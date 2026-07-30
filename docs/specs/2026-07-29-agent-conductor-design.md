@@ -26,6 +26,16 @@ Positioning in one line: *tracing tools (LangSmith, Langfuse, AgentOps) record
 calls; Conduct tracks decisions.* It runs on `127.0.0.1`, reads files, and
 needs no cloud, no account, and no API keys.
 
+**Any popular vibe-coding tool can join, and they coordinate with each other
+through Conduct while working on the same project.** Anything that reads and
+writes project files — Claude Code, OpenAI Codex, Cursor, Windsurf, Cline,
+aider, Devin — speaks the protocol directly via the universal prompt
+contract (§9). Cloud builders that own their own sandbox (Lovable, Bolt,
+v0) participate through the repository itself: `conductor/` is committed,
+so their lane updates travel as ordinary commits and appear on the panel
+after a pull. Conduct is the one place where heterogeneous tools *see each
+other*: one tool's finding, another tool's verdict, the human's queue.
+
 Tagline: **Your agents write lanes. You conduct.**
 
 ## 2. Goals and non-goals
@@ -313,8 +323,11 @@ motion respected, keyboard focus visible. Dark/light via
 ## 9. Adapters
 
 - **Universal (the default):** `conduct prompt <role>` output pasted into any
-  harness's instructions. Works today for Codex CLI, Cursor, aider — anything
-  that can write a file. Documented in `spec/PROTOCOL.md`.
+  harness's instructions. Works today for Codex CLI, Cursor, Windsurf, Cline,
+  aider, Devin — anything that can write a file. Cloud builders without local
+  filesystem access (Lovable, Bolt, v0) follow the same contract through the
+  repository: `conductor/` is committed, lanes arrive as commits, and the
+  panel picks them up on pull. Documented in `spec/PROTOCOL.md`.
 - **Claude Code** (`adapters/claude-code/`): a skill/CLAUDE.md snippet
   carrying the same contract, plus an optional **Stop-hook heartbeat** — a
   shell one-liner appending a mechanical `{"kind":"info","text":"session
