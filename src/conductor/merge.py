@@ -6,7 +6,6 @@ flag, or a queue de-dup. Silence is never consent.
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from typing import Any
 
 from conductor import schema
 from conductor.schema import DEFAULT_STALENESS_MINUTES
@@ -35,6 +34,31 @@ def _lane_view(entry: dict, now: datetime, warnings: list[str]) -> dict:
 def merge(map_data: dict | None, map_error: str | None, lanes: list[dict],
           events: list[dict], skipped_events: int, now: datetime,
           *, extra_warnings: tuple[str, ...] | list[str] = ()) -> dict:
+    """Merge a parsed map, raw lanes, and events into a `state.json` dict.
+
+    All rules are pure functions of the inputs, per PROTOCOL.md §6: no
+    author can write a disagreement, a stale flag, or a contested-node
+    verdict directly — silence is never consent.
+
+    Args:
+        map_data: The parsed `map.toml`, already passed through
+            `schema.validate_map`, or None if the map failed to load.
+        map_error: The map's load/validation error, when `map_data` is None.
+        lanes: Raw lane entries, each `{"author", "data", "error"}`. When
+            `data` is not None it has already passed `schema.validate_lane` —
+            that upstream guarantee is why a live lane always has a
+            parseable `updated`.
+        events: Parsed `events.jsonl` records, oldest first.
+        skipped_events: Count of malformed event lines skipped by the loader.
+        now: The current time, used for staleness and future-dating checks.
+            MUST be tz-aware — `schema.parse_iso` yields aware datetimes, and
+            comparing them against a naive `now` raises TypeError.
+        extra_warnings: Loader-level warnings (e.g. schema-version mismatches)
+            to fold into the output `warnings` list.
+
+    Returns:
+        The `state.json` dict per PROTOCOL.md §6.1.
+    """
     # extra_warnings: schema-version and other loader-level warnings (§4.5) —
     # store.load collects them, callers pass them through so they surface in state.
     warnings: list[str] = list(extra_warnings)
@@ -82,11 +106,37 @@ def merge(map_data: dict | None, map_error: str | None, lanes: list[dict],
     }
 
 
-def _nodes(map_data, live, warnings):
-    return [{"id": n["id"], "label": n.get("label", n["id"]),
-             "kind": n.get("kind", ""), "depends_on": n.get("depends_on", []),
-             "status": "idle", "contested_by": []}
-            for n in map_data.get("nodes", [])]
+# Under no-last-write-wins, the recency race only runs among AGREEING
+# voters, where the value is identical — recency is deliberately
+# unobservable and untested (documented in the plan).
+def _nodes(map_data: dict, live: list[dict], warnings: list[str]) -> list[dict]:
+    known = {n["id"] for n in map_data.get("nodes", [])}
+    votes: dict[str, list[tuple]] = {}          # node_id -> [(dt, future, author, status)]
+
+    for v in live:
+        for nid, status in (v["_data"].get("map_status") or {}).items():
+            if nid not in known:
+                warnings.append(
+                    f"lane {v['author']}: map_status key {nid!r} is not a map node — ignored")
+                continue
+            votes.setdefault(nid, []).append((v["_dt"], v["_future"], v["author"], status))
+
+    out = []
+    for n in map_data.get("nodes", []):
+        cast = votes.get(n["id"], [])
+        statuses = {s for (_, _, _, s) in cast}
+        if len(statuses) > 1:
+            status, contested = "contested", sorted(a for (_, _, a, _) in cast)
+        elif cast:
+            eligible = [c for c in cast if not c[1]] or cast   # prefer non-future voters
+            eligible.sort(key=lambda c: (c[0] is not None, c[0]))
+            status, contested = eligible[-1][3], []
+        else:
+            status, contested = "idle", []
+        out.append({"id": n["id"], "label": n.get("label", n["id"]),
+                    "kind": n.get("kind", ""), "depends_on": n.get("depends_on", []),
+                    "status": status, "contested_by": contested})
+    return out
 
 def _findings(map_data, views, warnings): return []
 def _human_queue(live): return []

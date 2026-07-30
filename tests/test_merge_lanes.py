@@ -67,3 +67,8 @@ def test_skipped_events_produce_a_warning():
     assert not any("skipped" in w for w in state["warnings"])
     state2 = merge.merge(_map(), None, [], [], 3, NOW)
     assert any("skipped 3" in w for w in state2["warnings"])
+
+def test_staleness_boundary_exact_threshold_is_not_stale():
+    edge = lane(updated="2026-07-30T06:00:00+00:00")   # exactly 360 min before NOW
+    state = merge.merge(_map(), None, [edge], [], 0, NOW)
+    assert state["lanes"][0]["stale"] is False          # strict >, spec §6
