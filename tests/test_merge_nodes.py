@@ -17,8 +17,11 @@ def lane(author, updated, status_map, **over):
 def _node(state, nid):
     return next(n for n in state["map"]["nodes"] if n["id"] == nid)
 
+# NOTE (spec insight): the §5 "most recently updated lane wins" clause can only
+# ever run when all voters AGREE — any disagreement is contested first. So
+# recency is unobservable in output and deliberately has no dedicated test.
 def test_single_lane_sets_node_status():
-    l1 = lane("solo", "2026-07-30T11:00:00+00:00", {"a": "pass"})
+    l1 = lane("only", "2026-07-30T11:00:00+00:00", {"a": "pass"})
     state = merge.merge(_map(), None, [l1], [], 0, NOW)
     assert _node(state, "a")["status"] == "pass"
 

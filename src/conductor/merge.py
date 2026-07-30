@@ -112,7 +112,6 @@ def merge(map_data: dict | None, map_error: str | None, lanes: list[dict],
 def _nodes(map_data: dict, live: list[dict], warnings: list[str]) -> list[dict]:
     known = {n["id"] for n in map_data.get("nodes", [])}
     votes: dict[str, list[tuple]] = {}          # node_id -> [(dt, future, author, status)]
-
     for v in live:
         for nid, status in (v["_data"].get("map_status") or {}).items():
             if nid not in known:
@@ -120,7 +119,6 @@ def _nodes(map_data: dict, live: list[dict], warnings: list[str]) -> list[dict]:
                     f"lane {v['author']}: map_status key {nid!r} is not a map node — ignored")
                 continue
             votes.setdefault(nid, []).append((v["_dt"], v["_future"], v["author"], status))
-
     out = []
     for n in map_data.get("nodes", []):
         cast = votes.get(n["id"], [])
