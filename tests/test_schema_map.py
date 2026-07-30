@@ -60,3 +60,52 @@ def test_map_with_only_nodes_is_valid():
     errors, warnings = schema.validate_map(
         {"schema_version": 1, "nodes": [{"id": "a", "label": "a", "kind": "artifact"}]})
     assert errors == [] and warnings == []
+
+def test_cycle_scalar_is_error():
+    m = valid_map(); m["cycle"] = "oops"
+    errors, _ = schema.validate_map(m)
+    assert any("cycle must be a table" in e for e in errors)
+
+def test_phases_scalar_is_error():
+    m = valid_map(); m["cycle"]["phases"] = "plan"
+    errors, _ = schema.validate_map(m)
+    assert any("cycle.phases must be a list of strings" in e for e in errors)
+
+def test_phases_with_non_string_element_is_error():
+    m = valid_map(); m["cycle"]["phases"] = ["plan", 5]
+    errors, _ = schema.validate_map(m)
+    assert any("cycle.phases must be a list of strings" in e for e in errors)
+
+def test_roles_scalar_is_error():
+    m = valid_map(); m["cycle"]["roles"] = "oops"
+    errors, _ = schema.validate_map(m)
+    assert any("cycle.roles must be a list of tables" in e for e in errors)
+
+def test_depends_on_scalar_is_single_error():
+    m = valid_map(); m["nodes"][1]["depends_on"] = "models"
+    errors, _ = schema.validate_map(m)
+    matches = [e for e in errors if "depends_on" in e]
+    assert len(matches) == 1
+    assert "must be a list" in matches[0]
+
+def test_reviews_scalar_is_single_error():
+    m = valid_map(); m["cycle"]["roles"][1]["reviews"] = "implementer"
+    errors, _ = schema.validate_map(m)
+    matches = [e for e in errors if "reviews" in e]
+    assert len(matches) == 1
+    assert "must be a list" in matches[0]
+
+def test_invariants_scalar_is_error():
+    m = valid_map(); m["invariants"] = "oops"
+    errors, _ = schema.validate_map(m)
+    assert any("invariants must be a list of tables" in e for e in errors)
+
+def test_reviews_nested_list_element_is_clear_error_not_crash():
+    m = valid_map(); m["cycle"]["roles"][1]["reviews"] = [["nested"]]
+    errors, _ = schema.validate_map(m)
+    assert any("reviews element must be a string" in e for e in errors)
+
+def test_depends_on_nested_list_element_is_clear_error_not_crash():
+    m = valid_map(); m["nodes"][1]["depends_on"] = [["nested"]]
+    errors, _ = schema.validate_map(m)
+    assert any("depends_on element must be a string" in e for e in errors)
