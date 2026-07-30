@@ -135,7 +135,7 @@ Append-only; one JSON object per line:
 ```
 
 `kind` ∈ `ok | fail | warn | stop | info`. Readers skip malformed lines and
-report the skip count. The panel renders the most recent 500. Event lines
+report the skip count. Consumers render the most recent 500. Event lines
 carry **no** `schema_version`: the log is versioned implicitly by the
 protocol version of the `conductor/` directory it lives in.
 
@@ -156,7 +156,7 @@ are pure functions of the inputs (unit-testable without I/O):
 | **Disagreement** | finding F (lane A) has a verdict from **any** other lane with disposition `refuted` or `partial` — observers included: a role-less lane can dispute, it just carries no review *obligation*. |
 | **Unreviewed** | role R has `reviews` containing A's role, some lane holds role R, and **no** lane holding role R has a verdict for F (several lanes may hold the same role; any one of them verdicting satisfies the obligation). Distinct from agreement — rendered as "not reviewed". |
 | **Uncovered** | role R with `reviews` ∋ A's role exists in the map but **no lane** holds role R — F is "review role absent", also never agreement. |
-| **Review state (per finding)** | one value with precedence `suspended > disagreement > unreviewed > uncovered > agreed`: `suspended` for id-collided findings; `agreed` only when every reviewing role's obligation is met and every verdict on F is `confirmed`. Self-verdicts (a lane verdicting its own finding) are ignored in **all** review-state computation. A finding whose author's role is reviewed by nobody lands on `agreed` vacuously — this is intended, and the panel renders such rows as "no reviewer assigned" so the silence-≠-consent story stays visible. Per-author detail always remains visible in the finding's `verdicts`. |
+| **Review state (per finding)** | one value with precedence `suspended > disagreement > unreviewed > uncovered > agreed`: `suspended` for id-collided findings; `agreed` only when every reviewing role's obligation is met and every verdict on F is `confirmed`. Self-verdicts (a lane verdicting its own finding) are ignored in **all** review-state computation. A finding whose author's role is reviewed by nobody lands on `agreed` vacuously — this is intended, and consumers should render such rows as "no reviewer assigned" so the silence-≠-consent story stays visible. Per-author detail always remains visible in the finding's `verdicts`. |
 | **Contested node** | two or more lanes report different `map_status` for the same node → state `contested`, listed with **all** disagreeing authors. No last-write-wins. |
 | **Node status** | otherwise: the status from the most recently `updated` lane that mentions the node (future-dated lanes are excluded from this race — the clock-skew warning stands); nodes nobody mentions are `idle`. |
 | **Current phase** | the `now.phase` of the most recently updated non-stale, non-future-dated lane that declares one; if no lane declares a phase, there is no current phase and the cycle renders statically. A `now.phase` naming no `cycle.phases` value (or any phase when the map declares none) is treated as undeclared, with a warning. |
@@ -179,9 +179,9 @@ count, broken lanes, stale lanes.
 
 ### 6.1 `state.json` shape (normative core)
 
-The merger's output — the contract between `merge.py`, the panel, and any
-third-party consumer of `/state.json`. Field list is normative; consumers
-must tolerate additional fields:
+The merger's output — the contract between a merger and any consumer of
+`state.json`. Field list is normative; consumers must tolerate additional
+fields:
 
 ```jsonc
 {
