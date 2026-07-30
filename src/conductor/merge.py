@@ -123,14 +123,14 @@ def _nodes(map_data: dict, live: list[dict], warnings: list[str]) -> list[dict]:
     for n in map_data.get("nodes", []):
         cast = votes.get(n["id"], [])
         statuses = {s for (_, _, _, s) in cast}
+        eligible = [c for c in cast if not c[1]]   # future voters never win (owner decision)
         if len(statuses) > 1:
             status, contested = "contested", sorted(a for (_, _, a, _) in cast)
-        elif cast:
-            eligible = [c for c in cast if not c[1]] or cast   # prefer non-future voters
+        elif eligible:
             eligible.sort(key=lambda c: (c[0] is not None, c[0]))
             status, contested = eligible[-1][3], []
         else:
-            status, contested = "idle", []
+            status, contested = "idle", []   # sole-future-voter node stays idle (§6)
         out.append({"id": n["id"], "label": n.get("label", n["id"]),
                     "kind": n.get("kind", ""), "depends_on": n.get("depends_on", []),
                     "status": status, "contested_by": contested})

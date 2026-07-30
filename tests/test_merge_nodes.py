@@ -33,9 +33,9 @@ def test_agreeing_lanes_are_not_contested():
     assert _node(state, "a")["contested_by"] == []
 
 def test_disagreeing_lanes_contest_the_node_with_all_authors():
-    ls = [lane("x", "2026-07-30T10:00:00+00:00", {"a": "pass"}),
-          lane("y", "2026-07-30T11:00:00+00:00", {"a": "fail"}),
-          lane("z", "2026-07-30T09:00:00+00:00", {"a": "blocked"})]
+    ls = [lane("z", "2026-07-30T09:00:00+00:00", {"a": "blocked"}),
+          lane("x", "2026-07-30T10:00:00+00:00", {"a": "pass"}),
+          lane("y", "2026-07-30T11:00:00+00:00", {"a": "fail"})]
     state = merge.merge(_map(), None, ls, [], 0, NOW)
     node = _node(state, "a")
     assert node["status"] == "contested"
@@ -64,3 +64,9 @@ def test_unknown_map_status_key_ignored_with_warning():
     state = merge.merge(_map(), None, [l1], [], 0, NOW)
     assert all(n["status"] == "idle" for n in state["map"]["nodes"])
     assert any("ghost" in w for w in state["warnings"])
+
+def test_sole_future_voter_leaves_node_idle():
+    fut = lane("fut", "2026-07-30T13:00:00+00:00", {"a": "pass"})   # future vs NOW
+    state = merge.merge(_map(), None, [fut], [], 0, NOW)
+    assert _node(state, "a")["status"] == "idle"                     # exclusion is total
+    assert any("future" in w for w in state["warnings"])
