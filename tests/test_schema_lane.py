@@ -87,23 +87,60 @@ def test_verdicts_non_dict_is_single_error():
     lane = valid_lane(); lane["verdicts"] = ["D-1"]
     errors, _ = schema.validate_lane(lane, filename_stem="claude")
     assert any("verdicts" in e and "must be" in e for e in errors)
+    assert len([e for e in errors if "verdicts" in e]) == 1
 
 def test_map_status_scalar_is_single_error():
     lane = valid_lane(); lane["map_status"] = "backend"
     errors, _ = schema.validate_lane(lane, filename_stem="claude")
     assert any("map_status" in e and "must be" in e for e in errors)
+    assert len([e for e in errors if "map_status" in e]) == 1
 
 def test_waits_scalar_is_single_error():
     lane = valid_lane(); lane["waits_on_human"] = "w-1"
     errors, _ = schema.validate_lane(lane, filename_stem="claude")
     assert any("waits_on_human" in e and "must be a list" in e for e in errors)
+    assert len([e for e in errors if "waits_on_human" in e]) == 1
 
 def test_invariants_scalar_is_single_error():
     lane = valid_lane(); lane["invariants"] = "main-untouched"
     errors, _ = schema.validate_lane(lane, filename_stem="claude")
     assert any("invariants" in e and "must be a list" in e for e in errors)
+    assert len([e for e in errors if "invariants" in e]) == 1
 
 def test_now_scalar_is_single_error():
     lane = valid_lane(); lane["now"] = "busy"
     errors, _ = schema.validate_lane(lane, filename_stem="claude")
     assert any("now" in e and "must be" in e for e in errors)
+    assert len([e for e in errors if "now" in e]) == 1
+
+
+def test_unhashable_map_status_value_does_not_crash():
+    lane = valid_lane(); lane["map_status"]["backend"] = ["pass"]
+    errors, _ = schema.validate_lane(lane, filename_stem="claude")
+    assert any("map_status" in e for e in errors)
+
+def test_unhashable_finding_severity_does_not_crash():
+    lane = valid_lane(); lane["findings"][0]["severity"] = ["blocker"]
+    errors, _ = schema.validate_lane(lane, filename_stem="claude")
+    assert any("severity" in e for e in errors)
+
+def test_unhashable_verdict_disposition_does_not_crash():
+    lane = valid_lane(); lane["verdicts"]["D-1"]["disposition"] = {"x": 1}
+    errors, _ = schema.validate_lane(lane, filename_stem="claude")
+    assert any("disposition" in e for e in errors)
+
+def test_unhashable_wait_kind_does_not_crash():
+    lane = valid_lane(); lane["waits_on_human"][0]["kind"] = {}
+    errors, _ = schema.validate_lane(lane, filename_stem="claude")
+    assert any("kind" in e for e in errors)
+
+def test_unhashable_event_kind_does_not_crash():
+    event = {"ts": "2026-07-29T21:05:00+03:00", "author": "claude",
+              "kind": ["ok"], "text": "t"}
+    errors = schema.validate_event(event)
+    assert any("kind" in e for e in errors)
+
+def test_staleness_after_minutes_bool_is_error():
+    lane = valid_lane(); lane["staleness_after_minutes"] = True
+    errors, _ = schema.validate_lane(lane, filename_stem="claude")
+    assert any("staleness_after_minutes" in e for e in errors)

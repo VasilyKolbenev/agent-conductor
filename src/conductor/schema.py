@@ -131,6 +131,40 @@ def _validate_invariants(data: dict, errors: list[str]) -> None:
         inv_ids.add(iid)
 
 
+def validate_map(data: Any) -> Result:
+    """Validate a parsed `map.toml` against Protocol v1 (spec section 2).
+
+    Only `schema_version` and `nodes` are required. `project`, `cycle`
+    (and its `cycle.roles` / `cycle.phases`), and `invariants` are all
+    optional — a map containing only `nodes` is valid.
+
+    Args:
+        data: The parsed map. Expected to be a dict (table); any other
+            top-level shape is itself an error.
+
+    Returns:
+        A `(errors, warnings)` pair of human-readable messages. Errors
+        mean the map is invalid and MUST block further processing;
+        warnings are informational only (e.g. an unrecognized
+        `schema_version`, accepted without guessing per spec section 5)
+        and never block.
+    """
+    errors: list[str] = []
+    warnings: list[str] = []
+    if not isinstance(data, dict):
+        return (["map: top level must be a table"], warnings)
+    _version_check(data, "map", errors, warnings)
+    _validate_nodes(data, errors)
+    _validate_cycle(data, errors)
+    _validate_invariants(data, errors)
+    return errors, warnings
+
+
+def _in_vocab(value: Any, vocab: frozenset[str]) -> bool:
+    """True iff `value` is a string member of `vocab` — never raises on unhashable input."""
+    return isinstance(value, str) and value in vocab
+
+
 def _validate_lane_core(data: dict, filename_stem: str, where: str, errors: list[str]) -> None:
     """Check author/updated/role/staleness_after_minutes/now (spec §3, §5)."""
     if data.get("author") != filename_stem:
@@ -141,7 +175,8 @@ def _validate_lane_core(data: dict, filename_stem: str, where: str, errors: list
     if role is not None and (not isinstance(role, str) or not role):
         errors.append(f"{where}: role must be a non-empty string when present")
     threshold = data.get("staleness_after_minutes")
-    if threshold is not None and not isinstance(threshold, (int, float)):
+    if threshold is not None and (isinstance(threshold, bool)
+                                   or not isinstance(threshold, (int, float))):
         errors.append(f"{where}: staleness_after_minutes must be a number")
     now = data.get("now")
     if now is not None and not isinstance(now, dict):
@@ -156,7 +191,7 @@ def _validate_lane_map_status(data: dict, where: str, errors: list[str]) -> None
         errors.append(f"{where}: map_status must be an object")
         return
     for node_id, status in map_status.items():
-        if status not in NODE_STATUSES:
+        if not _in_vocab(status, NODE_STATUSES):
             errors.append(f"{where}: map_status[{node_id!r}]={status!r} not in "
                           f"{sorted(NODE_STATUSES)}")
 
@@ -177,7 +212,7 @@ def _validate_lane_findings(data: dict, where: str, errors: list[str]) -> None:
         if fid in seen:
             errors.append(f"{where}: duplicate finding id {fid!r}")
         seen.add(fid)
-        if f.get("severity") not in SEVERITIES:
+        if not _in_vocab(f.get("severity"), SEVERITIES):
             errors.append(f"{where}: finding {fid!r} severity {f.get('severity')!r} "
                           f"not in {sorted(SEVERITIES)}")
         for key in ("title", "claim"):
@@ -193,7 +228,7 @@ def _validate_lane_verdicts(data: dict, where: str, errors: list[str]) -> None:
         errors.append(f"{where}: verdicts must be an object")
         return
     for fid, v in verdicts.items():
-        if not isinstance(v, dict) or v.get("disposition") not in DISPOSITIONS:
+        if not isinstance(v, dict) or not _in_vocab(v.get("disposition"), DISPOSITIONS):
             errors.append(f"{where}: verdict {fid!r} disposition must be one of "
                           f"{sorted(DISPOSITIONS)}")
 
@@ -214,7 +249,7 @@ def _validate_lane_waits(data: dict, where: str, errors: list[str]) -> None:
         if wid in seen:
             errors.append(f"{where}: duplicate waits_on_human id {wid!r}")
         seen.add(wid)
-        if w.get("kind") not in WAIT_KINDS:
+        if not _in_vocab(w.get("kind"), WAIT_KINDS):
             errors.append(f"{where}: wait {wid!r} kind {w.get('kind')!r} "
                           f"not in {sorted(WAIT_KINDS)}")
 
@@ -284,37 +319,8 @@ def validate_event(obj: Any) -> list[str]:
         errors.append("event: ts must be ISO-8601")
     if not isinstance(obj.get("author"), str) or not obj.get("author"):
         errors.append("event: author is required")
-    if obj.get("kind") not in EVENT_KINDS:
+    if not _in_vocab(obj.get("kind"), EVENT_KINDS):
         errors.append(f"event: kind {obj.get('kind')!r} not in {sorted(EVENT_KINDS)}")
     if not isinstance(obj.get("text"), str) or not obj.get("text"):
         errors.append("event: text is required")
     return errors
-
-
-def validate_map(data: Any) -> Result:
-    """Validate a parsed `map.toml` against Protocol v1 (spec section 2).
-
-    Only `schema_version` and `nodes` are required. `project`, `cycle`
-    (and its `cycle.roles` / `cycle.phases`), and `invariants` are all
-    optional — a map containing only `nodes` is valid.
-
-    Args:
-        data: The parsed map. Expected to be a dict (table); any other
-            top-level shape is itself an error.
-
-    Returns:
-        A `(errors, warnings)` pair of human-readable messages. Errors
-        mean the map is invalid and MUST block further processing;
-        warnings are informational only (e.g. an unrecognized
-        `schema_version`, accepted without guessing per spec section 5)
-        and never block.
-    """
-    errors: list[str] = []
-    warnings: list[str] = []
-    if not isinstance(data, dict):
-        return (["map: top level must be a table"], warnings)
-    _version_check(data, "map", errors, warnings)
-    _validate_nodes(data, errors)
-    _validate_cycle(data, errors)
-    _validate_invariants(data, errors)
-    return errors, warnings
