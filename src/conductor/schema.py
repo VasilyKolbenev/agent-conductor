@@ -131,6 +131,166 @@ def _validate_invariants(data: dict, errors: list[str]) -> None:
         inv_ids.add(iid)
 
 
+def _validate_lane_core(data: dict, filename_stem: str, where: str, errors: list[str]) -> None:
+    """Check author/updated/role/staleness_after_minutes/now (spec §3, §5)."""
+    if data.get("author") != filename_stem:
+        errors.append(f"{where}: author {data.get('author')!r} must equal filename stem")
+    if parse_iso(data.get("updated")) is None:
+        errors.append(f"{where}: updated must be ISO-8601")
+    role = data.get("role")
+    if role is not None and (not isinstance(role, str) or not role):
+        errors.append(f"{where}: role must be a non-empty string when present")
+    threshold = data.get("staleness_after_minutes")
+    if threshold is not None and not isinstance(threshold, (int, float)):
+        errors.append(f"{where}: staleness_after_minutes must be a number")
+    now = data.get("now")
+    if now is not None and not isinstance(now, dict):
+        errors.append(f"{where}: now must be an object")
+
+
+def _validate_lane_map_status(data: dict, where: str, errors: list[str]) -> None:
+    if "map_status" not in data:
+        return
+    map_status = data["map_status"]
+    if not isinstance(map_status, dict):
+        errors.append(f"{where}: map_status must be an object")
+        return
+    for node_id, status in map_status.items():
+        if status not in NODE_STATUSES:
+            errors.append(f"{where}: map_status[{node_id!r}]={status!r} not in "
+                          f"{sorted(NODE_STATUSES)}")
+
+
+def _validate_lane_findings(data: dict, where: str, errors: list[str]) -> None:
+    if "findings" not in data:
+        return
+    findings = data["findings"]
+    if not isinstance(findings, list):
+        errors.append(f"{where}: findings must be a list")
+        return
+    seen: set[str] = set()
+    for f in findings:
+        fid = f.get("id") if isinstance(f, dict) else None
+        if not isinstance(fid, str) or not fid:
+            errors.append(f"{where}: every finding needs a non-empty string id")
+            continue
+        if fid in seen:
+            errors.append(f"{where}: duplicate finding id {fid!r}")
+        seen.add(fid)
+        if f.get("severity") not in SEVERITIES:
+            errors.append(f"{where}: finding {fid!r} severity {f.get('severity')!r} "
+                          f"not in {sorted(SEVERITIES)}")
+        for key in ("title", "claim"):
+            if not isinstance(f.get(key), str) or not f.get(key):
+                errors.append(f"{where}: finding {fid!r} needs a non-empty {key}")
+
+
+def _validate_lane_verdicts(data: dict, where: str, errors: list[str]) -> None:
+    if "verdicts" not in data:
+        return
+    verdicts = data["verdicts"]
+    if not isinstance(verdicts, dict):
+        errors.append(f"{where}: verdicts must be an object")
+        return
+    for fid, v in verdicts.items():
+        if not isinstance(v, dict) or v.get("disposition") not in DISPOSITIONS:
+            errors.append(f"{where}: verdict {fid!r} disposition must be one of "
+                          f"{sorted(DISPOSITIONS)}")
+
+
+def _validate_lane_waits(data: dict, where: str, errors: list[str]) -> None:
+    if "waits_on_human" not in data:
+        return
+    waits = data["waits_on_human"]
+    if not isinstance(waits, list):
+        errors.append(f"{where}: waits_on_human must be a list")
+        return
+    seen: set[str] = set()
+    for w in waits:
+        wid = w.get("id") if isinstance(w, dict) else None
+        if not isinstance(wid, str) or not wid:
+            errors.append(f"{where}: every waits_on_human item needs an id")
+            continue
+        if wid in seen:
+            errors.append(f"{where}: duplicate waits_on_human id {wid!r}")
+        seen.add(wid)
+        if w.get("kind") not in WAIT_KINDS:
+            errors.append(f"{where}: wait {wid!r} kind {w.get('kind')!r} "
+                          f"not in {sorted(WAIT_KINDS)}")
+
+
+def _validate_lane_invariants(data: dict, where: str, errors: list[str]) -> None:
+    if "invariants" not in data:
+        return
+    invariants = data["invariants"]
+    if not isinstance(invariants, list):
+        errors.append(f"{where}: invariants must be a list")
+        return
+    for inv in invariants:
+        if not isinstance(inv, dict) or not isinstance(inv.get("id"), str) \
+                or not isinstance(inv.get("ok"), bool):
+            errors.append(f"{where}: invariants need string id + boolean ok")
+
+
+def validate_lane(data: Any, *, filename_stem: str) -> Result:
+    """Validate a parsed lane file against Protocol v1 (spec section 3).
+
+    Every collection field (`map_status`, `findings`, `verdicts`,
+    `waits_on_human`, `invariants`, `now`) is shape-guarded before it is
+    iterated: a wrong-typed present field produces exactly one clear error
+    instead of a silent bypass or per-character garbage, mirroring
+    `validate_map`.
+
+    Args:
+        data: The parsed lane JSON. Expected to be a dict; any other
+            top-level shape is itself an error.
+        filename_stem: The lane's filename without extension (e.g.
+            `"claude"` for `conductor/lanes/claude.json`) — must equal
+            `data["author"]`.
+
+    Returns:
+        A `(errors, warnings)` pair, same contract as `validate_map`.
+    """
+    errors: list[str] = []
+    warnings: list[str] = []
+    if not isinstance(data, dict):
+        return ([f"lane {filename_stem}: top level must be an object"], warnings)
+    where = f"lane {filename_stem}"
+    _version_check(data, where, errors, warnings)
+    _validate_lane_core(data, filename_stem, where, errors)
+    _validate_lane_map_status(data, where, errors)
+    _validate_lane_findings(data, where, errors)
+    _validate_lane_verdicts(data, where, errors)
+    _validate_lane_waits(data, where, errors)
+    _validate_lane_invariants(data, where, errors)
+    return errors, warnings
+
+
+def validate_event(obj: Any) -> list[str]:
+    """Validate one parsed line of `events.jsonl` against Protocol v1 (spec section 4).
+
+    Args:
+        obj: The parsed JSON object for one event line.
+
+    Returns:
+        A list of human-readable error strings; empty means the event
+        line is valid. Per spec, malformed lines are skipped by readers
+        rather than fatal — this function only classifies one line.
+    """
+    errors: list[str] = []
+    if not isinstance(obj, dict):
+        return ["event line must be an object"]
+    if parse_iso(obj.get("ts")) is None:
+        errors.append("event: ts must be ISO-8601")
+    if not isinstance(obj.get("author"), str) or not obj.get("author"):
+        errors.append("event: author is required")
+    if obj.get("kind") not in EVENT_KINDS:
+        errors.append(f"event: kind {obj.get('kind')!r} not in {sorted(EVENT_KINDS)}")
+    if not isinstance(obj.get("text"), str) or not obj.get("text"):
+        errors.append("event: text is required")
+    return errors
+
+
 def validate_map(data: Any) -> Result:
     """Validate a parsed `map.toml` against Protocol v1 (spec section 2).
 
