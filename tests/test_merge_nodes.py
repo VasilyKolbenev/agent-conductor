@@ -39,7 +39,9 @@ def test_disagreeing_lanes_contest_the_node_with_all_authors():
     state = merge.merge(_map(), None, ls, [], 0, NOW)
     node = _node(state, "a")
     assert node["status"] == "contested"
-    assert sorted(node["contested_by"]) == ["x", "y", "z"]
+    # Raw output equality: the implementation's own sorted() is load-bearing here —
+    # insertion order is z,x,y, so re-sorting in the assertion would mask its loss.
+    assert node["contested_by"] == ["x", "y", "z"]
 
 def test_unmentioned_node_is_idle():
     state = merge.merge(_map(), None, [], [], 0, NOW)
