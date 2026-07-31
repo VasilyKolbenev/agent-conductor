@@ -144,3 +144,25 @@ def test_staleness_after_minutes_bool_is_error():
     lane = valid_lane(); lane["staleness_after_minutes"] = True
     errors, _ = schema.validate_lane(lane, filename_stem="claude")
     assert any("staleness_after_minutes" in e for e in errors)
+
+
+def test_refs_scalar_is_single_error():
+    lane = valid_lane(); lane["findings"][0]["refs"] = "backend"
+    errors, _ = schema.validate_lane(lane, filename_stem="claude")
+    assert len([e for e in errors if "refs" in e]) == 1
+    assert any("must be a list" in e for e in errors)
+
+def test_refs_null_is_error_not_crash_downstream():
+    lane = valid_lane(); lane["findings"][0]["refs"] = None
+    errors, _ = schema.validate_lane(lane, filename_stem="claude")
+    assert any("refs" in e for e in errors)
+
+def test_refs_non_string_element_is_clear_error():
+    lane = valid_lane(); lane["findings"][0]["refs"] = ["backend", ["nested"]]
+    errors, _ = schema.validate_lane(lane, filename_stem="claude")
+    assert any("refs" in e and "element" in e for e in errors)
+
+def test_refs_absent_is_fine():
+    lane = valid_lane(); del lane["findings"][0]["refs"]
+    errors, _ = schema.validate_lane(lane, filename_stem="claude")
+    assert errors == []
