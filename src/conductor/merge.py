@@ -261,6 +261,22 @@ def _invariants(map_data: dict, live: list[dict], warnings: list[str]) -> list[d
     return list(state.values())
 
 
+def pending_verdicts(state: dict) -> dict[str, list[str]]:
+    """finding ids each reviewing role still owes a verdict on (for conduct prompt)."""
+    roles = {r["id"]: r for r in state["cycle"]["roles"]}
+    author_role = {ln["author"]: ln["role"] for ln in state["lanes"]}
+    pending: dict[str, list[str]] = {rid: [] for rid in roles}
+    for f in state["findings"]:
+        if f["review_state"] == "suspended":
+            continue
+        for rid, role in roles.items():
+            if author_role.get(f["author"]) not in role.get("reviews", []):
+                continue
+            if not any(v.get("role") == rid for v in f["verdicts"].values()):
+                pending[rid].append(f["id"])
+    return {rid: sorted(ids) for rid, ids in pending.items() if ids}
+
+
 # PROTOCOL.md §6: Current phase — most recently updated non-stale, non-future lane.
 def _cycle(map_data: dict, live: list[dict], warnings: list[str]) -> dict:
     cyc = map_data.get("cycle", {}) or {}
