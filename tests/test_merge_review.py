@@ -132,3 +132,11 @@ def test_verdicts_keyed_by_author_with_role_inside():
     state = merge.merge(MAP, None, ls, [], 0, NOW)
     v = _f(state, "D-1")["verdicts"]["codex"]
     assert v == {"disposition": "confirmed", "note": "ok", "role": "rev"}
+
+def test_unreviewed_beats_uncovered_on_the_same_finding():
+    # rev present-but-silent (unreviewed) AND sec absent entirely (uncovered):
+    # precedence says unreviewed wins.
+    ls = [lane("claude", "impl", [finding()]),
+          lane("codex", "rev")]                      # holds rev, no verdicts
+    state = merge.merge(MAP, None, ls, [], 0, NOW)
+    assert _f(state, "D-1")["review_state"] == "unreviewed"

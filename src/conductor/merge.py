@@ -136,19 +136,53 @@ def _nodes(map_data: dict, live: list[dict], warnings: list[str]) -> list[dict]:
                     "status": status, "contested_by": contested})
     return out
 
+# PROTOCOL.md §6: Disagreement, Unreviewed, Uncovered, Review state, Unknown
+# referenced ids, Unknown role, Id collision.
 def _findings(map_data: dict, views: list[dict], warnings: list[str]) -> list[dict]:
     live = [v for v in views if not v["broken"]]
     roles = {r["id"]: r for r in (map_data.get("cycle", {}) or {}).get("roles", [])}
-    role_holders: dict[str, list] = {}
+
+    known_role: dict[str, str | None] = {}
     for v in live:
         role = v["role"]
         if role is not None and role not in roles:
             warnings.append(f"lane {v['author']}: role {role!r} is not in cycle.roles — "
                             "treated as observer")
-            v = {**v, "role": None}
-        if v["role"]:
-            role_holders.setdefault(v["role"], []).append(v)
+        known_role[v["author"]] = role if role in roles else None
 
+    role_holders: dict[str, list] = {}
+    for v in live:
+        holder_role = known_role[v["author"]]
+        if holder_role:
+            role_holders.setdefault(holder_role, []).append(v)
+
+    owners, verdicts_on = _index_findings_and_verdicts(live, known_role, warnings)
+
+    out = []
+    for fid, owner_list in owners.items():
+        collided = len(owner_list) > 1
+        if collided:
+            warnings.append(f"id-collision: finding {fid!r} authored by "
+                            f"{sorted(view['author'] for view, _ in owner_list)}")
+        for view, f in owner_list:
+            author_role = known_role[view["author"]]
+            all_verdicts = dict(verdicts_on.get(fid, {}))
+            # Self-verdicts stay VISIBLE in output but are ignored in computation (§5).
+            others = {a: vd for a, vd in all_verdicts.items() if a != view["author"]}
+            reviewing = [r for r in roles.values() if author_role in r.get("reviews", [])]
+            review_state = _review_state(collided, others, reviewing, role_holders)
+            out.append({"id": fid, "title": f.get("title", ""),
+                        "severity": f.get("severity", "note"),
+                        "claim": f.get("claim", ""), "author": view["author"],
+                        "refs": [r for r in f.get("refs", [])],
+                        "verdicts": all_verdicts, "review_state": review_state})
+    _warn_unknown_refs(map_data, out, warnings)
+    return out
+
+
+def _index_findings_and_verdicts(live: list[dict], known_role: dict[str, str | None],
+                                  warnings: list[str]) -> tuple[dict, dict]:
+    """Owners map + verdicts_on collection (§6 Id collision / stale verdicts)."""
     owners: dict[str, list] = {}                      # finding id -> [(view, finding)]
     for v in live:
         for f in v["_data"].get("findings", []):
@@ -165,44 +199,27 @@ def _findings(map_data: dict, views: list[dict], warnings: list[str]) -> list[di
             verdicts_on.setdefault(fid, {})[v["author"]] = {
                 "disposition": verdict.get("disposition"),
                 "note": verdict.get("note", ""),
-                "role": v["role"] if v["role"] in roles else None,
+                "role": known_role[v["author"]],
             }
+    return owners, verdicts_on
 
-    out = []
-    for fid, owner_list in owners.items():
-        collided = len(owner_list) > 1
-        if collided:
-            warnings.append(f"id-collision: finding {fid!r} authored by "
-                            f"{sorted(v['author'] for v, _ in owner_list)}")
-        for view, f in owner_list:
-            author_role = view["role"] if view["role"] in roles else None
-            all_verdicts = dict(verdicts_on.get(fid, {}))
-            # Self-verdicts stay VISIBLE in output but are ignored in computation (§5).
-            others = {a: v for a, v in all_verdicts.items() if a != view["author"]}
-            reviewing = [r for r in roles.values() if author_role in r.get("reviews", [])]
-            if collided:
-                review_state = "suspended"
-            elif any(v["disposition"] in ("refuted", "partial")
-                     for v in others.values()):
-                review_state = "disagreement"
-            else:
-                unreviewed = uncovered = False
-                for r in reviewing:
-                    holders = role_holders.get(r["id"], [])
-                    if not holders:
-                        uncovered = True
-                    elif not any(a in others and others[a]["role"] == r["id"]
-                                 for a in (h["author"] for h in holders)):
-                        unreviewed = True
-                review_state = ("unreviewed" if unreviewed
-                                else "uncovered" if uncovered else "agreed")
-            out.append({"id": fid, "title": f.get("title", ""),
-                        "severity": f.get("severity", "note"),
-                        "claim": f.get("claim", ""), "author": view["author"],
-                        "refs": [r for r in f.get("refs", [])],
-                        "verdicts": all_verdicts, "review_state": review_state})
-    _warn_unknown_refs(map_data, out, warnings)
-    return out
+
+def _review_state(collided: bool, others: dict[str, dict], reviewing: list[dict],
+                   role_holders: dict[str, list]) -> str:
+    """§6 Review state precedence: suspended > disagreement > unreviewed > uncovered > agreed."""
+    if collided:
+        return "suspended"
+    if any(vd["disposition"] in ("refuted", "partial") for vd in others.values()):
+        return "disagreement"
+    unreviewed = uncovered = False
+    for r in reviewing:
+        holders = role_holders.get(r["id"], [])
+        if not holders:
+            uncovered = True
+        elif not any(a in others and others[a]["role"] == r["id"]
+                     for a in (h["author"] for h in holders)):
+            unreviewed = True
+    return "unreviewed" if unreviewed else "uncovered" if uncovered else "agreed"
 
 
 def _warn_unknown_refs(map_data: dict, findings: list[dict], warnings: list[str]) -> None:
