@@ -166,3 +166,25 @@ def test_refs_absent_is_fine():
     lane = valid_lane(); del lane["findings"][0]["refs"]
     errors, _ = schema.validate_lane(lane, filename_stem="claude")
     assert errors == []
+
+
+def test_wait_blocks_scalar_is_single_error():
+    lane = valid_lane(); lane["waits_on_human"][0]["blocks"] = "D-2"
+    errors, _ = schema.validate_lane(lane, filename_stem="claude")
+    assert len([e for e in errors if "blocks" in e]) == 1
+    assert any("must be a list" in e for e in errors)
+
+def test_wait_blocks_null_is_error():
+    lane = valid_lane(); lane["waits_on_human"][0]["blocks"] = None
+    errors, _ = schema.validate_lane(lane, filename_stem="claude")
+    assert any("blocks" in e for e in errors)
+
+def test_wait_blocks_non_string_element_is_clear_error():
+    lane = valid_lane(); lane["waits_on_human"][0]["blocks"] = ["D-2", 7]
+    errors, _ = schema.validate_lane(lane, filename_stem="claude")
+    assert any("blocks" in e and "element" in e for e in errors)
+
+def test_wait_blocks_absent_is_fine():
+    lane = valid_lane(); del lane["waits_on_human"][0]["blocks"]
+    errors, _ = schema.validate_lane(lane, filename_stem="claude")
+    assert errors == []

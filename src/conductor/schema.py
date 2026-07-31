@@ -262,6 +262,16 @@ def _validate_lane_waits(data: dict, where: str, errors: list[str]) -> None:
         if not _in_vocab(w.get("kind"), WAIT_KINDS):
             errors.append(f"{where}: wait {wid!r} kind {w.get('kind')!r} "
                           f"not in {sorted(WAIT_KINDS)}")
+        if "blocks" in w:
+            blocks = w["blocks"]
+            if not isinstance(blocks, list):
+                errors.append(f"{where}: wait {wid!r} blocks must be a list")
+            else:
+                for b in blocks:
+                    if not isinstance(b, str):
+                        errors.append(
+                            f"{where}: wait {wid!r} blocks element must be a string, "
+                            f"got {b!r}")
 
 
 def _validate_lane_invariants(data: dict, where: str, errors: list[str]) -> None:
