@@ -63,11 +63,13 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
 
 
 def run_targeted_test(test_file: str) -> int:
+    # timeout=180: a mutation must never be allowed to hang the harness.
     result = subprocess.run(
         [sys.executable, "-m", "pytest", test_file, "-q"],
         cwd=ROOT,
         capture_output=True,
         text=True,
+        timeout=180,
     )
     return result.returncode
 
@@ -86,12 +88,32 @@ def main() -> int:
         mutated = apply_mutation(original, anchor, replacement)
         try:
             MERGE_PATH.write_bytes(mutated)
-            returncode = run_targeted_test(test_file)
-            killed = returncode != 0
-            results.append((name, killed))
-            print(f"{'KILLED' if killed else 'SURVIVED'}: {name}")
+            try:
+                returncode = run_targeted_test(test_file)
+            except subprocess.TimeoutExpired:
+                print(f"TIMEOUT: {name}")
+                results.append((name, False))
+            else:
+                # pytest exit codes: 1 = genuine test failure (honest kill).
+                # 2-5 = usage/collection/internal error — the mutation broke
+                # something other than the assertions we're probing for, so
+                # it must NOT be counted as a kill.
+                if returncode == 1:
+                    print(f"KILLED: {name}")
+                    results.append((name, True))
+                elif returncode == 0:
+                    print(f"SURVIVED: {name}")
+                    results.append((name, False))
+                else:
+                    print(f"HARNESS_ERROR: {name} exited {returncode} "
+                          "(collection/usage error, not a test failure)")
+                    results.append((name, False))
         finally:
             MERGE_PATH.write_bytes(original)
+            # Verify the restore immediately — a corrupted restore must be
+            # caught here, before the next mutation runs against a dirty base.
+            assert MERGE_PATH.read_bytes() == original, (
+                f"restore verification failed after mutation: {name}")
 
     total = len(results)
     killed_count = sum(1 for _, killed in results if killed)
