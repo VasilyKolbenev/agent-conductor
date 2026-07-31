@@ -262,8 +262,26 @@ def _invariants(map_data: dict, live: list[dict], warnings: list[str]) -> list[d
 
 
 def pending_verdicts(state: dict) -> dict[str, list[str]]:
-    """finding ids each reviewing role still owes a verdict on (for conduct prompt)."""
+    """Finding ids each reviewing role still owes a verdict on (for conduct prompt).
+
+    Mirrors `_review_state`'s §6 self-verdict rule: an author's own verdict on
+    their own finding never counts toward satisfying a reviewing role's
+    obligation, even when a role reviews itself (schema-legal). Suspended
+    (id-collided) findings are skipped entirely — there is nothing to owe a
+    verdict on until the collision is resolved.
+
+    Args:
+        state: A `state.json` dict as produced by `merge()`.
+
+    Returns:
+        Mapping of role id to the sorted finding ids that role still owes a
+        verdict on. Roles with zero pending findings are OMITTED from the
+        result — callers must use `.get(role_id, [])`, not `[role_id]`.
+    """
     roles = {r["id"]: r for r in state["cycle"]["roles"]}
+    # lane roles are raw (schema-validated, not cross-checked against
+    # cycle.roles here) — equivalent to _findings' known_role because a
+    # role's `reviews` entries are themselves guaranteed-declared role ids.
     author_role = {ln["author"]: ln["role"] for ln in state["lanes"]}
     pending: dict[str, list[str]] = {rid: [] for rid in roles}
     for f in state["findings"]:
@@ -272,7 +290,8 @@ def pending_verdicts(state: dict) -> dict[str, list[str]]:
         for rid, role in roles.items():
             if author_role.get(f["author"]) not in role.get("reviews", []):
                 continue
-            if not any(v.get("role") == rid for v in f["verdicts"].values()):
+            if not any(v.get("role") == rid for a, v in f["verdicts"].items()
+                       if a != f["author"]):
                 pending[rid].append(f["id"])
     return {rid: sorted(ids) for rid, ids in pending.items() if ids}
 

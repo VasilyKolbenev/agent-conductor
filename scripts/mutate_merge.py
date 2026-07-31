@@ -59,6 +59,21 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
         '        eligible = cast   # future voters never win (owner decision)',
         "tests/test_merge_nodes.py",
     ),
+    (
+        "pending_verdicts: self-verdict exclusion dropped",
+        '            if not any(v.get("role") == rid for a, v in f["verdicts"].items()\n'
+        '                       if a != f["author"]):',
+        '            if not any(v.get("role") == rid for a, v in f["verdicts"].items()):',
+        "tests/test_merge_pending.py",
+    ),
+    (
+        "pending_verdicts: suspended skip dropped (condition inverted)",
+        '        if f["review_state"] == "suspended":\n'
+        '            continue',
+        '        if f["review_state"] != "suspended":\n'
+        '            continue',
+        "tests/test_merge_pending.py",
+    ),
 ]
 
 
@@ -91,7 +106,7 @@ def main() -> int:
             try:
                 returncode = run_targeted_test(test_file)
             except subprocess.TimeoutExpired:
-                print(f"TIMEOUT: {name}")
+                print(f"TIMEOUT: {name} (not counted as killed)")
                 results.append((name, False))
             else:
                 # pytest exit codes: 1 = genuine test failure (honest kill).
