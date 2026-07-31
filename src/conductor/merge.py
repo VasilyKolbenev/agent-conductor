@@ -231,11 +231,55 @@ def _warn_unknown_refs(map_data: dict, findings: list[dict], warnings: list[str]
         f["refs"] = [r for r in f["refs"] if r in known]
 
 
-def _human_queue(live): return []
-def _invariants(map_data, live, warnings): return []
-def _cycle(map_data, live, warnings):
+# PROTOCOL.md §6: Human queue — union of waits_on_human across lanes, keyed by id.
+def _human_queue(live: list[dict]) -> list[dict]:
+    queue: dict[str, dict] = {}
+    for v in live:
+        for w in v["_data"].get("waits_on_human", []):
+            item = queue.setdefault(w["id"], {
+                "id": w["id"], "kind": w.get("kind"), "title": w.get("title", ""),
+                "why": w.get("why", ""), "blocks": list(w.get("blocks", [])),
+                "sources": []})
+            item["sources"].append(v["author"])
+    return list(queue.values())
+
+
+# PROTOCOL.md §6: Invariant state — ok only if every lane mentioning it says ok.
+def _invariants(map_data: dict, live: list[dict], warnings: list[str]) -> list[dict]:
+    declared = {i["id"]: i for i in map_data.get("invariants", [])}
+    state = {iid: {"id": iid, "ok": True, "broken_by": []} for iid in declared}
+    for v in live:
+        for inv in v["_data"].get("invariants", []):
+            iid = inv.get("id")
+            if iid not in declared:
+                warnings.append(f"lane {v['author']}: invariant {iid!r} is not declared "
+                                "in the map — ignored")
+                continue
+            if inv.get("ok") is False:
+                state[iid]["ok"] = False
+                state[iid]["broken_by"].append(v["author"])
+    return list(state.values())
+
+
+# PROTOCOL.md §6: Current phase — most recently updated non-stale, non-future lane.
+def _cycle(map_data: dict, live: list[dict], warnings: list[str]) -> dict:
     cyc = map_data.get("cycle", {}) or {}
-    return {"phases": cyc.get("phases", []),
-            "roles": [{"id": r["id"], "harness": r.get("harness", ""),
-                       "reviews": r.get("reviews", [])}
-                      for r in cyc.get("roles", [])]}
+    phases = cyc.get("phases", [])
+    out = {"phases": phases,
+           "roles": [{"id": r["id"], "harness": r.get("harness", ""),
+                      "reviews": r.get("reviews", [])}
+                     for r in cyc.get("roles", [])]}
+    declaring = []
+    for v in live:
+        phase = (v["now"] or {}).get("phase")
+        if phase is None or v["stale"] or v["_future"] or v["_dt"] is None:
+            continue
+        if phase not in phases:
+            warnings.append(f"lane {v['author']}: now.phase {phase!r} is not a "
+                            "cycle phase — treated as undeclared")
+            continue
+        declaring.append((v["_dt"], phase))
+    if declaring:
+        declaring.sort()
+        out["current_phase"] = declaring[-1][1]
+    return out
