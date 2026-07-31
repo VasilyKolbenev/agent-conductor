@@ -280,6 +280,8 @@ def _cycle(map_data: dict, live: list[dict], warnings: list[str]) -> dict:
             continue
         declaring.append((v["_dt"], phase))
     if declaring:
+        # Exact-`updated` ties break on phase-string order (tuple-sort artifact).
+        # Accepted as-is: deterministic, unspecified by §6, pathological in practice.
         declaring.sort()
         out["current_phase"] = declaring[-1][1]
     return out
