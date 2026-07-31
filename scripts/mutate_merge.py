@@ -11,6 +11,7 @@ Usage: .venv\\Scripts\\python scripts\\mutate_merge.py
 """
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -79,12 +80,17 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
 
 def run_targeted_test(test_file: str) -> int:
     # timeout=180: a mutation must never be allowed to hang the harness.
+    # PYTHONDONTWRITEBYTECODE: a byte-identical-length mutation (e.g. == -> !=)
+    # can poison __pycache__ — Python's timestamp+size staleness check misses the
+    # mutate->restore round-trip, and later clean runs import the MUTATED bytecode
+    # (phantom failures on a clean git diff). Never write bytecode from here.
     result = subprocess.run(
         [sys.executable, "-m", "pytest", test_file, "-q"],
         cwd=ROOT,
         capture_output=True,
         text=True,
         timeout=180,
+        env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
     )
     return result.returncode
 
