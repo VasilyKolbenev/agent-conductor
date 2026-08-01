@@ -654,7 +654,7 @@ async function refresh(){
 }
 const es = new EventSource("/events");         // greeting on connect, one frame per change
 es.onmessage = refresh;
-es.onopen = () => setLive(true);
+es.onopen = refresh;                           // resync on every (re)connect, not just the greeting
 es.onerror = () => setLive(false);             // EventSource reconnects on its own
 refresh();
 </script>

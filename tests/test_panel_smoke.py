@@ -33,6 +33,16 @@ def test_panel_has_all_tooling_ids(tmp_path):
         assert f'id="{element_id}"' in html
 
 
+def test_panel_pins_review_vocabulary_tokens(tmp_path):
+    # Pin the mandated vocabulary so dropping a chip state or the uncovered
+    # hint cannot slip through green (quality-review follow-up).
+    root = write_project(tmp_path, lanes={"claude": good_lane()})
+    html = _fetch_panel(root)
+    for token in ("suspended", "disagreement", "uncovered", "no reviewer assigned",
+                  "contested_by", "Conduct — "):
+        assert token in html
+
+
 def test_panel_a11y_and_live_title_markers(tmp_path):
     # Reduced-motion support and the live document title are part of the delta list.
     root = write_project(tmp_path, lanes={"claude": good_lane()})
