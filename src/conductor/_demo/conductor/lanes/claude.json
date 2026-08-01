@@ -51,7 +51,7 @@
     {
       "id": "w-stt",
       "kind": "decision",
-      "title": "Bundle the STT model (+461 MB) or download on first run?",
+      "title": "Bundle the STT model (~500 MB) or download on first run?",
       "why": "Determines what D-2's fix looks like: ship the model inside the installer or add a first-run fetch.",
       "blocks": ["D-2"]
     }
