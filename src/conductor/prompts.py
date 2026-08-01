@@ -14,8 +14,9 @@ class UnknownRole(Exception):
     """Raised when `role_prompt` is asked for a role id the cycle does not declare."""
 
 
-# PROTOCOL.md §2.
-_MAP_EXAMPLE = '''schema_version = 1
+# PROTOCOL.md §2. Public: `conduct init` writes this text as the map.toml stub —
+# ONE sync point for the spec's map example.
+MAP_EXAMPLE = '''schema_version = 1
 project = "voice-app"
 
 [[nodes]]
@@ -97,7 +98,7 @@ def bootstrap_prompt() -> str:
         "   review cycle. A fully commented example:\n"
         "\n"
         "```toml\n"
-        f"{_MAP_EXAMPLE}\n"
+        f"{MAP_EXAMPLE}\n"
         "```\n"
         "\n"
         "Validation rules your map must satisfy:\n"
