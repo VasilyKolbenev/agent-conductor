@@ -1348,6 +1348,12 @@ def load(root: Path) -> Loaded:
 
 - [ ] **Step 4: Run — pass. Step 5: Commit** — `git commit -am "feat(store): tolerant conductor/ loader"`
 
+**Deviation note (as implemented):** Task 10 deviates from the reference block above in four ways.
+(1) `load()` is split into `_load_map`/`_load_lanes`/`_load_events` helpers. (2) All three readers
+catch `UnicodeDecodeError`/`OSError` — the reference block crashes on invalid UTF-8; do not
+re-inherit it. (3) Store-produced lane errors carry the `lane <stem>:` prefix, matching
+schema-produced ones. (4) An unreadable `events.jsonl` surfaces as a warning instead of raising.
+
 ### Task 11: `prompts.py` — bootstrap + state-aware role prompts
 
 **Files:**

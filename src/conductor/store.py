@@ -1,8 +1,9 @@
 """Tolerant reading of a project's conductor/ directory. The ONLY file-reading
 surface shared by validate, prompt and the server. Strict writers, tolerant
-readers (spec §3.5): a torn or malformed lane becomes a broken-lane entry, a
-malformed event line is skipped and counted, a broken map.toml is reported in
-`map_error` — nothing short of a missing conductor/ directory raises."""
+readers (PROTOCOL.md: tolerant reader, strict writer): a torn or malformed lane
+becomes a broken-lane entry, a malformed event line is skipped and counted, a
+broken map.toml is reported in `map_error` — nothing short of a missing
+conductor/ directory raises."""
 from __future__ import annotations
 
 import json
@@ -13,7 +14,7 @@ from pathlib import Path
 
 from conductor import schema
 
-AUTHOR_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+AUTHOR_RE = re.compile(r"[A-Za-z0-9_-]+")
 
 
 class StoreError(Exception):
@@ -22,15 +23,23 @@ class StoreError(Exception):
 
 @dataclass
 class Loaded:
+    """Everything read from one conductor/ directory, broken pieces included.
+
+    Each entry in `lanes` is `{"author": str, "data": dict | None,
+    "error": str | None}`: `data is None` exactly when the lane is broken,
+    and `error is None` exactly when it is live. This is the shape
+    `merge._lane_view` consumes.
+    """
+
     map_data: dict | None
     map_error: str | None
-    warnings: list[str] = field(default_factory=list)   # schema-version etc. (§4.5)
+    warnings: list[str] = field(default_factory=list)   # schema-version etc. (§5)
     lanes: list[dict] = field(default_factory=list)
     events: list[dict] = field(default_factory=list)
     skipped_events: int = 0
 
 
-def conductor_dir(root: Path) -> Path:
+def conductor_dir(root: Path | str) -> Path:
     """Resolve the conductor/ directory under a project root.
 
     Args:
@@ -57,7 +66,7 @@ def _load_map(cdir: Path, out: Loaded) -> None:
         return
     try:
         data = tomllib.loads(map_path.read_text(encoding="utf-8"))
-    except (OSError, tomllib.TOMLDecodeError) as e:
+    except (OSError, ValueError) as e:  # TOMLDecodeError and UnicodeDecodeError are ValueErrors
         out.map_error = f"map.toml unreadable: {e}"
         return
     errors, warnings = schema.validate_map(data)
@@ -75,17 +84,17 @@ def _load_lanes(cdir: Path, out: Loaded) -> None:
         return
     for path in sorted(lanes_dir.glob("*.json")):
         stem = path.stem
-        if not AUTHOR_RE.match(stem):
+        if not AUTHOR_RE.fullmatch(stem):
             out.lanes.append({"author": stem, "data": None,
-                              "error": f"invalid author filename {stem!r}"})
+                              "error": f"lane {stem}: invalid author filename {stem!r}"})
             continue
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as e:
-            out.lanes.append({"author": stem, "data": None, "error": str(e)})
+        except (OSError, ValueError) as e:  # JSONDecodeError/UnicodeDecodeError are ValueErrors
+            out.lanes.append({"author": stem, "data": None, "error": f"lane {stem}: {e}"})
             continue
         errors, warnings = schema.validate_lane(data, filename_stem=stem)
-        out.warnings.extend(warnings)     # §4.5: schema-version warnings surface
+        out.warnings.extend(warnings)     # §5: schema-version warnings surface
         if errors:
             out.lanes.append({"author": stem, "data": None,
                               "error": "; ".join(errors)})
@@ -98,7 +107,12 @@ def _load_events(cdir: Path, out: Loaded) -> None:
     events_path = cdir / "events.jsonl"
     if not events_path.is_file():
         return
-    for line in events_path.read_text(encoding="utf-8").splitlines():
+    try:
+        text = events_path.read_text(encoding="utf-8")
+    except (OSError, ValueError) as e:
+        out.warnings.append(f"events.jsonl unreadable: {e}")
+        return
+    for line in text.splitlines():
         if not line.strip():
             continue
         try:
@@ -112,15 +126,16 @@ def _load_events(cdir: Path, out: Loaded) -> None:
             out.events.append(obj)
 
 
-def load(root: Path) -> Loaded:
+def load(root: Path | str) -> Loaded:
     """Load everything under `root`/conductor/ tolerantly.
 
     Broken pieces are reported, never raised: an invalid or unreadable
     `map.toml` sets `map_error`; a malformed or misattributed lane file
     becomes a `{"author", "data": None, "error"}` entry; malformed or
-    invalid event lines are skipped and counted in `skipped_events`.
-    Unknown `schema_version` values are accepted with a warning, never
-    guessed (spec §4.5). Lanes are ordered by filename.
+    invalid event lines are skipped and counted in `skipped_events`, and
+    an unreadable `events.jsonl` surfaces as a warning. Unknown
+    `schema_version` values are accepted with a warning, never guessed
+    (spec §5). Lanes are ordered by filename.
 
     Args:
         root: The project root (the directory that contains `conductor/`).

@@ -127,3 +127,24 @@ def test_valid_json_but_invalid_event_is_counted_as_skipped(tmp_path):
     root = write_project(tmp_path, events='{"ts":"nope","author":"","kind":"???"}\n')
     loaded = store.load(root)
     assert loaded.events == [] and loaded.skipped_events == 1
+
+def test_lane_with_invalid_utf8_is_broken_not_crash(tmp_path):
+    root = write_project(tmp_path)
+    torn = good_lane(author="torn").encode("utf-8")[:-2] + b"\xe2\x82"  # torn multibyte tail
+    (root / "conductor" / "lanes" / "torn.json").write_bytes(torn)
+    loaded = store.load(root)
+    assert loaded.lanes[0]["data"] is None
+    assert loaded.lanes[0]["error"].startswith("lane torn:")
+
+def test_map_with_invalid_utf8_reported_not_raised(tmp_path):
+    root = write_project(tmp_path)
+    (root / "conductor" / "map.toml").write_bytes(b"\xff")
+    loaded = store.load(root)
+    assert loaded.map_data is None and "unreadable" in loaded.map_error
+
+def test_events_with_invalid_utf8_warn_not_crash(tmp_path):
+    root = write_project(tmp_path)
+    (root / "conductor" / "events.jsonl").write_bytes(b"\xff\xfe")
+    loaded = store.load(root)
+    assert loaded.events == [] and loaded.skipped_events == 0
+    assert any("events.jsonl" in w for w in loaded.warnings)
