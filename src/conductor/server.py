@@ -324,7 +324,7 @@ class ConductServer(ThreadingHTTPServer):
         A vanished client raises ConnectionError past the handler into
         ThreadingMixIn — the default prints a 40-dash traceback to stderr.
         """
-        if isinstance(sys.exception(), ConnectionError):
+        if isinstance(sys.exc_info()[1], ConnectionError):  # sys.exception() is 3.12+
             return
         super().handle_error(request, client_address)
 
