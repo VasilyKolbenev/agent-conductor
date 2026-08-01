@@ -14,7 +14,7 @@ from pathlib import Path
 
 from conductor import schema
 
-AUTHOR_RE = re.compile(r"[A-Za-z0-9_-]+")
+AUTHOR_RE = re.compile(r"\A[A-Za-z0-9_-]+\Z")
 
 
 class StoreError(Exception):

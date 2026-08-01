@@ -142,6 +142,10 @@ def test_map_with_invalid_utf8_reported_not_raised(tmp_path):
     loaded = store.load(root)
     assert loaded.map_data is None and "unreadable" in loaded.map_error
 
+def test_author_re_is_anchored_even_under_match():
+    # Task 13's URL guard uses AUTHOR_RE; anchoring must not depend on .fullmatch.
+    assert store.AUTHOR_RE.match("evil/../x") is None
+
 def test_events_with_invalid_utf8_warn_not_crash(tmp_path):
     root = write_project(tmp_path)
     (root / "conductor" / "events.jsonl").write_bytes(b"\xff\xfe")
