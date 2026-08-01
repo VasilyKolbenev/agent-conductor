@@ -6,6 +6,7 @@ import json
 import threading
 import urllib.error
 import urllib.request
+from datetime import datetime, timezone
 
 from conductor import server, store
 from tests.test_store import write_project, good_lane
@@ -43,6 +44,7 @@ def test_routes(tmp_path):
             assert status == 404
     finally:
         srv.shutdown()
+        srv.server_close()
 
 
 def test_sse_emits_on_file_change(tmp_path):
@@ -50,18 +52,22 @@ def test_sse_emits_on_file_change(tmp_path):
     srv, base = start(root)
     try:
         req = urllib.request.urlopen(base + "/events", timeout=10)
-        line = req.readline()          # greeting frame, sent on connect
-        assert line.startswith(b"data:")
-        (root / "conductor" / "lanes" / "claude.json").write_text(
-            good_lane().replace("11:00:00", "11:30:00"), encoding="utf-8")
-        while True:                    # next non-blank line must be the change frame
-            line = req.readline()
-            assert line, "SSE stream closed before the change frame arrived"
-            if line.strip():
-                break
-        assert line.startswith(b"data:")
+        try:
+            line = req.readline()      # greeting frame, sent on connect
+            assert line.startswith(b"data:")
+            (root / "conductor" / "lanes" / "claude.json").write_text(
+                good_lane().replace("11:00:00", "11:30:00"), encoding="utf-8")
+            while True:                # next non-blank line must be the change frame
+                line = req.readline()
+                assert line, "SSE stream closed before the change frame arrived"
+                if line.strip():
+                    break
+            assert line.startswith(b"data:")
+        finally:
+            req.close()
     finally:
         srv.shutdown()
+        srv.server_close()
 
 
 # --- additional coverage beyond the mandated set ---
@@ -96,6 +102,7 @@ def test_runtime_map_breakage_keeps_last_good_state(tmp_path):
         assert any("map" in w for w in state["warnings"])   # breakage surfaced
     finally:
         srv.shutdown()
+        srv.server_close()
 
 
 def test_lane_route_serves_raw_stored_bytes(tmp_path):
@@ -108,6 +115,7 @@ def test_lane_route_serves_raw_stored_bytes(tmp_path):
         assert headers["Cache-Control"] == "no-store"
     finally:
         srv.shutdown()
+        srv.server_close()
 
 
 def test_lane_route_404_for_unknown_author(tmp_path):
@@ -121,6 +129,7 @@ def test_lane_route_404_for_unknown_author(tmp_path):
         assert status == 404
     finally:
         srv.shutdown()
+        srv.server_close()
 
 
 def test_binds_loopback_only(tmp_path):
@@ -130,6 +139,7 @@ def test_binds_loopback_only(tmp_path):
         assert srv.server_address[0] == "127.0.0.1"
     finally:
         srv.shutdown()
+        srv.server_close()
 
 
 def test_busy_port_raises_instead_of_double_binding(tmp_path):
@@ -145,6 +155,7 @@ def test_busy_port_raises_instead_of_double_binding(tmp_path):
             pass
     finally:
         srv.shutdown()
+        srv.server_close()
 
 
 def test_refresh_reports_no_change_when_files_unchanged(tmp_path):
@@ -154,3 +165,59 @@ def test_refresh_reports_no_change_when_files_unchanged(tmp_path):
         assert srv.broker.refresh() is False   # same files → generated_at ignored
     finally:
         srv.shutdown()
+        srv.server_close()
+
+
+def _read_change_frame(req):
+    """Skip blank keep-alive lines; return the next non-blank SSE line."""
+    while True:
+        line = req.readline()
+        assert line, "SSE stream closed before the change frame arrived"
+        if line.strip():
+            return line
+
+
+def test_staleness_tick_emits_frame_without_file_change(tmp_path, monkeypatch):
+    # Pin: lanes go stale by TIME. With no file change at all, the tick-driven
+    # re-merge must flip the lane to stale and wake SSE clients. (The frame
+    # arrives because the stale flip changes the state — generated_at alone is
+    # excluded from change detection by design.)
+    monkeypatch.setattr(server, "TICK_INTERVAL", 0.1)
+    lane = json.loads(good_lane())
+    lane["updated"] = datetime.now(timezone.utc).isoformat()
+    lane["staleness_after_minutes"] = 0.05     # stale 3 s after `updated`
+    root = write_project(tmp_path, lanes={"claude": json.dumps(lane)})
+    srv, base = start(root)
+    try:
+        req = urllib.request.urlopen(base + "/events", timeout=15)
+        try:
+            assert req.readline().startswith(b"data:")     # greeting
+            assert _read_change_frame(req).startswith(b"data:")
+        finally:
+            req.close()
+        state = json.loads(get(base + "/state.json")[1])
+        assert state["lanes"][0]["stale"] is True
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+
+def test_change_frame_reaches_all_sse_clients(tmp_path):
+    root = write_project(tmp_path, lanes={"claude": good_lane()})
+    srv, base = start(root)
+    try:
+        req_a = urllib.request.urlopen(base + "/events", timeout=10)
+        req_b = urllib.request.urlopen(base + "/events", timeout=10)
+        try:
+            assert req_a.readline().startswith(b"data:")   # greetings
+            assert req_b.readline().startswith(b"data:")
+            (root / "conductor" / "lanes" / "claude.json").write_text(
+                good_lane().replace("11:00:00", "11:30:00"), encoding="utf-8")
+            assert _read_change_frame(req_a).startswith(b"data:")
+            assert _read_change_frame(req_b).startswith(b"data:")
+        finally:
+            req_a.close()
+            req_b.close()
+    finally:
+        srv.shutdown()
+        srv.server_close()

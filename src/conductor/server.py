@@ -15,6 +15,7 @@ import copy
 import importlib.resources
 import json
 import os
+import sys
 import threading
 import time
 from datetime import datetime, timezone
@@ -39,7 +40,8 @@ class Broker:
 
     def __init__(self, root: Path) -> None:
         self._root = root
-        self._lock = threading.Lock()
+        self._lock = threading.Lock()          # reader-facing swap only
+        self._refresh_lock = threading.Lock()  # serializes whole refreshes
         self._comparable: dict | None = None   # last state minus generated_at
         self._state_bytes = b"{}"
         self._lane_bytes: dict[str, bytes] = {}
@@ -47,6 +49,10 @@ class Broker:
 
     def refresh(self) -> bool:
         """Re-load conductor/ and re-merge; report whether the state changed.
+
+        The whole load→merge→compare→publish sequence runs under a refresh
+        lock so concurrent callers cannot publish out of order; readers only
+        contend on the inner swap lock, never on file I/O.
 
         Returns:
             True when the merged state differs from the previous one, with
@@ -56,17 +62,19 @@ class Broker:
             StoreError: If conductor/ vanished at runtime (the watcher
                 swallows this and keeps serving the last-good state).
         """
-        loaded = store.load(self._root)
-        state = self._merge_loaded(loaded)
-        comparable = copy.deepcopy(state)
-        comparable.pop("generated_at", None)
-        lane_bytes = _read_lane_bytes(store.conductor_dir(self._root))
-        with self._lock:
-            changed = comparable != self._comparable
-            self._comparable = comparable
-            self._state_bytes = json.dumps(state, ensure_ascii=False).encode("utf-8")
-            self._lane_bytes = lane_bytes
-        return changed
+        with self._refresh_lock:
+            loaded = store.load(self._root)
+            state = self._merge_loaded(loaded)
+            comparable = copy.deepcopy(state)
+            comparable.pop("generated_at", None)
+            lane_bytes = _read_lane_bytes(store.conductor_dir(self._root))
+            with self._lock:
+                changed = comparable != self._comparable
+                self._comparable = comparable
+                self._state_bytes = json.dumps(state,
+                                               ensure_ascii=False).encode("utf-8")
+                self._lane_bytes = lane_bytes
+            return changed
 
     def state_bytes(self) -> bytes:
         """Return the latest state.json payload as UTF-8 JSON bytes."""
@@ -85,8 +93,7 @@ class Broker:
         if map_error is not None and self._map_data is not None:
             map_data = self._map_data      # design: keep serving the last-good map
             map_error = None
-            extra.append(f"map is unreadable: {loaded.map_error}"
-                         " — serving the last-good map")
+            extra.append(f"{loaded.map_error} — serving the last-good map")
         elif map_data is not None:
             self._map_data = map_data
         return merge.merge(map_data, map_error, loaded.lanes, loaded.events,
@@ -106,7 +113,7 @@ def _read_lane_bytes(cdir: Path) -> dict[str, bytes]:
         try:
             out[path.stem] = path.read_bytes()
         except OSError:
-            continue                       # vanished mid-scan; next poll catches up
+            continue          # vanished mid-scan; next refresh (change or tick) catches up
     return out
 
 
@@ -266,8 +273,7 @@ class Handler(BaseHTTPRequestHandler):
                 if self.server.shutting_down:
                     break
                 self._send_frame()
-        except (ConnectionAbortedError, ConnectionResetError,
-                BrokenPipeError, OSError):
+        except OSError:                    # incl. ConnectionAborted/Reset/BrokenPipe
             pass                           # client vanished: this loop only
         finally:
             self.server.clients.unregister(wake)
@@ -304,11 +310,23 @@ class ConductServer(ThreadingHTTPServer):
         super().shutdown()
 
     def server_close(self) -> None:
-        """Stop the watcher, wake SSE loops, close the listening socket."""
+        """Stop and join the watcher, wake SSE loops, close the socket."""
         self.shutting_down = True
         self.clients.wake_all()
         self.watcher.stop()
+        if self.watcher.is_alive():        # never started on a failed bind
+            self.watcher.join(timeout=POLL_INTERVAL * 2)
         super().server_close()
+
+    def handle_error(self, request: object, client_address: object) -> None:
+        """Silence client aborts (panel refreshes, closed tabs); keep the rest.
+
+        A vanished client raises ConnectionError past the handler into
+        ThreadingMixIn — the default prints a 40-dash traceback to stderr.
+        """
+        if isinstance(sys.exception(), ConnectionError):
+            return
+        super().handle_error(request, client_address)
 
 
 def build(root: Path | str, port: int) -> ConductServer:
