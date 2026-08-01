@@ -106,7 +106,6 @@ def test_prompt_missing_conductor_dir_exits_1_with_stderr(tmp_path, capsys):
     assert main(["prompt", "reviewer", "--dir", str(tmp_path)]) == 1
     assert "conductor" in capsys.readouterr().err
 
-def test_up_and_demo_are_stubs():
-    for command in ("up", "demo"):
-        with pytest.raises(SystemExit, match="not yet implemented"):
-            main([command])
+def test_demo_is_a_stub():
+    with pytest.raises(SystemExit, match="not yet implemented"):
+        main(["demo"])

@@ -18,7 +18,7 @@ AUTHOR_RE = re.compile(r"\A[A-Za-z0-9_-]+\Z")
 
 
 class StoreError(Exception):
-    """The project root has no conductor/ directory (fail-closed startup)."""
+    """Fail-closed startup errors: no conductor/ directory, or a broken map at server start."""
 
 
 @dataclass

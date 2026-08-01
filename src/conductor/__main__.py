@@ -2,10 +2,11 @@
 
 Subcommands: `validate` (schema errors → exit 1, merge warnings → stdout),
 `init` (scaffold conductor/ and print the bootstrap prompt), `prompt <role>`
-(vend a role's working prompt). `up` and `demo` are declared but land in
-later tasks. Every command takes `--dir` (the project root, default `.`).
-Exit codes flow through `main`'s return value (0 ok, 1 failure), with two
-exceptions: the up/demo stubs raise SystemExit("not yet implemented"), and
+(vend a role's working prompt), `up` (serve the panel on 127.0.0.1 with SSE
+live updates; Ctrl-C → exit 0). `demo` is declared but lands in a later
+task. Every command takes `--dir` (the project root, default `.`). Exit
+codes flow through `main`'s return value (0 ok, 1 failure), with two
+exceptions: the demo stub raises SystemExit("not yet implemented"), and
 argparse exits 2 on usage errors.
 """
 from __future__ import annotations
@@ -16,7 +17,7 @@ from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 
-from conductor import merge, prompts, store
+from conductor import merge, prompts, server, store
 
 
 def _merged_state(loaded: store.Loaded) -> dict:
@@ -73,32 +74,63 @@ def _cmd_prompt(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_up(args: argparse.Namespace) -> int:
+    """Serve the panel on 127.0.0.1; Ctrl-C shuts down cleanly (exit 0)."""
+    try:
+        srv = server.build(args.dir, port=args.port)
+    except OSError as e:                  # port busy / unbindable → exit 1
+        print(f"cannot serve on 127.0.0.1:{args.port}: {e}", file=sys.stderr)
+        return 1
+    host, port = srv.server_address[:2]
+    print(f"serving http://{host}:{port}/ — Ctrl+C to stop")
+    try:
+        srv.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        srv.server_close()
+    return 0
+
+
 def _cmd_not_implemented(args: argparse.Namespace) -> int:
     """Placeholder body for subcommands that land in later tasks."""
     raise SystemExit("not yet implemented")
 
 
+def _add_dir_and_func(p: argparse.ArgumentParser,
+                      func: Callable[[argparse.Namespace], int]) -> None:
+    """Attach the shared `--dir` option and the dispatch target to a subparser."""
+    p.add_argument("--dir", default=".",
+                   help="project root, the directory holding conductor/ (default: .)")
+    p.set_defaults(func=func)
+
+
 def _build_parser() -> argparse.ArgumentParser:
-    """Build the `conduct` argument parser with all subcommands."""
+    """Build the `conduct` argument parser: one explicit block per subcommand."""
     parser = argparse.ArgumentParser(
         prog="conduct",
         description="A local, decision-centric control plane for AI coding agents.")
     sub = parser.add_subparsers(dest="command", required=True)
-    commands: list[tuple[str, str, Callable[[argparse.Namespace], int]]] = [
-        ("validate", "check map.toml and lane files; report errors and warnings",
-         _cmd_validate),
-        ("init", "scaffold conductor/ and print the bootstrap prompt", _cmd_init),
-        ("prompt", "print the working prompt for one cycle role", _cmd_prompt),
-        ("up", "serve the dashboard (not yet implemented)", _cmd_not_implemented),
-        ("demo", "run the scripted demo (not yet implemented)", _cmd_not_implemented),
-    ]
-    for name, help_text, func in commands:
-        p = sub.add_parser(name, help=help_text)
-        if name == "prompt":
-            p.add_argument("role", help="a cycle.roles id from map.toml")
-        p.add_argument("--dir", default=".",
-                       help="project root, the directory holding conductor/ (default: .)")
-        p.set_defaults(func=func)
+
+    p = sub.add_parser("validate",
+                       help="check map.toml and lane files; report errors and warnings")
+    _add_dir_and_func(p, _cmd_validate)
+
+    p = sub.add_parser("init", help="scaffold conductor/ and print the bootstrap prompt")
+    _add_dir_and_func(p, _cmd_init)
+
+    p = sub.add_parser("prompt", help="print the working prompt for one cycle role")
+    p.add_argument("role", help="a cycle.roles id from map.toml")
+    _add_dir_and_func(p, _cmd_prompt)
+
+    p = sub.add_parser("up", help="serve the panel on loopback HTTP with live updates")
+    p.add_argument("--port", type=int, default=7777,
+                   help="TCP port on 127.0.0.1 (default: 7777)")
+    _add_dir_and_func(p, _cmd_up)
+
+    p = sub.add_parser("demo", help="run the scripted demo (not yet implemented)")
+    _add_dir_and_func(p, _cmd_not_implemented)
+
     return parser
 
 
