@@ -4,7 +4,9 @@ Subcommands: `validate` (schema errors → exit 1, merge warnings → stdout),
 `init` (scaffold conductor/ and print the bootstrap prompt), `prompt <role>`
 (vend a role's working prompt). `up` and `demo` are declared but land in
 later tasks. Every command takes `--dir` (the project root, default `.`).
-Exit codes flow only through `main`'s return value: 0 ok, 1 failure.
+Exit codes flow through `main`'s return value (0 ok, 1 failure), with two
+exceptions: the up/demo stubs raise SystemExit("not yet implemented"), and
+argparse exits 2 on usage errors.
 """
 from __future__ import annotations
 
@@ -111,6 +113,12 @@ def main(argv: list[str] | None = None) -> int:
         Process exit code: 0 on success, 1 on any reported failure
         (schema errors, missing conductor/, unknown role, broken map).
     """
+    # Windows consoles/pipes default to the ANSI code page; the messages and
+    # prompts we emit contain non-ASCII punctuation. capsys-style substitute
+    # streams may lack reconfigure — hence the hasattr guard.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8")
     args = _build_parser().parse_args(argv)
     try:
         return args.func(args)
