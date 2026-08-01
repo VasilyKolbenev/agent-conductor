@@ -3,21 +3,22 @@
 Subcommands: `validate` (schema errors → exit 1, merge warnings → stdout),
 `init` (scaffold conductor/ and print the bootstrap prompt), `prompt <role>`
 (vend a role's working prompt), `up` (serve the panel on 127.0.0.1 with SSE
-live updates; Ctrl-C → exit 0). `demo` is declared but lands in a later
-task. Every command takes `--dir` (the project root, default `.`). Exit
-codes flow through `main`'s return value (0 ok, 1 failure), with two
-exceptions: the demo stub raises SystemExit("not yet implemented"), and
-argparse exits 2 on usage errors.
+live updates; Ctrl-C → exit 0), `demo` (materialize the bundled fixture
+into a temp directory and serve it — takes `--port` but no `--dir`). Every
+other command takes `--dir` (the project root, default `.`). Exit codes
+flow through `main`'s return value (0 ok, 1 failure); argparse exits 2 on
+usage errors.
 """
 from __future__ import annotations
 
 import argparse
 import sys
+import tempfile
 from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 
-from conductor import merge, prompts, server, store
+from conductor import demo, merge, prompts, server, store
 
 
 def _merged_state(loaded: store.Loaded) -> dict:
@@ -74,15 +75,15 @@ def _cmd_prompt(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_up(args: argparse.Namespace) -> int:
-    """Serve the panel on 127.0.0.1; Ctrl-C shuts down cleanly (exit 0)."""
+def _serve(root: Path | str, port: int) -> int:
+    """Serve the panel for `root` on 127.0.0.1; Ctrl-C shuts down cleanly."""
     try:
-        srv = server.build(args.dir, port=args.port)
+        srv = server.build(root, port=port)
     except OSError as e:                  # port busy / unbindable → exit 1
-        print(f"cannot serve on 127.0.0.1:{args.port}: {e}", file=sys.stderr)
+        print(f"cannot serve on 127.0.0.1:{port}: {e}", file=sys.stderr)
         return 1
-    host, port = srv.server_address[:2]
-    print(f"serving http://{host}:{port}/ — Ctrl+C to stop")
+    host, bound = srv.server_address[:2]
+    print(f"serving http://{host}:{bound}/ — Ctrl+C to stop")
     try:
         srv.serve_forever()
     except KeyboardInterrupt:
@@ -92,9 +93,16 @@ def _cmd_up(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_not_implemented(args: argparse.Namespace) -> int:
-    """Placeholder body for subcommands that land in later tasks."""
-    raise SystemExit("not yet implemented")
+def _cmd_up(args: argparse.Namespace) -> int:
+    """Serve the panel on 127.0.0.1; Ctrl-C shuts down cleanly (exit 0)."""
+    return _serve(args.dir, args.port)
+
+
+def _cmd_demo(args: argparse.Namespace) -> int:
+    """Materialize the bundled demo fixture into a temp dir and serve it."""
+    root = demo.materialize(Path(tempfile.mkdtemp(prefix="conduct-demo-")))
+    print(f"demo fixture materialized in {root} (throwaway copy)")
+    return _serve(root, args.port)
 
 
 def _add_dir_and_func(p: argparse.ArgumentParser,
@@ -128,8 +136,11 @@ def _build_parser() -> argparse.ArgumentParser:
                    help="TCP port on 127.0.0.1 (default: 7777)")
     _add_dir_and_func(p, _cmd_up)
 
-    p = sub.add_parser("demo", help="run the scripted demo (not yet implemented)")
-    _add_dir_and_func(p, _cmd_not_implemented)
+    # No --dir: demo materializes its own throwaway root.
+    p = sub.add_parser("demo", help="serve the bundled real-case demo fixture")
+    p.add_argument("--port", type=int, default=7777,
+                   help="TCP port on 127.0.0.1 (default: 7777)")
+    p.set_defaults(func=_cmd_demo)
 
     return parser
 

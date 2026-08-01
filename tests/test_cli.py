@@ -106,6 +106,10 @@ def test_prompt_missing_conductor_dir_exits_1_with_stderr(tmp_path, capsys):
     assert main(["prompt", "reviewer", "--dir", str(tmp_path)]) == 1
     assert "conductor" in capsys.readouterr().err
 
-def test_demo_is_a_stub():
-    with pytest.raises(SystemExit, match="not yet implemented"):
-        main(["demo"])
+def test_demo_rejects_dir_flag(capsys):
+    # Pin: demo materializes its own throwaway root — --dir is deliberately
+    # not accepted (argparse usage error, exit 2). Demo behavior itself is
+    # covered in tests/test_demo.py.
+    with pytest.raises(SystemExit) as e:
+        main(["demo", "--dir", "."])
+    assert e.value.code == 2

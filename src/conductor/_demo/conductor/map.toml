@@ -1,0 +1,63 @@
+schema_version = 1
+project = "voice-app"
+
+[[nodes]]
+id = "models"
+label = "model bundle"
+kind = "artifact"
+
+[[nodes]]
+id = "backend"
+label = "backend build"
+kind = "artifact"
+depends_on = ["models"]
+
+[[nodes]]
+id = "desktop"
+label = "desktop client"
+kind = "artifact"
+
+[[nodes]]
+id = "stage"
+label = "release stage"
+kind = "artifact"
+depends_on = ["backend", "desktop"]
+
+[[nodes]]
+id = "installer"
+label = "installer build"
+kind = "artifact"
+depends_on = ["stage"]
+
+[[nodes]]
+id = "smoke"
+label = "offline smoke gate"
+kind = "gate"
+depends_on = ["stage"]
+
+[[nodes]]
+id = "installed"
+label = "installed app"
+kind = "artifact"
+depends_on = ["installer"]
+
+[[cycle.roles]]
+id = "implementer"
+harness = "claude-code"
+reviews = []
+
+[[cycle.roles]]
+id = "reviewer"
+harness = "codex"
+reviews = ["implementer"]
+
+[cycle]
+phases = ["plan", "implement", "review", "human-gate"]
+
+[[invariants]]
+id = "main-protected"
+text = "main branch is never committed to directly"
+
+[[invariants]]
+id = "stage-sealed"
+text = "the release stage is assembled once and never patched in place"

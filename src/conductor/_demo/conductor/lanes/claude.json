@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "author": "claude",
+  "role": "implementer",
+  "updated": "2026-07-29T21:20:00+00:00",
+  "staleness_after_minutes": 52560000,
+  "now": {
+    "task": "diagnosing the smoke failure",
+    "since": "2026-07-29T20:05:00+00:00",
+    "phase": "review"
+  },
+  "map_status": {
+    "models": "pass",
+    "backend": "pass",
+    "desktop": "pass",
+    "stage": "pass",
+    "installer": "pass",
+    "smoke": "fail",
+    "installed": "blocked"
+  },
+  "findings": [
+    {
+      "id": "D-1",
+      "title": "/live answers in 11.5 s against a 1.0 s budget",
+      "severity": "blocker",
+      "claim": "defect",
+      "detail": "First staged /live probe returns in 11.5 s; the gate budget is 1.0 s.",
+      "evidence": "smoke/gate-d.log",
+      "refs": ["smoke", "backend"]
+    },
+    {
+      "id": "D-2",
+      "title": "STT model missing from the bundle — masked by the dev machine's global cache",
+      "severity": "blocker",
+      "claim": "defect",
+      "detail": "A clean install has no STT model on disk; dev runs passed only because a machine-wide model cache filled the gap.",
+      "evidence": "installer/setup.log",
+      "refs": ["smoke", "installer"]
+    },
+    {
+      "id": "D-3",
+      "title": "VAD fetched from the network at runtime, shipped model unused",
+      "severity": "blocker",
+      "claim": "defect",
+      "detail": "The offline run downloads the VAD model at startup while the bundled copy sits unused.",
+      "evidence": "smoke/netwatch.log",
+      "refs": ["smoke", "models"]
+    }
+  ],
+  "waits_on_human": [
+    {
+      "id": "w-stt",
+      "kind": "decision",
+      "title": "Bundle the STT model (+461 MB) or download on first run?",
+      "why": "Determines what D-2's fix looks like: ship the model inside the installer or add a first-run fetch.",
+      "blocks": ["D-2"]
+    }
+  ],
+  "invariants": [
+    { "id": "main-protected", "ok": true },
+    { "id": "stage-sealed", "ok": true }
+  ]
+}
