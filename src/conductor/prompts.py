@@ -3,7 +3,7 @@
 Two pure string builders: `bootstrap_prompt` tells an agent how to create
 `conductor/map.toml`; `role_prompt` tells a role-holding agent how to keep
 its lane file and which finding ids still owe it a verdict. The templates
-are verbatim spec excerpts (PROTOCOL.md §2 and §3).
+are taken from the spec (PROTOCOL.md §2 and §3).
 """
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ class UnknownRole(Exception):
     """Raised when `role_prompt` is asked for a role id the cycle does not declare."""
 
 
+# PROTOCOL.md §2.
 _MAP_EXAMPLE = '''schema_version = 1
 project = "voice-app"
 
@@ -128,7 +129,9 @@ def role_prompt(state: dict, role_id: str) -> str:
     """
     role = next((r for r in state["cycle"]["roles"] if r["id"] == role_id), None)
     if role is None:
-        raise UnknownRole(f"role {role_id!r} is not declared in cycle.roles")
+        known = ", ".join(r["id"] for r in state["cycle"]["roles"]) or "none declared"
+        raise UnknownRole(
+            f"role {role_id!r} is not declared in cycle.roles (known roles: {known})")
     reviews = role.get("reviews", [])
     reviewed = ", ".join(reviews) if reviews else "no other roles"
     node_ids = ", ".join(n["id"] for n in state["map"]["nodes"]) or "(none)"

@@ -28,8 +28,31 @@ def test_role_prompt_unknown_role_raises():
     try:
         prompts.role_prompt(state, "ghost")
         assert False
-    except prompts.UnknownRole:
-        pass
+    except prompts.UnknownRole as exc:
+        msg = str(exc)
+        for rid in ("impl", "rev", "sec"):   # message must name the known roles
+            assert rid in msg
+
+
+def test_role_prompt_unknown_role_empty_cycle_says_none_declared():
+    bare = {"schema_version": 1, "project": "p",
+            "nodes": [{"id": "n", "label": "n", "kind": "artifact"}]}
+    state = merge.merge(bare, None, [], [], 0, NOW)
+    try:
+        prompts.role_prompt(state, "ghost")
+        assert False
+    except prompts.UnknownRole as exc:
+        assert "none declared" in str(exc)
+
+
+def test_role_prompt_renders_every_pending_id():
+    # Pin test (behavior already correct at introduction): the pending section
+    # must render ALL owed ids, one "- <id>" line each, not just pending[0].
+    ls = [lane("claude", "impl", [finding("D-1"), finding("D-2")]),
+          lane("codex", "rev", verdicts={"D-1": {"disposition": "confirmed", "note": ""}})]
+    state = merge.merge(MAP, None, ls, [], 0, NOW)
+    tail = prompts.role_prompt(state, "sec").split("awaiting your verdict")[1]
+    assert "- D-1" in tail and "- D-2" in tail    # sec verdicted nothing: owes both
 
 
 def test_bootstrap_prompt_tells_agent_to_validate():
