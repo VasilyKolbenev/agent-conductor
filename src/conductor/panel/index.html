@@ -19,6 +19,7 @@
   --accent:#00857a; --pass:#1f7a4d; --wait:#b58a00; --fail:#cc3322;
 }}
 *{box-sizing:border-box}
+[hidden]{display:none!important}  /* .card sets display:flex — keep hidden winning */
 body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--sans);
      font-size:14px;line-height:1.45;-webkit-font-smoothing:antialiased}
 .wrap{max-width:1320px;margin:0 auto;padding:16px 16px 48px;display:flex;
@@ -121,14 +122,34 @@ svg{width:100%;height:auto;display:block;overflow:visible}
 .p--running{color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,transparent)}
 .p--idle{color:var(--faint);background:var(--panel)}
 
+/* ── attention zone: queue cards, alerts, agents ───────────── */
+.attn{display:flex;flex-direction:column;gap:12px}
+.calm{font-size:12.5px;color:var(--faint);margin:0 2px}
+.alert{display:flex;gap:9px;align-items:baseline;flex-wrap:wrap;font-size:12.5px;
+       padding:3px 0}
+.jump{color:var(--accent);text-decoration:underline;padding:0;font-size:12.5px}
+.jump:hover{color:var(--ink)}
+.ag{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;font-size:12.5px;
+    padding:5px 2px;border-bottom:1px solid var(--line)}
+.ag:last-child{border-bottom:none}
+.ag__who{font-weight:650}
+.ag__task{flex:1;min-width:140px;overflow:hidden;text-overflow:ellipsis;
+          white-space:nowrap;color:var(--muted)}
+.ag__err{color:var(--fail)}
+.ag__ago{margin-left:auto;white-space:nowrap}
+.copy{align-self:flex-start;margin-top:5px;font-family:var(--mono);font-size:10.5px;
+      color:var(--accent);border:1px solid var(--line);border-radius:5px;
+      padding:3px 8px;background:var(--panel)}
+.copy:hover{border-color:var(--accent)}
+.clip{position:fixed;left:-9999px;top:0}
+
 /* ── queue cards + tables ──────────────────────────────────── */
 .asks{display:grid;gap:8px;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));
       list-style:none;margin:0;padding:0}
 .ask{background:var(--sunk);border:1px solid var(--line);border-left:3px solid var(--wait);
      border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:3px;
-     text-align:left;width:100%}
-.ask--empty{border-left-color:var(--line);color:var(--faint);font-size:12.5px}
-button.ask:hover{border-color:var(--accent)}
+     text-align:left;width:100%;cursor:pointer}
+.ask:hover{border-color:var(--accent)}
 .ask__k{font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;color:var(--wait);
         text-transform:uppercase}
 .ask__t{font-size:13px;font-weight:620}
@@ -180,6 +201,26 @@ footer{font-size:10px;color:var(--faint);font-family:var(--mono);
 
   <div class="rail" id="kpis"></div>
 
+  <div class="attn" id="attention">
+    <div class="card" id="queue" hidden>
+      <div class="card__h"><h2>Waiting on you</h2>
+        <span class="hint">the human queue — click a card for the why</span></div>
+      <ul class="asks" id="queueList"></ul>
+    </div>
+    <div class="card" id="alerts" hidden>
+      <div class="card__h"><h2>Attention</h2>
+        <span class="hint">disagreements · invariants · lane health</span></div>
+      <div id="alertList"></div>
+    </div>
+    <p class="calm" id="attnCalm" hidden>Nothing needs you right now.</p>
+  </div>
+
+  <div class="card" id="agents">
+    <div class="card__h"><h2>Agents</h2><span class="hint">one row per lane</span></div>
+    <div id="agentList"></div>
+    <p class="empty" id="agentsEmpty" hidden>No lanes yet.</p>
+  </div>
+
   <div class="grid grid--split">
     <div class="card" id="map">
       <div class="card__h"><h2>Map</h2>
@@ -208,12 +249,6 @@ footer{font-size:10px;color:var(--faint);font-family:var(--mono);
         <p class="empty" id="cycleEmpty" hidden>No cycle declared in the map.</p>
       </div>
     </div>
-  </div>
-
-  <div class="card" id="queue">
-    <div class="card__h"><h2>Waiting on you</h2>
-      <span class="hint">the human queue — click a card for the why</span></div>
-    <ul class="asks" id="queueList"></ul>
   </div>
 
   <div class="card" id="findings">
@@ -298,6 +333,7 @@ const chip = (meta, label) => el("span", { class: "vd vd--" + meta.cls },
 /* UI state that survives re-renders */
 let LAST = null, SEL = null, warningsOpen = false;
 const openAsks = new Set(), openFindings = new Set();
+const copyFeedback = new Map();   /* wait id -> {label, timer} for the copy button */
 
 /* ── top strip + warnings banner ───────────────────────────── */
 function setLive(ok){
@@ -306,7 +342,9 @@ function setLive(ok){
 }
 function renderStrip(s){
   const proj = s.project ? s.project + " · " : "";
-  $("projInfo").textContent = "· " + proj + "generated " + ago(parseTs(s.generated_at));
+  const okInv = (s.invariants || []).filter(i => i.ok !== false).length;
+  $("projInfo").textContent = "· " + proj + "generated " + ago(parseTs(s.generated_at)) +
+    (okInv ? " · invariants: " + okInv + " ok" : "");
 }
 function renderWarnings(warnings){
   const banner = $("warnings");
@@ -488,26 +526,135 @@ function renderCycle(cycle){
   }
 }
 
-/* ── human queue cards ─────────────────────────────────────── */
+/* ── attention zone: human queue cards + computed alerts ───── */
 function renderQueue(items){
+  $("queue").hidden = !items.length;
   const list = $("queueList");
   list.replaceChildren();
-  if (!items.length){
-    list.append(el("li", { class: "ask ask--empty" }, "Nothing is waiting on you."));
-    return;
-  }
   for (const w of items){
     const id = String(w.id);
-    const open = openAsks.has(id);
-    const btn = el("button", { class: "ask", type: "button",
-                               "aria-expanded": String(open) },
+    const card = el("li", { class: "ask", tabindex: "0", role: "button",
+                            "aria-expanded": String(openAsks.has(id)) },
       el("span", { class: "ask__k" }, String(w.kind || "")),
       el("span", { class: "ask__t" }, String(w.title || w.id)),
       el("span", { class: "ask__b" }, "blocks: " + ((w.blocks || []).join(", ") || "—")),
-      el("span", { class: "ask__b" }, "sources: " + ((w.sources || []).join(", ") || "—")),
+      el("span", { class: "ask__b" }, "Reply to: " + ((w.sources || []).join(", ") || "—")),
       el("span", { class: "ask__w" }, String(w.why || "")));
-    btn.dataset.ask = id;
-    list.append(el("li", {}, btn));
+    card.dataset.ask = id;
+    const btn = el("button", { class: "copy", type: "button" },
+                   (copyFeedback.get(id) || { label: "Copy decision brief" }).label);
+    btn.dataset.copy = id;
+    card.append(btn);
+    list.append(card);
+  }
+}
+/* the brief is plain TEXT for the clipboard — never inserted into the DOM */
+function decisionBrief(w){
+  return ["Decision needed: " + String(w.title || w.id),
+    "id: " + String(w.id) + "  kind: " + String(w.kind || "—"),
+    "why: " + String(w.why || "—"),
+    "blocks: " + ((w.blocks || []).join(", ") || "none"),
+    "reply to: " + ((w.sources || []).join(", ") || "—"),
+    "---",
+    "Paste your decision to the agent(s) above. After you answer, the owning",
+    "agent should: remove this wait from its lane, append an events.jsonl line",
+    "(kind \"ok\", ref \"" + String(w.id) + "\") recording the decision, and run",
+    "conduct validate."].join("\n");
+}
+async function writeClipboard(text){
+  try { await navigator.clipboard.writeText(text); return; }
+  catch (err) { /* denied or unavailable — try the legacy path below */ }
+  const ta = el("textarea", { class: "clip", "aria-hidden": "true" }, text);
+  document.body.append(ta);
+  ta.select();
+  const ok = document.execCommand("copy");
+  ta.remove();
+  if (!ok) throw new Error("execCommand copy rejected");
+}
+function setCopyLabel(id, label){
+  for (const b of $("queueList").querySelectorAll("[data-copy]"))
+    if (b.dataset.copy === id) b.textContent = label;
+}
+function flipCopy(id, label){
+  const prev = copyFeedback.get(id);
+  if (prev) clearTimeout(prev.timer);          // re-click restarts the flip
+  const timer = setTimeout(() => { copyFeedback.delete(id);
+                                   setCopyLabel(id, "Copy decision brief"); }, 1500);
+  copyFeedback.set(id, { label, timer });
+  setCopyLabel(id, label);                     // text swap only — reduced-motion safe
+}
+function copyBrief(id){
+  const w = ((LAST && LAST.human_queue) || []).find(x => String(x.id) === id);
+  if (!w) return;
+  writeClipboard(decisionBrief(w)).then(
+    () => flipCopy(id, "Copied"),
+    err => { console.warn("copy failed: " + err); flipCopy(id, "Copy failed"); });
+}
+const plural = (n, word) => n + " " + word + (n === 1 ? "" : "s");
+function laneHealthRow(lanes){
+  const broken = lanes.filter(l => l.broken).map(l => String(l.author));
+  const stale = lanes.filter(l => l.stale).map(l => String(l.author));
+  if (!broken.length && !stale.length) return null;
+  const parts = [];
+  if (broken.length) parts.push(plural(broken.length, "broken lane") + ": " + broken.join(", "));
+  if (stale.length) parts.push(plural(stale.length, "stale lane") + ": " + stale.join(", "));
+  return el("div", { class: "alert" },
+    chip({ cls: broken.length ? "bad" : "wait", glyph: "▲" }, "lanes"),
+    el("span", {}, parts.join(" — ")));
+}
+function attentionAlerts(s){
+  const rows = [];
+  const dis = (s.findings || []).filter(f => f.review_state === "disagreement").length;
+  const unrev = (s.findings || []).filter(f => f.review_state === "unreviewed").length;
+  if (dis || unrev){
+    const bits = [];
+    if (dis) bits.push(plural(dis, "disagreement"));
+    if (unrev) bits.push(unrev + " unreviewed");
+    rows.push(el("div", { class: "alert" },
+      chip({ cls: dis ? "bad" : "wait", glyph: "≠" }, "findings"),
+      el("button", { class: "jump", type: "button", "data-jump": "findings" },
+         bits.join(", ") + " — see findings")));
+  }
+  for (const inv of (s.invariants || []).filter(i => i.ok === false))
+    rows.push(el("div", { class: "alert" },
+      chip({ cls: "bad", glyph: "✕" }, "invariant"),
+      el("span", { class: "mono" }, String(inv.id)),
+      el("span", { class: "faint" },
+         "voted false by: " + ((inv.broken_by || []).join(", ") || "unknown"))));
+  const laneRow = laneHealthRow(s.lanes || []);
+  if (laneRow) rows.push(laneRow);
+  return rows;
+}
+function renderAttention(s){
+  const alerts = attentionAlerts(s);
+  $("alertList").replaceChildren(...alerts);
+  $("alerts").hidden = !alerts.length;
+  $("attnCalm").hidden = !!((s.human_queue || []).length || alerts.length);
+}
+
+/* ── agents block: one row per lane ────────────────────────── */
+function laneChip(l){
+  if (l.broken) return chip({ cls: "bad", glyph: "✕" }, "broken");
+  if (l.stale) return chip({ cls: "wait", glyph: "◌" }, "stale");
+  return chip({ cls: "ok", glyph: "●" }, "active");
+}
+function renderAgents(lanes){
+  const box = $("agentList");
+  box.replaceChildren();
+  $("agentsEmpty").hidden = lanes.length > 0;
+  for (const l of lanes){
+    const now = l.now || {};
+    const row = el("div", { class: "ag" },
+      el("span", { class: "mono ag__who" }, String(l.author)),
+      laneChip(l),
+      el("span", { class: "faint" }, String(l.role || "observer")));
+    const task = l.broken ? String(l.error || "unreadable") : String(now.task || "");
+    if (task) row.append(el("span", { class: "ag__task" + (l.broken ? " ag__err" : ""),
+                                      title: task }, task));
+    if (now.phase)
+      row.append(el("span", { class: "mono faint" }, "phase: " + String(now.phase)));
+    row.append(el("span", { class: "mono faint ag__ago" }, ago(parseTs(l.updated))));
+    box.append(row);
   }
 }
 
@@ -609,6 +756,8 @@ function render(s){
   renderMap(((s.map || {}).nodes) || []);
   renderCycle(s.cycle || {});
   renderQueue(s.human_queue || []);
+  renderAttention(s);
+  renderAgents(s.lanes || []);
   renderFindings(s.findings || [], s);
   renderFeed(s.events_tail || []);
   $("foot").textContent = "state schema v" + (s.schema_version ?? "?") +
@@ -618,6 +767,11 @@ function render(s){
 /* ── interaction (click + Enter/Space) ─────────────────────── */
 function activate(target){
   if (!(target instanceof Element)) return false;
+  const copy = target.closest("[data-copy]");   // before [data-ask]: nested in the card
+  if (copy){ copyBrief(copy.dataset.copy); return true; }
+  const jump = target.closest("[data-jump]");   // scrollIntoView default is instant
+  if (jump){ const dest = $(jump.dataset.jump);
+             if (dest) dest.scrollIntoView(); return true; }
   const node = target.closest("[data-node]");
   if (node){
     SEL = node.dataset.node;

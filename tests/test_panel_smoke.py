@@ -60,3 +60,21 @@ def test_panel_a11y_and_live_title_markers(tmp_path):
     html = _fetch_panel(root)
     assert "prefers-reduced-motion" in html
     assert "waiting on you" in html
+
+
+def test_panel_attention_zone_and_agents_block(tmp_path):
+    # C6.3: the action loop — attention zone, agents block, copy decision brief.
+    root = write_project(tmp_path, lanes={"claude": good_lane()})
+    html = _fetch_panel(root)
+    for token in ('id="attention"', 'id="agents"', "Reply to:", "Copy decision brief",
+                  "Nothing needs you right now.", "No lanes yet."):
+        assert token in html
+
+
+def test_panel_decision_first_section_order(tmp_path):
+    # Attention (holding the queue) sits above agents, which sit above the map.
+    root = write_project(tmp_path, lanes={"claude": good_lane()})
+    html = _fetch_panel(root)
+    order = [html.index(f'id="{i}"')
+             for i in ("attention", "queue", "agents", "map", "findings", "feed")]
+    assert order == sorted(order)
