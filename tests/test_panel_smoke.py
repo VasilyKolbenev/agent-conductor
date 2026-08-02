@@ -71,6 +71,15 @@ def test_panel_attention_zone_and_agents_block(tmp_path):
         assert token in html
 
 
+def test_panel_pins_decision_brief_contract_tokens(tmp_path):
+    # Pin test: the copy-brief instruction tail is a protocol contract with
+    # agents (remove wait -> events.jsonl ok line -> conduct validate).
+    root = write_project(tmp_path, lanes={"claude": good_lane()})
+    html = _fetch_panel(root)
+    for token in ("Decision needed: ", "events.jsonl", "conduct validate."):
+        assert token in html
+
+
 def test_panel_decision_first_section_order(tmp_path):
     # Attention (holding the queue) sits above agents, which sit above the map.
     root = write_project(tmp_path, lanes={"claude": good_lane()})
