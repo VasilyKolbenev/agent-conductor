@@ -100,7 +100,11 @@ def _cmd_up(args: argparse.Namespace) -> int:
 
 def _cmd_demo(args: argparse.Namespace) -> int:
     """Materialize the bundled demo fixture into a temp dir and serve it."""
-    root = demo.materialize(Path(tempfile.mkdtemp(prefix="conduct-demo-")))
+    try:
+        root = demo.materialize(Path(tempfile.mkdtemp(prefix="conduct-demo-")))
+    except OSError as e:                  # unwritable temp dir / broken package data
+        print(f"cannot materialize the demo fixture: {e}", file=sys.stderr)
+        return 1
     print(f"demo fixture materialized in {root} (throwaway copy)")
     return _serve(root, args.port)
 

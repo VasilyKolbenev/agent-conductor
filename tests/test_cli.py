@@ -113,3 +113,4 @@ def test_demo_rejects_dir_flag(capsys):
     with pytest.raises(SystemExit) as e:
         main(["demo", "--dir", "."])
     assert e.value.code == 2
+    assert "usage" in capsys.readouterr().err

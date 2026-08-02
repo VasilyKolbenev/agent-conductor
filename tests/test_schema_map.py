@@ -5,7 +5,7 @@ from conductor import schema
 def valid_map() -> dict:
     return {
         "schema_version": 1,
-        "project": "voice-app",
+        "project": "web-app",
         "nodes": [
             {"id": "models", "label": "models", "kind": "artifact"},
             {"id": "backend", "label": "backend", "kind": "artifact",

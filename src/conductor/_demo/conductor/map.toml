@@ -1,45 +1,45 @@
 schema_version = 1
-project = "voice-app"
+project = "web-app"
 
 [[nodes]]
-id = "models"
-label = "model bundle"
+id = "schemas"
+label = "shared contracts"
 kind = "artifact"
 
 [[nodes]]
-id = "backend"
-label = "backend build"
+id = "api"
+label = "api build"
 kind = "artifact"
-depends_on = ["models"]
+depends_on = ["schemas"]
 
 [[nodes]]
-id = "desktop"
-label = "desktop client"
+id = "frontend"
+label = "frontend build"
 kind = "artifact"
 
 [[nodes]]
 id = "stage"
 label = "release stage"
 kind = "artifact"
-depends_on = ["backend", "desktop"]
+depends_on = ["api", "frontend"]
 
 [[nodes]]
-id = "installer"
-label = "installer build"
+id = "deploy"
+label = "staging deploy"
 kind = "artifact"
 depends_on = ["stage"]
 
 [[nodes]]
 id = "smoke"
-label = "offline smoke gate"
+label = "release smoke gate"
 kind = "gate"
 depends_on = ["stage"]
 
 [[nodes]]
-id = "installed"
-label = "installed app"
+id = "live"
+label = "production release"
 kind = "artifact"
-depends_on = ["installer"]
+depends_on = ["deploy"]
 
 [[cycle.roles]]
 id = "implementer"

@@ -11,7 +11,7 @@ def valid_lane() -> dict:
         "now": {"task": "fixing gate D", "since": "2026-07-29T20:00:00+03:00",
                 "phase": "review"},
         "map_status": {"backend": "pass"},
-        "findings": [{"id": "D-2", "title": "STT missing", "severity": "blocker",
+        "findings": [{"id": "D-2", "title": "config missing", "severity": "blocker",
                       "claim": "defect", "detail": "d", "evidence": "e",
                       "refs": ["backend"]}],
         "verdicts": {"D-1": {"disposition": "confirmed", "note": "reproduced"}},

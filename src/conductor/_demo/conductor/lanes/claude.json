@@ -10,49 +10,49 @@
     "phase": "review"
   },
   "map_status": {
-    "models": "pass",
-    "backend": "pass",
-    "desktop": "pass",
+    "schemas": "pass",
+    "api": "pass",
+    "frontend": "pass",
     "stage": "pass",
-    "installer": "pass",
+    "deploy": "pass",
     "smoke": "fail",
-    "installed": "blocked"
+    "live": "blocked"
   },
   "findings": [
     {
       "id": "D-1",
-      "title": "/live answers in 11.5 s against a 1.0 s budget",
+      "title": "checkout p95 at 4.2 s against a 1.0 s budget",
       "severity": "blocker",
       "claim": "defect",
-      "detail": "First staged /live probe returns in 11.5 s; the gate budget is 1.0 s.",
+      "detail": "Staged checkout probes put p95 at 4.2 s; the gate budget is 1.0 s.",
       "evidence": "smoke/gate-d.log",
-      "refs": ["smoke", "backend"]
+      "refs": ["smoke", "api"]
     },
     {
       "id": "D-2",
-      "title": "STT model missing from the bundle — masked by the dev machine's global cache",
+      "title": "payment gateway config missing from the release image — masked by dev-machine environment variables",
       "severity": "blocker",
       "claim": "defect",
-      "detail": "A clean install has no STT model on disk; dev runs passed only because a machine-wide model cache filled the gap.",
-      "evidence": "installer/setup.log",
-      "refs": ["smoke", "installer"]
+      "detail": "A clean deploy has no payment gateway config; dev runs passed only because local environment variables filled the gap.",
+      "evidence": "deploy/rollout.log",
+      "refs": ["smoke", "deploy"]
     },
     {
       "id": "D-3",
-      "title": "VAD fetched from the network at runtime, shipped model unused",
+      "title": "search index rebuilt from the network at startup, shipped snapshot unused",
       "severity": "blocker",
       "claim": "defect",
-      "detail": "The offline run downloads the VAD model at startup while the bundled copy sits unused.",
+      "detail": "The staged service rebuilds its search index from the network at startup while the bundled snapshot sits unused.",
       "evidence": "smoke/netwatch.log",
-      "refs": ["smoke", "models"]
+      "refs": ["smoke", "stage"]
     }
   ],
   "waits_on_human": [
     {
-      "id": "w-stt",
+      "id": "w-config",
       "kind": "decision",
-      "title": "Bundle the STT model (~500 MB) or download on first run?",
-      "why": "Determines what D-2's fix looks like: ship the model inside the installer or add a first-run fetch.",
+      "title": "Bake the payment config into the release image or provision it per environment at deploy time?",
+      "why": "Determines what D-2's fix looks like: bake the config into the image or add per-environment provisioning to the deploy step.",
       "blocks": ["D-2"]
     }
   ],

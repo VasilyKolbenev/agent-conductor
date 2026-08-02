@@ -12,15 +12,15 @@
   "verdicts": {
     "D-1": {
       "disposition": "confirmed",
-      "note": "reproduced on a clean stage: 11.2–11.9 s across three probes"
+      "note": "reproduced on a clean stage: p95 between 4.1 and 4.4 s across three probe runs"
     },
     "D-2": {
       "disposition": "confirmed",
-      "note": "clean-profile install has no STT model on disk; the cache masking is real"
+      "note": "clean deploy has no gateway config; the environment-variable masking is real"
     },
     "D-3": {
       "disposition": "partial",
-      "note": "network fetch confirmed, but the shipped file may be a dead artifact — verify before bundling"
+      "note": "network rebuild confirmed, but the shipped snapshot may be stale — verify before relying on it"
     }
   }
 }

@@ -17,14 +17,14 @@ class UnknownRole(Exception):
 # PROTOCOL.md §2. Public: `conduct init` writes this text as the map.toml stub —
 # ONE sync point for the spec's map example.
 MAP_EXAMPLE = '''schema_version = 1
-project = "voice-app"
+project = "web-app"
 
 [[nodes]]
-id = "backend"          # unique, referenced by lanes
-label = "backend build"
+id = "api"              # unique, referenced by lanes
+label = "api build"
 kind = "artifact"       # free-form: artifact | gate | component | doc | …
 row = 0                 # optional; layout falls back to topological layering
-depends_on = ["models"]
+depends_on = ["schemas"]
 
 [[cycle.roles]]
 id = "implementer"
@@ -52,11 +52,11 @@ _LANE_TEMPLATE = '''{
   "staleness_after_minutes": 360,   // optional; default 360
   "now": { "task": "fixing gate D", "since": "2026-07-29T20:00:00+03:00",
            "phase": "implement" },   // optional; must be a cycle.phases value
-  "map_status": { "backend": "pass", "smoke": "fail" },
+  "map_status": { "api": "pass", "smoke": "fail" },
   "findings": [
     {
       "id": "D-2",               // globally unique across lanes
-      "title": "STT model missing from the bundle",
+      "title": "payment gateway config missing from the release image",
       "severity": "blocker",     // blocker | major | minor | note
       "claim": "defect",         // the author's own assessment (free-form label)
       "detail": "…",
@@ -68,8 +68,8 @@ _LANE_TEMPLATE = '''{
     "D-1": { "disposition": "confirmed", "note": "reproduced at …" }
   },
   "waits_on_human": [
-    { "id": "w-whisper", "kind": "decision",
-      "title": "Bundle the STT model (+461 MB) or download on first run?",
+    { "id": "w-config", "kind": "decision",
+      "title": "Bake the payment config into the image or provision at deploy time?",
       "why": "Determines what D-2's fix looks like.", "blocks": ["D-2"] }
   ],
   "invariants": [ { "id": "main-untouched", "ok": true } ]

@@ -1619,6 +1619,10 @@ def test_demo_state_tells_the_story(tmp_path):
 - [ ] **Step 3: Run — fail. Step 4: Implement `demo.py`** — `materialize(target_dir)`: copy the packaged `_demo/conductor` tree (via `importlib.resources.files("conductor") / "_demo"`) into `target_dir`, return `target_dir`. Wire `conduct demo [--port]`: materialize into `tempfile.mkdtemp(prefix="conduct-demo-")`, then start the same server read-only. `demo/README.md` at repo root: one paragraph + pointer to the packaged path.
 - [ ] **Step 5: Run — pass. Step 6: Commit** — `git commit -am "feat(demo): bundled real-case fixture and conduct demo"`
 
+> **Deviation (2026-08-02, owner direction):** the demo narrative was re-themed from the
+> voice-app case to a neutral, fictional web project (no voice-domain references anywhere);
+> structure, counts, review pattern, and the mandated test assertions are unchanged.
+
 ### Task 16: CI matrix
 
 **Files:**
