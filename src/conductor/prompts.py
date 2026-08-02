@@ -53,7 +53,9 @@ id = "main-untouched"
 text = "main branch is never committed to directly"'''
 
 # The fill-in author for prompts vended without --author. Doubles as the lane
-# filename stem in the prose, so both stay in sync.
+# filename stem in the prose, so both stay in sync. The angle brackets are
+# load-bearing: they can never match store.AUTHOR_RE, so a verbatim copy that
+# keeps the placeholder is rejected instead of silently becoming a real lane.
 _AUTHOR_PLACEHOLDER = "<your-author-id>"
 
 # The literal `updated` value in the starter template; the agent must swap it
@@ -69,7 +71,9 @@ _LIFECYCLE = '''Lifecycle:
 - Remove a finding only after its fix is confirmed.
 - Remove a wait only after the human's answer is received.
 - When you close a finding or a wait, append a line to conductor/events.jsonl
-  with kind "ok" and the closed id in its ref.
+  with kind "ok" and the closed id in its ref — required shape (readers skip
+  malformed event lines silently):
+  {"ts": "<UTC ISO-8601>", "author": "<you>", "kind": "ok", "text": "closed D-2", "ref": "D-2"}
 - Run `conduct validate` before finishing a work session.'''
 
 _VOCABULARIES = '''Closed vocabularies:
@@ -184,6 +188,11 @@ def role_prompt(state: dict, role_id: str, author: str | None = None) -> str:
     reviewed = ", ".join(reviews) if reviews else "no other roles"
     node_ids = ", ".join(n["id"] for n in state["map"]["nodes"]) or "(none)"
     stem = author if author is not None else _AUTHOR_PLACEHOLDER
+    swap = (f'Replace the "updated" value ({_UPDATED_PLACEHOLDER}) with the\n'
+            "current UTC ISO-8601 time on every write.")
+    if author is None:
+        swap += (f"\nReplace {_AUTHOR_PLACEHOLDER} with your author id — in the\n"
+                 "lane file name too, not just the JSON.")
     return (
         f'You hold the "{role_id}" role in this project\'s Conduct cycle; '
         f"you review findings from: {reviewed}.\n"
@@ -196,9 +205,9 @@ def role_prompt(state: dict, role_id: str, author: str | None = None) -> str:
         f"{_starter_template(role_id, author)}\n"
         "```\n"
         "\n"
-        f'Replace the "updated" value ({_UPDATED_PLACEHOLDER}) with the\n'
-        "current UTC ISO-8601 time on every write. map_status keys must be ids\n"
-        "from the current map, listed below — never invent node ids.\n"
+        f"{swap}\n"
+        "map_status keys must be ids from the current map, listed below —\n"
+        "never invent node ids.\n"
         "\n"
         f"{_LIFECYCLE}\n"
         "\n"

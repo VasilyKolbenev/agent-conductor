@@ -1,7 +1,7 @@
 import json
 from datetime import datetime, timezone
 
-from conductor import merge, prompts, schema
+from conductor import merge, prompts, schema, store
 from tests.test_merge_review import MAP, lane, finding
 
 NOW = datetime(2026, 7, 30, 12, 0, tzinfo=timezone.utc)
@@ -128,13 +128,31 @@ def test_role_prompt_without_author_uses_placeholder_never_claude():
     assert "<your-author-id>" in text
     assert "claude" not in text                      # no hardcoded author anywhere
     assert "REPLACE-WITH-CURRENT-UTC-ISO8601" in text
+    # The swap instruction must name the author placeholder too — "copy it
+    # verbatim" alone would leave <your-author-id> in the file and filename.
+    assert "with your author id" in text
+    assert "file name" in text
+
+
+def test_author_placeholder_can_never_become_a_real_lane():
+    # Load-bearing pin: the angle brackets must never match store.AUTHOR_RE.
+    # Respelled regex-legal (e.g. your_author_id), a verbatim no-author copy
+    # would silently become a valid lane named after the placeholder.
+    assert store.AUTHOR_RE.fullmatch(prompts._AUTHOR_PLACEHOLDER) is None
+    state = merge.merge(MAP, None, [], [], 0, NOW)
+    block = _template_block(prompts.role_prompt(state, "rev"))
+    swapped = block.replace("REPLACE-WITH-CURRENT-UTC-ISO8601",
+                            "2026-07-30T12:00:00+00:00")
+    errors, _ = schema.validate_lane(json.loads(swapped), filename_stem="codex")
+    assert errors                                    # author swap stays mandatory
 
 
 def test_role_prompt_states_lifecycle_contract():
     state = merge.merge(MAP, None, [], [], 0, NOW)
     text = prompts.role_prompt(state, "rev")
     for token in ("temp file", "NEVER edit another agent's lane",
-                  "conduct validate", "events.jsonl"):
+                  "conduct validate", "events.jsonl", '"kind": "ok"',
+                  '"ts": '):                         # the event line's required shape
         assert token in text
 
 

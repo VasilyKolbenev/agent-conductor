@@ -285,7 +285,7 @@ must tolerate additional fields:
 | `conduct init` | Creates `conductor/` (refuses if it exists), writes a commented `map.toml` stub and an empty `lanes/`, then **prints the bootstrap prompt**: instructions for the user's own agent to read the project's roadmap/plan/architecture docs and generate a real `map.toml`. | 0 created · 1 already exists |
 | `conduct up [--port 7777] [--dir PATH]` | `--dir` is the **project root** (the directory containing `conductor/`; default: cwd). Validates the map (refuses to start on a broken map with a clear error), then serves the panel on `127.0.0.1`. Watches `conductor/` by polling mtimes (0.5 s) and pushes SSE updates. If the map becomes invalid *while running*, keeps serving the last good map with a visible banner. | 0 on clean shutdown · 1 startup failure (port busy, invalid map) |
 | `conduct demo [--port 7777]` | Copies the bundled demo fixture (via `importlib.resources`) into a temp directory and serves it read-only — the full experience with zero setup. | as `up` |
-| `conduct prompt <role-id>` | Renders the **state-aware** prompt contract for that role from `map.toml` *and current lanes*: mission, lane file path, exact JSON schema template, the list of finding ids currently awaiting this role's verdict, valid map node ids. Deterministic template rendering — no LLM. Output to stdout for piping. | 0 · 1 unknown role or missing/invalid map |
+| `conduct prompt --role <role> --author <author>` | Renders the **state-aware** prompt contract for that role from `map.toml` *and current lanes*: mission, lane file path, exact JSON schema template, the list of finding ids currently awaiting this role's verdict, valid map node ids. Deterministic template rendering — no LLM. Output to stdout for piping. | 0 · 1 unknown role or missing/invalid map |
 | `conduct validate` | Schema-checks `map.toml` + all lanes + `events.jsonl`, then runs cross-file referential checks matching the merger's warning set (§5), including: verdict ids vs findings, `refs`/`map_status` keys vs map nodes, `now.phase` vs phases, lane `role` vs `cycle.roles`, lane invariant ids vs map invariants. Schema violations are **errors**; referential mismatches are **warnings** (they are legal runtime drift the merger tolerates, §5). CI-friendly. | 0 schema-valid (warnings allowed) · 1 schema errors |
 
 ## 7. Server
@@ -331,7 +331,7 @@ motion respected, keyboard focus visible. Dark/light via
 
 ## 9. Adapters
 
-- **Universal (the default):** `conduct prompt <role>` output pasted into any
+- **Universal (the default):** `conduct prompt --role <role> --author <author>` output pasted into any
   harness's instructions. Works today for Codex CLI, Cursor, Windsurf, Cline,
   aider, Devin — anything that can write a file. Cloud builders without local
   filesystem access (Lovable, Bolt, v0) follow the same contract through the
