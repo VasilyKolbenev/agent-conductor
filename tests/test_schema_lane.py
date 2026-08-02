@@ -60,6 +60,16 @@ def test_duplicate_finding_id_within_lane_is_error():
     errors, _ = schema.validate_lane(lane, filename_stem="claude")
     assert any("duplicate finding id" in e for e in errors)
 
+def test_non_string_detail_and_evidence_are_errors():
+    # detail/evidence are optional, but when present they must be strings —
+    # they now travel into state.json verbatim (spec §6.1).
+    lane = valid_lane()
+    lane["findings"][0]["detail"] = 42
+    lane["findings"][0]["evidence"] = ["x"]
+    errors, _ = schema.validate_lane(lane, filename_stem="claude")
+    assert any("detail" in e and "must be a string" in e for e in errors)
+    assert any("evidence" in e and "must be a string" in e for e in errors)
+
 def test_role_is_optional():
     lane = valid_lane(); del lane["role"]
     errors, _ = schema.validate_lane(lane, filename_stem="claude")

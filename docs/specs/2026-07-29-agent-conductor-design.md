@@ -55,7 +55,8 @@ Tagline: **Your agents write lanes. You conduct.**
    agent can follow — no SDK required.
 5. A **Claude Code adapter** (instructions + a mechanical heartbeat hook) and
    an **experimental LangGraph example**.
-6. A **demo** (`conduct demo`) replaying a real multi-agent release-gate case.
+6. A **demo** (`conduct demo`) replaying a fictional release-gate scenario
+   modeled on real multi-agent coordination patterns.
 
 ### Non-goals (v0.1)
 
@@ -259,7 +260,8 @@ must tolerate additional fields:
              "current_phase": "implement" },        // absent if undeclared
   "lanes": [ { "author", "role", "updated", "stale": false,
                "broken": false, "error": null, "now": {} } ],
-  "findings": [ { "id", "title", "severity", "claim", "author", "refs": [],
+  "findings": [ { "id", "title", "severity", "claim", "detail", "evidence",
+                  "author", "refs": [],
                   "verdicts": { "<author>": { "disposition", "note",
                                               "role": "reviewer or null" } },
                   "review_state":
@@ -422,4 +424,5 @@ follow-ups planned after M4 ships.
 ## 15. Open questions
 
 None blocking. Two owner sign-offs are scheduled inside milestones: demo
-anonymization review (M4) and the announcement text (M6).
+narrative review (done 2026-08-02: fictional re-theme, owner-approved) and
+the announcement text (M6).

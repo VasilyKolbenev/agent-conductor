@@ -141,7 +141,7 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_dir_and_func(p, _cmd_up)
 
     # No --dir: demo materializes its own throwaway root.
-    p = sub.add_parser("demo", help="serve the bundled real-case demo fixture")
+    p = sub.add_parser("demo", help="serve the bundled demo fixture")
     p.add_argument("--port", type=int, default=7777,
                    help="TCP port on 127.0.0.1 (default: 7777)")
     p.set_defaults(func=_cmd_demo)

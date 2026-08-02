@@ -237,6 +237,10 @@ def _validate_lane_findings(data: dict, where: str, errors: list[str]) -> None:
         for key in ("title", "claim"):
             if not isinstance(f.get(key), str) or not f.get(key):
                 errors.append(f"{where}: finding {fid!r} needs a non-empty {key}")
+        for key in ("detail", "evidence"):
+            if key in f and not isinstance(f[key], str):
+                errors.append(f"{where}: finding {fid!r} {key} must be a string, "
+                              f"got {f[key]!r}")
         if "refs" in f:
             refs = f["refs"]
             if not isinstance(refs, list):
