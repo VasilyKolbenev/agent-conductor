@@ -145,6 +145,37 @@ def test_staleness_after_minutes_bool_is_error():
     errors, _ = schema.validate_lane(lane, filename_stem="claude")
     assert any("staleness_after_minutes" in e for e in errors)
 
+def test_staleness_nan_is_error():
+    # NaN passes isinstance(float) but crashes timedelta in merge — reject here.
+    lane = valid_lane(); lane["staleness_after_minutes"] = float("nan")
+    errors, _ = schema.validate_lane(lane, filename_stem="claude")
+    assert any("staleness_after_minutes" in e for e in errors)
+
+def test_staleness_infinity_is_error():
+    lane = valid_lane(); lane["staleness_after_minutes"] = float("inf")
+    errors, _ = schema.validate_lane(lane, filename_stem="claude")
+    assert any("staleness_after_minutes" in e for e in errors)
+
+def test_staleness_negative_infinity_is_error():
+    lane = valid_lane(); lane["staleness_after_minutes"] = float("-inf")
+    errors, _ = schema.validate_lane(lane, filename_stem="claude")
+    assert any("staleness_after_minutes" in e for e in errors)
+
+def test_staleness_zero_is_error():
+    lane = valid_lane(); lane["staleness_after_minutes"] = 0
+    errors, _ = schema.validate_lane(lane, filename_stem="claude")
+    assert any("staleness_after_minutes" in e for e in errors)
+
+def test_staleness_negative_is_error():
+    lane = valid_lane(); lane["staleness_after_minutes"] = -5
+    errors, _ = schema.validate_lane(lane, filename_stem="claude")
+    assert any("staleness_after_minutes" in e for e in errors)
+
+def test_staleness_positive_float_is_valid():
+    lane = valid_lane(); lane["staleness_after_minutes"] = 0.5
+    errors, _ = schema.validate_lane(lane, filename_stem="claude")
+    assert errors == []
+
 
 def test_refs_scalar_is_single_error():
     lane = valid_lane(); lane["findings"][0]["refs"] = "backend"

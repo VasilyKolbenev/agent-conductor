@@ -1,6 +1,7 @@
 """Protocol v1 validation. Pure: dicts in, (errors, warnings) out. Spec §4."""
 from __future__ import annotations
 
+import math
 from datetime import datetime, timezone
 from typing import Any
 
@@ -41,7 +42,7 @@ def parse_iso(value: Any) -> datetime | None:
     return parsed
 
 
-def _validate_nodes(data: dict, errors: list[str]) -> None:
+def _validate_nodes(data: dict, errors: list[str], warnings: list[str]) -> None:
     nodes = data.get("nodes")
     if not isinstance(nodes, list) or not nodes:
         errors.append("map: at least one node is required")
@@ -59,6 +60,13 @@ def _validate_nodes(data: dict, errors: list[str]) -> None:
         if not isinstance(n, dict):
             continue
         nid = n.get("id")
+        for key in ("label", "kind"):
+            # TOML yields datetime.date/int for unquoted values — they would
+            # crash json.dumps(state) or type-pollute it (task 15.5).
+            if key in n and not isinstance(n[key], str):
+                errors.append(f"map: node {nid!r} {key} must be a string, got {n[key]!r}")
+        if "row" in n:
+            warnings.append(f"map: node {nid!r} row is deprecated and ignored")  # ADR 0001
         depends_on = n.get("depends_on", [])
         if not isinstance(depends_on, list):
             errors.append(f"map: node {nid!r} depends_on must be a list")
@@ -96,6 +104,8 @@ def _validate_cycle(data: dict, errors: list[str]) -> None:
         if not isinstance(r, dict):
             continue
         rid = r.get("id")
+        if "harness" in r and not isinstance(r["harness"], str):
+            errors.append(f"map: role {rid!r} harness must be a string, got {r['harness']!r}")
         reviews = r.get("reviews", [])
         if not isinstance(reviews, list):
             errors.append(f"map: role {rid!r} reviews must be a list")
@@ -129,6 +139,8 @@ def _validate_invariants(data: dict, errors: list[str]) -> None:
         if iid in inv_ids:
             errors.append(f"map: duplicate invariant id {iid!r}")
         inv_ids.add(iid)
+        if "text" in inv and not isinstance(inv["text"], str):
+            errors.append(f"map: invariant {iid!r} text must be a string, got {inv['text']!r}")
 
 
 def validate_map(data: Any) -> Result:
@@ -146,15 +158,18 @@ def validate_map(data: Any) -> Result:
         A `(errors, warnings)` pair of human-readable messages. Errors
         mean the map is invalid and MUST block further processing;
         warnings are informational only (e.g. an unrecognized
-        `schema_version`, accepted without guessing per spec section 5)
-        and never block.
+        `schema_version`, accepted without guessing per spec section 5,
+        or a deprecated node `row` key, accepted and ignored per
+        ADR 0001) and never block.
     """
     errors: list[str] = []
     warnings: list[str] = []
     if not isinstance(data, dict):
         return (["map: top level must be a table"], warnings)
     _version_check(data, "map", errors, warnings)
-    _validate_nodes(data, errors)
+    if "project" in data and not isinstance(data["project"], str):
+        errors.append(f"map: project must be a string, got {data['project']!r}")
+    _validate_nodes(data, errors, warnings)
     _validate_cycle(data, errors)
     _validate_invariants(data, errors)
     return errors, warnings
@@ -175,9 +190,13 @@ def _validate_lane_core(data: dict, filename_stem: str, where: str, errors: list
     if role is not None and (not isinstance(role, str) or not role):
         errors.append(f"{where}: role must be a non-empty string when present")
     threshold = data.get("staleness_after_minutes")
-    if threshold is not None and (isinstance(threshold, bool)
-                                   or not isinstance(threshold, (int, float))):
-        errors.append(f"{where}: staleness_after_minutes must be a number")
+    if threshold is not None:
+        # NaN/inf pass isinstance(float) but crash timedelta in merge; NaN also
+        # fails every comparison, so the check is spelled out positively.
+        numeric = isinstance(threshold, (int, float)) and not isinstance(threshold, bool)
+        if not (numeric and math.isfinite(threshold) and threshold > 0):
+            errors.append(f"{where}: staleness_after_minutes must be a finite "
+                          f"number > 0, got {threshold!r}")
     now = data.get("now")
     if now is not None and not isinstance(now, dict):
         errors.append(f"{where}: now must be an object")

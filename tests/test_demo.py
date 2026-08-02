@@ -65,7 +65,7 @@ def test_demo_state_is_warning_free_and_never_stale(tmp_path):
     assert state["kpi"]["stale_lanes"] == 0 and state["kpi"]["broken_lanes"] == 0
     assert len(state["events_tail"]) == 11
 
-def test_demo_help_exits_0(capsys):
+def test_demo_help_exits_0():
     with pytest.raises(SystemExit) as e:
         main(["demo", "--help"])
     assert e.value.code == 0
