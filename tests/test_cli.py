@@ -67,6 +67,14 @@ def test_init_writes_empty_events_and_valid_toml_map(tmp_path, capsys):
     data = tomllib.loads((tmp_path / "conductor" / "map.toml").read_text(encoding="utf-8"))
     assert data["schema_version"] == 1 and data["nodes"]
 
+def test_init_then_validate_is_clean(tmp_path, capsys):
+    # The scaffold must satisfy its own validation rules end-to-end: no dangling
+    # depends_on, and no deprecated-row warning (ADR 0001 deleted row from v1).
+    assert main(["init", "--dir", str(tmp_path)]) == 0
+    capsys.readouterr()                       # isolate validate's output from init's
+    assert main(["validate", "--dir", str(tmp_path)]) == 0
+    assert "row" not in capsys.readouterr().out
+
 def test_validate_schema_version_warning_surfaces_in_stdout(tmp_path, capsys):
     # Pin: validate must pass loaded.warnings into merge (extra_warnings=...) —
     # dropping the pass-through would lose loader-level schema-version warnings.

@@ -59,6 +59,11 @@ def test_bootstrap_prompt_tells_agent_to_validate():
     assert "conduct validate" in prompts.bootstrap_prompt()
 
 
+def test_map_example_has_no_row_field():
+    # ADR 0001: row is deleted from normative v1 — the vended example must not teach it.
+    assert "row" not in prompts.MAP_EXAMPLE
+
+
 def test_role_prompt_prefills_role_in_lane_template():
     state = merge.merge(MAP, None, [], [], 0, NOW)
     text = prompts.role_prompt(state, "rev")

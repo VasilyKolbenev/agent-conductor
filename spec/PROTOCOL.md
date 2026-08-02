@@ -46,10 +46,14 @@ schema_version = 1
 project = "web-app"
 
 [[nodes]]
+id = "schemas"
+label = "shared contracts"
+kind = "artifact"
+
+[[nodes]]
 id = "api"              # unique, referenced by lanes
 label = "api build"
 kind = "artifact"       # free-form: artifact | gate | component | doc | …
-row = 0                 # optional; layout falls back to topological layering
 depends_on = ["schemas"]
 
 [[cycle.roles]]
