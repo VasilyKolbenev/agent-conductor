@@ -174,17 +174,20 @@ class Watcher(threading.Thread):
         self._broker = broker
         self._cdir = cdir
         self._clients = clients
-        self._stop = threading.Event()
+        # _stop_event, not _stop: threading.Thread has a private _stop()
+        # method that join() calls on Python <= 3.12 — shadowing it with an
+        # Event breaks join with TypeError: 'Event' object is not callable.
+        self._stop_event = threading.Event()
         self._fingerprint = _fingerprint(cdir)
         self._last_merge = time.monotonic()
 
     def stop(self) -> None:
         """Ask the thread to exit; it wakes within POLL_INTERVAL."""
-        self._stop.set()
+        self._stop_event.set()
 
     def run(self) -> None:
         """Poll until stopped; refresh on fingerprint change or tick."""
-        while not self._stop.wait(POLL_INTERVAL):
+        while not self._stop_event.wait(POLL_INTERVAL):
             current = _fingerprint(self._cdir)
             tick_due = time.monotonic() - self._last_merge >= TICK_INTERVAL
             if current == self._fingerprint and not tick_due:
