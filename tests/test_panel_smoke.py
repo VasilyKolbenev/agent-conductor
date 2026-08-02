@@ -43,6 +43,17 @@ def test_panel_pins_review_vocabulary_tokens(tmp_path):
         assert token in html
 
 
+def test_panel_findings_scannable_title_and_card_fields(tmp_path):
+    # C6.2: title is the scannable table column; claim moves into the expanded
+    # card alongside the new detail and evidence fields, each with a label.
+    root = write_project(tmp_path, lanes={"claude": good_lane()})
+    html = _fetch_panel(root)
+    assert '<th>title</th>' in html
+    assert '<th>claim</th>' not in html
+    for label in ('"Claim"', '"Detail"', '"Evidence"'):
+        assert label in html
+
+
 def test_panel_a11y_and_live_title_markers(tmp_path):
     # Reduced-motion support and the live document title are part of the delta list.
     root = write_project(tmp_path, lanes={"claude": good_lane()})

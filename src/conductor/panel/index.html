@@ -143,8 +143,12 @@ th{font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--fai
 tr:last-child td{border-bottom:none}
 tr.click{cursor:pointer} tr.click:hover td{background:var(--sunk)}
 td.mono{font-family:var(--mono);font-size:11px;color:var(--muted);white-space:nowrap}
+td.ft{max-width:380px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .detail{display:none} .detail.on{display:table-row}
 .detail td{background:var(--sunk);font-size:12px;color:var(--muted)}
+.fld{margin-top:3px}
+.fld__k{font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);
+        font-weight:650;margin-right:7px}
 .vd{font-family:var(--mono);font-size:10.5px;padding:1px 6px;border-radius:4px;
     white-space:nowrap}
 .vd--ok{color:var(--pass);background:color-mix(in srgb,var(--pass) 14%,transparent)}
@@ -214,9 +218,9 @@ footer{font-size:10px;color:var(--faint);font-family:var(--mono);
 
   <div class="card" id="findings">
     <div class="card__h"><h2>Findings</h2>
-      <span class="hint">click a row for verdicts</span></div>
+      <span class="hint">click a row for detail and verdicts</span></div>
     <div class="scroll"><table>
-      <thead><tr><th>id</th><th>severity</th><th>claim</th><th>author</th>
+      <thead><tr><th>id</th><th>severity</th><th>title</th><th>author</th>
         <th>review state</th></tr></thead>
       <tbody id="findBody"></tbody>
     </table></div>
@@ -514,9 +518,17 @@ function reviewedRoles(s){
     for (const reviewed of (r.reviews || [])) out.add(reviewed);
   return out;
 }
+function findingField(label, value){
+  const text = String(value || "");           // empty → visible "—" placeholder
+  return el("div", { class: "fld" },
+    el("span", { class: "fld__k" }, label), text || "—");
+}
 function findingDetail(f){
   const td = el("td", { colspan: "5" },
-    el("div", { class: "det__t" }, String(f.title || f.id)));
+    el("div", { class: "det__t" }, String(f.title || f.id)),
+    findingField("Claim", f.claim),
+    findingField("Detail", f.detail),
+    findingField("Evidence", f.evidence));
   if ((f.refs || []).length)
     td.append(el("div", { class: "subhint" }, "refs: " + f.refs.join(", ")));
   const verdicts = Object.entries(f.verdicts || {});
@@ -558,7 +570,8 @@ function renderFindings(findings, s){
                           "aria-expanded": String(open) },
       el("td", { class: "mono" }, String(f.id)),
       el("td", {}, chip(metaOf(SEVERITY, f.severity), String(f.severity || ""))),
-      el("td", {}, String(f.claim || "")),
+      el("td", { class: "ft", title: String(f.title || f.id) },
+         String(f.title || f.id)),
       el("td", { class: "mono" }, String(f.author || "")),
       reviewCell);
     tr.dataset.row = key;
