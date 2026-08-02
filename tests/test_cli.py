@@ -114,6 +114,50 @@ def test_prompt_missing_conductor_dir_exits_1_with_stderr(tmp_path, capsys):
     assert main(["prompt", "reviewer", "--dir", str(tmp_path)]) == 1
     assert "conductor" in capsys.readouterr().err
 
+
+# --- C6.1: conduct prompt --role/--author (positional role deprecated) ---
+
+
+def test_prompt_positional_role_warns_deprecated_but_works(tmp_path, capsys):
+    root = write_project(tmp_path, map_toml=MAP_WITH_ROLES,
+                         lanes={"claude": good_lane()})
+    assert main(["prompt", "reviewer", "--dir", str(root)]) == 0
+    captured = capsys.readouterr()
+    assert "deprecated" in captured.err and "--role" in captured.err
+    assert "reviewer" in captured.out
+
+def test_prompt_role_flag_exits_0_without_warning(tmp_path, capsys):
+    root = write_project(tmp_path, map_toml=MAP_WITH_ROLES)
+    assert main(["prompt", "--role", "reviewer", "--dir", str(root)]) == 0
+    captured = capsys.readouterr()
+    assert captured.err == "" and "reviewer" in captured.out
+
+def test_prompt_author_flag_renders_author_lane(tmp_path, capsys):
+    root = write_project(tmp_path, map_toml=MAP_WITH_ROLES)
+    assert main(["prompt", "--role", "reviewer", "--author", "codex",
+                 "--dir", str(root)]) == 0
+    out = capsys.readouterr().out
+    assert "conductor/lanes/codex.json" in out and '"author": "codex"' in out
+
+def test_prompt_invalid_author_exits_1(tmp_path, capsys):
+    root = write_project(tmp_path, map_toml=MAP_WITH_ROLES)
+    assert main(["prompt", "--role", "reviewer", "--author", "bad name",
+                 "--dir", str(root)]) == 1
+    assert "author" in capsys.readouterr().err
+
+def test_prompt_positional_plus_role_flag_is_usage_error(tmp_path, capsys):
+    with pytest.raises(SystemExit) as e:
+        main(["prompt", "reviewer", "--role", "reviewer", "--dir", str(tmp_path)])
+    assert e.value.code == 2
+    assert "usage" in capsys.readouterr().err
+
+def test_prompt_no_role_at_all_is_usage_error(tmp_path, capsys):
+    with pytest.raises(SystemExit) as e:
+        main(["prompt", "--dir", str(tmp_path)])
+    assert e.value.code == 2
+    assert "usage" in capsys.readouterr().err
+
+
 def test_demo_rejects_dir_flag(capsys):
     # Pin: demo materializes its own throwaway root — --dir is deliberately
     # not accepted (argparse usage error, exit 2). Demo behavior itself is

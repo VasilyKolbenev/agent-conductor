@@ -1,8 +1,9 @@
 """The `conduct` command-line interface.
 
 Subcommands: `validate` (schema errors → exit 1, merge warnings → stdout),
-`init` (scaffold conductor/ and print the bootstrap prompt), `prompt <role>`
-(vend a role's working prompt), `up` (serve the panel on 127.0.0.1 with SSE
+`init` (scaffold conductor/ and print the bootstrap prompt), `prompt --role R
+[--author A]` (vend a role's working prompt; the positional role form is
+deprecated), `up` (serve the panel on 127.0.0.1 with SSE
 live updates; Ctrl-C → exit 0), `demo` (materialize the bundled fixture
 into a temp directory and serve it — takes `--port` but no `--dir`). Every
 other command takes `--dir` (the project root, default `.`). Exit codes
@@ -61,13 +62,25 @@ def _cmd_init(args: argparse.Namespace) -> int:
 
 
 def _cmd_prompt(args: argparse.Namespace) -> int:
-    """Render the role prompt; broken map or unknown role → stderr, exit 1."""
+    """Render the role prompt; bad author, broken map, or unknown role → stderr, exit 1."""
+    if args.role_positional is not None and args.role is not None:
+        args.prompt_parser.error("give the role via --role or positionally, not both")
+    if args.role_positional is None and args.role is None:
+        args.prompt_parser.error("a role is required: conduct prompt --role <role>")
+    if args.role_positional is not None:
+        print("warning: positional role is deprecated; use --role/--author",
+              file=sys.stderr)
+    role = args.role if args.role is not None else args.role_positional
+    if args.author is not None and not store.AUTHOR_RE.fullmatch(args.author):
+        print(f"invalid author {args.author!r}: must match the lane filename "
+              "rule (letters, digits, _ and - only)", file=sys.stderr)
+        return 1
     loaded = store.load(args.dir)
     if loaded.map_error is not None:  # a substitute empty map would mislead the agent
         print(f"cannot vend a prompt: {loaded.map_error}", file=sys.stderr)
         return 1
     try:
-        text = prompts.role_prompt(_merged_state(loaded), args.role)
+        text = prompts.role_prompt(_merged_state(loaded), role, args.author)
     except prompts.UnknownRole as e:
         print(str(e), file=sys.stderr)
         return 1
@@ -132,7 +145,16 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_dir_and_func(p, _cmd_init)
 
     p = sub.add_parser("prompt", help="print the working prompt for one cycle role")
-    p.add_argument("role", help="a cycle.roles id from map.toml")
+    # ADR 0001: the positional is the DEPRECATED spelling of --role and its
+    # meaning must NEVER be silently redefined (e.g. to an instance id in v2) —
+    # any new addressing scheme gets its own flag.
+    p.add_argument("role_positional", nargs="?", metavar="role", default=None,
+                   help="deprecated positional form of --role")
+    p.add_argument("--role", help="a cycle.roles id from map.toml")
+    p.add_argument("--author",
+                   help="your lane author id — fills conductor/lanes/<author>.json "
+                        "into the prompt")
+    p.set_defaults(prompt_parser=p)   # lets _cmd_prompt raise argparse usage errors
     _add_dir_and_func(p, _cmd_prompt)
 
     p = sub.add_parser("up", help="serve the panel on loopback HTTP with live updates")

@@ -2,10 +2,15 @@
 
 Two pure string builders: `bootstrap_prompt` tells an agent how to create
 `conductor/map.toml`; `role_prompt` tells a role-holding agent how to keep
-its lane file and which finding ids still owe it a verdict. The templates
-are taken from the spec (PROTOCOL.md §2 and §3).
+its lane file and which findings still owe it a verdict. The map example is
+taken from the spec (PROTOCOL.md §2); the lane starter vended by
+`role_prompt` is deliberately NOT the commented §3 excerpt — that one stays
+in PROTOCOL.md as an illustration, while the vended template is a separate,
+copy-safe strict-JSON artifact an agent can write verbatim.
 """
 from __future__ import annotations
+
+import json
 
 from conductor import merge
 
@@ -47,37 +52,25 @@ phases = ["plan", "implement", "review", "human-gate"]
 id = "main-untouched"
 text = "main branch is never committed to directly"'''
 
-# PROTOCOL.md §3, with the "role" value swapped for a fill-in marker.
-_LANE_TEMPLATE = '''{
-  "schema_version": 1,
-  "author": "claude",            // must equal the filename stem
-  "role": "__ROLE__",            // a cycle.roles id, or absent for observers
-  "updated": "2026-07-29T21:20:00+03:00",
-  "staleness_after_minutes": 360,   // optional; default 360
-  "now": { "task": "fixing gate D", "since": "2026-07-29T20:00:00+03:00",
-           "phase": "implement" },   // optional; must be a cycle.phases value
-  "map_status": { "api": "pass", "smoke": "fail" },
-  "findings": [
-    {
-      "id": "D-2",               // globally unique across lanes
-      "title": "payment gateway config missing from the release image",
-      "severity": "blocker",     // blocker | major | minor | note
-      "claim": "defect",         // the author's own assessment (free-form label)
-      "detail": "…",
-      "evidence": "path/to/log or a reproduced command",
-      "refs": ["smoke"]          // map node ids this finding touches
-    }
-  ],
-  "verdicts": {
-    "D-1": { "disposition": "confirmed", "note": "reproduced at …" }
-  },
-  "waits_on_human": [
-    { "id": "w-config", "kind": "decision",
-      "title": "Bake the payment config into the image or provision at deploy time?",
-      "why": "Determines what D-2's fix looks like.", "blocks": ["D-2"] }
-  ],
-  "invariants": [ { "id": "main-untouched", "ok": true } ]
-}'''
+# The fill-in author for prompts vended without --author. Doubles as the lane
+# filename stem in the prose, so both stay in sync.
+_AUTHOR_PLACEHOLDER = "<your-author-id>"
+
+# The literal `updated` value in the starter template; the agent must swap it
+# for the current UTC ISO-8601 time on every write.
+_UPDATED_PLACEHOLDER = "REPLACE-WITH-CURRENT-UTC-ISO8601"
+
+_LIFECYCLE = '''Lifecycle:
+- Read the map and the other agents' lanes before acting.
+- NEVER edit another agent's lane file.
+- Update your own lane after each significant step.
+- Rewrite the whole file on every update: write a temp file, then rename it
+  over the lane path.
+- Remove a finding only after its fix is confirmed.
+- Remove a wait only after the human's answer is received.
+- When you close a finding or a wait, append a line to conductor/events.jsonl
+  with kind "ok" and the closed id in its ref.
+- Run `conduct validate` before finishing a work session.'''
 
 _VOCABULARIES = '''Closed vocabularies:
 - verdicts.*.disposition: confirmed | refuted | partial
@@ -116,18 +109,68 @@ def bootstrap_prompt() -> str:
     )
 
 
-def role_prompt(state: dict, role_id: str) -> str:
+def _starter_template(role_id: str, author: str | None) -> str:
+    """Serialize the copy-safe strict-JSON lane starter for one role.
+
+    Args:
+        role_id: The cycle role pre-filled into the template.
+        author: The lane author, or None to emit the fill-in placeholder.
+
+    Returns:
+        A `json.dumps(..., indent=2)` lane skeleton that passes
+        `schema.validate_lane` once `updated` is swapped for a real time.
+    """
+    return json.dumps({
+        "schema_version": 1,
+        "author": author if author is not None else _AUTHOR_PLACEHOLDER,
+        "role": role_id,
+        "updated": _UPDATED_PLACEHOLDER,
+        "map_status": {},
+        "findings": [],
+        "verdicts": {},
+        "waits_on_human": [],
+    }, indent=2)
+
+
+def _pending_block(state: dict, role_id: str) -> str:
+    """Render the enriched awaiting-verdict entries for one role.
+
+    Args:
+        state: A `state.json` dict as produced by `merge.merge()`.
+        role_id: The reviewing role whose owed findings are rendered.
+
+    Returns:
+        One block per pending finding — id, title, severity, author, refs,
+        evidence — or `(none)` when the role owes nothing.
+    """
+    pending = merge.pending_verdicts(state).get(role_id, [])
+    if not pending:
+        return "(none)"
+    by_id = {f["id"]: f for f in state["findings"]}
+    lines: list[str] = []
+    for fid in pending:
+        f = by_id[fid]
+        refs = ", ".join(f["refs"]) or "(none)"
+        lines.append(f"- {fid}: {f['title']}")
+        lines.append(f"  severity: {f['severity']} | author: {f['author']} | refs: {refs}")
+        lines.append(f"  evidence: {f['evidence'] or '(none)'}")
+    return "\n".join(lines)
+
+
+def role_prompt(state: dict, role_id: str, author: str | None = None) -> str:
     """Render the state-aware working prompt for one cycle role.
 
     Args:
         state: A `state.json` dict as produced by `merge.merge()`.
         role_id: The cycle role the prompt is vended for.
+        author: The agent's lane author id (`conductor/lanes/<author>.json`);
+            None renders an author-agnostic prompt with fill-in placeholders.
 
     Returns:
         A deterministic English prompt: mission line, lane-file contract with
-        the spec's lane template (role pre-filled), closed vocabularies, the
-        current map node ids, and — last — the finding ids still awaiting
-        this role's verdict.
+        a copy-safe strict-JSON starter (role and author pre-filled), the
+        lifecycle rules, closed vocabularies, the current map node ids, and —
+        last — the enriched findings still awaiting this role's verdict.
 
     Raises:
         UnknownRole: If `role_id` names no `state["cycle"]["roles"]` entry.
@@ -140,25 +183,29 @@ def role_prompt(state: dict, role_id: str) -> str:
     reviews = role.get("reviews", [])
     reviewed = ", ".join(reviews) if reviews else "no other roles"
     node_ids = ", ".join(n["id"] for n in state["map"]["nodes"]) or "(none)"
-    pending = merge.pending_verdicts(state).get(role_id, [])
-    pending_lines = "\n".join(f"- {fid}" for fid in pending) or "(none)"
+    stem = author if author is not None else _AUTHOR_PLACEHOLDER
     return (
         f'You hold the "{role_id}" role in this project\'s Conduct cycle; '
         f"you review findings from: {reviewed}.\n"
         "\n"
-        "Maintain your lane file at conductor/lanes/<author>.json, where <author>\n"
-        'is your agent name and must equal the file\'s "author" field. Rewrite the\n'
-        "whole file on every update (write a temp file, then rename). Template\n"
-        "(your role is pre-filled):\n"
+        f"Your lane file is conductor/lanes/{stem}.json; its \"author\" field\n"
+        "must equal the filename stem. Start from this template (STRICT JSON —\n"
+        "no comments, copy it verbatim):\n"
         "\n"
-        "```jsonc\n"
-        f'{_LANE_TEMPLATE.replace("__ROLE__", role_id)}\n'
+        "```json\n"
+        f"{_starter_template(role_id, author)}\n"
         "```\n"
+        "\n"
+        f'Replace the "updated" value ({_UPDATED_PLACEHOLDER}) with the\n'
+        "current UTC ISO-8601 time on every write. map_status keys must be ids\n"
+        "from the current map, listed below — never invent node ids.\n"
+        "\n"
+        f"{_LIFECYCLE}\n"
         "\n"
         f"{_VOCABULARIES}\n"
         "\n"
         f"Current map node ids: {node_ids}\n"
         "\n"
-        "The following finding ids are awaiting your verdict:\n"
-        f"{pending_lines}\n"
+        "The following findings are awaiting your verdict:\n"
+        f"{_pending_block(state, role_id)}\n"
     )
