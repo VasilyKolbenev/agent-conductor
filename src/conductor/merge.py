@@ -173,7 +173,10 @@ def _findings(map_data: dict, views: list[dict], warnings: list[str]) -> list[di
             review_state = _review_state(collided, others, reviewing, role_holders)
             out.append({"id": fid, "title": f.get("title", ""),
                         "severity": f.get("severity", "note"),
-                        "claim": f.get("claim", ""), "author": view["author"],
+                        "claim": f.get("claim", ""),
+                        "detail": f.get("detail", ""),
+                        "evidence": f.get("evidence", ""),
+                        "author": view["author"],
                         "refs": [r for r in f.get("refs", [])],
                         "verdicts": all_verdicts, "review_state": review_state})
     _warn_unknown_refs(map_data, out, warnings)

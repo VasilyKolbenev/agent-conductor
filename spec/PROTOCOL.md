@@ -199,7 +199,8 @@ fields:
              "current_phase": "implement" },        // absent if undeclared
   "lanes": [ { "author", "role", "updated", "stale": false,
                "broken": false, "error": null, "now": {} } ],
-  "findings": [ { "id", "title", "severity", "claim", "author", "refs": [],
+  "findings": [ { "id", "title", "severity", "claim", "detail", "evidence",
+                  "author", "refs": [],
                   "verdicts": { "<author>": { "disposition", "note",
                                               "role": "reviewer or null" } },
                   "review_state":

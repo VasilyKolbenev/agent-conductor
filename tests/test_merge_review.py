@@ -133,6 +133,21 @@ def test_verdicts_keyed_by_author_with_role_inside():
     v = _f(state, "D-1")["verdicts"]["codex"]
     assert v == {"disposition": "confirmed", "note": "ok", "role": "rev"}
 
+def test_finding_detail_and_evidence_carried_into_state():
+    # Spec §6.1: users must see the grounds, not just the verdicts — detail
+    # and evidence travel from the lane into state verbatim.
+    ls = [lane("claude", "impl", [finding()])]
+    state = merge.merge(MAP, None, ls, [], 0, NOW)
+    f = _f(state, "D-1")
+    assert f["detail"] == "d" and f["evidence"] == "e"
+
+def test_finding_missing_detail_and_evidence_defaults_to_empty():
+    bare = {"id": "D-9", "title": "t", "severity": "note", "claim": "hunch"}
+    ls = [lane("claude", "impl", [bare])]
+    state = merge.merge(MAP, None, ls, [], 0, NOW)
+    f = _f(state, "D-9")
+    assert f["detail"] == "" and f["evidence"] == ""
+
 def test_unreviewed_beats_uncovered_on_the_same_finding():
     # rev present-but-silent (unreviewed) AND sec absent entirely (uncovered):
     # precedence says unreviewed wins.
