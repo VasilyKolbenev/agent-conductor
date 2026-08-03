@@ -150,6 +150,39 @@ def test_node_row_is_warning_not_error():
     assert errors == []
     assert any("row is deprecated and ignored" in w for w in warnings)
 
+# --- container-element guards: `isinstance(x, dict)` inside a loop (audit §2) ---
+# The four crash defects fixed in M1 all had this shape, so each guard gets a
+# wrong-shape test. TOML is parsed for real so the element types are genuine.
+
+def test_nodes_element_non_table_is_rejected_not_crash():
+    m = tomllib.loads('schema_version = 1\nproject = "p"\nnodes = ["models", 42]\n')
+    errors, _ = schema.validate_map(m)
+    assert [e for e in errors if "every node needs a non-empty string id" in e]
+
+def test_nodes_scalar_is_rejected_not_crash():
+    # A scalar `nodes` shares the empty-list message: there is no node to read.
+    m = tomllib.loads('schema_version = 1\nproject = "p"\nnodes = "models"\n')
+    errors, _ = schema.validate_map(m)
+    assert any("at least one node is required" in e for e in errors)
+
+def test_cycle_roles_element_non_table_is_rejected_not_crash():
+    m = tomllib.loads(
+        'schema_version = 1\n'
+        '[[nodes]]\nid = "models"\nlabel = "models"\nkind = "artifact"\n'
+        '[cycle]\nroles = ["implementer", 7]\n')
+    errors, _ = schema.validate_map(m)
+    assert [e for e in errors if "every role needs a non-empty string id" in e]
+
+def test_invariants_element_non_table_is_rejected_not_crash():
+    # `invariants` precedes [[nodes]]: in TOML a bare key after a table header
+    # would belong to that table, not to the top level.
+    m = tomllib.loads(
+        'schema_version = 1\ninvariants = ["main-untouched", 7]\n'
+        '[[nodes]]\nid = "models"\nlabel = "models"\nkind = "artifact"\n')
+    errors, _ = schema.validate_map(m)
+    assert [e for e in errors if "every invariant needs a non-empty string id" in e]
+
+
 def test_toml_dates_in_already_enforced_fields_are_errors():
     # Audit pin: these string fields were ALREADY guarded by isinstance
     # checks — prove TOML-native dates hit them (no new code needed).

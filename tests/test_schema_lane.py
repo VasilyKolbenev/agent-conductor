@@ -229,3 +229,44 @@ def test_wait_blocks_absent_is_fine():
     lane = valid_lane(); del lane["waits_on_human"][0]["blocks"]
     errors, _ = schema.validate_lane(lane, filename_stem="claude")
     assert errors == []
+
+
+# --- container-element guards: `isinstance(x, dict)` inside a loop (audit §2) ---
+# The four crash defects fixed in M1 all had this shape. A wrong-shape element
+# must produce a clear error, never an AttributeError from a bare `.get`.
+
+def test_findings_element_non_object_is_rejected_not_crash():
+    lane = valid_lane(); lane["findings"] = ["D-2", 42]
+    errors, _ = schema.validate_lane(lane, filename_stem="claude")
+    assert [e for e in errors if "every finding needs a non-empty string id" in e]
+
+def test_waits_on_human_element_non_object_is_rejected_not_crash():
+    lane = valid_lane(); lane["waits_on_human"] = ["w-1", 42]
+    errors, _ = schema.validate_lane(lane, filename_stem="claude")
+    assert [e for e in errors if "every waits_on_human item needs an id" in e]
+
+def test_invariants_element_non_object_is_rejected_not_crash():
+    lane = valid_lane(); lane["invariants"] = ["main-untouched", 42]
+    errors, _ = schema.validate_lane(lane, filename_stem="claude")
+    assert [e for e in errors if "invariants need string id + boolean ok" in e]
+
+def test_verdict_value_scalar_is_rejected_not_crash():
+    # The dict guard is fused with the vocabulary check, so a scalar verdict
+    # value lands on the same disposition error rather than crashing `.get`.
+    lane = valid_lane(); lane["verdicts"]["D-1"] = "confirmed"
+    errors, _ = schema.validate_lane(lane, filename_stem="claude")
+    assert any("disposition" in e for e in errors)
+
+def test_now_null_is_tolerated_not_rejected():
+    # Deliberate tolerance: §4 accepts a null `now`. merge maps it to {} so the
+    # §6.1 shape holds — pinned by
+    # test_merge_lanes.py::test_null_now_is_emitted_as_an_empty_object.
+    lane = valid_lane(); lane["now"] = None
+    errors, _ = schema.validate_lane(lane, filename_stem="claude")
+    assert errors == []
+
+def test_event_non_object_line_is_rejected_not_crash():
+    # A JSON line that parses to a list, a scalar or null reaches validate_event;
+    # the top-level guard must answer with one error, not an AttributeError.
+    for obj in ("string", [1], None, 7):
+        assert schema.validate_event(obj) == ["event line must be an object"]
