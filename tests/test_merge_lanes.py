@@ -68,6 +68,26 @@ def test_skipped_events_produce_a_warning():
     state2 = merge.merge(_map(), None, [], [], 3, NOW)
     assert any("skipped 3" in w for w in state2["warnings"])
 
+def _event(i):
+    # store.load hands merge the events oldest-first; the text carries the index
+    # so ordering is observable in the output.
+    return {"ts": "2026-07-30T10:00:00+00:00", "author": "claude",
+            "kind": "ok", "text": f"e{i}"}
+
+
+def test_events_tail_is_newest_first():
+    state = merge.merge(_map(), None, [], [_event(i) for i in range(3)], 0, NOW)
+    assert [e["text"] for e in state["events_tail"]] == ["e2", "e1", "e0"]
+
+def test_events_tail_caps_at_the_tail_limit_and_keeps_the_newest():
+    n = merge.EVENTS_TAIL + 25
+    state = merge.merge(_map(), None, [], [_event(i) for i in range(n)], 0, NOW)
+    tail = state["events_tail"]
+    assert len(tail) == merge.EVENTS_TAIL
+    assert tail[0]["text"] == f"e{n - 1}"                 # newest survives the cap
+    assert tail[-1]["text"] == f"e{n - merge.EVENTS_TAIL}"  # the 25 oldest are dropped
+
+
 def test_null_now_is_emitted_as_an_empty_object():
     # §6.1 sketches "now": {}. A lane may legally write null — schema.py only
     # rejects a non-dict non-null `now` — so state must still emit an object.

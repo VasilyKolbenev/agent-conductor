@@ -270,6 +270,21 @@ footer{font-size:10px;color:var(--faint);font-family:var(--mono);
 </div>
 
 <script>
+/* Sections, in DOM order: helpers → top strip + warnings → KPI rail → map graph
+   → cycle ring → attention zone → agents block → findings table → feed →
+   render pipeline → interaction → data source.
+
+   FILE-SIZE WAIVER (owner, 2026-08-03). The global guard caps a file at 800
+   lines; this one is exempt up to 1600. Single-file, no-build, no-dependency is
+   a product constraint of the panel — `conduct serve` hands the browser one
+   static asset, so a bundler or an ES-module split would be a new toolchain in
+   a stdlib-only project. The exemption is conditional:
+     - sections stay marked with the banners listed above;
+     - never minify or otherwise compress source to fit under the cap — that
+       trades the readability the waiver was granted for;
+     - every surface keeps a smoke test in tests/test_panel_smoke.py;
+     - as the file approaches 1600 lines, stop and re-review the architecture
+       rather than raising the ceiling again. */
 "use strict";
 /* XSS hygiene: every state-derived string enters the DOM as a text node
    (el/sv append strings via Node.append) or a setAttribute value — never

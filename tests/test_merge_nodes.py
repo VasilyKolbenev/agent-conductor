@@ -67,6 +67,21 @@ def test_unknown_map_status_key_ignored_with_warning():
     assert all(n["status"] == "idle" for n in state["map"]["nodes"])
     assert any("ghost" in w for w in state["warnings"])
 
+def test_kpi_node_counts_pass_against_the_whole_map():
+    l1 = lane("x", "2026-07-30T11:00:00+00:00", {"a": "pass", "b": "fail"})
+    state = merge.merge(_map(), None, [l1], [], 0, NOW)
+    assert state["kpi"]["nodes_pass"] == 1     # only `a`
+    assert state["kpi"]["nodes_total"] == 2    # every map node, voted on or not
+
+def test_kpi_nodes_pass_counts_neither_contested_nor_idle():
+    ls = [lane("x", "2026-07-30T10:00:00+00:00", {"a": "pass"}),
+          lane("y", "2026-07-30T11:00:00+00:00", {"a": "fail"})]
+    state = merge.merge(_map(), None, ls, [], 0, NOW)
+    assert _node(state, "a")["status"] == "contested"
+    assert _node(state, "b")["status"] == "idle"
+    assert state["kpi"]["nodes_pass"] == 0
+    assert state["kpi"]["nodes_total"] == 2
+
 def test_sole_future_voter_leaves_node_idle():
     fut = lane("fut", "2026-07-30T13:00:00+00:00", {"a": "pass"})   # future vs NOW
     state = merge.merge(_map(), None, [fut], [], 0, NOW)
