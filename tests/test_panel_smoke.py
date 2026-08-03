@@ -84,20 +84,14 @@ def test_panel_never_says_anything_was_approved(tmp_path):
     # Guard carried from the owner's "silence is never consent" requirement.
     # Protocol v1 has no decision receipt: nothing the panel can read tells it
     # a human approved anything, so the panel must never say one did. Banned
-    # is the past participle — the CLAIM of a recorded state. "approval" and
-    # "approve" stay available for asking, which is all v1 can express.
+    # is the past participle — the CLAIM of a recorded state; it subsumes the
+    # named phrasings "Human approved" and "Everything approved". "approval"
+    # and "approve" stay available for asking, which is all v1 can express.
+    #
+    # Narrower than the name suggests: this renders one fixture, so it catches
+    # static wording and whatever this state reaches, not every branch.
     root = write_project(tmp_path, lanes={"claude": good_lane()})
-    html = _fetch_panel(root).lower()
-    assert "approved" not in html
-
-
-def test_panel_never_declares_a_blanket_all_clear_approval(tmp_path):
-    # The two specific phrasings that would turn a computed all-clear into a
-    # claimed human sign-off.
-    root = write_project(tmp_path, lanes={"claude": good_lane()})
-    html = _fetch_panel(root).lower()
-    for phrase in ("human approved", "everything approved"):
-        assert phrase not in html
+    assert "approved" not in _fetch_panel(root).lower()
 
 
 def test_panel_decision_first_section_order(tmp_path):

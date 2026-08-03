@@ -76,13 +76,28 @@ _LIFECYCLE = '''Lifecycle:
   {"ts": "<UTC ISO-8601>", "author": "<you>", "kind": "ok", "text": "closed D-2", "ref": "D-2"}
 - Run `conduct validate` before finishing a work session.'''
 
-# The Default Orbit's five stages: guiding question plus the contract the next
-# stage is entitled to receive (docs/specs/2026-08-03-product-direction.md §3).
-# Keyed by stage name; a role staged onto a project's own phase name simply
-# misses this table and gets no block — never a guessed one.
-_STAGE_CONTRACTS: dict[str, tuple[str, tuple[str, ...]]] = {
+# Who the stage hands off to. `deliver` ends the Run, so its recipient is the
+# human accepting it, not another stage — a shared header would be false there.
+_HANDOFF = "What the next stage is entitled to receive from you:"
+_HANDOFF_HUMAN = "What the human accepting this Run is entitled to receive from you:"
+
+# The Default Orbit's five stages: guiding question, handoff header, and the
+# contract owed (docs/specs/2026-08-03-product-direction.md §3). Keyed by stage
+# name; a role staged onto a project's own phase name simply misses this table
+# and gets no block — never a guessed one.
+#
+# Every line must be performable by the role that receives it: an imperative
+# only another role can carry out is worse than no imperative, because the
+# prompt already forbids editing another agent's lane.
+#
+# `goal` is unreachable from all three vended templates, which leave that stage
+# human-owned on purpose. It is kept for projects that do staff it — the
+# register is a human's, not an agent's, and that is not a defect to fix by
+# staffing goal in the default.
+_STAGE_CONTRACTS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     "goal": (
         "What are we trying to achieve, and who owns the decision?",
+        _HANDOFF,
         ("State the intended outcome and the scope of this pass.",
          "State what is explicitly out of scope.",
          "List the constraints and the acceptance criteria.",
@@ -92,17 +107,19 @@ _STAGE_CONTRACTS: dict[str, tuple[str, tuple[str, ...]]] = {
     ),
     "detect": (
         "What is actually true right now?",
+        _HANDOFF,
         ("Report what you observe as findings, each with a severity.",
          "Attach evidence to every one: a path, a log, or a reproduced command.",
          "Name the affected components in refs, using map node ids only.",
          "Say whether the finding reproduces, and how.",
          "List your unknowns honestly, rather than rounding them off.",
-         "A finding without evidence stays unverified (the Orbit's word, not a Protocol "
-         "v1 review state): confidence never promotes a claim to a fact."),
+         "Call a finding you cannot evidence unverified, and leave it there: never "
+         "raise your confidence in place of the evidence."),
     ),
     "diagnose": (
         "Why is it happening?",
-        ("Record a verdict on every finding you owe one, confirmed or refuted.",
+        _HANDOFF,
+        ("Record a verdict on every finding you owe one: confirmed, refuted or partial.",
          "Separate the root cause from the symptoms it produces.",
          "Give the evidence and the reproduction behind each verdict.",
          "Say which hypotheses you ruled out, not only the surviving one.",
@@ -110,6 +127,7 @@ _STAGE_CONTRACTS: dict[str, tuple[str, tuple[str, ...]]] = {
     ),
     "design": (
         "What do we intend to change, and how will we know it worked?",
+        _HANDOFF,
         ("Write the implementation plan and its architectural impact.",
          "Name the affected components and files.",
          "State the test strategy, the migration path and the rollback path.",
@@ -118,12 +136,16 @@ _STAGE_CONTRACTS: dict[str, tuple[str, tuple[str, ...]]] = {
     ),
     "deliver": (
         "What changed, what was checked, and is it safe to accept?",
+        _HANDOFF_HUMAN,
         ("Describe what changed.",
          "List the checks you ran and attach their evidence.",
-         "Get the review your cycle obliges, and record the verdicts.",
+         "Name the role that owes your findings a verdict — it is named above. If no "
+         "role does, ask for a human review with a waits_on_human entry of kind "
+         "review; your own verdict on your own finding is excluded from every "
+         "computation, so it can never stand in for one.",
          "Leave findings that are still open in your lane: never close them silently.",
          "Say why the result is ready.",
-         "Raise the decision that accepts it as a waits_on_human entry."),
+         "Raise, as a waits_on_human entry, the decision that accepts it."),
     ),
 }
 
@@ -201,9 +223,8 @@ def _stage_block(stage: str | None) -> str:
     contract = _STAGE_CONTRACTS.get(stage) if isinstance(stage, str) else None
     if contract is None:
         return ""
-    question, owed = contract
-    lines = [f"Stage: {stage} - {question}",
-             "What the next stage is entitled to receive from you:"]
+    question, handoff, owed = contract
+    lines = [f"Stage: {stage} - {question}", handoff]
     lines.extend(f"- {line}" for line in owed)
     return "\n".join(lines)
 
@@ -233,6 +254,27 @@ def _pending_block(state: dict, role_id: str) -> str:
     return "\n".join(lines)
 
 
+def _review_directions(state: dict, role: dict) -> tuple[str, str]:
+    """Render both review edges of one role for the prompt's mission lines.
+
+    Args:
+        state: A `state.json` dict as produced by `merge.merge()`.
+        role: The `state["cycle"]["roles"]` entry the prompt is vended for.
+
+    Returns:
+        `(reviewed, reviewed_by)` — whose findings this role owes verdicts on,
+        and which roles owe verdicts on this role's findings. The reverse edge
+        is what makes the `deliver` contract's "name the role that owes your
+        findings a verdict" answerable from the prompt rather than guessed.
+    """
+    reviews = role.get("reviews", [])
+    reviewers = [r["id"] for r in state["cycle"]["roles"]
+                 if role["id"] in r.get("reviews", [])]
+    return (", ".join(reviews) if reviews else "no other roles",
+            ", ".join(reviewers) if reviewers
+            else "no role — nobody owes your findings a verdict")
+
+
 def role_prompt(state: dict, role_id: str, author: str | None = None) -> str:
     """Render the state-aware working prompt for one cycle role.
 
@@ -243,11 +285,12 @@ def role_prompt(state: dict, role_id: str, author: str | None = None) -> str:
             None renders an author-agnostic prompt with fill-in placeholders.
 
     Returns:
-        A deterministic English prompt: mission line, lane-file contract with
-        a copy-safe strict-JSON starter (role and author pre-filled), the
-        lifecycle rules, the contract of the role's Orbit stage when it has
-        one, closed vocabularies, the current map node ids, and — last — the
-        enriched findings still awaiting this role's verdict.
+        A deterministic English prompt: mission lines naming both review
+        directions, the lane-file contract with a copy-safe strict-JSON
+        starter (role and author pre-filled), the lifecycle rules, the
+        contract of the role's Orbit stage when it has one, closed
+        vocabularies, the current map node ids, and — last — the enriched
+        findings still awaiting this role's verdict.
 
     Raises:
         UnknownRole: If `role_id` names no `state["cycle"]["roles"]` entry.
@@ -257,8 +300,7 @@ def role_prompt(state: dict, role_id: str, author: str | None = None) -> str:
         known = ", ".join(r["id"] for r in state["cycle"]["roles"]) or "none declared"
         raise UnknownRole(
             f"role {role_id!r} is not declared in cycle.roles (known roles: {known})")
-    reviews = role.get("reviews", [])
-    reviewed = ", ".join(reviews) if reviews else "no other roles"
+    reviewed, reviewed_by = _review_directions(state, role)
     node_ids = ", ".join(n["id"] for n in state["map"]["nodes"]) or "(none)"
     stem = author if author is not None else _AUTHOR_PLACEHOLDER
     stage_block = _stage_block(role.get("stage"))
@@ -271,6 +313,7 @@ def role_prompt(state: dict, role_id: str, author: str | None = None) -> str:
     return (
         f'You hold the "{role_id}" role in this project\'s Conduct cycle; '
         f"you review findings from: {reviewed}.\n"
+        f"Your own findings are reviewed by: {reviewed_by}.\n"
         "\n"
         f"Your lane file is conductor/lanes/{stem}.json; its \"author\" field\n"
         "must equal the filename stem. Start from this template (STRICT JSON —\n"

@@ -3,8 +3,9 @@ from datetime import datetime, timezone
 
 import pytest
 
-from conductor import merge, schema, templates
+from conductor import merge, prompts, schema, templates
 
+ALL_TEMPLATES = ["default-orbit", "single-harness", "empty"]
 ORBIT_PHASES = ["goal", "detect", "diagnose", "design", "deliver"]
 NOW = datetime(2026, 8, 3, 12, 0, tzinfo=timezone.utc)
 
@@ -14,20 +15,6 @@ def _lane(author, role, findings=(), verdicts=None):
             "data": {"schema_version": 1, "author": author, "role": role,
                      "updated": "2026-08-03T11:00:00+00:00",
                      "findings": list(findings), "verdicts": verdicts or {}}}
-
-
-def _decision_blocks(name):
-    """The contiguous comment blocks that explain `waits_on_human`."""
-    blocks, current = [], []
-    for line in templates.get(name).splitlines():
-        if line.startswith("#"):
-            current.append(line)
-        elif current:
-            blocks.append("\n".join(current))
-            current = []
-    if current:
-        blocks.append("\n".join(current))
-    return [b for b in blocks if "waits_on_human" in b]
 
 
 def _finding(fid="D-1"):
@@ -43,12 +30,40 @@ def _roles(data):
     return {r["id"]: r for r in data["cycle"]["roles"]}
 
 
-@pytest.mark.parametrize("name", ["default-orbit", "single-harness", "empty"])
+def _paragraphs(name):
+    """The template's comments as unwrapped paragraphs, one string each.
+
+    The prose IS the deliverable here, so tests must survive a rewrap. A
+    paragraph ends at a blank comment line, a `# ---` rule, or any TOML line.
+    """
+    paragraphs, current = [], []
+    for line in templates.get(name).splitlines():
+        body = line[1:].strip() if line.startswith("#") else ""
+        if body and set(body) != {"-"}:
+            current.append(body)
+        elif current:
+            paragraphs.append(" ".join(current))
+            current = []
+    if current:
+        paragraphs.append(" ".join(current))
+    return paragraphs
+
+
+def _prose(name):
+    """All of a template's comment text as one unwrapped string."""
+    return " ".join(_paragraphs(name))
+
+
+def _paragraphs_about(name, needle):
+    return [p for p in _paragraphs(name) if needle in p]
+
+
+@pytest.mark.parametrize("name", ALL_TEMPLATES)
 def test_every_template_parses_as_toml(name):
     assert isinstance(_parsed(name), dict)
 
 
-@pytest.mark.parametrize("name", ["default-orbit", "single-harness", "empty"])
+@pytest.mark.parametrize("name", ALL_TEMPLATES)
 def test_every_template_validates_clean(name):
     # The acceptance bar: a vended template ships to every new project, so
     # "mostly valid" is a defect. Zero errors AND zero warnings.
@@ -56,24 +71,41 @@ def test_every_template_validates_clean(name):
     assert errors == [] and warnings == []
 
 
-@pytest.mark.parametrize("name", ["default-orbit", "single-harness", "empty"])
+@pytest.mark.parametrize("name", ALL_TEMPLATES)
 def test_every_template_declares_at_least_one_node(name):
+    # Also closes the vacuous-all() hole in the placeholder-label test below.
     assert _parsed(name)["nodes"]
 
 
-@pytest.mark.parametrize("name", ["default-orbit", "single-harness", "empty"])
+@pytest.mark.parametrize("name", ALL_TEMPLATES)
 def test_every_template_node_label_announces_itself_as_a_placeholder(name):
     # The id prefix alone is not the guarantee: the label is what the panel
     # renders, so a plausible-looking label would let an unedited template pass
-    # for a real map. Pinned across all three.
+    # for a real map.
     assert all(n["label"].startswith("PLACEHOLDER") for n in _parsed(name)["nodes"])
+
+
+@pytest.mark.parametrize("name", ALL_TEMPLATES)
+def test_every_template_ends_in_exactly_one_newline(name):
+    # A caller writes this text straight to map.toml. Anything that adds its
+    # own trailing newline would leave a blank line in every user's map, and
+    # anything that strips one would leave the file without a final newline.
+    text = templates.get(name)
+    assert text.endswith("\n") and not text.endswith("\n\n")
 
 
 def test_names_lists_all_three_with_a_description():
     listed = templates.names()
-    assert [name for name, _ in listed] == ["default-orbit", "single-harness", "empty"]
+    assert [name for name, _ in listed] == ALL_TEMPLATES
     for _, description in listed:
         assert description and "\n" not in description       # one line each
+
+
+def test_default_names_the_recommended_template():
+    # DO-3 groundwork: callers ask for DEFAULT rather than hardcoding a name
+    # or trusting names() ordering.
+    assert templates.DEFAULT == "default-orbit"
+    assert templates.get(templates.DEFAULT)
 
 
 def test_unknown_template_name_raises_and_names_the_known_ones():
@@ -81,7 +113,7 @@ def test_unknown_template_name_raises_and_names_the_known_ones():
         templates.get("orbital-decay")
     msg = str(exc.value)
     assert "orbital-decay" in msg
-    for name in ("default-orbit", "single-harness", "empty"):
+    for name in ALL_TEMPLATES:
         assert name in msg
 
 
@@ -103,17 +135,18 @@ def test_default_orbit_role_shape():
         "implementer": [], "reviewer": ["implementer"]}
 
 
-def test_default_orbit_stages_all_name_declared_phases():
-    data = _parsed("default-orbit")
-    phases = data["cycle"]["phases"]
-    for role in data["cycle"]["roles"]:
-        assert role["stage"] in phases
-
-
 def test_default_orbit_stages_nobody_to_goal():
     # Goal is human-owned. A stage with no participant is intentional here.
     roles = _parsed("default-orbit")["cycle"]["roles"]
     assert "goal" not in {r["stage"] for r in roles}
+
+
+def test_every_default_orbit_stage_has_a_prompt_contract():
+    # The coupling the two halves of DO-2 were missing: renaming a phase in the
+    # template (roles updated, map still valid, every other test green) would
+    # otherwise silently turn the stage contracts off for the shipped default.
+    for role in _parsed("default-orbit")["cycle"]["roles"]:
+        assert prompts._stage_block(role["stage"]) != ""
 
 
 def test_default_orbit_reviewer_reviews_implementer_on_another_harness():
@@ -122,36 +155,57 @@ def test_default_orbit_reviewer_reviews_implementer_on_another_harness():
     assert roles["reviewer"]["harness"] != roles["implementer"]["harness"]
 
 
-def test_default_orbit_says_goal_is_human_owned_and_gates_are_not_map_objects():
-    text = templates.get("default-orbit")
-    assert "human-owned" in text
-    assert "waits_on_human" in text
+def test_default_orbit_says_goal_is_human_owned_and_decisions_live_in_lanes():
+    prose = _prose("default-orbit")
+    assert "human-owned" in prose
+    assert "waits_on_human" in prose
 
 
 def test_default_orbit_does_not_claim_review_independence():
     # v1 expresses a review OBLIGATION; self-verdict exclusion gives only
-    # minimal authorship separation. The template must not oversell that.
-    text = templates.get("default-orbit").lower()
-    assert "obligation" in text
-    assert "does not establish" in text
+    # minimal authorship separation. Scoped to the paragraph that makes the
+    # claim, so the ban cannot forbid a legitimate use elsewhere.
+    para = _paragraphs_about("default-orbit", "authorship separation")
+    assert len(para) == 1
+    assert "review obligation" in para[0]
+    assert "It does not establish that a review is independent" in para[0]
     for oversell in ("proves", "guarantees", "ensures"):
-        assert oversell not in text
+        assert oversell not in para[0].lower()
 
 
 def test_default_orbit_explains_the_shared_harness_product():
-    data = _parsed("default-orbit")
-    harnesses = [r["harness"] for r in data["cycle"]["roles"]]
+    harnesses = [r["harness"] for r in _parsed("default-orbit")["cycle"]["roles"]]
     assert harnesses.count("claude-code") == 3            # separate participants
-    assert "not three installations" in templates.get("default-orbit")
+    assert "not three installations" in _prose("default-orbit")
+
+
+def test_default_orbit_documents_the_fields_a_newcomer_must_edit():
+    # The epistemic caveats were exhaustive while the editing semantics were
+    # absent. Every field the template actually uses must be explained.
+    prose = _prose("default-orbit")
+    for field in ("id", "label", "kind", "depends_on", "harness", "stage", "reviews"):
+        assert field in prose
+    assert "free-form" in prose                           # kind
+    assert "one [[nodes]] block per component" in prose
+    assert "refs" in prose
+
+
+def test_default_orbit_warns_that_invariants_are_not_enforced():
+    para = _paragraphs_about("default-orbit", "INVARIANTS")
+    assert len(para) == 1
+    assert "does not enforce" in para[0]
+    assert "no lane has reported a breach" in para[0]
 
 
 def test_default_orbit_scopes_the_unread_claim_to_stage_not_phases():
-    # Fix round 1, D-1: `cycle.phases` IS read by the merger (now.phase
-    # membership, current_phase). Only `stage` is unread by every merge rule.
-    text = templates.get("default-orbit")
-    assert "It is `stage` below that no merge rule reads." in text
-    assert "now.phase must name one of these" in text
-    assert "nothing is gated on reaching one" in text
+    # D-1: `cycle.phases` IS read by the merger (now.phase membership,
+    # current_phase). Only `stage` is unread by every merge rule.
+    prose = _prose("default-orbit")
+    assert "nothing is gated on reaching one" in prose
+    assert "now.phase must name one of these" in prose
+    stage_para = _paragraphs_about("default-orbit", "stage     which phase")
+    assert len(stage_para) == 1
+    assert "no merge rule reads it" in stage_para[0]
 
 
 def test_default_orbit_renaming_a_phase_alone_really_does_break_the_map():
@@ -163,25 +217,17 @@ def test_default_orbit_renaming_a_phase_alone_really_does_break_the_map():
     assert any("stage 'detect'" in e for e in errors)
 
 
-def test_default_orbit_states_the_decision_ladder_without_the_word_gate():
-    # Fix round 1, O-1/O-2: a reader who takes away the word "gate" goes
-    # looking for an entity v1 does not have; and clearing the queue is not
-    # the same act as recording the decision. Scoped to the comment blocks
-    # that explain waits_on_human — "nothing is gated on reaching one", over
-    # in the phases block, is a verified-true statement about phases.
-    blocks = _decision_blocks("default-orbit")
-    assert blocks
-    for block in blocks:
-        assert "gate" not in block.lower()
+def test_default_orbit_editing_material_comes_before_the_epistemics():
+    # I6: a reader who came to edit must reach the first editable role before
+    # the material about what the protocol cannot promise.
     text = templates.get("default-orbit")
-    assert "Absence of a wait is not approval" in text
-    assert 'kind = "ok"' in text and "closed wait id" in text
+    assert text.index("[[cycle.roles]]") < text.index("DELIBERATELY DOES NOT CONTAIN")
+    assert text.index("ARCHITECTURE") < text.index("PARTICIPANTS")
 
 
 def test_default_orbit_nodes_are_obviously_placeholders():
-    data = _parsed("default-orbit")
-    assert all("placeholder" in n["id"] for n in data["nodes"])
-    assert "replace" in templates.get("default-orbit").lower()
+    assert all("placeholder" in n["id"] for n in _parsed("default-orbit")["nodes"])
+    assert "replace" in _prose("default-orbit").lower()
 
 
 # --- single-harness and empty ---
@@ -191,52 +237,65 @@ def test_single_harness_has_one_role_and_no_reviewer():
     roles = _parsed("single-harness")["cycle"]["roles"]
     assert len(roles) == 1
     assert roles[0]["reviews"] == []
-    assert "waits_on_human" in templates.get("single-harness")
+    assert "waits_on_human" in _prose("single-harness")
 
 
 def test_single_harness_names_the_vacuous_agreed_state():
-    # Fix round 1, D-2: against a protocol whose headline is "silence is never
-    # consent", the reassuring word is the one that must be said out loud.
-    text = templates.get("single-harness")
-    assert "`agreed`" in text
-    assert "vacuous" in text
-    assert "no reviewer assigned" in text
-    assert 'reviews = ["implementer"]' in text
+    # D-2: against a protocol whose headline is "silence is never consent",
+    # the reassuring word is the one that must be said out loud.
+    prose = _prose("single-harness")
+    assert "`agreed`" in prose
+    assert "vacuous truth, not consent" in prose
+    assert "no reviewer assigned" in prose
+    assert 'reviews = ["implementer"]' in prose
 
 
 def test_single_harness_solo_finding_really_computes_as_agreed():
     # The disclosure above is only worth pinning if it is true end to end.
-    data = _parsed("single-harness")
-    state = merge.merge(data, None, [_lane("a", "implementer", [_finding()])], [], 0, NOW)
+    state = merge.merge(_parsed("single-harness"), None,
+                        [_lane("a", "implementer", [_finding()])], [], 0, NOW)
     assert state["findings"][0]["review_state"] == "agreed"
 
 
-def test_single_harness_states_the_decision_ladder():
-    blocks = _decision_blocks("single-harness")
-    assert blocks
-    for block in blocks:
-        assert "gate" not in block.lower()
-    text = templates.get("single-harness")
-    assert 'kind = "ok"' in text and "closed wait id" in text
-    assert "absence of a wait is not\n# approval" in text
+@pytest.mark.parametrize("name", ["default-orbit", "single-harness"])
+def test_decision_ladder_is_stated_without_the_word_gate(name):
+    # O-1/O-2: a reader who takes away the word "gate" goes looking for an
+    # entity v1 does not have; and clearing the queue is not the same act as
+    # recording the decision. Scoped to the waits_on_human paragraphs —
+    # "nothing is gated on reaching one" is a true statement about phases.
+    about = _paragraphs_about(name, "waits_on_human")
+    assert about
+    for para in about:
+        assert "gate" not in para.lower()
+    prose = _prose(name)
+    assert "does not by itself record the decision" in prose
+    assert 'append an `events.jsonl` event with `kind = "ok"`' in prose
+    assert "Absence of a wait is not approval" in prose
+
+
+def test_the_receipt_ladder_is_one_shared_claim_not_two_copies():
+    # M7: a protocol version that ships receipts must be able to correct this
+    # in one edit, so both templates render the identical paragraphs.
+    orbit = _paragraphs_about("default-orbit", "structurally confirmed")
+    solo = _paragraphs_about("single-harness", "structurally confirmed")
+    assert len(orbit) == 1 and orbit == solo
+
+
+def test_empty_declares_no_cycle_roles():
+    assert _parsed("empty").get("cycle", {}).get("roles", []) == []
 
 
 # --- O-3: a stage with no role staged to it is a first-class shape ---
 
 
-def test_unassigned_goal_stage_keeps_the_map_valid():
-    errors, warnings = schema.validate_map(_parsed("default-orbit"))
-    assert errors == [] and warnings == []
-    assert "goal" in _parsed("default-orbit")["cycle"]["phases"]
-
-
 def test_unassigned_goal_stage_needs_no_lane_and_warns_about_nothing():
     # Merged with no lanes at all: an unstaffed phase is not an error, not a
     # warning, and not a reason to withhold a normal "ready" status.
-    state = merge.merge(_parsed("default-orbit"), None, [], [], 0, NOW)
+    data = _parsed("default-orbit")
+    assert "goal" in data["cycle"]["phases"]
+    state = merge.merge(data, None, [], [], 0, NOW)
     assert state["warnings"] == []
     assert state["project_status"]["state"] == "ready"
-    assert not any("goal" in w for w in state["warnings"])
 
 
 def test_unassigned_goal_stage_does_not_touch_review_state():
@@ -251,8 +310,3 @@ def test_unassigned_goal_stage_does_not_touch_review_state():
     agreed = merge.merge(data, None, lanes, [], 0, NOW)
     assert agreed["findings"][0]["review_state"] == "agreed"
     assert agreed["warnings"] == []
-
-
-def test_empty_declares_no_cycle_roles():
-    data = _parsed("empty")
-    assert data.get("cycle", {}).get("roles", []) == []

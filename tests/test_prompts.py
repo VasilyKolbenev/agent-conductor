@@ -240,6 +240,47 @@ def test_every_orbit_stage_has_a_contract_with_a_question_and_owed_lines():
         assert block.count("\n- ") >= 4               # the contract it owes
 
 
+def test_deliver_hands_off_to_the_human_not_to_a_next_stage():
+    # M15: deliver ends the Run — there is no next stage to be entitled to
+    # anything, so the shared handoff header would be a false statement.
+    deliver = prompts._stage_block("deliver")
+    assert "the human accepting this Run" in deliver
+    assert "next stage is entitled" not in deliver
+    for stage in ("goal", "detect", "diagnose", "design"):
+        assert "next stage is entitled" in prompts._stage_block(stage)
+
+
+def test_deliver_never_tells_an_agent_to_record_its_own_verdicts():
+    # C1: verdicts live in the REVIEWING role's lane. Writing them anywhere
+    # else is either forbidden (another agent's lane) or void (a self-verdict
+    # is excluded from every computation), so the contract must not ask.
+    deliver = prompts._stage_block("deliver")
+    assert "record the verdicts" not in deliver
+    assert "Name the role that owes your findings a verdict" in deliver
+    assert "waits_on_human entry of kind review" in deliver
+
+
+def test_diagnose_offers_the_whole_disposition_vocabulary():
+    # I2: `partial` is load-bearing — merge treats it as a disagreement
+    # signal. An agent offered two options will not reach for the third.
+    diagnose = prompts._stage_block("diagnose")
+    for disposition in ("confirmed", "refuted", "partial"):
+        assert disposition in diagnose
+
+
+def test_role_prompt_names_who_reviews_this_role():
+    # The reverse review edge, which the deliver contract depends on being
+    # readable rather than guessed.
+    state = merge.merge(STAGED_MAP, None, [], [], 0, NOW)
+    assert "Your own findings are reviewed by: rev" in prompts.role_prompt(state, "impl")
+
+
+def test_role_prompt_says_plainly_when_no_role_reviews_you():
+    state = merge.merge(STAGED_MAP, None, [], [], 0, NOW)
+    text = prompts.role_prompt(state, "rev")
+    assert "nobody owes your findings a verdict" in text
+
+
 def test_stage_block_is_empty_for_absent_and_unknown_stages():
     assert prompts._stage_block(None) == ""
     assert prompts._stage_block("recon") == ""
