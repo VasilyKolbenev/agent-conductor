@@ -209,7 +209,7 @@ fields:
   "human_queue": [ { "id", "kind", "title", "why", "blocks": [], "sources": [] } ],
   "invariants": [ { "id", "ok", "broken_by": [] } ],
   "events_tail": [],        // newest-first, capped at 500
-  "kpi": { "nodes_pass", "nodes_total", "blockers", "queue", 
+  "kpi": { "nodes_pass", "nodes_total", "blockers", "queue",
            "disagreements", "broken_lanes", "stale_lanes" },
   "warnings": []            // id collisions, stale verdicts, skipped event lines, schema warnings
 }
