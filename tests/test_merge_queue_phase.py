@@ -147,3 +147,45 @@ def test_stage_changes_no_merge_computed_value():
     assert with_stage["kpi"] == plain["kpi"]
     assert ([r["id"] for r in with_stage["cycle"]["roles"]]
             == [r["id"] for r in plain["cycle"]["roles"]] == ["impl", "rev", "sec"])
+
+
+# --- the same equality across the `complete` branch, which rich_lanes never reaches ---
+# rich_lanes queues a wait, so row 2 of the status ladder answers before
+# `_is_complete` is ever evaluated: a completeness rule that read `stage` would
+# survive the pair above untouched. These two fixtures walk the whole blocked
+# ladder and then answer `_is_complete` differently — one True, one False — so
+# a `stage`-dependent verdict has to move one of them.
+
+def clear_lanes():
+    """All-clear: every node passing, nothing open, no queue, no stale lane."""
+    return [lane("claude", role="impl", map_status={"n": "pass"},
+                 now={"task": "x", "phase": "review"}),
+            lane("codex", role="rev", map_status={"n": "pass"}),
+            lane("scan", role="sec", map_status={"n": "pass"})]
+
+
+def open_finding_lanes():
+    """Past the whole blocked ladder, but one open finding refuses `complete`."""
+    verdict = {"D-1": {"disposition": "confirmed", "note": ""}}
+    return [lane("claude", role="impl", map_status={"n": "pass"}, findings=[dict(FINDING)]),
+            lane("codex", role="rev", map_status={"n": "pass"}, verdicts=dict(verdict)),
+            lane("scan", role="sec", map_status={"n": "pass"}, verdicts=dict(verdict))]
+
+
+def test_the_complete_branch_fixtures_reach_it_from_both_sides():
+    clear = merge.merge(ROLES_MAP, None, clear_lanes(), [], 0, NOW)
+    assert clear["project_status"]["state"] == "complete"
+    assert clear["next_action"] is None
+    unfinished = merge.merge(ROLES_MAP, None, open_finding_lanes(), [], 0, NOW)
+    assert unfinished["project_status"]["state"] == "active"
+    assert merge.pending_verdicts(unfinished) == {}    # only the open finding refuses
+
+def test_stage_changes_nothing_on_a_complete_project():
+    plain = merge.merge(ROLES_MAP, None, clear_lanes(), [], 0, NOW)
+    with_stage = merge.merge(staged(ROLES_MAP), None, clear_lanes(), [], 0, NOW)
+    assert without_stage(with_stage) == without_stage(plain)
+
+def test_stage_cannot_declare_an_unfinished_project_complete():
+    plain = merge.merge(ROLES_MAP, None, open_finding_lanes(), [], 0, NOW)
+    with_stage = merge.merge(staged(ROLES_MAP), None, open_finding_lanes(), [], 0, NOW)
+    assert without_stage(with_stage) == without_stage(plain)
