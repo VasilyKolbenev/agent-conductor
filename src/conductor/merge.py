@@ -11,6 +11,7 @@ from conductor import schema
 from conductor.schema import DEFAULT_STALENESS_MINUTES
 
 EVENTS_TAIL = 500
+BLOCKING_NODE_STATUSES = frozenset({"fail", "blocked"})
 
 
 def _lane_view(entry: dict, now: datetime, warnings: list[str]) -> dict:
@@ -89,7 +90,7 @@ def merge(map_data: dict | None, map_error: str | None, lanes: list[dict],
         "broken_lanes": sum(1 for v in views if v["broken"]),
         "stale_lanes": sum(1 for v in views if v["stale"]),
     }
-    return {
+    state = {
         "schema_version": schema.SCHEMA_VERSION,
         "generated_at": now.isoformat(),
         "project": map_data.get("project", ""),
@@ -104,6 +105,12 @@ def merge(map_data: dict | None, map_error: str | None, lanes: list[dict],
         "kpi": kpi,
         "warnings": warnings,
     }
+    # Derived from the finished state (both read `pending_verdicts`, which
+    # takes a whole state dict); next_action reads project_status, so order
+    # matters here.
+    state["project_status"] = _project_status(state, map_error)
+    state["next_action"] = _next_action(state, map_error)
+    return state
 
 
 # Under no-last-write-wins, the recency race only runs among AGREEING
@@ -323,3 +330,156 @@ def _cycle(map_data: dict, live: list[dict], warnings: list[str]) -> dict:
         declaring.sort()
         out["current_phase"] = declaring[-1][1]
     return out
+
+
+# PROTOCOL.md §6.1: project_status / next_action — is the project ready,
+# active, blocked or complete, and what happens next.
+def _project_status(state: dict, map_error: str | None) -> dict:
+    """Classify the project, first match wins on a strict precedence.
+
+    Order: unknown > human decision > broken lane > broken invariant >
+    failing node > complete > active > ready. `complete` is the only state
+    that may read as success, so its conditions are deliberately strict — a
+    stale lane, an open finding or an unmet review obligation all keep the
+    project out of it. Disagreements and stale lanes do NOT force `blocked`:
+    `blocked` means a person must act before work can continue, and `active`
+    is not a success claim. `detail` states the fact only; imperatives belong
+    to `next_action`.
+
+    Args:
+        state: The `state.json` dict, complete except for these two keys.
+        map_error: The map's load/validation error, or None.
+
+    Returns:
+        `{"state", "reason", "detail"}` per PROTOCOL.md §6.1.
+    """
+    if map_error is not None:
+        return {"state": "unknown", "reason": "map_unreadable",
+                "detail": "map.toml is unreadable"}
+    blocked = _blocked_status(state)
+    if blocked is not None:
+        return blocked
+    nodes = state["map"]["nodes"]
+    detail = (f"{sum(1 for n in nodes if n['status'] == 'pass')} of "
+              f"{len(nodes)} nodes passing")
+    if _is_complete(state):
+        return {"state": "complete", "reason": "all_clear", "detail": detail}
+    if any(not ln["broken"] for ln in state["lanes"]):
+        return {"state": "active", "reason": "work_in_progress", "detail": detail}
+    return {"state": "ready", "reason": "no_lanes_yet",
+            "detail": "no lanes have reported yet"}
+
+
+def _blocked_status(state: dict) -> dict | None:
+    """The four `blocked` rows of the §6.1 precedence table, in order."""
+    queue = state["human_queue"]
+    if queue:
+        plural = "" if len(queue) == 1 else "s"
+        return _blocked("human_decision", f"{len(queue)} decision{plural} waiting on you")
+    broken = _broken_lanes(state)
+    if broken:
+        return _blocked("broken_lane", f"lane {broken[0]} is unreadable" if len(broken) == 1
+                        else f"{len(broken)} lanes are unreadable")
+    bad = _broken_invariants(state)
+    if bad:
+        return _blocked("invariant_broken", f"invariant {bad[0]} is broken" if len(bad) == 1
+                        else f"{len(bad)} invariants are broken")
+    failing = _failing_nodes(state)
+    if failing:
+        return _blocked("node_failing", f"{len(failing)} of {len(state['map']['nodes'])} "
+                                        "nodes failing or blocked")
+    return None
+
+
+def _blocked(reason: str, detail: str) -> dict:
+    return {"state": "blocked", "reason": reason, "detail": detail}
+
+
+def _is_complete(state: dict) -> bool:
+    """Every §6.1 `complete` condition — the owner's no-silent-success law."""
+    nodes = state["map"]["nodes"]
+    return (bool(nodes) and all(n["status"] == "pass" for n in nodes)
+            and not state["findings"] and not state["human_queue"]
+            and not pending_verdicts(state)
+            and not any(ln["broken"] or ln["stale"] for ln in state["lanes"]))
+
+
+# Ties inside one kind always break on sorted id, so two merges over identical
+# inputs emit identical bytes (server.Broker's change detection depends on it).
+def _broken_lanes(state: dict) -> list[str]:
+    return sorted(ln["author"] for ln in state["lanes"] if ln["broken"])
+
+
+def _broken_invariants(state: dict) -> list[str]:
+    return sorted(i["id"] for i in state["invariants"] if not i["ok"])
+
+
+def _failing_nodes(state: dict) -> list[dict]:
+    return sorted((n for n in state["map"]["nodes"]
+                   if n["status"] in BLOCKING_NODE_STATUSES), key=lambda n: n["id"])
+
+
+def _next_action(state: dict, map_error: str | None) -> dict | None:
+    """Pick the single most important next action, by §6.1 precedence.
+
+    Rows 1-5 mirror `_project_status`; the rest are fallbacks (unmet review
+    obligation, disagreement, stale lane, nothing started yet). A `complete`
+    project matches no row and so gets None — as does an `active` project
+    with nothing outstanding, where the next move belongs to the agents.
+
+    Args:
+        state: The `state.json` dict, with `project_status` already set.
+        map_error: The map's load/validation error, or None.
+
+    Returns:
+        `{"text", "kind", "ref"}` per PROTOCOL.md §6.1, or None.
+    """
+    if map_error is not None:
+        return _action("fix_map", None,
+                       "Fix conductor/map.toml — the project map cannot be read.")
+    queue = sorted(state["human_queue"], key=lambda w: w["id"])
+    if queue:
+        w = queue[0]
+        # kind/title are schema-guaranteed; fall back for hand-built lanes.
+        return _action("answer_wait", w["id"],
+                       f"Answer the {w['kind'] or 'decision'}: {w['title'] or w['id']}")
+    broken = _broken_lanes(state)
+    if broken:
+        return _action("fix_lane", broken[0],
+                       f"Fix conductor/lanes/{broken[0]}.json — the lane cannot be read.")
+    bad = _broken_invariants(state)
+    if bad:
+        return _action("fix_invariant", bad[0], f"Restore the broken invariant {bad[0]}.")
+    failing = _failing_nodes(state)
+    if failing:
+        return _action("fix_node", failing[0]["id"],
+                       f"Fix node {failing[0]['id']} — status is {failing[0]['status']}.")
+    return _review_action(state)
+
+
+def _review_action(state: dict) -> dict | None:
+    """The §6.1 fallback rows: review debt, disagreement, stale lane, start."""
+    # (finding, role) pairs sorted so a tie between two owing roles is stable.
+    owed = sorted((fid, rid) for rid, fids in pending_verdicts(state).items() for fid in fids)
+    if owed:
+        fid, rid = owed[0]
+        return _action("review_finding", fid, f"Get a verdict from {rid} on finding {fid}.")
+    disputed = sorted(f["id"] for f in state["disagreements"])
+    if disputed:
+        return _action("resolve_disagreement", disputed[0],
+                       f"Resolve the disagreement on finding {disputed[0]}.")
+    stale = sorted(ln["author"] for ln in state["lanes"] if ln["stale"])
+    if stale:
+        return _action("check_stale_lane", stale[0],
+                       f"Check lane {stale[0]} — it has not reported recently.")
+    if state["project_status"]["state"] == "ready":
+        roles = state["cycle"]["roles"]
+        rid = roles[0]["id"] if roles else None      # first DECLARED role, not sorted
+        return _action("start_work", rid,
+                       f"Vend a prompt for role {rid} to start work." if rid
+                       else "Vend a prompt to start work.")
+    return None
+
+
+def _action(kind: str, ref: str | None, text: str) -> dict:
+    return {"text": text, "kind": kind, "ref": ref}

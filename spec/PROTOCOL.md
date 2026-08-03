@@ -211,6 +211,21 @@ fields:
   "events_tail": [],        // newest-first, capped at 500
   "kpi": { "nodes_pass", "nodes_total", "blockers", "queue",
            "disagreements", "broken_lanes", "stale_lanes" },
-  "warnings": []            // id collisions, stale verdicts, skipped event lines, schema warnings
+  "warnings": [],           // id collisions, stale verdicts, skipped event lines, schema warnings
+  "project_status": {       // strict precedence, first match wins:
+    // unknown -> map_unreadable; blocked -> human_decision, broken_lane,
+    // invariant_broken, node_failing; complete -> all_clear (every node passing,
+    // nothing open, no stale lane); active -> work_in_progress; ready -> no_lanes_yet
+    "state": "unknown|blocked|complete|active|ready",
+    "reason": "human_decision",
+    "detail": "1 decision waiting on you"      // the fact only, never advice
+  },
+  "next_action": {          // the single most important next move; null when complete
+    // kind: fix_map, answer_wait, fix_lane, fix_invariant, fix_node,
+    // review_finding, resolve_disagreement, check_stale_lane, start_work
+    "text": "Answer the decision: ...",        // one imperative sentence
+    "kind": "answer_wait",
+    "ref": "w-config"                          // the id the action points at, or null
+  }
 }
 ```
