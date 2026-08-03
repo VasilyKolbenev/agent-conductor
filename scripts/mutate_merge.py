@@ -19,6 +19,37 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 MERGE_PATH = ROOT / "src" / "conductor" / "merge.py"
 
+# Adjacent §6.1 ladder rows, verbatim, so a swap is assembled from them: the
+# status ladder and the action ladder are written out twice by hand, and only
+# a test keeps `project_status.reason` and `next_action.kind` in agreement.
+ACTION_FIX_LANE = (
+    '    broken = _broken_lanes(state)\n'
+    '    if broken:\n'
+    '        return _action("fix_lane", broken[0],\n'
+    '                       f"Fix conductor/lanes/{broken[0]}.json '
+    '— the lane cannot be read.")\n'
+)
+ACTION_FIX_INVARIANT = (
+    '    bad = _broken_invariants(state)\n'
+    '    if bad:\n'
+    '        return _action("fix_invariant", bad[0], '
+    'f"Restore the broken invariant {bad[0]}.")\n'
+)
+STATUS_BROKEN_LANE = (
+    '    broken = _broken_lanes(state)\n'
+    '    if broken:\n'
+    '        return _blocked("broken_lane", f"lane {broken[0]} is unreadable" '
+    'if len(broken) == 1\n'
+    '                        else f"{len(broken)} lanes are unreadable")\n'
+)
+STATUS_INVARIANT = (
+    '    bad = _broken_invariants(state)\n'
+    '    if bad:\n'
+    '        return _blocked("invariant_broken", f"invariant {bad[0]} is broken" '
+    'if len(bad) == 1\n'
+    '                        else f"{len(bad)} invariants are broken")\n'
+)
+
 # Each mutation: (name, anchor, replacement, test file it must turn red)
 MUTATIONS: list[tuple[str, str, str, str]] = [
     (
@@ -74,6 +105,30 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
         '        if f["review_state"] != "suspended":\n'
         '            continue',
         "tests/test_merge_pending.py",
+    ),
+    (
+        "action ladder: fix_lane and fix_invariant rows swapped",
+        ACTION_FIX_LANE + ACTION_FIX_INVARIANT,
+        ACTION_FIX_INVARIANT + ACTION_FIX_LANE,
+        "tests/test_merge_status.py",
+    ),
+    (
+        "status ladder: broken_lane and invariant_broken rows swapped",
+        STATUS_BROKEN_LANE + STATUS_INVARIANT,
+        STATUS_INVARIANT + STATUS_BROKEN_LANE,
+        "tests/test_merge_status.py",
+    ),
+    (
+        "complete: stale-lane clause dropped (a stale lane could read as success)",
+        '            and not any(ln["broken"] or ln["stale"] for ln in state["lanes"]))',
+        '            and not any(ln["broken"] for ln in state["lanes"]))',
+        "tests/test_merge_status.py",
+    ),
+    (
+        "next_action: start_work guard widened from ready to not-complete",
+        '    if state["project_status"]["state"] == "ready":',
+        '    if state["project_status"]["state"] != "complete":',
+        "tests/test_merge_status.py",
     ),
 ]
 

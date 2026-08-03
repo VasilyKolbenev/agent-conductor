@@ -216,17 +216,24 @@ fields:
     // unknown -> map_unreadable; blocked -> human_decision, broken_lane,
     // invariant_broken, node_failing; complete -> all_clear (every node passing,
     // nothing open, no stale lane); active -> work_in_progress; ready -> no_lanes_yet
+    // vocabularies: merge.PROJECT_STATES, merge.STATUS_REASONS
     "state": "unknown|blocked|complete|active|ready",
     "reason": "human_decision",
-    "detail": "1 decision waiting on you"      // the fact only, never advice
+    "detail": "1 request waiting on you"       // the fact only, never advice
   },
   "next_action": {          // the single most important next move, in the same
                             // precedence order; null when nothing needs the user
-    // kind: fix_map, answer_wait, fix_lane, fix_invariant, fix_node, review_finding,
-    // resolve_disagreement, resolve_collision, check_stale_lane, start_work
+    // kind (merge.NEXT_ACTION_KINDS): fix_map, answer_wait, fix_lane, fix_invariant,
+    // fix_node, review_finding, resolve_disagreement, resolve_contested_node,
+    // resolve_collision, check_stale_lane, start_work
+    // ref id space, by kind: answer_wait -> human_queue id; fix_lane and
+    // check_stale_lane -> lane author; fix_invariant -> invariant id; fix_node and
+    // resolve_contested_node -> map node id; review_finding, resolve_disagreement
+    // and resolve_collision -> finding id; start_work -> cycle role id or null;
+    // fix_map -> null
     "text": "Answer the decision: ...",        // one imperative sentence
     "kind": "answer_wait",
-    "ref": "w-config"                          // the id the action points at, or null
+    "ref": "w-config"
   }
 }
 ```

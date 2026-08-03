@@ -14,6 +14,21 @@ from conductor.schema import DEFAULT_STALENESS_MINUTES
 EVENTS_TAIL = 500
 BLOCKING_NODE_STATUSES = frozenset({"fail", "blocked"})
 
+# §6.1 vocabularies. Merge-computed, not schema-validated (no author writes
+# them), so they live here rather than in `schema` — consumers switch on these
+# instead of transcribing the protocol sketch.
+PROJECT_STATES = frozenset({"unknown", "blocked", "complete", "active", "ready"})
+STATUS_REASONS = frozenset({"map_unreadable", "human_decision", "broken_lane",
+                            "invariant_broken", "node_failing", "all_clear",
+                            "work_in_progress", "no_lanes_yet"})
+NEXT_ACTION_KINDS = frozenset({"fix_map", "answer_wait", "fix_lane", "fix_invariant",
+                               "fix_node", "review_finding", "resolve_disagreement",
+                               "resolve_contested_node", "resolve_collision",
+                               "check_stale_lane", "start_work"})
+# One lead-in per schema.WAIT_KINDS value: a wait is not always a question.
+WAIT_LEAD_IN = {"decision": "Answer the decision", "action": "Do the action",
+                "review": "Do the review"}
+
 
 def _lane_view(entry: dict, now: datetime, warnings: list[str]) -> dict:
     author = entry["author"]
@@ -360,23 +375,37 @@ def _project_status(state: dict, map_error: str | None) -> dict:
     blocked = _blocked_status(state)
     if blocked is not None:
         return blocked
-    nodes = state["map"]["nodes"]
-    detail = (f"{sum(1 for n in nodes if n['status'] == 'pass')} of "
-              f"{len(nodes)} nodes passing")
+    kpi = state["kpi"]
+    detail = _node_detail(kpi["nodes_pass"], kpi["nodes_total"], "passing")
     if _is_complete(state):
         return {"state": "complete", "reason": "all_clear", "detail": detail}
+    # Row 3 already diverted every broken lane, so this reads as "any lane at
+    # all"; spelled out to mirror the table's wording rather than depend on it.
     if any(not ln["broken"] for ln in state["lanes"]):
         return {"state": "active", "reason": "work_in_progress", "detail": detail}
     return {"state": "ready", "reason": "no_lanes_yet",
             "detail": "no lanes have reported yet"}
 
 
+def _node_detail(count: int, total: int, phrase: str) -> str:
+    """`N of M node(s) <phrase>`, or a plain fact when the map declares none."""
+    if not total:
+        return "no nodes declared in map.toml"
+    return f"{count} of {total} {'node' if total == 1 else 'nodes'} {phrase}"
+
+
 def _blocked_status(state: dict) -> dict | None:
-    """The four `blocked` rows of the §6.1 precedence table, in order."""
+    """The four `blocked` rows of the §6.1 precedence table, in order.
+
+    Held in lockstep with the same four rows of `_next_action`: the panel
+    renders `reason` and `kind` side by side, and only a test keeps the two
+    hand-written ladders in agreement.
+    """
     queue = state["human_queue"]
     if queue:
+        # Kind-neutral: WAIT_KINDS covers decisions, actions and reviews.
         plural = "" if len(queue) == 1 else "s"
-        return _blocked("human_decision", f"{len(queue)} decision{plural} waiting on you")
+        return _blocked("human_decision", f"{len(queue)} request{plural} waiting on you")
     broken = _broken_lanes(state)
     if broken:
         return _blocked("broken_lane", f"lane {broken[0]} is unreadable" if len(broken) == 1
@@ -387,8 +416,9 @@ def _blocked_status(state: dict) -> dict | None:
                         else f"{len(bad)} invariants are broken")
     failing = _failing_nodes(state)
     if failing:
-        return _blocked("node_failing", f"{len(failing)} of {len(state['map']['nodes'])} "
-                                        "nodes failing or blocked")
+        return _blocked("node_failing", _node_detail(len(failing),
+                                                     state["kpi"]["nodes_total"],
+                                                     "failing or blocked"))
     return None
 
 
@@ -397,7 +427,15 @@ def _blocked(reason: str, detail: str) -> dict:
 
 
 def _is_complete(state: dict) -> bool:
-    """Every §6.1 `complete` condition — the owner's no-silent-success law."""
+    """Every §6.1 `complete` condition — the owner's no-silent-success law.
+
+    Three clauses cannot decide the answer today: rows 2-3 of the precedence
+    table divert an open queue and a broken lane before this runs, and an
+    empty `findings` already forces `pending_verdicts` empty. They stay so
+    `complete` remains correct on its own terms if a blocked row is ever
+    demoted — the spec lists them, and this function is the last guard
+    against a false success.
+    """
     nodes = state["map"]["nodes"]
     return (bool(nodes) and all(n["status"] == "pass" for n in nodes)
             and not state["findings"] and not state["human_queue"]
@@ -423,8 +461,8 @@ def _failing_nodes(state: dict) -> list[dict]:
 def _next_action(state: dict, map_error: str | None) -> dict | None:
     """Pick the single most important next action, by §6.1 precedence.
 
-    Rows 1-5 mirror `_project_status`; the rest are fallbacks (unmet review
-    obligation, disagreement, stale lane, nothing started yet). A `complete`
+    Rows 1-5 mirror `_project_status` row for row (tests/test_merge_status.py
+    pins the two ladders in agreement); the rest are fallbacks. A `complete`
     project matches no row and so gets None — as does an `active` project
     with nothing outstanding, where the next move belongs to the agents.
 
@@ -441,9 +479,10 @@ def _next_action(state: dict, map_error: str | None) -> dict | None:
     queue = sorted(state["human_queue"], key=lambda w: w["id"])
     if queue:
         w = queue[0]
-        # kind/title are schema-guaranteed; fall back for hand-built lanes.
-        return _action("answer_wait", w["id"],
-                       f"Answer the {w['kind'] or 'decision'}: {w['title'] or w['id']}")
+        # `kind` is schema-validated against WAIT_KINDS, so the lead-in always
+        # resolves; `title` is NOT validated anywhere, and renders as given.
+        lead = WAIT_LEAD_IN.get(w["kind"], "Answer the request")
+        return _action("answer_wait", w["id"], f"{lead}: {w['title'] or w['id']}")
     broken = _broken_lanes(state)
     if broken:
         return _action("fix_lane", broken[0],
@@ -455,40 +494,73 @@ def _next_action(state: dict, map_error: str | None) -> dict | None:
     if failing:
         return _action("fix_node", failing[0]["id"],
                        f"Fix node {failing[0]['id']} — status is {failing[0]['status']}.")
-    return _review_action(state)
+    return _fallback_action(state)
 
 
-def _review_action(state: dict) -> dict | None:
-    """§6.1 fallbacks: review debt, disagreement, id collision, stale lane, start."""
-    # (finding, role) pairs sorted so a tie between two owing roles is stable.
-    owed = sorted((fid, rid) for rid, fids in pending_verdicts(state).items() for fid in fids)
-    if owed:
-        fid, rid = owed[0]
-        return _action("review_finding", fid, f"Get a verdict from {rid} on finding {fid}.")
+def _fallback_action(state: dict) -> dict | None:
+    """The §6.1 rows below the blocked ladder, in order.
+
+    Review debt, disagreement, contested node, id collision, stale lane, and
+    finally nothing-started-yet. None when nothing needs the user.
+    """
+    debt = _review_debt_action(state)
+    if debt is not None:
+        return debt
     disputed = sorted(f["id"] for f in state["disagreements"])
     if disputed:
         return _action("resolve_disagreement", disputed[0],
                        f"Resolve the disagreement on finding {disputed[0]}.")
-    # A collision suspends review entirely, so it surfaces here rather than as a
-    # blocker: a person must rename one of the ids before the finding can move.
+    # Contested and collided both mean two agents disagree with no computed
+    # winner; neither blocks the project, but neither may pass in silence.
+    contested = sorted((n for n in state["map"]["nodes"] if n["status"] == "contested"),
+                       key=lambda n: n["id"])
+    if contested:
+        node = contested[0]
+        return _action("resolve_contested_node", node["id"],
+                       f"Settle node {node['id']} — {', '.join(node['contested_by'])} "
+                       "disagree on its status.")
     collided = Counter(f["id"] for f in state["findings"]
                        if f["review_state"] == "suspended")
     if collided:
         fid = min(collided)
         return _action("resolve_collision", fid,
-                       f"Resolve the duplicate finding id {fid} — "
-                       f"{collided[fid]} lanes claim it.")
+                       f"Rename the duplicate finding id {fid} — "
+                       f"{collided[fid]} lanes are using it.")
     stale = sorted(ln["author"] for ln in state["lanes"] if ln["stale"])
     if stale:
         return _action("check_stale_lane", stale[0],
                        f"Check lane {stale[0]} — it has not reported recently.")
     if state["project_status"]["state"] == "ready":
-        roles = state["cycle"]["roles"]
-        rid = roles[0]["id"] if roles else None      # first DECLARED role, not sorted
-        return _action("start_work", rid,
-                       f"Vend a prompt for role {rid} to start work." if rid
-                       else "Vend a prompt to start work.")
+        return _start_work_action(state)
     return None
+
+
+def _review_debt_action(state: dict) -> dict | None:
+    """The lowest-id unmet review obligation, named for whoever owes it."""
+    # (finding, role) pairs sorted so a tie between two owing roles is stable.
+    owed = sorted((fid, rid) for rid, fids in pending_verdicts(state).items() for fid in fids)
+    if not owed:
+        return None
+    fid, rid = owed[0]
+    # Branch on whether a lane actually holds the role, NOT on the finding's
+    # review_state: that is a per-finding aggregate (unreviewed outranks
+    # uncovered), so it would tell the user to chase an agent nobody is running
+    # whenever one reviewing role is silent and another is absent.
+    if any(ln["role"] == rid and not ln["broken"] for ln in state["lanes"]):
+        return _action("review_finding", fid, f"Get a verdict from {rid} on finding {fid}.")
+    return _action("review_finding", fid,
+                   f"Nobody is running the {rid} role — start one to review finding {fid}.")
+
+
+def _start_work_action(state: dict) -> dict:
+    """Nothing has reported yet: point at the first declared role's prompt."""
+    roles = state["cycle"]["roles"]
+    if not roles:
+        return _action("start_work", None,
+                       "Declare a role in conductor/map.toml to start work.")
+    rid = roles[0]["id"]                             # first DECLARED role, not sorted
+    return _action("start_work", rid,
+                   f"Start the {rid} agent — run: conduct prompt --role {rid}")
 
 
 def _action(kind: str, ref: str | None, text: str) -> dict:
