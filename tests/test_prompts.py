@@ -166,6 +166,86 @@ def test_role_prompt_states_lifecycle_contract():
         assert token in text
 
 
+# --- DO-2: stage-aware lifecycle contracts ---
+
+STAGED_MAP = {"schema_version": 1, "project": "p",
+              "nodes": [{"id": "n", "label": "n", "kind": "artifact"}],
+              "cycle": {"phases": ["goal", "detect", "diagnose", "design", "deliver"],
+                        "roles": [{"id": "scout", "harness": "cc", "reviews": [],
+                                   "stage": "detect"},
+                                  {"id": "impl", "harness": "cc", "reviews": [],
+                                   "stage": "deliver"},
+                                  {"id": "rev", "harness": "cx", "reviews": ["impl"]}]}}
+
+CUSTOM_MAP = {"schema_version": 1, "project": "p",
+              "nodes": [{"id": "n", "label": "n", "kind": "artifact"}],
+              "cycle": {"phases": ["recon", "ship"],
+                        "roles": [{"id": "impl", "harness": "cc", "reviews": [],
+                                   "stage": "recon"}]}}
+
+
+def test_role_prompt_renders_the_stage_contract_for_a_staged_role():
+    state = merge.merge(STAGED_MAP, None, [], [], 0, NOW)
+    text = prompts.role_prompt(state, "scout", author="codex")
+    assert "Stage: detect" in text
+    assert "What is actually true right now?" in text
+    assert "unverified" in text                      # the detect contract's own word
+
+
+def test_role_prompt_stage_contracts_differ_per_stage():
+    state = merge.merge(STAGED_MAP, None, [], [], 0, NOW)
+    scout = prompts.role_prompt(state, "scout", author="codex")
+    impl = prompts.role_prompt(state, "impl", author="codex")
+    assert "Stage: deliver" in impl and "Stage: detect" not in impl
+    assert "Stage: detect" in scout and "Stage: deliver" not in scout
+
+
+def test_role_prompt_omits_the_stage_block_for_an_unstaged_role():
+    state = merge.merge(STAGED_MAP, None, [], [], 0, NOW)
+    text = prompts.role_prompt(state, "rev", author="codex")
+    assert "Stage:" not in text
+
+
+def test_role_prompt_omits_the_stage_block_for_a_custom_phase_name():
+    # A project with its own phases is legal (spec §2): the stage is valid but
+    # is not an Orbit stage. Degrade silently — never render a wrong contract.
+    state = merge.merge(CUSTOM_MAP, None, [], [], 0, NOW)
+    text = prompts.role_prompt(state, "impl", author="codex")
+    assert "Stage:" not in text
+    assert "recon" not in text
+
+
+def test_role_prompt_keeps_the_generic_lifecycle_alongside_the_stage_block():
+    state = merge.merge(STAGED_MAP, None, [], [], 0, NOW)
+    text = prompts.role_prompt(state, "scout", author="codex")
+    assert "Lifecycle:" in text
+    assert "NEVER edit another agent's lane" in text
+
+
+def test_role_prompt_ordering_trap_holds_with_a_stage_block():
+    # The pending section must stay LAST and appear exactly once, whatever
+    # else is injected above it.
+    state = merge.merge(STAGED_MAP, None, [], [], 0, NOW)
+    text = prompts.role_prompt(state, "impl", author="codex")
+    assert text.count("awaiting your verdict") == 1
+    tail = text.split("awaiting your verdict")[1]
+    assert "Stage:" not in tail and "Lifecycle:" not in tail
+
+
+def test_every_orbit_stage_has_a_contract_with_a_question_and_owed_lines():
+    for stage in ("goal", "detect", "diagnose", "design", "deliver"):
+        block = prompts._stage_block(stage)
+        assert block.startswith(f"Stage: {stage} ")
+        assert block.rstrip().endswith(".")
+        assert block.count("\n- ") >= 4               # the contract it owes
+
+
+def test_stage_block_is_empty_for_absent_and_unknown_stages():
+    assert prompts._stage_block(None) == ""
+    assert prompts._stage_block("recon") == ""
+    assert prompts._stage_block("") == ""
+
+
 def test_role_prompt_pending_block_is_enriched():
     ls = [lane("claude", "impl", [finding("D-1"), finding("D-2")]),
           lane("codex", "rev", verdicts={"D-1": {"disposition": "confirmed", "note": ""}})]

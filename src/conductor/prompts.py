@@ -76,6 +76,56 @@ _LIFECYCLE = '''Lifecycle:
   {"ts": "<UTC ISO-8601>", "author": "<you>", "kind": "ok", "text": "closed D-2", "ref": "D-2"}
 - Run `conduct validate` before finishing a work session.'''
 
+# The Default Orbit's five stages: guiding question plus the contract the next
+# stage is entitled to receive (docs/specs/2026-08-03-product-direction.md §3).
+# Keyed by stage name; a role staged onto a project's own phase name simply
+# misses this table and gets no block — never a guessed one.
+_STAGE_CONTRACTS: dict[str, tuple[str, tuple[str, ...]]] = {
+    "goal": (
+        "What are we trying to achieve, and who owns the decision?",
+        ("State the intended outcome and the scope of this pass.",
+         "State what is explicitly out of scope.",
+         "List the constraints and the acceptance criteria.",
+         "List the risks you already know about.",
+         "Name the map nodes the work touches.",
+         "Name who owns the decision: a goal nobody owns is not a goal."),
+    ),
+    "detect": (
+        "What is actually true right now?",
+        ("Report what you observe as findings, each with a severity.",
+         "Attach evidence to every one: a path, a log, or a reproduced command.",
+         "Name the affected components in refs, using map node ids only.",
+         "Say whether the finding reproduces, and how.",
+         "List your unknowns honestly, rather than rounding them off.",
+         "A finding without evidence stays unverified: confidence is not a fact."),
+    ),
+    "diagnose": (
+        "Why is it happening?",
+        ("Record a verdict on every finding you owe one, confirmed or refuted.",
+         "Separate the root cause from the symptoms it produces.",
+         "Give the evidence and the reproduction behind each verdict.",
+         "Say which hypotheses you ruled out, not only the surviving one.",
+         "List the questions still open."),
+    ),
+    "design": (
+        "What do we intend to change, and how will we know it worked?",
+        ("Write the implementation plan and its architectural impact.",
+         "Name the affected components and files.",
+         "State the test strategy, the migration path and the rollback path.",
+         "State the risks, with the alternatives you considered and rejected.",
+         "State the evidence the delivery is expected to produce."),
+    ),
+    "deliver": (
+        "What changed, what was checked, and is it safe to accept?",
+        ("Describe what changed.",
+         "List the checks you ran and attach their evidence.",
+         "Get the review your cycle obliges, and record the verdicts.",
+         "Leave findings that are still open in your lane: never close them silently.",
+         "Say why the result is ready.",
+         "Raise the decision that accepts it as a waits_on_human entry."),
+    ),
+}
+
 _VOCABULARIES = '''Closed vocabularies:
 - verdicts.*.disposition: confirmed | refuted | partial
 - map_status values: pass | fail | blocked | running | idle
@@ -136,6 +186,27 @@ def _starter_template(role_id: str, author: str | None) -> str:
     }, indent=2)
 
 
+def _stage_block(stage: str | None) -> str:
+    """Render the Default Orbit contract for one stage, or nothing.
+
+    Args:
+        stage: The role's `stage` value from the map, or None when it has one.
+
+    Returns:
+        The stage's guiding question and the contract it owes, or `""` for an
+        absent stage and for any name outside the Orbit's five — a project may
+        declare its own phases, and a wrong contract is worse than none.
+    """
+    contract = _STAGE_CONTRACTS.get(stage) if isinstance(stage, str) else None
+    if contract is None:
+        return ""
+    question, owed = contract
+    lines = [f"Stage: {stage} - {question}",
+             "What the next stage is entitled to receive from you:"]
+    lines.extend(f"- {line}" for line in owed)
+    return "\n".join(lines)
+
+
 def _pending_block(state: dict, role_id: str) -> str:
     """Render the enriched awaiting-verdict entries for one role.
 
@@ -173,8 +244,9 @@ def role_prompt(state: dict, role_id: str, author: str | None = None) -> str:
     Returns:
         A deterministic English prompt: mission line, lane-file contract with
         a copy-safe strict-JSON starter (role and author pre-filled), the
-        lifecycle rules, closed vocabularies, the current map node ids, and —
-        last — the enriched findings still awaiting this role's verdict.
+        lifecycle rules, the contract of the role's Orbit stage when it has
+        one, closed vocabularies, the current map node ids, and — last — the
+        enriched findings still awaiting this role's verdict.
 
     Raises:
         UnknownRole: If `role_id` names no `state["cycle"]["roles"]` entry.
@@ -188,6 +260,8 @@ def role_prompt(state: dict, role_id: str, author: str | None = None) -> str:
     reviewed = ", ".join(reviews) if reviews else "no other roles"
     node_ids = ", ".join(n["id"] for n in state["map"]["nodes"]) or "(none)"
     stem = author if author is not None else _AUTHOR_PLACEHOLDER
+    stage_block = _stage_block(role.get("stage"))
+    lifecycle = f"{_LIFECYCLE}\n\n{stage_block}" if stage_block else _LIFECYCLE
     swap = (f'Replace the "updated" value ({_UPDATED_PLACEHOLDER}) with the\n'
             "current UTC ISO-8601 time on every write.")
     if author is None:
@@ -209,7 +283,7 @@ def role_prompt(state: dict, role_id: str, author: str | None = None) -> str:
         "map_status keys must be ids from the current map, listed below —\n"
         "never invent node ids.\n"
         "\n"
-        f"{_LIFECYCLE}\n"
+        f"{lifecycle}\n"
         "\n"
         f"{_VOCABULARIES}\n"
         "\n"
