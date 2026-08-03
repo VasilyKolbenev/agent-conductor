@@ -4,6 +4,11 @@ Every test calls `main(argv)` directly and inspects the return code plus
 capsys-captured stdout/stderr.
 """
 import json
+import os
+import re
+import subprocess
+import sys
+import threading
 import tomllib
 
 import pytest
@@ -262,6 +267,37 @@ def test_demo_stdout_is_the_url_and_the_temp_path_is_not(tmp_path, capsys, monke
     captured = capsys.readouterr()
     assert captured.out == "http://127.0.0.1:7777/\n"
     assert "materialized" in captured.err and "materialized" not in captured.out
+
+
+def test_up_flushes_the_url_while_it_is_still_serving(tmp_path):
+    # The one test here that needs a real child process. `capsys` cannot see
+    # this defect: it does not buffer, and _FakeServer returns instead of
+    # blocking. In the real thing stdout is block-buffered the moment it is
+    # redirected — the very case the contract exists for — and the next
+    # statement blocks in serve_forever(), so without flush=True the URL sits
+    # in the buffer until the server stops and never arrives at all if the
+    # server is killed. `conduct up | xargs open` would hang on an empty pipe.
+    #
+    # --port 0 lets the OS pick, so there is no free-port race. The read runs
+    # on a thread with a timeout: unflushed, readline() blocks forever, and a
+    # blocked reader must fail this test rather than hang the suite.
+    root = write_project(tmp_path, lanes={"claude": good_lane()})
+    env = {k: v for k, v in os.environ.items() if k != "PYTHONUNBUFFERED"}
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "conductor", "up", "--dir", str(root), "--port", "0"],
+        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, env=env)
+    first: list[str] = []
+    reader = threading.Thread(target=lambda: first.append(proc.stdout.readline()),
+                              daemon=True)
+    reader.start()
+    reader.join(timeout=20)
+    try:
+        assert first, "no URL reached a redirected stdout while the server was up"
+        assert re.fullmatch(r"http://127\.0\.0\.1:\d+/", first[0].strip())
+    finally:
+        proc.terminate()
+        proc.wait(timeout=20)
+        proc.stdout.close()
 
 
 def test_up_bind_failure_leaves_stdout_empty(tmp_path, capsys, monkeypatch):

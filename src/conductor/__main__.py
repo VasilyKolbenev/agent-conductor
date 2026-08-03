@@ -119,7 +119,13 @@ def _serve(root: Path | str, port: int) -> int:
     host, bound = srv.server_address[:2]
     # The URL is the result; how to stop the server is lifecycle chatter. Split
     # so `conduct up | xargs open` gets a URL and not a sentence about it.
-    print(f"http://{host}:{bound}/")
+    #
+    # flush=True is load-bearing, not tidiness. A redirected stdout is
+    # block-buffered, and the next statement blocks until the server stops —
+    # so without the flush the URL reaches the pipe only once it is useless,
+    # and a killed server never emits it at all. stderr needs no flush: it is
+    # line-buffered whether or not it is a terminal.
+    print(f"http://{host}:{bound}/", flush=True)
     print(f"serving {root} — Ctrl+C to stop", file=sys.stderr)
     try:
         srv.serve_forever()

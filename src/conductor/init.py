@@ -13,9 +13,14 @@ is a capability class of its own and needs its own ADR before any of it exists.
 Keeping the init path in one module is what makes that ban statable as a
 property of an import graph rather than a hand-kept list of file names.
 
-Validation is injected rather than imported (`run(..., validate=...)`): the
-scaffold is checked with exactly the computation `conduct validate` performs,
-without this module depending on the CLI that renders it.
+Validation is injected rather than imported (`execute(..., validate=...)`):
+the scaffold is checked with exactly the computation `conduct validate`
+performs, without this module depending on the CLI that renders it.
+
+stdout carries one thing, the prompt that fills the generated map in. The
+scaffold report, the validation verdict, the wizard and the advice that
+follows are all dialogue and go to stderr, so redirecting `conduct init`
+yields a promptable file and nothing else.
 """
 from __future__ import annotations
 
@@ -28,8 +33,9 @@ from pathlib import Path
 
 from conductor import prompts, templates
 
-#: What `run` needs of `conduct validate`: the errors and warnings it would
-#: report for a project root, as data, leaving the rendering to the caller.
+#: What `execute` needs of `conduct validate`: the errors and warnings it
+#: would report for a project root, as data, leaving the rendering to the
+#: caller.
 Validation = Callable[[argparse.Namespace], "tuple[list[str], list[str]]"]
 
 
@@ -102,10 +108,12 @@ def _interactive() -> bool:
 def _say(message: str = "") -> None:
     """Write one line of interactive dialogue to stderr.
 
-    The wizard is a conversation, not output. Keeping every question, menu and
-    rejection off stdout means stdout carries the same scaffold report on all
-    three init paths — so a caller capturing it never reads back a question,
-    least of all one the non-interactive fallback asked into the void.
+    Everything a person reads during `init` goes through here: the wizard, the
+    scaffold report, the validation verdict, the advice at the end. None of it
+    is the command's result, so none of it may reach stdout — which carries
+    the bootstrap prompt alone, identical on all three init paths. A caller
+    capturing it therefore never reads back a question, least of all one the
+    non-interactive fallback asked into the void.
     """
     print(message, file=sys.stderr)
 
