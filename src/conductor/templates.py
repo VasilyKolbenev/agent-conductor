@@ -38,6 +38,14 @@ class InvalidName(ValueError):
     """Raised when a project name or harness id is outside the allowed set."""
 
 
+class TemplateOutOfSync(Exception):
+    """Raised when a template holds a value assignment the substitution cannot rewrite.
+
+    A programming error, not user error: it means an edit to a template has
+    outrun the substitution that fills it in.
+    """
+
+
 #: Every character a caller-supplied project name or harness id may contain.
 #: These values are interpolated into TOML *text*, where a quote, a backslash,
 #: a newline or a control character breaks the file — or, worse, silently
@@ -368,25 +376,72 @@ _SAME_PRODUCT = (
     "# you chose - and nothing here checks it either way.")
 
 
-def _swap_assignment(line: str, swap: dict[str, str]) -> str:
-    """Rewrite one line's assignment if it is one we swap, keeping its comment.
+#: Every assignment the substitution knows how to rewrite. `_check_in_sync`
+#: requires that a template hold no OTHER `project =` or `harness =` line:
+#: matching on exact text is what preserves inline comments, but it also means
+#: a reformatted line would miss silently — and a silent miss ships a committed
+#: map naming a harness the user never chose.
+_SWAPPABLE = (f'project = "{_DEFAULT_PROJECT}"',
+              f'project = "{_LEGACY_PROJECT}"',
+              f'harness = "{_DEFAULT_PRIMARY}"',
+              f'harness = "{_DEFAULT_REVIEWER}"')
+
+_ASSIGNMENT_RE = re.compile(r"\A\s*(project|harness)\s*=")
+
+
+def _assignment(line: str) -> str:
+    """One line's assignment: everything before its comment, right-stripped.
+
+    A comment line yields `""`, so it can never match; a trailing
+    `# informational` is held back and survives the swap. Safe because no
+    value we substitute may contain a `#` — `NAME_RE` forbids it.
+    """
+    return line.partition("#")[0].rstrip()
+
+
+def _check_in_sync(name: str, text: str) -> None:
+    """Raise if a template holds a value assignment the substitution would miss.
 
     Args:
-        line: One line of a template document.
-        swap: Whole-assignment text -> its replacement.
+        name: The template's name, for the message.
+        text: The template document.
 
-    Returns:
-        The line, rewritten or untouched. Only the part before the first `#`
-        is considered, so a comment line can never match and a trailing
-        `# informational` survives the swap. Safe because no value we swap in
-        may contain a `#` — `NAME_RE` forbids it.
+    Raises:
+        TemplateOutOfSync: If any `project =` or `harness =` line is not one of
+            `_SWAPPABLE`. Run on every `get()`, parameterised or not, so the
+            desync is reported the first time anyone asks for the template
+            rather than only to the caller unlucky enough to pass a value.
     """
-    code, hash_sign, comment = line.partition("#")
-    assignment = code.rstrip()
+    for number, line in enumerate(text.split("\n"), 1):
+        assignment = _assignment(line)
+        if _ASSIGNMENT_RE.match(assignment) and assignment not in _SWAPPABLE:
+            raise TemplateOutOfSync(
+                f"template {name!r} line {number} is {assignment!r}, an assignment "
+                f"`conduct init` must be able to rewrite but does not recognise "
+                f"(known: {', '.join(_SWAPPABLE)}). Restore one of those spellings, "
+                f"or add this one to _SWAPPABLE. Left alone it is skipped in "
+                f"silence, and the user commits a map naming a harness they never "
+                f"chose.")
+
+
+def _swap_assignment(line: str, swap: dict[str, str]) -> str:
+    """Rewrite one line's assignment if it is one we swap, keeping its comment."""
+    assignment = _assignment(line)
     replacement = swap.get(assignment)
     if replacement is None:
         return line
+    code, hash_sign, comment = line.partition("#")
     return replacement + code[len(assignment):] + hash_sign + comment
+
+
+def _times(count: int) -> str:
+    """`3` -> `three times`. Keeps the counted sentence grammatical at any count."""
+    if count == 1:
+        return "once"
+    if count == 2:
+        return "twice"
+    return {3: "three times", 4: "four times", 5: "five times",
+            6: "six times"}.get(count, f"{count} times")
 
 
 def _substitute(text: str, project: str, primary: str, reviewer: str) -> str:
@@ -414,8 +469,12 @@ def _substitute(text: str, project: str, primary: str, reviewer: str) -> str:
             f'harness = "{_DEFAULT_PRIMARY}"': f'harness = "{primary}"',
             f'harness = "{_DEFAULT_REVIEWER}"': f'harness = "{reviewer}"'}
     body = "\n".join(_swap_assignment(line, swap) for line in text.split("\n"))
-    times = "three" if primary != reviewer else "five"
-    body = body.replace(_COUNT_CLAIM, f'# "{primary}" appears {times} times below.')
+    # Counted from the result, not asserted: pick the reviewer's harness for
+    # the implementing roles too and the sentence has to say five, not three.
+    appearances = sum(1 for line in body.split("\n")
+                      if _assignment(line) == f'harness = "{primary}"')
+    body = body.replace(_COUNT_CLAIM,
+                        f'# "{primary}" appears {_times(appearances)} below.')
     if primary == reviewer:
         body = body.replace(_DIFFERENT_PRODUCT, _SAME_PRODUCT)
     return body
@@ -442,13 +501,16 @@ def get(name: str, *, project: str | None = None, primary: str | None = None,
 
     Raises:
         UnknownTemplate: If `name` is not a built-in template.
-        InvalidName: If any supplied value is not a `NAME_RE` slug. Rejected
+        InvalidName: If any supplied value is not a `NAME_RE` name. Rejected
             here, at the boundary, rather than escaped into the TOML.
+        TemplateOutOfSync: If the template holds a `project =` or `harness =`
+            line the substitution cannot rewrite.
     """
     entry = _TEMPLATES.get(name)
     if entry is None:
         known = ", ".join(_TEMPLATES)
         raise UnknownTemplate(f"unknown template {name!r} (available: {known})")
+    _check_in_sync(name, entry[0])
     return _substitute(
         entry[0],
         _DEFAULT_PROJECT if project is None else check_name("project name", project),

@@ -11,9 +11,9 @@ from pathlib import Path
 
 import pytest
 import conductor.__main__
-from conductor import templates
-from conductor.__main__ import (_build_parser, _cmd_init, _console_ask,
-                                _interactive, main)
+from conductor import prompts, templates
+from conductor.__main__ import (_FIRST_ACTION, _build_parser, _cmd_init,
+                                _console_ask, _interactive, main)
 from tests.test_store import write_project, good_lane
 
 
@@ -469,10 +469,66 @@ def test_init_prints_next_commands_that_actually_run(tmp_path, capsys):
     out = capsys.readouterr().out
     assert f"--dir {tmp_path}" in out                  # the printed root is real
     assert "conduct up" in out and "127.0.0.1:7777" in out
-    assert "PLACEHOLDER" in out                        # the first action
+    assert "placeholder nodes" in out                  # the first action
     role = re.search(r"conduct prompt --role (\S+)", out).group(1)
     assert main(["validate", "--dir", str(tmp_path)]) == 0
     assert main(["prompt", "--role", role, "--dir", str(tmp_path)]) == 0
+
+
+def test_the_bootstrap_prompt_does_not_contradict_the_map_just_written(tmp_path, capsys):
+    # The prompt used to tell the agent to PRODUCE a map and embedded a
+    # different one, so the step the CLI recommends discarded every answer the
+    # wizard collected. It must now be about the file on disk.
+    assert _cmd_init(_init_args(tmp_path),
+                     ask=_scripted(["my-app", "Kimi Code", "2"])) == 0
+    out = capsys.readouterr().out
+    written = _map_text(tmp_path)
+    assert "already exists and already validates" in out
+    assert "Produce `conductor/map.toml`" not in out
+    # Nothing from the OTHER map may appear: those values contradict the
+    # answers, and an agent handed both will pick one.
+    for contradiction in ('project = "web-app"', "human-gate", '"plan"'):
+        assert contradiction not in out
+    assert 'project = "my-app"' in written and "Kimi Code" in written
+
+
+def test_the_bootstrap_prompt_stands_alone_when_redirected(tmp_path, capsys):
+    # `conduct init > bootstrap.txt` yields this and nothing else, so it may
+    # not lean on anything the CLI printed around it.
+    text = prompts.bootstrap_prompt("conductor/map.toml")
+    for needed in ("conductor/map.toml", "schema_version", "[[nodes]]",
+                   "[[cycle.roles]]", "conduct validate", "depends_on"):
+        assert needed in text
+    for dangling in ("above", "below", "the rules"):
+        assert dangling not in text
+
+
+def test_the_first_action_is_said_once_to_both_audiences(tmp_path, capsys):
+    # Two differently-worded first actions read as two separate tasks.
+    assert main(["init", "--dir", str(tmp_path)]) == 0
+    out = capsys.readouterr().out
+    assert out.count(_FIRST_ACTION) == 1               # the person's copy
+    assert "placeholder" in prompts.bootstrap_prompt()  # the agent's copy
+
+
+def test_the_harness_questions_say_what_the_answer_does(tmp_path, capsys):
+    # Two of three questions are about `harness`, which no merge rule reads.
+    # At a prompt that reads like configuring an integration.
+    assert _cmd_init(_init_args(tmp_path), ask=_scripted(["p", "", ""])) == 0
+    asked = capsys.readouterr().err
+    assert "never launches, installs or detects a harness" in asked
+    assert "labels who does what" in asked
+
+
+def test_the_no_reviewer_option_names_its_consequence(tmp_path, capsys):
+    # `none` is the one answer that removes a role rather than naming a
+    # product, and it hands the user the vacuous-agreed state.
+    assert _cmd_init(_init_args(tmp_path), ask=_scripted(["p", "", "2"])) == 0
+    asked = capsys.readouterr().err
+    assert "no reviewing role at all" in asked
+    assert "agreed with nobody having looked" in asked
+    assert [r["id"] for r in tomllib.loads(_map_text(tmp_path))["cycle"]["roles"]] \
+        == ["implementer"]
 
 
 def test_init_reports_the_validation_it_just_ran(tmp_path, capsys):

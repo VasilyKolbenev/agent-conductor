@@ -1,8 +1,9 @@
 """Prompt vending — deterministic instruction text for agents, no LLM involved.
 
-Two pure string builders: `bootstrap_prompt` tells an agent how to create
-`conductor/map.toml`; `role_prompt` tells a role-holding agent how to keep
-its lane file and which findings still owe it a verdict. The map example is
+Two pure string builders: `bootstrap_prompt` tells an agent how to fill in the
+`conductor/map.toml` that `conduct init` has already written; `role_prompt`
+tells a role-holding agent how to keep its lane file and which findings still
+owe it a verdict. The map example is
 taken from the spec (PROTOCOL.md §2); the lane starter vended by
 `role_prompt` is deliberately NOT the commented §3 excerpt — that one stays
 in PROTOCOL.md as an illustration, while the vended template is a separate,
@@ -19,11 +20,13 @@ class UnknownRole(Exception):
     """Raised when `role_prompt` is asked for a role id the cycle does not declare."""
 
 
-# PROTOCOL.md §2 — ONE sync point for the spec's map example. Public, with two
-# readers: `bootstrap_prompt` embeds it, and `templates` vends it verbatim as
-# the `minimal` template. It is NO LONGER what `conduct init` writes by
-# default; that scaffold is `templates.get(templates.DEFAULT)` (DO-3). Note it
-# ends without a trailing newline — `templates` adds the one a file needs.
+# PROTOCOL.md §2 — ONE sync point for the spec's map example. Public, with a
+# single reader: `templates` vends it verbatim as the `minimal` template. It is
+# neither what `conduct init` writes by default (that is
+# `templates.get(templates.DEFAULT)`) nor part of `bootstrap_prompt` any more —
+# a prompt that embeds a whole map invites an agent to replace the one already
+# on disk. Note it ends without a trailing newline; `templates` adds the one a
+# file needs.
 MAP_EXAMPLE = '''schema_version = 1
 project = "web-app"
 
@@ -159,33 +162,65 @@ _VOCABULARIES = '''Closed vocabularies:
 - blocks entries and event ref values hold finding ids or map node ids'''
 
 
-def bootstrap_prompt() -> str:
-    """Return the fixed instruction block for bootstrapping `conductor/map.toml`.
+#: Where the map lives, relative to the project root, when no caller says
+#: otherwise. `conduct init` passes the path it actually wrote.
+DEFAULT_MAP_PATH = "conductor/map.toml"
+
+# The one table the bootstrapping agent edits. A field reference, deliberately
+# NOT a document to reproduce: `conduct init` has already written a valid map,
+# so an example map here would invite the agent to replace it — and with it
+# every answer the person gave during setup.
+_NODE_FIELDS = '''  id          unique, and the only name a lane may use: a lane may report a
+              status only for ids declared here, and anything else is warned
+              about and ignored
+  label       the human name the panel shows
+  kind        free-form (artifact | check | component | doc | …); the panel
+              prints it, no rule computes on it
+  depends_on  ids declared in this same file. The panel draws the graph from
+              them; status does NOT propagate along them, so a failing
+              dependency never marks its dependents failing by itself.'''
+
+
+def bootstrap_prompt(map_path: str = DEFAULT_MAP_PATH) -> str:
+    """Return the instruction block for filling in an already-written map.
+
+    Args:
+        map_path: The map the agent must edit, named the way the person
+            handing this over sees it.
 
     Returns:
-        A deterministic English prompt: read the project docs, write the map
-        (full commented example embedded), obey the validation rules, then
-        run `conduct validate`.
+        A deterministic English prompt, self-contained enough to be redirected
+        to a file and handed over on its own: what the map already decides,
+        what the agent must replace, the field reference for the one table it
+        edits, what must still hold afterwards, and the command that checks it.
     """
     return (
-        "You are bootstrapping Conduct for this project.\n"
+        "You are setting up Conduct for this project.\n"
+        "\n"
+        f"`{map_path}` already exists and already validates. Your job is to make\n"
+        "it describe THIS project — not to write a new one. The cycle, its phases,\n"
+        "and every [[cycle.roles]] block's id, harness, stage and reviews value\n"
+        "were chosen when the project was set up. They are answers, not suggestions.\n"
         "\n"
         "1. Read the project's roadmap, plan, and architecture documents.\n"
-        "2. Produce `conductor/map.toml`: the project map — nodes plus an optional\n"
-        "   review cycle. A fully commented example:\n"
         "\n"
-        "```toml\n"
-        f"{MAP_EXAMPLE}\n"
-        "```\n"
+        f"2. Open `{map_path}`. Every [[nodes]] block in it is a placeholder.\n"
+        "   Replace them with the real components of this project, and add one\n"
+        "   [[nodes]] block per further component you want reported on:\n"
         "\n"
-        "Validation rules your map must satisfy:\n"
+        f"{_NODE_FIELDS}\n"
+        "\n"
+        "3. Change nothing else. If the cycle is genuinely wrong for this project,\n"
+        "   say so and stop — do not restructure it on your own initiative.\n"
+        "\n"
+        "What must still be true when you are done:\n"
         "- schema_version == 1\n"
-        "- node ids are unique\n"
-        "- depends_on and reviews reference existing ids\n"
-        "- at least one node\n"
-        "Everything else is optional — a map with only nodes is valid.\n"
+        "- node ids are unique, and there is at least one node\n"
+        "- every depends_on entry names a node declared in this file\n"
+        "- every reviews entry names a role declared in this file\n"
+        "- every role's stage, where it has one, names one of cycle.phases\n"
         "\n"
-        "3. Run `conduct validate` to check the map before you finish.\n"
+        "4. Run `conduct validate` and fix anything it reports before you finish.\n"
     )
 
 

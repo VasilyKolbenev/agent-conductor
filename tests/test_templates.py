@@ -1,3 +1,4 @@
+import re
 import tomllib
 from datetime import datetime, timezone
 
@@ -220,9 +221,11 @@ def test_default_orbit_scopes_the_unread_claim_to_stage_not_phases():
     prose = _prose("default-orbit")
     assert "nothing is gated on reaching one" in prose
     assert "now.phase must name one of these" in prose
-    stage_para = _paragraphs_about("default-orbit", "stage     which phase")
+    # Found by the claim, not by the field table's column padding: a pure
+    # reformat of that table must not read as a missing caveat.
+    stage_para = _paragraphs_about("default-orbit", "no merge rule reads it")
     assert len(stage_para) == 1
-    assert "no merge rule reads it" in stage_para[0]
+    assert "stage" in stage_para[0]
 
 
 def test_default_orbit_renaming_a_phase_alone_really_does_break_the_map():
@@ -283,7 +286,9 @@ def test_decision_ladder_is_stated_without_the_word_gate(name):
     about = _paragraphs_about(name, "waits_on_human")
     assert about
     for para in about:
-        assert "gate" not in para.lower()
+        # The noun, on a word boundary. Banning the substring would also ban
+        # delegate, mitigate and aggregate — and "gated" is a fair verb.
+        assert re.search(r"\bgates?\b", para, re.IGNORECASE) is None
     prose = _prose(name)
     assert "does not by itself record the decision" in prose
     assert 'append an `events.jsonl` event with `kind = "ok"`' in prose
@@ -426,6 +431,45 @@ def test_a_renamed_harness_is_renamed_in_the_prose_that_counts_it():
     text = templates.get("default-orbit", primary="kimi", reviewer="qwen")
     assert "claude-code" not in text
     assert '"kimi" appears three times' in text
+
+
+def test_minimal_is_parameterised_too_inline_comments_and_all():
+    # get("minimal", ...) is public and was covered only for validity, never
+    # for the values landing — and it is the one template whose assignments
+    # carry trailing comments, so it is exactly where a swap would miss.
+    text = templates.get("minimal", project="my-app", primary="kimi", reviewer="qwen")
+    data = tomllib.loads(text)
+    assert data["project"] == "my-app"
+    assert _roles(data)["implementer"]["harness"] == "kimi"
+    assert _roles(data)["reviewer"]["harness"] == "qwen"
+    assert "# informational" in text          # the inline comment survives
+    assert "claude-code" not in text and "codex" not in text
+
+
+@pytest.mark.parametrize("name", ALL_TEMPLATES)
+def test_a_reformatted_assignment_raises_instead_of_shipping_a_wrong_map(
+        name, monkeypatch):
+    # Exact-text matching is what preserves inline comments; the price is that
+    # one extra space would make the swap a silent no-op, handing the user a
+    # committed map naming a harness they never chose. It must fail loudly.
+    original = templates.get(name)
+    marker = 'project = "web-app"' if name == "minimal" else 'project = "your-project"'
+    broken = original.replace(marker, marker.replace(" = ", "  = "), 1)
+    monkeypatch.setitem(templates._TEMPLATES, name, (broken, "d"))
+    for call in (lambda: templates.get(name), lambda: templates.get(name, project="p")):
+        with pytest.raises(templates.TemplateOutOfSync) as exc:
+            call()                            # unparameterised too: caught early
+        msg = str(exc.value)
+        assert name in msg and marker.replace(" = ", "  = ") in msg
+        assert "_SWAPPABLE" in msg            # says how to fix it
+
+
+def test_the_counted_sentence_is_counted_not_asserted():
+    # The number is derived from the role blocks that actually carry the
+    # harness, so the sentence cannot outlive an edit to the template.
+    assert '"claude-code" appears three times' in templates.get("default-orbit")
+    both = templates.get("default-orbit", primary="kimi", reviewer="kimi")
+    assert '"kimi" appears five times' in both
 
 
 def test_one_harness_for_both_roles_withdraws_the_different_product_claim():

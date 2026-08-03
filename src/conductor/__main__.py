@@ -1,12 +1,17 @@
 """The `conduct` command-line interface.
 
-Subcommands: `validate` (schema errors → exit 1, merge warnings → stdout),
-`init` (scaffold conductor/ and print the bootstrap prompt), `prompt --role R
-[--author A]` (vend a role's working prompt; the positional role form is
-deprecated), `up` (serve the panel on 127.0.0.1 with SSE
-live updates; Ctrl-C → exit 0), `demo` (materialize the bundled fixture
-into a temp directory and serve it — takes `--port` but no `--dir`). Every
-other command takes `--dir` (the project root, default `.`). Exit codes
+Subcommands: `validate` (schema errors → exit 1, merge warnings → exit 0);
+`init` (scaffold conductor/ from a template and print the prompt that fills
+it in — `--template NAME` is the explicit path, a terminal without it gets a
+guided wizard, and anything that is not a terminal takes the same default
+without reading stdin); `prompt --role R [--author A]` (vend a role's working
+prompt; the positional role form is deprecated); `up` (serve the panel on
+127.0.0.1 with SSE live updates; Ctrl-C → exit 0); `demo` (materialize the
+bundled fixture into a temp directory and serve it — takes `--port` but no
+`--dir`). Every other command takes `--dir` (the project root, default `.`).
+
+The wizard's dialogue goes to stderr, never stdout: a question nobody was
+there to answer must not turn up in a caller's captured output. Exit codes
 flow through `main`'s return value (0 ok, 1 failure); argparse exits 2 on
 usage errors.
 """
@@ -31,20 +36,34 @@ def _merged_state(loaded: store.Loaded) -> dict:
                        extra_warnings=loaded.warnings)
 
 
-def _cmd_validate(args: argparse.Namespace) -> int:
-    """Print schema errors (exit 1) or merge warnings (exit 0)."""
+def _validation(args: argparse.Namespace) -> tuple[list[str], list[str]]:
+    """Compute what `conduct validate` reports, without rendering any of it.
+
+    Args:
+        args: A namespace carrying `dir`, the project root.
+
+    Returns:
+        `(errors, warnings)`. Errors are schema failures and mean exit 1;
+        warnings are informational and do not. Errors short-circuit the merge,
+        so the two are never both populated. Returning data rather than
+        printing is what lets `init` state whether its own scaffold came out
+        clean instead of inferring it from an exit code that says 0 either way.
+    """
     loaded = store.load(args.dir)
     errors = [entry["error"] for entry in loaded.lanes if entry["error"] is not None]
     if loaded.map_error is not None:
         errors.insert(0, loaded.map_error)
-    if errors:
-        for error in errors:          # already self-prefixed (lane <stem>: / map...)
-            print(error)
-        return 1
-    state = _merged_state(loaded)
-    for warning in state["warnings"]:
-        print(warning)
-    return 0
+    if errors:                        # already self-prefixed (lane <stem>: / map...)
+        return errors, []
+    return [], _merged_state(loaded)["warnings"]
+
+
+def _cmd_validate(args: argparse.Namespace) -> int:
+    """Print schema errors (exit 1) or merge warnings (exit 0)."""
+    errors, warnings = _validation(args)
+    for line in errors or warnings:
+        print(line)
+    return 1 if errors else 0
 
 
 # The harnesses the wizard offers by name. Ids only, and deliberately short:
@@ -58,6 +77,23 @@ _HARNESSES = ("claude-code", "codex")
 #: The reviewer answer that means "no independent reviewer" — the one answer
 #: that changes which template is written.
 _NO_REVIEWER = "none"
+
+# `harness` is presentation metadata: no merge rule computes on it. Asked at a
+# prompt, though, it reads like configuring a tool integration, and a newcomer
+# will reasonably expect Conduct to go and start something. Say what the answer
+# does before they answer it.
+_PRIMARY_QUESTION = (
+    "\nWhich harness runs the implementing roles?\n"
+    "  Conduct never launches, installs or detects a harness. The answer only\n"
+    "  labels who does what, in the map and in the panel.")
+
+# The reviewer question carries a structural decision inside a cosmetic one:
+# every other answer names a product, while `none` removes the reviewing role
+# altogether. Name that consequence at the point of choosing it, not in a
+# comment the user reads afterwards.
+_REVIEWER_QUESTION = "\nWhich harness reviews their work?"
+_NO_REVIEWER_GLOSS = (" — no reviewing role at all: findings then come out "
+                      "agreed with nobody having looked")
 
 
 def _interactive() -> bool:
@@ -160,12 +196,10 @@ def _wizard(ask: Callable[[str], str], default_project: str) -> tuple[str, str]:
     """
     _say("conduct init — three questions, and Enter takes the default.\n")
     project = _ask_name(ask, "Project name", default_project, "project name")
-    primary = _ask_harness(ask, "\nWhich harness runs the implementing roles?",
-                           [(h, "") for h in _HARNESSES])
+    primary = _ask_harness(ask, _PRIMARY_QUESTION, [(h, "") for h in _HARNESSES])
     others = [(h, "") for h in _HARNESSES if h != primary]
     reviewer = _ask_harness(
-        ask, "\nWhich harness reviews their work?",
-        others + [(_NO_REVIEWER, " — no independent reviewer")])
+        ask, _REVIEWER_QUESTION, others + [(_NO_REVIEWER, _NO_REVIEWER_GLOSS)])
     name = "single-harness" if reviewer == _NO_REVIEWER else templates.DEFAULT
     _say(f"\nWriting the {name} template:")
     _say(f"  project    {project}")
@@ -247,14 +281,20 @@ def _dir_suffix(dirname: str) -> str:
     return f' --dir "{dirname}"' if " " in dirname else f" --dir {dirname}"
 
 
+# The one sentence naming what the user must do next. Said once, to both
+# audiences: here to the person, and inside `bootstrap_prompt` to the agent
+# they may hand it to. Two differently-worded first actions read as two tasks.
+_FIRST_ACTION = ("Replace the placeholder nodes in conductor/map.toml with the "
+                 "real components of your project — until you do, nothing it "
+                 "reports is about your project.")
+
+
 def _print_next_steps(args: argparse.Namespace, text: str) -> None:
     """Print the first action, the next command, and how to open the panel."""
     where = _dir_suffix(args.dir)
     roles = tomllib.loads(text).get("cycle", {}).get("roles", [])
     print("Your first action")
-    print("  Open conductor/map.toml and replace every PLACEHOLDER node with a "
-          "real\n  component of your project. Until you do, nothing it reports "
-          "is about\n  your project.\n")
+    print(f"  {_FIRST_ACTION}\n")
     print("Next command")
     print(f"  conduct validate{where}")
     print("      silence means the map and every lane are valid\n")
@@ -275,17 +315,24 @@ def _scaffold(args: argparse.Namespace, cdir: Path, name: str, text: str) -> int
     (cdir / "map.toml").write_text(text, encoding="utf-8", newline="\n")
     print(f"scaffolded {cdir}: map.toml (edit me), lanes/, events.jsonl")
     print(f"template: {name}\n")
-    # The map on disk is a valid placeholder, not a description of this
-    # project. The bootstrap prompt is how you hand that gap to an agent, so
-    # it needs a line saying so — unheaded, it reads as "nothing was written".
-    print("To have an agent fill it in for you, paste everything between the "
-          "rules:\n" + "-" * 74)
-    print(prompts.bootstrap_prompt() + "-" * 74 + "\n")
-    if _cmd_validate(args) != 0:
+    # The map on disk is valid but generic, and the prompt below is how that
+    # gap gets handed to an agent. Unheaded it reads as "nothing was written".
+    # It does NOT restate _FIRST_ACTION: the same sentence twice in one screen
+    # of output reads as two tasks just as surely as two different ones did.
+    print("The map is valid but generic. To have an agent fill it in for you, "
+          "paste\neverything between the rules:\n" + "-" * 74)
+    print(prompts.bootstrap_prompt(str(cdir / "map.toml")) + "-" * 74 + "\n")
+    errors, warnings = _validation(args)
+    if errors:
+        for error in errors:
+            print(error)
         print("the generated map did not validate — that is a bug, please report it",
               file=sys.stderr)
         return 1
-    print("conduct validate: clean — the map is valid as written.\n")
+    for warning in warnings:          # exit 0 either way, so say which one it is
+        print(warning)
+    verdict = "valid, with the warnings above" if warnings else "clean — no warnings"
+    print(f"conduct validate: {verdict}.\n")
     _print_next_steps(args, text)
     return 0
 
