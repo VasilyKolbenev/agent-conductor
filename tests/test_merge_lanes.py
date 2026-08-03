@@ -68,6 +68,21 @@ def test_skipped_events_produce_a_warning():
     state2 = merge.merge(_map(), None, [], [], 3, NOW)
     assert any("skipped 3" in w for w in state2["warnings"])
 
+def test_null_now_is_emitted_as_an_empty_object():
+    # §6.1 sketches "now": {}. A lane may legally write null — schema.py only
+    # rejects a non-dict non-null `now` — so state must still emit an object.
+    state = merge.merge(_map(), None, [lane(now=None)], [], 0, NOW)
+    assert state["lanes"][0]["now"] == {}
+
+def test_absent_now_is_emitted_as_an_empty_object():
+    state = merge.merge(_map(), None, [lane()], [], 0, NOW)
+    assert state["lanes"][0]["now"] == {}
+
+def test_present_now_is_carried_through_verbatim():
+    payload = {"task": "fixing gate D", "phase": "review"}
+    state = merge.merge(_map(), None, [lane(now=payload)], [], 0, NOW)
+    assert state["lanes"][0]["now"] == payload
+
 def test_staleness_boundary_exact_threshold_is_not_stale():
     edge = lane(updated="2026-07-30T06:00:00+00:00")   # exactly 360 min before NOW
     state = merge.merge(_map(), None, [edge], [], 0, NOW)

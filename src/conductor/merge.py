@@ -28,7 +28,7 @@ def _lane_view(entry: dict, now: datetime, warnings: list[str]) -> dict:
     stale = dt is not None and not future and (now - dt) > timedelta(minutes=threshold)
     return {"author": author, "role": data.get("role"), "updated": data.get("updated"),
             "stale": stale, "broken": False, "error": None,
-            "now": data.get("now", {}), "_data": data, "_dt": dt, "_future": future}
+            "now": data.get("now") or {}, "_data": data, "_dt": dt, "_future": future}
 
 
 def merge(map_data: dict | None, map_error: str | None, lanes: list[dict],
