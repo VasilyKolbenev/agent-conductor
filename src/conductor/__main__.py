@@ -10,10 +10,25 @@ prompt; the positional role form is deprecated); `up` (serve the panel on
 bundled fixture into a temp directory and serve it — takes `--port` but no
 `--dir`). Every other command takes `--dir` (the project root, default `.`).
 
-The wizard's dialogue goes to stderr, never stdout: a question nobody was
-there to answer must not turn up in a caller's captured output. Exit codes
-flow through `main`'s return value (0 ok, 1 failure); argparse exits 2 on
-usage errors.
+THE STREAM CONTRACT, which every command here obeys and every command added
+here must obey. stdout carries the command's primary result and nothing else,
+so that redirecting it yields something usable on its own: the rendered prompt
+for `prompt`, the bootstrap prompt for `init`, the validation report for
+`validate`, the bare URL for `up` and `demo`. stderr carries everything a
+person reads around that — dialogue, progress, explanations, deprecation
+warnings, and errors that mean the command could not run.
+
+Two deliberate exceptions. What `validate` found IS its result, so findings
+stay on stdout even when the exit code is 1; and a clean `validate` prints
+nothing at all, on either stream. Whether a terminal is attached changes the
+conversation on stderr, never a byte of stdout.
+
+Nothing structural enforces this. It is held by review and by one contract
+test per command in `tests/test_cli.py` — a new command that prints its
+progress to stdout would pass every other check in the suite.
+
+Exit codes flow through `main`'s return value (0 ok, 1 failure); argparse
+exits 2 on usage errors.
 """
 from __future__ import annotations
 
@@ -152,6 +167,18 @@ def _cmd_demo(args: argparse.Namespace) -> int:
     return _serve(root, args.port)
 
 
+#: The port `up` and `demo` bind, and the one `init` tells the user to open.
+#: One constant, because init advising a port the panel is not on is worse
+#: than init saying nothing about the panel at all.
+DEFAULT_PORT = 7777
+
+
+def _add_port(p: argparse.ArgumentParser) -> None:
+    """Attach the shared `--port` option to a serving subparser."""
+    p.add_argument("--port", type=int, default=DEFAULT_PORT,
+                   help=f"TCP port on 127.0.0.1 (default: {DEFAULT_PORT})")
+
+
 def _add_dir_and_func(p: argparse.ArgumentParser,
                       func: Callable[[argparse.Namespace], int]) -> None:
     """Attach the shared `--dir` option and the dispatch target to a subparser."""
@@ -176,6 +203,7 @@ def _build_parser() -> argparse.ArgumentParser:
     # and hardcodes a second copy of the list. The explicit check in
     # _cmd_init exits 1 with templates.get()'s own message, so the available
     # names can never drift from the module that vends them.
+    p.set_defaults(default_port=DEFAULT_PORT)   # init advises it, never binds it
     p.add_argument("--template", metavar="NAME",
                    help="starting map: " + ", ".join(n for n, _ in templates.names())
                         + f" (default: {templates.DEFAULT}; omit it in a terminal "
@@ -196,14 +224,12 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_dir_and_func(p, _cmd_prompt)
 
     p = sub.add_parser("up", help="serve the panel on loopback HTTP with live updates")
-    p.add_argument("--port", type=int, default=7777,
-                   help="TCP port on 127.0.0.1 (default: 7777)")
+    _add_port(p)
     _add_dir_and_func(p, _cmd_up)
 
     # No --dir: demo materializes its own throwaway root.
     p = sub.add_parser("demo", help="serve the bundled demo fixture")
-    p.add_argument("--port", type=int, default=7777,
-                   help="TCP port on 127.0.0.1 (default: 7777)")
+    _add_port(p)
     p.set_defaults(func=_cmd_demo)
 
     return parser

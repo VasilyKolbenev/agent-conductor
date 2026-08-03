@@ -1,7 +1,15 @@
-"""Tests for conductor.__main__ — the `conduct` CLI, subprocess-free.
+"""Tests for conductor.__main__ — the `conduct` CLI.
 
-Every test calls `main(argv)` directly and inspects the return code plus
-capsys-captured stdout/stderr.
+Every test but one calls `main(argv)` directly and inspects the return code
+plus capsys-captured stdout/stderr. The exception is
+`test_up_flushes_the_url_while_it_is_still_serving`, which spawns a real child
+process because the defect it pins — a block-buffered stdout holding the URL
+until the server stops — cannot exist under capsys. Adding a second
+subprocess test should need the same justification: they are slower, and they
+can hang where an in-process test merely fails.
+
+The stream contract these tests enforce is stated in `conductor.__main__`'s
+module docstring; the contract section below is its enforcement.
 """
 import json
 import os
@@ -283,21 +291,32 @@ def test_up_flushes_the_url_while_it_is_still_serving(tmp_path):
     # blocked reader must fail this test rather than hang the suite.
     root = write_project(tmp_path, lanes={"claude": good_lane()})
     env = {k: v for k, v in os.environ.items() if k != "PYTHONUNBUFFERED"}
+    # stderr is captured, not discarded: an import error and an unflushed
+    # build both present as twenty seconds of silence, and only stderr tells
+    # them apart. Without it a broken environment reads as this exact defect.
     proc = subprocess.Popen(
         [sys.executable, "-m", "conductor", "up", "--dir", str(root), "--port", "0"],
-        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, env=env)
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
     first: list[str] = []
     reader = threading.Thread(target=lambda: first.append(proc.stdout.readline()),
                               daemon=True)
     reader.start()
     reader.join(timeout=20)
     try:
-        assert first, "no URL reached a redirected stdout while the server was up"
+        if not first:
+            proc.terminate()          # unblocks the reader so stderr can be read
+            assert first, ("no URL reached a redirected stdout in 20s; child "
+                           f"stderr was: {proc.stderr.read()!r}")
         assert re.fullmatch(r"http://127\.0\.0\.1:\d+/", first[0].strip())
     finally:
         proc.terminate()
-        proc.wait(timeout=20)
+        reader.join(timeout=5)        # let the reader observe the closed pipe
+        try:
+            proc.wait(timeout=20)
+        except subprocess.TimeoutExpired:
+            proc.kill()               # never let cleanup mask a real assertion
         proc.stdout.close()
+        proc.stderr.close()
 
 
 def test_up_bind_failure_leaves_stdout_empty(tmp_path, capsys, monkeypatch):

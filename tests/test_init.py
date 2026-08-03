@@ -1,9 +1,10 @@
 """Tests for `conduct init` — the guided wizard, templates, and the scaffold.
 
-Split out of test_cli.py when the init path moved into `conductor.init`. Same
-contract as test_cli.py: subprocess-free, every test calls the CLI entry point
-directly and inspects the return code plus capsys-captured stdout/stderr. The
-wizard is never driven through real stdin — `_scripted` injects the answers.
+Split out of test_cli.py when the init path moved into `conductor.init`. Every
+test here is subprocess-free: it calls the CLI entry point directly and
+inspects the return code plus capsys-captured stdout/stderr. The wizard is
+never driven through real stdin — `_scripted` injects the answers, so a
+re-prompt loop fails these tests instead of hanging them.
 """
 import ast
 import re
@@ -356,17 +357,6 @@ def test_the_bootstrap_prompt_does_not_contradict_the_map_just_written(tmp_path,
     assert 'project = "my-app"' in written and "Kimi Code" in written
 
 
-def test_the_bootstrap_prompt_stands_alone_when_redirected(tmp_path, capsys):
-    # `conduct init > bootstrap.txt` yields this and nothing else, so it may
-    # not lean on anything the CLI printed around it.
-    text = prompts.bootstrap_prompt("conductor/map.toml")
-    for needed in ("conductor/map.toml", "schema_version", "[[nodes]]",
-                   "[[cycle.roles]]", "conduct validate", "depends_on"):
-        assert needed in text
-    for dangling in ("above", "below", "the rules"):
-        assert dangling not in text
-
-
 def test_the_first_action_is_said_once_to_both_audiences(tmp_path, capsys):
     # Two differently-worded first actions read as two separate tasks.
     assert main(["init", "--dir", str(tmp_path)]) == 0
@@ -397,9 +387,6 @@ def test_the_no_reviewer_option_names_its_consequence(tmp_path, capsys):
 
 # --- rendered width: the sentences that matter most were the widest ---
 
-LONG_PATH = r"C:\Users\User\Projects\a-rather-long-repository-name\conductor\map.toml"
-
-
 def _widest(text, skip=None):
     """The longest rendered line, ignoring any line holding `skip`."""
     lines = [l for l in text.split("\n") if not (skip and skip in l)]
@@ -413,7 +400,7 @@ def test_the_default_run_dialogue_stays_inside_the_width(tmp_path, capsys,
     # a single 154-column line in exactly this run.
     monkeypatch.chdir(tmp_path)
     assert main(["init"]) == 0
-    assert _widest(capsys.readouterr().err) <= conductor.init.WIDTH
+    assert _widest(capsys.readouterr().err) <= prompts.WIDTH
 
 
 def test_the_wizard_dialogue_stays_inside_the_width(tmp_path, capsys, monkeypatch):
@@ -422,22 +409,43 @@ def test_the_wizard_dialogue_stays_inside_the_width(tmp_path, capsys, monkeypatc
     monkeypatch.chdir(tmp_path)
     answers = _scripted(['my "app"', "my-app", "", "claude-code"])
     assert _cmd_init(_build_parser().parse_args(["init"]), ask=answers) == 0
-    assert _widest(capsys.readouterr().err) <= conductor.init.WIDTH
+    assert _widest(capsys.readouterr().err) <= prompts.WIDTH
 
 
-@pytest.mark.parametrize("path", ["conductor/map.toml", LONG_PATH])
-def test_the_bootstrap_prompt_stays_inside_the_width(path):
-    # The path gets a line of its own precisely so an absolute one cannot
-    # stretch the prose: it is unwrappable, and folding sentences around it
-    # pushed two lines past 130 columns.
-    text = prompts.bootstrap_prompt(path)
-    assert _widest(text, skip=path) <= conductor.init.WIDTH
-    assert f"\n    {path}\n" in text          # alone on its line, never inline
-    # `skip=path` must skip exactly one line. Without this the two assertions
-    # above pass while the path is ALSO interpolated back into a sentence:
-    # the standalone line still exists, and every line the re-interpolation
-    # widened is skipped from the width check for containing the path.
-    assert text.count(path) == 1
+def test_init_degrades_gracefully_when_the_root_cannot_be_written(tmp_path, capsys):
+    # A real filesystem condition, not a patched one: a file where the project
+    # root should be. `conduct init` is the first command a new user runs, and
+    # it was the only one that answered an unwritable root with a traceback.
+    blocked = tmp_path / "not-a-directory"
+    blocked.write_text("", encoding="utf-8")
+    assert main(["init", "--dir", str(blocked)]) == 1
+    captured = capsys.readouterr()
+    assert captured.out == "" and "cannot write" in captured.err
+
+
+def test_the_one_path_that_leaves_a_directory_says_how_to_get_unstuck(
+        tmp_path, capsys, monkeypatch):
+    # Unreachable today — every template is pinned to validate — but it is the
+    # single exit that leaves conductor/ behind, and a re-run refuses an
+    # existing one. Without the recovery line the user is simply wedged.
+    monkeypatch.setattr("conductor.__main__._validation",
+                        lambda args: (["map: contrived failure"], []))
+    assert main(["init", "--dir", str(tmp_path)]) == 1
+    said = _unwrapped(capsys.readouterr().err)
+    assert "map: contrived failure" in said
+    assert str(tmp_path / "conductor") in said and "remove it" in said
+    assert (tmp_path / "conductor").exists()      # the message is telling the truth
+    assert main(["init", "--dir", str(tmp_path)]) == 1   # and a re-run does refuse
+
+
+def test_the_advised_panel_port_is_the_one_up_actually_binds(tmp_path, capsys):
+    # Two argparse defaults and a sentence in init used to carry 7777
+    # separately; changing the port could leave init advising the wrong one.
+    port = conductor.__main__.DEFAULT_PORT
+    assert _build_parser().parse_args(["up"]).port == port
+    assert _build_parser().parse_args(["demo"]).port == port
+    assert main(["init", "--dir", str(tmp_path)]) == 0
+    assert f"http://127.0.0.1:{port}/" in capsys.readouterr().err
 
 
 # --- the stream contract: stdout is the result, stderr is everything else ---

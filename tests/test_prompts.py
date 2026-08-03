@@ -2,6 +2,7 @@ import json
 import tomllib
 from datetime import datetime, timezone
 
+import pytest
 from conductor import merge, prompts, schema, store
 from tests.test_merge_review import MAP, lane, finding
 
@@ -298,3 +299,40 @@ def test_role_prompt_pending_block_is_enriched():
     assert "evidence: e" in tail
     assert "refs: n" in tail
     assert "D-1" not in tail                         # already verdicted — not re-asked
+
+
+# --- bootstrap_prompt: a deliverable someone redirects to a file ---
+
+LONG_PATH = r"C:\Users\User\Projects\a-rather-long-repository-name\conductor\map.toml"
+
+
+def _widest(text, skip=None):
+    """The longest rendered line, ignoring any line holding `skip`."""
+    lines = [l for l in text.split('\n') if not (skip and skip in l)]
+    return max((len(l) for l in lines), default=0)
+
+
+def test_the_bootstrap_prompt_stands_alone_when_redirected():
+    # `conduct init > bootstrap.txt` yields this and nothing else, so it may
+    # not lean on anything the CLI printed around it.
+    text = prompts.bootstrap_prompt("conductor/map.toml")
+    for needed in ("conductor/map.toml", "schema_version", "[[nodes]]",
+                   "[[cycle.roles]]", "conduct validate", "depends_on"):
+        assert needed in text
+    for dangling in ("above", "below", "the rules"):
+        assert dangling not in text
+
+
+@pytest.mark.parametrize("path", ["conductor/map.toml", LONG_PATH])
+def test_the_bootstrap_prompt_stays_inside_the_width(path):
+    # The path gets a line of its own precisely so an absolute one cannot
+    # stretch the prose: it is unwrappable, and folding sentences around it
+    # pushed two lines past 130 columns.
+    text = prompts.bootstrap_prompt(path)
+    assert _widest(text, skip=path) <= prompts.WIDTH
+    assert f"\n    {path}\n" in text          # alone on its line, never inline
+    # `skip=path` must skip exactly one line. Without this the two assertions
+    # above pass while the path is ALSO interpolated back into a sentence:
+    # the standalone line still exists, and every line the re-interpolation
+    # widened is skipped from the width check for containing the path.
+    assert text.count(path) == 1

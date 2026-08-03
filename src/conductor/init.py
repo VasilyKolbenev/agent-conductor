@@ -7,15 +7,16 @@ the harness that reviews. Anything that is not a terminal takes the same
 default without reading stdin at all, because a command that can block on
 input can block the whole of CI.
 
-Nothing in this module, or anything it imports, may inspect the machine: no
-PATH lookup, no subprocess, no environment scan. Detecting installed harnesses
-is a capability class of its own and needs its own ADR before any of it exists.
-Keeping the init path in one module is what makes that ban statable as a
-property of an import graph rather than a hand-kept list of file names.
-
-Validation is injected rather than imported (`execute(..., validate=...)`):
-the scaffold is checked with exactly the computation `conduct validate`
-performs, without this module depending on the CLI that renders it.
+Nothing on the init path may inspect the machine: no PATH lookup, no
+subprocess, no environment scan. Detecting installed harnesses is a capability
+class of its own and needs its own ADR before any of it exists. What enforces
+that today is narrower than the rule: `test_init_never_probes_the_machine_for_
+installed_harnesses` parses the source of three named modules and rejects a
+probing import or attribute in any of them. It does not follow imports, so a
+probe placed in a module this one merely calls would pass. Holding the init
+path in one module is what will let DO-4 state the ban over an import graph
+instead — and that reformulation has to be careful, because `pathlib` and
+`argparse` both pull in `os`.
 
 stdout carries one thing, the prompt that fills the generated map in. The
 scaffold report, the validation verdict, the wizard and the advice that
@@ -36,8 +37,10 @@ from conductor import prompts, templates
 #: What `execute` needs of `conduct validate`: the errors and warnings it
 #: would report for a project root, as data, leaving the rendering to the
 #: caller.
-Validation = Callable[[argparse.Namespace], "tuple[list[str], list[str]]"]
+Validation = Callable[[argparse.Namespace], tuple[list[str], list[str]]]
 
+
+# --- what the wizard offers, and the copy it says it with -------------------
 
 # The harnesses the wizard offers by name. Ids only, and deliberately short:
 # the branded registry (display names, detection metadata) is DO-4, and this
@@ -50,11 +53,6 @@ _HARNESSES = ("claude-code", "codex")
 #: The reviewer answer that means "no independent reviewer" — the one answer
 #: that changes which template is written.
 _NO_REVIEWER = "none"
-
-#: Every rendered line of dialogue folds to this. Narrow enough to survive a
-#: split terminal, and the width the pins enforce — the sentences that matter
-#: most here are the longest, so hand-wrapping them is what regressed last time.
-WIDTH = 72
 
 # `harness` is presentation metadata: no merge rule computes on it. Asked at a
 # prompt, though, it reads like configuring a tool integration, and a newcomer
@@ -72,9 +70,19 @@ _REVIEWER_QUESTION = "Which harness reviews their work?"
 _NO_REVIEWER_GLOSS = (" — no reviewing role at all: findings then come out "
                       "agreed with nobody having looked")
 
+# The one sentence naming what the user must do next. Said once, to the person;
+# `prompts.bootstrap_prompt` states the same instruction to the agent in its
+# own register, deliberately without sharing this text.
+_FIRST_ACTION = ("Replace the placeholder nodes in conductor/map.toml with the "
+                 "real components of your project — until you do, nothing it "
+                 "reports is about your project.")
+
+
+# --- talking to the person --------------------------------------------------
+
 
 def _wrap(text: str, indent: str = "", hang: str | None = None) -> str:
-    """Fold one paragraph to `WIDTH`, indenting every line.
+    """Fold one paragraph to `prompts.WIDTH`, indenting every line.
 
     Args:
         text: A single paragraph, unwrapped.
@@ -86,7 +94,7 @@ def _wrap(text: str, indent: str = "", hang: str | None = None) -> str:
         what keeps the width right after someone edits the sentence — every
         hand-wrapped line here has been re-broken by an edit at least once.
     """
-    return textwrap.fill(text, width=WIDTH, initial_indent=indent,
+    return textwrap.fill(text, width=prompts.WIDTH, initial_indent=indent,
                          subsequent_indent=indent if hang is None else hang)
 
 
@@ -217,6 +225,9 @@ def _wizard(ask: Callable[[str], str], default_project: str) -> tuple[str, str]:
                                reviewer=None if reviewer == _NO_REVIEWER else reviewer)
 
 
+# --- choosing what to write -------------------------------------------------
+
+
 def _default_project(dirname: str) -> str:
     """The project root's own directory name, when that is a legal name."""
     name = Path(dirname).resolve().name
@@ -278,19 +289,14 @@ def _init_map_text(args: argparse.Namespace,
         return default
 
 
+# --- writing it, and saying what happens next -------------------------------
+
+
 def _dir_suffix(dirname: str) -> str:
     """The ` --dir …` a printed command needs, or `""` for the default root."""
     if dirname == ".":
         return ""
     return f' --dir "{dirname}"' if " " in dirname else f" --dir {dirname}"
-
-
-# The one sentence naming what the user must do next. Said once, to both
-# audiences: here to the person, and inside `bootstrap_prompt` to the agent
-# they may hand it to. Two differently-worded first actions read as two tasks.
-_FIRST_ACTION = ("Replace the placeholder nodes in conductor/map.toml with the "
-                 "real components of your project — until you do, nothing it "
-                 "reports is about your project.")
 
 
 def _print_next_steps(args: argparse.Namespace, text: str) -> None:
@@ -307,7 +313,35 @@ def _print_next_steps(args: argparse.Namespace, text: str) -> None:
         _say(f"  conduct prompt --role {roles[0]['id']}{where}")
         _say("      the working prompt for that role — paste it into your harness")
     _say(f"  conduct up{where}")
-    _say("      the panel, at http://127.0.0.1:7777/")
+    # Derived, never retyped: init advising a port the panel does not bind
+    # would be worse than saying nothing.
+    _say(f"      the panel, at http://127.0.0.1:{args.default_port}/")
+
+
+def _report_check(cdir: Path, errors: list[str], warnings: list[str]) -> int:
+    """Say what the scaffold's own validation found.
+
+    Args:
+        cdir: The directory just written, named in the recovery line.
+        errors: Schema failures. Any at all mean the scaffold is unusable.
+        warnings: Informational remarks; they do not fail the command.
+
+    Returns:
+        0 if the generated map is valid, 1 if it is not. The failing branch is
+        the one exit in `init` that leaves a directory behind, and a re-run
+        refuses an existing one — so it says how to get unstuck rather than
+        leaving the user to guess.
+    """
+    for line in errors or warnings:
+        _say(line)
+    if errors:
+        _say(_wrap("the generated map did not validate — that is a bug, please "
+                   f"report it. {cdir} was created and is left in place; remove "
+                   "it before running conduct init again."))
+        return 1
+    verdict = "valid, with the warnings above" if warnings else "clean — no warnings"
+    _say(f"conduct validate: {verdict}.\n")
+    return 0
 
 
 def _scaffold(args: argparse.Namespace, cdir: Path, name: str, text: str,
@@ -319,24 +353,24 @@ def _scaffold(args: argparse.Namespace, cdir: Path, name: str, text: str,
     prompt that fills the map in is the command's one deliverable, so it is
     all that stdout carries, byte for byte and identical whether the answers
     came from a wizard, from `--template`, or from neither.
+
+    Returns:
+        0 when the scaffold is written and valid; 1 if the root cannot be
+        written to, or if the generated map fails its own validation.
     """
-    (cdir / "lanes").mkdir(parents=True)
-    (cdir / "events.jsonl").write_text("", encoding="utf-8", newline="\n")
-    # No `+ "\n"`: templates.get() already ends in exactly one newline, and a
-    # second would leave a blank line at the end of every user's committed map.
-    (cdir / "map.toml").write_text(text, encoding="utf-8", newline="\n")
+    try:
+        (cdir / "lanes").mkdir(parents=True)
+        (cdir / "events.jsonl").write_text("", encoding="utf-8", newline="\n")
+        # No `+ "\n"`: templates.get() already ends in exactly one newline, and
+        # a second would leave a blank line at the end of every user's map.
+        (cdir / "map.toml").write_text(text, encoding="utf-8", newline="\n")
+    except OSError as e:              # unwritable root, read-only mount, quota
+        _say(f"cannot write {cdir}: {e}")
+        return 1
     _say(f"scaffolded {cdir}: map.toml (edit me), lanes/, events.jsonl")
     _say(f"template: {name}\n")
-    errors, warnings = validate(args)
-    if errors:
-        for error in errors:
-            _say(error)
-        _say("the generated map did not validate — that is a bug, please report it")
+    if _report_check(cdir, *validate(args)) != 0:
         return 1
-    for warning in warnings:          # exit 0 either way, so say which one it is
-        _say(warning)
-    verdict = "valid, with the warnings above" if warnings else "clean — no warnings"
-    _say(f"conduct validate: {verdict}.\n")
     # The map is valid but generic, and the prompt is how that gap gets handed
     # to an agent. Unannounced it reads as "nothing was written" — but the
     # announcement is dialogue, so it goes to stderr and the prompt does not.
@@ -363,19 +397,22 @@ def execute(args: argparse.Namespace, ask: Callable[[str], str] | None = None,
             `(errors, warnings)` for `args.dir`.
 
     Returns:
-        0 on success; 1 for an existing conductor/, an unknown template, or a
-        wizard abandoned at EOF or Ctrl-C. Nothing is written on any of them.
+        0 on success, 1 on every refusal. Three of those refuse before
+        anything is written — an existing conductor/, an unknown template, a
+        wizard abandoned at EOF or Ctrl-C. The fourth comes from `_scaffold`
+        and is the exception: an unwritable root, or a generated map that
+        fails its own validation, which leaves the directory in place.
     """
     cdir = Path(args.dir) / "conductor"
     if cdir.exists():                 # checked before any question is asked
-        print(f"{cdir} already exists — refusing to touch it", file=sys.stderr)
+        _say(f"{cdir} already exists — refusing to touch it")
         return 1
     try:
         name, text = _init_map_text(args, ask)
     except templates.UnknownTemplate as e:
-        print(str(e), file=sys.stderr)
+        _say(str(e))
         return 1
     except (EOFError, KeyboardInterrupt):
-        print("\ninit cancelled — nothing was written", file=sys.stderr)
+        _say("\ninit cancelled — nothing was written")
         return 1
     return _scaffold(args, cdir, name, text, validate)

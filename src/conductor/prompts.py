@@ -166,6 +166,13 @@ _VOCABULARIES = '''Closed vocabularies:
 #: otherwise. `conduct init` passes the path it actually wrote.
 DEFAULT_MAP_PATH = "conductor/map.toml"
 
+#: Every line of prose a person reads in a terminal folds to this — the prompts
+#: below, hand-wrapped, and `conduct init`'s dialogue, folded at render time.
+#: Narrow enough to survive a split terminal, and the width the pins enforce:
+#: the sentences that matter most are the longest, which is exactly why
+#: hand-wrapping them regressed.
+WIDTH = 72
+
 # The one table the bootstrapping agent edits. A field reference, deliberately
 # NOT a document to reproduce: `conduct init` has already written a valid map,
 # so an example map here would invite the agent to replace it — and with it
