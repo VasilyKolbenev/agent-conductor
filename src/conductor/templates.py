@@ -179,9 +179,9 @@ phases = ["goal", "detect", "diagnose", "design", "deliver"]
 #             field with teeth: it is what makes the merger compute unreviewed
 #             and disagreement states instead of assuming agreement.
 #
-# "claude-code" appears three times below. Those are three separate
-# participants that happen to run the same product - three lanes, three author
-# ids - not three installations of it. A participant is whoever writes a lane
+# "claude-code" appears three times below. Those are separate participants
+# that happen to run the same product - separate lanes, separate author ids -
+# not separate installations of it. A participant is whoever writes a lane
 # file.
 #
 # Nobody is staged to "goal", and that is deliberate, not an omission. The

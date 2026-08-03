@@ -39,14 +39,14 @@ def _roles(data):
     return {r["id"]: r for r in data["cycle"]["roles"]}
 
 
-def _paragraphs(name):
-    """The template's comments as unwrapped paragraphs, one string each.
+def _paragraphs_of(text):
+    """One rendered template's comments as unwrapped paragraphs.
 
     The prose IS the deliverable here, so tests must survive a rewrap. A
     paragraph ends at a blank comment line, a `# ---` rule, or any TOML line.
     """
     paragraphs, current = [], []
-    for line in templates.get(name).splitlines():
+    for line in text.splitlines():
         body = line[1:].strip() if line.startswith("#") else ""
         if body and set(body) != {"-"}:
             current.append(body)
@@ -56,6 +56,11 @@ def _paragraphs(name):
     if current:
         paragraphs.append(" ".join(current))
     return paragraphs
+
+
+def _paragraphs(name):
+    """The named template's comments, at its default values."""
+    return _paragraphs_of(templates.get(name))
 
 
 def _prose(name):
@@ -194,7 +199,7 @@ def test_default_orbit_does_not_claim_review_independence():
 def test_default_orbit_explains_the_shared_harness_product():
     harnesses = [r["harness"] for r in _parsed("default-orbit")["cycle"]["roles"]]
     assert harnesses.count("claude-code") == 3            # separate participants
-    assert "not three installations" in _prose("default-orbit")
+    assert "not separate installations" in _prose("default-orbit")
 
 
 def test_default_orbit_documents_the_fields_a_newcomer_must_edit():
@@ -470,6 +475,40 @@ def test_the_counted_sentence_is_counted_not_asserted():
     assert '"claude-code" appears three times' in templates.get("default-orbit")
     both = templates.get("default-orbit", primary="kimi", reviewer="kimi")
     assert '"kimi" appears five times' in both
+
+
+# Every way the paragraph could name a number. The derived count owns the only
+# one it is allowed to carry.
+NUMBER_WORDS = ("once", "twice", "one", "two", "three", "four", "five", "six")
+
+
+@pytest.mark.parametrize("reviewer, counted", [("qwen", "three times"),
+                                               ("kimi", "five times")])
+def test_the_counted_paragraph_carries_exactly_one_number(reviewer, counted):
+    # Deriving the first sentence while the rest went on asserting the old
+    # number left the paragraph reading "five times ... three ... three ...
+    # three" — wrong before, and visibly self-contradicting after. The
+    # continuation now carries no number at all, so it is true at any count.
+    text = templates.get("default-orbit", primary="kimi", reviewer=reviewer)
+    para = [p for p in _paragraphs_of(text) if '"kimi" appears' in p]
+    assert len(para) == 1
+    assert counted in para[0]
+    for word in NUMBER_WORDS:
+        if word not in counted:
+            assert re.search(rf"\b{word}\b", para[0]) is None, word
+
+
+def test_the_count_is_not_frozen_at_three_or_five(monkeypatch):
+    # Move one implementing role onto the reviewing harness: the primary now
+    # appears twice, and a re-frozen literal would say otherwise.
+    moved = templates.get("default-orbit").replace(
+        'harness = "claude-code"', 'harness = "codex"', 1)
+    monkeypatch.setitem(templates._TEMPLATES, "default-orbit", (moved, "d"))
+    text = templates.get("default-orbit", primary="kimi", reviewer="qwen")
+    assert '"kimi" appears twice below' in text
+    para = [p for p in _paragraphs_of(text) if '"kimi" appears' in p][0]
+    for word in ("three", "five", "once"):
+        assert re.search(rf"\b{word}\b", para) is None
 
 
 def test_one_harness_for_both_roles_withdraws_the_different_product_claim():

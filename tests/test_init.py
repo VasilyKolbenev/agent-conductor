@@ -42,6 +42,17 @@ def _scripted(answers):
     return ask
 
 
+def _unwrapped(text):
+    """Dialogue with its folding undone, for phrase assertions.
+
+    Every surface here is wrapped at render time, so a needle that happens to
+    straddle a line break would fail for a reason that has nothing to do with
+    what the test is about. Normalising whitespace is what keeps these pins
+    about the words rather than about where the words break.
+    """
+    return " ".join(text.split())
+
+
 def _map_text(tmp_path):
     return (tmp_path / "conductor" / "map.toml").read_text(encoding="utf-8")
 
@@ -163,7 +174,7 @@ def test_wizard_never_asks_for_an_api_key_or_a_template(tmp_path, capsys):
 def test_wizard_rejects_an_illegal_project_name_and_re_prompts(tmp_path, capsys):
     assert _cmd_init(_init_args(tmp_path),
                      ask=_scripted(['my "app"', "my-app", "", ""])) == 0
-    dialogue = capsys.readouterr().err
+    dialogue = _unwrapped(capsys.readouterr().err)
     assert 'my "app"' in dialogue and templates.NAME_RULE in dialogue
     assert tomllib.loads(_map_text(tmp_path))["project"] == "my-app"
 
@@ -171,7 +182,7 @@ def test_wizard_rejects_an_illegal_project_name_and_re_prompts(tmp_path, capsys)
 def test_wizard_rejects_an_illegal_harness_id_and_re_prompts(tmp_path, capsys):
     assert _cmd_init(_init_args(tmp_path),
                      ask=_scripted(["", 'kimi"cli', "kimi-cli", ""])) == 0
-    dialogue = capsys.readouterr().err
+    dialogue = _unwrapped(capsys.readouterr().err)
     assert templates.NAME_RULE in dialogue and "'\"'" in dialogue  # names the char
     assert _harnesses(tmp_path)["implementer"] == "kimi-cli"
 
@@ -206,7 +217,7 @@ def test_wizard_accepts_a_harness_whose_name_is_a_number(tmp_path, capsys):
 def test_wizard_says_so_when_both_roles_run_the_same_harness(tmp_path, capsys):
     assert _cmd_init(_init_args(tmp_path),
                      ask=_scripted(["p", "claude-code", "claude-code"])) == 0
-    assert "not independent" in capsys.readouterr().err
+    assert "not independent" in _unwrapped(capsys.readouterr().err)
     assert "different harness product" not in _map_text(tmp_path)
 
 
@@ -336,7 +347,7 @@ def test_the_bootstrap_prompt_does_not_contradict_the_map_just_written(tmp_path,
                      ask=_scripted(["my-app", "Kimi Code", "2"])) == 0
     out = capsys.readouterr().out
     written = _map_text(tmp_path)
-    assert "already exists and already validates" in out
+    assert "already exists and it already validates" in _unwrapped(out)
     assert "Produce `conductor/map.toml`" not in out
     # Nothing from the OTHER map may appear: those values contradict the
     # answers, and an agent handed both will pick one.
@@ -359,7 +370,8 @@ def test_the_bootstrap_prompt_stands_alone_when_redirected(tmp_path, capsys):
 def test_the_first_action_is_said_once_to_both_audiences(tmp_path, capsys):
     # Two differently-worded first actions read as two separate tasks.
     assert main(["init", "--dir", str(tmp_path)]) == 0
-    assert capsys.readouterr().err.count(_FIRST_ACTION) == 1   # the person's copy
+    said = _unwrapped(capsys.readouterr().err)
+    assert said.count(_FIRST_ACTION) == 1              # the person's copy
     assert "placeholder" in prompts.bootstrap_prompt()  # the agent's copy
 
 
@@ -367,7 +379,7 @@ def test_the_harness_questions_say_what_the_answer_does(tmp_path, capsys):
     # Two of three questions are about `harness`, which no merge rule reads.
     # At a prompt that reads like configuring an integration.
     assert _cmd_init(_init_args(tmp_path), ask=_scripted(["p", "", ""])) == 0
-    asked = capsys.readouterr().err
+    asked = _unwrapped(capsys.readouterr().err)
     assert "never launches, installs or detects a harness" in asked
     assert "labels who does what" in asked
 
@@ -376,11 +388,51 @@ def test_the_no_reviewer_option_names_its_consequence(tmp_path, capsys):
     # `none` is the one answer that removes a role rather than naming a
     # product, and it hands the user the vacuous-agreed state.
     assert _cmd_init(_init_args(tmp_path), ask=_scripted(["p", "", "2"])) == 0
-    asked = capsys.readouterr().err
+    asked = _unwrapped(capsys.readouterr().err)
     assert "no reviewing role at all" in asked
     assert "agreed with nobody having looked" in asked
     assert [r["id"] for r in tomllib.loads(_map_text(tmp_path))["cycle"]["roles"]] \
         == ["implementer"]
+
+
+# --- rendered width: the sentences that matter most were the widest ---
+
+LONG_PATH = r"C:\Users\User\Projects\a-rather-long-repository-name\conductor\map.toml"
+
+
+def _widest(text, skip=None):
+    """The longest rendered line, ignoring any line holding `skip`."""
+    lines = [l for l in text.split("\n") if not (skip and skip in l)]
+    return max((len(l) for l in lines), default=0)
+
+
+def test_the_default_run_dialogue_stays_inside_the_width(tmp_path, capsys,
+                                                         monkeypatch):
+    # Run from inside the project so no absolute path enters a command line:
+    # this is the shape a first-time user sees, and _FIRST_ACTION rendered as
+    # a single 154-column line in exactly this run.
+    monkeypatch.chdir(tmp_path)
+    assert main(["init"]) == 0
+    assert _widest(capsys.readouterr().err) <= conductor.init.WIDTH
+
+
+def test_the_wizard_dialogue_stays_inside_the_width(tmp_path, capsys, monkeypatch):
+    # Menus, the no-reviewer gloss (the longest row), and a rejection message,
+    # which carries the whole of NAME_RULE and runs past 100 unwrapped.
+    monkeypatch.chdir(tmp_path)
+    answers = _scripted(['my "app"', "my-app", "", "claude-code"])
+    assert _cmd_init(_build_parser().parse_args(["init"]), ask=answers) == 0
+    assert _widest(capsys.readouterr().err) <= conductor.init.WIDTH
+
+
+@pytest.mark.parametrize("path", ["conductor/map.toml", LONG_PATH])
+def test_the_bootstrap_prompt_stays_inside_the_width(path):
+    # The path gets a line of its own precisely so an absolute one cannot
+    # stretch the prose: it is unwrappable, and folding sentences around it
+    # pushed two lines past 130 columns.
+    text = prompts.bootstrap_prompt(path)
+    assert _widest(text, skip=path) <= conductor.init.WIDTH
+    assert f"\n    {path}\n" in text          # alone on its line, never inline
 
 
 # --- the stream contract: stdout is the result, stderr is everything else ---

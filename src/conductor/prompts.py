@@ -170,15 +170,16 @@ DEFAULT_MAP_PATH = "conductor/map.toml"
 # NOT a document to reproduce: `conduct init` has already written a valid map,
 # so an example map here would invite the agent to replace it — and with it
 # every answer the person gave during setup.
-_NODE_FIELDS = '''  id          unique, and the only name a lane may use: a lane may report a
-              status only for ids declared here, and anything else is warned
-              about and ignored
+_NODE_FIELDS = '''  id          unique, and the only name a lane may use: a lane may
+              report a status only for ids declared here, and
+              anything else is warned about and ignored
   label       the human name the panel shows
-  kind        free-form (artifact | check | component | doc | …); the panel
-              prints it, no rule computes on it
-  depends_on  ids declared in this same file. The panel draws the graph from
-              them; status does NOT propagate along them, so a failing
-              dependency never marks its dependents failing by itself.'''
+  kind        free-form (artifact | check | component | doc | …);
+              the panel prints it, no rule computes on it
+  depends_on  ids declared in this same file. The panel draws the
+              graph from them; status does NOT propagate along
+              them, so a failing dependency never marks its
+              dependents failing by itself.'''
 
 
 def bootstrap_prompt(map_path: str = DEFAULT_MAP_PATH) -> str:
@@ -195,23 +196,31 @@ def bootstrap_prompt(map_path: str = DEFAULT_MAP_PATH) -> str:
         edits, what must still hold afterwards, and the command that checks it.
     """
     return (
-        "You are setting up Conduct for this project.\n"
+        "You are setting up Conduct for this project. The map you must fill\n"
+        "in is:\n"
         "\n"
-        f"`{map_path}` already exists and already validates. Your job is to make\n"
-        "it describe THIS project — not to write a new one. The cycle, its phases,\n"
-        "and every [[cycle.roles]] block's id, harness, stage and reviews value\n"
-        "were chosen when the project was set up. They are answers, not suggestions.\n"
+        # On its own line, and never interpolated into a sentence: an absolute
+        # path under `--dir` is long and unwrappable, and folding prose around
+        # it pushed these lines past 130 columns.
+        f"    {map_path}\n"
+        "\n"
+        "It already exists and it already validates. Your job is to make it\n"
+        "describe THIS project — not to write a new one. The cycle, its\n"
+        "phases, and every [[cycle.roles]] block's id, harness, stage and\n"
+        "reviews value were chosen when the project was set up. They are\n"
+        "answers, not suggestions.\n"
         "\n"
         "1. Read the project's roadmap, plan, and architecture documents.\n"
         "\n"
-        f"2. Open `{map_path}`. Every [[nodes]] block in it is a placeholder.\n"
-        "   Replace them with the real components of this project, and add one\n"
-        "   [[nodes]] block per further component you want reported on:\n"
+        "2. Open that file. Every [[nodes]] block in it is a placeholder.\n"
+        "   Replace them with the real components of this project, and add\n"
+        "   one [[nodes]] block per further component you want reported on:\n"
         "\n"
         f"{_NODE_FIELDS}\n"
         "\n"
-        "3. Change nothing else. If the cycle is genuinely wrong for this project,\n"
-        "   say so and stop — do not restructure it on your own initiative.\n"
+        "3. Change nothing else. If the cycle is genuinely wrong for this\n"
+        "   project, say so and stop — do not restructure it on your own\n"
+        "   initiative.\n"
         "\n"
         "What must still be true when you are done:\n"
         "- schema_version == 1\n"

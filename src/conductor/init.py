@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import textwrap
 import tomllib
 from collections.abc import Callable
 from pathlib import Path
@@ -44,22 +45,43 @@ _HARNESSES = ("claude-code", "codex")
 #: that changes which template is written.
 _NO_REVIEWER = "none"
 
+#: Every rendered line of dialogue folds to this. Narrow enough to survive a
+#: split terminal, and the width the pins enforce — the sentences that matter
+#: most here are the longest, so hand-wrapping them is what regressed last time.
+WIDTH = 72
+
 # `harness` is presentation metadata: no merge rule computes on it. Asked at a
 # prompt, though, it reads like configuring a tool integration, and a newcomer
 # will reasonably expect Conduct to go and start something. Say what the answer
 # does before they answer it.
-_PRIMARY_QUESTION = (
-    "\nWhich harness runs the implementing roles?\n"
-    "  Conduct never launches, installs or detects a harness. The answer only\n"
-    "  labels who does what, in the map and in the panel.")
+_PRIMARY_QUESTION = "Which harness runs the implementing roles?"
+_PRIMARY_NOTE = ("Conduct never launches, installs or detects a harness. The "
+                 "answer only labels who does what, in the map and in the panel.")
 
 # The reviewer question carries a structural decision inside a cosmetic one:
 # every other answer names a product, while `none` removes the reviewing role
 # altogether. Name that consequence at the point of choosing it, not in a
 # comment the user reads afterwards.
-_REVIEWER_QUESTION = "\nWhich harness reviews their work?"
+_REVIEWER_QUESTION = "Which harness reviews their work?"
 _NO_REVIEWER_GLOSS = (" — no reviewing role at all: findings then come out "
                       "agreed with nobody having looked")
+
+
+def _wrap(text: str, indent: str = "", hang: str | None = None) -> str:
+    """Fold one paragraph to `WIDTH`, indenting every line.
+
+    Args:
+        text: A single paragraph, unwrapped.
+        indent: Prefix for the first line.
+        hang: Prefix for continuation lines; None reuses `indent`.
+
+    Returns:
+        The folded paragraph. Wrapping at render time rather than by hand is
+        what keeps the width right after someone edits the sentence — every
+        hand-wrapped line here has been re-broken by an edit at least once.
+    """
+    return textwrap.fill(text, width=WIDTH, initial_indent=indent,
+                         subsequent_indent=indent if hang is None else hang)
 
 
 def _interactive() -> bool:
@@ -108,18 +130,21 @@ def _ask_name(ask: Callable[[str], str], question: str, default: str,
         try:
             return templates.check_name(kind, answer)
         except templates.InvalidName as e:
-            _say(f"  {e}")
+            _say(_wrap(str(e), "  "))       # NAME_RULE alone runs past 100
 
 
 def _ask_harness(ask: Callable[[str], str], question: str,
-                 options: list[tuple[str, str]]) -> str:
+                 options: list[tuple[str, str]], note: str = "") -> str:
     """Offer a short numbered menu; any other legal name is taken as typed.
 
     Args:
         ask: The prompting function (`_console_ask` in a terminal).
         question: The headline shown above the menu.
         options: `(value, gloss)` pairs, most recommended first — option 1 is
-            the default, so pressing Enter always works.
+            the default, so pressing Enter always works. A gloss hangs under
+            its own value rather than running off the end of the row.
+        note: An optional line saying what the answer does, shown before it
+            is given rather than explained afterwards.
 
     Returns:
         The chosen value: a menu entry, or a harness id the user typed. A
@@ -127,9 +152,11 @@ def _ask_harness(ask: Callable[[str], str], question: str,
         just what the user typed, so a harness genuinely called `7` stays
         reachable instead of being answered with an error.
     """
-    _say(question)
+    _say(_wrap(question))
+    if note:
+        _say(_wrap(note, "  "))
     for index, (value, gloss) in enumerate(options, 1):
-        _say(f"  {index}) {value}{gloss}")
+        _say(_wrap(f"{index}) {value}{gloss}", "  ", hang="     "))
     _say("  or type any other harness id")
     default = options[0][0]
     while True:
@@ -141,7 +168,7 @@ def _ask_harness(ask: Callable[[str], str], question: str,
         try:
             return templates.check_name("harness id", answer)
         except templates.InvalidName as e:
-            _say(f"  {e}")
+            _say(_wrap(str(e), "  "))
 
 
 def _wizard(ask: Callable[[str], str], default_project: str) -> tuple[str, str]:
@@ -162,8 +189,11 @@ def _wizard(ask: Callable[[str], str], default_project: str) -> tuple[str, str]:
     """
     _say("conduct init — three questions, and Enter takes the default.\n")
     project = _ask_name(ask, "Project name", default_project, "project name")
-    primary = _ask_harness(ask, _PRIMARY_QUESTION, [(h, "") for h in _HARNESSES])
+    _say()
+    primary = _ask_harness(ask, _PRIMARY_QUESTION, [(h, "") for h in _HARNESSES],
+                           note=_PRIMARY_NOTE)
     others = [(h, "") for h in _HARNESSES if h != primary]
+    _say()
     reviewer = _ask_harness(
         ask, _REVIEWER_QUESTION, others + [(_NO_REVIEWER, _NO_REVIEWER_GLOSS)])
     name = "single-harness" if reviewer == _NO_REVIEWER else templates.DEFAULT
@@ -172,8 +202,8 @@ def _wizard(ask: Callable[[str], str], default_project: str) -> tuple[str, str]:
     _say(f"  implements {primary}")
     _say(f"  reviews    {reviewer}")
     if reviewer == primary:
-        _say("  note: both roles run the same harness product, so this review "
-             "is not independent.")
+        _say(_wrap("note: both roles run the same harness product, so this "
+                   "review is not independent.", "  "))
     _say()
     return name, templates.get(name, project=project, primary=primary,
                                reviewer=None if reviewer == _NO_REVIEWER else reviewer)
@@ -260,7 +290,7 @@ def _print_next_steps(args: argparse.Namespace, text: str) -> None:
     where = _dir_suffix(args.dir)
     roles = tomllib.loads(text).get("cycle", {}).get("roles", [])
     _say("Your first action")
-    _say(f"  {_FIRST_ACTION}\n")
+    _say(_wrap(_FIRST_ACTION, "  ") + "\n")
     _say("Next command")
     _say(f"  conduct validate{where}")
     _say("      silence means the map and every lane are valid\n")
@@ -304,9 +334,9 @@ def _scaffold(args: argparse.Namespace, cdir: Path, name: str, text: str,
     # announcement is dialogue, so it goes to stderr and the prompt does not.
     # It does NOT restate _FIRST_ACTION: the same sentence twice in one screen
     # of output reads as two tasks just as surely as two different ones did.
-    _say("The map is valid but generic. The prompt that fills it in follows on "
-         "stdout —\npaste it into an agent, or re-run with `> setup.txt` to keep "
-         "it as a file.\n")
+    _say(_wrap("The map is valid but generic. The prompt that fills it in "
+               "follows on stdout: paste it into an agent, or re-run with "
+               "`> setup.txt` to keep it as a file.") + "\n")
     sys.stdout.write(prompts.bootstrap_prompt(str(cdir / "map.toml")))
     _say()
     _print_next_steps(args, text)
