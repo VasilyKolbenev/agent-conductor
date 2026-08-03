@@ -6,10 +6,18 @@ the wrong shape. Each template is therefore a literal TOML document, and every
 one of them must parse and pass `schema.validate_map` with zero errors and
 zero warnings.
 
-Three are vended: `default-orbit` (the recommended five-stage process),
-`single-harness` (one implementing role plus a human decision), and `empty`
-(the minimum that validates). Nothing here is wired to the CLI — `names()`
-returns data for a caller to render, never rendered text.
+Four are vended: `default-orbit` (the recommended five-stage process, and what
+`conduct init` writes when nothing else is asked for), `single-harness` (one
+implementing role plus a human decision), `empty` (the minimum that
+validates), and `minimal` (the spec's own §2 example, vended verbatim from
+`prompts.MAP_EXAMPLE` so the spec and the scaffold cannot drift). This module
+renders no UI — `names()` returns data for a caller to display, never display
+text.
+
+`get()` takes the three values `conduct init` fills in — project name, primary
+harness, reviewing harness — and rewrites both the TOML assignments and the
+comment sentences that state facts *about* those values, so a generated map
+never contradicts itself. Omitting them reproduces the template verbatim.
 
 The decision-receipt paragraph is a shared constant, not copied prose: it
 states what Protocol v1 can and cannot record, so a protocol version that
@@ -17,9 +25,70 @@ ships receipts must be able to correct it in one edit.
 """
 from __future__ import annotations
 
+import re
+
+from conductor import prompts
+
 
 class UnknownTemplate(Exception):
     """Raised when a template name is not one of the built-in templates."""
+
+
+class InvalidName(ValueError):
+    """Raised when a project name or harness id is outside the allowed set."""
+
+
+#: Every character a caller-supplied project name or harness id may contain.
+#: These values are interpolated into TOML *text*, where a quote, a backslash,
+#: a newline or a control character breaks the file — or, worse, silently
+#: changes what it means. Real product names carry spaces and parentheses
+#: ("Claude Code", "Qwen Code (beta)"), so those are in; nothing that TOML
+#: gives a meaning to is. Rejected, never escaped into something clever.
+_ALLOWED_CHAR_RE = re.compile(r"[\w .+()-]")
+
+#: The whole rule: an allowed run, opened by a letter or digit, at most 64
+#: characters. Unicode-aware — a project name is a name, not an identifier.
+NAME_RE = re.compile(r"\A[^\W_][\w .+()-]{0,63}\Z")
+
+#: `NAME_RE` in words. Public because the sentence a rejected caller has to act
+#: on must be the same one wherever the rejection happens.
+NAME_RULE = ("letters, digits, space, and . _ - + ( ) only, starting with a "
+             "letter or digit, at most 64 characters")
+
+
+def _offence(value: str) -> str:
+    """Name what is wrong with a rejected value, most specific reason first."""
+    if not isinstance(value, str):
+        return f"it is a {type(value).__name__}, not text"
+    for char in value:
+        if not _ALLOWED_CHAR_RE.fullmatch(char):
+            return f"the character {char!r} is not allowed"
+    if not value:
+        return "it is empty"
+    if len(value) > 64:
+        return f"it is {len(value)} characters long"
+    return f"it starts with {value[0]!r}"
+
+
+def check_name(kind: str, value: str) -> str:
+    """Return `value` unchanged if it is a legal name, else raise.
+
+    Args:
+        kind: What is being named, for the message (e.g. `"project name"`).
+        value: The candidate name.
+
+    Returns:
+        `value`, unchanged — so callers can validate and assign in one step.
+
+    Raises:
+        InvalidName: If `value` is not a `NAME_RE` name. The message names
+            three things: the field, the character that failed, and the format
+            allowed instead — enough to fix it without seeing the regex.
+    """
+    if not isinstance(value, str) or not NAME_RE.fullmatch(value):
+        raise InvalidName(f"invalid {kind} {value!r}: {_offence(value)}; "
+                          f"allowed: {NAME_RULE}")
+    return value
 
 
 #: The recommended template. A caller wanting "the default" asks for this
@@ -265,28 +334,126 @@ _TEMPLATES: dict[str, tuple[str, str]] = {
     "empty": (
         _EMPTY,
         "The minimum map that validates: one placeholder node, no cycle."),
+    # The spec's §2 example, vended from prompts.MAP_EXAMPLE so the spec, the
+    # bootstrap prompt and this template can never say three different things.
+    # It is quoted verbatim, which is why it alone carries realistic node
+    # labels rather than the PLACEHOLDER convention the other three follow —
+    # and why it is last: it is kept, not recommended. MAP_EXAMPLE ends without
+    # a newline; every template must end in exactly one.
+    "minimal": (
+        prompts.MAP_EXAMPLE + "\n",
+        "The spec's own example map — what `conduct init` wrote before v0.2."),
 }
 
 
-def get(name: str) -> str:
+# What the literal templates above say, and therefore what `get()` swaps out
+# when a caller supplies its own values. `minimal` is quoted from the spec and
+# names its own example project, so both placeholders are recognised.
+_DEFAULT_PROJECT = "your-project"
+_LEGACY_PROJECT = "web-app"
+_DEFAULT_PRIMARY = "claude-code"
+_DEFAULT_REVIEWER = "codex"
+
+# The two places `default-orbit` states a fact ABOUT its harness values rather
+# than merely using them. Rewriting the values without these would leave a
+# generated map asserting something its own role blocks contradict.
+_COUNT_CLAIM = f'# "{_DEFAULT_PRIMARY}" appears three times below.'
+_DIFFERENT_PRODUCT = (
+    "The reviewer above runs a\n"
+    "# different harness product from the implementer it reviews: a deliberate\n"
+    "# default and nothing more.")
+_SAME_PRODUCT = (
+    "The reviewer above runs the\n"
+    "# same harness product as the implementer it reviews, because that is what\n"
+    "# you chose - and nothing here checks it either way.")
+
+
+def _swap_assignment(line: str, swap: dict[str, str]) -> str:
+    """Rewrite one line's assignment if it is one we swap, keeping its comment.
+
+    Args:
+        line: One line of a template document.
+        swap: Whole-assignment text -> its replacement.
+
+    Returns:
+        The line, rewritten or untouched. Only the part before the first `#`
+        is considered, so a comment line can never match and a trailing
+        `# informational` survives the swap. Safe because no value we swap in
+        may contain a `#` — `NAME_RE` forbids it.
+    """
+    code, hash_sign, comment = line.partition("#")
+    assignment = code.rstrip()
+    replacement = swap.get(assignment)
+    if replacement is None:
+        return line
+    return replacement + code[len(assignment):] + hash_sign + comment
+
+
+def _substitute(text: str, project: str, primary: str, reviewer: str) -> str:
+    """Rewrite one template's project and harness values, prose included.
+
+    Args:
+        text: The literal template document.
+        project: The `project` value to write.
+        primary: The harness id of the implementing roles.
+        reviewer: The harness id of the reviewing roles.
+
+    Returns:
+        The rewritten document. Assignments are matched whole, so a harness id
+        occurring inside a sentence is never rewritten by accident; the two
+        sentences that state a fact about those values are named above and
+        rewritten deliberately.
+    """
+    if (project, primary, reviewer) == (_DEFAULT_PROJECT, _DEFAULT_PRIMARY,
+                                        _DEFAULT_REVIEWER):
+        return text
+    # Built in one pass off the ORIGINAL values, so swapping the two default
+    # harnesses for each other cannot collapse them onto one.
+    swap = {f'project = "{_DEFAULT_PROJECT}"': f'project = "{project}"',
+            f'project = "{_LEGACY_PROJECT}"': f'project = "{project}"',
+            f'harness = "{_DEFAULT_PRIMARY}"': f'harness = "{primary}"',
+            f'harness = "{_DEFAULT_REVIEWER}"': f'harness = "{reviewer}"'}
+    body = "\n".join(_swap_assignment(line, swap) for line in text.split("\n"))
+    times = "three" if primary != reviewer else "five"
+    body = body.replace(_COUNT_CLAIM, f'# "{primary}" appears {times} times below.')
+    if primary == reviewer:
+        body = body.replace(_DIFFERENT_PRODUCT, _SAME_PRODUCT)
+    return body
+
+
+def get(name: str, *, project: str | None = None, primary: str | None = None,
+        reviewer: str | None = None) -> str:
     """Return the full `map.toml` text of one named template.
 
     Args:
         name: A template name as listed by `names()`, or `DEFAULT`.
+        project: The `project` value to write, or None for the built-in
+            placeholder.
+        primary: The harness id of the implementing roles, or None for the
+            built-in default.
+        reviewer: The harness id of the reviewing roles, or None for the
+            built-in default. Templates that declare no reviewer ignore it.
 
     Returns:
         The template's literal TOML document, comments included, ending in
         exactly one newline — ready to be written to `conductor/map.toml`
-        with no further fixing up.
+        with no further fixing up. Passing None for all three reproduces the
+        template verbatim.
 
     Raises:
         UnknownTemplate: If `name` is not a built-in template.
+        InvalidName: If any supplied value is not a `NAME_RE` slug. Rejected
+            here, at the boundary, rather than escaped into the TOML.
     """
     entry = _TEMPLATES.get(name)
     if entry is None:
         known = ", ".join(_TEMPLATES)
         raise UnknownTemplate(f"unknown template {name!r} (available: {known})")
-    return entry[0]
+    return _substitute(
+        entry[0],
+        _DEFAULT_PROJECT if project is None else check_name("project name", project),
+        _DEFAULT_PRIMARY if primary is None else check_name("harness id", primary),
+        _DEFAULT_REVIEWER if reviewer is None else check_name("harness id", reviewer))
 
 
 def names() -> list[tuple[str, str]]:

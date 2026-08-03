@@ -15,11 +15,12 @@ from __future__ import annotations
 import argparse
 import sys
 import tempfile
+import tomllib
 from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 
-from conductor import demo, merge, prompts, server, store
+from conductor import demo, merge, prompts, server, store, templates
 
 
 def _merged_state(loaded: store.Loaded) -> dict:
@@ -46,19 +47,252 @@ def _cmd_validate(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_init(args: argparse.Namespace) -> int:
-    """Scaffold conductor/ (map.toml stub, lanes/, events.jsonl); print bootstrap."""
-    cdir = Path(args.dir) / "conductor"
-    if cdir.exists():
-        print(f"{cdir} already exists — refusing to touch it", file=sys.stderr)
-        return 1
+# The harnesses the wizard offers by name. Ids only, and deliberately short:
+# the branded registry (display names, detection metadata) is DO-4, and this
+# slice offers a recommended pair plus "type your own" rather than a wall of
+# products. NOTHING here inspects the machine — no PATH lookup, no subprocess,
+# no environment scan. Probing a user's box for installed harnesses is a new
+# capability class and needs its own ADR before any of it exists.
+_HARNESSES = ("claude-code", "codex")
+
+#: The reviewer answer that means "no independent reviewer" — the one answer
+#: that changes which template is written.
+_NO_REVIEWER = "none"
+
+
+def _interactive() -> bool:
+    """True only for a real terminal on stdin — the sole gate on the wizard.
+
+    Everything else — a pipe, a CI runner, a captured test stream, a closed or
+    absent stdin — takes the deterministic path, which never reads stdin at
+    all. A suite that can block on input blocks the whole of CI, so this
+    errs toward "not a terminal" on every doubt.
+    """
+    stream = getattr(sys, "stdin", None)
+    try:
+        return bool(stream is not None and stream.isatty())
+    except (AttributeError, ValueError, OSError):   # closed or substituted stream
+        return False
+
+
+def _ask_name(ask: Callable[[str], str], question: str, default: str,
+              kind: str) -> str:
+    """Read one name, re-asking until it is legal; Enter takes `default`."""
+    while True:
+        answer = ask(f"{question} [{default}]: ").strip() or default
+        try:
+            return templates.check_name(kind, answer)
+        except templates.InvalidName as e:
+            print(f"  {e}")
+
+
+def _ask_harness(ask: Callable[[str], str], question: str,
+                 options: list[tuple[str, str]]) -> str:
+    """Offer a short numbered menu; any other legal name is taken as typed.
+
+    Args:
+        ask: The prompting function (`input` in a terminal).
+        question: The headline shown above the menu.
+        options: `(value, gloss)` pairs, most recommended first — option 1 is
+            the default, so pressing Enter always works.
+
+    Returns:
+        The chosen value: a menu entry, or a harness id the user typed.
+    """
+    print(question)
+    for index, (value, gloss) in enumerate(options, 1):
+        print(f"  {index}) {value}{gloss}")
+    print("  or type any other harness id")
+    default = options[0][0]
+    while True:
+        answer = ask(f"  choice [{default}]: ").strip()
+        if not answer:
+            return default
+        if answer.isdigit():
+            if 1 <= int(answer) <= len(options):
+                return options[int(answer) - 1][0]
+            print(f"  pick a number from 1 to {len(options)}, or type a harness id")
+            continue
+        try:
+            return templates.check_name("harness id", answer)
+        except templates.InvalidName as e:
+            print(f"  {e}")
+
+
+def _wizard(ask: Callable[[str], str], default_project: str) -> tuple[str, str]:
+    """Ask the three questions `conduct init` cannot answer for you.
+
+    Args:
+        ask: The prompting function; injectable so tests drive a script.
+        default_project: What Enter accepts as the project name.
+
+    Returns:
+        `(template name, map.toml text)`. Everything is collected, validated
+        and echoed before this returns — the caller writes nothing until it
+        does, so an abandoned or rejected answer leaves no directory behind.
+
+    Raises:
+        EOFError: Propagated from `ask` when stdin closes mid-question.
+        KeyboardInterrupt: Propagated from `ask` on Ctrl-C.
+    """
+    print("conduct init — three questions, and Enter takes the default.\n")
+    project = _ask_name(ask, "Project name", default_project, "project name")
+    primary = _ask_harness(ask, "\nWhich harness runs the implementing roles?",
+                           [(h, "") for h in _HARNESSES])
+    others = [(h, "") for h in _HARNESSES if h != primary]
+    reviewer = _ask_harness(
+        ask, "\nWhich harness reviews their work?",
+        others + [(_NO_REVIEWER, " — no independent reviewer")])
+    name = "single-harness" if reviewer == _NO_REVIEWER else templates.DEFAULT
+    print(f"\nWriting the {name} template:")
+    print(f"  project    {project}")
+    print(f"  implements {primary}")
+    print(f"  reviews    {reviewer}")
+    if reviewer == primary:
+        print("  note: both roles run the same harness product, so this review "
+              "is not independent.")
+    print()
+    return name, templates.get(name, project=project, primary=primary,
+                               reviewer=None if reviewer == _NO_REVIEWER else reviewer)
+
+
+def _default_project(dirname: str) -> str:
+    """The project root's own directory name, when that is a legal name."""
+    name = Path(dirname).resolve().name
+    return name if templates.NAME_RE.fullmatch(name) else "your-project"
+
+
+class _Prompter:
+    """An `ask` that remembers whether it ever came back with an answer.
+
+    The difference decides what an EOF means: after an answer it is a person
+    abandoning the wizard, before one it is a session that was never
+    interactive at all, however loudly stdin claimed otherwise.
+    """
+
+    def __init__(self, ask: Callable[[str], str]) -> None:
+        self._ask = ask
+        self.answered = False
+
+    def __call__(self, prompt: str) -> str:
+        answer = self._ask(prompt)
+        self.answered = True          # set even when the answer is rejected
+        return answer
+
+
+def _init_map_text(args: argparse.Namespace,
+                   ask: Callable[[str], str] | None) -> tuple[str, str]:
+    """Choose the starting map: explicit `--template`, the wizard, or the default.
+
+    Args:
+        args: The parsed `init` namespace.
+        ask: An injected prompting function, which by itself means "this is an
+            interactive session"; None means detect a terminal and use `input`.
+
+    Returns:
+        `(template name, map.toml text)`. Writes nothing.
+
+    Raises:
+        EOFError: Only when stdin closes AFTER at least one answer — a wizard
+            a person started and abandoned.
+        KeyboardInterrupt: Propagated from the wizard on Ctrl-C.
+    """
+    if args.template is not None:
+        return args.template, templates.get(args.template)
+    default = (templates.DEFAULT, templates.get(templates.DEFAULT))
+    if ask is None and not _interactive():
+        return default
+    prompter = _Prompter(input if ask is None else ask)
+    try:
+        return _wizard(prompter, _default_project(args.dir))
+    except EOFError:
+        if prompter.answered:
+            raise
+        # isatty() said terminal and the first read hit EOF. On Windows that
+        # is `conduct init < NUL` — stdin redirected from the null DEVICE,
+        # which isatty()s as a console — and that is precisely the shape a
+        # script uses to mean "no input". Answer it the way the non-TTY path
+        # would rather than failing an automated caller.
+        print("\nno input available — writing the default template instead.\n")
+        return default
+
+
+def _dir_suffix(dirname: str) -> str:
+    """The ` --dir …` a printed command needs, or `""` for the default root."""
+    if dirname == ".":
+        return ""
+    return f' --dir "{dirname}"' if " " in dirname else f" --dir {dirname}"
+
+
+def _print_next_steps(args: argparse.Namespace, text: str) -> None:
+    """Print the first action, the next command, and how to open the panel."""
+    where = _dir_suffix(args.dir)
+    roles = tomllib.loads(text).get("cycle", {}).get("roles", [])
+    print("Your first action")
+    print("  Open conductor/map.toml and replace every PLACEHOLDER node with a "
+          "real\n  component of your project. Until you do, nothing it reports "
+          "is about\n  your project.\n")
+    print("Next command")
+    print(f"  conduct validate{where}")
+    print("      silence means the map and every lane are valid\n")
+    print("Then")
+    if roles:
+        print(f"  conduct prompt --role {roles[0]['id']}{where}")
+        print("      the working prompt for that role — paste it into your harness")
+    print(f"  conduct up{where}")
+    print("      the panel, at http://127.0.0.1:7777/")
+
+
+def _scaffold(args: argparse.Namespace, cdir: Path, name: str, text: str) -> int:
+    """Write conductor/, run the same check `conduct validate` runs, then advise."""
     (cdir / "lanes").mkdir(parents=True)
     (cdir / "events.jsonl").write_text("", encoding="utf-8", newline="\n")
-    (cdir / "map.toml").write_text(prompts.MAP_EXAMPLE + "\n",
-                                   encoding="utf-8", newline="\n")
-    print(f"scaffolded {cdir}: map.toml (edit me), lanes/, events.jsonl\n")
-    print(prompts.bootstrap_prompt())
+    # No `+ "\n"`: templates.get() already ends in exactly one newline, and a
+    # second would leave a blank line at the end of every user's committed map.
+    (cdir / "map.toml").write_text(text, encoding="utf-8", newline="\n")
+    print(f"scaffolded {cdir}: map.toml (edit me), lanes/, events.jsonl")
+    print(f"template: {name}\n")
+    # The map on disk is a valid placeholder, not a description of this
+    # project. The bootstrap prompt is how you hand that gap to an agent, so
+    # it needs a line saying so — unheaded, it reads as "nothing was written".
+    print("To have an agent fill it in for you, paste everything between the "
+          "rules:\n" + "-" * 74)
+    print(prompts.bootstrap_prompt() + "-" * 74 + "\n")
+    if _cmd_validate(args) != 0:
+        print("the generated map did not validate — that is a bug, please report it",
+              file=sys.stderr)
+        return 1
+    print("conduct validate: clean — the map is valid as written.\n")
+    _print_next_steps(args, text)
     return 0
+
+
+def _cmd_init(args: argparse.Namespace,
+              ask: Callable[[str], str] | None = None) -> int:
+    """Scaffold conductor/: `--template` is explicit, a terminal gets the wizard.
+
+    Args:
+        args: The parsed `init` namespace.
+        ask: An injected prompting function for the wizard; None (the CLI's
+            own call) means detect a terminal and use `input`.
+
+    Returns:
+        0 on success; 1 for an existing conductor/, an unknown template, or a
+        wizard abandoned at EOF or Ctrl-C. Nothing is written on any of them.
+    """
+    cdir = Path(args.dir) / "conductor"
+    if cdir.exists():                 # checked before any question is asked
+        print(f"{cdir} already exists — refusing to touch it", file=sys.stderr)
+        return 1
+    try:
+        name, text = _init_map_text(args, ask)
+    except templates.UnknownTemplate as e:
+        print(str(e), file=sys.stderr)
+        return 1
+    except (EOFError, KeyboardInterrupt):
+        print("\ninit cancelled — nothing was written", file=sys.stderr)
+        return 1
+    return _scaffold(args, cdir, name, text)
 
 
 def _cmd_prompt(args: argparse.Namespace) -> int:
@@ -142,6 +376,14 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_dir_and_func(p, _cmd_validate)
 
     p = sub.add_parser("init", help="scaffold conductor/ and print the bootstrap prompt")
+    # Deliberately NOT argparse `choices`: that raises a usage error (exit 2)
+    # and hardcodes a second copy of the list. The explicit check in
+    # _cmd_init exits 1 with templates.get()'s own message, so the available
+    # names can never drift from the module that vends them.
+    p.add_argument("--template", metavar="NAME",
+                   help="starting map: " + ", ".join(n for n, _ in templates.names())
+                        + f" (default: {templates.DEFAULT}; omit it in a terminal "
+                          "to be asked instead)")
     _add_dir_and_func(p, _cmd_init)
 
     p = sub.add_parser("prompt", help="print the working prompt for one cycle role")

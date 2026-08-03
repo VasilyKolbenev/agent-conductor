@@ -19,8 +19,11 @@ class UnknownRole(Exception):
     """Raised when `role_prompt` is asked for a role id the cycle does not declare."""
 
 
-# PROTOCOL.md §2. Public: `conduct init` writes this text as the map.toml stub —
-# ONE sync point for the spec's map example.
+# PROTOCOL.md §2 — ONE sync point for the spec's map example. Public, with two
+# readers: `bootstrap_prompt` embeds it, and `templates` vends it verbatim as
+# the `minimal` template. It is NO LONGER what `conduct init` writes by
+# default; that scaffold is `templates.get(templates.DEFAULT)` (DO-3). Note it
+# ends without a trailing newline — `templates` adds the one a file needs.
 MAP_EXAMPLE = '''schema_version = 1
 project = "web-app"
 

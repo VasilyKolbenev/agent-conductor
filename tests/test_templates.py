@@ -5,7 +5,15 @@ import pytest
 
 from conductor import merge, prompts, schema, templates
 
-ALL_TEMPLATES = ["default-orbit", "single-harness", "empty"]
+ALL_TEMPLATES = ["default-orbit", "single-harness", "empty", "minimal"]
+
+# `minimal` is the spec's own §2 example, vended verbatim from
+# prompts.MAP_EXAMPLE so the spec and the scaffold cannot drift. Conventions we
+# impose on the templates we author — PLACEHOLDER labels above all — stop at
+# it deliberately: correcting the quotation to satisfy our own house style
+# would defeat the point of quoting it.
+AUTHORED_TEMPLATES = ["default-orbit", "single-harness", "empty"]
+
 ORBIT_PHASES = ["goal", "detect", "diagnose", "design", "deliver"]
 NOW = datetime(2026, 8, 3, 12, 0, tzinfo=timezone.utc)
 
@@ -77,11 +85,13 @@ def test_every_template_declares_at_least_one_node(name):
     assert _parsed(name)["nodes"]
 
 
-@pytest.mark.parametrize("name", ALL_TEMPLATES)
-def test_every_template_node_label_announces_itself_as_a_placeholder(name):
+@pytest.mark.parametrize("name", AUTHORED_TEMPLATES)
+def test_every_authored_template_node_label_announces_itself_as_a_placeholder(name):
     # The id prefix alone is not the guarantee: the label is what the panel
     # renders, so a plausible-looking label would let an unedited template pass
-    # for a real map.
+    # for a real map. `minimal` is exempt and stays exempt — it is the spec's
+    # example quoted verbatim, and it is reachable only by asking for it by
+    # name, never from `conduct init` with no arguments.
     assert all(n["label"].startswith("PLACEHOLDER") for n in _parsed(name)["nodes"])
 
 
@@ -94,11 +104,18 @@ def test_every_template_ends_in_exactly_one_newline(name):
     assert text.endswith("\n") and not text.endswith("\n\n")
 
 
-def test_names_lists_all_three_with_a_description():
+def test_names_lists_every_template_with_a_description_recommended_first():
     listed = templates.names()
     assert [name for name, _ in listed] == ALL_TEMPLATES
+    assert listed[0][0] == templates.DEFAULT                 # vending order
     for _, description in listed:
         assert description and "\n" not in description       # one line each
+
+
+def test_minimal_is_the_spec_example_verbatim_plus_its_missing_newline():
+    # One sync point, quoted not copied: the spec's §2 example, the bootstrap
+    # prompt and this template must never be able to say different things.
+    assert templates.get("minimal") == prompts.MAP_EXAMPLE + "\n"
 
 
 def test_default_names_the_recommended_template():
@@ -310,3 +327,113 @@ def test_unassigned_goal_stage_does_not_touch_review_state():
     agreed = merge.merge(data, None, lanes, [], 0, NOW)
     assert agreed["findings"][0]["review_state"] == "agreed"
     assert agreed["warnings"] == []
+
+
+# --- DO-3: parameterisation, the values `conduct init` fills in ---
+
+# Legal but awkward: one character, hyphens, digits, mixed case, dots,
+# underscores, the real product names harnesses actually ship under (spaces
+# and parentheses included), a non-ASCII name, and the longest the rule allows.
+AWKWARD_NAMES = ["a", "A9", "my-app", "Web_App-2", "x.y.z", "Claude Code",
+                 "Kimi Code", "Qwen Code (beta)", "C++ service", "Проект",
+                 "a" * 64]
+
+# Everything below either breaks the generated TOML outright or silently
+# changes what it means. None of it may reach the file.
+TOML_BREAKING = ['a"b', "a\\b", "a\nb", "a\rb", "a\tb", "a\x00b", "", " ",
+                 "-leading", ".leading", "a" * 65, '"', "x] [y", "a#b", "a'b",
+                 "a\x1bb", "a=b", "a,b", "a{b"]
+
+
+@pytest.mark.parametrize("name", ALL_TEMPLATES)
+def test_explicit_none_arguments_reproduce_the_template_verbatim(name):
+    # The defaults are the contract every pre-DO-3 template test relies on.
+    assert templates.get(name, project=None, primary=None,
+                         reviewer=None) == templates.get(name)
+
+
+@pytest.mark.parametrize("value", AWKWARD_NAMES)
+@pytest.mark.parametrize("name", ALL_TEMPLATES)
+def test_every_accepted_name_still_generates_a_clean_map(name, value):
+    # generation -> tomllib -> validate_map must stay ([], []) for every input
+    # the rule accepts: a name that passes validation and then breaks the file
+    # would be the worst of both.
+    text = templates.get(name, project=value, primary=value, reviewer="rev-2")
+    errors, warnings = schema.validate_map(tomllib.loads(text))
+    assert errors == [] and warnings == []
+    assert text.endswith("\n") and not text.endswith("\n\n")
+
+
+@pytest.mark.parametrize("bad", TOML_BREAKING)
+@pytest.mark.parametrize("field", ["project", "primary", "reviewer"])
+def test_toml_breaking_names_are_rejected_before_they_reach_the_file(bad, field):
+    with pytest.raises(templates.InvalidName) as exc:
+        templates.get("default-orbit", **{field: bad})
+    msg = str(exc.value)
+    assert repr(bad) in msg                     # says which value
+    assert templates.NAME_RULE in msg           # and what is allowed instead
+    assert ("project name" if field == "project" else "harness id") in msg
+
+
+@pytest.mark.parametrize("bad, offender", [('my "app"', '"'), ("a\\b", "\\"),
+                                           ("a\nb", "\n"), ("a=b", "="),
+                                           ("a\x00b", "\x00")])
+def test_the_rejection_names_the_character_that_failed(bad, offender):
+    # "invalid input" is not actionable. The message must say which field,
+    # which character, and what the allowed format is.
+    with pytest.raises(templates.InvalidName) as exc:
+        templates.get("default-orbit", project=bad)
+    msg = str(exc.value)
+    assert "project name" in msg
+    assert repr(offender) in msg
+    assert templates.NAME_RULE in msg
+
+
+def test_parameterisation_carries_the_names_into_the_map():
+    data = tomllib.loads(templates.get("default-orbit", project="my-app",
+                                       primary="kimi", reviewer="qwen"))
+    assert data["project"] == "my-app"
+    roles = _roles(data)
+    assert roles["implementer"]["harness"] == "kimi"
+    assert roles["reviewer"]["harness"] == "qwen"
+    assert {r["harness"] for r in data["cycle"]["roles"]} == {"kimi", "qwen"}
+
+
+def test_swapping_the_two_default_harnesses_does_not_collapse_them():
+    # A naive sequential replace would rewrite claude-code -> codex and then
+    # every codex -> claude-code, leaving one harness everywhere.
+    roles = _roles(tomllib.loads(templates.get("default-orbit", primary="codex",
+                                               reviewer="claude-code")))
+    assert roles["implementer"]["harness"] == "codex"
+    assert roles["reviewer"]["harness"] == "claude-code"
+
+
+def test_single_harness_takes_the_primary_and_has_no_use_for_a_reviewer():
+    text = templates.get("single-harness", primary="kimi", reviewer="qwen")
+    assert _roles(tomllib.loads(text))["implementer"]["harness"] == "kimi"
+    assert "qwen" not in text
+
+
+def test_project_name_reaches_every_template():
+    for name in ALL_TEMPLATES:
+        assert tomllib.loads(templates.get(name, project="my-app"))["project"] == "my-app"
+
+
+def test_a_renamed_harness_is_renamed_in_the_prose_that_counts_it():
+    # The template states a fact about its own values. Substituting the values
+    # and leaving the sentence would ship a file that contradicts itself.
+    assert '"claude-code" appears three times' in templates.get("default-orbit")
+    text = templates.get("default-orbit", primary="kimi", reviewer="qwen")
+    assert "claude-code" not in text
+    assert '"kimi" appears three times' in text
+
+
+def test_one_harness_for_both_roles_withdraws_the_different_product_claim():
+    # The default's reviewer runs a different product; a user who picks the
+    # same one for both must not be told otherwise by their own map.
+    text = templates.get("default-orbit", primary="kimi", reviewer="kimi")
+    assert "different harness product" not in text
+    assert "same harness product" in text
+    assert '"kimi" appears five times' in text     # three primary + two reviewing
+    errors, warnings = schema.validate_map(tomllib.loads(text))
+    assert errors == [] and warnings == []
