@@ -12,7 +12,8 @@ from pathlib import Path
 import pytest
 import conductor.__main__
 from conductor import templates
-from conductor.__main__ import _build_parser, _cmd_init, _interactive, main
+from conductor.__main__ import (_build_parser, _cmd_init, _console_ask,
+                                _interactive, main)
 from tests.test_store import write_project, good_lane
 
 
@@ -284,8 +285,8 @@ def test_wizard_carries_the_chosen_project_and_harnesses(tmp_path, capsys):
     assert data["project"] == "my-app"
     assert _harnesses(tmp_path)["implementer"] == "codex"
     assert _harnesses(tmp_path)["reviewer"] == "kimi-cli"
-    out = capsys.readouterr().out
-    assert "my-app" in out and "kimi-cli" in out      # shown before writing
+    dialogue = capsys.readouterr().err
+    assert "my-app" in dialogue and "kimi-cli" in dialogue   # shown before writing
 
 
 def test_wizard_no_reviewer_selects_the_single_harness_template(tmp_path, capsys):
@@ -300,7 +301,8 @@ def test_wizard_no_reviewer_selects_the_single_harness_template(tmp_path, capsys
 
 def test_wizard_never_asks_for_an_api_key_or_a_template(tmp_path, capsys):
     assert _cmd_init(_init_args(tmp_path), ask=_scripted(["", "", ""])) == 0
-    asked = capsys.readouterr().out.lower()
+    captured = capsys.readouterr()
+    asked = (captured.out + captured.err).lower()
     for banned in ("api key", "api-key", "token", "password", "which template"):
         assert banned not in asked
 
@@ -308,16 +310,16 @@ def test_wizard_never_asks_for_an_api_key_or_a_template(tmp_path, capsys):
 def test_wizard_rejects_an_illegal_project_name_and_re_prompts(tmp_path, capsys):
     assert _cmd_init(_init_args(tmp_path),
                      ask=_scripted(['my "app"', "my-app", "", ""])) == 0
-    out = capsys.readouterr().out
-    assert 'my "app"' in out and templates.NAME_RULE in out
+    dialogue = capsys.readouterr().err
+    assert 'my "app"' in dialogue and templates.NAME_RULE in dialogue
     assert tomllib.loads(_map_text(tmp_path))["project"] == "my-app"
 
 
 def test_wizard_rejects_an_illegal_harness_id_and_re_prompts(tmp_path, capsys):
     assert _cmd_init(_init_args(tmp_path),
                      ask=_scripted(["", 'kimi"cli', "kimi-cli", ""])) == 0
-    out = capsys.readouterr().out
-    assert templates.NAME_RULE in out and "'\"'" in out    # names the character
+    dialogue = capsys.readouterr().err
+    assert templates.NAME_RULE in dialogue and "'\"'" in dialogue  # names the char
     assert _harnesses(tmp_path)["implementer"] == "kimi-cli"
 
 
@@ -330,15 +332,28 @@ def test_wizard_accepts_a_product_name_with_a_space(tmp_path, capsys):
     assert _harnesses(tmp_path)["implementer"] == "Kimi Code"
 
 
-def test_wizard_rejects_an_out_of_range_menu_number_and_re_prompts(tmp_path, capsys):
-    assert _cmd_init(_init_args(tmp_path), ask=_scripted(["", "9", "1", ""])) == 0
-    assert _harnesses(tmp_path)["implementer"] == "claude-code"
+def test_wizard_reads_an_in_range_number_as_a_menu_choice(tmp_path, capsys):
+    # Primary menu: 1) claude-code 2) codex. Reviewer menu then: 1) claude-code
+    # 2) none — so "1" here is a harness, not the no-reviewer entry.
+    assert _cmd_init(_init_args(tmp_path), ask=_scripted(["p", "2", "1"])) == 0
+    assert _harnesses(tmp_path)["implementer"] == "codex"
+    assert _harnesses(tmp_path)["reviewer"] == "claude-code"
+
+
+def test_wizard_accepts_a_harness_whose_name_is_a_number(tmp_path, capsys):
+    # A digit indexes the menu only while it indexes the menu. "7" against a
+    # two-item list is not a mistake to scold — it is the id the user typed,
+    # and a harness may legally be called that.
+    assert _cmd_init(_init_args(tmp_path), ask=_scripted(["p", "7", "9"])) == 0
+    assert _harnesses(tmp_path)["implementer"] == "7"
+    assert _harnesses(tmp_path)["reviewer"] == "9"
+    assert tomllib.loads(_map_text(tmp_path))["project"] == "p"
 
 
 def test_wizard_says_so_when_both_roles_run_the_same_harness(tmp_path, capsys):
     assert _cmd_init(_init_args(tmp_path),
                      ask=_scripted(["p", "claude-code", "claude-code"])) == 0
-    assert "not independent" in capsys.readouterr().out
+    assert "not independent" in capsys.readouterr().err
     assert "different harness product" not in _map_text(tmp_path)
 
 
@@ -394,7 +409,36 @@ def test_eof_before_any_answer_falls_back_to_the_default_template(tmp_path, caps
     # produce the same scaffold the non-TTY path does, not an exit 1.
     assert _cmd_init(_init_args(tmp_path), ask=_scripted([])) == 0
     assert _map_text(tmp_path) == templates.get(templates.DEFAULT)
-    assert "no input available" in capsys.readouterr().out
+    assert "no input available" in capsys.readouterr().err
+
+
+def test_a_nul_stdin_run_leaves_no_question_on_stdout(tmp_path, capsys, monkeypatch):
+    # The real shape, through the real terminal prompter: `input()` raises at
+    # once, exactly as it does when stdin is the null device. The outcome was
+    # already right; what a stdout-capturing caller sees must be too — the
+    # non-TTY contract is that no question is asked, so none may be echoed.
+    def eof():
+        raise EOFError
+
+    monkeypatch.setattr("builtins.input", eof)
+    assert _cmd_init(_init_args(tmp_path), ask=_console_ask) == 0
+    captured = capsys.readouterr()
+    assert _map_text(tmp_path) == templates.get(templates.DEFAULT)
+    for question in ("three questions", "Project name", "choice [",
+                     "Which harness", "no input available"):
+        assert question not in captured.out
+    assert "Project name" in captured.err        # a person at a terminal sees it
+
+
+def test_the_console_prompter_puts_its_prompt_on_stderr(tmp_path, capsys, monkeypatch):
+    # input(prompt) writes the prompt to stdout — and writes it BEFORE it
+    # discovers there is nothing to read. _console_ask is the whole reason the
+    # fallback above can stay silent, so pin it directly.
+    monkeypatch.setattr("builtins.input", lambda: "typed")
+    assert _console_ask("Project name [p]: ") == "typed"
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == "Project name [p]: "
 
 
 def test_wizard_ctrl_c_exits_1_and_leaves_no_conductor_dir(tmp_path, capsys):

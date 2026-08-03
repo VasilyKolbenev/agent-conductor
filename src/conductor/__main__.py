@@ -75,6 +75,29 @@ def _interactive() -> bool:
         return False
 
 
+def _say(message: str = "") -> None:
+    """Write one line of interactive dialogue to stderr.
+
+    The wizard is a conversation, not output. Keeping every question, menu and
+    rejection off stdout means stdout carries the same scaffold report on all
+    three init paths — so a caller capturing it never reads back a question,
+    least of all one the non-interactive fallback asked into the void.
+    """
+    print(message, file=sys.stderr)
+
+
+def _console_ask(prompt: str) -> str:
+    """Read one line from a real terminal, with the prompt on stderr.
+
+    `input(prompt)` writes its prompt to stdout, which is the one stream that
+    must stay clean — and it writes it *before* discovering there is nothing
+    to read, so on the EOF fallback path the question would outlive the
+    session that never asked it.
+    """
+    print(prompt, end="", file=sys.stderr, flush=True)
+    return input()
+
+
 def _ask_name(ask: Callable[[str], str], question: str, default: str,
               kind: str) -> str:
     """Read one name, re-asking until it is legal; Enter takes `default`."""
@@ -83,7 +106,7 @@ def _ask_name(ask: Callable[[str], str], question: str, default: str,
         try:
             return templates.check_name(kind, answer)
         except templates.InvalidName as e:
-            print(f"  {e}")
+            _say(f"  {e}")
 
 
 def _ask_harness(ask: Callable[[str], str], question: str,
@@ -91,32 +114,32 @@ def _ask_harness(ask: Callable[[str], str], question: str,
     """Offer a short numbered menu; any other legal name is taken as typed.
 
     Args:
-        ask: The prompting function (`input` in a terminal).
+        ask: The prompting function (`_console_ask` in a terminal).
         question: The headline shown above the menu.
         options: `(value, gloss)` pairs, most recommended first — option 1 is
             the default, so pressing Enter always works.
 
     Returns:
-        The chosen value: a menu entry, or a harness id the user typed.
+        The chosen value: a menu entry, or a harness id the user typed. A
+        digit is an index only while it indexes this menu — out of range it is
+        just what the user typed, so a harness genuinely called `7` stays
+        reachable instead of being answered with an error.
     """
-    print(question)
+    _say(question)
     for index, (value, gloss) in enumerate(options, 1):
-        print(f"  {index}) {value}{gloss}")
-    print("  or type any other harness id")
+        _say(f"  {index}) {value}{gloss}")
+    _say("  or type any other harness id")
     default = options[0][0]
     while True:
         answer = ask(f"  choice [{default}]: ").strip()
         if not answer:
             return default
-        if answer.isdigit():
-            if 1 <= int(answer) <= len(options):
-                return options[int(answer) - 1][0]
-            print(f"  pick a number from 1 to {len(options)}, or type a harness id")
-            continue
+        if answer.isdigit() and 1 <= int(answer) <= len(options):
+            return options[int(answer) - 1][0]
         try:
             return templates.check_name("harness id", answer)
         except templates.InvalidName as e:
-            print(f"  {e}")
+            _say(f"  {e}")
 
 
 def _wizard(ask: Callable[[str], str], default_project: str) -> tuple[str, str]:
@@ -135,7 +158,7 @@ def _wizard(ask: Callable[[str], str], default_project: str) -> tuple[str, str]:
         EOFError: Propagated from `ask` when stdin closes mid-question.
         KeyboardInterrupt: Propagated from `ask` on Ctrl-C.
     """
-    print("conduct init — three questions, and Enter takes the default.\n")
+    _say("conduct init — three questions, and Enter takes the default.\n")
     project = _ask_name(ask, "Project name", default_project, "project name")
     primary = _ask_harness(ask, "\nWhich harness runs the implementing roles?",
                            [(h, "") for h in _HARNESSES])
@@ -144,14 +167,14 @@ def _wizard(ask: Callable[[str], str], default_project: str) -> tuple[str, str]:
         ask, "\nWhich harness reviews their work?",
         others + [(_NO_REVIEWER, " — no independent reviewer")])
     name = "single-harness" if reviewer == _NO_REVIEWER else templates.DEFAULT
-    print(f"\nWriting the {name} template:")
-    print(f"  project    {project}")
-    print(f"  implements {primary}")
-    print(f"  reviews    {reviewer}")
+    _say(f"\nWriting the {name} template:")
+    _say(f"  project    {project}")
+    _say(f"  implements {primary}")
+    _say(f"  reviews    {reviewer}")
     if reviewer == primary:
-        print("  note: both roles run the same harness product, so this review "
-              "is not independent.")
-    print()
+        _say("  note: both roles run the same harness product, so this review "
+             "is not independent.")
+    _say()
     return name, templates.get(name, project=project, primary=primary,
                                reviewer=None if reviewer == _NO_REVIEWER else reviewer)
 
@@ -202,7 +225,7 @@ def _init_map_text(args: argparse.Namespace,
     default = (templates.DEFAULT, templates.get(templates.DEFAULT))
     if ask is None and not _interactive():
         return default
-    prompter = _Prompter(input if ask is None else ask)
+    prompter = _Prompter(_console_ask if ask is None else ask)
     try:
         return _wizard(prompter, _default_project(args.dir))
     except EOFError:
@@ -213,7 +236,7 @@ def _init_map_text(args: argparse.Namespace,
         # which isatty()s as a console — and that is precisely the shape a
         # script uses to mean "no input". Answer it the way the non-TTY path
         # would rather than failing an automated caller.
-        print("\nno input available — writing the default template instead.\n")
+        _say("\nno input available — writing the default template instead.\n")
         return default
 
 
