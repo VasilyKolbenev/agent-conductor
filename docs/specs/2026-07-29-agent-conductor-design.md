@@ -6,6 +6,9 @@
 - **License:** MIT · **Language:** Python ≥ 3.11, zero runtime dependencies
 - **Repository:** https://github.com/VasilyKolbenev/agent-conductor
 
+> 2026-08-02: examples and §10 re-aligned with the de-voiced protocol and
+> fictional demo (owner direction); row removed per ADR 0001.
+
 ## 1. Overview
 
 Conduct is a local, decision-centric control plane for heterogeneous AI coding
@@ -52,7 +55,8 @@ Tagline: **Your agents write lanes. You conduct.**
    agent can follow — no SDK required.
 5. A **Claude Code adapter** (instructions + a mechanical heartbeat hook) and
    an **experimental LangGraph example**.
-6. A **demo** (`conduct demo`) replaying a real multi-agent release-gate case.
+6. A **demo** (`conduct demo`) replaying a fictional release-gate scenario
+   modeled on real multi-agent coordination patterns.
 
 ### Non-goals (v0.1)
 
@@ -105,14 +109,18 @@ from the approved design.
 
 ```toml
 schema_version = 1
-project = "voice-app"
+project = "web-app"
 
 [[nodes]]
-id = "backend"          # unique, referenced by lanes
-label = "backend build"
+id = "schemas"
+label = "shared contracts"
+kind = "artifact"
+
+[[nodes]]
+id = "api"              # unique, referenced by lanes
+label = "api build"
 kind = "artifact"       # free-form: artifact | gate | component | doc | …
-row = 0                 # optional; layout falls back to topological layering
-depends_on = ["models"]
+depends_on = ["schemas"]
 
 [[cycle.roles]]
 id = "implementer"
@@ -153,11 +161,11 @@ a temp file, then rename, when the harness allows it).
   "staleness_after_minutes": 360,   // optional; default 360
   "now": { "task": "fixing gate D", "since": "2026-07-29T20:00:00+03:00",
            "phase": "implement" },   // optional; must be a cycle.phases value
-  "map_status": { "backend": "pass", "smoke": "fail" },
+  "map_status": { "api": "pass", "smoke": "fail" },
   "findings": [
     {
       "id": "D-2",               // globally unique across lanes
-      "title": "STT model missing from the bundle",
+      "title": "payment gateway config missing from the release image",
       "severity": "blocker",     // blocker | major | minor | note
       "claim": "defect",         // the author's own assessment (free-form label)
       "detail": "…",
@@ -169,8 +177,8 @@ a temp file, then rename, when the harness allows it).
     "D-1": { "disposition": "confirmed", "note": "reproduced at …" }
   },
   "waits_on_human": [
-    { "id": "w-whisper", "kind": "decision",
-      "title": "Bundle the STT model (+461 MB) or download on first run?",
+    { "id": "w-config", "kind": "decision",
+      "title": "Bake the payment config into the image or provision at deploy time?",
       "why": "Determines what D-2's fix looks like.", "blocks": ["D-2"] }
   ],
   "invariants": [ { "id": "main-untouched", "ok": true } ]
@@ -220,7 +228,7 @@ are pure functions of the inputs (unit-testable without I/O):
 | **Uncovered** | role R with `reviews` ∋ A's role exists in the map but **no lane** holds role R — F is "review role absent", also never agreement. |
 | **Review state (per finding)** | one value with precedence `suspended > disagreement > unreviewed > uncovered > agreed`: `suspended` for id-collided findings; `agreed` only when every reviewing role's obligation is met and every verdict on F is `confirmed`. Self-verdicts (a lane verdicting its own finding) are ignored in **all** review-state computation. A finding whose author's role is reviewed by nobody lands on `agreed` vacuously — this is intended, and the panel renders such rows as "no reviewer assigned" so the silence-≠-consent story stays visible. Per-author detail always remains visible in the finding's `verdicts`. |
 | **Contested node** | two or more lanes report different `map_status` for the same node → state `contested`, listed with **all** disagreeing authors. No last-write-wins. |
-| **Node status** | otherwise: the status from the most recently `updated` lane that mentions the node (future-dated lanes are excluded from this race — the clock-skew warning stands); nodes nobody mentions are `idle`. |
+| **Node status** | otherwise: the status from the most recently `updated` lane that mentions the node (future-dated lanes are excluded from this race — the clock-skew warning stands); nodes nobody mentions are `idle`. A node whose only voters are future-dated stays `idle`: the exclusion is total — a skewed clock never sets status unilaterally (mirroring the Current-phase rule; owner decision 2026-07-31). |
 | **Current phase** | the `now.phase` of the most recently updated non-stale, non-future-dated lane that declares one; if no lane declares a phase, there is no current phase and the cycle renders statically. A `now.phase` naming no `cycle.phases` value (or any phase when the map declares none) is treated as undeclared, with a warning. |
 | **Unknown referenced ids** | `map_status` keys, finding `refs`, and lane `invariants` ids that exist in no map are ignored for computation and reported in `warnings`. The invariant universe is the map-declared ids only. |
 | **Human queue** | union of `waits_on_human` across lanes, keyed by id (same id in two lanes = one item, all sources listed). |
@@ -244,7 +252,7 @@ must tolerate additional fields:
 {
   "schema_version": 1,
   "generated_at": "ISO8601",
-  "project": "voice-app",
+  "project": "web-app",
   "map": { "nodes": [ { "id", "label", "kind", "depends_on": [],
                         "status": "pass|fail|blocked|running|idle|contested",
                         "contested_by": [] } ] },
@@ -252,7 +260,8 @@ must tolerate additional fields:
              "current_phase": "implement" },        // absent if undeclared
   "lanes": [ { "author", "role", "updated", "stale": false,
                "broken": false, "error": null, "now": {} } ],
-  "findings": [ { "id", "title", "severity", "claim", "author", "refs": [],
+  "findings": [ { "id", "title", "severity", "claim", "detail", "evidence",
+                  "author", "refs": [],
                   "verdicts": { "<author>": { "disposition", "note",
                                               "role": "reviewer or null" } },
                   "review_state":
@@ -276,7 +285,7 @@ must tolerate additional fields:
 | `conduct init` | Creates `conductor/` (refuses if it exists), writes a commented `map.toml` stub and an empty `lanes/`, then **prints the bootstrap prompt**: instructions for the user's own agent to read the project's roadmap/plan/architecture docs and generate a real `map.toml`. | 0 created · 1 already exists |
 | `conduct up [--port 7777] [--dir PATH]` | `--dir` is the **project root** (the directory containing `conductor/`; default: cwd). Validates the map (refuses to start on a broken map with a clear error), then serves the panel on `127.0.0.1`. Watches `conductor/` by polling mtimes (0.5 s) and pushes SSE updates. If the map becomes invalid *while running*, keeps serving the last good map with a visible banner. | 0 on clean shutdown · 1 startup failure (port busy, invalid map) |
 | `conduct demo [--port 7777]` | Copies the bundled demo fixture (via `importlib.resources`) into a temp directory and serves it read-only — the full experience with zero setup. | as `up` |
-| `conduct prompt <role-id>` | Renders the **state-aware** prompt contract for that role from `map.toml` *and current lanes*: mission, lane file path, exact JSON schema template, the list of finding ids currently awaiting this role's verdict, valid map node ids. Deterministic template rendering — no LLM. Output to stdout for piping. | 0 · 1 unknown role or missing/invalid map |
+| `conduct prompt --role <role> --author <author>` | Renders the **state-aware** prompt contract for that role from `map.toml` *and current lanes*: mission, lane file path, exact JSON schema template, the list of finding ids currently awaiting this role's verdict, valid map node ids. Deterministic template rendering — no LLM. Output to stdout for piping. | 0 · 1 unknown role or missing/invalid map |
 | `conduct validate` | Schema-checks `map.toml` + all lanes + `events.jsonl`, then runs cross-file referential checks matching the merger's warning set (§5), including: verdict ids vs findings, `refs`/`map_status` keys vs map nodes, `now.phase` vs phases, lane `role` vs `cycle.roles`, lane invariant ids vs map invariants. Schema violations are **errors**; referential mismatches are **warnings** (they are legal runtime drift the merger tolerates, §5). CI-friendly. | 0 schema-valid (warnings allowed) · 1 schema errors |
 
 ## 7. Server
@@ -322,7 +331,7 @@ motion respected, keyboard focus visible. Dark/light via
 
 ## 9. Adapters
 
-- **Universal (the default):** `conduct prompt <role>` output pasted into any
+- **Universal (the default):** `conduct prompt --role <role> --author <author>` output pasted into any
   harness's instructions. Works today for Codex CLI, Cursor, Windsurf, Cline,
   aider, Devin — anything that can write a file. Cloud builders without local
   filesystem access (Lovable, Bolt, v0) follow the same contract through the
@@ -340,12 +349,12 @@ motion respected, keyboard focus visible. Dark/light via
 
 ## 10. Demo content
 
-An anonymized replay of a real case (a desktop release pipeline): gates
-pipeline with one gate failing offline-smoke, three blocker findings, a
-reviewer lane moving from silence (rendered as *unreviewed*) to verdicts, one
-computed disagreement, and a human queue with a genuine product decision.
-Fixtures are hand-sanitized (project renamed, paths genericized) and reviewed
-by the owner before first publish.
+A fictional release-gate scenario: a gates pipeline with one smoke gate
+failing, three blocker findings, a reviewer lane moving from silence
+(rendered as *unreviewed*) to verdicts, one computed disagreement, and a
+human queue with a genuine product decision. The structure is modeled on
+real multi-agent coordination patterns; every project name, path, and
+finding in the fixture is fictional.
 
 ## 11. Repository layout
 
@@ -415,4 +424,5 @@ follow-ups planned after M4 ships.
 ## 15. Open questions
 
 None blocking. Two owner sign-offs are scheduled inside milestones: demo
-anonymization review (M4) and the announcement text (M6).
+narrative review (done 2026-08-02: fictional re-theme, owner-approved) and
+the announcement text (M6).

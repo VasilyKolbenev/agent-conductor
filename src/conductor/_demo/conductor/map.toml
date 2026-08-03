@@ -1,0 +1,63 @@
+schema_version = 1
+project = "web-app"
+
+[[nodes]]
+id = "schemas"
+label = "shared contracts"
+kind = "artifact"
+
+[[nodes]]
+id = "api"
+label = "api build"
+kind = "artifact"
+depends_on = ["schemas"]
+
+[[nodes]]
+id = "frontend"
+label = "frontend build"
+kind = "artifact"
+
+[[nodes]]
+id = "stage"
+label = "release stage"
+kind = "artifact"
+depends_on = ["api", "frontend"]
+
+[[nodes]]
+id = "deploy"
+label = "staging deploy"
+kind = "artifact"
+depends_on = ["stage"]
+
+[[nodes]]
+id = "smoke"
+label = "release smoke gate"
+kind = "gate"
+depends_on = ["stage"]
+
+[[nodes]]
+id = "live"
+label = "production release"
+kind = "artifact"
+depends_on = ["deploy"]
+
+[[cycle.roles]]
+id = "implementer"
+harness = "claude-code"
+reviews = []
+
+[[cycle.roles]]
+id = "reviewer"
+harness = "codex"
+reviews = ["implementer"]
+
+[cycle]
+phases = ["plan", "implement", "review", "human-gate"]
+
+[[invariants]]
+id = "main-protected"
+text = "main branch is never committed to directly"
+
+[[invariants]]
+id = "stage-sealed"
+text = "the release stage is assembled once and never patched in place"

@@ -813,14 +813,14 @@ def _nodes(map_data, live, warnings):
     for n in map_data.get("nodes", []):
         cast = votes.get(n["id"], [])
         statuses = {s for (_, _, _, s) in cast}
+        eligible = [c for c in cast if not c[1]]   # future voters never win (owner decision)
         if len(statuses) > 1:
             status, contested = "contested", sorted(a for (_, _, a, _) in cast)
-        elif cast:
-            eligible = [c for c in cast if not c[1]] or cast   # prefer non-future voters
+        elif eligible:
             eligible.sort(key=lambda c: (c[0] is not None, c[0]))
             status, contested = eligible[-1][3], []
         else:
-            status, contested = "idle", []
+            status, contested = "idle", []   # sole-future-voter node stays idle (§6)
         out.append({"id": n["id"], "label": n.get("label", n["id"]),
                     "kind": n.get("kind", ""), "depends_on": n.get("depends_on", []),
                     "status": status, "contested_by": contested})
@@ -974,86 +974,11 @@ def test_verdicts_keyed_by_author_with_role_inside():
 ```
 
 - [ ] **Step 2: Run — verify fail.**
-- [ ] **Step 3: Implement `_findings`**
-
-```python
-def _findings(map_data, views, warnings):
-    live = [v for v in views if not v["broken"]]
-    roles = {r["id"]: r for r in (map_data.get("cycle", {}) or {}).get("roles", [])}
-    role_holders: dict[str, list] = {}
-    for v in live:
-        role = v["role"]
-        if role is not None and role not in roles:
-            warnings.append(f"lane {v['author']}: role {role!r} is not in cycle.roles — "
-                            "treated as observer")
-            v = {**v, "role": None}
-        if v["role"]:
-            role_holders.setdefault(v["role"], []).append(v)
-
-    owners: dict[str, list] = {}                      # finding id -> [(view, finding)]
-    for v in live:
-        for f in v["_data"].get("findings", []):
-            owners.setdefault(f["id"], []).append((v, f))
-    known_ids = set(owners)
-
-    verdicts_on: dict[str, dict[str, dict]] = {}      # fid -> author -> verdict
-    for v in live:
-        for fid, verdict in (v["_data"].get("verdicts") or {}).items():
-            if fid not in known_ids:
-                warnings.append(f"lane {v['author']}: stale verdict on {fid!r} "
-                                "(finding no longer exists) — excluded")
-                continue
-            verdicts_on.setdefault(fid, {})[v["author"]] = {
-                "disposition": verdict.get("disposition"),
-                "note": verdict.get("note", ""),
-                "role": v["role"] if v["role"] in roles else None,
-            }
-
-    out = []
-    for fid, owner_list in owners.items():
-        collided = len(owner_list) > 1
-        if collided:
-            warnings.append(f"id-collision: finding {fid!r} authored by "
-                            f"{sorted(v['author'] for v, _ in owner_list)}")
-        for view, f in owner_list:
-            author_role = view["role"] if view["role"] in roles else None
-            all_verdicts = dict(verdicts_on.get(fid, {}))
-            # Self-verdicts stay VISIBLE in output but are ignored in computation (§5).
-            others = {a: v for a, v in all_verdicts.items() if a != view["author"]}
-            reviewing = [r for r in roles.values() if author_role in r.get("reviews", [])]
-            if collided:
-                review_state = "suspended"
-            elif any(v["disposition"] in ("refuted", "partial")
-                     for v in others.values()):
-                review_state = "disagreement"
-            else:
-                unreviewed = uncovered = False
-                for r in reviewing:
-                    holders = role_holders.get(r["id"], [])
-                    if not holders:
-                        uncovered = True
-                    elif not any(a in others and others[a]["role"] == r["id"]
-                                 for a in (h["author"] for h in holders)):
-                        unreviewed = True
-                review_state = ("unreviewed" if unreviewed
-                                else "uncovered" if uncovered else "agreed")
-            out.append({"id": fid, "title": f.get("title", ""),
-                        "severity": f.get("severity", "note"),
-                        "claim": f.get("claim", ""), "author": view["author"],
-                        "refs": [r for r in f.get("refs", [])],
-                        "verdicts": all_verdicts, "review_state": review_state})
-    _warn_unknown_refs(map_data, out, warnings)
-    return out
-
-
-def _warn_unknown_refs(map_data, findings, warnings):
-    known = {n["id"] for n in map_data.get("nodes", [])}
-    for f in findings:
-        unknown = [r for r in f["refs"] if r not in known]
-        if unknown:
-            warnings.append(f"finding {f['id']!r}: refs {unknown} are not map nodes — ignored")
-        f["refs"] = [r for r in f["refs"] if r in known]
-```
+- [ ] **Step 3: Implement `_findings`** — implemented as `_index_findings_and_verdicts` +
+  `_review_state` + `_findings` after quality review (radon E/37, C901 17>10, 5 nesting
+  levels, 67 lines on the original single-function shape); see `merge.py` — behavior
+  identical, pinned by `tests/test_merge_review.py` (including
+  `test_unreviewed_beats_uncovered_on_the_same_finding`, added as the refactor's pin test).
 
 - [ ] **Step 4: Run full suite — verify pass.**
 - [ ] **Step 5: Commit** — `git commit -am "feat(merge): findings, author-keyed verdicts, five-state review precedence"`
@@ -1423,6 +1348,12 @@ def load(root: Path) -> Loaded:
 
 - [ ] **Step 4: Run — pass. Step 5: Commit** — `git commit -am "feat(store): tolerant conductor/ loader"`
 
+**Deviation note (as implemented):** Task 10 deviates from the reference block above in four ways.
+(1) `load()` is split into `_load_map`/`_load_lanes`/`_load_events` helpers. (2) All three readers
+catch `UnicodeDecodeError`/`OSError` — the reference block crashes on invalid UTF-8; do not
+re-inherit it. (3) Store-produced lane errors carry the `lane <stem>:` prefix, matching
+schema-produced ones. (4) An unreadable `events.jsonl` surfaces as a warning instead of raising.
+
 ### Task 11: `prompts.py` — bootstrap + state-aware role prompts
 
 **Files:**
@@ -1591,7 +1522,7 @@ def test_sse_emits_on_file_change(tmp_path):
 - [ ] **Step 2: Run — fail. Step 3: Implement `server.py`** — components:
   - `Broker`: holds the latest merged state under a lock; `refresh()` runs `store.load` + `merge.merge(now=datetime.now(timezone.utc), extra_warnings=loaded.warnings)` and returns `True` when state changed (comparison on a deep copy **with `generated_at` removed**, spec §7); keeps raw lane bytes for `/lane/` passthrough.
   - `Watcher` thread: every 0.5 s stats every file under `conductor/` (name, mtime_ns, size); on fingerprint change → `refresh()`; independently, every 60 s → `refresh()` regardless (the staleness tick). On change, sets an event that all SSE clients wait on.
-  - `Handler(BaseHTTPRequestHandler)`: `/` → packaged `panel/index.html` via `importlib.resources`; `/state.json` → broker state; `/lane/<author>.json` → 404 unless `store.AUTHOR_RE` matches and the file exists; `/events` → `text/event-stream`, sends one `data: {"kind":"state"}\n\n` frame **immediately on connect** (de-flakes the race between client registration and the first change) and then one per broker change signal (client re-fetches `/state.json` — keeps frames tiny); everything else 404. All responses `Cache-Control: no-store`.
+  - `Handler(BaseHTTPRequestHandler)`: `/` → packaged `panel/index.html` via `importlib.resources`; `/state.json` → broker state; `/lane/<author>.json` → 404 unless `store.AUTHOR_RE.fullmatch(author)` matches and the file exists; `/events` → `text/event-stream`, sends one `data: {"kind":"state"}\n\n` frame **immediately on connect** (de-flakes the race between client registration and the first change) and then one per broker change signal (client re-fetches `/state.json` — keeps frames tiny); everything else 404. All responses `Cache-Control: no-store`.
   - `build(root, port) -> ThreadingHTTPServer` bound to `127.0.0.1` only; startup calls `store.conductor_dir` (raises `StoreError` → CLI exit 1) and refuses a broken map at startup (spec §6) while *runtime* map breakage keeps last-good + warning.
   - Wire `conduct up`: parse `--port` (default 7777), `server.build`, print the URL, `serve_forever()` with `KeyboardInterrupt` → clean 0.
   - **Placeholder panel** (so this task's `/` route test can go green before Task 14): create `src/conductor/panel/index.html` containing only `<title>Conduct</title><p>Panel arrives in the next task.</p>`. Task 14 replaces it wholesale.
@@ -1687,6 +1618,10 @@ def test_demo_state_tells_the_story(tmp_path):
 
 - [ ] **Step 3: Run — fail. Step 4: Implement `demo.py`** — `materialize(target_dir)`: copy the packaged `_demo/conductor` tree (via `importlib.resources.files("conductor") / "_demo"`) into `target_dir`, return `target_dir`. Wire `conduct demo [--port]`: materialize into `tempfile.mkdtemp(prefix="conduct-demo-")`, then start the same server read-only. `demo/README.md` at repo root: one paragraph + pointer to the packaged path.
 - [ ] **Step 5: Run — pass. Step 6: Commit** — `git commit -am "feat(demo): bundled real-case fixture and conduct demo"`
+
+> **Deviation (2026-08-02, owner direction):** the demo narrative was re-themed from the
+> voice-app case to a neutral, fictional web project (no voice-domain references anywhere);
+> structure, counts, review pattern, and the mandated test assertions are unchanged.
 
 ### Task 16: CI matrix
 

@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "author": "claude",
+  "role": "implementer",
+  "updated": "2026-07-29T21:20:00+00:00",
+  "staleness_after_minutes": 52560000,
+  "now": {
+    "task": "diagnosing the smoke failure",
+    "since": "2026-07-29T20:05:00+00:00",
+    "phase": "review"
+  },
+  "map_status": {
+    "schemas": "pass",
+    "api": "pass",
+    "frontend": "pass",
+    "stage": "pass",
+    "deploy": "pass",
+    "smoke": "fail",
+    "live": "blocked"
+  },
+  "findings": [
+    {
+      "id": "D-1",
+      "title": "checkout p95 at 4.2 s against a 1.0 s budget",
+      "severity": "blocker",
+      "claim": "defect",
+      "detail": "Staged checkout probes put p95 at 4.2 s; the gate budget is 1.0 s.",
+      "evidence": "smoke/gate-d.log",
+      "refs": ["smoke", "api"]
+    },
+    {
+      "id": "D-2",
+      "title": "payment gateway config missing from the release image — masked by dev-machine environment variables",
+      "severity": "blocker",
+      "claim": "defect",
+      "detail": "A clean deploy has no payment gateway config; dev runs passed only because local environment variables filled the gap.",
+      "evidence": "deploy/rollout.log",
+      "refs": ["smoke", "deploy"]
+    },
+    {
+      "id": "D-3",
+      "title": "search index rebuilt from the network at startup, shipped snapshot unused",
+      "severity": "blocker",
+      "claim": "defect",
+      "detail": "The staged service rebuilds its search index from the network at startup while the bundled snapshot sits unused.",
+      "evidence": "smoke/netwatch.log",
+      "refs": ["smoke", "stage"]
+    }
+  ],
+  "waits_on_human": [
+    {
+      "id": "w-config",
+      "kind": "decision",
+      "title": "Bake the payment config into the release image or provision it per environment at deploy time?",
+      "why": "Determines what D-2's fix looks like: bake the config into the image or add per-environment provisioning to the deploy step.",
+      "blocks": ["D-2"]
+    }
+  ],
+  "invariants": [
+    { "id": "main-protected", "ok": true },
+    { "id": "stage-sealed", "ok": true }
+  ]
+}

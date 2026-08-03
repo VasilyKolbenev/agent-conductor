@@ -1,0 +1,11 @@
+{"ts": "2026-07-29T17:05:00+00:00", "author": "claude", "kind": "ok", "text": "shared contracts sealed — checksums recorded", "ref": "schemas"}
+{"ts": "2026-07-29T17:40:00+00:00", "author": "claude", "kind": "ok", "text": "api built against the sealed contracts", "ref": "api"}
+{"ts": "2026-07-29T18:10:00+00:00", "author": "claude", "kind": "ok", "text": "frontend built", "ref": "frontend"}
+{"ts": "2026-07-29T18:45:00+00:00", "author": "claude", "kind": "ok", "text": "release stage assembled and sealed", "ref": "stage"}
+{"ts": "2026-07-29T19:20:00+00:00", "author": "claude", "kind": "ok", "text": "staging deploy up from the sealed stage", "ref": "deploy"}
+{"ts": "2026-07-29T20:05:00+00:00", "author": "claude", "kind": "fail", "text": "release smoke gate failed — three blockers filed (D-1, D-2, D-3)", "ref": "smoke"}
+{"ts": "2026-07-29T20:20:00+00:00", "author": "claude", "kind": "stop", "text": "holding the release — smoke gate red, findings await review", "ref": "smoke"}
+{"ts": "2026-07-29T20:35:00+00:00", "author": "claude", "kind": "info", "text": "queued w-config for a human decision: bake the payment config in or provision per environment", "ref": "D-2"}
+{"ts": "2026-07-29T21:30:00+00:00", "author": "codex", "kind": "info", "text": "review in: D-1 confirmed — latency blowout reproduced on a clean stage", "ref": "D-1"}
+{"ts": "2026-07-29T21:35:00+00:00", "author": "codex", "kind": "info", "text": "review in: D-2 confirmed — config gap reproduced on a clean deploy", "ref": "D-2"}
+{"ts": "2026-07-29T21:40:00+00:00", "author": "codex", "kind": "info", "text": "review in: D-3 partial — the shipped search snapshot may be stale", "ref": "D-3"}

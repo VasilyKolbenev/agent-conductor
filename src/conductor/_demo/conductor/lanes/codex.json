@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "author": "codex",
+  "role": "reviewer",
+  "updated": "2026-07-29T21:40:00+00:00",
+  "staleness_after_minutes": 52560000,
+  "now": {
+    "task": "reviewing the smoke-gate findings",
+    "since": "2026-07-29T21:00:00+00:00",
+    "phase": "review"
+  },
+  "verdicts": {
+    "D-1": {
+      "disposition": "confirmed",
+      "note": "reproduced on a clean stage: p95 between 4.1 and 4.4 s across three probe runs"
+    },
+    "D-2": {
+      "disposition": "confirmed",
+      "note": "clean deploy has no gateway config; the environment-variable masking is real"
+    },
+    "D-3": {
+      "disposition": "partial",
+      "note": "network rebuild confirmed, but the shipped snapshot may be stale — verify before relying on it"
+    }
+  }
+}

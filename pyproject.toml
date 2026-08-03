@@ -1,0 +1,35 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "agent-conductor"
+version = "0.1.0.dev0"
+description = "A local, decision-centric control plane for heterogeneous AI coding agents. Your agents write lanes; you conduct."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Vasily Kolbenev" }]
+keywords = ["agents", "ai", "orchestration", "observability", "local-first"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+conduct = "conductor.__main__:main"
+
+[project.urls]
+Repository = "https://github.com/VasilyKolbenev/agent-conductor"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/conductor"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ["3.11", "3.12"]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install
+        run: python -m pip install -e ".[dev]"
+
+      - name: Tests
+        run: python -m pytest -q
+
+      - name: Mutation harness
+        run: python scripts/mutate_merge.py
+
+      - name: Demo drift gate
+        run: >
+          python -c "import sys, tempfile;
+          from conductor import demo;
+          from conductor.__main__ import main;
+          sys.exit(main(['validate', '--dir', str(demo.materialize(tempfile.mkdtemp()))]))"
+
+      - name: Wheel smoke
+        run: |
+          python -m pip install build
+          python -m build --wheel
+          python -m pip uninstall -y agent-conductor
+          python -m pip install --no-index --find-links dist agent-conductor --force-reinstall --no-deps
+          python -c "from conductor import schema, merge, store, prompts, server, demo"
+          demo_dir=$(python -c "import tempfile; from conductor import demo; print(demo.materialize(tempfile.mkdtemp()))")
+          conduct validate --dir "$demo_dir"
