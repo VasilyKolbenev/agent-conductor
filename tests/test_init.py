@@ -433,6 +433,11 @@ def test_the_bootstrap_prompt_stays_inside_the_width(path):
     text = prompts.bootstrap_prompt(path)
     assert _widest(text, skip=path) <= conductor.init.WIDTH
     assert f"\n    {path}\n" in text          # alone on its line, never inline
+    # `skip=path` must skip exactly one line. Without this the two assertions
+    # above pass while the path is ALSO interpolated back into a sentence:
+    # the standalone line still exists, and every line the re-interpolation
+    # widened is skipped from the width check for containing the path.
+    assert text.count(path) == 1
 
 
 # --- the stream contract: stdout is the result, stderr is everything else ---
