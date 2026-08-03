@@ -79,6 +79,23 @@ def _validate_nodes(data: dict, errors: list[str], warnings: list[str]) -> None:
                 errors.append(f"map: node {nid!r} depends_on unknown id {dep!r}")
 
 
+def _validate_role_stage(role: dict, rid: Any, phases: list[str],
+                         errors: list[str]) -> None:
+    """`stage` (optional, spec §2): which declared phase a role works in.
+
+    Design-time presentation and handoff metadata — no merge rule reads it.
+    Validated as a reference all the same: a map declaring no phases (or an
+    unreadable `phases`) offers nothing to reference, so any stage is invalid.
+    """
+    if "stage" not in role:
+        return
+    stage = role["stage"]
+    if not isinstance(stage, str) or not stage:
+        errors.append(f"map: role {rid!r} stage must be a non-empty string, got {stage!r}")
+    elif stage not in phases:
+        errors.append(f"map: role {rid!r} stage {stage!r} is not in cycle.phases {phases}")
+
+
 def _validate_cycle(data: dict, errors: list[str]) -> None:
     if "cycle" not in data:
         return
@@ -86,6 +103,12 @@ def _validate_cycle(data: dict, errors: list[str]) -> None:
     if not isinstance(cycle, dict):
         errors.append("map: cycle must be a table")
         return
+
+    # The phase names roles may reference. A malformed `phases` yields none —
+    # its own error below stands, and `stage` never substring-matches a string.
+    raw_phases = cycle.get("phases", [])
+    declared_phases = ([p for p in raw_phases if isinstance(p, str)]
+                       if isinstance(raw_phases, list) else [])
 
     roles = cycle.get("roles", [])
     if not isinstance(roles, list):
@@ -106,6 +129,7 @@ def _validate_cycle(data: dict, errors: list[str]) -> None:
         rid = r.get("id")
         if "harness" in r and not isinstance(r["harness"], str):
             errors.append(f"map: role {rid!r} harness must be a string, got {r['harness']!r}")
+        _validate_role_stage(r, rid, declared_phases, errors)
         reviews = r.get("reviews", [])
         if not isinstance(reviews, list):
             errors.append(f"map: role {rid!r} reviews must be a list")

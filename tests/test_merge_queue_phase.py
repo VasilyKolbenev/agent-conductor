@@ -63,3 +63,87 @@ def test_future_dated_lane_does_not_set_current_phase():
                now={"task": "y", "phase": "review"})]
     state = merge.merge(MAP, None, ls, [], 0, NOW)
     assert state["cycle"]["current_phase"] == "plan"       # future lane excluded
+
+
+# --- cycle.roles[].stage: projected for presentation, read by no merge rule ---
+
+ROLES_MAP = {**MAP, "cycle": {"phases": ["plan", "implement", "review"], "roles": [
+    {"id": "impl", "harness": "cc", "reviews": []},
+    {"id": "rev", "harness": "cx", "reviews": ["impl"]},
+    {"id": "sec", "harness": "cx", "reviews": ["impl"]}]}}
+STAGES = {"impl": "implement", "rev": "review", "sec": "review"}
+FINDING = {"id": "D-1", "title": "t", "severity": "blocker", "claim": "defect",
+           "detail": "d", "evidence": "e", "refs": ["n"]}
+
+
+def staged(map_data):
+    """The same map with every role assigned to a stage."""
+    cyc = map_data["cycle"]
+    return {**map_data, "cycle": {**cyc, "roles": [{**r, "stage": STAGES[r["id"]]}
+                                                   for r in cyc["roles"]]}}
+
+
+def rich_lanes():
+    """Three roles, a disagreement, a queued wait, a stale lane, a contested node."""
+    return [lane("claude", role="impl", map_status={"n": "pass"}, findings=[dict(FINDING)],
+                 waits_on_human=[dict(WAIT)], now={"task": "x", "phase": "implement"}),
+            lane("codex", role="rev",
+                 verdicts={"D-1": {"disposition": "refuted", "note": "no"}}),
+            lane("scan", role="sec",
+                 verdicts={"D-1": {"disposition": "confirmed", "note": ""}}),
+            lane("ghost", updated="2026-07-29T00:00:00+00:00",   # stale
+                 role="impl", map_status={"n": "running"})]
+
+
+def without_stage(state):
+    """`state` with every role's `stage` dropped and `generated_at` neutralised."""
+    roles = [{k: v for k, v in r.items() if k != "stage"} for r in state["cycle"]["roles"]]
+    return {**state, "generated_at": "<fixed>",
+            "cycle": {**state["cycle"], "roles": roles}}
+
+
+def test_state_projects_role_stage():
+    state = merge.merge(staged(ROLES_MAP), None, [], [], 0, NOW)
+    assert state["cycle"]["roles"] == [
+        {"id": "impl", "harness": "cc", "reviews": [], "stage": "implement"},
+        {"id": "rev", "harness": "cx", "reviews": ["impl"], "stage": "review"},
+        {"id": "sec", "harness": "cx", "reviews": ["impl"], "stage": "review"}]
+
+def test_legacy_project_without_stage_is_unchanged():
+    # Exact equality: a role with no stage must not gain a `"stage": None`,
+    # which would change every existing consumer's view of the role shape.
+    state = merge.merge(ROLES_MAP, None, [], [], 0, NOW)
+    assert state["cycle"]["roles"] == [
+        {"id": "impl", "harness": "cc", "reviews": []},
+        {"id": "rev", "harness": "cx", "reviews": ["impl"]},
+        {"id": "sec", "harness": "cx", "reviews": ["impl"]}]
+
+def test_the_additivity_fixture_has_something_to_protect():
+    # The equality below is only as strong as the state it compares; pin the
+    # fixture so a later edit cannot quietly reduce it to an empty project.
+    state = merge.merge(ROLES_MAP, None, rich_lanes(), [], 0, NOW)
+    assert state["kpi"]["disagreements"] == 1 and state["kpi"]["queue"] == 1
+    assert state["kpi"]["stale_lanes"] == 1
+    assert state["map"]["nodes"][0]["status"] == "contested"
+
+def test_stage_changes_nothing_but_the_role_projection():
+    plain = merge.merge(ROLES_MAP, None, rich_lanes(), [], 0, NOW)
+    with_stage = merge.merge(staged(ROLES_MAP), None, rich_lanes(), [], 0, NOW)
+    assert [r["stage"] for r in with_stage["cycle"]["roles"]] == [
+        "implement", "review", "review"]                  # the stages are really there
+    assert without_stage(with_stage) == without_stage(plain)
+
+def test_stage_changes_no_merge_computed_value():
+    # The equality above would catch all of these; naming them says which
+    # promises DO-1b is making, so a regression reads as a broken promise.
+    plain = merge.merge(ROLES_MAP, None, rich_lanes(), [], 0, NOW)
+    with_stage = merge.merge(staged(ROLES_MAP), None, rich_lanes(), [], 0, NOW)
+    assert ([f["review_state"] for f in with_stage["findings"]]
+            == [f["review_state"] for f in plain["findings"]] == ["disagreement"])
+    assert with_stage["project_status"] == plain["project_status"]
+    assert with_stage["next_action"] == plain["next_action"]
+    assert with_stage["human_queue"] == plain["human_queue"]
+    assert with_stage["invariants"] == plain["invariants"]
+    assert with_stage["kpi"] == plain["kpi"]
+    assert ([r["id"] for r in with_stage["cycle"]["roles"]]
+            == [r["id"] for r in plain["cycle"]["roles"]] == ["impl", "rev", "sec"])

@@ -322,14 +322,21 @@ def pending_verdicts(state: dict) -> dict[str, list[str]]:
     return {rid: sorted(ids) for rid, ids in pending.items() if ids}
 
 
+def _role(role: dict) -> dict:
+    """The §6.1 role shape. `stage` is projected ONLY when the map declares one:
+    a role without it must keep its legacy shape exactly, not gain a null."""
+    out = {"id": role["id"], "harness": role.get("harness", ""),
+           "reviews": role.get("reviews", [])}
+    if "stage" in role:
+        out["stage"] = role["stage"]
+    return out
+
+
 # PROTOCOL.md §6: Current phase — most recently updated non-stale, non-future lane.
 def _cycle(map_data: dict, live: list[dict], warnings: list[str]) -> dict:
     cyc = map_data.get("cycle", {}) or {}
     phases = cyc.get("phases", [])
-    out = {"phases": phases,
-           "roles": [{"id": r["id"], "harness": r.get("harness", ""),
-                      "reviews": r.get("reviews", [])}
-                     for r in cyc.get("roles", [])]}
+    out = {"phases": phases, "roles": [_role(r) for r in cyc.get("roles", [])]}
     declaring = []
     for v in live:
         phase = (v["now"] or {}).get("phase")

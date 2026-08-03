@@ -60,17 +60,22 @@ depends_on = ["schemas"]
 id = "implementer"
 harness = "claude-code"  # informational
 reviews = []             # role ids whose findings this role must verdict
+stage = "implement"      # optional; one cycle.phases value
 
 [[cycle.roles]]
 id = "reviewer"
 harness = "codex"
 reviews = ["implementer"]
+stage = "review"
 
 [cycle]
 phases = ["plan", "implement", "review", "human-gate"]
 # Phases are labels; a "human gate" is simply a phase name. Dedicated
 # human-gate objects were considered and cut (YAGNI): the human queue is
 # built from lanes' waits_on_human, not from the map.
+# `stage` says which phase a role works in, so a consumer can draw the cycle
+# from the map alone, before any lane reports. It is presentation and handoff
+# metadata: no §6 merge rule reads it, and it changes no computed value.
 
 [[invariants]]
 id = "main-untouched"
@@ -78,8 +83,10 @@ text = "main branch is never committed to directly"
 ```
 
 Validation rules: `schema_version == 1`; node ids unique; `depends_on` and
-`reviews` reference existing ids; at least one node. Everything else is
-optional — a map with only nodes is valid.
+`reviews` reference existing ids; at least one node. A role's `stage`, when
+present, MUST be a non-empty string naming one of `cycle.phases` — a map
+declaring no phases has nothing to reference, so it can carry no `stage`.
+Everything else is optional — a map with only nodes is valid.
 
 ## 3. Lane files — `conductor/lanes/<author>.json`
 
@@ -195,8 +202,10 @@ fields:
   "map": { "nodes": [ { "id", "label", "kind", "depends_on": [],
                         "status": "pass|fail|blocked|running|idle|contested",
                         "contested_by": [] } ] },
-  "cycle": { "phases": [], "roles": [ { "id", "harness", "reviews": [] } ],
-             "current_phase": "implement" },        // absent if undeclared
+  "cycle": { "phases": [],
+             "roles": [ { "id", "harness", "reviews": [],
+                          "stage": "implement" } ],  // stage absent if the map omits it
+             "current_phase": "implement" },         // absent if undeclared
   "lanes": [ { "author", "role", "updated", "stale": false,
                "broken": false, "error": null, "now": {} } ],
   "findings": [ { "id", "title", "severity", "claim", "detail", "evidence",

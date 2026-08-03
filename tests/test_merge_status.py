@@ -140,6 +140,11 @@ def test_no_lanes_is_ready():
 
 
 # --- complete is refused when any single one of its conditions fails ---
+# Three of these document intent rather than discriminate: the queued-wait and
+# broken-lane cases never reach `_is_complete` (rows 2-3 of the status ladder
+# divert them), and the review-obligation case is refused by its open finding
+# first. Deleting those clauses from `_is_complete` would leave all three
+# green — they pin the promise, not the code that keeps it.
 
 def test_complete_refused_when_a_finding_is_open():
     ls = [passing("claude", "impl", findings=[finding()]),

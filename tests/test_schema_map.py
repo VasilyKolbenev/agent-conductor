@@ -150,6 +150,43 @@ def test_node_row_is_warning_not_error():
     assert errors == []
     assert any("row is deprecated and ignored" in w for w in warnings)
 
+# --- cycle.roles[].stage: an optional design-time reference into cycle.phases ---
+
+def test_role_stage_must_be_string():
+    # Same 15.5 theme: an unquoted TOML value is a date, not a phase name.
+    for bad in (5, "", datetime.date(2026, 8, 3)):
+        m = valid_map(); m["cycle"]["roles"][0]["stage"] = bad
+        errors, _ = schema.validate_map(m)
+        assert any("stage must be a non-empty string" in e for e in errors), bad
+
+def test_role_stage_must_reference_declared_phase():
+    m = valid_map(); m["cycle"]["roles"][0]["stage"] = "shipping"
+    errors, _ = schema.validate_map(m)
+    assert any("role 'implementer' stage 'shipping' is not in cycle.phases" in e
+               for e in errors)
+
+def test_role_stage_without_phases_is_invalid():
+    # Nothing to reference: a map declaring no phases can carry no stage.
+    m = valid_map(); del m["cycle"]["phases"]
+    m["cycle"]["roles"][0]["stage"] = "implement"
+    errors, _ = schema.validate_map(m)
+    assert any("stage 'implement' is not in cycle.phases []" in e for e in errors)
+
+def test_role_without_stage_remains_valid():
+    # One role staged, one not — `stage` must never become required.
+    m = valid_map(); m["cycle"]["roles"][0]["stage"] = "implement"
+    errors, warnings = schema.validate_map(m)
+    assert errors == [] and warnings == []
+
+def test_role_stage_does_not_substring_match_a_malformed_phases():
+    # `phases = "implement"` is already an error; `"impl" in "implement"` must
+    # not quietly pass the stage as declared on the way past it.
+    m = valid_map(); m["cycle"]["phases"] = "implement"
+    m["cycle"]["roles"][0]["stage"] = "impl"
+    errors, _ = schema.validate_map(m)
+    assert any("stage 'impl' is not in cycle.phases []" in e for e in errors)
+
+
 # --- container-element guards: `isinstance(x, dict)` inside a loop (audit §2) ---
 # The four crash defects fixed in M1 all had this shape, so each guard gets a
 # wrong-shape test. TOML is parsed for real so the element types are genuine.
