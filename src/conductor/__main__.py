@@ -103,7 +103,9 @@ def _cmd_prompt(args: argparse.Namespace) -> int:
     except prompts.UnknownRole as e:
         print(str(e), file=sys.stderr)
         return 1
-    print(text)
+    # write, not print: role_prompt() already ends in a newline, and print's
+    # own would put a blank line at the end of every redirected prompt.
+    sys.stdout.write(text)
     return 0
 
 
@@ -115,7 +117,10 @@ def _serve(root: Path | str, port: int) -> int:
         print(f"cannot serve on 127.0.0.1:{port}: {e}", file=sys.stderr)
         return 1
     host, bound = srv.server_address[:2]
-    print(f"serving http://{host}:{bound}/ — Ctrl+C to stop")
+    # The URL is the result; how to stop the server is lifecycle chatter. Split
+    # so `conduct up | xargs open` gets a URL and not a sentence about it.
+    print(f"http://{host}:{bound}/")
+    print(f"serving {root} — Ctrl+C to stop", file=sys.stderr)
     try:
         srv.serve_forever()
     except KeyboardInterrupt:
@@ -137,7 +142,7 @@ def _cmd_demo(args: argparse.Namespace) -> int:
     except OSError as e:                  # unwritable temp dir / broken package data
         print(f"cannot materialize the demo fixture: {e}", file=sys.stderr)
         return 1
-    print(f"demo fixture materialized in {root} (throwaway copy)")
+    print(f"demo fixture materialized in {root} (throwaway copy)", file=sys.stderr)
     return _serve(root, args.port)
 
 

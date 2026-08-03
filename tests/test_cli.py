@@ -7,6 +7,8 @@ import json
 import tomllib
 
 import pytest
+import conductor.__main__
+from conductor import prompts, store
 from conductor.__main__ import main
 from tests.test_store import write_project, good_lane
 
@@ -157,6 +159,120 @@ def test_prompt_no_role_at_all_is_usage_error(tmp_path, capsys):
         main(["prompt", "--dir", str(tmp_path)])
     assert e.value.code == 2
     assert "usage" in capsys.readouterr().err
+
+
+# --- the stream contract ---
+#
+# stdout carries only the command's primary result, suitable for redirection.
+# stderr carries dialogue, progress, explanations, usage warnings and
+# operational errors. Validation findings are `validate`'s result, so they stay
+# on stdout even when the exit code is 1. `init`'s half lives in test_init.py.
+
+
+class _FakeServer:
+    """A bound server that returns from `serve_forever` at once, as Ctrl-C does."""
+
+    server_address = ("127.0.0.1", 7777)
+
+    def serve_forever(self):
+        raise KeyboardInterrupt
+
+    def server_close(self):
+        pass
+
+
+def test_prompt_stdout_is_exactly_the_rendered_prompt(tmp_path, capsys):
+    root = write_project(tmp_path, map_toml=MAP_WITH_ROLES)
+    assert main(["prompt", "--role", "reviewer", "--dir", str(root)]) == 0
+    captured = capsys.readouterr()
+    state = conductor.__main__._merged_state(store.load(root))
+    assert captured.out == prompts.role_prompt(state, "reviewer")
+    assert captured.err == ""
+
+
+def test_prompt_stdout_has_no_trailing_blank_line(tmp_path, capsys):
+    # role_prompt() already ends in a newline, so print() added a second one
+    # and every redirected prompt carried a stray blank line.
+    root = write_project(tmp_path, map_toml=MAP_WITH_ROLES)
+    assert main(["prompt", "--role", "reviewer", "--dir", str(root)]) == 0
+    out = capsys.readouterr().out
+    assert out.endswith("\n") and not out.endswith("\n\n")
+
+
+def test_prompt_deprecation_warning_never_reaches_stdout(tmp_path, capsys):
+    root = write_project(tmp_path, map_toml=MAP_WITH_ROLES)
+    assert main(["prompt", "reviewer", "--dir", str(root)]) == 0
+    captured = capsys.readouterr()
+    assert "deprecated" in captured.err and "deprecated" not in captured.out
+
+
+@pytest.mark.parametrize("argv, scaffolded", [
+    (["prompt", "--role", "reviewer"], False),                   # no conductor/
+    (["prompt", "--role", "ghost"], True),                       # unknown role
+    (["prompt", "--role", "reviewer", "--author", "bad name"], True),
+    (["prompt", "--role", "reviewer"], True),                    # broken map
+])
+def test_operational_errors_leave_stdout_empty(tmp_path, capsys, argv, scaffolded):
+    broken = argv == ["prompt", "--role", "reviewer"] and scaffolded
+    root = tmp_path
+    if scaffolded:
+        root = write_project(tmp_path,
+                             map_toml="= not toml" if broken else MAP_WITH_ROLES)
+    assert main([*argv, "--dir", str(root)]) == 1
+    captured = capsys.readouterr()
+    assert captured.out == "" and captured.err != ""
+
+
+def test_validate_findings_are_the_result_and_stay_on_stdout(tmp_path, capsys):
+    # Deliberate exception: what validate found IS what validate is for, so it
+    # belongs on stdout even though the command failed.
+    root = write_project(tmp_path, lanes={"bad": "{not json"})
+    assert main(["validate", "--dir", str(root)]) == 1
+    captured = capsys.readouterr()
+    assert "bad" in captured.out and captured.err == ""
+
+
+def test_validate_on_a_clean_project_writes_zero_bytes(tmp_path, capsys):
+    root = write_project(tmp_path, lanes={"claude": good_lane()})
+    assert main(["validate", "--dir", str(root)]) == 0
+    captured = capsys.readouterr()
+    assert captured.out == "" and captured.err == ""
+
+
+def test_validate_load_error_is_stderr_with_empty_stdout(tmp_path, capsys):
+    # A missing conductor/ is not a finding about the project — it is the
+    # command failing to run at all.
+    assert main(["validate", "--dir", str(tmp_path)]) == 1
+    captured = capsys.readouterr()
+    assert captured.out == "" and "conductor" in captured.err
+
+
+def test_up_stdout_is_exactly_the_url(tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr("conductor.server.build", lambda *a, **k: _FakeServer())
+    root = write_project(tmp_path, lanes={"claude": good_lane()})
+    assert main(["up", "--dir", str(root)]) == 0
+    captured = capsys.readouterr()
+    assert captured.out == "http://127.0.0.1:7777/\n"    # pipeable, on its own
+    assert "Ctrl+C" in captured.err
+
+
+def test_demo_stdout_is_the_url_and_the_temp_path_is_not(tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr("conductor.server.build", lambda *a, **k: _FakeServer())
+    assert main(["demo"]) == 0
+    captured = capsys.readouterr()
+    assert captured.out == "http://127.0.0.1:7777/\n"
+    assert "materialized" in captured.err and "materialized" not in captured.out
+
+
+def test_up_bind_failure_leaves_stdout_empty(tmp_path, capsys, monkeypatch):
+    def refuse(*args, **kwargs):
+        raise OSError("address already in use")
+
+    monkeypatch.setattr("conductor.server.build", refuse)
+    root = write_project(tmp_path, lanes={"claude": good_lane()})
+    assert main(["up", "--dir", str(root)]) == 1
+    captured = capsys.readouterr()
+    assert captured.out == "" and "cannot serve" in captured.err
 
 
 def test_demo_rejects_dir_flag(capsys):

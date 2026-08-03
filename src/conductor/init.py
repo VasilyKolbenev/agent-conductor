@@ -256,50 +256,59 @@ _FIRST_ACTION = ("Replace the placeholder nodes in conductor/map.toml with the "
 
 
 def _print_next_steps(args: argparse.Namespace, text: str) -> None:
-    """Print the first action, the next command, and how to open the panel."""
+    """Say, on stderr, the first action and the commands that follow it."""
     where = _dir_suffix(args.dir)
     roles = tomllib.loads(text).get("cycle", {}).get("roles", [])
-    print("Your first action")
-    print(f"  {_FIRST_ACTION}\n")
-    print("Next command")
-    print(f"  conduct validate{where}")
-    print("      silence means the map and every lane are valid\n")
-    print("Then")
+    _say("Your first action")
+    _say(f"  {_FIRST_ACTION}\n")
+    _say("Next command")
+    _say(f"  conduct validate{where}")
+    _say("      silence means the map and every lane are valid\n")
+    _say("Then")
     if roles:
-        print(f"  conduct prompt --role {roles[0]['id']}{where}")
-        print("      the working prompt for that role — paste it into your harness")
-    print(f"  conduct up{where}")
-    print("      the panel, at http://127.0.0.1:7777/")
+        _say(f"  conduct prompt --role {roles[0]['id']}{where}")
+        _say("      the working prompt for that role — paste it into your harness")
+    _say(f"  conduct up{where}")
+    _say("      the panel, at http://127.0.0.1:7777/")
 
 
 def _scaffold(args: argparse.Namespace, cdir: Path, name: str, text: str,
               validate: Validation) -> int:
-    """Write conductor/, run the same check `conduct validate` runs, then advise."""
+    """Write conductor/, check it, and emit the bootstrap prompt as the result.
+
+    Everything a person reads — what was written, which template, the
+    validation verdict, what to do next — is dialogue and goes to stderr. The
+    prompt that fills the map in is the command's one deliverable, so it is
+    all that stdout carries, byte for byte and identical whether the answers
+    came from a wizard, from `--template`, or from neither.
+    """
     (cdir / "lanes").mkdir(parents=True)
     (cdir / "events.jsonl").write_text("", encoding="utf-8", newline="\n")
     # No `+ "\n"`: templates.get() already ends in exactly one newline, and a
     # second would leave a blank line at the end of every user's committed map.
     (cdir / "map.toml").write_text(text, encoding="utf-8", newline="\n")
-    print(f"scaffolded {cdir}: map.toml (edit me), lanes/, events.jsonl")
-    print(f"template: {name}\n")
-    # The map on disk is valid but generic, and the prompt below is how that
-    # gap gets handed to an agent. Unheaded it reads as "nothing was written".
-    # It does NOT restate _FIRST_ACTION: the same sentence twice in one screen
-    # of output reads as two tasks just as surely as two different ones did.
-    print("The map is valid but generic. To have an agent fill it in for you, "
-          "paste\neverything between the rules:\n" + "-" * 74)
-    print(prompts.bootstrap_prompt(str(cdir / "map.toml")) + "-" * 74 + "\n")
+    _say(f"scaffolded {cdir}: map.toml (edit me), lanes/, events.jsonl")
+    _say(f"template: {name}\n")
     errors, warnings = validate(args)
     if errors:
         for error in errors:
-            print(error)
-        print("the generated map did not validate — that is a bug, please report it",
-              file=sys.stderr)
+            _say(error)
+        _say("the generated map did not validate — that is a bug, please report it")
         return 1
     for warning in warnings:          # exit 0 either way, so say which one it is
-        print(warning)
+        _say(warning)
     verdict = "valid, with the warnings above" if warnings else "clean — no warnings"
-    print(f"conduct validate: {verdict}.\n")
+    _say(f"conduct validate: {verdict}.\n")
+    # The map is valid but generic, and the prompt is how that gap gets handed
+    # to an agent. Unannounced it reads as "nothing was written" — but the
+    # announcement is dialogue, so it goes to stderr and the prompt does not.
+    # It does NOT restate _FIRST_ACTION: the same sentence twice in one screen
+    # of output reads as two tasks just as surely as two different ones did.
+    _say("The map is valid but generic. The prompt that fills it in follows on "
+         "stdout —\npaste it into an agent, or re-run with `> setup.txt` to keep "
+         "it as a file.\n")
+    sys.stdout.write(prompts.bootstrap_prompt(str(cdir / "map.toml")))
+    _say()
     _print_next_steps(args, text)
     return 0
 

@@ -58,7 +58,7 @@ TEMPLATE_NAMES = ["default-orbit", "single-harness", "empty", "minimal"]
 def test_init_template_writes_that_template_and_validates_clean(tmp_path, capsys, name):
     assert main(["init", "--dir", str(tmp_path), "--template", name]) == 0
     assert _map_text(tmp_path) == templates.get(name)
-    assert name in capsys.readouterr().out          # says which one it used
+    assert name in capsys.readouterr().err          # which one it used is dialogue
     assert main(["validate", "--dir", str(tmp_path)]) == 0
     assert capsys.readouterr().out == ""
 
@@ -319,7 +319,7 @@ def test_wizard_refuses_an_existing_conductor_before_asking_anything(tmp_path, c
 
 def test_init_prints_next_commands_that_actually_run(tmp_path, capsys):
     assert main(["init", "--dir", str(tmp_path)]) == 0
-    out = capsys.readouterr().out
+    out = capsys.readouterr().err          # advice is dialogue, not the result
     assert f"--dir {tmp_path}" in out                  # the printed root is real
     assert "conduct up" in out and "127.0.0.1:7777" in out
     assert "placeholder nodes" in out                  # the first action
@@ -359,8 +359,7 @@ def test_the_bootstrap_prompt_stands_alone_when_redirected(tmp_path, capsys):
 def test_the_first_action_is_said_once_to_both_audiences(tmp_path, capsys):
     # Two differently-worded first actions read as two separate tasks.
     assert main(["init", "--dir", str(tmp_path)]) == 0
-    out = capsys.readouterr().out
-    assert out.count(_FIRST_ACTION) == 1               # the person's copy
+    assert capsys.readouterr().err.count(_FIRST_ACTION) == 1   # the person's copy
     assert "placeholder" in prompts.bootstrap_prompt()  # the agent's copy
 
 
@@ -384,13 +383,53 @@ def test_the_no_reviewer_option_names_its_consequence(tmp_path, capsys):
         == ["implementer"]
 
 
+# --- the stream contract: stdout is the result, stderr is everything else ---
+
+
+def test_init_stdout_is_exactly_the_bootstrap_prompt(tmp_path, capsys):
+    # `conduct init > setup.txt` must yield a promptable file, not a prompt
+    # with a scaffold report and a next-steps list wrapped around it.
+    assert main(["init", "--dir", str(tmp_path)]) == 0
+    captured = capsys.readouterr()
+    assert captured.out == prompts.bootstrap_prompt(str(tmp_path / "conductor"
+                                                        / "map.toml"))
+    for dialogue in ("scaffolded", "template:", "conduct validate: clean",
+                     "Your first action"):
+        assert dialogue in captured.err and dialogue not in captured.out
+
+
+def test_init_stdout_does_not_depend_on_a_tty(tmp_path, capsys):
+    # The invariant under the contract: a terminal changes the conversation,
+    # never the result. Only the root each was written to may differ.
+    quiet, guided = tmp_path / "quiet", tmp_path / "guided"
+    quiet.mkdir(), guided.mkdir()
+    assert main(["init", "--dir", str(quiet)]) == 0
+    quiet_out = capsys.readouterr().out
+    assert _cmd_init(_init_args(guided), ask=_scripted(["", "", ""])) == 0
+    guided_out = capsys.readouterr().out
+    assert quiet_out.replace(str(quiet), "ROOT") == guided_out.replace(str(guided),
+                                                                      "ROOT")
+    assert quiet_out != ""
+
+
+@pytest.mark.parametrize("extra", [[], ["--template", "orbital-decay"]])
+def test_init_operational_errors_leave_stdout_empty(tmp_path, capsys, extra):
+    if not extra:
+        (tmp_path / "conductor").mkdir()               # the refusal path
+    assert main(["init", "--dir", str(tmp_path), *extra]) == 1
+    captured = capsys.readouterr()
+    assert captured.out == "" and captured.err != ""
+
+
 def test_init_reports_the_validation_it_just_ran(tmp_path, capsys):
     assert main(["init", "--dir", str(tmp_path)]) == 0
-    assert "conduct validate" in capsys.readouterr().out
+    # On stderr specifically: the bootstrap prompt also says `conduct validate`,
+    # so reading stdout here would pass without init having checked anything.
+    assert "conduct validate: clean" in capsys.readouterr().err
 
 
 def test_init_template_empty_prints_no_role_prompt_it_cannot_offer(tmp_path, capsys):
     assert main(["init", "--dir", str(tmp_path), "--template", "empty"]) == 0
-    out = capsys.readouterr().out
+    out = capsys.readouterr().err
     assert "conduct prompt --role" not in out          # `empty` declares no roles
     assert "conduct up" in out
