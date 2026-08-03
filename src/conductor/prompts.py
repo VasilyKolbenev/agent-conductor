@@ -97,7 +97,8 @@ _STAGE_CONTRACTS: dict[str, tuple[str, tuple[str, ...]]] = {
          "Name the affected components in refs, using map node ids only.",
          "Say whether the finding reproduces, and how.",
          "List your unknowns honestly, rather than rounding them off.",
-         "A finding without evidence stays unverified: confidence is not a fact."),
+         "A finding without evidence stays unverified (the Orbit's word, not a Protocol "
+         "v1 review state): confidence never promotes a claim to a fact."),
     ),
     "diagnose": (
         "Why is it happening?",
@@ -190,7 +191,7 @@ def _stage_block(stage: str | None) -> str:
     """Render the Default Orbit contract for one stage, or nothing.
 
     Args:
-        stage: The role's `stage` value from the map, or None when it has one.
+        stage: The role's `stage` value from the map, or None when it has none.
 
     Returns:
         The stage's guiding question and the contract it owes, or `""` for an

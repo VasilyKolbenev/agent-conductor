@@ -80,6 +80,26 @@ def test_panel_pins_decision_brief_contract_tokens(tmp_path):
         assert token in html
 
 
+def test_panel_never_says_anything_was_approved(tmp_path):
+    # Guard carried from the owner's "silence is never consent" requirement.
+    # Protocol v1 has no decision receipt: nothing the panel can read tells it
+    # a human approved anything, so the panel must never say one did. Banned
+    # is the past participle — the CLAIM of a recorded state. "approval" and
+    # "approve" stay available for asking, which is all v1 can express.
+    root = write_project(tmp_path, lanes={"claude": good_lane()})
+    html = _fetch_panel(root).lower()
+    assert "approved" not in html
+
+
+def test_panel_never_declares_a_blanket_all_clear_approval(tmp_path):
+    # The two specific phrasings that would turn a computed all-clear into a
+    # claimed human sign-off.
+    root = write_project(tmp_path, lanes={"claude": good_lane()})
+    html = _fetch_panel(root).lower()
+    for phrase in ("human approved", "everything approved"):
+        assert phrase not in html
+
+
 def test_panel_decision_first_section_order(tmp_path):
     # Attention (holding the queue) sits above agents, which sit above the map.
     root = write_project(tmp_path, lanes={"claude": good_lane()})

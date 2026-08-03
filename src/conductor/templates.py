@@ -48,8 +48,16 @@ depends_on = ["placeholder-service"]
 
 # ---------------------------------------------------------------------------
 # The Default Orbit: goal -> detect -> diagnose -> design -> deliver.
-# Phases are labels. They carry no protocol semantics: no merge rule reads
-# them, nothing is gated on reaching one, and you may rename or drop them.
+#
+# Phases are labels, and nothing is gated on reaching one: no readiness rule
+# and no review rule references a phase. They are read, though. A lane's
+# now.phase must name one of these (anything else is warned about and treated
+# as undeclared), and the project's current phase is computed from the phases
+# the lanes report. It is `stage` below that no merge rule reads.
+#
+# Renaming a phase therefore means renaming it in every role staged to it, in
+# the same edit: a `stage` naming a phase this list does not declare is a map
+# error, and an unreadable map leaves the whole project status unknown.
 # ---------------------------------------------------------------------------
 
 [cycle]
@@ -61,12 +69,23 @@ phases = ["goal", "detect", "diagnose", "design", "deliver"]
 # owns the decision. The agents start at "detect". A stage with no participant
 # is a legitimate shape.
 #
-# There is likewise no approval object anywhere in this file. Protocol v1 has
-# no dedicated human-gate entity - they were considered and cut - and the
-# human queue is computed from the lanes instead. So the final approval is a
-# waits_on_human entry written by whichever agent needs the decision, at the
-# moment it needs it. Adding an "approval" node or a "gate" role here would
-# buy you nothing the queue does not already give you.
+# The final human decision is not an object in this file either, and does not
+# need to be. A decision lives in the lane that needs it: the agent writes a
+# waits_on_human entry the moment it needs your answer, and Conduct builds
+# your queue from those entries across every lane. That is the whole
+# mechanism, and it is why an approval request appears exactly when someone is
+# actually blocked on you rather than because a map said it would.
+#
+# Removing `waits_on_human` clears the queue but does not by itself record the
+# decision. Ask the agent to append an `events.jsonl` event with `kind = "ok"`
+# and `ref` set to the closed wait id.
+#
+# Read that ladder honestly. A wait present means a decision is expected; the
+# wait removed means the request is no longer queued; a matching ok event
+# means the agent reported a decision. Absence of a wait is not approval, and
+# an agent's own event is not a structurally confirmed human receipt. Real
+# approved / rejected / deferred states arrive with decision receipts, which
+# this version of the protocol does not have.
 #
 # "claude-code" appears three times below. Those are three separate
 # participants that happen to run the same harness product - three lanes,
@@ -134,14 +153,25 @@ kind = "artifact"
 phases = ["goal", "deliver"]
 
 # "goal" is human-owned and carries no role: you set the outcome, the scope
-# and the acceptance criteria. The approval at the end is not an object in
+# and the acceptance criteria. The decision at the end is not an object in
 # this file either - it is a waits_on_human entry the implementer writes when
-# it needs your decision, and the human queue is built from those.
+# it needs your answer, and your queue is built from those entries.
 #
-# Be aware of what one role costs you: with nobody declared to review the
-# implementer, no role owes a verdict on its findings, so Conduct will not
-# report them as unreviewed. Add a second role with reviews = ["implementer"]
-# when you want that obligation to exist.
+# Removing `waits_on_human` clears the queue but does not by itself record the
+# decision. Ask the agent to append an `events.jsonl` event with `kind = "ok"`
+# and `ref` set to the closed wait id. Even then: absence of a wait is not
+# approval, and an agent's own event is not a structurally confirmed human
+# receipt. Real approved / rejected / deferred states arrive with decision
+# receipts, which this version of the protocol does not have.
+#
+# Know what one role costs you. With no role declaring `reviews`, nothing owes
+# the implementer a verdict - and its findings do not come out unreviewed,
+# they come out `agreed`, which the panel draws as a green check. That is
+# vacuous truth, not consent: "every reviewing role has confirmed" holds
+# trivially when there are no reviewing roles. The panel prints a
+# "no reviewer assigned" hint beside such a finding, and that hint is the only
+# thing standing between it and a real review. Add a second role with
+# reviews = ["implementer"] when you want the obligation to exist.
 
 [[cycle.roles]]
 id = "implementer"

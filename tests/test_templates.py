@@ -1,10 +1,38 @@
 import tomllib
+from datetime import datetime, timezone
 
 import pytest
 
-from conductor import schema, templates
+from conductor import merge, schema, templates
 
 ORBIT_PHASES = ["goal", "detect", "diagnose", "design", "deliver"]
+NOW = datetime(2026, 8, 3, 12, 0, tzinfo=timezone.utc)
+
+
+def _lane(author, role, findings=(), verdicts=None):
+    return {"author": author, "error": None,
+            "data": {"schema_version": 1, "author": author, "role": role,
+                     "updated": "2026-08-03T11:00:00+00:00",
+                     "findings": list(findings), "verdicts": verdicts or {}}}
+
+
+def _decision_blocks(name):
+    """The contiguous comment blocks that explain `waits_on_human`."""
+    blocks, current = [], []
+    for line in templates.get(name).splitlines():
+        if line.startswith("#"):
+            current.append(line)
+        elif current:
+            blocks.append("\n".join(current))
+            current = []
+    if current:
+        blocks.append("\n".join(current))
+    return [b for b in blocks if "waits_on_human" in b]
+
+
+def _finding(fid="D-1"):
+    return {"id": fid, "title": "t", "severity": "major", "claim": "defect",
+            "detail": "d", "evidence": "e", "refs": ["placeholder-service"]}
 
 
 def _parsed(name):
@@ -31,6 +59,14 @@ def test_every_template_validates_clean(name):
 @pytest.mark.parametrize("name", ["default-orbit", "single-harness", "empty"])
 def test_every_template_declares_at_least_one_node(name):
     assert _parsed(name)["nodes"]
+
+
+@pytest.mark.parametrize("name", ["default-orbit", "single-harness", "empty"])
+def test_every_template_node_label_announces_itself_as_a_placeholder(name):
+    # The id prefix alone is not the guarantee: the label is what the panel
+    # renders, so a plausible-looking label would let an unedited template pass
+    # for a real map. Pinned across all three.
+    assert all(n["label"].startswith("PLACEHOLDER") for n in _parsed(name)["nodes"])
 
 
 def test_names_lists_all_three_with_a_description():
@@ -109,6 +145,39 @@ def test_default_orbit_explains_the_shared_harness_product():
     assert "not three installations" in templates.get("default-orbit")
 
 
+def test_default_orbit_scopes_the_unread_claim_to_stage_not_phases():
+    # Fix round 1, D-1: `cycle.phases` IS read by the merger (now.phase
+    # membership, current_phase). Only `stage` is unread by every merge rule.
+    text = templates.get("default-orbit")
+    assert "It is `stage` below that no merge rule reads." in text
+    assert "now.phase must name one of these" in text
+    assert "nothing is gated on reaching one" in text
+
+
+def test_default_orbit_renaming_a_phase_alone_really_does_break_the_map():
+    # The template warns that a phase rename must reach every role staged to
+    # it. Prove the warning describes real behavior, not caution.
+    data = _parsed("default-orbit")
+    data["cycle"]["phases"] = ["goal", "recon", "diagnose", "design", "deliver"]
+    errors, _ = schema.validate_map(data)
+    assert any("stage 'detect'" in e for e in errors)
+
+
+def test_default_orbit_states_the_decision_ladder_without_the_word_gate():
+    # Fix round 1, O-1/O-2: a reader who takes away the word "gate" goes
+    # looking for an entity v1 does not have; and clearing the queue is not
+    # the same act as recording the decision. Scoped to the comment blocks
+    # that explain waits_on_human — "nothing is gated on reaching one", over
+    # in the phases block, is a verified-true statement about phases.
+    blocks = _decision_blocks("default-orbit")
+    assert blocks
+    for block in blocks:
+        assert "gate" not in block.lower()
+    text = templates.get("default-orbit")
+    assert "Absence of a wait is not approval" in text
+    assert 'kind = "ok"' in text and "closed wait id" in text
+
+
 def test_default_orbit_nodes_are_obviously_placeholders():
     data = _parsed("default-orbit")
     assert all("placeholder" in n["id"] for n in data["nodes"])
@@ -123,6 +192,65 @@ def test_single_harness_has_one_role_and_no_reviewer():
     assert len(roles) == 1
     assert roles[0]["reviews"] == []
     assert "waits_on_human" in templates.get("single-harness")
+
+
+def test_single_harness_names_the_vacuous_agreed_state():
+    # Fix round 1, D-2: against a protocol whose headline is "silence is never
+    # consent", the reassuring word is the one that must be said out loud.
+    text = templates.get("single-harness")
+    assert "`agreed`" in text
+    assert "vacuous" in text
+    assert "no reviewer assigned" in text
+    assert 'reviews = ["implementer"]' in text
+
+
+def test_single_harness_solo_finding_really_computes_as_agreed():
+    # The disclosure above is only worth pinning if it is true end to end.
+    data = _parsed("single-harness")
+    state = merge.merge(data, None, [_lane("a", "implementer", [_finding()])], [], 0, NOW)
+    assert state["findings"][0]["review_state"] == "agreed"
+
+
+def test_single_harness_states_the_decision_ladder():
+    blocks = _decision_blocks("single-harness")
+    assert blocks
+    for block in blocks:
+        assert "gate" not in block.lower()
+    text = templates.get("single-harness")
+    assert 'kind = "ok"' in text and "closed wait id" in text
+    assert "absence of a wait is not\n# approval" in text
+
+
+# --- O-3: a stage with no role staged to it is a first-class shape ---
+
+
+def test_unassigned_goal_stage_keeps_the_map_valid():
+    errors, warnings = schema.validate_map(_parsed("default-orbit"))
+    assert errors == [] and warnings == []
+    assert "goal" in _parsed("default-orbit")["cycle"]["phases"]
+
+
+def test_unassigned_goal_stage_needs_no_lane_and_warns_about_nothing():
+    # Merged with no lanes at all: an unstaffed phase is not an error, not a
+    # warning, and not a reason to withhold a normal "ready" status.
+    state = merge.merge(_parsed("default-orbit"), None, [], [], 0, NOW)
+    assert state["warnings"] == []
+    assert state["project_status"]["state"] == "ready"
+    assert not any("goal" in w for w in state["warnings"])
+
+
+def test_unassigned_goal_stage_does_not_touch_review_state():
+    # Review state follows the staffed roles only: scout's finding is owed a
+    # verdict by diagnostician, and the empty goal stage has no say either way.
+    data = _parsed("default-orbit")
+    lanes = [_lane("a", "scout", [_finding()]), _lane("b", "diagnostician")]
+    unreviewed = merge.merge(data, None, lanes, [], 0, NOW)
+    assert unreviewed["findings"][0]["review_state"] == "unreviewed"
+    lanes[1] = _lane("b", "diagnostician",
+                     verdicts={"D-1": {"disposition": "confirmed", "note": "reproduced"}})
+    agreed = merge.merge(data, None, lanes, [], 0, NOW)
+    assert agreed["findings"][0]["review_state"] == "agreed"
+    assert agreed["warnings"] == []
 
 
 def test_empty_declares_no_cycle_roles():
