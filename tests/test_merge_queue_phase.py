@@ -189,3 +189,36 @@ def test_stage_cannot_declare_an_unfinished_project_complete():
     plain = merge.merge(ROLES_MAP, None, open_finding_lanes(), [], 0, NOW)
     with_stage = merge.merge(staged(ROLES_MAP), None, open_finding_lanes(), [], 0, NOW)
     assert without_stage(with_stage) == without_stage(plain)
+
+
+# --- and on `ready`, the last branch where a stage could change the answer ---
+# `_start_work_action` is the only fallback row that reads cycle.roles at all,
+# so it is the one door left open: a pick that preferred a staged role would
+# start `rev` here while the unstaged map still starts `impl`. The first
+# DECLARED role is left unstaged on purpose to make that divergence visible —
+# an all-staged fixture would pick `impl` either way and prove nothing.
+#
+# The coverage boundary stops there deliberately. `unknown` cannot host the
+# dependence: merge() substitutes an empty cycle for an unreadable map, so no
+# role survives to carry a stage. The broken-lane, invariant and failing-node
+# rows read lanes, invariants and nodes — none of which carry `stage`, because
+# it is projected into cycle.roles only and never copied into a lane.
+
+def half_staged(map_data):
+    """Stages every role but the first declared one, which stays bare."""
+    cyc = map_data["cycle"]
+    return {**map_data, "cycle": {**cyc, "roles": [
+        r if r["id"] == "impl" else {**r, "stage": STAGES[r["id"]]}
+        for r in cyc["roles"]]}}
+
+
+def test_the_ready_fixture_reaches_start_work():
+    state = merge.merge(half_staged(ROLES_MAP), None, [], [], 0, NOW)
+    assert state["project_status"]["state"] == "ready"
+    assert state["next_action"]["kind"] == "start_work"
+    assert [("stage" in r) for r in state["cycle"]["roles"]] == [False, True, True]
+
+def test_stage_does_not_choose_which_role_starts_work():
+    plain = merge.merge(ROLES_MAP, None, [], [], 0, NOW)
+    with_stage = merge.merge(half_staged(ROLES_MAP), None, [], [], 0, NOW)
+    assert without_stage(with_stage) == without_stage(plain)
