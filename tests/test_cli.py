@@ -21,7 +21,7 @@ import tomllib
 
 import pytest
 import conductor.__main__
-from conductor import prompts, store
+from conductor import prompts, store, validate
 from conductor.__main__ import main
 from tests.test_store import write_project, good_lane
 
@@ -198,7 +198,7 @@ def test_prompt_stdout_is_exactly_the_rendered_prompt(tmp_path, capsys):
     root = write_project(tmp_path, map_toml=MAP_WITH_ROLES)
     assert main(["prompt", "--role", "reviewer", "--dir", str(root)]) == 0
     captured = capsys.readouterr()
-    state = conductor.__main__._merged_state(store.load(root))
+    state = validate.merged_state(store.load(root))
     assert captured.out == prompts.role_prompt(state, "reviewer")
     assert captured.err == ""
 

@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pytest
 import conductor.init
+import conductor.validate
 import conductor.__main__
 from conductor import prompts, templates
 from conductor.init import _FIRST_ACTION, _console_ask, _interactive
@@ -244,7 +245,8 @@ def test_init_never_probes_the_machine_for_installed_harnesses():
     # init path may import a module that can see the machine, or call anything
     # that looks one up. Parsed, so a comment mentioning subprocess is fine
     # and an actual import is not.
-    for module in (conductor.init, conductor.__main__, conductor.templates):
+    for module in (conductor.init, conductor.__main__, conductor.templates,
+                   conductor.validate):
         tree = ast.parse(Path(module.__file__).read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             imported = []
@@ -428,8 +430,8 @@ def test_the_one_path_that_leaves_a_directory_says_how_to_get_unstuck(
     # Unreachable today — every template is pinned to validate — but it is the
     # single exit that leaves conductor/ behind, and a re-run refuses an
     # existing one. Without the recovery line the user is simply wedged.
-    monkeypatch.setattr("conductor.__main__._validation",
-                        lambda args: (["map: contrived failure"], []))
+    monkeypatch.setattr("conductor.validate.check",
+                        lambda root: (["map: contrived failure"], []))
     assert main(["init", "--dir", str(tmp_path)]) == 1
     said = _unwrapped(capsys.readouterr().err)
     assert "map: contrived failure" in said

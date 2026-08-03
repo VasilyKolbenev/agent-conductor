@@ -36,45 +36,14 @@ import argparse
 import sys
 import tempfile
 from collections.abc import Callable
-from datetime import datetime, timezone
 from pathlib import Path
 
-from conductor import demo, init, merge, prompts, server, store, templates
-
-
-def _merged_state(loaded: store.Loaded) -> dict:
-    """Merge a `Loaded` snapshot into a state dict at the current time."""
-    return merge.merge(loaded.map_data, loaded.map_error, loaded.lanes,
-                       loaded.events, loaded.skipped_events,
-                       datetime.now(timezone.utc),
-                       extra_warnings=loaded.warnings)
-
-
-def _validation(args: argparse.Namespace) -> tuple[list[str], list[str]]:
-    """Compute what `conduct validate` reports, without rendering any of it.
-
-    Args:
-        args: A namespace carrying `dir`, the project root.
-
-    Returns:
-        `(errors, warnings)`. Errors are schema failures and mean exit 1;
-        warnings are informational and do not. Errors short-circuit the merge,
-        so the two are never both populated. Returning data rather than
-        printing is what lets `init` state whether its own scaffold came out
-        clean instead of inferring it from an exit code that says 0 either way.
-    """
-    loaded = store.load(args.dir)
-    errors = [entry["error"] for entry in loaded.lanes if entry["error"] is not None]
-    if loaded.map_error is not None:
-        errors.insert(0, loaded.map_error)
-    if errors:                        # already self-prefixed (lane <stem>: / map...)
-        return errors, []
-    return [], _merged_state(loaded)["warnings"]
+from conductor import demo, init, prompts, server, store, templates, validate
 
 
 def _cmd_validate(args: argparse.Namespace) -> int:
     """Print schema errors (exit 1) or merge warnings (exit 0)."""
-    errors, warnings = _validation(args)
+    errors, warnings = validate.check(args.dir)
     for line in errors or warnings:
         print(line)
     return 1 if errors else 0
@@ -82,7 +51,7 @@ def _cmd_validate(args: argparse.Namespace) -> int:
 
 def _cmd_init(args: argparse.Namespace,
               ask: Callable[[str], str] | None = None) -> int:
-    """Dispatch `init`, handing it the check `conduct validate` performs.
+    """Dispatch `init`.
 
     Args:
         args: The parsed `init` namespace.
@@ -92,7 +61,7 @@ def _cmd_init(args: argparse.Namespace,
     Returns:
         `conductor.init.execute`'s exit code: 0 on success, 1 on any refusal.
     """
-    return init.execute(args, ask, validate=_validation)
+    return init.execute(args, ask)
 
 
 def _cmd_prompt(args: argparse.Namespace) -> int:
@@ -114,7 +83,8 @@ def _cmd_prompt(args: argparse.Namespace) -> int:
         print(f"cannot vend a prompt: {loaded.map_error}", file=sys.stderr)
         return 1
     try:
-        text = prompts.role_prompt(_merged_state(loaded), role, args.author)
+        state = validate.merged_state(loaded)
+        text = prompts.role_prompt(state, role, args.author)
     except prompts.UnknownRole as e:
         print(str(e), file=sys.stderr)
         return 1

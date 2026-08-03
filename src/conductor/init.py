@@ -32,12 +32,7 @@ import tomllib
 from collections.abc import Callable
 from pathlib import Path
 
-from conductor import prompts, templates
-
-#: What `execute` needs of `conduct validate`: the errors and warnings it
-#: would report for a project root, as data, leaving the rendering to the
-#: caller.
-Validation = Callable[[argparse.Namespace], tuple[list[str], list[str]]]
+from conductor import prompts, templates, validate
 
 
 # --- what the wizard offers, and the copy it says it with -------------------
@@ -344,8 +339,8 @@ def _report_check(cdir: Path, errors: list[str], warnings: list[str]) -> int:
     return 0
 
 
-def _scaffold(args: argparse.Namespace, cdir: Path, name: str, text: str,
-              validate: Validation) -> int:
+def _scaffold(args: argparse.Namespace, cdir: Path, name: str,
+              text: str) -> int:
     """Write conductor/, check it, and emit the bootstrap prompt as the result.
 
     Everything a person reads — what was written, which template, the
@@ -369,7 +364,7 @@ def _scaffold(args: argparse.Namespace, cdir: Path, name: str, text: str,
         return 1
     _say(f"scaffolded {cdir}: map.toml (edit me), lanes/, events.jsonl")
     _say(f"template: {name}\n")
-    if _report_check(cdir, *validate(args)) != 0:
+    if _report_check(cdir, *validate.check(args.dir)) != 0:
         return 1
     # The map is valid but generic, and the prompt is how that gap gets handed
     # to an agent. Unannounced it reads as "nothing was written" — but the
@@ -385,16 +380,14 @@ def _scaffold(args: argparse.Namespace, cdir: Path, name: str, text: str,
     return 0
 
 
-def execute(args: argparse.Namespace, ask: Callable[[str], str] | None = None,
-            *, validate: Validation) -> int:
+def execute(args: argparse.Namespace,
+            ask: Callable[[str], str] | None = None) -> int:
     """Scaffold conductor/: `--template` is explicit, a terminal gets the wizard.
 
     Args:
         args: The parsed `init` namespace.
         ask: An injected prompting function for the wizard; None (the CLI's
             own call) means detect a terminal and use `input`.
-        validate: The check `conduct validate` performs, returning
-            `(errors, warnings)` for `args.dir`.
 
     Returns:
         0 on success, 1 on every refusal. Three of those refuse before
@@ -415,4 +408,4 @@ def execute(args: argparse.Namespace, ask: Callable[[str], str] | None = None,
     except (EOFError, KeyboardInterrupt):
         _say("\ninit cancelled — nothing was written")
         return 1
-    return _scaffold(args, cdir, name, text, validate)
+    return _scaffold(args, cdir, name, text)
