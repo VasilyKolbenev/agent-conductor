@@ -130,6 +130,12 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
         '    if state["project_status"]["state"] != "complete":',
         "tests/test_merge_status.py",
     ),
+    (
+        "role projection: stage presence guard dropped (absent stage becomes null)",
+        '    if "stage" in role:\n        out["stage"] = role["stage"]\n',
+        '    out["stage"] = role.get("stage")\n',
+        "tests/test_merge_queue_phase.py",
+    ),
 ]
 
 

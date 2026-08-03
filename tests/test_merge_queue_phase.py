@@ -66,6 +66,9 @@ def test_future_dated_lane_does_not_set_current_phase():
 
 
 # --- cycle.roles[].stage: projected for presentation, read by no merge rule ---
+# Additivity is proven over four fixtures, one per outcome a stage could plausibly
+# move: blocked (rich_lanes), complete (clear_lanes), not-complete (open_finding_lanes)
+# and ready (no lanes). Deleting one deletes a branch of the proof, not a duplicate.
 
 ROLES_MAP = {**MAP, "cycle": {"phases": ["plan", "implement", "review"], "roles": [
     {"id": "impl", "harness": "cc", "reviews": []},
@@ -96,10 +99,32 @@ def rich_lanes():
 
 
 def without_stage(state):
-    """`state` with every role's `stage` dropped and `generated_at` neutralised."""
+    """`state` with every role's `stage` dropped — and nothing else touched.
+
+    The strip is deliberately one key deep: widening it to a recursive scrub
+    would also hide a `stage` that had leaked into lanes, findings or the
+    action, which is precisely what these comparisons exist to forbid.
+    """
     roles = [{k: v for k, v in r.items() if k != "stage"} for r in state["cycle"]["roles"]]
-    return {**state, "generated_at": "<fixed>",
-            "cycle": {**state["cycle"], "roles": roles}}
+    return {**state, "cycle": {**state["cycle"], "roles": roles}}
+
+
+def assert_stage_is_additive(staged_map, plain_map, lanes):
+    """The same lanes merged with and without stages differ only in the roles.
+
+    Non-vacuity is checked here rather than in a neighbouring test: a fixture
+    that quietly stopped staging would otherwise compare two identical states
+    and pass while proving nothing.
+
+    Args:
+        staged_map: A map whose roles carry `stage`.
+        plain_map: The same map with no stages at all.
+        lanes: Zero-arg factory returning fresh lane entries for each merge.
+    """
+    with_stage = merge.merge(staged_map, None, lanes(), [], 0, NOW)
+    plain = merge.merge(plain_map, None, lanes(), [], 0, NOW)
+    assert any("stage" in r for r in with_stage["cycle"]["roles"]), "fixture stages nothing"
+    assert without_stage(with_stage) == without_stage(plain)
 
 
 def test_state_projects_role_stage():
@@ -127,11 +152,7 @@ def test_the_additivity_fixture_has_something_to_protect():
     assert state["map"]["nodes"][0]["status"] == "contested"
 
 def test_stage_changes_nothing_but_the_role_projection():
-    plain = merge.merge(ROLES_MAP, None, rich_lanes(), [], 0, NOW)
-    with_stage = merge.merge(staged(ROLES_MAP), None, rich_lanes(), [], 0, NOW)
-    assert [r["stage"] for r in with_stage["cycle"]["roles"]] == [
-        "implement", "review", "review"]                  # the stages are really there
-    assert without_stage(with_stage) == without_stage(plain)
+    assert_stage_is_additive(staged(ROLES_MAP), ROLES_MAP, rich_lanes)
 
 def test_stage_changes_no_merge_computed_value():
     # The equality above would catch all of these; naming them says which
@@ -181,14 +202,10 @@ def test_the_complete_branch_fixtures_reach_it_from_both_sides():
     assert merge.pending_verdicts(unfinished) == {}    # only the open finding refuses
 
 def test_stage_changes_nothing_on_a_complete_project():
-    plain = merge.merge(ROLES_MAP, None, clear_lanes(), [], 0, NOW)
-    with_stage = merge.merge(staged(ROLES_MAP), None, clear_lanes(), [], 0, NOW)
-    assert without_stage(with_stage) == without_stage(plain)
+    assert_stage_is_additive(staged(ROLES_MAP), ROLES_MAP, clear_lanes)
 
 def test_stage_cannot_declare_an_unfinished_project_complete():
-    plain = merge.merge(ROLES_MAP, None, open_finding_lanes(), [], 0, NOW)
-    with_stage = merge.merge(staged(ROLES_MAP), None, open_finding_lanes(), [], 0, NOW)
-    assert without_stage(with_stage) == without_stage(plain)
+    assert_stage_is_additive(staged(ROLES_MAP), ROLES_MAP, open_finding_lanes)
 
 
 # --- and on `ready`, the last branch where a stage could change the answer ---
@@ -216,9 +233,8 @@ def test_the_ready_fixture_reaches_start_work():
     state = merge.merge(half_staged(ROLES_MAP), None, [], [], 0, NOW)
     assert state["project_status"]["state"] == "ready"
     assert state["next_action"]["kind"] == "start_work"
+    assert state["next_action"]["ref"] == "impl"      # the honest, unstaged pick
     assert [("stage" in r) for r in state["cycle"]["roles"]] == [False, True, True]
 
 def test_stage_does_not_choose_which_role_starts_work():
-    plain = merge.merge(ROLES_MAP, None, [], [], 0, NOW)
-    with_stage = merge.merge(half_staged(ROLES_MAP), None, [], [], 0, NOW)
-    assert without_stage(with_stage) == without_stage(plain)
+    assert_stage_is_additive(half_staged(ROLES_MAP), ROLES_MAP, lambda: [])

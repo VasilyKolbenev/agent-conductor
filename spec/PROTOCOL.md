@@ -86,7 +86,9 @@ Validation rules: `schema_version == 1`; node ids unique; `depends_on` and
 `reviews` reference existing ids; at least one node. A role's `stage`, when
 present, MUST be a non-empty string naming one of `cycle.phases` — a map
 declaring no phases has nothing to reference, so it can carry no `stage`.
-Everything else is optional — a map with only nodes is valid.
+`stage` is presentation and handoff metadata only: no merge rule in §6 reads
+it, and it changes no computed value. Everything else is optional — a map with
+only nodes is valid.
 
 ## 3. Lane files — `conductor/lanes/<author>.json`
 
@@ -203,9 +205,10 @@ fields:
                         "status": "pass|fail|blocked|running|idle|contested",
                         "contested_by": [] } ] },
   "cycle": { "phases": [],
-             "roles": [ { "id", "harness", "reviews": [],
-                          "stage": "implement" } ],  // stage absent if the map omits it
-             "current_phase": "implement" },         // absent if undeclared
+             // role.stage: presentation only; no rule reads it. Absent when
+             // the map omits it — never projected as null. See the note below.
+             "roles": [ { "id", "harness", "reviews": [], "stage": "implement" } ],
+             "current_phase": "implement" },        // absent if undeclared
   "lanes": [ { "author", "role", "updated", "stale": false,
                "broken": false, "error": null, "now": {} } ],
   "findings": [ { "id", "title", "severity", "claim", "detail", "evidence",
@@ -246,3 +249,12 @@ fields:
   }
 }
 ```
+
+**`role.stage` versus `now.phase`.** The two answer different questions and are
+never merged: design-time `stage` says where a participant *should* work,
+runtime `now.phase` says where its lane reports it *is* working. Neither
+overwrites the other, and `stage` takes no part in `current_phase`. A role
+whose lane reports a phase other than its `stage` is *drift*: a consumer MAY
+surface it as a non-blocking, presentation-level warning, and MUST NOT treat it
+as a readiness, gate, or review rule — in particular, MUST NOT take `stage` as
+authoritative and relocate the lane to the staged phase.

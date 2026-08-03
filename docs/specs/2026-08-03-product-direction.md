@@ -172,8 +172,8 @@ lane reports which one it is in through `now.phase` (`spec/PROTOCOL.md` §2,
 §3). The Default Orbit is therefore expressible today by writing its five
 names into `cycle.phases`; nothing else is required.
 
-An optional `cycle.roles[].stage` field is **planned for a later slice**. It
-will assign a role to a stage for **presentation and handoff only** — never
+An optional `cycle.roles[].stage` field **is part of Protocol v1** (spec §2,
+§6.1). It assigns a role to a stage for **presentation and handoff only** — never
 affecting readiness, review state, the human queue, gate semantics, or any
 merge rule. A panel or adapter that starts treating a stage label as a
 semantic gate is a bug, not a feature.

@@ -104,8 +104,9 @@ def _validate_cycle(data: dict, errors: list[str]) -> None:
         errors.append("map: cycle must be a table")
         return
 
-    # The phase names roles may reference. A malformed `phases` yields none —
-    # its own error below stands, and `stage` never substring-matches a string.
+    # `cycle.phases` read once: `declared_phases` is the set a role's `stage`
+    # must name, and the shape check below is "did anything fall out of it?", so
+    # the two cannot drift. Malformed `phases` yields none — no substring match.
     raw_phases = cycle.get("phases", [])
     declared_phases = ([p for p in raw_phases if isinstance(p, str)]
                        if isinstance(raw_phases, list) else [])
@@ -141,10 +142,9 @@ def _validate_cycle(data: dict, errors: list[str]) -> None:
             elif reviewed not in role_ids:
                 errors.append(f"map: role {rid!r} reviews unknown role {reviewed!r}")
 
-    if "phases" in cycle:
-        phases = cycle["phases"]
-        if not isinstance(phases, list) or not all(isinstance(p, str) for p in phases):
-            errors.append("map: cycle.phases must be a list of strings")
+    if "phases" in cycle and (not isinstance(raw_phases, list)
+                              or len(declared_phases) != len(raw_phases)):
+        errors.append("map: cycle.phases must be a list of strings")
 
 
 def _validate_invariants(data: dict, errors: list[str]) -> None:

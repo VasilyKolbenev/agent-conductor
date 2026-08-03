@@ -322,16 +322,6 @@ def pending_verdicts(state: dict) -> dict[str, list[str]]:
     return {rid: sorted(ids) for rid, ids in pending.items() if ids}
 
 
-def _role(role: dict) -> dict:
-    """The §6.1 role shape. `stage` is projected ONLY when the map declares one:
-    a role without it must keep its legacy shape exactly, not gain a null."""
-    out = {"id": role["id"], "harness": role.get("harness", ""),
-           "reviews": role.get("reviews", [])}
-    if "stage" in role:
-        out["stage"] = role["stage"]
-    return out
-
-
 # PROTOCOL.md §6: Current phase — most recently updated non-stale, non-future lane.
 def _cycle(map_data: dict, live: list[dict], warnings: list[str]) -> dict:
     cyc = map_data.get("cycle", {}) or {}
@@ -352,6 +342,19 @@ def _cycle(map_data: dict, live: list[dict], warnings: list[str]) -> dict:
         # Accepted as-is: deterministic, unspecified by §6, pathological in practice.
         declaring.sort()
         out["current_phase"] = declaring[-1][1]
+    return out
+
+
+def _role(role: dict) -> dict:
+    """The §6.1 role shape. `stage` is projected ONLY when the map declares one:
+    a role without it must keep its legacy shape exactly, not gain a null.
+
+    Design-time metadata; `current_phase` above is computed from lanes alone and
+    never consults it (§6.1, `role.stage` versus `now.phase`)."""
+    out = {"id": role["id"], "harness": role.get("harness", ""),
+           "reviews": role.get("reviews", [])}
+    if "stage" in role:
+        out["stage"] = role["stage"]
     return out
 
 

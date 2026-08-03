@@ -1,4 +1,5 @@
 import json
+import tomllib
 from datetime import datetime, timezone
 
 from conductor import merge, prompts, schema, store
@@ -68,6 +69,15 @@ def test_bootstrap_prompt_tells_agent_to_validate():
 def test_map_example_has_no_row_field():
     # ADR 0001: row is deleted from normative v1 — the vended example must not teach it.
     assert "row" not in prompts.MAP_EXAMPLE
+
+
+def test_map_example_validates_clean():
+    # The example is vended verbatim by `conduct init`, so anything wrong in it
+    # ships to every new project. Parse it for real and put it through the same
+    # validator the user's own map faces — a role staged onto a phase absent
+    # from cycle.phases, say, would otherwise never be caught here.
+    errors, warnings = schema.validate_map(tomllib.loads(prompts.MAP_EXAMPLE))
+    assert errors == [] and warnings == []
 
 
 def test_role_prompt_prefills_role_in_lane_template():

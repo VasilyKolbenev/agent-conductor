@@ -150,6 +150,7 @@ def test_node_row_is_warning_not_error():
     assert errors == []
     assert any("row is deprecated and ignored" in w for w in warnings)
 
+
 # --- cycle.roles[].stage: an optional design-time reference into cycle.phases ---
 
 def test_role_stage_must_be_string():
@@ -173,7 +174,14 @@ def test_role_stage_without_phases_is_invalid():
     assert any("stage 'implement' is not in cycle.phases []" in e for e in errors)
 
 def test_role_without_stage_remains_valid():
-    # One role staged, one not — `stage` must never become required.
+    # `stage` never becomes required: staging one role draws no error against
+    # the bare one standing next to it.
+    m = valid_map(); m["cycle"]["roles"][1]["stage"] = "review"
+    errors, _ = schema.validate_map(m)
+    assert not [e for e in errors if "implementer" in e]
+
+def test_partially_staged_map_is_valid():
+    # ...and the map as a whole validates clean, one role staged, one bare.
     m = valid_map(); m["cycle"]["roles"][0]["stage"] = "implement"
     errors, warnings = schema.validate_map(m)
     assert errors == [] and warnings == []
