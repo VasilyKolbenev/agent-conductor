@@ -220,9 +220,10 @@ fields:
     "reason": "human_decision",
     "detail": "1 decision waiting on you"      // the fact only, never advice
   },
-  "next_action": {          // the single most important next move; null when complete
-    // kind: fix_map, answer_wait, fix_lane, fix_invariant, fix_node,
-    // review_finding, resolve_disagreement, check_stale_lane, start_work
+  "next_action": {          // the single most important next move, in the same
+                            // precedence order; null when nothing needs the user
+    // kind: fix_map, answer_wait, fix_lane, fix_invariant, fix_node, review_finding,
+    // resolve_disagreement, resolve_collision, check_stale_lane, start_work
     "text": "Answer the decision: ...",        // one imperative sentence
     "kind": "answer_wait",
     "ref": "w-config"                          // the id the action points at, or null

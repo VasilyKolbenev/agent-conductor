@@ -219,6 +219,42 @@ def test_next_action_resolve_disagreement_once_every_verdict_is_in():
     assert action["kind"] == "resolve_disagreement" and action["ref"] == "D-1"
     assert "D-1" in action["text"]
 
+def test_review_finding_beats_a_disagreement():
+    # Both rows apply: D-1 is disputed AND sec still owes a verdict on it.
+    ls = [passing("claude", "impl", findings=[finding("D-1"), finding("D-2")]),
+          passing("codex", "rev", verdicts={"D-1": {"disposition": "refuted", "note": "no"}})]
+    state = merge.merge(MAP, None, ls, [], 0, NOW)
+    assert state["disagreements"] and merge.pending_verdicts(state)
+    assert state["next_action"]["kind"] == "review_finding"
+
+def test_next_action_resolve_collision_names_the_duplicate_id():
+    ls = [passing("claude", "impl", findings=[finding()]),
+          passing("scan", "sec", findings=[finding()])]        # same id from two lanes
+    state = merge.merge(MAP, None, ls, [], 0, NOW)
+    assert all(f["review_state"] == "suspended" for f in state["findings"])
+    action = state["next_action"]
+    assert action["kind"] == "resolve_collision" and action["ref"] == "D-1"
+    assert "D-1" in action["text"]
+    assert status(state)["state"] == "active"      # a collision is not a hard blocker
+
+def test_disagreement_beats_a_collision():
+    ls = [passing("claude", "impl", findings=[finding("D-1"), finding("D-2")]),
+          passing("scan", "sec", findings=[finding("D-1")],
+                  verdicts={"D-2": {"disposition": "confirmed", "note": ""}}),
+          passing("codex", "rev", verdicts={"D-2": {"disposition": "refuted", "note": "no"}})]
+    state = merge.merge(MAP, None, ls, [], 0, NOW)
+    assert merge.pending_verdicts(state) == {}     # only the two rows below compete
+    assert any(f["review_state"] == "suspended" for f in state["findings"])
+    assert state["next_action"]["kind"] == "resolve_disagreement"
+    assert state["next_action"]["ref"] == "D-2"
+
+def test_collision_beats_a_stale_lane():
+    ls = [passing("claude", "impl", findings=[finding()], updated=STALE_UPDATED),
+          passing("scan", "sec", findings=[finding()])]
+    state = merge.merge(MAP, None, ls, [], 0, NOW)
+    assert state["kpi"]["stale_lanes"] == 1
+    assert state["next_action"]["kind"] == "resolve_collision"
+
 def test_next_action_check_stale_lane_names_the_author():
     state = merge.merge(MAP, None, [passing(updated=STALE_UPDATED)], [], 0, NOW)
     action = state["next_action"]
@@ -229,6 +265,13 @@ def test_next_action_start_work_names_the_first_declared_role():
     action = merge.merge(MAP, None, [], [], 0, NOW)["next_action"]
     assert action["kind"] == "start_work" and action["ref"] == "impl"
     assert "impl" in action["text"]
+
+def test_next_action_start_work_uses_declaration_order_not_alphabetical():
+    m = {**MAP, "cycle": {"phases": [], "roles": [
+        {"id": "zeta", "harness": "cc", "reviews": []},
+        {"id": "alpha", "harness": "cx", "reviews": []}]}}
+    action = merge.merge(m, None, [], [], 0, NOW)["next_action"]
+    assert action["kind"] == "start_work" and action["ref"] == "zeta"
 
 def test_next_action_start_work_without_roles_has_no_ref():
     m = {**MAP, "cycle": {"phases": [], "roles": []}}

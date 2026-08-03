@@ -5,6 +5,7 @@ flag, or a queue de-dup. Silence is never consent.
 """
 from __future__ import annotations
 
+from collections import Counter
 from datetime import datetime, timedelta
 
 from conductor import schema
@@ -458,7 +459,7 @@ def _next_action(state: dict, map_error: str | None) -> dict | None:
 
 
 def _review_action(state: dict) -> dict | None:
-    """The §6.1 fallback rows: review debt, disagreement, stale lane, start."""
+    """§6.1 fallbacks: review debt, disagreement, id collision, stale lane, start."""
     # (finding, role) pairs sorted so a tie between two owing roles is stable.
     owed = sorted((fid, rid) for rid, fids in pending_verdicts(state).items() for fid in fids)
     if owed:
@@ -468,6 +469,15 @@ def _review_action(state: dict) -> dict | None:
     if disputed:
         return _action("resolve_disagreement", disputed[0],
                        f"Resolve the disagreement on finding {disputed[0]}.")
+    # A collision suspends review entirely, so it surfaces here rather than as a
+    # blocker: a person must rename one of the ids before the finding can move.
+    collided = Counter(f["id"] for f in state["findings"]
+                       if f["review_state"] == "suspended")
+    if collided:
+        fid = min(collided)
+        return _action("resolve_collision", fid,
+                       f"Resolve the duplicate finding id {fid} — "
+                       f"{collided[fid]} lanes claim it.")
     stale = sorted(ln["author"] for ln in state["lanes"] if ln["stale"])
     if stale:
         return _action("check_stale_lane", stale[0],
