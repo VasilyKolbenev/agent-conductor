@@ -73,6 +73,20 @@ uncommitted work out of the result. Both numbers are unchanged:
 
 Never `uv run` — the lockfile is not the environment these gates are pinned against.
 
+**How these numbers are maintained** (owner, 2026-08-03). Every intermediate measurement is
+signed with the specific commit it was taken on, and parallel changes are never mixed into an
+older result. The table above therefore still reads `bf0ab3b`, even though the branch has since
+advanced to `a120cb0` and the suite there measures **498 passed** — that divergence is not a
+defect of this document, it is the rule working. Until DO-7 the table need not be re-pinned for
+every parallel commit; carrying the measurement's commit plus this explicit note that a final
+re-pin is owed is sufficient. The final re-pin happens in DO-7, on a frozen HEAD, and only that
+single run's results become the chunk's numbers.
+
+One trap for whoever performs that re-pin: this `.venv` carries an editable-install `.pth`
+pointing at the working tree, so an isolated `git archive` export does **not** isolate imports on
+its own — `PYTHONPATH` must point at the export's `src`, or the mutation harness silently mutates
+the export while the tests import the working tree and reports 0/13.
+
 ## 3. The queue
 
 The owner's approved order, reconciled with the December UI slices. Two reconciliations matter,
@@ -126,19 +140,41 @@ UI slices consume. No layout is redesigned here.
 - Palette lives once in `:root` (§4). Today's accent is teal (`--accent:#33b3a4` dark,
   `#00857a` light); December Red replaces it in the reserved roles only.
 - Today's `--fail` is `#e0645c`, close enough to December Red `#E44955` that the two would read
-  alike at a glance. Moving failure away from red-adjacent, or separating the two by weight and
-  glyph, is this slice's job — §4 forbids the current state and a failure from looking alike.
-- The light theme stays (`@media (prefers-color-scheme:light)`), on the approved
-  *winter-daylight* palette — decision §8.3, 2026-08-03. Its token values are **outstanding**:
-  the table in §8.3 is the coordinator's proposal awaiting the owner's sign-off, and this slice
-  may not ship it as though it were approved.
-- A constraint on this slice, not an opinion: December Red at `#E44955` on a light background
-  falls below the 4.5:1 contrast ratio required for normal text, so the light theme needs a
-  darkened variant of the brand red for text and small elements.
+  alike at a glance. Both themes now settle this and this slice implements both. In the
+  **light** theme, `--accent` `#c92f42` and `--fail` `#b42318` (§8.3). In the **dark** theme,
+  `--fail` moves to `#e0703a` while December Red is retained at full strength as the accent
+  (§8.4). No semantic value is invented by this slice; all of them are the owner's.
+- The light theme stays (`@media (prefers-color-scheme:light)`), on the *Winter Daylight*
+  palette — decision §8.3, 2026-08-03. **Its token values are approved** (§4, §8.3) and this
+  slice implements them.
+- The contrast constraint that travelled with the light-theme decision is **satisfied by the
+  approved palette rather than outstanding**: December Red at `#E44955` on a light background
+  falls below the 4.5:1 ratio required for normal text, and the approved light `--accent`
+  `#c92f42` is that darkened variant. The obligation to *measure and record* remains.
+- **Accent and fail are both reds in the light theme.** `--accent` `#c92f42` and `--fail`
+  `#b42318` differ by roughly a 1.24:1 luminance ratio — the coordinator's estimate, which this
+  slice must replace with a precise measurement. §4 forbids the current state and a failure from
+  looking alike, and the mitigation the palette relies on is structural rather than chromatic:
+  statuses always carry glyph, text and shape, and the accent is reserved for the current stage,
+  the travelled trajectory, human-control points, the primary action and focus — roles that
+  rarely occupy the same position as a status chip.
+- **`fail` and `wait` are both warm hues in the dark theme.** `#e0703a` (orange-coral) and
+  `#c9971f` (gold) are adjacent on the wheel. Under red-green colour-vision deficiency — the
+  common form — orange and gold converge, so the pair that separates *"this failed"* from
+  *"this is waiting"* may not be separable by hue for a meaningful share of users. This is stated
+  as a fact to measure, not an objection to the palette: the owner's glyph/text/shape rule is the
+  mitigation, and this obligation is what proves the rule is load-bearing rather than decorative.
 - The document title already follows the target pattern — `document.title = "Conduct — N
   waiting on you"` — so `December — N waiting on you` is a one-word swap plus a test update.
 - Acceptance: smoke tests pin the title pattern and the mark; every foreground/background pair
-  the slice ships has a measured contrast ratio recorded as a number, not an assumption; no
+  the slice ships has a measured contrast ratio recorded as a number, not an assumption;
+  `fail` and `wait` are each measured against `panel` and `sunk` in both themes; every
+  accent/`fail` pair is measured precisely rather than estimated, and the slice enumerates the
+  places where an accent element and a `fail` element can appear within one field of view and
+  shows that they stay distinguishable without relying on hue alone; the two common CVD types are
+  simulated and the slice records whether `fail` and `wait` remain separable under each; the
+  glyph-and-text differentiation is shown to be genuinely load-bearing — the states are still
+  tellable apart with colour removed entirely, not merely accompanied by a glyph; no
   state is conveyed by colour alone; no invented identifier of any kind appears in the shell —
   no run id, no synthesised session or build label (§8.2); no `innerHTML` introduced.
 
@@ -220,32 +256,46 @@ Close the chunk: README and docs reconciled with what shipped, cross-document co
 checked, both gates green, and the mutation harness extended to cover any merge rule added
 along the way.
 
+- **DO-7 owns the final gate re-pin** (§2). On a frozen HEAD, the test suite, the mutation
+  harness and a clean-tree check are re-run *together*, in one run, and only that single run's
+  results become the chunk's final numbers. Intermediate measurements taken along the way are
+  signed with their own commit and are not merged into it.
+
 ## 4. The December visual system
 
 The owner's specification, recorded as given.
 
 ### Palette
 
-| Token | Value | Role |
-|---|---|---|
-| ground | `#07090D` | Page background |
-| panel | `#10141B` | Card surface |
-| sunk | `#0B0E14` | Recessed surface |
-| line | `#262D38` | Borders and rules |
-| ink | `#F3F6F8` | Primary text |
-| muted | `#B9C2CC` | Secondary text |
-| faint | `#7F8A98` | Tertiary text |
-| **December Red** | `#E44955` | Reserved — see below |
+Both themes are the owner's and both are approved: the dark surfaces and text ramp, the
+*Winter Daylight* light set (decision §8.3), and the dark semantic triple (decision §8.4) — the
+last two approved 2026-08-03. Values are recorded verbatim as supplied, hex case included.
 
-Those are the dark values, approved. The light theme is retained on the *winter-daylight*
-palette (decision §8.3) and its token values are still outstanding.
+| Token | Role | dark (approved) | light — Winter Daylight (approved) |
+|---|---|---|---|
+| ground | Page background | `#07090D` | `#f3f5f7` |
+| panel | Card surface | `#10141B` | `#ffffff` |
+| sunk | Recessed surface | `#0B0E14` | `#e9edf1` |
+| line | Borders and rules | `#262D38` | `#d5dce4` |
+| ink | Primary text | `#F3F6F8` | `#11161d` |
+| muted | Secondary text | `#B9C2CC` | `#4e5965` |
+| faint | Tertiary text | `#7F8A98` | `#697684` |
+| **December Red** / accent | Reserved — see below | `#E44955` | `#c92f42` |
+| pass | Operational status | `#3fa86a` (§8.4) | `#247a4b` |
+| wait | Operational status | `#c9971f` (§8.4) | `#8a6500` |
+| fail | Operational status | `#e0703a` (§8.4) | `#b42318` |
+
+Both columns are now complete. December Red `#E44955` is retained as the full brand accent in
+the dark theme; it is the failure colour that moved away from it, not the accent that gave up
+colour (§8.4).
 
 December Red is reserved for six things and nothing else: the current Orbit stage, the
 travelled part of the trajectory, human-control points, the primary action, focus and
 selection, and a small brand mark. It is never used as a large filled surface.
 
-Operational statuses — pass, warning, fail — keep their own semantics, stay compact, and are
-always **glyph + text**. The current state and a failure must never look alike.
+Operational statuses — pass, wait, fail — keep their own semantics, stay compact, and are
+always distinguished by **glyph, text and shape as well as colour, never by colour alone**
+(owner, 2026-08-03, §8.4). The current state and a failure must never look alike.
 
 A barely-perceptible coordinate or star texture is allowed. No planets, no rockets, no galaxy
 illustrations, no permanent decorative animation.
@@ -278,7 +328,8 @@ viewports it becomes a vertical sequence of stages — the same information, re-
 reduced subset.
 
 **Accessibility.** Full keyboard navigation with visible focus. No state conveyed by colour
-alone — the glyph + text rule is what makes this hold. Existing XSS hygiene is preserved: every
+alone — the glyph, text and shape rule (§4, §8.4) is what makes this hold, and both approved
+palettes depend on it holding. Existing XSS hygiene is preserved: every
 state-derived string enters the DOM as a text node or a `setAttribute` value, never through
 `innerHTML`, because lane authors are untrusted input. Contrast is checked, not assumed.
 
@@ -340,8 +391,10 @@ applies — stop and re-review the architecture, do not raise the ceiling and do
 
 ## 8. Resolved decisions
 
-The owner answered all three of the chunk's open questions on **2026-08-03**. The reasoning is
-kept rather than deleted: whoever reopens one of these is owed the argument that closed it.
+The owner answered all three of the chunk's open questions on **2026-08-03**, and closed a
+fourth the same day — §8.4, a gap the light-theme approval exposed rather than one the chunk
+started with. The reasoning is kept rather than deleted: whoever reopens one of these is owed
+the argument that closed it.
 
 ### 8.1 Stage naming — resolved 2026-08-03, no rename
 
@@ -383,32 +436,82 @@ until P1 ships run identity.
 No invented or synthesised identifier of any kind may appear in the shell — not a run id, not a
 session number, not a build label. DEC-UI-1 and DEC-UI-2 carry that as acceptance.
 
-### 8.3 Light theme — resolved 2026-08-03, kept; token values outstanding
+### 8.3 Light theme — resolved 2026-08-03, kept; token values approved
 
-**Decision: `prefers-color-scheme: light` support is retained**, on an approved palette named
-*winter-daylight*. **The owner has not yet supplied the token values**, so they are outstanding
-and DEC-UI-1 cannot ship the light theme until they arrive.
+**Decision: `prefers-color-scheme: light` support is retained, on the owner's *Winter Daylight*
+palette, and the token values below are the owner's and are approved.** Nothing about the light
+theme is outstanding, and **DEC-UI-1 may implement it**.
 
-The table below is the **coordinator's proposal, awaiting the owner's sign-off**. The dark
-column is the approved palette from §4; the light column is not approved and must not be treated
-as though it were:
+| token | light — Winter Daylight (approved) |
+|---|---|
+| `--ground` | `#f3f5f7` |
+| `--panel` | `#ffffff` |
+| `--sunk` | `#e9edf1` |
+| `--line` | `#d5dce4` |
+| `--ink` | `#11161d` |
+| `--muted` | `#4e5965` |
+| `--faint` | `#697684` |
+| `--accent` | `#c92f42` |
+| `--pass` | `#247a4b` |
+| `--wait` | `#8a6500` |
+| `--fail` | `#b42318` |
 
-| token | dark (approved) | light (proposed) |
-|---|---|---|
-| ground | `#07090D` | `#F2F5F8` |
-| panel | `#10141B` | `#FFFFFF` |
-| sunk | `#0B0E14` | `#E8EDF2` |
-| line | `#262D38` | `#D3DBE4` |
-| ink | `#F3F6F8` | `#0D1319` |
-| muted | `#B9C2CC` | `#4A5763` |
-| faint | `#7F8A98` | `#77848F` |
-| December Red | `#E44955` | `#C8323E` |
+The reasoning, kept. An earlier revision of this entry carried a **coordinator's proposal**
+awaiting sign-off — `#F2F5F8 / #FFFFFF / #E8EDF2 / #D3DBE4 / #0D1319 / #4A5763 / #77848F` with
+December Red at `#C8323E`. That proposal is **superseded in full** by the table above. It is
+recorded only so a future reader can tell the two apart: the values above are the owner's, they
+are what ships, and the proposal never was. The approved set also goes further than the proposal
+did — it supplies the semantic triple (`pass`, `wait`, `fail`), which the proposal did not
+address at all.
 
-One measurable constraint travels with the decision to DEC-UI-1, and it is a constraint rather
-than an opinion: December Red at `#E44955` on a light background falls below the 4.5:1 contrast
-ratio required for normal text, so the light theme needs a darkened variant of the brand red for
-text and small elements. DEC-UI-1 must measure every foreground/background pair it ships and
-record the numbers.
+The measurable constraint that travelled with the decision is now **satisfied rather than
+outstanding**: December Red at `#E44955` on a light background falls below the 4.5:1 contrast
+ratio required for normal text, and `--accent` `#c92f42` is the darkened variant that answers it.
+The obligation it created survives the approval — DEC-UI-1 still measures every
+foreground/background pair it ships and records the numbers, because approval of a value is not
+a measurement of it.
+
+The approval also exposed something the proposal had not: `--accent` `#c92f42` and `--fail`
+`#b42318` are both reds, roughly 1.24:1 apart in luminance by the coordinator's estimate. That
+is not a defect — the separation is meant to be structural, not chromatic — but it is a
+measurement DEC-UI-1 owes, and it is written into that slice's acceptance in §3.
+
+### 8.4 Dark semantic triple — resolved 2026-08-03, variant A approved
+
+**Decision: the dark theme's `pass`/`wait`/`fail` are the owner's values below, approved.** The
+owner's original dark palette (§4) supplied surfaces, the text ramp and December Red but no
+semantic triple, and the panel had been shipping its own unapproved values. That gap is closed.
+
+| token | dark (approved) |
+|---|---|
+| `--pass` | `#3fa86a` |
+| `--wait` | `#c9971f` |
+| `--fail` | `#e0703a` |
+
+**These exact hex values were approved, not merely the direction.** Variant A was put to the
+owner with these values and blessed as it stood; a future reader may treat them as literal, and
+a change to any one of them is a new decision rather than an adjustment within an approved
+direction.
+
+The reasoning, kept, because it constrains future changes more than the values do. The problem
+was that today's dark `--fail` `#e0645c` sits very close to December Red `#E44955` — the same
+collision the light theme has between accent and fail, but more acute, because in a dark theme
+both are light marks on a near-black field and cannot be separated by lightness the way the
+light theme separates them. Two ways out existed: move the failure colour, or take the colour
+away from the accent and let form and position carry it. **The owner chose to move the failure
+colour and to retain December Red as the full brand accent** — the current state, focus and
+human-action points must not lose the brand colour, and must not come to look like a failure.
+So failure moves to orange-coral and the warning stays gold.
+
+One standing rule travels with the decision, and it is a rule rather than a nicety precisely
+because the palette leans on it: `pass`, `wait` and `fail` are always distinguished by **glyph,
+text and shape as well as colour, never by colour alone**. §4 and §5 already carried the weaker
+*glyph + text* form of this; it is now the stronger form and applies to both themes.
+
+What the decision leaves for DEC-UI-1 to measure, not to reopen: `#e0703a` and `#c9971f` are
+adjacent warm hues, and under the common form of red-green colour-vision deficiency orange and
+gold converge. The mitigation is the standing rule above; the obligation to prove it holds is
+written into DEC-UI-1's acceptance in §3.
 
 ## 9. Still open
 
