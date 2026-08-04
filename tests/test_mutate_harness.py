@@ -30,6 +30,7 @@ import stat
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -159,6 +160,7 @@ def test_a_shadowed_import_root_refuses_before_any_mutation_and_never_scores(
     # and restored". No mutation was reported, so none was run.
     assert "SURVIVED" not in combined
     assert "KILLED" not in combined
+    assert "baseline" not in combined      # the refusal precedes even the baseline
     assert merge_path.read_bytes() == before                  # refused before mutating
 
 
@@ -430,6 +432,98 @@ def test_verify_only_confirms_the_import_root_and_says_no_mutations_were_run(
     assert "no mutations were run" in result.stdout
     assert "killed" not in result.stdout.lower()
     assert not SCORE_SHAPED.search(result.stdout)
+
+
+# --- the baseline: a red test file scores every mutation aimed at it as KILLED ---
+
+
+def _recorder(returncode=0, testcases=1):
+    """A `subprocess` stand-in that records calls and fakes a JUnit report."""
+    calls = []
+
+    def run(cmd, **kwargs):
+        calls.append((list(cmd), kwargs))
+        for arg in cmd:
+            if str(arg).startswith("--junit-xml="):
+                cases = "<testcase/>" * testcases
+                Path(str(arg).split("=", 1)[1]).write_text(
+                    f"<testsuites><testsuite>{cases}</testsuite></testsuites>",
+                    encoding="utf-8")
+        return subprocess.CompletedProcess(cmd, returncode, "captured out", "captured err")
+
+    return calls, SimpleNamespace(run=run, TimeoutExpired=subprocess.TimeoutExpired)
+
+
+def test_the_baseline_covers_exactly_the_files_the_mutations_are_scored_against():
+    declared = [test_file for _, _, _, test_file in harness.MUTATIONS]
+    assert set(harness.targeted_test_files()) == set(declared)
+    assert len(harness.targeted_test_files()) == len(set(declared))
+
+
+def test_the_baseline_and_the_mutant_runs_come_from_one_environment(monkeypatch, tmp_path):
+    # Not "built the same way" — the same. Two builders drift apart at the
+    # first edit, and then the baseline proves the wrong tree is green.
+    calls, fake = _recorder()
+    monkeypatch.setattr(harness, "subprocess", fake)
+    source_root, cwd = tmp_path / "src", tmp_path
+    harness.check_baseline(source_root, cwd, source_root / "conductor" / "merge.py")
+    harness.run_targeted_test("tests/test_merge_review.py", source_root, cwd)
+
+    (baseline_cmd, baseline_kw), (mutant_cmd, mutant_kw) = calls
+    assert baseline_cmd[:3] == mutant_cmd[:3] == [sys.executable, "-m", "pytest"]
+    assert baseline_kw["cwd"] == mutant_kw["cwd"] == cwd
+    assert baseline_kw["env"] == mutant_kw["env"] == harness.subprocess_env(source_root)
+    assert [a for a in baseline_cmd if a.endswith(".py")] == harness.targeted_test_files()
+
+
+def test_a_baseline_that_is_not_green_is_an_invalid_measurement(monkeypatch, tmp_path):
+    calls, fake = _recorder(returncode=1)
+    monkeypatch.setattr(harness, "subprocess", fake)
+    with pytest.raises(harness.InvalidMeasurement) as raised:
+        harness.check_baseline(tmp_path / "src", tmp_path, tmp_path / "merge.py")
+    assert "not green on unmutated source" in str(raised.value)
+    assert "reads as KILLED" in str(raised.value)
+
+
+def test_a_baseline_that_collected_nothing_is_an_invalid_measurement(monkeypatch, tmp_path):
+    # A green exit over zero tests proves nothing, and it is a distinct failure
+    # from a red one.
+    calls, fake = _recorder(returncode=0, testcases=0)
+    monkeypatch.setattr(harness, "subprocess", fake)
+    with pytest.raises(harness.InvalidMeasurement) as raised:
+        harness.check_baseline(tmp_path / "src", tmp_path, tmp_path / "merge.py")
+    assert "collected no test at all" in str(raised.value)
+
+
+def test_pytest_exits_five_when_it_collects_nothing(tmp_path):
+    # The fact the baseline docstring rests on, executed rather than assumed.
+    (tmp_path / "test_nothing.py").write_text("def helper():\n    return 1\n",
+                                              encoding="utf-8")
+    result = subprocess.run([sys.executable, "-m", "pytest", "test_nothing.py", "-q"],
+                            cwd=tmp_path, capture_output=True, text=True, timeout=300)
+    assert result.returncode == 5
+
+
+def test_a_red_targeted_file_stops_the_run_before_the_first_mutation(
+        tmp_path, export, shadowing_python):
+    # The defect: a targeted file that is already red reports every mutation
+    # aimed at it as KILLED, because the harness only ever asked for exit 1.
+    tree = tmp_path / "already_red"
+    shutil.copytree(export, tree, ignore=shutil.ignore_patterns("__pycache__"))
+    red = tree / "tests" / harness.targeted_test_files()[0].split("/")[-1]
+    red.write_text(red.read_text(encoding="utf-8") +
+                   "\n\ndef test_planted_failure_unrelated_to_merge():\n"
+                   "    assert False\n", encoding="utf-8")
+    merge_path = tree / "src" / "conductor" / "merge.py"
+    before = merge_path.read_bytes()
+
+    result = run_harness(shadowing_python, "--root", str(tree))
+
+    assert result.returncode == harness.EXIT_INVALID, result.stdout + result.stderr
+    assert "not green on unmutated source" in result.stderr
+    assert merge_path.read_bytes() == before            # never touched
+    assert "KILLED" not in result.stdout and "SURVIVED" not in result.stdout
+    assert "mutations killed" not in result.stdout + result.stderr
 
 
 # --- prose about this code is code: these pin claims, not wording ---

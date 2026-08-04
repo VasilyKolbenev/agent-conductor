@@ -10,11 +10,13 @@ was never measured, and an unmeasured mutation may not be folded into a score.
 The original bytes are restored from an in-memory copy and the restore is
 PROVED by content hash.
 
-Before the first mutation the harness confirms where `conductor.merge` is
-actually imported from. File isolation is not verification isolation: an
-editable install (a `.pth` in site-packages) or an installed copy can shadow
-an exported tree, so the harness mutates one file while pytest imports
-another and prints a plausible score that means nothing.
+Before the first mutation the harness checks two things about itself. Where
+`conductor.merge` is actually imported from: file isolation is not
+verification isolation, so an editable install (a `.pth` in site-packages) or
+an installed copy can shadow an exported tree, and the harness would mutate
+one file while pytest imported another and print a plausible score that means
+nothing. And whether the targeted tests are green on unmutated source: a test
+file that is already red reports every mutation aimed at it as KILLED.
 
 What the restore does and does not promise. An `OSError` in the restore is
 retried, and when the content hash still cannot be confirmed the run stops and
@@ -56,8 +58,10 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
+from xml.etree import ElementTree
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -302,6 +306,44 @@ def print_provenance(source_root: Path, resolved: Path) -> None:
     print("------------------")
 
 
+def targeted_test_files() -> list[str]:
+    """Return every test file the mutations are scored against, in order.
+
+    Returns:
+        The distinct `test_file` entries of `MUTATIONS`, declaration order kept.
+    """
+    files: list[str] = []
+    for _, _, _, test_file in MUTATIONS:
+        if test_file not in files:
+            files.append(test_file)
+    return files
+
+
+def run_pytest(argv: list[str], source_root: Path, cwd: Path) -> subprocess.CompletedProcess:
+    """Run pytest the one way this harness ever runs it.
+
+    Both the baseline and every mutant run come through here, so the
+    interpreter, the working directory and the environment cannot drift apart
+    between what the baseline proved and what the mutations were measured in.
+
+    Args:
+        argv: Arguments after `-m pytest`.
+        source_root: Source root the subprocess imports from.
+        cwd: Working directory for pytest.
+
+    Returns:
+        The completed process, output captured as text.
+    """
+    return subprocess.run(
+        [sys.executable, "-m", "pytest", *argv],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        timeout=PYTEST_TIMEOUT_S,
+        env=subprocess_env(source_root),
+    )
+
+
 def run_targeted_test(test_file: str, source_root: Path, cwd: Path) -> int:
     """Run one targeted test file against the currently mutated source.
 
@@ -313,15 +355,86 @@ def run_targeted_test(test_file: str, source_root: Path, cwd: Path) -> int:
     Returns:
         The pytest exit code.
     """
-    result = subprocess.run(
-        [sys.executable, "-m", "pytest", test_file, "-q"],
-        cwd=cwd,
-        capture_output=True,
-        text=True,
-        timeout=PYTEST_TIMEOUT_S,
-        env=subprocess_env(source_root),
-    )
-    return result.returncode
+    return run_pytest([test_file, "-q"], source_root, cwd).returncode
+
+
+def _collected_tests(report: Path) -> int:
+    """Count the test cases pytest recorded in its JUnit report.
+
+    Args:
+        report: The `--junit-xml` file pytest was asked to write.
+
+    Returns:
+        The number of `testcase` elements in the report.
+
+    Raises:
+        InvalidMeasurement: The report is missing or unreadable, so how many
+            tests actually ran is unknown.
+    """
+    try:
+        root = ElementTree.parse(report).getroot()
+    except (OSError, ElementTree.ParseError) as exc:
+        raise InvalidMeasurement(
+            f"the baseline test report could not be read ({exc}), so how many "
+            "tests ran is unknown and nothing here can be measured.") from exc
+    return len(root.findall(".//testcase"))
+
+
+def check_baseline(source_root: Path, cwd: Path, resolved: Path) -> int:
+    """Prove the targeted tests are green on unmutated source, before mutating.
+
+    A targeted test file that is already red reports every mutation aimed at it
+    as KILLED — the same defect class as a wrong import root, a plausible
+    number that measures nothing. This runs the exact set of files the
+    mutations are scored against, through `run_pytest`, so it uses the same
+    interpreter, PYTHONPATH, working directory and environment the mutant runs
+    will use, against the import root `verify_import_root` has just confirmed.
+    A green exit is not enough on its own: pytest exits 5, not 0, when it
+    collects nothing, but the count is checked rather than inferred.
+
+    Args:
+        source_root: The verified source root.
+        cwd: Working directory for pytest, as for the mutant runs.
+        resolved: The confirmed `conductor.merge.__file__`, named in failures.
+
+    Returns:
+        The number of tests that ran.
+
+    Raises:
+        InvalidMeasurement: The run was not green, collected nothing, or could
+            not complete. No mutation has been applied at that point.
+    """
+    workspace = Path(tempfile.mkdtemp(prefix="mutate_merge_baseline_"))
+    report = workspace / "baseline.xml"
+    try:
+        try:
+            result = run_pytest([*targeted_test_files(), "-q", f"--junit-xml={report}"],
+                                source_root, cwd)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise InvalidMeasurement(
+                f"the baseline test run could not complete: {exc}") from exc
+        if result.returncode != 0:
+            raise InvalidMeasurement(_baseline_report(result, resolved))
+        collected = _collected_tests(report)
+        if collected == 0:
+            raise InvalidMeasurement(
+                "the baseline run collected no test at all, so its green exit "
+                "proves nothing.\n"
+                f"  test files: {', '.join(targeted_test_files())}")
+        return collected
+    finally:
+        shutil.rmtree(workspace, ignore_errors=True)
+
+
+def _baseline_report(result: subprocess.CompletedProcess, resolved: Path) -> str:
+    """Say why the unmutated tree is not a thing anything can be measured against."""
+    tail = "\n".join(f"  | {line}" for line
+                     in (result.stdout + result.stderr).strip().splitlines()[-15:])
+    return (f"the targeted tests are not green on unmutated source (pytest "
+            f"exited {result.returncode}).\n"
+            f"  conductor.merge under measurement: {resolved}\n"
+            "  A mutation aimed at an already-red file reads as KILLED, so\n"
+            f"  nothing here can be measured.\n{tail}")
 
 
 def apply_mutation(name: str, original: bytes, anchor: str, replacement: str) -> bytes:
@@ -551,6 +664,8 @@ def main(argv: list[str] | None = None) -> int:
                   "no mutations were run")
             return EXIT_OK
         try:
+            green = check_baseline(source_root, root, resolved)
+            print(f"baseline: {green} targeted tests green on unmutated source")
             results = run_mutations(merge_path, source_root, root)
         finally:
             clear_pycache(source_root)
