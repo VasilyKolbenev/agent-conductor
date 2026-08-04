@@ -12,7 +12,7 @@ subprocess, no environment scan. Detecting installed harnesses is a capability
 class of its own and needs its own ADR before any of it exists. What enforces
 that is `test_init_never_probes_the_machine_for_installed_harnesses`. It runs
 `conduct init` in a child interpreter, takes the `conductor.*` modules that
-run actually imported — this module, the harness registry, `__main__`, and
+the run actually imported — this module, the harness registry, `__main__`, and
 everything the three of them reach — and rejects a probing import or a
 qualified probing call in any of them.
 
