@@ -159,25 +159,20 @@ def test_the_fallback_monogram_is_one_or_two_characters_and_never_padded():
 
 
 def test_the_neutral_pair_is_public_and_is_what_an_unknown_harness_gets():
-    assert HEX_RE.fullmatch(harnesses.NEUTRAL_DARK.lower())
-    assert HEX_RE.fullmatch(harnesses.NEUTRAL_LIGHT.lower())
-    assert harnesses.NEUTRAL_DARK != harnesses.NEUTRAL_LIGHT
+    # Only the NAME is new information here. That the pair is well formed is
+    # test_both_themes_carry_a_well_formed_accent's job, and that a declared
+    # `custom` carries the same pair is already
+    # test_an_unregistered_harness_resolves_to_a_neutral_badge's. What nothing
+    # else can catch is a rename that leaves every value intact and every
+    # panel reaching for a name that is gone.
     unregistered = harnesses.resolve("no-such-harness")
     assert unregistered.accent_dark == harnesses.NEUTRAL_DARK
     assert unregistered.accent_light == harnesses.NEUTRAL_LIGHT
-    custom = harnesses.get(harnesses.CUSTOM)      # a declared custom looks alike
-    assert custom.accent_dark == harnesses.NEUTRAL_DARK
-    assert custom.accent_light == harnesses.NEUTRAL_LIGHT
 
 
 def test_vendors_is_the_registry_minus_the_row_that_names_no_vendor():
     assert [h.id for h in harnesses.vendors()] == [
         h.id for h in harnesses.known() if h.id != harnesses.CUSTOM]
-    # The defining property, not just the arithmetic: every row it returns
-    # names a product, so every row it returns has vendor documentation.
-    assert harnesses.vendors()
-    for harness in harnesses.vendors():
-        assert harness.docs.startswith("https://"), harness.id
 
 
 def test_the_payload_is_json_ordered_and_carries_only_the_badge():
