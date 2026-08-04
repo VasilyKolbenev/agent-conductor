@@ -14,9 +14,7 @@ import re
 import tomllib
 
 import pytest
-import conductor
 import conductor.init
-import conductor.validate
 import conductor.__main__
 from conductor import harnesses, prompts, templates
 from conductor.init import _FIRST_ACTION, _NO_REVIEWER, _console_ask, _interactive
