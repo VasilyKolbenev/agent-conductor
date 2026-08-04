@@ -13,10 +13,17 @@ worth less than an equality plus a test that the fixture still has teeth.
 import json
 import re
 
-from conductor import harnesses, merge
+from conductor import harnesses, merge, templates
 from tests.test_merge_queue_phase import NOW, ROLES_MAP, rich_lanes
 
 HEX_RE = re.compile(r"\A#[0-9a-f]{6}\Z")
+
+#: The non-ASCII ids whose badges this file pins. Every one of them is checked
+#: against `templates.NAME_RE` in the tests that use it, and that check is not
+#: ceremony: a fixture that stopped being a legal harness id would go on
+#: passing while pinning an input no user can reach, which is a test that
+#: guards nothing dressed as a test that guards something.
+UNICODE_IDS = ("Кодекс", "ΩΩΩ", "中文", "my_own_agent", "ß", "ßa", "ß-agent")
 
 
 # --- the data itself ---
@@ -138,18 +145,55 @@ def test_the_fallback_monogram_is_one_or_two_characters_and_never_padded():
         assert harnesses.resolve(value).monogram == monogram, value
     # Padding is not a length question — a filler character is the right length
     # and still shows something nobody supplied. So the property is: no more
-    # characters than the id offers, and every one of them taken FROM the id.
-    # `?` is the single character that is not, and only an id that offers
-    # nothing may reach it.
-    for value in ("x", "7", "42", "c++", "kimi cli", "in-house-sast", "..."):
+    # characters than the UPPER-CASED id offers, and every one of them taken
+    # FROM that upper-cased id. Upper-casing is where the count lives, because
+    # one code point can grow into two — `ß` gives `SS` — and the badge is cut
+    # back to two rather than padded up to them. `?` is the single character
+    # that comes from nowhere, and only an id that offers no letter and no
+    # digit may reach it. The table carries non-ASCII on purpose: computing
+    # `offered` by a Unicode rule while the code split by an ASCII one is
+    # exactly how this loop stayed green over a `?` badge for `Кодекс`.
+    for value in ("x", "7", "42", "c++", "kimi cli", "in-house-sast", "...",
+                  *UNICODE_IDS):
+        if value in UNICODE_IDS:
+            assert templates.NAME_RE.fullmatch(value), value
         monogram = harnesses.resolve(value).monogram
-        offered = [char for char in value if char.isalnum()]
+        offered = [char for char in value.upper() if char.isalnum()]
         assert 1 <= len(monogram) <= 2, value
         assert len(monogram) <= max(1, len(offered)), value    # never padded
         if offered:
             assert set(monogram) <= set(value.upper()), value  # never invented
         else:
             assert monogram == "?", value
+
+
+def test_the_fallback_monogram_reads_a_unicode_id_as_words_not_as_punctuation():
+    # `templates.NAME_RE` is Unicode-aware, so an id of nothing but letters is
+    # legal in any script — and December never declared an ASCII-only harness
+    # id. Splitting one by an ASCII rule finds no words at all and badges every
+    # such id `?`, which is what the panel would then draw.
+    for value in ("Кодекс", "ΩΩΩ", "中文", "my_own_agent"):
+        assert templates.NAME_RE.fullmatch(value), value
+    assert harnesses.resolve("Кодекс").monogram == "КО"
+    assert harnesses.resolve("ΩΩΩ").monogram == "ΩΩ"
+    assert harnesses.resolve("中文").monogram == "中文"
+    # The underscore keeps separating words. It is a Unicode word character, so
+    # a split that only asked for `\W` would read this as one word and answer
+    # `MY` — the initials of three words are what this id has always got.
+    assert harnesses.resolve("my_own_agent").monogram == "MO"
+
+
+def test_a_badge_stays_two_characters_when_upper_casing_expands_a_letter():
+    # `"ß".upper()` is `"SS"`: one code point in, two out. Both branches of the
+    # fallback upper-case what they picked, so both need the cut afterwards —
+    # without it `ßa` badges `SSA` and `ß-agent` badges `SSA` too, three
+    # characters wide in a slot the registry sizes at two.
+    for value in ("ß", "ßa", "ß-agent"):
+        assert templates.NAME_RE.fullmatch(value), value
+    assert "ß".upper() == "SS"
+    assert harnesses.resolve("ß").monogram == "SS"
+    assert harnesses.resolve("ßa").monogram == "SS"        # single-word branch
+    assert harnesses.resolve("ß-agent").monogram == "SS"   # two-word branch
 
 
 # --- the seam a panel renders the registry through ---

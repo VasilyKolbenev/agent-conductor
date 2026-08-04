@@ -73,9 +73,11 @@ class Harness:
         monogram: One or two characters for the panel's badge (ADR 0001 §6).
             Every entry in the bundled registry below carries two; the
             fallback `resolve` builds for an unregistered id manages only one
-            when the id holds a single alphanumeric word one character long —
-            `c++` and `a-` are as short as `x` here — and `"?"` when it holds
-            no letter or digit at all.
+            when the id holds a single word one character long that is still
+            one character upper-cased — `c++` and `a-` are as short as `x`
+            here, while `ß` upper-cases into `SS` — and `"?"` when the id holds
+            no letter or digit at all. Words are Unicode, so the badge for
+            `Кодекс` reads `КО` and the badge for `中文` reads `中文`.
         accent_dark: Badge accent on the dark theme, as `#rrggbb`.
         accent_light: Badge accent on the light theme, as `#rrggbb`.
         docs: The vendor's documentation entry point; `""` for `custom`, which
@@ -157,9 +159,15 @@ _BY_ID = {harness.id: harness for harness in _KNOWN}
 #: here is an onboarding decision, not a claim that these work better.
 RECOMMENDED = ("claude-code", "codex", "cursor")
 
-#: Splits an id into words for the fallback monogram. Not a validation rule —
-#: `templates.NAME_RE` owns what a harness id may contain.
-_WORD_RE = re.compile(r"[^0-9A-Za-z]+")
+#: Splits an id into words for the fallback monogram: a run of anything that is
+#: not a Unicode word character, plus the underscore, separates two words.
+#: Unicode because `templates.NAME_RE` validates by Unicode `\w` and December
+#: declared no ASCII-only harness id — an ASCII split reads `Кодекс`, `ΩΩΩ` and
+#: `中文` as having no words at all and badges every one of them `?`. The
+#: underscore is added back as a separator because `\W` alone would keep it and
+#: turn `my_own_agent` into one word. Not a validation rule — `templates.NAME_RE`
+#: owns what a harness id may contain.
+_WORD_RE = re.compile(r"[\W_]+")
 
 
 def known() -> list[Harness]:
@@ -237,18 +245,25 @@ def _monogram(harness_id: str) -> str:
 
     Returns:
         The first letter of each of the first two words, or the first two
-        characters of a single word, upper-cased — one character when that is
-        all the string has, and `"?"` when it holds no letter or digit at all.
-        Neither case is padded to two: there is no honest second character to
-        add, and a badge that invents one states something about a harness
-        nobody supplied.
+        characters of a single word, upper-cased and then cut back to two code
+        points — one character when that is all the upper-cased string has, and
+        `"?"` when it holds no letter or digit at all. Words are runs of Unicode
+        alphanumerics, so `Кодекс` gives `КО` rather than `?`. The cut comes
+        after upper-casing because upper-casing can lengthen: `ß` becomes `SS`,
+        so `ßa` would otherwise badge three characters wide.
+
+        Neither short case is padded to two: there is no honest second
+        character to add, and a badge that invents one states something about a
+        harness nobody supplied.
     """
     words = [word for word in _WORD_RE.split(harness_id) if word]
     if len(words) >= 2:
-        return (words[0][0] + words[1][0]).upper()
-    if words:
-        return words[0][:2].upper()
-    return "?"                        # no letters or digits at all
+        initials = words[0][0] + words[1][0]
+    elif words:
+        initials = words[0][:2]
+    else:
+        return "?"                    # no letters or digits at all
+    return initials.upper()[:2]       # `ß`.upper() is `SS`: two out of one
 
 
 def resolve(harness_id: str) -> Harness:
