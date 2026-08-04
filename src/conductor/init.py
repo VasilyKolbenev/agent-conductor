@@ -234,8 +234,8 @@ def _custom_row() -> tuple[str, str]:
         was typed. A row that taught only the second would leave a user to
         discover the first from their own map.toml.
     """
-    rest = ", ".join(h.id for h in harnesses.known()
-                     if h.id not in harnesses.RECOMMENDED and h.id != harnesses.CUSTOM)
+    rest = ", ".join(h.id for h in harnesses.vendors()
+                     if h.id not in harnesses.RECOMMENDED)
     return (harnesses.CUSTOM,
             f" — anything else: this row writes the id {harnesses.CUSTOM}. "
             f"Conduct also knows {rest} — type an id, listed or not, and it "

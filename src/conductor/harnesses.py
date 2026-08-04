@@ -104,9 +104,11 @@ CUSTOM = "custom"
 #: The neutral badge an unregistered harness gets (ADR 0001 §6: unknown
 #: adapters get the neutral badge, never a guessed brand). `custom` carries the
 #: same pair, so a declared custom harness and an unrecognised string look
-#: alike — which is the truth about how much either one is known.
-_NEUTRAL_DARK = "#8b93a1"
-_NEUTRAL_LIGHT = "#5a6472"
+#: alike — which is the truth about how much either one is known. Public
+#: because a panel drawing an unregistered harness needs this pair by name,
+#: and a private one would make a rename here a broken badge there.
+NEUTRAL_DARK = "#8b93a1"
+NEUTRAL_LIGHT = "#5a6472"
 
 _KNOWN: tuple[Harness, ...] = (
     Harness(id="claude-code", display_name="Claude Code", monogram="CC",
@@ -142,7 +144,7 @@ _KNOWN: tuple[Harness, ...] = (
             docs="https://docs.github.com/en/copilot",
             adapter="github-copilot", executable_hints=("gh",)),
     Harness(id=CUSTOM, display_name="Custom harness", monogram="CH",
-            accent_dark=_NEUTRAL_DARK, accent_light=_NEUTRAL_LIGHT,
+            accent_dark=NEUTRAL_DARK, accent_light=NEUTRAL_LIGHT,
             docs="", adapter="", executable_hints=()),
 )
 
@@ -167,6 +169,49 @@ def known() -> list[Harness]:
         to spell a row, and nothing here returns display text.
     """
     return list(_KNOWN)
+
+
+def vendors() -> list[Harness]:
+    """Every registered entry that names a vendor — `known()` without `custom`.
+
+    Returns:
+        The entries in registry order, minus the `custom` row. `custom` is a
+        legitimate harness type rather than an error state, but it names no
+        product: it carries no documentation link, no accent of its own and no
+        executable hint. A caller listing the products this file knows about
+        therefore wants this; `known()` is for when the menu itself, `custom`
+        row included, is the subject.
+    """
+    return [harness for harness in _KNOWN if harness.id != CUSTOM]
+
+
+def as_payload() -> list[dict[str, str]]:
+    """The registry as JSON-serialisable presentation data, in registry order.
+
+    Returns:
+        One fresh dict per entry — `known()`'s order, `custom` included, since
+        a panel has to draw that badge too — carrying exactly what a badge is
+        drawn from: id, display name, monogram, both accents and the
+        documentation link (`""` for `custom`, which links to no vendor).
+
+        Two fields are deliberately absent. `executable_hints` is documentation
+        for a person reading this file and would become a lookup the moment it
+        crossed a wire, which is the one thing this module promises it is not.
+        `adapter` resolves to nothing today and shipping it would read as a
+        promise that it does.
+
+        The dicts are rebuilt on each call, so a caller that edits what it got
+        back cannot reach the frozen entries anyone else resolves against.
+
+    How this reaches the panel is NOT decided here. A dedicated
+    `/harnesses.json` route and a server-side resolve into the state document
+    are both open, and the choice belongs to DEC-UI-3; what this function
+    settles is only the shape, so either route carries the same bytes.
+    """
+    return [{"id": harness.id, "display_name": harness.display_name,
+             "monogram": harness.monogram, "accent_dark": harness.accent_dark,
+             "accent_light": harness.accent_light, "docs": harness.docs}
+            for harness in _KNOWN]
 
 
 def get(harness_id: str) -> Harness | None:
@@ -224,5 +269,5 @@ def resolve(harness_id: str) -> Harness:
         return known_harness
     return Harness(id=harness_id, display_name=harness_id,
                    monogram=_monogram(harness_id),
-                   accent_dark=_NEUTRAL_DARK, accent_light=_NEUTRAL_LIGHT,
+                   accent_dark=NEUTRAL_DARK, accent_light=NEUTRAL_LIGHT,
                    docs="", adapter="", executable_hints=())

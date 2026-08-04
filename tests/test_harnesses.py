@@ -10,6 +10,7 @@ block below is the same shape `role.stage` uses in test_merge_queue_phase.py,
 for the same reason: an equality that a fixture could quietly make vacuous is
 worth less than an equality plus a test that the fixture still has teeth.
 """
+import json
 import re
 
 from conductor import harnesses, merge
@@ -136,6 +137,56 @@ def test_the_fallback_monogram_is_one_or_two_characters_and_never_padded():
         assert harnesses.resolve(value).monogram == monogram, value
     for value in ("x", "7", "42", "(", "kimi cli", "in-house-sast"):
         assert 1 <= len(harnesses.resolve(value).monogram) <= 2, value
+
+
+# --- the seam a panel renders the registry through ---
+# Three public names so DEC-UI-3 never reaches into a private one: a rename in
+# here would otherwise land as a broken badge over there, with nothing in this
+# suite to catch it in between.
+
+
+def test_the_neutral_pair_is_public_and_is_what_an_unknown_harness_gets():
+    assert HEX_RE.fullmatch(harnesses.NEUTRAL_DARK.lower())
+    assert HEX_RE.fullmatch(harnesses.NEUTRAL_LIGHT.lower())
+    assert harnesses.NEUTRAL_DARK != harnesses.NEUTRAL_LIGHT
+    unregistered = harnesses.resolve("no-such-harness")
+    assert unregistered.accent_dark == harnesses.NEUTRAL_DARK
+    assert unregistered.accent_light == harnesses.NEUTRAL_LIGHT
+    custom = harnesses.get(harnesses.CUSTOM)      # a declared custom looks alike
+    assert custom.accent_dark == harnesses.NEUTRAL_DARK
+    assert custom.accent_light == harnesses.NEUTRAL_LIGHT
+
+
+def test_vendors_is_the_registry_minus_the_row_that_names_no_vendor():
+    assert [h.id for h in harnesses.vendors()] == [
+        h.id for h in harnesses.known() if h.id != harnesses.CUSTOM]
+    # The defining property, not just the arithmetic: every row it returns
+    # names a product, so every row it returns has vendor documentation.
+    assert harnesses.vendors()
+    for harness in harnesses.vendors():
+        assert harness.docs.startswith("https://"), harness.id
+
+
+def test_the_payload_is_json_ordered_and_carries_only_the_badge():
+    payload = harnesses.as_payload()
+    assert [row["id"] for row in payload] == [h.id for h in harnesses.known()]
+    assert json.loads(json.dumps(payload)) == payload   # no tuples, no dataclass
+    for row, harness in zip(payload, harnesses.known()):
+        assert row == {"id": harness.id, "display_name": harness.display_name,
+                       "monogram": harness.monogram,
+                       "accent_dark": harness.accent_dark,
+                       "accent_light": harness.accent_light,
+                       "docs": harness.docs}
+    # `executable_hints` is documentation for a person and would become a
+    # lookup the moment it crossed a wire; `adapter` resolves to nothing yet
+    # and would read as a promise that it does. Neither may ride along.
+    for row in payload:
+        assert "executable_hints" not in row and "adapter" not in row
+    # A projection, not a view: editing what one caller got back may not reach
+    # the entries every other caller resolves against.
+    payload[0]["display_name"] = "Sabotage"
+    assert harnesses.as_payload()[0]["display_name"] != "Sabotage"
+    assert harnesses.known()[0].display_name != "Sabotage"
 
 
 # --- additivity: the merger cannot tell a known harness from an unknown one ---
