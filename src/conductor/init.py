@@ -21,7 +21,7 @@ and `shutil`, and `argparse` imports both as well, so a rule phrased over
 "everything init imports" would fail on the standard library before it ever
 reached our code. Inside that boundary the two halves catch different
 spellings. The import half is the blunt one — a banned module may not be
-named at all. The qualified half makes a probe say where it came from: it
+imported at all. The qualified half makes a probe say where it came from: it
 matches `os.environ`, never a bare `.environ`, which is what lets `__main__`
 go on calling this module's entry point `init.run` instead of losing the name
 to a rule that cannot tell it from `subprocess.run`.
