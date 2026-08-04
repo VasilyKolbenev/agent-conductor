@@ -3,20 +3,45 @@ discipline: a green test suite that can't catch a mutated rule is not proof
 of anything).
 
 For each mutation below: apply ONE source-text substitution in place to
-`src/conductor/merge.py`, run the targeted test file, and assert it goes
-RED (nonzero pytest exit). The original bytes are restored from an in-memory
-copy and the restore is PROVED by content hash, so the working tree is always
-left clean — or the run stops saying, unmistakably, that it is not.
+`src/conductor/merge.py`, run the targeted test file, and require pytest to
+exit 1 — a genuine test failure, the only exit code that is a kill. Any other
+nonzero exit (2-5: usage, collection or internal errors) means the mutation
+was never measured, and an unmeasured mutation may not be folded into a score.
+The original bytes are restored from an in-memory copy and the restore is
+PROVED by content hash.
 
 Before the first mutation the harness confirms where `conductor.merge` is
 actually imported from. File isolation is not verification isolation: an
 editable install (a `.pth` in site-packages) or an installed copy can shadow
 an exported tree, so the harness mutates one file while pytest imports
-another and prints a plausible score that means nothing. A wrong import root
-is an infrastructure error (exit 3), never a mutation score.
+another and prints a plausible score that means nothing.
 
-Exit codes: 0 every mutation killed, 1 a mutation survived, 3 the instrument
-itself could not be trusted and nothing was measured.
+What the restore does and does not promise. An `OSError` in the restore is
+retried, and when the content hash still cannot be confirmed the run stops and
+names the file that may still carry a mutation. A hard kill of the process
+between the mutation write and the restore is outside that promise: it leaves
+a mutated `merge.py` and says nothing at all. Crash-safe restore — writing
+beside the target and renaming, or restoring from git — is a separate task
+with its own review, queued as the first backlog item in
+docs/plans/2026-08-03-p0-control-loop-and-december-ui.md §10.
+
+Exit codes. The code describes whether the mode that was REQUESTED succeeded;
+it is not in every mode a mutation score.
+
+    normal run      0  valid measurement, every mutation killed
+                    1  valid measurement, a mutation survived
+                    2  the measurement is invalid or never started
+    --verify-only   0  the instrument checked out; NO mutations were run, so
+                       this zero does not mean any mutation was killed
+                    2  the instrument did not check out, or a usage error
+                    1  not used
+
+Exit 2 carries no mutation score of any kind — not `0/13`, not a zero. Every
+path to it runs through `_invalid_measurement`, and the score is printed by a
+function that path never reaches. `argparse` also exits 2, on an unrecognised
+argument; the overlap is deliberate and means the same thing, because a usage
+error is likewise a run in which no valid measurement happened — argparse
+prints usage to stderr and stops before anything is measured.
 
 Usage:
     .venv\\Scripts\\python scripts\\mutate_merge.py          # in-tree, as CI runs it
@@ -38,10 +63,11 @@ ROOT = Path(__file__).resolve().parent.parent
 
 EXIT_OK = 0
 EXIT_SURVIVORS = 1
-EXIT_INFRASTRUCTURE = 3          # never overlaps a score: nothing was measured
+EXIT_INVALID = 2                 # no score is printed on this path — see above
 
 RESTORE_ATTEMPTS = 3
 RESTORE_DELAY_S = 0.2
+PYTEST_TIMEOUT_S = 180           # a mutation must never hang the harness
 
 # `pytest` is imported by the probe on purpose: PYTHONNOUSERSITE hides a
 # user-site pytest, and `python -m pytest` without pytest exits 1 — which this
@@ -52,8 +78,8 @@ IMPORT_PROBE = (
 )
 
 
-class InfrastructureError(RuntimeError):
-    """The instrument is untrustworthy, so no number it produced is a result."""
+class InvalidMeasurement(RuntimeError):
+    """This run cannot produce a mutation score, so it must not print one."""
 
 
 # Adjacent §6.1 ladder rows, verbatim, so a swap is assembled from them: the
@@ -180,8 +206,11 @@ def subprocess_env(source_root: Path) -> dict[str, str]:
     """Build the one environment every harness subprocess runs in.
 
     PYTHONPATH is replaced, never extended: an inherited value is exactly the
-    ambiguity this harness exists to remove. PYTHONNOUSERSITE keeps a user-site
-    install from shadowing the source root. PYTHONDONTWRITEBYTECODE is a
+    ambiguity this harness exists to remove. PYTHONNOUSERSITE hides a user-site
+    pytest, so the probe's `import pytest` means the pytest the mutation runs
+    will actually use; it does not decide which `conductor` wins, because
+    PYTHONPATH already precedes every site directory on `sys.path`.
+    PYTHONDONTWRITEBYTECODE is a
     correctness guard, not a speed one: a mutation of identical byte length
     (`==` -> `!=`) can poison `__pycache__`, because Python's timestamp+size
     staleness check misses the mutate->restore round-trip and later clean runs
@@ -239,7 +268,7 @@ def verify_import_root(source_root: Path, cwd: Path) -> Path:
         The resolved path of `conductor.merge.__file__`.
 
     Raises:
-        InfrastructureError: The probe could not run, the import failed, or it
+        InvalidMeasurement: The probe could not run, the import failed, or it
             resolved outside `source_root`.
     """
     try:
@@ -247,15 +276,15 @@ def verify_import_root(source_root: Path, cwd: Path) -> Path:
             [sys.executable, "-c", IMPORT_PROBE], cwd=cwd, capture_output=True,
             text=True, timeout=180, env=subprocess_env(source_root))
     except (OSError, subprocess.TimeoutExpired) as exc:
-        raise InfrastructureError(f"the import probe could not run: {exc}") from exc
+        raise InvalidMeasurement(f"the import probe could not run: {exc}") from exc
     if probe.returncode != 0:
-        raise InfrastructureError(
+        raise InvalidMeasurement(
             "import isolation not confirmed - the probe failed to import\n"
             f"  conductor.merge and pytest with PYTHONPATH={source_root}:\n"
             f"{probe.stderr.strip()}")
     resolved = Path(probe.stdout.strip())
     if not _is_inside(resolved, source_root):
-        raise InfrastructureError(_shadow_report(resolved, source_root))
+        raise InvalidMeasurement(_shadow_report(resolved, source_root))
     return resolved
 
 
@@ -284,24 +313,46 @@ def run_targeted_test(test_file: str, source_root: Path, cwd: Path) -> int:
     Returns:
         The pytest exit code.
     """
-    # timeout=180: a mutation must never be allowed to hang the harness.
     result = subprocess.run(
         [sys.executable, "-m", "pytest", test_file, "-q"],
         cwd=cwd,
         capture_output=True,
         text=True,
-        timeout=180,
+        timeout=PYTEST_TIMEOUT_S,
         env=subprocess_env(source_root),
     )
     return result.returncode
 
 
-def apply_mutation(original: bytes, anchor: str, replacement: str) -> bytes:
-    """Return `original` with `anchor` replaced once by `replacement`."""
+def apply_mutation(name: str, original: bytes, anchor: str, replacement: str) -> bytes:
+    """Return `original` with `anchor` replaced once by `replacement`.
+
+    The anchor count is CHECKED, never asserted: `assert` disappears under
+    `python -O`, and without the check `str.replace` silently substitutes
+    nothing and the unapplied mutation is scored as SURVIVED.
+
+    Args:
+        name: The mutation's catalogue name, for the failure message.
+        original: The unmutated source bytes.
+        anchor: The text the mutation replaces.
+        replacement: The text it is replaced with.
+
+    Returns:
+        The mutated source bytes.
+
+    Raises:
+        InvalidMeasurement: The anchor does not appear exactly once, so the
+            catalogue has drifted from the merge engine.
+    """
     text = original.decode("utf-8")
-    assert text.count(anchor) == 1, f"anchor not found exactly once: {anchor!r}"
-    mutated = text.replace(anchor, replacement, 1)
-    return mutated.encode("utf-8")
+    found = text.count(anchor)
+    if found != 1:
+        raise InvalidMeasurement(
+            f"mutation {name!r}: its anchor appears {found} times in the source, "
+            "not once, so the mutation catalogue has drifted from the merge "
+            "engine. No mutation was applied and nothing was measured.\n"
+            f"  anchor: {anchor!r}")
+    return text.replace(anchor, replacement, 1).encode("utf-8")
 
 
 def restore_source(path: Path, original: bytes) -> None:
@@ -317,7 +368,7 @@ def restore_source(path: Path, original: bytes) -> None:
         original: The bytes the file must contain afterwards.
 
     Raises:
-        InfrastructureError: The content could not be confirmed within
+        InvalidMeasurement: The content could not be confirmed within
             `RESTORE_ATTEMPTS`. The file may still carry a mutation.
     """
     want = hashlib.sha256(original).hexdigest()
@@ -334,7 +385,7 @@ def restore_source(path: Path, original: bytes) -> None:
             problem = f"{type(exc).__name__}: {exc}"
         if attempt + 1 < RESTORE_ATTEMPTS:
             time.sleep(RESTORE_DELAY_S * (attempt + 1))
-    raise InfrastructureError(
+    raise InvalidMeasurement(
         f"restore could not be confirmed after {RESTORE_ATTEMPTS} attempts "
         f"({problem}).\n"
         f"  THE FILE MAY STILL CARRY A MUTATION: {path}\n"
@@ -359,24 +410,38 @@ def clear_pycache(source_root: Path) -> None:
 
 
 def _score_mutation(name: str, test_file: str, source_root: Path, cwd: Path) -> bool:
-    """Run one mutation's targeted tests and report whether it was killed."""
+    """Run one mutation's targeted tests and report whether it was killed.
+
+    Args:
+        name: The mutation's catalogue name.
+        test_file: The test file that must turn red.
+        source_root: Source root the subprocess imports from.
+        cwd: Working directory for pytest.
+
+    Returns:
+        Whether pytest exited 1, the only exit code that is a kill.
+
+    Raises:
+        InvalidMeasurement: pytest could not run, timed out, or exited 2-5 — a
+            usage, collection or internal error. The mutation was never
+            measured, so it may not be folded into a score as a survivor.
+    """
     try:
         returncode = run_targeted_test(test_file, source_root, cwd)
-    except subprocess.TimeoutExpired:
-        print(f"TIMEOUT: {name} (not counted as killed)")
-        return False
-    # pytest exit codes: 1 = genuine test failure (honest kill). 2-5 =
-    # usage/collection/internal error — the mutation broke something other than
-    # the assertions we're probing for, so it must NOT be counted as a kill.
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise InvalidMeasurement(
+            f"mutation {name!r}: the run of {test_file} could not complete "
+            f"({exc}), so the mutation was never measured.") from exc
     if returncode == 1:
         print(f"KILLED: {name}")
         return True
     if returncode == 0:
         print(f"SURVIVED: {name}")
         return False
-    print(f"HARNESS_ERROR: {name} exited {returncode} "
-          "(collection/usage error, not a test failure)")
-    return False
+    raise InvalidMeasurement(
+        f"mutation {name!r}: pytest exited {returncode} on {test_file} - a "
+        "usage, collection or internal error, not a test result. Only exit 1 "
+        "is a kill, so this mutation was never measured.")
 
 
 def run_mutations(merge_path: Path, source_root: Path, cwd: Path) -> list[tuple[str, bool]]:
@@ -391,18 +456,18 @@ def run_mutations(merge_path: Path, source_root: Path, cwd: Path) -> list[tuple[
         One `(name, killed)` pair per mutation, in declaration order.
 
     Raises:
-        InfrastructureError: A mutation could not be applied, or a restore
+        InvalidMeasurement: A mutation could not be applied, or a restore
             could not be confirmed. The run stops there; no score is produced.
     """
     original = merge_path.read_bytes()
     results: list[tuple[str, bool]] = []
     for name, anchor, replacement, test_file in MUTATIONS:
-        mutated = apply_mutation(original, anchor, replacement)
+        mutated = apply_mutation(name, original, anchor, replacement)
         try:
             merge_path.write_bytes(mutated)
         except OSError as exc:
             restore_source(merge_path, original)      # a failed write may truncate
-            raise InfrastructureError(
+            raise InvalidMeasurement(
                 f"mutation {name!r} could not be applied to {merge_path}: {exc}\n"
                 "  Nothing was measured, so this run has no mutation score.") from exc
         try:
@@ -434,33 +499,64 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def _invalid_measurement(exc: InvalidMeasurement) -> int:
+    """Report a run that produced no valid measurement, and exit 2.
+
+    Every path to `EXIT_INVALID` ends here, and this is the only place in the
+    module that returns it, so "exit 2 prints no mutation score" is held by the
+    shape of the code rather than by remembering it at each raise site. It
+    writes to stderr only: stdout carries results, and there is no result.
+
+    Args:
+        exc: Why this run cannot be trusted to have measured anything.
+
+    Returns:
+        `EXIT_INVALID`.
+    """
+    print(f"INVALID MEASUREMENT: {exc}", file=sys.stderr)
+    print("VERDICT: INVALID - this run produced no mutation score, not even a zero",
+          file=sys.stderr)
+    return EXIT_INVALID
+
+
+def report_score(results: list[tuple[str, bool]]) -> int:
+    """Print the verdict for a valid measurement and return its exit code.
+
+    Args:
+        results: One `(name, killed)` pair per mutation actually measured.
+
+    Returns:
+        `EXIT_OK` when every mutation was killed, else `EXIT_SURVIVORS`.
+    """
+    killed = sum(1 for _, was_killed in results if was_killed)
+    total = len(results)
+    verdict = "PASS" if killed == total else "FAIL"
+    print(f"VERDICT: {verdict} - {killed}/{total} mutations killed")
+    return EXIT_OK if killed == total else EXIT_SURVIVORS
+
+
 def main(argv: list[str] | None = None) -> int:
-    """Verify the import root, then score every mutation. See module docstring."""
+    """Check the instrument, then score every mutation. See module docstring."""
     args = parse_args(argv)
     root = args.root.resolve()
     source_root = root / "src"
     merge_path = source_root / "conductor" / "merge.py"
     try:
         if not merge_path.is_file():
-            raise InfrastructureError(f"no merge engine to mutate at {merge_path}")
-        print_provenance(source_root, verify_import_root(source_root, root))
+            raise InvalidMeasurement(f"no merge engine to mutate at {merge_path}")
+        resolved = verify_import_root(source_root, root)
+        print_provenance(source_root, resolved)
         if args.verify_only:
-            print("VERDICT: import isolation confirmed - no mutation requested")
+            print("VERDICT: verification passed - import isolation confirmed, "
+                  "no mutations were run")
             return EXIT_OK
         try:
             results = run_mutations(merge_path, source_root, root)
         finally:
             clear_pycache(source_root)
-    except InfrastructureError as exc:
-        print(f"INFRASTRUCTURE ERROR: {exc}", file=sys.stderr)
-        print("VERDICT: INFRASTRUCTURE ERROR - this run produced no mutation score",
-              file=sys.stderr)
-        return EXIT_INFRASTRUCTURE
-    killed = sum(1 for _, was_killed in results if was_killed)
-    total = len(results)
-    verdict = "PASS" if killed == total else "FAIL"
-    print(f"VERDICT: {verdict} - {killed}/{total} mutations killed")
-    return EXIT_OK if killed == total else EXIT_SURVIVORS
+    except InvalidMeasurement as exc:
+        return _invalid_measurement(exc)
+    return report_score(results)
 
 
 if __name__ == "__main__":
