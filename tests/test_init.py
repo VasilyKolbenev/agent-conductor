@@ -646,11 +646,30 @@ def test_the_custom_row_says_only_things_that_hold(tmp_path, capsys):
         assert harness_id in gloss, harness_id
     for harness_id in harnesses.RECOMMENDED:      # numbered above, not here
         assert harness_id not in gloss, harness_id
+    # Both directions, or the name is a lie. Inclusion alone leaves the leak
+    # open: a `vendors()` that forgot to drop the custom row would put this
+    # row's own id back among the ids you may type INSTEAD of it, and every
+    # assertion above would still be green. Pinned over the one clause that
+    # lists ids — the row's id legitimately appears earlier in the sentence.
+    listed = gloss.split("also knows ", 1)[1].split(" — ", 1)[0]
+    assert [item.strip() for item in listed.split(",")] == unnumbered
     # Primary menu: 1-3 recommended, 4 custom. With custom primary the whole
     # recommended list returns, so the reviewer's 4 is custom as well.
     assert conductor.init.run(_init_args(tmp_path), ask=_scripted(["p", "4", "4"])) == 0
     assert _harnesses(tmp_path)["implementer"] == harnesses.CUSTOM
     assert _harnesses(tmp_path)["reviewer"] == harnesses.CUSTOM
+
+
+def test_the_custom_row_does_not_promise_a_number_is_written_as_typed():
+    # A digit that indexes the menu answers with the row it numbers, not with
+    # itself — pinned by test_wizard_reads_an_in_range_number_as_a_menu_choice
+    # above, where the legal id `2` lands in map.toml as `codex`. This gloss
+    # ships to a user who has no way to check that, so its promise of a literal
+    # write must carry that exception rather than read as unconditional.
+    _, gloss = conductor.init._custom_row()
+    promise = gloss.split("also knows ", 1)[1].split(" — ", 1)[1]
+    assert "exactly as typed" in promise
+    assert "not a number" in promise
 
 
 def test_none_means_a_harness_at_both_prompts_now(tmp_path, capsys):

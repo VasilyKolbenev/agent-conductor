@@ -231,15 +231,19 @@ def _custom_row() -> tuple[str, str]:
         The gloss names both answers available here, because they do not
         produce the same file. Choosing the row writes the literal id
         `custom`; typing an id writes that id, listed or not, exactly as it
-        was typed. A row that taught only the second would leave a user to
-        discover the first from their own map.toml.
+        was typed — except for the numbers the menu itself uses, which
+        `_ask_harness` reads as a choice, so a legal id like `2` answers with
+        the row it numbers. The gloss carries that exception rather than
+        promising more than the prompt delivers. A row that taught only the
+        typed answer would leave a user to discover the other from their own
+        map.toml.
     """
     rest = ", ".join(h.id for h in harnesses.vendors()
                      if h.id not in harnesses.RECOMMENDED)
     return (harnesses.CUSTOM,
             f" — anything else: this row writes the id {harnesses.CUSTOM}. "
-            f"Conduct also knows {rest} — type an id, listed or not, and it "
-            "is written exactly as typed.")
+            f"Conduct also knows {rest} — type any id that is not a number "
+            "above, listed or not, and it is written exactly as typed.")
 
 
 def _wizard(ask: Callable[[str], str], default_project: str) -> tuple[str, str]:
