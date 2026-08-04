@@ -128,7 +128,7 @@ def _cmd_up(args: argparse.Namespace) -> int:
 
 def _cmd_demo(args: argparse.Namespace) -> int:
     """Materialize the bundled demo fixture into a temp dir and serve it."""
-    import tempfile                           # this is the only temp dir made
+    import tempfile               # local to its one use; no boundary rides on it
     from conductor import demo                # deferred: see the import block
     try:
         root = demo.materialize(Path(tempfile.mkdtemp(prefix="conduct-demo-")))
