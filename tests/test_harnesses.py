@@ -118,7 +118,24 @@ def test_the_fallback_monogram_is_stable_and_derived_from_the_string_alone():
                             ("gemini", "GE"), ("x", "X"), ("7", "7"),
                             ("(", "?")]:
         assert harnesses.resolve(value).monogram == monogram
-    assert harnesses.resolve("gemini").monogram == harnesses.resolve("gemini").monogram
+    # The WHOLE fallback repeats, not one field of it. Two renders of the same
+    # unregistered harness must agree on every attribute, and a field compared
+    # with itself could not notice any other one drifting. The identity check
+    # is what stops the equality being satisfied by a single shared object.
+    first, second = harnesses.resolve("gemini"), harnesses.resolve("gemini")
+    assert first == second and first is not second
+
+def test_the_fallback_monogram_is_one_or_two_characters_and_never_padded():
+    # Every registered entry above carries two; the fallback promises at most
+    # two. A one-character id has no honest second character and a string with
+    # no letter or digit has no first, so the badge says so rather than
+    # inventing filler — stating something about a harness nobody supplied is
+    # the one thing a badge may not do.
+    for value, monogram in [("x", "X"), ("7", "7"), ("42", "42"),
+                            ("(", "?"), ("...", "?"), ("-", "?")]:
+        assert harnesses.resolve(value).monogram == monogram, value
+    for value in ("x", "7", "42", "(", "kimi cli", "in-house-sast"):
+        assert 1 <= len(harnesses.resolve(value).monogram) <= 2, value
 
 
 # --- additivity: the merger cannot tell a known harness from an unknown one ---

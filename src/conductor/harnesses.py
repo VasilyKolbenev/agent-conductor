@@ -70,7 +70,11 @@ class Harness:
             protocol. This, never `display_name`, is what lands in a file.
         display_name: The product's name as its vendor writes it. Presentation
             only.
-        monogram: Two characters for the panel's badge (ADR 0001 §6).
+        monogram: One or two characters for the panel's badge (ADR 0001 §6).
+            Every entry in the bundled registry below carries two; the
+            fallback `resolve` builds for an unregistered id manages only one
+            when the id is a single character, or holds no letter or digit at
+            all.
         accent_dark: Badge accent on the dark theme, as `#rrggbb`.
         accent_light: Badge accent on the light theme, as `#rrggbb`.
         docs: The vendor's documentation entry point; `""` for `custom`, which
@@ -180,7 +184,19 @@ def get(harness_id: str) -> Harness | None:
 
 
 def _monogram(harness_id: str) -> str:
-    """Two initials for an unregistered harness, from the string alone."""
+    """One or two initials for an unregistered harness, from the string alone.
+
+    Args:
+        harness_id: A harness string with no registry entry.
+
+    Returns:
+        The first letter of each of the first two words, or the first two
+        characters of a single word, upper-cased — one character when that is
+        all the string has, and `"?"` when it holds no letter or digit at all.
+        Neither case is padded to two: there is no honest second character to
+        add, and a badge that invents one states something about a harness
+        nobody supplied.
+    """
     words = [word for word in _WORD_RE.split(harness_id) if word]
     if len(words) >= 2:
         return (words[0][0] + words[1][0]).upper()
