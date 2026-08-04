@@ -127,9 +127,10 @@ types. Data only — no protocol key is added and no merge rule reads it.
   DO-4 must widen the ban to the modules the init path actually reaches, because DO-4 — a
   registry of known harnesses — is where the temptation to detect the installed ones is highest.
 - Acceptance: `state.json` is byte-identical before and after for every existing fixture; an
-  unknown harness string yields a stable monogram and accent from the string alone; the widened
-  ban is verified by the same sabotage method as the original; the mutation harness and the
-  suite stay green.
+  unregistered harness takes its display name from the incoming string, a deterministic monogram
+  from that same string, and the fixed neutral accent of the theme in force — no hash-derived
+  colour, and `custom` and unrecognised harnesses alike stay neutral; the widened ban is verified
+  by the same sabotage method as the original; the mutation harness and the suite stay green.
 
 ### DEC-UI-1 — brand foundation
 
@@ -260,6 +261,12 @@ along the way.
   harness and a clean-tree check are re-run *together*, in one run, and only that single run's
   results become the chunk's final numbers. Intermediate measurements taken along the way are
   signed with their own commit and are not merged into it.
+- **Until crash-safe restore lands, DO-7 runs the mutation harness on a throwaway export only.**
+  Crash-safe restore stays a separate task with its own review (§10, first backlog item). Until
+  it is done, DO-7 runs `scripts/mutate_merge.py` against a one-shot export of the frozen HEAD:
+  if a run dies between the mutation write and the restore, the export is discarded and the
+  working tree is never the thing being restored. Point `--root` at the export — the trap in §2
+  is why: the export isolates files, not imports.
 
 ## 4. The December visual system
 
