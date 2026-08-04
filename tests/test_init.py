@@ -378,7 +378,8 @@ def _init_path_modules():
             # relative path resolving it inside this throwaway rather than
             # inside the repository it is measuring. PYTHONPATH is SET, not
             # prepended — `{**os.environ, ...}` drops whatever the shell
-            # exported, so an inherited entry cannot be searched ahead of SRC.
+            # exported, so an inherited entry cannot be searched ahead of
+            # `SRC.parent`, the source root this test puts there.
             done = subprocess.run(
                 [sys.executable, str(script), str(report)],
                 cwd=work, stdin=subprocess.DEVNULL, capture_output=True,
