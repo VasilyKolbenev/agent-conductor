@@ -301,8 +301,8 @@ def test_being_in_the_registry_changes_no_merge_computed_value():
 def test_the_registry_carries_no_lookup_of_its_own_hints():
     # `executable_hints` is documentation for a person reading the registry.
     # Its shape is data and nothing resolves it — the structural half of that
-    # promise is the machine-probing ban in test_init.py, which now parses
-    # this module too.
+    # promise is the machine-probing ban in test_init_probing_ban.py, which now
+    # parses this module too.
     for harness in harnesses.known():
         assert all(isinstance(hint, str) for hint in harness.executable_hints)
     assert harnesses.get("claude-code").executable_hints == ("claude",)

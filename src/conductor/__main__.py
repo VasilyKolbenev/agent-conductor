@@ -44,9 +44,10 @@ from conductor import init, prompts, store, templates, validate
 # that need them, not here. Both legitimately touch the machine — demo copies a
 # tree with `shutil`, server reads `os.environ` — and importing them at module
 # scope would put them on the import path of EVERY command, `conduct init`
-# included. The machine-probing guard in tests/test_init.py measures what a
-# real `conduct init` imports, so hoisting either back to the top makes that
-# test fail. That is the point: the boundary is enforced, not asserted.
+# included. The machine-probing guard in tests/test_init_probing_ban.py
+# measures what a real `conduct init` imports, so hoisting either back to the
+# top makes that test fail. That is the point: the boundary is enforced, not
+# asserted.
 
 
 def _cmd_validate(args: argparse.Namespace) -> int:
