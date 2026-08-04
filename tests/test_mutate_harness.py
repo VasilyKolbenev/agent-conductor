@@ -193,10 +193,11 @@ class _FlakyFile:
     "the mutation lands, and the restore is what breaks".
     """
 
-    def __init__(self, real: Path, failing=(), corrupting=()):
+    def __init__(self, real: Path, failing=(), corrupting=(), truncating=()):
         self.real = real
         self.failing = set(failing)
         self.corrupting = set(corrupting)
+        self.truncating = set(truncating)
         self.writes = 0
 
     def read_bytes(self) -> bytes:
@@ -204,6 +205,9 @@ class _FlakyFile:
 
     def write_bytes(self, data: bytes) -> int:
         self.writes += 1
+        if self.writes in self.truncating:
+            self.real.write_bytes(b"")      # the write landed, and landed empty
+            raise OSError(28, "no space left on device")
         if self.writes in self.failing:
             raise OSError(5, "the volume went away mid-write")
         if self.writes in self.corrupting:
@@ -558,6 +562,60 @@ def test_the_pythonnousersite_reason_is_the_one_that_holds():
     doc = harness.subprocess_env.__doc__
     assert "from shadowing the source root" not in doc
     assert "pytest" in doc
+
+
+def test_a_mutation_write_that_truncates_before_failing_is_restored(
+        source_copy, monkeypatch):
+    # The failure mode the read-only test cannot construct: `write_bytes`
+    # empties the file and *then* raises, so the file is left shorter than it
+    # was. Without the restore on the failed-write path the tree keeps a
+    # truncated merge.py and every later run measures nothing at all.
+    monkeypatch.setattr(harness, "run_targeted_test", lambda *args, **kwargs: 1)
+    original = source_copy.read_bytes()
+    flaky = _FlakyFile(source_copy, truncating={1})
+    with pytest.raises(harness.InvalidMeasurement) as raised:
+        harness.run_mutations(flaky, source_copy.parent, source_copy.parent)
+    assert "could not be applied" in str(raised.value)
+    assert source_copy.read_bytes() == original      # the truncation was undone
+
+
+# --- the probe must prove pytest, not just conductor.merge ---
+
+
+@pytest.fixture(scope="session")
+def pytest_free_python(tmp_path_factory):
+    """An interpreter that cannot import pytest at all.
+
+    Cheaper than it looks and fully deterministic: a venv built without pip
+    carries no packages and no `.pth`, so `import pytest` fails there. That is
+    the interpreter on which `python -m pytest` exits 1 — the exit code the
+    scorer reads as an honest kill.
+    """
+    venv = tmp_path_factory.mktemp("nopytest") / "venv"
+    subprocess.run([sys.executable, "-m", "venv", "--without-pip", str(venv)],
+                   check=True, capture_output=True, timeout=300)
+    return (venv / "Scripts" / "python.exe") if os.name == "nt" \
+        else (venv / "bin" / "python")
+
+
+def test_an_interpreter_that_cannot_run_a_test_cannot_produce_a_score(
+        export, pytest_free_python):
+    # The harness's worst false positive: 13/13 killed, exit 0, from an
+    # interpreter on which not one test can run, because `python -m pytest`
+    # without pytest exits 1 and exit 1 is what a kill looks like.
+    assert "pytest" in harness.IMPORT_PROBE
+    would_read_as_a_kill = subprocess.run(
+        [str(pytest_free_python), "-m", "pytest", "--version"],
+        capture_output=True, text=True, timeout=300)
+    assert would_read_as_a_kill.returncode == 1
+
+    result = run_harness(pytest_free_python, "--root", str(export))
+
+    assert result.returncode == harness.EXIT_INVALID, result.stdout + result.stderr
+    assert "the probe failed to import" in result.stderr     # the returncode branch
+    assert "No module named 'pytest'" in result.stderr
+    assert "killed" not in (result.stdout + result.stderr).lower()
+    assert not SCORE_SHAPED.search(result.stdout)
 
 
 def test_a_source_that_cannot_be_written_is_an_invalid_measurement_not_a_score(
