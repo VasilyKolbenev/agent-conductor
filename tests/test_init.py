@@ -316,7 +316,34 @@ with open(sys.argv[1], "w", encoding="utf-8") as report:
     json.dump({"outcome": outcome, "modules": loaded}, report)
 """
 
+#: One measurement, reused: both tests below ask about the same child run and
+#: nothing between them can change its answer, so this keeps the file at one
+#: spawned interpreter instead of two.
 _measured: dict[str, dict[str, Path]] = {}
+
+
+def _measured_modules(data: dict) -> dict[str, Path]:
+    """The measured modules the ban can parse, checked against `FLOOR`.
+
+    Args:
+        data: The child's report — `{"outcome": str, "modules": {name: file}}`.
+
+    Returns:
+        `{dotted name: source Path}` for every module reported with a source
+        file. The filter runs BEFORE the floor check, and that order is the
+        point: a module measured with `__file__` of None is one
+        `_probing_findings` can never parse, so counting it toward the floor
+        would let the measurement claim a module the ban then skipped.
+
+    Raises:
+        AssertionError: When a `FLOOR` module was not measured, or was
+            measured without a source file the ban could read.
+    """
+    modules = {name: Path(file) for name, file in data["modules"].items() if file}
+    assert FLOOR <= set(modules), (
+        f"the init path was not measured to the floor ({data['outcome']}); "
+        f"missing {sorted(FLOOR - set(modules))}")
+    return modules
 
 
 def _init_path_modules():
@@ -345,16 +372,23 @@ def _init_path_modules():
         with tempfile.TemporaryDirectory() as work:
             script, report = Path(work) / "probe.py", Path(work) / "report.json"
             script.write_text(_PROBE, encoding="utf-8")
+            # cwd is containment, not mechanism: the measurement is identical
+            # without it, since `sys.path[0]` is the script's own directory
+            # and not the working one. It only keeps a child that resolves a
+            # relative path resolving it inside this throwaway rather than
+            # inside the repository it is measuring. PYTHONPATH is SET, not
+            # prepended — `{**os.environ, ...}` drops whatever the shell
+            # exported, so an inherited entry cannot be searched ahead of SRC.
             done = subprocess.run(
                 [sys.executable, str(script), str(report)],
                 cwd=work, stdin=subprocess.DEVNULL, capture_output=True,
                 timeout=120, env={**os.environ, "PYTHONPATH": str(SRC.parent)})
-            assert report.is_file(), done.stderr.decode("utf-8", "replace")
+            assert report.is_file(), (
+                "the probe wrote no report, so nothing was measured — the "
+                "child died before it could write one. Its stderr:\n"
+                + done.stderr.decode("utf-8", "replace"))
             data = json.loads(report.read_text(encoding="utf-8"))
-        assert FLOOR <= set(data["modules"]), (
-            f"the init path was not measured to the floor ({data['outcome']}); "
-            f"missing {sorted(FLOOR - set(data['modules']))}")
-        _measured["modules"] = {n: Path(f) for n, f in data["modules"].items() if f}
+        _measured["modules"] = _measured_modules(data)
     return _measured["modules"]
 
 
@@ -398,6 +432,17 @@ def test_init_never_probes_the_machine_for_installed_harnesses():
     for module, path in _init_path_modules().items():
         findings += _probing_findings(module, path)
     assert findings == []
+
+
+def test_a_module_measured_without_a_source_file_fails_the_floor():
+    # The ban parses source, and a module reported with `__file__` of None has
+    # none to parse — so the filter has to run before the check, not after it.
+    full = {"outcome": "exit 0", "modules": {name: f"{name}.py" for name in FLOOR}}
+    assert set(_measured_modules(full)) == FLOOR
+    blind = {"outcome": "exit 0",
+             "modules": {**full["modules"], "conductor.init": None}}
+    with pytest.raises(AssertionError, match="conductor.init"):
+        _measured_modules(blind)
 
 
 def test_the_ban_reaches_every_conductor_module_init_actually_runs():
@@ -578,8 +623,7 @@ def test_the_wizard_menu_names_a_single_product(tmp_path, capsys):
     # Two brand names in one screen is a question the user has to answer
     # before they can answer ours. §9.1 of the P0 plan leaves it to the owner
     # whether the CLI carries December's terminology before the package is
-    # renamed, so the wizard stays on the name the rest of the package ships:
-    # `prompts`, `templates`, `__init__` and the panel title all say Conduct.
+    # renamed, so the wizard stays on the name the package already ships.
     assert conductor.init.run(_init_args(tmp_path), ask=_scripted(["p", "", ""])) == 0
     asked = _unwrapped(capsys.readouterr().err)
     assert "Conduct" in asked
@@ -588,9 +632,7 @@ def test_the_wizard_menu_names_a_single_product(tmp_path, capsys):
 
 def test_the_custom_row_says_only_things_that_hold(tmp_path, capsys):
     # The gloss is the one place the wizard makes claims about ids it does not
-    # number, and it ships to a user who has no way to check them. Each claim
-    # is pinned: which ids it says are known, which it leaves to the numbered
-    # rows above it, and what choosing the row actually writes.
+    # number, and it ships to a user with no way to check them.
     value, gloss = conductor.init._custom_row()
     unnumbered = [h.id for h in harnesses.known()
                   if h.id not in harnesses.RECOMMENDED and h.id != harnesses.CUSTOM]
@@ -624,8 +666,11 @@ def test_none_means_a_harness_at_both_prompts_now(tmp_path, capsys):
 
 
 # --- the mandated set, moved here from test_cli.py ---
-# Four tests older than `conductor.init` that stayed behind in the CLI file
-# when the init path moved out of it. They are about init, so they live here.
+# Tests older than `conductor.init` that stayed behind in the CLI file when
+# the init path moved out of it. They are about init, so they live here. A
+# fourth, `test_init_refuses_existing`, is gone: it was the `extra=[]` case of
+# `test_init_refuses_an_existing_conductor_on_every_path` line for line, minus
+# that test's assertion on the message.
 
 
 def test_init_creates_the_scaffold_and_the_prompt_names_the_map_path(tmp_path, capsys):
@@ -637,10 +682,6 @@ def test_init_creates_the_scaffold_and_the_prompt_names_the_map_path(tmp_path, c
     assert (tmp_path / "conductor" / "map.toml").is_file()
     assert (tmp_path / "conductor" / "lanes").is_dir()
     assert "map.toml" in capsys.readouterr().out
-
-def test_init_refuses_existing(tmp_path, capsys):
-    (tmp_path / "conductor").mkdir()
-    assert main(["init", "--dir", str(tmp_path)]) == 1
 
 def test_init_writes_empty_events_and_valid_toml_map(tmp_path, capsys):
     assert main(["init", "--dir", str(tmp_path)]) == 0

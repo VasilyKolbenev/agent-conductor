@@ -35,7 +35,6 @@ from __future__ import annotations
 
 import argparse
 import sys
-import tempfile
 from collections.abc import Callable
 from pathlib import Path
 
@@ -129,6 +128,7 @@ def _cmd_up(args: argparse.Namespace) -> int:
 
 def _cmd_demo(args: argparse.Namespace) -> int:
     """Materialize the bundled demo fixture into a temp dir and serve it."""
+    import tempfile                           # this is the only temp dir made
     from conductor import demo                # deferred: see the import block
     try:
         root = demo.materialize(Path(tempfile.mkdtemp(prefix="conduct-demo-")))
