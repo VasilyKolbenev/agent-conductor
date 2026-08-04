@@ -574,6 +574,42 @@ def test_the_menu_offers_the_registry_and_claims_no_detection(tmp_path, capsys):
         assert claim not in asked.lower()      # there is no detection, so say none
 
 
+def test_the_wizard_menu_names_a_single_product(tmp_path, capsys):
+    # Two brand names in one screen is a question the user has to answer
+    # before they can answer ours. §9.1 of the P0 plan leaves it to the owner
+    # whether the CLI carries December's terminology before the package is
+    # renamed, so the wizard stays on the name the rest of the package ships:
+    # `prompts`, `templates`, `__init__` and the panel title all say Conduct.
+    assert conductor.init.run(_init_args(tmp_path), ask=_scripted(["p", "", ""])) == 0
+    asked = _unwrapped(capsys.readouterr().err)
+    assert "Conduct" in asked
+    assert "December" not in asked
+
+
+def test_the_custom_row_says_only_things_that_hold(tmp_path, capsys):
+    # The gloss is the one place the wizard makes claims about ids it does not
+    # number, and it ships to a user who has no way to check them. Each claim
+    # is pinned: which ids it says are known, which it leaves to the numbered
+    # rows above it, and what choosing the row actually writes.
+    value, gloss = conductor.init._custom_row()
+    unnumbered = [h.id for h in harnesses.known()
+                  if h.id not in harnesses.RECOMMENDED and h.id != harnesses.CUSTOM]
+    assert value == harnesses.CUSTOM and unnumbered
+    # The row names the id it writes. Choosing it and typing an id are two
+    # different answers, and a gloss that only teaches typing leaves the user
+    # to discover the first one from their own map.toml.
+    assert value in gloss
+    for harness_id in unnumbered:
+        assert harness_id in gloss, harness_id
+    for harness_id in harnesses.RECOMMENDED:      # numbered above, not here
+        assert harness_id not in gloss, harness_id
+    # Primary menu: 1-3 recommended, 4 custom. With custom primary the whole
+    # recommended list returns, so the reviewer's 4 is custom as well.
+    assert conductor.init.run(_init_args(tmp_path), ask=_scripted(["p", "4", "4"])) == 0
+    assert _harnesses(tmp_path)["implementer"] == harnesses.CUSTOM
+    assert _harnesses(tmp_path)["reviewer"] == harnesses.CUSTOM
+
+
 def test_none_means_a_harness_at_both_prompts_now(tmp_path, capsys):
     # The old sentinel WAS the word `none`, so it named a product at the first
     # prompt and removed a role at the second. Both prompts now agree, and the

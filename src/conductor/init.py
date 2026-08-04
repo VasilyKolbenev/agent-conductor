@@ -14,14 +14,23 @@ that is `test_init_never_probes_the_machine_for_installed_harnesses`. It runs
 `conduct init` in a child interpreter, takes the `conductor.*` modules that
 run actually imported — this module, the harness registry, `__main__`, and
 everything the three of them reach — and rejects a probing import or a
-qualified probing call in any of them. The qualified half is what covers
-reach-through into the standard library, which the import half cannot:
-`pathlib` and `argparse` both pull in `os`, so no rule phrased over
-"everything init imports" survives.
+qualified probing call in any of them.
+
+The walk stops at `conductor.*`, and it has to: `pathlib` imports both `os`
+and `shutil`, and `argparse` imports both as well, so a rule phrased over
+"everything init imports" would fail on the standard library before it ever
+reached our code. Inside that boundary the two halves catch different
+spellings. The import half is the blunt one — a banned module may not be
+named at all. The qualified half makes a probe say where it came from: it
+matches `os.environ`, never a bare `.environ`, which is what lets `__main__`
+go on calling this module's entry point `init.run` instead of losing the name
+to a rule that cannot tell it from `subprocess.run`.
 
 Read it for what it is: a REPOSITORY GUARD, not a security sandbox. It stops a
 probe from arriving by accident or without discussion. It does not stop a
-determined one — `getattr` and a string defeat it in a line — and claiming
+determined one — `getattr` and a string defeat it in a line, and so does
+reaching through a module nobody banned, since `pathlib.os.environ` is a
+different string from `os.environ` and neither half matches it — and claiming
 otherwise would be exactly the kind of overstatement the last two slices went
 through the shipped prose to remove.
 
@@ -218,11 +227,19 @@ def _custom_row() -> tuple[str, str]:
         round-trip: the numbered list stays short, and this row's gloss — hung
         under its own line — says which other ids the registry knows, so the
         rest are reachable by typing rather than by a menu nobody reads.
+
+        The gloss names both answers available here, because they do not
+        produce the same file. Choosing the row writes the literal id
+        `custom`; typing an id writes that id, listed or not, exactly as it
+        was typed. A row that taught only the second would leave a user to
+        discover the first from their own map.toml.
     """
     rest = ", ".join(h.id for h in harnesses.known()
                      if h.id not in harnesses.RECOMMENDED and h.id != harnesses.CUSTOM)
     return (harnesses.CUSTOM,
-            f" — anything else. December also knows {rest}: type the id you want.")
+            f" — anything else: this row writes the id {harnesses.CUSTOM}. "
+            f"Conduct also knows {rest} — type an id, listed or not, and it "
+            "is written exactly as typed.")
 
 
 def _wizard(ask: Callable[[str], str], default_project: str) -> tuple[str, str]:
