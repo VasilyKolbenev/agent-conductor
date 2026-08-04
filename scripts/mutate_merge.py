@@ -39,11 +39,13 @@ it is not in every mode a mutation score.
                     1  not used
 
 Exit 2 carries no mutation score of any kind — not `0/13`, not a zero. Every
-path to it runs through `_invalid_measurement`, and the score is printed by a
-function that path never reaches. `argparse` also exits 2, on an unrecognised
-argument; the overlap is deliberate and means the same thing, because a usage
-error is likewise a run in which no valid measurement happened — argparse
-prints usage to stderr and stops before anything is measured.
+path THIS MODULE takes to it runs through `_invalid_measurement`, and the score
+is printed by a function that path never reaches. There is exactly one more way
+out with a 2, and it is not in this module: `argparse` exits 2 itself on an
+unrecognised argument. That overlap is deliberate and means the same thing — a
+usage error is likewise a run in which no valid measurement happened — and
+argparse prints usage to stderr and stops before anything is measured, so the
+rule holds on that path too.
 
 Usage:
     .venv\\Scripts\\python scripts\\mutate_merge.py          # in-tree, as CI runs it
