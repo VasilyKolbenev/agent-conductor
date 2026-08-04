@@ -222,6 +222,23 @@ def test_wizard_accepts_a_harness_whose_name_is_a_number(tmp_path, capsys):
     assert tomllib.loads(_map_text(tmp_path))["project"] == "p"
 
 
+@pytest.mark.parametrize("answer", ["02", "002", "٢", "²"])
+def test_the_wizard_takes_a_number_it_never_printed_as_a_typed_harness_id(
+        tmp_path, capsys, answer):
+    # The primary menu prints `1` `2` `3` `4`, and those four strings are the
+    # whole of what picks a row. `02`, `002` and the ARABIC-INDIC `٢` all read
+    # as item 2 to `int()` but were never offered, so answering one of them and
+    # getting `codex` writes a product nobody chose. `²` is worse than
+    # ambiguous: `'²'.isdigit()` is True while `int('²')` raises, so a range
+    # test spelled over `int()` ends `conduct init` in an unhandled ValueError
+    # on an id `templates.NAME_RE` accepts.
+    assert templates.NAME_RE.fullmatch(answer), answer
+    assert conductor.init.run(_init_args(tmp_path),
+                              ask=_scripted(["p", answer, "1"])) == 0
+    assert _harnesses(tmp_path)["implementer"] == answer
+    assert _harnesses(tmp_path)["reviewer"] == "claude-code"   # row 1, as printed
+
+
 def test_wizard_says_so_when_both_roles_run_the_same_harness(tmp_path, capsys):
     assert conductor.init.run(_init_args(tmp_path),
                               ask=_scripted(["p", "claude-code", "claude-code"])) == 0

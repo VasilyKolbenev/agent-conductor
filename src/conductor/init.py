@@ -180,10 +180,14 @@ def _ask_harness(ask: Callable[[str], str], question: str,
             is given rather than explained afterwards.
 
     Returns:
-        The chosen value: a menu entry, or a harness id the user typed. A
-        digit is an index only while it indexes this menu — out of range it is
-        just what the user typed, so a harness genuinely called `7` stays
-        reachable instead of being answered with an error.
+        The chosen value: a menu entry, or a harness id the user typed. What
+        selects a row is the string the menu printed beside it and nothing
+        else — `7` past the end of a four-row menu is a harness genuinely
+        called `7`, and so are `02`, `002` and `٢`, which read as item 2 to
+        `int()` and were never offered. Comparing the typed string rather than
+        its numeric value is also what keeps `²` out of the crash it used to
+        cause: `'²'.isdigit()` is True while `int('²')` raises, on an id
+        `templates.NAME_RE` accepts.
     """
     _say(_wrap(question))
     if note:
@@ -191,13 +195,15 @@ def _ask_harness(ask: Callable[[str], str], question: str,
     for index, (value, gloss) in enumerate(options, 1):
         _say(_wrap(f"{index}) {value}{gloss}", "  ", hang="     "))
     _say("  or type any other harness id")
+    numbered = {str(index): value
+                for index, (value, _) in enumerate(options, 1)}
     default = options[0][0]
     while True:
         answer = ask(f"  choice [{default}]: ").strip()
         if not answer:
             return default
-        if answer.isdigit() and 1 <= int(answer) <= len(options):
-            return options[int(answer) - 1][0]
+        if answer in numbered:        # exactly the tokens printed above
+            return numbered[answer]
         try:
             return templates.check_name("harness id", answer)
         except templates.InvalidName as e:
@@ -231,12 +237,14 @@ def _custom_row() -> tuple[str, str]:
         The gloss names both answers available here, because they do not
         produce the same file. Choosing the row writes the literal id
         `custom`; typing an id writes that id, listed or not, exactly as it
-        was typed — except for the numbers the menu itself uses, which
-        `_ask_harness` reads as a choice, so a legal id like `2` answers with
-        the row it numbers. The gloss carries that exception rather than
-        promising more than the prompt delivers. A row that taught only the
-        typed answer would leave a user to discover the other from their own
-        map.toml.
+        was typed — except for the numbers the menu printed beside its own
+        rows, which `_ask_harness` matches as the strings they are, so a legal
+        id like `2` answers with the row it numbers while `02` and `²` are
+        harness ids like any other. That exactness is what makes the gloss's
+        "not a number above" literally true, and the gloss carries the
+        exception rather than promising more than the prompt delivers. A row
+        that taught only the typed answer would leave a user to discover the
+        other from their own map.toml.
     """
     rest = ", ".join(h.id for h in harnesses.vendors()
                      if h.id not in harnesses.RECOMMENDED)
