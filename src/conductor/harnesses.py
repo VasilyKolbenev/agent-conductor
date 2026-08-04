@@ -73,8 +73,9 @@ class Harness:
         monogram: One or two characters for the panel's badge (ADR 0001 §6).
             Every entry in the bundled registry below carries two; the
             fallback `resolve` builds for an unregistered id manages only one
-            when the id is a single character, or holds no letter or digit at
-            all.
+            when the id holds a single alphanumeric word one character long —
+            `c++` and `a-` are as short as `x` here — and `"?"` when it holds
+            no letter or digit at all.
         accent_dark: Badge accent on the dark theme, as `#rrggbb`.
         accent_light: Badge accent on the light theme, as `#rrggbb`.
         docs: The vendor's documentation entry point; `""` for `custom`, which

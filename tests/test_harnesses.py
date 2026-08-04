@@ -127,16 +127,29 @@ def test_the_fallback_monogram_is_stable_and_derived_from_the_string_alone():
     assert first == second and first is not second
 
 def test_the_fallback_monogram_is_one_or_two_characters_and_never_padded():
-    # Every registered entry above carries two; the fallback promises at most
-    # two. A one-character id has no honest second character and a string with
-    # no letter or digit has no first, so the badge says so rather than
-    # inventing filler — stating something about a harness nobody supplied is
-    # the one thing a badge may not do.
-    for value, monogram in [("x", "X"), ("7", "7"), ("42", "42"),
-                            ("(", "?"), ("...", "?"), ("-", "?")]:
+    # An id with one alphanumeric word one character long has no honest second
+    # character, and a string with no letter or digit has no first, so the
+    # badge says so rather than inventing filler — stating something about a
+    # harness nobody supplied is the one thing a badge may not do. `c++` is
+    # that first case without being one character long, which is why the
+    # promise is phrased over words rather than over the length of the id.
+    for value, monogram in [("42", "42"), ("c++", "C"), ("a-", "A"),
+                            ("...", "?"), ("-", "?")]:
         assert harnesses.resolve(value).monogram == monogram, value
-    for value in ("x", "7", "42", "(", "kimi cli", "in-house-sast"):
-        assert 1 <= len(harnesses.resolve(value).monogram) <= 2, value
+    # Padding is not a length question — a filler character is the right length
+    # and still shows something nobody supplied. So the property is: no more
+    # characters than the id offers, and every one of them taken FROM the id.
+    # `?` is the single character that is not, and only an id that offers
+    # nothing may reach it.
+    for value in ("x", "7", "42", "c++", "kimi cli", "in-house-sast", "..."):
+        monogram = harnesses.resolve(value).monogram
+        offered = [char for char in value if char.isalnum()]
+        assert 1 <= len(monogram) <= 2, value
+        assert len(monogram) <= max(1, len(offered)), value    # never padded
+        if offered:
+            assert set(monogram) <= set(value.upper()), value  # never invented
+        else:
+            assert monogram == "?", value
 
 
 # --- the seam a panel renders the registry through ---
