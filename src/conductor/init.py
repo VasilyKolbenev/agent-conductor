@@ -10,13 +10,20 @@ input can block the whole of CI.
 Nothing on the init path may inspect the machine: no PATH lookup, no
 subprocess, no environment scan. Detecting installed harnesses is a capability
 class of its own and needs its own ADR before any of it exists. What enforces
-that today is narrower than the rule: `test_init_never_probes_the_machine_for_
-installed_harnesses` parses the source of three named modules and rejects a
-probing import or attribute in any of them. It does not follow imports, so a
-probe placed in a module this one merely calls would pass. Holding the init
-path in one module is what will let DO-4 state the ban over an import graph
-instead — and that reformulation has to be careful, because `pathlib` and
-`argparse` both pull in `os`.
+that is `test_init_never_probes_the_machine_for_installed_harnesses`. It runs
+`conduct init` in a child interpreter, takes the `conductor.*` modules that
+run actually imported — this module, the harness registry, `__main__`, and
+everything the three of them reach — and rejects a probing import or a
+qualified probing call in any of them. The qualified half is what covers
+reach-through into the standard library, which the import half cannot:
+`pathlib` and `argparse` both pull in `os`, so no rule phrased over
+"everything init imports" survives.
+
+Read it for what it is: a REPOSITORY GUARD, not a security sandbox. It stops a
+probe from arriving by accident or without discussion. It does not stop a
+determined one — `getattr` and a string defeat it in a line — and claiming
+otherwise would be exactly the kind of overstatement the last two slices went
+through the shipped prose to remove.
 
 stdout carries one thing, the prompt that fills the generated map in. The
 scaffold report, the validation verdict, the wizard and the advice that
@@ -32,22 +39,28 @@ import tomllib
 from collections.abc import Callable
 from pathlib import Path
 
-from conductor import prompts, templates, validate
+from conductor import harnesses, prompts, templates, validate
 
 
 # --- what the wizard offers, and the copy it says it with -------------------
 
-# The harnesses the wizard offers by name. Ids only, and deliberately short:
-# the branded registry (display names, detection metadata) is DO-4, and this
-# slice offers a recommended pair plus "type your own" rather than a wall of
-# products. NOTHING here inspects the machine — no PATH lookup, no subprocess,
-# no environment scan. Probing a user's box for installed harnesses is a new
-# capability class and needs its own ADR before any of it exists.
-_HARNESSES = ("claude-code", "codex")
+# The menu comes from `conductor.harnesses`: `RECOMMENDED` by number, then a
+# `custom` row that names the rest without numbering them, then free text.
+# There is no "Detected" section and there will not be one — NOTHING here
+# inspects the machine, no PATH lookup, no subprocess, no environment scan.
+#
+# The registry's id is what lands in map.toml; its display name is shown
+# beside the id and never written. A user who types their own answer gets
+# exactly what they typed, registry or no registry.
 
 #: The reviewer answer that means "no independent reviewer" — the one answer
-#: that changes which template is written.
-_NO_REVIEWER = "none"
+#: that changes which template is written. Spelled so that it CANNOT be typed:
+#: `templates.NAME_RE` requires a letter or digit first, so `(none)` is only
+#: ever reachable by choosing its row. The bare word `none` used to be the
+#: sentinel, which made it a harness id at the first prompt and a command at
+#: the second; now `none` means the same thing at both — a harness called
+#: `none` — and the sentinel belongs to the menu alone.
+_NO_REVIEWER = "(none)"
 
 # `harness` is presentation metadata: no merge rule computes on it. Asked at a
 # prompt, though, it reads like configuring a tool integration, and a newcomer
@@ -182,6 +195,36 @@ def _ask_harness(ask: Callable[[str], str], question: str,
             _say(_wrap(str(e), "  "))
 
 
+def _menu(ids: list[str] | tuple[str, ...]) -> list[tuple[str, str]]:
+    """`(value, gloss)` rows for `_ask_harness`: each id, glossed with its name.
+
+    Args:
+        ids: Harness ids, in the order they should be offered.
+
+    Returns:
+        Rows whose *value* is the id — the string that lands in `map.toml` —
+        so choosing a row and typing the same id are the same answer. The
+        product name rides in the gloss, where it informs the choice without
+        ever becoming the choice.
+    """
+    return [(h, f" — {harnesses.resolve(h).display_name}") for h in ids]
+
+
+def _custom_row() -> tuple[str, str]:
+    """The `custom` row, which is also how the unnumbered harnesses are named.
+
+    Returns:
+        One `(value, gloss)` pair. Progressive disclosure with no second
+        round-trip: the numbered list stays short, and this row's gloss — hung
+        under its own line — says which other ids the registry knows, so the
+        rest are reachable by typing rather than by a menu nobody reads.
+    """
+    rest = ", ".join(h.id for h in harnesses.known()
+                     if h.id not in harnesses.RECOMMENDED and h.id != harnesses.CUSTOM)
+    return (harnesses.CUSTOM,
+            f" — anything else. December also knows {rest}: type the id you want.")
+
+
 def _wizard(ask: Callable[[str], str], default_project: str) -> tuple[str, str]:
     """Ask the three questions `conduct init` cannot answer for you.
 
@@ -201,12 +244,14 @@ def _wizard(ask: Callable[[str], str], default_project: str) -> tuple[str, str]:
     _say("conduct init — three questions, and Enter takes the default.\n")
     project = _ask_name(ask, "Project name", default_project, "project name")
     _say()
-    primary = _ask_harness(ask, _PRIMARY_QUESTION, [(h, "") for h in _HARNESSES],
+    primary = _ask_harness(ask, _PRIMARY_QUESTION,
+                           _menu(harnesses.RECOMMENDED) + [_custom_row()],
                            note=_PRIMARY_NOTE)
-    others = [(h, "") for h in _HARNESSES if h != primary]
+    others = [h for h in harnesses.RECOMMENDED if h != primary]
     _say()
-    reviewer = _ask_harness(
-        ask, _REVIEWER_QUESTION, others + [(_NO_REVIEWER, _NO_REVIEWER_GLOSS)])
+    reviewer = _ask_harness(ask, _REVIEWER_QUESTION,
+                            _menu(others) + [_custom_row(),
+                                             (_NO_REVIEWER, _NO_REVIEWER_GLOSS)])
     name = "single-harness" if reviewer == _NO_REVIEWER else templates.DEFAULT
     _say(f"\nWriting the {name} template:")
     _say(f"  project    {project}")
@@ -313,8 +358,8 @@ def _print_next_steps(args: argparse.Namespace, text: str) -> None:
     _say(f"      the panel, at http://127.0.0.1:{args.default_port}/")
 
 
-def _report_check(cdir: Path, errors: list[str], warnings: list[str]) -> int:
-    """Say what the scaffold's own validation found.
+def _check_failed(cdir: Path, errors: list[str], warnings: list[str]) -> bool:
+    """Say what the scaffold's own validation found; True if it is unusable.
 
     Args:
         cdir: The directory just written, named in the recovery line.
@@ -322,10 +367,10 @@ def _report_check(cdir: Path, errors: list[str], warnings: list[str]) -> int:
         warnings: Informational remarks; they do not fail the command.
 
     Returns:
-        0 if the generated map is valid, 1 if it is not. The failing branch is
-        the one exit in `init` that leaves a directory behind, and a re-run
-        refuses an existing one — so it says how to get unstuck rather than
-        leaving the user to guess.
+        True if the generated map failed validation, False if it is valid —
+        with or without warnings. The failing branch is the one exit in `init`
+        that leaves a directory behind, and a re-run refuses an existing one,
+        so it says how to get unstuck rather than leaving the user to guess.
     """
     for line in errors or warnings:
         _say(line)
@@ -333,10 +378,10 @@ def _report_check(cdir: Path, errors: list[str], warnings: list[str]) -> int:
         _say(_wrap("the generated map did not validate — that is a bug, please "
                    f"report it. {cdir} was created and is left in place; remove "
                    "it before running conduct init again."))
-        return 1
+        return True
     verdict = "valid, with the warnings above" if warnings else "clean — no warnings"
     _say(f"conduct validate: {verdict}.\n")
-    return 0
+    return False
 
 
 def _scaffold(args: argparse.Namespace, cdir: Path, name: str,
@@ -364,7 +409,8 @@ def _scaffold(args: argparse.Namespace, cdir: Path, name: str,
         return 1
     _say(f"scaffolded {cdir}: map.toml (edit me), lanes/, events.jsonl")
     _say(f"template: {name}\n")
-    if _report_check(cdir, *validate.check(args.dir)) != 0:
+    errors, warnings = validate.check(args.dir)
+    if _check_failed(cdir, errors, warnings):
         return 1
     # The map is valid but generic, and the prompt is how that gap gets handed
     # to an agent. Unannounced it reads as "nothing was written" — but the
@@ -380,14 +426,19 @@ def _scaffold(args: argparse.Namespace, cdir: Path, name: str,
     return 0
 
 
-def execute(args: argparse.Namespace,
-            ask: Callable[[str], str] | None = None) -> int:
+def run(args: argparse.Namespace,
+        ask: Callable[[str], str] | None = None) -> int:
     """Scaffold conductor/: `--template` is explicit, a terminal gets the wizard.
+
+    This is `argparse`'s dispatch target, called as `args.func(args)` — there
+    is no `_cmd_init` wrapper in the CLI, because a pass-through with this
+    signature only gives the contract a second place to be restated.
 
     Args:
         args: The parsed `init` namespace.
         ask: An injected prompting function for the wizard; None (the CLI's
-            own call) means detect a terminal and use `input`.
+            own call) means detect a terminal and use `input`. `argparse`
+            never passes it: the tests do.
 
     Returns:
         0 on success, 1 on every refusal. Three of those refuse before

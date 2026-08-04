@@ -24,8 +24,9 @@ nothing at all, on either stream. Whether a terminal is attached changes the
 conversation on stderr, never a byte of stdout.
 
 Nothing structural enforces this. It is held by review and by one contract
-test per command in `tests/test_cli.py` — a new command that prints its
-progress to stdout would pass every other check in the suite.
+test per command, in `tests/test_cli.py` and — for `init` — `tests/test_init.py`;
+a new command that prints its progress to stdout would pass every other check
+in the suite.
 
 Exit codes flow through `main`'s return value (0 ok, 1 failure); argparse
 exits 2 on usage errors.
@@ -38,7 +39,15 @@ import tempfile
 from collections.abc import Callable
 from pathlib import Path
 
-from conductor import demo, init, prompts, server, store, templates, validate
+from conductor import init, prompts, store, templates, validate
+
+# `conductor.demo` and `conductor.server` are imported inside the two commands
+# that need them, not here. Both legitimately touch the machine — demo copies a
+# tree with `shutil`, server reads `os.environ` — and importing them at module
+# scope would put them on the import path of EVERY command, `conduct init`
+# included. The machine-probing guard in tests/test_init.py measures what a
+# real `conduct init` imports, so hoisting either back to the top makes that
+# test fail. That is the point: the boundary is enforced, not asserted.
 
 
 def _cmd_validate(args: argparse.Namespace) -> int:
@@ -49,19 +58,10 @@ def _cmd_validate(args: argparse.Namespace) -> int:
     return 1 if errors else 0
 
 
-def _cmd_init(args: argparse.Namespace,
-              ask: Callable[[str], str] | None = None) -> int:
-    """Dispatch `init`.
-
-    Args:
-        args: The parsed `init` namespace.
-        ask: An injected prompting function for the wizard; None means detect
-            a terminal and use `input`.
-
-    Returns:
-        `conductor.init.execute`'s exit code: 0 on success, 1 on any refusal.
-    """
-    return init.execute(args, ask)
+# No `_cmd_init`: `init.run(args)` already has the `args.func(args)` shape, so
+# a wrapper here would be pure indirection restating a contract that lives in
+# `conductor.init`. Its `ask=` parameter, which argparse never passes, belongs
+# to the tests that inject a scripted wizard — and they test `conductor.init`.
 
 
 def _cmd_prompt(args: argparse.Namespace) -> int:
@@ -96,6 +96,7 @@ def _cmd_prompt(args: argparse.Namespace) -> int:
 
 def _serve(root: Path | str, port: int) -> int:
     """Serve the panel for `root` on 127.0.0.1; Ctrl-C shuts down cleanly."""
+    from conductor import server              # deferred: see the import block
     try:
         srv = server.build(root, port=port)
     except OSError as e:                  # port busy / unbindable → exit 1
@@ -128,6 +129,7 @@ def _cmd_up(args: argparse.Namespace) -> int:
 
 def _cmd_demo(args: argparse.Namespace) -> int:
     """Materialize the bundled demo fixture into a temp dir and serve it."""
+    from conductor import demo                # deferred: see the import block
     try:
         root = demo.materialize(Path(tempfile.mkdtemp(prefix="conduct-demo-")))
     except OSError as e:                  # unwritable temp dir / broken package data
@@ -171,14 +173,14 @@ def _build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("init", help="scaffold conductor/ and print the bootstrap prompt")
     # Deliberately NOT argparse `choices`: that raises a usage error (exit 2)
     # and hardcodes a second copy of the list. The explicit check in
-    # _cmd_init exits 1 with templates.get()'s own message, so the available
+    # `init.run` exits 1 with templates.get()'s own message, so the available
     # names can never drift from the module that vends them.
     p.set_defaults(default_port=DEFAULT_PORT)   # init advises it, never binds it
     p.add_argument("--template", metavar="NAME",
                    help="starting map: " + ", ".join(n for n, _ in templates.names())
                         + f" (default: {templates.DEFAULT}; omit it in a terminal "
                           "to be asked instead)")
-    _add_dir_and_func(p, _cmd_init)
+    _add_dir_and_func(p, init.run)
 
     p = sub.add_parser("prompt", help="print the working prompt for one cycle role")
     # ADR 0001: the positional is the DEPRECATED spelling of --role and its

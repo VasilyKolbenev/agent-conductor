@@ -17,7 +17,6 @@ import re
 import subprocess
 import sys
 import threading
-import tomllib
 
 import pytest
 import conductor.__main__
@@ -43,16 +42,6 @@ def test_validate_referential_drift_warns_but_exits_0(tmp_path, capsys):
     assert main(["validate", "--dir", str(root)]) == 0
     assert "ghost" in capsys.readouterr().out
 
-def test_init_scaffolds_and_prints_bootstrap(tmp_path, capsys):
-    assert main(["init", "--dir", str(tmp_path)]) == 0
-    assert (tmp_path / "conductor" / "map.toml").is_file()
-    assert (tmp_path / "conductor" / "lanes").is_dir()
-    assert "map.toml" in capsys.readouterr().out
-
-def test_init_refuses_existing(tmp_path, capsys):
-    (tmp_path / "conductor").mkdir()
-    assert main(["init", "--dir", str(tmp_path)]) == 1
-
 def test_prompt_renders_role_and_fails_on_unknown(tmp_path, capsys):
     root = write_project(tmp_path, lanes={"claude": good_lane()})
     # map from write_project has no roles → unknown role must exit 1
@@ -76,20 +65,6 @@ def test_validate_broken_map_prints_error_and_exits_1(tmp_path, capsys):
 def test_validate_missing_conductor_dir_exits_1_with_stderr(tmp_path, capsys):
     assert main(["validate", "--dir", str(tmp_path)]) == 1
     assert "conductor" in capsys.readouterr().err
-
-def test_init_writes_empty_events_and_valid_toml_map(tmp_path, capsys):
-    assert main(["init", "--dir", str(tmp_path)]) == 0
-    assert (tmp_path / "conductor" / "events.jsonl").read_text(encoding="utf-8") == ""
-    data = tomllib.loads((tmp_path / "conductor" / "map.toml").read_text(encoding="utf-8"))
-    assert data["schema_version"] == 1 and data["nodes"]
-
-def test_init_then_validate_is_clean(tmp_path, capsys):
-    # The scaffold must satisfy its own validation rules end-to-end and print
-    # zero warnings (subsumes the deprecated-row check, ADR 0001).
-    assert main(["init", "--dir", str(tmp_path)]) == 0
-    capsys.readouterr()                       # isolate validate's output from init's
-    assert main(["validate", "--dir", str(tmp_path)]) == 0
-    assert capsys.readouterr().out == ""
 
 def test_validate_schema_version_warning_surfaces_in_stdout(tmp_path, capsys):
     # Pin: validate must pass loaded.warnings into merge (extra_warnings=...) —

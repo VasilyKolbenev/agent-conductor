@@ -1,23 +1,37 @@
 """Tests for `conduct init` — the guided wizard, templates, and the scaffold.
 
 Split out of test_cli.py when the init path moved into `conductor.init`. Every
-test here is subprocess-free: it calls the CLI entry point directly and
-inspects the return code plus capsys-captured stdout/stderr. The wizard is
-never driven through real stdin — `_scripted` injects the answers, so a
-re-prompt loop fails these tests instead of hanging them.
+test here but one calls the CLI entry point directly and inspects the return
+code plus capsys-captured stdout/stderr. The wizard is never driven through
+real stdin — `_scripted` injects the answers, so a re-prompt loop fails these
+tests instead of hanging them.
+
+The exception is the machine-probing guard, which spawns a child interpreter
+because the question it asks — which modules does a real `conduct init`
+import? — cannot be answered in this process: the suite has already imported
+every module in the package, so `sys.modules` here would answer "all of them".
+It cannot hang: the child's stdin is the null device, `conduct init` never
+reads stdin off a terminal anyway, and the call carries a timeout. A second
+subprocess test would need the same justification.
 """
 import ast
+import json
+import os
 import re
+import subprocess
+import sys
+import tempfile
 import tomllib
 from pathlib import Path
 
 import pytest
+import conductor
 import conductor.init
 import conductor.validate
 import conductor.__main__
-from conductor import prompts, templates
-from conductor.init import _FIRST_ACTION, _console_ask, _interactive
-from conductor.__main__ import _build_parser, _cmd_init, main
+from conductor import harnesses, prompts, templates
+from conductor.init import _FIRST_ACTION, _NO_REVIEWER, _console_ask, _interactive
+from conductor.__main__ import _build_parser, main
 
 
 # --- DO-3: guided init, templates, and the deterministic --template path ---
@@ -124,14 +138,14 @@ def test_the_result_of_init_does_not_depend_on_a_tty(tmp_path, capsys):
     quiet, guided = tmp_path / "quiet", tmp_path / "guided"
     quiet.mkdir(), guided.mkdir()
     assert main(["init", "--dir", str(quiet)]) == 0
-    assert _cmd_init(_init_args(guided), ask=_scripted(["", "", ""])) == 0
+    assert conductor.init.run(_init_args(guided), ask=_scripted(["", "", ""])) == 0
     quiet_map, guided_map = _map_text(quiet), _map_text(guided)
     assert tomllib.loads(quiet_map)["cycle"] == tomllib.loads(guided_map)["cycle"]
     assert guided_map == templates.get("default-orbit", project=guided.name)
 
 
 def test_wizard_all_defaults_produces_a_valid_default_orbit(tmp_path, capsys):
-    assert _cmd_init(_init_args(tmp_path), ask=_scripted(["", "", ""])) == 0
+    assert conductor.init.run(_init_args(tmp_path), ask=_scripted(["", "", ""])) == 0
     data = tomllib.loads(_map_text(tmp_path))
     assert data["project"] == tmp_path.name          # the directory you are in
     assert data["cycle"]["phases"][0] == "goal"
@@ -145,8 +159,8 @@ def test_wizard_all_defaults_produces_a_valid_default_orbit(tmp_path, capsys):
 
 def test_wizard_carries_the_chosen_project_and_harnesses(tmp_path, capsys):
     # project, primary = menu item 2 (codex), reviewer = a typed custom id.
-    assert _cmd_init(_init_args(tmp_path),
-                     ask=_scripted(["my-app", "2", "kimi-cli"])) == 0
+    assert conductor.init.run(_init_args(tmp_path),
+                              ask=_scripted(["my-app", "2", "kimi-cli"])) == 0
     data = tomllib.loads(_map_text(tmp_path))
     assert data["project"] == "my-app"
     assert _harnesses(tmp_path)["implementer"] == "codex"
@@ -156,8 +170,9 @@ def test_wizard_carries_the_chosen_project_and_harnesses(tmp_path, capsys):
 
 
 def test_wizard_no_reviewer_selects_the_single_harness_template(tmp_path, capsys):
-    # With claude-code primary the reviewer menu is 1) codex  2) none.
-    assert _cmd_init(_init_args(tmp_path), ask=_scripted(["solo", "1", "2"])) == 0
+    # With claude-code primary the reviewer menu is 1) codex 2) cursor
+    # 3) custom 4) (none) — the sentinel is always last, after the registry.
+    assert conductor.init.run(_init_args(tmp_path), ask=_scripted(["solo", "1", "4"])) == 0
     data = tomllib.loads(_map_text(tmp_path))
     assert [r["id"] for r in data["cycle"]["roles"]] == ["implementer"]
     assert data["project"] == "solo"
@@ -166,7 +181,7 @@ def test_wizard_no_reviewer_selects_the_single_harness_template(tmp_path, capsys
 
 
 def test_wizard_never_asks_for_an_api_key_or_a_template(tmp_path, capsys):
-    assert _cmd_init(_init_args(tmp_path), ask=_scripted(["", "", ""])) == 0
+    assert conductor.init.run(_init_args(tmp_path), ask=_scripted(["", "", ""])) == 0
     captured = capsys.readouterr()
     asked = (captured.out + captured.err).lower()
     for banned in ("api key", "api-key", "token", "password", "which template"):
@@ -174,16 +189,16 @@ def test_wizard_never_asks_for_an_api_key_or_a_template(tmp_path, capsys):
 
 
 def test_wizard_rejects_an_illegal_project_name_and_re_prompts(tmp_path, capsys):
-    assert _cmd_init(_init_args(tmp_path),
-                     ask=_scripted(['my "app"', "my-app", "", ""])) == 0
+    assert conductor.init.run(_init_args(tmp_path),
+                              ask=_scripted(['my "app"', "my-app", "", ""])) == 0
     dialogue = _unwrapped(capsys.readouterr().err)
     assert 'my "app"' in dialogue and templates.NAME_RULE in dialogue
     assert tomllib.loads(_map_text(tmp_path))["project"] == "my-app"
 
 
 def test_wizard_rejects_an_illegal_harness_id_and_re_prompts(tmp_path, capsys):
-    assert _cmd_init(_init_args(tmp_path),
-                     ask=_scripted(["", 'kimi"cli', "kimi-cli", ""])) == 0
+    assert conductor.init.run(_init_args(tmp_path),
+                              ask=_scripted(["", 'kimi"cli', "kimi-cli", ""])) == 0
     dialogue = _unwrapped(capsys.readouterr().err)
     assert templates.NAME_RULE in dialogue and "'\"'" in dialogue  # names the char
     assert _harnesses(tmp_path)["implementer"] == "kimi-cli"
@@ -192,33 +207,35 @@ def test_wizard_rejects_an_illegal_harness_id_and_re_prompts(tmp_path, capsys):
 def test_wizard_accepts_a_product_name_with_a_space(tmp_path, capsys):
     # Real harnesses ship under names like "Claude Code"; the allowlist must
     # not turn a correct answer into an error.
-    assert _cmd_init(_init_args(tmp_path),
-                     ask=_scripted(["My Project (v2)", "Kimi Code", ""])) == 0
+    assert conductor.init.run(_init_args(tmp_path),
+                              ask=_scripted(["My Project (v2)", "Kimi Code", ""])) == 0
     assert tomllib.loads(_map_text(tmp_path))["project"] == "My Project (v2)"
     assert _harnesses(tmp_path)["implementer"] == "Kimi Code"
 
 
 def test_wizard_reads_an_in_range_number_as_a_menu_choice(tmp_path, capsys):
-    # Primary menu: 1) claude-code 2) codex. Reviewer menu then: 1) claude-code
-    # 2) none — so "1" here is a harness, not the no-reviewer entry.
-    assert _cmd_init(_init_args(tmp_path), ask=_scripted(["p", "2", "1"])) == 0
+    # Primary menu: 1) claude-code 2) codex 3) cursor 4) custom. Picking codex
+    # drops it from the reviewer menu, so "1" there is claude-code — a
+    # harness, not the no-reviewer entry, which the registry pushed to the end.
+    assert conductor.init.run(_init_args(tmp_path), ask=_scripted(["p", "2", "1"])) == 0
     assert _harnesses(tmp_path)["implementer"] == "codex"
     assert _harnesses(tmp_path)["reviewer"] == "claude-code"
 
 
 def test_wizard_accepts_a_harness_whose_name_is_a_number(tmp_path, capsys):
     # A digit indexes the menu only while it indexes the menu. "7" against a
-    # two-item list is not a mistake to scold — it is the id the user typed,
-    # and a harness may legally be called that.
-    assert _cmd_init(_init_args(tmp_path), ask=_scripted(["p", "7", "9"])) == 0
+    # four-item list is not a mistake to scold — it is the id the user typed,
+    # and a harness may legally be called that. Keeping the recommended list
+    # short is what keeps this reachable at all.
+    assert conductor.init.run(_init_args(tmp_path), ask=_scripted(["p", "7", "9"])) == 0
     assert _harnesses(tmp_path)["implementer"] == "7"
     assert _harnesses(tmp_path)["reviewer"] == "9"
     assert tomllib.loads(_map_text(tmp_path))["project"] == "p"
 
 
 def test_wizard_says_so_when_both_roles_run_the_same_harness(tmp_path, capsys):
-    assert _cmd_init(_init_args(tmp_path),
-                     ask=_scripted(["p", "claude-code", "claude-code"])) == 0
+    assert conductor.init.run(_init_args(tmp_path),
+                              ask=_scripted(["p", "claude-code", "claude-code"])) == 0
     assert "not independent" in _unwrapped(capsys.readouterr().err)
     assert "different harness product" not in _map_text(tmp_path)
 
@@ -227,44 +244,180 @@ def test_invalid_wizard_input_leaves_no_half_created_project(tmp_path, capsys):
     # Every answer is validated before anything is created. A run abandoned
     # after a rejected answer must leave the directory exactly as it found it.
     before = sorted(p.name for p in tmp_path.iterdir())
-    assert _cmd_init(_init_args(tmp_path), ask=_scripted(['my "app"'])) == 1
+    assert conductor.init.run(_init_args(tmp_path), ask=_scripted(['my "app"'])) == 1
     assert not (tmp_path / "conductor").exists()
     assert sorted(p.name for p in tmp_path.iterdir()) == before
 
 
+# --- the machine-probing ban, stated over the init path's import graph ---
+
 PROBING_MODULES = {"shutil", "subprocess", "os", "platform", "socket",
                    "importlib", "sysconfig", "site", "winreg"}
-PROBING_CALLS = {"which", "getenv", "popen", "system", "run", "find_spec",
-                 "check_output", "listdir", "environ"}
+
+#: QUALIFIED calls, never bare attribute names. The bare form banned `.run`
+#: outright, which cost the entry point its natural spelling (`init.run` read
+#: as `subprocess.run`) — and a rule that renames honest code is a rule people
+#: learn to route around. Matching the pair costs nothing: the module half is
+#: already unimportable, so a probe has to spell out where it came from.
+PROBING_CALLS = {
+    "shutil.which", "shutil.disk_usage",
+    "subprocess.run", "subprocess.Popen", "subprocess.call",
+    "subprocess.check_call", "subprocess.check_output", "subprocess.getoutput",
+    "os.system", "os.popen", "os.getenv", "os.environ", "os.listdir",
+    "os.scandir", "os.walk", "os.uname", "os.get_exec_path", "os.path.exists",
+    "platform.system", "platform.machine", "platform.node",
+    "socket.gethostname", "socket.gethostbyname",
+    "importlib.util.find_spec", "importlib.metadata.version",
+    "sysconfig.get_paths", "site.getsitepackages",
+    "winreg.OpenKey", "winreg.QueryValueEx",
+}
+
+#: The modules the ban exists FOR. If a measurement is missing one of these
+#: the child died before importing it, and a ban that parsed the remainder
+#: would pass while covering nothing that matters — so this is checked at the
+#: measurement, where a crash can still be told apart from a clean run.
+FLOOR = {"conductor", "conductor.__main__", "conductor.init",
+         "conductor.harnesses", "conductor.templates", "conductor.validate"}
+
+SRC = Path(conductor.__file__).parent
+
+
+def _dotted(node):
+    """An attribute chain as source text (`os.environ`), or None if computed."""
+    parts = []
+    while isinstance(node, ast.Attribute):
+        parts.append(node.attr)
+        node = node.value
+    if not isinstance(node, ast.Name):
+        return None
+    parts.append(node.id)
+    return ".".join(reversed(parts))
+
+
+#: Run a real `conduct init` in a fresh interpreter and report which
+#: `conductor.*` modules ended up imported, and the file each was read from.
+#: Measuring beats reasoning here: a static walk has to decide what to follow,
+#: and every answer is either an over-approximation (`__main__` imports every
+#: command's code) or a claim about the call graph that nobody checks again.
+#: Reporting `__file__` rather than rebuilding a path from the dotted name
+#: keeps the parent parsing the exact source the child executed, packages and
+#: submodules included.
+_PROBE = """
+import json, sys, tempfile
+try:
+    from conductor.__main__ import main
+    with tempfile.TemporaryDirectory() as root:
+        outcome = "exit %d" % main(["init", "--dir", root])
+except BaseException as failure:      # a probe that crashes init is still a probe
+    outcome = "%s: %s" % (type(failure).__name__, failure)
+loaded = {n: getattr(m, "__file__", None) for n, m in sorted(sys.modules.items())
+          if n == "conductor" or n.startswith("conductor.")}
+with open(sys.argv[1], "w", encoding="utf-8") as report:
+    json.dump({"outcome": outcome, "modules": loaded}, report)
+"""
+
+_measured: dict[str, dict[str, Path]] = {}
+
+
+def _init_path_modules():
+    """The `conductor.*` modules a real `conduct init` run actually imports.
+
+    Returns:
+        `{dotted name: source Path}`, measured in a child interpreter. Not
+        measurable in this process: the suite has already imported the whole
+        package, so `sys.modules` here would answer "all of them".
+
+    The measurement is the point. `conductor.demo` and `conductor.server`
+    stay off this list only because `conductor.__main__` defers importing
+    them into the two commands that need them — hoist either back to module
+    scope and it appears here, gets parsed, and fails the ban on its own
+    honest `shutil`/`importlib` import. That is a boundary the test proves
+    rather than asserts.
+
+    Whether the probed `init` SUCCEEDS is deliberately not asserted: a probe
+    planted in a module init reaches may well crash the run, and a crash does
+    not change which modules got imported. What IS asserted is `FLOOR`, and
+    the two failures read differently on purpose — a missing floor names the
+    child's outcome and means it crashed before measuring, while a probe the
+    ban caught names the module and the call.
+    """
+    if not _measured:
+        with tempfile.TemporaryDirectory() as work:
+            script, report = Path(work) / "probe.py", Path(work) / "report.json"
+            script.write_text(_PROBE, encoding="utf-8")
+            done = subprocess.run(
+                [sys.executable, str(script), str(report)],
+                cwd=work, stdin=subprocess.DEVNULL, capture_output=True,
+                timeout=120, env={**os.environ, "PYTHONPATH": str(SRC.parent)})
+            assert report.is_file(), done.stderr.decode("utf-8", "replace")
+            data = json.loads(report.read_text(encoding="utf-8"))
+        assert FLOOR <= set(data["modules"]), (
+            f"the init path was not measured to the floor ({data['outcome']}); "
+            f"missing {sorted(FLOOR - set(data['modules']))}")
+        _measured["modules"] = {n: Path(f) for n, f in data["modules"].items() if f}
+    return _measured["modules"]
+
+
+def _probing_findings(module, path):
+    """Every banned import and qualified call in one module's source.
+
+    Args:
+        module: The dotted name, used to write the finding.
+        path: The file the child interpreter actually imported it from.
+
+    Returns:
+        One string per violation. Collected rather than asserted node by node
+        so a failure names ALL of them: a sabotage check that reads back only
+        the first violation cannot tell its own probe from the honest import
+        that happens to be parsed earlier.
+    """
+    findings = []
+    for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+        imported = []
+        if isinstance(node, ast.Import):
+            imported = [alias.name for alias in node.names]
+        elif isinstance(node, ast.ImportFrom):
+            imported = [node.module or ""]
+        findings += [f"{module} may not import {name}" for name in imported
+                     if name.split(".")[0] in PROBING_MODULES]
+        if isinstance(node, ast.Attribute) and _dotted(node) in PROBING_CALLS:
+            findings.append(f"{module} may not call {_dotted(node)}")
+    return findings
 
 
 def test_init_never_probes_the_machine_for_installed_harnesses():
     # Detecting installed harnesses is deferred, and probing a user's box is a
     # new capability class that needs its own ADR (privacy, sandboxing). The
-    # ban is pinned structurally rather than by grepping prose: nothing on the
-    # init path may import a module that can see the machine, or call anything
-    # that looks one up. Parsed, so a comment mentioning subprocess is fine
-    # and an actual import is not.
-    for module in (conductor.init, conductor.__main__, conductor.templates,
-                   conductor.validate):
-        tree = ast.parse(Path(module.__file__).read_text(encoding="utf-8"))
-        for node in ast.walk(tree):
-            imported = []
-            if isinstance(node, ast.Import):
-                imported = [alias.name for alias in node.names]
-            elif isinstance(node, ast.ImportFrom):
-                imported = [node.module or ""]
-            for name in imported:
-                assert name.split(".")[0] not in PROBING_MODULES, \
-                    f"{module.__name__} may not import {name}"
-            if isinstance(node, ast.Attribute):
-                assert node.attr not in PROBING_CALLS, \
-                    f"{module.__name__} may not touch .{node.attr}"
+    # ban is a REPOSITORY GUARD, not a security sandbox: it stops a probe from
+    # arriving by accident or without discussion, and it would not stop a
+    # determined one — `getattr` and a string defeat it in a line. What it
+    # covers is every conductor module a real `conduct init` imports, and both
+    # halves of how a probe is spelled: the import, and the qualified call.
+    # Parsed, so a comment naming subprocess is fine and an import is not.
+    findings = []
+    for module, path in _init_path_modules().items():
+        findings += _probing_findings(module, path)
+    assert findings == []
+
+
+def test_the_ban_reaches_every_conductor_module_init_actually_runs():
+    # The old ban parsed a hand-kept list of modules and followed nothing, so
+    # a probe in a module init merely called went unseen. These assertions are
+    # what makes the widening real rather than nominal. `FLOOR` is not restated
+    # here: the measurement itself refuses to return without it.
+    modules = set(_init_path_modules())
+    # Nobody had to remember these; init reaches them and the measurement saw it.
+    assert {"conductor.merge", "conductor.store", "conductor.schema",
+            "conductor.prompts"} <= modules
+    # And the boundary, measured rather than argued: `conduct init` does not
+    # import the two modules that legitimately touch the machine. They are
+    # deferred inside `conduct demo` and `conduct up`; undo that and this fails.
+    assert "conductor.demo" not in modules and "conductor.server" not in modules
 
 
 def test_wizard_eof_after_an_answer_exits_1_and_leaves_no_conductor_dir(tmp_path, capsys):
     # A person started answering and walked away: that is a cancellation.
-    assert _cmd_init(_init_args(tmp_path), ask=_scripted(["my-app"])) == 1
+    assert conductor.init.run(_init_args(tmp_path), ask=_scripted(["my-app"])) == 1
     assert not (tmp_path / "conductor").exists()
     assert "cancelled" in capsys.readouterr().err
 
@@ -274,7 +427,7 @@ def test_eof_before_any_answer_falls_back_to_the_default_template(tmp_path, caps
     # reports a console and the wizard starts, but there is nothing to read.
     # That is a script saying "no input", not a person cancelling — it must
     # produce the same scaffold the non-TTY path does, not an exit 1.
-    assert _cmd_init(_init_args(tmp_path), ask=_scripted([])) == 0
+    assert conductor.init.run(_init_args(tmp_path), ask=_scripted([])) == 0
     assert _map_text(tmp_path) == templates.get(templates.DEFAULT)
     assert "no input available" in capsys.readouterr().err
 
@@ -288,7 +441,7 @@ def test_a_nul_stdin_run_leaves_no_question_on_stdout(tmp_path, capsys, monkeypa
         raise EOFError
 
     monkeypatch.setattr("builtins.input", eof)
-    assert _cmd_init(_init_args(tmp_path), ask=_console_ask) == 0
+    assert conductor.init.run(_init_args(tmp_path), ask=_console_ask) == 0
     captured = capsys.readouterr()
     assert _map_text(tmp_path) == templates.get(templates.DEFAULT)
     for question in ("three questions", "Project name", "choice [",
@@ -312,7 +465,7 @@ def test_wizard_ctrl_c_exits_1_and_leaves_no_conductor_dir(tmp_path, capsys):
     def interrupt(prompt):
         raise KeyboardInterrupt
 
-    assert _cmd_init(_init_args(tmp_path), ask=interrupt) == 1
+    assert conductor.init.run(_init_args(tmp_path), ask=interrupt) == 1
     assert not (tmp_path / "conductor").exists()
     assert "cancelled" in capsys.readouterr().err
 
@@ -327,7 +480,7 @@ def test_init_refuses_an_existing_conductor_on_every_path(tmp_path, capsys, extr
 def test_wizard_refuses_an_existing_conductor_before_asking_anything(tmp_path, capsys):
     # An empty script means any question at all would surface as "cancelled".
     (tmp_path / "conductor").mkdir()
-    assert _cmd_init(_init_args(tmp_path), ask=_scripted([])) == 1
+    assert conductor.init.run(_init_args(tmp_path), ask=_scripted([])) == 1
     assert "already exists" in capsys.readouterr().err
 
 
@@ -346,8 +499,8 @@ def test_the_bootstrap_prompt_does_not_contradict_the_map_just_written(tmp_path,
     # The prompt used to tell the agent to PRODUCE a map and embedded a
     # different one, so the step the CLI recommends discarded every answer the
     # wizard collected. It must now be about the file on disk.
-    assert _cmd_init(_init_args(tmp_path),
-                     ask=_scripted(["my-app", "Kimi Code", "2"])) == 0
+    assert conductor.init.run(_init_args(tmp_path),
+                              ask=_scripted(["my-app", "Kimi Code", "2"])) == 0
     out = capsys.readouterr().out
     written = _map_text(tmp_path)
     assert "already exists and it already validates" in _unwrapped(out)
@@ -370,21 +523,102 @@ def test_the_first_action_is_said_once_to_both_audiences(tmp_path, capsys):
 def test_the_harness_questions_say_what_the_answer_does(tmp_path, capsys):
     # Two of three questions are about `harness`, which no merge rule reads.
     # At a prompt that reads like configuring an integration.
-    assert _cmd_init(_init_args(tmp_path), ask=_scripted(["p", "", ""])) == 0
+    assert conductor.init.run(_init_args(tmp_path), ask=_scripted(["p", "", ""])) == 0
     asked = _unwrapped(capsys.readouterr().err)
     assert "never launches, installs or detects a harness" in asked
     assert "labels who does what" in asked
 
 
 def test_the_no_reviewer_option_names_its_consequence(tmp_path, capsys):
-    # `none` is the one answer that removes a role rather than naming a
+    # The last row is the one answer that removes a role rather than naming a
     # product, and it hands the user the vacuous-agreed state.
-    assert _cmd_init(_init_args(tmp_path), ask=_scripted(["p", "", "2"])) == 0
+    assert conductor.init.run(_init_args(tmp_path), ask=_scripted(["p", "", "4"])) == 0
     asked = _unwrapped(capsys.readouterr().err)
     assert "no reviewing role at all" in asked
     assert "agreed with nobody having looked" in asked
     assert [r["id"] for r in tomllib.loads(_map_text(tmp_path))["cycle"]["roles"]] \
         == ["implementer"]
+
+
+# --- DO-4: the harness registry drives the menu, and only the id is written ---
+
+
+def test_the_menu_shows_the_product_name_and_writes_the_id(tmp_path, capsys):
+    # Two values exist now, and exactly one of them may reach disk. The row
+    # carries both so the user can see which is which before answering.
+    assert conductor.init.run(_init_args(tmp_path), ask=_scripted(["p", "1", "1"])) == 0
+    assert "claude-code — Claude Code" in _unwrapped(capsys.readouterr().err)
+    written = _map_text(tmp_path)
+    assert _harnesses(tmp_path)["implementer"] == "claude-code"
+    assert "Claude Code" not in written        # the display name never lands
+
+
+def test_a_typed_harness_lands_exactly_as_typed(tmp_path, capsys):
+    # The registry is never matched against free text, in either direction: a
+    # display name typed by hand stays a display name, and an unregistered id
+    # is never helpfully rewritten into a registered one.
+    assert conductor.init.run(_init_args(tmp_path),
+                              ask=_scripted(["p", "Claude Code", "my own agent"])) == 0
+    assert _harnesses(tmp_path)["implementer"] == "Claude Code"
+    assert _harnesses(tmp_path)["reviewer"] == "my own agent"
+
+
+def test_the_menu_offers_the_registry_and_claims_no_detection(tmp_path, capsys):
+    assert conductor.init.run(_init_args(tmp_path), ask=_scripted(["p", "", ""])) == 0
+    asked = _unwrapped(capsys.readouterr().err)
+    for harness_id in harnesses.RECOMMENDED:                    # numbered rows
+        assert f"{harness_id} — {harnesses.get(harness_id).display_name}" in asked
+    for harness in harnesses.known():          # the rest, named on the custom row
+        assert harness.id in asked
+    for claim in ("detected", "installed on", "we found"):
+        assert claim not in asked.lower()      # there is no detection, so say none
+
+
+def test_none_means_a_harness_at_both_prompts_now(tmp_path, capsys):
+    # The old sentinel WAS the word `none`, so it named a product at the first
+    # prompt and removed a role at the second. Both prompts now agree, and the
+    # sentinel is spelled so `templates.NAME_RE` refuses to accept it typed.
+    with pytest.raises(templates.InvalidName):
+        templates.check_name("harness id", _NO_REVIEWER)
+    assert conductor.init.run(_init_args(tmp_path),
+                              ask=_scripted(["p", "none", "none"])) == 0
+    assert _harnesses(tmp_path) == {"scout": "none", "diagnostician": "none",
+                                    "architect": "none", "implementer": "none",
+                                    "reviewer": "none"}
+
+
+# --- the mandated set, moved here from test_cli.py ---
+# Four tests older than `conductor.init` that stayed behind in the CLI file
+# when the init path moved out of it. They are about init, so they live here.
+
+
+def test_init_creates_the_scaffold_and_the_prompt_names_the_map_path(tmp_path, capsys):
+    # Renamed on the move: the stdout assertion passes because the BOOTSTRAP
+    # PROMPT names the file it is about, not because a scaffold report reaches
+    # stdout — the report is dialogue and goes to stderr. The old name read as
+    # a claim that init prints its scaffold, which the stream contract forbids.
+    assert main(["init", "--dir", str(tmp_path)]) == 0
+    assert (tmp_path / "conductor" / "map.toml").is_file()
+    assert (tmp_path / "conductor" / "lanes").is_dir()
+    assert "map.toml" in capsys.readouterr().out
+
+def test_init_refuses_existing(tmp_path, capsys):
+    (tmp_path / "conductor").mkdir()
+    assert main(["init", "--dir", str(tmp_path)]) == 1
+
+def test_init_writes_empty_events_and_valid_toml_map(tmp_path, capsys):
+    assert main(["init", "--dir", str(tmp_path)]) == 0
+    assert (tmp_path / "conductor" / "events.jsonl").read_text(encoding="utf-8") == ""
+    data = tomllib.loads(_map_text(tmp_path))
+    assert data["schema_version"] == 1 and data["nodes"]
+
+def test_init_then_validate_is_clean(tmp_path, capsys):
+    # The scaffold must satisfy its own validation rules end-to-end and print
+    # zero warnings (subsumes the deprecated-row check, ADR 0001).
+    assert main(["init", "--dir", str(tmp_path)]) == 0
+    capsys.readouterr()                       # isolate validate's output from init's
+    assert main(["validate", "--dir", str(tmp_path)]) == 0
+    assert capsys.readouterr().out == ""
 
 
 # --- rendered width: the sentences that matter most were the widest ---
@@ -410,7 +644,7 @@ def test_the_wizard_dialogue_stays_inside_the_width(tmp_path, capsys, monkeypatc
     # which carries the whole of NAME_RULE and runs past 100 unwrapped.
     monkeypatch.chdir(tmp_path)
     answers = _scripted(['my "app"', "my-app", "", "claude-code"])
-    assert _cmd_init(_build_parser().parse_args(["init"]), ask=answers) == 0
+    assert conductor.init.run(_build_parser().parse_args(["init"]), ask=answers) == 0
     assert _widest(capsys.readouterr().err) <= prompts.WIDTH
 
 
@@ -472,7 +706,7 @@ def test_init_stdout_does_not_depend_on_a_tty(tmp_path, capsys):
     quiet.mkdir(), guided.mkdir()
     assert main(["init", "--dir", str(quiet)]) == 0
     quiet_out = capsys.readouterr().out
-    assert _cmd_init(_init_args(guided), ask=_scripted(["", "", ""])) == 0
+    assert conductor.init.run(_init_args(guided), ask=_scripted(["", "", ""])) == 0
     guided_out = capsys.readouterr().out
     assert quiet_out.replace(str(quiet), "ROOT") == guided_out.replace(str(guided),
                                                                       "ROOT")
