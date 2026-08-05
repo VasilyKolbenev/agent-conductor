@@ -2,7 +2,9 @@
 
 [![CI](https://github.com/VasilyKolbenev/agent-conductor/actions/workflows/ci.yml/badge.svg)](https://github.com/VasilyKolbenev/agent-conductor/actions/workflows/ci.yml)
 
-**Your agents write lanes. You conduct.**
+**Build your Orbit. Control the cycle.**
+
+*Your agents write lanes. You conduct.*
 
 Conduct is a self-hosted control plane for the AI coding harnesses already working on
 your code — Claude Code, Codex, or anything that can write a JSON file. Each agent keeps

@@ -1,8 +1,15 @@
 """Smoke tests for the packaged panel (Task 14) — served HTML references the protocol."""
+import re
 import urllib.request
+from datetime import datetime, timezone
 
+from conductor import merge
+from tests.test_merge_review import MAP, lane
+from tests.test_panel_contrast import panel_html
 from tests.test_server import start
 from tests.test_store import write_project, good_lane
+
+NOW = datetime(2026, 7, 30, 12, 0, tzinfo=timezone.utc)
 
 
 def _fetch_panel(root):
@@ -39,7 +46,7 @@ def test_panel_pins_review_vocabulary_tokens(tmp_path):
     root = write_project(tmp_path, lanes={"claude": good_lane()})
     html = _fetch_panel(root)
     for token in ("suspended", "disagreement", "uncovered", "no reviewer assigned",
-                  "contested_by", "Conduct — "):
+                  "contested_by", "December — "):
         assert token in html
 
 
@@ -92,6 +99,93 @@ def test_panel_never_says_anything_was_approved(tmp_path):
     # static wording and whatever this state reaches, not every branch.
     root = write_project(tmp_path, lanes={"claude": good_lane()})
     assert "approved" not in _fetch_panel(root).lower()
+
+
+def test_panel_titles_the_document_december_and_counts_the_queue(tmp_path):
+    html = _fetch_panel(write_project(tmp_path, lanes={"claude": good_lane()}))
+    assert "<title>December</title>" in html
+    assert 'document.title = "December — " + (Number(k.queue) || 0) + " waiting on you"' in html
+
+
+def test_panel_shell_carries_the_mark_the_wordmark_and_an_honest_last_update(tmp_path):
+    html = _fetch_panel(write_project(tmp_path, lanes={"claude": good_lane()}))
+    assert 'aria-label="December"' in html          # the mark, inline SVG
+    assert 'class="mark__dot"' in html              # the one red dot
+    assert 'class="wordmark">December<' in html
+    assert '"last update "' in html                 # computed from generated_at
+    assert "generated_at" in html
+
+
+def test_panel_shell_names_no_run_and_no_other_invented_identifier(tmp_path):
+    # Plan §8.2: protocol v1 has no run identity, so the shell may not display
+    # one, nor a session number, nor a build label. Comments are stripped first
+    # — prose explaining why the identifier is absent is not the identifier, and
+    # scanning it instead of the markup is how this check would fool itself.
+    served = _fetch_panel(write_project(tmp_path, lanes={"claude": good_lane()}))
+    html = re.sub(r"/\*.*?\*/|<!--.*?-->", " ", served, flags=re.S).lower()
+    for banned in ("this run", "run id", "run #", "session id", "session #",
+                   "build id", "build #", "version id"):
+        assert banned not in html, banned
+
+
+def test_panel_introduces_no_new_innerhtml(tmp_path):
+    # Lane authors are untrusted input; the one surviving occurrence is the
+    # comment that states the ban.
+    html = panel_html()
+    assert html.count("innerHTML") == 1
+    assert "through innerHTML. Lane authors are untrusted input." in html
+
+
+def _attention_table():
+    """Parse the panel's project_status.state -> light level mapping."""
+    body = re.search(r"const ATTENTION = \{([^}]*)\}", panel_html()).group(1)
+    return dict(re.findall(r'(\w+):\s*"(\w+)"', body))
+
+
+def test_every_light_level_the_panel_declares_names_a_real_project_state():
+    # A level keyed on a state the merger cannot produce would be a reading of
+    # a signal that does not exist.
+    assert set(_attention_table()) <= merge.PROJECT_STATES
+    assert set(_attention_table()) == {"blocked", "active"}
+
+
+def _level_for(state):
+    return _attention_table().get(state["project_status"]["state"], "none")
+
+
+def test_the_light_level_follows_the_project_status_the_merger_computes():
+    # Three states built by the real merger, not by hand: a lane waiting on a
+    # person, a lane simply working, and a project with no lanes at all. The
+    # light level differs across them, which is what makes it a reading of the
+    # data rather than decoration.
+    waiting = merge.merge(MAP, None, [dict(lane("claude", "impl"), data={
+        **lane("claude", "impl")["data"],
+        "waits_on_human": [{"id": "w-1", "kind": "decision", "title": "Ship it?",
+                            "why": "", "blocks": []}]})], [], 0, NOW)
+    working = merge.merge(MAP, None, [lane("claude", "impl")], [], 0, NOW)
+    empty = merge.merge(MAP, None, [], [], 0, NOW)
+
+    assert (waiting["project_status"]["state"], _level_for(waiting)) == ("blocked", "high")
+    assert (working["project_status"]["state"], _level_for(working)) == ("active", "low")
+    assert (empty["project_status"]["state"], _level_for(empty)) == ("ready", "none")
+
+
+def test_a_panel_with_nothing_waiting_stays_unlit():
+    # Absence of attention is a real state and must look like one: no level, no
+    # lift, no brighter contour. The CSS only lights `low` and `high`.
+    html = panel_html()
+    assert 'html[data-attention="low"] .lit' in html
+    assert 'html[data-attention="high"] .lit' in html
+    assert 'data-attention="none"' not in html
+
+
+def test_the_light_level_never_spends_the_accent(tmp_path):
+    # Precision Cockpit light is carried by surface, contour and depth. If a
+    # light rule ever reached for var(--accent) the accent would have grown a
+    # seventh role by accident.
+    html = panel_html()
+    for rule in re.findall(r"html\[data-attention=[^\n]*", html):
+        assert "var(--accent)" not in rule, rule
 
 
 def test_panel_decision_first_section_order(tmp_path):

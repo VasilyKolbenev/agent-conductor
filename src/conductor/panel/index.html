@@ -3,20 +3,42 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Conduct</title>
+<title>December</title>
 <style>
-/* ── theme ─────────────────────────────────────────────────── */
+/* ── theme: December palette + Precision Cockpit material ──── */
+/* Every value below is the owner's, settled 2026-08-03 (plan §8.3 dark and
+   Winter Daylight light, §8.4 the dark semantic triple). Hex case is
+   reproduced as supplied. Contrast ratios are not written here as prose —
+   a number in a comment goes stale silently. They are computed from these
+   declarations by tests/test_panel_contrast.py, which parses this block. */
 :root{
-  --ground:#0e1317; --panel:#151c22; --sunk:#1a232a; --line:#26313a;
-  --ink:#e4eaef; --muted:#94a2ae; --faint:#6d7b87;
-  --accent:#33b3a4; --pass:#4aa06a; --wait:#d9a323; --fail:#e0645c;
+  --ground:#07090D; --panel:#10141B; --sunk:#0B0E14; --line:#262D38;
+  --ink:#F3F6F8; --muted:#B9C2CC; --faint:#7F8A98;
+  --accent:#E44955; --pass:#3fa86a; --wait:#c9971f; --fail:#e0703a;
+  /* Precision Cockpit material (owner, 2026-08-05). A light layer over the
+     settled palette, not a second palette: every material token is mixed
+     from the tokens above, so none of them introduces a hue. Light is
+     carried by surface lightness, contour weight and depth — never by the
+     accent, which stays on its six reserved roles. */
+  --panel-lit:color-mix(in srgb,var(--ink) 4%,var(--panel));
+  --contour-lit:color-mix(in srgb,var(--ink) 22%,var(--line));
+  --lift-1:0 1px 2px rgba(0,0,0,.5);
+  --lift-2:0 2px 12px rgba(0,0,0,.6);
   --mono:ui-monospace,"Cascadia Mono",Consolas,"SF Mono",monospace;
   --sans:ui-sans-serif,-apple-system,"Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;
 }
 @media (prefers-color-scheme:light){:root{
-  --ground:#f4f6f7; --panel:#fff; --sunk:#eaeef0; --line:#dbe1e5;
-  --ink:#151c22; --muted:#5b6874; --faint:#8794a0;
-  --accent:#00857a; --pass:#1f7a4d; --wait:#b58a00; --fail:#cc3322;
+  --ground:#f3f5f7; --panel:#ffffff; --sunk:#e9edf1; --line:#d5dce4;
+  --ink:#11161d; --muted:#4e5965; --faint:#697684;
+  --accent:#c92f42; --pass:#247a4b; --wait:#8a6500; --fail:#b42318;
+  /* Winter Daylight is not an inversion. A white card cannot get lighter,
+     so here the whole light level is carried by depth and contour: the lit
+     surface stays --panel and the lifts get stronger. --contour-lit needs no
+     override — its one formula pulls --line toward --ink, which brightens
+     the contour on dark and darkens it on light. */
+  --panel-lit:var(--panel);
+  --lift-1:0 1px 2px rgba(17,22,29,.10);
+  --lift-2:0 4px 16px rgba(17,22,29,.18);
 }}
 *{box-sizing:border-box}
 [hidden]{display:none!important}  /* .card sets display:flex — keep hidden winning */
@@ -30,6 +52,27 @@ button{font:inherit;cursor:pointer;background:none;border:none;color:inherit}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .faint{color:var(--faint)}
 .empty{font-size:12.5px;color:var(--faint);margin:4px 2px}
+
+/* ── brand shell + light level ─────────────────────────────── */
+/* The shell carries the mark, the wordmark, the live state and an honestly
+   labelled last update. It carries no identifier: protocol v1 has no run
+   identity, so there is nothing true to put there (plan §8.2). */
+.shell{display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+       border-bottom:1px solid var(--line);padding-bottom:9px}
+.mark{width:22px;height:22px;flex:none}
+.mark__ring{fill:none;stroke:var(--line);stroke-width:1.4}
+.mark__path{fill:none;stroke:var(--faint);stroke-width:1}
+.mark__dot{fill:var(--accent)}          /* accent role 6: the brand mark */
+.wordmark{font-size:14px;font-weight:660;letter-spacing:-.015em}
+/* Light level. The single source is state.json's project_status.state
+   (PROTOCOL.md §6.1) — the one shipped field that says whether a person is
+   needed. renderShell is its only writer; see ATTENTION below. There is no
+   level without a field behind it, and "none" is a real state: a panel with
+   nothing waiting is meant to look unlit rather than uniformly glowing. */
+html[data-attention="low"] .lit{background:var(--panel-lit);box-shadow:var(--lift-1)}
+html[data-attention="high"] .lit{background:var(--panel-lit);box-shadow:var(--lift-2);
+                                 border-color:var(--contour-lit)}
+html[data-attention="high"] .shell{border-bottom-color:var(--contour-lit)}
 
 /* ── top strip + warnings banner ───────────────────────────── */
 .strip{display:flex;align-items:center;gap:10px;font-family:var(--mono);font-size:11px;
@@ -80,9 +123,18 @@ svg{width:100%;height:auto;display:block;overflow:visible}
 .node text{font-family:var(--mono);font-size:11px;fill:var(--muted);
            dominant-baseline:middle;text-anchor:middle}
 .node .id{font-size:12.5px;font-weight:700;fill:var(--ink)}
+/* Status is never carried by hue. Each status owns a silhouette (the corner
+   radius, set from STATUS.rx in drawNodes), a contour pattern and a glyph
+   plus a spelt-out label inside the node, so the graph stays readable with
+   colour removed entirely. This matters most for running and fail: in the
+   light theme --accent #c92f42 and --fail #b42318 are both reds, and before
+   this slice both drew a 2.5px solid contour, leaving hue as the only
+   difference. They are now a pill and a square. Interaction — hover, focus,
+   selection — may change hue and weight but never the silhouette, so no
+   interaction can make one status impersonate another. */
 .node--pass rect{stroke:var(--pass);fill:color-mix(in srgb,var(--pass) 14%,var(--sunk))}
 .node--pass .id{fill:var(--pass)}
-.node--fail rect{stroke:var(--fail);stroke-width:2.5;
+.node--fail rect{stroke:var(--fail);stroke-width:3;
                  fill:color-mix(in srgb,var(--fail) 16%,var(--sunk))}
 .node--fail .id{fill:var(--fail)}
 .node--blocked rect{stroke:var(--wait);stroke-dasharray:5 3;
@@ -186,10 +238,21 @@ footer{font-size:10px;color:var(--faint);font-family:var(--mono);
 <body>
 <div class="wrap">
 
-  <div class="strip">
-    <span class="dot" id="dot"></span><span id="liveText">connecting…</span>
-    <span id="projInfo" class="mono"></span>
-  </div>
+  <header class="shell" id="shell">
+    <svg class="mark" viewBox="0 0 24 24" role="img" aria-label="December">
+      <circle class="mark__ring" cx="12" cy="12" r="8.4"/>
+      <ellipse class="mark__path" cx="12" cy="12" rx="11.2" ry="4.4"
+               transform="rotate(-28 12 12)"/>
+      <ellipse class="mark__path" cx="12" cy="12" rx="11.2" ry="4.4"
+               transform="rotate(38 12 12)"/>
+      <circle class="mark__dot" cx="19.1" cy="7.6" r="2.3"/>
+    </svg>
+    <span class="wordmark">December</span>
+    <span class="strip">
+      <span class="dot" id="dot"></span><span id="liveText">connecting…</span>
+      <span id="projInfo" class="mono"></span>
+    </span>
+  </header>
 
   <div class="banner" id="warnings" hidden>
     <button class="banner__head" id="warnHead" type="button" aria-expanded="false">
@@ -202,12 +265,12 @@ footer{font-size:10px;color:var(--faint);font-family:var(--mono);
   <div class="rail" id="kpis"></div>
 
   <div class="attn" id="attention">
-    <div class="card" id="queue" hidden>
+    <div class="card lit" id="queue" hidden>
       <div class="card__h"><h2>Waiting on you</h2>
         <span class="hint">the human queue — click a card for the why</span></div>
       <ul class="asks" id="queueList"></ul>
     </div>
-    <div class="card" id="alerts" hidden>
+    <div class="card lit" id="alerts" hidden>
       <div class="card__h"><h2>Attention</h2>
         <span class="hint">disagreements · invariants · lane health</span></div>
       <div id="alertList"></div>
@@ -270,7 +333,7 @@ footer{font-size:10px;color:var(--faint);font-family:var(--mono);
 </div>
 
 <script>
-/* Sections, in DOM order: helpers → top strip + warnings → KPI rail → map graph
+/* Sections, in DOM order: helpers → brand shell + warnings → KPI rail → map graph
    → cycle ring → attention zone → agents block → findings table → feed →
    render pipeline → interaction → data source.
 
@@ -316,16 +379,28 @@ const ago = d => { if (!d) return "—";
   const h = Math.floor(m / 60);
   return h < 24 ? h + " h " + (m % 60) + " min ago" : Math.floor(h / 24) + " d ago"; };
 
-/* status vocabularies — glyph + text so state is never color-alone */
+/* Status vocabularies. Each status carries a glyph, a spelt-out label and
+   `rx` — the corner radius drawNodes gives its map node, which makes the
+   silhouette a third carrier alongside the glyph and the text. running is a
+   pill and fail is a square, because those two are the pair whose contours
+   are both red in the light theme; the rest keep the default radius. */
 const STATUS = {
-  pass:      { cls: "pass",      glyph: "✓", label: "pass" },
-  fail:      { cls: "fail",      glyph: "✕", label: "fail" },
-  blocked:   { cls: "blocked",   glyph: "■", label: "blocked" },
-  running:   { cls: "running",   glyph: "▶", label: "running" },
-  idle:      { cls: "idle",      glyph: "·", label: "idle" },
-  contested: { cls: "contested", glyph: "≠", label: "contested" },
+  pass:      { cls: "pass",      glyph: "✓", label: "pass",      rx: 7 },
+  fail:      { cls: "fail",      glyph: "✕", label: "fail",      rx: 2 },
+  blocked:   { cls: "blocked",   glyph: "■", label: "blocked",   rx: 7 },
+  running:   { cls: "running",   glyph: "▶", label: "running",   rx: 14 },
+  idle:      { cls: "idle",      glyph: "·", label: "idle",      rx: 7 },
+  contested: { cls: "contested", glyph: "≠", label: "contested", rx: 2 },
 };
-const statusOf = s => STATUS[s] || { cls: "idle", glyph: "?", label: String(s || "unknown") };
+const statusOf = s =>
+  STATUS[s] || { cls: "idle", glyph: "?", label: String(s || "unknown"), rx: 7 };
+/* Light level — the only input is project_status.state (PROTOCOL.md §6.1).
+   blocked means a person is needed, active means work is moving, and every
+   other state of the vocabulary (complete, ready, unknown) leaves the panel
+   unlit. A level with no field behind it would be a reading of a signal that
+   does not exist, so there is no fourth level. */
+const ATTENTION = { blocked: "high", active: "low" };
+const attentionOf = s => ATTENTION[(s.project_status || {}).state] || "none";
 const REVIEW = {   /* merge vocabulary: agreed|disagreement|unreviewed|uncovered|suspended */
   agreed:       { cls: "ok",   glyph: "✓", label: "agreed" },
   disagreement: { cls: "bad",  glyph: "✕", label: "disagreement" },
@@ -350,15 +425,21 @@ let LAST = null, SEL = null, warningsOpen = false;
 const openAsks = new Set(), openFindings = new Set();
 const copyFeedback = new Map();   /* wait id -> {label, timer} for the copy button */
 
-/* ── top strip + warnings banner ───────────────────────────── */
+/* ── brand shell + warnings banner ─────────────────────────── */
 function setLive(ok){
   $("dot").className = "dot" + (ok ? "" : " dot--down");
   $("liveText").textContent = ok ? "live" : "connection lost — retrying";
 }
-function renderStrip(s){
+/* The shell shows the project, the live state and when the state was last
+   written. "last update" is computed from generated_at and says only that.
+   Nothing here names a run: protocol v1 has no run identity, and a
+   synthesised one would be the panel asserting something the data cannot
+   support (plan §8.2). */
+function renderShell(s){
+  document.documentElement.dataset.attention = attentionOf(s);
   const proj = s.project ? s.project + " · " : "";
   const okInv = (s.invariants || []).filter(i => i.ok !== false).length;
-  $("projInfo").textContent = "· " + proj + "generated " + ago(parseTs(s.generated_at)) +
+  $("projInfo").textContent = "· " + proj + "last update " + ago(parseTs(s.generated_at)) +
     (okInv ? " · invariants: " + okInv + " ok" : "");
 }
 function renderWarnings(warnings){
@@ -460,7 +541,7 @@ function drawNodes(svgEl, nodes, pos){
                         "aria-pressed": String(SEL === n.id),
                         "aria-label": String(n.label || n.id) + ": " + st.label });
     g.dataset.node = n.id;
-    g.append(sv("rect", { x, y, width: W, height: H, rx: 7 }),
+    g.append(sv("rect", { x, y, width: W, height: H, rx: st.rx }),
              sv("text", { class: "id", x: x + W / 2, y: y + 19 },
                 trim(String(n.label || n.id), 20)),
              sv("text", { x: x + W / 2, y: y + 37 }, st.glyph + " " + st.label));
@@ -764,8 +845,8 @@ function renderFeed(events){
 function render(s){
   LAST = s;
   const k = s.kpi || {};
-  document.title = "Conduct — " + (Number(k.queue) || 0) + " waiting on you";
-  renderStrip(s);
+  document.title = "December — " + (Number(k.queue) || 0) + " waiting on you";
+  renderShell(s);
   renderWarnings(s.warnings || []);
   renderKpis(k);
   renderMap(((s.map || {}).nodes) || []);

@@ -272,6 +272,38 @@ along the way.
 
 The owner's specification, recorded as given.
 
+### Direction — Precision Cockpit, decided 2026-08-05
+
+**Decision: the December surface is a *Precision Cockpit*** — the minimal, premium
+instrument panel of a car or a real spacecraft. Matte dark surfaces, thin cool contours,
+local functional lighting, and one dominant instrument: the Orbit. The intensity of the
+light reflects real activity and real need for attention. No fake telemetry, no decorative
+HUD, no wall-to-wall neon, no perpetual animation.
+
+The direction is a material-and-light layer **over** the palette below, not a replacement
+for it. The owner's tokens are unchanged by it: `--ground` `#07090D`, `--panel` `#10141B`
+and `--sunk` `#0B0E14` already *are* matte dark surfaces and `--line` `#262D38` already is
+a cool contour. What the direction adds is that they become a named system rather than a
+set of coincidences.
+
+**Responsibility is split between two slices.** DEC-UI-1 lays down the material and light
+system **without changing layout**; DEC-UI-2 turns the Orbit into the central instrument
+cluster. Neither does the other's half.
+
+Two constraints travel with the direction and bind every slice that touches the panel:
+
+- **Light must be derived from data.** Every light level names a concrete field or
+  computation from `state.json` that drives it. A level with no source behind it is fake
+  telemetry, which is §8.2's ban on invented identifiers in its visual form. The absence of
+  attention is itself a valid state: a panel with nothing waiting is meant to look calmly
+  unlit, not uniformly glowing.
+- **Light and accent are different channels.** Light intensity is carried by material and
+  contour — surface lightness, contour weight and brightness, depth — and never by the
+  accent hue. A lit card does not turn red; it gets lighter and its contour gets crisper.
+  December Red stays on the six roles below. In the light theme the mechanism inverts:
+  Winter Daylight is an instrument panel in daylight, so depth and contour carry the light
+  level there, because a white card cannot be made lighter.
+
 ### Palette
 
 Both themes are the owner's and both are approved: the dark surfaces and text ramp, the
