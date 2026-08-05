@@ -192,11 +192,12 @@ def _ask_harness(ask: Callable[[str], str], question: str,
     _say(_wrap(question))
     if note:
         _say(_wrap(note, "  "))
-    for index, (value, gloss) in enumerate(options, 1):
-        _say(_wrap(f"{index}) {value}{gloss}", "  ", hang="     "))
+    rows = [(str(index), value, gloss)
+            for index, (value, gloss) in enumerate(options, 1)]
+    for number, value, gloss in rows:
+        _say(_wrap(f"{number}) {value}{gloss}", "  ", hang="     "))
     _say("  or type any other harness id")
-    numbered = {str(index): value
-                for index, (value, _) in enumerate(options, 1)}
+    numbered = {number: value for number, value, _ in rows}
     default = options[0][0]
     while True:
         answer = ask(f"  choice [{default}]: ").strip()

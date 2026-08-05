@@ -237,6 +237,29 @@ def test_the_wizard_takes_a_number_it_never_printed_as_a_typed_harness_id(
     assert _harnesses(tmp_path)["reviewer"] == "claude-code"   # row 1, as printed
 
 
+def test_answering_a_row_with_the_number_printed_beside_it_writes_that_rows_harness(
+        tmp_path, capsys):
+    # The number a person reads and the number that selects are the same
+    # number, and only one structure may decide that. So this test spells no
+    # row out: it reads the menu the wizard actually printed, answers each row
+    # with the token printed on that line, and requires the id printed on the
+    # SAME line to be what lands in map.toml. Any split between the printed
+    # token and the selecting token — an offset on one of them, a token paired
+    # with a neighbour's id — makes the user read one harness and get another,
+    # and that is what fails here.
+    assert conductor.init.run(_init_args(tmp_path / "menu"),
+                              ask=_scripted(["p"])) == 1      # menu, then EOF
+    matched = (re.match(r"^ {2}(\S+)\) (\S+)", line)
+               for line in capsys.readouterr().err.splitlines())
+    printed = [(m.group(1), m.group(2)) for m in matched if m]
+    assert len(printed) == len(harnesses.RECOMMENDED) + 1     # every row read
+    for number, shown in printed:
+        target = tmp_path / f"row-{number}"
+        assert conductor.init.run(_init_args(target),
+                                  ask=_scripted(["p", number, "a-reviewer"])) == 0
+        assert _harnesses(target)["implementer"] == shown, number
+
+
 def test_wizard_says_so_when_both_roles_run_the_same_harness(tmp_path, capsys):
     assert conductor.init.run(_init_args(tmp_path),
                               ask=_scripted(["p", "claude-code", "claude-code"])) == 0
