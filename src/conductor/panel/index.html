@@ -89,9 +89,12 @@ html[data-attention="high"] .shell{border-bottom-color:var(--contour-lit)}
 @media (prefers-reduced-motion:reduce){.dot,.pulse .box{animation:none}}
 .banner{background:color-mix(in srgb,var(--wait) 12%,transparent);
         border:1px solid var(--wait);border-radius:8px;padding:3px 8px}
+/* The banner sits on a --wait tint over --ground, so its own text runs on
+   --ink and the semantic colour stays on the border and on the glyph. */
 .banner__head{display:flex;gap:9px;align-items:baseline;width:100%;text-align:left;
-              font-family:var(--mono);font-size:12px;color:var(--wait);padding:5px 4px}
-.banner__hint{font-size:10px;color:var(--faint)}
+              font-family:var(--mono);font-size:12px;color:var(--ink);padding:5px 4px}
+.banner__head .gl{color:var(--wait)}
+.banner__hint{font-size:10px;color:var(--muted)}
 .banner__list{margin:0;padding:2px 10px 8px 26px;font-size:12px;color:var(--muted)}
 .banner__list li{margin:2px 0}
 
@@ -126,6 +129,10 @@ svg{width:100%;height:auto;display:block;overflow:visible}
 .node .box{fill:var(--sunk);stroke:var(--line);stroke-width:1.5}
 .node text{font-family:var(--mono);font-size:11px;fill:var(--muted);
            dominant-baseline:middle;text-anchor:middle}
+/* The node name stays --ink on every status: it sits on a tint of the status
+   colour, where the status colour itself does not clear 4.5:1 in the light
+   theme. The status is carried by the contour, the silhouette, the glyph and
+   the spelt-out word underneath. */
 .node .id{font-size:12.5px;font-weight:700;fill:var(--ink)}
 /* Status owns the inner silhouette, and owns it alone. Each status draws its
    own .box: a corner radius (from STATUS.rx in drawNodes), a stroke colour, a
@@ -143,19 +150,14 @@ svg{width:100%;height:auto;display:block;overflow:visible}
    tests/test_panel_style.py computes the .box profile of every status with
    and without each interactive state and requires the two to be equal. */
 .node--pass .box{stroke:var(--pass);fill:color-mix(in srgb,var(--pass) 14%,var(--sunk))}
-.node--pass .id{fill:var(--pass)}
 .node--fail .box{stroke:var(--fail);stroke-width:3;
                  fill:color-mix(in srgb,var(--fail) 16%,var(--sunk))}
-.node--fail .id{fill:var(--fail)}
 .node--blocked .box{stroke:var(--wait);stroke-dasharray:5 3;
                     fill:color-mix(in srgb,var(--wait) 13%,var(--sunk))}
-.node--blocked .id{fill:var(--wait)}
 .node--running .box{stroke:var(--accent);stroke-width:2.5}
-.node--running .id{fill:var(--accent)}
 .node--idle .box{stroke-dasharray:3 4;opacity:.65}
 .node--contested .box{stroke:var(--fail);stroke-width:2.5;stroke-dasharray:6 4;
                       fill:url(#ctstFill)}   /* dashed + two-tone */
-.node--contested .id{fill:var(--ink)}
 .halo{fill:none;stroke:none;stroke-width:1.5}
 .node:hover .halo{stroke:var(--faint)}
 .node:focus-visible .halo{stroke:var(--accent)}
@@ -179,20 +181,43 @@ svg{width:100%;height:auto;display:block;overflow:visible}
 .det__contested{font-size:12px;color:var(--fail)}
 .pill{font-family:var(--mono);font-size:10px;padding:2px 7px;border-radius:4px;
       align-self:flex-start}
-.p--pass{color:var(--pass);background:color-mix(in srgb,var(--pass) 14%,transparent)}
-.p--fail,.p--contested{color:var(--fail);
-      background:color-mix(in srgb,var(--fail) 14%,transparent)}
-.p--blocked{color:var(--wait);background:color-mix(in srgb,var(--wait) 16%,transparent)}
-.p--running{color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,transparent)}
-.p--idle{color:var(--faint);background:var(--panel)}
+.p--idle{background:var(--panel)}
+/* Chips — .pill in the detail card, .vd everywhere else — share one rule set,
+   because they say the same words about the same states. The word runs on
+   --ink: a chip sits on a tint of its own status colour, and status-on-tint
+   does not clear 4.5:1 for the smaller sizes used here (the numbers are in
+   tests/test_panel_contrast.py). The status colour keeps the two carriers
+   where 1.4.11's 3:1 is the governing threshold — the border and the glyph —
+   so a chip is still identified by colour, shape and word, never by word
+   alone. Owner's instruction, 2026-08-05. */
+.pill,.vd{color:var(--ink);border:1px solid var(--line)}
+.gl{font-style:normal}
+.p--pass,.vd--ok{background:color-mix(in srgb,var(--pass) 14%,transparent);
+                 border-color:var(--pass)}
+.p--fail,.p--contested,.vd--bad{background:color-mix(in srgb,var(--fail) 14%,transparent);
+                 border-color:var(--fail)}
+.p--blocked,.vd--wait{background:color-mix(in srgb,var(--wait) 16%,transparent);
+                 border-color:var(--wait)}
+.p--running{background:color-mix(in srgb,var(--accent) 14%,transparent);
+                 border-color:var(--accent)}
+.p--idle,.vd--idle{border-color:var(--faint)}
+.p--pass .gl,.vd--ok .gl{color:var(--pass)}
+.p--fail .gl,.p--contested .gl,.vd--bad .gl{color:var(--fail)}
+.p--blocked .gl,.vd--wait .gl{color:var(--wait)}
+.p--running .gl{color:var(--accent)}
+.p--idle .gl,.vd--idle .gl{color:var(--faint)}
 
 /* ── attention zone: queue cards, alerts, agents ───────────── */
 .attn{display:flex;flex-direction:column;gap:12px}
 .calm{font-size:12.5px;color:var(--faint);margin:0 2px}
 .alert{display:flex;gap:9px;align-items:baseline;flex-wrap:wrap;font-size:12.5px;
        padding:3px 0}
-.jump{color:var(--accent);text-decoration:underline;padding:0;font-size:12.5px}
-.jump:hover{color:var(--ink)}
+/* The see-findings link lands on a lit alert card, where --accent measures
+   4.33:1 against --panel-lit in the dark theme. The underline already carries
+   the affordance, so the label runs on --ink and the accent stays on the
+   primary-action button (.copy) and on hover. */
+.jump{color:var(--ink);text-decoration:underline;padding:0;font-size:12.5px}
+.jump:hover{color:var(--accent)}
 .ag{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;font-size:12.5px;
     padding:5px 2px;border-bottom:1px solid var(--line)}
 .ag:last-child{border-bottom:none}
@@ -236,10 +261,7 @@ td.ft{max-width:380px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
         font-weight:650;margin-right:7px}
 .vd{font-family:var(--mono);font-size:10.5px;padding:1px 6px;border-radius:4px;
     white-space:nowrap}
-.vd--ok{color:var(--pass);background:color-mix(in srgb,var(--pass) 14%,transparent)}
-.vd--bad{color:var(--fail);background:color-mix(in srgb,var(--fail) 14%,transparent)}
-.vd--wait{color:var(--wait);background:color-mix(in srgb,var(--wait) 16%,transparent)}
-.vd--idle{color:var(--faint);background:var(--sunk)}
+.vd--idle{background:var(--sunk)}
 .subhint{font-family:var(--mono);font-size:10px;color:var(--faint);margin-top:2px}
 .verdict{margin-top:3px;font-size:12px}
 .vnote{color:var(--muted)}
@@ -429,8 +451,10 @@ const EKIND = { ok: { cls: "ok", glyph: "✓" }, fail: { cls: "bad", glyph: "✕
                 info: { cls: "idle", glyph: "·" } };
 const metaOf = (table, key) =>
   table[key] || { cls: "idle", glyph: "?" };
+/* The glyph is its own element so the status colour can stay on it while the
+   word runs on --ink; see the chip rules in the stylesheet. */
 const chip = (meta, label) => el("span", { class: "vd vd--" + meta.cls },
-                                meta.glyph + " " + label);
+                                el("i", { class: "gl" }, meta.glyph), " " + label);
 
 /* UI state that survives re-renders */
 let LAST = null, SEL = null, warningsOpen = false;
@@ -458,8 +482,8 @@ function renderWarnings(warnings){
   const banner = $("warnings");
   banner.hidden = !warnings.length;
   if (!warnings.length) return;
-  $("warnCount").textContent = "▲ " + warnings.length +
-    (warnings.length === 1 ? " warning" : " warnings");
+  $("warnCount").replaceChildren(el("i", { class: "gl" }, "▲"),
+    " " + warnings.length + (warnings.length === 1 ? " warning" : " warnings"));
   $("warnList").replaceChildren(...warnings.map(w => el("li", {}, String(w))));
   $("warnList").hidden = !warningsOpen;
   $("warnHead").setAttribute("aria-expanded", String(warningsOpen));
@@ -521,8 +545,10 @@ function layoutMap(nodes){
 function mapDefs(){
   return sv("defs", {},
     sv("linearGradient", { id: "ctstFill", x1: "0", y1: "0", x2: "1", y2: "1" },
-      sv("stop", { offset: "0.5", style: "stop-color:var(--wait);stop-opacity:.35" }),
-      sv("stop", { offset: "0.5", style: "stop-color:var(--fail);stop-opacity:.30" })),
+      /* the two halves are tinted at the same strength as the other node
+         fills, so the status word on top keeps the contrast they have */
+      sv("stop", { offset: "0.5", style: "stop-color:var(--wait);stop-opacity:.16" }),
+      sv("stop", { offset: "0.5", style: "stop-color:var(--fail);stop-opacity:.14" })),
     sv("marker", { id: "arw", viewBox: "0 0 10 10", refX: "9", refY: "5",
                    markerWidth: "6", markerHeight: "6", orient: "auto" },
       sv("path", { d: "M0,0 L10,5 L0,10 z", class: "arw" })));
@@ -594,7 +620,8 @@ function renderDetail(nodes){
   }
   const st = statusOf(n.status);
   box.append(
-    el("span", { class: "pill p--" + st.cls }, st.glyph + " " + st.label),
+    el("span", { class: "pill p--" + st.cls },
+       el("i", { class: "gl" }, st.glyph), " " + st.label),
     el("span", { class: "det__t" }, String(n.label || n.id)),
     el("span", { class: "det__meta" }, "id: " + n.id + " · kind: " + (n.kind || "—")),
     el("span", { class: "det__meta" },
