@@ -13,18 +13,29 @@ background is neither the token nor the card but the blend of the two — and th
 first version of this module measured the token, which is how nine shipped pairs
 went unmeasured. Nothing here is written by hand: a row names the element and
 the surface it sits on, the tint strength is read out of the stylesheet through
-the cascade in tests/test_panel_cascade.py, and the ratio is computed. Push a tint
-from 14% to 92% and the number moves with it.
+the cascade in tests/test_panel_cascade.py, and the ratio is computed. Push a
+tint from 14% to 92% and the number moves with it.
 
-The tokens and the rules are parsed out of `src/conductor/panel/index.html`, so
-changing a declaration there moves these results. That is the point.
+A pair is also a pair the panel puts on the screen at any moment, not only at
+rest. Hover, focus and selection repaint things, and a repaint is a new pair —
+which is how `.jump:hover` shipped an accent on a lit card that no table here
+had ever measured. Every row below is therefore re-resolved under each
+interactive state, and the ones that actually change colour become rows of
+their own.
+
+The arithmetic lives in tests/test_panel_colour.py, which knows nothing about
+the panel. The tokens and the rules are parsed out of
+`src/conductor/panel/index.html`, so changing a declaration there moves these
+results. That is the point.
 """
 import re
 from typing import NamedTuple
 
 import pytest
 
-from tests.test_panel_cascade import E, computed, panel_html
+from tests.test_panel_cascade import (
+    INTERACTIONS, E, computed, environments, panel_html, touched)
+from tests.test_panel_colour import JND, contrast, delta_e, simulate_cvd
 from tests.test_panel_style import root_declarations
 
 # WCAG 2.1 thresholds. 1.4.3 normal text; 1.4.11 non-text and large text.
@@ -117,11 +128,11 @@ def paint(theme: str, value: str, under: tuple | None) -> tuple[int, int, int]:
 _SURFACE_PROPS = ("background", "background-color", "fill")
 
 
-def surface(theme: str, chain: list) -> tuple[int, int, int]:
+def surface(theme: str, chain: list, env: frozenset = frozenset()) -> tuple[int, int, int]:
     """Composite every painted layer of an element chain, outermost first."""
     under = None
     for depth in range(1, len(chain) + 1):
-        win = computed(chain[:depth])
+        win = computed(chain[:depth], env=env)
         value = next((win[p] for p in _SURFACE_PROPS if p in win), None)
         if value is None or value in ("none", "transparent"):
             continue
@@ -135,15 +146,38 @@ def surface(theme: str, chain: list) -> tuple[int, int, int]:
     return under
 
 
-def foreground(theme: str, chain: list, prop: str) -> tuple[int, int, int]:
-    """Resolve the colour one element draws its own marks with."""
-    win = computed(chain)
+def foreground(theme: str, chain: list, prop: str,
+               env: frozenset = frozenset()) -> tuple[int, int, int]:
+    """Resolve the colour one element draws its own marks with.
+
+    The element's own ``opacity`` is applied here, as :func:`surface` already
+    applies it to a background. In SVG ``opacity`` dims the whole element —
+    stroke as well as fill — so a mark on a translucent element is composited
+    over what lies beneath that element, which is its ancestors' surface rather
+    than its own. Reading opacity on the background side only recorded four
+    composites the panel never rasterises.
+
+    Args:
+        theme: ``"dark"`` or ``"light"``.
+        chain: Ancestors outermost first; the element itself last.
+        prop: The property carrying the mark — ``color``, ``fill``, ``stroke``…
+        env: The ``@media`` conditions that are true.
+
+    Returns:
+        The composited sRGB triple of the mark.
+    """
+    win = computed(chain, env=env)
     if prop == "border-color" and "border-color" not in win:
         shorthand = win.get("border", "")
         found = re.search(r"var\(--[a-z0-9-]+\)|#[0-9a-fA-F]{3,6}", shorthand)
         assert found, f"no border colour in {shorthand!r}"
-        return paint(theme, found.group(0), None)
-    return paint(theme, win[prop], None)
+        mark = paint(theme, found.group(0), None)
+    else:
+        mark = paint(theme, win[prop], None)
+    alpha = float(win.get("opacity", 1))
+    if alpha < 1:
+        mark = _mix_srgb(mark, alpha * 100, surface(theme, list(chain[:-1]), env))
+    return mark
 
 
 class Tint(NamedTuple):
@@ -163,97 +197,12 @@ def gradient_stops() -> list[tuple[str, float]]:
     return [(token, float(alpha) * 100) for token, alpha in stops]
 
 
-def background(theme: str, spec) -> tuple[int, int, int]:
+def background(theme: str, spec, env: frozenset = frozenset()) -> tuple[int, int, int]:
     """Resolve the background of a pair row, chain or gradient stop alike."""
     if isinstance(spec, Tint):
         return _mix_srgb(tokens(theme)[spec.token], spec.pct,
-                         surface(theme, list(spec.under)))
-    return surface(theme, list(spec))
-
-
-# ── colorimetry ────────────────────────────────────────────────────────────
-def _linear(channel: int) -> float:
-    c = channel / 255.0
-    return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
-
-
-def luminance(rgb: tuple[int, int, int]) -> float:
-    """Relative luminance per WCAG 2.1."""
-    r, g, b = (_linear(c) for c in rgb)
-    return 0.2126 * r + 0.7152 * g + 0.0722 * b
-
-
-def contrast(fg: tuple[int, int, int], bg: tuple[int, int, int]) -> float:
-    """Contrast ratio per WCAG 2.1, always >= 1."""
-    a, b = luminance(fg), luminance(bg)
-    hi, lo = max(a, b), min(a, b)
-    return (hi + 0.05) / (lo + 0.05)
-
-
-def _to_lab(rgb: tuple[int, int, int]) -> tuple[float, float, float]:
-    r, g, b = (_linear(c) for c in rgb)
-    x = (0.4124 * r + 0.3576 * g + 0.1805 * b) / 0.95047
-    y = 0.2126 * r + 0.7152 * g + 0.0722 * b
-    z = (0.0193 * r + 0.1192 * g + 0.9505 * b) / 1.08883
-
-    def f(t: float) -> float:
-        return t ** (1 / 3) if t > 0.008856 else 7.787 * t + 16 / 116
-
-    fx, fy, fz = f(x), f(y), f(z)
-    return 116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)
-
-
-def delta_e(a: tuple[int, int, int], b: tuple[int, int, int]) -> float:
-    """CIE76 dE*ab between two sRGB colours.
-
-    CIE76 is used because it is exactly defined and reproducible from the
-    formula alone. It is not the most perceptually even metric available, and
-    for the muted yellow-greens that fail and wait become under simulated
-    dichromacy it tends to *understate* rather than overstate the gap — so the
-    small number recorded below is a conservative reading of how close those
-    two get, not a flattering one.
-    """
-    la, aa, ba = _to_lab(a)
-    lb, ab, bb = _to_lab(b)
-    return ((la - lb) ** 2 + (aa - ab) ** 2 + (ba - bb) ** 2) ** 0.5
-
-
-# Viénot, Brettel & Mollon (1999) dichromat simulation, applied in linear RGB
-# through the Hunt-Pointer-Estevez LMS space.
-_RGB_LMS = ((0.31399022, 0.63951294, 0.04649755),
-            (0.15537241, 0.75789446, 0.08670142),
-            (0.01775239, 0.10944209, 0.87256922))
-_LMS_RGB = ((5.47221206, -4.64196010, 0.16963708),
-            (-1.12524190, 2.29317094, -0.16789520),
-            (0.02980165, -0.19318073, 1.16364789))
-
-
-def simulate_cvd(rgb: tuple[int, int, int], kind: str) -> tuple[int, int, int]:
-    """Simulate how a dichromat sees an sRGB colour.
-
-    Args:
-        rgb: The colour as an sRGB triple.
-        kind: ``"protanopia"`` (no L cone) or ``"deuteranopia"`` (no M cone).
-
-    Returns:
-        The simulated colour as an sRGB triple.
-    """
-    lin = [_linear(c) for c in rgb]
-    lms = [sum(row[i] * lin[i] for i in range(3)) for row in _RGB_LMS]
-    if kind == "protanopia":
-        lms[0] = 1.05118294 * lms[1] - 0.05116099 * lms[2]
-    elif kind == "deuteranopia":
-        lms[1] = 0.95130920 * lms[0] + 0.04866992 * lms[2]
-    else:
-        raise ValueError(f"unknown deficiency: {kind}")
-    out = [sum(row[i] * lms[i] for i in range(3)) for row in _LMS_RGB]
-
-    def encode(c: float) -> int:
-        c = min(1.0, max(0.0, c))
-        s = 12.92 * c if c <= 0.0031308 else 1.055 * c ** (1 / 2.4) - 0.055
-        return round(min(1.0, max(0.0, s)) * 255)
-
-    return tuple(encode(c) for c in out)
+                         surface(theme, list(spec.under), env))
+    return surface(theme, list(spec), env)
 
 
 # ── the pairs the panel actually ships ─────────────────────────────────────
@@ -293,6 +242,7 @@ NONTEXT_PAIRS = [
     ("--fail", "--sunk", "fail node contour", NONTEXT_MIN),
     ("--accent", "--panel", "the selection ring around a node", NONTEXT_MIN),
     ("--faint", "--panel", "the hover ring around a node", NONTEXT_MIN),
+    ("--faint", "--sunk", "the hover ring around a queue card", NONTEXT_MIN),
 ]
 
 # Pairs that do NOT clear their threshold on the owner's approved values. They
@@ -302,14 +252,20 @@ NONTEXT_PAIRS = [
 # the suite saying so, and cannot be deleted without the deletion showing up.
 # All three are the light theme; the dark theme clears every pair it ships.
 #
-# --accent on --sunk is kept even though it is no longer a text pair: after the
-# fix round the running pill's word runs on --ink, so the accent meets --sunk
-# only as a contour and a 4px bar, where 3:1 governs and 4.50 clears. The
-# measurement stays pinned because it is the owner's recorded number.
+# --accent on --sunk is kept even though it is no longer a text pair: the
+# running pill's word runs on --ink and the current phase's label now does too,
+# so the accent meets --sunk as a contour and a 4px bar and nowhere else, where
+# 3:1 governs and 4.4972 clears. The measurement stays pinned because it is the
+# owner's recorded number.
+#
+# Recorded to four places, not two. This is the one row where the second decimal
+# answers the question: rounded to 4.50 it reads as clearing 4.5:1, and 4.4972
+# does not. Rounding up hid exactly the difference that decided whether the
+# phase label could stay on the accent — it could not.
 KNOWN_SHORTFALLS = {
-    ("light", "--faint", "--ground"): 4.25,   # footer and shell hints, 10-12.5px
-    ("light", "--faint", "--sunk"): 3.94,     # queue card meta and detail meta, ~10.5px
-    ("light", "--accent", "--sunk"): 4.50,    # now a contour, not a word
+    ("light", "--faint", "--ground"): 4.2462,  # footer and shell hints, 10-12.5px
+    ("light", "--faint", "--sunk"): 3.9443,    # queue card meta, detail meta, ~10.5px
+    ("light", "--accent", "--sunk"): 4.4972,   # a contour and a 4px bar, not a word
 }
 
 THEMES = ("dark", "light")
@@ -408,7 +364,28 @@ def _node_rows() -> list[Shipped]:
     return rows
 
 
-SHIPPED = _chip_rows() + _node_rows() + [
+def _phase_rows() -> list[Shipped]:
+    # The cycle ring. Its current stage is accent role 1 and carries the accent
+    # as a contour; the labels are 10px text, which is why they run on --ink and
+    # --muted. Missing here until now, and the gap was load-bearing: the current
+    # label used to be drawn in the accent, which is text on --sunk at 4.4972.
+    ring = [HTML_LIT, BODY, CARD, E("svg")]
+    plain = [*ring, E("g", "phase")]
+    current = [*ring, E("g", "phase", "phase--current", "pulse")]
+    return [
+        Shipped("the current phase's label on the ring", current + [E("text")], "fill",
+                current + [E("rect", "box")], TEXT_MIN),
+        Shipped("a phase's label on the ring", plain + [E("text")], "fill",
+                plain + [E("rect", "box")], TEXT_MIN),
+        Shipped("the current phase's contour against its own box",
+                current + [E("rect", "box")], "stroke", current + [E("rect", "box")],
+                NONTEXT_MIN),
+        Shipped("the current phase's contour against the cycle card",
+                current + [E("rect", "box")], "stroke", ring, NONTEXT_MIN),
+    ]
+
+
+SHIPPED = _chip_rows() + _node_rows() + _phase_rows() + [
     Shipped("the warnings headline on the banner tint", BANNER + [E("button", "banner__head")],
             "color", BANNER, TEXT_MIN),
     Shipped("the warnings glyph on the banner tint",
@@ -444,9 +421,45 @@ def measure(theme: str, pairs: list) -> list[tuple[str, str, str, float, float]]
     return [(fg, bg, use, contrast(t[fg], t[bg]), floor) for fg, bg, use, floor in pairs]
 
 
-def measure_shipped(theme: str, row: Shipped) -> float:
+def measure_shipped(theme: str, row: Shipped, env: frozenset = frozenset()) -> float:
     """Composite one shipped row and return its contrast ratio."""
-    return contrast(foreground(theme, row.fg, row.fg_prop), background(theme, row.bg))
+    return contrast(foreground(theme, row.fg, row.fg_prop, env),
+                    background(theme, row.bg, env))
+
+
+# ── the pairs interaction creates ──────────────────────────────────────────
+def _touch(spec, interaction: str):
+    """Put one interactive state on a chain or on the chain under a tint."""
+    if isinstance(spec, Tint):
+        return spec._replace(under=tuple(touched(spec.under, interaction)))
+    return touched(spec, interaction)
+
+
+def _interactive_rows() -> list[Shipped]:
+    """Every shipped row that an interactive state repaints, as its own row.
+
+    Derived rather than listed: each row is re-resolved under hover, focus and
+    selection, and a row appears here only when the resolved colours actually
+    move. So a rule added to `:hover` tomorrow brings its own measurement with
+    it, and a resting row that no interaction touches costs nothing.
+    """
+    rows = []
+    for row in SHIPPED:
+        for interaction in sorted(INTERACTIONS):
+            touched_row = row._replace(
+                usage=f"{row.usage} — under {interaction}",
+                fg=_touch(row.fg, interaction), bg=_touch(row.bg, interaction))
+            moved = False
+            for theme in THEMES:
+                for _, env in environments(theme):
+                    resting = (foreground(theme, row.fg, row.fg_prop, env),
+                               background(theme, row.bg, env))
+                    now = (foreground(theme, touched_row.fg, touched_row.fg_prop, env),
+                           background(theme, touched_row.bg, env))
+                    moved = moved or now != resting
+            if moved:
+                rows.append(touched_row)
+    return rows
 
 
 # Composited pairs that do not clear the threshold their row names, recorded
@@ -459,11 +472,17 @@ def measure_shipped(theme: str, row: Shipped) -> float:
 # here encloses rather than identifies, the case the non-text table already
 # excludes for card borders. Recorded so the reasoning is visible and the
 # numbers cannot drift; the pin is two-sided, as for the token shortfalls.
+#
+# The numbers moved on 2026-08-07 and the shapes did not. `.node--idle .box`
+# carries `opacity:.65`, and in SVG that dims the stroke as well as the fill;
+# foreground() read it on the fill side only, so these four recorded the ratio
+# between a full-strength contour and a correctly dimmed surface — a pair the
+# panel never rasterises. Reading opacity on both sides is what changed them.
 RECORDED_COMPOSITES = {
-    ("the idle node's contour against its own fill", "dark"): 1.37,
-    ("the idle node's contour against its own fill", "light"): 1.24,
-    ("the idle node's contour against the map card", "dark"): 1.33,
-    ("the idle node's contour against the map card", "light"): 1.38,
+    ("the idle node's contour against its own fill", "dark"): 1.22,
+    ("the idle node's contour against its own fill", "light"): 1.11,
+    ("the idle node's contour against the map card", "dark"): 1.18,
+    ("the idle node's contour against the map card", "light"): 1.23,
 }
 
 
@@ -509,8 +528,8 @@ def test_each_recorded_shortfall_still_measures_what_it_was_recorded_at(theme, f
     # and it fails if someone repairs it without moving the number here.
     t = tokens(theme)
     ratio = contrast(t[fg], t[bg])
-    assert ratio < TEXT_MIN, f"{theme} {fg} on {bg} now clears {TEXT_MIN}:1 at {ratio:.2f}"
-    assert round(ratio, 2) == KNOWN_SHORTFALLS[(theme, fg, bg)]
+    assert ratio < TEXT_MIN, f"{theme} {fg} on {bg} now clears {TEXT_MIN}:1 at {ratio:.4f}"
+    assert round(ratio, 4) == KNOWN_SHORTFALLS[(theme, fg, bg)]
 
 
 @pytest.mark.parametrize("theme", THEMES)
@@ -526,11 +545,46 @@ def test_every_mark_the_panel_composites_clears_the_threshold_that_governs_it(th
     # The composited half of the measurement contour. A chip's word is text and
     # answers to 4.5:1; its glyph and its border sit beside that word saying the
     # same thing, so 1.4.11's 3:1 is what governs them. Nothing is exempt: every
-    # row below is resolved through the cascade, tint strengths included.
+    # row below is resolved through the cascade, tint strengths included, and
+    # once for every media environment the stylesheet declares — a rule that
+    # only applies below 1000px still paints something a reader has to read.
     if (row.usage, theme) in RECORDED_COMPOSITES:
         pytest.skip("recorded below threshold — see test_each_recorded_composite_...")
-    ratio = measure_shipped(theme, row)
-    assert ratio >= row.floor, f"{theme}: {row.usage} is {ratio:.2f}:1, floor {row.floor}"
+    for label, env in environments(theme):
+        ratio = measure_shipped(theme, row, env)
+        assert ratio >= row.floor, (
+            f"{label}: {row.usage} is {ratio:.2f}:1, floor {row.floor}")
+
+
+# Which shipped marks an interactive state repaints. Empty, and the emptiness
+# is the result: hover paints the map's outer ring and the queue card's outer
+# ring, focus paints the outline, selection paints the ring — all of them
+# outside every mark measured above. `.jump:hover` used to be in this list at
+# 4.33:1 against a lit card, which is what the list is for. Two-sided: a new
+# interactive repaint appears here and fails until it is measured and named.
+REPAINTED_BY_INTERACTION = ()
+
+
+def test_the_only_marks_an_interaction_repaints_are_the_ones_recorded_here():
+    assert tuple(row.usage for row in _interactive_rows()) == REPAINTED_BY_INTERACTION
+
+
+@pytest.mark.parametrize("interaction", sorted(INTERACTIONS))
+@pytest.mark.parametrize("theme", THEMES)
+def test_every_mark_an_interaction_repaints_clears_its_threshold_too(theme, interaction):
+    # WCAG exempts no state, and this is the round that moved the accent onto
+    # :hover — `.jump:hover{color:var(--accent)}` shipped an accent on a lit
+    # card at 12.5px in no table at all. A pointer resting on an element is
+    # still the element, so every row above is measured again under it.
+    for row in SHIPPED:
+        if (row.usage, theme) in RECORDED_COMPOSITES:
+            continue
+        held = row._replace(fg=_touch(row.fg, interaction), bg=_touch(row.bg, interaction))
+        for label, env in environments(theme):
+            ratio = measure_shipped(theme, held, env)
+            assert ratio >= row.floor, (
+                f"{label}: {row.usage} under {interaction} is {ratio:.2f}:1, "
+                f"floor {row.floor}")
 
 
 @pytest.mark.parametrize("usage,theme", [k for k in RECORDED_COMPOSITES])
@@ -543,17 +597,22 @@ def test_each_recorded_composite_still_measures_what_it_was_recorded_at(usage, t
     assert round(ratio, 2) == RECORDED_COMPOSITES[(usage, theme)]
 
 
+@pytest.mark.parametrize("interaction", [None, *sorted(INTERACTIONS)])
 @pytest.mark.parametrize("theme", THEMES)
-def test_no_chip_says_its_status_with_colour_alone(theme):
+def test_no_chip_says_its_status_with_colour_alone(theme, interaction):
     # Moving chip words onto --ink is only safe because the status keeps two
     # other carriers. If a chip ever lost both, the word would be all that is
-    # left and the colour channel would be gone entirely.
-    for cls in ("pass", "fail", "blocked", "running", "idle"):
-        chain = _pill(cls)
-        glyph = foreground(theme, chain + [E("i", "gl")], "color")
-        border = foreground(theme, chain, "border-color")
-        word = foreground(theme, chain, "color")
-        assert glyph != word and border != word, cls
+    # left and the colour channel would be gone entirely. Held under the pointer
+    # as well as at rest: a hover rule collapsing the glyph onto the word colour
+    # takes the same carrier away, and used to do it with this test passing.
+    for build, classes in ((_pill, ("pass", "fail", "blocked", "running", "idle")),
+                           (lambda c: _vd(c, "alert"), ("ok", "bad", "wait", "idle"))):
+        for cls in classes:
+            chain = touched(build(cls), interaction)
+            glyph = foreground(theme, chain + touched([E("i", "gl")], interaction), "color")
+            border = foreground(theme, chain, "border-color")
+            word = foreground(theme, chain, "color")
+            assert glyph != word and border != word, (cls, interaction)
 
 
 @pytest.mark.parametrize("theme", THEMES)
@@ -618,8 +677,8 @@ def test_accent_and_fail_are_nearly_the_same_lightness_in_both_themes(theme):
 # The CIE76 dE*ab between fail and wait as a dichromat sees them. A difference
 # under about 2.3 is the standard just-noticeable-difference floor: below it the
 # two are the same colour. These are measurements of the owner's approved
-# palette, recorded as facts; the palette is not reopened by them.
-JND = 2.3
+# palette, recorded as facts; the palette is not reopened by them. The floor
+# itself and the arithmetic live in tests/test_panel_colour.py.
 CVD_FAIL_WAIT = {
     ("dark", "protanopia"): 19.9,
     ("dark", "deuteranopia"): 11.1,
