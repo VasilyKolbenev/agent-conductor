@@ -2,10 +2,11 @@
 
 The panel's palette is the owner's and is approved (plan §8.3, §8.4). What this
 module measures is not the palette but the *shipped pairs*: which foreground the
-panel actually puts on which background, what each of those measures, and whether
-the states stay apart when colour is taken away. Every number lives here rather
-than in a comment beside a token, because a number in a comment goes stale the
-moment the token changes and says nothing when it does.
+panel actually puts on which background and what each of those measures. Every
+number lives here rather than in a comment beside a token, because a number in a
+comment goes stale the moment the token changes and says nothing when it does.
+Whether the states stay apart once colour is taken away is a claim about shapes
+and words rather than about light, and it lives in tests/test_panel_style.py.
 
 The tokens are parsed out of `src/conductor/panel/index.html`, so changing a
 declaration there moves these results. That is the point.
@@ -353,73 +354,6 @@ def test_fail_and_wait_stay_apart_under_protanopia_in_both_themes():
         measured = delta_e(simulate_cvd(t["--fail"], "protanopia"),
                            simulate_cvd(t["--wait"], "protanopia"))
         assert measured > JND * 4, f"{theme}: {measured:.2f}"
-
-
-# ── the states must survive colour being removed entirely ──────────────────
-def _status_table() -> dict[str, dict[str, str]]:
-    """Parse the panel's STATUS vocabulary — the glyph, label and silhouette."""
-    rows = re.findall(
-        r'(\w+):\s*\{\s*cls:\s*"([^"]+)",\s*glyph:\s*"([^"]+)",'
-        r'\s*label:\s*"([^"]+)",\s*rx:\s*(\d+)\s*\}', panel_html())
-    assert rows, "the STATUS table is no longer shaped as this parser expects"
-    return {key: {"cls": cls, "glyph": glyph, "label": label, "rx": rx}
-            for key, cls, glyph, label, rx in rows}
-
-
-def _contour(cls: str) -> tuple[str, str]:
-    """Return the (stroke-width, stroke-dasharray) the panel draws for one status."""
-    html = panel_html()
-    block = re.search(r"\.node--" + cls + r" rect\{(.*?)\}", html, re.S)
-    body = block.group(1) if block else ""
-    width = re.search(r"stroke-width:\s*([\d.]+)", body)
-    dash = re.search(r"stroke-dasharray:\s*([^;}]+)", body)
-    return (width.group(1) if width else "1.5",      # .node rect base
-            dash.group(1).strip() if dash else "none")
-
-
-def _signature(status: str) -> tuple[str, str, str, str, str]:
-    row = _status_table()[status]
-    width, dash = _contour(row["cls"])
-    return row["glyph"], row["label"], row["rx"], width, dash
-
-
-@pytest.mark.parametrize("status", ["pass", "fail", "blocked", "running", "idle",
-                                    "contested"])
-def test_every_status_carries_a_glyph_and_a_spelt_out_label(status):
-    row = _status_table()[status]
-    assert row["glyph"] and row["label"], status
-
-
-def test_no_two_statuses_share_a_glyph_or_a_label():
-    table = _status_table()
-    glyphs = [r["glyph"] for r in table.values()]
-    labels = [r["label"] for r in table.values()]
-    assert len(set(glyphs)) == len(glyphs)
-    assert len(set(labels)) == len(labels)
-
-
-def test_running_and_fail_differ_in_silhouette_and_not_only_in_hue():
-    # The collision this slice exists to settle. In the light theme the running
-    # contour is --accent #c92f42 and the fail contour is --fail #b42318, 1.24:1
-    # apart, and before this slice both drew a 2.5px solid rounded rectangle. A
-    # reader with the colour removed had nothing left. They are now a pill
-    # (rx 14) and a square (rx 2), which survives any amount of colour loss.
-    running, fail = _signature("running"), _signature("fail")
-    assert running[2] != fail[2], "running and fail draw the same corner radius"
-    assert running[0] != fail[0] and running[1] != fail[1]
-
-
-def test_work_in_progress_waiting_and_failure_are_all_three_tellable_apart_without_colour():
-    # running / blocked / fail is the trio the slice must keep separable with
-    # colour switched off. Each carries a different glyph, a different word, and
-    # a different contour signature (radius, weight, dash pattern).
-    signatures = {s: _signature(s) for s in ("running", "blocked", "fail")}
-    colourless = {s: (sig[0], sig[1], sig[2], sig[3], sig[4])
-                  for s, sig in signatures.items()}
-    assert len(set(colourless.values())) == 3, colourless
-    for a, b in (("running", "blocked"), ("running", "fail"), ("blocked", "fail")):
-        shape_a, shape_b = colourless[a][2:], colourless[b][2:]
-        assert shape_a != shape_b, f"{a} and {b} draw the same contour: {shape_a}"
 
 
 def test_the_map_prints_the_status_word_inside_every_node():

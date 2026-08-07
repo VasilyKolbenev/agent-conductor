@@ -86,7 +86,7 @@ html[data-attention="high"] .shell{border-bottom-color:var(--contour-lit)}
 .dot--down{background:var(--fail);animation:none}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:.25}}
 @keyframes glow{0%,100%{filter:none}50%{filter:brightness(1.5)}}
-@media (prefers-reduced-motion:reduce){.dot,.pulse rect{animation:none}}
+@media (prefers-reduced-motion:reduce){.dot,.pulse .box{animation:none}}
 .banner{background:color-mix(in srgb,var(--wait) 12%,transparent);
         border:1px solid var(--wait);border-radius:8px;padding:3px 8px}
 .banner__head{display:flex;gap:9px;align-items:baseline;width:100%;text-align:left;
@@ -123,44 +123,52 @@ html[data-attention="high"] .shell{border-bottom-color:var(--contour-lit)}
 svg{width:100%;height:auto;display:block;overflow:visible}
 .arw{fill:var(--line)}
 .node{cursor:pointer}
-.node rect{fill:var(--sunk);stroke:var(--line);stroke-width:1.5}
+.node .box{fill:var(--sunk);stroke:var(--line);stroke-width:1.5}
 .node text{font-family:var(--mono);font-size:11px;fill:var(--muted);
            dominant-baseline:middle;text-anchor:middle}
 .node .id{font-size:12.5px;font-weight:700;fill:var(--ink)}
-/* Status is never carried by hue. Each status owns a silhouette (the corner
-   radius, set from STATUS.rx in drawNodes), a contour pattern and a glyph
-   plus a spelt-out label inside the node, so the graph stays readable with
-   colour removed entirely. This matters most for running and fail: in the
-   light theme --accent #c92f42 and --fail #b42318 are both reds, and before
-   this slice both drew a 2.5px solid contour, leaving hue as the only
-   difference. They are now a pill and a square. Interaction — hover, focus,
-   selection — may change hue and weight but never the silhouette, so no
-   interaction can make one status impersonate another. */
-.node--pass rect{stroke:var(--pass);fill:color-mix(in srgb,var(--pass) 14%,var(--sunk))}
+/* Status owns the inner silhouette, and owns it alone. Each status draws its
+   own .box: a corner radius (from STATUS.rx in drawNodes), a stroke colour, a
+   weight and a dash pattern, with a glyph and a spelt-out label printed
+   inside, so the graph stays readable with colour removed entirely. This
+   matters most for running and fail: in the light theme --accent #c92f42 and
+   --fail #b42318 are both reds, and before this slice both drew a 2.5px solid
+   contour, leaving hue as the only difference. They are now a pill and a
+   square.
+   Interaction is a separate channel with a separate element. Hover, focus and
+   selection paint .halo — an outer ring around the box — and touch no
+   property of .box at all, so a failing node under the cursor is still drawn
+   exactly as a failing node. No interaction can make one status impersonate
+   another because no interactive rule can reach the carrier.
+   tests/test_panel_style.py computes the .box profile of every status with
+   and without each interactive state and requires the two to be equal. */
+.node--pass .box{stroke:var(--pass);fill:color-mix(in srgb,var(--pass) 14%,var(--sunk))}
 .node--pass .id{fill:var(--pass)}
-.node--fail rect{stroke:var(--fail);stroke-width:3;
+.node--fail .box{stroke:var(--fail);stroke-width:3;
                  fill:color-mix(in srgb,var(--fail) 16%,var(--sunk))}
 .node--fail .id{fill:var(--fail)}
-.node--blocked rect{stroke:var(--wait);stroke-dasharray:5 3;
+.node--blocked .box{stroke:var(--wait);stroke-dasharray:5 3;
                     fill:color-mix(in srgb,var(--wait) 13%,var(--sunk))}
 .node--blocked .id{fill:var(--wait)}
-.node--running rect{stroke:var(--accent);stroke-width:2.5}
+.node--running .box{stroke:var(--accent);stroke-width:2.5}
 .node--running .id{fill:var(--accent)}
-.node--idle rect{stroke-dasharray:3 4;opacity:.65}
-.node--contested rect{stroke:var(--fail);stroke-width:2.5;stroke-dasharray:6 4;
+.node--idle .box{stroke-dasharray:3 4;opacity:.65}
+.node--contested .box{stroke:var(--fail);stroke-width:2.5;stroke-dasharray:6 4;
                       fill:url(#ctstFill)}   /* dashed + two-tone */
 .node--contested .id{fill:var(--ink)}
-.node:hover rect{stroke:var(--accent)}
-.node[aria-pressed="true"] rect{stroke:var(--accent);stroke-width:3}
+.halo{fill:none;stroke:none;stroke-width:1.5}
+.node:hover .halo{stroke:var(--faint)}
+.node:focus-visible .halo{stroke:var(--accent)}
+.node[aria-pressed="true"] .halo{stroke:var(--accent);stroke-width:2}
 .edge{stroke:var(--line);stroke-width:2;fill:none;marker-end:url(#arw)}
 .edge--dead{stroke:var(--fail);stroke-dasharray:6 5}
 .edge--idle{stroke:var(--faint);stroke-dasharray:3 5;opacity:.5}
 .ring{fill:none;stroke:var(--line);stroke-width:1;stroke-dasharray:3 4}
-.phase rect{fill:var(--sunk);stroke:var(--line)}
+.phase .box{fill:var(--sunk);stroke:var(--line)}
 .phase text{font-size:10px}
-.phase--current rect{stroke:var(--accent);stroke-width:2.5}
+.phase--current .box{stroke:var(--accent);stroke-width:2.5}
 .phase--current text{fill:var(--accent)}
-.pulse rect{animation:glow 2s ease-in-out infinite}
+.pulse .box{animation:glow 2s ease-in-out infinite}
 .role{font-size:12px;padding:1px 0}
 
 /* ── detail card ───────────────────────────────────────────── */
@@ -545,7 +553,12 @@ function drawNodes(svgEl, nodes, pos){
                         "aria-pressed": String(SEL === n.id),
                         "aria-label": String(n.label || n.id) + ": " + st.label });
     g.dataset.node = n.id;
-    g.append(sv("rect", { x, y, width: W, height: H, rx: st.rx }),
+    /* .halo is the interaction channel and nothing else: it is drawn outside
+       the box, it carries no status, and the stylesheet paints it only on
+       hover, focus and selection. The box below is the status carrier. */
+    g.append(sv("rect", { class: "halo", x: x - 3, y: y - 3, width: W + 6,
+                          height: H + 6, rx: st.rx + 3 }),
+             sv("rect", { class: "box", x, y, width: W, height: H, rx: st.rx }),
              sv("text", { class: "id", x: x + W / 2, y: y + 19 },
                 trim(String(n.label || n.id), 20)),
              sv("text", { x: x + W / 2, y: y + 37 }, st.glyph + " " + st.label));
@@ -600,7 +613,8 @@ function drawRing(svgEl, phases, current){
     const x = cx + Math.cos(a) * RX, y = cy + Math.sin(a) * RY;
     const cur = p === current;
     const g = sv("g", { class: "node phase" + (cur ? " phase--current pulse" : "") });
-    g.append(sv("rect", { x: x - 37, y: y - 13, width: 74, height: 26, rx: 6 }),
+    g.append(sv("rect", { class: "box", x: x - 37, y: y - 13, width: 74,
+                          height: 26, rx: 6 }),
              sv("text", { x, y: y + 1 }, (cur ? "▶ " : "") + trim(String(p), 11)));
     svgEl.append(g);
   });
