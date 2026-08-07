@@ -160,11 +160,13 @@ def test_the_live_state_is_the_only_other_thing_the_shell_can_say():
 
 
 def test_panel_introduces_no_new_innerhtml(tmp_path):
-    # Lane authors are untrusted input; the one surviving occurrence is the
-    # comment that states the ban.
-    html = panel_html()
-    assert html.count("innerHTML") == 1
-    assert "through innerHTML. Lane authors are untrusted input." in html
+    # Lane authors are untrusted input. This used to allow one occurrence — the
+    # comment stating the ban — and assert that the comment's words were
+    # present, which a comment rewritten to mean the exact opposite satisfied
+    # while keeping the words. No assertion about prose can be made by matching
+    # prose, so the panel stopped naming the API at all and the ban is held by
+    # absence: the name occurs nowhere, comment or code.
+    assert "innerHTML" not in panel_html()
 
 
 def _attention_table():

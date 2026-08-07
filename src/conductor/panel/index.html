@@ -10,7 +10,8 @@
    Winter Daylight light, §8.4 the dark semantic triple). Hex case is
    reproduced as supplied. Contrast ratios are not written here as prose —
    a number in a comment goes stale silently. They are computed from these
-   declarations by tests/test_panel_contrast.py, which parses this block. */
+   declarations by tests/test_panel_contrast.py, which resolves them through
+   the cascade in tests/test_panel_cascade.py. */
 :root{
   --ground:#07090D; --panel:#10141B; --sunk:#0B0E14; --line:#262D38;
   --ink:#F3F6F8; --muted:#B9C2CC; --faint:#7F8A98;
@@ -130,9 +131,13 @@ html[data-attention="high"] .shell{border-bottom-color:var(--contour-lit)}
 .legend i{width:9px;height:9px;display:inline-block;border:1.5px solid}
 svg{width:100%;height:auto;display:block;overflow:visible}
 .arw{fill:var(--line)}
+/* Two SVG widgets draw boxes with labels — the map's nodes and the cycle
+   ring's phases — and they share this geometry, but nothing else. Only .node
+   is interactive, and only .node carries a status, which is why the two keep
+   separate class namespaces: a rule written for one cannot reach the other. */
 .node{cursor:pointer}
-.node .box{fill:var(--sunk);stroke:var(--line);stroke-width:1.5}
-.node text{font-family:var(--mono);font-size:11px;fill:var(--muted);
+.node .box,.phase .box{fill:var(--sunk);stroke:var(--line);stroke-width:1.5}
+.node text,.phase text{font-family:var(--mono);font-size:11px;fill:var(--muted);
            dominant-baseline:middle;text-anchor:middle}
 /* The node name stays --ink on every status: it sits on a tint of the status
    colour, where the status colour itself does not clear 4.5:1 in the light
@@ -147,13 +152,16 @@ svg{width:100%;height:auto;display:block;overflow:visible}
    --fail #b42318 are both reds, and before this slice both drew a 2.5px solid
    contour, leaving hue as the only difference. They are now a pill and a
    square.
-   Interaction is a separate channel with a separate element. Hover, focus and
-   selection paint .halo — an outer ring around the box — and touch no
-   property of .box at all, so a failing node under the cursor is still drawn
-   exactly as a failing node. No interaction can make one status impersonate
+   Interaction is a separate channel drawn outside the box. Hover and selection
+   paint .halo — an outer ring — and focus is left to the global :focus-visible
+   outline above, which already reaches this group; a second ring for focus
+   would only draw two concentric accents. Neither channel touches any property
+   of .box, so a failing node under the cursor is still drawn exactly as a
+   failing node. No interaction can make one status impersonate
    another because no interactive rule can reach the carrier.
    tests/test_panel_style.py computes the .box profile of every status with
-   and without each interactive state and requires the two to be equal. */
+   and without each interactive state and requires the two to be equal, and it
+   does that for every carrier the stylesheet declares, not only for nodes. */
 .node--pass .box{stroke:var(--pass);fill:color-mix(in srgb,var(--pass) 14%,var(--sunk))}
 .node--fail .box{stroke:var(--fail);stroke-width:3;
                  fill:color-mix(in srgb,var(--fail) 16%,var(--sunk))}
@@ -165,16 +173,19 @@ svg{width:100%;height:auto;display:block;overflow:visible}
                       fill:url(#ctstFill)}   /* dashed + two-tone */
 .halo{fill:none;stroke:none;stroke-width:1.5}
 .node:hover .halo{stroke:var(--faint)}
-.node:focus-visible .halo{stroke:var(--accent)}
 .node[aria-pressed="true"] .halo{stroke:var(--accent);stroke-width:2}
 .edge{stroke:var(--line);stroke-width:2;fill:none;marker-end:url(#arw)}
 .edge--dead{stroke:var(--fail);stroke-dasharray:6 5}
 .edge--idle{stroke:var(--faint);stroke-dasharray:3 5;opacity:.5}
 .ring{fill:none;stroke:var(--line);stroke-width:1;stroke-dasharray:3 4}
-.phase .box{fill:var(--sunk);stroke:var(--line)}
 .phase text{font-size:10px}
+/* The current stage is accent role 1, and the accent carries it as a contour,
+   where 1.4.11's 3:1 governs. The label beside it is 10px text, so 4.5:1
+   governs there and the accent does not clear it against --sunk in the light
+   theme — the label runs on --ink instead, brighter than the other phases'
+   --muted, which is the emphasis the label was there to give. */
 .phase--current .box{stroke:var(--accent);stroke-width:2.5}
-.phase--current text{fill:var(--accent)}
+.phase--current text{fill:var(--ink)}
 .pulse .box{animation:glow 2s ease-in-out infinite}
 .role{font-size:12px;padding:1px 0}
 
@@ -217,12 +228,14 @@ svg{width:100%;height:auto;display:block;overflow:visible}
 .calm{font-size:12.5px;color:var(--faint);margin:0 2px}
 .alert{display:flex;gap:9px;align-items:baseline;flex-wrap:wrap;font-size:12.5px;
        padding:3px 0}
-/* The see-findings link lands on a lit alert card, where --accent measures
-   4.33:1 against --panel-lit in the dark theme. The underline already carries
-   the affordance, so the label runs on --ink and the accent stays on the
-   primary-action button (.copy) and on hover. */
+/* The see-findings link lands on a lit alert card, and the accent does not
+   clear 4.5:1 on that surface at this size. The underline already carries the
+   affordance, so the label runs on --ink and hover thickens the underline
+   rather than repainting the label — which means hovering this link creates no
+   colour pair of its own. tests/test_panel_contrast.py measures the pairs
+   interaction does create, beside the resting ones. */
 .jump{color:var(--ink);text-decoration:underline;padding:0;font-size:12.5px}
-.jump:hover{color:var(--accent)}
+.jump:hover{text-decoration-thickness:2px}
 .ag{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;font-size:12.5px;
     padding:5px 2px;border-bottom:1px solid var(--line)}
 .ag:last-child{border-bottom:none}
@@ -243,7 +256,11 @@ svg{width:100%;height:auto;display:block;overflow:visible}
 .ask{background:var(--sunk);border:1px solid var(--line);border-left:3px solid var(--wait);
      border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:3px;
      text-align:left;width:100%;cursor:pointer}
-.ask:hover{border-color:var(--accent)}
+/* The left edge of a queue card is a status carrier — a 3px --wait rule saying
+   this item is waiting — so hover may not repaint it, and the `border-color`
+   shorthand would have repainted all four sides. Interaction gets an outer ring
+   instead, in the same --faint the map's .halo uses for hover. */
+.ask:hover{box-shadow:0 0 0 1px var(--faint)}
 .ask__k{font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;color:var(--wait);
         text-transform:uppercase}
 .ask__t{font-size:13px;font-weight:620}
@@ -392,8 +409,12 @@ footer{font-size:10px;color:var(--faint);font-family:var(--mono);
        rather than raising the ceiling again. */
 "use strict";
 /* XSS hygiene: every state-derived string enters the DOM as a text node
-   (el/sv append strings via Node.append) or a setAttribute value — never
-   through innerHTML. Lane authors are untrusted input. */
+   (el/sv append strings via Node.append) or as a setAttribute value. Lane
+   authors are untrusted input. The banned API is deliberately not named
+   here: tests/test_panel_smoke.py requires that its name occur nowhere in
+   this file, comments included, so the ban is held by absence. A sentence
+   saying the ban is observed can be rewritten to say the opposite while a
+   guard that reads it still passes; an absence cannot. */
 const $ = id => document.getElementById(id);
 const SVGNS = "http://www.w3.org/2000/svg";
 
@@ -587,9 +608,11 @@ function drawNodes(svgEl, nodes, pos){
                         "aria-pressed": String(SEL === n.id),
                         "aria-label": String(n.label || n.id) + ": " + st.label });
     g.dataset.node = n.id;
-    /* .halo is the interaction channel and nothing else: it is drawn outside
-       the box, it carries no status, and the stylesheet paints it only on
-       hover, focus and selection. The box below is the status carrier. */
+    /* .halo takes its geometry from the box, three pixels out, so the ring
+       hugs whatever silhouette the status draws. Its geometry therefore
+       follows the status; its paint never does — the stylesheet gives it a
+       stroke only on hover and on selection, and gives it the same stroke
+       whatever the status is. The box below is the status carrier. */
     g.append(sv("rect", { class: "halo", x: x - 3, y: y - 3, width: W + 6,
                           height: H + 6, rx: st.rx + 3 }),
              sv("rect", { class: "box", x, y, width: W, height: H, rx: st.rx }),
@@ -647,7 +670,11 @@ function drawRing(svgEl, phases, current){
     const a = -Math.PI / 2 + i * 2 * Math.PI / phases.length;
     const x = cx + Math.cos(a) * RX, y = cy + Math.sin(a) * RY;
     const cur = p === current;
-    const g = sv("g", { class: "node phase" + (cur ? " phase--current pulse" : "") });
+    /* A phase is not a node: it carries no status, it is not focusable and it
+       is not clickable, so it keeps its own class namespace. Sharing "node"
+       would put two graph widgets under one set of rules — and would make the
+       node guards reason about groups that have no status to protect. */
+    const g = sv("g", { class: "phase" + (cur ? " phase--current pulse" : "") });
     g.append(sv("rect", { class: "box", x: x - 37, y: y - 13, width: 74,
                           height: 26, rx: 6 }),
              sv("text", { x, y: y + 1 }, (cur ? "▶ " : "") + trim(String(p), 11)));

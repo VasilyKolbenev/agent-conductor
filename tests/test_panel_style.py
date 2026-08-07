@@ -265,6 +265,20 @@ def halo_profile(status: str, interaction: str | None = None) -> dict[str, str]:
     return {prop: win.get(prop) for prop in ("stroke", "stroke-width", "fill")}
 
 
+def interaction_is_drawn(status: str, interaction: str | None = None) -> bool:
+    """Whether a node paints anything outside its status to say it is touched.
+
+    Two carriers count: the outer ring, and the global focus outline that
+    reaches the same group. "Drawn" means a real paint, not merely a different
+    declaration — ``outline:none`` is a change and is also an invisible focus
+    indicator, so a test asking only whether something *changed* would accept
+    the one case a focus indicator must never be in.
+    """
+    ring = halo_profile(status, interaction).get("stroke")
+    outline = computed(node_chain(status, interaction)[:1]).get("outline", "none")
+    return ring not in (None, "none") or "none" not in outline
+
+
 @pytest.mark.parametrize("interaction", sorted(INTERACTIONS))
 @pytest.mark.parametrize("status", STATUSES)
 def test_a_node_draws_the_same_status_contour_whether_or_not_it_is_being_touched(
@@ -282,11 +296,13 @@ def test_a_node_draws_the_same_status_contour_whether_or_not_it_is_being_touched
 def test_an_interaction_is_still_visible_even_though_it_cannot_touch_the_status(
         interaction):
     # The other half: separating the channels is only honest if the second
-    # channel actually draws something. The ring has to change, on every
-    # status, or "interaction has its own carrier" would be a way of saying
-    # interaction is invisible.
+    # channel actually draws something. Hover and selection draw the ring;
+    # focus is left to the global outline, which reaches the same group. Which
+    # of the two carries a state is left open — what is held is that at rest
+    # nothing is painted outside the status, and under every state something is.
     for status in STATUSES:
-        assert halo_profile(status, interaction) != halo_profile(status), status
+        assert not interaction_is_drawn(status), status
+        assert interaction_is_drawn(status, interaction), status
 
 
 def test_no_status_can_be_mistaken_for_another_once_colour_is_taken_away():
