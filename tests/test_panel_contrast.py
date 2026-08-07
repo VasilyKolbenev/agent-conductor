@@ -13,7 +13,7 @@ background is neither the token nor the card but the blend of the two — and th
 first version of this module measured the token, which is how nine shipped pairs
 went unmeasured. Nothing here is written by hand: a row names the element and
 the surface it sits on, the tint strength is read out of the stylesheet through
-the cascade in tests/test_panel_style.py, and the ratio is computed. Push a tint
+the cascade in tests/test_panel_cascade.py, and the ratio is computed. Push a tint
 from 14% to 92% and the number moves with it.
 
 The tokens and the rules are parsed out of `src/conductor/panel/index.html`, so
@@ -24,7 +24,8 @@ from typing import NamedTuple
 
 import pytest
 
-from tests.test_panel_style import E, computed, panel_html, root_declarations
+from tests.test_panel_cascade import E, computed, panel_html
+from tests.test_panel_style import root_declarations
 
 # WCAG 2.1 thresholds. 1.4.3 normal text; 1.4.11 non-text and large text.
 TEXT_MIN = 4.5

@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 from conductor import merge
 from tests.test_merge_review import MAP, lane
-from tests.test_panel_style import function_body, panel_html
+from tests.test_panel_cascade import function_body, panel_html
 from tests.test_server import start
 from tests.test_store import write_project, good_lane
 

@@ -1,214 +1,25 @@
-"""The panel's stylesheet, parsed into rules and resolved through the cascade.
+"""What the panel's stylesheet promises, held as relations over the cascade.
 
-Every guard in this module is written against a *relation* between declarations
-rather than against the presence of a word. A test that greps the source for
-``:hover`` passes as soon as the string exists and says nothing about what the
-rule does; a test that computes the winning declarations for a node with and
-without an interactive state says exactly the thing the panel promises. The
-sabotage that motivated this module — ``.node:hover rect{stroke:var(--accent);
-rx:14px}`` — is invisible to the first kind of test and fails the second.
+The claims here are the owner's two invariants and the rules of §4: status owns
+the inner silhouette and interaction may not touch it; the light level is
+conditional, data-keyed and never spends the accent; the material layer carries
+no hue; the legend echoes the silhouettes; December Red stays on its reserved
+roles. Each is written as an equality or an inequality between computed
+profiles, so the sabotage that motivated the module — ``.node:hover
+rect{stroke:var(--accent);rx:14px}`` — fails it, while rewriting a comment
+cannot make it pass.
 
-So the module builds a small cascade: it parses the ``<style>`` block into
-rules, computes specificity, matches selectors against described elements, and
-returns the declarations that win. Everything else here is a claim expressed in
-terms of that.
-
-The panel's own source is read here too (:func:`panel_html`), and the other two
-panel modules import it from this one. That is deliberate rather than
-convenient: this module owns the parsing, and duplicating a stylesheet parser
-into a colour module would be worse than one directed import.
+The cascade those profiles are computed through lives in
+tests/test_panel_cascade.py, which also derives the set of elements that carry a
+state at all. This module says what may be true of them.
 """
 import re
-from pathlib import Path
-from typing import NamedTuple
 
 import pytest
 
-PANEL = Path(__file__).resolve().parents[1] / "src" / "conductor" / "panel" / "index.html"
-
-
-def panel_html() -> str:
-    """Return the packaged panel source."""
-    return PANEL.read_text(encoding="utf-8")
-
-
-# ── the stylesheet, parsed ─────────────────────────────────────────────────
-class Rule(NamedTuple):
-    """One selector of one CSS rule, with the declarations it carries."""
-
-    selector: str
-    decls: dict[str, str]
-    order: int
-    context: str
-
-
-class Element(NamedTuple):
-    """An element as the cascade needs to see it, with no DOM behind it."""
-
-    tag: str
-    classes: frozenset[str] = frozenset()
-    states: frozenset[str] = frozenset()
-    attrs: dict[str, str] = {}
-
-
-def E(tag: str, *classes: str, states: tuple = (), **attrs: str) -> Element:
-    """Build an :class:`Element`; the terse form the pair tables read best in."""
-    return Element(tag, frozenset(classes), frozenset(states), dict(attrs))
-
-
-def _split_top_level(text: str, sep: str) -> list[str]:
-    out, depth, cur = [], 0, []
-    for ch in text:
-        if ch in "([":
-            depth += 1
-        elif ch in ")]":
-            depth -= 1
-        if ch == sep and depth == 0:
-            out.append("".join(cur))
-            cur = []
-        else:
-            cur.append(ch)
-    out.append("".join(cur))
-    return out
-
-
-def _declarations(body: str) -> dict[str, str]:
-    out: dict[str, str] = {}
-    for chunk in _split_top_level(body, ";"):
-        prop, sep, value = chunk.partition(":")
-        if not sep:
-            continue
-        prop, value = prop.strip(), value.replace("!important", "").strip()
-        if prop and value:
-            out[prop] = value
-    return out
-
-
-def _collect(css: str, context: str, out: list[Rule]) -> None:
-    i, n, prelude = 0, len(css), []
-    while i < n:
-        if css[i] != "{":
-            prelude.append(css[i])
-            i += 1
-            continue
-        head = "".join(prelude).strip()
-        prelude = []
-        depth, j = 1, i + 1
-        while j < n and depth:
-            depth += (css[j] == "{") - (css[j] == "}")
-            j += 1
-        body = css[i + 1:j - 1]
-        if head.startswith("@"):
-            if not head.startswith("@keyframes"):
-                _collect(body, head, out)
-        else:
-            decls = _declarations(body)
-            for sel in head.split(","):
-                out.append(Rule(sel.strip(), decls, len(out), context))
-        i = j
-
-
-def stylesheet(html: str | None = None) -> str:
-    """Return the panel's CSS with comments removed."""
-    block = re.search(r"<style>(.*?)</style>", html or panel_html(), re.S)
-    assert block, "the panel no longer carries a single inline <style> block"
-    return re.sub(r"/\*.*?\*/", " ", block.group(1), flags=re.S)
-
-
-def rules(html: str | None = None) -> list[Rule]:
-    """Parse the panel's stylesheet into one :class:`Rule` per selector."""
-    out: list[Rule] = []
-    _collect(stylesheet(html), "", out)
-    return out
-
-
-# ── matching and specificity ───────────────────────────────────────────────
-_TOKEN = re.compile(r"[.#][\w-]+|\[[^\]]*\]|::?[\w-]+(?:\([^)]*\))?")
-_COMPOUND = re.compile(r"([a-z][\w-]*|\*)?((?:[.#][\w-]+|\[[^\]]*\]|"
-                       r"::?[\w-]+(?:\([^)]*\))?)*)")
-
-
-def specificity(selector: str) -> tuple[int, int, int]:
-    """Return the (id, class, type) specificity triple of one selector."""
-    ids = len(re.findall(r"#[\w-]+", selector))
-    classes = (len(re.findall(r"\.[\w-]+", selector))
-               + len(re.findall(r"\[[^\]]*\]", selector))
-               + len(re.findall(r"(?<!:):[\w-]+", selector)))
-    types = (len(re.findall(r"(?:^|[\s])([a-z][\w-]*)", selector))
-             + len(re.findall(r"::[\w-]+", selector)))
-    return ids, classes, types
-
-
-def _compound_matches(compound: str, el: Element) -> bool:
-    m = _COMPOUND.fullmatch(compound)
-    if not m:
-        return False
-    tag, rest = m.group(1), m.group(2) or ""
-    if tag and tag not in ("*", el.tag):
-        return False
-    for token in _TOKEN.findall(rest):
-        if token.startswith("."):
-            if token[1:] not in el.classes:
-                return False
-        elif token.startswith("#"):
-            if el.attrs.get("id") != token[1:]:
-                return False
-        elif token.startswith("["):
-            name, sep, value = token[1:-1].partition("=")
-            name, value = name.strip(), value.strip().strip("\"'")
-            if sep and el.attrs.get(name) != value:
-                return False
-            if not sep and name not in el.attrs:
-                return False
-        elif token.lstrip(":") not in el.states:
-            return False
-    return True
-
-
-def _selector_matches(selector: str, chain: list[Element]) -> bool:
-    compounds = selector.split()
-    if not compounds or not _compound_matches(compounds[-1], chain[-1]):
-        return False
-    index = len(chain) - 2
-    for compound in reversed(compounds[:-1]):
-        while index >= 0 and not _compound_matches(compound, chain[index]):
-            index -= 1
-        if index < 0:
-            return False
-        index -= 1
-    return True
-
-
-def computed(chain: list[Element], html: str | None = None) -> dict[str, str]:
-    """Resolve the declarations that win for the last element of ``chain``.
-
-    Args:
-        chain: Ancestors outermost first; the element itself last.
-        html: Panel source override, for tests that mutate it.
-
-    Returns:
-        Mapping of property to winning value, by specificity then source order.
-    """
-    won: dict[str, tuple] = {}
-    for rule in rules(html):
-        if not _selector_matches(rule.selector, chain):
-            continue
-        key = (specificity(rule.selector), rule.order)
-        for prop, value in rule.decls.items():
-            if prop not in won or won[prop][0] <= key:
-                won[prop] = (key, value)
-    return {prop: value for prop, (_, value) in won.items()}
-
-
-def test_the_stylesheet_uses_only_the_selector_forms_this_cascade_models():
-    # The cascade above understands descendant combinators and nothing else.
-    # If the panel ever grows a `>`, `+` or `~`, every guard built on it would
-    # start passing by failing to match, so the model has to say so out loud.
-    for rule in rules():
-        assert not re.search(r"[>+~]", rule.selector), rule.selector
-        for compound in rule.selector.split():
-            assert _COMPOUND.fullmatch(compound), rule.selector
-
+from tests.test_panel_cascade import (
+    ENVIRONMENTS, INTERACTIONS, Element, Rule, carriers, computed, function_body,
+    paint_profile, panel_html, rules, script, stylesheet, touched)
 
 # ── the status vocabulary and the silhouette it owns ───────────────────────
 def status_table() -> dict[str, dict[str, str]]:
@@ -228,44 +39,42 @@ STATUSES = ("pass", "fail", "blocked", "running", "idle", "contested")
 # status can be made to look like another.
 SILHOUETTE = ("rx", "stroke", "stroke-width", "stroke-dasharray", "fill", "opacity")
 
-# Every way the panel can say "this element is being interacted with". The
-# closing test below proves the stylesheet contains no other.
-INTERACTIONS = {
-    "hover": (frozenset({"hover"}), {}),
-    "focus": (frozenset({"focus-visible", "focus"}), {}),
-    "selected": (frozenset(), {"aria-pressed": "true"}),
-}
 
-
+# ── the map's nodes: the invariant where it was first written ──────────────
 def node_chain(status: str, interaction: str | None = None) -> list[Element]:
     """Build the (group, status box) chain for one node in one state."""
-    states, attrs = INTERACTIONS[interaction] if interaction else (frozenset(), {})
     cls = status_table()[status]["cls"]
-    group = Element("g", frozenset({"node", "node--" + cls}), states,
-                    {"aria-pressed": "false", **attrs})
-    return [group, Element("rect", frozenset({"box"}), states, {})]
+    group = Element("g", frozenset({"node", "node--" + cls}), frozenset(),
+                    {"aria-pressed": "false"})
+    return touched([group, Element("rect", frozenset({"box"}), frozenset(), {})],
+                   interaction)
 
 
-def box_profile(status: str, interaction: str | None = None) -> dict[str, str]:
+def box_profile(status: str, interaction: str | None = None,
+                env: frozenset = frozenset()) -> dict[str, str]:
     """Return everything that decides how one status draws its contour."""
-    win = computed(node_chain(status, interaction))
+    win = computed(node_chain(status, interaction), env=env)
     profile = {prop: win.get(prop) for prop in SILHOUETTE}
     # rx arrives as a presentation attribute from STATUS.rx unless a rule
     # overrides it, and a rule overriding it is exactly the impersonation this
-    # guards against — so the attribute is part of the profile.
-    profile["rx"] = win.get("rx") or "attribute:" + status_table()[status]["rx"]
+    # guards against — so the attribute is part of the profile. Read as a
+    # number, because "14px" from a rule and 14 from the attribute are the same
+    # corner and a comparison of the two spellings would say they are not.
+    profile["rx"] = float(str(win.get("rx", status_table()[status]["rx"])).rstrip("px"))
     return profile
 
 
-def halo_profile(status: str, interaction: str | None = None) -> dict[str, str]:
+def halo_profile(status: str, interaction: str | None = None,
+                 env: frozenset = frozenset()) -> dict[str, str]:
     """Return how the interaction ring is painted for one node state."""
     chain = node_chain(status, interaction)
-    chain[-1] = Element("rect", frozenset({"halo"}), chain[-1].states, {})
-    win = computed(chain)
+    chain[-1] = chain[-1]._replace(classes=frozenset({"halo"}))
+    win = computed(chain, env=env)
     return {prop: win.get(prop) for prop in ("stroke", "stroke-width", "fill")}
 
 
-def interaction_is_drawn(status: str, interaction: str | None = None) -> bool:
+def interaction_is_drawn(status: str, interaction: str | None = None,
+                         env: frozenset = frozenset()) -> bool:
     """Whether a node paints anything outside its status to say it is touched.
 
     Two carriers count: the outer ring, and the global focus outline that
@@ -274,8 +83,8 @@ def interaction_is_drawn(status: str, interaction: str | None = None) -> bool:
     indicator, so a test asking only whether something *changed* would accept
     the one case a focus indicator must never be in.
     """
-    ring = halo_profile(status, interaction).get("stroke")
-    outline = computed(node_chain(status, interaction)[:1]).get("outline", "none")
+    ring = halo_profile(status, interaction, env).get("stroke")
+    outline = computed(node_chain(status, interaction)[:1], env=env).get("outline", "none")
     return ring not in (None, "none") or "none" not in outline
 
 
@@ -287,9 +96,12 @@ def test_a_node_draws_the_same_status_contour_whether_or_not_it_is_being_touched
     # focusing or selecting a node may add to it but may not repaint, reshape
     # or reweight it, so a failing node under the cursor is still a failing
     # node. Nothing here looks for the word "hover" — the two profiles are
-    # computed through the cascade and compared.
-    assert box_profile(status, interaction) == box_profile(status), (
-        f"{interaction} changed how {status} draws itself")
+    # computed through the cascade and compared, once per media environment the
+    # stylesheet declares, because a rule that only applies in Winter Daylight
+    # is still a rule that applies.
+    for label, env in ENVIRONMENTS:
+        assert box_profile(status, interaction, env) == box_profile(status, None, env), (
+            f"{interaction} changed how {status} draws itself in {label}")
 
 
 @pytest.mark.parametrize("interaction", sorted(INTERACTIONS))
@@ -300,9 +112,41 @@ def test_an_interaction_is_still_visible_even_though_it_cannot_touch_the_status(
     # focus is left to the global outline, which reaches the same group. Which
     # of the two carries a state is left open — what is held is that at rest
     # nothing is painted outside the status, and under every state something is.
-    for status in STATUSES:
-        assert not interaction_is_drawn(status), status
-        assert interaction_is_drawn(status, interaction), status
+    for label, env in ENVIRONMENTS:
+        for status in STATUSES:
+            assert not interaction_is_drawn(status, None, env), (status, label)
+            assert interaction_is_drawn(status, interaction, env), (status, label)
+
+
+@pytest.mark.parametrize("interaction", sorted(INTERACTIONS))
+def test_the_interaction_ring_is_painted_the_same_whatever_the_status(interaction):
+    # drawNodes says the ring takes its geometry from the status and its paint
+    # never does. This is the paint half held as a relation: one ring paint
+    # across six statuses, so the ring cannot become a second status carrier.
+    for label, env in ENVIRONMENTS:
+        painted = {tuple(sorted(halo_profile(s, interaction, env).items()))
+                   for s in STATUSES}
+        assert len(painted) == 1, (label, interaction, painted)
+
+
+# ── the same invariant over every carrier, not only the map ────────────────
+# Owner invariant 1 was written about map nodes but stated generally, and the
+# general form is the one that holds: a chip's border, a queue card's left edge
+# and the ring's current stage all say what state something is in. The carriers
+# are derived in tests/test_panel_cascade.py from the stylesheet itself, so the
+# next one comes under guard when it is declared rather than when it is noticed.
+@pytest.mark.parametrize("interaction", sorted(INTERACTIONS))
+def test_no_interaction_repaints_an_element_the_stylesheet_gives_a_state_to(interaction):
+    # Owner invariant 1, general form: hover, focus and selection may add an
+    # outer ring, a second contour or a surface of their own, and may not touch
+    # the paint or the shape of anything carrying a state. Held over carriers
+    # read out of the stylesheet rather than listed here, so a carrier the panel
+    # grows next comes under guard the moment it is declared — which is how the
+    # chips, the queue card's edge and the ring's current stage arrive.
+    for carrier in carriers():
+        for label, env in ENVIRONMENTS:
+            assert paint_profile(carrier.chain, interaction, env) == \
+                paint_profile(carrier.chain, None, env), (carrier.label, label, interaction)
 
 
 def test_no_status_can_be_mistaken_for_another_once_colour_is_taken_away():
@@ -312,28 +156,6 @@ def test_no_status_can_be_mistaken_for_another_once_colour_is_taken_away():
               + (status_table()[s]["glyph"], status_table()[s]["label"])
               for s in STATUSES}
     assert len(set(shapes.values())) == len(STATUSES), shapes
-
-
-def test_the_stylesheet_declares_no_interactive_state_this_module_does_not_model():
-    # The equality tests above are only as complete as the list of states they
-    # try. Any other interactive selector in the stylesheet would sit outside
-    # them, so its appearance has to break something.
-    modelled = {"hover", "focus", "focus-visible", "aria-pressed"}
-    # Selectors that key on something other than a person touching the element:
-    # a document position, a visibility flag, a disclosure flag, and the light
-    # level, which is read from state.json rather than from the pointer.
-    inert = {"root", "last-child", "hidden", "aria-expanded", "data-attention"}
-    for rule in rules():
-        for token in _TOKEN.findall(rule.selector):
-            if token.startswith("::"):
-                continue
-            if token.startswith(":"):
-                name = token.lstrip(":").split("(")[0]
-            elif token.startswith("["):
-                name = token[1:-1].partition("=")[0].strip()
-            else:
-                continue
-            assert name in modelled or name in inert, rule.selector
 
 
 @pytest.mark.parametrize("status", STATUSES)
@@ -356,26 +178,17 @@ def test_running_and_fail_differ_in_silhouette_and_not_only_in_hue():
     # apart, and before this slice both drew a 2.5px solid rounded rectangle. A
     # reader with the colour removed had nothing left. They are now a pill
     # (rx 14) and a square (rx 2), which survives any amount of colour loss.
-    running, fail = box_profile("running"), box_profile("fail")
-    assert running["rx"] != fail["rx"], "running and fail draw the same corner radius"
-    assert running["stroke-width"] != fail["stroke-width"]
+    #
+    # Held in every media environment, and the light one is the point: that is
+    # where the two contours are the same red, so a rule scoped to Winter
+    # Daylight is exactly where the silhouettes would quietly converge.
+    for label, env in ENVIRONMENTS:
+        running, fail = box_profile("running", None, env), box_profile("fail", None, env)
+        assert running["rx"] != fail["rx"], f"{label}: same corner radius"
+        assert running["stroke-width"] != fail["stroke-width"], label
     table = status_table()
     assert table["running"]["glyph"] != table["fail"]["glyph"]
     assert table["running"]["label"] != table["fail"]["label"]
-
-
-def function_body(name: str, html: str | None = None) -> str:
-    """Return the source of one top-level ``function`` in the panel's script."""
-    src = html or panel_html()
-    start = src.index("function " + name + "(")
-    depth, i = 0, src.index("{", start)
-    j = i
-    while j < len(src):
-        depth += (src[j] == "{") - (src[j] == "}")
-        j += 1
-        if depth == 0:
-            return src[i + 1:j - 1]
-    raise AssertionError(f"{name} is not a balanced function body")
 
 
 def test_the_map_prints_the_status_word_inside_every_node():
@@ -394,10 +207,18 @@ def test_the_map_prints_the_status_word_inside_every_node():
 def test_the_status_box_and_the_interaction_ring_are_two_elements_in_every_node():
     # The cascade guards above describe a node with a .box and a .halo. If
     # drawNodes stopped emitting either of them, those guards would be
-    # reasoning about an element that is no longer drawn.
+    # reasoning about an element that is no longer drawn. "Every node" is the
+    # load-bearing word: the cycle ring used to emit groups classed "node phase"
+    # with a single .box and no ring, which made this name false and left the
+    # ring's own boxes outside the node guards. So the second half holds the
+    # class namespace — drawNodes is the only writer of the class "node".
     body = function_body("drawNodes")
     assert re.search(r'sv\("rect",\s*\{\s*class:\s*"halo"', body), body
     assert re.search(r'sv\("rect",\s*\{\s*class:\s*"box"', body), body
+    written = [literal for literal in re.findall(r'class:\s*"([^"]*)"', script())
+               if "node" in literal.split()]
+    assert written == ["node node--"], written
+    assert re.findall(r'class:\s*"([^"]*)"', body).count("node node--") == 1
 
 
 # ── the light level: conditional, data-keyed, and never the accent ─────────
@@ -408,18 +229,31 @@ def _light_rules() -> list[Rule]:
     return [r for r in rules() if "data-attention" in r.selector]
 
 
-def test_a_card_can_only_reach_the_lit_material_through_the_light_level():
-    # Absence of attention is a real state and has to look like one. A rule
-    # that hands out the lit surface, the lift or the brightened contour
-    # without asking the light level would make the panel glow permanently,
-    # which is the direction's central prohibition stated in reverse.
-    for rule in rules():
-        if rule.selector in (":root",) or rule.context.startswith("@media (prefers-color"):
-            continue                       # the token declarations themselves
-        spent = [prop for prop, value in rule.decls.items()
-                 if any(token in value for token in LIT_MATERIAL)]
-        if spent:
-            assert "data-attention" in rule.selector, (rule.selector, spent)
+def _card(level: str, lit: bool) -> list[Element]:
+    return [Element("html", frozenset(), frozenset(), {"data-attention": level}),
+            Element("body"),
+            Element("div", frozenset({"card", "lit"} if lit else {"card"}))]
+
+
+LEVELS = ("none", "low", "high")
+
+
+@pytest.mark.parametrize("label,env", ENVIRONMENTS,
+                         ids=[label for label, _ in ENVIRONMENTS])
+def test_a_card_can_only_reach_the_lit_material_through_the_light_level(label, env):
+    # Absence of attention is a real state and has to look like one. The first
+    # version of this asked for the substring "data-attention" in the selector,
+    # which `html[data-attention] .lit` satisfies while matching at every level
+    # including "none" — a panel lit permanently, the direction's central
+    # prohibition, with the suite green. So the claim is held as a relation
+    # instead: at level "none" a lit card is drawn exactly like a card that is
+    # not lit at all, and at the two levels that mean something, it is not.
+    unlit = computed(_card("none", lit=False), env=env)
+    assert computed(_card("none", lit=True), env=env) == unlit, "the panel glows unasked"
+    for level in ("low", "high"):
+        assert computed(_card(level, lit=True), env=env) != unlit, level
+    for level in LEVELS:
+        assert computed(_card(level, lit=False), env=env) == unlit, level
 
 
 def test_the_light_level_never_spends_the_accent():
@@ -435,16 +269,6 @@ def test_the_light_level_never_spends_the_accent():
         for prop, value in rule.decls.items():
             if prop in LIT_MATERIAL:
                 assert "--accent" not in value, (rule.selector, prop, value)
-
-
-def test_the_parser_reads_every_rule_of_the_panel_to_its_closing_brace():
-    # The parser is the foundation every claim below stands on, so it says out
-    # loud what it found: the multi-line light rule whose second line used to be
-    # invisible, and a rule inside a media query, both complete.
-    found = {r.selector: r for r in rules()}
-    high = found['html[data-attention="high"] .lit']
-    assert set(high.decls) == {"background", "box-shadow", "border-color"}
-    assert found[".grid--split"].context.startswith("@media")
 
 
 def root_declarations() -> tuple[dict[str, str], dict[str, str]]:
@@ -508,6 +332,71 @@ def test_every_legend_key_draws_its_status_as_a_contour_and_not_as_a_flat_fill()
     # may be a block of one token. contested keeps a fill because being two
     # colours at once is its signature — but it is a gradient of two tokens
     # inside a dashed contour, not a flat swatch, so the rule below still holds.
+    # Asking that the background not begin with `var(` was a check on spelling:
+    # `color-mix(in srgb,var(--accent) 100%,transparent)` is the same flat red
+    # written differently. What a key may carry is stated positively instead.
     for status, style in legend_keys().items():
         assert "border-color" in style, status
-        assert not style.get("background", "").startswith("var("), status
+        fill = style.get("background", "")
+        if not fill:
+            continue
+        assert fill.startswith("linear-gradient("), (status, fill)
+        assert len(set(re.findall(r"var\((--[\w-]+)\)", fill))) == 2, (status, fill)
+
+
+# ── movement, and the accent's six roles ──────────────────────────────────
+def animated() -> dict[str, str]:
+    """Every selector the stylesheet animates, with the animation it declares."""
+    return {f"{rule.context} {rule.selector}".strip(): rule.decls["animation"]
+            for rule in rules() if "animation" in rule.decls}
+
+
+# The panel's two movements, both pre-existing. §5 of the plan forbids
+# permanent decorative animation and removing what is already here is DEC-UI-4's
+# work — but this slice lays down a material layer, and a material layer is
+# exactly the thing a throb or a shimmer gets attached to. Pinned two-sidedly:
+# a new animation fails here, and so does deleting one without saying so.
+MOVEMENT = {
+    ".dot": "blink 2.4s ease-in-out infinite",
+    ".pulse .box": "glow 2s ease-in-out infinite",
+    ".dot--down": "none",
+    "@media (prefers-reduced-motion:reduce) .dot": "none",
+    "@media (prefers-reduced-motion:reduce) .pulse .box": "none",
+}
+
+
+def test_the_panel_moves_in_the_two_places_it_already_moved_and_nowhere_else():
+    assert animated() == MOVEMENT
+    declared = set(re.findall(r"@keyframes\s+([\w-]+)", stylesheet()))
+    used = {value.split()[0] for value in animated().values() if value != "none"}
+    assert declared == used, (declared, used)
+
+
+# The six roles §4 reserves December Red for: the current Orbit stage, the
+# travelled trajectory, human-control points, the primary action, focus and
+# selection, and a small brand mark. Every place the stylesheet spends the
+# accent is named here with the role it spends it on, so a new accent site
+# cannot appear without someone deciding which role it is. Three of them are
+# open questions carried to the owner rather than settled roles, and they say
+# so: an honest map beats a tidy one.
+ACCENT_ROLES = {
+    ":focus-visible": "role 5 — focus, on every focusable element including a node",
+    ".node[aria-pressed=\"true\"] .halo": "role 5 — selection, on the outer ring",
+    ".phase--current .box": "role 1 — the current Orbit stage",
+    ".mark__dot": "role 6 — the brand mark",
+    ".copy": "role 4 — the primary action, the decision-brief button",
+    ".copy:hover": "role 4 — the same button under the pointer",
+    ".spark i": "OPEN — the KPI progress bar, carried to the owner",
+    ".node--running .box": "OPEN — the running node's contour, carried to the owner",
+    ".p--running": "OPEN — the running chip's tint and border, carried to the owner",
+    ".p--running .gl": "OPEN — the running chip's glyph, carried to the owner",
+    "legend key: running": "OPEN — the map legend's contour for running",
+}
+
+
+def test_every_place_the_panel_spends_the_accent_is_named_with_the_role_it_spends_it_on():
+    spent = {rule.selector for rule in rules()
+             for value in rule.decls.values() if "var(--accent)" in value}
+    spent |= {f"legend key: {status}" for status, style in legend_keys().items()
+              if any("var(--accent)" in value for value in style.values())}
+    assert spent == set(ACCENT_ROLES), spent ^ set(ACCENT_ROLES)
