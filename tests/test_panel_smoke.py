@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 from conductor import merge
 from tests.test_merge_review import MAP, lane
-from tests.test_panel_cascade import function_body, panel_html
+from tests.test_panel_cascade import PANEL, function_body, panel_html, script
 from tests.test_server import start
 from tests.test_store import write_project, good_lane
 
@@ -107,16 +107,32 @@ def test_panel_titles_the_document_december_and_counts_the_queue(tmp_path):
     assert 'document.title = "December — " + (Number(k.queue) || 0) + " waiting on you"' in html
 
 
+def _arguments_of(name: str, source: str) -> list[str]:
+    """Return the argument text of every call to ``name`` in ``source``."""
+    out = []
+    for match in re.finditer(re.escape(name) + r"\(", source):
+        depth, i = 1, match.end()
+        while depth:
+            depth += (source[i] == "(") - (source[i] == ")")
+            i += 1
+        out.append(source[match.end():i - 1])
+    return out
+
+
 def test_panel_shell_carries_the_mark_the_wordmark_and_an_honest_last_update(tmp_path):
     html = _fetch_panel(write_project(tmp_path, lanes={"claude": good_lane()}))
     assert 'aria-label="December"' in html          # the mark, inline SVG
     assert 'class="mark__dot"' in html              # the one red dot
     assert 'class="wordmark">December<' in html
-    # "honest" is the load-bearing word in this test's name, so the whole
-    # expression is pinned rather than the field name. `generated_at` appears
-    # in the footer too, which is why a shell that prints ago(new Date()) — a
-    # last update that always reads "just now" — used to survive this check.
-    assert '"last update " + ago(parseTs(s.generated_at))' in html
+    # "honest" is the load-bearing word in this test's name, and pinning the
+    # whole expression against the raw file was still a substring assertion: it
+    # survived `ago(new Date())` in the live line with the pinned expression
+    # kept alive in a comment beside it. So the assertion is made against the
+    # shell's *code* — function_body strips comments before counting braces —
+    # and it holds a relation as well: the shell ages exactly one thing, and
+    # the thing it ages is the state document's own timestamp.
+    assert _arguments_of("ago", function_body("renderShell")) == \
+        ["parseTs(s.generated_at)"]
 
 
 def _shell_markup(served: str) -> str:
@@ -165,8 +181,29 @@ def test_panel_introduces_no_new_innerhtml(tmp_path):
     # present, which a comment rewritten to mean the exact opposite satisfied
     # while keeping the words. No assertion about prose can be made by matching
     # prose, so the panel stopped naming the API at all and the ban is held by
-    # absence: the name occurs nowhere, comment or code.
+    # absence: the name occurs nowhere, comment or code. The rewrite that used
+    # to pass now fails, because writing it means writing the word.
     assert "innerHTML" not in panel_html()
+
+
+def test_every_test_module_the_panel_points_a_reader_at_exists():
+    # The panel's comments send a reader to five test modules by path. This
+    # repository has already paid once for a reference that stopped resolving
+    # (commit 97f8325), and this round moved guards into two more files.
+    named = set(re.findall(r"tests/test_panel_\w+\.py", panel_html()))
+    assert named, "the panel no longer points at the guards that hold its claims"
+    for path in sorted(named):
+        assert (PANEL.parents[3] / path).exists(), path
+
+
+def test_the_panel_draws_the_interaction_ring_it_serves(tmp_path):
+    # The file-size waiver's third condition: every surface keeps a smoke test
+    # here. .halo is the surface this slice added, and the cascade guards in
+    # tests/test_panel_style.py reason about it, so the served panel has to
+    # actually draw it.
+    html = _fetch_panel(write_project(tmp_path, lanes={"claude": good_lane()}))
+    assert 'class: "halo"' in html
+    assert ".halo{" in html
 
 
 def _attention_table():
@@ -209,10 +246,36 @@ def test_the_light_level_is_written_once_and_from_that_one_expression():
     # Purity is only worth having if nothing bypasses it. One writer, one
     # source: the light level the document wears is the value attentionOf
     # computed from the state document handed to renderShell.
-    html = panel_html()
-    assert html.count("dataset.attention") == 1
-    assert "document.documentElement.dataset.attention = attentionOf(s);" in html
-    assert function_body("renderShell").count("attentionOf(") == 1
+    #
+    # Counting one spelling was not that. A second writer using setAttribute
+    # instead of dataset — a clock-keyed one, in render(), a line below the
+    # call to renderShell — left the count at one and the suite green. So what
+    # is held is the relation: the script reaches the document element exactly
+    # once, and never names the attribute as a string, which is the only other
+    # way to write it.
+    body = function_body("renderShell")
+    assert script().count("documentElement") == 1
+    assert "document.documentElement.dataset.attention = attentionOf(s);" in body
+    assert body.count("attentionOf(") == 1
+    assert not [text for text in re.findall(r'"([^"]*)"', script())
+                if "data-attention" in text or "attention" == text]
+
+
+def test_which_cards_are_lit_is_decided_by_the_markup_and_never_computed():
+    # The other half of the owner's invariant. "The same state with a different
+    # clock gives the same classes and the same styles" is about two things:
+    # which level the document wears, and which elements wear the lit material.
+    # The level was guarded three ways and the set was guarded by nothing, so
+    # `$("agents").classList.toggle("lit", Date.now() % 2 === 0)` changed the
+    # classes by the clock with every panel test green. The set is markup-
+    # determined, so that is what is asserted — and no script expression may
+    # spell the class at all, which is the only way it could become computed.
+    wearing = [ident for classes, ident in re.findall(r'class="([^"]*)" id="(\w+)"',
+                                                      panel_html())
+               if "lit" in classes.split()]
+    assert wearing == ["queue", "alerts"], wearing
+    written = [word for text in re.findall(r'"([^"]*)"', script()) for word in text.split()]
+    assert "lit" not in written, written
 
 
 def _level_for(state):
