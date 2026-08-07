@@ -362,6 +362,19 @@ def function_body(name: str, html: str | None = None) -> str:
     raise AssertionError(f"{name} is not a balanced function body")
 
 
+def test_the_map_prints_the_status_word_inside_every_node():
+    # The glyph alone would be a symbol to learn; the word next to it is what
+    # makes the map readable without the legend and without colour. Scoped to
+    # drawNodes on purpose: the same expression also lives in renderDetail, so
+    # searching the whole file proves only that the detail card still has it.
+    body = function_body("drawNodes")
+    texts = re.findall(r'sv\("text",[^;]*?\)(?=,|\);)', body, re.S)
+    assert len(texts) == 2, texts
+    printed = " ".join(texts)
+    assert "st.glyph" in printed and "st.label" in printed, printed
+    assert "n.label || n.id" in printed, printed
+
+
 def test_the_status_box_and_the_interaction_ring_are_two_elements_in_every_node():
     # The cascade guards above describe a node with a .box and a .halo. If
     # drawNodes stopped emitting either of them, those guards would be
@@ -446,3 +459,39 @@ def test_the_material_layer_is_palette_mixes_plus_neutral_shadow_geometry(theme)
         shade = re.fullmatch(r"[\d\spx]+rgba\((\d+),(\d+),(\d+),\.\d+\)", value)
         assert shade, value
         assert tuple(int(c) for c in shade.groups()) in ((0, 0, 0), ink_rgb), value
+
+
+# ── the map legend ─────────────────────────────────────────────────────────
+def legend_keys() -> dict[str, dict[str, str]]:
+    """Parse the map legend: one status word to the swatch style beside it."""
+    block = re.search(r'<div class="legend">(.*?)</div>', panel_html(), re.S).group(1)
+    out = {}
+    for style, text in re.findall(r'<i style="([^"]*)"></i>\s*\S+\s*([a-z]+)', block, re.S):
+        out[text] = dict(part.split(":", 1) for part in
+                         (p.strip() for p in style.replace("\n", " ").split(";")) if part)
+    assert len(out) == len(STATUSES), out
+    return out
+
+
+def test_the_legend_key_of_a_status_echoes_the_silhouette_that_status_draws():
+    # The legend is the one place a --fail swatch and an --accent swatch stand
+    # side by side, and as identical squares hue was all that separated them.
+    # The relation held here is monotonic: a status with a rounder node draws a
+    # rounder key, and two statuses with the same radius draw the same key.
+    table, keys = status_table(), legend_keys()
+    radius = {s: float(keys[s]["border-radius"].rstrip("px")) for s in STATUSES}
+    corner = {s: float(table[s]["rx"]) for s in STATUSES}
+    for a in STATUSES:
+        for b in STATUSES:
+            assert (corner[a] > corner[b]) == (radius[a] > radius[b]), (a, b)
+            assert (corner[a] == corner[b]) == (radius[a] == radius[b]), (a, b)
+
+
+def test_every_legend_key_draws_its_status_as_a_contour_and_not_as_a_flat_fill():
+    # §4 reserves the accent for six roles and never for a large fill, so no key
+    # may be a block of one token. contested keeps a fill because being two
+    # colours at once is its signature — but it is a gradient of two tokens
+    # inside a dashed contour, not a flat swatch, so the rule below still holds.
+    for status, style in legend_keys().items():
+        assert "border-color" in style, status
+        assert not style.get("background", "").startswith("var("), status

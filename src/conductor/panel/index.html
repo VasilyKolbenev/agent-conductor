@@ -122,7 +122,12 @@ html[data-attention="high"] .shell{border-bottom-color:var(--contour-lit)}
 .legend{display:flex;gap:11px;flex-wrap:wrap;font-family:var(--mono);font-size:10px;
         color:var(--muted)}
 .legend b{font-weight:400;display:inline-flex;align-items:center;gap:4px}
-.legend i{width:8px;height:8px;border-radius:2px;display:inline-block}
+/* Legend keys are contours, not filled squares: this is the one place where a
+   --fail swatch and an --accent swatch stand side by side, and as identical
+   squares hue was the only thing telling them apart. Each key now echoes the
+   silhouette its node draws — the radii below track STATUS.rx — so the legend
+   obeys the same rule as the map, and no key is a solid block of accent. */
+.legend i{width:9px;height:9px;display:inline-block;border:1.5px solid}
 svg{width:100%;height:auto;display:block;overflow:visible}
 .arw{fill:var(--line)}
 .node{cursor:pointer}
@@ -325,12 +330,15 @@ footer{font-size:10px;color:var(--faint);font-family:var(--mono);
       <svg id="mapSvg" viewBox="0 0 10 10" role="img" aria-label="Dependency map"></svg>
       <p class="empty" id="mapEmpty" hidden>No nodes in the map yet.</p>
       <div class="legend">
-        <b><i style="background:var(--pass)"></i>✓ pass</b>
-        <b><i style="background:var(--fail)"></i>✕ fail</b>
-        <b><i style="background:var(--wait)"></i>■ blocked</b>
-        <b><i style="background:var(--accent)"></i>▶ running</b>
-        <b><i style="background:var(--faint)"></i>· idle</b>
-        <b><i style="background:linear-gradient(135deg,var(--wait) 50%,var(--fail) 50%)"></i>≠
+        <b><i style="border-color:var(--pass);border-radius:3px"></i>✓ pass</b>
+        <b><i style="border-color:var(--fail);border-radius:1px"></i>✕ fail</b>
+        <b><i style="border-color:var(--wait);border-radius:3px;
+                     border-style:dashed"></i>■ blocked</b>
+        <b><i style="border-color:var(--accent);border-radius:5px"></i>▶ running</b>
+        <b><i style="border-color:var(--faint);border-radius:3px;
+                     border-style:dotted"></i>· idle</b>
+        <b><i style="border-color:var(--fail);border-radius:1px;border-style:dashed;
+                     background:linear-gradient(135deg,var(--wait) 50%,var(--fail) 50%)"></i>≠
            contested</b>
       </div>
     </div>

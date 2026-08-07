@@ -653,9 +653,3 @@ def test_fail_and_wait_stay_apart_under_protanopia_in_both_themes():
         measured = delta_e(simulate_cvd(t["--fail"], "protanopia"),
                            simulate_cvd(t["--wait"], "protanopia"))
         assert measured > JND * 4, f"{theme}: {measured:.2f}"
-
-
-def test_the_map_prints_the_status_word_inside_every_node():
-    # The glyph alone would be a symbol to learn; the word next to it is what
-    # makes the map readable without the legend and without colour.
-    assert 'st.glyph + " " + st.label' in panel_html()

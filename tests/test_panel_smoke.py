@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 from conductor import merge
 from tests.test_merge_review import MAP, lane
-from tests.test_panel_style import panel_html
+from tests.test_panel_style import function_body, panel_html
 from tests.test_server import start
 from tests.test_store import write_project, good_lane
 
@@ -112,20 +112,51 @@ def test_panel_shell_carries_the_mark_the_wordmark_and_an_honest_last_update(tmp
     assert 'aria-label="December"' in html          # the mark, inline SVG
     assert 'class="mark__dot"' in html              # the one red dot
     assert 'class="wordmark">December<' in html
-    assert '"last update "' in html                 # computed from generated_at
-    assert "generated_at" in html
+    # "honest" is the load-bearing word in this test's name, so the whole
+    # expression is pinned rather than the field name. `generated_at` appears
+    # in the footer too, which is why a shell that prints ago(new Date()) — a
+    # last update that always reads "just now" — used to survive this check.
+    assert '"last update " + ago(parseTs(s.generated_at))' in html
+
+
+def _shell_markup(served: str) -> str:
+    header = re.search(r'<header class="shell".*?</header>', served, re.S)
+    assert header, "the panel no longer serves a <header class=\"shell\">"
+    return re.sub(r"<!--.*?-->", " ", header.group(0), flags=re.S)
 
 
 def test_panel_shell_names_no_run_and_no_other_invented_identifier(tmp_path):
     # Plan §8.2: protocol v1 has no run identity, so the shell may not display
-    # one, nor a session number, nor a build label. Comments are stripped first
-    # — prose explaining why the identifier is absent is not the identifier, and
-    # scanning it instead of the markup is how this check would fool itself.
+    # one, nor a session number, nor a build label, nor anything else it made
+    # up. A list of banned phrasings cannot say that — "Session 4718 · build
+    # 2026.08.05-a3f9 · run 41" walks straight through one. So the check is
+    # positive instead: the shell's static markup is allowed to spell exactly
+    # two things, and every other word in it has to come from state.json
+    # through the two functions checked below.
     served = _fetch_panel(write_project(tmp_path, lanes={"claude": good_lane()}))
-    html = re.sub(r"/\*.*?\*/|<!--.*?-->", " ", served, flags=re.S).lower()
-    for banned in ("this run", "run id", "run #", "session id", "session #",
-                   "build id", "build #", "version id"):
-        assert banned not in html, banned
+    text = re.sub(r"<[^>]+>", "\x00", _shell_markup(served))
+    assert [run.strip() for run in text.split("\x00") if run.strip()] == \
+        ["December", "connecting…"]
+
+
+def test_the_shell_prints_only_what_the_state_document_gives_it():
+    # The other half of the shell's promise, on the writing side. renderShell
+    # may read these fields of the state document and no others, and may spell
+    # these words and no others; anything else in the shell would be the panel
+    # asserting something the data cannot support.
+    body = function_body("renderShell")
+    assert set(re.findall(r"\bs\.([A-Za-z_$][\w$]*)", body)) == \
+        {"project", "generated_at", "invariants"}
+    assert set(re.findall(r'"([^"]*)"', body)) == \
+        {"", " · ", "· ", "last update ", " · invariants: ", " ok", "projInfo"}
+
+
+def test_the_live_state_is_the_only_other_thing_the_shell_can_say():
+    # setLive owns the one remaining piece of shell text. Same treatment: the
+    # two strings it can write are named, so a third cannot appear unnoticed.
+    body = function_body("setLive")
+    assert set(re.findall(r'"([^"]*)"', body)) == \
+        {"dot", "liveText", "dot", " dot--down", "live", "connection lost — retrying", ""}
 
 
 def test_panel_introduces_no_new_innerhtml(tmp_path):
@@ -179,6 +210,7 @@ def test_the_light_level_is_written_once_and_from_that_one_expression():
     html = panel_html()
     assert html.count("dataset.attention") == 1
     assert "document.documentElement.dataset.attention = attentionOf(s);" in html
+    assert function_body("renderShell").count("attentionOf(") == 1
 
 
 def _level_for(state):
