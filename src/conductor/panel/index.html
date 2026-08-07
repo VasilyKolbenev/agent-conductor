@@ -16,10 +16,14 @@
   --ink:#F3F6F8; --muted:#B9C2CC; --faint:#7F8A98;
   --accent:#E44955; --pass:#3fa86a; --wait:#c9971f; --fail:#e0703a;
   /* Precision Cockpit material (owner, 2026-08-05). A light layer over the
-     settled palette, not a second palette: every material token is mixed
-     from the tokens above, so none of them introduces a hue. Light is
-     carried by surface lightness, contour weight and depth — never by the
-     accent, which stays on its six reserved roles. */
+     settled palette, not a second palette. Two of the four tokens are mixes
+     of the palette above: --panel-lit and --contour-lit. The other two are
+     not colours at all but shadow geometry plus one neutral — dark lifts
+     shade with pure black, light lifts shade with the rgb of --ink, written
+     out because a shadow needs an alpha and the token has none. So the layer
+     introduces no hue anywhere: light is carried by surface lightness,
+     contour weight and depth — never by the accent, which stays on its six
+     reserved roles. tests/test_panel_style.py holds that split. */
   --panel-lit:color-mix(in srgb,var(--ink) 4%,var(--panel));
   --contour-lit:color-mix(in srgb,var(--ink) 22%,var(--line));
   --lift-1:0 1px 2px rgba(0,0,0,.5);

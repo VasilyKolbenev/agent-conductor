@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 from conductor import merge
 from tests.test_merge_review import MAP, lane
-from tests.test_panel_contrast import panel_html
+from tests.test_panel_style import panel_html
 from tests.test_server import start
 from tests.test_store import write_project, good_lane
 
@@ -149,6 +149,38 @@ def test_every_light_level_the_panel_declares_names_a_real_project_state():
     assert set(_attention_table()) == {"blocked", "active"}
 
 
+_JS_WORDS = {"return", "typeof", "new", "null", "true", "false", "undefined", "in",
+             "of", "void", "delete", "instanceof"}
+
+
+def _free_names(source: str, bound: set[str]) -> set[str]:
+    """Identifiers a fragment of JavaScript reads from outside itself."""
+    source = re.sub(r'"[^"]*"|\'[^\']*\'|`[^`]*`', " ", source)   # string literals
+    source = re.sub(r"\.\s*[A-Za-z_$][\w$]*", " ", source)        # property names
+    return set(re.findall(r"[A-Za-z_$][\w$]*", source)) - bound - _JS_WORDS
+
+
+def test_changing_the_clock_cannot_change_the_light_level():
+    # The owner's own formulation of the invariant: the same state document has
+    # to give the same light level whatever the time is. That is a statement
+    # about what attentionOf is allowed to depend on, so it is checked as one —
+    # the only names the expression may reach for are its own argument and the
+    # declared table. A clock, a random source, a frame counter or any other
+    # ambient reading would appear here as a free name and fail, without this
+    # test having to know what any of them are called.
+    expression = re.search(r"const attentionOf = (.*?);\n", panel_html(), re.S).group(1)
+    assert _free_names(expression, {"s"}) == {"ATTENTION"}, expression
+
+
+def test_the_light_level_is_written_once_and_from_that_one_expression():
+    # Purity is only worth having if nothing bypasses it. One writer, one
+    # source: the light level the document wears is the value attentionOf
+    # computed from the state document handed to renderShell.
+    html = panel_html()
+    assert html.count("dataset.attention") == 1
+    assert "document.documentElement.dataset.attention = attentionOf(s);" in html
+
+
 def _level_for(state):
     return _attention_table().get(state["project_status"]["state"], "none")
 
@@ -157,7 +189,9 @@ def test_the_light_level_follows_the_project_status_the_merger_computes():
     # Three states built by the real merger, not by hand: a lane waiting on a
     # person, a lane simply working, and a project with no lanes at all. The
     # light level differs across them, which is what makes it a reading of the
-    # data rather than decoration.
+    # data rather than decoration. _level_for re-implements the lookup in
+    # Python, which is only honest because the two tests above pin the panel's
+    # expression to exactly that lookup and to nothing else.
     waiting = merge.merge(MAP, None, [dict(lane("claude", "impl"), data={
         **lane("claude", "impl")["data"],
         "waits_on_human": [{"id": "w-1", "kind": "decision", "title": "Ship it?",
@@ -177,15 +211,6 @@ def test_a_panel_with_nothing_waiting_stays_unlit():
     assert 'html[data-attention="low"] .lit' in html
     assert 'html[data-attention="high"] .lit' in html
     assert 'data-attention="none"' not in html
-
-
-def test_the_light_level_never_spends_the_accent(tmp_path):
-    # Precision Cockpit light is carried by surface, contour and depth. If a
-    # light rule ever reached for var(--accent) the accent would have grown a
-    # seventh role by accident.
-    html = panel_html()
-    for rule in re.findall(r"html\[data-attention=[^\n]*", html):
-        assert "var(--accent)" not in rule, rule
 
 
 def test_panel_decision_first_section_order(tmp_path):

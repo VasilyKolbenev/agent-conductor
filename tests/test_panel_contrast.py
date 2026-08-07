@@ -11,38 +11,17 @@ The tokens are parsed out of `src/conductor/panel/index.html`, so changing a
 declaration there moves these results. That is the point.
 """
 import re
-from pathlib import Path
 
 import pytest
 
-PANEL = Path(__file__).resolve().parents[1] / "src" / "conductor" / "panel" / "index.html"
+from tests.test_panel_style import panel_html, root_declarations
 
 # WCAG 2.1 thresholds. 1.4.3 normal text; 1.4.11 non-text and large text.
 TEXT_MIN = 4.5
 NONTEXT_MIN = 3.0
 
 
-# ── parsing the declarations out of the panel ──────────────────────────────
-def panel_html() -> str:
-    """Return the packaged panel source."""
-    return PANEL.read_text(encoding="utf-8")
-
-
-def _declarations(block: str) -> dict[str, str]:
-    return {m.group(1): m.group(2).strip()
-            for m in re.finditer(r"(--[a-z0-9-]+)\s*:\s*([^;}]+)", block)}
-
-
-def _root_blocks(html: str) -> tuple[str, str]:
-    """Return the dark `:root` body and the light-media `:root` body."""
-    light = re.search(r"@media\s*\(prefers-color-scheme:light\)\s*\{:root\{(.*?)\}\}",
-                      html, re.S)
-    dark = re.search(r"^:root\{(.*?)\n\}", html, re.S | re.M)
-    if not (light and dark):
-        raise AssertionError("panel no longer declares both :root blocks as expected")
-    return dark.group(1), light.group(1)
-
-
+# ── resolving the declarations into colours ────────────────────────────────
 def _hex_to_rgb(value: str) -> tuple[int, int, int]:
     h = value.strip().lstrip("#")
     if len(h) == 3:
@@ -70,11 +49,12 @@ def tokens(theme: str) -> dict[str, tuple[int, int, int]]:
     Returns:
         Mapping of token name (with the leading dashes) to an sRGB triple.
     """
-    dark_body, light_body = _root_blocks(panel_html())
-    decls = _declarations(dark_body)
+    dark, light = root_declarations()
     if theme == "light":
-        decls.update(_declarations(light_body))
-    elif theme != "dark":
+        decls = dict(dark, **light)
+    elif theme == "dark":
+        decls = dict(dark)
+    else:
         raise ValueError(f"unknown theme: {theme}")
 
     out: dict[str, tuple[int, int, int]] = {}
