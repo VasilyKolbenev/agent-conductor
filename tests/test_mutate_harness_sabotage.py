@@ -104,14 +104,25 @@ class _Lab:
             text = text.replace(old, new, 1)
         _write(self.harness, text)
 
-    def target(self, tests: str = SYNTH_TESTS, package: bool = True) -> Path:
-        """Build a synthetic project root and return it."""
+    def target(self, tests: str = SYNTH_TESTS, package: bool = True,
+               merge_bytes: bytes | None = None) -> Path:
+        """Build a synthetic project root and return it.
+
+        Args:
+            tests: The targeted test file's source.
+            package: Whether the source root is a regular package.
+            merge_bytes: Raw bytes for `merge.py`, for sources that are valid
+                Python without being valid UTF-8.
+        """
         self._targets += 1
         root = self.tmp / f"target{self._targets}"
         (root / "src" / "conductor").mkdir(parents=True)
         if package:
             _write(root / "src" / "conductor" / "__init__.py", "")
-        _write(root / "src" / "conductor" / "merge.py", SYNTH_MERGE)
+        if merge_bytes is None:
+            _write(root / "src" / "conductor" / "merge.py", SYNTH_MERGE)
+        else:
+            (root / "src" / "conductor" / "merge.py").write_bytes(merge_bytes)
         (root / "tests").mkdir()
         _write(root / "tests" / "test_synth.py", tests)
         return root
@@ -213,6 +224,8 @@ class Diversion:
         replacement: What that mutation substitutes.
         interpreter: Which interpreter fixture runs it, or None for this one.
         optimize: Whether to run under `python -O`.
+        merge_bytes: Raw bytes for the target's `merge.py`, when the case needs
+            a source that is valid Python and not valid UTF-8.
         guarded: A string the shipped harness must say.
         reopened: A string only the sabotaged copy says.
     """
@@ -227,10 +240,17 @@ class Diversion:
     replacement: str = KILLING
     interpreter: str | None = None
     optimize: bool = False
+    merge_bytes: bytes | None = None
 
 
 NO_BASELINE = ("            green = check_baseline(source_root, root, resolved)",
                "            green = 0")
+
+# Valid Python, valid latin-1, not valid UTF-8: it imports, its tests are green,
+# and the instrument breaks on reading it rather than on measuring anything.
+LATIN1_MERGE = ("# -*- coding: latin-1 -*-\n"
+                "# caf\xe9 a comment the source encoding allows\n"
+                + SYNTH_MERGE).encode("latin-1")
 
 DIVERSIONS = [
     Diversion(
@@ -299,6 +319,19 @@ DIVERSIONS = [
         guarded="VERDICT: FAIL - 0/1 mutations killed",
         reopened="VERDICT: PASS - 0/1 mutations killed",
     ),
+    Diversion(
+        diversion="an exception that is not an InvalidMeasurement escapes main and exits 1",
+        # A duplicate handler: the first clause already takes every
+        # InvalidMeasurement, so with this edit nothing else is converted and
+        # the traceback reaches the interpreter, which exits 1 — the code the
+        # table gives an honest survivor.
+        edits=(("    except Exception as exc:", "    except InvalidMeasurement as exc:"),),
+        merge_bytes=LATIN1_MERGE,
+        guarded="the instrument itself failed",
+        # The traceback is what the contract says never reaches the outside,
+        # and the guarded run names the exception without letting one out.
+        reopened="Traceback (most recent call last)",
+    ),
 ]
 
 
@@ -307,10 +340,12 @@ def test_each_guard_still_closes_the_hole_its_diversion_opened(case, lab, reques
     python = request.getfixturevalue(case.interpreter) if case.interpreter else None
     kwargs = dict(anchor=case.anchor, replacement=case.replacement,
                   python=python, optimize=case.optimize)
+    target = dict(tests=case.tests, package=case.package,
+                  merge_bytes=case.merge_bytes)
 
-    guarded = lab.run(lab.target(tests=case.tests, package=case.package), **kwargs)
+    guarded = lab.run(lab.target(**target), **kwargs)
     lab.sabotage(case.edits)
-    reopened = lab.run(lab.target(tests=case.tests, package=case.package), **kwargs)
+    reopened = lab.run(lab.target(**target), **kwargs)
 
     guarded_output = guarded.stdout + guarded.stderr
     reopened_output = reopened.stdout + reopened.stderr

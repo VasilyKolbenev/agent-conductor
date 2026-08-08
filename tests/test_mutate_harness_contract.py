@@ -99,6 +99,21 @@ def test_exit_two_is_returned_by_one_helper_and_by_nothing_else_in_the_module():
     assert exits == []
 
 
+def test_nothing_main_does_after_reading_its_arguments_runs_outside_the_funnel():
+    # The companion of the exit surface, and the reason exit 1 cannot be
+    # produced by an accident: every statement that touches the measuring path
+    # sits inside one `try`, and that `try` ends in a handler for anything at
+    # all. A statement added after it, or the catch-all narrowed back to
+    # InvalidMeasurement, would put a traceback and an exit 1 back on the table.
+    main = next(node for node in ast.walk(harness_ast())
+                if isinstance(node, ast.FunctionDef) and node.name == "main")
+    assert [type(statement).__name__ for statement in main.body] \
+        == ["Expr", "Assign", "Try"]         # docstring, parse_args, everything else
+    assert ast.unparse(main.body[1].value.func) == "parse_args"
+    assert [ast.unparse(handler.type) for handler in main.body[-1].handlers] \
+        == ["InvalidMeasurement", "Exception"]
+
+
 def test_one_place_in_the_module_starts_a_pytest_and_it_is_run_pytest():
     # The baseline and every mutant run must come from one environment, and the
     # test that compares them compares two recorded calls: a SECOND builder is

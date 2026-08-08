@@ -305,6 +305,75 @@ def test_the_verdict_word_follows_the_score_it_reports(capsys):
     assert "VERDICT: FAIL - 1/2 mutations killed" in capsys.readouterr().out
 
 
+@pytest.fixture
+def measurable(tmp_path):
+    """The smallest tree `main` will accept as something to measure."""
+    merge_path = tmp_path / "src" / "conductor" / "merge.py"
+    merge_path.parent.mkdir(parents=True)
+    merge_path.write_text("def is_ready(state):\n    return True\n", encoding="utf-8")
+    return tmp_path
+
+
+def _stub_every_stage(monkeypatch, measurable):
+    """Make each stage of the measuring path succeed without doing anything."""
+    monkeypatch.setattr(harness, "verify_import_root",
+                        lambda *a, **k: measurable / "src" / "conductor" / "merge.py")
+    monkeypatch.setattr(harness, "check_baseline", lambda *a, **k: 2)
+    monkeypatch.setattr(harness, "run_mutations", lambda *a, **k: [("m", True)])
+    monkeypatch.setattr(harness, "report_score", lambda results: harness.EXIT_OK)
+
+
+@pytest.mark.parametrize("stage, blow_up", [
+    ("verify_import_root", OSError(5, "the volume went away")),
+    ("check_baseline", OSError(28, "no space left on device")),
+    ("run_mutations", UnicodeDecodeError("utf-8", b"\xe9", 0, 1, "invalid start byte")),
+    ("report_score", MemoryError("out of memory writing the verdict")),
+], ids=["provenance", "baseline", "mutations", "report"])
+def test_an_instrument_failure_that_is_not_an_invalid_measurement_still_exits_two(
+        monkeypatch, capsys, measurable, stage, blow_up):
+    # The half of the contract the exit table had assumed rather than held. An
+    # exception that is not an InvalidMeasurement used to escape main and exit
+    # 1 — the code the table gives an honest survivor — with a traceback and no
+    # verdict line. Every stage of the measuring path is checked, because the
+    # invariant is about the funnel and not about any one window: the stages
+    # are all stubbed to succeed, and then one of them is made to fail.
+    def raise_it(*args, **kwargs):
+        raise blow_up
+
+    _stub_every_stage(monkeypatch, measurable)
+    monkeypatch.setattr(harness, stage, raise_it)
+
+    code = harness.main(["--root", str(measurable)])
+
+    captured = capsys.readouterr()
+    assert code == harness.EXIT_INVALID
+    assert "the instrument itself failed" in captured.err
+    assert type(blow_up).__name__ in captured.err
+    assert "no mutation score" in captured.err
+    assert not SCORE_SHAPED.search(captured.out + captured.err)
+    assert "VERDICT: PASS" not in captured.out and "VERDICT: FAIL" not in captured.out
+
+
+def test_a_workspace_that_cannot_be_created_is_not_a_surviving_mutation(
+        monkeypatch, capsys, measurable):
+    # The window named in the review, in situ rather than by faking the stage:
+    # `check_baseline` opens a workspace with `tempfile.mkdtemp` before it runs
+    # anything, and a full disk there is not a measurement of any kind.
+    def no_space(*args, **kwargs):
+        raise OSError(28, "no space left on device")
+
+    monkeypatch.setattr(harness, "verify_import_root",
+                        lambda *a, **k: measurable / "src" / "conductor" / "merge.py")
+    monkeypatch.setattr(harness, "tempfile", SimpleNamespace(mkdtemp=no_space))
+
+    code = harness.main(["--root", str(measurable)])
+
+    captured = capsys.readouterr()
+    assert code == harness.EXIT_INVALID
+    assert "no space left on device" in captured.err
+    assert not SCORE_SHAPED.search(captured.out + captured.err)
+
+
 def test_a_usage_error_exits_two_before_anything_could_be_measured():
     # The one exit-2 path that does not run through the helper, because it
     # happens inside argparse. The docstring claims it prints usage and stops

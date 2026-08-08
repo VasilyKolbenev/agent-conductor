@@ -40,9 +40,13 @@ it is not in every mode a mutation score.
 
 Exit 2 carries no mutation score of any kind — not `0/13`, not a zero. Every
 path THIS MODULE takes to it runs through `_invalid_measurement`, and the score
-is printed by a function that path never reaches. There is exactly one more way
-out with a 2, and it is not in this module: `argparse` exits 2 itself on an
-unrecognised argument. That overlap is deliberate and means the same thing — a
+is printed by a function that path never reaches. An exception the instrument
+did not expect is such a path: `main` converts anything that is not already an
+`InvalidMeasurement` into one, because a traceback escaping to the interpreter
+would exit 1 — the code reserved for an honest survivor. The traceback is not
+part of the contract; the named infrastructure failure and the 2 are. There is
+exactly one more way out with a 2, and it is not in this module: `argparse`
+exits 2 itself on an unrecognised argument. That overlap is deliberate and means the same thing — a
 usage error is likewise a run in which no valid measurement happened — and
 argparse prints usage to stderr and stops before anything is measured, so the
 rule holds on that path too.
@@ -653,10 +657,10 @@ def report_score(results: list[tuple[str, bool]]) -> int:
 def main(argv: list[str] | None = None) -> int:
     """Check the instrument, then score every mutation. See module docstring."""
     args = parse_args(argv)
-    root = args.root.resolve()
-    source_root = root / "src"
-    merge_path = source_root / "conductor" / "merge.py"
     try:
+        root = args.root.resolve()
+        source_root = root / "src"
+        merge_path = source_root / "conductor" / "merge.py"
         if not merge_path.is_file():
             raise InvalidMeasurement(f"no merge engine to mutate at {merge_path}")
         resolved = verify_import_root(source_root, root)
@@ -671,9 +675,19 @@ def main(argv: list[str] | None = None) -> int:
             results = run_mutations(merge_path, source_root, root)
         finally:
             clear_pycache(source_root)
+        return report_score(results)
     except InvalidMeasurement as exc:
         return _invalid_measurement(exc)
-    return report_score(results)
+    except Exception as exc:                      # noqa: BLE001 — see below
+        # The other half of the exit contract. Whatever else goes wrong on the
+        # measuring path — a source that is not UTF-8, a workspace that cannot
+        # be created, a read that fails — is an instrument failure, and letting
+        # its traceback reach the interpreter would exit 1, the code reserved
+        # for an honest survivor. Every mode of failure converges here so that
+        # `1` cannot be produced by anything except a completed measurement.
+        return _invalid_measurement(InvalidMeasurement(
+            f"the instrument itself failed ({type(exc).__name__}: {exc}), so "
+            "nothing here was measured."))
 
 
 if __name__ == "__main__":
