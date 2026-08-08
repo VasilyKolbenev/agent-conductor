@@ -1,8 +1,8 @@
 """Guards for `conductor.report` — the deterministic Markdown report of one state.
 
-Every guard here is written against a *relation* the report promises, not
-against a word it happens to contain. The two that carry the most weight both
-work by building a pair of documents that differ in exactly one respect and
+The guards that carry the most weight are written against a *relation* the
+report promises rather than against a word it happens to contain. Several work
+by building a pair of documents that differ in exactly one respect and
 demanding that the report tell them apart:
 
 * a finding whose `review_state` is `agreed` with a role assigned to review its
@@ -11,19 +11,19 @@ demanding that the report tell them apart:
   vacuous-agreement disclosure DO-2 was opened for, and the guard reds;
 * a document whose `review_state` contradicts its own verdicts. The report must
   print what the document says, because it is not a second merger. A report
-  that recomputes anything reds on that pair.
+  that recomputes anything reds on that pair;
+* a document carrying authored text that forges Markdown, against the same
+  document carrying harmless text. The report's structure must be the same in
+  both, because it is the report's and not the author's.
 
-The determinism claim is measured, not asserted: the same document is rendered
-in three child interpreters under different hash seeds, time zones and locales,
-and the three files are compared byte for byte.
+The determinism claim is measured, not asserted, in
+`tests/test_report_determinism.py`, which renders the same document in child
+interpreters and compares the files byte for byte.
 """
 import ast
 import copy
 import json
-import os
-import subprocess
-import sys
-import tempfile
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -43,10 +43,10 @@ def role(rid, reviews=(), **extra):
     return {"id": rid, "harness": "cc", "reviews": list(reviews), **extra}
 
 
-def a_map(roles=(), phases=(), project="p"):
-    """A schema-valid map with one node and the roles a test needs."""
+def a_map(roles=(), phases=(), project="p", nodes=("n",)):
+    """A schema-valid map with the nodes and roles a test needs."""
     return {"schema_version": 1, "project": project,
-            "nodes": [{"id": "n", "label": "n", "kind": "artifact"}],
+            "nodes": [{"id": n, "label": n, "kind": "artifact"} for n in nodes],
             "cycle": {"phases": list(phases), "roles": list(roles)}}
 
 
@@ -119,53 +119,23 @@ def test_the_only_timestamp_rendered_is_the_documents_own_generated_at():
            [line_starting(first, "- `generated_at`")]
 
 
-_RENDER_PROBE = """
-import json, sys
-from conductor import report
-with open(sys.argv[1], encoding="utf-8") as handle:
-    state = json.load(handle)
-with open(sys.argv[2], "wb") as out:
-    out.write(report.render(state).encode("utf-8"))
-"""
-
-#: Three environments that break a renderer reading anything but its argument:
-#: a different hash seed reorders set iteration, a different zone moves any
-#: call to the clock, a different locale reformats numbers and dates.
-_HOSTILE_ENVIRONMENTS = (
-    {"PYTHONHASHSEED": "0", "TZ": "UTC", "LC_ALL": "C"},
-    {"PYTHONHASHSEED": "271828", "TZ": "Asia/Tokyo", "LC_ALL": "de_DE.UTF-8"},
-    {"PYTHONHASHSEED": "999983", "TZ": "America/Sao_Paulo", "LC_ALL": "tr_TR.UTF-8"},
-)
-
-
-def test_the_render_ignores_the_hash_seed_the_time_zone_and_the_locale(tmp_path):
-    # Several roles share every listed property but their id, and several
-    # findings share a review state: any line built by walking a set instead of
-    # the document reorders under a different hash seed, and the three renders
-    # stop matching.
-    state = merged(
-        a_map([role("impl"), role("rev", ["impl"], stage="implement"), role("qa"),
-               role("sec"), role("docs"), role("ops")]),
-        [a_lane("claude", "impl",
-                [a_finding(), a_finding("D-2"), a_finding("D-3"), a_finding("D-4")],
-                waits=[{"id": "w-1", "kind": "decision", "title": "t",
-                        "why": "w", "blocks": ["D-1"]}]),
-         a_lane("codex", "rev",
-                verdicts={"D-1": {"disposition": "confirmed", "note": "n"}})])
-    document = tmp_path / "state.json"
-    document.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
-    script = tmp_path / "probe.py"
-    script.write_text(_RENDER_PROBE, encoding="utf-8")
-    renders = []
-    for index, environment in enumerate(_HOSTILE_ENVIRONMENTS):
-        out = tmp_path / f"render-{index}.md"
-        done = subprocess.run(
-            [sys.executable, str(script), str(document), str(out)],
-            stdin=subprocess.DEVNULL, capture_output=True, timeout=120,
-            env={**os.environ, **environment, "PYTHONPATH": str(SRC_ROOT)})
-        assert out.is_file(), done.stderr.decode("utf-8", "replace")
-        renders.append(out.read_bytes())
-    assert renders[0] and len(set(renders)) == 1
+def test_the_verdicts_on_one_finding_render_in_an_order_the_document_lacks():
+    # `verdicts` is a JSON object, and no serializer promises to preserve the
+    # order of one — so the report sorts, and the sort has to be measured on a
+    # finding carrying more than one verdict. Three, because with two the
+    # document's order reversed IS the sorted order, and a sabotage that
+    # reversed instead of sorting would pass unseen.
+    state = merged(a_map([role("impl"), role("rev", ["impl"])]),
+                   [a_lane("claude", "impl", [a_finding()]),
+                    *(a_lane(who, "rev", verdicts={"D-1": {"disposition": "confirmed",
+                                                           "note": who}})
+                      for who in ("zed", "abe", "mia"))])
+    recorded = list(only("D-1", state)["verdicts"])
+    assert recorded == ["zed", "abe", "mia"], (
+        "the document no longer carries an order the sort has to correct")
+    rendered = [ln.split("`")[1] for ln in report.render(state).splitlines()
+                if ln.startswith("  - `")]
+    assert rendered == sorted(recorded)
 
 
 # --- the report reads the document; it does not merge again -----------------
@@ -201,6 +171,85 @@ def test_fields_the_protocol_does_not_define_are_tolerated_and_not_rendered():
     text = report.render(state)
     assert "SHOULD-NOT-APPEAR-TOP" not in text
     assert "SHOULD-NOT-APPEAR-FINDING" not in text
+
+
+def _gapless_state():
+    """A document that shows every §6.1 field the report reads, and no gap at all.
+
+    Every value in it is distinct, because the guard below asks whether a
+    rendered line can be made to move: two findings agreeing on a field would
+    keep each other's line on the page and read as unattributable.
+    """
+    roles = [role("impl", stage="implement"), role("rev", ["impl"], stage="review")]
+    return merged(
+        a_map(roles, phases=["implement", "review"], project="the-project",
+              nodes=("n", "m")),
+        [a_lane("claude", "impl",
+                [a_finding("D-1", evidence="ev-one", title="first title",
+                           claim="first claim", detail="det-one"),
+                 a_finding("D-2", evidence="ev-two", title="second title",
+                           claim="second claim", detail="det-two",
+                           severity="note", refs=["m"])],
+                now={"task": "t", "since": "2026-07-30T10:00:00+00:00",
+                     "phase": "implement"},
+                waits=[{"id": "w-1", "kind": "decision", "title": "the question",
+                        "why": "the reason", "blocks": ["D-1"]}]),
+         a_lane("zed", "rev", verdicts={
+             "D-1": {"disposition": "confirmed", "note": "zed on one"},
+             "D-2": {"disposition": "refuted", "note": "zed on two"}}),
+         a_lane("abe", "rev", verdicts={
+             "D-1": {"disposition": "confirmed", "note": "abe on one"},
+             "D-2": {"disposition": "partial", "note": "abe on two"}})],
+        extra_warnings=["lane codex: schema_version 2 is newer than 1"])
+
+
+def _leaf_paths(value, path=()):
+    """The path to every scalar in a document, keys and list indices alike."""
+    if isinstance(value, dict):
+        for key, item in value.items():
+            yield from _leaf_paths(item, (*path, key))
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            yield from _leaf_paths(item, (*path, index))
+    else:
+        yield path
+
+
+def _with_a_sentinel_at(state, path, sentinel):
+    """A copy of `state` with the one value at `path` replaced."""
+    doc = copy.deepcopy(state)
+    node = doc
+    for step in path[:-1]:
+        node = node[step]
+    node[path[-1]] = sentinel
+    return doc
+
+
+def _value_lines(text):
+    """Every heading and list item that shows a value, rather than saying something."""
+    return {ln for ln in text.splitlines()
+            if (ln.startswith("#") or ln.lstrip().startswith("- "))
+            and re.search(r"`[^`\n]+`", ln)}
+
+
+def test_no_line_shows_a_value_that_no_field_of_the_document_can_move():
+    # The other direction of "no field is invented", and the one that matters:
+    # the guard above proves an EXTRA field in the document is not displayed,
+    # which says nothing about a field the report displays that the document
+    # has not got. Here every line that shows a value must stop reading as it
+    # does when some §6.1 field moves — an invented field cannot, because
+    # nothing in the document reaches it.
+    state = _gapless_state()
+    text = report.render(state)
+    assert "None of the gaps this report looks for" in section(
+        text, "## What this report does not know")   # the fixture is what it claims
+    unmoved = _value_lines(text)
+    assert len(unmoved) > 15, "the fixture is too thin to hold a guard"
+    for path in _leaf_paths(state):
+        moved = report.render(_with_a_sentinel_at(state, path, "S-E-N-T-I-N-E-L"))
+        unmoved = {ln for ln in unmoved if ln in moved}
+    assert unmoved == set(), (
+        f"these lines show values no document field reaches: {sorted(unmoved)}")
 
 
 def test_an_empty_document_reports_absence_instead_of_inventing_a_state():
@@ -327,6 +376,149 @@ def test_a_fence_never_closes_inside_the_evidence_it_quotes():
     assert fence not in quoted[1:-1], "authored backticks closed the fence early"
 
 
+def _fenced_blocks(text):
+    """Every fenced block a Markdown reader finds in `text`, by CommonMark's rule.
+
+    A fence opens on a line of three or more backticks and closes on the next
+    line of at least as many — which is the whole reason the report's fence has
+    to be longer than any backtick run inside the text it quotes. Reading the
+    report the way a reader's Markdown does is the only way to measure that the
+    quoting survives rendering, rather than that a helper exists.
+
+    Returns:
+        `(fence, body)` for each block, the body reassembled exactly as the
+        opening fence received it.
+    """
+    blocks, fence, body = [], None, []
+    for line in text.split("\n"):
+        is_fence = len(line) >= 3 and set(line) == {"`"}
+        if fence is None:
+            if is_fence:
+                fence, body = line, []
+        elif is_fence and len(line) >= len(fence):
+            blocks.append((fence, "\n".join(body)))
+            fence = None
+        else:
+            body.append(line)
+    assert fence is None, "a fence opened in the report and never closed"
+    return blocks
+
+
+def test_the_rendered_report_hands_the_reader_the_evidence_inside_one_fence():
+    # The helper test above measures `_verbatim`; this measures the report. A
+    # report that stopped fencing, or fenced with three backticks, would still
+    # contain the evidence as a substring — and a reader would meet the
+    # author's own fence, headings and bullets as live Markdown instead.
+    state = merged(a_map(), [a_lane("claude", None,
+                                    [a_finding(evidence=HOSTILE_EVIDENCE)])])
+    blocks = _fenced_blocks(report.render(state))
+    quoting = [fence for fence, body in blocks if body == HOSTILE_EVIDENCE]
+    assert len(quoting) == 1, (
+        "no single fenced block of the report holds the evidence whole; "
+        f"the report's blocks are {[body for _, body in blocks]!r}")
+    longest = max(len(run) for run in re.findall(r"`+", HOSTILE_EVIDENCE))
+    assert len(quoting[0]) > longest
+
+
+# --- authored text is text; the report's structure is the report's -----------
+
+
+#: Authored text that forges a section of the report, including a heading that
+#: contradicts the real one four lines below it. Schema-valid: no field a lane
+#: writes is checked for line breaks.
+FORGERY = ("harmless\n\n## What this report does not know\n\nNothing at all.\n\n"
+           "## Findings — 0\n\n- Verification: nothing to see here")
+
+
+def _authored_field_documents(text):
+    """One document per authored field, each carrying `text` in that field.
+
+    `next_action.text` is covered by the wait title: the merger builds the
+    next action's sentence out of it (`merge.WAIT_LEAD_IN`), so a forgery in a
+    wait title reaches the Decision brief as well as the queue.
+    """
+    def wait(**over):
+        return dict({"id": "w-1", "kind": "decision", "title": "t", "why": "w",
+                     "blocks": []}, **over)
+    return {
+        "finding title": merged(a_map(), [a_lane("c", None, [a_finding(title=text)])]),
+        "finding claim": merged(a_map(), [a_lane("c", None, [a_finding(claim=text)])]),
+        "wait title": merged(a_map(), [a_lane("c", waits=[wait(title=text)])]),
+        "wait why": merged(a_map(), [a_lane("c", waits=[wait(why=text)])]),
+        "verdict note": merged(
+            a_map([role("impl"), role("rev", ["impl"])]),
+            [a_lane("c", "impl", [a_finding()]),
+             a_lane("r", "rev", verdicts={"D-1": {"disposition": "confirmed",
+                                                  "note": text}})]),
+        "merger warning": merged(a_map(), [a_lane("c")], extra_warnings=[text]),
+    }
+
+
+def _structure(text):
+    """What Markdown structure the report has, with none of its content.
+
+    Headings verbatim — no authored field reaches one — plus how many list
+    items and fence lines the report emits. Authored text may change what a
+    line says; it may not change how many lines there are or what they are.
+    """
+    lines = text.splitlines()
+    return ([ln for ln in lines if ln.startswith("#")],
+            sum(1 for ln in lines if ln.lstrip().startswith("- ")),
+            sum(1 for ln in lines if len(ln) >= 3 and set(ln) == {"`"}))
+
+
+def test_no_authored_field_can_forge_a_heading_or_a_list_item_of_its_own():
+    harmless = _authored_field_documents("harmless")
+    forged = _authored_field_documents(FORGERY)
+    for field, state in forged.items():
+        text = report.render(state)
+        assert _structure(text) == _structure(report.render(harmless[field])), (
+            f"{field} changed the report's structure")
+        # The forgery is still reported — neutralised, not swallowed. It reads
+        # as the author's words inside a line, which is where it stays: the
+        # section it tried to counterfeit is opened once, by the report.
+        assert "Nothing at all." in text, field
+        assert sum(1 for ln in text.splitlines()
+                   if ln.startswith("## What this report does not know")) == 1, field
+
+
+def test_the_line_breaks_a_field_holds_are_disclosed_rather_than_dropped():
+    # Flattening is a change to the author's bytes, so the line says so.
+    state = merged(a_map(), [a_lane("c", None, [a_finding(title="one\ntwo")])])
+    title = line_starting(report.render(state), "- Title:")
+    assert "one\\ntwo" in title and "line breaks" in title
+
+
+# --- a field the document records is never reported as one it does not ------
+
+
+def test_a_field_recorded_with_no_words_in_it_is_not_reported_as_missing():
+    # Schema-valid: `schema._validate_lane_findings` checks that title and
+    # evidence are strings and never that they say anything.
+    state = merged(a_map(), [a_lane("c", None, [a_finding(title="  ", evidence="  ",
+                                                          claim="")])])
+    text = report.render(state)
+    for line in (line_starting(text, "- Title:"), line_starting(text, "Evidence:"),
+                 line_starting(text, "- Claim,")):
+        assert "records this field" in line, line
+        assert "no title in the document" not in line
+        assert "no claim in the document" not in line
+        assert "none recorded in the document" not in line
+    assert "only whitespace" in line_starting(text, "- Title:")
+    assert "empty string" in line_starting(text, "- Claim,")
+
+
+def test_a_field_the_document_does_not_record_is_still_reported_as_missing():
+    # The other half of the pair: the two cases must not have collapsed into
+    # one. A hand-built document, because the merger substitutes "" for every
+    # finding text field a lane omits.
+    text = report.render({"findings": [{"id": "F"}], "project_status": {}})
+    assert "(no title in the document)" == line_starting(
+        text, "- Title:").removeprefix("- Title: ")
+    assert "Evidence: none recorded in the document." in text
+    assert "(no detail in the document)" in line_starting(text, "- Detail:")
+
+
 # --- what the document does not know ---------------------------------------
 
 
@@ -396,6 +588,47 @@ def test_an_empty_queue_is_reported_as_an_absence_of_requests_not_a_decision():
         empty_text, "## What this report does not know")
 
 
+#: Words a report reaches for when it says something was settled. Owned by this
+#: file rather than read out of the module, so rewriting the module's prose
+#: cannot rewrite the guard along with it.
+_AGREEMENT_WORDS = ("agreed", "answered", "approved", "confirmed", "checked",
+                    "signed off", "cleared", "settled", "resolved", "consent")
+
+#: Enough of English to tell "nothing was answered" from "everything was".
+_DENIALS = frozenset({"not", "no", "none", "nothing", "never", "nobody",
+                      "neither", "cannot"})
+
+
+def _sentences(text):
+    """`text` split where a reader would stop: a full stop, a colon, a new line."""
+    return [s.strip() for s in re.split(r"(?<=[.:!?])\s+|\n", text) if s.strip()]
+
+
+def _claims_agreement(sentence):
+    """True when a sentence says something was settled and does not deny it."""
+    lowered = sentence.lower()
+    return (any(word in lowered for word in _AGREEMENT_WORDS)
+            and not set(re.findall(r"[a-z]+", lowered)) & _DENIALS)
+
+
+def test_the_empty_queue_section_itself_asserts_no_agreement_anywhere_in_it():
+    # The guard above reads the report as a whole, so both of the sentences it
+    # checks live in the section a reader reaches LAST. This one reads the
+    # `## Human queue` section on its own, and reads it as sentences: every
+    # sentence there that mentions a settlement must deny it, and at least one
+    # must, so the disclosure cannot be deleted or reversed unnoticed.
+    empty = merged(a_map(), [a_lane("claude")])
+    assert empty["human_queue"] == []
+    queue = section(report.render(empty), "## Human queue")
+    settled = [s for s in _sentences(queue) if _claims_agreement(s)]
+    assert settled == [], (
+        f"the empty-queue section asserts that something was settled: {settled}")
+    denials = [s for s in _sentences(queue)
+               if any(w in s.lower() for w in _AGREEMENT_WORDS)]
+    assert denials, ("the empty-queue section says nothing about agreement at "
+                     "all, so silence is left to speak for itself")
+
+
 # --- the known data defect the report must survive --------------------------
 
 
@@ -439,48 +672,9 @@ NETWORKING_ROOTS = {"socket", "ssl", "http", "urllib", "urllib3", "asyncio",
                     "imaplib", "telnetlib", "xmlrpc", "requests", "httpx",
                     "aiohttp", "webbrowser", "subprocess", "multiprocessing"}
 
-#: `sys.argv[2]` decides whether the child imports the module under measurement,
-#: so the same script produces both the measurement and its baseline. The whole
-#: of `sys.modules` is reported, not the growth: a networking module already
-#: loaded when the probe started would vanish from a difference.
-_MODULES_PROBE = """
-import json, sys
-if sys.argv[2] == "import":
-    import conductor.report
-with open(sys.argv[1], "w", encoding="utf-8") as out:
-    json.dump({"loaded": sorted(sys.modules),
-               "has_report": "conductor.report" in sys.modules}, out)
-"""
-
 
 def _root_of(dotted):
     return dotted.split(".", 1)[0]
-
-
-def _modules_loaded(work, mode):
-    """Every module name a child interpreter holds, with or without the import."""
-    script, out = Path(work) / "probe.py", Path(work) / f"loaded-{mode}.json"
-    script.write_text(_MODULES_PROBE, encoding="utf-8")
-    done = subprocess.run(
-        [sys.executable, str(script), str(out), mode], cwd=work,
-        stdin=subprocess.DEVNULL, capture_output=True, timeout=120,
-        env={**os.environ, "PYTHONPATH": str(SRC_ROOT)})
-    assert out.is_file(), done.stderr.decode("utf-8", "replace")
-    return json.loads(out.read_text(encoding="utf-8"))
-
-
-def test_importing_the_report_loads_no_module_that_can_reach_the_network():
-    with tempfile.TemporaryDirectory() as work:
-        measured = _modules_loaded(work, "import")
-        baseline = _modules_loaded(work, "skip")
-    assert measured["has_report"], "the child never imported the module measured"
-    assert not baseline["has_report"], "the baseline is not a baseline"
-    # Asserted on the whole module table, then attributed: the first assertion
-    # is the claim, the difference only says who to blame if it fails.
-    reached = {n for n in measured["loaded"] if _root_of(n) in NETWORKING_ROOTS}
-    assert reached == set(), (
-        f"a child holding conductor.report also holds {sorted(reached)}; "
-        f"of those, {sorted(reached - set(baseline['loaded']))} arrived with it")
 
 
 def _imported_modules(path):
@@ -496,8 +690,9 @@ def _imported_modules(path):
 
 
 def test_the_report_source_names_no_networking_module_anywhere():
-    # The import-closure measurement above cannot see a deferred import inside
-    # a function; this reads the source, where such an import would still be.
+    # The import-closure measurement in tests/test_report_determinism.py cannot
+    # see a deferred import inside a function that never runs; this reads the
+    # source, where such an import would still be.
     imported = _imported_modules(REPORT_SOURCE)
     assert {name for name in imported if _root_of(name) in NETWORKING_ROOTS} == set()
 
@@ -505,7 +700,19 @@ def test_the_report_source_names_no_networking_module_anywhere():
 # --- the report and the panel cannot describe different states --------------
 
 
-def test_the_report_and_the_panel_are_handed_the_same_document(tmp_path):
+def _without_the_stamp(text):
+    """The report minus its one `generated_at` line.
+
+    Two merges of an unchanged project differ on that field and no other — the
+    server's own change detection drops it for the same reason
+    (`Broker.refresh`), and the guard above proves the report puts it on
+    exactly one line. It is what a document merged by the panel and a document
+    merged by the command may legitimately not share.
+    """
+    return [ln for ln in text.splitlines() if not ln.startswith("- `generated_at`")]
+
+
+def test_the_report_and_the_panel_are_handed_the_same_document(tmp_path, capsys):
     lane_body = json.dumps({
         "schema_version": 1, "author": "claude", "role": "impl",
         "updated": "2026-07-30T11:00:00+00:00",
@@ -542,3 +749,12 @@ def test_the_report_and_the_panel_are_handed_the_same_document(tmp_path):
     rendered = report.render(cli_state)
     assert "### `D-1`" in rendered and "### `w-1`" in rendered
     assert cli_state["warnings"] and "## Merger warnings — 1" in rendered
+    # And the command itself, not a transcription of what it does: everything
+    # `conduct report` puts on stdout is the report of the document the panel
+    # served. A command that dropped, added to or reworded any part of the
+    # document on its way to the reader reds here and nowhere else.
+    assert main(["report", "--dir", str(root)]) == 0
+    printed = capsys.readouterr()
+    assert printed.err == ""
+    assert _without_the_stamp(printed.out) == _without_the_stamp(
+        report.render(panel_state))

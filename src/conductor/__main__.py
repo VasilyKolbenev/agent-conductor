@@ -101,8 +101,9 @@ def _cmd_report(args: argparse.Namespace) -> int:
 
     The state comes from `store.load` + `validate.merged_state` — the same two
     calls `prompt` makes, and no second merge is written here.
-    `tests/test_report.py` measures the rest of that claim: on one project, the
-    document this produces is the one the panel's server serves. A missing
+    `tests/test_report.py` measures the rest of that claim by running this
+    command: on one project, what it writes to stdout is the report of the very
+    document the panel's server serves, `generated_at` apart. A missing
     `conductor/` raises `store.StoreError`, which `main` reports on stderr with
     exit 1; stdout stays empty, so a redirected report file is never a
     half-written one. A map that will not parse is not that failure: the merger
