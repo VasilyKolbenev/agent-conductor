@@ -275,11 +275,10 @@ th{font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--fai
 tr:last-child td{border-bottom:none}
 /* A findings row's cells carry status chips, and a chip's background is a
    color-mix over whatever the cell paints beneath it — so repainting the cell
-   moved the surface under every chip in the row. Resolved through the cascade
-   in Winter Daylight, the wait chip's glyph read 4.2759:1 at rest and 3.6919:1
-   with `td{background:var(--sunk)}` under the pointer. Hover is declared as an
-   outer ring instead — the same ring .ask:hover declares — which leaves the
-   cell's own paint alone; the equality is held in tests/test_panel_contrast.py. */
+   moved the surface under every chip in the row. Hover is declared as an outer
+   ring instead — the same ring .ask:hover declares — which leaves the cell's
+   own paint alone. The equality of the surface at rest and under the pointer
+   is computed, not asserted here, in tests/test_panel_contrast.py. */
 tr.click{cursor:pointer} tr.click:hover{box-shadow:0 0 0 1px var(--faint)}
 td.mono{font-family:var(--mono);font-size:11px;color:var(--muted);white-space:nowrap}
 td.ft{max-width:380px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

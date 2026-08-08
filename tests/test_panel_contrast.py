@@ -605,10 +605,15 @@ def test_every_mark_the_declarations_composite_to_clears_the_threshold_governing
 # Which shipped marks an interactive state repaints. Empty, and the emptiness
 # is the result: hover declares the map's outer ring, the queue card's outer
 # ring and the findings row's outer ring, focus declares the outline, selection
-# declares the ring — all of them outside every mark measured above.
+# declares the ring — all of them outside every mark measured above. One hover
+# does move a colour rather than add a ring: `.copy:hover` takes the copy
+# button's border from --line to --accent. It leaves the button's word alone,
+# and the border encloses the control rather than identifying a state, which is
+# the line NONTEXT_PAIRS already draws — so no measured mark moves under it.
 # `.jump:hover` used to be in this list at 4.33:1 against a lit card, which is
-# what the list is for. Two-sided: a new interactive repaint appears here and
-# fails until it is measured and named.
+# what the list is for. Two-sided for the marks the tables above name: an
+# interaction that repaints one of them appears here and fails until it is
+# measured and named.
 REPAINTED_BY_INTERACTION = ()
 
 

@@ -5,9 +5,9 @@ server and the real handler, so the panel is genuinely *served*; what is then
 checked is the **text of the response** and the **source of the script**. No
 browser parses it, no DOM is built, nothing is rendered. These guards therefore
 catch a surface being deleted, an id being dropped, a contract token being
-renamed — and they do not establish that any of it works in a browser. The
-names below say "source", "writes" and "spells" for that reason; a behaviour
-claim about the rendered panel is post-alpha work, carried in §10 of the plan.
+renamed — and they do not establish that any of it works in a browser. A
+behaviour claim about the rendered panel is post-alpha work, carried in §10 of
+the plan.
 """
 import re
 import urllib.request
@@ -251,7 +251,7 @@ def _free_names(source: str, bound: set[str]) -> set[str]:
     return set(re.findall(r"[A-Za-z_$][\w$]*", source)) - bound - _JS_WORDS
 
 
-def test_changing_the_clock_cannot_change_the_light_level():
+def test_attentionOf_reads_only_its_argument_and_the_declared_table():
     # The owner's own formulation of the invariant: the same state document has
     # to give the same light level whatever the time is. That is a statement
     # about what attentionOf is allowed to depend on, so it is checked as one —
@@ -263,7 +263,7 @@ def test_changing_the_clock_cannot_change_the_light_level():
     assert _free_names(expression, {"s"}) == {"ATTENTION"}, expression
 
 
-def test_the_light_level_is_written_once_and_from_that_one_expression():
+def test_the_only_documentElement_in_the_script_is_renderShells_attention_assignment():
     # Purity is only worth having if nothing bypasses it. One writer, one
     # source: the light level the document wears is the value attentionOf
     # computed from the state document handed to renderShell.
@@ -271,9 +271,9 @@ def test_the_light_level_is_written_once_and_from_that_one_expression():
     # Counting one spelling was not that. A second writer using setAttribute
     # instead of dataset — a clock-keyed one, in render(), a line below the
     # call to renderShell — left the count at one and the suite green. So what
-    # is held is the relation: the script reaches the document element exactly
-    # once, and never names the attribute as a string, which is the only other
-    # way to write it.
+    # is held is a relation between the count and the place: the script names
+    # `documentElement` exactly once, that one naming is renderShell's
+    # assignment, and no string literal in the script names the attribute.
     body = function_body("renderShell")
     assert script().count("documentElement") == 1
     assert "document.documentElement.dataset.attention = attentionOf(s);" in body
@@ -282,15 +282,15 @@ def test_the_light_level_is_written_once_and_from_that_one_expression():
                 if "data-attention" in text or "attention" == text]
 
 
-def test_which_cards_are_lit_is_decided_by_the_markup_and_never_computed():
+def test_the_lit_cards_are_named_in_the_markup_and_no_literal_spells_the_class():
     # The other half of the owner's invariant. "The same state with a different
     # clock gives the same classes and the same styles" is about two things:
     # which level the document wears, and which elements wear the lit material.
     # The level was guarded three ways and the set was guarded by nothing, so
     # `$("agents").classList.toggle("lit", Date.now() % 2 === 0)` changed the
     # classes by the clock with every panel test green. The set is markup-
-    # determined, so that is what is asserted — and no script expression may
-    # spell the class at all, which is the only way it could become computed.
+    # determined, so that is what is asserted — and separately, no string
+    # literal in the script may spell the class.
     wearing = [ident for classes, ident in re.findall(r'class="([^"]*)" id="(\w+)"',
                                                       panel_html())
                if "lit" in classes.split()]
@@ -322,7 +322,7 @@ def test_the_light_level_follows_the_project_status_the_merger_computes():
     assert (empty["project_status"]["state"], _level_for(empty)) == ("ready", "none")
 
 
-def test_a_panel_with_nothing_waiting_stays_unlit():
+def test_the_stylesheet_lights_only_the_low_and_high_levels():
     # Absence of attention is a real state and must look like one: no level, no
     # lift, no brighter contour. The CSS only lights `low` and `high`.
     html = panel_html()
