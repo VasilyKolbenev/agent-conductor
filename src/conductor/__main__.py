@@ -5,16 +5,18 @@ Subcommands: `validate` (schema errors → exit 1, merge warnings → exit 0);
 it in — `--template NAME` is the explicit path, a terminal without it gets a
 guided wizard, and anything that is not a terminal takes the same default
 without reading stdin); `prompt --role R [--author A]` (vend a role's working
-prompt; the positional role form is deprecated); `up` (serve the panel on
-127.0.0.1 with SSE live updates; Ctrl-C → exit 0); `demo` (materialize the
-bundled fixture into a temp directory and serve it — takes `--port` but no
-`--dir`). Every other command takes `--dir` (the project root, default `.`).
+prompt; the positional role form is deprecated); `report` (render the merged
+state as a Markdown report); `up` (serve the panel on 127.0.0.1 with SSE live
+updates; Ctrl-C → exit 0); `demo` (materialize the bundled fixture into a temp
+directory and serve it — takes `--port` but no `--dir`). Every other command
+takes `--dir` (the project root, default `.`).
 
 THE STREAM CONTRACT, which every command here obeys and every command added
 here must obey. stdout carries the command's primary result and nothing else,
 so that redirecting it yields something usable on its own: the rendered prompt
 for `prompt`, the bootstrap prompt for `init`, the validation report for
-`validate`, the bare URL for `up` and `demo`. stderr carries everything a
+`validate`, the Markdown report for `report`, the bare URL for `up` and
+`demo`. stderr carries everything a
 person reads around that — dialogue, progress, explanations, deprecation
 warnings, and errors that mean the command could not run.
 
@@ -38,7 +40,7 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
-from conductor import init, prompts, store, templates, validate
+from conductor import init, prompts, report, store, templates, validate
 
 # `conductor.demo` and `conductor.server` are imported inside the two commands
 # that need them, not here. Both legitimately touch the machine — demo copies a
@@ -91,6 +93,25 @@ def _cmd_prompt(args: argparse.Namespace) -> int:
     # write, not print: role_prompt() already ends in a newline, and print's
     # own would put a blank line at the end of every redirected prompt.
     sys.stdout.write(text)
+    return 0
+
+
+def _cmd_report(args: argparse.Namespace) -> int:
+    """Write the Markdown report of the merged state to stdout.
+
+    The state comes from `store.load` + `validate.merged_state` — the same two
+    calls `prompt` makes, and no second merge is written here.
+    `tests/test_report.py` measures the rest of that claim: on one project, the
+    document this produces is the one the panel's server serves. A missing
+    `conductor/` raises `store.StoreError`, which `main` reports on stderr with
+    exit 1; stdout stays empty, so a redirected report file is never a
+    half-written one. A map that will not parse is not that failure: the merger
+    represents it as `project_status.state == "unknown"`, which is a state worth
+    reporting.
+    """
+    state = validate.merged_state(store.load(args.dir))
+    # write, not print: render() already ends in exactly one newline.
+    sys.stdout.write(report.render(state))
     return 0
 
 
@@ -195,6 +216,9 @@ def _build_parser() -> argparse.ArgumentParser:
                         "into the prompt")
     p.set_defaults(prompt_parser=p)   # lets _cmd_prompt raise argparse usage errors
     _add_dir_and_func(p, _cmd_prompt)
+
+    p = sub.add_parser("report", help="print a Markdown report of the merged state")
+    _add_dir_and_func(p, _cmd_report)
 
     p = sub.add_parser("up", help="serve the panel on loopback HTTP with live updates")
     _add_port(p)

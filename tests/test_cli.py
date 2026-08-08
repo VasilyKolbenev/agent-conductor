@@ -17,10 +17,11 @@ import re
 import subprocess
 import sys
 import threading
+from datetime import datetime, timezone
 
 import pytest
 import conductor.__main__
-from conductor import prompts, store, validate
+from conductor import prompts, report, store, validate
 from conductor.__main__ import main
 from tests.test_store import write_project, good_lane
 
@@ -209,6 +210,57 @@ def test_operational_errors_leave_stdout_empty(tmp_path, capsys, argv, scaffolde
     assert main([*argv, "--dir", str(root)]) == 1
     captured = capsys.readouterr()
     assert captured.out == "" and captured.err != ""
+
+
+class _FrozenClock:
+    """A `datetime` stand-in whose `now` never moves, so two merges agree.
+
+    `generated_at` is the one field two merges of an unchanged project differ
+    on, and comparing the command's stdout against a second merge is a byte
+    comparison only if the clock holds still between them.
+    """
+
+    @staticmethod
+    def now(tz=None):
+        return datetime(2026, 7, 30, 12, 0, tzinfo=tz or timezone.utc)
+
+
+def test_report_stdout_is_exactly_the_rendered_report(tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr(validate, "datetime", _FrozenClock)
+    root = write_project(tmp_path, map_toml=MAP_WITH_ROLES,
+                         lanes={"claude": good_lane()})
+    assert main(["report", "--dir", str(root)]) == 0
+    captured = capsys.readouterr()
+    assert captured.out == report.render(validate.merged_state(store.load(root)))
+    assert captured.err == ""
+
+
+def test_report_stdout_has_no_trailing_blank_line(tmp_path, capsys):
+    root = write_project(tmp_path, lanes={"claude": good_lane()})
+    assert main(["report", "--dir", str(root)]) == 0
+    out = capsys.readouterr().out
+    assert out.endswith("\n") and not out.endswith("\n\n")
+
+
+def test_report_without_a_conductor_directory_leaves_stdout_empty(tmp_path, capsys):
+    assert main(["report", "--dir", str(tmp_path)]) == 1
+    captured = capsys.readouterr()
+    assert captured.out == "" and captured.err != ""
+
+
+def test_report_dir_selects_which_project_is_reported(tmp_path, capsys):
+    # `--dir` behaves as it does everywhere else: it chooses the project, and
+    # the report follows it rather than describing the working directory.
+    one = write_project(tmp_path / "one", map_toml=MAP_WITH_ROLES.replace(
+        'project = "p"', 'project = "alpha"'))
+    two = write_project(tmp_path / "two", map_toml=MAP_WITH_ROLES.replace(
+        'project = "p"', 'project = "beta"'))
+    assert main(["report", "--dir", str(one)]) == 0
+    first = capsys.readouterr().out
+    assert main(["report", "--dir", str(two)]) == 0
+    second = capsys.readouterr().out
+    assert first.splitlines()[0].endswith("alpha")
+    assert second.splitlines()[0].endswith("beta")
 
 
 def test_validate_findings_are_the_result_and_stay_on_stdout(tmp_path, capsys):
