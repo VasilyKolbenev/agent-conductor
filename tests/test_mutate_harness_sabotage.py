@@ -1,10 +1,22 @@
 """Sabotage suite for `scripts/mutate_merge.py` — the guards, kept honest.
 
-Two independent reviews broke sixteen guards of this harness by hand and
-recorded, each time, that nothing noticed. A report proves a guard held on the
-day it was written; only a test proves it still holds after the next edit.
-Each case below re-creates one of those diversions and pins the difference
-between a guarded run and a sabotaged one.
+Four independent reviews broke guards of this harness by hand and recorded,
+each time, that nothing noticed. A report proves a guard held on the day it was
+written; only a test proves it still holds after the next edit. Each case
+re-creates one of those diversions and pins the difference between a guarded
+run and a sabotaged one.
+
+Where the cases live, and why they are not all here. `DIVERSIONS` below carries
+the ones that need a running instrument: a harness copy is sabotaged, pointed
+at a synthetic target, and the two runs are compared. The rest pin a single
+function's behaviour, and live in tests/test_mutate_harness.py, or they pin the
+shipped script's structure and prose, and live in
+tests/test_mutate_harness_contract.py. Counting rows in any one file therefore
+undercounts, so no file is the inventory: `INVENTORY` is, and
+`test_the_inventory_of_diversions_is_complete_and_every_entry_resolves` fails if
+a case loses the test that pins it, wherever that test lives. The inventory
+below is complete: sixteen cases from the first review round and eight from the
+second, one of which is a guard that never existed rather than one that broke.
 
 Nothing here writes inside the repository. Every case copies the harness into a
 temporary directory and sabotages the COPY, and the target it measures is a
@@ -34,6 +46,8 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 HARNESS = ROOT / "scripts" / "mutate_merge.py"
+SIBLINGS = (ROOT / "tests" / "test_mutate_harness.py",
+            ROOT / "tests" / "test_mutate_harness_contract.py")
 
 SYNTH_MERGE = 'def is_ready(state):\n    return state == "ready"\n'
 SYNTH_TESTS = (
@@ -507,3 +521,174 @@ def test_every_row_of_the_exit_code_table_is_a_run_that_produced_it(lab):
         if "no mutations run" in claims:
             assert "no mutations were run" in output, output
             assert not SCORE_SHAPED.search(output), output
+
+
+# --- the inventory: every diversion either has a test, or a stated reason ---
+
+
+PINS = ("row", "behaviour", "structure", "prose")
+
+
+@dataclass(frozen=True)
+class Case:
+    """One diversion from a review, and the test that now catches it.
+
+    Attributes:
+        diversion: What was broken, in the reviewers' words.
+        round: Which review round broke it, 1 or 2.
+        pin: How it is held. `row` re-applies the diversion to a harness copy
+            and runs it; `behaviour` executes the guarded code and asserts what
+            it does; `structure` reads the module's shape; `prose` pins a claim
+            about code whose defect is deliberately still open.
+        pinned_by: Names of the tests that catch it. A `row` case names one of
+            the `DIVERSIONS` ids above; every other name is a test function,
+            here or in tests/test_mutate_harness.py.
+        why_not_automated: Required of, and only of, a `prose` case: why no
+            test re-applies the diversion itself.
+    """
+
+    diversion: str
+    round: int
+    pin: str
+    pinned_by: tuple[str, ...]
+    why_not_automated: str = ""
+
+
+INVENTORY = [
+    Case("spec B: a hard kill between the mutation write and the restore leaves a "
+         "mutated merge.py and says nothing", 1, "prose",
+         ("test_the_docstring_admits_the_window_the_restore_design_leaves_open",),
+         "crash-safe restore is a separate task by owner decision, so the design still "
+         "has this window and the honest guard is the prose that admits it"),
+    Case("spec F: anchor rot under python -O, where `assert` was stripped", 1, "row",
+         ("F/anchor-rot under python -O, where `assert` was stripped",
+          "test_the_anchor_check_still_runs_under_python_O")),
+    Case("spec F': a targeted test file that cannot be collected, so pytest exits 2 "
+         "and the mutation is never measured", 1, "row",
+         ("S6: any nonzero pytest exit counts as a kill",
+          "test_a_pytest_exit_that_is_not_a_test_result_is_an_invalid_measurement")),
+    Case("spec F'': the targeted file is already red, so every mutation reads as KILLED",
+         1, "row",
+         ("F'': the targeted file is already red, so every mutation reads as KILLED",
+          "test_a_red_targeted_file_stops_the_run_before_the_first_mutation")),
+    Case("spec S11: the provenance source-root line hardcoded to a lie", 1, "behaviour",
+         ("test_provenance_prints_the_path_the_probe_resolved_not_the_expected_one",
+          "test_verify_only_confirms_the_import_root_and_says_no_mutations_were_run")),
+    Case("spec S12: the provenance interpreter line hardcoded to a lie", 1, "behaviour",
+         ("test_verify_only_confirms_the_import_root_and_says_no_mutations_were_run",)),
+    Case("spec S13: print_provenance prints the expected merge path, not the resolved one",
+         1, "behaviour",
+         ("test_provenance_prints_the_path_the_probe_resolved_not_the_expected_one",)),
+    Case("spec S14: the verdict word is hardcoded to PASS", 1, "row",
+         ("S14: the verdict word is hardcoded to PASS",
+          "test_the_verdict_word_follows_the_score_it_reports")),
+    Case("spec S16: `pytest` dropped from IMPORT_PROBE", 1, "row",
+         ("S16/S5: `pytest` dropped from IMPORT_PROBE, on a pytest-free interpreter",
+          "test_an_interpreter_that_cannot_run_a_test_cannot_produce_a_score")),
+    Case("quality S5: `pytest` dropped from IMPORT_PROBE — the same edit to the same "
+         "constant under the same interpreter condition as spec S16, merged into one row",
+         1, "row",
+         ("S16/S5: `pytest` dropped from IMPORT_PROBE, on a pytest-free interpreter",)),
+    Case("quality S6: any nonzero pytest exit counts as a kill", 1, "row",
+         ("S6: any nonzero pytest exit counts as a kill",
+          "test_a_pytest_exit_that_is_not_a_test_result_is_an_invalid_measurement")),
+    Case("quality S8: the `probe.returncode != 0` branch never runs", 1, "row",
+         ("S8: the `probe.returncode != 0` branch never runs",
+          "test_an_interpreter_that_cannot_run_a_test_cannot_produce_a_score")),
+    Case("quality S9: no restore after a mutation write that truncates before failing",
+         1, "behaviour",
+         ("test_a_mutation_write_that_truncates_before_failing_is_restored",)),
+    Case("quality S10: verification moved to after all the mutations", 1, "row",
+         ("S10: verification moved to after all the mutations",
+          "test_a_shadowed_import_root_refuses_before_any_mutation_and_never_scores")),
+    Case("quality anchor rot on a plain run: the anchor no longer matches merge.py",
+         1, "row",
+         ("F/anchor-rot: the anchor no longer matches, plain run",
+          "test_an_anchor_that_no_longer_matches_is_an_invalid_measurement_not_a_survivor")),
+    Case("quality PYTHONNOUSERSITE: the docstring's stated reason for the flag does not "
+         "hold, because PYTHONPATH precedes every site directory", 1, "prose",
+         ("test_the_pythonnousersite_reason_is_the_one_that_holds",),
+         "the finding was about the prose and not about behaviour: a reviewer installed "
+         "a real user-site package and confirmed the rewritten claim by execution"),
+    Case("spec: an exception that is not an InvalidMeasurement escapes main, so the "
+         "process exits 1 — the code reserved for an honest survivor", 2, "row",
+         ("an exception that is not an InvalidMeasurement escapes main and exits 1",
+          "test_an_instrument_failure_that_is_not_an_invalid_measurement_still_exits_two",
+          "test_nothing_main_does_after_reading_its_arguments_runs_outside_the_funnel")),
+    Case("quality: tempfile.mkdtemp raises OSError inside check_baseline, before the "
+         "baseline has run", 2, "behaviour",
+         ("test_a_workspace_that_cannot_be_created_is_not_a_surviving_mutation",
+          "test_an_instrument_failure_that_is_not_an_invalid_measurement_still_exits_two")),
+    Case("spec: `_QUIET_FAILURE = EXIT_INVALID` and `return _QUIET_FAILURE` — a second "
+         "exit-2 door under another name, printing a fabricated score", 2, "structure",
+         ("test_exit_two_is_returned_by_one_helper_and_by_nothing_else_in_the_module",)),
+    Case("spec: main hands print_provenance the path it is about to mutate instead of "
+         "the one the probe resolved", 2, "behaviour",
+         ("test_main_verifies_the_file_it_will_mutate_and_shows_what_the_probe_resolved",)),
+    Case("quality: check_baseline calls subprocess.run itself with a second environment "
+         "builder that agrees today", 2, "structure",
+         ("test_one_place_in_the_module_starts_a_pytest_and_it_is_run_pytest",
+          "test_the_baseline_and_the_mutant_runs_come_from_one_environment")),
+    Case("quality: the whole exit-code table replaced by one that contradicts the code "
+         "on every row", 2, "behaviour",
+         ("test_every_row_of_the_exit_code_table_is_a_run_that_produced_it",)),
+    Case("quality: a true unrelated sentence containing the word `always` reddens the "
+         "guard on the restore prose", 2, "structure",
+         ("test_the_restore_window_guard_reads_the_claim_and_not_the_word_always",)),
+    Case("the guard that never existed: the import is checked for membership of the "
+         "source root but never for being the file the run mutates", 2, "row",
+         ("the import root is checked for membership but not for identity",
+          "test_an_import_under_the_source_root_is_still_refused_when_it_is_another_file")),
+]
+
+_NUMBERS = {"sixteen": 16, "eight": 8, "seven": 7, "nine": 9, "ten": 10}
+
+
+def _test_names(path: Path) -> set[str]:
+    """Every test function defined in a test module, read from its AST."""
+    return {node.name for node in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
+            if isinstance(node, ast.FunctionDef) and node.name.startswith("test_")}
+
+
+def test_the_inventory_of_diversions_is_complete_and_every_entry_resolves():
+    # The docstring names a count and the module shows fewer rows than that,
+    # because half the pins are prose and structure and live next door. An
+    # auditor counting rows cannot tell a deliberate split from cases silently
+    # dropped, and a coincidental "16 passed" makes the undercount plausible.
+    # So the split is written down as data and checked: every name here must
+    # resolve to a test that exists in one of the three modules, every
+    # parametrised row must be claimed by an entry, and the counts stated in
+    # the docstring must be the counts in the table.
+    known = _test_names(Path(__file__)) | {case.diversion for case in DIVERSIONS}
+    for sibling in SIBLINGS:
+        known |= _test_names(sibling)
+    for case in INVENTORY:
+        assert case.pinned_by, case.diversion
+        for name in case.pinned_by:
+            assert name in known, f"{case.diversion!r} points at a missing test: {name}"
+
+    claimed = {name for case in INVENTORY for name in case.pinned_by}
+    assert {case.diversion for case in DIVERSIONS} <= claimed
+
+    stated = re.search(
+        r"(\w+) cases from the first review round and (\w+) from the second",
+        " ".join(__doc__.split()))
+    assert stated, "the docstring no longer states how many cases the inventory has"
+    first, second = stated.groups()
+    assert _NUMBERS[first] == sum(1 for case in INVENTORY if case.round == 1)
+    assert _NUMBERS[second] == sum(1 for case in INVENTORY if case.round == 2)
+    assert len({case.diversion for case in INVENTORY}) == len(INVENTORY)
+
+
+def test_a_case_pinned_only_by_prose_is_the_only_kind_that_states_a_reason():
+    # The rule that keeps the inventory honest rather than merely complete. A
+    # diversion may be left without a test that re-applies it, but not
+    # silently: `prose` is the only pin that admits that, and it must say why.
+    rows = {case.diversion for case in DIVERSIONS}
+    for case in INVENTORY:
+        assert case.pin in PINS, case.diversion
+        assert bool(case.why_not_automated) == (case.pin == "prose"), case.diversion
+        named_rows = rows & set(case.pinned_by)
+        assert bool(named_rows) == (case.pin == "row"), case.diversion
+        if case.pin != "row":
+            assert all(name.startswith("test_") for name in case.pinned_by), case.diversion
