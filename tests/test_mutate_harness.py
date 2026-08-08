@@ -481,7 +481,7 @@ def test_the_baseline_and_the_mutant_runs_come_from_one_environment(monkeypatch,
 
 
 def test_a_baseline_that_is_not_green_is_an_invalid_measurement(monkeypatch, tmp_path):
-    calls, fake = _recorder(returncode=1)
+    _, fake = _recorder(returncode=1)
     monkeypatch.setattr(harness, "subprocess", fake)
     with pytest.raises(harness.InvalidMeasurement) as raised:
         harness.check_baseline(tmp_path / "src", tmp_path, tmp_path / "merge.py")
@@ -492,7 +492,7 @@ def test_a_baseline_that_is_not_green_is_an_invalid_measurement(monkeypatch, tmp
 def test_a_baseline_that_collected_nothing_is_an_invalid_measurement(monkeypatch, tmp_path):
     # A green exit over zero tests proves nothing, and it is a distinct failure
     # from a red one.
-    calls, fake = _recorder(returncode=0, testcases=0)
+    _, fake = _recorder(returncode=0, testcases=0)
     monkeypatch.setattr(harness, "subprocess", fake)
     with pytest.raises(harness.InvalidMeasurement) as raised:
         harness.check_baseline(tmp_path / "src", tmp_path, tmp_path / "merge.py")

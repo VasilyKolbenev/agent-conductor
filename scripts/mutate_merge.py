@@ -73,7 +73,7 @@ EXIT_INVALID = 2                 # no score is printed on this path — see abov
 
 RESTORE_ATTEMPTS = 3
 RESTORE_DELAY_S = 0.2
-PYTEST_TIMEOUT_S = 180           # a mutation must never hang the harness
+SUBPROCESS_TIMEOUT_S = 180       # nothing the harness starts may hang it
 
 # `pytest` is imported by the probe on purpose: PYTHONNOUSERSITE hides a
 # user-site pytest, and `python -m pytest` without pytest exits 1 — which this
@@ -280,7 +280,7 @@ def verify_import_root(source_root: Path, cwd: Path) -> Path:
     try:
         probe = subprocess.run(
             [sys.executable, "-c", IMPORT_PROBE], cwd=cwd, capture_output=True,
-            text=True, timeout=180, env=subprocess_env(source_root))
+            text=True, timeout=SUBPROCESS_TIMEOUT_S, env=subprocess_env(source_root))
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise InvalidMeasurement(f"the import probe could not run: {exc}") from exc
     if probe.returncode != 0:
@@ -341,7 +341,7 @@ def run_pytest(argv: list[str], source_root: Path, cwd: Path) -> subprocess.Comp
         cwd=cwd,
         capture_output=True,
         text=True,
-        timeout=PYTEST_TIMEOUT_S,
+        timeout=SUBPROCESS_TIMEOUT_S,
         env=subprocess_env(source_root),
     )
 
