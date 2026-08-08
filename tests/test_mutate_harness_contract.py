@@ -196,6 +196,31 @@ def test_the_restore_window_guard_reads_the_claim_and_not_the_word_always():
     assert not _admits_the_crash_window(exhaustive)
 
 
+_POINTER = re.compile(r"(?P<path>docs/[\w./-]+\.md)\s+§(?P<section>\d+)")
+
+
+def test_the_backlog_item_the_docstring_points_at_describes_the_script_that_exists():
+    # The docstring sends a reader to a numbered section of the plan. A pointer
+    # into prose that describes code which is no longer there is the same
+    # defect as a false docstring, one file further away — and that section
+    # once said the restore was "verified by an `assert`" that "disappears
+    # under `python -O`", which is the very defect this instrument closed.
+    pointer = _POINTER.search(module_doc())
+    assert pointer, "the docstring no longer says where the open work is queued"
+    plan = ROOT / pointer.group("path")
+    assert plan.is_file(), plan
+    body = plan.read_text(encoding="utf-8")
+    heading = f"\n## {pointer.group('section')}. "
+    assert heading in body, f"{plan} has no section {pointer.group('section')}"
+    section = body.split(heading, 1)[1].split("\n## ", 1)[0]
+    item = next((block for block in section.split("\n- ") if "mutate_merge.py" in block),
+                None)
+    assert item, "the section no longer carries the item the docstring points at"
+    if "assert" in item:
+        assert [n for n in ast.walk(harness_ast()) if isinstance(n, ast.Assert)], \
+            "the plan describes a verification `assert` the script does not contain"
+
+
 def test_the_pythonnousersite_reason_is_the_one_that_holds():
     # PYTHONPATH precedes every site directory, so the flag does not keep a
     # user-site install from shadowing the source root. What it does do is hide

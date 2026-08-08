@@ -575,13 +575,16 @@ receipt exists. Is DEC-UI expected to design around that gap as well, or to open
 
 Four items queued, none attached to a slice.
 
-- **Harden `scripts/mutate_merge.py`.** The restore is a `finally` block rewriting `merge.py`
-  from a byte copy held in memory, verified by an `assert`. An interrupt or a crash between the
-  mutation write and the restore leaves a mutated `merge.py` in the working tree, and the
-  verification `assert` disappears under `python -O`. The script already needed one guard against
-  `__pycache__` poisoning across the same round trip (`PYTHONDONTWRITEBYTECODE`) — the same
-  failure class: a later run reads something the harness thought it had put back. A crash-safe
-  restore, writing beside the target and renaming, or restoring from git, removes the class.
+- **Give `scripts/mutate_merge.py` a crash-safe restore.** The restore is a `finally` block
+  rewriting `merge.py` from a byte copy held in memory, and the rewrite is proved by content
+  hash with retries: a restore that cannot be confirmed stops the run and names the file that
+  may still carry a mutation. What no `finally` covers is the window between the mutation write
+  and the restore — an interrupt or a hard kill there leaves a mutated `merge.py` in the working
+  tree and says nothing at all, which is the one outcome the harness documents rather than
+  prevents. The script already needed one guard against `__pycache__` poisoning across the same
+  round trip (`PYTHONDONTWRITEBYTECODE`) — the same failure class: a later run reads something
+  the harness thought it had put back. A crash-safe restore, writing beside the target and
+  renaming, or restoring from git, removes the class.
 - **Validate `waits_on_human[].title` as a string.** `schema._validate_lane_waits` checks `id`,
   `kind` and `blocks`, and never touches `title`. Finding titles *are* validated
   (`finding {id} needs a non-empty title`), so the gap is asymmetric. `merge._next_action`
