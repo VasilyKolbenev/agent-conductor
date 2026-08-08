@@ -34,7 +34,7 @@ from typing import NamedTuple
 import pytest
 
 from tests.test_panel_cascade import (
-    INTERACTIONS, E, computed, environments, panel_html, touched)
+    INTERACTIONS, E, computed, environments, panel_html, script, touched)
 from tests.test_panel_colour import JND, contrast, delta_e, simulate_cvd
 from tests.test_panel_style import root_declarations
 
@@ -241,7 +241,8 @@ NONTEXT_PAIRS = [
     ("--wait", "--sunk", "blocked node contour", NONTEXT_MIN),
     ("--fail", "--sunk", "fail node contour", NONTEXT_MIN),
     ("--accent", "--panel", "the selection ring around a node", NONTEXT_MIN),
-    ("--faint", "--panel", "the hover ring around a node", NONTEXT_MIN),
+    ("--faint", "--panel", "the hover ring around a node and around a findings row",
+     NONTEXT_MIN),
     ("--faint", "--sunk", "the hover ring around a queue card", NONTEXT_MIN),
 ]
 
@@ -284,11 +285,39 @@ def _pill(cls: str) -> list:
     return [HTML_LIT, BODY, CARD, DETAIL, E("span", "pill", "p--" + cls)]
 
 
+# Where a `.vd` chip is written, as the script writes it. "table" is the feed's
+# row, which carries no class; "findings row" is the findings table's row, which
+# the script builds as `el("tr", { class: "click", … })`. Modelling both rows as
+# a bare `<tr>` is how `tr.click:hover td{background:var(--sunk)}` shipped: the
+# rule that repainted the surface under every chip in the row could not match
+# any chain this module built, so nothing here could see it.
 def _vd(cls: str, where: str) -> list:
     inside = {"alert": [LIT_CARD, E("div", "alert")],
               "table": [CARD, E("table"), E("tr"), E("td")],
+              "findings row": [CARD, E("table"), E("tr", "click"), E("td")],
               "expanded": [CARD, E("table"), E("tr", "detail"), E("td")]}[where]
     return [HTML_LIT, BODY, *inside, E("span", "vd", "vd--" + cls)]
+
+
+VD_PLACES = ("alert", "table", "findings row", "expanded")
+
+
+def _tr_classes() -> set[frozenset]:
+    """The class sets the panel's script writes on a ``<tr>``, read from source.
+
+    Each ``el("tr", {…})`` call is located and the first string literal of its
+    ``class:`` entry is taken, so a row built as ``"detail" + (open ? " on" : "")``
+    reports the class it always has. A source read, not a read of a built row.
+    """
+    out, src = set(), script()
+    for match in re.finditer(r'el\("tr",\s*\{', src):
+        depth, i = 1, match.end()
+        while depth:
+            depth += (src[i] == "{") - (src[i] == "}")
+            i += 1
+        found = re.search(r'class:\s*"([^"]*)"', src[match.end():i - 1])
+        out.add(frozenset(found.group(1).split()) if found else frozenset())
+    return out
 
 
 def _node(cls: str, part: str) -> list:
@@ -325,7 +354,7 @@ def _chip_rows() -> list[Shipped]:
                     "border-color", chain[:-1], NONTEXT_MIN),
         ]
     for cls in ("ok", "bad", "wait", "idle"):
-        for where in ("alert", "table", "expanded"):
+        for where in VD_PLACES:
             chain = _vd(cls, where)
             rows += [
                 Shipped(f"the {cls} chip's word in the {where}", chain, "color",
@@ -557,16 +586,51 @@ def test_every_mark_the_panel_composites_clears_the_threshold_that_governs_it(th
 
 
 # Which shipped marks an interactive state repaints. Empty, and the emptiness
-# is the result: hover paints the map's outer ring and the queue card's outer
-# ring, focus paints the outline, selection paints the ring — all of them
-# outside every mark measured above. `.jump:hover` used to be in this list at
-# 4.33:1 against a lit card, which is what the list is for. Two-sided: a new
-# interactive repaint appears here and fails until it is measured and named.
+# is the result: hover declares the map's outer ring, the queue card's outer
+# ring and the findings row's outer ring, focus declares the outline, selection
+# declares the ring — all of them outside every mark measured above.
+# `.jump:hover` used to be in this list at 4.33:1 against a lit card, which is
+# what the list is for. Two-sided: a new interactive repaint appears here and
+# fails until it is measured and named.
 REPAINTED_BY_INTERACTION = ()
 
 
 def test_the_only_marks_an_interaction_repaints_are_the_ones_recorded_here():
     assert tuple(row.usage for row in _interactive_rows()) == REPAINTED_BY_INTERACTION
+
+
+def test_every_row_class_the_script_writes_is_a_row_this_module_measures():
+    # The list above is only as wide as the chains this module builds, and the
+    # chains are hand-written. This closes the gap the shipped defect went
+    # through: the findings table's row is `el("tr", { class: "click", … })`, the
+    # chip chains modelled it as a bare `<tr>`, and so `tr.click:hover` matched
+    # nothing here. Read out of the script rather than listed, so the next row
+    # class the panel starts writing has to arrive with a chain of its own.
+    modelled = {frozenset(el.classes) for where in VD_PLACES
+                for el in _vd("ok", where) if el.tag == "tr"}
+    assert _tr_classes() <= modelled, _tr_classes() - modelled
+
+
+@pytest.mark.parametrize("interaction", sorted(INTERACTIONS))
+@pytest.mark.parametrize("where", VD_PLACES)
+def test_no_interaction_moves_the_surface_a_status_chip_is_mixed_into(where, interaction):
+    # The targeted form of the rule the findings row broke. A chip's background
+    # is `color-mix(<status> N%, transparent)`, so the surface beneath it is
+    # part of the chip's own colour and of every ratio measured against it:
+    # `tr.click:hover td{background:var(--sunk)}` moved that surface for ten
+    # marks at once, and in Winter Daylight it took the wait chip's glyph from
+    # 4.2759:1 to 3.6919:1 — above the 3:1 that governs a glyph, and still a
+    # sixth of the contrast of a mark that identifies a state. Held as an
+    # equality of composited colours, so the interaction cannot move the surface
+    # in either direction, and held over the cell as well as over the chip: a
+    # rule repainting either one fails here by arithmetic, not by spelling.
+    for cls in ("ok", "bad", "wait", "idle"):
+        chain = _vd(cls, where)
+        for theme in THEMES:
+            for label, env in environments(theme):
+                for depth in (len(chain), len(chain) - 1):
+                    assert background(theme, _touch(chain[:depth], interaction), env) == \
+                        background(theme, chain[:depth], env), (cls, where, label, theme)
 
 
 @pytest.mark.parametrize("interaction", sorted(INTERACTIONS))
