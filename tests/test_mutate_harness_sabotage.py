@@ -21,7 +21,9 @@ half of every case exercises the code that ships.
 The target is synthetic on purpose. A real run is thirteen pytest invocations;
 these cases need one or two, which is what keeps a suite of them affordable.
 """
+import ast
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -115,14 +117,15 @@ class _Lab:
         return root
 
     def run(self, target: Path, anchor: str = ANCHOR, replacement: str = KILLING,
-            python=None, optimize: bool = False) -> subprocess.CompletedProcess:
+            python=None, optimize: bool = False,
+            extra_args: tuple[str, ...] = ()) -> subprocess.CompletedProcess:
         """Run the harness copy against `target` and capture everything."""
         driver = self.tmp / "drive.py"
         _write(driver, _driver(anchor, replacement))
         cmd = [str(python or sys.executable)]
         if optimize:
             cmd.append("-O")
-        cmd += [str(driver), str(self.harness), "--root", str(target)]
+        cmd += [str(driver), str(self.harness), "--root", str(target), *extra_args]
         return subprocess.run(cmd, capture_output=True, text=True, timeout=900)
 
 
@@ -352,3 +355,105 @@ def test_a_mutation_that_was_never_measured_is_never_a_score(lab, kwargs, expect
     assert expected in result.stderr
     assert "no mutation score" in result.stderr
     assert SCORE not in result.stdout + result.stderr
+
+
+# --- the exit-code table, executed row by row rather than mentioned ---
+
+
+_ROW = re.compile(r"^ {4}(?P<mode>\S+(?: \S+)*?)? {2,}(?P<code>\d)  (?P<meaning>.+)$")
+SCORE_SHAPED = re.compile(r"\d+\s*/\s*\d+")
+
+
+def harness_doc() -> str:
+    """The shipped harness's module docstring, read from the file that ships."""
+    return ast.get_docstring(ast.parse(HARNESS.read_text(encoding="utf-8")))
+
+
+def exit_table(doc: str) -> list[tuple[str, int, str]]:
+    """Read the exit-code table out of the harness docstring.
+
+    Args:
+        doc: The harness module docstring.
+
+    Returns:
+        One `(mode, code, meaning)` triple per row, continuation lines folded
+        into the meaning they belong to.
+    """
+    block = doc.split("Exit codes.", 1)[1].split("Exit 2 carries", 1)[0]
+    rows: list[tuple[str, int, str]] = []
+    mode = ""
+    for line in block.splitlines():
+        row = _ROW.match(line)
+        if row:
+            mode = row.group("mode") or mode
+            rows.append((mode, int(row.group("code")), row.group("meaning")))
+        elif rows and line.startswith("        ") and line.strip():
+            last_mode, last_code, meaning = rows[-1]
+            rows[-1] = (last_mode, last_code, f"{meaning} {line.strip()}")
+    return rows
+
+
+def claims_of(meaning: str) -> set[str]:
+    """Name the checkable claims a row makes, read from what the row says."""
+    claims = set()
+    if "every mutation killed" in meaning:
+        claims.add("all killed")
+    if "a mutation survived" in meaning:
+        claims.add("a survivor")
+    if "invalid" in meaning or "never started" in meaning \
+            or "did not check out" in meaning or "usage error" in meaning:
+        claims.add("nothing measured")
+    if "no mutations were run" in meaning.lower():
+        claims.add("no mutations run")
+    if "not used" in meaning:
+        claims.add("unreachable")
+    return claims
+
+
+def _score(output: str) -> tuple[int, int]:
+    """Return the `(killed, total)` the run reported, or `(-1, -1)` for none."""
+    found = re.search(r"(\d+)/(\d+) mutations killed", output)
+    return (int(found.group(1)), int(found.group(2))) if found else (-1, -1)
+
+
+def test_every_row_of_the_exit_code_table_is_a_run_that_produced_it(lab):
+    # The table was true when it was written and nothing kept it true: the only
+    # test that looked at it checked that two substrings occurred in the
+    # docstring, so the whole table could be replaced by one contradicting the
+    # code on every row with the suite still green. Here each row is parsed out
+    # of the prose, matched to a run that really produced that code in that
+    # mode, and the row's own words are checked against what the run printed.
+    no_engine = lab.target()
+    (no_engine / "src" / "conductor" / "merge.py").unlink()
+    runs = {
+        ("normal run", 0): lab.run(lab.target()),
+        ("normal run", 1): lab.run(lab.target(), replacement=SURVIVING),
+        ("normal run", 2): lab.run(lab.target(), anchor=DRIFTED),
+        ("--verify-only", 0): lab.run(lab.target(), extra_args=("--verify-only",)),
+        ("--verify-only", 2): lab.run(no_engine, extra_args=("--verify-only",)),
+    }
+    rows = exit_table(harness_doc())
+    assert rows, "no exit-code table could be read out of the docstring"
+    unreachable = {(mode, code) for mode, code, meaning in rows
+                   if "unreachable" in claims_of(meaning)}
+    assert {(mode, code) for mode, code, _ in rows} - unreachable == set(runs)
+
+    for mode, code, meaning in rows:
+        claims = claims_of(meaning)
+        assert claims, f"row {mode} {code} makes no claim this test can check: {meaning}"
+        if "unreachable" in claims:
+            assert all(run.returncode != code for (m, _), run in runs.items() if m == mode)
+            continue
+        run = runs[(mode, code)]
+        output = run.stdout + run.stderr
+        assert run.returncode == code, output
+        killed, total = _score(output)
+        if "all killed" in claims:
+            assert total > 0 and killed == total, output
+        if "a survivor" in claims:
+            assert "SURVIVED" in output and 0 <= killed < total, output
+        if "nothing measured" in claims:
+            assert not SCORE_SHAPED.search(output) and SCORE not in output, output
+        if "no mutations run" in claims:
+            assert "no mutations were run" in output, output
+            assert not SCORE_SHAPED.search(output), output

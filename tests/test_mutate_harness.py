@@ -21,7 +21,6 @@ editable `.pth` pointing somewhere else — instead of trusting the ambient
 environment to still carry one. Without that construction, none of the
 assertions here would have teeth, which is what the first test checks.
 """
-import ast
 import importlib.util
 import os
 import re
@@ -289,35 +288,6 @@ def test_a_stumbling_restore_still_leaves_no_mutation_applied(source_copy, monke
 # --- the exit-code contract: a code describes the mode that was requested ---
 
 
-def _returns_exit_invalid(node) -> bool:
-    """Whether an AST node is the harness's invalid-measurement exit code."""
-    if isinstance(node, ast.Name):
-        return node.id == "EXIT_INVALID"
-    return isinstance(node, ast.Constant) and node.value == 2
-
-
-def test_exit_two_is_returned_by_one_helper_and_by_nothing_else_in_the_module():
-    # Sixteen independent `print(...); return 2` sites are the design in which
-    # the seventeenth forgets to stay silent. The invariant "exit 2 prints no
-    # score" is held here by the shape of the module, read from its AST, not by
-    # remembering it at each raise site. (`argparse` also exits 2 on a usage
-    # error — that happens inside argparse, not in this module, and the module
-    # docstring names the overlap.)
-    tree = ast.parse(HARNESS.read_text(encoding="utf-8"))
-    returners = set()
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.FunctionDef):
-            continue
-        for inner in ast.walk(node):
-            if isinstance(inner, ast.Return) and _returns_exit_invalid(inner.value):
-                returners.add(node.name)
-    assert returners == {"_invalid_measurement"}
-    exits = [n for n in ast.walk(tree) if isinstance(n, ast.Call)
-             and ast.unparse(n.func) in ("sys.exit", "SystemExit", "exit")
-             and any(_returns_exit_invalid(a) for a in n.args)]
-    assert exits == []
-
-
 def test_an_invalid_measurement_prints_no_score_and_returns_exit_two(capsys):
     code = harness._invalid_measurement(harness.InvalidMeasurement("the volume went away"))
     captured = capsys.readouterr()
@@ -466,7 +436,11 @@ def test_the_baseline_covers_exactly_the_files_the_mutations_are_scored_against(
 
 def test_the_baseline_and_the_mutant_runs_come_from_one_environment(monkeypatch, tmp_path):
     # Not "built the same way" — the same. Two builders drift apart at the
-    # first edit, and then the baseline proves the wrong tree is green.
+    # first edit, and then the baseline proves the wrong tree is green. This
+    # catches drift between the two calls; what forbids a second builder that
+    # agrees today is structural and lives in
+    # tests/test_mutate_harness_contract.py, in
+    # test_one_place_in_the_module_starts_a_pytest_and_it_is_run_pytest.
     calls, fake = _recorder()
     monkeypatch.setattr(harness, "subprocess", fake)
     source_root, cwd = tmp_path / "src", tmp_path
@@ -530,38 +504,7 @@ def test_a_red_targeted_file_stops_the_run_before_the_first_mutation(
     assert "mutations killed" not in result.stdout + result.stderr
 
 
-# --- prose about this code is code: these pin claims, not wording ---
-
-
-def test_the_docstring_states_the_kill_rule_the_scorer_actually_applies():
-    doc = harness.__doc__
-    assert "nonzero pytest exit" not in doc      # only exit 1 is a kill
-    assert "exit 1" in doc
-
-
-def test_the_docstring_does_not_promise_a_tree_that_is_always_left_clean():
-    # A hard kill between the mutation write and the restore leaves a mutated
-    # file and says nothing. The docstring may not offer two exhaustive
-    # outcomes while that third one exists.
-    doc = harness.__doc__
-    assert "always" not in doc
-    assert "hard kill" in doc
-    assert "separate task" in doc
-
-
-def test_the_exit_table_covers_verify_only_and_the_argparse_overlap():
-    doc = harness.__doc__
-    assert "--verify-only" in doc
-    assert "argparse" in doc
-
-
-def test_the_pythonnousersite_reason_is_the_one_that_holds():
-    # PYTHONPATH precedes every site directory, so the flag does not keep a
-    # user-site install from shadowing the source root. What it does do is hide
-    # a user-site pytest, which is why the probe imports pytest at all.
-    doc = harness.subprocess_env.__doc__
-    assert "from shadowing the source root" not in doc
-    assert "pytest" in doc
+# --- the restore path again: the failure mode a read-only file cannot make ---
 
 
 def test_a_mutation_write_that_truncates_before_failing_is_restored(
