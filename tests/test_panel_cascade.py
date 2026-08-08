@@ -495,8 +495,10 @@ def test_every_state_the_stylesheet_declares_appears_in_the_carrier_set():
             if tag:
                 assert not (_classes_of(compound) & guarded), rule.selector
     # And the shapes the invariant is really about are in there, by name.
+    # `.orb--current` and `.trk--next` are the Orbit's two: the stage the panel
+    # marks as current, and the one connection that must never read as a status.
     for label in (".node--fail .box", ".p--fail", ".vd--bad .gl",
-                  ".phase--current .box", ".ask"):
+                  ".orb--current", ".trk--next", ".ask"):
         assert label in {carrier.label for carrier in carriers()}, label
 
 

@@ -111,7 +111,7 @@ html[data-attention="high"] .shell{border-bottom-color:var(--contour-lit)}
 .spark{height:4px;border-radius:3px;background:var(--sunk);overflow:hidden;margin-top:5px}
 .spark i{display:block;height:100%;background:var(--accent)}
 
-/* ── cards, map SVG, cycle ring ────────────────────────────── */
+/* ── cards, map SVG, Orbit ─────────────────────────────────── */
 .grid{display:grid;gap:12px;grid-template-columns:1fr}
 @media(min-width:1000px){.grid--split{grid-template-columns:1fr 340px}}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;
@@ -131,13 +131,13 @@ html[data-attention="high"] .shell{border-bottom-color:var(--contour-lit)}
 .legend i{width:9px;height:9px;display:inline-block;border:1.5px solid}
 svg{width:100%;height:auto;display:block;overflow:visible}
 .arw{fill:var(--line)}
-/* Two SVG widgets draw boxes with labels — the map's nodes and the cycle
-   ring's phases — and they share this geometry, but nothing else. Only .node
-   is interactive, and only .node carries a status, which is why the two keep
-   separate class namespaces: a rule written for one cannot reach the other. */
+/* The map's nodes are the only interactive graph the panel draws and the only
+   one carrying a status, which is why they keep their own class namespace: a
+   rule written for a node cannot reach the Orbit below, and a guard reasoning
+   about node statuses is not handed a group that has none. */
 .node{cursor:pointer}
-.node .box,.phase .box{fill:var(--sunk);stroke:var(--line);stroke-width:1.5}
-.node text,.phase text{font-family:var(--mono);font-size:11px;fill:var(--muted);
+.node .box{fill:var(--sunk);stroke:var(--line);stroke-width:1.5}
+.node text{font-family:var(--mono);font-size:11px;fill:var(--muted);
            dominant-baseline:middle;text-anchor:middle}
 /* The node name stays --ink on every status: it sits on a tint of the status
    colour, where the status colour itself does not clear 4.5:1 in the light
@@ -177,17 +177,73 @@ svg{width:100%;height:auto;display:block;overflow:visible}
 .edge{stroke:var(--line);stroke-width:2;fill:none;marker-end:url(#arw)}
 .edge--dead{stroke:var(--fail);stroke-dasharray:6 5}
 .edge--idle{stroke:var(--faint);stroke-dasharray:3 5;opacity:.5}
-.ring{fill:none;stroke:var(--line);stroke-width:1;stroke-dasharray:3 4}
-.phase text{font-size:10px}
-/* The current stage is accent role 1, and the accent carries it as a contour,
-   where 1.4.11's 3:1 governs. The label beside it is 10px text, so 4.5:1
-   governs there and the accent does not clear it against --sunk in the light
-   theme — the label runs on --ink instead, brighter than the other phases'
-   --muted, which is the emphasis the label was there to give. */
-.phase--current .box{stroke:var(--accent);stroke-width:2.5}
-.phase--current text{fill:var(--ink)}
 .pulse .box{animation:glow 2s ease-in-out infinite}
 .role{font-size:12px;padding:1px 0}
+
+/* ── Orbit: the declared cycle as a closed trajectory ───────── */
+/* The field is a plain positioned box: the trajectory is drawn into an SVG
+   layer underneath, the stages are HTML on top of it. HTML rather than SVG
+   text for one reason — a stage name reaches the DOM as the bytes the map
+   declared, so it has to be able to wrap and to be shortened by the layout
+   rather than by the script (plan §8.1, and see SHIPPED_STAGES below for the
+   one presentational liberty taken with it).
+   Geometry is computed from the actual phase list; the stylesheet only says
+   which of the two layouts is in force. Wide: stages placed on an ellipse by
+   drawOrbitRing. Narrow: a vertical loop in normal flow, with the return kept
+   as its own element — collapsing the cycle into a line would change what the
+   picture means, not only how it is arranged. */
+.orbit{position:relative;width:100%}
+.orbit svg{position:absolute;left:0;top:0}
+.orbit--ring .orb{position:absolute;width:178px;transform:translate(-50%,-50%)}
+/* The trajectory carries no history. Protocol v1 has no run identity and no
+   travelled path, so no arc may read as "done": every one of them is --line,
+   and the arc returning to the first stage is told apart from a step by its
+   dash and by having no arrow head — form, never a status colour. */
+/* --faint and not --line. The trajectory is the one mark that says the process
+   is a cycle at all, so it answers to 1.4.11's 3:1 like any other identifying
+   contour, and --line is the deliberately faint enclosure token that does not
+   clear it. The numbers are computed in tests/test_panel_contrast.py. */
+.trk{fill:none;stroke:var(--faint);stroke-width:1.5;marker-end:url(#orbTip)}
+.trk--next{stroke-dasharray:2 7;marker-end:none}
+.arw--orb{fill:var(--faint)}
+.nextrun{font-family:var(--mono);font-size:10px;color:var(--faint);white-space:nowrap}
+.orbit--ring .nextrun{position:absolute;transform:translate(-50%,-50%)}
+.orbit .lnk{display:flex;align-items:center;justify-content:center;gap:7px;
+            font-family:var(--mono);font-size:10px;color:var(--faint);padding:5px 0}
+.orbit .lnk i{display:block;width:0;height:18px;border-left-width:1.5px;
+              border-left-style:solid;border-left-color:var(--faint)}
+.orbit .lnk--next i{border-left-style:dashed;height:26px}
+/* A stage's state is carried by the contour it draws plus the chips inside it,
+   and the chips spell a glyph and a word each. Neutral is the resting form and
+   the honest one: with no run history there is nothing to say about a stage
+   nobody is reporting from. Only the current runtime stage spends the accent. */
+/* Longhands rather than the `border` shorthand, so that the width, the style
+   and the colour of a stage's contour are three declarations a guard can
+   resolve one at a time — which is what makes "these four states stay apart
+   with the colour taken away" a computation instead of a claim. */
+.orb{width:100%;max-width:430px;margin:0 auto;background:var(--sunk);
+     border-width:1px;border-style:solid;border-color:var(--faint);
+     border-radius:9px;padding:8px 10px;
+     display:flex;flex-direction:column;gap:5px}
+.orb--neutral{border-style:solid;border-width:1px;border-radius:9px}
+.orb--waiting{border-color:var(--wait);border-style:dashed}
+.orb--blocked{border-color:var(--fail);border-width:2px}
+.orb--current{border-color:var(--accent);border-width:2px;border-radius:16px}
+.orb .orb__name{font-size:13px;font-weight:640;overflow-wrap:anywhere;color:var(--ink)}
+/* Presentational only, and deliberately narrow. drawOrbitStage adds .cap to a
+   stage whose id is one of the five Default Orbit stages Python ships, so the
+   word a reader sees is that same word with a capital. The text node and every
+   attribute keep the author's bytes, and a stage name nobody shipped is never
+   touched: a blanket text-transform on stage labels is the thing this rule
+   exists instead of. */
+.cap{text-transform:capitalize}
+.orb .orb__marks{display:flex;flex-wrap:wrap;gap:4px}
+.orb .orb__who{display:flex;flex-direction:column;gap:2px;font-size:11.5px;
+               color:var(--ink)}
+.orb .orb__hn{font-family:var(--mono);font-size:10.5px;color:var(--muted)}
+.orb .orb__note{font-family:var(--mono);font-size:10px;color:var(--muted);display:block}
+.orb__group{font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;
+            color:var(--faint);font-weight:650;margin-top:6px}
 
 /* ── detail card ───────────────────────────────────────────── */
 .det{background:var(--sunk);border:1px solid var(--line);border-radius:8px;padding:11px 13px;
@@ -214,13 +270,13 @@ svg{width:100%;height:auto;display:block;overflow:visible}
                  border-color:var(--fail)}
 .p--blocked,.vd--wait{background:color-mix(in srgb,var(--wait) 16%,transparent);
                  border-color:var(--wait)}
-.p--running{background:color-mix(in srgb,var(--accent) 14%,transparent);
+.p--running,.vd--run{background:color-mix(in srgb,var(--accent) 14%,transparent);
                  border-color:var(--accent)}
 .p--idle,.vd--idle{border-color:var(--faint)}
 .p--pass .gl,.vd--ok .gl{color:var(--pass)}
 .p--fail .gl,.p--contested .gl,.vd--bad .gl{color:var(--fail)}
 .p--blocked .gl,.vd--wait .gl{color:var(--wait)}
-.p--running .gl{color:var(--accent)}
+.p--running .gl,.vd--run .gl{color:var(--accent)}
 .p--idle .gl,.vd--idle .gl{color:var(--faint)}
 
 /* ── attention zone: queue cards, alerts, agents ───────────── */
@@ -340,6 +396,17 @@ footer{font-size:10px;color:var(--faint);font-family:var(--mono);
     <p class="calm" id="attnCalm" hidden>Nothing needs you right now.</p>
   </div>
 
+  <div class="card" id="cycle">
+    <div class="card__h"><h2>Orbit</h2>
+      <span class="hint" id="cycleHint"></span></div>
+    <div class="orbit" id="orbitField">
+      <svg id="orbitSvg" aria-hidden="true"></svg>
+      <div class="orbit__body" id="orbitBody"></div>
+    </div>
+    <p class="empty" id="cycleEmpty" hidden>No phases configured</p>
+    <div id="roles"></div>
+  </div>
+
   <div class="card" id="agents">
     <div class="card__h"><h2>Agents</h2><span class="hint">one row per lane</span></div>
     <div id="agentList"></div>
@@ -370,12 +437,6 @@ footer{font-size:10px;color:var(--faint);font-family:var(--mono);
         <div class="card__h"><h2>Details</h2></div>
         <div class="det" id="det"></div>
       </div>
-      <div class="card" id="cycle">
-        <div class="card__h"><h2>Cycle</h2><span class="hint" id="cycleHint"></span></div>
-        <svg id="cycleSvg" viewBox="0 0 320 156" role="img" aria-label="Cycle phases"></svg>
-        <div id="roles"></div>
-        <p class="empty" id="cycleEmpty" hidden>No cycle declared in the map.</p>
-      </div>
     </div>
   </div>
 
@@ -399,20 +460,22 @@ footer{font-size:10px;color:var(--faint);font-family:var(--mono);
 
 <script>
 /* Sections, in DOM order: helpers → brand shell + warnings → KPI rail → map graph
-   → cycle ring → attention zone → agents block → findings table → feed →
+   → Orbit → attention zone → agents block → findings table → feed →
    render pipeline → interaction → data source.
 
-   FILE-SIZE WAIVER (owner, 2026-08-03). The global guard caps a file at 800
-   lines; this one is exempt up to 1600. Single-file, no-build, no-dependency is
-   a product constraint of the panel — `conduct up` hands the browser one
-   static asset, so a bundler or an ES-module split would be a new toolchain in
-   a stdlib-only project. The exemption is conditional:
+   FILE-SIZE WAIVER (owner, 2026-08-03; revised 2026-08-08). The global guard
+   caps a file at 800 lines; this one is exempt. Single-file, no-build,
+   no-dependency is a product constraint of the panel — `conduct up` hands the
+   browser one static asset, so a bundler or an ES-module split would be a new
+   toolchain in a stdlib-only project. The exemption is conditional:
      - sections stay marked with the banners listed above;
-     - never minify or otherwise compress source to fit under the cap — that
-       trades the readability the waiver was granted for;
+     - never minify or otherwise compress source to fit under a line count —
+       that trades the readability the waiver was granted for;
      - every surface keeps a smoke test in tests/test_panel_smoke.py;
-     - as the file approaches 1600 lines, stop and re-review the architecture
-       rather than raising the ceiling again. */
+     - 1600 lines is a mandatory architecture audit, not a cap: on crossing it,
+       stop after the current commit and re-review the structure;
+     - 2000 lines is the alpha ceiling. A forecast past it is a stop, and the
+       answer is a proposal for splitting the file, never compression. */
 "use strict";
 /* XSS hygiene: every state-derived string enters the DOM as a text node
    (el/sv append strings via Node.append) or as a setAttribute value. Lane
@@ -668,44 +731,203 @@ function renderDetail(nodes){
                   "≠ contested by: " + n.contested_by.join(", ")));
 }
 
-/* ── cycle ring: phases + roles; pulse only with current_phase ─ */
-function drawRing(svgEl, phases, current){
-  const cx = 160, cy = 78, RX = 104, RY = 56;
-  svgEl.append(sv("ellipse", { cx, cy, rx: RX, ry: RY, class: "ring" }));
-  phases.forEach((p, i) => {
-    const a = -Math.PI / 2 + i * 2 * Math.PI / phases.length;
-    const x = cx + Math.cos(a) * RX, y = cy + Math.sin(a) * RY;
-    const cur = p === current;
-    /* A phase is not a node: it carries no status, it is not focusable and it
-       is not clickable, so it keeps its own class namespace. Sharing "node"
-       would put two graph widgets under one set of rules — and would make the
-       node guards reason about groups that have no status to protect. */
-    const g = sv("g", { class: "phase" + (cur ? " phase--current pulse" : "") });
-    g.append(sv("rect", { class: "box", x: x - 37, y: y - 13, width: 74,
-                          height: 26, rx: 6 }),
-             sv("text", { x, y: y + 1 }, (cur ? "▶ " : "") + trim(String(p), 11)));
-    svgEl.append(g);
-  });
+/* ── Orbit: the declared cycle, drawn from the declared cycle ─ */
+/* The five Default Orbit stages Python ships, and the whole of what the panel
+   is allowed to know about a stage name. Membership decides one thing: whether
+   the label gets .cap, a CSS capital on the same word. It never decides what a
+   stage is called — a project's own `research` stays `research` and is never
+   shown as some canonical term — and it never reaches the text node or an
+   attribute. tests/test_panel_orbit.py fails if this set drifts from
+   conductor.prompts and the default-orbit template. */
+const SHIPPED_STAGES = new Set(["goal", "detect", "diagnose", "design", "deliver"]);
+/* What a stage can be marked with, and the words each mark spells. Every one
+   is a fact already in state.json: `current` is the phase a lane is reporting
+   (never an assigned stage), `waiting` is a queue item raised by a lane whose
+   role sits here, `blocked` is such a lane past its own staleness threshold,
+   and `mismatch` is design-time stage against runtime phase. Nothing here says
+   a stage was reached, finished or passed — v1 records none of those. */
+const ORBIT_MARKS = {
+  current:  { cls: "run",  glyph: "▶", label: "current phase" },
+  blocked:  { cls: "bad",  glyph: "■", label: "lane gone quiet" },
+  waiting:  { cls: "wait", glyph: "?", label: "waiting on you" },
+  mismatch: { cls: "idle", glyph: "≠", label: "stage mismatch" },
+};
+/* Reading order for the chips, and — for the first three — contour priority.
+   A mismatch is explicitly non-blocking (§2.3), so it never takes the contour:
+   it says its piece in a chip and leaves the stage's silhouette alone. */
+const MARK_ORDER = ["current", "blocked", "waiting", "mismatch"];
+const TONES = ["current", "blocked", "waiting"];
+const NARROW = 760;                    /* px of viewport below which the loop goes vertical */
+
+/* The trajectory as a list, before any geometry touches it: one step per
+   consecutive pair, then exactly one return to the first stage. It depends on
+   the count and on nothing else, and both layouts consume this same list —
+   which is what keeps the stage order and the return present in each. */
+function orbitEdges(n){
+  const out = [];
+  for (let i = 0; i + 1 < n; i++) out.push({ from: i, to: i + 1, kind: "step" });
+  if (n) out.push({ from: n - 1, to: 0, kind: "next" });
+  return out;
 }
-function renderCycle(cycle){
+/* The ellipse the wide layout places stages on. The minor radius grows with
+   the count so neighbours keep a constant distance rather than crowding at the
+   ends of the major axis; the major radius follows the field but never falls
+   below the minor one. `gap` is the angle left blank at each end of an arc, so
+   an arrow head lands beside a stage instead of under it. */
+function orbitRing(n, w){
+  const ry = Math.max(120, Math.ceil(172 * n / (2 * Math.PI)));
+  const rx = Math.max(ry, Math.min(2.6 * ry, w / 2 - 112));
+  return { w, h: 2 * ry + 150, rx, ry, gap: Math.min(0.55, 0.68 * Math.PI / n),
+           at: i => -Math.PI / 2 + i * 2 * Math.PI / n,
+           point(a){ return { x: this.w / 2 + Math.cos(a) * this.rx,
+                              y: this.h / 2 + Math.sin(a) * this.ry }; } };
+}
+/* One arc of the ellipse, from the trimmed end of one stage to the trimmed
+   start of the next. `wrap` adds the full turn, which is what makes the return
+   edge run the long way round to the first stage — and, when a cycle declares
+   a single stage, what makes it a self-return arc all the way round. */
+function orbitArc(g, edge){
+  const a1 = g.at(edge.from) + g.gap;
+  const a2 = g.at(edge.to) + (edge.kind === "next" ? 2 * Math.PI : 0) - g.gap;
+  const p1 = g.point(a1), p2 = g.point(a2);
+  return "M" + p1.x.toFixed(1) + " " + p1.y.toFixed(1) + " A" + g.rx + " " + g.ry +
+         " 0 " + (a2 - a1 > Math.PI ? 1 : 0) + " 1 " +
+         p2.x.toFixed(1) + " " + p2.y.toFixed(1);
+}
+function orbitDefs(){
+  return sv("defs", {},
+    sv("marker", { id: "orbTip", viewBox: "0 0 10 10", refX: "9", refY: "5",
+                   markerWidth: "5", markerHeight: "5", orient: "auto" },
+      sv("path", { d: "M0,0 L10,5 L0,10 z", class: "arw arw--orb" })));
+}
+/* One stage. The name is appended as it arrived: no case fold, no truncation,
+   no lookup that could put a different word in its place. */
+function orbitStage(name, seat){
+  const marks = MARK_ORDER.filter(m => seat.marks.has(m));
+  const tone = TONES.find(t => seat.marks.has(t)) || "neutral";
+  const box = el("div", { class: "orb orb--" + tone },
+    el("span", { class: "orb__name" + (SHIPPED_STAGES.has(name) ? " cap" : "") },
+       String(name)),
+    el("div", { class: "orb__marks" },
+       ...marks.map(m => chip(ORBIT_MARKS[m], ORBIT_MARKS[m].label))));
+  const who = el("div", { class: "orb__who" });
+  for (const r of seat.roles){
+    const badge = el("div", {}, el("b", {}, String(r.id)),
+      el("span", { class: "orb__hn" }, " " + String(r.harness || "no harness")));
+    if (r.reporting)
+      badge.append(el("span", { class: "orb__note" }, "reports: " + r.reporting));
+    who.append(badge);
+  }
+  if (!seat.roles.length)
+    who.append(el("span", { class: "orb__note" }, "no participant"));
+  box.append(who);
+  return box;
+}
+function drawOrbitRing(field, svgEl, body, proj){
+  const g = orbitRing(proj.phases.length, Math.max(420, field.clientWidth || 900));
+  field.style.height = g.h + "px";
+  svgEl.style.display = "";
+  svgEl.setAttribute("viewBox", "0 0 " + g.w + " " + g.h);
+  svgEl.append(orbitDefs());
+  const edges = orbitEdges(proj.phases.length);
+  for (const e of edges)
+    svgEl.append(sv("path", { class: e.kind === "next" ? "trk trk--next" : "trk",
+                              d: orbitArc(g, e) }));
+  proj.phases.forEach((p, i) => {
+    const stage = orbitStage(p, proj.seatOf(p));
+    const at = g.point(g.at(i));
+    stage.style.left = at.x + "px";
+    stage.style.top = at.y + "px";
+    body.append(stage);
+  });
+  const back = edges[edges.length - 1];
+  const mid = (g.at(back.from) + g.at(back.to) + 2 * Math.PI) / 2;
+  const label = g.point(mid);
+  const tag = el("span", { class: "nextrun" }, "↺ next Run");
+  tag.style.left = (label.x + Math.cos(mid) * 30) + "px";
+  tag.style.top = (label.y + Math.sin(mid) * 30) + "px";
+  body.append(tag);
+}
+function drawOrbitColumn(field, svgEl, body, proj){
+  field.style.height = "";
+  svgEl.style.display = "none";
+  const edges = orbitEdges(proj.phases.length);
+  proj.phases.forEach((p, i) => {
+    body.append(orbitStage(p, proj.seatOf(p)));
+    if (edges.some(e => e.kind === "step" && e.from === i))
+      body.append(el("div", { class: "lnk" }, el("i"), "↓"));
+  });
+  if (edges.some(e => e.kind === "next"))
+    body.append(el("div", { class: "lnk lnk--next" }, el("i"), "↺ next Run"));
+}
+/* Which stage carries which mark, and which roles are on the Orbit at all.
+   Design-time and runtime stay apart here: `role.stage` decides where a role
+   is drawn, `now.phase` decides what is reported, and a disagreement between
+   them becomes a mismatch mark rather than a move. */
+function orbitProject(cycle, s){
   const phases = cycle.phases || [], roles = cycle.roles || [];
-  const svgEl = $("cycleSvg");
-  svgEl.replaceChildren();
-  $("cycleEmpty").hidden = !!(phases.length || roles.length);
-  svgEl.style.display = phases.length ? "" : "none";
-  $("cycleHint").textContent = cycle.current_phase ? "current: " + cycle.current_phase
-    : (phases.length ? "no active phase" : "");
-  if (phases.length) drawRing(svgEl, phases, cycle.current_phase);
+  const held = new Map();
+  for (const l of (s.lanes || []))
+    if (l.role) held.set(l.role, (held.get(l.role) || []).concat([l]));
+  const asking = new Set();
+  for (const w of (s.human_queue || [])) for (const a of (w.sources || [])) asking.add(a);
+  const seats = new Map(phases.map(p => [p, { marks: new Set(), roles: [] }]));
+  const unstaged = [];
+  for (const r of roles){
+    const seat = seats.get(r.stage);
+    const lanes = held.get(r.id) || [];
+    if (!seat){ unstaged.push(r); continue; }
+    const elsewhere = lanes.map(l => (l.now || {}).phase)
+                           .find(p => p && p !== r.stage) || "";
+    seat.roles.push({ id: r.id, harness: r.harness, reporting: elsewhere });
+    if (elsewhere) seat.marks.add("mismatch");
+    if (lanes.some(l => asking.has(l.author))) seat.marks.add("waiting");
+    if (lanes.some(l => l.stale)) seat.marks.add("blocked");
+  }
+  const now = seats.get(cycle.current_phase);
+  if (now) now.marks.add("current");
+  return { phases, unstaged,
+           seatOf: p => seats.get(p) || { marks: new Set(), roles: [] } };
+}
+/* Roles the Orbit cannot place — no stage, or a stage the map never declared —
+   stay visible in a neutral group of their own. A legacy project has every
+   role here and loses nothing by it. */
+function renderUnstaged(unstaged){
   const box = $("roles");
   box.replaceChildren();
-  for (const r of roles){
+  if (!unstaged.length) return;
+  box.append(el("div", { class: "orb__group" }, "Unstaged"));
+  for (const r of unstaged){
     const bits = [el("b", {}, String(r.id))];
     if (r.harness) bits.push(el("span", { class: "mono faint" }, " " + r.harness));
+    if (r.stage) bits.push(el("span", { class: "mono faint" }, " · stage: " + r.stage));
     if ((r.reviews || []).length)
       bits.push(el("span", { class: "mono faint" },
                    " · reviews: " + r.reviews.join(", ")));
     box.append(el("div", { class: "role" }, ...bits));
   }
+}
+let orbitAt = -1;                      /* the field width the current drawing was built for */
+function renderOrbit(s){
+  const cycle = s.cycle || {};
+  const proj = orbitProject(cycle, s);
+  const field = $("orbitField"), svgEl = $("orbitSvg"), body = $("orbitBody");
+  svgEl.replaceChildren();
+  body.replaceChildren();
+  $("cycleEmpty").hidden = proj.phases.length > 0;
+  field.hidden = !proj.phases.length;
+  $("cycleHint").textContent = cycle.current_phase ? "current: " + cycle.current_phase
+    : (proj.phases.length ? "no active phase" : "");
+  if (proj.phases.length){
+    const wide = window.innerWidth >= NARROW;
+    field.className = "orbit" + (wide ? " orbit--ring" : "");
+    (wide ? drawOrbitRing : drawOrbitColumn)(field, svgEl, body, proj);
+  }
+  orbitAt = field.clientWidth;
+  renderUnstaged(proj.unstaged);
+}
+function reflowOrbit(){
+  if (LAST && $("orbitField").clientWidth !== orbitAt) renderOrbit(LAST);
 }
 
 /* ── attention zone: human queue cards + computed alerts ───── */
@@ -936,7 +1158,7 @@ function render(s){
   renderWarnings(s.warnings || []);
   renderKpis(k);
   renderMap(((s.map || {}).nodes) || []);
-  renderCycle(s.cycle || {});
+  renderOrbit(s);
   renderQueue(s.human_queue || []);
   renderAttention(s);
   renderAgents(s.lanes || []);
@@ -989,6 +1211,11 @@ document.addEventListener("click", e => activate(e.target));
 document.addEventListener("keydown", e => {
   if (e.key === "Enter" || e.key === " "){ if (activate(e.target)) e.preventDefault(); }
 });
+/* The Orbit's geometry is computed against the width it is drawn into, so a
+   resize is the one event that has to redraw it. Nothing else is re-rendered
+   and no state is re-read: reflowOrbit redraws the last state document at the
+   new width, and only when the width actually moved. */
+window.addEventListener("resize", reflowOrbit);
 
 /* ── data source: fetch /state.json; SSE frame → re-fetch ──── */
 async function refresh(){

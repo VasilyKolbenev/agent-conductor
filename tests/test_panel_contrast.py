@@ -306,11 +306,16 @@ def _vd(cls: str, where: str) -> list:
     inside = {"alert": [LIT_CARD, E("div", "alert")],
               "table": [CARD, E("table"), E("tr"), E("td")],
               "findings row": [CARD, E("table"), E("tr", "click"), E("td")],
-              "expanded": [CARD, E("table"), E("tr", "detail"), E("td")]}[where]
+              "expanded": [CARD, E("table"), E("tr", "detail"), E("td")],
+              # An Orbit stage is a chip's fourth home, and its own surface is
+              # --sunk rather than the card's --panel, which moves every tint
+              # the chips are mixed into.
+              "orbit stage": [CARD, E("div", "orbit"), E("div", "orb", "orb--neutral"),
+                              E("div", "orb__marks")]}[where]
     return [HTML_LIT, BODY, *inside, E("span", "vd", "vd--" + cls)]
 
 
-VD_PLACES = ("alert", "table", "findings row", "expanded")
+VD_PLACES = ("alert", "table", "findings row", "expanded", "orbit stage")
 
 
 def _tr_classes() -> set[frozenset]:
@@ -364,7 +369,7 @@ def _chip_rows() -> list[Shipped]:
             Shipped(f"the {cls} pill's border against the detail card", chain,
                     "border-color", chain[:-1], NONTEXT_MIN),
         ]
-    for cls in ("ok", "bad", "wait", "idle"):
+    for cls in ("ok", "bad", "wait", "idle", "run"):
         for where in VD_PLACES:
             chain = _vd(cls, where)
             rows += [
@@ -404,28 +409,57 @@ def _node_rows() -> list[Shipped]:
     return rows
 
 
-def _phase_rows() -> list[Shipped]:
-    # The cycle ring. Its current stage is accent role 1 and carries the accent
-    # as a contour; the labels are 10px text, which is why they run on --ink and
-    # --muted. Missing here until now, and the gap was load-bearing: the current
-    # label used to be drawn in the accent, which is text on --sunk at 4.4972.
-    ring = [HTML_LIT, BODY, CARD, E("svg")]
-    plain = [*ring, E("g", "phase")]
-    current = [*ring, E("g", "phase", "phase--current", "pulse")]
-    return [
-        Shipped("the current phase's label on the ring", current + [E("text")], "fill",
-                current + [E("rect", "box")], TEXT_MIN),
-        Shipped("a phase's label on the ring", plain + [E("text")], "fill",
-                plain + [E("rect", "box")], TEXT_MIN),
-        Shipped("the current phase's contour against its own box",
-                current + [E("rect", "box")], "stroke", current + [E("rect", "box")],
-                NONTEXT_MIN),
-        Shipped("the current phase's contour against the cycle card",
-                current + [E("rect", "box")], "stroke", ring, NONTEXT_MIN),
-    ]
+ORBIT_FIELD = [HTML_LIT, BODY, CARD, E("div", "orbit")]
+ORBIT_TRACK = [*ORBIT_FIELD, E("svg")]
 
 
-SHIPPED = _chip_rows() + _node_rows() + _phase_rows() + [
+def _stage(tone: str) -> list:
+    return [*ORBIT_FIELD, E("div", "orb", "orb--" + tone)]
+
+
+def _orbit_rows() -> list[Shipped]:
+    # The Orbit. A stage's contour is what identifies its state at a glance, so
+    # 1.4.11's 3:1 governs it, and it is measured twice: against the stage's own
+    # --sunk surface and against the --panel card the field sits on. The two
+    # connection forms are measured the same way — they are the trajectory, and
+    # a reader who cannot see them cannot see the cycle.
+    rows = []
+    for tone in ("neutral", "current", "waiting", "blocked"):
+        chain = _stage(tone)
+        rows += [
+            Shipped(f"a {tone} stage's name inside its own box",
+                    chain + [E("span", "orb__name")], "color", chain, TEXT_MIN),
+            Shipped(f"a {tone} stage's contour against its own surface", chain,
+                    "border-color", chain, NONTEXT_MIN),
+            Shipped(f"a {tone} stage's contour against the Orbit card", chain,
+                    "border-color", ORBIT_FIELD, NONTEXT_MIN),
+            Shipped(f"a role id on a {tone} stage",
+                    chain + [E("div", "orb__who")], "color", chain, TEXT_MIN),
+            Shipped(f"the harness string on a {tone} stage",
+                    chain + [E("div", "orb__who"), E("span", "orb__hn")], "color",
+                    chain, TEXT_MIN),
+            Shipped(f"the participant note on a {tone} stage",
+                    chain + [E("div", "orb__who"), E("span", "orb__note")], "color",
+                    chain, TEXT_MIN),
+        ]
+    for classes, what in ((("trk",), "a step of the trajectory"),
+                          (("trk", "trk--next"), "the return to the first stage")):
+        chain = [*ORBIT_TRACK, E("path", *classes)]
+        rows.append(Shipped(f"{what} against the Orbit card", chain, "stroke",
+                            ORBIT_FIELD, NONTEXT_MIN))
+    rows.append(Shipped("the arrow head that gives a step its direction",
+                        [*ORBIT_TRACK, E("path", "arw", "arw--orb")], "fill",
+                        ORBIT_FIELD, NONTEXT_MIN))
+    rows.append(Shipped("the next-Run label beside the return",
+                        ORBIT_FIELD + [E("span", "nextrun")], "color", ORBIT_FIELD,
+                        TEXT_MIN))
+    rows.append(Shipped("the vertical link between two stacked stages",
+                        ORBIT_FIELD + [E("div", "lnk"), E("i")], "border-left-color",
+                        ORBIT_FIELD, NONTEXT_MIN))
+    return rows
+
+
+SHIPPED = _chip_rows() + _node_rows() + _orbit_rows() + [
     Shipped("the warnings headline on the banner tint", BANNER + [E("button", "banner__head")],
             "color", BANNER, TEXT_MIN),
     Shipped("the warnings glyph on the banner tint",

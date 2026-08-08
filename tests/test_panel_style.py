@@ -425,7 +425,9 @@ def test_the_stylesheet_declares_animation_in_the_two_places_it_already_did_and_
 ACCENT_ROLES = {
     ":focus-visible": "role 5 — focus, on every focusable element including a node",
     ".node[aria-pressed=\"true\"] .halo": "role 5 — selection, on the outer ring",
-    ".phase--current .box": "role 1 — the current Orbit stage",
+    ".orb--current": "role 1 — the current Orbit stage, as its contour",
+    ".vd--run": "role 1 — the same stage's chip, which spells the word beside it",
+    ".vd--run .gl": "role 1 — that chip's glyph",
     ".mark__dot": "role 6 — the brand mark",
     ".copy": "role 4 — the primary action, the decision-brief button",
     ".copy:hover": "role 4 — the same button under the pointer",
