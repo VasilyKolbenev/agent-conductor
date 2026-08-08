@@ -13,7 +13,7 @@ copied, never recomputed; the counts and the groupings come from the document's
 own lists. Where a line reads more than one field — `Verification` under each
 finding — the line says which fields it read.
 
-Three ways a report about review could lie, and what is done about each:
+Four ways a report like this could lie, and what is done about each:
 
 1. **`agreed` is not `checked`.** §6's review-state table makes `agreed`
    vacuous for a finding whose author's role is reviewed by nobody: no
@@ -24,13 +24,26 @@ Three ways a report about review could lie, and what is done about each:
 2. **Evidence is authored text.** `findings[].evidence` was written by a person
    or an agent, and this report quotes it whole, inside a fence long enough that
    nothing in it needs escaping. It is never summarised and never truncated, so
-   there is no truncation the report could fail to disclose.
+   there is no truncation the report could fail to disclose. `detail` is quoted
+   the same way. Every *other* authored field — a finding's `title` and `claim`,
+   a wait's `title` and `why`, `project_status.detail`, `next_action.text`, a
+   verdict `note`, a merger warning — renders inside a bullet, where a line
+   break would end that bullet and let what follows open a heading, a list or a
+   fence this report never wrote. `_one_line` puts those fields on the one line
+   they are rendered into and says so. It does not escape inline markup, and it
+   cannot stop an authored field from quoting a sentence this report also
+   writes: what an authored field cannot do is add a line.
 3. **Absence is not an answer.** Everything the document does not know gets a
    line of its own under "What this report does not know" — an `unknown`
    project state, unreviewed and uncovered findings, vacuous agreement, a
    missing `current_phase` (§6.1: absent, never null), roles with no `stage`,
    unreadable lanes, and an empty queue. An empty queue is the absence of a
    request, not a record that anything was agreed.
+4. **Recorded and empty is not missing.** A field the document records with no
+   words in it — an empty string, or whitespace — is reported as recorded and
+   empty. "None recorded in the document" is kept for the field the document
+   does not record at all, because the other reading is a false statement about
+   the document that wrote the field.
 
 Ordering is taken from the document: lists render in the order the merger built
 them. `findings[].verdicts` is the one exception — it is a JSON object, whose
@@ -82,27 +95,68 @@ def _code(value: object) -> str:
     return f"`{json.dumps(value, ensure_ascii=False, sort_keys=True)}`"
 
 
-def _authored(value: object, absent: str) -> str:
-    """Render an authored string as prose, or say why there is no prose to render.
+def _one_line(text: str) -> str:
+    """Put authored text on the one line it is rendered into.
 
-    A value that is not a string is never rendered as prose. It is reported as
-    JSON in a code span instead, so a Python `repr` can never pass for a
+    Every authored field but `findings[].evidence` and `findings[].detail` is
+    rendered inside a bullet or a sentence. A line break in one of them would
+    end that line, and everything after it would be read as Markdown this
+    report never wrote — a heading, a list item, a fence. Line breaks are shown
+    as the two characters `\\n` instead, and the line says so: the substitution
+    changes the author's bytes, so it cannot pass unstated.
+
+    Args:
+        text: The authored text, as the document records it.
+
+    Returns:
+        `text` unchanged when it holds no line break; otherwise one line, with
+        the substitution disclosed on it.
+    """
+    if "\n" not in text and "\r" not in text:
+        return text
+    shown = text.replace("\r\n", "\n").replace("\r", "\n").replace("\n", "\\n")
+    return (f"{shown} — the document records this field with line breaks in it, "
+            "shown here as `\\n`: the field renders on one line, so its text "
+            "cannot open a heading or a list of its own")
+
+
+def _blank(text: str) -> str:
+    """Say what an authored field holds when it holds no words.
+
+    Not an absence. The document records the field, so reporting it as missing
+    would be a false statement about the document that wrote it.
+    """
+    if not text:
+        return "(the document records this field as an empty string)"
+    return ("(the document records this field, and it holds only whitespace: "
+            f"`{json.dumps(text)}`)")
+
+
+def _authored(value: object, absent: str) -> str:
+    """Render an authored string as prose, or say what the document holds instead.
+
+    Four cases the report must not confuse: text, a field the document does not
+    record, a field it records with no words in it, and a field holding
+    something that is not a string. Only the second is an absence and only it
+    gets `absent`. A value that is not a string is never rendered as prose; it
+    is reported as JSON in a code span, so a Python `repr` can never pass for a
     sentence somebody wrote. `waits_on_human[].title` and `[].why` reach this
     function unvalidated — `schema._validate_lane_waits` checks a wait's `id`,
     `kind` and `blocks` and not those two.
 
     Args:
         value: The document's value for the field.
-        absent: What to say when there is no authored text.
+        absent: What to say when the document does not record the field.
 
     Returns:
-        The author's own text, or a statement about the field.
+        The author's own text on one line, or a statement about the field.
     """
     if isinstance(value, str):
-        return value if value.strip() else absent
+        return _one_line(value) if value.strip() else _blank(value)
     if value is None:
         return absent
-    return f"{absent} — the field holds a non-string value: {_code(value)}"
+    return ("(not a sentence: the document records a non-string value "
+            f"{_code(value)})")
 
 
 def _id_list(value: object) -> str:
@@ -270,7 +324,7 @@ def _verdicts(finding: dict) -> list[str]:
                    f"{_code(entry.get('disposition'))}{own}")
         note = entry.get("note")
         if isinstance(note, str) and note.strip():
-            out.append(f"    - note, as written: {note}")
+            out.append(f"    - note, as written: {_one_line(note)}")
     return out
 
 
@@ -285,7 +339,10 @@ def _evidence(finding: dict) -> list[str]:
         out += ["Evidence, as the author wrote it — quoted whole, not summarised:",
                 "", *_verbatim(evidence), ""]
     else:
-        out += ["Evidence: none recorded in the document.", ""]
+        # `_authored` for the rest: a recorded-but-empty `evidence` is not a
+        # missing one, and neither is a value that is not a string.
+        out += [f"Evidence: {_authored(evidence, 'none recorded in the document')}.",
+                ""]
     return out
 
 
@@ -424,7 +481,8 @@ def render(state: dict) -> str:
     Args:
         state: A `state.json` dict per PROTOCOL.md §6.1. Additional fields are
             tolerated and not rendered; missing fields are reported as missing
-            rather than substituted.
+            rather than substituted, and a field the document records empty is
+            reported as recorded and empty.
 
     Returns:
         The report as Markdown text, ending in exactly one newline.
