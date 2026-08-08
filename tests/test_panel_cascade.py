@@ -17,6 +17,15 @@ The panel's source is read here (:func:`panel_html`, :func:`script`) and the
 other panel modules import it from this one. That is deliberate rather than
 convenient: this module owns the parsing, and a second copy of a stylesheet
 parser in a colour module would be worse than one directed import.
+
+What this cascade is and is not. It is a model of the panel's *source text*,
+built by parsing characters; it is not a browser and it does not render
+anything. ``computed`` returns the declarations this model says would win, for
+an element this model was handed — which is a structural fact about the
+stylesheet, not a fact about a pixel. Every guard built on it inherits that
+limit, so no name or docstring in these modules may claim a rendered result.
+Sabotages that keep the behaviour and change the spelling pass here by design;
+§10 of the plan carries the post-alpha work that would catch them.
 """
 import re
 from functools import lru_cache

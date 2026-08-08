@@ -2,7 +2,7 @@
 
 The panel's palette is the owner's and is approved (plan §8.3, §8.4). What this
 module measures is not the palette but the *shipped pairs*: which foreground the
-panel actually puts on which background, what each of those measures, and
+panel's declarations put on which background, what each of those measures, and
 whether the states stay apart when colour is taken away. Every number lives here
 rather than in a comment beside a token, because a number in a comment goes
 stale the moment the token changes and says nothing when it does.
@@ -16,10 +16,10 @@ the surface it sits on, the tint strength is read out of the stylesheet through
 the cascade in tests/test_panel_cascade.py, and the ratio is computed. Push a
 tint from 14% to 92% and the number moves with it.
 
-A pair is also a pair the panel puts on the screen at any moment, not only at
-rest. Hover, focus and selection repaint things, and a repaint is a new pair —
-which is how `.jump:hover` shipped an accent on a lit card that no table here
-had ever measured. Every row below is therefore re-resolved under each
+A pair is also a pair the declarations produce in any state, not only at rest.
+Hover, focus and selection redeclare paints, and a redeclared paint is a new
+pair — which is how `.jump:hover` shipped an accent on a lit card that no table
+here had ever measured. Every row below is therefore re-resolved under each
 interactive state, and the ones that actually change colour become rows of
 their own.
 
@@ -27,6 +27,17 @@ The arithmetic lives in tests/test_panel_colour.py, which knows nothing about
 the panel. The tokens and the rules are parsed out of
 `src/conductor/panel/index.html`, so changing a declaration there moves these
 results. That is the point.
+
+What a ratio here is a ratio of. Every number below is computed from the
+panel's *declarations*, resolved through the cascade model in
+tests/test_panel_cascade.py. Nothing is rendered and nothing is sampled off a
+screen: a row names a chain of elements, this module composites the paints the
+model says win for that chain, and reports the arithmetic. That is a strong
+statement about what the stylesheet asks for and not a statement about what a
+browser produces — a rule this model cannot express, or an element chain the
+panel builds and no row here names, is invisible to all of it. `tr.click` was
+exactly that until 2026-08-08. Assertions on a rendered result are §10
+post-alpha work; the names below stay inside the source-level claim.
 """
 import re
 from typing import NamedTuple
@@ -272,7 +283,7 @@ KNOWN_SHORTFALLS = {
 THEMES = ("dark", "light")
 
 
-# ── the composited pairs: what a reader's eye actually receives ────────────
+# ── the composited pairs, resolved from the declarations ───────────────────
 HTML_LIT = E("html", **{"data-attention": "high"})
 BODY = E("body")
 CARD = E("div", "card")
@@ -570,13 +581,19 @@ def test_every_contour_that_identifies_a_state_clears_the_non_text_threshold(the
 
 @pytest.mark.parametrize("theme", THEMES)
 @pytest.mark.parametrize("row", SHIPPED, ids=lambda r: r.usage)
-def test_every_mark_the_panel_composites_clears_the_threshold_that_governs_it(theme, row):
+def test_every_mark_the_declarations_composite_to_clears_the_threshold_governing_it(
+        theme, row):
     # The composited half of the measurement contour. A chip's word is text and
     # answers to 4.5:1; its glyph and its border sit beside that word saying the
     # same thing, so 1.4.11's 3:1 is what governs them. Nothing is exempt: every
     # row below is resolved through the cascade, tint strengths included, and
     # once for every media environment the stylesheet declares — a rule that
-    # only applies below 1000px still paints something a reader has to read.
+    # only applies below 1000px still declares something a reader has to read.
+    #
+    # The name used to say "the panel composites", which reads as a claim about
+    # rasterised output. The compositing is this module's arithmetic over the
+    # declarations the cascade model resolves; a mark on a chain no row names is
+    # not measured at all, and that is the limit the module docstring states.
     if (row.usage, theme) in RECORDED_COMPOSITES:
         pytest.skip("recorded below threshold — see test_each_recorded_composite_...")
     for label, env in environments(theme):

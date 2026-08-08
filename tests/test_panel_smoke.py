@@ -1,4 +1,14 @@
-"""Smoke tests for the packaged panel (Task 14) — served HTML references the protocol."""
+"""Smoke tests for the packaged panel (Task 14) — served HTML references the protocol.
+
+Smoke is the whole claim, and the module is named for it. What runs is the real
+server and the real handler, so the panel is genuinely *served*; what is then
+checked is the **text of the response** and the **source of the script**. No
+browser parses it, no DOM is built, nothing is rendered. These guards therefore
+catch a surface being deleted, an id being dropped, a contract token being
+renamed — and they do not establish that any of it works in a browser. The
+names below say "source", "writes" and "spells" for that reason; a behaviour
+claim about the rendered panel is post-alpha work, carried in §10 of the plan.
+"""
 import re
 import urllib.request
 from datetime import datetime, timezone
@@ -155,11 +165,16 @@ def test_panel_shell_names_no_run_and_no_other_invented_identifier(tmp_path):
         ["December", "connecting…"]
 
 
-def test_the_shell_prints_only_what_the_state_document_gives_it():
+def test_rendershell_reads_only_the_state_fields_and_spells_only_the_words_named_here():
     # The other half of the shell's promise, on the writing side. renderShell
     # may read these fields of the state document and no others, and may spell
     # these words and no others; anything else in the shell would be the panel
     # asserting something the data cannot support.
+    #
+    # The name used to say "the shell prints only…", which is a claim about
+    # output. Two sets are extracted from the *source* of one function and
+    # compared. A field read through a computed key, or a word built by
+    # concatenation, is outside both sets and outside this test.
     body = function_body("renderShell")
     assert set(re.findall(r"\bs\.([A-Za-z_$][\w$]*)", body)) == \
         {"project", "generated_at", "invariants"}
@@ -167,9 +182,11 @@ def test_the_shell_prints_only_what_the_state_document_gives_it():
         {"", " · ", "· ", "last update ", " · invariants: ", " ok", "projInfo"}
 
 
-def test_the_live_state_is_the_only_other_thing_the_shell_can_say():
-    # setLive owns the one remaining piece of shell text. Same treatment: the
-    # two strings it can write are named, so a third cannot appear unnoticed.
+def test_setlive_spells_only_the_string_literals_named_here():
+    # setLive owns the one remaining piece of shell text. Same treatment and the
+    # same limit: the string literals in its source are named, so a third cannot
+    # appear unnoticed — and a string assembled at runtime is not a literal and
+    # is not seen here.
     body = function_body("setLive")
     assert set(re.findall(r'"([^"]*)"', body)) == \
         {"dot", "liveText", "dot", " dot--down", "live", "connection lost — retrying", ""}
@@ -196,11 +213,15 @@ def test_every_test_module_the_panel_points_a_reader_at_exists():
         assert (PANEL.parents[3] / path).exists(), path
 
 
-def test_the_panel_draws_the_interaction_ring_it_serves(tmp_path):
+def test_the_served_panel_source_carries_the_interaction_ring_and_its_rule(tmp_path):
     # The file-size waiver's third condition: every surface keeps a smoke test
     # here. .halo is the surface this slice added, and the cascade guards in
-    # tests/test_panel_style.py reason about it, so the served panel has to
-    # actually draw it.
+    # tests/test_panel_style.py reason about an element they assume is emitted,
+    # so the served source has to carry both the emitter and the rule.
+    #
+    # The name used to say "the panel draws"; two substrings of the served text
+    # are what is checked. This is a smoke test — it catches the ring being
+    # deleted outright, and nothing subtler.
     html = _fetch_panel(write_project(tmp_path, lanes={"claude": good_lane()}))
     assert 'class: "halo"' in html
     assert ".halo{" in html

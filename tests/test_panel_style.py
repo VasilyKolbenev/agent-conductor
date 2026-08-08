@@ -12,6 +12,17 @@ cannot make it pass.
 The cascade those profiles are computed through lives in
 tests/test_panel_cascade.py, which also derives the set of elements that carry a
 state at all. This module says what may be true of them.
+
+Scope, stated once and meant literally. Everything here reads the panel's
+*source text*: the ``<style>`` block parsed into rules, the ``<script>`` block
+read as characters. No browser runs, no DOM is built, nothing is rasterised. So
+what these guards hold is what the panel *declares* — a structural property —
+and not what a reader finally sees. The same behaviour written a different way
+goes through: fourteen executed sabotages across two reviews did exactly that,
+none of them by changing what the panel does. Closing that class needs
+assertions on a rendered result, which §10 of the plan carries as post-alpha
+work. Every name, docstring and comment below is written to that limit, and
+none of them may promise past it.
 """
 import re
 
@@ -52,7 +63,7 @@ def node_chain(status: str, interaction: str | None = None) -> list[Element]:
 
 def box_profile(status: str, interaction: str | None = None,
                 env: frozenset = frozenset()) -> dict[str, str]:
-    """Return everything that decides how one status draws its contour."""
+    """Return the declarations that decide one status's contour."""
     win = computed(node_chain(status, interaction), env=env)
     profile = {prop: win.get(prop) for prop in SILHOUETTE}
     # rx arrives as a presentation attribute from STATUS.rx unless a rule
@@ -66,22 +77,23 @@ def box_profile(status: str, interaction: str | None = None,
 
 def halo_profile(status: str, interaction: str | None = None,
                  env: frozenset = frozenset()) -> dict[str, str]:
-    """Return how the interaction ring is painted for one node state."""
+    """Return the paint declarations the interaction ring wins in one state."""
     chain = node_chain(status, interaction)
     chain[-1] = chain[-1]._replace(classes=frozenset({"halo"}))
     win = computed(chain, env=env)
     return {prop: win.get(prop) for prop in ("stroke", "stroke-width", "fill")}
 
 
-def interaction_is_drawn(status: str, interaction: str | None = None,
-                         env: frozenset = frozenset()) -> bool:
-    """Whether a node paints anything outside its status to say it is touched.
+def interaction_is_declared(status: str, interaction: str | None = None,
+                            env: frozenset = frozenset()) -> bool:
+    """Whether the stylesheet declares a mark outside a node's status for a state.
 
     Two carriers count: the outer ring, and the global focus outline that
-    reaches the same group. "Drawn" means a real paint, not merely a different
-    declaration — ``outline:none`` is a change and is also an invisible focus
+    reaches the same group. The declaration has to name a real paint rather than
+    merely differ — ``outline:none`` differs and is also an invisible focus
     indicator, so a test asking only whether something *changed* would accept
-    the one case a focus indicator must never be in.
+    the one case a focus indicator must never be in. Whether a browser renders
+    what is declared is outside this module; see the scope note above.
     """
     ring = halo_profile(status, interaction, env).get("stroke")
     outline = computed(node_chain(status, interaction)[:1], env=env).get("outline", "none")
@@ -90,7 +102,7 @@ def interaction_is_drawn(status: str, interaction: str | None = None,
 
 @pytest.mark.parametrize("interaction", sorted(INTERACTIONS))
 @pytest.mark.parametrize("status", STATUSES)
-def test_a_node_draws_the_same_status_contour_whether_or_not_it_is_being_touched(
+def test_the_stylesheet_resolves_one_status_contour_for_a_node_touched_or_not(
         status, interaction):
     # The invariant in one line: status owns the inner silhouette. Hovering,
     # focusing or selecting a node may add to it but may not repaint, reshape
@@ -99,30 +111,41 @@ def test_a_node_draws_the_same_status_contour_whether_or_not_it_is_being_touched
     # computed through the cascade and compared, once per media environment the
     # stylesheet declares, because a rule that only applies in Winter Daylight
     # is still a rule that applies.
+    #
+    # "Resolves" is the honest verb, and the name used to say "draws". What is
+    # compared is two sets of winning *declarations*; no node is drawn here.
     for label, env in ENVIRONMENTS:
         assert box_profile(status, interaction, env) == box_profile(status, None, env), (
-            f"{interaction} changed how {status} draws itself in {label}")
+            f"{interaction} changed the contour declarations of {status} in {label}")
 
 
 @pytest.mark.parametrize("interaction", sorted(INTERACTIONS))
-def test_an_interaction_is_still_visible_even_though_it_cannot_touch_the_status(
+def test_every_interaction_still_declares_a_mark_outside_the_status_it_may_not_touch(
         interaction):
     # The other half: separating the channels is only honest if the second
-    # channel actually draws something. Hover and selection draw the ring;
+    # channel actually declares something. Hover and selection declare the ring;
     # focus is left to the global outline, which reaches the same group. Which
-    # of the two carries a state is left open — what is held is that at rest
-    # nothing is painted outside the status, and under every state something is.
+    # of the two carries a state is left open — what is held is that at rest no
+    # paint is declared outside the status, and under every state one is.
+    #
+    # The name used to say "is still visible", which is a claim about a screen.
+    # What is checked is a stroke declaration and an outline declaration, and
+    # `interaction_is_declared` reads them out of the cascade model. A declared
+    # ring that a browser fails to paint would pass here; that gap is §10 work.
     for label, env in ENVIRONMENTS:
         for status in STATUSES:
-            assert not interaction_is_drawn(status, None, env), (status, label)
-            assert interaction_is_drawn(status, interaction, env), (status, label)
+            assert not interaction_is_declared(status, None, env), (status, label)
+            assert interaction_is_declared(status, interaction, env), (status, label)
 
 
 @pytest.mark.parametrize("interaction", sorted(INTERACTIONS))
-def test_the_interaction_ring_is_painted_the_same_whatever_the_status(interaction):
+def test_the_interaction_rings_paint_declarations_are_one_set_across_every_status(
+        interaction):
     # drawNodes says the ring takes its geometry from the status and its paint
-    # never does. This is the paint half held as a relation: one ring paint
-    # across six statuses, so the ring cannot become a second status carrier.
+    # never does. This is the paint half held as a relation: one set of ring
+    # paint declarations across six statuses, so the ring cannot become a second
+    # status carrier. The name says "declarations" because that is what is
+    # compared — six dictionaries out of the cascade model, not six rings.
     for label, env in ENVIRONMENTS:
         painted = {tuple(sorted(halo_profile(s, interaction, env).items()))
                    for s in STATUSES}
@@ -136,13 +159,22 @@ def test_the_interaction_ring_is_painted_the_same_whatever_the_status(interactio
 # are derived in tests/test_panel_cascade.py from the stylesheet itself, so the
 # next one comes under guard when it is declared rather than when it is noticed.
 @pytest.mark.parametrize("interaction", sorted(INTERACTIONS))
-def test_no_interaction_repaints_an_element_the_stylesheet_gives_a_state_to(interaction):
+def test_no_interaction_changes_the_paint_declarations_of_a_state_carrier(interaction):
     # Owner invariant 1, general form: hover, focus and selection may add an
     # outer ring, a second contour or a surface of their own, and may not touch
     # the paint or the shape of anything carrying a state. Held over carriers
     # read out of the stylesheet rather than listed here, so a carrier the panel
     # grows next comes under guard the moment it is declared — which is how the
     # chips, the queue card's edge and the ring's current stage arrive.
+    #
+    # The name used to say "repaints an element", which is a claim about what
+    # happens on a screen. Two declarations resolved by this model are compared,
+    # and the carrier is a chain of elements this model built — not the DOM the
+    # panel builds. The gap is real and was paid for: a carrier's *ancestor*
+    # being repainted moves the carrier's own composited colour and is invisible
+    # to this equality, which is how `tr.click:hover td{background:var(--sunk)}`
+    # walked past it. tests/test_panel_contrast.py holds that half, by
+    # arithmetic over full chains.
     for carrier in carriers():
         for label, env in ENVIRONMENTS:
             assert paint_profile(carrier.chain, interaction, env) == \
@@ -191,11 +223,17 @@ def test_running_and_fail_differ_in_silhouette_and_not_only_in_hue():
     assert table["running"]["label"] != table["fail"]["label"]
 
 
-def test_the_map_prints_the_status_word_inside_every_node():
+def test_drawnodes_writes_the_status_word_and_the_node_label_into_its_two_text_calls():
     # The glyph alone would be a symbol to learn; the word next to it is what
     # makes the map readable without the legend and without colour. Scoped to
     # drawNodes on purpose: the same expression also lives in renderDetail, so
     # searching the whole file proves only that the detail card still has it.
+    #
+    # The name used to say "the map prints", which claims something about what a
+    # reader sees. This reads the source of one function and matches the
+    # arguments of its two `sv("text", …)` calls. Live code that keeps those
+    # substrings while producing nothing — `(st.glyph + " " + st.label) && ""`
+    # is the executed sabotage — passes; that is the class §10 carries.
     body = function_body("drawNodes")
     texts = re.findall(r'sv\("text",[^;]*?\)(?=,|\);)', body, re.S)
     assert len(texts) == 2, texts
@@ -207,7 +245,7 @@ def test_the_map_prints_the_status_word_inside_every_node():
 def test_the_status_box_and_the_interaction_ring_are_two_elements_in_every_node():
     # The cascade guards above describe a node with a .box and a .halo. If
     # drawNodes stopped emitting either of them, those guards would be
-    # reasoning about an element that is no longer drawn. "Every node" is the
+    # reasoning about an element that is no longer emitted. "Every node" is the
     # load-bearing word: the cycle ring used to emit groups classed "node phase"
     # with a single .box and no ring, which made this name false and left the
     # ring's own boxes outside the node guards. So the second half holds the
@@ -246,8 +284,9 @@ def test_a_card_can_only_reach_the_lit_material_through_the_light_level(label, e
     # which `html[data-attention] .lit` satisfies while matching at every level
     # including "none" — a panel lit permanently, the direction's central
     # prohibition, with the suite green. So the claim is held as a relation
-    # instead: at level "none" a lit card is drawn exactly like a card that is
-    # not lit at all, and at the two levels that mean something, it is not.
+    # instead: at level "none" a lit card resolves exactly the declarations of a
+    # card that is not lit at all, and at the two levels that mean something, it
+    # does not.
     unlit = computed(_card("none", lit=False), env=env)
     assert computed(_card("none", lit=True), env=env) == unlit, "the panel glows unasked"
     for level in ("low", "high"):
@@ -313,11 +352,13 @@ def legend_keys() -> dict[str, dict[str, str]]:
     return out
 
 
-def test_the_legend_key_of_a_status_echoes_the_silhouette_that_status_draws():
+def test_the_legend_key_of_a_status_echoes_the_silhouette_the_status_table_declares():
     # The legend is the one place a --fail swatch and an --accent swatch stand
     # side by side, and as identical squares hue was all that separated them.
-    # The relation held here is monotonic: a status with a rounder node draws a
-    # rounder key, and two statuses with the same radius draw the same key.
+    # The relation held here is monotonic: a status whose STATUS.rx is rounder
+    # gets a key whose declared border-radius is rounder, and two statuses with
+    # the same rx get keys with the same radius. Both numbers are read out of
+    # the source — the STATUS table and the legend's inline styles.
     table, keys = status_table(), legend_keys()
     radius = {s: float(keys[s]["border-radius"].rstrip("px")) for s in STATUSES}
     corner = {s: float(table[s]["rx"]) for s in STATUSES}
@@ -327,7 +368,7 @@ def test_the_legend_key_of_a_status_echoes_the_silhouette_that_status_draws():
             assert (corner[a] == corner[b]) == (radius[a] == radius[b]), (a, b)
 
 
-def test_every_legend_key_draws_its_status_as_a_contour_and_not_as_a_flat_fill():
+def test_every_legend_key_declares_its_status_as_a_contour_and_not_as_a_flat_fill():
     # §4 reserves the accent for six roles and never for a large fill, so no key
     # may be a block of one token. contested keeps a fill because being two
     # colours at once is its signature — but it is a gradient of two tokens
@@ -365,7 +406,9 @@ MOVEMENT = {
 }
 
 
-def test_the_panel_moves_in_the_two_places_it_already_moved_and_nowhere_else():
+def test_the_stylesheet_declares_animation_in_the_two_places_it_already_did_and_nowhere_else():
+    # A declaration, not a movement: what is compared is the `animation` values
+    # the cascade resolves, and the @keyframes names the stylesheet spells.
     assert animated() == MOVEMENT
     declared = set(re.findall(r"@keyframes\s+([\w-]+)", stylesheet()))
     used = {value.split()[0] for value in animated().values() if value != "none"}
