@@ -15,8 +15,12 @@ Before the first mutation the harness checks two things about itself. Where
 verification isolation, so an editable install (a `.pth` in site-packages) or
 an installed copy can shadow an exported tree, and the harness would mutate
 one file while pytest imported another and print a plausible score that means
-nothing. And whether the targeted tests are green on unmutated source: a test
-file that is already red reports every mutation aimed at it as KILLED.
+nothing. Belonging to the source root is not enough there — the import must
+resolve to the very file the run mutates, byte for byte the same path, because
+a root carrying both `conductor/merge.py` and a `conductor/merge/` package
+passes any looser test while every mutation lands in a file nobody imports.
+And whether the targeted tests are green on unmutated source: a test file that
+is already red reports every mutation aimed at it as KILLED.
 
 What the restore does and does not promise. An `OSError` in the restore is
 retried, and when the content hash still cannot be confirmed the run stops and
@@ -264,22 +268,39 @@ def _shadow_report(resolved: Path, source_root: Path) -> str:
             "  this run has no mutation score - not even a zero.")
 
 
-def verify_import_root(source_root: Path, cwd: Path) -> Path:
-    """Confirm `conductor.merge` imports from `source_root` and nowhere else.
+def _wrong_file_report(resolved: Path, merge_path: Path) -> str:
+    """Say that the imported file is under the root but is not the mutated one."""
+    return ("import isolation not confirmed - conductor.merge lies under the "
+            "source root but is not the file this run mutates.\n"
+            f"  conductor.merge imported from: {resolved}\n"
+            f"  the file that would be mutated: {merge_path}\n"
+            "  A package beats a module of the same name, so a root carrying\n"
+            "  both loses every mutation into a file nobody imports. No\n"
+            "  mutation was applied and nothing was measured, so this run has\n"
+            "  no mutation score - not even a zero.")
+
+
+def verify_import_root(source_root: Path, cwd: Path, merge_path: Path) -> Path:
+    """Confirm `conductor.merge` imports from the file this run will mutate.
 
     Runs in the same subprocess environment the mutations will run in, before
     the first mutation, because file isolation is not verification isolation.
+    Membership of `source_root` is the weaker half and is checked first, for
+    the sake of the message it produces; the requirement is exact equality with
+    `merge_path`, since a mutation of any other file measures nothing.
 
     Args:
         source_root: The `src` directory that must own the import.
         cwd: Working directory for the probe, as for the test runs.
+        merge_path: The file the mutations will be written to.
 
     Returns:
         The resolved path of `conductor.merge.__file__`.
 
     Raises:
-        InvalidMeasurement: The probe could not run, the import failed, or it
-            resolved outside `source_root`.
+        InvalidMeasurement: The probe could not run, the import failed, it
+            resolved outside `source_root`, or it resolved to some other file
+            under it.
     """
     try:
         probe = subprocess.run(
@@ -295,6 +316,8 @@ def verify_import_root(source_root: Path, cwd: Path) -> Path:
     resolved = Path(probe.stdout.strip())
     if not _is_inside(resolved, source_root):
         raise InvalidMeasurement(_shadow_report(resolved, source_root))
+    if resolved != merge_path.resolve():
+        raise InvalidMeasurement(_wrong_file_report(resolved, merge_path))
     return resolved
 
 
@@ -663,7 +686,7 @@ def main(argv: list[str] | None = None) -> int:
         merge_path = source_root / "conductor" / "merge.py"
         if not merge_path.is_file():
             raise InvalidMeasurement(f"no merge engine to mutate at {merge_path}")
-        resolved = verify_import_root(source_root, root)
+        resolved = verify_import_root(source_root, root, merge_path)
         print_provenance(source_root, resolved)
         if args.verify_only:
             print("VERDICT: verification passed - import isolation confirmed, "

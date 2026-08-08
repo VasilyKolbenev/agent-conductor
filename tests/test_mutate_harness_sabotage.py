@@ -105,7 +105,7 @@ class _Lab:
         _write(self.harness, text)
 
     def target(self, tests: str = SYNTH_TESTS, package: bool = True,
-               merge_bytes: bytes | None = None) -> Path:
+               merge_bytes: bytes | None = None, shadow_package: bool = False) -> Path:
         """Build a synthetic project root and return it.
 
         Args:
@@ -113,6 +113,8 @@ class _Lab:
             package: Whether the source root is a regular package.
             merge_bytes: Raw bytes for `merge.py`, for sources that are valid
                 Python without being valid UTF-8.
+            shadow_package: Also ship a `conductor/merge/` package, which wins
+                the import over the `merge.py` the harness would mutate.
         """
         self._targets += 1
         root = self.tmp / f"target{self._targets}"
@@ -123,6 +125,9 @@ class _Lab:
             _write(root / "src" / "conductor" / "merge.py", SYNTH_MERGE)
         else:
             (root / "src" / "conductor" / "merge.py").write_bytes(merge_bytes)
+        if shadow_package:
+            (root / "src" / "conductor" / "merge").mkdir()
+            _write(root / "src" / "conductor" / "merge" / "__init__.py", SYNTH_MERGE)
         (root / "tests").mkdir()
         _write(root / "tests" / "test_synth.py", tests)
         return root
@@ -226,6 +231,8 @@ class Diversion:
         optimize: Whether to run under `python -O`.
         merge_bytes: Raw bytes for the target's `merge.py`, when the case needs
             a source that is valid Python and not valid UTF-8.
+        shadow_package: Whether the target also ships a `conductor/merge/`
+            package, which wins the import over the file being mutated.
         guarded: A string the shipped harness must say.
         reopened: A string only the sabotaged copy says.
     """
@@ -241,6 +248,7 @@ class Diversion:
     interpreter: str | None = None
     optimize: bool = False
     merge_bytes: bytes | None = None
+    shadow_package: bool = False
 
 
 NO_BASELINE = ("            green = check_baseline(source_root, root, resolved)",
@@ -301,11 +309,11 @@ DIVERSIONS = [
     ),
     Diversion(
         diversion="S10: verification moved to after all the mutations",
-        edits=(("        resolved = verify_import_root(source_root, root)",
+        edits=(("        resolved = verify_import_root(source_root, root, merge_path)",
                 "        resolved = merge_path"),
                ("            results = run_mutations(merge_path, source_root, root)",
                 "            results = run_mutations(merge_path, source_root, root)\n"
-                "            verify_import_root(source_root, root)")),
+                "            verify_import_root(source_root, root, merge_path)")),
         package=False,
         interpreter="shadowing_python",
         guarded="import isolation not confirmed",
@@ -332,6 +340,13 @@ DIVERSIONS = [
         # and the guarded run names the exception without letting one out.
         reopened="Traceback (most recent call last)",
     ),
+    Diversion(
+        diversion="the import root is checked for membership but not for identity",
+        edits=(("    if resolved != merge_path.resolve():", "    if False:"),),
+        shadow_package=True,
+        guarded="is not the file this run mutates",
+        reopened="SURVIVED: the synthetic rule",
+    ),
 ]
 
 
@@ -341,7 +356,7 @@ def test_each_guard_still_closes_the_hole_its_diversion_opened(case, lab, reques
     kwargs = dict(anchor=case.anchor, replacement=case.replacement,
                   python=python, optimize=case.optimize)
     target = dict(tests=case.tests, package=case.package,
-                  merge_bytes=case.merge_bytes)
+                  merge_bytes=case.merge_bytes, shadow_package=case.shadow_package)
 
     guarded = lab.run(lab.target(**target), **kwargs)
     lab.sabotage(case.edits)

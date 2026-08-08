@@ -374,6 +374,51 @@ def test_a_workspace_that_cannot_be_created_is_not_a_surviving_mutation(
     assert not SCORE_SHAPED.search(captured.out + captured.err)
 
 
+def test_main_verifies_the_file_it_will_mutate_and_shows_what_the_probe_resolved(
+        monkeypatch, measurable):
+    # The provenance lines are pinned inside `print_provenance`, which proves
+    # it prints what it is given. This is the other end: main must ask about
+    # the path it is about to write to, and must then show the probe's answer
+    # rather than that same path. In every green run the two coincide, so only
+    # the call site can tell them apart — and the same lie planted one frame up
+    # went unnoticed by fifty-three tests.
+    merge_path = measurable / "src" / "conductor" / "merge.py"
+    resolved = measurable / "src" / "conductor" / "merge" / "__init__.py"
+    asked, shown = [], []
+    monkeypatch.setattr(harness, "verify_import_root",
+                        lambda *args: (asked.append(args), resolved)[1])
+    monkeypatch.setattr(harness, "print_provenance", lambda *args: shown.append(args))
+
+    assert harness.main(["--root", str(measurable), "--verify-only"]) == harness.EXIT_OK
+
+    assert asked == [(measurable / "src", measurable, merge_path)]
+    assert shown == [(measurable / "src", resolved)]
+    assert shown[0][1] != merge_path
+
+
+def test_an_import_under_the_source_root_is_still_refused_when_it_is_another_file(
+        tmp_path):
+    # Belonging to the root is the weaker half: a root carrying both
+    # `conductor/merge.py` and a `conductor/merge/` package resolves to the
+    # package, passes any is-inside test, and every mutation then lands in a
+    # file nobody imports. Both paths here are under the root.
+    source_root = tmp_path / "src"
+    merge_path = source_root / "conductor" / "merge.py"
+    package = source_root / "conductor" / "merge" / "__init__.py"
+    package.parent.mkdir(parents=True)
+    merge_path.write_text("def is_ready(state):\n    return True\n", encoding="utf-8")
+    package.write_text("def is_ready(state):\n    return True\n", encoding="utf-8")
+    (source_root / "conductor" / "__init__.py").write_text("", encoding="utf-8")
+
+    with pytest.raises(harness.InvalidMeasurement) as raised:
+        harness.verify_import_root(source_root, tmp_path, merge_path)
+
+    message = str(raised.value)
+    assert "is not the file this run mutates" in message
+    assert str(package) in message and str(merge_path) in message
+    assert "no mutation score" in message
+
+
 def test_a_usage_error_exits_two_before_anything_could_be_measured():
     # The one exit-2 path that does not run through the helper, because it
     # happens inside argparse. The docstring claims it prints usage and stops
