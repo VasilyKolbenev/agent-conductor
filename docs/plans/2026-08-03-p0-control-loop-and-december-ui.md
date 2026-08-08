@@ -573,8 +573,24 @@ receipt exists. Is DEC-UI expected to design around that gap as well, or to open
 
 ## 10. Backlog
 
-Four items queued, none attached to a slice.
+Five items queued, none attached to a slice.
 
+- **Rendered-result browser testing.** The panel's guards read source text: the `<style>`
+  block parsed into rules, the `<script>` block read as characters. Nothing renders. So they
+  prove what the panel *declares* — its structure — and not what a browser produces from it,
+  and the same behaviour written a different way goes straight through. That is not a
+  hypothesis: two reviews executed fourteen sabotages of exactly this kind, among them
+  `querySelector("html")` for `documentElement`, a class assembled as `"card li" + "t"`, a
+  class reached through `style.boxShadow`, an attribute order the regex could not follow,
+  `(st.glyph + " " + st.label) && ""` keeping every guarded substring while producing an empty
+  string, `insertAdjacentHTML` for `innerHTML`, and `box-shadow: inset` and `filter:
+  hue-rotate` as paints outside the closed list. Chasing each spelling is not the answer and
+  the owner has closed that route; closing the class needs assertions on the **rendered
+  result** rather than on the source. Post-alpha this becomes a **separate browser-test job**
+  with Playwright driving Chromium, asserting computed styles and composited colours off a
+  live page. It is a **dev/CI dependency only**, and it leaves the three product constraints
+  intact: the runtime stays stdlib-only, the panel stays a single file, and there is still no
+  build step.
 - **Harden `scripts/mutate_merge.py`.** The restore is a `finally` block rewriting `merge.py`
   from a byte copy held in memory, verified by an `assert`. An interrupt or a crash between the
   mutation write and the restore leaves a mutated `merge.py` in the working tree, and the
