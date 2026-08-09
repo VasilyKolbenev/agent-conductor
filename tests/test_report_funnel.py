@@ -8,11 +8,12 @@ the named fields again would leave the next site to be added open in its turn.
 
 So the module has one door — `_from_document` — and these guards are written
 against the module's own AST rather than against a list of fields. A rendering
-site added later that reads the document directly reds
+site added later that *builds* a line out of a document value — an f-string, or
+a string joined to a string — reds
 `test_no_function_but_the_funnels_own_puts_a_document_value_into_an_f_string`
-without anybody remembering to extend a fixture, and so does a second door
-written to look like the first, because that door's own body would read the
-document without going through `_from_document`.
+or the join guard beside it, without anybody remembering to extend a fixture,
+and so does a second door written to look like the first, because that door's
+own body would read the document without going through `_from_document`.
 
 What the AST guards do *not* cover, and why:
 
@@ -23,12 +24,19 @@ What the AST guards do *not* cover, and why:
 * a value the *merger* folded into a string before the report saw it —
   `next_action.text` is built from a wait's unvalidated `title` — is a string in
   the document by the time it arrives, and the report renders it as one. The
-  behavioural guard below pins that, and says so in its name.
+  behavioural guard below pins that, and says so in its name;
+* a site that does not build a line but *returns a document value as one* —
+  appended or spliced into the list of lines a section returns, with no
+  f-string and no join anywhere in it — is not a shape these guards read.
+  `_unknown_lanes` returning each broken lane's own `error` text that way
+  passes all five of them, and prints a second `## What this report does not
+  know` when that text holds one. Only a rendered report shows that, and only
+  for a document some fixture holds.
 
 The behavioural half is `test_no_string_field_of_the_document_can_forge_a_heading`:
 every string in a full document, one at a time, replaced by text that forges
-headings. It is the measurement; the AST guards are what keep it from being
-outgrown by a field nobody added to a fixture.
+headings. It is the measurement; the AST guards are what keep the two
+line-building shapes from being outgrown by a field nobody added to a fixture.
 """
 import ast
 import json

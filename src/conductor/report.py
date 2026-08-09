@@ -48,8 +48,10 @@ Four ways a report like this could lie, and what is done about each:
 Points 2 and 4 rest on one structural fact rather than on remembering them at
 each rendering site: `_from_document` is the only path from the document to a
 rendered line, in either shape the report has. `tests/test_report_funnel.py`
-reads this module's AST and reds if any other path exists, so a site added
-later cannot quietly reopen what a point above closed.
+reads this module's AST and reds when a line is *built* out of a document value
+anywhere else — an f-string, or a string joined to a string. Returning a
+document value as a line of its own is not a shape that reading sees; only a
+rendered report shows it. That test's docstring says which is which.
 
 Ordering is taken from the document: lists render in the order the merger built
 them. `findings[].verdicts` is the one exception — it is a JSON object, whose
