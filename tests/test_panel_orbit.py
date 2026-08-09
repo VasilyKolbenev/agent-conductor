@@ -25,8 +25,9 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from conductor import harnesses, merge
-from tests.test_panel_cascade import free_names, function_body, panel_html, script
+from conductor import harnesses, merge, prompts, templates
+from tests.test_panel_cascade import (
+    E, computed, environments, free_names, function_body, panel_html, script)
 
 NOW = datetime(2026, 7, 30, 12, 0, tzinfo=timezone.utc)
 RECENT = "2026-07-30T11:00:00+00:00"
@@ -217,6 +218,81 @@ def test_two_roles_on_two_phases_each_keep_the_harness_string_the_map_declared()
         [("claude-code", "design"), ("Some Local Agent", "deliver")]
 
 
+# ── stage names: one presentational liberty, and nothing else ──────────────
+def panel_shipped_stages() -> set[str]:
+    """Parse the set of stage ids the panel is allowed to capitalise."""
+    found = re.search(r"const SHIPPED_STAGES = new Set\(\[(.*?)\]\)", panel_html(), re.S)
+    assert found, "the panel no longer carries a SHIPPED_STAGES set"
+    return set(re.findall(r'"([^"]+)"', found.group(1)))
+
+
+def test_the_stages_the_panel_will_capitalise_are_the_ones_python_ships():
+    # §2.1a, consequence 3. The set lives in Python twice — the phases the
+    # `default-orbit` template writes, and the stages `prompts` knows a contract
+    # for — and a third copy in a static HTML file is a second source of one
+    # truth. It is allowed only with this: both Python sources are read here and
+    # the three sets must be one set. Renaming a shipped stage in Python and not
+    # in the panel fails, and so does the panel quietly adopting a sixth.
+    template = templates.get("default-orbit")
+    declared = re.search(r"phases = \[(.*?)\]", template).group(1)
+    from_template = set(re.findall(r'"([^"]+)"', declared))
+    from_prompts = set(prompts._STAGE_CONTRACTS)
+    assert from_template == from_prompts, from_template ^ from_prompts
+    assert panel_shipped_stages() == from_template, \
+        panel_shipped_stages() ^ from_template
+
+
+def test_a_shipped_stage_id_is_capitalised_by_a_class_and_not_by_a_rewrite():
+    # The liberty, and its exact extent. The stage builder decides one thing
+    # from the shipped set — whether the label element also carries `cap` — and
+    # the class is the whole of the difference. The name itself is appended as
+    # `String(name)` either way, so what reaches the text node is the author's
+    # bytes and the capital is a property of the rendering.
+    body = function_body("orbitStage")
+    assert re.search(r'SHIPPED_STAGES\.has\(name\) \? " cap" : ""', body), body
+    assert re.search(r'class:\s*"orb__name"\s*\+\s*\(SHIPPED_STAGES', body), body
+    assert "String(name)" in body, body
+
+
+def test_the_shipped_set_is_asked_for_membership_and_never_for_a_replacement():
+    # §2.1a: a user's `research` is never shown as `Detect`. The strongest form
+    # of that available to a source read is what the set can *do*: it is a Set
+    # and it is touched exactly once, by `.has`. A lookup table mapping a name
+    # to a canonical term cannot be spelt that way, and neither can a
+    # normalisation pass — both would have to reach for the set a second time or
+    # index it, and either shows up here.
+    src = script()
+    assert src.count("SHIPPED_STAGES") == 2          # the declaration and the test
+    assert len(re.findall(r"SHIPPED_STAGES\.has\(", src)) == 1
+    assert not re.search(r"SHIPPED_STAGES\s*\[", src)
+
+
+def test_no_rule_capitalises_a_stage_name_that_is_not_a_shipped_id():
+    # The blanket `text-transform` this arrangement exists instead of. The only
+    # rule in the stylesheet that transforms text on a stage label is the one
+    # keyed on `.cap`, and `.orb__name` on its own resolves no transform at all
+    # — which is what keeps a custom name, a Unicode name and an already mixed
+    # case name looking exactly as their author wrote them.
+    label = [E("div", "orbit"), E("div", "orb", "orb--neutral"), E("span", "orb__name")]
+    capped = label[:-1] + [E("span", "orb__name", "cap")]
+    for theme in ("dark", "light"):
+        for _, env in environments(theme):
+            assert "text-transform" not in computed(label, env=env)
+            assert computed(capped, env=env)["text-transform"] == "capitalize"
+
+
+@pytest.mark.parametrize("name", ["research", "delivery-check", "Design-Review",
+                                  "Кодекс-ревью", "実装", "中文", "délivrer",
+                                  "reproduce the report"])
+def test_a_name_the_panel_did_not_ship_is_outside_the_one_set_that_changes_anything(name):
+    # The fourth naming test, from the data side. Every one of these is a name a
+    # project might write; none is in the set; so none can be given the capital,
+    # and — because membership is the only thing the set decides — none can be
+    # given a different word either. The merger tests above hold the other half:
+    # the bytes reach the state document unchanged.
+    assert name not in panel_shipped_stages()
+
+
 # ── what the drawing code is allowed to depend on ──────────────────────────
 # Source reads, and the module docstring's second kind. What each of these
 # establishes is a *dependence*: the set of names a function reaches for
@@ -229,6 +305,105 @@ def test_the_trajectory_of_a_cycle_is_a_function_of_the_phase_count_and_of_nothi
     # table, a stored history — the panel would be able to draw a travelled
     # path. It reaches for no name at all.
     assert free_names(function_body("orbitEdges"), {"n", "out", "i"}) == set()
+
+
+def _braced(source: str, marker: str) -> str:
+    """Return the body of the first block opening after ``marker``."""
+    start = source.index(marker)
+    i = j = source.index("{", start)
+    depth = 0
+    while True:
+        depth += (source[j] == "{") - (source[j] == "}")
+        j += 1
+        if depth == 0:
+            return source[i + 1:j - 1]
+
+
+def test_a_cycle_with_no_phases_still_renders_every_role_it_could_not_place():
+    # The owner's N = 0 row, held where it can be: the drawing is inside a
+    # branch on the phase count and the roles are outside it, so an Orbit with
+    # nothing to draw cannot take the participants down with it. The empty
+    # message is the complement of the same count.
+    body = function_body("renderOrbit")
+    drawn = _braced(body, "if (proj.phases.length)")
+    assert "drawOrbitRing" in drawn and "drawOrbitColumn" in drawn
+    assert "renderUnstaged(proj.unstaged)" in body
+    assert "renderUnstaged" not in drawn
+    assert '$("cycleEmpty").hidden = proj.phases.length > 0;' in body
+
+
+def test_the_orbit_writes_to_its_own_surfaces_and_to_no_others():
+    # §2.4, the part a legacy project depends on: an Orbit that cannot draw
+    # itself must not be able to hide anything else. What renderOrbit can reach
+    # is the field, its two layers, the empty message and the hint — the lanes,
+    # the map and the agents block are not among them, so no state of the Orbit
+    # can remove a lane from the panel.
+    assert set(re.findall(r'\$\("(\w+)"\)', function_body("renderOrbit"))) == \
+        {"orbitField", "orbitSvg", "orbitBody", "cycleEmpty", "cycleHint"}
+
+
+def test_both_layouts_are_built_from_the_one_edge_list_and_the_one_stage_builder():
+    # §2bis: the cycle closes at every count in both layouts, and the reason is
+    # that there is one list of connections and one builder for a stage. Two
+    # consumers and one producer — a third way to draw a connection would have
+    # to appear here first.
+    for name in ("drawOrbitRing", "drawOrbitColumn"):
+        body = function_body(name)
+        assert "orbitEdges(" in body, name
+        assert "orbitStage(" in body, name
+    assert script().count("orbitEdges(") == 3       # the producer and its two consumers
+    assert script().count("orbitStage(") == 3
+
+
+def test_the_vertical_layout_walks_the_declared_phases_in_the_order_they_arrive():
+    # §4 and the owner's narrow row. What can be established by reading the
+    # source is the walk: the stages are appended by iterating `proj.phases`
+    # itself, the step link between two of them is emitted from the edge list,
+    # and the return is appended after the loop as an element of its own. That
+    # the browser then paints them in that order is not established here.
+    body = function_body("drawOrbitColumn")
+    assert re.search(r"proj\.phases\.forEach\(\(p, i\) =>", body), body
+    assert 'e.kind === "step" && e.from === i' in body
+    assert 'e.kind === "next"' in body
+    assert body.index("forEach") < body.index('e.kind === "next"')
+    for undo in (".sort(", ".reverse(", ".slice(").__iter__():
+        assert undo not in body, undo
+
+
+def test_a_human_wait_marks_a_stage_that_already_exists_and_can_never_add_one():
+    # §2.5: the queue is a state on a stage, not an entity of its own. The seat
+    # table is built once, from the declared phases, and never grown — there is
+    # no `set` on it anywhere — so nothing a lane raises can put a node on the
+    # Orbit that the map did not declare.
+    body = function_body("orbitProject")
+    assert "new Map(phases.map(" in body
+    assert "seats.set(" not in body
+    assert 'seat.marks.add("waiting")' in body
+
+
+def test_a_stage_assignment_places_a_role_and_a_lane_report_never_moves_it():
+    # §2.3, held as a relation instead of a reading. The seat table is reached
+    # into three times in the whole projection, and the three arguments are the
+    # whole design: the stage a role declares, which is what decides where that
+    # role is drawn; the phase the merger computed, which is what decides which
+    # stage is current; and the phase the layout is drawing, which is how it
+    # fetches what it has to show. A lane's own `now.phase` is compared and
+    # never looked up, so a runtime report cannot move a role to another stage —
+    # it can only raise the mismatch mark.
+    body = function_body("orbitProject")
+    assert re.findall(r"seats\.get\(([^)]*)\)", body) == \
+        ["r.stage", "cycle.current_phase", "p"]
+    assert 'seat.marks.add("mismatch")' in body
+
+
+def test_the_projection_reads_the_cycle_and_the_state_document_and_nothing_else():
+    # What decides a stage's marks. The projection reaches for two collection
+    # constructors and for no other name, so there is nowhere for a clock, a
+    # stored history or a second table of stages to enter — which is what makes
+    # "every mark is a fact already in state.json" checkable rather than stated.
+    bound = {"cycle", "s", "phases", "roles", "held", "l", "asking", "w", "a",
+             "seats", "p", "unstaged", "r", "seat", "lanes", "elsewhere", "now"}
+    assert free_names(function_body("orbitProject"), bound) == {"Map", "Set"}
 
 
 def test_the_ellipse_is_derived_from_the_count_the_field_and_the_stage_box_alone():
