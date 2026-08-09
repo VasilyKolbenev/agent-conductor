@@ -20,12 +20,13 @@ docstring below stays inside the source-level claim, and none of them may
 promise a rendered result. Assertions on a rendered result are §10 post-alpha
 work.
 """
+import re
 from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from conductor import merge
-from tests.test_panel_cascade import free_names, function_body
+from conductor import harnesses, merge
+from tests.test_panel_cascade import free_names, function_body, panel_html, script
 
 NOW = datetime(2026, 7, 30, 12, 0, tzinfo=timezone.utc)
 RECENT = "2026-07-30T11:00:00+00:00"
@@ -241,6 +242,66 @@ def test_the_ellipse_is_derived_from_the_count_the_field_and_the_stage_box_alone
         {"Math", "orbitAngle", "ORBIT_GUTTER"}
     assert free_names(function_body("orbitBox"), {"n", "w", "apex", "fits"}) == \
         {"Math", "orbitAngle", "ORBIT_GUTTER"}
+
+
+# ── the harness table the panel keeps, against the registry Python ships ───
+def panel_harness_names() -> dict[str, str]:
+    """Parse the panel's id-to-product-name table."""
+    block = re.search(r"const HARNESS_NAMES = \{(.*?)\n\};", panel_html(), re.S)
+    assert block, "the panel no longer carries a HARNESS_NAMES table"
+    return dict(re.findall(r'"([^"]+)":\s*"([^"]+)"', block.group(1)))
+
+
+def test_the_panel_names_every_registered_harness_exactly_as_the_registry_does():
+    # §2.6, and the second-source-of-truth problem it creates. The panel is a
+    # single static file with no way to import Python, so the registry's display
+    # names have to be copied into it — and a copy is only allowed to exist with
+    # a guard that goes red when it drifts. Entry by entry, both directions: a
+    # row added to conductor/harnesses.py and not to the panel fails here, and
+    # so does a product renamed in the panel alone.
+    assert panel_harness_names() == \
+        {entry.id: entry.display_name for entry in harnesses.known()}
+
+
+def test_the_panel_registers_no_harness_the_registry_has_not():
+    # The other half of "the UI commit does not change the registry": Gemini CLI
+    # and OpenCode are named in the product brief and are not in the registry
+    # today, and adding either one to the panel would ship a registry change
+    # through the back door. Held as a set relation rather than by naming the
+    # two, so the next brief entry is covered by the same line.
+    assert set(panel_harness_names()) == {entry.id for entry in harnesses.known()}
+
+
+@pytest.mark.parametrize("name", ["Some Local Agent", "gemini-cli", "opencode",
+                                  "Кодекс", "中文", "my_own_agent", "x"])
+def test_an_unregistered_harness_resolves_to_the_string_the_map_wrote(name):
+    # The neutral fallback, from the side that can be executed: `resolve` hands
+    # back the string as its own display name for anything it does not know, and
+    # the panel's table does not know these either. Nothing normalises them
+    # toward a registry id, which is what a slugify or a nearest-match would do.
+    assert harnesses.resolve(name).display_name == name
+    assert name not in panel_harness_names()
+
+
+def test_the_panel_has_one_source_for_a_harness_name_and_falls_back_to_the_string():
+    # A dependence claim, source-read: the lookup reaches for the table and for
+    # `String`, and for nothing else. That is what rules out the second fallback
+    # §2.6 forbids — a hue hashed out of the name, a guessed monogram, a second
+    # table of near-matches — without this test having to know what one would be
+    # called. `String(id)` is the whole of the fallback, so an unregistered
+    # harness is shown as itself.
+    expression = re.search(r"const harnessName = (.*?);\n", panel_html(), re.S).group(1)
+    assert free_names(expression, {"id"}) == {"HARNESS_NAMES", "String"}
+    assert script().count("HARNESS_NAMES") == 2      # the table, and this lookup
+
+
+def test_each_role_on_a_stage_resolves_its_own_harness():
+    # §2.6 asks for several different harnesses on different stages, each shown
+    # as its own. The stage builder resolves exactly one thing — the harness of
+    # the role it is drawing — so it has no way to resolve one product for a
+    # whole Orbit or to inherit a neighbour's.
+    body = function_body("orbitStage")
+    assert re.findall(r"harnessName\(([^)]*)\)", body) == ["r.harness"]
 
 
 def test_the_merger_never_reports_that_a_phase_was_completed():

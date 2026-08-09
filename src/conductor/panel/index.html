@@ -743,6 +743,31 @@ function renderDetail(nodes){
    attribute. tests/test_panel_orbit.py fails if this set drifts from
    conductor.prompts and the default-orbit template. */
 const SHIPPED_STAGES = new Set(["goal", "detect", "diagnose", "design", "deliver"]);
+/* The harness products conductor/harnesses.py registers, keyed by the id a map
+   writes. Two copies of one table is the defect class that cost this project a
+   hotfix at the CLI boundary, so this one exists only together with the guard
+   that reddens when it drifts: tests/test_panel_orbit.py compares it to the
+   registry entry by entry.
+   What the registry knows is a product's own name; what it refuses to do is
+   guess. `harnesses.resolve` answers an unregistered string with that string as
+   its own display name — never a slug rewritten into a product, never a brand
+   picked by resemblance — and the fallback below is the same answer, so the
+   Orbit shows what the map said and admits when that is all it knows. The
+   monogram and the vendor accent resolve() also carries are not drawn here:
+   applying a harness accent is DEC-UI-3's, which owns the channel rule that
+   keeps identity and status apart. */
+const HARNESS_NAMES = {
+  "claude-code": "Claude Code",
+  "codex": "Codex",
+  "cursor": "Cursor",
+  "windsurf": "Windsurf",
+  "kimi-code": "Kimi Code",
+  "qwen-code": "Qwen Code",
+  "grok-build": "Grok Build",
+  "github-copilot": "GitHub Copilot coding agent",
+  "custom": "Custom harness",
+};
+const harnessName = id => HARNESS_NAMES[id] || String(id);
 /* What a stage can be marked with, and the words each mark spells. Every one
    is a fact already in state.json: `current` is the phase a lane is reporting
    (never an assigned stage), `waiting` is a queue item raised by a lane whose
@@ -849,8 +874,12 @@ function orbitStage(name, seat){
        ...marks.map(m => chip(ORBIT_MARKS[m], ORBIT_MARKS[m].label))));
   const who = el("div", { class: "orb__who" });
   for (const r of seat.roles){
+    /* One badge per role standing on this stage, each resolving its own
+       harness — two roles on one stage may run two different products, and a
+       stage that names no harness says so rather than borrowing a neighbour's. */
     const badge = el("div", {}, el("b", {}, String(r.id)),
-      el("span", { class: "orb__hn" }, " " + String(r.harness || "no harness")));
+      el("span", { class: "orb__hn" },
+         " " + (r.harness ? harnessName(r.harness) : "no harness")));
     if (r.reporting)
       badge.append(el("span", { class: "orb__note" }, "reports: " + r.reporting));
     who.append(badge);
@@ -946,7 +975,8 @@ function renderUnstaged(unstaged){
   box.append(el("div", { class: "orb__group" }, "Unstaged"));
   for (const r of unstaged){
     const bits = [el("b", {}, String(r.id))];
-    if (r.harness) bits.push(el("span", { class: "mono faint" }, " " + r.harness));
+    if (r.harness)
+      bits.push(el("span", { class: "mono faint" }, " " + harnessName(r.harness)));
     if (r.stage) bits.push(el("span", { class: "mono faint" }, " · stage: " + r.stage));
     if ((r.reviews || []).length)
       bits.push(el("span", { class: "mono faint" },
