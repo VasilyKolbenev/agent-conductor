@@ -326,9 +326,12 @@ def _decision_brief(state: dict) -> list[str]:
 def _queue_item(item: dict) -> list[str]:
     """One `human_queue` entry, headed by its id — never by its title.
 
-    `id` and `kind` are the only fields of a wait the schema constrains; `title`
-    is not among them. Heading a section with an unvalidated `title` is how a
-    Python `repr` becomes a heading, so the title is reported as a field.
+    `schema._validate_lane_waits` constrains a wait's `id`, `kind` and
+    `blocks`, and `title` is not among them. Heading a section with an
+    unvalidated `title` is how a Python `repr` becomes a heading, so the title
+    is reported as a field. The `id` it is headed by is constrained only to be
+    a non-empty string — nothing says what may be inside one, which is why the
+    heading takes it through `_from_document` like everything else.
     """
     return [
         f"### {_from_document(item.get('id'), _SPAN)} — "

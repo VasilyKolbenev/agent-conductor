@@ -467,7 +467,12 @@ def _structure(text):
             sum(1 for ln in lines if len(ln) >= 3 and set(ln) == {"`"}))
 
 
-def test_no_authored_field_can_forge_a_heading_or_a_list_item_of_its_own():
+def test_the_authored_fields_rendered_in_a_bullet_forge_no_heading_list_item_or_fence():
+    # Six fields, each rendered inside a bullet, each fed text that forges a
+    # section — and the whole of the report's structure held still, not just
+    # its headings. The claim over EVERY field of the document, headings only,
+    # is `test_report_funnel.test_no_string_field_of_the_document_can_forge_a_
+    # heading`; the two are halves of one guard and neither is the other.
     harmless = _authored_field_documents("harmless")
     forged = _authored_field_documents(FORGERY)
     for field, state in forged.items():
@@ -644,13 +649,29 @@ def test_the_schema_still_lets_a_non_string_wait_title_through(tmp_path):
     assert schema.validate_lane(data, filename_stem="claude")[0] == []
 
 
-def test_a_non_string_wait_title_is_never_rendered_as_the_authors_words(tmp_path):
+def test_a_non_string_wait_title_is_never_the_authors_words_in_the_human_queue(tmp_path):
     state = merged(a_map(), [a_lane("claude", waits=[NON_STRING_WAIT])])
     queue = section(report.render(state), "## Human queue")
     assert "### `w-1`" in queue                  # headed by the id the schema checks
     assert "{'raw': 1}" not in queue             # never a Python repr
     assert '{"raw": 1}' in line_starting(queue, "- Title:")   # shown as data, as JSON
     assert "non-string value" in line_starting(queue, "- Why:")
+
+
+def test_a_non_string_wait_title_reaches_the_decision_brief_as_a_repr_the_merger_wrote():
+    # The other half, and the one the guard above was named as though it
+    # covered. `merge._next_action` builds the next action's sentence with an
+    # f-string over the same unvalidated title, so by the time the report is
+    # handed the document the repr IS the text of `next_action.text` — a
+    # string, indistinguishable from one a person wrote. The report cannot
+    # un-write it, and nothing here may claim otherwise.
+    state = merged(a_map(), [a_lane("claude", waits=[NON_STRING_WAIT])])
+    assert state["next_action"]["text"] == "Answer the decision: {'raw': 1}"
+    brief = line_starting(report.render(state), "- Next action:")
+    assert brief == "- Next action: Answer the decision: {'raw': 1}"
+    # What the report does hold: the repr is on one line and opens nothing.
+    # Fixing it belongs to the merger, which is where the f-string is.
+    assert "\n" not in brief
 
 
 def test_the_report_command_survives_a_non_string_wait_title(tmp_path, capsys):
