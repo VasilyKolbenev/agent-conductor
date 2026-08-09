@@ -1,25 +1,42 @@
-"""What the doctor report claims about a project, held against that project.
+"""Three measurable parts of the doctor report, held against the project.
 
 `test_doctor.py` asks what each check answers and whether the command it names
-is one the CLI accepts. This file asks the other half — whether the SENTENCES
-are true — and that is the half already shipped wrong twice: a fallback kept
-the sentence written for the branch it fell back from, so the report said
-"Start one with:" over `conduct validate`, and a summary counted nothing.
-Both were green, because a report is prose and a test that looks for a
-substring of prose agrees with whatever the prose is later rewritten to say.
+is one the CLI accepts. This file goes after the failure that hid inside the
+prose twice: a fallback kept the sentence written for the branch it fell back
+from, so the report said "Start one with:" over `conduct validate`, and a
+summary counted nothing. Both were green, because a report is prose and a test
+that looks for a substring of prose agrees with whatever the prose is later
+rewritten to say.
 
 Three instruments, none of them a substring of an expected sentence:
 
 * an advice is classified by the PROMISE its closing words make to a reader,
   and the command printed under it is then RUN and held to that promise.
   "Start one with:" over `conduct validate` fails here not because the pair is
-  unexpected but because running validate hands nobody a prompt.
+  unexpected but because running validate hands nobody a prompt; `conduct
+  doctor` under "this command reports why:" fails because what it prints is
+  the report the reader is already holding and names no error `store`
+  recorded.
 * every number a detail prints is compared with the same number measured from
   the project, over several sizes of the thing being counted, so neither a
-  constant nor a count of the wrong set survives.
-* every authored value a detail quotes is compared with the set computed here
-  from the map and the registry — the ids the finding is about, and not the
-  ids sitting next to them that it is not about.
+  constant nor a count of the wrong set survives. Outcome included, and OK
+  rows among them: a detail right about the answer and wrong about the count
+  is still false about somebody's project.
+* the two findings that name authored ids — the only two details that quote
+  anything — have the set they print compared with the set computed here from
+  the map and the registry, so a finding cannot name the ids sitting beside
+  the ones it is about.
+
+WHAT NOTHING HERE HOLDS, said plainly so the three above are not read as
+wider than they are. The declarative wording of a detail — everything between
+its numbers, its quoted ids and its closing sentence — is held by no test in
+this file. Rewriting "no lane file has been written" into its opposite passes
+this file, and so does rewriting the whole one-sentence detail of a check that
+came back OK, which carries no closing advice and no command; of an OK detail
+only the outcome and the integers are held, and only for the rows of
+`NUMBER_CASES`. Both were tried by inverting the sentence and running the
+file. A guard for that text would have to be a relation to the project the
+sentence describes, and there is not one here.
 
 Split from `test_doctor.py` rather than added to it: the corpus, the fixtures
 and the report helpers are imported from there, so no project shape is
