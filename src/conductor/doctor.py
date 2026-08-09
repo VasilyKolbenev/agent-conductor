@@ -513,7 +513,8 @@ def _spelled(token: str) -> str:
     knowing when reading a `--author` token; it is not what this paragraph
     rests on, and it is not enough on its own, since it admits a leading dash.
     Every remaining token is this module's own literal or the root the reader
-    themselves typed.
+    themselves typed — and the root is the reason the rule is `_BARE_CHARS`
+    and not "quote on a space": a reader's own directory may hold `&`.
     """
     return token if token and not set(token) - _BARE_CHARS else f'"{token}"'
 

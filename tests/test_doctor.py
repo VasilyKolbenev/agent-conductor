@@ -13,6 +13,7 @@ because "green on something it never inspected" is the defect this command
 exists in order not to have.
 """
 import json
+import string
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -154,6 +155,19 @@ def ran(argv):
         return main(list(argv))
     except SystemExit as e:                    # argparse: exit 2 on a usage error
         return e.code
+
+
+#: What a token may hold and still mean itself when it is pasted bare into a
+#: shell. Owned here rather than imported from `doctor`, for the reason
+#: `SHELL_SYNTAX` below is: a guard that asks the code under test which
+#: characters are safe agrees with it by construction, and would have gone on
+#: agreeing while the rule was "quote if it holds a space".
+BARE_ENOUGH = set(string.ascii_letters + string.digits + "-_.,:/@+=~\\")
+
+
+def needs_quoting(token):
+    """True when pasting `token` bare would hand a shell something else."""
+    return bool(set(token) - BARE_ENOUGH)
 
 
 class _FakeServer:
@@ -676,20 +690,44 @@ def test_the_only_shell_syntax_a_printed_command_carries_is_the_readers_own_path
             assert doctor.COMMAND_PREFIX + doctor.spell(check.command) in out
             for token in check.command:
                 if token == str(root):
+                    # The one token no map can choose, and so the only one
+                    # allowed to hold shell syntax at all. Held to the quoting
+                    # rule here rather than skipped — what makes it safe is
+                    # that the line quotes it when bare would not carry it.
+                    assert (f'"{token}"' in out) == needs_quoting(token), (name,
+                                                                           token)
                     continue
                 assert not set(token) & SHELL_SYNTAX, (name, token)
                 tokens += 1
     assert tokens >= len(projects)
 
 
-def test_a_root_needing_more_than_a_space_quoted_is_still_quoted(tmp_path, capsys):
-    # A space is not the only character that costs a token its meaning. This
-    # root is the shape every Windows box ships with, and a line that quotes
-    # only on spaces hands the reader a command that runs as a different one.
-    root = tmp_path / "Program Files (x86)"
+#: Directory names a root can carry on Windows and on POSIX alike — Windows
+#: forbids `< > : " / \ | ? *` and not one of these holds one. The first group
+#: needs the quotes and, apart from the last two rows, holds no space; the
+#: second group needs none. A rule that quoted on a space alone would agree
+#: with the last two rows of the first group and disagree with the other six.
+NEEDING_QUOTES = ["p&q", "p;q", "p$(id)", "p`q", "p!q", "p^q", "p q",
+                  "Program Files (x86)"]
+NEEDING_NONE = ["plain", "p-q", "p_q", "p.q", "p+q", "p,q", "p=q"]
+
+
+@pytest.mark.parametrize("name", NEEDING_QUOTES + NEEDING_NONE)
+def test_a_root_is_quoted_exactly_when_bare_would_not_carry_it(tmp_path, capsys,
+                                                               name):
+    # A space is not the only character that costs a token its meaning — and a
+    # root with a space in it cannot show that, because the space is the one
+    # character the naive rule already quotes. So the claim is a RELATION over
+    # roots that disagree: `p&q` holds no space and still must be quoted,
+    # `p+q` holds neither and must not be. Read off the rendered line, then
+    # run, so quoting something that did not need it is caught too.
+    root = tmp_path / name
     root.mkdir()
     out = report(capsys, root, 1)
-    assert f'--dir "{root}"' in out
+    (line,) = [ln for ln in out.splitlines()
+               if ln.startswith(doctor.COMMAND_PREFIX)]
+    assert str(root) in line
+    assert (f'--dir "{root}"' in line) == needs_quoting(str(root)), line
     (check,) = doctor.inspect(root)
     assert main(list(check.command)) == 0          # the argv behind that line runs
     capsys.readouterr()
