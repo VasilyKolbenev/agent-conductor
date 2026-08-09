@@ -25,14 +25,14 @@ Four ways a report like this could lie, and what is done about each:
    or an agent, and this report quotes it whole, inside a fence long enough that
    nothing in it needs escaping. It is never summarised and never truncated, so
    there is no truncation the report could fail to disclose. `detail` is quoted
-   the same way. Every *other* authored field — a finding's `title` and `claim`,
-   a wait's `title` and `why`, `project_status.detail`, `next_action.text`, a
-   verdict `note`, a merger warning — renders inside a bullet, where a line
-   break would end that bullet and let what follows open a heading, a list or a
-   fence this report never wrote. `_one_line` puts those fields on the one line
-   they are rendered into and says so. It does not escape inline markup, and it
-   cannot stop an authored field from quoting a sentence this report also
-   writes: what an authored field cannot do is add a line.
+   the same way when it has words in it. Every *other* value the document holds
+   — authored prose and identifier alike, a finding's `title`, a wait's `id`, a
+   verdict's `disposition` — reaches the reader through `_from_document`, which
+   puts it on the one line it is rendered into and says so when that changed the
+   author's bytes. What a document value cannot do is add a line, close the code
+   span around itself, or open a heading, a list or a fence this report never
+   wrote. It can still quote a sentence this report also writes: nothing here
+   escapes inline markup.
 3. **Absence is not an answer.** Everything the document does not know gets a
    line of its own under "What this report does not know" — an `unknown`
    project state, unreviewed and uncovered findings, vacuous agreement, a
@@ -44,6 +44,12 @@ Four ways a report like this could lie, and what is done about each:
    empty. "None recorded in the document" is kept for the field the document
    does not record at all, because the other reading is a false statement about
    the document that wrote the field.
+
+Points 2 and 4 rest on one structural fact rather than on remembering them at
+each rendering site: `_from_document` is the only path from the document to a
+rendered line, in either shape the report has. `tests/test_report_funnel.py`
+reads this module's AST and reds if any other path exists, so a site added
+later cannot quietly reopen what a point above closed.
 
 Ordering is taken from the document: lists render in the order the merger built
 them. `findings[].verdicts` is the one exception — it is a JSON object, whose
@@ -88,40 +94,61 @@ _UNVERIFIED = {
 }
 
 
-def _code(value: object) -> str:
-    """Render any JSON value as a code span, strings bare and the rest as JSON."""
-    if isinstance(value, str):
-        return f"`{value}`"
-    return f"`{json.dumps(value, ensure_ascii=False, sort_keys=True)}`"
+#: The two shapes a value taken from the document is rendered in: a sentence of
+#: the report's own prose, or a code span. `_from_document` builds both, and
+#: nothing else in this module builds either.
+_PROSE = "prose"
+_SPAN = "span"
+
+#: Said beside a value whose line breaks were flattened. The substitution
+#: changes the document's bytes, so it cannot pass unstated.
+_FLATTENED = (" — the document records this field with line breaks in it, shown "
+              "here as `\\n`: the field renders on one line, so its text cannot "
+              "open a heading or a list of its own")
+
+#: For a field reached only when the document records it, and records it null.
+#: Not an absence either: JSON null is what the document chose to write.
+_RECORDED_NULL = "(the document records this field as `null`)"
 
 
-def _one_line(text: str) -> str:
-    """Put authored text on the one line it is rendered into.
+def _one_line(text: str) -> tuple[str, str]:
+    """Put text on one line, and say beside it when that changed its bytes.
 
-    Every authored field but `findings[].evidence` and `findings[].detail` is
-    rendered inside a bullet or a sentence. A line break in one of them would
-    end that line, and everything after it would be read as Markdown this
-    report never wrote — a heading, a list item, a fence. Line breaks are shown
-    as the two characters `\\n` instead, and the line says so: the substitution
-    changes the author's bytes, so it cannot pass unstated.
+    A line break in a value would end the line the value is rendered into, and
+    everything after it would be read as Markdown this report never wrote — a
+    heading, a list item, a fence. Line breaks are shown as the two characters
+    `\\n` instead.
 
     Args:
-        text: The authored text, as the document records it.
+        text: The value's text, as the document records it.
 
     Returns:
-        `text` unchanged when it holds no line break; otherwise one line, with
-        the substitution disclosed on it.
+        `(the one line, what to disclose beside it)`. The disclosure is empty
+        when the text held no line break and the line is the document's bytes.
     """
     if "\n" not in text and "\r" not in text:
-        return text
-    shown = text.replace("\r\n", "\n").replace("\r", "\n").replace("\n", "\\n")
-    return (f"{shown} — the document records this field with line breaks in it, "
-            "shown here as `\\n`: the field renders on one line, so its text "
-            "cannot open a heading or a list of its own")
+        return text, ""
+    flat = text.replace("\r\n", "\n").replace("\r", "\n").replace("\n", "\\n")
+    return flat, _FLATTENED
+
+
+def _span(text: str) -> str:
+    """Wrap one line in a code span that line cannot reshape.
+
+    CommonMark closes a code span at the first backtick run as long as the run
+    that opened it, so the fence here is one backtick longer than the longest
+    run inside it. CommonMark also strips one space from each end of a span
+    that has one at both ends, so text beginning or ending with a backtick or a
+    space is padded to survive that strip byte for byte.
+    """
+    longest = max((len(run) for run in re.findall(r"`+", text)), default=0)
+    fence = "`" * (longest + 1)
+    pad = " " if text.strip(" ") and (text[0] in "` " or text[-1] in "` ") else ""
+    return f"{fence}{pad}{text}{pad}{fence}"
 
 
 def _blank(text: str) -> str:
-    """Say what an authored field holds when it holds no words.
+    """Say what a field holds when the document records it with no words in it.
 
     Not an absence. The document records the field, so reporting it as missing
     would be a false statement about the document that wrote it.
@@ -129,41 +156,59 @@ def _blank(text: str) -> str:
     if not text:
         return "(the document records this field as an empty string)"
     return ("(the document records this field, and it holds only whitespace: "
-            f"`{json.dumps(text)}`)")
+            f"{_span(json.dumps(text))})")
 
 
-def _authored(value: object, absent: str) -> str:
-    """Render an authored string as prose, or say what the document holds instead.
+def _from_document(value: object, shape: str, absent: str | None = None) -> str:
+    """The one door out of the document: every value the report prints uses it.
 
-    Four cases the report must not confuse: text, a field the document does not
-    record, a field it records with no words in it, and a field holding
-    something that is not a string. Only the second is an absence and only it
-    gets `absent`. A value that is not a string is never rendered as prose; it
-    is reported as JSON in a code span, so a Python `repr` can never pass for a
-    sentence somebody wrote. `waits_on_human[].title` and `[].why` reach this
-    function unvalidated — `schema._validate_lane_waits` checks a wait's `id`,
-    `kind` and `blocks` and not those two.
+    Four things a value could do to the report are handled here, once, instead
+    of at each site that renders one: a line break that would end the line it
+    renders into, a backtick run that would close the code span around it, a
+    field the document records with no words in it, and a value that is not a
+    string. Four cases the report must not confuse, and only the second is an
+    absence: text, a field the document does not record, a field it records
+    empty, and a non-string. A non-string never renders as prose — it is
+    reported as JSON, so no value the merger stored as data can read as a
+    sentence somebody wrote.
+
+    Values this function is not given cannot be protected by it:
+    `findings[].detail` and `[].evidence` take the verbatim path through
+    `_verbatim` by design, and a value the *merger* has already folded into a
+    string — `next_action.text` is built from a wait's unvalidated `title`
+    (`merge._next_action`) — arrives here as text and is rendered as text.
 
     Args:
         value: The document's value for the field.
-        absent: What to say when the document does not record the field.
+        shape: `_PROSE` to render it as a sentence, `_SPAN` as a code span.
+        absent: What `_PROSE` says when the document does not record the field
+            at all. `_SPAN` needs none: it renders a missing field as `null`,
+            which is what the document's own JSON would have said.
 
     Returns:
-        The author's own text on one line, or a statement about the field.
+        One line, safe to place wherever the report renders a line.
     """
-    if isinstance(value, str):
-        return _one_line(value) if value.strip() else _blank(value)
-    if value is None:
-        return absent
-    return ("(not a sentence: the document records a non-string value "
-            f"{_code(value)})")
+    if shape == _PROSE:
+        if value is None:
+            return absent
+        if not isinstance(value, str):
+            return ("(not a sentence: the document records a non-string value "
+                    f"{_from_document(value, _SPAN)})")
+        if not value.strip():
+            return _blank(value)
+        flat, disclosed = _one_line(value)
+        return flat + disclosed
+    text = (value if isinstance(value, str) and value
+            else json.dumps(value, ensure_ascii=False, sort_keys=True))
+    flat, disclosed = _one_line(text)
+    return _span(flat) + disclosed
 
 
 def _id_list(value: object) -> str:
     """Render a list of ids as code spans in document order; tolerate non-lists."""
     if isinstance(value, list):
-        return ", ".join(_code(v) for v in value) if value else "none"
-    return _code(value)
+        return ", ".join(_from_document(v, _SPAN) for v in value) if value else "none"
+    return _from_document(value, _SPAN)
 
 
 def _verbatim(text: str) -> list[str]:
@@ -223,8 +268,8 @@ def verify(finding: dict, state: dict) -> Verification:
     review_state = finding.get("review_state")
     if review_state != "agreed":
         return _UNVERIFIED.get(review_state) or Verification(
-            False, f"unrecognised review state {_code(review_state)} — this report "
-                   "makes no claim about it")
+            False, f"unrecognised review state {_from_document(review_state, _SPAN)} "
+                   "— this report makes no claim about it")
     if _author_role(finding, state) in _reviewed_roles(state):
         return Verification(
             True, "agreed — every role assigned to review it gave a verdict and "
@@ -238,14 +283,16 @@ def verify(finding: dict, state: dict) -> Verification:
 def _header(state: dict) -> list[str]:
     """The title and the two document-level facts a reader needs first."""
     return [
-        f"# Conduct report — {_authored(state.get('project'), '(unnamed project)')}",
+        f"# Conduct report — "
+        f"{_from_document(state.get('project'), _PROSE, '(unnamed project)')}",
         "",
         "Source: one `state.json` document, the merger's output. Every value is "
         "copied from it, never recomputed; the counts and groupings below are drawn "
         "from that document and from nothing else.",
         "",
-        f"- `generated_at`, as the document records it: {_code(state.get('generated_at'))}",
-        f"- `schema_version`: {_code(state.get('schema_version'))}",
+        f"- `generated_at`, as the document records it: "
+        f"{_from_document(state.get('generated_at'), _SPAN)}",
+        f"- `schema_version`: {_from_document(state.get('schema_version'), _SPAN)}",
     ]
 
 
@@ -256,20 +303,23 @@ def _decision_brief(state: dict) -> list[str]:
     out = [
         "## Decision brief",
         "",
-        f"- Project state: {_code(status.get('state'))}, "
-        f"reason {_code(status.get('reason'))}",
-        f"- Detail: {_authored(status.get('detail'), '(no detail in the document)')}",
+        f"- Project state: {_from_document(status.get('state'), _SPAN)}, "
+        f"reason {_from_document(status.get('reason'), _SPAN)}",
+        f"- Detail: "
+        f"{_from_document(status.get('detail'), _PROSE, '(no detail in the document)')}",
     ]
     if isinstance(action, dict):
         out += [
             f"- Next action: "
-            f"{_authored(action.get('text'), '(no text in the document)')}",
-            f"  - kind {_code(action.get('kind'))}, ref {_code(action.get('ref'))}",
+            f"{_from_document(action.get('text'), _PROSE, '(no text in the document)')}",
+            f"  - kind {_from_document(action.get('kind'), _SPAN)}, "
+            f"ref {_from_document(action.get('ref'), _SPAN)}",
         ]
     else:
         out.append(
-            f"- Next action: {_code(action)} — the merger names no next move. That is "
-            "the absence of a computed action, not a finding that the work is done.")
+            f"- Next action: {_from_document(action, _SPAN)} — the merger names no "
+            "next move. That is the absence of a computed action, not a finding "
+            "that the work is done.")
     return out
 
 
@@ -281,10 +331,13 @@ def _queue_item(item: dict) -> list[str]:
     Python `repr` becomes a heading, so the title is reported as a field.
     """
     return [
-        f"### {_code(item.get('id'))} — kind {_code(item.get('kind'))}",
+        f"### {_from_document(item.get('id'), _SPAN)} — "
+        f"kind {_from_document(item.get('kind'), _SPAN)}",
         "",
-        f"- Title: {_authored(item.get('title'), '(the lane recorded no title)')}",
-        f"- Why: {_authored(item.get('why'), '(the lane recorded no reason)')}",
+        f"- Title: "
+        f"{_from_document(item.get('title'), _PROSE, '(the lane recorded no title)')}",
+        f"- Why: "
+        f"{_from_document(item.get('why'), _PROSE, '(the lane recorded no reason)')}",
         f"- Blocks: {_id_list(item.get('blocks'))}",
         f"- Reported by: {_id_list(item.get('sources'))}",
         "",
@@ -311,7 +364,13 @@ def _queue(state: dict) -> list[str]:
 
 
 def _verdicts(finding: dict) -> list[str]:
-    """Every recorded verdict on one finding, authors sorted, notes quoted."""
+    """Every recorded verdict on one finding, authors sorted, notes quoted.
+
+    A verdict that records a `note` gets a note line whatever the note holds:
+    an empty one is a note the reviewer wrote nothing into, not a note nobody
+    wrote, and the two must not read alike. A verdict recording no `note` at
+    all gets no line.
+    """
     verdicts = finding.get("verdicts")
     if not isinstance(verdicts, dict) or not verdicts:
         return ["- Verdicts: none recorded"]
@@ -320,28 +379,38 @@ def _verdicts(finding: dict) -> list[str]:
         entry = verdicts[author] if isinstance(verdicts[author], dict) else {}
         own = (" — self-verdict, ignored for `review_state` (§6)"
                if author == finding.get("author") else "")
-        out.append(f"  - {_code(author)} (role {_code(entry.get('role'))}): "
-                   f"{_code(entry.get('disposition'))}{own}")
-        note = entry.get("note")
-        if isinstance(note, str) and note.strip():
-            out.append(f"    - note, as written: {_one_line(note)}")
+        out.append(f"  - {_from_document(author, _SPAN)} "
+                   f"(role {_from_document(entry.get('role'), _SPAN)}): "
+                   f"{_from_document(entry.get('disposition'), _SPAN)}{own}")
+        if "note" in entry:                    # a recorded null reaches `_RECORDED_NULL`
+            out.append(f"    - note, as written: "
+                       f"{_from_document(entry.get('note'), _PROSE, _RECORDED_NULL)}")
     return out
 
 
 def _evidence(finding: dict) -> list[str]:
-    """`detail` and `evidence` quoted whole — no summary, no truncation."""
+    """`detail` and `evidence` quoted whole — no summary, no truncation.
+
+    Both take the same two paths, because the two fields make the same promise:
+    text with words in it is fenced whole, and everything else — recorded and
+    empty, recorded as something that is not a string, not recorded at all —
+    goes through `_from_document`, which tells those three apart.
+    """
     out = [""]
     detail = finding.get("detail")
     if isinstance(detail, str) and detail.strip():
         out += ["Detail, as the author wrote it:", "", *_verbatim(detail), ""]
+    else:
+        out += [f"Detail: "
+                f"{_from_document(detail, _PROSE, 'none recorded in the document')}.",
+                ""]
     evidence = finding.get("evidence")
     if isinstance(evidence, str) and evidence.strip():
         out += ["Evidence, as the author wrote it — quoted whole, not summarised:",
                 "", *_verbatim(evidence), ""]
     else:
-        # `_authored` for the rest: a recorded-but-empty `evidence` is not a
-        # missing one, and neither is a value that is not a string.
-        out += [f"Evidence: {_authored(evidence, 'none recorded in the document')}.",
+        out += [f"Evidence: "
+                f"{_from_document(evidence, _PROSE, 'none recorded in the document')}.",
                 ""]
     return out
 
@@ -349,16 +418,18 @@ def _evidence(finding: dict) -> list[str]:
 def _finding(finding: dict, state: dict) -> list[str]:
     """One finding: its own fields, what review stands behind it, its evidence."""
     out = [
-        f"### {_code(finding.get('id'))} — severity {_code(finding.get('severity'))} "
-        f"— reported by {_code(finding.get('author'))}",
+        f"### {_from_document(finding.get('id'), _SPAN)} — "
+        f"severity {_from_document(finding.get('severity'), _SPAN)} — "
+        f"reported by {_from_document(finding.get('author'), _SPAN)}",
         "",
-        f"- Title: {_authored(finding.get('title'), '(no title in the document)')}",
+        f"- Title: "
+        f"{_from_document(finding.get('title'), _PROSE, '(no title in the document)')}",
         f"- `review_state`, as the document records it: "
-        f"{_code(finding.get('review_state'))}",
+        f"{_from_document(finding.get('review_state'), _SPAN)}",
         f"- Verification (read from `review_state` and `cycle.roles[].reviews`): "
         f"{verify(finding, state).label}",
         f"- Claim, the author's own label: "
-        f"{_authored(finding.get('claim'), '(no claim in the document)')}",
+        f"{_from_document(finding.get('claim'), _PROSE, '(no claim in the document)')}",
         f"- Refs: {_id_list(finding.get('refs'))}",
     ]
     return out + _verdicts(finding) + _evidence(finding)
@@ -385,27 +456,31 @@ def _unknown_status(state: dict) -> list[str]:
     status = state.get("project_status") or {}
     if status.get("state") != "unknown":
         return []
-    return [f"- The project state is {_code('unknown')} "
-            f"(reason {_code(status.get('reason'))}): "
-            f"{_authored(status.get('detail'), '(no detail in the document)')}"]
+    return [f"- The project state is `unknown` "
+            f"(reason {_from_document(status.get('reason'), _SPAN)}): "
+            f"{_from_document(status.get('detail'), _PROSE, '(no detail in the document)')}"]
+
+
+#: Each `review_state` whose findings the unknown section names, and the clause
+#: naming it. A table rather than four literals inline, so the clause a line
+#: renders is the report's own text and reaches it from nowhere else.
+_REVIEW_GAPS = (
+    ("unreviewed", "awaiting a verdict from a role that owes one"),
+    ("uncovered", "whose reviewing role exists in the map but no lane holds"),
+    ("agreed",
+     "agreed with no role declared to review their author — vacuous, not a check"),
+    ("suspended", "suspended: the id is claimed by more than one lane"),
+)
 
 
 def _unknown_review(state: dict) -> list[str]:
     """One line per way a finding's review standing is not a check that passed."""
     findings = state.get("findings") or []
-    groups = (
-        ("awaiting a verdict from a role that owes one",
-         [f for f in findings if f.get("review_state") == "unreviewed"]),
-        ("whose reviewing role exists in the map but no lane holds",
-         [f for f in findings if f.get("review_state") == "uncovered"]),
-        ("agreed with no role declared to review their author — vacuous, not a check",
-         [f for f in findings if f.get("review_state") == "agreed"
-          and not verify(f, state).verified]),
-        ("suspended: the id is claimed by more than one lane",
-         [f for f in findings if f.get("review_state") == "suspended"]),
-    )
     out = []
-    for why, group in groups:
+    for review_state, why in _REVIEW_GAPS:
+        group = [f for f in findings if f.get("review_state") == review_state]
+        if review_state == "agreed":       # only the vacuous half of `agreed`
+            group = [f for f in group if not verify(f, state).verified]
         if group:
             out.append(f"- Findings {why}: "
                        f"{_id_list([f.get('id') for f in group])}")
@@ -462,7 +537,7 @@ def _warnings(state: dict) -> list[str]:
         return ["## Merger warnings — none", "",
                 "The merger recorded no warning about this document."]
     return ([f"## Merger warnings — {len(warnings)}", ""]
-            + [f"- {_authored(w, '(empty warning)')}" for w in warnings])
+            + [f"- {_from_document(w, _PROSE, '(empty warning)')}" for w in warnings])
 
 
 #: Every section, in the order they are rendered. One list so that adding a
