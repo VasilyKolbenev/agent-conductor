@@ -81,6 +81,10 @@ def corpus(tmp_path):
         "untypable role": write_project(tmp_path / "untypable",
                                         map_toml=role_map("scout x"),
                                         lanes={"claude": lane()}),
+        # And a map whose authored id would run if a command carried it.
+        "injected role": write_project(tmp_path / "injected",
+                                       map_toml=role_map("scout $(id)"),
+                                       lanes={"claude": lane()}),
     }
 
 
@@ -485,6 +489,83 @@ def test_a_role_id_that_cannot_be_typed_gets_a_command_that_can(tmp_path, capsys
     assert ["doctor", "--dir", str(root)] in commands(out)
     assert main(["doctor", "--dir", str(root)]) == 1
     assert capsys.readouterr().out == out
+
+
+#: What a shell reads as syntax rather than as text. Owned here rather than
+#: imported from `doctor`: a guard that asks the code under test which
+#: characters are dangerous agrees with it by construction, and would have
+#: passed while the answer was `str.isprintable`.
+SHELL_SYNTAX = set(" \t\n\r\"'`$;&|<>()[]{}*?!#~^%")
+
+
+@pytest.mark.parametrize("role_id", [
+    "scout $(id)",      # command substitution
+    "scout `id`",       # the older spelling of it
+    'scout "x"',        # ends the quoting the printed line puts around it
+    "scout;id",         # ends the command and starts another
+    "-scout",           # argparse reads this as a flag: exit 2, not a run
+])
+def test_a_role_id_no_shell_would_keep_never_reaches_a_printed_command(tmp_path,
+                                                                       capsys,
+                                                                       role_id):
+    # Every one of these is a printable, schema-legal role id arriving from the
+    # project's own map, and the command a report prints is printed to be
+    # copied and run. So the map must not be able to write it: the finding
+    # about such a role names the command that re-states the finding, and that
+    # command is run here to show it is one.
+    root = write_project(tmp_path, map_toml=role_map(role_id),
+                         lanes={"claude": lane()})
+    out = report(capsys, root, 1)
+    assert outcomes(out)["roles"] == doctor.FINDING
+    assert not any(line for line in out.splitlines()
+                   if line.startswith(doctor.COMMAND_PREFIX) and role_id in line)
+    assert ["doctor", "--dir", str(root)] in commands(out)
+    assert main(["doctor", "--dir", str(root)]) == 1
+    assert capsys.readouterr().out == out
+
+
+def test_the_only_shell_syntax_a_printed_command_carries_is_the_readers_own_path(
+        tmp_path, capsys):
+    # The relation, over every project the corpus builds and every id above:
+    # a token of a printed command is either the root the reader themselves
+    # typed — which the report quotes, and which no map can choose — or a value
+    # holding nothing a shell would act on. Checked token by token against the
+    # argv each line was rendered from, so a quoted line cannot hide a token
+    # that was never safe to print.
+    projects = corpus(tmp_path)
+    projects.update({f"injected {i}": write_project(tmp_path / f"inj{i}",
+                                                    map_toml=role_map(role_id),
+                                                    lanes={"claude": lane()})
+                     for i, role_id in enumerate(["scout $(id)", "scout `id`",
+                                                  'scout "x"', "-scout"])})
+    tokens = 0
+    for name, root in projects.items():
+        main(["doctor", "--dir", str(root)])
+        out = capsys.readouterr().out
+        for check in doctor.inspect(root):
+            if not check.command:
+                continue
+            assert doctor.COMMAND_PREFIX + doctor.spell(check.command) in out
+            for token in check.command:
+                if token == str(root):
+                    continue
+                assert not set(token) & SHELL_SYNTAX, (name, token)
+                tokens += 1
+    assert tokens >= len(projects)
+
+
+def test_a_root_needing_more_than_a_space_quoted_is_still_quoted(tmp_path, capsys):
+    # A space is not the only character that costs a token its meaning. This
+    # root is the shape every Windows box ships with, and a line that quotes
+    # only on spaces hands the reader a command that runs as a different one.
+    root = tmp_path / "Program Files (x86)"
+    root.mkdir()
+    out = report(capsys, root, 1)
+    assert f'--dir "{root}"' in out
+    (check,) = doctor.inspect(root)
+    assert main(list(check.command)) == 0          # the argv behind that line runs
+    capsys.readouterr()
+    assert (root / "conductor").is_dir()
 
 
 def test_a_very_long_authored_id_is_cut_in_the_detail_and_kept_in_the_command(

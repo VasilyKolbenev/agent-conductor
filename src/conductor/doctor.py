@@ -48,7 +48,12 @@ A COMMAND is the one exception, and has to be: it is printed to be pasted, so
 it carries its values exactly, untruncated and unescaped. That is why the
 value has to earn the command instead — `_spellable` rejects an id no shell
 could carry, and the finding about it names a command a reader can run rather
-than a `conduct prompt` line nobody could.
+than a `conduct prompt` line nobody could. What "could carry" means is
+`_AUTHORED_CHARS` and not `str.isprintable`: `$(id)`, a backtick, a quote and
+a space are every one of them printable, and an id holding them is legal
+Protocol v1 arriving from the project's own map — printed into the one command
+this report asks a person to run, it makes a line that either cannot be pasted
+or runs the map's text.
 
 Which command that is, is itself a claim this module has to keep. A finding
 travels with the sentence that introduces it, as one `Advice` value, because
@@ -64,6 +69,7 @@ finding may name is measured rather than reviewed.
 """
 from __future__ import annotations
 
+import string
 import sys
 import textwrap
 import tomllib
@@ -93,6 +99,25 @@ COMMAND_PREFIX = f"{_COMMAND_INDENT}next: "
 #: recognise a typo in a harness id, short enough that one value cannot push a
 #: report off the screen.
 SHOWN_LIMIT = 80
+
+#: Every character a token of a printed command may hold and still mean itself
+#: in the shell it is pasted into. An allowlist, and not a list of
+#: metacharacters to reject: a denylist is a claim about the grammar of POSIX
+#: sh, PowerShell and cmd at once, and the character left out of it is the one
+#: that runs. The backslash and the tilde are here for the one token that is a
+#: path the reader themselves passed rather than a value out of their map.
+_BARE_CHARS = frozenset(string.ascii_letters + string.digits + "-_.,:/@+=~\\")
+
+#: What a value out of the project's map may hold. The path characters are not
+#: in it: an id needs neither, and a backslash is an escape wherever a token
+#: goes unquoted.
+_AUTHORED_CHARS = _BARE_CHARS - set("~\\")
+
+#: What a token that opens with this means to `argparse`, whatever it holds
+#: after it: a flag. `conduct prompt --role --dir` is not a command with an
+#: oddly named role, it is a usage error — so an id spelled this way earns no
+#: printed command either.
+_FLAG_MARK = "-"
 
 
 @dataclass(frozen=True)
@@ -139,11 +164,23 @@ def _shown(value: str) -> str:
 def _spellable(value: str) -> bool:
     """True if `value` can be put on a command line and stay itself.
 
-    A role id holding a line break is legal Protocol v1 and cannot be typed
-    into a shell, so a finding about it must name some other command rather
-    than print one that could never be run.
+    Args:
+        value: A role id or another string the project's map authored.
+
+    Returns:
+        True only when every character is one of `_AUTHORED_CHARS` and the
+        value does not open like a flag. Being printable is a weaker question
+        and the wrong one: a role id holding a line break cannot be typed at
+        all, but `scout $(id)`, ``scout `id` `` and `scout "x"` are printable,
+        legal Protocol v1, and would each turn the one command this report
+        asks a person to run into a line that runs the map's text instead of
+        theirs. `-x` is quieter and just as unrunnable — `argparse` reads it
+        as a flag and exits 2 on the command this report printed. A finding
+        about a value that is not spellable names a command a reader can run
+        instead.
     """
-    return bool(value) and value.isprintable()
+    return (bool(value) and not value.startswith(_FLAG_MARK)
+            and not set(value) - _AUTHORED_CHARS)
 
 
 def _dir_args(root: str) -> tuple[str, ...]:
@@ -383,6 +420,27 @@ def inspect(root: Path | str) -> list[Check]:
 # --- saying it --------------------------------------------------------------
 
 
+def _spelled(token: str) -> str:
+    """One token of a printed command, quoted if bare would not carry it.
+
+    A space is not the only character that costs a token its meaning — a
+    Windows root under `Program Files (x86)`, or any path holding `&`, breaks
+    a line that only quotes on spaces. Quoting whatever is not `_BARE_CHARS`
+    is the whole rule, and it is stated as an allowlist for the reason
+    `_BARE_CHARS` is: the metacharacter left out of a denylist is the one that
+    runs.
+
+    Double quotes and not single: they are the one quoting form POSIX sh,
+    PowerShell and cmd all read. What they do NOT neutralise in a POSIX shell
+    is `$`, a backtick, a backslash and a double quote itself — so nothing
+    holding one may reach here from the project's map, and nothing does:
+    every authored value in a `Check.command` has been through `_spellable`,
+    which admits none of the four. The tokens left are this module's own
+    literals and the root the reader themselves typed.
+    """
+    return token if token and not set(token) - _BARE_CHARS else f'"{token}"'
+
+
 def spell(argv: tuple[str, ...]) -> str:
     """One command as a person would type it: `conduct prompt --role scout`.
 
@@ -390,13 +448,12 @@ def spell(argv: tuple[str, ...]) -> str:
         argv: A `Check.command`.
 
     Returns:
-        The command line, `conduct` included, with any token holding a space
+        The command line, `conduct` included, with every token that needs it
         quoted. NOT truncated and NOT escaped, unlike the authored values in a
         detail: a command a reader cannot paste and run is worse than a long
         one, so this stays exactly what `main` would be given.
     """
-    return "conduct " + " ".join(f'"{token}"' if " " in token else token
-                                 for token in argv)
+    return "conduct " + " ".join(_spelled(token) for token in argv)
 
 
 def summary(checks: list[Check]) -> str:
