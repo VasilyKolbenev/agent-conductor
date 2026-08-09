@@ -11,7 +11,9 @@ this module only reads it, so the report and the panel cannot disagree about
 what a project's state is: they render the same document. Field values are
 copied, never recomputed; the counts and the groupings come from the document's
 own lists. Where a line reads more than one field — `Verification` under each
-finding — the line says which fields it read.
+finding — the line names the fields §6 states the rule over: `review_state` and
+`cycle.roles[].reviews`. The author's lane `role`, which `verify()` looks up to
+join those two, is not named there.
 
 Four ways a report like this could lie, and what is done about each:
 

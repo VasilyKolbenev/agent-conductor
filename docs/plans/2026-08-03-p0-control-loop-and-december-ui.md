@@ -633,13 +633,12 @@ Five items queued, none attached to a slice.
      order the merger built them; having `report._findings` iterate its findings sorted by
      `str(f.get("id"))` in reverse instead stays green. A re-sort is deterministic, so the
      determinism battery cannot see it, and no other guard looks at sequence.
-  6. **Nothing ties the `Verification` line to the fields it reads.** Shortening its
-     parenthetical to ``(read from `review_state` alone)`` stays green, so the module docstring's
-     promise — that a line reading more than one field names the fields it read — is held by no
-     test. Closing this one moves the rendered line too: the parenthetical names `review_state`
-     and `cycle.roles[].reviews`, while the verdict also turns on `lanes[].role` — with both
-     named fields byte-identical, moving the author's lane role from `impl` to `docs` flips
-     `verified` from True to False.
+  6. **Nothing ties the `Verification` line to the fields it names.** Shortening its
+     parenthetical to ``(read from `review_state` alone)`` stays green, so what the line tells a
+     reader the verdict rests on is held by no test. Both fields it names are live, which is the
+     relation a guard here can reach rather than a vocabulary: with the rest of the document
+     unchanged, taking the author's role out of `cycle.roles[].reviews` flips `verified` from
+     True to False, and so does changing `review_state`.
 
   **Closed when** each of the six, applied one at a time to an otherwise clean tree and run as
   `pytest -q` with `PYTHONPATH` on that worktree's `src`, turns the suite red, and the tree with
@@ -647,8 +646,8 @@ Five items queued, none attached to a slice.
   report verbatim; a guard that reds only on the exact wording quoted above closes nothing. Three
   of them constrain the shape of the fix: (1) cannot be closed by lengthening `_AGREEMENT_WORDS`,
   because a vocabulary the test owns is still a vocabulary; (3) cannot be closed by a comparison
-  whose two sides both derive from `verify()`; and (6) is not closed until the rendered line names
-  every field the verdict turns on.
+  whose two sides both derive from `verify()`; and (6) is not closed by a substring match on the
+  parenthetical, but by moving each field it names and showing the rendered verdict move with it.
 - **The README does not document `--template` or the wizard.** `conduct init` appears there once,
   as a bare command annotated with what it scaffolds — and what it scaffolds changed in
   `2f4aabf`, so that annotation now describes the old default. A small docs slice: the three
