@@ -217,6 +217,30 @@ def test_the_panel_resolves_an_unregistered_string_through_its_own_fallback():
     assert free_names(body, {"id"}) == {"REGISTRY", "String", "harnessName",
                                         "monogramOf", "NEUTRAL_ACCENT"}
     assert 'docs: ""' in body, body
+    # The dependence set alone let a sabotage through: `REGISTRY.get(String(id))
+    # || REGISTRY.get("claude-code") || …` reaches for nothing new and hands an
+    # unregistered string a registered product's name, monogram and colour. So
+    # the registry may be asked once, and the question it is asked is the
+    # argument — a second lookup, or a first one keyed on anything else, fails
+    # here whatever it is keyed on.
+    assert script().count("REGISTRY.get(") == 1
+    assert "REGISTRY.get(String(id))" in body, body
+
+
+def test_no_resolver_spells_a_product_name_of_its_own():
+    # The sabotage a dependence guard cannot see, because what it adds is not a
+    # name: `HARNESS_NAMES[id] || (String(id).toLowerCase().includes("gemini")
+    # ? "Gemini CLI" : String(id))` reaches for HARNESS_NAMES and String and
+    # nothing else — string literals are stripped before identifiers are counted
+    # — and hands an unregistered harness a brand nobody registered.
+    #
+    # So a resolver may spell nothing at all. Every name the panel can show comes
+    # from the table, which tests/test_panel_orbit.py compares to the registry
+    # entry by entry, or from the harness string itself. The empty string is the
+    # one literal allowed, and it is the absence of a documentation page.
+    expression = re.search(r"const harnessName = (.*?);\n", panel_html()).group(1)
+    assert re.findall(r'"[^"]*"', expression) == [], expression
+    assert set(re.findall(r'"([^"]*)"', function_body("harnessOf"))) == {""}
 
 
 def test_the_minimal_card_differs_from_a_registered_one_by_the_vendor_link_alone():
@@ -643,7 +667,12 @@ def test_the_panel_asks_for_the_registry_once_and_asks_nothing_else_of_the_netwo
     assert set(re.findall(r'fetch\("([^"]*)"', src)) == {"/state.json", "/harnesses.json"}
     assert set(re.findall(r'new EventSource\("([^"]*)"', src)) == {"/events"}
     assert src.count('fetch("/harnesses.json"') == 1
-    assert src.count("loadHarnesses(") == 2          # the declaration and the one call
+    # Counting the calls was not counting the loads: `setTimeout(loadHarnesses,
+    # 5000)` names the loader without calling it there and turned the one
+    # request into a poll with this line green. The name itself is counted
+    # instead — the declaration and the one call, and nothing may hold a third
+    # reference to it, whatever it would hand that reference to.
+    assert src.count("loadHarnesses") == 2
 
 
 def test_a_registry_that_never_arrives_leaves_every_other_surface_alone():
