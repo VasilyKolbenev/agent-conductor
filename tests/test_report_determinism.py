@@ -23,6 +23,7 @@ import os
 import subprocess
 import sys
 import tempfile
+from datetime import date
 from pathlib import Path
 
 from tests.test_report import (NETWORKING_ROOTS, SRC_ROOT, _root_of, a_finding,
@@ -36,8 +37,12 @@ with open(sys.argv[1], encoding="utf-8") as handle:
 with open(sys.argv[2], "wb") as out:
     out.write(report.render(state).encode("utf-8"))
 with open(sys.argv[3], "w", encoding="utf-8") as clock:
-    json.dump([datetime.datetime.now().isoformat(), datetime.date.today().isoformat(),
-               time.strftime("%Y-%m-%d %H:%M:%S"), time.time()], clock)
+    json.dump({"datetime.now": datetime.datetime.now().isoformat(),
+               "date.today": datetime.date.today().isoformat(),
+               "time.strftime": time.strftime("%Y-%m-%d %H:%M:%S"),
+               "time.time": time.time(),
+               "time.ctime": time.ctime(),
+               "time.asctime": time.asctime()}, clock)
 """
 
 #: A `sitecustomize` module, which CPython imports at startup from anything on
@@ -45,6 +50,14 @@ with open(sys.argv[3], "w", encoding="utf-8") as clock:
 #: names. It replaces the module attributes rather than the classes, so a
 #: `datetime.date.today()` written anywhere — including inside a function, in a
 #: module imported later — reads the fake instant.
+#:
+#: Measured under it, on this platform: `time.mktime`, `email.utils.formatdate`,
+#: a `logging` record's `created` and `uuid.uuid1`'s timestamp all follow the
+#: injection, because each reads it through one of the names below.
+#: `os.stat().st_mtime` does not — it asks the filesystem, not the process —
+#: and `time.clock_gettime(CLOCK_REALTIME)` does not exist here to be asked.
+#: A report reaching for either would have to touch `os`, which it does not
+#: import; that is a claim of the module docstring and not of this injection.
 _FAKE_CLOCK = """
 import datetime, os, time
 
@@ -73,13 +86,18 @@ class _DateTime(datetime.datetime):
 
 datetime.date, datetime.datetime = _Date, _DateTime
 _localtime, _gmtime, _strftime = time.localtime, time.gmtime, time.strftime
+_ctime, _asctime = time.ctime, time.asctime
 time.time = lambda: _at
 time.time_ns = lambda: int(_at * 1_000_000_000)
 time.localtime = lambda secs=None: _localtime(_at if secs is None else secs)
 time.gmtime = lambda secs=None: _gmtime(_at if secs is None else secs)
-# strftime() with no second argument reads the real clock inside C, not
-# time.localtime, so patching localtime alone would leave it telling the truth.
+# Called with no argument, each of these three reads the system clock inside C
+# rather than through time.localtime, so patching localtime alone would leave
+# all three telling the truth while the battery reported a moved clock. A
+# review dated a report by time.ctime() and watched the suite stay green.
 time.strftime = lambda fmt, t=None: _strftime(fmt, _localtime(_at) if t is None else t)
+time.ctime = lambda secs=None: _ctime(_at if secs is None else secs)
+time.asctime = lambda t=None: _asctime(_localtime(_at) if t is None else t)
 """
 
 #: Three environments that break a renderer reading anything but its argument.
@@ -125,7 +143,8 @@ def _render_in_a_child(work, state, tag, environment):
             whole value.
 
     Returns:
-        `(rendered bytes, what the child's clock said)`.
+        `(rendered bytes, what each of the child's ways of asking the time
+        said)`, the second keyed by the call that asked.
     """
     document = Path(work) / f"state-{tag}.json"
     document.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
@@ -153,18 +172,28 @@ def test_moving_the_clock_a_hundred_days_moves_nothing_in_the_render(tmp_path):
     clock_dir.mkdir()
     (clock_dir / "sitecustomize.py").write_text(_FAKE_CLOCK, encoding="utf-8")
     path = os.pathsep.join([str(clock_dir), str(SRC_ROOT)])
-    epoch = 1780000000                                    # 2026-05-29, near enough
+    epoch = 823000000                     # 1996-01-29, and not the year this runs in
     early, early_clock = _render_in_a_child(
         tmp_path, state, "early",
         {"PYTHONPATH": path, "CONDUCT_FAKE_EPOCH": str(epoch)})
     late, late_clock = _render_in_a_child(
         tmp_path, state, "late",
         {"PYTHONPATH": path, "CONDUCT_FAKE_EPOCH": str(epoch + 100 * 86400)})
-    # Without this the guard would be the emptiest kind: two children agreeing
-    # because nothing about them differed. Every way of asking the time must
-    # answer differently before the renders are compared.
-    assert all(was != now for was, now in zip(early_clock, late_clock)), (
-        f"the injected clock never moved: {early_clock} against {late_clock}")
+    # Without the two checks below the guard would be the emptiest kind: two
+    # children agreeing because nothing about them differed. Every way of
+    # asking the time must have answered from the instant it was given, and
+    # answered differently in the two children, before the renders are
+    # compared. The injected year is not the year this test runs in precisely
+    # so that a reader the injection missed is caught by the first check rather
+    # than by whether the two children happened to land in the same second.
+    ran_in = str(date.today().year)
+    leaked = [f"{name}={said}" for said_by in (early_clock, late_clock)
+              for name, said in said_by.items()
+              if isinstance(said, str) and ran_in in said]
+    assert leaked == [], (
+        f"these read the system clock past the injection: {leaked}")
+    still = [name for name, was in early_clock.items() if was == late_clock[name]]
+    assert still == [], f"the injected clock never moved for {still}"
     assert early == late and early
 
 
