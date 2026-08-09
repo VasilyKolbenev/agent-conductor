@@ -55,6 +55,14 @@ Protocol v1 arriving from the project's own map — printed into the one command
 this report asks a person to run, it makes a line that either cannot be pasted
 or runs the map's text.
 
+Two shapes on disk get their own words here rather than the nearest existing
+sentence, because the nearest one says something false. A `conductor` path
+that exists and is not a directory is not a project nobody has scaffolded —
+`conduct init` refuses any existing `conductor`, so pointing at it would name
+a command that cannot succeed. A `conductor/lanes` path that is not a
+directory made `store` look for no lane file at all, so "no lane file has been
+written" would report on files nobody searched for; that is an UNKNOWN.
+
 Which command that is, is itself a claim this module has to keep. A finding
 travels with the sentence that introduces it, as one `Advice` value, because
 the two drifting apart is the failure this file has already had: a fallback
@@ -216,12 +224,41 @@ def _recheck_command(root: str) -> tuple[str, ...]:
 
 
 def _no_scaffold(root: str) -> Check:
-    """The whole report when there is no `conductor/` to inspect."""
+    """The whole report when there is no `conductor/` to inspect.
+
+    Two shapes reach here, because `store` refuses both, and they are told
+    apart rather than described by the commoner one. A root with nothing of
+    that name is a project nobody has scaffolded, and `conduct init` is the
+    command that fixes it. A root where the name is already taken by a file is
+    not that: `conduct init` refuses any existing `conductor` before it asks
+    anything, so naming it would name a command that cannot succeed, and
+    saying there is no `conductor/` would say something that is not so.
+    """
+    if (Path(root) / "conductor").exists():
+        return Check("scaffold", FINDING,
+                     f"conductor/ under {root} exists and is not a directory, "
+                     "so nothing could be read from it and conduct init "
+                     "refuses to touch a name that is already taken. Move it "
+                     "aside, then re-check with:",
+                     _recheck_command(root))
     return Check("scaffold", FINDING,
                  f"there is no conductor/ directory under {root}, so this is "
                  "not a Conduct project yet and nothing else about it can be "
                  "checked. Scaffold one:",
                  ("init", "--template", templates.DEFAULT, *_dir_args(root)))
+
+
+def _unlisted_lanes(root: str) -> bool:
+    """True when `conductor/lanes` is a path `store` could not list.
+
+    `store` reads lane files out of a directory of that name and returns
+    quietly when there is not one, so a `lanes` path taken by a file leaves it
+    with an empty list — the same list a project nobody has ever reported into
+    produces. The two are different facts, and the checks that read lanes are
+    given this one so they do not report on files nobody searched for.
+    """
+    lanes = Path(root) / "conductor" / "lanes"
+    return lanes.exists() and not lanes.is_dir()
 
 
 def _template_node_sets() -> dict[str, frozenset[tuple[str, str]]]:
@@ -293,8 +330,16 @@ def _restart_advice(root: str, state: dict, stale: list[dict]) -> Advice:
             "reported:", ("up", *_dir_args(root)))
 
 
-def _check_lanes(root: str, loaded: store.Loaded, state: dict) -> Check:
+def _check_lanes(root: str, loaded: store.Loaded, state: dict,
+                 unlisted: bool) -> Check:
     """Has anything reported at all, and did it report recently?"""
+    if unlisted:
+        return Check("lanes", UNKNOWN,
+                     "conductor/lanes exists and is not a directory, so no "
+                     "lane file was looked for and whether anyone has "
+                     "reported cannot be judged from here. Move it aside, "
+                     "then re-check with:",
+                     _recheck_command(root))
     lanes = state["lanes"]
     if not lanes:
         sentence, command = _start_advice(root, loaded, state)
@@ -330,7 +375,8 @@ def _unheld_advice(root: str, unheld: list[str]) -> Advice:
             "conductor/map.toml, then re-check with:", _recheck_command(root))
 
 
-def _check_roles(root: str, loaded: store.Loaded, state: dict) -> Check:
+def _check_roles(root: str, loaded: store.Loaded, state: dict,
+                 unlisted: bool) -> Check:
     """Is every role the map declares actually held by a lane?"""
     if loaded.map_error is not None:
         return Check("roles", UNKNOWN,
@@ -343,6 +389,13 @@ def _check_roles(root: str, loaded: store.Loaded, state: dict) -> Check:
                      "conductor/map.toml declares no cycle.roles, so there is "
                      "no role for an agent to claim and no prompt to hand out. "
                      "Declare at least one, then re-check with:",
+                     _recheck_command(root))
+    if unlisted:
+        return Check("roles", UNKNOWN,
+                     "conductor/lanes exists and is not a directory, so no "
+                     f"lane file was looked for and which of the {len(roles)} "
+                     "declared role(s) are held cannot be judged from here. "
+                     "Move it aside, then re-check with:",
                      _recheck_command(root))
     broken = [lane for lane in state["lanes"] if lane["broken"]]
     if broken:
@@ -396,11 +449,12 @@ def inspect(root: Path | str) -> list[Check]:
         root: The project root — the directory holding `conductor/`.
 
     Returns:
-        The checks in reporting order. A root with no `conductor/` yields the
-        single `scaffold` finding and nothing else: there is genuinely nothing
-        to inspect, and five unknowns saying so would be noise rather than
-        honesty — the one finding states in its own words that nothing else
-        could be checked, and no check comes back `OK`.
+        The checks in reporting order. A root `store` refuses — no
+        `conductor/` at all, or that name taken by something which is not a
+        directory — yields the single `scaffold` finding and nothing else:
+        there is genuinely nothing to inspect, and five unknowns saying so
+        would be noise rather than honesty — the one finding states in its own
+        words that nothing else could be checked, and no check comes back `OK`.
     """
     text_root = str(root)
     try:
@@ -410,10 +464,11 @@ def inspect(root: Path | str) -> list[Check]:
         # was never set up" IS the answer `doctor` exists to give.
         return [_no_scaffold(text_root)]
     state = validate.merged_state(loaded)
+    unlisted = _unlisted_lanes(text_root)
     return [Check("scaffold", OK, "conductor/ is present."),
             _check_map(text_root, loaded),
-            _check_lanes(text_root, loaded, state),
-            _check_roles(text_root, loaded, state),
+            _check_lanes(text_root, loaded, state, unlisted),
+            _check_roles(text_root, loaded, state, unlisted),
             _check_harnesses(text_root, loaded, state)]
 
 

@@ -54,6 +54,24 @@ def ready_project(tmp_path):
     return write_project(tmp_path, map_toml=REAL_MAP, lanes={"claude": lane()})
 
 
+def taken_scaffold(root):
+    """A root where the name conductor/ is held by something that is not a directory."""
+    root.mkdir(parents=True)
+    (root / "conductor").write_text("notes, not a project\n", encoding="utf-8")
+    return root
+
+
+def unlisted_lanes(root, **kwargs):
+    """A project whose conductor/lanes is a file, so no lane file can be listed."""
+    write_project(root, **kwargs)
+    lanes = root / "conductor" / "lanes"
+    for path in lanes.iterdir():
+        path.unlink()
+    lanes.rmdir()
+    lanes.write_text("notes, not a directory\n", encoding="utf-8")
+    return root
+
+
 def corpus(tmp_path):
     """One project per readiness answer, each in its own directory."""
     unscaffolded = tmp_path / "unscaffolded"
@@ -81,7 +99,11 @@ def corpus(tmp_path):
         "untypable role": write_project(tmp_path / "untypable",
                                         map_toml=role_map("scout x"),
                                         lanes={"claude": lane()}),
-        # And a map whose authored id would run if a command carried it.
+        # And three shapes no amount of reading the project's files answers:
+        # two where the file that would have been read was not there to read,
+        # and one whose authored id would run if a command carried it.
+        "taken scaffold": taken_scaffold(tmp_path / "taken"),
+        "unlisted lanes": unlisted_lanes(tmp_path / "unlisted", map_toml=REAL_MAP),
         "injected role": write_project(tmp_path / "injected",
                                        map_toml=role_map("scout $(id)"),
                                        lanes={"claude": lane()}),
@@ -438,6 +460,44 @@ def test_a_declared_custom_harness_is_not_reported_as_unrecognised(tmp_path, cap
                          map_toml=REAL_MAP.replace('"claude-code"',
                                                    f'"{harnesses.CUSTOM}"'))
     assert outcomes(report(capsys, root, 0))["harnesses"] == doctor.OK
+
+
+def test_a_conductor_that_is_not_a_directory_is_said_as_the_thing_it_is(tmp_path,
+                                                                        capsys):
+    # `store` refuses this root and the unscaffolded one alike, so a report
+    # built from that alone says the commoner thing about both: that there is
+    # no conductor/ and `conduct init` will make one. Here there IS one, and
+    # init refuses a name already taken — executed below rather than argued,
+    # because a finding naming a command that cannot succeed is a dead end
+    # dressed as advice.
+    root = taken_scaffold(tmp_path / "taken")
+    out = report(capsys, root, 1)
+    assert outcomes(out) == {"scaffold": doctor.FINDING}
+    assert main(["init", "--dir", str(root)]) == 1        # what init would do here
+    capsys.readouterr()
+    # The two shapes get two answers, and the one this root gets re-checks.
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    assert out.replace(str(root), "<root>") != report(
+        capsys, empty, 1).replace(str(empty), "<root>")
+    (argv,) = commands(out)
+    assert main(argv) == 1 and capsys.readouterr().out == out
+
+
+def test_lanes_nobody_could_look_for_are_unknown_rather_than_lanes_nobody_wrote(
+        tmp_path, capsys):
+    # `store` reads lane files out of a directory of that name and returns
+    # quietly when there is not one — so these two projects hand doctor the
+    # same empty list, and only one of them is a project nobody has reported
+    # into. Saying so of both would state as fact something no file was
+    # searched to find out.
+    unlisted = unlisted_lanes(tmp_path / "unlisted", map_toml=REAL_MAP)
+    never = write_project(tmp_path / "never", map_toml=REAL_MAP)
+    assert store.load(unlisted).lanes == store.load(never).lanes == []
+    found = outcomes(report(capsys, unlisted, 1))
+    assert found["lanes"] == doctor.UNKNOWN and found["roles"] == doctor.UNKNOWN
+    written = outcomes(report(capsys, never, 1))
+    assert written["lanes"] == doctor.FINDING and written["roles"] == doctor.FINDING
 
 
 # --- authored text cannot forge the report's structure ----------------------
