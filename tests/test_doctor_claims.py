@@ -101,6 +101,20 @@ def a_server(served):
     return build
 
 
+def why_recorded(root):
+    """Every load failure `store` recorded for `root`, verbatim.
+
+    What a reader promised "this command reports why" was told they cannot see
+    for themselves: the map error, and the error of each lane that did not
+    load. `validate` prints these strings and nothing else, so they are the
+    honest test of whether the named command reports why.
+    """
+    loaded = store.load(root)
+    return ([loaded.map_error] if loaded.map_error is not None else []
+            ) + [entry["error"] for entry in loaded.lanes
+                 if entry["error"] is not None]
+
+
 def keeps(promise, argv, root, printed, capsys, served):
     """Run `argv` and assert it does the thing `promise` says it does."""
     if promise is PROMPT:
@@ -110,8 +124,20 @@ def keeps(promise, argv, root, printed, capsys, served):
         assert main(list(argv)) == 0
         assert capsys.readouterr().out == wanted
     elif promise is WHY:
+        # Exiting 1 and printing something is what `conduct doctor` does on
+        # every unready project, so it cannot be the whole test: put doctor
+        # here and the reader, just told the map did not load, is sent to a
+        # command that reprints the report they are holding and never says so.
+        # Two things separate the honest command from that. What it prints is
+        # not the report, and it names an error `store` actually recorded —
+        # which is exactly the thing this report deliberately does not carry.
+        recorded = why_recorded(root)
+        assert recorded, ("nothing under this root failed to load, so no "
+                          f"command can report why: {argv}")
         assert main(list(argv)) == 1
-        assert capsys.readouterr().out.strip() != ""
+        said = capsys.readouterr().out
+        assert said != printed, argv
+        assert any(error in said for error in recorded), (argv, said, recorded)
     elif promise is RECHECK:
         assert main(list(argv)) == 1
         assert capsys.readouterr().out == printed
