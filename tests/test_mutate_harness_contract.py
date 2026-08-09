@@ -150,10 +150,10 @@ def test_the_exit_surface_guard_reads_the_doors_and_not_the_spelling_of_a_code()
 
 
 def test_nothing_main_does_after_reading_its_arguments_runs_outside_the_funnel():
-    # The companion of the exit surface, and the reason exit 1 cannot be
-    # produced by an accident: every statement that touches the measuring path
-    # sits inside one `try`, and that `try` ends in a handler for anything at
-    # all. A statement added after it, or the catch-all narrowed back to
+    # The companion of the exit surface, and the reason no `Exception` can
+    # produce an exit 1: every statement that touches the measuring path sits
+    # inside one `try`, and that `try` ends in a handler for every `Exception`.
+    # A statement added after it, or the handler narrowed back to
     # InvalidMeasurement, would put a traceback and an exit 1 back on the table.
     main = next(node for node in ast.walk(harness_ast())
                 if isinstance(node, ast.FunctionDef) and node.name == "main")
