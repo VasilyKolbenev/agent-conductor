@@ -544,6 +544,32 @@ def function_body(name: str, html: str | None = None) -> str:
 
 
 
+_JS_WORDS = {"return", "typeof", "new", "null", "true", "false", "undefined", "in",
+             "of", "void", "delete", "instanceof", "const", "let", "for", "if", "else",
+             "while", "break", "continue", "function", "this"}
+
+
+def free_names(source: str, bound: set[str]) -> set[str]:
+    """Identifiers a fragment of JavaScript reads from outside itself.
+
+    String literals, property reads and the keys of object literals are removed
+    first — none of them is a name the fragment reaches for — so what is left is
+    what it does reach for. Everything a caller declares as ``bound`` —
+    parameters, locals, loop variables, the properties an object literal
+    declares — is subtracted, and what remains is the fragment's dependence on
+    the world around it. A test written against this asks what a function is
+    *allowed to depend on* without having to know what the forbidden
+    dependencies are called.
+
+    The identifier pattern refuses to start inside a word, or `1e-9` would
+    report a dependence on something called `e`.
+    """
+    source = re.sub(r'"[^"]*"|\'[^\']*\'|`[^`]*`', " ", source)   # string literals
+    source = re.sub(r"\.\s*[A-Za-z_$][\w$]*", " ", source)        # property reads
+    source = re.sub(r"([{,]\s*)[A-Za-z_$][\w$]*\s*:", r"\1", source)   # literal keys
+    return set(re.findall(r"(?<![\w$])[A-Za-z_$][\w$]*", source)) - bound - _JS_WORDS
+
+
 def test_the_parser_reads_every_rule_of_the_panel_to_its_closing_brace():
     # The parser is the foundation every claim below stands on, so it says out
     # loud what it found: the multi-line light rule whose second line used to be

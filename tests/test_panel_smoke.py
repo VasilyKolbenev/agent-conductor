@@ -15,7 +15,8 @@ from datetime import datetime, timezone
 
 from conductor import merge
 from tests.test_merge_review import MAP, lane
-from tests.test_panel_cascade import PANEL, function_body, panel_html, script
+from tests.test_panel_cascade import (
+    PANEL, free_names, function_body, panel_html, script)
 from tests.test_server import start
 from tests.test_store import write_project, good_lane
 
@@ -240,17 +241,6 @@ def test_every_light_level_the_panel_declares_names_a_real_project_state():
     assert set(_attention_table()) == {"blocked", "active"}
 
 
-_JS_WORDS = {"return", "typeof", "new", "null", "true", "false", "undefined", "in",
-             "of", "void", "delete", "instanceof"}
-
-
-def _free_names(source: str, bound: set[str]) -> set[str]:
-    """Identifiers a fragment of JavaScript reads from outside itself."""
-    source = re.sub(r'"[^"]*"|\'[^\']*\'|`[^`]*`', " ", source)   # string literals
-    source = re.sub(r"\.\s*[A-Za-z_$][\w$]*", " ", source)        # property names
-    return set(re.findall(r"[A-Za-z_$][\w$]*", source)) - bound - _JS_WORDS
-
-
 def test_attentionOf_reads_only_its_argument_and_the_declared_table():
     # The owner's own formulation of the invariant: the same state document has
     # to give the same light level whatever the time is. That is a statement
@@ -260,7 +250,7 @@ def test_attentionOf_reads_only_its_argument_and_the_declared_table():
     # ambient reading would appear here as a free name and fail, without this
     # test having to know what any of them are called.
     expression = re.search(r"const attentionOf = (.*?);\n", panel_html(), re.S).group(1)
-    assert _free_names(expression, {"s"}) == {"ATTENTION"}, expression
+    assert free_names(expression, {"s"}) == {"ATTENTION"}, expression
 
 
 def test_the_only_documentElement_in_the_script_is_renderShells_attention_assignment():

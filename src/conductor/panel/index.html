@@ -194,7 +194,10 @@ svg{width:100%;height:auto;display:block;overflow:visible}
    picture means, not only how it is arranged. */
 .orbit{position:relative;width:100%}
 .orbit svg{position:absolute;left:0;top:0}
-.orbit--ring .orb{position:absolute;width:178px;transform:translate(-50%,-50%)}
+/* The box width is set on the element by drawOrbitRing, which reads it out of
+   the field: see orbitBox. Everything else about a stage is the same in both
+   layouts, which is what keeps the two from drifting into two designs. */
+.orbit--ring .orb{position:absolute;transform:translate(-50%,-50%)}
 /* The trajectory carries no history. Protocol v1 has no run identity and no
    travelled path, so no arc may read as "done": every one of them is --line,
    and the arc returning to the first stage is told apart from a step by its
@@ -769,23 +772,57 @@ function orbitEdges(n){
   if (n) out.push({ from: n - 1, to: 0, kind: "next" });
   return out;
 }
-/* The ellipse the wide layout places stages on. The minor radius grows with
-   the count so neighbours keep a constant distance rather than crowding at the
-   ends of the major axis; the major radius follows the field but never falls
-   below the minor one. `gap` is the angle left blank at each end of an arc, so
-   an arrow head lands beside a stage instead of under it. */
-function orbitRing(n, w){
-  const ry = Math.max(120, Math.ceil(172 * n / (2 * Math.PI)));
-  const rx = Math.max(ry, Math.min(2.6 * ry, w / 2 - 112));
-  return { w, h: 2 * ry + 150, rx, ry, gap: Math.min(0.55, 0.68 * Math.PI / n),
-           at: i => -Math.PI / 2 + i * 2 * Math.PI / n,
+/* The angle of stage `i` on a cycle of `n`: the first one at the top, the rest
+   clockwise from it. Both radii are derived from this, so the placement and the
+   arcs cannot disagree about where a stage is. */
+const orbitAngle = (i, n) => -Math.PI / 2 + i * 2 * Math.PI / n;
+const ORBIT_GUTTER = 14;               /* clear space demanded between two stages */
+/* The width a stage box is given in the wide layout. What has to fit on the
+   ellipse is a box and not a point, so the first thing the field decides is how
+   wide that box may be: the two stages either side of the top of the ellipse
+   are the pair the major axis separates least well, and this is the widest box
+   that still lets them stand side by side in `w` — the inequality below is
+   `rx * apex >= bw + ORBIT_GUTTER` solved for `bw`, with `rx` as orbitRing
+   computes it. Under the floor the boxes would be too narrow to read a stage
+   name in, and the honest answer there is the vertical layout rather than a
+   thinner ellipse. */
+function orbitBox(n, w){
+  const apex = Math.abs(Math.cos(orbitAngle(0, n)) - Math.cos(orbitAngle(1, n)));
+  /* A cycle of one and a cycle of two put nothing beside the top stage, so
+     nothing narrows the box. The tolerance is float hygiene, not a threshold:
+     the two cosines are the same cosine, and one of them arrives 2e-16 off. */
+  const fits = apex > 1e-9 ? (apex * (w - 48) - 2 * ORBIT_GUTTER) / (2 + apex) : 178;
+  return Math.max(132, Math.min(178, Math.floor(fits)));
+}
+/* The ellipse the wide layout places stages on, from the count, the field and
+   the box that has to sit at each point. The major radius takes what the field
+   can spare. The minor radius is then the smallest one that keeps every pair of
+   neighbouring stages apart — a pair clears either by a full box width along x
+   or by a full box height along y, and the pairs nearest the top and the bottom
+   of the ellipse, which the major axis barely separates at all, are the ones
+   that decide it. A constant per-phase circumference does not: nine stages on a
+   circle whose circumference divides evenly into nine still overlapped, because
+   the chord between neighbours was shorter than the box. `gap` is the angle
+   left blank at each end of an arc, so an arrow head lands beside a stage
+   instead of under it. */
+function orbitRing(n, w, bw, bh){
+  const rx = Math.max(140, w / 2 - bw / 2 - 24);
+  let ry = 120;
+  for (let i = 0; i < n; i++){
+    const a = orbitAngle(i, n), b = orbitAngle(i + 1, n);
+    const apart = Math.abs(Math.sin(a) - Math.sin(b));
+    if (rx * Math.abs(Math.cos(a) - Math.cos(b)) < bw + ORBIT_GUTTER && apart > 1e-9)
+      ry = Math.max(ry, (bh + ORBIT_GUTTER) / apart);
+  }
+  return { w, h: 2 * ry + bh + 110, rx, ry, gap: Math.min(0.55, 0.68 * Math.PI / n),
+           at: i => orbitAngle(i, n),
            point(a){ return { x: this.w / 2 + Math.cos(a) * this.rx,
                               y: this.h / 2 + Math.sin(a) * this.ry }; } };
 }
 /* One arc of the ellipse, from the trimmed end of one stage to the trimmed
-   start of the next. `wrap` adds the full turn, which is what makes the return
-   edge run the long way round to the first stage — and, when a cycle declares
-   a single stage, what makes it a self-return arc all the way round. */
+   start of the next. A return edge gets the full turn added to its far angle,
+   which is what makes it run the long way round to the first stage — and, when
+   a cycle declares a single stage, a self-return arc all the way round. */
 function orbitArc(g, edge){
   const a1 = g.at(edge.from) + g.gap;
   const a2 = g.at(edge.to) + (edge.kind === "next" ? 2 * Math.PI : 0) - g.gap;
@@ -823,22 +860,32 @@ function orbitStage(name, seat){
   box.append(who);
   return box;
 }
+/* The stages are put in the field before the ellipse is measured, because how
+   tall a stage box turns out to be is what the minor radius has to clear, and
+   that depends on the stage: how far its name wraps, how many marks it carries
+   and how many participants stand on it. Reading it back from the one that came
+   out tallest is the only number here nothing else can supply. */
 function drawOrbitRing(field, svgEl, body, proj){
-  const g = orbitRing(proj.phases.length, Math.max(420, field.clientWidth || 900));
+  const n = proj.phases.length, w = Math.max(420, field.clientWidth || 900);
+  const bw = orbitBox(n, w);
+  const stages = proj.phases.map(p => orbitStage(p, proj.seatOf(p)));
+  for (const stage of stages){
+    stage.style.width = bw + "px";
+    body.append(stage);
+  }
+  const g = orbitRing(n, w, bw, Math.max(...stages.map(s => s.offsetHeight)));
   field.style.height = g.h + "px";
   svgEl.style.display = "";
   svgEl.setAttribute("viewBox", "0 0 " + g.w + " " + g.h);
   svgEl.append(orbitDefs());
-  const edges = orbitEdges(proj.phases.length);
+  const edges = orbitEdges(n);
   for (const e of edges)
     svgEl.append(sv("path", { class: e.kind === "next" ? "trk trk--next" : "trk",
                               d: orbitArc(g, e) }));
-  proj.phases.forEach((p, i) => {
-    const stage = orbitStage(p, proj.seatOf(p));
+  stages.forEach((stage, i) => {
     const at = g.point(g.at(i));
     stage.style.left = at.x + "px";
     stage.style.top = at.y + "px";
-    body.append(stage);
   });
   const back = edges[edges.length - 1];
   const mid = (g.at(back.from) + g.at(back.to) + 2 * Math.PI) / 2;

@@ -25,6 +25,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from conductor import merge
+from tests.test_panel_cascade import free_names, function_body
 
 NOW = datetime(2026, 7, 30, 12, 0, tzinfo=timezone.utc)
 RECENT = "2026-07-30T11:00:00+00:00"
@@ -213,6 +214,33 @@ def test_two_roles_on_two_phases_each_keep_the_harness_string_the_map_declared()
     state = merge.merge(cycle_map(["design", "deliver"], roles), None, [], [], 0, NOW)
     assert [(r["harness"], r["stage"]) for r in state["cycle"]["roles"]] == \
         [("claude-code", "design"), ("Some Local Agent", "deliver")]
+
+
+# ── what the drawing code is allowed to depend on ──────────────────────────
+# Source reads, and the module docstring's second kind. What each of these
+# establishes is a *dependence*: the set of names a function reaches for
+# outside itself. That is weaker than running the function and stronger than
+# looking for a word, and it is the strongest form available here — no browser
+# runs in this suite, so nothing below may be read as a claim about a drawing.
+def test_the_trajectory_of_a_cycle_is_a_function_of_the_phase_count_and_of_nothing_else():
+    # §2.2. The list of connections is what the picture is made of, and if it
+    # could consult anything besides the count — a lane's report, a status
+    # table, a stored history — the panel would be able to draw a travelled
+    # path. It reaches for no name at all.
+    assert free_names(function_body("orbitEdges"), {"n", "out", "i"}) == set()
+
+
+def test_the_ellipse_is_derived_from_the_count_the_field_and_the_stage_box_alone():
+    # §2.1. Geometry from the declared cycle means the radii answer to how many
+    # phases there are and how much room the field has, and to nothing else. A
+    # pentagon hard-coded into the panel, a lookup keyed on a phase name, or a
+    # reading of the viewport taken behind the layout's back would all show up
+    # here as a name this function has no business knowing.
+    bound = {"n", "w", "bw", "bh", "rx", "ry", "i", "a", "b", "apart", "point"}
+    assert free_names(function_body("orbitRing"), bound) == \
+        {"Math", "orbitAngle", "ORBIT_GUTTER"}
+    assert free_names(function_body("orbitBox"), {"n", "w", "apex", "fits"}) == \
+        {"Math", "orbitAngle", "ORBIT_GUTTER"}
 
 
 def test_the_merger_never_reports_that_a_phase_was_completed():
