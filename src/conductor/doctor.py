@@ -46,9 +46,13 @@ reach neither of the other two levels however it is spelled.
 
 A COMMAND is the one exception, and has to be: it is printed to be pasted, so
 it carries its values exactly, untruncated and unescaped. That is why the
-value has to earn the command instead — `_spellable` rejects an id no shell
-could carry, and the finding about it names a command a reader can run rather
-than a `conduct prompt` line nobody could. What "could carry" means is
+value has to earn the command instead — `_spellable` rejects a role id or a
+lane author no shell could carry, and the finding about it names a command a
+reader can run rather than a `conduct prompt` line nobody could. Both authored
+tokens go through it, and the author had to be added: `store.AUTHOR_RE` keeps
+a lane filename to letters, digits, `_` and `-`, which is why no
+metacharacter ever reached a printed `--author` — but it admits a LEADING
+dash, and `--author -x` is a usage error rather than a run. What "could carry" means is
 `_AUTHORED_CHARS` and not `str.isprintable`: `$(id)`, a backtick, a quote and
 a space are every one of them printable, and an id holding them is legal
 Protocol v1 arriving from the project's own map — printed into the one command
@@ -318,16 +322,27 @@ def _start_advice(root: str, loaded: store.Loaded, state: dict) -> Advice:
 
 
 def _restart_advice(root: str, state: dict, stale: list[dict]) -> Advice:
-    """How to hand a stale lane's role its prompt again — or why that cannot be done."""
+    """How to hand a stale lane's role its prompt again — or why that cannot be done.
+
+    This is the one printed command carrying TWO authored values, and both
+    have to earn it. The author is a lane filename `store` read off disk, so
+    `store.AUTHOR_RE` has already kept every shell metacharacter out of it —
+    but that rule admits a leading dash, and `conduct prompt --author -x` is
+    `argparse` exiting 2 on the line this report asked a person to paste.
+    `_spellable` is what rejects that, the same predicate and for the same
+    reason as the role id beside it.
+    """
     declared = {role["id"] for role in state["cycle"]["roles"]}
     for lane in stale:
-        if lane["role"] in declared and _spellable(lane["role"]):
+        if (lane["role"] in declared and _spellable(lane["role"])
+                and _spellable(lane["author"])):
             return ("Hand the work back out with:",
                     ("prompt", "--role", lane["role"], "--author", lane["author"],
                      *_dir_args(root)))
-    return ("No stale lane holds a role this map declares, so there is no "
-            "prompt to hand back out. This command shows when each lane last "
-            "reported:", ("up", *_dir_args(root)))
+    return ("No stale lane pairs a role this map declares with a role id and "
+            "an author a command line could carry, so there is no prompt to "
+            "hand back out. This command shows when each lane last reported:",
+            ("up", *_dir_args(root)))
 
 
 def _check_lanes(root: str, loaded: store.Loaded, state: dict,
@@ -488,10 +503,17 @@ def _spelled(token: str) -> str:
     Double quotes and not single: they are the one quoting form POSIX sh,
     PowerShell and cmd all read. What they do NOT neutralise in a POSIX shell
     is `$`, a backtick, a backslash and a double quote itself — so nothing
-    holding one may reach here from the project's map, and nothing does:
-    every authored value in a `Check.command` has been through `_spellable`,
-    which admits none of the four. The tokens left are this module's own
-    literals and the root the reader themselves typed.
+    holding one may reach here from the project's map, and nothing does.
+    Exactly two kinds of token arrive here already authored rather than
+    written by this module: a role id out of `cycle.roles`, and a lane author,
+    which is the stem of a filename `store` found on disk. `_spellable` is
+    what covers both — a `Check.command` is built with one only after it
+    returned True — and it admits none of the four. `store.AUTHOR_RE` narrows
+    an author further, to letters, digits, `_` and `-`, and that is worth
+    knowing when reading a `--author` token; it is not what this paragraph
+    rests on, and it is not enough on its own, since it admits a leading dash.
+    Every remaining token is this module's own literal or the root the reader
+    themselves typed.
     """
     return token if token and not set(token) - _BARE_CHARS else f'"{token}"'
 

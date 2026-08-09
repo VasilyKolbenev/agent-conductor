@@ -107,6 +107,13 @@ def corpus(tmp_path):
         "injected role": write_project(tmp_path / "injected",
                                        map_toml=role_map("scout $(id)"),
                                        lanes={"claude": lane()}),
+        # The second authored value a printed command can carry, and the one
+        # that reaches it from a filename rather than from the map. `store`
+        # accepts `-x` as a lane author — its rule allows a leading dash — and
+        # `conduct prompt --author -x` is argparse exiting 2.
+        "flag author": write_project(tmp_path / "flagauthor", map_toml=REAL_MAP,
+                                     lanes={"-x": lane(author="-x",
+                                                       minutes_ago=10_000)}),
     }
 
 
@@ -133,6 +140,20 @@ def commands(out):
     return [line[len(doctor.COMMAND_PREFIX):].split(" ")[1:]
             for line in out.splitlines()
             if line.startswith(doctor.COMMAND_PREFIX)]
+
+
+def ran(argv):
+    """`main(argv)`'s exit code, with argparse's own exit as a value.
+
+    A usage error does not return: argparse prints and raises `SystemExit(2)`.
+    Turning it into a code here is what lets a printed command that no longer
+    parses read as a false claim by the report, rather than as this harness
+    falling over.
+    """
+    try:
+        return main(list(argv))
+    except SystemExit as e:                    # argparse: exit 2 on a usage error
+        return e.code
 
 
 class _FakeServer:
@@ -306,7 +327,7 @@ def test_every_command_doctor_prints_is_one_the_cli_accepts(tmp_path, capsys,
     for name, root in projects.items():
         main(["doctor", "--dir", str(root)])
         for argv in commands(capsys.readouterr().out):
-            assert main(argv) != 2, (name, argv)   # a usage error raises SystemExit(2)
+            assert ran(argv) != 2, (name, argv)    # 2 is argparse refusing the line
             capsys.readouterr()
             seen += 1
     assert seen >= len(projects)
@@ -582,6 +603,53 @@ def test_a_role_id_no_shell_would_keep_never_reaches_a_printed_command(tmp_path,
     assert ["doctor", "--dir", str(root)] in commands(out)
     assert main(["doctor", "--dir", str(root)]) == 1
     assert capsys.readouterr().out == out
+
+
+def test_a_lane_author_argparse_would_refuse_never_reaches_a_printed_command(
+        tmp_path, capsys, monkeypatch):
+    # The other authored value a printed command can carry, and the one that
+    # arrives from a filename rather than from the map. `store` accepts `-x`:
+    # its rule is letters, digits, `_` and `-`, which lets a name OPEN with a
+    # dash. `conduct prompt --author -x` is then argparse exiting 2 on the one
+    # line this report asked a person to paste — so the author earns the
+    # command the same way the role id beside it does, and the finding falls
+    # back to the command that does show when each lane last reported.
+    monkeypatch.setattr("conductor.server.build", lambda *a, **k: _FakeServer())
+    root = write_project(tmp_path, map_toml=REAL_MAP,
+                         lanes={"-x": lane(author="-x", minutes_ago=10_000)})
+    assert store.load(root).lanes[0]["error"] is None      # store took the author
+    out = report(capsys, root, 1)
+    assert outcomes(out)["lanes"] == doctor.FINDING
+    assert not any("-x" in line for line in out.splitlines()
+                   if line.startswith(doctor.COMMAND_PREFIX))
+    assert ["up", "--dir", str(root)] in commands(out)
+    for argv in commands(out):
+        assert ran(argv) != 2, argv
+        capsys.readouterr()
+
+
+def test_no_command_any_corpus_project_prints_is_one_argparse_refuses(tmp_path,
+                                                                      capsys,
+                                                                      monkeypatch):
+    # The relation the test above is one row of, over every project shape and
+    # every printed line: a command this report hands a reader is one the CLI
+    # parses. Exit 2 is argparse saying the line cannot be run at all — which
+    # is what a flag-shaped role id or a flag-shaped author makes of it — and
+    # it is the one code no printed command may produce, whatever else it does.
+    monkeypatch.setattr("conductor.server.build", lambda *a, **k: _FakeServer())
+    projects = corpus(tmp_path)
+    projects.update({f"flagged {i}": write_project(tmp_path / f"flag{i}",
+                                                   map_toml=role_map(role_id),
+                                                   lanes={"claude": lane()})
+                     for i, role_id in enumerate(["-x", "--dir", "-"])})
+    seen = 0
+    for name, root in projects.items():
+        main(["doctor", "--dir", str(root)])
+        for argv in commands(capsys.readouterr().out):
+            assert ran(argv) != 2, (name, argv)
+            capsys.readouterr()
+            seen += 1
+    assert seen >= len(projects)
 
 
 def test_the_only_shell_syntax_a_printed_command_carries_is_the_readers_own_path(
