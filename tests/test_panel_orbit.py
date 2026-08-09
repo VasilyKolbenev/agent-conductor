@@ -406,6 +406,23 @@ def test_the_projection_reads_the_cycle_and_the_state_document_and_nothing_else(
     assert free_names(function_body("orbitProject"), bound) == {"Map", "Set"}
 
 
+def test_the_geometry_counts_off_the_phase_list_and_not_off_a_number_of_its_own():
+    # §2.1's central prohibition, and the one a dependence guard cannot reach:
+    # `for (let i = 0; i + 1 < 5; i++)` introduces no new name and hard-wires
+    # the Default Orbit into the panel. So the count is held positively — the
+    # connection list carries no number except the 0 and the 1 it needs to walk
+    # a list, both loops are bounded by the phase count, and the angle of a
+    # stage divides the turn by that count.
+    edges = function_body("orbitEdges")
+    assert set(re.findall(r"(?<![\w.])\d+(?:\.\d+)?", edges)) <= {"0", "1"}, edges
+    assert re.search(r"for \(let i = 0; i \+ 1 < n; i\+\+\)", edges), edges
+    ring = function_body("orbitRing")
+    assert re.search(r"for \(let i = 0; i < n; i\+\+\)", ring), ring
+    assert "orbitAngle(i, n)" in ring
+    angle = re.search(r"const orbitAngle = (.*?);\n", panel_html()).group(1)
+    assert "/ n" in angle, angle
+
+
 def test_the_ellipse_is_derived_from_the_count_the_field_and_the_stage_box_alone():
     # §2.1. Geometry from the declared cycle means the radii answer to how many
     # phases there are and how much room the field has, and to nothing else. A

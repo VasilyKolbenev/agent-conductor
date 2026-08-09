@@ -423,26 +423,41 @@ def test_the_vertical_layout_tells_the_return_from_a_step_the_same_way():
         assert step["border-left-style"] != ret["border-left-style"], label
 
 
-ORBIT_PARTS = (("div", "orb"), ("div", "orb__marks"), ("div", "orb__who"),
-               ("span", "orb__name"), ("span", "orb__hn"), ("span", "orb__note"),
-               ("div", "lnk"), ("span", "nextrun"))
+STAGE = Element("div", frozenset({"orb", "orb--neutral"}))
+WHO = Element("div", frozenset({"orb__who"}))
+
+# Each part of the Orbit as the ancestors the panel actually gives it. Written
+# as whole chains and not as one class, because the rules that style them are
+# descendant rules: `.orb .orb__who` matches nothing when the model is handed an
+# `.orb__who` with no `.orb` above it, and a guard reading `display` off that
+# element resolves nothing and passes whatever the stylesheet says.
+ORBIT_PARTS = {
+    "stage": [ORBIT_FIELD, STAGE],
+    "name": [ORBIT_FIELD, STAGE, Element("span", frozenset({"orb__name"}))],
+    "marks": [ORBIT_FIELD, STAGE, Element("div", frozenset({"orb__marks"}))],
+    "participants": [ORBIT_FIELD, STAGE, WHO],
+    "harness": [ORBIT_FIELD, STAGE, WHO, Element("span", frozenset({"orb__hn"}))],
+    "note": [ORBIT_FIELD, STAGE, WHO, Element("span", frozenset({"orb__note"}))],
+    "vertical link": [ORBIT_FIELD, Element("div", frozenset({"lnk"}))],
+    "return label": [ORBIT_FIELD, Element("span", frozenset({"nextrun"}))],
+}
 
 
 @pytest.mark.parametrize("interaction", [None, *sorted(INTERACTIONS)])
-@pytest.mark.parametrize("tag,cls", ORBIT_PARTS, ids=[cls for _, cls in ORBIT_PARTS])
-def test_no_part_of_a_stage_is_declared_hidden_until_a_pointer_arrives(tag, cls,
+@pytest.mark.parametrize("part", sorted(ORBIT_PARTS))
+def test_no_part_of_a_stage_is_declared_hidden_until_a_pointer_arrives(part,
                                                                       interaction):
     # §4: no hidden mandatory hover, in either layout. Every part of a stage —
     # its name, its marks, its participants, the connection labels — resolves
     # the same `display` with a pointer on it as without, and that value is
     # never `none`. The queue card's why-text is the panel's one disclosure and
     # it is not in this list; nothing in the Orbit may join it.
-    chain = touched([ORBIT_FIELD, Element(tag, frozenset({cls}))], interaction)
-    resting = [ORBIT_FIELD, Element(tag, frozenset({cls}))]
+    resting = ORBIT_PARTS[part]
+    chain = touched(resting, interaction)
     for label, env in ENVIRONMENTS:
         shown = computed(chain, env=env).get("display", "")
-        assert shown != "none", (label, cls, interaction)
-        assert shown == computed(resting, env=env).get("display", ""), (label, cls)
+        assert shown != "none", (label, part, interaction)
+        assert shown == computed(resting, env=env).get("display", ""), (label, part)
 
 
 # ── the light level: conditional, data-keyed, and never the accent ─────────
