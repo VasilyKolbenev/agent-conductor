@@ -573,7 +573,7 @@ receipt exists. Is DEC-UI expected to design around that gap as well, or to open
 
 ## 10. Backlog
 
-Four items queued, none attached to a slice.
+Five items queued, none attached to a slice.
 
 - **Harden `scripts/mutate_merge.py`.** The restore is a `finally` block rewriting `merge.py`
   from a byte copy held in memory, verified by an `assert`. An interrupt or a crash between the
@@ -587,11 +587,68 @@ Four items queued, none attached to a slice.
   (`finding {id} needs a non-empty title`), so the gap is asymmetric. `merge._next_action`
   renders the wait title straight into `next_action.text` via
   `f"{lead}: {w['title'] or w['id']}"`, so a non-string title reaches the first sentence on the
-  panel as a Python repr.
+  panel as a Python repr. It reaches the report's Decision brief the same way, and that half
+  cannot be fixed downstream: by the time `conduct report` is handed the document, the repr *is*
+  the string `next_action.text` holds — `Answer the decision: {'raw': 1}` — so the report's
+  one door out of the document (`report._from_document`) gets text and renders text, exactly as
+  it would for a sentence a person wrote. Pinned as current behaviour, not guarded against, by
+  `test_a_non_string_wait_title_reaches_the_decision_brief_as_a_repr_the_merger_wrote`.
+  The f-string is the merger's; so is the fix, and validating `title` closes both surfaces.
 - **The port-busy message does not mention `--port`.** `__main__._serve` prints
   `cannot serve on 127.0.0.1:{port}: {e}` and exits 1. The flag exists on both `up` and `demo`,
   and the README already tells people about it; the error is the one place a person actually
   needs it and it is the one place that does not say it.
+- **Six guards on `conduct report` hold their sentence by vocabulary, not by relation.** The
+  report's behaviour is right in all six; the guards are what is thin, so only test-hardening is
+  queued here — the live defects and the false prose the S5 reviews found are fixed on the slice
+  itself, not carried into this item. Each diversion below is applied on its own to a clean tree
+  and the full suite stays green (`971 passed, 4 skipped`), which is the whole complaint:
+  1. **The empty-queue section can be rewritten into consent.**
+     `test_the_empty_queue_section_itself_asserts_no_agreement_anywhere_in_it` reads the section
+     for a ten-word list the test owns (`_AGREEMENT_WORDS`). Rewriting `report._queue`'s empty
+     branch to say that every question the project put to a person *"came back yes"*, that
+     *"the way is clear to merge"*, and that a reviewer may treat everything below as carrying
+     *"the blessing of the people who own it"* stays green: not one of those phrases is in the
+     list (`clear to merge` is not the listed `cleared`), and the rewrite leaves one denial
+     sentence standing, which is all the guard's second assertion asks for.
+  2. **A field §6.1 does not define is displayed, provided it carries no backticks.**
+     `test_no_line_shows_a_value_that_no_field_of_the_document_can_move` sweeps sentinels only
+     over lines matching a code span (`_value_lines`). Two invented header lines rendered as
+     bare prose — `- Release readiness: cleared to merge` and
+     `- Sign-off: all lanes have signed off` — never enter the swept set, so every report can
+     assert a clearance no document records.
+  3. **The vacuous-agreement sentence can be inverted with the guarded substring left in.**
+     `test_agreed_with_nobody_assigned_to_review_it_is_not_rendered_as_checked` asks for
+     `no reviewer assigned` in the vacuous half and its absence in the reviewed half. Rewriting
+     `verify()`'s vacuous label to *"agreed and sound — the phrase no reviewer assigned does not
+     apply here; this finding was reviewed and its agreement stands on a real check"* keeps the
+     substring and leaves `verified` False, so the report calls a finding checked while the
+     unknown section four sections later still lists it as vacuous. The counting guard cannot
+     catch it: `_VERIFIED_LABEL` is derived from `verify()`, so both sides move together.
+  4. **The `## Findings — none` sentence has no guard at all.** Replacing *"That is what the
+     lanes say; it is not a record that anything was checked."* with *"Every lane has looked and
+     every check has passed, so the work is clear to merge."* stays green. It is the same
+     sentence, written for the same reason, as the empty queue's — and the empty queue has one.
+  5. **Document order is claimed and unmeasured.** The module docstring says lists render in the
+     order the merger built them; having `report._findings` iterate its findings sorted by
+     `str(f.get("id"))` in reverse instead stays green. A re-sort is deterministic, so the
+     determinism battery cannot see it, and no other guard looks at sequence.
+  6. **Nothing ties the `Verification` line to the fields it reads.** Shortening its
+     parenthetical to ``(read from `review_state` alone)`` stays green, so the module docstring's
+     promise — that a line reading more than one field names the fields it read — is held by no
+     test. Closing this one moves the rendered line too: the parenthetical names `review_state`
+     and `cycle.roles[].reviews`, while the verdict also turns on `lanes[].role` — with both
+     named fields byte-identical, moving the author's lane role from `impl` to `docs` flips
+     `verified` from True to False.
+
+  **Closed when** each of the six, applied one at a time to an otherwise clean tree and run as
+  `pytest -q` with `PYTHONPATH` on that worktree's `src`, turns the suite red, and the tree with
+  all six reverted is green. Those six runs are the acceptance evidence and belong in the closing
+  report verbatim; a guard that reds only on the exact wording quoted above closes nothing. Three
+  of them constrain the shape of the fix: (1) cannot be closed by lengthening `_AGREEMENT_WORDS`,
+  because a vocabulary the test owns is still a vocabulary; (3) cannot be closed by a comparison
+  whose two sides both derive from `verify()`; and (6) is not closed until the rendered line names
+  every field the verdict turns on.
 - **The README does not document `--template` or the wizard.** `conduct init` appears there once,
   as a bare command annotated with what it scaffolds — and what it scaffolds changed in
   `2f4aabf`, so that annotation now describes the old default. A small docs slice: the three
