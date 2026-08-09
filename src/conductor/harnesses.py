@@ -212,10 +212,16 @@ def as_payload() -> list[dict[str, str]]:
         The dicts are rebuilt on each call, so a caller that edits what it got
         back cannot reach the frozen entries anyone else resolves against.
 
-    How this reaches the panel is NOT decided here. A dedicated
-    `/harnesses.json` route and a server-side resolve into the state document
-    are both open, and the choice belongs to DEC-UI-3; what this function
-    settles is only the shape, so either route carries the same bytes.
+    How this reaches the panel was settled by the owner on 2026-08-09: a
+    dedicated read-only `GET /harnesses.json` route, served from this function
+    and from nothing else. It is a presentation API and not part of Protocol
+    v1 — `state.json` does not change, no merge rule reads a field defined
+    here, and a project served without the route loses a badge and nothing
+    else. The rejected alternative was a server-side resolve into the state
+    document: it binds the panel's HTML to a running Python server and makes
+    a static copy of that HTML — the checkpoint files a reviewer opens with no
+    server behind them — harder to produce honestly, where a separate route
+    simply is not answered and the panel falls back to the neutral badge.
     """
     return [{"id": harness.id, "display_name": harness.display_name,
              "monogram": harness.monogram, "accent_dark": harness.accent_dark,

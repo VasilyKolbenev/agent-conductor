@@ -491,9 +491,12 @@ def test_each_role_on_a_stage_resolves_its_own_harness():
     # §2.6 asks for several different harnesses on different stages, each shown
     # as its own. The stage builder resolves exactly one thing — the harness of
     # the role it is drawing — so it has no way to resolve one product for a
-    # whole Orbit or to inherit a neighbour's.
+    # whole Orbit or to inherit a neighbour's. DEC-UI-3 moved the resolution
+    # from the name lookup to the badge builder, which resolves the name, the
+    # monogram and the accent together; the relation held here is the same one.
     body = function_body("orbitStage")
-    assert re.findall(r"harnessName\(([^)]*)\)", body) == ["r.harness"]
+    assert re.findall(r"harnessBadge\(([^)]*)\)", body) == ["r.harness"]
+    assert "harnessName(" not in body
 
 
 def test_the_merger_never_reports_that_a_phase_was_completed():

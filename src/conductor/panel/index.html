@@ -246,6 +246,35 @@ svg{width:100%;height:auto;display:block;overflow:visible}
 .orb__group{font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;
             color:var(--faint);font-weight:650;margin-top:6px}
 
+/* ── harness identity: the registry, drawn ─────────────────── */
+/* Identity is carried by three marks and only three: the monogram, the product
+   name, and the small swatch the monogram sits in. Status is carried by the
+   glyph, the word and the chip or contour beside them — a separate channel, and
+   the separation is what both of the owner's palettes rest on. A harness accent
+   is forbidden on a node outline, on an edge, on the trajectory, on the primary
+   action, on the focus ring and on any status glyph, so two vendors sharing a
+   hue can never move a meaning. tests/test_panel_harness.py holds that as a
+   relation over the cascade rather than as a list of names, and measures every
+   accent the registry ships against this badge in both themes.
+   The pair of accents arrives as custom properties set on the badge element
+   itself, because the value belongs to a product and not to the palette; which
+   of the two is in force is decided by the theme, exactly as for every other
+   colour here. The monogram runs on --ink and the swatch keeps the accent on a
+   border and a tint — the arrangement the chips already use, and for the same
+   reason: at this size a vendor accent is not a text colour. */
+.hb{--hb:var(--hb-dark);display:inline-flex;align-items:baseline;gap:5px;min-width:0}
+@media (prefers-color-scheme:light){.hb{--hb:var(--hb-light)}}
+.hb__m{font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.06em;
+       color:var(--ink);border:1px solid var(--hb);border-radius:4px;padding:0 3px;
+       background:color-mix(in srgb,var(--hb) 14%,transparent)}
+.hb__n{font-family:var(--mono);font-size:10.5px;color:var(--muted);overflow-wrap:anywhere}
+/* The documentation link is the whole of the difference between the card a
+   registered product gets and the minimal one an unregistered string gets. Its
+   label runs on --ink with the underline carrying the affordance, so hovering it
+   creates no colour pair of its own — the arrangement .jump already uses. */
+.hb__d{font-family:var(--mono);font-size:10px;color:var(--ink);text-decoration:underline}
+.hb__d:hover{text-decoration-thickness:2px}
+
 /* ── detail card ───────────────────────────────────────────── */
 .det{background:var(--sunk);border:1px solid var(--line);border-radius:8px;padding:11px 13px;
      display:flex;flex-direction:column;gap:6px;min-height:110px}
@@ -727,9 +756,23 @@ function renderDetail(nodes){
     el("span", { class: "det__meta" }, "id: " + n.id + " · kind: " + (n.kind || "—")),
     el("span", { class: "det__meta" },
        "depends on: " + ((n.depends_on || []).join(", ") || "—")));
-  if ((n.contested_by || []).length)
-    box.append(el("span", { class: "det__contested" },
-                  "≠ contested by: " + n.contested_by.join(", ")));
+  /* A node carries no harness — the protocol gives one to a role and never to
+     a node — so the honest thing for this card to badge is the lanes that
+     contested the node, each through the role it declared. The glyph, the word
+     "contested" and the status pill above are what say the state; the badges
+     say which products disagree, and a lane whose harness cannot be resolved
+     keeps its name and simply gets none. */
+  if ((n.contested_by || []).length){
+    const line = el("span", { class: "det__contested" }, "≠ contested by: ");
+    const harnessed = harnessByAuthor(LAST || {});
+    n.contested_by.forEach((author, i) => {
+      if (i) line.append(", ");
+      line.append(String(author));
+      const harness = harnessed.get(String(author));
+      if (harness) line.append(" ", harnessBadge(harness));
+    });
+    box.append(line);
+  }
 }
 
 /* ── Orbit: the declared cycle, drawn from the declared cycle ─ */
@@ -751,9 +794,10 @@ const SHIPPED_STAGES = new Set(["goal", "detect", "diagnose", "design", "deliver
    its own display name — never a slug rewritten into a product, never a brand
    picked by resemblance — and the fallback below is the same answer, so the
    Orbit shows what the map said and admits when that is all it knows. The
-   monogram and the vendor accent resolve() also carries are not drawn here:
-   applying a harness accent is DEC-UI-3's, which owns the channel rule that
-   keeps identity and status apart. */
+   monogram and the vendor accent resolve() also carries arrive over the wire
+   instead: see REGISTRY below. This table is what the panel still knows when
+   that request is not answered, which is the ordinary case for a static copy
+   of this file. */
 const HARNESS_NAMES = {
   "claude-code": "Claude Code",
   "codex": "Codex",
@@ -766,6 +810,104 @@ const HARNESS_NAMES = {
   "custom": "Custom harness",
 };
 const harnessName = id => HARNESS_NAMES[id] || String(id);
+/* The badge half of the registry, and where it comes from. `/harnesses.json`
+   answers with conductor/harnesses.py `as_payload()` and with nothing else — a
+   presentation route the owner settled on 2026-08-09, deliberately not part of
+   Protocol v1: state.json does not change, no merge rule reads any of this, and
+   the request is made exactly once.
+   The panel is required to draw without it. A checkpoint copy of this file is
+   opened with no server behind it, so an unanswered request is a normal mode
+   rather than an error: REGISTRY stays empty, every harness resolves to the
+   neutral badge and to its own string, and every other surface — the Orbit, the
+   queue, the map, the agents — is untouched. */
+const REGISTRY = new Map();
+/* The neutral pair conductor/harnesses.py declares as NEUTRAL_DARK and
+   NEUTRAL_LIGHT. Two copies of one value again, and again only with the guard
+   that reddens when they drift: tests/test_panel_harness.py compares these to
+   the module's own. */
+const NEUTRAL_ACCENT = { dark: "#8b93a1", light: "#5a6472" };
+const HEX_RE = /^#[0-9a-f]{6}$/i;
+/* The response is validated where it arrives, because this is a boundary: a row
+   is taken only when every field the badge is drawn from is a non-empty string,
+   and only when both accents are six-digit hex. An accent reaches the DOM as the
+   value of a custom property, so a row that is not well formed is dropped rather
+   than repaired — its harness then draws the neutral badge, like any
+   unregistered one, which is a true statement about how much is known about it. */
+function loadRegistry(rows){
+  REGISTRY.clear();
+  if (!Array.isArray(rows)) return;
+  for (const row of rows){
+    if (typeof row.id !== "string" || !row.id) continue;
+    if (typeof row.display_name !== "string" || !row.display_name) continue;
+    if (typeof row.monogram !== "string" || !row.monogram) continue;
+    if (!HEX_RE.test(row.accent_dark) || !HEX_RE.test(row.accent_light)) continue;
+    REGISTRY.set(row.id, { name: row.display_name, monogram: row.monogram,
+                           dark: row.accent_dark, light: row.accent_light,
+                           docs: typeof row.docs === "string" ? row.docs : "" });
+  }
+}
+/* The monogram an unregistered harness gets, from its own string and from
+   nothing else — the rule conductor/harnesses.py `_monogram` states: the first
+   letter of each of the first two words, or the first two characters of a single
+   word, upper-cased and then cut back to two code points, and "?" when the
+   string holds no letter or digit at all. Upper-casing comes before the cut
+   because it can lengthen (ß upper-cases into SS), and the cut counts code
+   points rather than UTF-16 units so an astral character is never halved.
+   A rule stated twice in two languages is a drift risk, and this one exists only
+   with the guard that reddens: tests/test_panel_harness.py holds both to one
+   table of strings. No colour is derived here and none ever may be — a hue
+   hashed out of a name is a brand claim about a product nobody registered. */
+const MONO_SPLIT = /[^\p{L}\p{N}]+/u;
+function monogramOf(id){
+  const words = String(id).split(MONO_SPLIT).filter(w => w);
+  if (!words.length) return "?";
+  const initials = words.length > 1 ? [...words[0]][0] + [...words[1]][0]
+                                    : [...words[0]].slice(0, 2).join("");
+  return [...initials.toUpperCase()].slice(0, 2).join("");
+}
+/* Presentation metadata for any harness string, registered or not — the panel's
+   half of `harnesses.resolve`. An unregistered string is its own display name,
+   its monogram comes from that same string, and its accent is the fixed neutral
+   pair: never a hue picked by resemblance, never a brand guessed out of a name
+   that happens to look like a product's. */
+function harnessOf(id){
+  return REGISTRY.get(String(id)) ||
+    { name: harnessName(id), monogram: monogramOf(id), docs: "",
+      dark: NEUTRAL_ACCENT.dark, light: NEUTRAL_ACCENT.light };
+}
+/* One harness badge: the monogram in its swatch, the product name beside it,
+   and — only where the registry names a vendor documentation page — a link to
+   it. That link is the whole of the difference between a registered product's
+   card and the minimal one an unregistered string gets; the monogram and the
+   name are drawn either way, so a harness Conduct has never heard of is never a
+   blank space and never borrows somebody's brand.
+   What this function is handed is a harness string. A lane's status, its place
+   in an order and its position in the queue are not in scope here and cannot be
+   read from here, which is the strongest form available of "branding decides
+   nothing": the status of whatever row this badge sits in is carried by that
+   row's own chip, beside the badge and untouched by it. */
+function harnessBadge(id){
+  const h = harnessOf(id);
+  const badge = el("span", { class: "hb",
+                             style: "--hb-dark:" + h.dark + ";--hb-light:" + h.light },
+    el("span", { class: "hb__m" }, h.monogram),
+    el("span", { class: "hb__n" }, h.name));
+  if (h.docs.startsWith("https://"))
+    badge.append(el("a", { class: "hb__d", href: h.docs, target: "_blank",
+                           rel: "noreferrer noopener" }, "docs"));
+  return badge;
+}
+/* Which product each lane is running. The lane names its role and the map's
+   cycle names that role's harness, and both hops are already in state.json —
+   nothing here invents a link. A lane whose role the cycle does not declare gets
+   no badge at all rather than a borrowed one. */
+function harnessByAuthor(s){
+  const byRole = new Map(((s.cycle || {}).roles || []).map(r => [r.id, r.harness]));
+  const out = new Map();
+  for (const l of (s.lanes || []))
+    if (byRole.get(l.role)) out.set(String(l.author), byRole.get(l.role));
+  return out;
+}
 /* What a stage can be marked with, and the words each mark spells. Every one
    is a fact already in state.json: `current` is the phase a lane is reporting
    (never an assigned stage), `waiting` is a queue item raised by a lane whose
@@ -875,9 +1017,9 @@ function orbitStage(name, seat){
     /* One badge per role standing on this stage, each resolving its own
        harness — two roles on one stage may run two different products, and a
        stage that names no harness says so rather than borrowing a neighbour's. */
-    const badge = el("div", {}, el("b", {}, String(r.id)),
+    const badge = el("div", {}, el("b", {}, String(r.id)), " ",
       el("span", { class: "orb__hn" },
-         " " + (r.harness ? harnessName(r.harness) : "no harness")));
+         r.harness ? harnessBadge(r.harness) : "no harness"));
     if (r.reporting)
       badge.append(el("span", { class: "orb__note" }, "reports: " + r.reporting));
     who.append(badge);
@@ -973,8 +1115,7 @@ function renderUnstaged(unstaged){
   box.append(el("div", { class: "orb__group" }, "Unstaged"));
   for (const r of unstaged){
     const bits = [el("b", {}, String(r.id))];
-    if (r.harness)
-      bits.push(el("span", { class: "mono faint" }, " " + harnessName(r.harness)));
+    if (r.harness) bits.push(" ", harnessBadge(r.harness));
     if (r.stage) bits.push(el("span", { class: "mono faint" }, " · stage: " + r.stage));
     if ((r.reviews || []).length)
       bits.push(el("span", { class: "mono faint" },
@@ -1117,8 +1258,14 @@ function laneChip(l){
   if (l.stale) return chip({ cls: "wait", glyph: "◌" }, "stale");
   return chip({ cls: "ok", glyph: "●" }, "active");
 }
-function renderAgents(lanes){
+/* One row per lane, in the order the state document lists them. The badge is
+   appended to a row that is already built and already carries its own status
+   chip: nothing here sorts, filters or re-groups, and no branch reads the
+   harness before the row exists — so a product's identity cannot move a lane
+   up the list, change what it says about itself, or take its chip's place. */
+function renderAgents(lanes, s){
   const box = $("agentList");
+  const harnessed = harnessByAuthor(s);
   box.replaceChildren();
   $("agentsEmpty").hidden = lanes.length > 0;
   for (const l of lanes){
@@ -1127,6 +1274,8 @@ function renderAgents(lanes){
       el("span", { class: "mono ag__who" }, String(l.author)),
       laneChip(l),
       el("span", { class: "faint" }, String(l.role || "observer")));
+    const harness = harnessed.get(String(l.author));
+    if (harness) row.append(harnessBadge(harness));
     const task = l.broken ? String(l.error || "unreadable") : String(now.task || "");
     if (task) row.append(el("span", { class: "ag__task" + (l.broken ? " ag__err" : ""),
                                       title: task }, task));
@@ -1236,7 +1385,7 @@ function render(s){
   renderOrbit(s);
   renderQueue(s.human_queue || []);
   renderAttention(s);
-  renderAgents(s.lanes || []);
+  renderAgents(s.lanes || [], s);
   renderFindings(s.findings || [], s);
   renderFeed(s.events_tail || []);
   $("foot").textContent = "state schema v" + (s.schema_version ?? "?") +
@@ -1303,10 +1452,29 @@ async function refresh(){
     setLive(false);                            // keep the last rendered state
   }
 }
+/* The registry, fetched once and never again. There is nothing to poll: the
+   bundled registry is the same bytes for the life of the process, and a retry
+   loop in a file that is also opened without a server would run forever
+   against nothing. A failed load is not an error state — every harness then
+   draws the neutral badge and its own string, which is a true statement about
+   how much the panel knows. The re-render is for the ordering: the first state
+   document may already have arrived and been drawn with no registry behind
+   it. */
+async function loadHarnesses(){
+  try {
+    const r = await fetch("/harnesses.json", { cache: "no-store" });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    loadRegistry(await r.json());
+  } catch (err) {
+    return;                                    // no registry: neutral badges
+  }
+  if (LAST) render(LAST);
+}
 const es = new EventSource("/events");         // greeting on connect, one frame per change
 es.onmessage = refresh;
 es.onopen = refresh;                           // resync on every (re)connect, not just the greeting
 es.onerror = () => setLive(false);             // EventSource reconnects on its own
+loadHarnesses();
 refresh();
 </script>
 </body>
