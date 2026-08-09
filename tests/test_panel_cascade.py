@@ -332,8 +332,18 @@ SEMANTIC = ("--pass", "--wait", "--fail")
 # What "how this element reads" means: its own paint plus the shape properties
 # a silhouette is made of. The four border sides are resolved from whichever
 # shorthand won them, which is what `border-color` on :hover quietly overrode.
+#
+# The shape half used to be the SVG half only — `rx`, the stroke width and the
+# dash pattern — because every state the panel drew was drawn in SVG. The Orbit
+# draws its stages as HTML boxes, and there a silhouette is the border's weight,
+# its pattern and the corner radius; without these three in the profile, a rule
+# rounding the current stage's corner on hover until it read as a neutral one
+# was a change no guard in this repository could see. The `border` shorthand is
+# in the list for the same reason `_border_sides` reads it: a rule may reweight
+# a contour through it without ever naming `border-width`.
 PAINTS = ("color", "background", "background-color", "fill", "stroke",
-          "stroke-width", "stroke-dasharray", "rx", "opacity")
+          "stroke-width", "stroke-dasharray", "rx", "opacity",
+          "border", "border-width", "border-style", "border-radius")
 _SIDES = ("top", "right", "bottom", "left")
 _COLOUR = re.compile(r"var\(--[\w-]+\)|color-mix\(.*\)|#[0-9a-fA-F]{3,8}"
                      r"|\btransparent\b|\bcurrentColor\b")

@@ -30,7 +30,7 @@ import pytest
 
 from tests.test_panel_cascade import (
     ENVIRONMENTS, INTERACTIONS, Element, Rule, carriers, computed, function_body,
-    paint_profile, panel_html, rules, script, stylesheet, touched)
+    media_contexts, paint_profile, panel_html, rules, script, stylesheet, touched)
 
 # ── the status vocabulary and the silhouette it owns ───────────────────────
 def status_table() -> dict[str, dict[str, str]]:
@@ -259,6 +259,192 @@ def test_the_status_box_and_the_interaction_ring_are_two_elements_in_every_node(
     assert re.findall(r'class:\s*"([^"]*)"', body).count("node node--") == 1
 
 
+# ── the Orbit: four stage states, two connection forms ─────────────────────
+# The Orbit is the panel's second graph and the first one drawn as HTML boxes
+# rather than as SVG, so the same two questions are asked of it here as of the
+# map above: can two states be told apart with the colour removed, and does the
+# form that carries a state stay put when a pointer arrives. The chains below
+# are the ones the script builds — a stage inside the field, a connection inside
+# the field's SVG layer — and everything is resolved through the cascade model,
+# which is a statement about declarations and not about a drawn shape.
+TONES = ("neutral", "current", "waiting", "blocked")
+
+# What a stage's silhouette is made of. Deliberately the same three properties
+# the panel writes as longhands, so each can be resolved on its own: a state may
+# own the weight, the pattern and the corner of its contour.
+STAGE_SHAPE = ("border-width", "border-style", "border-radius")
+
+ORBIT_FIELD = Element("div", frozenset({"orbit"}))
+
+
+def stage_chain(tone: str, interaction: str | None = None) -> list[Element]:
+    """Build the (field, stage) chain for one stage state."""
+    return touched([ORBIT_FIELD, Element("div", frozenset({"orb", "orb--" + tone}))],
+                   interaction)
+
+
+def stage_shape(tone: str, interaction: str | None = None,
+                env: frozenset = frozenset()) -> tuple:
+    """Return one stage state's silhouette, with every colour left out."""
+    win = computed(stage_chain(tone, interaction), env=env)
+    return tuple(win.get(prop) for prop in STAGE_SHAPE)
+
+
+def orbit_marks() -> dict[str, dict[str, str]]:
+    """Parse the ORBIT_MARKS vocabulary — the chip each stage state spells."""
+    block = re.search(r"const ORBIT_MARKS = \{(.*?)\n\};", panel_html(), re.S)
+    assert block, "the panel no longer carries an ORBIT_MARKS table"
+    rows = re.findall(r'(\w+):\s*\{\s*cls:\s*"([^"]+)",\s*glyph:\s*"([^"]+)",'
+                      r'\s*label:\s*"([^"]+)"\s*\}', block.group(1))
+    assert len(rows) == 4, rows
+    return {key: {"cls": cls, "glyph": glyph, "label": label}
+            for key, cls, glyph, label in rows}
+
+
+def test_no_stage_state_can_be_mistaken_for_another_once_colour_is_taken_away():
+    # §3: every state is carried by at least two channels. Take the colour out
+    # of the four and the contours are still four different contours — a
+    # one-pixel solid nine-radius box, the same box dashed, a two-pixel one, and
+    # a two-pixel one with a sixteen-radius corner. Held in every media
+    # environment, because a rule scoped to Winter Daylight is still a rule.
+    for label, env in ENVIRONMENTS:
+        shapes = {tone: stage_shape(tone, None, env) for tone in TONES}
+        assert len(set(shapes.values())) == len(TONES), (label, shapes)
+
+
+@pytest.mark.parametrize("interaction", sorted(INTERACTIONS))
+@pytest.mark.parametrize("tone", TONES)
+def test_the_stylesheet_resolves_one_stage_silhouette_touched_or_not(tone, interaction):
+    # Owner invariant 1 on the Orbit's own carrier. The paint half is held for
+    # every carrier the stylesheet declares by the general test above; this is
+    # the shape half, spelt out for the four states the Orbit gives a stage,
+    # because rounding a current stage's corner back to nine on hover would make
+    # it read as a neutral one without repainting anything.
+    for label, env in ENVIRONMENTS:
+        assert stage_shape(tone, interaction, env) == stage_shape(tone, None, env), (
+            f"{interaction} changed the silhouette declarations of {tone} in {label}")
+
+
+def test_every_stage_mark_carries_a_glyph_and_a_spelt_out_label_of_its_own():
+    # The second channel, and the one that survives any amount of colour loss.
+    # Every mark a stage can carry spells a word beside its glyph, and no two
+    # marks share either.
+    marks = orbit_marks()
+    assert set(marks) == {"current", "blocked", "waiting", "mismatch"}
+    for key, row in marks.items():
+        assert row["glyph"] and row["label"], key
+    assert len({row["glyph"] for row in marks.values()}) == 4
+    assert len({row["label"] for row in marks.values()}) == 4
+
+
+def test_no_stage_mark_claims_a_phase_was_reached_finished_or_passed():
+    # §2.2. Protocol v1 records no run history, so no word in this vocabulary
+    # may assert one. Held as a property of what the words *say*: a mark is a
+    # statement about right now — a lane is reporting here, a lane has gone
+    # quiet, a person is being waited on, an assignment disagrees with a report
+    # — and none of them is in the past tense.
+    spoken = " ".join(row["label"] for row in orbit_marks().values()).lower()
+    for claim in ("done", "complete", "completed", "finished", "passed", "reached",
+                  "travelled", "traveled", "visited", "approved"):
+        assert claim not in spoken.split(), (claim, spoken)
+
+
+def _js_list(name: str) -> list[str]:
+    """Parse one of the panel's declared string lists."""
+    found = re.search(r"const " + name + r" = \[(.*?)\];", panel_html(), re.S)
+    assert found, name
+    return re.findall(r'"([^"]+)"', found.group(1))
+
+
+def test_a_mismatch_is_read_out_in_a_chip_and_never_takes_a_stages_contour():
+    # §2.3: the warning is non-blocking, and "non-blocking" has a shape here.
+    # A mismatch is in the reading order, so it is always shown; it is not among
+    # the marks that claim the contour, so the stage it sits on keeps the
+    # silhouette it would have had; and the stylesheet declares no state for it
+    # at all, so there is nothing for it to claim. All three, or a mismatch
+    # could quietly start reading as a failure.
+    assert "mismatch" in _js_list("MARK_ORDER")
+    assert "mismatch" not in _js_list("TONES")
+    assert _js_list("TONES") == ["current", "blocked", "waiting"]
+    assert not [rule for rule in rules() if "orb--mismatch" in rule.selector]
+
+
+def test_every_mark_a_stage_can_carry_is_in_the_reading_order():
+    # The order decides what a reader sees; the vocabulary decides what exists.
+    # A mark added to one and not the other would either never be drawn or be
+    # drawn with no word to go with it.
+    assert set(_js_list("MARK_ORDER")) == set(orbit_marks())
+
+
+def connection_profile(kind: str, env: frozenset = frozenset()) -> dict[str, str]:
+    """Resolve one form of the trajectory: a step, or the return to the first."""
+    classes = {"trk"} | ({"trk--next"} if kind == "next" else set())
+    return computed([ORBIT_FIELD, Element("svg"),
+                     Element("path", frozenset(classes))], env=env)
+
+
+def test_the_return_to_the_first_stage_differs_from_a_step_in_form_and_not_in_colour():
+    # §2bis, the whole of what makes `next Run` honest. The connection that
+    # closes the cycle has to be tellable from a step — the two mean different
+    # things — and it may not be told apart by a status colour, because a status
+    # colour would say something about the state of a pass the protocol cannot
+    # record. So: same stroke, different dash, different arrow head.
+    for label, env in ENVIRONMENTS:
+        step, back = connection_profile("step", env), connection_profile("next", env)
+        assert step["stroke"] == back["stroke"], label
+        assert step.get("stroke-dasharray") != back.get("stroke-dasharray"), label
+        assert step.get("marker-end") != back.get("marker-end"), label
+
+
+def test_no_part_of_the_trajectory_is_painted_with_a_status_colour():
+    # The other half: neutral means neutral. Neither form of the connection, nor
+    # the arrow head, nor the label beside the return may spend the accent or any
+    # of the three semantic tokens — an accented return would read as the current
+    # step, and a --pass one would read as a lap completed.
+    reserved = ("--accent", "--pass", "--wait", "--fail")
+    for rule in rules():
+        if not any(cls in rule.selector for cls in
+                   (".trk", ".arw--orb", ".nextrun", ".lnk")):
+            continue
+        for prop, value in rule.decls.items():
+            for token in reserved:
+                assert token not in value, (rule.selector, prop, value)
+
+
+def test_the_vertical_layout_tells_the_return_from_a_step_the_same_way():
+    # The narrow layout draws its connections as bordered elements rather than
+    # as arcs, and the same rule governs them: the return differs from a step by
+    # its pattern, and both are drawn in the same neutral colour.
+    link = [ORBIT_FIELD, Element("div", frozenset({"lnk"})), Element("i")]
+    back = [ORBIT_FIELD, Element("div", frozenset({"lnk", "lnk--next"})), Element("i")]
+    for label, env in ENVIRONMENTS:
+        step, ret = computed(link, env=env), computed(back, env=env)
+        assert step["border-left-color"] == ret["border-left-color"], label
+        assert step["border-left-style"] != ret["border-left-style"], label
+
+
+ORBIT_PARTS = (("div", "orb"), ("div", "orb__marks"), ("div", "orb__who"),
+               ("span", "orb__name"), ("span", "orb__hn"), ("span", "orb__note"),
+               ("div", "lnk"), ("span", "nextrun"))
+
+
+@pytest.mark.parametrize("interaction", [None, *sorted(INTERACTIONS)])
+@pytest.mark.parametrize("tag,cls", ORBIT_PARTS, ids=[cls for _, cls in ORBIT_PARTS])
+def test_no_part_of_a_stage_is_declared_hidden_until_a_pointer_arrives(tag, cls,
+                                                                      interaction):
+    # §4: no hidden mandatory hover, in either layout. Every part of a stage —
+    # its name, its marks, its participants, the connection labels — resolves
+    # the same `display` with a pointer on it as without, and that value is
+    # never `none`. The queue card's why-text is the panel's one disclosure and
+    # it is not in this list; nothing in the Orbit may join it.
+    chain = touched([ORBIT_FIELD, Element(tag, frozenset({cls}))], interaction)
+    resting = [ORBIT_FIELD, Element(tag, frozenset({cls}))]
+    for label, env in ENVIRONMENTS:
+        shown = computed(chain, env=env).get("display", "")
+        assert shown != "none", (label, cls, interaction)
+        assert shown == computed(resting, env=env).get("display", ""), (label, cls)
+
+
 # ── the light level: conditional, data-keyed, and never the accent ─────────
 LIT_MATERIAL = ("--panel-lit", "--contour-lit", "--lift-1", "--lift-2")
 
@@ -387,9 +573,46 @@ def test_every_legend_key_declares_its_status_as_a_contour_and_not_as_a_flat_fil
 
 # ── movement, and the accent's six roles ──────────────────────────────────
 def animated() -> dict[str, str]:
-    """Every selector the stylesheet animates, with the animation it declares."""
-    return {f"{rule.context} {rule.selector}".strip(): rule.decls["animation"]
-            for rule in rules() if "animation" in rule.decls}
+    """Every selector the stylesheet animates, with the animation it declares.
+
+    Any property in the ``animation`` family counts, not the shorthand alone.
+    Reading the shorthand only was a hole with a shape: ``animation-name`` plus
+    ``animation-iteration-count`` on two lines declares exactly the movement
+    this table exists to enumerate, and would have appeared in it as nothing.
+    """
+    out: dict[str, str] = {}
+    for rule in rules():
+        family = {prop: value for prop, value in rule.decls.items()
+                  if prop == "animation" or prop.startswith("animation-")}
+        if not family:
+            continue
+        key = f"{rule.context} {rule.selector}".strip()
+        out[key] = " ".join(value if prop == "animation" else f"{prop}:{value}"
+                            for prop, value in sorted(family.items()))
+    return out
+
+
+def _root_values() -> dict[str, str]:
+    dark, light = root_declarations()
+    return dict(dark, **light)
+
+
+def permanently_animated() -> set[str]:
+    """Every selector the stylesheet gives an animation that never stops.
+
+    ``infinite`` is looked for in the resolved value, custom properties
+    included, because ``animation:throb 3s var(--forever)`` is the same
+    permanent movement written where a scan of the declaration cannot see it.
+    """
+    values = _root_values()
+    out = set()
+    for key, declared in animated().items():
+        text = declared
+        for name in re.findall(r"var\((--[\w-]+)\)", declared):
+            text += " " + values.get(name, "")
+        if re.search(r"(?<![\w-])infinite(?![\w-])", text):
+            out.add(key)
+    return out
 
 
 # The panel's one movement. §5 of the plan forbids permanent decorative
@@ -406,13 +629,65 @@ MOVEMENT = {
 }
 
 
-def test_the_stylesheet_declares_animation_in_the_two_places_it_already_did_and_nowhere_else():
+def test_the_stylesheet_declares_animation_in_the_one_place_it_already_did_and_nowhere_else():
     # A declaration, not a movement: what is compared is the `animation` values
-    # the cascade resolves, and the @keyframes names the stylesheet spells.
+    # the cascade resolves, and the @keyframes names the stylesheet spells. The
+    # second half is what makes the table's emptiness load-bearing in both
+    # directions — a keyframes block nothing references fails here, so dead
+    # movement cannot sit in the file waiting to be attached to something.
     assert animated() == MOVEMENT
     declared = set(re.findall(r"@keyframes\s+([\w-]+)", stylesheet()))
     used = {value.split()[0] for value in animated().values() if value != "none"}
     assert declared == used, (declared, used)
+
+
+def test_the_one_animation_that_never_stops_is_the_live_connection_dot():
+    # §2.2 asks that DEC-UI-2 add no permanent animation, and the honest form of
+    # that is a relation rather than an absence: the panel does have one, the
+    # heartbeat beside the word "live", and it predates every December slice.
+    # What must stay true is that it is the only one — the executed sabotage
+    # this is written against is `@keyframes throb` plus `.lit{animation:throb
+    # 3s ease-in-out infinite}`, a whole panel breathing, which the file's own
+    # direction forbids outright. Both the longhand spelling and a duration hidden
+    # behind a custom property resolve here before the question is asked.
+    assert permanently_animated() == {".dot"}
+
+
+def test_the_current_stage_is_told_apart_without_any_movement_at_all():
+    # The owner's first movement test, and the reason the pulse could be
+    # deleted. Nothing in the Orbit is animated; what separates the current
+    # stage from every other one is its contour weight, its corner and the word
+    # in its chip, all of which are there with animation switched off entirely.
+    orbit = {key for key in animated()
+             if any(part in key for part in (".orb", ".trk", ".lnk", ".nextrun"))}
+    assert orbit == set(), orbit
+    assert stage_shape("current") != stage_shape("neutral")
+    assert orbit_marks()["current"]["glyph"] and orbit_marks()["current"]["label"]
+
+
+def test_the_deleted_pulse_leaves_no_reference_anywhere_in_the_panel():
+    # The class the old cycle ring put on its current phase. It has no writer
+    # and no rule left, and a dead selector is a place a movement gets
+    # reattached without anyone deciding to. Held by absence, which is the one
+    # form a sabotage cannot satisfy while removing the thing.
+    assert "pulse" not in panel_html()
+
+
+def test_every_animation_the_stylesheet_declares_is_switched_off_by_reduced_motion():
+    # A person who has asked their system for less movement gets none. Held as a
+    # relation over the sheet rather than as a search for the media query: every
+    # selector carrying a live animation must carry a second declaration, inside
+    # the reduced-motion condition, that stops it. Adding an animated element
+    # and forgetting the override fails here without this test knowing what the
+    # element is called.
+    reduce = [c for c in media_contexts() if "reduced-motion" in c]
+    assert len(reduce) == 1, reduce
+    stopped = {key[len(reduce[0]):].strip() for key, value in animated().items()
+               if key.startswith(reduce[0]) and value == "none"}
+    for key, value in animated().items():
+        if key.startswith("@media") or value == "none":
+            continue
+        assert key in stopped, f"{key} keeps moving under reduced motion"
 
 
 # The six roles §4 reserves December Red for: the current Orbit stage, the
