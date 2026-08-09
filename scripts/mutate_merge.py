@@ -50,10 +50,10 @@ did not expect is such a path: `main` converts anything that is not already an
 would exit 1 — the code reserved for an honest survivor. The traceback is not
 part of the contract; the named infrastructure failure and the 2 are. There is
 exactly one more way out with a 2, and it is not in this module: `argparse`
-exits 2 itself on an unrecognised argument. That overlap is deliberate and means the same thing — a
-usage error is likewise a run in which no valid measurement happened — and
-argparse prints usage to stderr and stops before anything is measured, so the
-rule holds on that path too.
+exits 2 itself on an unrecognised argument. That overlap is deliberate and
+means the same thing — a usage error is likewise a run in which no valid
+measurement happened — and argparse prints usage to stderr and stops before
+anything is measured, so the rule holds on that path too.
 
 Usage:
     .venv\\Scripts\\python scripts\\mutate_merge.py          # in-tree, as CI runs it
