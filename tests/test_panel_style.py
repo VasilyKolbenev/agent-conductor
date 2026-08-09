@@ -392,17 +392,17 @@ def animated() -> dict[str, str]:
             for rule in rules() if "animation" in rule.decls}
 
 
-# The panel's two movements, both pre-existing. §5 of the plan forbids
-# permanent decorative animation and removing what is already here is DEC-UI-4's
-# work — but this slice lays down a material layer, and a material layer is
-# exactly the thing a throb or a shimmer gets attached to. Pinned two-sidedly:
-# a new animation fails here, and so does deleting one without saying so.
+# The panel's one movement. §5 of the plan forbids permanent decorative
+# animation; `.dot` is the live-connection heartbeat and is the whole of what
+# the panel animates, at rest and in every state. The current Orbit stage is not
+# in this table and may not enter it: it is told apart by its contour, its
+# corner radius and the word in its chip, which is what makes it legible with
+# movement switched off. Pinned two-sidedly — a new animation fails here, and so
+# does deleting one without saying so.
 MOVEMENT = {
     ".dot": "blink 2.4s ease-in-out infinite",
-    ".pulse .box": "glow 2s ease-in-out infinite",
     ".dot--down": "none",
     "@media (prefers-reduced-motion:reduce) .dot": "none",
-    "@media (prefers-reduced-motion:reduce) .pulse .box": "none",
 }
 
 

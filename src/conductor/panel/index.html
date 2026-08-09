@@ -86,8 +86,7 @@ html[data-attention="high"] .shell{border-bottom-color:var(--contour-lit)}
      animation:blink 2.4s ease-in-out infinite}
 .dot--down{background:var(--fail);animation:none}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:.25}}
-@keyframes glow{0%,100%{filter:none}50%{filter:brightness(1.5)}}
-@media (prefers-reduced-motion:reduce){.dot,.pulse .box{animation:none}}
+@media (prefers-reduced-motion:reduce){.dot{animation:none}}
 .banner{background:color-mix(in srgb,var(--wait) 12%,transparent);
         border:1px solid var(--wait);border-radius:8px;padding:3px 8px}
 /* The banner sits on a --wait tint over --ground, so its own text runs on
@@ -177,7 +176,6 @@ svg{width:100%;height:auto;display:block;overflow:visible}
 .edge{stroke:var(--line);stroke-width:2;fill:none;marker-end:url(#arw)}
 .edge--dead{stroke:var(--fail);stroke-dasharray:6 5}
 .edge--idle{stroke:var(--faint);stroke-dasharray:3 5;opacity:.5}
-.pulse .box{animation:glow 2s ease-in-out infinite}
 .role{font-size:12px;padding:1px 0}
 
 /* ── Orbit: the declared cycle as a closed trajectory ───────── */
