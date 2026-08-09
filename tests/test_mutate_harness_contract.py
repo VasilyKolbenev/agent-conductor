@@ -67,13 +67,41 @@ def _shape(node: ast.expr) -> str:
     return ast.unparse(node)
 
 
+TAIL = "if __name__ == '__main__':\n    raise SystemExit(main())"
+
+
+def _exit_doors(tree: ast.Module) -> list[str]:
+    """Every name in the module by which the PROCESS itself can end, sorted.
+
+    The doors are read, never the exit code handed to one: an alias binds a
+    second name to the same 2, so a guard that inspects the argument sees a
+    name it does not know instead of the code it was looking for.
+    """
+    return sorted(
+        ast.unparse(node) for node in ast.walk(tree)
+        if (isinstance(node, ast.Name) and node.id in ("SystemExit", "exit", "quit"))
+        or (isinstance(node, ast.Attribute)
+            and ast.unparse(node) in ("sys.exit", "os._exit")))
+
+
+def _exit_codes(tree: ast.Module) -> dict[str, object]:
+    """The module-level `EXIT_*` constants, by name."""
+    return {target.id: node.value.value
+            for node in tree.body if isinstance(node, ast.Assign)
+            for target in node.targets
+            if isinstance(target, ast.Name) and target.id.startswith("EXIT_")}
+
+
 def test_exit_two_is_returned_by_one_helper_and_by_nothing_else_in_the_module():
     # Sixteen independent `print(...); return 2` sites are the design in which
     # the seventeenth forgets to stay silent. Matching the SPELLING of the exit
-    # code is not enough to hold that: `_QUIET_FAILURE = EXIT_INVALID` followed
-    # by `return _QUIET_FAILURE` is a second door under a different name. So
-    # the whole exit surface of the process is pinned instead — the three
-    # expressions `main` may return, and what each of those returns in turn.
+    # code is not enough to hold that: `_QUIET_FAILURE = EXIT_INVALID` is a
+    # second name for the same 2, and it can be taken by `sys.exit` as readily
+    # as by `return` — a guard reading the ARGUMENT sees neither. So the exit
+    # surface of the process is pinned instead of what goes through it: the
+    # three expressions `main` may return, what each of those returns in turn,
+    # which constant is which code, and the single statement by which this
+    # module ends its process at all.
     # Nothing can leave this module with a 2 without passing the helper.
     # (`argparse` also exits 2 on a usage error — that happens inside argparse,
     # not in this module, and the module docstring names the overlap.)
@@ -84,6 +112,7 @@ def test_exit_two_is_returned_by_one_helper_and_by_nothing_else_in_the_module():
         == ["EXIT_INVALID"]
     assert [ast.unparse(node) for node in _returned(tree, "report_score")] \
         == ["EXIT_OK if killed == total else EXIT_SURVIVORS"]
+    assert _exit_codes(tree) == {"EXIT_OK": 0, "EXIT_SURVIVORS": 1, "EXIT_INVALID": 2}
 
     returners = set()
     for node in ast.walk(tree):
@@ -93,10 +122,31 @@ def test_exit_two_is_returned_by_one_helper_and_by_nothing_else_in_the_module():
             if isinstance(inner, ast.Return) and _returns_exit_invalid(inner.value):
                 returners.add(node.name)
     assert returners == {"_invalid_measurement"}
-    exits = [n for n in ast.walk(tree) if isinstance(n, ast.Call)
-             and ast.unparse(n.func) in ("sys.exit", "SystemExit", "exit")
-             and any(_returns_exit_invalid(a) for a in n.args)]
-    assert exits == []
+    assert _exit_doors(tree) == ["SystemExit"]
+    assert ast.unparse(tree.body[-1]) == TAIL
+
+
+def test_the_exit_surface_guard_reads_the_doors_and_not_the_spelling_of_a_code():
+    # The half the guard above used to check by spelling, executed. A reviewer
+    # bound `_QUIET_FAILURE` to `EXIT_INVALID` and left through it, and the
+    # whole harness suite stayed green while a run printed `FAIL - 0/13
+    # mutations killed` and exited 2. Both ways of taking that alias are
+    # applied here to the shipped text: one adds a door beside the one that
+    # ships, the other rewrites the only door there is, and the guard above
+    # asserts on what each of these returns.
+    aliased = HARNESS.read_text(encoding="utf-8").replace(
+        "RESTORE_ATTEMPTS = 3", "_QUIET_FAILURE = EXIT_INVALID\nRESTORE_ATTEMPTS = 3", 1)
+    assert "_QUIET_FAILURE = EXIT_INVALID" in aliased      # the alias really landed
+
+    smuggled = aliased.replace(
+        'raise InvalidMeasurement(f"no merge engine to mutate at {merge_path}")',
+        "sys.exit(_QUIET_FAILURE)", 1)
+    assert _exit_doors(ast.parse(smuggled)) == ["SystemExit", "sys.exit"]
+
+    rerouted = aliased.replace("raise SystemExit(main())",
+                               "raise SystemExit(main() and _QUIET_FAILURE)", 1)
+    assert _exit_doors(ast.parse(rerouted)) == ["SystemExit"]      # still one door...
+    assert ast.unparse(ast.parse(rerouted).body[-1]) != TAIL       # ...not the one shipped
 
 
 def test_nothing_main_does_after_reading_its_arguments_runs_outside_the_funnel():

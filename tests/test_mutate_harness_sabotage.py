@@ -15,7 +15,7 @@ tests/test_mutate_harness_contract.py. Counting rows in any one file therefore
 undercounts, so no file is the inventory: `INVENTORY` is, and
 `test_the_inventory_of_diversions_is_complete_and_every_entry_resolves` fails if
 a case loses the test that pins it, wherever that test lives. The inventory
-below is complete: sixteen cases from the first review round and eight from the
+below is complete: sixteen cases from the first review round and nine from the
 second, one of which is a guard that never existed rather than one that broke.
 
 Nothing here writes inside the repository. Every case copies the harness into a
@@ -622,6 +622,10 @@ INVENTORY = [
     Case("spec: `_QUIET_FAILURE = EXIT_INVALID` and `return _QUIET_FAILURE` — a second "
          "exit-2 door under another name, printing a fabricated score", 2, "structure",
          ("test_exit_two_is_returned_by_one_helper_and_by_nothing_else_in_the_module",)),
+    Case("spec: the same alias taken with `sys.exit` instead of `return`, which the guard "
+         "still read by the spelling of its argument", 2, "structure",
+         ("test_exit_two_is_returned_by_one_helper_and_by_nothing_else_in_the_module",
+          "test_the_exit_surface_guard_reads_the_doors_and_not_the_spelling_of_a_code")),
     Case("spec: main hands print_provenance the path it is about to mutate instead of "
          "the one the probe resolved", 2, "behaviour",
          ("test_main_verifies_the_file_it_will_mutate_and_shows_what_the_probe_resolved",)),
