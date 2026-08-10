@@ -52,7 +52,7 @@ Base for this chunk is `c2c79cd` (the M1–M4 tip).
 | **DO-1** public product direction | `ba3b736` | `docs/specs/2026-08-03-product-direction.md` — five stages, eight product laws, the Orbit/Stage/Node/Harness/Gate/Run levels. |
 | **DO-1b** optional `role.stage` | `49c301f` `688878b` `9009d75` `57266ef` | `cycle.roles[].stage` in Protocol v1 as presentation metadata, projected only when declared; additivity proven on both branches. |
 | **DO-2** Default Orbit template and stage-aware prompts | `b9ff514` `db88fdd` `df70fcb` | The `default-orbit` template (five phases, five staged roles), `prompts._STAGE_CONTRACTS`, and the vacuous `agreed` state disclosed. |
-| **DO-3/S4** guided init | `2f4aabf` | `conduct init` wizard, three vended templates, deterministic `--template`, scaffold-then-validate, printed next steps. |
+| **DO-3/S4** guided init | `2f4aabf` | `conduct init` wizard, four vended templates, deterministic `--template`, scaffold-then-validate, printed next steps. |
 
 **DO-3/S4's spec review has since passed.** Eighteen shell probes ran with no hang; the
 AST-based ban on probing the machine for installed harnesses was verified by sabotage and
