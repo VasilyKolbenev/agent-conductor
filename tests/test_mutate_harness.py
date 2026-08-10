@@ -156,7 +156,8 @@ def test_a_shadowed_import_root_refuses_before_any_mutation_and_never_scores(
     # The law being pinned: an unknown state may not be displayed as a result.
     combined = result.stdout + result.stderr
     assert "no mutation score" in combined
-    assert "killed" not in combined.lower() and "0/13" not in combined
+    assert "killed" not in combined.lower()
+    assert f"0/{len(harness.MUTATIONS)}" not in combined   # nor the shape of one
     # "before any mutation" is the other half of this test's name, and the
     # bytes being right at the end cannot tell "never written" from "written
     # and restored". No mutation was reported, so none was run.
