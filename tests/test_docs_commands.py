@@ -158,7 +158,7 @@ def test_the_readme_promises_two_imperatives_and_each_template_earns_the_right_o
 
 def test_every_repository_document_the_readme_points_a_reader_at_exists():
     # The panel pays for its own version of this in tests/test_panel_smoke.py;
-    # the README points at four documents, one of them added with this slice.
+    # every repository document named by the README must survive refactors.
     named = set(_DOC_PATH_RE.findall(README.read_text(encoding="utf-8")))
     assert named, "the README no longer points a reader at any document"
     for path in sorted(named):

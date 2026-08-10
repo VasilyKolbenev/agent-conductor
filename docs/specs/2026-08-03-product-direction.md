@@ -214,10 +214,11 @@ environment.
 
 - Observe, explain, and decide, over a committed `conductor/` directory.
 - A read-only panel on `127.0.0.1`, live-updating, with an attention list, an
-  agents block, findings with evidence, and a copyable decision brief.
+  agents block, findings with evidence, a harness-lane drill-down, a copyable
+  handoff packet, and a copyable decision brief.
 - Deterministic projections only — no LLM anywhere in the product.
 - Python 3.11+, zero runtime dependencies, loopback-only, no account.
-- CLI surface: `conduct validate`, `init`, `prompt`, `up`, `demo`.
+- CLI surface: `conduct validate`, `init`, `doctor`, `prompt`, `report`, `up`, `demo`.
 
 ### 7.2 Deliberately deferred
 

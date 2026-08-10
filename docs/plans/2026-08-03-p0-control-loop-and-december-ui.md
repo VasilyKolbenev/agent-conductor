@@ -34,10 +34,9 @@ is a self-hosted control plane for individually assembled AI-harness work cycles
 | **Gate** | A transition condition, or a human decision. |
 | **Run** | One pass through an Orbit. |
 
-The Python package stays `agent-conductor` and the CLI stays `conduct`, deliberately, for now.
-A rename touches `pyproject.toml`, the entry point, every doc and the demo output; folded into a
-UI slice it would make both unreviewable. It is a separate atomic PR, and it lands **before** any
-PyPI publish — the name is cheap to change while nobody depends on it, expensive afterwards.
+The v0.1.0 distribution stays `agent-conductor` and the CLI stays `conduct`, deliberately.
+The public rename follows the alpha only after trademark, domain, repository and package
+clearance; §8.7 records the later owner decision that superseded the earlier pre-PyPI course.
 
 The tagline belongs in the README, in onboarding, and in empty states — not on the working
 dashboard, where a person is mid-task and a slogan above their queue is noise.
@@ -53,39 +52,34 @@ Base for this chunk is `c2c79cd` (the M1–M4 tip).
 | **DO-1b** optional `role.stage` | `49c301f` `688878b` `9009d75` `57266ef` | `cycle.roles[].stage` in Protocol v1 as presentation metadata, projected only when declared; additivity proven on both branches. |
 | **DO-2** Default Orbit template and stage-aware prompts | `b9ff514` `db88fdd` `df70fcb` | The `default-orbit` template (five phases, five staged roles), `prompts._STAGE_CONTRACTS`, and the vacuous `agreed` state disclosed. |
 | **DO-3/S4** guided init | `2f4aabf` | `conduct init` wizard, four vended templates, deterministic `--template`, scaffold-then-validate, printed next steps. |
+| **DO-4/REG-1** harness registry and measurement hardening | `829ba00` | Registry data and neutral fallbacks, Gemini CLI and OpenCode owner-confirmed, machine-probing ban, and an honest mutation instrument. |
+| **S5** deterministic report | `de68d35` | `conduct report` projects one merged state to Markdown without recomputing it. |
+| **S7** readiness doctor | `a6d5934` `4e303e8` | `conduct doctor` explains setup blockers and safe next commands without probing the machine. |
+| **DEC-UI-1–4** December panel and Orbit | `39c9397` `97619e9` `f177953` | Precision Cockpit themes, data-derived light, a cycle-driven responsive Orbit, harness identity and observed-SSE-only motion. |
+| **DO-6** lane drill-down and handoff | `06c09a7` | Read-only harness-lane details and a deterministic handoff packet from the same brokered state. |
+| **DO-7** alpha release preparation | `3a00544` | December Command v0.1.0 metadata, reconciled release prose, tracked competitive direction and clean-wheel smoke. |
 
-**DO-3/S4's spec review has since passed.** Eighteen shell probes ran with no hang; the
-AST-based ban on probing the machine for installed harnesses was verified by sabotage and
-confirmed at runtime with an audit hook; the input allowlist and the validate-before-write order
-are pinned by tests. The slice is off the queue — the head is now DO-4, which carries the one
-requirement the review left behind (§3).
+All planned alpha slices above are integrated. DO-7 adds no orchestration or write surface;
+post-alpha execution remains governed by §8.7 and the competitive product-direction document.
 
-### Gate numbers
+### Final gate numbers
 
-Re-measured 2026-08-03 on an isolated export of `bf0ab3b` — docs-only above `2f4aabf`, so the
-code under test is identical — which keeps the agents working in this tree undisturbed and their
-uncommitted work out of the result. Both numbers are unchanged:
+Re-pinned 2026-08-10 in one run on frozen HEAD `3a00544959422e1d8d028ac1eb4c371767719a5d`.
+The mutation harness ran against a one-shot `git archive`; its provenance resolved both the
+source root and `conductor.merge` to that export, not to the editable working tree.
 
 | Gate | Command | Result |
 |---|---|---|
-| Test suite | `.venv\Scripts\python -m pytest -q` | **495 passed** |
-| Mutation harness | `.venv\Scripts\python scripts\mutate_merge.py` | **13/13 mutations killed** |
+| Test suite | `.venv\Scripts\python -m pytest -q` | **1750 passed, 4 skipped** |
+| Mutation baseline | targeted tests on unmutated export | **102 passed** |
+| Mutation harness | `scripts/mutate_merge.py --root <export>` | **15/15 mutations killed** |
+| Working tree | `git status --porcelain` in the same run | **clean** |
 
-Never `uv run` — the lockfile is not the environment these gates are pinned against.
-
-**How these numbers are maintained** (owner, 2026-08-03). Every intermediate measurement is
-signed with the specific commit it was taken on, and parallel changes are never mixed into an
-older result. The table above therefore still reads `bf0ab3b`, even though the branch has since
-advanced to `a120cb0` and the suite there measures **498 passed** — that divergence is not a
-defect of this document, it is the rule working. Until DO-7 the table need not be re-pinned for
-every parallel commit; carrying the measurement's commit plus this explicit note that a final
-re-pin is owed is sufficient. The final re-pin happens in DO-7, on a frozen HEAD, and only that
-single run's results become the chunk's numbers.
-
-One trap for whoever performs that re-pin: this `.venv` carries an editable-install `.pth`
-pointing at the working tree, so an isolated `git archive` export does **not** isolate imports on
-its own — `PYTHONPATH` must point at the export's `src`, or the mutation harness silently mutates
-the export while the tests import the working tree and reports 0/13.
+The first attempt produced no final number: two nested pytest processes were refused access to
+the host `%TEMP%`, the suite exited non-zero, and the mutation phase did not start. The accepted
+run set `TEMP` and `TMP` once for the complete process tree; no assertion or product file changed.
+The full evidence and the separate clean-wheel smoke are recorded in
+`docs/audits/2026-08-10-alpha-closeout.md`.
 
 ## 3. The queue
 
