@@ -197,13 +197,14 @@ svg{width:100%;height:auto;display:block;overflow:visible}
    layouts, which is what keeps the two from drifting into two designs. */
 .orbit--ring .orb{position:absolute;transform:translate(-50%,-50%)}
 /* The trajectory carries no history. Protocol v1 has no run identity and no
-   travelled path, so no arc may read as "done": every one of them is --line,
+   travelled path, so no arc may read as "done": every one of them is --faint,
    and the arc returning to the first stage is told apart from a step by its
    dash and by having no arrow head — form, never a status colour. */
-/* --faint and not --line. The trajectory is the one mark that says the process
-   is a cycle at all, so it answers to 1.4.11's 3:1 like any other identifying
-   contour, and --line is the deliberately faint enclosure token that does not
-   clear it. The numbers are computed in tests/test_panel_contrast.py. */
+/* Why --faint and not --line. The trajectory is the one mark that says the
+   process is a cycle at all, so it answers to 1.4.11's 3:1 like any other
+   identifying contour, and --line is the deliberately faint enclosure token
+   that does not clear it. The numbers are computed in
+   tests/test_panel_contrast.py. */
 .trk{fill:none;stroke:var(--faint);stroke-width:1.5;marker-end:url(#orbTip)}
 .trk--next{stroke-dasharray:2 7;marker-end:none}
 .arw--orb{fill:var(--faint)}
@@ -952,9 +953,18 @@ const ORBIT_GUTTER = 14;               /* clear space demanded between two stage
    are the pair the major axis separates least well, and this is the widest box
    that still lets them stand side by side in `w` — the inequality below is
    `rx * apex >= bw + ORBIT_GUTTER` solved for `bw`, with `rx` as orbitRing
-   computes it. Under the floor the boxes would be too narrow to read a stage
-   name in, and the honest answer there is the vertical layout rather than a
-   thinner ellipse. */
+   computes it before its own floor.
+   Where the solution stops holding, and what holds instead. Two floors sit
+   under these numbers: `bw` may not go below 132, or a stage name is
+   unreadable, and orbitRing's `rx` may not go below 140. In a field narrow
+   enough for the `bw` floor to bind, the box returned is wider than the
+   inequality permits and the arithmetic above is no longer true of the values
+   actually used — that is the case the floor exists for, and the honest answer
+   to it is the vertical layout rather than a thinner ellipse. Nothing overlaps
+   in the meantime: the `ry` loop in orbitRing tests this same condition pair by
+   pair and grows the minor radius until the two clear along y instead. The `rx`
+   floor only ever raises `rx`, so it can add slack to the inequality and never
+   take any away. */
 function orbitBox(n, w){
   const apex = Math.abs(Math.cos(orbitAngle(0, n)) - Math.cos(orbitAngle(1, n)));
   /* A cycle of one and a cycle of two put nothing beside the top stage, so
