@@ -26,7 +26,9 @@ measured in `test_doctor.py`, by running every command the report prints.
 Nor is this a reachability proof — a guarded token is one `_spellable` is
 called on somewhere in the same function, which is what the module's shape
 makes checkable, and not a claim that no branch can reach the tuple another
-way.
+way. Nor is the root followed further back than the site: it is recognised as
+the first parameter of the function the site stands in, unrebound, and what a
+CALLER passes into that parameter is not read here.
 """
 import ast
 import string
@@ -120,6 +122,53 @@ def root_args_body():
     return [], []
 
 
+def root_parameter(function_name):
+    """The name one function was handed its root in — its first parameter, if it still holds it.
+
+    Returns:
+        The first parameter's name, or None when the function has no parameter
+        or assigns to that name anywhere in its body. A rebound name is not
+        the root the caller passed: `root = role["harness"]` before a site
+        leaves the site spelled exactly as it was while meaning something else.
+    """
+    for function in ast.walk(TREE):
+        if (isinstance(function, ast.FunctionDef)
+                and function.name == function_name):
+            takes = (*function.args.posonlyargs, *function.args.args)
+            if not takes:
+                return None
+            first = takes[0].arg
+            rebound = {node.id for node in ast.walk(function)
+                       if isinstance(node, ast.Name)
+                       and isinstance(node.ctx, ast.Store)}
+            return None if first in rebound else first
+    return None
+
+
+def spliced_root(function_name, element):
+    """The name for a star that splices in the site's own root, or None if it does not.
+
+    The whole rule, and the one the site can be read for: the call must be
+    `_dir_args`, handed exactly one positional value, no keyword arguments,
+    and that value must be the name the enclosing function was given its root
+    in. Anything else — an expression, a local bound to something out of the
+    project's files, an extra argument — is a value reaching a printed command
+    by a path nothing put a predicate on.
+    """
+    call = element.value
+    if not (isinstance(call, ast.Call)
+            and getattr(call.func, "id", None) == _ROOT_ARGS):
+        return None
+    if call.keywords or len(call.args) != 1:
+        return None
+    root = root_parameter(function_name)
+    argument = call.args[0]
+    if not (root is not None and isinstance(argument, ast.Name)
+            and argument.id == root):
+        return None
+    return "the reader's own root"
+
+
 def guarded_in(function_name):
     """Every expression `_spellable` is called on inside one function."""
     for function in ast.walk(TREE):
@@ -146,20 +195,20 @@ def describe(function_name, element):
     The four are the whole rule, and each carries its own reason. A string
     literal is a word this module wrote. The `*_dir_args(root)` star is the
     root the reader typed, which `_spelled` quotes when bare would not carry
-    it — a name and not an expression, so the site cannot hand that call a
-    value out of the project's files, and what the call returns is held to the
-    same rule below. A guarded expression is a value out of the project's
-    files that has been put to `_spellable`. A dotted name is a constant out of
-    a bundled module — resolved here and required to need no quoting, rather
-    than waved through because it looks like a constant.
+    it; what earns it that name is not the shape of the call but its argument,
+    which `spliced_root` holds to being the very name the enclosing function
+    was handed its root in and still holds — so a local bound to a value out
+    of the project's files is a door here and not a root, however plainly it
+    is spelled. What the call returns is held to the same rule below. A
+    guarded expression is a value out of the project's files that has been put
+    to `_spellable`. A dotted name is a constant out of a bundled module —
+    resolved here and required to need no quoting, rather than waved through
+    because it looks like a constant.
     """
     if isinstance(element, ast.Constant) and isinstance(element.value, str):
         return "literal"
-    if (isinstance(element, ast.Starred) and isinstance(element.value, ast.Call)
-            and getattr(element.value.func, "id", None) == _ROOT_ARGS
-            and all(isinstance(argument, ast.Name)
-                    for argument in element.value.args)):
-        return "the reader's own root"
+    if isinstance(element, ast.Starred):
+        return spliced_root(function_name, element)
     if _shape(element) in guarded_in(function_name):
         return "guarded"
     value = _dotted_value(element)
@@ -180,7 +229,13 @@ KNOWN_DOORS = {
 
 
 def authored_doors():
-    """Every argv element that is neither a literal nor the reader's own root."""
+    """Every argv element that is neither a literal nor a spliced tuple.
+
+    The floor's raw material, and deliberately blunter than `describe`: a star
+    is skipped here whatever it was handed, because whether it stands for the
+    reader's root is the question `describe` answers and this one only counts
+    the values that stand in an argv by name.
+    """
     found = set()
     for function_name, argv in argv_sites():
         for element in argv.elts:
