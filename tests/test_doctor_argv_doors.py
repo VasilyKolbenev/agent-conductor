@@ -372,9 +372,11 @@ def test_every_command_line_the_module_builds_is_spliced_with_the_readers_root()
     # command is accounted for above by the function it stands in — so a
     # command carrying no root is a command whose tokens were never put to
     # anything, because nothing spliced it out of the one helper the walk
-    # reads. Naming a project on the command line is also what keeps a printed
-    # `conduct init` from scaffolding into whatever directory a reader happens
-    # to be standing in.
+    # reads. What is held is the SPLICE IN THE SOURCE and not what any command
+    # prints: `_dir_args` returns an empty tuple for the default root, as its
+    # own docstring says, so a report about `.` prints commands naming no
+    # project at all — including `conduct init`. That is the module's design
+    # and this test neither holds it nor contradicts it.
     miscounted = [(name, len(root_stars(argv)), ast.unparse(argv), argv.lineno)
                   for name, argv in argv_sites() if len(root_stars(argv)) != 1]
     # The count is reported, not translated into a story about it: with two
