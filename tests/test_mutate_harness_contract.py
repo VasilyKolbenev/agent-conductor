@@ -199,6 +199,7 @@ def test_main_routes_measurement_through_the_disposable_workspace():
     calls = [name for name, _ in _calls_in("main")]
     assert calls.count("measure_in_scratch") == 1
     assert "run_mutations" not in calls
+    assert "verify_import_root" not in calls
 
 
 def test_the_disposable_copy_is_verified_before_any_mutation_runs():

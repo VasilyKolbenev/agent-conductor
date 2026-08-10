@@ -138,7 +138,12 @@ def test_measuring_an_export_under_an_editable_install_is_honest_not_plausible(
     assert result.returncode == harness.EXIT_OK, result.stdout + result.stderr
     total = len(harness.MUTATIONS)
     assert f"VERDICT: PASS - {total}/{total} mutations killed" in result.stdout
-    assert f"conductor.merge: {export / 'src' / 'conductor' / 'merge.py'}" in result.stdout
+    assert f"requested merge.py:    {export / 'src' / 'conductor' / 'merge.py'}" \
+        in result.stdout
+    imported = next(line.split(": ", 1)[1] for line in result.stdout.splitlines()
+                    if line.startswith("conductor.merge:"))
+    assert "conduct-mutations-" in imported
+    assert Path(imported).parts[-2:] == ("conductor", "merge.py")
     assert str(WORKING_TREE_MERGE) not in result.stdout   # the export was measured, not us
     assert WORKING_TREE_MERGE.read_bytes() == working_tree_before
     assert not stale.exists()                             # stale bytecode cleared on exit
@@ -154,7 +159,7 @@ def test_a_shadowed_import_root_refuses_before_any_mutation_and_never_scores(
     assert result.returncode == harness.EXIT_INVALID
     assert "INVALID MEASUREMENT" in result.stderr
     assert "import isolation not confirmed" in result.stderr
-    assert str(shadowed_export / "src") in result.stderr      # what we asked to measure
+    assert str(shadowed_export / "src") in result.stdout      # what we asked to measure
     assert str(WORKING_TREE_MERGE) in result.stderr           # what actually imported
     # The law being pinned: an unknown state may not be displayed as a result.
     combined = result.stdout + result.stderr
@@ -176,8 +181,9 @@ def test_an_inherited_pythonpath_cannot_redirect_the_measurement(export, shadowi
     result = run_harness(shadowing_python, "--root", str(export), "--verify-only",
                          env={**os.environ, "PYTHONPATH": str(ROOT / "src")})
     assert result.returncode == harness.EXIT_OK, result.stderr
-    assert f"conductor.merge: {export / 'src' / 'conductor' / 'merge.py'}" in result.stdout
-    assert "import isolation confirmed" in result.stdout
+    assert f"requested merge.py:    {export / 'src' / 'conductor' / 'merge.py'}" \
+        in result.stdout
+    assert "disposable import isolation confirmed" in result.stdout
 
 
 def test_the_subprocess_environment_is_pinned_and_never_inherited(monkeypatch):
@@ -187,51 +193,6 @@ def test_the_subprocess_environment_is_pinned_and_never_inherited(monkeypatch):
     assert env["PYTHONPATH"] == str(Path("/somewhere/else/src"))
     assert env["PYTHONNOUSERSITE"] == "1"
     assert env["PYTHONDONTWRITEBYTECODE"] == "1"
-
-
-# --- the mutation workspace: a crash may poison only a disposable copy ---
-
-
-class _SimulatedHardKill(BaseException):
-    """Stop the measurement outside the `Exception`/restore contract."""
-
-
-def test_a_hard_kill_can_only_poison_the_disposable_workspace(export, monkeypatch):
-    source = export / "src" / "conductor" / "merge.py"
-    original = source.read_bytes()
-    touched = []
-
-    monkeypatch.setattr(harness, "verify_import_root",
-                        lambda source_root, root, merge_path: merge_path)
-    monkeypatch.setattr(harness, "check_baseline", lambda *args: 102)
-
-    def stop_while_mutated(merge_path, source_root, root):
-        touched.append(merge_path)
-        merge_path.write_bytes(b"mutation left by a hard-stopped worker\n")
-        assert source.read_bytes() == original
-        raise _SimulatedHardKill
-
-    monkeypatch.setattr(harness, "run_mutations", stop_while_mutated)
-
-    with pytest.raises(_SimulatedHardKill):
-        harness.measure_in_scratch(export, source)
-
-    assert len(touched) == 1
-    assert touched[0] != source
-    assert source.read_bytes() == original
-
-
-def test_a_copy_that_differs_from_the_source_is_refused_before_mutation(
-        export, monkeypatch):
-    source = export / "src" / "conductor" / "merge.py"
-    mismatched_source = SimpleNamespace(
-        read_bytes=lambda: source.read_bytes() + b"not in the copy\n")
-    monkeypatch.setattr(
-        harness, "run_mutations",
-        lambda *args: pytest.fail("a mismatched copy reached the mutation loop"))
-
-    with pytest.raises(harness.InvalidMeasurement, match="differs from the requested source"):
-        harness.measure_in_scratch(export, mismatched_source)
 
 
 # --- restoring the disposable copy is still fatal when it cannot be proved ---
@@ -426,27 +387,6 @@ def test_a_workspace_that_cannot_be_created_is_not_a_surviving_mutation(
     assert not SCORE_SHAPED.search(captured.out + captured.err)
 
 
-def test_main_verifies_requested_source_and_shows_what_the_probe_resolved(
-        monkeypatch, measurable):
-    # The provenance lines are pinned inside `print_provenance`, which proves
-    # it prints what it is given. This is the other end: main must ask about
-    # the source the caller requested, and must then show the probe's answer
-    # rather than echoing that expected path. Normal measurement subsequently
-    # copies it; verify-only stops here without a mutation workspace.
-    merge_path = measurable / "src" / "conductor" / "merge.py"
-    resolved = measurable / "src" / "conductor" / "merge" / "__init__.py"
-    asked, shown = [], []
-    monkeypatch.setattr(harness, "verify_import_root",
-                        lambda *args: (asked.append(args), resolved)[1])
-    monkeypatch.setattr(harness, "print_provenance", lambda *args: shown.append(args))
-
-    assert harness.main(["--root", str(measurable), "--verify-only"]) == harness.EXIT_OK
-
-    assert asked == [(measurable / "src", measurable, merge_path)]
-    assert shown == [(measurable / "src", resolved)]
-    assert shown[0][1] != merge_path
-
-
 def test_an_import_under_the_source_root_is_still_refused_when_it_is_another_file(
         tmp_path):
     # Belonging to the root is the weaker half: a root carrying both
@@ -565,10 +505,14 @@ def test_verify_only_confirms_the_import_root_and_says_no_mutations_were_run(
         export, shadowing_python):
     result = run_harness(shadowing_python, "--root", str(export), "--verify-only")
     assert result.returncode == harness.EXIT_OK, result.stderr
-    assert f"source root:     {export / 'src'}" in result.stdout
-    assert f"conductor.merge: {export / 'src' / 'conductor' / 'merge.py'}" in result.stdout
+    assert f"requested source root: {export / 'src'}" in result.stdout
+    assert f"requested merge.py:    {export / 'src' / 'conductor' / 'merge.py'}" \
+        in result.stdout
+    assert "conduct-mutations-" in next(
+        line for line in result.stdout.splitlines() if line.startswith("conductor.merge:"))
     assert f"interpreter:     {shadowing_python}" in result.stdout
     assert "no mutations were run" in result.stdout
+    assert "no baseline was run" in result.stdout
     assert "killed" not in result.stdout.lower()
     assert not SCORE_SHAPED.search(result.stdout)
 

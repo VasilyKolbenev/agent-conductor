@@ -9,17 +9,10 @@ test failure, the only exit code that is a kill. The requested `merge.py` is
 never written. A hard kill can orphan a mutated disposable directory, but it
 cannot poison the source the user is working in.
 
-Before the first mutation the harness checks two things about itself. Where
-`conductor.merge` is actually imported from: file isolation is not
-verification isolation, so an editable install (a `.pth` in site-packages) or
-an installed copy can shadow an exported tree, and the harness would mutate
-one file while pytest imported another and print a plausible score that means
-nothing. Belonging to the source root is not enough there — the import must
-resolve to the very file the run mutates, byte for byte the same path, because
-a root carrying both `conductor/merge.py` and a `conductor/merge/` package
-passes any looser test while every mutation lands in a file nobody imports.
-And whether the targeted tests are green on unmutated source: a test file that
-is already red reports every mutation aimed at it as KILLED.
+Before mutation, the harness proves that the disposable `conductor.merge`
+imports from the exact copied file, not an editable or installed shadow, and
+that the copied targeted tests are green. A red baseline cannot kill mutants.
+The requested module is read and copied but never imported or executed.
 
 Inside the disposable copy, every ordinary restore is still retried and proved
 by content hash. Failure is fatal and names the scratch file. This closes the
@@ -56,12 +49,10 @@ Usage:
     python scripts/mutate_merge.py --root DIR               # an exported tree
     python scripts/mutate_merge.py --verify-only            # provenance, no mutation
 
-`--root` is the requested program, not an import hint: every subprocess is given
-PYTHONPATH=ROOT/src REPLACING whatever the shell held, and `verify_import_root`
-first verifies the requested tree, then the disposable copy. The provenance
-block names the program requested; a separate line confirms that the copy's
-import resolved to its own merge engine. A shell PYTHONPATH pointing elsewhere
-is discarded.
+`--root` is the requested program, not an import hint. The requested path and
+the scratch import provenance are printed separately; every subprocess gets
+only the scratch `src` on PYTHONPATH. `--verify-only` exercises that same
+copy-and-import boundary, skipping only baseline and mutations.
 """
 from __future__ import annotations
 
@@ -85,6 +76,8 @@ EXIT_INVALID = 2                 # no score is printed on this path — see abov
 RESTORE_ATTEMPTS = 3
 RESTORE_DELAY_S = 0.2
 SUBPROCESS_TIMEOUT_S = 180       # nothing the harness starts may hang it
+SCRATCH_IGNORED = frozenset({
+    ".git", ".venv", ".worktrees", ".pytest_cache", "__pycache__", "build", "dist"})
 
 # `pytest` is imported by the probe on purpose: PYTHONNOUSERSITE hides a
 # user-site pytest, and `python -m pytest` without pytest exits 1 — which this
@@ -645,24 +638,54 @@ def run_mutations(merge_path: Path, source_root: Path, cwd: Path) -> list[tuple[
     return results
 
 
-def measure_in_scratch(root: Path, source_merge: Path) -> list[tuple[str, bool]]:
-    """Copy `root`, then baseline and mutate only that disposable copy."""
-    scratch_parent = Path(tempfile.mkdtemp(prefix="conduct-mutations-"))
+def _scratch_ignore(_directory: str, names: list[str]) -> set[str]:
+    """Names excluded from both the audit and the disposable copy."""
+    return {name for name in names if name in SCRATCH_IGNORED or name.endswith(".pyc")}
+
+
+def _audit_copy_surface(root: Path) -> None:
+    """Refuse links and reparse points rather than following a copy cycle."""
+    pending = [root]
+    while pending:
+        directory = pending.pop()
+        for entry in os.scandir(directory):
+            if entry.name in _scratch_ignore(str(directory), [entry.name]):
+                continue
+            metadata = entry.stat(follow_symlinks=False)
+            if entry.is_symlink() or getattr(metadata, "st_reparse_tag", 0):
+                raise InvalidMeasurement(
+                    f"copy surface contains a link or reparse point: {entry.path}")
+            if entry.is_dir(follow_symlinks=False):
+                pending.append(Path(entry.path))
+
+
+def measure_in_scratch(root: Path, source_merge: Path,
+                       verify_only: bool = False) -> list[tuple[str, bool]]:
+    """Verify and optionally measure only an external disposable copy."""
+    root = root.resolve()
+    source_bytes = source_merge.read_bytes()
+    scratch_parent = Path(tempfile.mkdtemp(prefix="conduct-mutations-")).resolve()
     scratch_root = scratch_parent / "tree"
     scratch_source = scratch_root / "src"
     try:
-        ignore = shutil.ignore_patterns(
-            ".git", ".venv", ".worktrees", ".pytest_cache", "__pycache__",
-            "*.pyc", "build", "dist")
-        shutil.copytree(root, scratch_root, ignore=ignore)
+        if scratch_parent == root or root in scratch_parent.parents:
+            raise InvalidMeasurement(
+                f"disposable workspace is inside the requested project: {scratch_parent}")
+        _audit_copy_surface(root)
+        shutil.copytree(root, scratch_root, ignore=_scratch_ignore, symlinks=True)
         scratch_merge = scratch_source / "conductor" / "merge.py"
-        if scratch_merge.read_bytes() != source_merge.read_bytes():
+        if scratch_merge.read_bytes() != source_bytes:
             raise InvalidMeasurement(
                 "the disposable merge.py differs from the requested source before "
                 "measurement; nothing was mutated or scored")
         resolved = verify_import_root(scratch_source, scratch_root, scratch_merge)
-        print("mutation workspace: disposable copy import verified; requested "
-              "merge.py is never written")
+        if scratch_merge.read_bytes() != source_bytes:
+            raise InvalidMeasurement(
+                "the disposable merge.py changed while its import was verified; "
+                "the requested source was not executed or changed")
+        print_provenance(scratch_source, resolved)
+        if verify_only:
+            return []
         green = check_baseline(scratch_source, scratch_root, resolved)
         print(f"baseline: {green} targeted tests green on unmutated source")
         return run_mutations(scratch_merge, scratch_source, scratch_root)
@@ -742,16 +765,16 @@ def main(argv: list[str] | None = None) -> int:
         merge_path = source_root / "conductor" / "merge.py"
         if not merge_path.is_file():
             raise InvalidMeasurement(f"no merge engine to mutate at {merge_path}")
-        resolved = verify_import_root(source_root, root, merge_path)
-        print_provenance(source_root, resolved)
-        if args.verify_only:
-            print("VERDICT: verification passed - import isolation confirmed, "
-                  "no mutations were run")
-            return EXIT_OK
+        print(f"requested source root: {source_root}")
+        print(f"requested merge.py:    {merge_path}")
         try:
-            results = measure_in_scratch(root, merge_path)
+            results = measure_in_scratch(root, merge_path, verify_only=args.verify_only)
         finally:
             clear_pycache(source_root)
+        if args.verify_only:
+            print("VERDICT: verification passed - disposable import isolation confirmed, "
+                  "no mutations were run; no baseline was run")
+            return EXIT_OK
         return report_score(results)
     except InvalidMeasurement as exc:
         return _invalid_measurement(exc)

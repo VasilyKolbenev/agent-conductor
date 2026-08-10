@@ -697,11 +697,13 @@ Five items recorded; the first is complete and four remain queued.
 - **Completed 2026-08-10 — give `scripts/mutate_merge.py` a crash-safe restore.** Atomic restore
   alone cannot cover a hard kill before the restore call. The implemented boundary is stronger:
   `measure_in_scratch` copies the requested project to an external disposable directory,
-  verifies that copy's import identity and clean baseline, and passes only its `merge.py` to the
-  mutation loop. The requested merge engine is never written. A hard kill may orphan a mutated
-  scratch directory, but it cannot poison the project being measured. Ordinary restores inside
-  the scratch tree retain the retry and content-hash proof; source `__pycache__` cleanup remains
-  for compatibility, while subprocesses keep `PYTHONDONTWRITEBYTECODE=1`.
+  rejects symlinks, junctions and reparse points instead of following a copy cycle, verifies the
+  copy's import identity and clean baseline, and passes only its `merge.py` to the mutation loop.
+  The requested merge engine is never imported or written. `--verify-only` crosses the same
+  snapshot and import boundary, skipping only the baseline and mutations. A hard kill may orphan
+  a mutated scratch directory, but it cannot poison the project being measured. Ordinary
+  restores inside the scratch tree retain the retry and content-hash proof; source `__pycache__`
+  cleanup remains for compatibility, while subprocesses keep `PYTHONDONTWRITEBYTECODE=1`.
 - **Rendered-result browser testing.** The panel's guards read source text: the `<style>`
   block parsed into rules, the `<script>` block read as characters. Nothing renders. So they
   prove what the panel *declares* — its structure — and not what a browser produces from it,

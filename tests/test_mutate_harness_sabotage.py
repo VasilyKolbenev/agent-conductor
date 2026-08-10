@@ -46,7 +46,8 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 HARNESS = ROOT / "scripts" / "mutate_merge.py"
 SIBLINGS = (ROOT / "tests" / "test_mutate_harness.py",
-            ROOT / "tests" / "test_mutate_harness_contract.py")
+            ROOT / "tests" / "test_mutate_harness_contract.py",
+            ROOT / "tests" / "test_mutate_harness_crash_safety.py")
 
 SYNTH_MERGE = 'def is_ready(state):\n    return state == "ready"\n'
 SYNTH_TESTS = (
@@ -223,7 +224,9 @@ def test_python_O_changes_nothing_about_a_clean_run(lab):
     plain = lab.run(target)
     optimised = lab.run(target, optimize=True)
     assert plain.returncode == optimised.returncode == 0
-    assert plain.stdout == optimised.stdout
+    temporary = r"conduct-mutations-[^\\/\r\n]+"
+    assert re.sub(temporary, "conduct-mutations-TEMP", plain.stdout) == \
+        re.sub(temporary, "conduct-mutations-TEMP", optimised.stdout)
 
 
 # --- the inventory: one row per diversion the reviewers got away with ---
@@ -322,9 +325,7 @@ DIVERSIONS = [
     ),
     Diversion(
         diversion="S10: verification moved to after all the mutations",
-        edits=(("        resolved = verify_import_root(source_root, root, merge_path)",
-                "        resolved = merge_path"),
-               ("        resolved = verify_import_root(scratch_source, scratch_root, scratch_merge)",
+        edits=(("        resolved = verify_import_root(scratch_source, scratch_root, scratch_merge)",
                 "        resolved = scratch_merge"),
                ("        return run_mutations(scratch_merge, scratch_source, scratch_root)",
                 "        results = run_mutations(scratch_merge, scratch_source, scratch_root)\n"
@@ -628,7 +629,7 @@ INVENTORY = [
           "test_the_exit_surface_guard_reads_the_doors_and_not_the_spelling_of_a_code")),
     Case("spec: main hands print_provenance the path it is about to mutate instead of "
          "the one the probe resolved", 2, "behaviour",
-         ("test_main_verifies_requested_source_and_shows_what_the_probe_resolved",)),
+         ("test_requested_merge_is_never_imported_or_self_modified",)),
     Case("quality: check_baseline calls subprocess.run itself with a second environment "
          "builder that agrees today", 2, "structure",
          ("test_one_place_in_the_module_starts_a_pytest_and_it_is_run_pytest",
