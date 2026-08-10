@@ -415,21 +415,41 @@ def _hint_readers(path):
     return findings
 
 
+def _hint_findings(root):
+    """Every hint-reading site under `root`, plus the files the walk parsed.
+
+    Args:
+        root: A directory to walk — the real package, or a fabricated tree.
+
+    Returns:
+        `(paths, findings)`: every `*.py` under `root`, subpackages included
+        (`rglob`, because a package is a tree and a flat listing of it is a
+        different, smaller claim), and every reading site found in them. The
+        paths come back too because `findings == []` is also what an empty
+        walk answers — a caller asserting emptiness has to anchor the walk
+        before trusting it.
+    """
+    paths = sorted(root.rglob("*.py"))
+    return paths, [f for path in paths for f in _hint_readers(path)]
+
+
 def test_the_registry_carries_no_lookup_of_its_own_hints(tmp_path):
     # The module docstring says nothing looks these up and that no code path
     # turns them into a lookup. That is a claim about every module in the
-    # package, so it is asked of every module in the package, by parsing: a
-    # reviewer answered the old version of this test with a real reverse index
-    # over the hints plus a public function to search it, and the suite stayed
-    # green because nothing here had ever looked at the source.
+    # package, so it is asked of every module in the package, by parsing —
+    # the whole tree, not one level of it: a reviewer answered the flat
+    # `glob("*.py")` walk with a real, importable reverse index in a
+    # `conductor.adapters` subpackage, and the suite stayed green because
+    # only top-level files were ever read. And the walk is anchored before
+    # its emptiness is believed, because `findings == []` is also the answer
+    # a walk of nothing gives.
     #
     # A REPOSITORY GUARD, not a sandbox, and for the same reason the probing
     # ban says so about itself: a name assembled at runtime walks straight
     # past it. What it stops is a lookup arriving without the ADR the
     # docstring says one would need.
-    findings = []
-    for path in sorted(Path(harnesses.__file__).parent.glob("*.py")):
-        findings += _hint_readers(path)
+    paths, findings = _hint_findings(Path(harnesses.__file__).parent)
+    assert Path(harnesses.__file__) in paths     # the walk saw the registry
     assert findings == []
     # And the parse has teeth: the exact shape it exists to refuse, written
     # out and read back, so an empty finding list is an answer rather than the
@@ -439,3 +459,26 @@ def test_the_registry_carries_no_lookup_of_its_own_hints(tmp_path):
         f"_BY_HINT = {{hint: row for row in _KNOWN for hint in row.{HINTS}}}\n",
         encoding="utf-8")
     assert _hint_readers(reverse_index) == [f"reverse_index.py:1 reads .{HINTS}"]
+
+
+def test_a_reverse_index_in_a_subpackage_is_inside_the_walk(tmp_path):
+    # DO4-2, the reviewer's diversion, kept as a regression. The index below
+    # is the shape that landed in `src/conductor/adapters/detect.py` and left
+    # the registry guard green: real, importable, and one directory below the
+    # only level the old flat walk ever read. Reachability was the whole hole
+    # — the parse recognised the shape from the start — so what this pins is
+    # the walk: the same index, one level down a fabricated package, must
+    # come back as a finding, and the file that carries it must be among the
+    # paths the walk reports having parsed.
+    package = tmp_path / "adapters"
+    package.mkdir()
+    (package / "__init__.py").write_text("", encoding="utf-8")
+    (package / "detect.py").write_text(
+        "from conductor.harnesses import known\n"
+        f"_BY_HINT = {{hint: row for row in known() for hint in row.{HINTS}}}\n"
+        "def harness_for(hint):\n"
+        "    return _BY_HINT.get(hint)\n",
+        encoding="utf-8")
+    paths, findings = _hint_findings(tmp_path)
+    assert package / "detect.py" in paths
+    assert findings == [f"detect.py:2 reads .{HINTS}"]
