@@ -164,9 +164,11 @@ def _shown(value: str) -> str:
     Returns:
         The value cut to `SHOWN_LIMIT` characters and passed through `repr`,
         so a line break comes back as `\\n` rather than as a line break, and
-        the result is quoted. The cut happens before `repr` and not after:
-        truncating the repr itself would drop its closing quote and produce a
-        value that looks like it continues.
+        the result is quoted. What the quotes are for is where the value ends,
+        so a value arrives CLOSED however long it was — a reader can see that
+        the id stopped rather than that the sentence did. That is why the cut
+        is taken before `repr` here and not after it: truncating the repr
+        itself takes its closing quote away with it.
     """
     if len(value) > SHOWN_LIMIT:
         value = value[:SHOWN_LIMIT] + "…"
