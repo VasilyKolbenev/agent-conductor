@@ -139,6 +139,21 @@ agents move on.
 - The release smoke test, run against a release candidate before publishing:
   `docs/release-smoke.md`
 
+## Browser-level panel checks
+
+The regular test suite stays dependency-light and checks the panel's source-level
+contracts. A separate suite opens the live loopback panel in Chromium and checks
+the rendered DOM, computed styles, responsive Orbit, and composited status colours:
+
+```console
+python -m pip install -e ".[browser]"
+python -m playwright install chromium
+python -m pytest -q browser_tests
+```
+
+Playwright is an optional development/CI dependency. It is not installed with the
+runtime wheel, the panel remains one static HTML file, and no build step is added.
+
 ## Status
 
 December Command v0.1.0 alpha. Protocol v1. Python 3.11+, zero runtime dependencies. CI on Windows and Linux.
