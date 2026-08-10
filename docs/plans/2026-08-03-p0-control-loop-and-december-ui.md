@@ -422,7 +422,7 @@ The part a redesign is most likely to erode. None of it is negotiable inside a U
   static asset; a bundler or an ES-module split would be a new toolchain in a stdlib-only
   project.
 - **Read-only semantics.** The panel never writes; loopback only.
-- **The 1600-line waiver** (owner, 2026-08-03; third condition widened 2026-08-10, §8.5) exempts
+- **The single-file waiver** (owner, 2026-08-03; revised 2026-08-08 and 2026-08-10, §8.5) exempts
   `src/conductor/panel/index.html` from the 800-line global cap, on four conditions, all recorded
   in the file itself:
     - sections stay marked with their banners;
@@ -430,8 +430,8 @@ The part a redesign is most likely to erode. None of it is negotiable inside a U
     - Every new panel invariant is pinned in the matching `tests/test_panel_*.py` module.
       `test_panel_smoke.py` guards basic loading and the structural contract; it is not the
       mandatory home for every panel guard.
-    - as the file approaches 1600 lines the architecture is re-reviewed rather than the ceiling
-      raised again.
+    - crossing 1600 lines triggers an architecture audit; 2000 lines is the alpha ceiling, and
+      a forecast beyond it stops the slice for a split proposal rather than another increase.
 
   (The M1–M4 closeout audit recorded this waiver as living only in session history; it is now
   written into the panel source, so that finding is closed.)
@@ -443,16 +443,18 @@ The part a redesign is most likely to erode. None of it is negotiable inside a U
 | Measure | Lines |
 |---|---|
 | `panel/index.html` at M1–M4 closeout | 829 |
-| `panel/index.html` today (`2f4aabf`) | **844** |
-| Ceiling under the waiver | 1600 |
-| **Remaining** | **756** |
+| `panel/index.html` before the UI chunk (`2f4aabf`) | **844** |
+| `panel/index.html` after DO-6 (`9541746`) | **1657** |
+| Mandatory architecture-audit trigger | 1600 |
+| Alpha ceiling under the waiver | 2000 |
+| **Remaining after DO-6** | **343** |
 
-Four UI slices — DEC-UI-1 through DEC-UI-4 — share those 756 lines, roughly 189 each, and
-DEC-UI-2 replaces the cycle ring with a full spatial graph plus a responsive fallback layout.
-That is the main structural risk of this chunk. Two consequences follow. First, each UI slice
-reports its line delta when it lands, so the budget is visible rather than discovered at the
-cap. Second, if DEC-UI-2 alone approaches the remaining budget, the waiver's own condition
-applies — stop and re-review the architecture, do not raise the ceiling and do not minify.
+The trigger fired after DO-6 and the architecture review is recorded in
+`docs/audits/2026-08-10-panel-1600-line-audit.md`. The alpha keeps the single-file constraint:
+the source is still sectioned, unminified and below 2000, while the invariant circuits already
+live in focused `tests/test_panel_*.py` modules. The remaining 343 lines are defect headroom,
+not a feature budget. Any post-alpha interactive control work starts with a split proposal;
+DO-7 may reconcile documentation and fix release blockers, but adds no new panel surface.
 
 ## 8. Resolved decisions
 
