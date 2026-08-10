@@ -1495,9 +1495,17 @@ window.addEventListener("resize", reflowOrbit);
    A dropped connection clears `streamed`, and so does a fetch that did not
    arrive: a phase that moved while the panel was not listening was not watched
    moving, and the document that re-establishes the record can never be the one
-   that reports the move. */
+   that reports the move.
+   The record must also never be written from before a drop. The three
+   conditions read `streamed` and `LAST`, and a response still in flight when
+   the connection died could land after the reconnect and write both — raising
+   `streamed` so that the greeting frame reported a change the panel never
+   watched. So every drop ends an epoch: a fetch captures the epoch it started
+   under, and a response from an ended epoch is discarded whole — the record,
+   the drawing and the connection light hear nothing from it. */
 let streamed = false;
 let ARRIVED = null;
+let EPOCH = 0;                                 /* ends at every drop of the stream */
 const phaseOf = s => String(((s || {}).cycle || {}).current_phase || "");
 function noteState(s, framed){
   ARRIVED = framed && streamed && LAST !== null && phaseOf(s) !== phaseOf(LAST)
@@ -1505,14 +1513,17 @@ function noteState(s, framed){
   streamed = framed;
 }
 async function refresh(framed){
+  const epoch = EPOCH;                         // the connection this fetch reports under
   try {
     const r = await fetch("/state.json", { cache: "no-store" });
     if (!r.ok) throw new Error("HTTP " + r.status);
     const s = await r.json();
+    if (epoch !== EPOCH) return;               // fetched before a drop: not a document
     noteState(s, framed);                      // before render: LAST is the drawing so far
     render(s);
     setLive(true);
   } catch (err) {
+    if (epoch !== EPOCH) return;               // the drop already put the record down
     streamed = false;                          // a document was missed, not watched
     setLive(false);                            // keep the last rendered state
   }
@@ -1538,7 +1549,7 @@ async function loadHarnesses(){
 const es = new EventSource("/events");         // greeting on connect, one frame per change
 es.onmessage = () => refresh(true);            // the one caller that may report a change
 es.onopen = () => refresh(false);              // resync on every (re)connect, not just the greeting
-es.onerror = () => { streamed = false; setLive(false); };  // EventSource reconnects on its own
+es.onerror = () => { EPOCH++; streamed = false; setLive(false); };  // EventSource reconnects on its own
 loadHarnesses();
 refresh(false);                                // page load: the first drawing, nothing before it
 </script>

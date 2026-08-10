@@ -11,9 +11,15 @@ one decision, and that decision fires only on an event the panel observed.
 The owner settled the decision on 2026-08-09 in three conditions. A phase change
 may be reported only when a drawing already exists to have changed from, when
 this state document and the one before it both arrived through the live stream,
-and when the two name different current phases. Five things that are not a
-change follow from those three and are pinned one by one here: a page load, a
-reconnect, the first frame after either, a new `generated_at`, and a new queue.
+and when the two name different current phases. Six things that are not a
+change are pinned one by one here: a page load, a reconnect, the first frame
+after either, a new `generated_at`, a new queue — and a response fetched before
+the stream dropped. The sixth is why the other five do not simply follow from
+the three conditions, as this docstring used to claim: the conditions read a
+record, and review finding F1 reproduced a stale response landing after a
+reconnect, writing that record, and handing the greeting frame a change the
+panel never watched. So every drop ends an epoch, and a response from an ended
+epoch is discarded before the record can hear from it.
 
 Scope, and it is the module's whole limit. Everything below reads the panel's
 *script* as characters — the same limit tests/test_panel_cascade.py states for
@@ -160,7 +166,7 @@ def test_a_reconnect_re_establishes_the_record_and_reports_no_change():
     # flag down — a phase that moved while the panel was not listening was not
     # watched moving.
     assert ("es.onopen = () =>", "false") in refresh_calls()
-    assert re.search(r"es\.onerror = \(\) => \{ streamed = false;", script())
+    assert re.search(r"es\.onerror = \(\) => \{ EPOCH\+\+; streamed = false;", script())
 
 
 def test_the_first_frame_after_a_connection_opens_reports_no_change():
@@ -195,6 +201,26 @@ def test_a_change_in_what_is_waiting_on_a_person_reports_no_change():
     assert free_names(function_body("noteState"), {"s", "framed"}) == \
         {"ARRIVED", "streamed", "LAST", "phaseOf"}
     assert free_names(phase_reader(), {"s"}) == {"String"}
+
+
+def test_a_response_fetched_before_the_stream_dropped_cannot_write_the_record():
+    # Non-trigger 6, review finding F1, reproduced live by the reviewer: a
+    # frame's fetch held across a drop resolved after the reconnect, raised
+    # `streamed`, and the greeting frame after it was handed a change the panel
+    # never watched. So the record is written only from the epoch it describes:
+    # a drop ends an epoch, a fetch captures the epoch it started under before
+    # anything is awaited, and a response from an ended epoch returns before
+    # the decision, the drawing or the connection light can hear from it — on
+    # the failure path too, where it would otherwise knock down a record the
+    # current connection had honestly built.
+    body = function_body("refresh")
+    discard = "if (epoch !== EPOCH) return;"
+    assert body.index("const epoch = EPOCH;") < body.index("await fetch")
+    assert body.count(discard) == 2
+    assert body.index(discard) < body.index("noteState(")
+    assert body.rindex(discard) < body.index("streamed = false;")
+    assert script().count("EPOCH++") == 1            # only a drop ends an epoch
+    assert naming("EPOCH") == {"refresh"}
 
 
 def test_the_registry_answering_late_redraws_the_panel_and_reports_no_change():
