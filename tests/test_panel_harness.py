@@ -415,7 +415,7 @@ HARNESS_READERS = {
 
 
 def test_the_only_places_that_know_what_product_is_running_are_named_here():
-    # Held the way the accent's six roles are held: every place is named with
+    # Held the way the accent's five roles are held: every place is named with
     # what it does there, so a new one cannot appear without someone deciding
     # what it is for. The load-bearing half is the other direction — nothing
     # that decides an order, a status or a queue position is in this set, and a
@@ -533,7 +533,7 @@ def test_no_carrier_of_a_status_or_an_action_resolves_a_harness_accent(where,
 
 def test_the_focus_ring_is_the_palettes_and_never_a_products():
     # The fifth forbidden place. Focus is drawn by one global rule, and what it
-    # spends is December Red — the accent's role 5. A harness accent reaching it
+    # spends is December Red — the accent's role 4. A harness accent reaching it
     # would mean the ring around a focused control changed colour with whatever
     # product happened to be beside it.
     for label, env in ENVIRONMENTS:

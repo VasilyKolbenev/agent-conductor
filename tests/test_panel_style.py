@@ -570,7 +570,7 @@ def test_the_legend_key_of_a_status_echoes_the_silhouette_the_status_table_decla
 
 
 def test_every_legend_key_declares_its_status_as_a_contour_and_not_as_a_flat_fill():
-    # §4 reserves the accent for six roles and never for a large fill, so no key
+    # §4 reserves the accent for five roles and never for a large fill, so no key
     # may be a block of one token. contested keeps a fill because being two
     # colours at once is its signature — but it is a gradient of two tokens
     # inside a dashed contour, not a flat swatch, so the rule below still holds.
@@ -586,7 +586,7 @@ def test_every_legend_key_declares_its_status_as_a_contour_and_not_as_a_flat_fil
         assert len(set(re.findall(r"var\((--[\w-]+)\)", fill))) == 2, (status, fill)
 
 
-# ── movement, and the accent's six roles ──────────────────────────────────
+# ── movement, and the accent's five roles ─────────────────────────────────
 def animated() -> dict[str, str]:
     """Every selector the stylesheet animates, with the animation it declares.
 
@@ -705,22 +705,28 @@ def test_every_animation_the_stylesheet_declares_is_switched_off_by_reduced_moti
         assert key in stopped, f"{key} keeps moving under reduced motion"
 
 
-# The six roles §4 reserves December Red for: the current Orbit stage, the
-# travelled trajectory, human-control points, the primary action, focus and
-# selection, and a small brand mark. Every place the stylesheet spends the
-# accent is named here with the role it spends it on, so a new accent site
-# cannot appear without someone deciding which role it is. Three of them are
-# open questions carried to the owner rather than settled roles, and they say
-# so: an honest map beats a tidy one.
+# The five roles §4 reserves December Red for: the current Orbit stage,
+# human-control points, the primary action, focus and selection, and a small
+# brand mark. Every place the stylesheet spends the accent is named here with
+# the role it spends it on, so a new accent site cannot appear without someone
+# deciding which role it is. Three of them are open questions carried to the
+# owner rather than settled roles, and they say so: an honest map beats a tidy
+# one.
+#
+# The list was six until 2026-08-10, when the owner reserved the travelled
+# trajectory until a structural Run history exists (plan §8.6) and the roles
+# after it moved up one. The table never had a row for it: nothing in the panel
+# ever spent the accent there, and the guard above forbids it outright — which
+# is the shape the contradiction had while the plan still counted it.
 ACCENT_ROLES = {
-    ":focus-visible": "role 5 — focus, on every focusable element including a node",
-    ".node[aria-pressed=\"true\"] .halo": "role 5 — selection, on the outer ring",
+    ":focus-visible": "role 4 — focus, on every focusable element including a node",
+    ".node[aria-pressed=\"true\"] .halo": "role 4 — selection, on the outer ring",
     ".orb--current": "role 1 — the current Orbit stage, as its contour",
     ".vd--run": "role 1 — the same stage's chip, which spells the word beside it",
     ".vd--run .gl": "role 1 — that chip's glyph",
-    ".mark__dot": "role 6 — the brand mark",
-    ".copy": "role 4 — the primary action, the decision-brief button",
-    ".copy:hover": "role 4 — the same button under the pointer",
+    ".mark__dot": "role 5 — the brand mark",
+    ".copy": "role 3 — the primary action, the decision-brief button",
+    ".copy:hover": "role 3 — the same button under the pointer",
     ".spark i": "OPEN — the KPI progress bar, carried to the owner",
     ".node--running .box": "OPEN — the running node's contour, carried to the owner",
     ".p--running": "OPEN — the running chip's tint and border, carried to the owner",

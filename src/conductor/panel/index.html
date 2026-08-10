@@ -23,7 +23,7 @@
      shade with pure black, light lifts shade with the rgb of --ink, written
      out because a shadow needs an alpha and the token has none. So the layer
      introduces no hue anywhere: light is carried by surface lightness,
-     contour weight and depth — never by the accent, which stays on its six
+     contour weight and depth — never by the accent, which stays on its five
      reserved roles. tests/test_panel_style.py holds that split. */
   --panel-lit:color-mix(in srgb,var(--ink) 4%,var(--panel));
   --contour-lit:color-mix(in srgb,var(--ink) 22%,var(--line));
@@ -67,7 +67,7 @@ button{font:inherit;cursor:pointer;background:none;border:none;color:inherit}
 .mark{width:22px;height:22px;flex:none}
 .mark__ring{fill:none;stroke:var(--line);stroke-width:1.4}
 .mark__path{fill:none;stroke:var(--faint);stroke-width:1}
-.mark__dot{fill:var(--accent)}          /* accent role 6: the brand mark */
+.mark__dot{fill:var(--accent)}          /* accent role 5: the brand mark */
 .wordmark{font-size:14px;font-weight:660;letter-spacing:-.015em}
 /* Light level. The single source is state.json's project_status.state
    (PROTOCOL.md §6.1) — the one shipped field that says whether a person is
@@ -501,7 +501,10 @@ footer{font-size:10px;color:var(--faint);font-family:var(--mono);
      - sections stay marked with the banners listed above;
      - never minify or otherwise compress source to fit under a line count —
        that trades the readability the waiver was granted for;
-     - every surface keeps a smoke test in tests/test_panel_smoke.py;
+     - Every new panel invariant is pinned in the matching tests/test_panel_*.py
+       module. test_panel_smoke.py guards basic loading and the structural
+       contract; it is not the mandatory home for every panel guard.
+       (Widened by the owner 2026-08-10; plan §8.5 carries the argument.)
      - 1600 lines is a mandatory architecture audit, not a cap: on crossing it,
        stop after the current commit and re-review the structure;
      - 2000 lines is the alpha ceiling. A forecast past it is a stop, and the

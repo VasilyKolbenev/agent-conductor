@@ -214,9 +214,38 @@ def test_every_test_module_the_panel_points_a_reader_at_exists():
         assert (PANEL.parents[3] / path).exists(), path
 
 
+def _waiver_conditions() -> list[str]:
+    """The conditions the panel records its file-size waiver as granted on."""
+    block = re.search(r"FILE-SIZE WAIVER \(.*?\*/", panel_html(), re.S)
+    assert block, "the panel no longer records the waiver it lives under"
+    body = block.group(0).split("conditional:", 1)[1]
+    return [" ".join(item.split()) for item in re.split(r"\n\s*- ", body)[1:]]
+
+
+def test_the_waiver_names_as_the_home_of_a_panel_guard_every_module_that_holds_one():
+    # Nothing held this condition to the tree before, and it showed: the waiver
+    # sat in the panel as prose naming a single module while the guards had long
+    # since spread across seven, and every test in all seven stayed green. The
+    # owner widened the condition on 2026-08-10 (plan §8.5) and this is what
+    # keeps the widening true.
+    #
+    # What is checked is the relation the condition asserts, not its wording:
+    # the test paths it names, expanded as the patterns they are, are exactly
+    # the panel test modules this repository has. Narrowing it back to one
+    # module shrinks the left side and fails here; a module added later is
+    # already covered, because the pattern is what is named.
+    naming = [c for c in _waiver_conditions() if "tests/test_panel" in c]
+    assert len(naming) == 1, naming
+    tests = PANEL.parents[3] / "tests"
+    named = set(re.findall(r"tests/(test_panel_[\w*]+\.py)", naming[0]))
+    assert {p.name for pattern in named for p in tests.glob(pattern)} == \
+        {p.name for p in tests.glob("test_panel_*.py")}
+
+
 def test_the_served_panel_source_carries_the_interaction_ring_and_its_rule(tmp_path):
-    # The file-size waiver's third condition: every surface keeps a smoke test
-    # here. .halo is the surface this slice added, and the cascade guards in
+    # The file-size waiver's third condition, in the module that matches it: a
+    # panel surface is pinned somewhere, and the served response is what this
+    # module owns. .halo is the surface this slice added, and the cascade guards in
     # tests/test_panel_style.py reason about an element they assume is emitted,
     # so the served source has to carry both the emitter and the rule.
     #

@@ -157,8 +157,8 @@ UI slices consume. No layout is redesigned here.
   slice must replace with a precise measurement. §4 forbids the current state and a failure from
   looking alike, and the mitigation the palette relies on is structural rather than chromatic:
   statuses always carry glyph, text and shape, and the accent is reserved for the current stage,
-  the travelled trajectory, human-control points, the primary action and focus — roles that
-  rarely occupy the same position as a status chip.
+  human-control points, the primary action and focus — roles that rarely occupy the same
+  position as a status chip.
 - **`fail` and `wait` are both warm hues in the dark theme.** `#e0703a` (orange-coral) and
   `#c9971f` (gold) are adjacent on the wheel. Under red-green colour-vision deficiency — the
   common form — orange and gold converge, so the pair that separates *"this failed"* from
@@ -182,10 +182,14 @@ UI slices consume. No layout is redesigned here.
 ### DEC-UI-2 — Orbit presentation *(owner checkpoint before implementation)*
 
 Replaces the current cycle ring with the Orbit as the dominant spatial graph: five stages, the
-travelled part of the trajectory, the current stage, and roles grouped under the stage they are
-staged to. **Unblocked by §8.1 (2026-08-03):** the stages display as *Goal, Detect, Diagnose,
-Design, Deliver* — the shipped protocol ids, capitalised — and no alternative label is
-introduced.
+trajectory that connects them and returns to the first, the current stage, and roles grouped
+under the stage they are staged to. **Unblocked by §8.1 (2026-08-03):** the stages display as
+*Goal, Detect, Diagnose, Design, Deliver* — the shipped protocol ids, capitalised — and no
+alternative label is introduced.
+
+The trajectory carries no history, and the slice ships none: every connection is the same
+neutral contour, and the return to the first stage is told from a step by its dash and its
+missing arrow head rather than by a colour. Displaying the travelled part is reserved (§8.6).
 
 - Files: `src/conductor/panel/index.html` (`drawRing`, `renderCycle`), `tests/test_panel_smoke.py`.
 - The panel joins `lane.role → cycle.roles[].stage`. It does not do this today: `renderCycle`
@@ -300,7 +304,7 @@ Two constraints travel with the direction and bind every slice that touches the 
 - **Light and accent are different channels.** Light intensity is carried by material and
   contour — surface lightness, contour weight and brightness, depth — and never by the
   accent hue. A lit card does not turn red; it gets lighter and its contour gets crisper.
-  December Red stays on the six roles below. In the light theme the mechanism inverts:
+  December Red stays on the five roles below. In the light theme the mechanism inverts:
   Winter Daylight is an instrument panel in daylight, so depth and contour carry the light
   level there, because a white card cannot be made lighter.
 
@@ -328,9 +332,11 @@ Both columns are now complete. December Red `#E44955` is retained as the full br
 the dark theme; it is the failure colour that moved away from it, not the accent that gave up
 colour (§8.4).
 
-December Red is reserved for six things and nothing else: the current Orbit stage, the
-travelled part of the trajectory, human-control points, the primary action, focus and
-selection, and a small brand mark. It is never used as a large filled surface.
+December Red is reserved for five things and nothing else: the current Orbit stage,
+human-control points, the primary action, focus and selection, and a small brand mark. It is
+never used as a large filled surface. A sixth role — the travelled part of the trajectory —
+was reserved here until 2026-08-10, when the owner reserved the display itself until a
+structural Run history exists (§8.6).
 
 Operational statuses — pass, wait, fail — keep their own semantics, stay compact, and are
 always distinguished by **glyph, text and shape as well as colour, never by colour alone**
@@ -357,8 +363,12 @@ says **Recent activity** until P1 ships run identity.
 **Motion.** Only functional motion is allowed:
 
 - a short pulse movement on a *real* phase change;
-- a soft refresh of the travelled trajectory;
 - a brief accent on a new queue item.
+
+A soft refresh of the travelled trajectory was a third allowance. It goes with the display it
+would have moved: §8.6 reserves that display until a structural Run history exists, so in v1
+there is nothing for such a refresh to be a refresh *of*, and inventing one would be motion
+with no event behind it.
 
 No perpetual Orbit motion. `prefers-reduced-motion` is respected for every animation.
 
@@ -402,13 +412,19 @@ The part a redesign is most likely to erode. None of it is negotiable inside a U
   static asset; a bundler or an ES-module split would be a new toolchain in a stdlib-only
   project.
 - **Read-only semantics.** The panel never writes; loopback only.
-- **The 1600-line waiver** (owner, 2026-08-03) exempts `src/conductor/panel/index.html` from the
-  800-line global cap, on four conditions, all recorded in the file itself: sections stay marked
-  with their banners; the source is never minified or compressed to fit; every surface keeps a
-  smoke test in `tests/test_panel_smoke.py`; and as the file approaches 1600 lines the
-  architecture is re-reviewed rather than the ceiling raised again. (The M1–M4 closeout audit
-  recorded this waiver as living only in session history; it is now written into the panel
-  source, so that finding is closed.)
+- **The 1600-line waiver** (owner, 2026-08-03; third condition widened 2026-08-10, §8.5) exempts
+  `src/conductor/panel/index.html` from the 800-line global cap, on four conditions, all recorded
+  in the file itself:
+    - sections stay marked with their banners;
+    - the source is never minified or compressed to fit;
+    - Every new panel invariant is pinned in the matching `tests/test_panel_*.py` module.
+      `test_panel_smoke.py` guards basic loading and the structural contract; it is not the
+      mandatory home for every panel guard.
+    - as the file approaches 1600 lines the architecture is re-reviewed rather than the ceiling
+      raised again.
+
+  (The M1–M4 closeout audit recorded this waiver as living only in session history; it is now
+  written into the panel source, so that finding is closed.)
 - **Protocol changes and visual redesign never share a commit.**
 - **Internal protocol keys are not renamed without a separate decision.**
 
@@ -551,6 +567,70 @@ What the decision leaves for DEC-UI-1 to measure, not to reopen: `#e0703a` and `
 adjacent warm hues, and under the common form of red-green colour-vision deficiency orange and
 gold converge. The mitigation is the standing rule above; the obligation to prove it holds is
 written into DEC-UI-1's acceptance in §3.
+
+### 8.5 Where a panel invariant is pinned — resolved 2026-08-10, the waiver's third condition widened
+
+**Decision, as given:**
+
+> Every new panel invariant is pinned in the matching tests/test_panel_*.py module.
+> test_panel_smoke.py guards basic loading and the structural contract; it is not the
+> mandatory home for every panel guard.
+
+§7 and the copy of the four conditions inside `src/conductor/panel/index.html` both carry the
+new wording. The condition has to read the same in both places or the panel's own record of the
+waiver stops being the record.
+
+The reasoning, kept. The condition was written when one module held everything the panel
+promised. It no longer does: `tests/test_panel_cascade.py` owns the parsing and the cascade
+model, `test_panel_colour.py` the colorimetry as a self-contained circuit, `test_panel_contrast.py`
+the measured pairs, `test_panel_style.py` the stylesheet's structural relations,
+`test_panel_orbit.py` the Orbit's geometry and stage vocabulary, `test_panel_harness.py` the
+harness channel rule, and `test_panel_smoke.py` the served response and the id contract. Two
+forces produced that split and both are the owner's: a guard belongs with the class it closes,
+and a test file over 800 lines gives up the self-contained circuit inside it rather than growing
+(the rule of 2026-08-04, which is what moved the colorimetry out of the contrast module).
+
+Read literally, the old condition ordered the geometry, cascade, contrast and branding guards
+back into `test_panel_smoke.py`. The 800-line cap on test files is not what the panel's waiver
+suspends — the waiver names one HTML file — and the guards outside the smoke module already run
+to 2927 lines against a smoke module of 270, so the literal reading is not merely undesirable
+but unreachable. It would also put unrelated guards behind one module's fixtures and dissolve
+the one thing a module name is good for: telling a reader which class of claim was closed where.
+
+What the condition buys is unchanged, and it is the part worth keeping: no surface ships
+unguarded. It is the module that moved, not the obligation. Specifically **not** implied by
+this decision: gathering the Orbit's checks into `test_panel_smoke.py` for literal compliance
+with the old wording. Geometry, cascade, contrast and branding stay in the modules that own them.
+
+### 8.6 The travelled trajectory — resolved 2026-08-10, reserved rather than a v1 accent role
+
+**Decision, as given:**
+
+> Displaying the travelled trajectory is reserved until a structural Run history exists.
+> It is not implemented in v1: the interface does not derive it from the current phase,
+> does not accumulate it client-side, and does not simulate historical data.
+
+December Red is therefore reserved for **five** roles, not six (§4); DEC-UI-1's accent list and
+DEC-UI-2's description of what the Orbit shows (§3) drop it; and §5's soft refresh of the
+travelled trajectory goes with it.
+
+The reasoning, kept. Protocol v1 records no run history. `state.json`'s `cycle` carries the
+declared phases, the roles, and at most the one phase a lane is reporting right now — there is
+no field in it that could make a travelled path true, and run identity is ADR-deferred (§8.2,
+ADR 0001 §2). Each of the three ways to draw one anyway is an invention of exactly the kind this
+document bans elsewhere: deriving the path from `now.phase` asserts that every earlier phase was
+completed, which the merger never says; accumulating it in the browser makes the picture depend
+on how long a tab happened to stay open, so two people looking at the same project see different
+histories; and simulated history is fake telemetry, which §4's rule that light must be derived
+from data already forbids.
+
+The role therefore had no subject, and the panel had already settled the question in the other
+direction while the plan still listed it: no part of the trajectory may be painted with the
+accent or with a status colour, and the return to the first stage is told from a step by its
+dash and its missing arrow head. The DEC-UI-2 review found that contradiction and correctly
+declined to fix it in the guards, because the guards were quoting §4 faithfully and the
+contradiction was the plan's. This entry is that repair. Nothing in the panel is implemented to
+satisfy it and nothing needs to be: reserving a display is a decision not to build one.
 
 ## 9. Still open
 
