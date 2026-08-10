@@ -13,6 +13,7 @@ worth less than an equality plus a test that the fixture still has teeth.
 import ast
 import json
 import re
+from dataclasses import replace
 from pathlib import Path
 
 from conductor import harnesses, merge, templates
@@ -53,7 +54,8 @@ def test_the_registry_lists_the_products_it_says_it_does():
     # decision about what December claims to know, not an implementation detail.
     assert [h.id for h in harnesses.known()] == [
         "claude-code", "codex", "cursor", "windsurf", "kimi-code",
-        "qwen-code", "grok-build", "github-copilot", "custom"]
+        "qwen-code", "grok-build", "github-copilot", "gemini-cli", "opencode",
+        "custom"]
 
 def test_deepseek_is_deliberately_absent():
     # Not because the integration story is missing — DeepSeek publishes models,
@@ -66,6 +68,56 @@ def test_deepseek_is_deliberately_absent():
     text = " ".join(f"{h.id} {h.display_name}" for h in harnesses.known()).lower()
     assert "deepseek" not in text
     assert harnesses.get("deepseek") is None
+
+def test_the_gemini_row_is_the_cli_product_and_not_the_model_family():
+    # The same rule that keeps DeepSeek out decides how Google gets in. Google
+    # ships both a model family reached over an API and a first-party terminal
+    # harness built on it, and only the second is a harness product — so the
+    # row is `gemini-cli`/`Gemini CLI`, and the bare model name stays
+    # unregistered. A user who types `gemini` gets that exact string and the
+    # neutral badge, which is the honest answer: this file knows a CLI, not a
+    # model. OpenCode needs no such distinction — it ships no model at all and
+    # is pointed at whichever provider its user configures.
+    assert harnesses.get("gemini-cli") is not None
+    assert harnesses.get("gemini") is None
+    assert harnesses.resolve("gemini").accent_dark == harnesses.NEUTRAL_DARK
+    assert harnesses.get("opencode") is not None
+
+
+def _repeated_monograms(entries):
+    """Every monogram carried by more than one entry, in first-clash order.
+
+    Args:
+        entries: Registry rows, real or fabricated.
+
+    Returns:
+        One string per monogram that two rows share. Computed over the rows
+        handed in rather than over `known()`, so the sabotage below can ask
+        this the same question about a registry that does collide — a check
+        spelled inline over the real registry can only ever answer about the
+        registry that exists, and cannot show it would notice one that did not.
+    """
+    seen, repeated = set(), []
+    for harness in entries:
+        if harness.monogram in seen and harness.monogram not in repeated:
+            repeated.append(harness.monogram)
+        seen.add(harness.monogram)
+    return repeated
+
+
+def test_no_two_registered_harnesses_share_a_badge_and_a_collision_is_caught():
+    # A hard invariant, not a preference: the monogram is the whole badge at
+    # the size the panel draws it, so two rows sharing one make two products
+    # indistinguishable wherever the display name does not also fit. New rows
+    # therefore have to take a free pair — `GC` and `OC` were free.
+    assert _repeated_monograms(harnesses.known()) == []
+    # And the check has teeth. A row that duplicates a shipped badge is built
+    # from a real entry, so the fabricated registry differs from the true one
+    # in exactly the field under test and in no other.
+    clash = replace(harnesses.get("gemini-cli"), id="gemini-cli-nightly")
+    assert clash.monogram == harnesses.get("gemini-cli").monogram
+    assert _repeated_monograms([*harnesses.known(), clash]) == ["GC"]
+
 
 def test_the_registry_never_normalises_a_display_name_into_an_id():
     # No slugify, no case folding, no "they probably meant claude-code". A

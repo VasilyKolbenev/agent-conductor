@@ -146,6 +146,19 @@ _KNOWN: tuple[Harness, ...] = (
             accent_dark="#cf8bf2", accent_light="#7a26ad", monogram="GH",
             docs="https://docs.github.com/en/copilot",
             adapter="github-copilot", executable_hints=("gh",)),
+    # REG-1. The two documentation links below are PROPOSED, not confirmed:
+    # this slice ran with no network access, so nothing fetched either address
+    # and no code here can. Every other field of both rows is checkable where
+    # it is written — a URL is the one that is not, so it is the one the owner
+    # is asked to confirm before these rows ship.
+    Harness(id="gemini-cli", display_name="Gemini CLI", monogram="GC",
+            accent_dark="#4fd1a5", accent_light="#0d6d5a",
+            docs="https://github.com/google-gemini/gemini-cli",
+            adapter="gemini-cli", executable_hints=("gemini",)),
+    Harness(id="opencode", display_name="OpenCode", monogram="OC",
+            accent_dark="#d3a88c", accent_light="#7d4a2c",
+            docs="https://github.com/sst/opencode",
+            adapter="opencode", executable_hints=("opencode",)),
     Harness(id=CUSTOM, display_name="Custom harness", monogram="CH",
             accent_dark=NEUTRAL_DARK, accent_light=NEUTRAL_LIGHT,
             docs="", adapter="", executable_hints=()),
@@ -154,8 +167,9 @@ _KNOWN: tuple[Harness, ...] = (
 _BY_ID = {harness.id: harness for harness in _KNOWN}
 
 #: The ids `conduct init` offers by number, in the order it offers them. Short
-#: on purpose: a wall of nine products at the first prompt is a worse opening
-#: minute than three names and a line saying where the rest are. Membership
+#: on purpose: a wall of every product this file knows, at the first prompt, is
+#: a worse opening minute than three names and a line saying where the rest
+#: are — and the wall gets taller with every row added. Membership
 #: here is an onboarding decision, not a claim that these work better.
 RECOMMENDED = ("claude-code", "codex", "cursor")
 
