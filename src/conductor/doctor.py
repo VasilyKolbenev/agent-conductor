@@ -519,8 +519,12 @@ def _spelled(token: str) -> str:
     a command from — by the verb it opens on, so one built with no root is
     found too — holds each to being spliced with the reader's root, and holds
     every remaining element to being a literal, that root, or a value
-    `_spellable` was asked about. So a third authored token added later is
-    named there rather than discovered here.
+    `_spellable` was asked about. What the splice itself contributes is held
+    as narrowly, because a token woven into it would land in EVERY command at
+    once while standing at no site of its own: `_dir_args` must be one return
+    of literals and the root it was handed, and any other shape of it is
+    reported there. So a third authored token added later is named there
+    rather than discovered here.
 
     Every remaining token is this module's own literal or the root the reader
     themselves typed — and the root is the reason the rule is `_BARE_CHARS`

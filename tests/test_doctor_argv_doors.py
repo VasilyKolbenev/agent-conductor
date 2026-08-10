@@ -14,11 +14,17 @@ finds every command line by walking it, and holds each to two rules. It is
 spliced with the reader's own root — which is the sentence the rest rests on,
 so it is measured and not assumed. And every token of it is this module's own
 literal, that root, or a value that went through `_spellable` first. The one
-helper those sites spell the root with is read the same way: every printed
-command passes through it, so a value woven into what it returns would reach
-all of them at once while appearing at no site at all. A fourth door added
-later is caught because it is in the source — not because the corpus happened
-to grow a project that walks through it.
+helper those sites spell the root with is read too, and more narrowly: every
+printed command passes through it, so a value woven into what it RETURNS would
+reach all of them at once while standing at no site at all. That helper is
+therefore held to a single SHAPE — one `return`, of this module's own string
+literals and the one name its signature takes, arranged in tuples and
+conditionals — and every other shape is a door. Held as a shape and not as a
+list of banned forms on purpose: a call, a `+`, an f-string, a comprehension, a
+second helper and the form nobody has written yet are all out because they are
+not the one allowed in, so this file does not have to have foreseen them. A
+fourth door added later is caught because it is in the source — not because the
+corpus happened to grow a project that walks through it.
 
 A command line is recognised by the verb it opens on, read from the CLI's own
 source, and not by the root star it carries. Both halves of that matter. A
@@ -37,7 +43,10 @@ called on somewhere in the same function, which is what the module's shape
 makes checkable, and not a claim that no branch can reach the tuple another
 way. Nor is the root followed further back than the site: it is recognised as
 the first parameter of the function the site stands in, unrebound, and what a
-CALLER passes into that parameter is not read here. And a command line is a
+CALLER passes into that parameter is not read here. That is the one level left
+open, and left open deliberately — the root is the path the reader typed on
+their own command line, which `_spelled` in `doctor.py` says in as many words
+is a value this module does not defend against. And a command line is a
 TUPLE LITERAL opening on a LITERAL verb: one assembled some other way — the
 verb held in a variable, the tuple returned by a call or glued together from
 fragments — is not found by that rule, and the floor below is what notices the
@@ -82,8 +91,9 @@ VERBS = _verbs()
 #: command this module prints carries it — a convention this file rests on and
 #: MEASURES, rather than a fact read off today's source: the tuples are found
 #: by their verb, and each is then held to carrying exactly one of these stars.
-#: What the star stands for is read too: the tuple that call returns is walked
-#: below and held to the same rule as the sites it is spliced into.
+#: What the star stands FOR is read too, and by a rule narrower than a site's:
+#: the helper must be one `return` of this module's literals and the single
+#: name it takes, so nothing else can be in the tuple the star unpacks.
 _ROOT_ARGS = "_dir_args"
 
 #: The predicate a value out of the project's files has to pass before it may
@@ -131,20 +141,29 @@ def root_stars(argv):
             and getattr(element.value.func, "id", None) == _ROOT_ARGS]
 
 
-def root_args_body():
-    """What `_dir_args` takes, and every element of every tuple its body builds.
+#: The one shape `_dir_args` is allowed to have, as the kinds of node it may
+#: be built from. An allowlist and not a list of banned forms, which is the
+#: whole mechanism: a call, a `+`, an f-string, a comprehension, a walrus, a
+#: second helper — and every shape nobody has written yet — are doors by not
+#: being in here, rather than by having been thought of. `ast.Compare` is in
+#: because the default root is told apart by `root == "."`; a comparison
+#: decides WHICH tuple comes back and puts nothing into one.
+RETURNABLE = (ast.Return, ast.IfExp, ast.Compare, ast.Tuple, ast.Name,
+              ast.Constant)
 
-    The star above stands for this tuple, and no site holds it: it is where
-    `--dir` and the root are put together, and the one tuple every printed
-    command with a root of its own is spliced from.
+
+def root_args():
+    """What `_dir_args` can be handed a value in, and the body that answers.
+
+    The star above stands for what this function RETURNS, and no site holds
+    it: it is where `--dir` and the root are put together, and the one tuple
+    every printed command with a root of its own is spliced from.
 
     Returns:
-        `(the parameter names, the tuple elements)`. Every place a signature
-        can take a value is counted — positional-only, ordinary, keyword-only,
-        and `*args`/`**kwargs`, the last two spelled with their stars so a
-        widening there cannot read as an ordinary name. The body only — a
-        return annotation like `tuple[str, ...]` is a tuple to `ast` and none
-        of this module's business.
+        `(the parameter names, the body with a leading docstring dropped)`.
+        Every place a signature can take a value is counted — positional-only,
+        ordinary, keyword-only, and `*args`/`**kwargs`, the last two spelled
+        with their stars so a widening there cannot read as an ordinary name.
     """
     for function in ast.walk(TREE):
         if (isinstance(function, ast.FunctionDef)
@@ -157,11 +176,47 @@ def root_args_body():
                       if extra is not None]
             takes += [f"**{extra.arg}" for extra in (signature.kwarg,)
                       if extra is not None]
-            return (takes,
-                    [element for statement in function.body
-                     for node in ast.walk(statement)
-                     if isinstance(node, ast.Tuple) for element in node.elts])
+            body = function.body
+            if (body and isinstance(body[0], ast.Expr)
+                    and isinstance(body[0].value, ast.Constant)
+                    and isinstance(body[0].value.value, str)):
+                body = body[1:]
+            return takes, body
     return [], []
+
+
+def foreign_nodes(returned, takes):
+    """Every node under one `return` that the one allowed shape does not admit.
+
+    The shape entire: tuple literals and conditionals over them, whose
+    elements are this module's own string literals and the single name the
+    signature takes. Everything is measured against that and nothing against a
+    catalogue of bad forms — so a value reaching the returned tuple through a
+    call, a `+`, an f-string, a comprehension, a second helper or a shape this
+    file has never seen is reported because it is not the allowed one, which
+    is what stops this from being the same fix again one level further out.
+
+    Args:
+        returned: The single `return` statement `root_args` handed back.
+        takes: Its parameter names. A `Name` is admitted only when the
+            signature takes exactly that one name, so a widened signature
+            cannot smuggle a second name into the tuple.
+
+    Returns:
+        `(unparsed node, line)` for each door, so a report names where. Nodes
+        carrying no value of their own — an expression context, a comparison
+        operator — are not read.
+    """
+    doors = []
+    for node in ast.walk(returned):
+        if not isinstance(node, (ast.expr, ast.stmt)):
+            continue
+        if (not isinstance(node, RETURNABLE)
+                or (isinstance(node, ast.Name) and [node.id] != takes)
+                or (isinstance(node, ast.Constant)
+                    and not isinstance(node.value, str))):
+            doors.append((ast.unparse(node), node.lineno))
+    return doors
 
 
 def _own_scope(function):
@@ -390,26 +445,32 @@ def test_every_command_line_the_module_builds_is_spliced_with_the_readers_root()
 def test_the_tuple_the_root_star_stands_for_holds_that_root_and_nothing_else():
     # The other half of the traversal, and the half a site cannot show. Every
     # element above that is a star is called "the reader's own root" on the
-    # strength of what one function returns, so that function is read: it may
-    # put this module's own literals and the single value it was handed into
-    # its tuple, and nothing else. A value spliced in there would be printed by
-    # every command carrying a root while standing at none of the sites — which
-    # is exactly the shape of door the sites cannot see.
-    takes, elements = root_args_body()
+    # strength of what one function RETURNS, so what it returns is what is
+    # read here — and not the tuple literals that happen to lie in its body,
+    # which a value glued on to the returned tuple by anything else walks
+    # straight past. Such a value would be printed by every command carrying a
+    # root while standing at none of the sites: exactly the door a site cannot
+    # see. So the helper is held to ONE shape — one return, of literals and
+    # the single name it takes — and everything else is reported, including
+    # the forms nobody has written. That is the point of holding a shape
+    # rather than banning a list: the list is what has to be extended each
+    # time somebody finds one more way in.
+    takes, body = root_args()
     # One value in, so one value out — counted over the whole signature, so a
     # second way in opened anywhere in it is a widening this line reports.
     assert len(takes) == 1, takes
-    literals = {element.value for element in elements
-                if isinstance(element, ast.Constant)
-                and isinstance(element.value, str)}
-    doors = [(ast.unparse(element), element.lineno) for element in elements
-             if not (isinstance(element, ast.Constant)
-                     and isinstance(element.value, str))
-             and not (isinstance(element, ast.Name) and [element.id] == takes)]
+    assert len(body) == 1 and isinstance(body[0], ast.Return), (
+        f"{_ROOT_ARGS} is no longer one return, so what it hands back cannot "
+        f"be read off a single expression: {[ast.unparse(s) for s in body]}")
+    doors = foreign_nodes(body[0], takes)
     assert not doors, f"value(s) reaching every printed command unread: {doors}"
     # Vacuity guard, for the same reason as the one below: a walk that stopped
     # finding this tuple would report no doors and mean nothing by it. `--dir`
     # is the flag those commands are spliced with.
+    literals = {element.value for node in ast.walk(body[0])
+                if isinstance(node, ast.Tuple) for element in node.elts
+                if isinstance(element, ast.Constant)
+                and isinstance(element.value, str)}
     assert literals == {"--dir"}, literals
 
 
