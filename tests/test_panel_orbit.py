@@ -489,13 +489,23 @@ def test_an_unregistered_harness_resolves_to_the_string_the_map_wrote(name):
 
 def test_the_panel_has_one_source_for_a_harness_name_and_falls_back_to_the_string():
     # A dependence claim, source-read: the lookup reaches for the table and for
-    # `String`, and for nothing else. That is what rules out the second fallback
-    # §2.6 forbids — a hue hashed out of the name, a guessed monogram, a second
-    # table of near-matches — without this test having to know what one would be
-    # called. `String(id)` is the whole of the fallback, so an unregistered
-    # harness is shown as itself.
-    expression = re.search(r"const harnessName = (.*?);\n", panel_html(), re.S).group(1)
+    # `String`, and for nothing else. That rules out a fallback assembled from
+    # other names — a hue hashed out of the string, a second table consulted for
+    # near-matches — without this test having to know what one would be called.
+    #
+    # It did not rule out a match by resemblance, and the comment above it used
+    # to say it did. A resemblance test needs no name it does not already have:
+    # `String(id).includes("gemini") ? "Gemini CLI" : String(id)` reaches for the
+    # same two names, and the executed sabotage that spelt exactly that left the
+    # whole suite green while the panel invented a product for any string with
+    # `gemini` in it. What such a rewrite cannot do without is a word to look for
+    # and a word to answer with, so the second assertion is that this expression
+    # spells no word at all: the fallback is `String(id)`, the author's own bytes,
+    # and there is nowhere in it to put a brand. Held over the comment-stripped
+    # script, so the ban is on the expression and not on the prose beside it.
+    expression = re.search(r"const harnessName = (.*?);\n", script(), re.S).group(1)
     assert free_names(expression, {"id"}) == {"HARNESS_NAMES", "String"}
+    assert not re.findall(r"""["'`]""", expression), expression
     assert script().count("HARNESS_NAMES") == 2      # the table, and this lookup
 
 
