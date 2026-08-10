@@ -513,10 +513,12 @@ def _spelled(token: str) -> str:
     knowing when reading a `--author` token; it is not what this paragraph
     rests on, and it is not enough on its own, since it admits a leading dash.
     That there are exactly two is not a reading of this file but a walk over
-    it: `tests/test_doctor_argv_doors.py` finds every tuple a printed command
-    is built from and holds each element to being a literal, the root, or a
-    value `_spellable` was asked about — so a third authored token added later
-    is named there rather than discovered here.
+    it: `tests/test_doctor_argv_doors.py` finds every tuple this module builds
+    a command from — by the verb it opens on, so one built with no root is
+    found too — holds each to being spliced with the reader's root, and holds
+    every remaining element to being a literal, that root, or a value
+    `_spellable` was asked about. So a third authored token added later is
+    named there rather than discovered here.
 
     Every remaining token is this module's own literal or the root the reader
     themselves typed — and the root is the reason the rule is `_BARE_CHARS`

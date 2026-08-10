@@ -10,14 +10,23 @@ went into `conduct prompt --author` unread, and the corpus stayed green for as
 long as it took someone to think of writing a lane named `-x`.
 
 So nothing here builds a project. This file reads the module's own source,
-finds the argv sites by walking it, and holds every one of them to one rule: a
-token of a printed command is this module's own literal, the root the reader
-themselves typed, or a value that went through `_spellable` first. The one
+finds every command line by walking it, and holds each to two rules. It is
+spliced with the reader's own root — which is the sentence the rest rests on,
+so it is measured and not assumed. And every token of it is this module's own
+literal, that root, or a value that went through `_spellable` first. The one
 helper those sites spell the root with is read the same way: every printed
 command passes through it, so a value woven into what it returns would reach
 all of them at once while appearing at no site at all. A fourth door added
 later is caught because it is in the source — not because the corpus happened
 to grow a project that walks through it.
+
+A command line is recognised by the verb it opens on, read from the CLI's own
+source, and not by the root star it carries. Both halves of that matter. A
+tuple found by its star could never be a tuple missing one, so "every command
+carries the root" would have been true by the way the walk was written rather
+than by anything the module does; and a command built with no root at all —
+`("prompt", "--role", role_id)` — would have been no tuple this file had ever
+heard of, its authored token held to nothing.
 
 WHAT NOTHING HERE HOLDS. Whether `_spellable` is the right rule, and what any
 command does once it parses, are not asked here: this file only asks that
@@ -28,13 +37,18 @@ called on somewhere in the same function, which is what the module's shape
 makes checkable, and not a claim that no branch can reach the tuple another
 way. Nor is the root followed further back than the site: it is recognised as
 the first parameter of the function the site stands in, unrebound, and what a
-CALLER passes into that parameter is not read here.
+CALLER passes into that parameter is not read here. And a command line is a
+TUPLE LITERAL opening on a LITERAL verb: one assembled some other way — the
+verb held in a variable, the tuple returned by a call or glued together from
+fragments — is not found by that rule, and the floor below is what notices the
+walk going quiet.
 """
 import ast
 import string
 from pathlib import Path
 
 import pytest
+from conductor import __main__ as cli
 from conductor import doctor
 
 #: The module read as text, from the file the imported module actually came
@@ -43,12 +57,33 @@ from conductor import doctor
 SOURCE = Path(doctor.__file__).read_text(encoding="utf-8")
 TREE = ast.parse(SOURCE)
 
-#: The call that contributes the reader's own project root to an argv. It is
-#: also what makes an argv recognisable: every command this module prints
-#: carries the root, so a tuple holding this star is a command line and a
-#: tuple not holding one is not. What the star stands for is read rather than
-#: taken on trust: the tuple that call returns is walked below and held to the
-#: same rule as the sites it is spliced into.
+
+def _verbs():
+    """Every word `conduct` has a subcommand for, read out of the CLI's source.
+
+    Read rather than listed: the set that decides which tuples this file walks
+    must be the CLI's own, so a subcommand added there is one a command tuple
+    can open on here without an edit to keep in step.
+    """
+    source = Path(cli.__file__).read_text(encoding="utf-8")
+    return frozenset(node.args[0].value for node in ast.walk(ast.parse(source))
+                     if isinstance(node, ast.Call)
+                     and getattr(node.func, "attr", None) == "add_parser"
+                     and node.args and isinstance(node.args[0], ast.Constant))
+
+
+#: What makes a tuple a command line, and the reason the walk below is not
+#: hung on the root star: a command built with no root at all would be
+#: invisible to a walk looking for that star, and is exactly the tuple this
+#: file must not miss.
+VERBS = _verbs()
+
+#: The call that splices the reader's own project root into a command. Every
+#: command this module prints carries it — a convention this file rests on and
+#: MEASURES, rather than a fact read off today's source: the tuples are found
+#: by their verb, and each is then held to carrying exactly one of these stars.
+#: What the star stands for is read too: the tuple that call returns is walked
+#: below and held to the same rule as the sites it is spliced into.
 _ROOT_ARGS = "_dir_args"
 
 #: The predicate a value out of the project's files has to pass before it may
@@ -68,25 +103,32 @@ def _shape(node):
 
 
 def argv_sites():
-    """Every argv tuple in the module, with the function that builds it.
+    """Every command line the module builds, with the function that builds it.
 
     Yields:
-        `(function name, tuple node)` for each tuple literal holding a
-        `*_dir_args(...)` star. That star is the signature of a command line
-        rather than an arbitrary tuple: `--dir` is how a printed command says
-        which project it is about, and every one of them carries it.
+        `(function name, tuple node)` for each tuple literal whose first
+        element is a literal verb — a word `conduct` has a subcommand for.
+        That is the CLI's own definition of a command line, and it is what a
+        tuple is recognised by here: a tuple opening on `prompt` is a command
+        whether or not it carries a root, so one built without a root is found
+        and reported rather than walked past.
     """
     for function in ast.walk(TREE):
         if not isinstance(function, (ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
         for node in ast.walk(function):
-            if not isinstance(node, ast.Tuple):
-                continue
-            if any(isinstance(element, ast.Starred)
-                   and isinstance(element.value, ast.Call)
-                   and getattr(element.value.func, "id", None) == _ROOT_ARGS
-                   for element in node.elts):
+            if (isinstance(node, ast.Tuple) and node.elts
+                    and isinstance(node.elts[0], ast.Constant)
+                    and node.elts[0].value in VERBS):
                 yield function.name, node
+
+
+def root_stars(argv):
+    """Every `*_dir_args(...)` element of one command tuple, whatever it was given."""
+    return [element for element in argv.elts
+            if isinstance(element, ast.Starred)
+            and isinstance(element.value, ast.Call)
+            and getattr(element.value.func, "id", None) == _ROOT_ARGS]
 
 
 def root_args_body():
@@ -259,6 +301,19 @@ def test_every_value_a_printed_command_carries_is_a_literal_a_root_or_spellable(
     assert not doors, f"unguarded value(s) reaching a printed command: {doors}"
 
 
+def test_every_command_line_the_module_builds_is_spliced_with_the_readers_root():
+    # The rule the file rests on, held rather than assumed. Every token of a
+    # command is accounted for above by the function it stands in — so a
+    # command carrying no root is a command whose tokens were never put to
+    # anything, because nothing spliced it out of the one helper the walk
+    # reads. Naming a project on the command line is also what keeps a printed
+    # `conduct init` from scaffolding into whatever directory a reader happens
+    # to be standing in.
+    rootless = [(name, ast.unparse(argv), argv.lineno)
+                for name, argv in argv_sites() if len(root_stars(argv)) != 1]
+    assert not rootless, f"command(s) built without the reader's root: {rootless}"
+
+
 def test_the_tuple_the_root_star_stands_for_holds_that_root_and_nothing_else():
     # The other half of the traversal, and the half a site cannot show. Every
     # element above that is a star is called "the reader's own root" on the
@@ -288,8 +343,10 @@ def test_the_tuple_the_root_star_stands_for_holds_that_root_and_nothing_else():
 def test_the_walk_finds_every_argv_the_module_builds():
     # Vacuity guard. Everything above is a statement about the set this walk
     # returns, so a walk that returned nothing would prove nothing and say it
-    # loudly. The five verbs are every command the report can name, and the
-    # known doors are the authored values that reach one today.
+    # loudly — and the walk now turns on a set read out of another file, which
+    # is one more way for it to come back empty. The five verbs are every
+    # command the report can name — `demo` is the subcommand it never names —
+    # and the known doors are the authored values that reach one today.
     verbs = {argv.elts[0].value for _, argv in argv_sites()
              if isinstance(argv.elts[0], ast.Constant)}
     assert verbs == {"init", "validate", "doctor", "prompt", "up"}, verbs
