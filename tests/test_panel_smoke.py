@@ -44,10 +44,23 @@ def test_panel_serves_and_references_state(tmp_path):
 
 
 def test_panel_has_all_tooling_ids(tmp_path):
-    # The full id contract promised to future tooling (plan Task 14, delta 5).
+    # The full id contract promised to future tooling (plan Task 14, delta 5),
+    # and the root nodes render() cannot start without.
+    #
+    # The five Orbit ids were in no assertion in this repository until now, and a
+    # sabotage renaming `orbitField` to `orbitFieldXX` left every panel module
+    # green. Served against the demo project, that rename makes renderOrbit throw
+    # `TypeError: Cannot set properties of null` on `field.hidden`; render()
+    # stops there, so the queue, the attention zone, the agents block, the
+    # findings table, the feed and the footer are never drawn and the shell
+    # reports the connection lost. The KPI rail and the map survive it — they run
+    # before renderOrbit — which is why this is a structural-contract guard and
+    # not a claim that the panel goes blank. Each of the five throws the same
+    # way, so all five are named.
     root = write_project(tmp_path, lanes={"claude": good_lane()})
     html = _fetch_panel(root)
-    for element_id in ("map", "cycle", "kpis", "queue", "findings", "feed", "warnings"):
+    for element_id in ("map", "cycle", "kpis", "queue", "findings", "feed", "warnings",
+                       "orbitField", "orbitSvg", "orbitBody", "cycleEmpty", "cycleHint"):
         assert f'id="{element_id}"' in html
 
 
