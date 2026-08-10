@@ -231,6 +231,29 @@ def test_wait_blocks_absent_is_fine():
     assert errors == []
 
 
+# --- wait title: optional, but a string when present (spec §3 example; the
+# --- closed vocabularies name only `kind`, and merge falls back to the id) ---
+
+def test_wait_title_absent_is_fine():
+    lane = valid_lane(); del lane["waits_on_human"][0]["title"]
+    errors, _ = schema.validate_lane(lane, filename_stem="claude")
+    assert errors == []
+
+def test_wait_title_empty_is_fine():
+    lane = valid_lane(); lane["waits_on_human"][0]["title"] = ""
+    errors, _ = schema.validate_lane(lane, filename_stem="claude")
+    assert errors == []
+
+def test_wait_non_string_title_is_clear_error_naming_the_wait_and_the_value():
+    for bad in (7, ["Ship it?"], None):
+        lane = valid_lane(); lane["waits_on_human"][0]["title"] = bad
+        errors, _ = schema.validate_lane(lane, filename_stem="claude")
+        matching = [e for e in errors if "title" in e and "'w-1'" in e]
+        assert matching, f"no wait title error for {bad!r}: {errors}"
+        assert any(repr(bad) in e for e in matching), (
+            f"the error does not show the value {bad!r}: {matching}")
+
+
 # --- container-element guards: `isinstance(x, dict)` inside a loop (audit §2) ---
 # The four crash defects fixed in M1 all had this shape. A wrong-shape element
 # must produce a clear error, never an AttributeError from a bare `.get`.

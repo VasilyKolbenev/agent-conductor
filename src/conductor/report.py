@@ -185,7 +185,8 @@ def _from_document(value: object, shape: str, absent: str | None = None) -> str:
     Values this function is not given cannot be protected by it:
     `findings[].detail` and `[].evidence` take the verbatim path through
     `_verbatim` by design, and a value the *merger* has already folded into a
-    string — `next_action.text` is built from a wait's unvalidated `title`
+    string — `next_action.text` is built from a wait's `title`, which the
+    schema constrains to a string only when the document was validated
     (`merge._next_action`) — arrives here as text and is rendered as text.
 
     Args:
@@ -336,12 +337,12 @@ def _decision_brief(state: dict) -> list[str]:
 def _queue_item(item: dict) -> list[str]:
     """One `human_queue` entry, headed by its id — never by its title.
 
-    `schema._validate_lane_waits` constrains a wait's `id`, `kind` and
-    `blocks`, and `title` is not among them. Heading a section with an
-    unvalidated `title` is how a Python `repr` becomes a heading, so the title
-    is reported as a field. The `id` it is headed by is constrained only to be
-    a non-empty string — nothing says what may be inside one, which is why the
-    heading takes it through `_from_document` like everything else.
+    `schema._validate_lane_waits` constrains a wait's `title` to a string
+    when the field is present; absent and empty are legal, and the `id` is
+    the queue's key, so the section is headed by the id and the title is
+    reported as a field. The `id` is constrained only to be a non-empty
+    string — nothing says what may be inside one, which is why the heading
+    takes it through `_from_document` like everything else.
     """
     return [
         f"### {_from_document(item.get('id'), _SPAN)} — "

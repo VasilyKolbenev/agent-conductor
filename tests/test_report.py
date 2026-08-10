@@ -634,22 +634,26 @@ def test_the_empty_queue_section_itself_asserts_no_agreement_anywhere_in_it():
                      "all, so silence is left to speak for itself")
 
 
-# --- the known data defect the report must survive --------------------------
+# --- the data defect the schema boundary now stops --------------------------
 
 
 NON_STRING_WAIT = {"id": "w-1", "kind": "decision", "title": {"raw": 1},
                    "why": 7, "blocks": []}
 
 
-def test_the_schema_still_lets_a_non_string_wait_title_through(tmp_path):
-    # The precondition, pinned where the report's behaviour depends on it:
-    # `schema._validate_lane_waits` checks a wait's id, kind and blocks and
-    # never its title. Backlog item, another slice's to fix.
+def test_the_schema_rejects_a_non_string_wait_title_at_the_boundary():
+    # The precondition the two outside-the-contract tests below rest on:
+    # `schema._validate_lane_waits` rejects a non-string title, so a lane
+    # holding one is invalid, and `store.load` breaks it before merge.
     data = a_lane("claude", waits=[NON_STRING_WAIT])["data"]
-    assert schema.validate_lane(data, filename_stem="claude")[0] == []
+    errors = schema.validate_lane(data, filename_stem="claude")[0]
+    assert any("title" in e and "'w-1'" in e for e in errors)
 
 
-def test_a_non_string_wait_title_is_never_the_authors_words_in_the_human_queue(tmp_path):
+def test_outside_the_contract_a_merged_non_string_title_renders_as_data_not_prose():
+    # `merge.merge` called directly, skipping the schema — input the pipeline
+    # now refuses. The report's own door still holds for it: the value is
+    # shown as JSON on the Title line, never as a sentence somebody wrote.
     state = merged(a_map(), [a_lane("claude", waits=[NON_STRING_WAIT])])
     queue = section(report.render(state), "## Human queue")
     assert "### `w-1`" in queue                  # headed by the id the schema checks
@@ -658,29 +662,34 @@ def test_a_non_string_wait_title_is_never_the_authors_words_in_the_human_queue(t
     assert "non-string value" in line_starting(queue, "- Why:")
 
 
-def test_a_non_string_wait_title_reaches_the_decision_brief_as_a_repr_the_merger_wrote():
-    # The other half, and the one the guard above was named as though it
-    # covered. `merge._next_action` builds the next action's sentence with an
-    # f-string over the same unvalidated title, so by the time the report is
-    # handed the document the repr IS the text of `next_action.text` — a
-    # string, indistinguishable from one a person wrote. The report cannot
-    # un-write it, and nothing here may claim otherwise.
+def test_outside_the_contract_the_brief_still_carries_the_repr_the_merger_wrote():
+    # The other half. `merge._next_action` renders a title as given — by
+    # design, sanitising in the merger is refused — so hand merge a document
+    # the schema would reject and the repr IS the text of `next_action.text`:
+    # a string, indistinguishable from one a person wrote, that the report
+    # cannot un-write. What stands between this repr and a reader is the
+    # schema boundary the test above pins, not anything downstream of it.
     state = merged(a_map(), [a_lane("claude", waits=[NON_STRING_WAIT])])
     assert state["next_action"]["text"] == "Answer the decision: {'raw': 1}"
     brief = line_starting(report.render(state), "- Next action:")
+    # The equality pins the whole line: the repr sits inside it and opens nothing.
     assert brief == "- Next action: Answer the decision: {'raw': 1}"
-    # What the report does hold: the repr is on one line and opens nothing.
-    # Fixing it belongs to the merger, which is where the f-string is.
-    assert "\n" not in brief
 
 
-def test_the_report_command_survives_a_non_string_wait_title(tmp_path, capsys):
+def test_the_report_command_breaks_a_non_string_wait_title_lane_at_the_boundary(
+        tmp_path, capsys):
+    # Through the commands the boundary is real: the lane fails validation in
+    # `store.load`, the wait never reaches the queue, and the report says the
+    # lane could not be read instead of printing the repr anywhere.
     body = json.dumps({"schema_version": 1, "author": "claude",
                        "updated": "2026-07-30T11:00:00+00:00",
                        "waits_on_human": [NON_STRING_WAIT]})
     root = write_project(tmp_path, lanes={"claude": body})
     assert main(["report", "--dir", str(root)]) == 0
-    assert "### `w-1`" in capsys.readouterr().out
+    printed = capsys.readouterr().out
+    assert "Lanes that could not be read" in printed
+    assert "### `w-1`" not in printed
+    assert "{'raw': 1}" not in printed
 
 
 # --- no network -------------------------------------------------------------

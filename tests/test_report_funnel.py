@@ -22,9 +22,11 @@ What the AST guards do *not* cover, and why:
   in `tests/test_report.py`, by reading the rendered report the way CommonMark
   does;
 * a value the *merger* folded into a string before the report saw it —
-  `next_action.text` is built from a wait's unvalidated `title` — is a string in
-  the document by the time it arrives, and the report renders it as one. The
-  behavioural guard below pins that, and says so in its name;
+  `next_action.text` is built from a wait's `title`, a string whenever the
+  document passed the schema — is a string in the document by the time it
+  arrives, and the report renders it as one.
+  `test_outside_the_contract_the_brief_still_carries_the_repr_the_merger_wrote`
+  in `tests/test_report.py` pins that, and says so in its name;
 * a site that does not build a line but *returns a document value as one* —
   appended or spliced into the list of lines a section returns, with no
   f-string and no join anywhere in it — is not a shape these guards read.
