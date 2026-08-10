@@ -74,6 +74,19 @@ def panel_payload_fields() -> set[str]:
     return set(re.findall(r"row\.([a-z_]+)", function_body("loadRegistry")))
 
 
+def panel_status_glyphs() -> set[str]:
+    """Every glyph the panel's status vocabularies spell.
+
+    Read off the panel rather than listed here, so a vocabulary that gains a
+    mark, or a sixth vocabulary, is covered without this file being edited:
+    STATUS, REVIEW, SEVERITY, DISPO, EKIND and ORBIT_MARKS all declare their
+    mark under the same `glyph:` key, as does `statusOf`'s fallback.
+    """
+    found = set(re.findall(r'glyph:\s*"([^"]+)"', panel_html()))
+    assert len(found) > 5, found
+    return found
+
+
 def test_the_panel_falls_back_to_the_neutral_pair_the_registry_declares():
     # The second copy of a value again, and again allowed only with the guard
     # that reddens when it drifts. Both directions: renaming the pair in Python
@@ -455,14 +468,19 @@ def test_the_agents_block_keeps_the_order_it_was_handed_and_every_lanes_own_chip
 
 
 def test_a_badge_carries_no_status_word_glyph_or_colour_of_its_own():
-    # The badge may not become a second, quieter status carrier. Two halves: the
-    # builder spells none of the status vocabulary, and no rule that styles a
-    # badge paints with a semantic token or with December Red — so nothing about
-    # it can be read as pass, fail, blocked, running or waiting.
+    # The badge may not become a second, quieter status carrier. §6 of
+    # conductor/harnesses.py names three channels a status travels on — the
+    # word, the glyph and the colour — so this asks the badge for all three.
+    # The builder spells none of the status vocabulary and emits none of the
+    # marks any vocabulary spells, and no rule that styles a badge paints with a
+    # semantic token or with December Red.
     spoken = set(re.findall(r'"([^"]*)"', function_body("harnessBadge")))
     for word in ("pass", "fail", "blocked", "running", "idle", "contested",
                  "stale", "broken", "active"):
         assert word not in spoken, word
+    for glyph in panel_status_glyphs():
+        for literal in spoken:
+            assert glyph not in literal, (glyph, literal)
     for rule in rules():
         if BADGE not in rule.selector:
             continue
