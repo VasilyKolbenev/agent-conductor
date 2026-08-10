@@ -18,12 +18,24 @@ from tests.test_merge_queue_phase import NOW, ROLES_MAP, rich_lanes
 
 HEX_RE = re.compile(r"\A#[0-9a-f]{6}\Z")
 
-#: The non-ASCII ids whose badges this file pins. Every one of them is checked
+#: U+030C COMBINING CARON, named because it draws as nothing on its own. It is
+#: what `ǰ` upper-cases into behind the `J`, and the reason the badge property
+#: below counts the upper-casing rather than the letters and digits in it.
+CARON = chr(0x030C)
+
+#: The ids whose badges turn on how `_WORD_RE` splits words, rather than on
+#: the alphabet they are written in. Seven are non-ASCII, and an ASCII `\w`
+#: reads their letters as punctuation: that either strands the id with no words
+#: at all — `Кодекс` badges `?` — or leaves it with the wrong ones, since `ßa`
+#: then badges `A`. `my_own_agent` is pure ASCII and is here for the other
+#: clause of the same rule, the underscore `_WORD_RE` adds back as a separator:
+#: without it the id is one word and badges `MY`. Every one of them is checked
 #: against `templates.NAME_RE` in the tests that use it, and that check is not
 #: ceremony: a fixture that stopped being a legal harness id would go on
 #: passing while pinning an input no user can reach, which is a test that
 #: guards nothing dressed as a test that guards something.
-UNICODE_IDS = ("Кодекс", "ΩΩΩ", "中文", "my_own_agent", "ß", "ßa", "ß-agent")
+UNICODE_IDS = ("Кодекс", "ΩΩΩ", "中文", "my_own_agent", "ß", "ßa", "ß-agent",
+               "ǰ")
 
 
 # --- the data itself ---
@@ -145,24 +157,29 @@ def test_the_fallback_monogram_is_one_or_two_characters_and_never_padded():
         assert harnesses.resolve(value).monogram == monogram, value
     # Padding is not a length question — a filler character is the right length
     # and still shows something nobody supplied. So the property is: no more
-    # characters than the UPPER-CASED id offers, and every one of them taken
-    # FROM that upper-cased id. Upper-casing is where the count lives, because
-    # one code point can grow into two — `ß` gives `SS` — and the badge is cut
-    # back to two rather than padded up to them. `?` is the single character
-    # that comes from nowhere, and only an id that offers no letter and no
-    # digit may reach it. The table carries non-ASCII on purpose: computing
-    # `offered` by a Unicode rule while the code split by an ASCII one is
-    # exactly how this loop stayed green over a `?` badge for `Кодекс`.
+    # characters than the id's letters and digits offer once upper-cased, and
+    # every one of them taken FROM that upper-casing. Upper-casing is where the
+    # count lives, because one code point can grow into two — `ß` gives `SS` —
+    # and because what it grows into need not be a letter at all: `ǰ` gives `J`
+    # plus a COMBINING CARON, so counting only the alphanumerics would call the
+    # correct two-character badge padded. The badge is cut back to two rather
+    # than padded up to them. `?` is the single character that comes from
+    # nowhere, and only an id that offers no letter and no digit may reach it.
+    # The table carries non-ASCII on purpose, and the table is the half that
+    # does the work: while every row of it was ASCII this loop was green over a
+    # `?` badge for `Кодекс`, because it never asked about one. Computing
+    # `offered` by a Unicode rule is what makes an extended table fail instead
+    # of pass.
     for value in ("x", "7", "42", "c++", "kimi cli", "in-house-sast", "...",
                   *UNICODE_IDS):
         if value in UNICODE_IDS:
             assert templates.NAME_RE.fullmatch(value), value
         monogram = harnesses.resolve(value).monogram
-        offered = [char for char in value.upper() if char.isalnum()]
+        offered = "".join(char for char in value if char.isalnum()).upper()
         assert 1 <= len(monogram) <= 2, value
-        assert len(monogram) <= max(1, len(offered)), value    # never padded
         if offered:
-            assert set(monogram) <= set(value.upper()), value  # never invented
+            assert len(monogram) <= len(offered), value    # never padded
+            assert set(monogram) <= set(offered), value    # never invented
         else:
             assert monogram == "?", value
 
@@ -188,12 +205,21 @@ def test_a_badge_stays_two_characters_when_upper_casing_expands_a_letter():
     # fallback upper-case what they picked, so both need the cut afterwards —
     # without it `ßa` badges `SSA` and `ß-agent` badges `SSA` too, three
     # characters wide in a slot the registry sizes at two.
-    for value in ("ß", "ßa", "ß-agent"):
+    for value in ("ß", "ßa", "ß-agent", "ǰ"):
         assert templates.NAME_RE.fullmatch(value), value
     assert "ß".upper() == "SS"
     assert harnesses.resolve("ß").monogram == "SS"
     assert harnesses.resolve("ßa").monogram == "SS"        # single-word branch
     assert harnesses.resolve("ß-agent").monogram == "SS"   # two-word branch
+    # The other shape of the same expansion, and the one a length rule spelled
+    # over alphanumerics gets wrong: `ǰ` upper-cases into `J` plus a COMBINING
+    # CARON, two code points of which only the first is a letter. Both are the
+    # badge — dropping the mark would leave a plain `J` this id never carried.
+    # Built from `CARON` rather than pasted: a combining mark renders as
+    # nothing of its own, and an expectation nobody can see is an expectation
+    # nobody reviews.
+    assert "ǰ".upper() == "J" + CARON
+    assert harnesses.resolve("ǰ").monogram == "J" + CARON
 
 
 # --- the seam a panel renders the registry through ---
