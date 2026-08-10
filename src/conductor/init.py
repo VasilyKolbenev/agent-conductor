@@ -94,10 +94,19 @@ _TYPED_EXAMPLE = "my-own-agent"
 
 # The one sentence naming what the user must do next. Said once, to the person;
 # `prompts.bootstrap_prompt` states the same instruction to the agent in its
-# own register, deliberately without sharing this text.
+# own register, deliberately without sharing this text. Which of the two is
+# said is decided the same way the agent's copy decides it — by counting the
+# map that was just written, never by which template wrote it. Both sentences
+# are the same instruction; only the verb differs, because "replace the
+# placeholder nodes" is an instruction nobody can carry out on a map that has
+# none.
 _FIRST_ACTION = ("Replace the placeholder nodes in conductor/map.toml with the "
                  "real components of your project — until you do, nothing it "
                  "reports is about your project.")
+_FIRST_ACTION_NO_PLACEHOLDERS = (
+    "Check the nodes in conductor/map.toml against the real components of "
+    "your project — until they name them, nothing it reports is about your "
+    "project.")
 
 
 # --- talking to the person --------------------------------------------------
@@ -394,12 +403,18 @@ def _dir_suffix(dirname: str) -> str:
     return f' --dir "{dirname}"' if " " in dirname else f" --dir {dirname}"
 
 
+def _first_action(text: str) -> str:
+    """The first action that is true of the map just written."""
+    placeholders, _ = prompts.placeholder_nodes(text)
+    return _FIRST_ACTION if placeholders else _FIRST_ACTION_NO_PLACEHOLDERS
+
+
 def _print_next_steps(args: argparse.Namespace, text: str) -> None:
     """Say, on stderr, the first action and the commands that follow it."""
     where = _dir_suffix(args.dir)
     roles = tomllib.loads(text).get("cycle", {}).get("roles", [])
     _say("Your first action")
-    _say(_wrap(_FIRST_ACTION, "  ") + "\n")
+    _say(_wrap(_first_action(text), "  ") + "\n")
     _say("Next command")
     _say(f"  conduct validate{where}")
     _say("      silence means the map and every lane are valid\n")
@@ -475,7 +490,7 @@ def _scaffold(args: argparse.Namespace, cdir: Path, name: str,
     _say(_wrap("The map is valid but generic. The prompt that fills it in "
                "follows on stdout: paste it into an agent, or re-run with "
                "`> setup.txt` to keep it as a file.") + "\n")
-    sys.stdout.write(prompts.bootstrap_prompt(str(cdir / "map.toml")))
+    sys.stdout.write(prompts.bootstrap_prompt(str(cdir / "map.toml"), text))
     _say()
     _print_next_steps(args, text)
     return 0

@@ -19,7 +19,9 @@ import tomllib
 import pytest
 import conductor.init
 from conductor import harnesses, prompts, templates
-from conductor.init import _FIRST_ACTION, _NO_REVIEWER, _console_ask, _interactive
+from conductor.init import (_FIRST_ACTION, _FIRST_ACTION_NO_PLACEHOLDERS,
+                            _NO_REVIEWER, _console_ask, _first_action,
+                            _interactive)
 from conductor.__main__ import _build_parser, main
 
 
@@ -380,7 +382,107 @@ def test_the_first_action_is_said_once_to_both_audiences(tmp_path, capsys):
     assert main(["init", "--dir", str(tmp_path)]) == 0
     said = _unwrapped(capsys.readouterr().err)
     assert said.count(_FIRST_ACTION) == 1              # the person's copy
-    assert "placeholder" in prompts.bootstrap_prompt()  # the agent's copy
+    agent = prompts.bootstrap_prompt("conductor/map.toml", _map_text(tmp_path))
+    assert "placeholder" in agent                      # the agent's copy
+
+
+# Every claim `conduct init` can print about the map's nodes, paired with what
+# has to be TRUE of that map for the claim to be honest. The pairing is what
+# makes the test below about a RELATION rather than about a substring somebody
+# expected to see: each claim is required to appear exactly when its fact
+# holds, and to be absent otherwise.
+_NODE_CLAIMS = {
+    prompts._STEP_EVERY_NODE_IS_A_PLACEHOLDER:
+        lambda marked, total: total > 0 and marked == total,
+    prompts._STEP_SOME_NODES_ARE_PLACEHOLDERS:
+        lambda marked, total: 0 < marked < total,
+    prompts._STEP_NO_NODE_IS_A_PLACEHOLDER:
+        lambda marked, total: marked == 0,
+}
+
+
+def _placeholders_in(text):
+    """`(placeholder nodes, nodes)` of a written map, counted here, not by init.
+
+    The PLACEHOLDER convention is restated deliberately: borrowing
+    `prompts.placeholder_nodes` would let a miscount agree with itself, and
+    then the test would only prove init is self-consistent. Marked means the
+    label carries the word, wherever in it — the same reading the prose the
+    map is printed with claims for itself.
+    """
+    nodes = tomllib.loads(text).get("nodes", [])
+    return (sum(1 for n in nodes if "PLACEHOLDER" in n["label"]), len(nodes))
+
+
+@pytest.mark.parametrize("name", [n for n, _ in templates.names()])
+def test_what_init_says_about_placeholders_is_true_of_the_map_it_just_wrote(
+        tmp_path, capsys, name):
+    # `minimal` is the template that made this necessary: it quotes the spec's
+    # §2 example, carries no placeholder at all, and was told on stdout that
+    # every one of its nodes was one. The claim is checked against the file on
+    # disk, so a fifth template — or a user's own map — is covered by the same
+    # sentence rather than by a branch nobody remembered to add.
+    assert main(["init", "--dir", str(tmp_path), "--template", name]) == 0
+    captured = capsys.readouterr()
+    marked, total = _placeholders_in(_map_text(tmp_path))
+    assert total, f"{name} wrote no nodes: the claim would be vacuous"
+    for claim, holds in _NODE_CLAIMS.items():
+        assert (claim in captured.out) == holds(marked, total), (name, claim)
+    # The person's copy on stderr is bound to the same fact, not to a template.
+    said = _unwrapped(captured.err)
+    assert (_FIRST_ACTION in said) == (marked > 0), name
+    assert (_FIRST_ACTION_NO_PLACEHOLDERS in said) == (marked == 0), name
+
+
+# What the person's first action must tell them to DO, keyed by whether the map
+# they were left with still carries placeholder labels. The verb, not the
+# constant: swap the two constants' bodies and every assertion naming only
+# `_FIRST_ACTION` goes on passing while the person is told to replace
+# placeholders their map does not have.
+_FIRST_ACTION_VERBS = {
+    True: "Replace the placeholder nodes in conductor/map.toml",
+    False: "Check the nodes in conductor/map.toml against the real components",
+}
+
+
+def _hand_edited(text):
+    """A written map with every PLACEHOLDER label filled in, as a person would.
+
+    The mirror of tests/test_prompts.py's fixture, restated here for the same
+    reason `_placeholders_in` restates the convention. No template name changes
+    when a label does, so anything answering by template name answers about a
+    map that is no longer the one on disk.
+    """
+    done, out = 0, []
+    for line in text.split("\n"):
+        if line.startswith('label = "PLACEHOLDER'):
+            line = f'label = "billing service {done}"'
+            done += 1
+        out.append(line)
+    assert done, "the fixture replaced nothing"
+    return "\n".join(out)
+
+
+def test_the_first_action_reads_the_map_it_is_given_not_the_template_behind_it():
+    # The class, not the instance. `minimal` is only the map that happens to
+    # ARRIVE without placeholders; the agent's half of this pair is already held
+    # against a map that has none because a person did the work, and the
+    # sentence said to the person has to be as true of that map. Unreachable
+    # through `conduct init`, which writes a template and reads it straight
+    # back — which is exactly why passing on the four vended maps proved
+    # nothing about the fifth, or about anyone's map a week later.
+    edited_any = False
+    for name, _ in templates.names():
+        written = templates.get(name)
+        if "PLACEHOLDER" not in written:
+            continue
+        edited_any = True
+        assert _FIRST_ACTION_VERBS[True] in _first_action(written), name
+        assert _FIRST_ACTION_VERBS[False] not in _first_action(written), name
+        edited = _hand_edited(written)
+        assert _FIRST_ACTION_VERBS[False] in _first_action(edited), name
+        assert _FIRST_ACTION_VERBS[True] not in _first_action(edited), name
+    assert edited_any, "no vended template carries a placeholder any more"
 
 
 def test_the_harness_questions_say_what_the_answer_does(tmp_path, capsys):
@@ -728,8 +830,8 @@ def test_init_stdout_is_exactly_the_bootstrap_prompt(tmp_path, capsys):
     # with a scaffold report and a next-steps list wrapped around it.
     assert main(["init", "--dir", str(tmp_path)]) == 0
     captured = capsys.readouterr()
-    assert captured.out == prompts.bootstrap_prompt(str(tmp_path / "conductor"
-                                                        / "map.toml"))
+    assert captured.out == prompts.bootstrap_prompt(
+        str(tmp_path / "conductor" / "map.toml"), _map_text(tmp_path))
     for dialogue in ("scaffolded", "template:", "conduct validate: clean",
                      "Your first action"):
         assert dialogue in captured.err and dialogue not in captured.out
