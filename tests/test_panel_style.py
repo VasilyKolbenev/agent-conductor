@@ -30,7 +30,8 @@ import pytest
 
 from tests.test_panel_cascade import (
     ENVIRONMENTS, INTERACTIONS, Element, Rule, carriers, computed, function_body,
-    media_contexts, paint_profile, panel_html, rules, script, stylesheet, touched)
+    keyframe_properties, media_contexts, paint_profile, panel_html, rules, script,
+    stylesheet, touched)
 
 # ── the status vocabulary and the silhouette it owns ───────────────────────
 def status_table() -> dict[str, dict[str, str]]:
@@ -641,52 +642,62 @@ def permanently_animated() -> set[str]:
     return out
 
 
-# The panel's one movement. §5 of the plan forbids permanent decorative
-# animation; `.dot` is the live-connection heartbeat and is the whole of what
-# the panel animates, at rest and in every state. The current Orbit stage is not
-# in this table and may not enter it: it is told apart by its contour, its
-# corner radius and the word in its chip, which is what makes it legible with
-# movement switched off. Pinned two-sidedly — a new animation fails here, and so
-# does deleting one without saying so.
+# Every movement the panel declares, and the whole of it. DEC-UI-4 left one:
+# `.orb--arrived`, the ring a stage draws once when the panel has watched that
+# stage become the current phase. `.dot` used to be the other — a 2.4 s loop
+# behind which nothing happened — and the owner made it static on 2026-08-09,
+# which is why no entry here repeats. Pinned two-sidedly: a new animation fails
+# here, and so does deleting one without saying so.
 MOVEMENT = {
-    ".dot": "blink 2.4s ease-in-out infinite",
-    ".dot--down": "none",
-    "@media (prefers-reduced-motion:reduce) .dot": "none",
+    ".orb--arrived": "arrive .5s ease-out",
+    "@media (prefers-reduced-motion:reduce) .orb--arrived": "none",
 }
 
 
-def test_the_stylesheet_declares_animation_in_the_one_place_it_already_did_and_nowhere_else():
+def test_the_stylesheet_animates_the_arrival_of_a_current_phase_and_nothing_else():
     # A declaration, not a movement: what is compared is the `animation` values
     # the cascade resolves, and the @keyframes names the stylesheet spells. The
     # second half is what makes the table's emptiness load-bearing in both
     # directions — a keyframes block nothing references fails here, so dead
     # movement cannot sit in the file waiting to be attached to something.
+    # Which event puts the class on a stage is not decided by the stylesheet and
+    # is not asked here; tests/test_panel_motion.py holds that half.
     assert animated() == MOVEMENT
     declared = set(re.findall(r"@keyframes\s+([\w-]+)", stylesheet()))
     used = {value.split()[0] for value in animated().values() if value != "none"}
     assert declared == used, (declared, used)
 
 
-def test_the_one_animation_that_never_stops_is_the_live_connection_dot():
-    # §2.2 asks that DEC-UI-2 add no permanent animation, and the honest form of
-    # that is a relation rather than an absence: the panel does have one, the
-    # heartbeat beside the word "live", and it predates every December slice.
-    # What must stay true is that it is the only one — the executed sabotage
-    # this is written against is `@keyframes throb` plus `.lit{animation:throb
-    # 3s ease-in-out infinite}`, a whole panel breathing, which the file's own
-    # direction forbids outright. Both the longhand spelling and a duration hidden
-    # behind a custom property resolve here before the question is asked.
-    assert permanently_animated() == {".dot"}
+def test_no_animation_the_panel_declares_ever_repeats():
+    # §5 forbids perpetual motion, and after DEC-UI-4 the panel declares none at
+    # all: the one animation left runs once, on an event, and stops. The
+    # executed sabotage this is written against is `@keyframes throb` plus
+    # `.lit{animation:throb 3s ease-in-out infinite}`, a whole panel breathing.
+    # Both the longhand spelling and an iteration count hidden behind a custom
+    # property resolve here before the question is asked.
+    assert permanently_animated() == set()
 
 
 def test_the_current_stage_is_told_apart_without_any_movement_at_all():
     # The owner's first movement test, and the reason the pulse could be
-    # deleted. Nothing in the Orbit is animated; what separates the current
-    # stage from every other one is its contour weight, its corner and the word
-    # in its chip, all of which are there with animation switched off entirely.
-    orbit = {key for key in animated()
-             if any(part in key for part in (".orb", ".trk", ".lnk", ".nextrun"))}
-    assert orbit == set(), orbit
+    # deleted. What separates the current stage from every other one is its
+    # contour weight, its corner and the word in its chip — all of them there
+    # with animation switched off entirely.
+    #
+    # DEC-UI-4 gave the Orbit one animation, so "nothing here is animated" is no
+    # longer the thing to assert. What is asserted instead is the relation that
+    # sentence was standing in for: the four tones and the two connection forms
+    # carry no animation at all, and the one class that does carry one moves no
+    # property any of them is told apart by. A keyframes block that reached for
+    # the contour, the corner or the paint would fail here — and so would
+    # hanging an animation off `.orb--current` itself.
+    moving = {key for key in animated()
+              if any(part in key for part in (".orb", ".trk", ".lnk", ".nextrun"))}
+    assert moving == {".orb--arrived",
+                      "@media (prefers-reduced-motion:reduce) .orb--arrived"}, moving
+    assert keyframe_properties("arrive") == {"box-shadow"}
+    for tone in TONES:
+        assert computed(stage_chain(tone)).get("box-shadow") is None, tone
     assert stage_shape("current") != stage_shape("neutral")
     assert orbit_marks()["current"]["glyph"] and orbit_marks()["current"]["label"]
 
@@ -714,6 +725,21 @@ def test_every_animation_the_stylesheet_declares_is_switched_off_by_reduced_moti
         if key.startswith("@media") or value == "none":
             continue
         assert key in stopped, f"{key} keeps moving under reduced motion"
+
+
+def test_a_reader_who_asked_for_less_movement_gets_the_arrival_instantly():
+    # The owner's requirement for the one animation there is, resolved through
+    # the cascade rather than read off the sheet: the stage that has just become
+    # current animates for a reader who did not ask otherwise, declares no
+    # animation at all for a reader who did, and is the same silhouette either
+    # way. The third assertion is the point of the first two — what is switched
+    # off is the movement, not the mark.
+    reduce = frozenset(c for c in media_contexts() if "reduced-motion" in c)
+    chain = [ORBIT_FIELD,
+             Element("div", frozenset({"orb", "orb--current", "orb--arrived"}))]
+    assert computed(chain)["animation"] == MOVEMENT[".orb--arrived"]
+    assert computed(chain, env=reduce)["animation"] == "none"
+    assert stage_shape("current", env=reduce) == stage_shape("current")
 
 
 # The five roles §4 reserves December Red for: the current Orbit stage,

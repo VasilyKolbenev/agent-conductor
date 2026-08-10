@@ -161,6 +161,29 @@ def rules(html: str | None = None) -> tuple[Rule, ...]:
     return tuple(out)
 
 
+def keyframe_properties(name: str, html: str | None = None) -> set[str]:
+    """Every property one ``@keyframes`` block moves, over all of its steps.
+
+    ``_collect`` walks past ``@keyframes`` bodies on purpose: a step is not a
+    rule and matches no element, so nothing in it can win a declaration. The
+    block is still source this module owns, and a guard asking what a movement
+    touches has to be able to read one — so it is parsed here rather than a
+    second time somewhere else.
+    """
+    sheet = stylesheet(html)
+    start = sheet.index("@keyframes " + name)
+    i = j = sheet.index("{", start)
+    depth = 0
+    while True:
+        depth += (sheet[j] == "{") - (sheet[j] == "}")
+        j += 1
+        if not depth:
+            break
+    return {chunk.split(":", 1)[0].strip()
+            for step in re.findall(r"\{([^{}]*)\}", sheet[i:j])
+            for chunk in step.split(";") if ":" in chunk}
+
+
 def media_contexts(html: str | None = None) -> tuple[str, ...]:
     """Every ``@media`` condition the stylesheet declares, as written."""
     return tuple(sorted({rule.context for rule in rules(html) if rule.context}))

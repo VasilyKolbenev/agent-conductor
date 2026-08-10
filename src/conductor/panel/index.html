@@ -82,11 +82,13 @@ html[data-attention="high"] .shell{border-bottom-color:var(--contour-lit)}
 /* ── top strip + warnings banner ───────────────────────────── */
 .strip{display:flex;align-items:center;gap:10px;font-family:var(--mono);font-size:11px;
        color:var(--muted);flex-wrap:wrap}
-.dot{width:7px;height:7px;border-radius:50%;background:var(--pass);
-     animation:blink 2.4s ease-in-out infinite}
-.dot--down{background:var(--fail);animation:none}
-@keyframes blink{0%,100%{opacity:1}50%{opacity:.25}}
-@media (prefers-reduced-motion:reduce){.dot{animation:none}}
+/* The connection indicator, and a static one. It blinked on a 2.4 s loop until
+   the owner settled DEC-UI-4 on 2026-08-09: nothing happened between two beats
+   of it, so the movement reported an event that had not occurred. What the dot
+   knows it says by colour, and the word beside it spells the same thing — both
+   written by setLive, from the fetch that has just succeeded or failed. */
+.dot{width:7px;height:7px;border-radius:50%;background:var(--pass)}
+.dot--down{background:var(--fail)}
 .banner{background:color-mix(in srgb,var(--wait) 12%,transparent);
         border:1px solid var(--wait);border-radius:8px;padding:3px 8px}
 /* The banner sits on a --wait tint over --ground, so its own text runs on
@@ -231,6 +233,21 @@ svg{width:100%;height:auto;display:block;overflow:visible}
 .orb--waiting{border-color:var(--wait);border-style:dashed}
 .orb--blocked{border-color:var(--fail);border-width:2px}
 .orb--current{border-color:var(--accent);border-width:2px;border-radius:16px}
+/* The one movement the panel makes, and the single event that starts it: this
+   browser watched the current phase change. renderOrbit hands exactly one stage
+   the arrival flag, and the flag is set only where noteState sets it — from a
+   document that arrived as a stream frame, after another stream frame, saying a
+   different current phase than the drawing already on screen. See the data
+   source section for that decision; nothing else in the file can reach it.
+   The movement runs once and is over. What moves is a ring outside the box:
+   the contour, the corner radius and the chips are what say which stage is
+   current, and none of them is named in these keyframes — so a reader who has
+   asked for less movement, or who arrives a second later, is told the same
+   thing by the same marks. */
+@keyframes arrive{from{box-shadow:0 0 0 0 var(--contour-lit)}
+                  to{box-shadow:0 0 0 10px transparent}}
+.orb--arrived{animation:arrive .5s ease-out}
+@media (prefers-reduced-motion:reduce){.orb--arrived{animation:none}}
 .orb .orb__name{font-size:13px;font-weight:640;overflow-wrap:anywhere;color:var(--ink)}
 /* Presentational only, and deliberately narrow. drawOrbitStage adds .cap to a
    stage whose id is one of the five Default Orbit stages Python ships, so the
@@ -1017,11 +1034,14 @@ function orbitDefs(){
       sv("path", { d: "M0,0 L10,5 L0,10 z", class: "arw arw--orb" })));
 }
 /* One stage. The name is appended as it arrived: no case fold, no truncation,
-   no lookup that could put a different word in its place. */
-function orbitStage(name, seat){
+   no lookup that could put a different word in its place.
+   `arrived` is the movement flag and the whole of what this function does with
+   it is add a class. It says nothing a reader needs: the tone below is what
+   marks the current stage, and it is computed from the marks either way. */
+function orbitStage(name, seat, arrived){
   const marks = MARK_ORDER.filter(m => seat.marks.has(m));
   const tone = TONES.find(t => seat.marks.has(t)) || "neutral";
-  const box = el("div", { class: "orb orb--" + tone },
+  const box = el("div", { class: "orb orb--" + tone + (arrived ? " orb--arrived" : "") },
     el("span", { class: "orb__name" + (SHIPPED_STAGES.has(name) ? " cap" : "") },
        String(name)),
     el("div", { class: "orb__marks" },
@@ -1051,7 +1071,7 @@ function orbitStage(name, seat){
 function drawOrbitRing(field, svgEl, body, proj){
   const n = proj.phases.length, w = Math.max(420, field.clientWidth || 900);
   const bw = orbitBox(n, w);
-  const stages = proj.phases.map(p => orbitStage(p, proj.seatOf(p)));
+  const stages = proj.phases.map(p => orbitStage(p, proj.seatOf(p), p === proj.arrived));
   for (const stage of stages){
     stage.style.width = bw + "px";
     body.append(stage);
@@ -1083,7 +1103,7 @@ function drawOrbitColumn(field, svgEl, body, proj){
   svgEl.style.display = "none";
   const edges = orbitEdges(proj.phases.length);
   proj.phases.forEach((p, i) => {
-    body.append(orbitStage(p, proj.seatOf(p)));
+    body.append(orbitStage(p, proj.seatOf(p), p === proj.arrived));
     if (edges.some(e => e.kind === "step" && e.from === i))
       body.append(el("div", { class: "lnk" }, el("i"), "↓"));
   });
@@ -1140,7 +1160,12 @@ function renderUnstaged(unstaged){
 let orbitAt = -1;                      /* the field width the current drawing was built for */
 function renderOrbit(s){
   const cycle = s.cycle || {};
-  const proj = orbitProject(cycle, s);
+  /* ARRIVED is spent here and nowhere else. A drawing may mark an arrival once,
+     so the flag is taken out of the module and cleared in the same breath: a
+     reflow redraws this same document at a new width and must not replay a
+     movement whose event has already been reported. */
+  const proj = { ...orbitProject(cycle, s), arrived: ARRIVED };
+  ARRIVED = null;
   const field = $("orbitField"), svgEl = $("orbitSvg"), body = $("orbitBody");
   svgEl.replaceChildren();
   body.replaceChildren();
@@ -1456,13 +1481,39 @@ document.addEventListener("keydown", e => {
 window.addEventListener("resize", reflowOrbit);
 
 /* ── data source: fetch /state.json; SSE frame → re-fetch ──── */
-async function refresh(){
+/* Movement is a report of an observed event, never decoration, so the panel
+   keeps exactly enough of the stream's history to know whether it observed one.
+   `streamed` says the document drawn before this one arrived as a stream frame;
+   `ARRIVED` is the phase the next drawing is allowed to mark, and null the rest
+   of the time.
+   A phase change may be marked only when all three of these hold: a drawing
+   already exists to have changed from, this document and the one before it both
+   came through the live stream, and the two name different current phases. Each
+   of the events that is not a change fails one of the three — a reload and a
+   reconnect are not frames, the first frame after either has no frame before
+   it, and a new generated_at or a new queue leaves the phase where it was.
+   A dropped connection clears `streamed`, and so does a fetch that did not
+   arrive: a phase that moved while the panel was not listening was not watched
+   moving, and the document that re-establishes the record can never be the one
+   that reports the move. */
+let streamed = false;
+let ARRIVED = null;
+const phaseOf = s => String(((s || {}).cycle || {}).current_phase || "");
+function noteState(s, framed){
+  ARRIVED = framed && streamed && LAST !== null && phaseOf(s) !== phaseOf(LAST)
+    ? phaseOf(s) : null;
+  streamed = framed;
+}
+async function refresh(framed){
   try {
     const r = await fetch("/state.json", { cache: "no-store" });
     if (!r.ok) throw new Error("HTTP " + r.status);
-    render(await r.json());
+    const s = await r.json();
+    noteState(s, framed);                      // before render: LAST is the drawing so far
+    render(s);
     setLive(true);
   } catch (err) {
+    streamed = false;                          // a document was missed, not watched
     setLive(false);                            // keep the last rendered state
   }
 }
@@ -1485,11 +1536,11 @@ async function loadHarnesses(){
   if (LAST) render(LAST);
 }
 const es = new EventSource("/events");         // greeting on connect, one frame per change
-es.onmessage = refresh;
-es.onopen = refresh;                           // resync on every (re)connect, not just the greeting
-es.onerror = () => setLive(false);             // EventSource reconnects on its own
+es.onmessage = () => refresh(true);            // the one caller that may report a change
+es.onopen = () => refresh(false);              // resync on every (re)connect, not just the greeting
+es.onerror = () => { streamed = false; setLive(false); };  // EventSource reconnects on its own
 loadHarnesses();
-refresh();
+refresh(false);                                // page load: the first drawing, nothing before it
 </script>
 </body>
 </html>
