@@ -571,6 +571,11 @@ def test_the_custom_rows_typed_promise_is_true_of_what_gets_written(
     shown = re.search(r"type (\S+) and get (\S+)\.", gloss)
     assert shown, gloss             # the promise has to show its own case
     typed, promised = shown.groups()
+    # REG1-02: the example must stay the UNREGISTERED half of the promise. The
+    # claim is `listed or not`, the listed ids demonstrate the first half, and
+    # a registry that ever gained a row under this id would leave the second
+    # half demonstrated by nothing while every assertion here stayed green.
+    assert harnesses.get(typed) is None
     named = [(item.strip(), item.strip()) for item in listed.split(",")]
     for index, (answer, expected) in enumerate(named + [(typed, promised)]):
         target = tmp_path / f"named-{index}"
