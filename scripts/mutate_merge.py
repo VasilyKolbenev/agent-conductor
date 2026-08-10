@@ -15,8 +15,12 @@ Before the first mutation the harness checks two things about itself. Where
 verification isolation, so an editable install (a `.pth` in site-packages) or
 an installed copy can shadow an exported tree, and the harness would mutate
 one file while pytest imported another and print a plausible score that means
-nothing. And whether the targeted tests are green on unmutated source: a test
-file that is already red reports every mutation aimed at it as KILLED.
+nothing. Belonging to the source root is not enough there — the import must
+resolve to the very file the run mutates, byte for byte the same path, because
+a root carrying both `conductor/merge.py` and a `conductor/merge/` package
+passes any looser test while every mutation lands in a file nobody imports.
+And whether the targeted tests are green on unmutated source: a test file that
+is already red reports every mutation aimed at it as KILLED.
 
 What the restore does and does not promise. An `OSError` in the restore is
 retried, and when the content hash still cannot be confirmed the run stops and
@@ -40,17 +44,47 @@ it is not in every mode a mutation score.
 
 Exit 2 carries no mutation score of any kind — not `0/13`, not a zero. Every
 path THIS MODULE takes to it runs through `_invalid_measurement`, and the score
-is printed by a function that path never reaches. There is exactly one more way
-out with a 2, and it is not in this module: `argparse` exits 2 itself on an
-unrecognised argument. That overlap is deliberate and means the same thing — a
-usage error is likewise a run in which no valid measurement happened — and
-argparse prints usage to stderr and stops before anything is measured, so the
-rule holds on that path too.
+is printed by a function that path never reaches. An exception the instrument
+did not expect is such a path: `main` converts any `Exception` that is not
+already an `InvalidMeasurement` into one, because a traceback escaping to the
+interpreter would exit 1 — the code reserved for an honest survivor. The
+traceback is not part of the contract; the named infrastructure failure and
+the 2 are. There is exactly one more way out with a 2, and it is not in this
+module: `argparse` exits 2 itself on an unrecognised argument. That overlap is
+deliberate and means the same thing — a usage error is likewise a run in which
+no valid measurement happened — and argparse prints usage to stderr and stops
+before anything is measured, so the rule holds on that path too.
 
 Usage:
     .venv\\Scripts\\python scripts\\mutate_merge.py          # in-tree, as CI runs it
     python scripts/mutate_merge.py --root DIR               # an exported tree
     python scripts/mutate_merge.py --verify-only            # provenance, no mutation
+
+Running on a throwaway export, which is how DO-7 must run this until crash-safe
+restore lands: a run that dies mid-mutation then poisons a directory that gets
+deleted rather than the tree the chunk is being reviewed in. `git archive`
+exports the COMMIT, not the tree, so an unclean tree silently measures a
+different program than the one on screen — check that first, and read the
+number as the commit's either way. PowerShell, because MSYS rewrites PYTHONPATH
+on the way into the process; and `--output`, because piping a tar stream
+through PowerShell corrupts it:
+
+    git -C TREE status --porcelain                          # must be empty
+    $exp = "$env:TEMP\\conduct-export"
+    New-Item -ItemType Directory -Force $exp
+    git -C TREE archive --format=tar --output "$exp\\head.tar" HEAD
+    tar -x -f "$exp\\head.tar" -C $exp; Remove-Item "$exp\\head.tar"
+    .venv\\Scripts\\python TREE\\scripts\\mutate_merge.py --root $exp
+    Remove-Item -Recurse -Force $exp
+
+`--root` is the whole isolation, not a hint: every subprocess is given
+PYTHONPATH=ROOT/src REPLACING whatever the shell held, and `verify_import_root`
+stops the run unless `conductor.merge` resolves to the very file under `--root`.
+A shell PYTHONPATH left pointing at the working tree is therefore discarded
+rather than obeyed, and cannot produce the MEAS-1 number. What can still be
+wrong is `--root` itself, and nothing in the verdict line says so — read the
+provenance block first: `source root` and `conductor.merge` must both name the
+export. Naming the working tree means the number belongs to that tree.
 """
 from __future__ import annotations
 
@@ -73,7 +107,7 @@ EXIT_INVALID = 2                 # no score is printed on this path — see abov
 
 RESTORE_ATTEMPTS = 3
 RESTORE_DELAY_S = 0.2
-PYTEST_TIMEOUT_S = 180           # a mutation must never hang the harness
+SUBPROCESS_TIMEOUT_S = 180       # nothing the harness starts may hang it
 
 # `pytest` is imported by the probe on purpose: PYTHONNOUSERSITE hides a
 # user-site pytest, and `python -m pytest` without pytest exits 1 — which this
@@ -200,6 +234,29 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
         "tests/test_merge_status.py",
     ),
     (
+        # Row 1 of the action ladder against row 2. The status ladder's row 1
+        # is pinned on its own, and the rung-by-rung agreement test cannot
+        # reach this pair: every rung it walks is a `blocked` row, and row 1
+        # is `unknown`. Lanes still parse when the map does not, so the queue
+        # this narrowing defers to is genuinely reachable.
+        "action ladder: fix_map no longer outranks a queued wait",
+        '    if map_error is not None:\n        return _action("fix_map", None,',
+        '    if map_error is not None and not state["human_queue"]:\n'
+        '        return _action("fix_map", None,',
+        "tests/test_merge_status.py",
+    ),
+    (
+        # One entry for the whole kind: broken invariants, review-debt pairs,
+        # disagreements and contested nodes all break ties on sorted id, and
+        # one test pins all four against inputs arriving in the worst order.
+        # Broken invariants stand for the kind here because their per-row test
+        # passes on declaration order alone and so proves nothing by itself.
+        "tie-breaks stop ordering by id (broken invariants stand for the kind)",
+        '    return sorted(i["id"] for i in state["invariants"] if not i["ok"])',
+        '    return list(i["id"] for i in state["invariants"] if not i["ok"])',
+        "tests/test_merge_status.py",
+    ),
+    (
         "role projection: stage presence guard dropped (absent stage becomes null)",
         '    if "stage" in role:\n        out["stage"] = role["stage"]\n',
         '    out["stage"] = role.get("stage")\n',
@@ -260,27 +317,44 @@ def _shadow_report(resolved: Path, source_root: Path) -> str:
             "  this run has no mutation score - not even a zero.")
 
 
-def verify_import_root(source_root: Path, cwd: Path) -> Path:
-    """Confirm `conductor.merge` imports from `source_root` and nowhere else.
+def _wrong_file_report(resolved: Path, merge_path: Path) -> str:
+    """Say that the imported file is under the root but is not the mutated one."""
+    return ("import isolation not confirmed - conductor.merge lies under the "
+            "source root but is not the file this run mutates.\n"
+            f"  conductor.merge imported from: {resolved}\n"
+            f"  the file that would be mutated: {merge_path}\n"
+            "  A package beats a module of the same name, so a root carrying\n"
+            "  both loses every mutation into a file nobody imports. No\n"
+            "  mutation was applied and nothing was measured, so this run has\n"
+            "  no mutation score - not even a zero.")
+
+
+def verify_import_root(source_root: Path, cwd: Path, merge_path: Path) -> Path:
+    """Confirm `conductor.merge` imports from the file this run will mutate.
 
     Runs in the same subprocess environment the mutations will run in, before
     the first mutation, because file isolation is not verification isolation.
+    Membership of `source_root` is the weaker half and is checked first, for
+    the sake of the message it produces; the requirement is exact equality with
+    `merge_path`, since a mutation of any other file measures nothing.
 
     Args:
         source_root: The `src` directory that must own the import.
         cwd: Working directory for the probe, as for the test runs.
+        merge_path: The file the mutations will be written to.
 
     Returns:
         The resolved path of `conductor.merge.__file__`.
 
     Raises:
-        InvalidMeasurement: The probe could not run, the import failed, or it
-            resolved outside `source_root`.
+        InvalidMeasurement: The probe could not run, the import failed, it
+            resolved outside `source_root`, or it resolved to some other file
+            under it.
     """
     try:
         probe = subprocess.run(
             [sys.executable, "-c", IMPORT_PROBE], cwd=cwd, capture_output=True,
-            text=True, timeout=180, env=subprocess_env(source_root))
+            text=True, timeout=SUBPROCESS_TIMEOUT_S, env=subprocess_env(source_root))
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise InvalidMeasurement(f"the import probe could not run: {exc}") from exc
     if probe.returncode != 0:
@@ -291,6 +365,8 @@ def verify_import_root(source_root: Path, cwd: Path) -> Path:
     resolved = Path(probe.stdout.strip())
     if not _is_inside(resolved, source_root):
         raise InvalidMeasurement(_shadow_report(resolved, source_root))
+    if resolved != merge_path.resolve():
+        raise InvalidMeasurement(_wrong_file_report(resolved, merge_path))
     return resolved
 
 
@@ -341,7 +417,7 @@ def run_pytest(argv: list[str], source_root: Path, cwd: Path) -> subprocess.Comp
         cwd=cwd,
         capture_output=True,
         text=True,
-        timeout=PYTEST_TIMEOUT_S,
+        timeout=SUBPROCESS_TIMEOUT_S,
         env=subprocess_env(source_root),
     )
 
@@ -653,13 +729,13 @@ def report_score(results: list[tuple[str, bool]]) -> int:
 def main(argv: list[str] | None = None) -> int:
     """Check the instrument, then score every mutation. See module docstring."""
     args = parse_args(argv)
-    root = args.root.resolve()
-    source_root = root / "src"
-    merge_path = source_root / "conductor" / "merge.py"
     try:
+        root = args.root.resolve()
+        source_root = root / "src"
+        merge_path = source_root / "conductor" / "merge.py"
         if not merge_path.is_file():
             raise InvalidMeasurement(f"no merge engine to mutate at {merge_path}")
-        resolved = verify_import_root(source_root, root)
+        resolved = verify_import_root(source_root, root, merge_path)
         print_provenance(source_root, resolved)
         if args.verify_only:
             print("VERDICT: verification passed - import isolation confirmed, "
@@ -671,9 +747,19 @@ def main(argv: list[str] | None = None) -> int:
             results = run_mutations(merge_path, source_root, root)
         finally:
             clear_pycache(source_root)
+        return report_score(results)
     except InvalidMeasurement as exc:
         return _invalid_measurement(exc)
-    return report_score(results)
+    except Exception as exc:                      # noqa: BLE001 — see below
+        # The other half of the exit contract. Any other `Exception` on the
+        # measuring path — a source that is not UTF-8, a workspace that cannot
+        # be created, a read that fails — is an instrument failure, and letting
+        # its traceback reach the interpreter would exit 1, the code reserved
+        # for an honest survivor. Every one of them converges here, so no
+        # `Exception` can turn into a `1`.
+        return _invalid_measurement(InvalidMeasurement(
+            f"the instrument itself failed ({type(exc).__name__}: {exc}), so "
+            "nothing here was measured."))
 
 
 if __name__ == "__main__":

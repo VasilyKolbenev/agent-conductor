@@ -87,6 +87,11 @@ _REVIEWER_QUESTION = "Which harness reviews their work?"
 _NO_REVIEWER_GLOSS = (" — no reviewing role at all: findings then come out "
                       "agreed with nobody having looked")
 
+#: The id the `custom` row demonstrates its own promise with. Deliberately not
+#: a registry id: the claim being shown is that an UNLISTED answer survives the
+#: prompt intact, and a listed one would leave that half unshown.
+_TYPED_EXAMPLE = "my-own-agent"
+
 # The one sentence naming what the user must do next. Said once, to the person;
 # `prompts.bootstrap_prompt` states the same instruction to the agent in its
 # own register, deliberately without sharing this text.
@@ -241,18 +246,38 @@ def _custom_row() -> tuple[str, str]:
         was typed — except for the numbers the menu printed beside its own
         rows, which `_ask_harness` matches as the strings they are, so a legal
         id like `2` answers with the row it numbers while `02` and `²` are
-        harness ids like any other. That exactness is what makes the gloss's
-        "not a number above" literally true, and the gloss carries the
-        exception rather than promising more than the prompt delivers. A row
-        that taught only the typed answer would leave a user to discover the
-        other from their own map.toml.
+        harness ids like any other. A row that taught only the typed answer
+        would leave a user to discover the other from their own map.toml.
+
+        The gloss is rendered from the claim table below by the one formatter
+        under it, and it is guarded whole, never by its fragments. For a given
+        registry it has exactly one legal spelling:
+        `test_the_custom_row_gloss_has_exactly_one_legal_spelling_for_this_registry`
+        rebuilds the entire string from the registry, `_TYPED_EXAMPLE` and the
+        number the menu prints, and asserts EQUALITY — a clause inserted
+        around the worked examples, or one negating the sentence they sit in,
+        fails there even when every fragment survives, which is the rewrite
+        the fragment guards waved through: twice by substring, a third time
+        around the parsed examples. The examples still do their own work:
+        `test_the_custom_rows_typed_promise_is_true_of_what_gets_written` and
+        `test_the_number_the_custom_row_excepts_chooses_that_row_instead`
+        parse them out of this string and drive the wizard with them, so a
+        wizard that stops doing what an example shows fails on behaviour even
+        while the sentence never changed.
     """
     rest = ", ".join(h.id for h in harnesses.vendors()
                      if h.id not in harnesses.RECOMMENDED)
-    return (harnesses.CUSTOM,
-            f" — anything else: this row writes the id {harnesses.CUSTOM}. "
-            f"Conduct also knows {rest} — type any id that is not a number "
-            "above, listed or not, and it is written exactly as typed.")
+    claims = (
+        (f"anything else: this row writes the id {harnesses.CUSTOM}", ""),
+        (f"Conduct also knows {rest} — type any id, listed or not, and it "
+         "is written exactly as typed",
+         f"type {_TYPED_EXAMPLE} and get {_TYPED_EXAMPLE}"),
+        ("The numbers this menu printed are the one exception",
+         "answer 1 and get row 1"),
+    )
+    rendered = " ".join(f"{claim}: {example}." if example else f"{claim}."
+                        for claim, example in claims)
+    return harnesses.CUSTOM, f" — {rendered}"
 
 
 def _wizard(ask: Callable[[str], str], default_project: str) -> tuple[str, str]:

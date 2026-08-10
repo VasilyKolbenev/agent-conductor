@@ -146,6 +146,32 @@ _KNOWN: tuple[Harness, ...] = (
             accent_dark="#cf8bf2", accent_light="#7a26ad", monogram="GH",
             docs="https://docs.github.com/en/copilot",
             adapter="github-copilot", executable_hints=("gh",)),
+    # REG-1. OWNER-CONFIRMED 2026-08-10. Three fields of the two rows below
+    # state external facts — `docs`, `display_name`, and `executable_hints` —
+    # and the owner verified all six values against the vendors' official
+    # documentation. Gemini CLI uses https://geminicli.com/docs/ and the
+    # `gemini` command. OpenCode uses https://opencode.ai/docs/ and the
+    # `opencode` command; its product spelling is title-cased even though its
+    # executable and technical identifiers are lower-case. Tests pin the
+    # confirmed literals locally; they deliberately make no network request.
+    # The remaining fields state no vendor fact a test cannot reach: `id` and
+    # `monogram` are pinned by test_every_entry_is_complete_and_unambiguous
+    # and test_no_two_registered_harnesses_share_a_badge_and_a_collision_is_caught,
+    # the accents by test_both_themes_carry_a_well_formed_accent plus the
+    # contrast audit in test_harness_accent_contrast.py, and `adapter`
+    # resolves to nothing yet — a placeholder whose one promise, staying off
+    # the wire, is test_the_payload_is_json_ordered_and_carries_only_the_badge's.
+    # test_the_reg1_disclosure_names_every_field_that_states_an_external_fact
+    # derives the external set from the dataclass and requires each member
+    # named here, so this list cannot narrow again without a test going red.
+    Harness(id="gemini-cli", display_name="Gemini CLI", monogram="GC",
+            accent_dark="#4fd1a5", accent_light="#0d6d5a",
+            docs="https://geminicli.com/docs/",
+            adapter="gemini-cli", executable_hints=("gemini",)),
+    Harness(id="opencode", display_name="OpenCode", monogram="OC",
+            accent_dark="#d3a88c", accent_light="#7d4a2c",
+            docs="https://opencode.ai/docs/",
+            adapter="opencode", executable_hints=("opencode",)),
     Harness(id=CUSTOM, display_name="Custom harness", monogram="CH",
             accent_dark=NEUTRAL_DARK, accent_light=NEUTRAL_LIGHT,
             docs="", adapter="", executable_hints=()),
@@ -154,8 +180,9 @@ _KNOWN: tuple[Harness, ...] = (
 _BY_ID = {harness.id: harness for harness in _KNOWN}
 
 #: The ids `conduct init` offers by number, in the order it offers them. Short
-#: on purpose: a wall of nine products at the first prompt is a worse opening
-#: minute than three names and a line saying where the rest are. Membership
+#: on purpose: a wall of every product this file knows, at the first prompt, is
+#: a worse opening minute than three names and a line saying where the rest
+#: are — and the wall gets taller with every row added. Membership
 #: here is an onboarding decision, not a claim that these work better.
 RECOMMENDED = ("claude-code", "codex", "cursor")
 

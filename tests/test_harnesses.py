@@ -10,20 +10,40 @@ block below is the same shape `role.stage` uses in test_merge_queue_phase.py,
 for the same reason: an equality that a fixture could quietly make vacuous is
 worth less than an equality plus a test that the fixture still has teeth.
 """
+import ast
 import json
 import re
+from dataclasses import fields, replace
+from pathlib import Path
 
 from conductor import harnesses, merge, templates
 from tests.test_merge_queue_phase import NOW, ROLES_MAP, rich_lanes
 
 HEX_RE = re.compile(r"\A#[0-9a-f]{6}\Z")
 
-#: The non-ASCII ids whose badges this file pins. Every one of them is checked
+#: The field the registry documents and never resolves, spelled once so the
+#: parse below, its own sabotage fixture and the findings it writes cannot
+#: drift apart from each other.
+HINTS = "executable_hints"
+
+#: U+030C COMBINING CARON, named because it draws as nothing on its own. It is
+#: what `ǰ` upper-cases into behind the `J`, and the reason the badge property
+#: below counts the upper-casing rather than the letters and digits in it.
+CARON = chr(0x030C)
+
+#: The ids whose badges turn on how `_WORD_RE` splits words, rather than on
+#: the alphabet they are written in. Seven are non-ASCII, and an ASCII `\w`
+#: reads their letters as punctuation: that either strands the id with no words
+#: at all — `Кодекс` badges `?` — or leaves it with the wrong ones, since `ßa`
+#: then badges `A`. `my_own_agent` is pure ASCII and is here for the other
+#: clause of the same rule, the underscore `_WORD_RE` adds back as a separator:
+#: without it the id is one word and badges `MY`. Every one of them is checked
 #: against `templates.NAME_RE` in the tests that use it, and that check is not
 #: ceremony: a fixture that stopped being a legal harness id would go on
 #: passing while pinning an input no user can reach, which is a test that
 #: guards nothing dressed as a test that guards something.
-UNICODE_IDS = ("Кодекс", "ΩΩΩ", "中文", "my_own_agent", "ß", "ßa", "ß-agent")
+UNICODE_IDS = ("Кодекс", "ΩΩΩ", "中文", "my_own_agent", "ß", "ßa", "ß-agent",
+               "ǰ")
 
 
 # --- the data itself ---
@@ -34,7 +54,8 @@ def test_the_registry_lists_the_products_it_says_it_does():
     # decision about what December claims to know, not an implementation detail.
     assert [h.id for h in harnesses.known()] == [
         "claude-code", "codex", "cursor", "windsurf", "kimi-code",
-        "qwen-code", "grok-build", "github-copilot", "custom"]
+        "qwen-code", "grok-build", "github-copilot", "gemini-cli", "opencode",
+        "custom"]
 
 def test_deepseek_is_deliberately_absent():
     # Not because the integration story is missing — DeepSeek publishes models,
@@ -47,6 +68,56 @@ def test_deepseek_is_deliberately_absent():
     text = " ".join(f"{h.id} {h.display_name}" for h in harnesses.known()).lower()
     assert "deepseek" not in text
     assert harnesses.get("deepseek") is None
+
+def test_the_gemini_row_is_the_cli_product_and_not_the_model_family():
+    # The same rule that keeps DeepSeek out decides how Google gets in. Google
+    # ships both a model family reached over an API and a first-party terminal
+    # harness built on it, and only the second is a harness product — so the
+    # row is `gemini-cli`/`Gemini CLI`, and the bare model name stays
+    # unregistered. A user who types `gemini` gets that exact string and the
+    # neutral badge, which is the honest answer: this file knows a CLI, not a
+    # model. OpenCode needs no such distinction — it ships no model at all and
+    # is pointed at whichever provider its user configures.
+    assert harnesses.get("gemini-cli") is not None
+    assert harnesses.get("gemini") is None
+    assert harnesses.resolve("gemini").accent_dark == harnesses.NEUTRAL_DARK
+    assert harnesses.get("opencode") is not None
+
+
+def _repeated_monograms(entries):
+    """Every monogram carried by more than one entry, in first-clash order.
+
+    Args:
+        entries: Registry rows, real or fabricated.
+
+    Returns:
+        One string per monogram that two rows share. Computed over the rows
+        handed in rather than over `known()`, so the sabotage below can ask
+        this the same question about a registry that does collide — a check
+        spelled inline over the real registry can only ever answer about the
+        registry that exists, and cannot show it would notice one that did not.
+    """
+    seen, repeated = set(), []
+    for harness in entries:
+        if harness.monogram in seen and harness.monogram not in repeated:
+            repeated.append(harness.monogram)
+        seen.add(harness.monogram)
+    return repeated
+
+
+def test_no_two_registered_harnesses_share_a_badge_and_a_collision_is_caught():
+    # A hard invariant, not a preference: the monogram is the whole badge at
+    # the size the panel draws it, so two rows sharing one make two products
+    # indistinguishable wherever the display name does not also fit. New rows
+    # therefore have to take a free pair — `GC` and `OC` were free.
+    assert _repeated_monograms(harnesses.known()) == []
+    # And the check has teeth. A row that duplicates a shipped badge is built
+    # from a real entry, so the fabricated registry differs from the true one
+    # in exactly the field under test and in no other.
+    clash = replace(harnesses.get("gemini-cli"), id="gemini-cli-nightly")
+    assert clash.monogram == harnesses.get("gemini-cli").monogram
+    assert _repeated_monograms([*harnesses.known(), clash]) == ["GC"]
+
 
 def test_the_registry_never_normalises_a_display_name_into_an_id():
     # No slugify, no case folding, no "they probably meant claude-code". A
@@ -77,6 +148,48 @@ def test_every_vendor_entry_carries_a_documentation_url():
             assert harness.docs == ""
         else:
             assert harness.docs.startswith("https://"), harness.id
+
+def test_the_reg1_confirmation_names_and_pins_every_external_fact():
+    # REG1-01. The disclosure beside the two REG-1 rows once said the docs URL
+    # was the ONE field that could not be checked in place. False: an owner
+    # who read it would confirm two URLs and ship unverified vendor spellings,
+    # because `display_name` (how the vendor writes it) and `executable_hints`
+    # (what the command line calls it) are external facts of exactly the same
+    # kind. The external set is DERIVED — every `Harness` field minus the ones
+    # the suite pins from the repository alone — so a future field lands
+    # external by default. The exact owner-confirmed literals are pinned here
+    # without making the test suite depend on the network.
+    internal = {
+        "id", "monogram",                # test_every_entry_is_complete_and_unambiguous
+        "accent_dark", "accent_light",   # well-formedness here, contrast audit
+        "adapter",                       # resolves to nothing: no fact to confirm
+    }
+    external = {field.name for field in fields(harnesses.Harness)} - internal
+    assert external == {"docs", "display_name", "executable_hints"}
+    lines = Path(harnesses.__file__).read_text(encoding="utf-8").splitlines()
+    start = next(index for index, line in enumerate(lines)
+                 if line.strip().startswith("# REG-1."))
+    block = []
+    for line in lines[start:]:
+        if not line.strip().startswith("#"):
+            break
+        block.append(line.strip())
+    disclosure = " ".join(block)
+    assert "OWNER-CONFIRMED 2026-08-10" in disclosure
+    for name in sorted(external):
+        assert f"`{name}`" in disclosure, name
+    assert {
+        harness.id: (harness.docs, harness.display_name,
+                     harness.executable_hints)
+        for harness in harnesses.known()
+        if harness.id in {"gemini-cli", "opencode"}
+    } == {
+        "gemini-cli": ("https://geminicli.com/docs/", "Gemini CLI",
+                       ("gemini",)),
+        "opencode": ("https://opencode.ai/docs/", "OpenCode",
+                     ("opencode",)),
+    }
+
 
 def test_the_recommended_ids_are_registry_entries_and_exclude_custom():
     # The wizard numbers these. A recommended id with no entry would render a
@@ -145,24 +258,29 @@ def test_the_fallback_monogram_is_one_or_two_characters_and_never_padded():
         assert harnesses.resolve(value).monogram == monogram, value
     # Padding is not a length question — a filler character is the right length
     # and still shows something nobody supplied. So the property is: no more
-    # characters than the UPPER-CASED id offers, and every one of them taken
-    # FROM that upper-cased id. Upper-casing is where the count lives, because
-    # one code point can grow into two — `ß` gives `SS` — and the badge is cut
-    # back to two rather than padded up to them. `?` is the single character
-    # that comes from nowhere, and only an id that offers no letter and no
-    # digit may reach it. The table carries non-ASCII on purpose: computing
-    # `offered` by a Unicode rule while the code split by an ASCII one is
-    # exactly how this loop stayed green over a `?` badge for `Кодекс`.
+    # characters than the id's letters and digits offer once upper-cased, and
+    # every one of them taken FROM that upper-casing. Upper-casing is where the
+    # count lives, because one code point can grow into two — `ß` gives `SS` —
+    # and because what it grows into need not be a letter at all: `ǰ` gives `J`
+    # plus a COMBINING CARON, so counting only the alphanumerics would call the
+    # correct two-character badge padded. The badge is cut back to two rather
+    # than padded up to them. `?` is the single character that comes from
+    # nowhere, and only an id that offers no letter and no digit may reach it.
+    # The table carries non-ASCII on purpose, and the table is the half that
+    # does the work: while every row of it was ASCII this loop was green over a
+    # `?` badge for `Кодекс`, because it never asked about one. Computing
+    # `offered` by a Unicode rule is what makes an extended table fail instead
+    # of pass.
     for value in ("x", "7", "42", "c++", "kimi cli", "in-house-sast", "...",
                   *UNICODE_IDS):
         if value in UNICODE_IDS:
             assert templates.NAME_RE.fullmatch(value), value
         monogram = harnesses.resolve(value).monogram
-        offered = [char for char in value.upper() if char.isalnum()]
+        offered = "".join(char for char in value if char.isalnum()).upper()
         assert 1 <= len(monogram) <= 2, value
-        assert len(monogram) <= max(1, len(offered)), value    # never padded
         if offered:
-            assert set(monogram) <= set(value.upper()), value  # never invented
+            assert len(monogram) <= len(offered), value    # never padded
+            assert set(monogram) <= set(offered), value    # never invented
         else:
             assert monogram == "?", value
 
@@ -188,12 +306,21 @@ def test_a_badge_stays_two_characters_when_upper_casing_expands_a_letter():
     # fallback upper-case what they picked, so both need the cut afterwards —
     # without it `ßa` badges `SSA` and `ß-agent` badges `SSA` too, three
     # characters wide in a slot the registry sizes at two.
-    for value in ("ß", "ßa", "ß-agent"):
+    for value in ("ß", "ßa", "ß-agent", "ǰ"):
         assert templates.NAME_RE.fullmatch(value), value
     assert "ß".upper() == "SS"
     assert harnesses.resolve("ß").monogram == "SS"
     assert harnesses.resolve("ßa").monogram == "SS"        # single-word branch
     assert harnesses.resolve("ß-agent").monogram == "SS"   # two-word branch
+    # The other shape of the same expansion, and the one a length rule spelled
+    # over alphanumerics gets wrong: `ǰ` upper-cases into `J` plus a COMBINING
+    # CARON, two code points of which only the first is a letter. Both are the
+    # badge — dropping the mark would leave a plain `J` this id never carried.
+    # Built from `CARON` rather than pasted: a combining mark renders as
+    # nothing of its own, and an expectation nobody can see is an expectation
+    # nobody reviews.
+    assert "ǰ".upper() == "J" + CARON
+    assert harnesses.resolve("ǰ").monogram == "J" + CARON
 
 
 # --- the seam a panel renders the registry through ---
@@ -298,11 +425,104 @@ def test_being_in_the_registry_changes_no_merge_computed_value():
     assert known["kpi"] == unknown["kpi"]
     assert known["warnings"] == unknown["warnings"]
 
-def test_the_registry_carries_no_lookup_of_its_own_hints():
-    # `executable_hints` is documentation for a person reading the registry.
-    # Its shape is data and nothing resolves it — the structural half of that
-    # promise is the machine-probing ban in test_init_probing_ban.py, which now
-    # parses this module too.
+def test_the_registry_carries_its_hints_as_plain_strings():
+    # The shape only. What this does NOT show is that nothing resolves them —
+    # that claim is the test below, and this one used to carry its name.
     for harness in harnesses.known():
         assert all(isinstance(hint, str) for hint in harness.executable_hints)
     assert harnesses.get("claude-code").executable_hints == ("claude",)
+
+
+def _hint_readers(path):
+    """Every place in one module that reads an `executable_hints` back out.
+
+    Args:
+        path: A `conductor` source file.
+
+    Returns:
+        One string per reading site. Declaring the field and writing it are
+        the two spellings a registry needs — the annotation in `Harness` and
+        the keyword arguments that build the rows — and neither is a read, so
+        neither is reported. An attribute access is: `h.executable_hints` is
+        the first half of the reverse index, the `.get` on it the second. The
+        literal string is reported too, because `getattr(h, "…")` is the same
+        read with the name moved into data.
+    """
+    findings = []
+    for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+        if isinstance(node, ast.Attribute) and node.attr == HINTS:
+            findings.append(f"{path.name}:{node.lineno} reads .{HINTS}")
+        elif isinstance(node, ast.Constant) and node.value == HINTS:
+            findings.append(f"{path.name}:{node.lineno} names {HINTS!r}")
+    return findings
+
+
+def _hint_findings(root):
+    """Every hint-reading site under `root`, plus the files the walk parsed.
+
+    Args:
+        root: A directory to walk — the real package, or a fabricated tree.
+
+    Returns:
+        `(paths, findings)`: every `*.py` under `root`, subpackages included
+        (`rglob`, because a package is a tree and a flat listing of it is a
+        different, smaller claim), and every reading site found in them. The
+        paths come back too because `findings == []` is also what an empty
+        walk answers — a caller asserting emptiness has to anchor the walk
+        before trusting it.
+    """
+    paths = sorted(root.rglob("*.py"))
+    return paths, [f for path in paths for f in _hint_readers(path)]
+
+
+def test_the_registry_carries_no_lookup_of_its_own_hints(tmp_path):
+    # The module docstring says nothing looks these up and that no code path
+    # turns them into a lookup. That is a claim about every module in the
+    # package, so it is asked of every module in the package, by parsing —
+    # the whole tree, not one level of it: a reviewer answered the flat
+    # `glob("*.py")` walk with a real, importable reverse index in a
+    # `conductor.adapters` subpackage, and the suite stayed green because
+    # only top-level files were ever read. And the walk is anchored before
+    # its emptiness is believed, because `findings == []` is also the answer
+    # a walk of nothing gives.
+    #
+    # A REPOSITORY GUARD, not a sandbox, and for the same reason the probing
+    # ban says so about itself: a name assembled at runtime walks straight
+    # past it, and so does a positional read of the frozen row —
+    # `astuple(row)[-1]` is this same field with its name gone entirely.
+    # What it stops is a lookup arriving without the ADR the docstring says
+    # one would need.
+    paths, findings = _hint_findings(Path(harnesses.__file__).parent)
+    assert Path(harnesses.__file__) in paths     # the walk saw the registry
+    assert findings == []
+    # And the parse has teeth: the exact shape it exists to refuse, written
+    # out and read back, so an empty finding list is an answer rather than the
+    # only thing this function knows how to produce.
+    reverse_index = tmp_path / "reverse_index.py"
+    reverse_index.write_text(
+        f"_BY_HINT = {{hint: row for row in _KNOWN for hint in row.{HINTS}}}\n",
+        encoding="utf-8")
+    assert _hint_readers(reverse_index) == [f"reverse_index.py:1 reads .{HINTS}"]
+
+
+def test_a_reverse_index_in_a_subpackage_is_inside_the_walk(tmp_path):
+    # DO4-2, the reviewer's diversion, kept as a regression. The index below
+    # is the shape that landed in `src/conductor/adapters/detect.py` and left
+    # the registry guard green: real, importable, and one directory below the
+    # only level the old flat walk ever read. Reachability was the whole hole
+    # — the parse recognised the shape from the start — so what this pins is
+    # the walk: the same index, one level down a fabricated package, must
+    # come back as a finding, and the file that carries it must be among the
+    # paths the walk reports having parsed.
+    package = tmp_path / "adapters"
+    package.mkdir()
+    (package / "__init__.py").write_text("", encoding="utf-8")
+    (package / "detect.py").write_text(
+        "from conductor.harnesses import known\n"
+        f"_BY_HINT = {{hint: row for row in known() for hint in row.{HINTS}}}\n"
+        "def harness_for(hint):\n"
+        "    return _BY_HINT.get(hint)\n",
+        encoding="utf-8")
+    paths, findings = _hint_findings(tmp_path)
+    assert package / "detect.py" in paths
+    assert findings == [f"detect.py:2 reads .{HINTS}"]

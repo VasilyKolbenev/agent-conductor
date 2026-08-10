@@ -203,6 +203,16 @@ def test_next_action_kind_matches_the_blocked_reason_at_every_rung():
     assert rung(blocked_project(queue=False, broken=False, invariant=False)) == (
         "node_failing", "fix_node")
 
+def test_an_unreadable_map_outranks_a_queued_wait_in_the_action_ladder_too():
+    # `rung` cannot reach this pair: every row it walks is a `blocked` one, and
+    # row 1 is `unknown`. Lanes still parse when the map does not, so a queued
+    # wait is genuinely in play here and the two ladders can drift apart.
+    ls = [with_data(lane("claude", "impl"), waits_on_human=[wait()])]
+    state = merge.merge(None, "boom", ls, [], 0, NOW)
+    assert state["human_queue"]
+    assert (status(state)["reason"], state["next_action"]["kind"]) == (
+        "map_unreadable", "fix_map")
+
 
 # --- next_action, one test per kind ---
 
@@ -486,6 +496,38 @@ def test_status_and_action_do_not_depend_on_lane_order():
     second = merge.merge(MAP, None, list(reversed(ls)), [], 0, NOW)
     assert first["project_status"] == second["project_status"]
     assert first["next_action"] == second["next_action"]
+
+def test_every_lowest_id_tie_break_survives_the_inputs_arriving_in_the_worst_order():
+    # One test for the whole kind. Each row below picks the lowest id among
+    # several candidates, and here every candidate set arrives in the reverse
+    # of that order — the map declares its invariants and nodes as it likes,
+    # a lane lists its findings as it likes, and cycle.roles fixes the order
+    # review debt is collected in. Pinned one row at a time, a case whose
+    # inputs happen to arrive already sorted passes without sorting anything.
+    def ref(map_data, lanes):
+        return merge.merge(map_data, None, lanes, [], 0, NOW)["next_action"]["ref"]
+
+    late_invariants = {**MAP, "invariants": [{"id": "i-2", "text": "y"},
+                                             {"id": "i-1", "text": "x"}]}
+    assert ref(late_invariants,
+               [with_data(passing(), invariants=[{"id": "i-2", "ok": False},
+                                                 {"id": "i-1", "ok": False}])]) == "i-1"
+    # rev owes D-2 and sec owes D-1; cycle.roles declares rev first.
+    owed = [passing("claude", "impl", findings=[finding("D-1"), finding("D-2")]),
+            passing("codex", "rev", verdicts={"D-1": {"disposition": "confirmed", "note": ""}}),
+            passing("scan", "sec", verdicts={"D-2": {"disposition": "confirmed", "note": ""}})]
+    assert ref(MAP, owed) == "D-1"
+    refuted = {"disposition": "refuted", "note": "no"}
+    confirmed = {"disposition": "confirmed", "note": ""}
+    disputed = [passing("claude", "impl", findings=[finding("D-2"), finding("D-1")]),
+                passing("codex", "rev", verdicts={"D-1": refuted, "D-2": refuted}),
+                passing("scan", "sec", verdicts={"D-1": confirmed, "D-2": confirmed})]
+    assert ref(MAP, disputed) == "D-1"
+    both_contested = [with_data(lane("claude", "impl"),
+                                map_status={"beta": "pass", "alpha": "pass"}),
+                      with_data(lane("codex", "rev"),
+                                map_status={"beta": "running", "alpha": "running"})]
+    assert ref(TWO_NODE_MAP, both_contested) == "alpha"
 
 
 # --- a legacy-shaped project (map only, no lanes) ---

@@ -21,7 +21,6 @@ editable `.pth` pointing somewhere else — instead of trusting the ambient
 environment to still carry one. Without that construction, none of the
 assertions here would have teeth, which is what the first test checks.
 """
-import ast
 import importlib.util
 import os
 import re
@@ -122,8 +121,10 @@ def test_the_shadowing_fixture_really_does_shadow_the_export(export, shadowing_p
 def test_measuring_an_export_under_an_editable_install_is_honest_not_plausible(
         export, shadowing_python):
     # The acceptance condition: run from an export while an editable install of
-    # the working tree exists. The only two honest outcomes are a true 13/13 or
-    # a refusal — never a score computed against a file nobody imported.
+    # the working tree exists. The only two honest outcomes are a true full
+    # score or a refusal — never a score computed against a file nobody
+    # imported. The count is read off the catalogue, not written down here: a
+    # literal would pass a shrunken catalogue and fail an extended one.
     stale = export / "src" / "conductor" / "__pycache__"
     stale.mkdir(exist_ok=True)
     (stale / "merge.cpython-000.pyc").write_bytes(b"stale bytecode")
@@ -132,7 +133,8 @@ def test_measuring_an_export_under_an_editable_install_is_honest_not_plausible(
     result = run_harness(shadowing_python, "--root", str(export))
 
     assert result.returncode == harness.EXIT_OK, result.stdout + result.stderr
-    assert "VERDICT: PASS - 13/13 mutations killed" in result.stdout
+    total = len(harness.MUTATIONS)
+    assert f"VERDICT: PASS - {total}/{total} mutations killed" in result.stdout
     assert f"conductor.merge: {export / 'src' / 'conductor' / 'merge.py'}" in result.stdout
     assert str(WORKING_TREE_MERGE) not in result.stdout   # the export was measured, not us
     assert WORKING_TREE_MERGE.read_bytes() == working_tree_before
@@ -154,7 +156,8 @@ def test_a_shadowed_import_root_refuses_before_any_mutation_and_never_scores(
     # The law being pinned: an unknown state may not be displayed as a result.
     combined = result.stdout + result.stderr
     assert "no mutation score" in combined
-    assert "killed" not in combined.lower() and "0/13" not in combined
+    assert "killed" not in combined.lower()
+    assert f"0/{len(harness.MUTATIONS)}" not in combined   # nor the shape of one
     # "before any mutation" is the other half of this test's name, and the
     # bytes being right at the end cannot tell "never written" from "written
     # and restored". No mutation was reported, so none was run.
@@ -289,35 +292,6 @@ def test_a_stumbling_restore_still_leaves_no_mutation_applied(source_copy, monke
 # --- the exit-code contract: a code describes the mode that was requested ---
 
 
-def _returns_exit_invalid(node) -> bool:
-    """Whether an AST node is the harness's invalid-measurement exit code."""
-    if isinstance(node, ast.Name):
-        return node.id == "EXIT_INVALID"
-    return isinstance(node, ast.Constant) and node.value == 2
-
-
-def test_exit_two_is_returned_by_one_helper_and_by_nothing_else_in_the_module():
-    # Sixteen independent `print(...); return 2` sites are the design in which
-    # the seventeenth forgets to stay silent. The invariant "exit 2 prints no
-    # score" is held here by the shape of the module, read from its AST, not by
-    # remembering it at each raise site. (`argparse` also exits 2 on a usage
-    # error — that happens inside argparse, not in this module, and the module
-    # docstring names the overlap.)
-    tree = ast.parse(HARNESS.read_text(encoding="utf-8"))
-    returners = set()
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.FunctionDef):
-            continue
-        for inner in ast.walk(node):
-            if isinstance(inner, ast.Return) and _returns_exit_invalid(inner.value):
-                returners.add(node.name)
-    assert returners == {"_invalid_measurement"}
-    exits = [n for n in ast.walk(tree) if isinstance(n, ast.Call)
-             and ast.unparse(n.func) in ("sys.exit", "SystemExit", "exit")
-             and any(_returns_exit_invalid(a) for a in n.args)]
-    assert exits == []
-
-
 def test_an_invalid_measurement_prints_no_score_and_returns_exit_two(capsys):
     code = harness._invalid_measurement(harness.InvalidMeasurement("the volume went away"))
     captured = capsys.readouterr()
@@ -333,6 +307,120 @@ def test_the_verdict_word_follows_the_score_it_reports(capsys):
     assert "VERDICT: PASS - 2/2 mutations killed" in capsys.readouterr().out
     assert harness.report_score([("a", True), ("b", False)]) == harness.EXIT_SURVIVORS
     assert "VERDICT: FAIL - 1/2 mutations killed" in capsys.readouterr().out
+
+
+@pytest.fixture
+def measurable(tmp_path):
+    """The smallest tree `main` will accept as something to measure."""
+    merge_path = tmp_path / "src" / "conductor" / "merge.py"
+    merge_path.parent.mkdir(parents=True)
+    merge_path.write_text("def is_ready(state):\n    return True\n", encoding="utf-8")
+    return tmp_path
+
+
+def _stub_every_stage(monkeypatch, measurable):
+    """Make each stage of the measuring path succeed without doing anything."""
+    monkeypatch.setattr(harness, "verify_import_root",
+                        lambda *a, **k: measurable / "src" / "conductor" / "merge.py")
+    monkeypatch.setattr(harness, "check_baseline", lambda *a, **k: 2)
+    monkeypatch.setattr(harness, "run_mutations", lambda *a, **k: [("m", True)])
+    monkeypatch.setattr(harness, "report_score", lambda results: harness.EXIT_OK)
+
+
+@pytest.mark.parametrize("stage, blow_up", [
+    ("verify_import_root", OSError(5, "the volume went away")),
+    ("check_baseline", OSError(28, "no space left on device")),
+    ("run_mutations", UnicodeDecodeError("utf-8", b"\xe9", 0, 1, "invalid start byte")),
+    ("report_score", MemoryError("out of memory writing the verdict")),
+], ids=["provenance", "baseline", "mutations", "report"])
+def test_an_instrument_failure_that_is_not_an_invalid_measurement_still_exits_two(
+        monkeypatch, capsys, measurable, stage, blow_up):
+    # The half of the contract the exit table had assumed rather than held. An
+    # exception that is not an InvalidMeasurement used to escape main and exit
+    # 1 — the code the table gives an honest survivor — with a traceback and no
+    # verdict line. Every stage of the measuring path is checked, because the
+    # invariant is about the funnel and not about any one window: the stages
+    # are all stubbed to succeed, and then one of them is made to fail.
+    def raise_it(*args, **kwargs):
+        raise blow_up
+
+    _stub_every_stage(monkeypatch, measurable)
+    monkeypatch.setattr(harness, stage, raise_it)
+
+    code = harness.main(["--root", str(measurable)])
+
+    captured = capsys.readouterr()
+    assert code == harness.EXIT_INVALID
+    assert "the instrument itself failed" in captured.err
+    assert type(blow_up).__name__ in captured.err
+    assert "no mutation score" in captured.err
+    assert not SCORE_SHAPED.search(captured.out + captured.err)
+    assert "VERDICT: PASS" not in captured.out and "VERDICT: FAIL" not in captured.out
+
+
+def test_a_workspace_that_cannot_be_created_is_not_a_surviving_mutation(
+        monkeypatch, capsys, measurable):
+    # The window named in the review, in situ rather than by faking the stage:
+    # `check_baseline` opens a workspace with `tempfile.mkdtemp` before it runs
+    # anything, and a full disk there is not a measurement of any kind.
+    def no_space(*args, **kwargs):
+        raise OSError(28, "no space left on device")
+
+    monkeypatch.setattr(harness, "verify_import_root",
+                        lambda *a, **k: measurable / "src" / "conductor" / "merge.py")
+    monkeypatch.setattr(harness, "tempfile", SimpleNamespace(mkdtemp=no_space))
+
+    code = harness.main(["--root", str(measurable)])
+
+    captured = capsys.readouterr()
+    assert code == harness.EXIT_INVALID
+    assert "no space left on device" in captured.err
+    assert not SCORE_SHAPED.search(captured.out + captured.err)
+
+
+def test_main_verifies_the_file_it_will_mutate_and_shows_what_the_probe_resolved(
+        monkeypatch, measurable):
+    # The provenance lines are pinned inside `print_provenance`, which proves
+    # it prints what it is given. This is the other end: main must ask about
+    # the path it is about to write to, and must then show the probe's answer
+    # rather than that same path. In every green run the two coincide, so only
+    # the call site can tell them apart — and the same lie planted one frame up
+    # went unnoticed by fifty-three tests.
+    merge_path = measurable / "src" / "conductor" / "merge.py"
+    resolved = measurable / "src" / "conductor" / "merge" / "__init__.py"
+    asked, shown = [], []
+    monkeypatch.setattr(harness, "verify_import_root",
+                        lambda *args: (asked.append(args), resolved)[1])
+    monkeypatch.setattr(harness, "print_provenance", lambda *args: shown.append(args))
+
+    assert harness.main(["--root", str(measurable), "--verify-only"]) == harness.EXIT_OK
+
+    assert asked == [(measurable / "src", measurable, merge_path)]
+    assert shown == [(measurable / "src", resolved)]
+    assert shown[0][1] != merge_path
+
+
+def test_an_import_under_the_source_root_is_still_refused_when_it_is_another_file(
+        tmp_path):
+    # Belonging to the root is the weaker half: a root carrying both
+    # `conductor/merge.py` and a `conductor/merge/` package resolves to the
+    # package, passes any is-inside test, and every mutation then lands in a
+    # file nobody imports. Both paths here are under the root.
+    source_root = tmp_path / "src"
+    merge_path = source_root / "conductor" / "merge.py"
+    package = source_root / "conductor" / "merge" / "__init__.py"
+    package.parent.mkdir(parents=True)
+    merge_path.write_text("def is_ready(state):\n    return True\n", encoding="utf-8")
+    package.write_text("def is_ready(state):\n    return True\n", encoding="utf-8")
+    (source_root / "conductor" / "__init__.py").write_text("", encoding="utf-8")
+
+    with pytest.raises(harness.InvalidMeasurement) as raised:
+        harness.verify_import_root(source_root, tmp_path, merge_path)
+
+    message = str(raised.value)
+    assert "is not the file this run mutates" in message
+    assert str(package) in message and str(merge_path) in message
+    assert "no mutation score" in message
 
 
 def test_a_usage_error_exits_two_before_anything_could_be_measured():
@@ -466,7 +554,11 @@ def test_the_baseline_covers_exactly_the_files_the_mutations_are_scored_against(
 
 def test_the_baseline_and_the_mutant_runs_come_from_one_environment(monkeypatch, tmp_path):
     # Not "built the same way" — the same. Two builders drift apart at the
-    # first edit, and then the baseline proves the wrong tree is green.
+    # first edit, and then the baseline proves the wrong tree is green. This
+    # catches drift between the two calls; what forbids a second builder that
+    # agrees today is structural and lives in
+    # tests/test_mutate_harness_contract.py, in
+    # test_one_place_in_the_module_starts_a_pytest_and_it_is_run_pytest.
     calls, fake = _recorder()
     monkeypatch.setattr(harness, "subprocess", fake)
     source_root, cwd = tmp_path / "src", tmp_path
@@ -481,7 +573,7 @@ def test_the_baseline_and_the_mutant_runs_come_from_one_environment(monkeypatch,
 
 
 def test_a_baseline_that_is_not_green_is_an_invalid_measurement(monkeypatch, tmp_path):
-    calls, fake = _recorder(returncode=1)
+    _, fake = _recorder(returncode=1)
     monkeypatch.setattr(harness, "subprocess", fake)
     with pytest.raises(harness.InvalidMeasurement) as raised:
         harness.check_baseline(tmp_path / "src", tmp_path, tmp_path / "merge.py")
@@ -492,7 +584,7 @@ def test_a_baseline_that_is_not_green_is_an_invalid_measurement(monkeypatch, tmp
 def test_a_baseline_that_collected_nothing_is_an_invalid_measurement(monkeypatch, tmp_path):
     # A green exit over zero tests proves nothing, and it is a distinct failure
     # from a red one.
-    calls, fake = _recorder(returncode=0, testcases=0)
+    _, fake = _recorder(returncode=0, testcases=0)
     monkeypatch.setattr(harness, "subprocess", fake)
     with pytest.raises(harness.InvalidMeasurement) as raised:
         harness.check_baseline(tmp_path / "src", tmp_path, tmp_path / "merge.py")
@@ -530,38 +622,7 @@ def test_a_red_targeted_file_stops_the_run_before_the_first_mutation(
     assert "mutations killed" not in result.stdout + result.stderr
 
 
-# --- prose about this code is code: these pin claims, not wording ---
-
-
-def test_the_docstring_states_the_kill_rule_the_scorer_actually_applies():
-    doc = harness.__doc__
-    assert "nonzero pytest exit" not in doc      # only exit 1 is a kill
-    assert "exit 1" in doc
-
-
-def test_the_docstring_does_not_promise_a_tree_that_is_always_left_clean():
-    # A hard kill between the mutation write and the restore leaves a mutated
-    # file and says nothing. The docstring may not offer two exhaustive
-    # outcomes while that third one exists.
-    doc = harness.__doc__
-    assert "always" not in doc
-    assert "hard kill" in doc
-    assert "separate task" in doc
-
-
-def test_the_exit_table_covers_verify_only_and_the_argparse_overlap():
-    doc = harness.__doc__
-    assert "--verify-only" in doc
-    assert "argparse" in doc
-
-
-def test_the_pythonnousersite_reason_is_the_one_that_holds():
-    # PYTHONPATH precedes every site directory, so the flag does not keep a
-    # user-site install from shadowing the source root. What it does do is hide
-    # a user-site pytest, which is why the probe imports pytest at all.
-    doc = harness.subprocess_env.__doc__
-    assert "from shadowing the source root" not in doc
-    assert "pytest" in doc
+# --- the restore path again: the failure mode a read-only file cannot make ---
 
 
 def test_a_mutation_write_that_truncates_before_failing_is_restored(
@@ -600,8 +661,8 @@ def pytest_free_python(tmp_path_factory):
 
 def test_an_interpreter_that_cannot_run_a_test_cannot_produce_a_score(
         export, pytest_free_python):
-    # The harness's worst false positive: 13/13 killed, exit 0, from an
-    # interpreter on which not one test can run, because `python -m pytest`
+    # The harness's worst false positive: every mutation killed, exit 0, from
+    # an interpreter on which not one test can run, because `python -m pytest`
     # without pytest exits 1 and exit 1 is what a kill looks like.
     assert "pytest" in harness.IMPORT_PROBE
     would_read_as_a_kill = subprocess.run(
