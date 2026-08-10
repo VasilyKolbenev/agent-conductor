@@ -421,6 +421,17 @@ def test_the_vertical_layout_tells_the_return_from_a_step_the_same_way():
         step, ret = computed(link, env=env), computed(back, env=env)
         assert step["border-left-color"] == ret["border-left-color"], label
         assert step["border-left-style"] != ret["border-left-style"], label
+    # The name says "the vertical layout", and until now only the stylesheet was
+    # read: nothing required drawOrbitColumn to write the class the rules above
+    # are keyed on, and removing it left the whole suite green with the return
+    # to the next Run drawn as an ordinary step. So the writer is read too, in
+    # the same form the walk test below uses — the branch that recognises the
+    # return is what emits the class, and the branch that emits a step does not.
+    body = function_body("drawOrbitColumn")
+    head, _, tail = body.partition('e.kind === "next"')
+    assert tail, body
+    assert "lnk--next" in re.findall(r'class:\s*"([^"]*)"', tail)[0].split()
+    assert "lnk--next" not in head
 
 
 STAGE = Element("div", frozenset({"orb", "orb--neutral"}))
