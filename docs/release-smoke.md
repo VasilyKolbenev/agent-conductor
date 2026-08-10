@@ -55,7 +55,7 @@ you are shipping.
 Expect exit 0, and this list of subcommands — no more, no fewer:
 
 ```
-usage: conduct [-h] {validate,init,prompt,report,up,demo} ...
+usage: conduct [-h] {validate,init,doctor,prompt,report,up,demo} ...
 ```
 
 If a subcommand you expected is missing, the wheel is not built from what you think it is.
@@ -211,10 +211,11 @@ Run it a second time and expect a refusal, exit 1 — a release that overwrites 
 ...\proj\conductor already exists — refusing to touch it
 ```
 
-## 9. `conduct validate`, `conduct report` and `conduct prompt` read what init wrote
+## 9. `conduct validate`, `conduct doctor`, `conduct report` and `conduct prompt` read what init wrote
 
 ```powershell
 & $CONDUCT validate --dir $PROJ; "validate exit=$LASTEXITCODE"
+& $CONDUCT doctor --dir $PROJ; "doctor exit=$LASTEXITCODE"
 & $CONDUCT report --dir $PROJ
 & $CONDUCT prompt --role scout --author claude --dir $PROJ
 ```
@@ -222,6 +223,17 @@ Run it a second time and expect a refusal, exit 1 — a release that overwrites 
 Expect `conduct validate` to print nothing at all, on either stream, and exit 0. Silence is
 the whole signal: a freshly scaffolded map that warns has a defect in the template it was
 written from.
+
+Expect `conduct doctor` to describe the scaffold honestly and exit 1: the map is still the
+built-in `default-orbit`, no lane has reported, and no declared role is held. Its last line is:
+
+```
+not ready: 3 finding(s), 0 unknown, 2 ok.
+```
+
+Each finding must include a copyable `next: conduct ...` command. This is a successful smoke
+result even though the process exits 1: a fresh scaffold is valid, but it is not yet a project
+that agents have configured or worked in.
 
 Expect `conduct report` to print a Markdown document beginning `# Conduct report —
 your-project`, with a `## Decision brief` naming `no_lanes_yet` and a `## What this report

@@ -46,6 +46,7 @@ cd your-project
 conduct init        # asks three questions in a terminal; --template skips them
 # edit conductor/map.toml: swap in your nodes, roles, and phases
 conduct validate    # prints nothing when the map and lanes are valid
+conduct doctor      # says what is not ready and gives the next command
 conduct prompt --role implementer --author claude
 conduct report      # the merged state as Markdown, on stdout
 conduct up          # panel at http://127.0.0.1:7777/
@@ -60,6 +61,11 @@ live.
 the decision brief, the human queue, the findings, and a section naming what that state
 does not know. Nothing about it is interactive, so it goes in a pull request comment, a
 CI log, or a file.
+
+`conduct doctor` answers a different question from `validate`: not only whether the files
+parse, but whether the project is set up to work. Each finding names the next command to
+run, and the command exits 0 only when every readiness check is OK. It reads project files
+and the bundled harness registry; it never probes your machine for installed tools.
 
 ### What `conduct init` writes
 
