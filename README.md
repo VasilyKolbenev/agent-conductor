@@ -151,8 +151,9 @@ python -m playwright install chromium
 python -m pytest -q browser_tests
 ```
 
-Playwright is an optional development/CI dependency. It is not installed with the
-runtime wheel, the panel remains one static HTML file, and no build step is added.
+Playwright and the pixel decoder are optional development/CI dependencies. They are
+not installed with the runtime wheel, the panel remains one static HTML file, and no
+build step is added.
 
 ## Status
 

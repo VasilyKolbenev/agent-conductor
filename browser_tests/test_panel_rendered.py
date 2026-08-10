@@ -13,8 +13,10 @@ from __future__ import annotations
 
 import threading
 from collections.abc import Iterator
+from io import BytesIO
 
 import pytest
+from PIL import Image
 from playwright.sync_api import Browser, Page, sync_playwright
 
 from conductor import demo, server
@@ -64,43 +66,60 @@ def panel_page(chromium: Browser, panel_url: str, request: pytest.FixtureRequest
         context.close()
 
 
-def _box_profile(page: Page, node_id: str) -> dict[str, str | None]:
-    """Read the browser's status-owned geometry and paint for one map node."""
-    return page.locator(f'[data-node="{node_id}"] .box').evaluate(
-        """box => {
-          const style = getComputedStyle(box);
+def _box_profile(page: Page, node_id: str) -> dict[str, object]:
+    """Capture a status box as geometry plus pixels, not a CSS-property list."""
+    box = page.locator(f'[data-node="{node_id}"] .box')
+    geometry = box.evaluate(
+        """node => {
+          const rect = node.getBoundingClientRect(), matrix = node.getScreenCTM();
           return {
-            rx: box.getAttribute("rx"),
-            fill: style.fill,
-            stroke: style.stroke,
-            strokeWidth: style.strokeWidth,
-            strokeDasharray: style.strokeDasharray,
-            opacity: style.opacity,
+            rect: [rect.x, rect.y, rect.width, rect.height],
+            matrix: matrix && [matrix.a, matrix.b, matrix.c, matrix.d, matrix.e, matrix.f],
           };
         }"""
     )
+    # The halo and generic focus outline are the interaction feedback expressly
+    # allowed to change. Hide only those siblings while rasterizing the status
+    # carrier; :hover/:focus/aria-pressed still apply to the box itself.
+    saved = box.evaluate(
+        """node => {
+          const group = node.parentElement, halo = group.querySelector(".halo");
+          const state = {halo: halo.style.visibility, outline: group.style.outline};
+          halo.style.visibility = "hidden";
+          group.style.outline = "none";
+          return state;
+        }"""
+    )
+    try:
+        png = box.screenshot(animations="disabled", scale="css")
+    finally:
+        box.evaluate(
+            """(node, state) => {
+              const group = node.parentElement, halo = group.querySelector(".halo");
+              halo.style.visibility = state.halo;
+              group.style.outline = state.outline;
+            }""",
+            saved,
+        )
+    with Image.open(BytesIO(png)) as image:
+        pixels = (image.size, image.convert("RGBA").tobytes())
+    return {"geometry": geometry, "pixels": pixels}
 
 
-_CONTRAST = r"""({selector, property, against}) => {
-  const target = document.querySelector(selector);
+_CONTRAST = r"""({selector, property, against, index}) => {
+  const target = document.querySelectorAll(selector)[index || 0];
   if (!target) throw new Error("missing foreground: " + selector);
 
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = 1;
+  const context = canvas.getContext("2d", {willReadFrequently: true});
   function colour(value) {
-    value = String(value).trim().toLowerCase();
-    if (value === "transparent") return [0, 0, 0, 0];
-    if (value.startsWith("color(srgb")) {
-      const body = value.slice(value.indexOf(" ") + 1, -1);
-      const halves = body.split("/");
-      const channels = halves[0].trim().split(/\s+/).map(Number);
-      return [channels[0] * 255, channels[1] * 255, channels[2] * 255,
-              halves[1] === undefined ? 1 : Number(halves[1].trim())];
-    }
-    const match = value.match(/^rgba?\((.+)\)$/);
-    if (!match) throw new Error("unsupported computed colour: " + value);
-    const parts = match[1].replace(/,/g, " ").split(/\s+/).filter(Boolean);
-    const channel = part => part.endsWith("%") ? parseFloat(part) * 2.55 : Number(part);
-    return [channel(parts[0]), channel(parts[1]), channel(parts[2]),
-            parts[3] === undefined ? 1 : Number(parts[3])];
+    context.clearRect(0, 0, 1, 1);
+    context.fillStyle = "rgba(0,0,0,0)";
+    context.fillStyle = String(value);
+    context.fillRect(0, 0, 1, 1);
+    const actual = context.getImageData(0, 0, 1, 1).data;
+    return [actual[0], actual[1], actual[2], actual[3] / 255];
   }
 
   function over(front, back) {
@@ -139,11 +158,12 @@ _CONTRAST = r"""({selector, property, against}) => {
 
 
 def _contrast(page: Page, selector: str, property_name: str = "color",
-              against: str = "self") -> float:
+              against: str = "self", index: int = 0) -> float:
     """Measure a computed foreground against its composited live surface."""
     return page.evaluate(
         _CONTRAST,
-        {"selector": selector, "property": property_name, "against": against},
+        {"selector": selector, "property": property_name, "against": against,
+         "index": index},
     )
 
 
@@ -166,22 +186,25 @@ def test_rendered_status_channels_survive_pointer_focus_and_selection(panel_page
         assert rendered_mark != status
         assert (node.get_attribute("aria-label") or "").endswith(": " + status)
 
-    fail = panel_page.locator('[data-node="smoke"]')
-    before = _box_profile(panel_page, "smoke")
-    halo_before = fail.locator(".halo").evaluate("node => getComputedStyle(node).stroke")
+    for node_id in ("schemas", "smoke", "live"):
+        node = panel_page.locator(f'[data-node="{node_id}"]')
+        node.scroll_into_view_if_needed()
+        before = _box_profile(panel_page, node_id)
+        halo_before = node.locator(".halo").evaluate("item => getComputedStyle(item).stroke")
 
-    fail.hover()
-    halo_hover = fail.locator(".halo").evaluate("node => getComputedStyle(node).stroke")
-    assert halo_hover != halo_before
-    assert _box_profile(panel_page, "smoke") == before
+        node.hover()
+        halo_hover = node.locator(".halo").evaluate("item => getComputedStyle(item).stroke")
+        assert halo_hover != halo_before
+        assert _box_profile(panel_page, node_id) == before
 
-    fail.focus()
-    fail.press("Enter")
-    assert fail.get_attribute("aria-pressed") == "true"
-    assert _box_profile(panel_page, "smoke") == before
+        node.focus()
+        assert _box_profile(panel_page, node_id) == before
+        node.press("Enter")
+        assert node.get_attribute("aria-pressed") == "true"
+        assert _box_profile(panel_page, node_id) == before
 
     distinct = {
-        tuple(_box_profile(panel_page, node_id).values())
+        _box_profile(panel_page, node_id)["pixels"]
         for node_id in ("schemas", "smoke", "live")
     }
     assert len(distinct) == 3
@@ -202,6 +225,37 @@ def test_browser_composites_status_chips_above_their_declared_thresholds(panel_p
             against="parent",
         ) >= 3.0
 
+    visible = 0
+    verdicts = panel_page.locator(".vd")
+    for index in range(verdicts.count()):
+        verdict = verdicts.nth(index)
+        if not verdict.is_visible():
+            continue
+        visible += 1
+        key = f"verdict-{index}"
+        verdict.evaluate("(node, value) => node.dataset.renderCheck = value", key)
+        selector = f'[data-render-check="{key}"]'
+        assert _contrast(panel_page, selector) >= 4.5
+        assert _contrast(panel_page, selector + " .gl") >= 3.0
+        assert _contrast(
+            panel_page, selector, property_name="borderColor", against="parent"
+        ) >= 3.0
+    assert visible > 0
+
+
+def test_extended_srgb_is_measured_as_the_pixels_chromium_draws(panel_page: Page) -> None:
+    """Out-of-gamut computed colours are normalized before contrast arithmetic."""
+    panel_page.evaluate(
+        """() => {
+          const probe = document.createElement("span");
+          probe.id = "gamutProbe";
+          probe.style.cssText = "color:color(srgb 2 2 2);background:rgb(255 255 255)";
+          probe.textContent = "probe";
+          document.body.append(probe);
+        }"""
+    )
+    assert _contrast(panel_page, "#gamutProbe") == pytest.approx(1.0)
+
 
 def test_rendered_orbit_keeps_order_return_and_non_overlapping_stages(panel_page: Page) -> None:
     """Both responsive layouts remain a closed, data-sized cycle in the live DOM."""
@@ -211,13 +265,40 @@ def test_rendered_orbit_keeps_order_return_and_non_overlapping_stages(panel_page
     assert panel_page.locator("#orbitSvg .trk").count() == len(names)
     assert panel_page.locator("#orbitSvg .trk--next").count() == 1
 
-    overlaps = panel_page.locator("#orbitBody .orb").evaluate_all(
-        """stages => stages.flatMap((a, i) => stages.slice(i + 1).map(b => {
-          const x = a.getBoundingClientRect(), y = b.getBoundingClientRect();
-          return x.left < y.right && x.right > y.left && x.top < y.bottom && x.bottom > y.top;
-        })).filter(Boolean).length"""
+    geometry = panel_page.locator("#orbitField").evaluate(
+        """field => {
+          const stages = [...field.querySelectorAll(".orb")];
+          const centers = stages.map(stage => {
+            const box = stage.getBoundingClientRect();
+            return {x: box.left + box.width / 2, y: box.top + box.height / 2, box};
+          });
+          const nearest = point => centers.reduce((best, center, index) => {
+            const distance = Math.hypot(center.x - point.x, center.y - point.y);
+            return distance < best.distance ? {index, distance} : best;
+          }, {index: -1, distance: Infinity}).index;
+          const links = [...field.querySelectorAll(".trk")].map(path => {
+            const matrix = path.getScreenCTM(), length = path.getTotalLength();
+            const at = offset => {
+              const raw = path.getPointAtLength(offset);
+              const point = new DOMPoint(raw.x, raw.y);
+              return point.matrixTransform(matrix);
+            };
+            return [nearest(at(0)), nearest(at(length))];
+          });
+          const area = Math.abs(centers.reduce((sum, point, index) => {
+            const next = centers[(index + 1) % centers.length];
+            return sum + point.x * next.y - next.x * point.y;
+          }, 0)) / 2;
+          const overlaps = centers.flatMap((a, i) => centers.slice(i + 1).map(b =>
+            a.box.left < b.box.right && a.box.right > b.box.left &&
+            a.box.top < b.box.bottom && a.box.bottom > b.box.top
+          )).filter(Boolean).length;
+          return {area, links, overlaps};
+        }"""
     )
-    assert overlaps == 0
+    assert geometry["overlaps"] == 0
+    assert geometry["area"] > 1_000
+    assert geometry["links"] == [[0, 1], [1, 2], [2, 3], [3, 0]]
 
     panel_page.set_viewport_size({"width": 640, "height": 1200})
     panel_page.wait_for_function(

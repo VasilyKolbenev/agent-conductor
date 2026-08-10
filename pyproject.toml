@@ -21,7 +21,7 @@ classifiers = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
-browser = ["pytest>=8", "playwright>=1.54,<2"]
+browser = ["pytest>=8", "playwright>=1.54,<2", "pillow>=10,<13"]
 
 [project.scripts]
 conduct = "conductor.__main__:main"
