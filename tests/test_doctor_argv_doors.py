@@ -375,9 +375,14 @@ def test_every_command_line_the_module_builds_is_spliced_with_the_readers_root()
     # reads. Naming a project on the command line is also what keeps a printed
     # `conduct init` from scaffolding into whatever directory a reader happens
     # to be standing in.
-    rootless = [(name, ast.unparse(argv), argv.lineno)
-                for name, argv in argv_sites() if len(root_stars(argv)) != 1]
-    assert not rootless, f"command(s) built without the reader's root: {rootless}"
+    miscounted = [(name, len(root_stars(argv)), ast.unparse(argv), argv.lineno)
+                  for name, argv in argv_sites() if len(root_stars(argv)) != 1]
+    # The count is reported, not translated into a story about it: with two
+    # stars in a tuple, "built without the reader's root" would have been the
+    # opposite of what happened.
+    assert not miscounted, (
+        "every command must splice the reader's root exactly once; these "
+        f"carry the number named beside them: {miscounted}")
 
 
 def test_the_tuple_the_root_star_stands_for_holds_that_root_and_nothing_else():
