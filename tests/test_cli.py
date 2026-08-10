@@ -1,12 +1,14 @@
 """Tests for conductor.__main__ — the `conduct` CLI.
 
-Every test but one calls `main(argv)` directly and inspects the return code
-plus capsys-captured stdout/stderr. The exception is
-`test_up_flushes_the_url_while_it_is_still_serving`, which spawns a real child
-process because the defect it pins — a block-buffered stdout holding the URL
-until the server stops — cannot exist under capsys. Adding a second
-subprocess test should need the same justification: they are slower, and they
-can hang where an in-process test merely fails.
+Every test but two calls `main(argv)` directly and inspects the return code
+plus capsys-captured stdout/stderr. The exceptions spawn a real child process
+because what they pin cannot exist under capsys:
+`test_up_flushes_the_url_while_it_is_still_serving` (a block-buffered stdout
+holding the URL until the server stops) and
+`test_up_on_a_genuinely_busy_port_prints_the_port_hint_from_a_real_process`
+(the bind failure and its message produced by the OS, not by a mock). Adding
+another subprocess test should need the same justification: they are slower,
+and they can hang where an in-process test merely fails.
 
 The stream contract these tests enforce is stated in `conductor.__main__`'s
 module docstring; the contract section below is its enforcement.
@@ -14,6 +16,7 @@ module docstring; the contract section below is its enforcement.
 import json
 import os
 import re
+import socket
 import subprocess
 import sys
 import threading
@@ -355,6 +358,101 @@ def test_up_bind_failure_leaves_stdout_empty(tmp_path, capsys, monkeypatch):
     assert main(["up", "--dir", str(root)]) == 1
     captured = capsys.readouterr()
     assert captured.out == "" and "cannot serve" in captured.err
+
+
+def test_up_bind_failure_names_the_requested_endpoint_and_the_port_flag(
+        tmp_path, capsys, monkeypatch):
+    # The error is the one place a person actually needs --port, so it must
+    # carry: the endpoint the user asked for, the system's own reason, and the
+    # literal `--port PORT` hint. The digit-set equality is the class guard:
+    # stderr may name no number at all beyond the loopback address and the
+    # port the user requested — a substituted default port and an invented
+    # "free" alternative port both fail the same one assertion.
+    def refuse(*args, **kwargs):
+        raise OSError("address already in use")
+
+    monkeypatch.setattr("conductor.server.build", refuse)
+    root = write_project(tmp_path, lanes={"claude": good_lane()})
+    assert main(["up", "--dir", str(root), "--port", "7901"]) == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""                       # the stream contract holds
+    assert "127.0.0.1:7901" in captured.err         # the endpoint actually asked for
+    assert "address already in use" in captured.err  # the system error, verbatim
+    assert "--port PORT" in captured.err            # placeholder, not a made-up number
+    assert set(re.findall(r"\d+", captured.err)) == {"127", "0", "1", "7901"}
+
+
+def test_demo_bind_failure_keeps_its_chatter_and_names_the_users_port(
+        capsys, monkeypatch):
+    # Same contract, reached through `demo`: the materialize note survives on
+    # stderr, and the only port-shaped number anywhere on stderr is the one
+    # the user passed. The class door is the up test's full digit-set
+    # equality on the shared _serve; this looser case-insensitive scan
+    # (numbers after `:` or `port `) is the demo-path net, tolerating the
+    # digits of the throwaway temp path it must not red on.
+    def refuse(*args, **kwargs):
+        raise OSError("address already in use")
+
+    monkeypatch.setattr("conductor.server.build", refuse)
+    assert main(["demo", "--port", "7902"]) == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "materialized" in captured.err
+    assert "127.0.0.1:7902" in captured.err
+    assert "--port PORT" in captured.err
+    assert set(re.findall(r"(?:port\s+|:)(\d+)", captured.err,
+                          flags=re.IGNORECASE)) == {"7902"}
+
+
+def test_up_and_demo_reach_the_same_serve_function_with_the_users_port(
+        tmp_path, capsys, monkeypatch):
+    # The relation that keeps the two commands from drifting apart: one mock
+    # of `_serve` intercepts both, so there is no second copy of the serving
+    # (and failing) path for `demo` to take, and both hand it the port the
+    # user typed rather than a default.
+    calls = []
+
+    def fake_serve(root, port):
+        calls.append(port)
+        return 23
+
+    monkeypatch.setattr(conductor.__main__, "_serve", fake_serve)
+    root = write_project(tmp_path, lanes={"claude": good_lane()})
+    assert main(["up", "--dir", str(root), "--port", "7903"]) == 23
+    assert main(["demo", "--port", "7904"]) == 23
+    assert calls == [7903, 7904]
+
+
+def test_up_on_a_genuinely_busy_port_prints_the_port_hint_from_a_real_process(tmp_path):
+    # The second subprocess test this file allows itself, with the same kind
+    # of justification as the flush test: the mocked tests above construct
+    # their OSError, so only a real bind against a really occupied port can
+    # prove the message a user sees is the one the mocks describe.
+    #
+    # SO_EXCLUSIVEADDRUSE hardens the fixture rather than enabling it:
+    # ConductServer already keeps SO_REUSEADDR off on Windows (server.py)
+    # precisely so a busy port refuses, so the child is refused either way.
+    # Exclusivity makes the refusal deterministic regardless of the server's
+    # socket options, keeping this test's premise intact even if that
+    # design ever regressed.
+    root = write_project(tmp_path, lanes={"claude": good_lane()})
+    blocker = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+            blocker.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        blocker.bind(("127.0.0.1", 0))
+        blocker.listen(1)
+        port = blocker.getsockname()[1]
+        proc = subprocess.run(
+            [sys.executable, "-m", "conductor", "up", "--dir", str(root),
+             "--port", str(port)],
+            capture_output=True, text=True, timeout=60)
+    finally:
+        blocker.close()
+    assert proc.returncode == 1
+    assert proc.stdout == ""
+    assert f"127.0.0.1:{port}" in proc.stderr
+    assert "--port PORT" in proc.stderr
 
 
 def test_demo_rejects_dir_flag(capsys):
