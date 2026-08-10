@@ -13,6 +13,10 @@ The command list is not written down in this file. It is taken from the parser
 may actually invoke — so renaming, adding or removing a subcommand moves this
 list by itself. A guard holding a hand-copied list would be a second place to
 forget, and would go on passing the day the two disagreed.
+
+The same holds for the second code-owned list in the same section: the template
+names the README's `--template` bullet spells are checked against
+`templates.names()`, in both directions, and are likewise not written down here.
 """
 from __future__ import annotations
 
@@ -20,6 +24,7 @@ import argparse
 import re
 from pathlib import Path
 
+from conductor import prompts, templates
 from conductor.__main__ import _build_parser
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -35,6 +40,28 @@ _INVOCATION_RE = re.compile(r"(?<![\w-])conduct +([a-z][a-z0-9-]*)")
 
 #: A repository-relative Markdown path in a code span, e.g. `demo/README.md`.
 _DOC_PATH_RE = re.compile(r"`([\w./-]+\.md)`")
+
+#: The README bullet that documents `conduct init --template`, from its own
+#: marker down to the next top-level one — an indented sub-list belongs to it.
+_TEMPLATE_BULLET_RE = re.compile(r"^- \*\*`--template NAME`\*\*.*?(?=^\S|\Z)",
+                                 re.M | re.S)
+
+#: One template entry inside that bullet: an indented item opening with the
+#: name in a code span. The em dash is required, so a code span elsewhere in
+#: the sub-list cannot pass for a name.
+_TEMPLATE_NAME_RE = re.compile(r"^ +- `([a-z][a-z0-9-]*)` — ", re.M)
+
+
+def readme_template_names() -> set[str]:
+    """Every template name the README's `--template` bullet offers a reader."""
+    bullet = _TEMPLATE_BULLET_RE.search(README.read_text(encoding="utf-8"))
+    assert bullet, "the README no longer documents `conduct init --template`"
+    return set(_TEMPLATE_NAME_RE.findall(bullet.group()))
+
+
+def vended_template_names() -> set[str]:
+    """Every template name `conduct init --template` actually accepts."""
+    return {name for name, _ in templates.names()}
 
 
 def subcommands() -> set[str]:
@@ -78,6 +105,35 @@ def test_the_release_smoke_exercises_every_subcommand_the_release_ships():
     # command published untried.
     assert subcommands() <= named_in(SMOKE), \
         sorted(subcommands() - named_in(SMOKE))
+
+
+def test_every_template_name_the_readme_lists_is_one_conduct_init_accepts():
+    # The reader's failure mode: they copy a name out of this bullet, and
+    # `conduct init --template <it>` exits 1 with "unknown template". The
+    # subcommand list next door is held this way; this list was not, and a
+    # misspelling here reads exactly like a working instruction.
+    named = readme_template_names()
+    assert named, "the README no longer lists a single template name"
+    assert named <= vended_template_names(), sorted(named - vended_template_names())
+
+
+def test_every_template_conduct_init_vends_is_listed_in_the_readme():
+    # The other half: a fifth template ships, `--help` shows it, and the README
+    # goes on describing four. Nothing else would say so.
+    assert vended_template_names() <= readme_template_names(), \
+        sorted(vended_template_names() - readme_template_names())
+
+
+def test_the_readme_is_right_about_which_scaffold_the_bootstrap_prompt_describes():
+    # The README says one prompt is vended for every map, that it calls every
+    # [[nodes]] block a placeholder, and that this is false of `minimal`. All
+    # three are checkable, and the third is the one that rots: make `minimal`
+    # carry the PLACEHOLDER convention, or teach the prompt which map it is
+    # talking about, and the README's caveat becomes the false sentence.
+    assert "[[nodes]] block in it is a placeholder" in prompts.bootstrap_prompt()
+    assert "PLACEHOLDER" not in templates.get("minimal")
+    for name in vended_template_names() - {"minimal"}:
+        assert "PLACEHOLDER" in templates.get(name), name
 
 
 def test_every_repository_document_the_readme_points_a_reader_at_exists():

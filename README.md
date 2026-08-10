@@ -70,19 +70,24 @@ the answers it takes only label who does what, in the map and in the panel.
   implementing roles, and which harness reviews their work. Enter takes the default on
   each. Answering the reviewer question with the `(none)` row writes the `single-harness`
   map; every other answer writes `default-orbit`.
-- **`--template NAME`** skips the questions. Four maps are vended: `default-orbit`, the
-  recommended five-stage process — goal, detect, diagnose, design, deliver — and the
-  default; `single-harness`, one implementing role plus a human decision and no reviewer;
-  `empty`, the minimum that validates, one placeholder node and no cycle; and `minimal`,
-  the protocol spec's own §2 example map. `conduct init --help` lists them.
+- **`--template NAME`** skips the questions and writes one named map, and
+  `conduct init --help` lists them:
+  - `default-orbit` — the recommended five-stage process, goal, detect, diagnose,
+    design, deliver, and what init writes when nothing else is asked for.
+  - `single-harness` — one implementing role plus a human decision, and no reviewer.
+  - `empty` — the minimum that validates: one placeholder node and no cycle.
+  - `minimal` — the protocol spec's own §2 example map, quoted verbatim.
 - **Where there is no terminal** — a pipe, a CI runner — it writes `default-orbit`
   without waiting for an answer, so it cannot block a script.
 
 Every path writes the same three things: `conductor/map.toml`, `conductor/lanes/` and
 `conductor/events.jsonl`. It then validates what it wrote, and puts on stdout — and on
-stdout alone — a bootstrap prompt telling an agent to replace the placeholder nodes with
-your real components, so `conduct init > setup.txt` leaves you that prompt and nothing
-else. An existing `conductor/` is never touched: init says so and exits 1.
+stdout alone — a bootstrap prompt for the agent that fills the map in, so
+`conduct init > setup.txt` leaves you that prompt and nothing else. The same prompt is
+vended for every map, and it tells the agent that every `[[nodes]]` block is a placeholder
+to replace with your real components: true of the other three, false of `minimal`, which
+quotes the spec's example and so carries components of its own. An existing `conductor/`
+is never touched: init says so and exits 1.
 
 ## What it is
 
