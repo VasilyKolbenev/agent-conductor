@@ -4,12 +4,14 @@ Subcommands: `validate` (schema errors → exit 1, merge warnings → exit 0);
 `init` (scaffold conductor/ from a template and print the prompt that fills
 it in — `--template NAME` is the explicit path, a terminal without it gets a
 guided wizard, and anything that is not a terminal takes the same default
-without reading stdin); `prompt --role R [--author A]` (vend a role's working
-prompt; the positional role form is deprecated); `report` (render the merged
-state as a Markdown report); `up` (serve the panel on 127.0.0.1 with SSE live
-updates; Ctrl-C → exit 0); `demo` (materialize the bundled fixture into a temp
-directory and serve it — takes `--port` but no `--dir`). Every other command
-takes `--dir` (the project root, default `.`).
+without reading stdin); `doctor` (report whether this project is set up to
+work and name the command that fixes each problem — exit 1 while anything is
+wrong or could not be checked); `prompt --role R [--author A]` (vend a role's
+working prompt; the positional role form is deprecated); `report` (render the
+merged state as a Markdown report); `up` (serve the panel on 127.0.0.1 with SSE
+live updates; Ctrl-C → exit 0); `demo` (materialize the bundled fixture into a
+temp directory and serve it — takes `--port` but no `--dir`). Every other
+command takes `--dir` (the project root, default `.`).
 
 THE STREAM CONTRACT, which every command here obeys and every command added
 here must obey. stdout carries the command's primary result and nothing else,
@@ -40,7 +42,7 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
-from conductor import init, prompts, report, store, templates, validate
+from conductor import doctor, init, prompts, report, store, templates, validate
 
 # `conductor.demo` and `conductor.server` are imported inside the two commands
 # that need them, not here. Both legitimately touch the machine — demo copies a
@@ -204,6 +206,10 @@ def _build_parser() -> argparse.ArgumentParser:
                         + f" (default: {templates.DEFAULT}; omit it in a terminal "
                           "to be asked instead)")
     _add_dir_and_func(p, init.run)
+
+    p = sub.add_parser("doctor",
+                       help="check whether this project is set up to work, and how to fix it")
+    _add_dir_and_func(p, doctor.run)
 
     p = sub.add_parser("prompt", help="print the working prompt for one cycle role")
     # ADR 0001: the positional is the DEPRECATED spelling of --role and its

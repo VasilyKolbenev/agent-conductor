@@ -50,8 +50,16 @@ PROBING_CALLS = {
 #: the child died before importing it, and a ban that parsed the remainder
 #: would pass while covering nothing that matters — so this is checked at the
 #: measurement, where a crash can still be told apart from a clean run.
+#:
+#: `conductor.doctor` is on this list for the same reason `conductor.harnesses`
+#: is, only more so: readiness is the one command with a standing reason to ask
+#: whether a harness is installed, and it may not. It reaches the measurement
+#: because `conductor.__main__` imports it at module scope — defer that import
+#: into the doctor subcommand and this floor fails rather than quietly stops
+#: parsing it.
 FLOOR = {"conductor", "conductor.__main__", "conductor.init",
-         "conductor.harnesses", "conductor.templates", "conductor.validate"}
+         "conductor.harnesses", "conductor.templates", "conductor.validate",
+         "conductor.doctor"}
 
 SRC = Path(conductor.__file__).parent
 
