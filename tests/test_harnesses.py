@@ -149,18 +149,16 @@ def test_every_vendor_entry_carries_a_documentation_url():
         else:
             assert harness.docs.startswith("https://"), harness.id
 
-def test_the_reg1_disclosure_names_every_field_that_states_an_external_fact():
+def test_the_reg1_confirmation_names_and_pins_every_external_fact():
     # REG1-01. The disclosure beside the two REG-1 rows once said the docs URL
     # was the ONE field that could not be checked in place. False: an owner
     # who read it would confirm two URLs and ship unverified vendor spellings,
     # because `display_name` (how the vendor writes it) and `executable_hints`
     # (what the command line calls it) are external facts of exactly the same
-    # kind, verified by nothing in this repository. The external set is
-    # DERIVED — every `Harness` field minus the ones the suite pins from the
-    # repository alone — so a field added to the dataclass lands external by
-    # default, and the comment cannot quietly narrow back down to one field:
-    # each member of the set must be named, backticked, inside the REG-1
-    # block, or this goes red.
+    # kind. The external set is DERIVED — every `Harness` field minus the ones
+    # the suite pins from the repository alone — so a future field lands
+    # external by default. The exact owner-confirmed literals are pinned here
+    # without making the test suite depend on the network.
     internal = {
         "id", "monogram",                # test_every_entry_is_complete_and_unambiguous
         "accent_dark", "accent_light",   # well-formedness here, contrast audit
@@ -177,9 +175,20 @@ def test_the_reg1_disclosure_names_every_field_that_states_an_external_fact():
             break
         block.append(line.strip())
     disclosure = " ".join(block)
-    assert "PROPOSED, not confirmed" in disclosure
+    assert "OWNER-CONFIRMED 2026-08-10" in disclosure
     for name in sorted(external):
         assert f"`{name}`" in disclosure, name
+    assert {
+        harness.id: (harness.docs, harness.display_name,
+                     harness.executable_hints)
+        for harness in harnesses.known()
+        if harness.id in {"gemini-cli", "opencode"}
+    } == {
+        "gemini-cli": ("https://geminicli.com/docs/", "Gemini CLI",
+                       ("gemini",)),
+        "opencode": ("https://opencode.ai/docs/", "OpenCode",
+                     ("opencode",)),
+    }
 
 
 def test_the_recommended_ids_are_registry_entries_and_exclude_custom():

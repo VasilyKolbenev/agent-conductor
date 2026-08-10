@@ -146,13 +146,14 @@ _KNOWN: tuple[Harness, ...] = (
             accent_dark="#cf8bf2", accent_light="#7a26ad", monogram="GH",
             docs="https://docs.github.com/en/copilot",
             adapter="github-copilot", executable_hints=("gh",)),
-    # REG-1. Three fields of the two rows below state external facts — facts
-    # about a vendor that nothing in this repository checks or can check —
-    # and all three are PROPOSED, not confirmed, so the owner is asked to
-    # confirm each of them before these rows ship: `docs` (nothing fetched
-    # either address — this slice ran with no network access, and no code
-    # here can), `display_name` (the product's name as its vendor writes it)
-    # and `executable_hints` (what the product is called on a command line).
+    # REG-1. OWNER-CONFIRMED 2026-08-10. Three fields of the two rows below
+    # state external facts — `docs`, `display_name`, and `executable_hints` —
+    # and the owner verified all six values against the vendors' official
+    # documentation. Gemini CLI uses https://geminicli.com/docs/ and the
+    # `gemini` command. OpenCode uses https://opencode.ai/docs/ and the
+    # `opencode` command; its product spelling is title-cased even though its
+    # executable and technical identifiers are lower-case. Tests pin the
+    # confirmed literals locally; they deliberately make no network request.
     # The remaining fields state no vendor fact a test cannot reach: `id` and
     # `monogram` are pinned by test_every_entry_is_complete_and_unambiguous
     # and test_no_two_registered_harnesses_share_a_badge_and_a_collision_is_caught,
@@ -165,11 +166,11 @@ _KNOWN: tuple[Harness, ...] = (
     # named here, so this list cannot narrow again without a test going red.
     Harness(id="gemini-cli", display_name="Gemini CLI", monogram="GC",
             accent_dark="#4fd1a5", accent_light="#0d6d5a",
-            docs="https://github.com/google-gemini/gemini-cli",
+            docs="https://geminicli.com/docs/",
             adapter="gemini-cli", executable_hints=("gemini",)),
     Harness(id="opencode", display_name="OpenCode", monogram="OC",
             accent_dark="#d3a88c", accent_light="#7d4a2c",
-            docs="https://github.com/sst/opencode",
+            docs="https://opencode.ai/docs/",
             adapter="opencode", executable_hints=("opencode",)),
     Harness(id=CUSTOM, display_name="Custom harness", monogram="CH",
             accent_dark=NEUTRAL_DARK, accent_light=NEUTRAL_LIGHT,
