@@ -59,6 +59,32 @@ Usage:
     .venv\\Scripts\\python scripts\\mutate_merge.py          # in-tree, as CI runs it
     python scripts/mutate_merge.py --root DIR               # an exported tree
     python scripts/mutate_merge.py --verify-only            # provenance, no mutation
+
+Running on a throwaway export, which is how DO-7 must run this until crash-safe
+restore lands: a run that dies mid-mutation then poisons a directory that gets
+deleted rather than the tree the chunk is being reviewed in. `git archive`
+exports the COMMIT, not the tree, so an unclean tree silently measures a
+different program than the one on screen — check that first, and read the
+number as the commit's either way. PowerShell, because MSYS rewrites PYTHONPATH
+on the way into the process; and `--output`, because piping a tar stream
+through PowerShell corrupts it:
+
+    git -C TREE status --porcelain                          # must be empty
+    $exp = "$env:TEMP\\conduct-export"
+    New-Item -ItemType Directory -Force $exp
+    git -C TREE archive --format=tar --output "$exp\\head.tar" HEAD
+    tar -x -f "$exp\\head.tar" -C $exp; Remove-Item "$exp\\head.tar"
+    .venv\\Scripts\\python TREE\\scripts\\mutate_merge.py --root $exp
+    Remove-Item -Recurse -Force $exp
+
+`--root` is the whole isolation, not a hint: every subprocess is given
+PYTHONPATH=ROOT/src REPLACING whatever the shell held, and `verify_import_root`
+stops the run unless `conductor.merge` resolves to the very file under `--root`.
+A shell PYTHONPATH left pointing at the working tree is therefore discarded
+rather than obeyed, and cannot produce the MEAS-1 number. What can still be
+wrong is `--root` itself, and nothing in the verdict line says so — read the
+provenance block first: `source root` and `conductor.merge` must both name the
+export. Naming the working tree means the number belongs to that tree.
 """
 from __future__ import annotations
 
