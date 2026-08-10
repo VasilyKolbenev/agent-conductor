@@ -10,13 +10,20 @@ block below is the same shape `role.stage` uses in test_merge_queue_phase.py,
 for the same reason: an equality that a fixture could quietly make vacuous is
 worth less than an equality plus a test that the fixture still has teeth.
 """
+import ast
 import json
 import re
+from pathlib import Path
 
 from conductor import harnesses, merge, templates
 from tests.test_merge_queue_phase import NOW, ROLES_MAP, rich_lanes
 
 HEX_RE = re.compile(r"\A#[0-9a-f]{6}\Z")
+
+#: The field the registry documents and never resolves, spelled once so the
+#: parse below, its own sabotage fixture and the findings it writes cannot
+#: drift apart from each other.
+HINTS = "executable_hints"
 
 #: U+030C COMBINING CARON, named because it draws as nothing on its own. It is
 #: what `ǰ` upper-cases into behind the `J`, and the reason the badge property
@@ -324,11 +331,59 @@ def test_being_in_the_registry_changes_no_merge_computed_value():
     assert known["kpi"] == unknown["kpi"]
     assert known["warnings"] == unknown["warnings"]
 
-def test_the_registry_carries_no_lookup_of_its_own_hints():
-    # `executable_hints` is documentation for a person reading the registry.
-    # Its shape is data and nothing resolves it — the structural half of that
-    # promise is the machine-probing ban in test_init_probing_ban.py, which now
-    # parses this module too.
+def test_the_registry_carries_its_hints_as_plain_strings():
+    # The shape only. What this does NOT show is that nothing resolves them —
+    # that claim is the test below, and this one used to carry its name.
     for harness in harnesses.known():
         assert all(isinstance(hint, str) for hint in harness.executable_hints)
     assert harnesses.get("claude-code").executable_hints == ("claude",)
+
+
+def _hint_readers(path):
+    """Every place in one module that reads an `executable_hints` back out.
+
+    Args:
+        path: A `conductor` source file.
+
+    Returns:
+        One string per reading site. Declaring the field and writing it are
+        the two spellings a registry needs — the annotation in `Harness` and
+        the keyword arguments that build the rows — and neither is a read, so
+        neither is reported. An attribute access is: `h.executable_hints` is
+        the first half of the reverse index, the `.get` on it the second. The
+        literal string is reported too, because `getattr(h, "…")` is the same
+        read with the name moved into data.
+    """
+    findings = []
+    for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+        if isinstance(node, ast.Attribute) and node.attr == HINTS:
+            findings.append(f"{path.name}:{node.lineno} reads .{HINTS}")
+        elif isinstance(node, ast.Constant) and node.value == HINTS:
+            findings.append(f"{path.name}:{node.lineno} names {HINTS!r}")
+    return findings
+
+
+def test_the_registry_carries_no_lookup_of_its_own_hints(tmp_path):
+    # The module docstring says nothing looks these up and that no code path
+    # turns them into a lookup. That is a claim about every module in the
+    # package, so it is asked of every module in the package, by parsing: a
+    # reviewer answered the old version of this test with a real reverse index
+    # over the hints plus a public function to search it, and the suite stayed
+    # green because nothing here had ever looked at the source.
+    #
+    # A REPOSITORY GUARD, not a sandbox, and for the same reason the probing
+    # ban says so about itself: a name assembled at runtime walks straight
+    # past it. What it stops is a lookup arriving without the ADR the
+    # docstring says one would need.
+    findings = []
+    for path in sorted(Path(harnesses.__file__).parent.glob("*.py")):
+        findings += _hint_readers(path)
+    assert findings == []
+    # And the parse has teeth: the exact shape it exists to refuse, written
+    # out and read back, so an empty finding list is an answer rather than the
+    # only thing this function knows how to produce.
+    reverse_index = tmp_path / "reverse_index.py"
+    reverse_index.write_text(
+        f"_BY_HINT = {{hint: row for row in _KNOWN for hint in row.{HINTS}}}\n",
+        encoding="utf-8")
+    assert _hint_readers(reverse_index) == [f"reverse_index.py:1 reads .{HINTS}"]
