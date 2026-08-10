@@ -490,7 +490,8 @@ def _next_action(state: dict, map_error: str | None) -> dict | None:
     if queue:
         w = queue[0]
         # `kind` is schema-validated against WAIT_KINDS, so the lead-in always
-        # resolves; `title` is NOT validated anywhere, and renders as given.
+        # resolves; `title` is schema-validated as a string when present
+        # (absent or empty falls through to the id), and renders as given.
         lead = WAIT_LEAD_IN.get(w["kind"], "Answer the request")
         return _action("answer_wait", w["id"], f"{lead}: {w['title'] or w['id']}")
     broken = _broken_lanes(state)

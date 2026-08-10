@@ -692,7 +692,7 @@ receipt exists. Is DEC-UI expected to design around that gap as well, or to open
 
 ## 10. Backlog
 
-Five items recorded; the first is complete and four remain queued.
+Five items recorded; the first three are complete and two remain queued.
 
 - **Completed 2026-08-10 — give `scripts/mutate_merge.py` a crash-safe restore.** Atomic restore
   alone cannot cover a hard kill before the restore call. The implemented boundary is stronger:
@@ -724,18 +724,15 @@ Five items recorded; the first is complete and four remain queued.
   invariance, measures the browser's composited status-chip colours, and exercises both wide
   and narrow Orbit layouts. `.github/workflows/ci.yml` runs it as an independent Chromium job;
   the regular suite does not collect it and the runtime dependency set remains empty.
-- **Validate `waits_on_human[].title` as a string.** `schema._validate_lane_waits` checks `id`,
-  `kind` and `blocks`, and never touches `title`. Finding titles *are* validated
-  (`finding {id} needs a non-empty title`), so the gap is asymmetric. `merge._next_action`
-  renders the wait title straight into `next_action.text` via
-  `f"{lead}: {w['title'] or w['id']}"`, so a non-string title reaches the first sentence on the
-  panel as a Python repr. It reaches the report's Decision brief the same way, and that half
-  cannot be fixed downstream: by the time `conduct report` is handed the document, the repr *is*
-  the string `next_action.text` holds — `Answer the decision: {'raw': 1}` — so the report's
-  one door out of the document (`report._from_document`) gets text and renders text, exactly as
-  it would for a sentence a person wrote. Pinned as current behaviour, not guarded against, by
-  `test_a_non_string_wait_title_reaches_the_decision_brief_as_a_repr_the_merger_wrote`.
-  The f-string is the merger's; so is the fix, and validating `title` closes both surfaces.
+- **Completed 2026-08-10 — validate `waits_on_human[].title` as a string.** The implemented
+  boundary: `schema._validate_lane_waits` rejects a non-string `title`, naming the wait's id
+  and the received value, in the style of the `detail`/`evidence` checks on findings. Absent
+  and empty titles stay legal — `merge._next_action` falls back to the wait's id — so no
+  previously valid lane became invalid, and merge and report are byte-identical on valid
+  documents. A lane carrying a non-string title now breaks in `store.load`, so the repr never
+  reaches the panel's first sentence or the report's Decision brief; the merger still renders
+  `title` as given, by design. The former pins in `tests/test_report.py` are rewritten as one
+  boundary test plus two outside-the-contract guards on that render-as-given behaviour.
 - **The port-busy message does not mention `--port`.** `__main__._serve` prints
   `cannot serve on 127.0.0.1:{port}: {e}` and exits 1. The flag exists on both `up` and `demo`,
   and the README already tells people about it; the error is the one place a person actually

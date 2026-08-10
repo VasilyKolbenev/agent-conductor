@@ -309,6 +309,9 @@ def _validate_lane_waits(data: dict, where: str, errors: list[str]) -> None:
         if not _in_vocab(w.get("kind"), WAIT_KINDS):
             errors.append(f"{where}: wait {wid!r} kind {w.get('kind')!r} "
                           f"not in {sorted(WAIT_KINDS)}")
+        if "title" in w and not isinstance(w["title"], str):
+            errors.append(f"{where}: wait {wid!r} title must be a string, "
+                          f"got {w['title']!r}")
         if "blocks" in w:
             blocks = w["blocks"]
             if not isinstance(blocks, list):

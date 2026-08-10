@@ -236,6 +236,20 @@ def test_next_action_lead_in_fits_every_wait_kind():
         state = merge.merge(MAP, None, ls, [], 0, NOW)
         assert state["next_action"]["text"] == f"{lead}: Rotate the key"
 
+def test_next_action_answer_wait_falls_back_to_the_id_when_title_is_absent():
+    # A wait with no title is schema-valid: title is optional — spec §3 shows
+    # it only in the example — and it is the schema that constrains it to a
+    # string when present. The sentence names the id instead.
+    w = {"id": "w-1", "kind": "decision", "why": "", "blocks": []}
+    ls = [with_data(passing(), waits_on_human=[w])]
+    state = merge.merge(MAP, None, ls, [], 0, NOW)
+    assert state["next_action"]["text"] == "Answer the decision: w-1"
+
+def test_next_action_answer_wait_falls_back_to_the_id_when_title_is_empty():
+    ls = [with_data(passing(), waits_on_human=[wait(title="")])]
+    state = merge.merge(MAP, None, ls, [], 0, NOW)
+    assert state["next_action"]["text"] == "Answer the decision: w-1"
+
 def test_queue_detail_is_kind_neutral_and_pluralized():
     for kind in ("decision", "action", "review"):
         ls = [with_data(passing(), waits_on_human=[wait(kind=kind)])]
