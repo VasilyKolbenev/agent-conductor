@@ -2,34 +2,23 @@
 discipline: a green test suite that can't catch a mutated rule is not proof
 of anything).
 
-For each mutation below: apply ONE source-text substitution in place to
-`src/conductor/merge.py`, run the targeted test file, and require pytest to
-exit 1 — a genuine test failure, the only exit code that is a kill. Any other
-nonzero exit (2-5: usage, collection or internal errors) means the mutation
-was never measured, and an unmeasured mutation may not be folded into a score.
-The original bytes are restored from an in-memory copy and the restore is
-PROVED by content hash.
+For each mutation below: copy the requested tree to a disposable workspace,
+apply ONE source-text substitution to that copy of `src/conductor/merge.py`,
+run the copied targeted test file, and require pytest to exit 1 — a genuine
+test failure, the only exit code that is a kill. The requested `merge.py` is
+never written. A hard kill can orphan a mutated disposable directory, but it
+cannot poison the source the user is working in.
 
-Before the first mutation the harness checks two things about itself. Where
-`conductor.merge` is actually imported from: file isolation is not
-verification isolation, so an editable install (a `.pth` in site-packages) or
-an installed copy can shadow an exported tree, and the harness would mutate
-one file while pytest imported another and print a plausible score that means
-nothing. Belonging to the source root is not enough there — the import must
-resolve to the very file the run mutates, byte for byte the same path, because
-a root carrying both `conductor/merge.py` and a `conductor/merge/` package
-passes any looser test while every mutation lands in a file nobody imports.
-And whether the targeted tests are green on unmutated source: a test file that
-is already red reports every mutation aimed at it as KILLED.
+Before mutation, the harness proves that the disposable `conductor.merge`
+imports from the exact copied file, not an editable or installed shadow, and
+that the copied targeted tests are green. A red baseline cannot kill mutants.
+The requested module is read and copied but never imported or executed.
 
-What the restore does and does not promise. An `OSError` in the restore is
-retried, and when the content hash still cannot be confirmed the run stops and
-names the file that may still carry a mutation. A hard kill of the process
-between the mutation write and the restore is outside that promise: it leaves
-a mutated `merge.py` and says nothing at all. Crash-safe restore — writing
-beside the target and renaming, or restoring from git — is a separate task
-with its own review, queued as the first backlog item in
-docs/plans/2026-08-03-p0-control-loop-and-december-ui.md §10.
+Inside the disposable copy, every ordinary restore is still retried and proved
+by content hash. Failure is fatal and names the scratch file. This closes the
+first backlog item in
+docs/plans/2026-08-03-p0-control-loop-and-december-ui.md §10 by removing the
+working source from the mutation/restore round trip altogether.
 
 Exit codes. The code describes whether the mode that was REQUESTED succeeded;
 it is not in every mode a mutation score.
@@ -60,31 +49,10 @@ Usage:
     python scripts/mutate_merge.py --root DIR               # an exported tree
     python scripts/mutate_merge.py --verify-only            # provenance, no mutation
 
-Running on a throwaway export, which is how DO-7 must run this until crash-safe
-restore lands: a run that dies mid-mutation then poisons a directory that gets
-deleted rather than the tree the chunk is being reviewed in. `git archive`
-exports the COMMIT, not the tree, so an unclean tree silently measures a
-different program than the one on screen — check that first, and read the
-number as the commit's either way. PowerShell, because MSYS rewrites PYTHONPATH
-on the way into the process; and `--output`, because piping a tar stream
-through PowerShell corrupts it:
-
-    git -C TREE status --porcelain                          # must be empty
-    $exp = "$env:TEMP\\conduct-export"
-    New-Item -ItemType Directory -Force $exp
-    git -C TREE archive --format=tar --output "$exp\\head.tar" HEAD
-    tar -x -f "$exp\\head.tar" -C $exp; Remove-Item "$exp\\head.tar"
-    .venv\\Scripts\\python TREE\\scripts\\mutate_merge.py --root $exp
-    Remove-Item -Recurse -Force $exp
-
-`--root` is the whole isolation, not a hint: every subprocess is given
-PYTHONPATH=ROOT/src REPLACING whatever the shell held, and `verify_import_root`
-stops the run unless `conductor.merge` resolves to the very file under `--root`.
-A shell PYTHONPATH left pointing at the working tree is therefore discarded
-rather than obeyed, and cannot produce the MEAS-1 number. What can still be
-wrong is `--root` itself, and nothing in the verdict line says so — read the
-provenance block first: `source root` and `conductor.merge` must both name the
-export. Naming the working tree means the number belongs to that tree.
+`--root` is the requested program, not an import hint. The requested path and
+the scratch import provenance are printed separately; every subprocess gets
+only the scratch `src` on PYTHONPATH. `--verify-only` exercises that same
+copy-and-import boundary, skipping only baseline and mutations.
 """
 from __future__ import annotations
 
@@ -108,6 +76,8 @@ EXIT_INVALID = 2                 # no score is printed on this path — see abov
 RESTORE_ATTEMPTS = 3
 RESTORE_DELAY_S = 0.2
 SUBPROCESS_TIMEOUT_S = 180       # nothing the harness starts may hang it
+SCRATCH_IGNORED = frozenset({
+    ".git", ".venv", ".worktrees", ".pytest_cache", "__pycache__", "build", "dist"})
 
 # `pytest` is imported by the probe on purpose: PYTHONNOUSERSITE hides a
 # user-site pytest, and `python -m pytest` without pytest exits 1 — which this
@@ -668,6 +638,66 @@ def run_mutations(merge_path: Path, source_root: Path, cwd: Path) -> list[tuple[
     return results
 
 
+def _scratch_ignore(_directory: str, names: list[str]) -> set[str]:
+    """Names excluded from both the audit and the disposable copy."""
+    return {name for name in names if name in SCRATCH_IGNORED or name.endswith(".pyc")}
+
+
+def _audit_copy_surface(root: Path) -> None:
+    """Refuse links and reparse points rather than following a copy cycle."""
+    pending = [root]
+    while pending:
+        directory = pending.pop()
+        for entry in os.scandir(directory):
+            if entry.name in _scratch_ignore(str(directory), [entry.name]):
+                continue
+            metadata = entry.stat(follow_symlinks=False)
+            if entry.is_symlink() or getattr(metadata, "st_reparse_tag", 0):
+                raise InvalidMeasurement(
+                    f"copy surface contains a link or reparse point: {entry.path}")
+            if entry.is_dir(follow_symlinks=False):
+                pending.append(Path(entry.path))
+
+
+def measure_in_scratch(root: Path, source_merge: Path,
+                       verify_only: bool = False) -> list[tuple[str, bool]]:
+    """Verify and optionally measure only an external disposable copy."""
+    root = root.resolve()
+    source_bytes = source_merge.read_bytes()
+    scratch_parent = Path(tempfile.mkdtemp(prefix="conduct-mutations-")).resolve()
+    scratch_root = scratch_parent / "tree"
+    scratch_source = scratch_root / "src"
+    try:
+        if scratch_parent == root or root in scratch_parent.parents:
+            raise InvalidMeasurement(
+                f"disposable workspace is inside the requested project: {scratch_parent}")
+        _audit_copy_surface(root)
+        shutil.copytree(root, scratch_root, ignore=_scratch_ignore, symlinks=True)
+        scratch_merge = scratch_source / "conductor" / "merge.py"
+        if scratch_merge.read_bytes() != source_bytes:
+            raise InvalidMeasurement(
+                "the disposable merge.py differs from the requested source before "
+                "measurement; nothing was mutated or scored")
+        resolved = verify_import_root(scratch_source, scratch_root, scratch_merge)
+        if scratch_merge.read_bytes() != source_bytes:
+            raise InvalidMeasurement(
+                "the disposable merge.py changed while its import was verified; "
+                "the requested source was not executed or changed")
+        print_provenance(scratch_source, resolved)
+        if verify_only:
+            return []
+        green = check_baseline(scratch_source, scratch_root, resolved)
+        print(f"baseline: {green} targeted tests green on unmutated source")
+        return run_mutations(scratch_merge, scratch_source, scratch_root)
+    finally:
+        clear_pycache(scratch_source)
+        try:
+            shutil.rmtree(scratch_parent)
+        except OSError as exc:
+            print(f"WARNING: could not remove disposable workspace {scratch_parent}: "
+                  f"{exc}", file=sys.stderr)
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Parse the harness command line.
 
@@ -735,18 +765,16 @@ def main(argv: list[str] | None = None) -> int:
         merge_path = source_root / "conductor" / "merge.py"
         if not merge_path.is_file():
             raise InvalidMeasurement(f"no merge engine to mutate at {merge_path}")
-        resolved = verify_import_root(source_root, root, merge_path)
-        print_provenance(source_root, resolved)
-        if args.verify_only:
-            print("VERDICT: verification passed - import isolation confirmed, "
-                  "no mutations were run")
-            return EXIT_OK
+        print(f"requested source root: {source_root}")
+        print(f"requested merge.py:    {merge_path}")
         try:
-            green = check_baseline(source_root, root, resolved)
-            print(f"baseline: {green} targeted tests green on unmutated source")
-            results = run_mutations(merge_path, source_root, root)
+            results = measure_in_scratch(root, merge_path, verify_only=args.verify_only)
         finally:
             clear_pycache(source_root)
+        if args.verify_only:
+            print("VERDICT: verification passed - disposable import isolation confirmed, "
+                  "no mutations were run; no baseline was run")
+            return EXIT_OK
         return report_score(results)
     except InvalidMeasurement as exc:
         return _invalid_measurement(exc)

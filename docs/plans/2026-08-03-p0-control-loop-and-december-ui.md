@@ -269,12 +269,12 @@ along the way.
   harness and a clean-tree check are re-run *together*, in one run, and only that single run's
   results become the chunk's final numbers. Intermediate measurements taken along the way are
   signed with their own commit and are not merged into it.
-- **Until crash-safe restore lands, DO-7 runs the mutation harness on a throwaway export only.**
-  Crash-safe restore stays a separate task with its own review (§10, first backlog item). Until
-  it is done, DO-7 runs `scripts/mutate_merge.py` against a one-shot export of the frozen HEAD:
-  if a run dies between the mutation write and the restore, the export is discarded and the
-  working tree is never the thing being restored. Point `--root` at the export — the trap in §2
-  is why: the export isolates files, not imports.
+- **DO-7 ran the mutation harness on a throwaway export.** At the time, crash-safe restore had
+  not landed, so `scripts/mutate_merge.py --root <export>` made a hard-kill poison disposable.
+  The provenance trap in §2 still applied: the export isolated files, not imports. The accepted
+  measurement and its audit remain historical facts. The post-alpha completion in §10 now
+  creates and verifies its own disposable copy, so future in-tree runs no longer rely on the
+  caller exporting the source for crash safety.
 
 ## 4. The December visual system
 
@@ -660,8 +660,8 @@ The alpha scope stays frozen; no v2 execution or orchestration functionality ent
 December Command strike as written in the spec: four parallel lanes, daily integration,
 architecture frozen by day 2, features frozen after day 10, release candidate on day 13,
 release on day 14. Phase order: A foundation (recorded alpha quality debt, browser-render
-test job, crash-safe mutation restore, Protocol v2 ADRs, run identity / evidence /
-receipts) → B safe control (adapter SDK, Claude Code and Codex adapters, Observe and
+test job, crash-safe mutation workspace (completed 2026-08-10), Protocol v2 ADRs, run
+identity / evidence / receipts) → B safe control (adapter SDK, Claude Code and Codex adapters, Observe and
 Propose modes, action previews, verified handoff and review dispatch) → C interactive
 execution (Confirm mode, pause / resume / retry / stop, harness switching, run history and
 replay, immutable Human Gate decisions) → D December Command v2 (Policy mode, visual Orbit
@@ -692,18 +692,18 @@ receipt exists. Is DEC-UI expected to design around that gap as well, or to open
 
 ## 10. Backlog
 
-Five items queued, none attached to a slice.
+Five items recorded; the first is complete and four remain queued.
 
-- **Give `scripts/mutate_merge.py` a crash-safe restore.** The restore is a `finally` block
-  rewriting `merge.py` from a byte copy held in memory, and the rewrite is proved by content
-  hash with retries: a restore that cannot be confirmed stops the run and names the file that
-  may still carry a mutation. What no `finally` covers is the window between the mutation write
-  and the restore — an interrupt or a hard kill there leaves a mutated `merge.py` in the working
-  tree and says nothing at all, which is the one outcome the harness documents rather than
-  prevents. The script already needed one guard against `__pycache__` poisoning across the same
-  round trip (`PYTHONDONTWRITEBYTECODE`) — the same failure class: a later run reads something
-  the harness thought it had put back. A crash-safe restore, writing beside the target and
-  renaming, or restoring from git, removes the class.
+- **Completed 2026-08-10 — give `scripts/mutate_merge.py` a crash-safe restore.** Atomic restore
+  alone cannot cover a hard kill before the restore call. The implemented boundary is stronger:
+  `measure_in_scratch` copies the requested project to an external disposable directory,
+  rejects symlinks, junctions and reparse points instead of following a copy cycle, verifies the
+  copy's import identity and clean baseline, and passes only its `merge.py` to the mutation loop.
+  The requested merge engine is never imported or written. `--verify-only` crosses the same
+  snapshot and import boundary, skipping only the baseline and mutations. A hard kill may orphan
+  a mutated scratch directory, but it cannot poison the project being measured. Ordinary
+  restores inside the scratch tree retain the retry and content-hash proof; source `__pycache__`
+  cleanup remains for compatibility, while subprocesses keep `PYTHONDONTWRITEBYTECODE=1`.
 - **Rendered-result browser testing.** The panel's guards read source text: the `<style>`
   block parsed into rules, the `<script>` block read as characters. Nothing renders. So they
   prove what the panel *declares* — its structure — and not what a browser produces from it,

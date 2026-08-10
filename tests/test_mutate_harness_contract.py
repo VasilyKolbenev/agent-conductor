@@ -188,62 +188,26 @@ def test_the_docstring_states_the_kill_rule_the_scorer_actually_applies():
     assert "exit 1" in doc
 
 
-def _restore_writes_in_place() -> bool:
-    """Whether the restore still rewrites the target where it stands.
-
-    The crash window exists exactly while it does: a process killed between
-    the mutation write and the restore leaves the mutation on disk. Writing
-    beside the target and renaming would close it, so the presence of a rename
-    is what turns the requirement below off — the guard follows the design
-    rather than a promise about the design.
-    """
-    tree = harness_ast()
-    renamed = [call for call in ast.walk(tree) if isinstance(call, ast.Call)
-               and ast.unparse(call.func) in ("os.replace", "os.rename", "shutil.move")]
-    restore = next(n for n in ast.walk(tree)
-                   if isinstance(n, ast.FunctionDef) and n.name == "restore_source")
-    in_place = [call for call in ast.walk(restore) if isinstance(call, ast.Call)
-                and ast.unparse(call.func) == "path.write_bytes"]
-    return bool(in_place) and not renamed
+def _calls_in(function_name: str) -> list[tuple[str, int]]:
+    function = next(node for node in ast.walk(harness_ast())
+                    if isinstance(node, ast.FunctionDef) and node.name == function_name)
+    return [(ast.unparse(call.func), call.lineno) for call in ast.walk(function)
+            if isinstance(call, ast.Call)]
 
 
-def _admits_the_crash_window(doc: str) -> bool:
-    """Whether some sentence names the outcome the restore design really has.
-
-    Two independent elements, not one banned word: a process that stops
-    abruptly, and a mutated file surviving it. Rewriting the paragraph into a
-    promise that the tree is always left clean removes both.
-    """
-    sentences = [" ".join(part.split()) for part in re.split(r"(?<=\.)\s+", doc)]
-    return any(re.search(r"hard kill|killed|crash|interrupt", sentence)
-               and re.search(r"leaves a mutated|still (mutated|carries)"
-                             r"|mutation (is )?(left|still)", sentence)
-               for sentence in sentences)
+def test_main_routes_measurement_through_the_disposable_workspace():
+    calls = [name for name, _ in _calls_in("main")]
+    assert calls.count("measure_in_scratch") == 1
+    assert "run_mutations" not in calls
+    assert "verify_import_root" not in calls
 
 
-def test_the_docstring_admits_the_window_the_restore_design_leaves_open():
-    # A hard kill between the mutation write and the restore leaves a mutated
-    # file and says nothing. While that is the design — the condition below is
-    # read from the code, so a crash-safe restore would retire this — the
-    # docstring may not offer a pair of exhaustive outcomes instead.
-    assert _restore_writes_in_place(), \
-        "the restore no longer writes in place: this requirement must be revisited"
-    assert _admits_the_crash_window(module_doc())
-    assert "separate task" in module_doc()      # and it is queued, not forgotten
-
-
-def test_the_restore_window_guard_reads_the_claim_and_not_the_word_always():
-    # The guard this replaced banned the word "always" from the docstring, so a
-    # true and unrelated sentence carrying it turned the suite red while the
-    # claim itself stayed unguarded. Both halves, executed on the predicate.
-    innocent = module_doc() + "\nThe baseline always runs before the first mutation.\n"
-    assert _admits_the_crash_window(innocent)
-    exhaustive = re.sub(
-        r"A hard kill[^.]*\.[^.]*\.",
-        "The working tree is always left clean - or the run stops saying, "
-        "unmistakably, that it is not.", module_doc())
-    assert "always left clean" in exhaustive         # the rewrite really landed
-    assert not _admits_the_crash_window(exhaustive)
+def test_the_disposable_copy_is_verified_before_any_mutation_runs():
+    calls = _calls_in("measure_in_scratch")
+    verified = [line for name, line in calls if name == "verify_import_root"]
+    mutated = [line for name, line in calls if name == "run_mutations"]
+    assert len(verified) == len(mutated) == 1
+    assert verified[0] < mutated[0]
 
 
 _POINTER = re.compile(r"(?P<path>docs/[\w./-]+\.md)\s+§(?P<section>\d+)")
