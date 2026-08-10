@@ -125,15 +125,22 @@ def test_every_template_conduct_init_vends_is_listed_in_the_readme():
 
 
 def test_the_readme_is_right_about_which_scaffold_the_bootstrap_prompt_describes():
-    # The README says one prompt is vended for every map, that it calls every
-    # [[nodes]] block a placeholder, and that this is false of `minimal`. All
-    # three are checkable, and the third is the one that rots: make `minimal`
-    # carry the PLACEHOLDER convention, or teach the prompt which map it is
-    # talking about, and the README's caveat becomes the false sentence.
-    assert "[[nodes]] block in it is a placeholder" in prompts.bootstrap_prompt()
+    # The README now says the prompt reads the map it was written beside, and
+    # names `minimal` as the map that already carries components. Both halves
+    # are checkable, and both rot the same way: give `minimal` the PLACEHOLDER
+    # convention, or take the map back off the prompt, and this paragraph
+    # becomes the false sentence.
+    replace_them = "Every [[nodes]] block in it is a placeholder"
+    check_them = "No [[nodes]] block in it is a placeholder"
     assert "PLACEHOLDER" not in templates.get("minimal")
+    said = prompts.bootstrap_prompt(prompts.DEFAULT_MAP_PATH,
+                                    templates.get("minimal"))
+    assert check_them in said and replace_them not in said
     for name in vended_template_names() - {"minimal"}:
         assert "PLACEHOLDER" in templates.get(name), name
+        said = prompts.bootstrap_prompt(prompts.DEFAULT_MAP_PATH,
+                                        templates.get(name))
+        assert replace_them in said and check_them not in said, name
 
 
 def test_every_repository_document_the_readme_points_a_reader_at_exists():

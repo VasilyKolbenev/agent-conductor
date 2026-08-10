@@ -83,10 +83,11 @@ the answers it takes only label who does what, in the map and in the panel.
 Every path writes the same three things: `conductor/map.toml`, `conductor/lanes/` and
 `conductor/events.jsonl`. It then validates what it wrote, and puts on stdout — and on
 stdout alone — a bootstrap prompt for the agent that fills the map in, so
-`conduct init > setup.txt` leaves you that prompt and nothing else. The same prompt is
-vended for every map, and it tells the agent that every `[[nodes]]` block is a placeholder
-to replace with your real components: true of the other three, false of `minimal`, which
-quotes the spec's example and so carries components of its own. An existing `conductor/`
+`conduct init > setup.txt` leaves you that prompt and nothing else. What the prompt says
+about your `[[nodes]]` blocks is read out of the map that was just written: where they are
+placeholders it tells the agent to replace them with your real components, and where they
+already name components — as in `minimal`, which quotes the spec's example — it tells the
+agent to check each one against your project instead. An existing `conductor/`
 is never touched: init says so and exits 1.
 
 ## What it is

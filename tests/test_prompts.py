@@ -3,10 +3,15 @@ import tomllib
 from datetime import datetime, timezone
 
 import pytest
-from conductor import merge, prompts, schema, store
+from conductor import merge, prompts, schema, store, templates
 from tests.test_merge_review import MAP, lane, finding
 
 NOW = datetime(2026, 7, 30, 12, 0, tzinfo=timezone.utc)
+
+#: A written map to hand `bootstrap_prompt`, for the tests whose claim is not
+#: about which map it was. It takes the text and not just the path on purpose,
+#: so there is no map-less call to make.
+SCAFFOLD = templates.get(templates.DEFAULT)
 
 
 def _template_block(text):
@@ -15,7 +20,7 @@ def _template_block(text):
 
 
 def test_bootstrap_prompt_names_the_contract_files():
-    text = prompts.bootstrap_prompt()
+    text = prompts.bootstrap_prompt(prompts.DEFAULT_MAP_PATH, SCAFFOLD)
     for token in ("map.toml", "conductor/", "schema_version", "nodes", "roles"):
         assert token in text
 
@@ -64,7 +69,8 @@ def test_role_prompt_renders_every_pending_id():
 
 
 def test_bootstrap_prompt_tells_agent_to_validate():
-    assert "conduct validate" in prompts.bootstrap_prompt()
+    assert "conduct validate" in prompts.bootstrap_prompt(prompts.DEFAULT_MAP_PATH,
+                                                          SCAFFOLD)
 
 
 def test_map_example_has_no_row_field():
@@ -315,7 +321,7 @@ def _widest(text, skip=None):
 def test_the_bootstrap_prompt_stands_alone_when_redirected():
     # `conduct init > bootstrap.txt` yields this and nothing else, so it may
     # not lean on anything the CLI printed around it.
-    text = prompts.bootstrap_prompt("conductor/map.toml")
+    text = prompts.bootstrap_prompt("conductor/map.toml", SCAFFOLD)
     for needed in ("conductor/map.toml", "schema_version", "[[nodes]]",
                    "[[cycle.roles]]", "conduct validate", "depends_on"):
         assert needed in text
@@ -324,11 +330,13 @@ def test_the_bootstrap_prompt_stands_alone_when_redirected():
 
 
 @pytest.mark.parametrize("path", ["conductor/map.toml", LONG_PATH])
-def test_the_bootstrap_prompt_stays_inside_the_width(path):
+@pytest.mark.parametrize("name", [n for n, _ in templates.names()])
+def test_the_bootstrap_prompt_stays_inside_the_width(path, name):
     # The path gets a line of its own precisely so an absolute one cannot
     # stretch the prose: it is unwrappable, and folding sentences around it
-    # pushed two lines past 130 columns.
-    text = prompts.bootstrap_prompt(path)
+    # pushed two lines past 130 columns. Every template, because step 2 is now
+    # one of three hand-wrapped variants and only one of them used to exist.
+    text = prompts.bootstrap_prompt(path, templates.get(name))
     assert _widest(text, skip=path) <= prompts.WIDTH
     assert f"\n    {path}\n" in text          # alone on its line, never inline
     # `skip=path` must skip exactly one line. Without this the two assertions
@@ -336,3 +344,67 @@ def test_the_bootstrap_prompt_stays_inside_the_width(path):
     # the standalone line still exists, and every line the re-interpolation
     # widened is skipped from the width check for containing the path.
     assert text.count(path) == 1
+
+
+# --- step 2 is read off the map, so no template name can decide it ----------
+
+
+def _relabelled(text, how_many=None):
+    """A written map with its PLACEHOLDER labels filled in, as a person would.
+
+    Args:
+        text: A template's map text.
+        how_many: How many labels to replace; None replaces every one, which
+            is what a user who finished the job leaves behind.
+
+    Returns:
+        The rewritten map. Editing the file is the point: no template name
+        changes here, so anything that answers by template name answers about
+        a map that no longer exists.
+    """
+    done, out = 0, []
+    for line in text.split("\n"):
+        if (line.startswith(f'label = "{prompts.PLACEHOLDER_LABEL}')
+                and (how_many is None or done < how_many)):
+            line = f'label = "billing service {done}"'
+            done += 1
+        out.append(line)
+    assert done == (how_many or done) and done, "the fixture replaced nothing"
+    return "\n".join(out)
+
+
+def test_a_map_whose_placeholders_a_person_replaced_is_not_called_a_placeholder():
+    # The class, not the instance. `minimal` is only the map that happens to
+    # arrive without placeholders; this one has none because someone did the
+    # work, and the same sentence has to be true of it.
+    edited = _relabelled(SCAFFOLD)
+    assert prompts.placeholder_nodes(edited)[0] == 0
+    text = prompts.bootstrap_prompt(prompts.DEFAULT_MAP_PATH, edited)
+    assert prompts._STEP_NO_NODE_IS_A_PLACEHOLDER in text
+    assert prompts._STEP_EVERY_NODE_IS_A_PLACEHOLDER not in text
+    assert prompts._STEP_SOME_NODES_ARE_PLACEHOLDERS not in text
+
+
+def test_a_half_replaced_map_is_told_only_some_of_its_nodes_are_placeholders():
+    # The shape a map spends most of its life in. "Every block is a
+    # placeholder" and "none is" are both false here, so a two-way answer
+    # would be wrong exactly where a user is actually working.
+    half = _relabelled(SCAFFOLD, how_many=2)
+    placeholders, nodes = prompts.placeholder_nodes(half)
+    assert 0 < placeholders < nodes
+    text = prompts.bootstrap_prompt(LONG_PATH, half)
+    assert prompts._STEP_SOME_NODES_ARE_PLACEHOLDERS in text
+    assert prompts._STEP_EVERY_NODE_IS_A_PLACEHOLDER not in text
+    assert prompts._STEP_NO_NODE_IS_A_PLACEHOLDER not in text
+    assert _widest(text, skip=LONG_PATH) <= prompts.WIDTH
+
+
+def test_no_variant_of_step_two_leaves_the_agent_without_the_work():
+    # The branch without placeholders must not become an empty place: whichever
+    # variant is chosen, the agent is still told which table it edits and what
+    # it is expected to add to it.
+    owed = "add one [[nodes]] block per further component you want reported on:"
+    for written in (SCAFFOLD, _relabelled(SCAFFOLD), _relabelled(SCAFFOLD, 2)):
+        step = prompts._node_step(written)
+        assert step.startswith("2. Open that file.")
+        assert owed in " ".join(step.split())

@@ -3,7 +3,10 @@
 Two pure string builders: `bootstrap_prompt` tells an agent how to fill in the
 `conductor/map.toml` that `conduct init` has already written; `role_prompt`
 tells a role-holding agent how to keep its lane file and which findings still
-owe it a verdict. The map example is
+owe it a verdict. Both read the artefact they talk about — `bootstrap_prompt`
+takes the map's TEXT, not just its path, because a sentence about what is in
+that file has to be derived from the file rather than from which template
+wrote it. The map example is
 taken from the spec (PROTOCOL.md §2); the lane starter vended by
 `role_prompt` is deliberately NOT the commented §3 excerpt — that one stays
 in PROTOCOL.md as an illustration, while the vended template is a separate,
@@ -12,6 +15,7 @@ copy-safe strict-JSON artifact an agent can write verbatim.
 from __future__ import annotations
 
 import json
+import tomllib
 
 from conductor import merge
 
@@ -202,19 +206,98 @@ _NODE_FIELDS = '''  id          unique, and the only name a lane may use: a lane
               them, so a failing dependency never marks its
               dependents failing by itself.'''
 
+#: The PLACEHOLDER convention, named once so code can apply it rather than
+#: restate it. A node whose label opens with this word is scaffolding a
+#: template wrote, not a component of anyone's project: `templates` spells it
+#: into every label it vends, and `placeholder_nodes` reads it back out of a
+#: map that has already been written — which is the only way a sentence about
+#: a map can be true of maps the templates did not write, a hand-edited one
+#: included.
+PLACEHOLDER_LABEL = "PLACEHOLDER"
 
-def bootstrap_prompt(map_path: str = DEFAULT_MAP_PATH) -> str:
+
+def placeholder_nodes(map_text: str) -> tuple[int, int]:
+    """Count a written map's placeholder nodes, and its nodes.
+
+    Args:
+        map_text: The TOML text of a map that has already been written.
+
+    Returns:
+        `(placeholders, nodes)` — how many `[[nodes]]` blocks still carry a
+        `PLACEHOLDER_LABEL` label, and how many there are. The pair, not a
+        boolean: "every node is a placeholder" and "some node is" are
+        different claims, and a prompt that conflates them is false about a
+        half-replaced map.
+
+    Raises:
+        tomllib.TOMLDecodeError: If `map_text` is not TOML. Callers hold a map
+            that has parsed and validated already; nothing here re-checks it.
+    """
+    nodes = tomllib.loads(map_text).get("nodes", [])
+    return (sum(1 for node in nodes
+                if str(node.get("label", "")).startswith(PLACEHOLDER_LABEL)),
+            len(nodes))
+
+
+# What step 2 says about the map's nodes. One of the three, chosen by counting
+# the map that was actually written — never by which template wrote it. A
+# template name answers correctly for the four we vend and wrongly for the
+# fifth, and wrongly for every map a user has since edited; the count is right
+# for all of them. `PLACEHOLDER` is interpolated rather than retyped, so the
+# marker the prose names is the marker the counting uses.
+_STEP_EVERY_NODE_IS_A_PLACEHOLDER = (
+    "2. Open that file. Every [[nodes]] block in it is a placeholder.\n"
+    "   Replace them with the real components of this project, and add\n"
+    "   one [[nodes]] block per further component you want reported on:")
+
+_STEP_SOME_NODES_ARE_PLACEHOLDERS = (
+    "2. Open that file. Some of its [[nodes]] blocks are placeholders,\n"
+    f"   labelled {PLACEHOLDER_LABEL}. Replace those with the real\n"
+    "   components of this project, check the rest still describe it,\n"
+    "   and add one [[nodes]] block per further component you want\n"
+    "   reported on:")
+
+# Not an empty branch: the map still has to be made to describe THIS project,
+# and the agent is the one who has to check that it does. What changes is the
+# verb — check and correct, rather than replace wholesale.
+_STEP_NO_NODE_IS_A_PLACEHOLDER = (
+    "2. Open that file. No [[nodes]] block in it is a placeholder: no\n"
+    f"   label is marked {PLACEHOLDER_LABEL}, so they name components\n"
+    "   already. Check every one against THIS project, replace what\n"
+    "   does not describe it, and add one [[nodes]] block per further\n"
+    "   component you want reported on:")
+
+
+def _node_step(map_text: str) -> str:
+    """Pick the step-2 text that is true of the map that was written."""
+    placeholders, nodes = placeholder_nodes(map_text)
+    if placeholders == 0:
+        return _STEP_NO_NODE_IS_A_PLACEHOLDER
+    if placeholders == nodes:
+        return _STEP_EVERY_NODE_IS_A_PLACEHOLDER
+    return _STEP_SOME_NODES_ARE_PLACEHOLDERS
+
+
+def bootstrap_prompt(map_path: str, map_text: str) -> str:
     """Return the instruction block for filling in an already-written map.
 
     Args:
         map_path: The map the agent must edit, named the way the person
             handing this over sees it.
+        map_text: That map's TOML text, as it was written. Required, and the
+            reason is the whole of this function's history: given only a path,
+            the prompt called every node a placeholder for every map, which is
+            false of the `minimal` template and of any map a user has edited.
 
     Returns:
         A deterministic English prompt, self-contained enough to be redirected
         to a file and handed over on its own: what the map already decides,
-        what the agent must replace, the field reference for the one table it
-        edits, what must still hold afterwards, and the command that checks it.
+        what the agent must replace — stated from what `map_text` actually
+        holds — the field reference for the one table it edits, what must
+        still hold afterwards, and the command that checks it.
+
+    Raises:
+        tomllib.TOMLDecodeError: If `map_text` is not TOML.
     """
     return (
         "You are setting up Conduct for this project. The map you must fill\n"
@@ -233,9 +316,7 @@ def bootstrap_prompt(map_path: str = DEFAULT_MAP_PATH) -> str:
         "\n"
         "1. Read the project's roadmap, plan, and architecture documents.\n"
         "\n"
-        "2. Open that file. Every [[nodes]] block in it is a placeholder.\n"
-        "   Replace them with the real components of this project, and add\n"
-        "   one [[nodes]] block per further component you want reported on:\n"
+        f"{_node_step(map_text)}\n"
         "\n"
         f"{_NODE_FIELDS}\n"
         "\n"
