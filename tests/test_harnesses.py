@@ -13,7 +13,7 @@ worth less than an equality plus a test that the fixture still has teeth.
 import ast
 import json
 import re
-from dataclasses import replace
+from dataclasses import fields, replace
 from pathlib import Path
 
 from conductor import harnesses, merge, templates
@@ -148,6 +148,39 @@ def test_every_vendor_entry_carries_a_documentation_url():
             assert harness.docs == ""
         else:
             assert harness.docs.startswith("https://"), harness.id
+
+def test_the_reg1_disclosure_names_every_field_that_states_an_external_fact():
+    # REG1-01. The disclosure beside the two REG-1 rows once said the docs URL
+    # was the ONE field that could not be checked in place. False: an owner
+    # who read it would confirm two URLs and ship unverified vendor spellings,
+    # because `display_name` (how the vendor writes it) and `executable_hints`
+    # (what the command line calls it) are external facts of exactly the same
+    # kind, verified by nothing in this repository. The external set is
+    # DERIVED — every `Harness` field minus the ones the suite pins from the
+    # repository alone — so a field added to the dataclass lands external by
+    # default, and the comment cannot quietly narrow back down to one field:
+    # each member of the set must be named, backticked, inside the REG-1
+    # block, or this goes red.
+    internal = {
+        "id", "monogram",                # test_every_entry_is_complete_and_unambiguous
+        "accent_dark", "accent_light",   # well-formedness here, contrast audit
+        "adapter",                       # resolves to nothing: no fact to confirm
+    }
+    external = {field.name for field in fields(harnesses.Harness)} - internal
+    assert external == {"docs", "display_name", "executable_hints"}
+    lines = Path(harnesses.__file__).read_text(encoding="utf-8").splitlines()
+    start = next(index for index, line in enumerate(lines)
+                 if line.strip().startswith("# REG-1."))
+    block = []
+    for line in lines[start:]:
+        if not line.strip().startswith("#"):
+            break
+        block.append(line.strip())
+    disclosure = " ".join(block)
+    assert "PROPOSED, not confirmed" in disclosure
+    for name in sorted(external):
+        assert f"`{name}`" in disclosure, name
+
 
 def test_the_recommended_ids_are_registry_entries_and_exclude_custom():
     # The wizard numbers these. A recommended id with no entry would render a

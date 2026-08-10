@@ -146,11 +146,23 @@ _KNOWN: tuple[Harness, ...] = (
             accent_dark="#cf8bf2", accent_light="#7a26ad", monogram="GH",
             docs="https://docs.github.com/en/copilot",
             adapter="github-copilot", executable_hints=("gh",)),
-    # REG-1. The two documentation links below are PROPOSED, not confirmed:
-    # this slice ran with no network access, so nothing fetched either address
-    # and no code here can. Every other field of both rows is checkable where
-    # it is written — a URL is the one that is not, so it is the one the owner
-    # is asked to confirm before these rows ship.
+    # REG-1. Three fields of the two rows below state external facts — facts
+    # about a vendor that nothing in this repository checks or can check —
+    # and all three are PROPOSED, not confirmed, so the owner is asked to
+    # confirm each of them before these rows ship: `docs` (nothing fetched
+    # either address — this slice ran with no network access, and no code
+    # here can), `display_name` (the product's name as its vendor writes it)
+    # and `executable_hints` (what the product is called on a command line).
+    # The remaining fields state no vendor fact a test cannot reach: `id` and
+    # `monogram` are pinned by test_every_entry_is_complete_and_unambiguous
+    # and test_no_two_registered_harnesses_share_a_badge_and_a_collision_is_caught,
+    # the accents by test_both_themes_carry_a_well_formed_accent plus the
+    # contrast audit in test_harness_accent_contrast.py, and `adapter`
+    # resolves to nothing yet — a placeholder whose one promise, staying off
+    # the wire, is test_the_payload_is_json_ordered_and_carries_only_the_badge's.
+    # test_the_reg1_disclosure_names_every_field_that_states_an_external_fact
+    # derives the external set from the dataclass and requires each member
+    # named here, so this list cannot narrow again without a test going red.
     Harness(id="gemini-cli", display_name="Gemini CLI", monogram="GC",
             accent_dark="#4fd1a5", accent_light="#0d6d5a",
             docs="https://github.com/google-gemini/gemini-cli",
