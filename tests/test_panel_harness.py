@@ -233,9 +233,10 @@ def test_the_panel_resolves_an_unregistered_string_through_its_own_fallback():
     # The dependence set alone let a sabotage through: `REGISTRY.get(String(id))
     # || REGISTRY.get("claude-code") || …` reaches for nothing new and hands an
     # unregistered string a registered product's name, monogram and colour. So
-    # the registry may be asked once, and the question it is asked is the
-    # argument — a second lookup, or a first one keyed on anything else, fails
-    # here whatever it is keyed on.
+    # exactly one `REGISTRY.get(` is spelt in the whole script, and the one that
+    # is spelt is keyed on the argument. This closes that sabotage and no more:
+    # a second reach into the registry spelt some other way — `.entries()`,
+    # `[...REGISTRY.values()][0]` — is not seen from here.
     assert script().count("REGISTRY.get(") == 1
     assert "REGISTRY.get(String(id))" in body, body
 

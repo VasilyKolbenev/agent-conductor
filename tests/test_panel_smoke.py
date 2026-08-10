@@ -205,7 +205,8 @@ def test_panel_introduces_no_new_innerhtml(tmp_path):
 
 
 def test_every_test_module_the_panel_points_a_reader_at_exists():
-    # The panel's comments send a reader to five test modules by path. This
+    # The panel's comments send a reader to test modules by path — the count is
+    # left unsaid here on purpose, because saying it went stale once. This
     # repository has already paid once for a reference that stopped resolving
     # (commit 97f8325), and this round moved guards into two more files.
     named = set(re.findall(r"tests/test_panel_\w+\.py", panel_html()))
