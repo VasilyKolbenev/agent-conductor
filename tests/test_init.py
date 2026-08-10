@@ -15,7 +15,6 @@ import tomllib
 
 import pytest
 import conductor.init
-import conductor.__main__
 from conductor import harnesses, prompts, templates
 from conductor.init import _FIRST_ACTION, _NO_REVIEWER, _console_ask, _interactive
 from conductor.__main__ import _build_parser, main
