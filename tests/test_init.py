@@ -18,7 +18,8 @@ import conductor.init
 import conductor.__main__
 from conductor import harnesses, prompts, templates
 from conductor.init import (_FIRST_ACTION, _FIRST_ACTION_NO_PLACEHOLDERS,
-                            _NO_REVIEWER, _console_ask, _interactive)
+                            _NO_REVIEWER, _console_ask, _first_action,
+                            _interactive)
 from conductor.__main__ import _build_parser, main
 
 
@@ -429,6 +430,57 @@ def test_what_init_says_about_placeholders_is_true_of_the_map_it_just_wrote(
     said = _unwrapped(captured.err)
     assert (_FIRST_ACTION in said) == (marked > 0), name
     assert (_FIRST_ACTION_NO_PLACEHOLDERS in said) == (marked == 0), name
+
+
+# What the person's first action must tell them to DO, keyed by whether the map
+# they were left with still carries placeholder labels. The verb, not the
+# constant: swap the two constants' bodies and every assertion naming only
+# `_FIRST_ACTION` goes on passing while the person is told to replace
+# placeholders their map does not have.
+_FIRST_ACTION_VERBS = {
+    True: "Replace the placeholder nodes in conductor/map.toml",
+    False: "Check the nodes in conductor/map.toml against the real components",
+}
+
+
+def _hand_edited(text):
+    """A written map with every PLACEHOLDER label filled in, as a person would.
+
+    The mirror of tests/test_prompts.py's fixture, restated here for the same
+    reason `_placeholders_in` restates the convention. No template name changes
+    when a label does, so anything answering by template name answers about a
+    map that is no longer the one on disk.
+    """
+    done, out = 0, []
+    for line in text.split("\n"):
+        if line.startswith('label = "PLACEHOLDER'):
+            line = f'label = "billing service {done}"'
+            done += 1
+        out.append(line)
+    assert done, "the fixture replaced nothing"
+    return "\n".join(out)
+
+
+def test_the_first_action_reads_the_map_it_is_given_not_the_template_behind_it():
+    # The class, not the instance. `minimal` is only the map that happens to
+    # ARRIVE without placeholders; the agent's half of this pair is already held
+    # against a map that has none because a person did the work, and the
+    # sentence said to the person has to be as true of that map. Unreachable
+    # through `conduct init`, which writes a template and reads it straight
+    # back — which is exactly why passing on the four vended maps proved
+    # nothing about the fifth, or about anyone's map a week later.
+    edited_any = False
+    for name, _ in templates.names():
+        written = templates.get(name)
+        if "PLACEHOLDER" not in written:
+            continue
+        edited_any = True
+        assert _FIRST_ACTION_VERBS[True] in _first_action(written), name
+        assert _FIRST_ACTION_VERBS[False] not in _first_action(written), name
+        edited = _hand_edited(written)
+        assert _FIRST_ACTION_VERBS[False] in _first_action(edited), name
+        assert _FIRST_ACTION_VERBS[True] not in _first_action(edited), name
+    assert edited_any, "no vended template carries a placeholder any more"
 
 
 def test_the_harness_questions_say_what_the_answer_does(tmp_path, capsys):
