@@ -477,6 +477,85 @@ def test_the_custom_row_says_only_things_that_hold(tmp_path, capsys):
     assert _harnesses(tmp_path)["reviewer"] == harnesses.CUSTOM
 
 
+def _one_legal_gloss(number):
+    """The single legal spelling of the custom row's gloss for this registry.
+
+    Args:
+        number: The menu token the gloss's exception example is worked with.
+
+    Rebuilt from the same registry, the same example id and the number the
+    menu prints — never read back out of `_custom_row`, which is the function
+    under test. One spelling per registry is the point: a gloss guarded by its
+    fragments survived three rewrites that kept every fragment, so the guard
+    is now the whole sentence, and any other sentence is wrong by equality.
+    """
+    rest = ", ".join(h.id for h in harnesses.vendors()
+                     if h.id not in harnesses.RECOMMENDED)
+    typed = conductor.init._TYPED_EXAMPLE
+    return (f" — anything else: this row writes the id {harnesses.CUSTOM}. "
+            f"Conduct also knows {rest} — type any id, listed or not, and it "
+            f"is written exactly as typed: type {typed} and get {typed}. "
+            "The numbers this menu printed are the one exception: "
+            f"answer {number} and get row {number}.")
+
+
+def test_the_custom_row_gloss_has_exactly_one_legal_spelling_for_this_registry(
+        tmp_path, capsys):
+    # DO4-1. The fragments the other custom-row tests parse — the `also knows`
+    # list, both worked examples — survived a third rewrite that kept every
+    # one of them intact and wrapped them in sentences false in both clauses.
+    # Fragments cannot guard the sentence around them, so the whole sentence
+    # is the guard: rebuilt here from the registry, the example id and the
+    # number the menu actually prints, and required to be EQUAL. A clause
+    # inserted, dropped or negated fails this; a wizard that stops doing what
+    # the examples show fails the two tests that run them.
+    assert conductor.init.run(_init_args(tmp_path / "menu"),
+                              ask=_scripted(["p"])) == 1      # menu, then EOF
+    first = re.findall(r"^ {2}(\S+)\) ", capsys.readouterr().err,
+                       re.MULTILINE)[0]
+    _, gloss = conductor.init._custom_row()
+    assert gloss == _one_legal_gloss(first)
+
+
+def test_a_gloss_rewrite_that_keeps_every_parsed_fragment_fails_the_equality():
+    # DO4-1, the reviewer's third diversion, kept as a regression. Every
+    # fragment the parsing tests read survives below — the `also knows` list,
+    # the dash after it, both worked examples with their outcomes — while the
+    # sentences around them claim the opposite of what the wizard does: that
+    # the listed ids are the ONLY strings the prompt preserves, that all else
+    # is replaced with `custom`, and that the menu numbers are no exception. A
+    # wizard run proves both clauses false, yet no fragment parse can see any
+    # of it, which is how this shipped green once. The equality is the door
+    # that class fails.
+    rest = ", ".join(h.id for h in harnesses.vendors()
+                     if h.id not in harnesses.RECOMMENDED)
+    typed = conductor.init._TYPED_EXAMPLE
+    sabotage = (
+        f" — the ids Conduct also knows {rest} — are the ONLY strings the "
+        f"prompt preserves; every other answer is silently replaced with "
+        f"{harnesses.CUSTOM}, with one surviving exception soon to be "
+        f"removed: type {typed} and get {typed}. The numbers this menu "
+        "printed are no exception, and the old claim about them has not been "
+        "true for two releases: answer 1 and get row 1.")
+    unnumbered = [h.id for h in harnesses.known()
+                  if h.id not in harnesses.RECOMMENDED and h.id != harnesses.CUSTOM]
+    # Every fragment parse the suite aims at the real gloss succeeds on it...
+    listed = sabotage.split("also knows ", 1)[1].split(" — ", 1)[0]
+    assert [item.strip() for item in listed.split(",")] == unnumbered
+    assert harnesses.CUSTOM in sabotage
+    assert re.search(r"type (\S+) and get (\S+)\.", sabotage).groups() \
+        == (typed, typed)
+    assert re.search(r"answer (\S+) and get row (\S+)\.", sabotage).groups() \
+        == ("1", "1")
+    for harness_id in harnesses.RECOMMENDED:
+        assert harness_id not in sabotage
+    # ...and the equality is what refuses it. The last line is the door in the
+    # suite, restated here so this regression stands alone: the shipped gloss
+    # IS the one legal spelling the sabotage is not.
+    assert sabotage != _one_legal_gloss("1")
+    assert conductor.init._custom_row()[1] == _one_legal_gloss("1")
+
+
 def test_the_custom_rows_typed_promise_is_true_of_what_gets_written(
         tmp_path, capsys):
     # The row's first claim: type an id and that id is what lands in map.toml.
