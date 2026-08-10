@@ -219,10 +219,20 @@ detail card.
 Functional motion only (§5), and the removal of what is decorative today.
 
 - Files: `src/conductor/panel/index.html`.
-- The current phase carries a **permanent** animation today (`.pulse rect{animation:glow 2s
-  ease-in-out infinite}`), and the live dot blinks on a 2.4 s infinite loop. The permanent glow
-  is exactly the perpetual motion §5 forbids and this slice removes it; the live dot is a
-  connection indicator, not Orbit motion, and its fate is a judgement call for the slice.
+- The permanent glow on the current phase (`.pulse rect{animation:glow 2s ease-in-out
+  infinite}`) is gone already: DEC-UI-2 deleted it with the old cycle ring in b8b80bf, and
+  tests/test_panel_style.py holds that nothing references it. What is left for this slice is
+  what the owner settled on 2026-08-09. The live dot becomes a **static** connection
+  indicator — a blink with no event behind it is fake telemetry, which the Precision Cockpit
+  direction forbids — so the panel is left with no perpetual motion at all. In its place the
+  Orbit gets one short transition, on an **observed** change of the current phase: a first
+  drawing exists, two consecutive state documents arrived over a live SSE connection, and they
+  name different phases. A reload, a reconnect, the first frame after either, a new
+  `generated_at` and a new queue each fail one of those and move nothing. Under
+  `prefers-reduced-motion` the transition is instant.
+- The **travelled trajectory** is not implemented in v1. Protocol v1 records no run history, so
+  the third kind of movement §5 sketches has no subject; it is reserved with the accent role in
+  §8.6 and stays reserved.
 - `@media (prefers-reduced-motion:reduce)` already disables both; the guard must keep covering
   every animation added here.
 - Acceptance: no animation runs when nothing changed; every new animation is listed in the
