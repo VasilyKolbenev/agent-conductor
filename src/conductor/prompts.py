@@ -27,6 +27,12 @@ class UnknownRole(Exception):
 # a prompt that embeds a whole map invites an agent to replace the one already
 # on disk. Note it ends without a trailing newline; `templates` adds the one a
 # file needs.
+#
+# It is a COPY of the spec's fenced block, not an import of it, so the copy is
+# what has to be held: tests/test_templates.py::
+# test_the_minimal_template_is_the_protocol_spec_section_2_block_byte_for_byte
+# reads that block out of spec/PROTOCOL.md and requires this text back. Edit
+# one of the two and that guard names the other.
 MAP_EXAMPLE = '''schema_version = 1
 project = "web-app"
 
@@ -45,14 +51,22 @@ depends_on = ["schemas"]
 id = "implementer"
 harness = "claude-code"  # informational
 reviews = []             # role ids whose findings this role must verdict
+stage = "implement"      # optional; one cycle.phases value
 
 [[cycle.roles]]
 id = "reviewer"
 harness = "codex"
 reviews = ["implementer"]
+stage = "review"
 
 [cycle]
 phases = ["plan", "implement", "review", "human-gate"]
+# Phases are labels; a "human gate" is simply a phase name. Dedicated
+# human-gate objects were considered and cut (YAGNI): the human queue is
+# built from lanes' waits_on_human, not from the map.
+# `stage` says which phase a role works in, so a consumer can draw the cycle
+# from the map alone, before any lane reports. It is presentation and handoff
+# metadata: no §6 merge rule reads it, and it changes no computed value.
 
 [[invariants]]
 id = "main-untouched"

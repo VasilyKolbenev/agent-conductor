@@ -9,10 +9,11 @@ zero warnings.
 Four are vended: `default-orbit` (the recommended five-stage process, and what
 `conduct init` writes when nothing else is asked for), `single-harness` (one
 implementing role plus a human decision), `empty` (the minimum that
-validates), and `minimal` (the spec's own §2 example, vended verbatim from
-`prompts.MAP_EXAMPLE` so the spec and the scaffold cannot drift). This module
-renders no UI — `names()` returns data for a caller to display, never display
-text.
+validates), and `minimal` (the spec's own §2 example, vended from
+`prompts.MAP_EXAMPLE`, which a guard holds byte-for-byte against the fenced
+block in `spec/PROTOCOL.md` so the spec and the scaffold cannot drift in
+silence). This module renders no UI — `names()` returns data for a caller to
+display, never display text.
 
 `get()` takes the three values `conduct init` fills in — project name, primary
 harness, reviewing harness — and rewrites both the TOML assignments and the
@@ -342,8 +343,9 @@ _TEMPLATES: dict[str, tuple[str, str]] = {
     "empty": (
         _EMPTY,
         "The minimum map that validates: one placeholder node, no cycle."),
-    # The spec's §2 example, vended from prompts.MAP_EXAMPLE so the spec, the
-    # bootstrap prompt and this template can never say three different things.
+    # The spec's §2 example, vended from prompts.MAP_EXAMPLE and held against
+    # the fenced block in spec/PROTOCOL.md by a guard, so the spec and this
+    # template cannot say two different things without a test naming it.
     # It is quoted verbatim, which is why it alone carries realistic node
     # labels rather than the PLACEHOLDER convention the other three follow —
     # and why it is last: it is kept, not recommended. MAP_EXAMPLE ends without

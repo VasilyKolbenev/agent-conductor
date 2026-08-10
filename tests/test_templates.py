@@ -1,6 +1,7 @@
 import re
 import tomllib
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
 
@@ -17,6 +18,25 @@ AUTHORED_TEMPLATES = ["default-orbit", "single-harness", "empty"]
 
 ORBIT_PHASES = ["goal", "detect", "diagnose", "design", "deliver"]
 NOW = datetime(2026, 8, 3, 12, 0, tzinfo=timezone.utc)
+
+PROTOCOL = Path(__file__).resolve().parents[1] / "spec" / "PROTOCOL.md"
+
+#: A fenced TOML block's body, newline-terminated like the file it is written
+#: to — which is why the extraction returns something a template can be
+#: compared against with `==` and no fixing up.
+_FENCE_RE = re.compile(r"^```toml\n(.*?)^```", re.M | re.S)
+
+
+def _spec_section_2():
+    """The text of PROTOCOL.md §2, from its heading to the next one."""
+    text = PROTOCOL.read_text(encoding="utf-8")
+    start = text.index("## 2. `map.toml`")
+    return text[start:text.index("\n## ", start + 1)]
+
+
+def _spec_section_2_map():
+    """The one `map.toml` the spec shows in §2, as the file text it stands for."""
+    return _FENCE_RE.search(_spec_section_2()).group(1)
 
 
 def _lane(author, role, findings=(), verdicts=None):
@@ -122,6 +142,27 @@ def test_minimal_is_the_spec_example_verbatim_plus_its_missing_newline():
     # One sync point, quoted not copied: the spec's §2 example, the bootstrap
     # prompt and this template must never be able to say different things.
     assert templates.get("minimal") == prompts.MAP_EXAMPLE + "\n"
+
+
+def test_the_minimal_template_is_the_protocol_spec_section_2_block_byte_for_byte():
+    # The test above compares two expressions of ONE constant, so it stays green
+    # while the constant drifts away from the document it claims to quote — and
+    # it did drift: `minimal` shipped without the two `stage =` lines and the
+    # phases comment §2 spends a paragraph explaining. The document is the other
+    # party to the claim, so read it: the fenced block is parsed out of
+    # spec/PROTOCOL.md here, not written down in this file, and a rewrite of
+    # either side moves this expectation with it.
+    block = _spec_section_2_map()
+    assert templates.get("minimal") == block
+
+
+def test_the_protocol_spec_section_2_holds_exactly_one_map_to_compare_against():
+    # Guards the guard: an extraction that found nothing, or found the wrong
+    # fence, would compare `minimal` against a stray block and pass on a
+    # coincidence. The section must offer exactly one candidate.
+    section = _spec_section_2()
+    assert len(_FENCE_RE.findall(section)) == 1
+    assert 'schema_version = 1' in _spec_section_2_map()
 
 
 def test_default_names_the_recommended_template():
