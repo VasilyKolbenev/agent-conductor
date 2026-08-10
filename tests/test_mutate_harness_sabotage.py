@@ -23,15 +23,14 @@ temporary directory and sabotages the COPY, and the target it measures is a
 synthetic three-line module in the same temporary directory. That is true by
 construction, not by `finally`: no code in this module ever opens a file in the
 working tree for writing, so an interrupted run cannot leave the tree changed.
-The harness's own first gotcha is that it mutates `merge.py` in place, and
-reproducing that gotcha inside the tests that close it would be a defect of
-this round rather than its result.
+The shipped harness now has the same stronger construction: it copies the
+requested tree and mutates only the disposable workspace.
 
 An unsabotaged copy is byte-identical to the shipped script, so the "guarded"
 half of every case exercises the code that ships.
 
-The target is synthetic on purpose. A real run is thirteen pytest invocations;
-these cases need one or two, which is what keeps a suite of them affordable.
+The target is synthetic on purpose. A real run follows the catalogue through
+many pytest invocations; these cases need one or two, which keeps them affordable.
 """
 import ast
 import os
@@ -265,8 +264,8 @@ class Diversion:
     shadow_package: bool = False
 
 
-NO_BASELINE = ("            green = check_baseline(source_root, root, resolved)",
-               "            green = 0")
+NO_BASELINE = ("        green = check_baseline(scratch_source, scratch_root, resolved)",
+               "        green = 0")
 
 # Valid Python, valid latin-1, not valid UTF-8: it imports, its tests are green,
 # and the instrument breaks on reading it rather than on measuring anything.
@@ -325,9 +324,12 @@ DIVERSIONS = [
         diversion="S10: verification moved to after all the mutations",
         edits=(("        resolved = verify_import_root(source_root, root, merge_path)",
                 "        resolved = merge_path"),
-               ("            results = run_mutations(merge_path, source_root, root)",
-                "            results = run_mutations(merge_path, source_root, root)\n"
-                "            verify_import_root(source_root, root, merge_path)")),
+               ("        resolved = verify_import_root(scratch_source, scratch_root, scratch_merge)",
+                "        resolved = scratch_merge"),
+               ("        return run_mutations(scratch_merge, scratch_source, scratch_root)",
+                "        results = run_mutations(scratch_merge, scratch_source, scratch_root)\n"
+                "        verify_import_root(scratch_source, scratch_root, scratch_merge)\n"
+                "        return results")),
         package=False,
         interpreter="shadowing_python",
         guarded="import isolation not confirmed",
@@ -556,10 +558,8 @@ class Case:
 
 INVENTORY = [
     Case("spec B: a hard kill between the mutation write and the restore leaves a "
-         "mutated merge.py and says nothing", 1, "prose",
-         ("test_the_docstring_admits_the_window_the_restore_design_leaves_open",),
-         "crash-safe restore is a separate task by owner decision, so the design still "
-         "has this window and the honest guard is the prose that admits it"),
+         "mutated merge.py and says nothing", 1, "behaviour",
+         ("test_a_hard_kill_can_only_poison_the_disposable_workspace",)),
     Case("spec F: anchor rot under python -O, where `assert` was stripped", 1, "row",
          ("F/anchor-rot under python -O, where `assert` was stripped",
           "test_the_anchor_check_still_runs_under_python_O")),
@@ -628,7 +628,7 @@ INVENTORY = [
           "test_the_exit_surface_guard_reads_the_doors_and_not_the_spelling_of_a_code")),
     Case("spec: main hands print_provenance the path it is about to mutate instead of "
          "the one the probe resolved", 2, "behaviour",
-         ("test_main_verifies_the_file_it_will_mutate_and_shows_what_the_probe_resolved",)),
+         ("test_main_verifies_requested_source_and_shows_what_the_probe_resolved",)),
     Case("quality: check_baseline calls subprocess.run itself with a second environment "
          "builder that agrees today", 2, "structure",
          ("test_one_place_in_the_module_starts_a_pytest_and_it_is_run_pytest",
@@ -637,8 +637,8 @@ INVENTORY = [
          "on every row", 2, "behaviour",
          ("test_every_row_of_the_exit_code_table_is_a_run_that_produced_it",)),
     Case("quality: a true unrelated sentence containing the word `always` reddens the "
-         "guard on the restore prose", 2, "structure",
-         ("test_the_restore_window_guard_reads_the_claim_and_not_the_word_always",)),
+         "old guard on restore prose", 2, "behaviour",
+         ("test_a_hard_kill_can_only_poison_the_disposable_workspace",)),
     Case("the guard that never existed: the import is checked for membership of the "
          "source root but never for being the file the run mutates", 2, "row",
          ("the import root is checked for membership but not for identity",

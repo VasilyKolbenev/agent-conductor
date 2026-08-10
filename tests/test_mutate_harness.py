@@ -11,10 +11,10 @@ pytest imported the working tree's, and printed `0/13 killed`. That is not
 verification isolation until the harness has confirmed the actual import root,
 and a wrong import root must never render as a mutation score, not even zero.
 
-The second is the restore path. An `OSError` raised inside a `finally` block
-left a mutation applied to the working tree with the check that would have
-caught it unrun, and the tree stayed poisoned for hours: every later run then
-measures code that is not in the repository.
+The second is source isolation. A proved `finally` restore still cannot run
+after a hard kill, so mutating the requested source at all leaves a poison
+window. The instrument now copies the requested tree and mutates only that
+disposable workspace; the source file never enters the restore round trip.
 
 The shadowing fixture below CONSTRUCTS the exact condition — an export plus an
 editable `.pth` pointing somewhere else — instead of trusting the ambient
@@ -112,8 +112,11 @@ def test_the_shadowing_fixture_really_does_shadow_the_export(export, shadowing_p
     # Everything below is worth nothing unless this still holds: with no
     # PYTHONPATH the export loses the import to the editable install, which is
     # exactly the condition that once produced a false 0/13.
+    env = os.environ.copy()
+    env.pop("PYTHONPATH", None)
     probe = subprocess.run([str(shadowing_python), "-c", harness.IMPORT_PROBE],
-                           cwd=export, capture_output=True, text=True, timeout=300)
+                           cwd=export, capture_output=True, text=True, timeout=300,
+                           env=env)
     assert probe.returncode == 0, probe.stderr
     assert Path(probe.stdout.strip()) == WORKING_TREE_MERGE
 
@@ -186,7 +189,52 @@ def test_the_subprocess_environment_is_pinned_and_never_inherited(monkeypatch):
     assert env["PYTHONDONTWRITEBYTECODE"] == "1"
 
 
-# --- the restore path: crash-safe, or loud about not being ---
+# --- the mutation workspace: a crash may poison only a disposable copy ---
+
+
+class _SimulatedHardKill(BaseException):
+    """Stop the measurement outside the `Exception`/restore contract."""
+
+
+def test_a_hard_kill_can_only_poison_the_disposable_workspace(export, monkeypatch):
+    source = export / "src" / "conductor" / "merge.py"
+    original = source.read_bytes()
+    touched = []
+
+    monkeypatch.setattr(harness, "verify_import_root",
+                        lambda source_root, root, merge_path: merge_path)
+    monkeypatch.setattr(harness, "check_baseline", lambda *args: 102)
+
+    def stop_while_mutated(merge_path, source_root, root):
+        touched.append(merge_path)
+        merge_path.write_bytes(b"mutation left by a hard-stopped worker\n")
+        assert source.read_bytes() == original
+        raise _SimulatedHardKill
+
+    monkeypatch.setattr(harness, "run_mutations", stop_while_mutated)
+
+    with pytest.raises(_SimulatedHardKill):
+        harness.measure_in_scratch(export, source)
+
+    assert len(touched) == 1
+    assert touched[0] != source
+    assert source.read_bytes() == original
+
+
+def test_a_copy_that_differs_from_the_source_is_refused_before_mutation(
+        export, monkeypatch):
+    source = export / "src" / "conductor" / "merge.py"
+    mismatched_source = SimpleNamespace(
+        read_bytes=lambda: source.read_bytes() + b"not in the copy\n")
+    monkeypatch.setattr(
+        harness, "run_mutations",
+        lambda *args: pytest.fail("a mismatched copy reached the mutation loop"))
+
+    with pytest.raises(harness.InvalidMeasurement, match="differs from the requested source"):
+        harness.measure_in_scratch(export, mismatched_source)
+
+
+# --- restoring the disposable copy is still fatal when it cannot be proved ---
 
 
 class _FlakyFile:
@@ -378,14 +426,13 @@ def test_a_workspace_that_cannot_be_created_is_not_a_surviving_mutation(
     assert not SCORE_SHAPED.search(captured.out + captured.err)
 
 
-def test_main_verifies_the_file_it_will_mutate_and_shows_what_the_probe_resolved(
+def test_main_verifies_requested_source_and_shows_what_the_probe_resolved(
         monkeypatch, measurable):
     # The provenance lines are pinned inside `print_provenance`, which proves
     # it prints what it is given. This is the other end: main must ask about
-    # the path it is about to write to, and must then show the probe's answer
-    # rather than that same path. In every green run the two coincide, so only
-    # the call site can tell them apart — and the same lie planted one frame up
-    # went unnoticed by fifty-three tests.
+    # the source the caller requested, and must then show the probe's answer
+    # rather than echoing that expected path. Normal measurement subsequently
+    # copies it; verify-only stops here without a mutation workspace.
     merge_path = measurable / "src" / "conductor" / "merge.py"
     resolved = measurable / "src" / "conductor" / "merge" / "__init__.py"
     asked, shown = [], []
