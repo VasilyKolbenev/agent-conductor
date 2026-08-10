@@ -95,14 +95,25 @@ def root_args_body():
     command with a root of its own is spliced from.
 
     Returns:
-        `(the parameter names, the tuple elements)`. The body only — a return
-        annotation like `tuple[str, ...]` is a tuple to `ast` and none of this
-        module's business.
+        `(the parameter names, the tuple elements)`. Every place a signature
+        can take a value is counted — positional-only, ordinary, keyword-only,
+        and `*args`/`**kwargs`, the last two spelled with their stars so a
+        widening there cannot read as an ordinary name. The body only — a
+        return annotation like `tuple[str, ...]` is a tuple to `ast` and none
+        of this module's business.
     """
     for function in ast.walk(TREE):
         if (isinstance(function, ast.FunctionDef)
                 and function.name == _ROOT_ARGS):
-            return ([argument.arg for argument in function.args.args],
+            signature = function.args
+            takes = [argument.arg for argument in
+                     (*signature.posonlyargs, *signature.args,
+                      *signature.kwonlyargs)]
+            takes += [f"*{extra.arg}" for extra in (signature.vararg,)
+                      if extra is not None]
+            takes += [f"**{extra.arg}" for extra in (signature.kwarg,)
+                      if extra is not None]
+            return (takes,
                     [element for statement in function.body
                      for node in ast.walk(statement)
                      if isinstance(node, ast.Tuple) for element in node.elts])
@@ -202,7 +213,9 @@ def test_the_tuple_the_root_star_stands_for_holds_that_root_and_nothing_else():
     # every command carrying a root while standing at none of the sites — which
     # is exactly the shape of door the sites cannot see.
     takes, elements = root_args_body()
-    assert len(takes) == 1, takes           # one value in, so one value out
+    # One value in, so one value out — counted over the whole signature, so a
+    # second way in opened anywhere in it is a widening this line reports.
+    assert len(takes) == 1, takes
     literals = {element.value for element in elements
                 if isinstance(element, ast.Constant)
                 and isinstance(element.value, str)}
