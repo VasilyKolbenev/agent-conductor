@@ -77,6 +77,11 @@ def named_in(path: Path) -> set[str]:
     return set(_INVOCATION_RE.findall(path.read_text(encoding="utf-8")))
 
 
+def _flat(text: str) -> str:
+    """One line, single-spaced — both surfaces here are wrapped by hand."""
+    return " ".join(text.split())
+
+
 def test_every_conduct_command_the_readme_names_is_one_the_cli_accepts():
     # Catches the command that was documented before it existed, or after it
     # stopped existing — a reader who types it gets an argparse usage error.
@@ -124,22 +129,30 @@ def test_every_template_conduct_init_vends_is_listed_in_the_readme():
         sorted(vended_template_names() - readme_template_names())
 
 
-def test_the_readme_is_right_about_which_scaffold_the_bootstrap_prompt_describes():
-    # The README now says the prompt reads the map it was written beside, and
-    # names `minimal` as the map that already carries components. Both halves
-    # are checkable, and both rot the same way: give `minimal` the PLACEHOLDER
-    # convention, or take the map back off the prompt, and this paragraph
-    # becomes the false sentence.
-    replace_them = "Every [[nodes]] block in it is a placeholder"
-    check_them = "No [[nodes]] block in it is a placeholder"
+def test_the_readme_promises_two_imperatives_and_each_template_earns_the_right_one():
+    # The README's `conduct init` paragraph promises two INSTRUCTIONS, not two
+    # observations: where the nodes are placeholders the prompt tells the agent
+    # to replace them with the reader's real components, and where they already
+    # name components — `minimal`, which quotes the spec's §2 example — to check
+    # each one against the reader's project instead. Held on the verb in both
+    # documents, because the earlier version of this guard pinned only the
+    # subordinate clauses ("Every/No [[nodes]] block in it is a placeholder")
+    # and stayed green through a rewrite that kept both clauses and told the
+    # agent to delete the real nodes.
+    promised_replace = "it tells the agent to replace them with your real components"
+    promised_check = "it tells the agent to check each one against your project instead"
+    readme = _flat(README.read_text(encoding="utf-8"))
+    assert promised_replace in readme and promised_check in readme
+    replace_them = "Replace them with the real components of this project"
+    check_them = "Check every one against THIS project, replace what does not describe it"
     assert "PLACEHOLDER" not in templates.get("minimal")
-    said = prompts.bootstrap_prompt(prompts.DEFAULT_MAP_PATH,
-                                    templates.get("minimal"))
+    said = _flat(prompts.bootstrap_prompt(prompts.DEFAULT_MAP_PATH,
+                                          templates.get("minimal")))
     assert check_them in said and replace_them not in said
     for name in vended_template_names() - {"minimal"}:
         assert "PLACEHOLDER" in templates.get(name), name
-        said = prompts.bootstrap_prompt(prompts.DEFAULT_MAP_PATH,
-                                        templates.get(name))
+        said = _flat(prompts.bootstrap_prompt(prompts.DEFAULT_MAP_PATH,
+                                              templates.get(name)))
         assert replace_them in said and check_them not in said, name
 
 

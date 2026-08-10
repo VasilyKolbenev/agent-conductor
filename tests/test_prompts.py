@@ -423,12 +423,42 @@ def test_a_half_replaced_map_is_told_only_some_of_its_nodes_are_placeholders():
     assert _widest(text, skip=LONG_PATH) <= prompts.WIDTH
 
 
-def test_no_variant_of_step_two_leaves_the_agent_without_the_work():
-    # The branch without placeholders must not become an empty place: whichever
-    # variant is chosen, the agent is still told which table it edits and what
-    # it is expected to add to it.
+#: The imperative each step-2 variant exists to give, flattened to one line.
+#: Held on the VERB, never on the negation clause around it: every assertion
+#: that only pinned "Every [[nodes]] block in it is a placeholder" or "No
+#: [[nodes]] block in it is a placeholder" survived a rewrite that kept the
+#: clause word for word and told the agent to delete the real nodes, or to
+#: leave the file exactly as it found it. The clause reports a fact; the
+#: instruction is what a map either gets or does not.
+_STEP_IMPERATIVES = {
+    prompts._STEP_EVERY_NODE_IS_A_PLACEHOLDER:
+        "Replace them with the real components of this project",
+    prompts._STEP_SOME_NODES_ARE_PLACEHOLDERS:
+        "Replace those with the real components of this project, check the "
+        "rest still describe it",
+    prompts._STEP_NO_NODE_IS_A_PLACEHOLDER:
+        "Check every one against THIS project, replace what does not describe it",
+}
+
+
+def test_every_variant_of_step_two_carries_the_work_and_an_imperative_the_others_lack():
+    # Two claims, and the second is why the first is not enough. No variant may
+    # become an empty place: whichever is chosen, the agent is still told which
+    # table it edits and what to add to it. And the variants must be told apart
+    # by their instruction rather than by the sentence in front of it — being
+    # different is a RELATION between the three, so it is asserted as one,
+    # against every other variant rather than against a list someone typed.
     owed = "add one [[nodes]] block per further component you want reported on:"
+    reached = set()
     for written in (SCAFFOLD, _relabelled(SCAFFOLD), _relabelled(SCAFFOLD, 2)):
         step = prompts._node_step(written)
         assert step.startswith("2. Open that file.")
         assert owed in " ".join(step.split())
+        reached.add(step)
+    assert reached == set(_STEP_IMPERATIVES), "a variant was never reached"
+    for variant, imperative in _STEP_IMPERATIVES.items():
+        flat = " ".join(variant.split())
+        assert imperative in flat, imperative
+        for other, elsewhere in _STEP_IMPERATIVES.items():
+            if other is not variant:
+                assert elsewhere not in flat, (imperative, elsewhere)
