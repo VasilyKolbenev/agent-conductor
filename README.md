@@ -1,4 +1,4 @@
-# Conduct
+# December
 
 [![CI](https://github.com/VasilyKolbenev/agent-conductor/actions/workflows/ci.yml/badge.svg)](https://github.com/VasilyKolbenev/agent-conductor/actions/workflows/ci.yml)
 
@@ -6,11 +6,11 @@
 
 *Your agents write lanes. You conduct.*
 
-Conduct is a self-hosted control plane for the AI coding harnesses already working on
+December Command is a self-hosted control plane for the AI coding harnesses already working on
 your code — Claude Code, Codex, or anything that can write a JSON file. Each agent keeps
 one file — its lane — saying what it is doing, what it found, and what it needs from you.
 
-*Alpha — protocol v1.*
+*Alpha — Protocol v1. The distribution is `agent-conductor`; the CLI is `conduct`.*
 
 ## 60-second quickstart
 
@@ -66,6 +66,11 @@ CI log, or a file.
 parse, but whether the project is set up to work. Each finding names the next command to
 run, and the command exits 0 only when every readiness check is OK. It reads project files
 and the bundled harness registry; it never probes your machine for installed tools.
+
+In the panel, select an agent lane to see its current harness, role, assigned stage, runtime
+phase, task, findings, and human requests. **Copy handoff packet** copies a deterministic
+Markdown packet rendered from that same `state.json`; fields Protocol v1 does not have — model,
+prompt, skills, runtime controls — are not guessed or shown as empty placeholders.
 
 ### What `conduct init` writes
 
@@ -128,11 +133,13 @@ agents move on.
 
 - Current normative protocol: `spec/PROTOCOL.md`
 - Accepted Harness control-plane model: `docs/adr/0001-harness-control-plane-model.md`
+- Product direction and the post-alpha December Command strike:
+  `docs/specs/2026-08-03-hcp-competitive-product-direction.md`
 - The demo scenario: `demo/README.md`
 - The release smoke test, run against a release candidate before publishing:
   `docs/release-smoke.md`
 
 ## Status
 
-Alpha. Protocol v1. Python 3.11+, zero runtime dependencies. CI on Windows and Linux.
+December Command v0.1.0 alpha. Protocol v1. Python 3.11+, zero runtime dependencies. CI on Windows and Linux.
 MIT license.

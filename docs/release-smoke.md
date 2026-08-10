@@ -66,7 +66,7 @@ If a subcommand you expected is missing, the wheel is not built from what you th
 & $PY -c "import conductor; print(conductor.__version__)"
 ```
 
-Expect the version string of this release, e.g. `0.1.0.dev0`.
+Expect the version string of this release: `0.1.0`.
 
 Checked by eye, not by command: that this string and the version in `pyproject.toml` agree.
 The CLI has no `--version` flag — `conduct --version` is an argparse usage error, exit 2 —
@@ -107,6 +107,9 @@ $j = (Invoke-WebRequest -Uri "http://127.0.0.1:7801/state.json" -UseBasicParsing
      ConvertFrom-Json
 "project=$($j.project) state=$($j.project_status.state) reason=$($j.project_status.reason)"
 "findings=$($j.findings.Count) queue=$($j.human_queue.Count)"
+$handoff = Invoke-WebRequest -Uri "http://127.0.0.1:7801/handoff/claude.md" -UseBasicParsing
+"$($handoff.StatusCode) $($handoff.Headers['Content-Type'])"
+($handoff.Content -split "`n")[0]
 ```
 
 Expect `200 text/html; charset=utf-8` and a page of tens of kilobytes, with `<title>December
@@ -117,7 +120,12 @@ not make it into the wheel. Expect the state document to describe the bundled sc
 ```
 project=web-app state=blocked reason=human_decision
 findings=3 queue=1
+200 text/markdown; charset=utf-8
+# Conduct handoff — claude
 ```
+
+The handoff response is generated from the same brokered `state.json`, not from the raw lane,
+and is what the panel's **Copy handoff packet** button copies.
 
 ## 6. It listens on loopback and nowhere else
 
