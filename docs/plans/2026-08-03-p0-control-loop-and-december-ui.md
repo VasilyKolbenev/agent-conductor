@@ -552,6 +552,39 @@ adjacent warm hues, and under the common form of red-green colour-vision deficie
 gold converge. The mitigation is the standing rule above; the obligation to prove it holds is
 written into DEC-UI-1's acceptance in §3.
 
+### 8.7 December Command — the 2026-08-10 owner directive, acknowledged
+
+**Decision (owner, 2026-08-10; binding).** The product's full name is **December Command**;
+the brand stays **December**; the market category is **Harness Control Plane**. The naming
+discussion is closed and is not reopened here. The authoritative record is
+`docs/specs/2026-08-03-hcp-competitive-product-direction.md` (§1.2, §4.9–§4.11, §8 P3, and
+the "14-day December Command strike" section). That file becomes tracked at
+integration/DO-7 **deliberately** — this supersedes the 2026-08-03 disclosure decision to
+keep it untracked, and its historical evidence is not rewritten.
+
+**What this changes for the alpha: the packaging course, nothing else.** v0.1.0 ships under
+the distribution name `agent-conductor`, CLI `conduct`, Protocol v1, read-only panel
+semantics. No broad rename happens during DO-7. This supersedes the 2026-08-08 packaging
+decision that the first public release must ship as `december-orbit`, and it supersedes
+§1's sentence that the rename lands before any PyPI publish: the public rename to December
+Command happens post-alpha, only after trademark, domain, repository and package clearance.
+The alpha scope stays frozen; no v2 execution or orchestration functionality enters it.
+
+**What this changes after the alpha.** The post-alpha delivery contract is the 14-day
+December Command strike as written in the spec: four parallel lanes, daily integration,
+architecture frozen by day 2, features frozen after day 10, release candidate on day 13,
+release on day 14. Phase order: A foundation (recorded alpha quality debt, browser-render
+test job, crash-safe mutation restore, Protocol v2 ADRs, run identity / evidence /
+receipts) → B safe control (adapter SDK, Claude Code and Codex adapters, Observe and
+Propose modes, action previews, verified handoff and review dispatch) → C interactive
+execution (Confirm mode, pause / resume / retry / stop, harness switching, run history and
+replay, immutable Human Gate decisions) → D December Command v2 (Policy mode, visual Orbit
+editor, parallel execution, the complete wow path, public launch). The nine ADRs the
+directive lists precede implementation; none of these concepts enters through an
+incidental UI commit or a silent Protocol v1 change. The product laws travel with it:
+Orbit advances only from verified state — an accepted command is never a successful
+result — and there is no hidden fully-autonomous mode.
+
 ## 9. Still open
 
 These two are for the owner. Nothing in this section is decided.
