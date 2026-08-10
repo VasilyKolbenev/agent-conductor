@@ -1,10 +1,16 @@
-"""A deterministic Markdown report of one merged `state.json`, for a pull request.
+"""Deterministic Markdown reports and handoffs from one merged `state.json`.
 
 `render(state)` is a pure function of the document it is handed: the same dict
 renders the same bytes, on any machine, at any time, under any locale. Nothing
 here reads the clock, the environment, the network or the disk — the report has
 no inputs besides its argument, and no module-level import that could acquire
 one.
+
+`handoff(state, author)` applies the same rule to one lane. It groups that
+lane's existing §6.1 fields with the findings it authored and human requests
+whose `sources` name it. It does not add capability placeholders: model,
+prompt, skills and runtime controls are not fields in Protocol v1, so they are
+not headings in the packet.
 
 **It does not merge.** `state.json` is the merger's output (PROTOCOL.md §6) and
 this module only reads it, so the report and the panel cannot disagree about
@@ -572,3 +578,79 @@ def render(state: dict) -> str:
     blocks = [section(state) for section in _SECTIONS]
     body = "\n\n".join("\n".join(block).strip("\n") for block in blocks if block)
     return body + "\n"
+
+
+def handoff(state: dict, author: str) -> str:
+    """Render the current packet for one lane, from §6.1 fields only.
+
+    The packet is a grouping, not a new state projection. Lane metadata is
+    copied from `lanes[]`; harness, stage and review obligations come from the
+    matching `cycle.roles[]` row; findings are selected by `author`; human
+    requests are selected by `sources`. Their order is the document's order.
+    Nothing is inferred from a missing row or field, and nothing reads the
+    clock, disk, environment or network.
+
+    Args:
+        state: A merged `state.json` dict per Protocol v1 §6.1.
+        author: The exact `lanes[].author` to hand off from.
+
+    Returns:
+        A Markdown packet ending in exactly one newline.
+
+    Raises:
+        KeyError: No lane in the document records that author.
+    """
+    lanes = state.get("lanes") or []
+    lane = next((item for item in lanes if item.get("author") == author), None)
+    if lane is None:
+        raise KeyError(author)
+
+    role_id = lane.get("role")
+    roles = (state.get("cycle") or {}).get("roles") or []
+    role = next((item for item in roles if item.get("id") == role_id), {})
+    now = lane.get("now") if isinstance(lane.get("now"), dict) else {}
+    findings = [item for item in state.get("findings") or []
+                if item.get("author") == author]
+    waits = [item for item in state.get("human_queue") or []
+             if author in (item.get("sources") or [])]
+
+    out = [
+        f"# Conduct handoff — {_from_document(author, _PROSE, '(unknown author)')}",
+        "",
+        f"Project: "
+        f"{_from_document(state.get('project'), _PROSE, '(unnamed project)')}",
+        "",
+        "## Lane",
+        "",
+        f"- Author: {_from_document(lane.get('author'), _SPAN)}",
+        f"- Role: {_from_document(role_id, _SPAN)}",
+        f"- Harness: {_from_document(role.get('harness'), _SPAN)}",
+        f"- Assigned stage: {_from_document(role.get('stage'), _SPAN)}",
+        f"- Reviews roles: {_id_list(role.get('reviews'))}",
+        f"- Updated: {_from_document(lane.get('updated'), _SPAN)}",
+        f"- Stale: {_from_document(lane.get('stale'), _SPAN)}",
+        f"- Broken: {_from_document(lane.get('broken'), _SPAN)}",
+        f"- Current task: "
+        f"{_from_document(now.get('task'), _PROSE, '(not recorded in state.json)')}",
+        f"- Runtime phase: {_from_document(now.get('phase'), _SPAN)}",
+        f"- Task since: {_from_document(now.get('since'), _SPAN)}",
+    ]
+    if lane.get("error") is not None:
+        out.append(f"- Lane error: "
+                   f"{_from_document(lane.get('error'), _PROSE, _RECORDED_NULL)}")
+
+    out += ["", f"## Findings from this lane — {len(findings)}", ""]
+    if findings:
+        for finding in findings:
+            out += _finding(finding, state)
+    else:
+        out.append("No finding in the document names this lane as its author.")
+
+    out += ["", f"## Human requests from this lane — {len(waits)}", ""]
+    if waits:
+        for item in waits:
+            out += _queue_item(item)
+    else:
+        out.append("No human-queue item in the document names this lane as a source.")
+
+    return "\n".join([*out, ""])
