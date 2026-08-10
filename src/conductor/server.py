@@ -1,8 +1,17 @@
 """Loopback HTTP server for the Conduct panel: merge broker, routes, SSE.
 
 `build(root, port)` returns a `ThreadingHTTPServer` bound to 127.0.0.1 that
-serves the packaged panel at `/`, the merged state at `/state.json`, raw lane
-files at `/lane/<author>.json`, and a Server-Sent-Events stream at `/events`.
+serves the packaged panel at `/`, the merged state at `/state.json`, the
+bundled harness registry at `/harnesses.json`, raw lane files at
+`/lane/<author>.json`, and a Server-Sent-Events stream at `/events`.
+
+`/harnesses.json` is a *presentation* route and not part of Protocol v1. It
+answers with `harnesses.as_payload()` — the same bytes for every project,
+computed from the bundled registry and never from the merge — so the panel can
+draw a harness as a product rather than as a slug. `state.json` is unchanged by
+its existence, and a panel that never receives it stays fully usable with
+neutral badges.
+
 A `Watcher` daemon thread polls `conductor/` every `POLL_INTERVAL` seconds and
 re-merges every `TICK_INTERVAL` seconds regardless — lanes go stale by TIME,
 not only by file change. Startup is fail-closed (missing conductor/ or a
@@ -23,7 +32,14 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from conductor import merge, store
+from conductor import harnesses, merge, store
+
+#: The `/harnesses.json` body, serialized once. The registry is frozen data
+#: that no project can influence, so this is the same answer for every request
+#: of every server — building it per request would only invite the impression
+#: that something about it varies.
+HARNESSES_JSON = json.dumps(harnesses.as_payload(),
+                            ensure_ascii=False).encode("utf-8")
 
 POLL_INTERVAL = 0.5   # seconds between conductor/ fingerprint polls
 TICK_INTERVAL = 60.0  # seconds between unconditional re-merges (staleness tick)
@@ -203,7 +219,7 @@ class Watcher(threading.Thread):
 
 
 class Handler(BaseHTTPRequestHandler):
-    """Routes: `/` panel, `/state.json`, `/lane/<author>.json`, `/events`."""
+    """Routes: `/`, `/state.json`, `/harnesses.json`, `/lane/<author>.json`, `/events`."""
 
     server: ConductServer                  # narrowed for type checkers
 
@@ -214,6 +230,8 @@ class Handler(BaseHTTPRequestHandler):
             self._serve_panel()
         elif path == "/state.json":
             self._serve_state()
+        elif path == "/harnesses.json":
+            self._serve_harnesses()
         elif path == "/events":
             self._serve_events()
         elif path.startswith("/lane/"):
@@ -242,6 +260,13 @@ class Handler(BaseHTTPRequestHandler):
     def _serve_state(self) -> None:
         self._send_body(200, "application/json; charset=utf-8",
                         self.server.broker.state_bytes())
+
+    def _serve_harnesses(self) -> None:
+        # Read-only presentation data. It never reaches the broker, so no
+        # project's files can change a byte of it and no merge can be delayed
+        # by it — which is the whole reason the registry is served beside the
+        # state document instead of inside it.
+        self._send_body(200, "application/json; charset=utf-8", HARNESSES_JSON)
 
     def _serve_lane(self, path: str) -> None:
         # Security-load-bearing: parse the segment, regex it, then look up the

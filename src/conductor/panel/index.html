@@ -23,7 +23,7 @@
      shade with pure black, light lifts shade with the rgb of --ink, written
      out because a shadow needs an alpha and the token has none. So the layer
      introduces no hue anywhere: light is carried by surface lightness,
-     contour weight and depth — never by the accent, which stays on its six
+     contour weight and depth — never by the accent, which stays on its five
      reserved roles. tests/test_panel_style.py holds that split. */
   --panel-lit:color-mix(in srgb,var(--ink) 4%,var(--panel));
   --contour-lit:color-mix(in srgb,var(--ink) 22%,var(--line));
@@ -67,7 +67,7 @@ button{font:inherit;cursor:pointer;background:none;border:none;color:inherit}
 .mark{width:22px;height:22px;flex:none}
 .mark__ring{fill:none;stroke:var(--line);stroke-width:1.4}
 .mark__path{fill:none;stroke:var(--faint);stroke-width:1}
-.mark__dot{fill:var(--accent)}          /* accent role 6: the brand mark */
+.mark__dot{fill:var(--accent)}          /* accent role 5: the brand mark */
 .wordmark{font-size:14px;font-weight:660;letter-spacing:-.015em}
 /* Light level. The single source is state.json's project_status.state
    (PROTOCOL.md §6.1) — the one shipped field that says whether a person is
@@ -82,12 +82,13 @@ html[data-attention="high"] .shell{border-bottom-color:var(--contour-lit)}
 /* ── top strip + warnings banner ───────────────────────────── */
 .strip{display:flex;align-items:center;gap:10px;font-family:var(--mono);font-size:11px;
        color:var(--muted);flex-wrap:wrap}
-.dot{width:7px;height:7px;border-radius:50%;background:var(--pass);
-     animation:blink 2.4s ease-in-out infinite}
-.dot--down{background:var(--fail);animation:none}
-@keyframes blink{0%,100%{opacity:1}50%{opacity:.25}}
-@keyframes glow{0%,100%{filter:none}50%{filter:brightness(1.5)}}
-@media (prefers-reduced-motion:reduce){.dot,.pulse .box{animation:none}}
+/* The connection indicator, and a static one. It blinked on a 2.4 s loop until
+   the owner settled DEC-UI-4 on 2026-08-09: nothing happened between two beats
+   of it, so the movement reported an event that had not occurred. What the dot
+   knows it says by colour, and the word beside it spells the same thing — both
+   written by setLive, from the fetch that has just succeeded or failed. */
+.dot{width:7px;height:7px;border-radius:50%;background:var(--pass)}
+.dot--down{background:var(--fail)}
 .banner{background:color-mix(in srgb,var(--wait) 12%,transparent);
         border:1px solid var(--wait);border-radius:8px;padding:3px 8px}
 /* The banner sits on a --wait tint over --ground, so its own text runs on
@@ -111,7 +112,7 @@ html[data-attention="high"] .shell{border-bottom-color:var(--contour-lit)}
 .spark{height:4px;border-radius:3px;background:var(--sunk);overflow:hidden;margin-top:5px}
 .spark i{display:block;height:100%;background:var(--accent)}
 
-/* ── cards, map SVG, cycle ring ────────────────────────────── */
+/* ── cards, map SVG, Orbit ─────────────────────────────────── */
 .grid{display:grid;gap:12px;grid-template-columns:1fr}
 @media(min-width:1000px){.grid--split{grid-template-columns:1fr 340px}}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;
@@ -131,13 +132,13 @@ html[data-attention="high"] .shell{border-bottom-color:var(--contour-lit)}
 .legend i{width:9px;height:9px;display:inline-block;border:1.5px solid}
 svg{width:100%;height:auto;display:block;overflow:visible}
 .arw{fill:var(--line)}
-/* Two SVG widgets draw boxes with labels — the map's nodes and the cycle
-   ring's phases — and they share this geometry, but nothing else. Only .node
-   is interactive, and only .node carries a status, which is why the two keep
-   separate class namespaces: a rule written for one cannot reach the other. */
+/* The map's nodes are the only interactive graph the panel draws and the only
+   one carrying a status, which is why they keep their own class namespace: a
+   rule written for a node cannot reach the Orbit below, and a guard reasoning
+   about node statuses is not handed a group that has none. */
 .node{cursor:pointer}
-.node .box,.phase .box{fill:var(--sunk);stroke:var(--line);stroke-width:1.5}
-.node text,.phase text{font-family:var(--mono);font-size:11px;fill:var(--muted);
+.node .box{fill:var(--sunk);stroke:var(--line);stroke-width:1.5}
+.node text{font-family:var(--mono);font-size:11px;fill:var(--muted);
            dominant-baseline:middle;text-anchor:middle}
 /* The node name stays --ink on every status: it sits on a tint of the status
    colour, where the status colour itself does not clear 4.5:1 in the light
@@ -177,17 +178,120 @@ svg{width:100%;height:auto;display:block;overflow:visible}
 .edge{stroke:var(--line);stroke-width:2;fill:none;marker-end:url(#arw)}
 .edge--dead{stroke:var(--fail);stroke-dasharray:6 5}
 .edge--idle{stroke:var(--faint);stroke-dasharray:3 5;opacity:.5}
-.ring{fill:none;stroke:var(--line);stroke-width:1;stroke-dasharray:3 4}
-.phase text{font-size:10px}
-/* The current stage is accent role 1, and the accent carries it as a contour,
-   where 1.4.11's 3:1 governs. The label beside it is 10px text, so 4.5:1
-   governs there and the accent does not clear it against --sunk in the light
-   theme — the label runs on --ink instead, brighter than the other phases'
-   --muted, which is the emphasis the label was there to give. */
-.phase--current .box{stroke:var(--accent);stroke-width:2.5}
-.phase--current text{fill:var(--ink)}
-.pulse .box{animation:glow 2s ease-in-out infinite}
 .role{font-size:12px;padding:1px 0}
+
+/* ── Orbit: the declared cycle as a closed trajectory ───────── */
+/* The field is a plain positioned box: the trajectory is drawn into an SVG
+   layer underneath, the stages are HTML on top of it. HTML rather than SVG
+   text for one reason — a stage name reaches the DOM as the bytes the map
+   declared, so it has to be able to wrap and to be shortened by the layout
+   rather than by the script (plan §8.1, and see SHIPPED_STAGES below for the
+   one presentational liberty taken with it).
+   Geometry is computed from the actual phase list; the stylesheet only says
+   which of the two layouts is in force. Wide: stages placed on an ellipse by
+   drawOrbitRing. Narrow: a vertical loop in normal flow, with the return kept
+   as its own element — collapsing the cycle into a line would change what the
+   picture means, not only how it is arranged. */
+.orbit{position:relative;width:100%}
+.orbit svg{position:absolute;left:0;top:0}
+/* The box width is set on the element by drawOrbitRing, which reads it out of
+   the field: see orbitBox. Everything else about a stage is the same in both
+   layouts, which is what keeps the two from drifting into two designs. */
+.orbit--ring .orb{position:absolute;transform:translate(-50%,-50%)}
+/* The trajectory carries no history. Protocol v1 has no run identity and no
+   travelled path, so no arc may read as "done": every one of them is --faint,
+   and the arc returning to the first stage is told apart from a step by its
+   dash and by having no arrow head — form, never a status colour. */
+/* Why --faint and not --line. The trajectory is the one mark that says the
+   process is a cycle at all, so it answers to 1.4.11's 3:1 like any other
+   identifying contour, and --line is the deliberately faint enclosure token
+   that does not clear it. The numbers are computed in
+   tests/test_panel_contrast.py. */
+.trk{fill:none;stroke:var(--faint);stroke-width:1.5;marker-end:url(#orbTip)}
+.trk--next{stroke-dasharray:2 7;marker-end:none}
+.arw--orb{fill:var(--faint)}
+.nextrun{font-family:var(--mono);font-size:10px;color:var(--faint);white-space:nowrap}
+.orbit--ring .nextrun{position:absolute;transform:translate(-50%,-50%)}
+.orbit .lnk{display:flex;align-items:center;justify-content:center;gap:7px;
+            font-family:var(--mono);font-size:10px;color:var(--faint);padding:5px 0}
+.orbit .lnk i{display:block;width:0;height:18px;border-left-width:1.5px;
+              border-left-style:solid;border-left-color:var(--faint)}
+.orbit .lnk--next i{border-left-style:dashed;height:26px}
+/* A stage's state is carried by the contour it draws plus the chips inside it,
+   and the chips spell a glyph and a word each. Neutral is the resting form and
+   the honest one: with no run history there is nothing to say about a stage
+   nobody is reporting from. Only the current runtime stage spends the accent. */
+/* Longhands rather than the `border` shorthand, so that the width, the style
+   and the colour of a stage's contour are three declarations a guard can
+   resolve one at a time — which is what makes "these four states stay apart
+   with the colour taken away" a computation instead of a claim. */
+.orb{width:100%;max-width:430px;margin:0 auto;background:var(--sunk);
+     border-width:1px;border-style:solid;border-color:var(--faint);
+     border-radius:9px;padding:8px 10px;
+     display:flex;flex-direction:column;gap:5px}
+.orb--neutral{border-style:solid;border-width:1px;border-radius:9px}
+.orb--waiting{border-color:var(--wait);border-style:dashed}
+.orb--blocked{border-color:var(--fail);border-width:2px}
+.orb--current{border-color:var(--accent);border-width:2px;border-radius:16px}
+/* The one movement the panel makes, and the single event that starts it: this
+   browser watched the current phase change. renderOrbit hands exactly one stage
+   the arrival flag, and the flag is set only where noteState sets it — from a
+   document that arrived as a stream frame, after another stream frame, saying a
+   different current phase than the drawing already on screen. See the data
+   source section for that decision; nothing else in the file can reach it.
+   The movement runs once and is over. What moves is a ring outside the box:
+   the contour, the corner radius and the chips are what say which stage is
+   current, and none of them is named in these keyframes — so a reader who has
+   asked for less movement, or who arrives a second later, is told the same
+   thing by the same marks. */
+@keyframes arrive{from{box-shadow:0 0 0 0 var(--contour-lit)}
+                  to{box-shadow:0 0 0 10px transparent}}
+.orb--arrived{animation:arrive .5s ease-out}
+@media (prefers-reduced-motion:reduce){.orb--arrived{animation:none}}
+.orb .orb__name{font-size:13px;font-weight:640;overflow-wrap:anywhere;color:var(--ink)}
+/* Presentational only, and deliberately narrow. drawOrbitStage adds .cap to a
+   stage whose id is one of the five Default Orbit stages Python ships, so the
+   word a reader sees is that same word with a capital. The text node and every
+   attribute keep the author's bytes, and a stage name nobody shipped is never
+   touched: a blanket text-transform on stage labels is the thing this rule
+   exists instead of. */
+.cap{text-transform:capitalize}
+.orb .orb__marks{display:flex;flex-wrap:wrap;gap:4px}
+.orb .orb__who{display:flex;flex-direction:column;gap:2px;font-size:11.5px;
+               color:var(--ink)}
+.orb .orb__hn{font-family:var(--mono);font-size:10.5px;color:var(--muted)}
+.orb .orb__note{font-family:var(--mono);font-size:10px;color:var(--muted);display:block}
+.orb__group{font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;
+            color:var(--faint);font-weight:650;margin-top:6px}
+
+/* ── harness identity: the registry, drawn ─────────────────── */
+/* Identity is carried by three marks and only three: the monogram, the product
+   name, and the small swatch the monogram sits in. Status is carried by the
+   glyph, the word and the chip or contour beside them — a separate channel, and
+   the separation is what both of the owner's palettes rest on. A harness accent
+   is forbidden on a node outline, on an edge, on the trajectory, on the primary
+   action, on the focus ring and on any status glyph, so two vendors sharing a
+   hue can never move a meaning. tests/test_panel_harness.py holds that as a
+   relation over the cascade rather than as a list of names, and measures every
+   accent the registry ships against this badge in both themes.
+   The pair of accents arrives as custom properties set on the badge element
+   itself, because the value belongs to a product and not to the palette; which
+   of the two is in force is decided by the theme, exactly as for every other
+   colour here. The monogram runs on --ink and the swatch keeps the accent on a
+   border and a tint — the arrangement the chips already use, and for the same
+   reason: at this size a vendor accent is not a text colour. */
+.hb{--hb:var(--hb-dark);display:inline-flex;align-items:baseline;gap:5px;min-width:0}
+@media (prefers-color-scheme:light){.hb{--hb:var(--hb-light)}}
+.hb__m{font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.06em;
+       color:var(--ink);border:1px solid var(--hb);border-radius:4px;padding:0 3px;
+       background:color-mix(in srgb,var(--hb) 14%,transparent)}
+.hb__n{font-family:var(--mono);font-size:10.5px;color:var(--muted);overflow-wrap:anywhere}
+/* The documentation link is the whole of the difference between the card a
+   registered product gets and the minimal one an unregistered string gets. Its
+   label runs on --ink with the underline carrying the affordance, so hovering it
+   creates no colour pair of its own — the arrangement .jump already uses. */
+.hb__d{font-family:var(--mono);font-size:10px;color:var(--ink);text-decoration:underline}
+.hb__d:hover{text-decoration-thickness:2px}
 
 /* ── detail card ───────────────────────────────────────────── */
 .det{background:var(--sunk);border:1px solid var(--line);border-radius:8px;padding:11px 13px;
@@ -214,13 +318,13 @@ svg{width:100%;height:auto;display:block;overflow:visible}
                  border-color:var(--fail)}
 .p--blocked,.vd--wait{background:color-mix(in srgb,var(--wait) 16%,transparent);
                  border-color:var(--wait)}
-.p--running{background:color-mix(in srgb,var(--accent) 14%,transparent);
+.p--running,.vd--run{background:color-mix(in srgb,var(--accent) 14%,transparent);
                  border-color:var(--accent)}
 .p--idle,.vd--idle{border-color:var(--faint)}
 .p--pass .gl,.vd--ok .gl{color:var(--pass)}
 .p--fail .gl,.p--contested .gl,.vd--bad .gl{color:var(--fail)}
 .p--blocked .gl,.vd--wait .gl{color:var(--wait)}
-.p--running .gl{color:var(--accent)}
+.p--running .gl,.vd--run .gl{color:var(--accent)}
 .p--idle .gl,.vd--idle .gl{color:var(--faint)}
 
 /* ── attention zone: queue cards, alerts, agents ───────────── */
@@ -273,7 +377,13 @@ th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line);verti
 th{font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);
    font-weight:650;white-space:nowrap}
 tr:last-child td{border-bottom:none}
-tr.click{cursor:pointer} tr.click:hover td{background:var(--sunk)}
+/* A findings row's cells carry status chips, and a chip's background is a
+   color-mix over whatever the cell paints beneath it — so repainting the cell
+   moved the surface under every chip in the row. Hover is declared as an outer
+   ring instead — the same ring .ask:hover declares — which leaves the cell's
+   own paint alone. The equality of the surface at rest and under the pointer
+   is computed, not asserted here, in tests/test_panel_contrast.py. */
+tr.click{cursor:pointer} tr.click:hover{box-shadow:0 0 0 1px var(--faint)}
 td.mono{font-family:var(--mono);font-size:11px;color:var(--muted);white-space:nowrap}
 td.ft{max-width:380px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .detail{display:none} .detail.on{display:table-row}
@@ -334,6 +444,17 @@ footer{font-size:10px;color:var(--faint);font-family:var(--mono);
     <p class="calm" id="attnCalm" hidden>Nothing needs you right now.</p>
   </div>
 
+  <div class="card" id="cycle">
+    <div class="card__h"><h2>Orbit</h2>
+      <span class="hint" id="cycleHint"></span></div>
+    <div class="orbit" id="orbitField">
+      <svg id="orbitSvg" aria-hidden="true"></svg>
+      <div class="orbit__body" id="orbitBody"></div>
+    </div>
+    <p class="empty" id="cycleEmpty" hidden>No phases configured</p>
+    <div id="roles"></div>
+  </div>
+
   <div class="card" id="agents">
     <div class="card__h"><h2>Agents</h2><span class="hint">one row per lane</span></div>
     <div id="agentList"></div>
@@ -364,12 +485,6 @@ footer{font-size:10px;color:var(--faint);font-family:var(--mono);
         <div class="card__h"><h2>Details</h2></div>
         <div class="det" id="det"></div>
       </div>
-      <div class="card" id="cycle">
-        <div class="card__h"><h2>Cycle</h2><span class="hint" id="cycleHint"></span></div>
-        <svg id="cycleSvg" viewBox="0 0 320 156" role="img" aria-label="Cycle phases"></svg>
-        <div id="roles"></div>
-        <p class="empty" id="cycleEmpty" hidden>No cycle declared in the map.</p>
-      </div>
     </div>
   </div>
 
@@ -393,20 +508,25 @@ footer{font-size:10px;color:var(--faint);font-family:var(--mono);
 
 <script>
 /* Sections, in DOM order: helpers → brand shell + warnings → KPI rail → map graph
-   → cycle ring → attention zone → agents block → findings table → feed →
-   render pipeline → interaction → data source.
+   → harness identity → Orbit → attention zone → agents block → findings table →
+   feed → render pipeline → interaction → data source.
 
-   FILE-SIZE WAIVER (owner, 2026-08-03). The global guard caps a file at 800
-   lines; this one is exempt up to 1600. Single-file, no-build, no-dependency is
-   a product constraint of the panel — `conduct up` hands the browser one
-   static asset, so a bundler or an ES-module split would be a new toolchain in
-   a stdlib-only project. The exemption is conditional:
+   FILE-SIZE WAIVER (owner, 2026-08-03; revised 2026-08-08). The global guard
+   caps a file at 800 lines; this one is exempt. Single-file, no-build,
+   no-dependency is a product constraint of the panel — `conduct up` hands the
+   browser one static asset, so a bundler or an ES-module split would be a new
+   toolchain in a stdlib-only project. The exemption is conditional:
      - sections stay marked with the banners listed above;
-     - never minify or otherwise compress source to fit under the cap — that
-       trades the readability the waiver was granted for;
-     - every surface keeps a smoke test in tests/test_panel_smoke.py;
-     - as the file approaches 1600 lines, stop and re-review the architecture
-       rather than raising the ceiling again. */
+     - never minify or otherwise compress source to fit under a line count —
+       that trades the readability the waiver was granted for;
+     - Every new panel invariant is pinned in the matching tests/test_panel_*.py
+       module. test_panel_smoke.py guards basic loading and the structural
+       contract; it is not the mandatory home for every panel guard.
+       (Widened by the owner 2026-08-10; plan §8.5 carries the argument.)
+     - 1600 lines is a mandatory architecture audit, not a cap: on crossing it,
+       stop after the current commit and re-review the structure;
+     - 2000 lines is the alpha ceiling. A forecast past it is a stop, and the
+       answer is a proposal for splitting the file, never compression. */
 "use strict";
 /* XSS hygiene: every state-derived string enters the DOM as a text node
    (el/sv append strings via Node.append) or as a setAttribute value. Lane
@@ -657,49 +777,414 @@ function renderDetail(nodes){
     el("span", { class: "det__meta" }, "id: " + n.id + " · kind: " + (n.kind || "—")),
     el("span", { class: "det__meta" },
        "depends on: " + ((n.depends_on || []).join(", ") || "—")));
-  if ((n.contested_by || []).length)
-    box.append(el("span", { class: "det__contested" },
-                  "≠ contested by: " + n.contested_by.join(", ")));
+  /* A node carries no harness — the protocol gives one to a role and never to
+     a node — so the honest thing for this card to badge is the lanes that
+     contested the node, each through the role it declared. The glyph, the word
+     "contested" and the status pill above are what say the state; the badges
+     say which products disagree, and a lane whose harness cannot be resolved
+     keeps its name and simply gets none. */
+  if ((n.contested_by || []).length){
+    const line = el("span", { class: "det__contested" }, "≠ contested by: ");
+    const harnessed = harnessByAuthor(LAST || {});
+    n.contested_by.forEach((author, i) => {
+      if (i) line.append(", ");
+      line.append(String(author));
+      const harness = harnessed.get(String(author));
+      if (harness) line.append(" ", harnessBadge(harness));
+    });
+    box.append(line);
+  }
 }
 
-/* ── cycle ring: phases + roles; pulse only with current_phase ─ */
-function drawRing(svgEl, phases, current){
-  const cx = 160, cy = 78, RX = 104, RY = 56;
-  svgEl.append(sv("ellipse", { cx, cy, rx: RX, ry: RY, class: "ring" }));
-  phases.forEach((p, i) => {
-    const a = -Math.PI / 2 + i * 2 * Math.PI / phases.length;
-    const x = cx + Math.cos(a) * RX, y = cy + Math.sin(a) * RY;
-    const cur = p === current;
-    /* A phase is not a node: it carries no status, it is not focusable and it
-       is not clickable, so it keeps its own class namespace. Sharing "node"
-       would put two graph widgets under one set of rules — and would make the
-       node guards reason about groups that have no status to protect. */
-    const g = sv("g", { class: "phase" + (cur ? " phase--current pulse" : "") });
-    g.append(sv("rect", { class: "box", x: x - 37, y: y - 13, width: 74,
-                          height: 26, rx: 6 }),
-             sv("text", { x, y: y + 1 }, (cur ? "▶ " : "") + trim(String(p), 11)));
-    svgEl.append(g);
-  });
+/* ── harness identity: the registry, resolved ──────────────── */
+/* The harness products conductor/harnesses.py registers, keyed by the id a map
+   writes. Two copies of one table is the defect class that cost this project a
+   hotfix at the CLI boundary, so this one exists only together with the guard
+   that reddens when it drifts: tests/test_panel_orbit.py compares it to the
+   registry entry by entry.
+   What the registry knows is a product's own name; what it refuses to do is
+   guess. `harnesses.resolve` answers an unregistered string with that string as
+   its own display name — never a slug rewritten into a product, never a brand
+   picked by resemblance — and the fallback below is the same answer, so the
+   Orbit shows what the map said and admits when that is all it knows. The
+   monogram and the vendor accent resolve() also carries arrive over the wire
+   instead: see REGISTRY below. This table is what the panel still knows when
+   that request is not answered, which is the ordinary case for a static copy
+   of this file. */
+const HARNESS_NAMES = {
+  "claude-code": "Claude Code",
+  "codex": "Codex",
+  "cursor": "Cursor",
+  "windsurf": "Windsurf",
+  "kimi-code": "Kimi Code",
+  "qwen-code": "Qwen Code",
+  "grok-build": "Grok Build",
+  "github-copilot": "GitHub Copilot coding agent",
+  "gemini-cli": "Gemini CLI",
+  "opencode": "OpenCode",
+  "custom": "Custom harness",
+};
+const harnessName = id => HARNESS_NAMES[id] || String(id);
+/* The badge half of the registry, and where it comes from. `/harnesses.json`
+   answers with conductor/harnesses.py `as_payload()` and with nothing else — a
+   presentation route the owner settled on 2026-08-09, deliberately not part of
+   Protocol v1: state.json does not change, no merge rule reads any of this, and
+   the request is made exactly once.
+   The panel is required to draw without it. A checkpoint copy of this file is
+   opened with no server behind it, so an unanswered request is a normal mode
+   rather than an error: REGISTRY stays empty, every harness resolves to the
+   neutral badge and to its own string, and every other surface — the Orbit, the
+   queue, the map, the agents — is untouched. */
+const REGISTRY = new Map();
+/* The neutral pair conductor/harnesses.py declares as NEUTRAL_DARK and
+   NEUTRAL_LIGHT. Two copies of one value again, and again only with the guard
+   that reddens when they drift: tests/test_panel_harness.py compares these to
+   the module's own. */
+const NEUTRAL_ACCENT = { dark: "#8b93a1", light: "#5a6472" };
+const HEX_RE = /^#[0-9a-f]{6}$/i;
+/* The response is validated where it arrives, because this is a boundary: a row
+   is taken only when every field the badge is drawn from is a non-empty string,
+   and only when both accents are six-digit hex. An accent reaches the DOM as the
+   value of a custom property, so a row that is not well formed is dropped rather
+   than repaired — its harness then draws the neutral badge, like any
+   unregistered one, which is a true statement about how much is known about it. */
+function loadRegistry(rows){
+  REGISTRY.clear();
+  if (!Array.isArray(rows)) return;
+  for (const row of rows){
+    if (typeof row.id !== "string" || !row.id) continue;
+    if (typeof row.display_name !== "string" || !row.display_name) continue;
+    if (typeof row.monogram !== "string" || !row.monogram) continue;
+    if (!HEX_RE.test(row.accent_dark) || !HEX_RE.test(row.accent_light)) continue;
+    REGISTRY.set(row.id, { name: row.display_name, monogram: row.monogram,
+                           dark: row.accent_dark, light: row.accent_light,
+                           docs: typeof row.docs === "string" ? row.docs : "" });
+  }
 }
-function renderCycle(cycle){
+/* The monogram an unregistered harness gets, from its own string and from
+   nothing else — the rule conductor/harnesses.py `_monogram` states: the first
+   letter of each of the first two words, or the first two characters of a single
+   word, upper-cased and then cut back to two code points, and "?" when the
+   string holds no letter or digit at all. Upper-casing comes before the cut
+   because it can lengthen (ß upper-cases into SS), and the cut counts code
+   points rather than UTF-16 units so an astral character is never halved.
+   A rule stated twice in two languages is a drift risk, and this one exists only
+   with the guard that reddens: tests/test_panel_harness.py holds both to one
+   table of strings. No colour is derived here and none ever may be — a hue
+   hashed out of a name is a brand claim about a product nobody registered. */
+const MONO_SPLIT = /[^\p{L}\p{N}]+/u;
+function monogramOf(id){
+  const words = String(id).split(MONO_SPLIT).filter(w => w);
+  if (!words.length) return "?";
+  const initials = words.length > 1 ? [...words[0]][0] + [...words[1]][0]
+                                    : [...words[0]].slice(0, 2).join("");
+  return [...initials.toUpperCase()].slice(0, 2).join("");
+}
+/* Presentation metadata for any harness string, registered or not — the panel's
+   half of `harnesses.resolve`. An unregistered string is its own display name,
+   its monogram comes from that same string, and its accent is the fixed neutral
+   pair: never a hue picked by resemblance, never a brand guessed out of a name
+   that happens to look like a product's. */
+function harnessOf(id){
+  return REGISTRY.get(String(id)) ||
+    { name: harnessName(id), monogram: monogramOf(id), docs: "",
+      dark: NEUTRAL_ACCENT.dark, light: NEUTRAL_ACCENT.light };
+}
+/* One harness badge: the monogram in its swatch, the product name beside it,
+   and — only where the registry names a vendor documentation page — a link to
+   it. That link is the whole of the difference between a registered product's
+   card and the minimal one an unregistered string gets; the monogram and the
+   name are drawn either way, so a harness Conduct has never heard of is never a
+   blank space and never borrows somebody's brand.
+   What this function is handed is a harness string. A lane's status, its place
+   in an order and its position in the queue are not in scope here and cannot be
+   read from here, which is the strongest form available of "branding decides
+   nothing": the status of whatever row this badge sits in is carried by that
+   row's own chip, beside the badge and untouched by it. */
+function harnessBadge(id){
+  const h = harnessOf(id);
+  const badge = el("span", { class: "hb",
+                             style: "--hb-dark:" + h.dark + ";--hb-light:" + h.light },
+    el("span", { class: "hb__m" }, h.monogram),
+    el("span", { class: "hb__n" }, h.name));
+  if (h.docs.startsWith("https://"))
+    badge.append(el("a", { class: "hb__d", href: h.docs, target: "_blank",
+                           rel: "noreferrer noopener" }, "docs"));
+  return badge;
+}
+/* Which product each lane is running. The lane names its role and the map's
+   cycle names that role's harness, and both hops are already in state.json —
+   nothing here invents a link. A lane whose role the cycle does not declare gets
+   no badge at all rather than a borrowed one. */
+function harnessByAuthor(s){
+  const byRole = new Map(((s.cycle || {}).roles || []).map(r => [r.id, r.harness]));
+  const out = new Map();
+  for (const l of (s.lanes || []))
+    if (byRole.get(l.role)) out.set(String(l.author), byRole.get(l.role));
+  return out;
+}
+/* ── Orbit: the declared cycle, drawn from the declared cycle ─ */
+/* The five Default Orbit stages Python ships, and the whole of what the panel
+   is allowed to know about a stage name. Membership decides one thing: whether
+   the label gets .cap, a CSS capital on the same word. It never decides what a
+   stage is called — a project's own `research` stays `research` and is never
+   shown as some canonical term — and it never reaches the text node or an
+   attribute. tests/test_panel_orbit.py fails if this set drifts from
+   conductor.prompts and the default-orbit template. */
+const SHIPPED_STAGES = new Set(["goal", "detect", "diagnose", "design", "deliver"]);
+/* What a stage can be marked with, and the words each mark spells. Every one
+   is a fact already in state.json: `current` is the phase a lane is reporting
+   (never an assigned stage), `waiting` is a queue item raised by a lane whose
+   role sits here, `blocked` is such a lane past its own staleness threshold,
+   and `mismatch` is design-time stage against runtime phase. Nothing here says
+   a stage was reached, finished or passed — v1 records none of those. */
+const ORBIT_MARKS = {
+  current:  { cls: "run",  glyph: "▶", label: "current phase" },
+  blocked:  { cls: "bad",  glyph: "■", label: "lane gone quiet" },
+  waiting:  { cls: "wait", glyph: "?", label: "waiting on you" },
+  mismatch: { cls: "idle", glyph: "≠", label: "stage mismatch" },
+};
+/* Reading order for the chips, and — for the first three — contour priority.
+   A mismatch is explicitly non-blocking (§2.3), so it never takes the contour:
+   it says its piece in a chip and leaves the stage's silhouette alone. */
+const MARK_ORDER = ["current", "blocked", "waiting", "mismatch"];
+const TONES = ["current", "blocked", "waiting"];
+const NARROW = 760;                    /* px of viewport below which the loop goes vertical */
+
+/* The trajectory as a list, before any geometry touches it: one step per
+   consecutive pair, then exactly one return to the first stage. It depends on
+   the count and on nothing else, and both layouts consume this same list —
+   which is what keeps the stage order and the return present in each. */
+function orbitEdges(n){
+  const out = [];
+  for (let i = 0; i + 1 < n; i++) out.push({ from: i, to: i + 1, kind: "step" });
+  if (n) out.push({ from: n - 1, to: 0, kind: "next" });
+  return out;
+}
+/* The angle of stage `i` on a cycle of `n`: the first one at the top, the rest
+   clockwise from it. Both radii are derived from this, so the placement and the
+   arcs cannot disagree about where a stage is. */
+const orbitAngle = (i, n) => -Math.PI / 2 + i * 2 * Math.PI / n;
+const ORBIT_GUTTER = 14;               /* clear space demanded between two stages */
+/* The width a stage box is given in the wide layout. What has to fit on the
+   ellipse is a box and not a point, so the first thing the field decides is how
+   wide that box may be: the two stages either side of the top of the ellipse
+   are the pair the major axis separates least well, and this is the widest box
+   that still lets them stand side by side in `w` — the inequality below is
+   `rx * apex >= bw + ORBIT_GUTTER` solved for `bw`, with `rx` as orbitRing
+   computes it before its own floor.
+   Where the solution stops holding, and what holds instead. Two floors sit
+   under these numbers: `bw` may not go below 132, or a stage name is
+   unreadable, and orbitRing's `rx` may not go below 140. In a field narrow
+   enough for the `bw` floor to bind, the box returned is wider than the
+   inequality permits and the arithmetic above is no longer true of the values
+   actually used — that is the case the floor exists for, and the honest answer
+   to it is the vertical layout rather than a thinner ellipse. Nothing overlaps
+   in the meantime: the `ry` loop in orbitRing tests this same condition pair by
+   pair and grows the minor radius until the two clear along y instead. The `rx`
+   floor only ever raises `rx`, so it can add slack to the inequality and never
+   take any away. */
+function orbitBox(n, w){
+  const apex = Math.abs(Math.cos(orbitAngle(0, n)) - Math.cos(orbitAngle(1, n)));
+  /* A cycle of one and a cycle of two put nothing beside the top stage, so
+     nothing narrows the box. The tolerance is float hygiene, not a threshold:
+     the two cosines are the same cosine, and one of them arrives 2e-16 off. */
+  const fits = apex > 1e-9 ? (apex * (w - 48) - 2 * ORBIT_GUTTER) / (2 + apex) : 178;
+  return Math.max(132, Math.min(178, Math.floor(fits)));
+}
+/* The ellipse the wide layout places stages on, from the count, the field and
+   the box that has to sit at each point. The major radius takes what the field
+   can spare. The minor radius is then the smallest one that keeps every pair of
+   neighbouring stages apart — a pair clears either by a full box width along x
+   or by a full box height along y, and the pairs nearest the top and the bottom
+   of the ellipse, which the major axis barely separates at all, are the ones
+   that decide it. A constant per-phase circumference does not: nine stages on a
+   circle whose circumference divides evenly into nine still overlapped, because
+   the chord between neighbours was shorter than the box. `gap` is the angle
+   left blank at each end of an arc, so an arrow head lands beside a stage
+   instead of under it. */
+function orbitRing(n, w, bw, bh){
+  const rx = Math.max(140, w / 2 - bw / 2 - 24);
+  let ry = 120;
+  for (let i = 0; i < n; i++){
+    const a = orbitAngle(i, n), b = orbitAngle(i + 1, n);
+    const apart = Math.abs(Math.sin(a) - Math.sin(b));
+    if (rx * Math.abs(Math.cos(a) - Math.cos(b)) < bw + ORBIT_GUTTER && apart > 1e-9)
+      ry = Math.max(ry, (bh + ORBIT_GUTTER) / apart);
+  }
+  return { w, h: 2 * ry + bh + 110, rx, ry, gap: Math.min(0.55, 0.68 * Math.PI / n),
+           at: i => orbitAngle(i, n),
+           point(a){ return { x: this.w / 2 + Math.cos(a) * this.rx,
+                              y: this.h / 2 + Math.sin(a) * this.ry }; } };
+}
+/* One arc of the ellipse, from the trimmed end of one stage to the trimmed
+   start of the next. A return edge gets the full turn added to its far angle,
+   which is what makes it run the long way round to the first stage — and, when
+   a cycle declares a single stage, a self-return arc all the way round. */
+function orbitArc(g, edge){
+  const a1 = g.at(edge.from) + g.gap;
+  const a2 = g.at(edge.to) + (edge.kind === "next" ? 2 * Math.PI : 0) - g.gap;
+  const p1 = g.point(a1), p2 = g.point(a2);
+  return "M" + p1.x.toFixed(1) + " " + p1.y.toFixed(1) + " A" + g.rx + " " + g.ry +
+         " 0 " + (a2 - a1 > Math.PI ? 1 : 0) + " 1 " +
+         p2.x.toFixed(1) + " " + p2.y.toFixed(1);
+}
+function orbitDefs(){
+  return sv("defs", {},
+    sv("marker", { id: "orbTip", viewBox: "0 0 10 10", refX: "9", refY: "5",
+                   markerWidth: "5", markerHeight: "5", orient: "auto" },
+      sv("path", { d: "M0,0 L10,5 L0,10 z", class: "arw arw--orb" })));
+}
+/* One stage. The name is appended as it arrived: no case fold, no truncation,
+   no lookup that could put a different word in its place.
+   `arrived` is the movement flag and the whole of what this function does with
+   it is add a class. It says nothing a reader needs: the tone below is what
+   marks the current stage, and it is computed from the marks either way. */
+function orbitStage(name, seat, arrived){
+  const marks = MARK_ORDER.filter(m => seat.marks.has(m));
+  const tone = TONES.find(t => seat.marks.has(t)) || "neutral";
+  const box = el("div", { class: "orb orb--" + tone + (arrived ? " orb--arrived" : "") },
+    el("span", { class: "orb__name" + (SHIPPED_STAGES.has(name) ? " cap" : "") },
+       String(name)),
+    el("div", { class: "orb__marks" },
+       ...marks.map(m => chip(ORBIT_MARKS[m], ORBIT_MARKS[m].label))));
+  const who = el("div", { class: "orb__who" });
+  for (const r of seat.roles){
+    /* One badge per role standing on this stage, each resolving its own
+       harness — two roles on one stage may run two different products, and a
+       stage that names no harness says so rather than borrowing a neighbour's. */
+    const badge = el("div", {}, el("b", {}, String(r.id)), " ",
+      el("span", { class: "orb__hn" },
+         r.harness ? harnessBadge(r.harness) : "no harness"));
+    if (r.reporting)
+      badge.append(el("span", { class: "orb__note" }, "reports: " + r.reporting));
+    who.append(badge);
+  }
+  if (!seat.roles.length)
+    who.append(el("span", { class: "orb__note" }, "no participant"));
+  box.append(who);
+  return box;
+}
+/* The stages are put in the field before the ellipse is measured, because how
+   tall a stage box turns out to be is what the minor radius has to clear, and
+   that depends on the stage: how far its name wraps, how many marks it carries
+   and how many participants stand on it. Reading it back from the one that came
+   out tallest is the only number here nothing else can supply. */
+function drawOrbitRing(field, svgEl, body, proj){
+  const n = proj.phases.length, w = Math.max(420, field.clientWidth || 900);
+  const bw = orbitBox(n, w);
+  const stages = proj.phases.map(p => orbitStage(p, proj.seatOf(p), p === proj.arrived));
+  for (const stage of stages){
+    stage.style.width = bw + "px";
+    body.append(stage);
+  }
+  const g = orbitRing(n, w, bw, Math.max(...stages.map(s => s.offsetHeight)));
+  field.style.height = g.h + "px";
+  svgEl.style.display = "";
+  svgEl.setAttribute("viewBox", "0 0 " + g.w + " " + g.h);
+  svgEl.append(orbitDefs());
+  const edges = orbitEdges(n);
+  for (const e of edges)
+    svgEl.append(sv("path", { class: e.kind === "next" ? "trk trk--next" : "trk",
+                              d: orbitArc(g, e) }));
+  stages.forEach((stage, i) => {
+    const at = g.point(g.at(i));
+    stage.style.left = at.x + "px";
+    stage.style.top = at.y + "px";
+  });
+  const back = edges[edges.length - 1];
+  const mid = (g.at(back.from) + g.at(back.to) + 2 * Math.PI) / 2;
+  const label = g.point(mid);
+  const tag = el("span", { class: "nextrun" }, "↺ next Run");
+  tag.style.left = (label.x + Math.cos(mid) * 30) + "px";
+  tag.style.top = (label.y + Math.sin(mid) * 30) + "px";
+  body.append(tag);
+}
+function drawOrbitColumn(field, svgEl, body, proj){
+  field.style.height = "";
+  svgEl.style.display = "none";
+  const edges = orbitEdges(proj.phases.length);
+  proj.phases.forEach((p, i) => {
+    body.append(orbitStage(p, proj.seatOf(p), p === proj.arrived));
+    if (edges.some(e => e.kind === "step" && e.from === i))
+      body.append(el("div", { class: "lnk" }, el("i"), "↓"));
+  });
+  if (edges.some(e => e.kind === "next"))
+    body.append(el("div", { class: "lnk lnk--next" }, el("i"), "↺ next Run"));
+}
+/* Which stage carries which mark, and which roles are on the Orbit at all.
+   Design-time and runtime stay apart here: `role.stage` decides where a role
+   is drawn, `now.phase` decides what is reported, and a disagreement between
+   them becomes a mismatch mark rather than a move. */
+function orbitProject(cycle, s){
   const phases = cycle.phases || [], roles = cycle.roles || [];
-  const svgEl = $("cycleSvg");
-  svgEl.replaceChildren();
-  $("cycleEmpty").hidden = !!(phases.length || roles.length);
-  svgEl.style.display = phases.length ? "" : "none";
-  $("cycleHint").textContent = cycle.current_phase ? "current: " + cycle.current_phase
-    : (phases.length ? "no active phase" : "");
-  if (phases.length) drawRing(svgEl, phases, cycle.current_phase);
+  const held = new Map();
+  for (const l of (s.lanes || []))
+    if (l.role) held.set(l.role, (held.get(l.role) || []).concat([l]));
+  const asking = new Set();
+  for (const w of (s.human_queue || [])) for (const a of (w.sources || [])) asking.add(a);
+  const seats = new Map(phases.map(p => [p, { marks: new Set(), roles: [] }]));
+  const unstaged = [];
+  for (const r of roles){
+    const seat = seats.get(r.stage);
+    const lanes = held.get(r.id) || [];
+    if (!seat){ unstaged.push(r); continue; }
+    const elsewhere = lanes.map(l => (l.now || {}).phase)
+                           .find(p => p && p !== r.stage) || "";
+    seat.roles.push({ id: r.id, harness: r.harness, reporting: elsewhere });
+    if (elsewhere) seat.marks.add("mismatch");
+    if (lanes.some(l => asking.has(l.author))) seat.marks.add("waiting");
+    if (lanes.some(l => l.stale)) seat.marks.add("blocked");
+  }
+  const now = seats.get(cycle.current_phase);
+  if (now) now.marks.add("current");
+  return { phases, unstaged,
+           seatOf: p => seats.get(p) || { marks: new Set(), roles: [] } };
+}
+/* Roles the Orbit cannot place — no stage, or a stage the map never declared —
+   stay visible in a neutral group of their own. A legacy project has every
+   role here and loses nothing by it. */
+function renderUnstaged(unstaged){
   const box = $("roles");
   box.replaceChildren();
-  for (const r of roles){
+  if (!unstaged.length) return;
+  box.append(el("div", { class: "orb__group" }, "Unstaged"));
+  for (const r of unstaged){
     const bits = [el("b", {}, String(r.id))];
-    if (r.harness) bits.push(el("span", { class: "mono faint" }, " " + r.harness));
+    if (r.harness) bits.push(" ", harnessBadge(r.harness));
+    if (r.stage) bits.push(el("span", { class: "mono faint" }, " · stage: " + r.stage));
     if ((r.reviews || []).length)
       bits.push(el("span", { class: "mono faint" },
                    " · reviews: " + r.reviews.join(", ")));
     box.append(el("div", { class: "role" }, ...bits));
   }
+}
+let orbitAt = -1;                      /* the field width the current drawing was built for */
+function renderOrbit(s){
+  const cycle = s.cycle || {};
+  /* ARRIVED is spent here and nowhere else. A drawing may mark an arrival once,
+     so the flag is taken out of the module and cleared in the same breath: a
+     reflow redraws this same document at a new width and must not replay a
+     movement whose event has already been reported. */
+  const proj = { ...orbitProject(cycle, s), arrived: ARRIVED };
+  ARRIVED = null;
+  const field = $("orbitField"), svgEl = $("orbitSvg"), body = $("orbitBody");
+  svgEl.replaceChildren();
+  body.replaceChildren();
+  $("cycleEmpty").hidden = proj.phases.length > 0;
+  field.hidden = !proj.phases.length;
+  $("cycleHint").textContent = cycle.current_phase ? "current: " + cycle.current_phase
+    : (proj.phases.length ? "no active phase" : "");
+  if (proj.phases.length){
+    const wide = window.innerWidth >= NARROW;
+    field.className = "orbit" + (wide ? " orbit--ring" : "");
+    (wide ? drawOrbitRing : drawOrbitColumn)(field, svgEl, body, proj);
+  }
+  orbitAt = field.clientWidth;
+  renderUnstaged(proj.unstaged);
+}
+function reflowOrbit(){
+  if (LAST && $("orbitField").clientWidth !== orbitAt) renderOrbit(LAST);
 }
 
 /* ── attention zone: human queue cards + computed alerts ───── */
@@ -814,8 +1299,14 @@ function laneChip(l){
   if (l.stale) return chip({ cls: "wait", glyph: "◌" }, "stale");
   return chip({ cls: "ok", glyph: "●" }, "active");
 }
-function renderAgents(lanes){
+/* One row per lane, in the order the state document lists them. The badge is
+   appended to a row that is already built and already carries its own status
+   chip: nothing here sorts, filters or re-groups, and no branch reads the
+   harness before the row exists — so a product's identity cannot move a lane
+   up the list, change what it says about itself, or take its chip's place. */
+function renderAgents(lanes, s){
   const box = $("agentList");
+  const harnessed = harnessByAuthor(s);
   box.replaceChildren();
   $("agentsEmpty").hidden = lanes.length > 0;
   for (const l of lanes){
@@ -824,6 +1315,8 @@ function renderAgents(lanes){
       el("span", { class: "mono ag__who" }, String(l.author)),
       laneChip(l),
       el("span", { class: "faint" }, String(l.role || "observer")));
+    const harness = harnessed.get(String(l.author));
+    if (harness) row.append(harnessBadge(harness));
     const task = l.broken ? String(l.error || "unreadable") : String(now.task || "");
     if (task) row.append(el("span", { class: "ag__task" + (l.broken ? " ag__err" : ""),
                                       title: task }, task));
@@ -930,10 +1423,10 @@ function render(s){
   renderWarnings(s.warnings || []);
   renderKpis(k);
   renderMap(((s.map || {}).nodes) || []);
-  renderCycle(s.cycle || {});
+  renderOrbit(s);
   renderQueue(s.human_queue || []);
   renderAttention(s);
-  renderAgents(s.lanes || []);
+  renderAgents(s.lanes || [], s);
   renderFindings(s.findings || [], s);
   renderFeed(s.events_tail || []);
   $("foot").textContent = "state schema v" + (s.schema_version ?? "?") +
@@ -983,23 +1476,84 @@ document.addEventListener("click", e => activate(e.target));
 document.addEventListener("keydown", e => {
   if (e.key === "Enter" || e.key === " "){ if (activate(e.target)) e.preventDefault(); }
 });
+/* The Orbit's geometry is computed against the width it is drawn into, so a
+   resize is the one event that has to redraw it. Nothing else is re-rendered
+   and no state is re-read: reflowOrbit redraws the last state document at the
+   new width, and only when the width actually moved. */
+window.addEventListener("resize", reflowOrbit);
 
 /* ── data source: fetch /state.json; SSE frame → re-fetch ──── */
-async function refresh(){
+/* Movement is a report of an observed event, never decoration, so the panel
+   keeps exactly enough of the stream's history to know whether it observed one.
+   `streamed` says the document drawn before this one arrived as a stream frame;
+   `ARRIVED` is the phase the next drawing is allowed to mark, and null the rest
+   of the time.
+   A phase change may be marked only when all three of these hold: a drawing
+   already exists to have changed from, this document and the one before it both
+   came through the live stream, and the two name different current phases. Each
+   of the events that is not a change fails one of the three — a reload and a
+   reconnect are not frames, the first frame after either has no frame before
+   it, and a new generated_at or a new queue leaves the phase where it was.
+   A dropped connection clears `streamed`, and so does a fetch that did not
+   arrive: a phase that moved while the panel was not listening was not watched
+   moving, and the document that re-establishes the record can never be the one
+   that reports the move.
+   The record must also never be written from before a drop. The three
+   conditions read `streamed` and `LAST`, and a response still in flight when
+   the connection died could land after the reconnect and write both — raising
+   `streamed` so that the greeting frame reported a change the panel never
+   watched. So every drop ends an epoch: a fetch captures the epoch it started
+   under, and a response from an ended epoch is discarded whole — the record,
+   the drawing and the connection light hear nothing from it. */
+let streamed = false;
+let ARRIVED = null;
+let EPOCH = 0;                                 /* ends at every drop of the stream */
+const phaseOf = s => String(((s || {}).cycle || {}).current_phase || "");
+function noteState(s, framed){
+  ARRIVED = framed && streamed && LAST !== null && phaseOf(s) !== phaseOf(LAST)
+    ? phaseOf(s) : null;
+  streamed = framed;
+}
+async function refresh(framed){
+  const epoch = EPOCH;                         // the connection this fetch reports under
   try {
     const r = await fetch("/state.json", { cache: "no-store" });
     if (!r.ok) throw new Error("HTTP " + r.status);
-    render(await r.json());
+    const s = await r.json();
+    if (epoch !== EPOCH) return;               // fetched before a drop: not a document
+    noteState(s, framed);                      // before render: LAST is the drawing so far
+    render(s);
     setLive(true);
   } catch (err) {
+    if (epoch !== EPOCH) return;               // the drop already put the record down
+    streamed = false;                          // a document was missed, not watched
     setLive(false);                            // keep the last rendered state
   }
 }
+/* The registry, fetched once and never again. There is nothing to poll: the
+   bundled registry is the same bytes for the life of the process, and a retry
+   loop in a file that is also opened without a server would run forever
+   against nothing. A failed load is not an error state — every harness then
+   draws the neutral badge and its own string, which is a true statement about
+   how much the panel knows. The re-render is for the ordering: the first state
+   document may already have arrived and been drawn with no registry behind
+   it. */
+async function loadHarnesses(){
+  try {
+    const r = await fetch("/harnesses.json", { cache: "no-store" });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    loadRegistry(await r.json());
+  } catch (err) {
+    return;                                    // no registry: neutral badges
+  }
+  if (LAST) render(LAST);
+}
 const es = new EventSource("/events");         // greeting on connect, one frame per change
-es.onmessage = refresh;
-es.onopen = refresh;                           // resync on every (re)connect, not just the greeting
-es.onerror = () => setLive(false);             // EventSource reconnects on its own
-refresh();
+es.onmessage = () => refresh(true);            // the one caller that may report a change
+es.onopen = () => refresh(false);              // resync on every (re)connect, not just the greeting
+es.onerror = () => { EPOCH++; streamed = false; setLive(false); };  // EventSource reconnects on its own
+loadHarnesses();
+refresh(false);                                // page load: the first drawing, nothing before it
 </script>
 </body>
 </html>

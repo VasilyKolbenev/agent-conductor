@@ -17,6 +17,15 @@ The panel's source is read here (:func:`panel_html`, :func:`script`) and the
 other panel modules import it from this one. That is deliberate rather than
 convenient: this module owns the parsing, and a second copy of a stylesheet
 parser in a colour module would be worse than one directed import.
+
+What this cascade is and is not. It is a model of the panel's *source text*,
+built by parsing characters; it is not a browser and it does not render
+anything. ``computed`` returns the declarations this model says would win, for
+an element this model was handed — which is a structural fact about the
+stylesheet, not a fact about a pixel. Every guard built on it inherits that
+limit, so no name or docstring in these modules may claim a rendered result.
+Sabotages that keep the behaviour and change the spelling pass here by design;
+§10 of the plan carries the post-alpha work that would catch them.
 """
 import re
 from functools import lru_cache
@@ -150,6 +159,29 @@ def rules(html: str | None = None) -> tuple[Rule, ...]:
     out: list[Rule] = []
     _collect(stylesheet(html), "", out)
     return tuple(out)
+
+
+def keyframe_properties(name: str, html: str | None = None) -> set[str]:
+    """Every property one ``@keyframes`` block moves, over all of its steps.
+
+    ``_collect`` walks past ``@keyframes`` bodies on purpose: a step is not a
+    rule and matches no element, so nothing in it can win a declaration. The
+    block is still source this module owns, and a guard asking what a movement
+    touches has to be able to read one — so it is parsed here rather than a
+    second time somewhere else.
+    """
+    sheet = stylesheet(html)
+    start = sheet.index("@keyframes " + name)
+    i = j = sheet.index("{", start)
+    depth = 0
+    while True:
+        depth += (sheet[j] == "{") - (sheet[j] == "}")
+        j += 1
+        if not depth:
+            break
+    return {chunk.split(":", 1)[0].strip()
+            for step in re.findall(r"\{([^{}]*)\}", sheet[i:j])
+            for chunk in step.split(";") if ":" in chunk}
 
 
 def media_contexts(html: str | None = None) -> tuple[str, ...]:
@@ -323,8 +355,18 @@ SEMANTIC = ("--pass", "--wait", "--fail")
 # What "how this element reads" means: its own paint plus the shape properties
 # a silhouette is made of. The four border sides are resolved from whichever
 # shorthand won them, which is what `border-color` on :hover quietly overrode.
+#
+# The shape half used to be the SVG half only — `rx`, the stroke width and the
+# dash pattern — because every state the panel drew was drawn in SVG. The Orbit
+# draws its stages as HTML boxes, and there a silhouette is the border's weight,
+# its pattern and the corner radius; without these three in the profile, a rule
+# rounding the current stage's corner on hover until it read as a neutral one
+# was a change no guard in this repository could see. The `border` shorthand is
+# in the list for the same reason `_border_sides` reads it: a rule may reweight
+# a contour through it without ever naming `border-width`.
 PAINTS = ("color", "background", "background-color", "fill", "stroke",
-          "stroke-width", "stroke-dasharray", "rx", "opacity")
+          "stroke-width", "stroke-dasharray", "rx", "opacity",
+          "border", "border-width", "border-style", "border-radius")
 _SIDES = ("top", "right", "bottom", "left")
 _COLOUR = re.compile(r"var\(--[\w-]+\)|color-mix\(.*\)|#[0-9a-fA-F]{3,8}"
                      r"|\btransparent\b|\bcurrentColor\b")
@@ -486,8 +528,10 @@ def test_every_state_the_stylesheet_declares_appears_in_the_carrier_set():
             if tag:
                 assert not (_classes_of(compound) & guarded), rule.selector
     # And the shapes the invariant is really about are in there, by name.
+    # `.orb--current` and `.trk--next` are the Orbit's two: the stage the panel
+    # marks as current, and the one connection that must never read as a status.
     for label in (".node--fail .box", ".p--fail", ".vd--bad .gl",
-                  ".phase--current .box", ".ask"):
+                  ".orb--current", ".trk--next", ".ask"):
         assert label in {carrier.label for carrier in carriers()}, label
 
 
@@ -514,23 +558,127 @@ def test_the_stylesheet_declares_no_interactive_state_this_module_does_not_model
             assert name in modelled or name in inert, rule.selector
 
 
-def function_body(name: str, html: str | None = None) -> str:
-    """Return the source of one top-level ``function``, comments removed.
+# One declared function of the script, in the arrow spelling: the parameter
+# slot is a parenthesised list or a single bare name, then the arrow itself.
+_ARROW = r"const\s+(%s)\s*=\s*(?:\([^()]*\)|[A-Za-z_$][\w$]*)\s*=>"
 
-    Comments are gone before the braces are counted, so an expression left in a
-    comment beside the line that no longer evaluates it is not source any more.
+_STRING = re.compile(r'"(?:[^"\\\n]|\\.)*"'
+                     r"|'(?:[^'\\\n]|\\.)*'"
+                     r"|`(?:[^`\\]|\\.)*`")
+
+
+def _initialiser(src: str, i: int) -> str:
+    """The expression from ``i`` to its terminating top-level ``;``.
+
+    String literals are stepped over whole, so a semicolon or a brace inside
+    one can neither end the expression early nor unbalance the count.
+    """
+    depth, j = 0, i
+    while j < len(src):
+        if src[j] in "\"'`":
+            j = _STRING.match(src, j).end()
+            continue
+        depth += (src[j] in "([{")
+        depth -= (src[j] in ")]}")
+        if src[j] == ";" and depth == 0:
+            return src[i:j]
+        j += 1
+    raise AssertionError(f"no terminating semicolon after offset {i}")
+
+
+def function_body(name: str, html: str | None = None) -> str:
+    """Return the source of one declared function, comments removed.
+
+    A declaration is either the ``function`` keyword or a ``const`` arrow —
+    the panel spells helpers both ways, and a walk that knew only the first
+    form read as if it covered the script while `chip` sat outside it.
+    Comments are gone before anything is counted, so an expression left in a
+    comment beside the line that no longer evaluates it is not source any
+    more. For the keyword form the braced body alone is returned, as it always
+    was; for an arrow it is the whole initialiser, parameters included.
     """
     src = script(html)
-    start = src.index("function " + name + "(")
-    depth, i = 0, src.index("{", start)
-    j = i
-    while j < len(src):
-        depth += (src[j] == "{") - (src[j] == "}")
-        j += 1
-        if depth == 0:
-            return src[i + 1:j - 1]
-    raise AssertionError(f"{name} is not a balanced function body")
+    start = src.find("function " + name + "(")
+    if start >= 0:
+        depth, i = 0, src.index("{", start)
+        j = i
+        while j < len(src):
+            depth += (src[j] == "{") - (src[j] == "}")
+            j += 1
+            if depth == 0:
+                return src[i + 1:j - 1]
+        raise AssertionError(f"{name} is not a balanced function body")
+    found = re.search(_ARROW % re.escape(name), src)
+    if not found:
+        raise ValueError(f"{name} is not a declared function of the script")
+    return _initialiser(src, src.index("=", found.start()) + 1).strip()
 
+
+
+_JS_WORDS = {"return", "typeof", "new", "null", "true", "false", "undefined", "in",
+             "of", "void", "delete", "instanceof", "const", "let", "for", "if", "else",
+             "while", "break", "continue", "function", "this"}
+
+
+def free_names(source: str, bound: set[str]) -> set[str]:
+    """Identifiers a fragment of JavaScript reads from outside itself.
+
+    String literals, property reads and the keys of object literals are removed
+    first — none of them is a name the fragment reaches for — so what is left is
+    what it does reach for. Everything a caller declares as ``bound`` —
+    parameters, locals, loop variables, the properties an object literal
+    declares — is subtracted, and what remains is the fragment's dependence on
+    the world around it. A test written against this asks what a function is
+    *allowed to depend on* without having to know what the forbidden
+    dependencies are called.
+
+    The identifier pattern refuses to start inside a word, or `1e-9` would
+    report a dependence on something called `e`.
+    """
+    source = re.sub(r'"[^"]*"|\'[^\']*\'|`[^`]*`', " ", source)   # string literals
+    source = re.sub(r"\.\s*[A-Za-z_$][\w$]*", " ", source)        # property reads
+    source = re.sub(r"([{,]\s*)[A-Za-z_$][\w$]*\s*:", r"\1", source)   # literal keys
+    return set(re.findall(r"(?<![\w$])[A-Za-z_$][\w$]*", source)) - bound - _JS_WORDS
+
+
+def test_the_shared_status_chip_cannot_reach_out_and_mutate_the_panel():
+    # A review diversion hid the entire Agents section from `chip`, a helper
+    # used by status marks all over the panel. The earlier source walk knew
+    # only `function name(...)` declarations, so this `const` arrow sat outside
+    # every dependency guard while the suite stayed green. Its complete world
+    # is deliberately tiny: the two values it is handed and the element
+    # builder it returns. A document lookup, timer, panel id or global state
+    # therefore appears as an extra free name instead of needing a denylist.
+    assert free_names(function_body("chip"), {"meta", "label"}) == {"el"}
+
+
+@lru_cache(maxsize=4)
+def script_functions(html: str | None = None) -> frozenset:
+    """Every function the script declares with the ``function`` keyword."""
+    return frozenset(re.findall(r"function\s+([A-Za-z_$][\w$]*)\s*\(", script(html)))
+
+
+def reachable_from(name: str, html: str | None = None) -> set[str]:
+    """``name`` and every declared function reachable from it, transitively.
+
+    "Reachable" is *named*, not *called*: a body that mentions a function counts,
+    whether it calls it, stores it or picks it out of a conditional. The panel
+    does the last of these — `(wide ? drawOrbitRing : drawOrbitColumn)(…)` — and a
+    walk that only recognised `name(` would have stepped straight over both
+    layouts. Over-counting a mention that never runs makes a guard built on this
+    stricter than the truth; under-counting one would make it a guard about a
+    subset of the code while reading like a guard about all of it.
+    """
+    seen, todo = set(), [name]
+    while todo:
+        current = todo.pop()
+        if current in seen:
+            continue
+        seen.add(current)
+        body = function_body(current, html)
+        todo += sorted({other for other in script_functions(html)
+                        if re.search(r"(?<![\w.$])" + other + r"(?![\w$])", body)} - seen)
+    return seen
 
 
 def test_the_parser_reads_every_rule_of_the_panel_to_its_closing_brace():
@@ -541,4 +689,3 @@ def test_the_parser_reads_every_rule_of_the_panel_to_its_closing_brace():
     high = found['html[data-attention="high"] .lit']
     assert set(high.decls) == {"background", "box-shadow", "border-color"}
     assert found[".grid--split"].context.startswith("@media")
-

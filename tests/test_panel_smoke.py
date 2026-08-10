@@ -1,11 +1,22 @@
-"""Smoke tests for the packaged panel (Task 14) — served HTML references the protocol."""
+"""Smoke tests for the packaged panel (Task 14) — served HTML references the protocol.
+
+Smoke is the whole claim, and the module is named for it. What runs is the real
+server and the real handler, so the panel is genuinely *served*; what is then
+checked is the **text of the response** and the **source of the script**. No
+browser parses it, no DOM is built, nothing is rendered. These guards therefore
+catch a surface being deleted, an id being dropped, a contract token being
+renamed — and they do not establish that any of it works in a browser. A
+behaviour claim about the rendered panel is post-alpha work, carried in §10 of
+the plan.
+"""
 import re
 import urllib.request
 from datetime import datetime, timezone
 
 from conductor import merge
 from tests.test_merge_review import MAP, lane
-from tests.test_panel_cascade import PANEL, function_body, panel_html, script
+from tests.test_panel_cascade import (
+    PANEL, free_names, function_body, panel_html, script)
 from tests.test_server import start
 from tests.test_store import write_project, good_lane
 
@@ -33,10 +44,23 @@ def test_panel_serves_and_references_state(tmp_path):
 
 
 def test_panel_has_all_tooling_ids(tmp_path):
-    # The full id contract promised to future tooling (plan Task 14, delta 5).
+    # The full id contract promised to future tooling (plan Task 14, delta 5),
+    # and the root nodes render() cannot start without.
+    #
+    # The five Orbit ids were in no assertion in this repository until now, and a
+    # sabotage renaming `orbitField` to `orbitFieldXX` left every panel module
+    # green. Served against the demo project, that rename makes renderOrbit throw
+    # `TypeError: Cannot set properties of null` on `field.hidden`; render()
+    # stops there, so the queue, the attention zone, the agents block, the
+    # findings table, the feed and the footer are never drawn and the shell
+    # reports the connection lost. The KPI rail and the map survive it — they run
+    # before renderOrbit — which is why this is a structural-contract guard and
+    # not a claim that the panel goes blank. Each of the five throws the same
+    # way, so all five are named.
     root = write_project(tmp_path, lanes={"claude": good_lane()})
     html = _fetch_panel(root)
-    for element_id in ("map", "cycle", "kpis", "queue", "findings", "feed", "warnings"):
+    for element_id in ("map", "cycle", "kpis", "queue", "findings", "feed", "warnings",
+                       "orbitField", "orbitSvg", "orbitBody", "cycleEmpty", "cycleHint"):
         assert f'id="{element_id}"' in html
 
 
@@ -155,11 +179,16 @@ def test_panel_shell_names_no_run_and_no_other_invented_identifier(tmp_path):
         ["December", "connecting…"]
 
 
-def test_the_shell_prints_only_what_the_state_document_gives_it():
+def test_rendershell_reads_only_the_state_fields_and_spells_only_the_words_named_here():
     # The other half of the shell's promise, on the writing side. renderShell
     # may read these fields of the state document and no others, and may spell
     # these words and no others; anything else in the shell would be the panel
     # asserting something the data cannot support.
+    #
+    # The name used to say "the shell prints only…", which is a claim about
+    # output. Two sets are extracted from the *source* of one function and
+    # compared. A field read through a computed key, or a word built by
+    # concatenation, is outside both sets and outside this test.
     body = function_body("renderShell")
     assert set(re.findall(r"\bs\.([A-Za-z_$][\w$]*)", body)) == \
         {"project", "generated_at", "invariants"}
@@ -167,9 +196,11 @@ def test_the_shell_prints_only_what_the_state_document_gives_it():
         {"", " · ", "· ", "last update ", " · invariants: ", " ok", "projInfo"}
 
 
-def test_the_live_state_is_the_only_other_thing_the_shell_can_say():
-    # setLive owns the one remaining piece of shell text. Same treatment: the
-    # two strings it can write are named, so a third cannot appear unnoticed.
+def test_setlive_spells_only_the_string_literals_named_here():
+    # setLive owns the one remaining piece of shell text. Same treatment and the
+    # same limit: the string literals in its source are named, so a third cannot
+    # appear unnoticed — and a string assembled at runtime is not a literal and
+    # is not seen here.
     body = function_body("setLive")
     assert set(re.findall(r'"([^"]*)"', body)) == \
         {"dot", "liveText", "dot", " dot--down", "live", "connection lost — retrying", ""}
@@ -187,7 +218,8 @@ def test_panel_introduces_no_new_innerhtml(tmp_path):
 
 
 def test_every_test_module_the_panel_points_a_reader_at_exists():
-    # The panel's comments send a reader to five test modules by path. This
+    # The panel's comments send a reader to test modules by path — the count is
+    # left unsaid here on purpose, because saying it went stale once. This
     # repository has already paid once for a reference that stopped resolving
     # (commit 97f8325), and this round moved guards into two more files.
     named = set(re.findall(r"tests/test_panel_\w+\.py", panel_html()))
@@ -196,11 +228,44 @@ def test_every_test_module_the_panel_points_a_reader_at_exists():
         assert (PANEL.parents[3] / path).exists(), path
 
 
-def test_the_panel_draws_the_interaction_ring_it_serves(tmp_path):
-    # The file-size waiver's third condition: every surface keeps a smoke test
-    # here. .halo is the surface this slice added, and the cascade guards in
-    # tests/test_panel_style.py reason about it, so the served panel has to
-    # actually draw it.
+def _waiver_conditions() -> list[str]:
+    """The conditions the panel records its file-size waiver as granted on."""
+    block = re.search(r"FILE-SIZE WAIVER \(.*?\*/", panel_html(), re.S)
+    assert block, "the panel no longer records the waiver it lives under"
+    body = block.group(0).split("conditional:", 1)[1]
+    return [" ".join(item.split()) for item in re.split(r"\n\s*- ", body)[1:]]
+
+
+def test_the_waiver_names_as_the_home_of_a_panel_guard_every_module_that_holds_one():
+    # Nothing held this condition to the tree before, and it showed: the waiver
+    # sat in the panel as prose naming a single module while the guards had long
+    # since spread across seven, and every test in all seven stayed green. The
+    # owner widened the condition on 2026-08-10 (plan §8.5) and this is what
+    # keeps the widening true.
+    #
+    # What is checked is the relation the condition asserts, not its wording:
+    # the test paths it names, expanded as the patterns they are, are exactly
+    # the panel test modules this repository has. Narrowing it back to one
+    # module shrinks the left side and fails here; a module added later is
+    # already covered, because the pattern is what is named.
+    naming = [c for c in _waiver_conditions() if "tests/test_panel" in c]
+    assert len(naming) == 1, naming
+    tests = PANEL.parents[3] / "tests"
+    named = set(re.findall(r"tests/(test_panel_[\w*]+\.py)", naming[0]))
+    assert {p.name for pattern in named for p in tests.glob(pattern)} == \
+        {p.name for p in tests.glob("test_panel_*.py")}
+
+
+def test_the_served_panel_source_carries_the_interaction_ring_and_its_rule(tmp_path):
+    # The file-size waiver's third condition, in the module that matches it: a
+    # panel surface is pinned somewhere, and the served response is what this
+    # module owns. .halo is the surface this slice added, and the cascade guards in
+    # tests/test_panel_style.py reason about an element they assume is emitted,
+    # so the served source has to carry both the emitter and the rule.
+    #
+    # The name used to say "the panel draws"; two substrings of the served text
+    # are what is checked. This is a smoke test — it catches the ring being
+    # deleted outright, and nothing subtler.
     html = _fetch_panel(write_project(tmp_path, lanes={"claude": good_lane()}))
     assert 'class: "halo"' in html
     assert ".halo{" in html
@@ -219,18 +284,7 @@ def test_every_light_level_the_panel_declares_names_a_real_project_state():
     assert set(_attention_table()) == {"blocked", "active"}
 
 
-_JS_WORDS = {"return", "typeof", "new", "null", "true", "false", "undefined", "in",
-             "of", "void", "delete", "instanceof"}
-
-
-def _free_names(source: str, bound: set[str]) -> set[str]:
-    """Identifiers a fragment of JavaScript reads from outside itself."""
-    source = re.sub(r'"[^"]*"|\'[^\']*\'|`[^`]*`', " ", source)   # string literals
-    source = re.sub(r"\.\s*[A-Za-z_$][\w$]*", " ", source)        # property names
-    return set(re.findall(r"[A-Za-z_$][\w$]*", source)) - bound - _JS_WORDS
-
-
-def test_changing_the_clock_cannot_change_the_light_level():
+def test_attentionOf_reads_only_its_argument_and_the_declared_table():
     # The owner's own formulation of the invariant: the same state document has
     # to give the same light level whatever the time is. That is a statement
     # about what attentionOf is allowed to depend on, so it is checked as one —
@@ -239,10 +293,10 @@ def test_changing_the_clock_cannot_change_the_light_level():
     # ambient reading would appear here as a free name and fail, without this
     # test having to know what any of them are called.
     expression = re.search(r"const attentionOf = (.*?);\n", panel_html(), re.S).group(1)
-    assert _free_names(expression, {"s"}) == {"ATTENTION"}, expression
+    assert free_names(expression, {"s"}) == {"ATTENTION"}, expression
 
 
-def test_the_light_level_is_written_once_and_from_that_one_expression():
+def test_the_only_documentElement_in_the_script_is_renderShells_attention_assignment():
     # Purity is only worth having if nothing bypasses it. One writer, one
     # source: the light level the document wears is the value attentionOf
     # computed from the state document handed to renderShell.
@@ -250,9 +304,9 @@ def test_the_light_level_is_written_once_and_from_that_one_expression():
     # Counting one spelling was not that. A second writer using setAttribute
     # instead of dataset — a clock-keyed one, in render(), a line below the
     # call to renderShell — left the count at one and the suite green. So what
-    # is held is the relation: the script reaches the document element exactly
-    # once, and never names the attribute as a string, which is the only other
-    # way to write it.
+    # is held is a relation between the count and the place: the script names
+    # `documentElement` exactly once, that one naming is renderShell's
+    # assignment, and no string literal in the script names the attribute.
     body = function_body("renderShell")
     assert script().count("documentElement") == 1
     assert "document.documentElement.dataset.attention = attentionOf(s);" in body
@@ -261,15 +315,15 @@ def test_the_light_level_is_written_once_and_from_that_one_expression():
                 if "data-attention" in text or "attention" == text]
 
 
-def test_which_cards_are_lit_is_decided_by_the_markup_and_never_computed():
+def test_the_lit_cards_are_named_in_the_markup_and_no_literal_spells_the_class():
     # The other half of the owner's invariant. "The same state with a different
     # clock gives the same classes and the same styles" is about two things:
     # which level the document wears, and which elements wear the lit material.
     # The level was guarded three ways and the set was guarded by nothing, so
     # `$("agents").classList.toggle("lit", Date.now() % 2 === 0)` changed the
     # classes by the clock with every panel test green. The set is markup-
-    # determined, so that is what is asserted — and no script expression may
-    # spell the class at all, which is the only way it could become computed.
+    # determined, so that is what is asserted — and separately, no string
+    # literal in the script may spell the class.
     wearing = [ident for classes, ident in re.findall(r'class="([^"]*)" id="(\w+)"',
                                                       panel_html())
                if "lit" in classes.split()]
@@ -301,7 +355,7 @@ def test_the_light_level_follows_the_project_status_the_merger_computes():
     assert (empty["project_status"]["state"], _level_for(empty)) == ("ready", "none")
 
 
-def test_a_panel_with_nothing_waiting_stays_unlit():
+def test_the_stylesheet_lights_only_the_low_and_high_levels():
     # Absence of attention is a real state and must look like one: no level, no
     # lift, no brighter contour. The CSS only lights `low` and `high`.
     html = panel_html()

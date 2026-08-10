@@ -2,7 +2,7 @@
 
 The panel's palette is the owner's and is approved (plan §8.3, §8.4). What this
 module measures is not the palette but the *shipped pairs*: which foreground the
-panel actually puts on which background, what each of those measures, and
+panel's declarations put on which background, what each of those measures, and
 whether the states stay apart when colour is taken away. Every number lives here
 rather than in a comment beside a token, because a number in a comment goes
 stale the moment the token changes and says nothing when it does.
@@ -16,10 +16,10 @@ the surface it sits on, the tint strength is read out of the stylesheet through
 the cascade in tests/test_panel_cascade.py, and the ratio is computed. Push a
 tint from 14% to 92% and the number moves with it.
 
-A pair is also a pair the panel puts on the screen at any moment, not only at
-rest. Hover, focus and selection repaint things, and a repaint is a new pair —
-which is how `.jump:hover` shipped an accent on a lit card that no table here
-had ever measured. Every row below is therefore re-resolved under each
+A pair is also a pair the declarations produce in any state, not only at rest.
+Hover, focus and selection redeclare paints, and a redeclared paint is a new
+pair — which is how `.jump:hover` shipped an accent on a lit card that no table
+here had ever measured. Every row below is therefore re-resolved under each
 interactive state, and the ones that actually change colour become rows of
 their own.
 
@@ -27,6 +27,17 @@ The arithmetic lives in tests/test_panel_colour.py, which knows nothing about
 the panel. The tokens and the rules are parsed out of
 `src/conductor/panel/index.html`, so changing a declaration there moves these
 results. That is the point.
+
+What a ratio here is a ratio of. Every number below is computed from the
+panel's *declarations*, resolved through the cascade model in
+tests/test_panel_cascade.py. Nothing is rendered and nothing is sampled off a
+screen: a row names a chain of elements, this module composites the paints the
+model says win for that chain, and reports the arithmetic. That is a strong
+statement about what the stylesheet asks for and not a statement about what a
+browser produces — a rule this model cannot express, or an element chain the
+panel builds and no row here names, is invisible to all of it. `tr.click` was
+exactly that until 2026-08-08. Assertions on a rendered result are §10
+post-alpha work; the names below stay inside the source-level claim.
 """
 import re
 from typing import NamedTuple
@@ -34,7 +45,7 @@ from typing import NamedTuple
 import pytest
 
 from tests.test_panel_cascade import (
-    INTERACTIONS, E, computed, environments, panel_html, touched)
+    INTERACTIONS, E, computed, environments, panel_html, script, touched)
 from tests.test_panel_colour import JND, contrast, delta_e, simulate_cvd
 from tests.test_panel_style import root_declarations
 
@@ -241,7 +252,8 @@ NONTEXT_PAIRS = [
     ("--wait", "--sunk", "blocked node contour", NONTEXT_MIN),
     ("--fail", "--sunk", "fail node contour", NONTEXT_MIN),
     ("--accent", "--panel", "the selection ring around a node", NONTEXT_MIN),
-    ("--faint", "--panel", "the hover ring around a node", NONTEXT_MIN),
+    ("--faint", "--panel", "the hover ring around a node and around a findings row",
+     NONTEXT_MIN),
     ("--faint", "--sunk", "the hover ring around a queue card", NONTEXT_MIN),
 ]
 
@@ -271,7 +283,7 @@ KNOWN_SHORTFALLS = {
 THEMES = ("dark", "light")
 
 
-# ── the composited pairs: what a reader's eye actually receives ────────────
+# ── the composited pairs, resolved from the declarations ───────────────────
 HTML_LIT = E("html", **{"data-attention": "high"})
 BODY = E("body")
 CARD = E("div", "card")
@@ -284,11 +296,44 @@ def _pill(cls: str) -> list:
     return [HTML_LIT, BODY, CARD, DETAIL, E("span", "pill", "p--" + cls)]
 
 
+# Where a `.vd` chip is written, as the script writes it. "table" is the feed's
+# row, which carries no class; "findings row" is the findings table's row, which
+# the script builds as `el("tr", { class: "click", … })`. Modelling both rows as
+# a bare `<tr>` is how `tr.click:hover td{background:var(--sunk)}` shipped: the
+# rule that repainted the surface under every chip in the row could not match
+# any chain this module built, so nothing here could see it.
 def _vd(cls: str, where: str) -> list:
     inside = {"alert": [LIT_CARD, E("div", "alert")],
               "table": [CARD, E("table"), E("tr"), E("td")],
-              "expanded": [CARD, E("table"), E("tr", "detail"), E("td")]}[where]
+              "findings row": [CARD, E("table"), E("tr", "click"), E("td")],
+              "expanded": [CARD, E("table"), E("tr", "detail"), E("td")],
+              # An Orbit stage is a chip's fourth home, and its own surface is
+              # --sunk rather than the card's --panel, which moves every tint
+              # the chips are mixed into.
+              "orbit stage": [CARD, E("div", "orbit"), E("div", "orb", "orb--neutral"),
+                              E("div", "orb__marks")]}[where]
     return [HTML_LIT, BODY, *inside, E("span", "vd", "vd--" + cls)]
+
+
+VD_PLACES = ("alert", "table", "findings row", "expanded", "orbit stage")
+
+
+def _tr_classes() -> set[frozenset]:
+    """The class sets the panel's script writes on a ``<tr>``, read from source.
+
+    Each ``el("tr", {…})`` call is located and the first string literal of its
+    ``class:`` entry is taken, so a row built as ``"detail" + (open ? " on" : "")``
+    reports the class it always has. A source read, not a read of a built row.
+    """
+    out, src = set(), script()
+    for match in re.finditer(r'el\("tr",\s*\{', src):
+        depth, i = 1, match.end()
+        while depth:
+            depth += (src[i] == "{") - (src[i] == "}")
+            i += 1
+        found = re.search(r'class:\s*"([^"]*)"', src[match.end():i - 1])
+        out.add(frozenset(found.group(1).split()) if found else frozenset())
+    return out
 
 
 def _node(cls: str, part: str) -> list:
@@ -324,8 +369,8 @@ def _chip_rows() -> list[Shipped]:
             Shipped(f"the {cls} pill's border against the detail card", chain,
                     "border-color", chain[:-1], NONTEXT_MIN),
         ]
-    for cls in ("ok", "bad", "wait", "idle"):
-        for where in ("alert", "table", "expanded"):
+    for cls in ("ok", "bad", "wait", "idle", "run"):
+        for where in VD_PLACES:
             chain = _vd(cls, where)
             rows += [
                 Shipped(f"the {cls} chip's word in the {where}", chain, "color",
@@ -364,28 +409,57 @@ def _node_rows() -> list[Shipped]:
     return rows
 
 
-def _phase_rows() -> list[Shipped]:
-    # The cycle ring. Its current stage is accent role 1 and carries the accent
-    # as a contour; the labels are 10px text, which is why they run on --ink and
-    # --muted. Missing here until now, and the gap was load-bearing: the current
-    # label used to be drawn in the accent, which is text on --sunk at 4.4972.
-    ring = [HTML_LIT, BODY, CARD, E("svg")]
-    plain = [*ring, E("g", "phase")]
-    current = [*ring, E("g", "phase", "phase--current", "pulse")]
-    return [
-        Shipped("the current phase's label on the ring", current + [E("text")], "fill",
-                current + [E("rect", "box")], TEXT_MIN),
-        Shipped("a phase's label on the ring", plain + [E("text")], "fill",
-                plain + [E("rect", "box")], TEXT_MIN),
-        Shipped("the current phase's contour against its own box",
-                current + [E("rect", "box")], "stroke", current + [E("rect", "box")],
-                NONTEXT_MIN),
-        Shipped("the current phase's contour against the cycle card",
-                current + [E("rect", "box")], "stroke", ring, NONTEXT_MIN),
-    ]
+ORBIT_FIELD = [HTML_LIT, BODY, CARD, E("div", "orbit")]
+ORBIT_TRACK = [*ORBIT_FIELD, E("svg")]
 
 
-SHIPPED = _chip_rows() + _node_rows() + _phase_rows() + [
+def _stage(tone: str) -> list:
+    return [*ORBIT_FIELD, E("div", "orb", "orb--" + tone)]
+
+
+def _orbit_rows() -> list[Shipped]:
+    # The Orbit. A stage's contour is what identifies its state at a glance, so
+    # 1.4.11's 3:1 governs it, and it is measured twice: against the stage's own
+    # --sunk surface and against the --panel card the field sits on. The two
+    # connection forms are measured the same way — they are the trajectory, and
+    # a reader who cannot see them cannot see the cycle.
+    rows = []
+    for tone in ("neutral", "current", "waiting", "blocked"):
+        chain = _stage(tone)
+        rows += [
+            Shipped(f"a {tone} stage's name inside its own box",
+                    chain + [E("span", "orb__name")], "color", chain, TEXT_MIN),
+            Shipped(f"a {tone} stage's contour against its own surface", chain,
+                    "border-color", chain, NONTEXT_MIN),
+            Shipped(f"a {tone} stage's contour against the Orbit card", chain,
+                    "border-color", ORBIT_FIELD, NONTEXT_MIN),
+            Shipped(f"a role id on a {tone} stage",
+                    chain + [E("div", "orb__who")], "color", chain, TEXT_MIN),
+            Shipped(f"the harness string on a {tone} stage",
+                    chain + [E("div", "orb__who"), E("span", "orb__hn")], "color",
+                    chain, TEXT_MIN),
+            Shipped(f"the participant note on a {tone} stage",
+                    chain + [E("div", "orb__who"), E("span", "orb__note")], "color",
+                    chain, TEXT_MIN),
+        ]
+    for classes, what in ((("trk",), "a step of the trajectory"),
+                          (("trk", "trk--next"), "the return to the first stage")):
+        chain = [*ORBIT_TRACK, E("path", *classes)]
+        rows.append(Shipped(f"{what} against the Orbit card", chain, "stroke",
+                            ORBIT_FIELD, NONTEXT_MIN))
+    rows.append(Shipped("the arrow head that gives a step its direction",
+                        [*ORBIT_TRACK, E("path", "arw", "arw--orb")], "fill",
+                        ORBIT_FIELD, NONTEXT_MIN))
+    rows.append(Shipped("the next-Run label beside the return",
+                        ORBIT_FIELD + [E("span", "nextrun")], "color", ORBIT_FIELD,
+                        TEXT_MIN))
+    rows.append(Shipped("the vertical link between two stacked stages",
+                        ORBIT_FIELD + [E("div", "lnk"), E("i")], "border-left-color",
+                        ORBIT_FIELD, NONTEXT_MIN))
+    return rows
+
+
+SHIPPED = _chip_rows() + _node_rows() + _orbit_rows() + [
     Shipped("the warnings headline on the banner tint", BANNER + [E("button", "banner__head")],
             "color", BANNER, TEXT_MIN),
     Shipped("the warnings glyph on the banner tint",
@@ -541,13 +615,19 @@ def test_every_contour_that_identifies_a_state_clears_the_non_text_threshold(the
 
 @pytest.mark.parametrize("theme", THEMES)
 @pytest.mark.parametrize("row", SHIPPED, ids=lambda r: r.usage)
-def test_every_mark_the_panel_composites_clears_the_threshold_that_governs_it(theme, row):
+def test_every_mark_the_declarations_composite_to_clears_the_threshold_governing_it(
+        theme, row):
     # The composited half of the measurement contour. A chip's word is text and
     # answers to 4.5:1; its glyph and its border sit beside that word saying the
     # same thing, so 1.4.11's 3:1 is what governs them. Nothing is exempt: every
     # row below is resolved through the cascade, tint strengths included, and
     # once for every media environment the stylesheet declares — a rule that
-    # only applies below 1000px still paints something a reader has to read.
+    # only applies below 1000px still declares something a reader has to read.
+    #
+    # The name used to say "the panel composites", which reads as a claim about
+    # rasterised output. The compositing is this module's arithmetic over the
+    # declarations the cascade model resolves; a mark on a chain no row names is
+    # not measured at all, and that is the limit the module docstring states.
     if (row.usage, theme) in RECORDED_COMPOSITES:
         pytest.skip("recorded below threshold — see test_each_recorded_composite_...")
     for label, env in environments(theme):
@@ -557,16 +637,56 @@ def test_every_mark_the_panel_composites_clears_the_threshold_that_governs_it(th
 
 
 # Which shipped marks an interactive state repaints. Empty, and the emptiness
-# is the result: hover paints the map's outer ring and the queue card's outer
-# ring, focus paints the outline, selection paints the ring — all of them
-# outside every mark measured above. `.jump:hover` used to be in this list at
-# 4.33:1 against a lit card, which is what the list is for. Two-sided: a new
-# interactive repaint appears here and fails until it is measured and named.
+# is the result: hover declares the map's outer ring, the queue card's outer
+# ring and the findings row's outer ring, focus declares the outline, selection
+# declares the ring — all of them outside every mark measured above. One hover
+# does move a colour rather than add a ring: `.copy:hover` takes the copy
+# button's border from --line to --accent. It leaves the button's word alone,
+# and the border encloses the control rather than identifying a state, which is
+# the line NONTEXT_PAIRS already draws — so no measured mark moves under it.
+# `.jump:hover` used to be in this list at 4.33:1 against a lit card, which is
+# what the list is for. Two-sided for the marks the tables above name: an
+# interaction that repaints one of them appears here and fails until it is
+# measured and named.
 REPAINTED_BY_INTERACTION = ()
 
 
 def test_the_only_marks_an_interaction_repaints_are_the_ones_recorded_here():
     assert tuple(row.usage for row in _interactive_rows()) == REPAINTED_BY_INTERACTION
+
+
+def test_every_row_class_the_script_writes_is_a_row_this_module_measures():
+    # The list above is only as wide as the chains this module builds, and the
+    # chains are hand-written. This closes the gap the shipped defect went
+    # through: the findings table's row is `el("tr", { class: "click", … })`, the
+    # chip chains modelled it as a bare `<tr>`, and so `tr.click:hover` matched
+    # nothing here. Read out of the script rather than listed, so the next row
+    # class the panel starts writing has to arrive with a chain of its own.
+    modelled = {frozenset(el.classes) for where in VD_PLACES
+                for el in _vd("ok", where) if el.tag == "tr"}
+    assert _tr_classes() <= modelled, _tr_classes() - modelled
+
+
+@pytest.mark.parametrize("interaction", sorted(INTERACTIONS))
+@pytest.mark.parametrize("where", VD_PLACES)
+def test_no_interaction_moves_the_surface_a_status_chip_is_mixed_into(where, interaction):
+    # The targeted form of the rule the findings row broke. A chip's background
+    # is `color-mix(<status> N%, transparent)`, so the surface beneath it is
+    # part of the chip's own colour and of every ratio measured against it:
+    # `tr.click:hover td{background:var(--sunk)}` moved that surface for ten
+    # marks at once, and in Winter Daylight it took the wait chip's glyph from
+    # 4.2759:1 to 3.6919:1 — above the 3:1 that governs a glyph, and still a
+    # sixth of the contrast of a mark that identifies a state. Held as an
+    # equality of composited colours, so the interaction cannot move the surface
+    # in either direction, and held over the cell as well as over the chip: a
+    # rule repainting either one fails here by arithmetic, not by spelling.
+    for cls in ("ok", "bad", "wait", "idle"):
+        chain = _vd(cls, where)
+        for theme in THEMES:
+            for label, env in environments(theme):
+                for depth in (len(chain), len(chain) - 1):
+                    assert background(theme, _touch(chain[:depth], interaction), env) == \
+                        background(theme, chain[:depth], env), (cls, where, label, theme)
 
 
 @pytest.mark.parametrize("interaction", sorted(INTERACTIONS))
