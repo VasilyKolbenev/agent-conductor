@@ -332,8 +332,10 @@ def test_an_id_too_long_to_show_whole_is_still_closed_where_the_detail_stops(
     roles = next(c for c in doctor.inspect(root) if c.name == "roles")
     assert roles.outcome == doctor.FINDING
     # Said first and said plainly, because it is the thing that breaks: a cut
-    # taken after `repr` drops the closing quote, and every assertion below
-    # would then fail about a count while the reader hunts for why.
+    # taken after `repr` drops the closing quote, `quoted` then pairs nothing
+    # off and returns an empty set, and the very next assertion fails about a
+    # count of values while the reader hunts for why. Nothing after that one
+    # runs at all, so this is the only line placed to say what went wrong.
     assert roles.detail.count("'") % 2 == 0, (
         f"the shown id has no closing quote: {roles.detail}")
     values = quoted(roles.detail)
