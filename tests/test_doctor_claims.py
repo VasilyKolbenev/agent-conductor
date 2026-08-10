@@ -321,24 +321,29 @@ def test_a_finding_quotes_the_values_it_is_about_and_not_the_ones_beside_them(
 
 def test_an_id_too_long_to_show_whole_is_still_closed_where_the_detail_stops(
         tmp_path):
-    # What the quotes are for. `_shown` cuts and then hands the cut to `repr`,
-    # in that order, and the order is a claim about what a reader sees: cutting
-    # the repr itself would take its closing quote with it, and the id would
-    # read as running on past where the sentence stops. Stated over a rendered
-    # detail and not against the cut-off, so it holds whatever that constant
-    # becomes — an id far longer than anything a detail shows must come back as
-    # ONE closed quotation, shorter than the id and holding nothing the id did
-    # not.
+    # What the quotes are for: they say where an authored value stops, so a
+    # value shown only in part still has to arrive closed. Stated over a
+    # rendered detail and not against the cut-off, so it holds whatever that
+    # constant becomes — an id far longer than anything a detail shows must
+    # come back as ONE closed quotation holding nothing the id did not.
     long_id = "z" * 5_000
     root = write_project(tmp_path, map_toml=role_map(long_id),
                          lanes={"claude": lane()})
     roles = next(c for c in doctor.inspect(root) if c.name == "roles")
     assert roles.outcome == doctor.FINDING
+    # Said first and said plainly, because it is the thing that breaks: a cut
+    # taken after `repr` drops the closing quote, and every assertion below
+    # would then fail about a count while the reader hunts for why.
+    assert roles.detail.count("'") % 2 == 0, (
+        f"the shown id has no closing quote: {roles.detail}")
     values = quoted(roles.detail)
-    assert len(values) == 1, roles.detail      # an unclosed one is no value here
+    assert len(values) == 1, roles.detail
     (shown,) = values
     assert set(shown) <= set(long_id) | {"…"}, shown
-    assert 0 < len(shown) < len(long_id), len(shown)
+    # Non-vacuity only — an empty value would satisfy the subset above. That
+    # the id is cut at all is owned by test_doctor.py, by name:
+    # test_a_very_long_authored_id_is_cut_in_the_detail_and_kept_in_the_command.
+    assert shown, roles.detail
 
 
 def test_the_report_names_the_project_it_was_asked_about_and_no_other(tmp_path,
