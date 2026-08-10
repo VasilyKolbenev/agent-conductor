@@ -239,20 +239,32 @@ def spliced_root(function_name, element):
     """The name for a star that splices in the site's own root, or None if it does not.
 
     The whole rule, and the one the site can be read for: the call must be
-    `_dir_args`, handed exactly one positional value, no keyword arguments,
-    and that value must be the name the enclosing function was given its root
-    in. Anything else — an expression, a local bound to something out of the
+    `_dir_args`, handed exactly one value in a place this file can name, and
+    that value must be the name the enclosing function was given its root in.
+    Anything else — an expression, a local bound to something out of the
     project's files, an extra argument — is a value reaching a printed command
     by a path nothing put a predicate on.
+
+    One value in a place this file can name is either a lone positional or a
+    lone keyword whose name is `_dir_args`'s own first parameter: `root=root`
+    hands over exactly what `(root)` does, and refusing it would redden legal
+    code. `*args` and `**kwargs` at the call are neither — the values in them
+    are not countable from here, so they are not read as the root.
     """
     call = element.value
     if not (isinstance(call, ast.Call)
             and getattr(call.func, "id", None) == _ROOT_ARGS):
         return None
-    if call.keywords or len(call.args) != 1:
+    if len(call.args) + len(call.keywords) != 1:
         return None
+    if call.keywords:
+        keyword = call.keywords[0]
+        if keyword.arg is None or keyword.arg != root_parameter(_ROOT_ARGS):
+            return None
+        argument = keyword.value
+    else:
+        argument = call.args[0]
     root = root_parameter(function_name)
-    argument = call.args[0]
     if not (root is not None and isinstance(argument, ast.Name)
             and argument.id == root):
         return None
@@ -346,7 +358,13 @@ def test_every_value_a_printed_command_carries_is_a_literal_a_root_or_spellable(
             if describe(function_name, element) is None:
                 doors.append((function_name, ast.unparse(element),
                               element.lineno))
-    assert not doors, f"unguarded value(s) reaching a printed command: {doors}"
+    # Two things end up in this list and the message says so, because a star
+    # is rejected for its CALL FORM and not for the value in it: a splice this
+    # file cannot count the arguments of is refused without any claim about
+    # what was passed.
+    assert not doors, (
+        "value(s) reaching a printed command by a path nothing guards, or "
+        f"spliced by a call this file cannot read as the root: {doors}")
 
 
 def test_every_command_line_the_module_builds_is_spliced_with_the_readers_root():
