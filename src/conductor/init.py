@@ -87,6 +87,11 @@ _REVIEWER_QUESTION = "Which harness reviews their work?"
 _NO_REVIEWER_GLOSS = (" — no reviewing role at all: findings then come out "
                       "agreed with nobody having looked")
 
+#: The id the `custom` row demonstrates its own promise with. Deliberately not
+#: a registry id: the claim being shown is that an UNLISTED answer survives the
+#: prompt intact, and a listed one would leave that half unshown.
+_TYPED_EXAMPLE = "my-own-agent"
+
 # The one sentence naming what the user must do next. Said once, to the person;
 # `prompts.bootstrap_prompt` states the same instruction to the agent in its
 # own register, deliberately without sharing this text.
@@ -241,18 +246,28 @@ def _custom_row() -> tuple[str, str]:
         was typed — except for the numbers the menu printed beside its own
         rows, which `_ask_harness` matches as the strings they are, so a legal
         id like `2` answers with the row it numbers while `02` and `²` are
-        harness ids like any other. That exactness is what makes the gloss's
-        "not a number above" literally true, and the gloss carries the
-        exception rather than promising more than the prompt delivers. A row
-        that taught only the typed answer would leave a user to discover the
-        other from their own map.toml.
+        harness ids like any other. A row that taught only the typed answer
+        would leave a user to discover the other from their own map.toml.
+
+        Both claims are spelled as worked examples — `type X and get X`, and
+        `answer 1 and get row 1` — and that is not decoration. This sentence
+        ships to someone with no way to check it, and the two tests that used
+        to guard it looked for substrings of it: both survived a rewrite that
+        negated every clause, because a substring is still there when the
+        sentence around it says the opposite. The examples cannot be read that
+        way. `test_the_custom_rows_typed_promise_is_true_of_what_gets_written`
+        and `test_the_number_the_custom_row_excepts_chooses_that_row_instead`
+        parse them out of this string and drive the wizard with them, so the
+        sentence is wrong exactly when the run disagrees with it.
     """
     rest = ", ".join(h.id for h in harnesses.vendors()
                      if h.id not in harnesses.RECOMMENDED)
     return (harnesses.CUSTOM,
             f" — anything else: this row writes the id {harnesses.CUSTOM}. "
-            f"Conduct also knows {rest} — type any id that is not a number "
-            "above, listed or not, and it is written exactly as typed.")
+            f"Conduct also knows {rest} — type any id, listed or not, and it "
+            f"is written exactly as typed: type {_TYPED_EXAMPLE} and get "
+            f"{_TYPED_EXAMPLE}. The numbers this menu printed are the one "
+            "exception: answer 1 and get row 1.")
 
 
 def _wizard(ask: Callable[[str], str], default_project: str) -> tuple[str, str]:

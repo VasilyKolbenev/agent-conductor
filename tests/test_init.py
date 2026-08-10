@@ -2,8 +2,11 @@
 
 Split out of test_cli.py when the init path moved into `conductor.init`. Almost
 every test here calls the CLI entry point directly and inspects the return code
-plus capsys-captured stdout/stderr; the two that do not pin one helper
-(`_console_ask`, `_custom_row`) because the helper is what the claim is about.
+plus capsys-captured stdout/stderr; the one that does not pins `_console_ask`,
+because that helper is what the claim is about. The tests about the `custom`
+row do both: they read the gloss out of `_custom_row` and then run the wizard
+on what it says, so the sentence and the behaviour are checked against each
+other rather than against a substring of the sentence.
 The wizard is never driven through real stdin — `_scripted` injects the
 answers, so a re-prompt loop fails these tests instead of hanging them.
 
@@ -474,16 +477,54 @@ def test_the_custom_row_says_only_things_that_hold(tmp_path, capsys):
     assert _harnesses(tmp_path)["reviewer"] == harnesses.CUSTOM
 
 
-def test_the_custom_row_does_not_promise_a_number_is_written_as_typed():
-    # A digit that indexes the menu answers with the row it numbers, not with
-    # itself — pinned by test_wizard_reads_an_in_range_number_as_a_menu_choice
-    # above, where the legal id `2` lands in map.toml as `codex`. This gloss
-    # ships to a user who has no way to check that, so its promise of a literal
-    # write must carry that exception rather than read as unconditional.
+def test_the_custom_rows_typed_promise_is_true_of_what_gets_written(
+        tmp_path, capsys):
+    # The row's first claim: type an id and that id is what lands in map.toml.
+    # Guarded by substring, that claim survived being rewritten into its own
+    # negation — twice, by two reviewers, with the suite green both times. So
+    # it is guarded by the wizard instead: the ids the row NAMES all go through
+    # the prompt, and the example it demonstrates the promise with is read out
+    # of the gloss and run as written. Naming an id the wizard would rewrite,
+    # and demonstrating an outcome the wizard would not produce, are the same
+    # lie in two clauses, and both fail here.
     _, gloss = conductor.init._custom_row()
-    promise = gloss.split("also knows ", 1)[1].split(" — ", 1)[1]
-    assert "exactly as typed" in promise
-    assert "not a number" in promise
+    listed = gloss.split("also knows ", 1)[1].split(" — ", 1)[0]
+    shown = re.search(r"type (\S+) and get (\S+)\.", gloss)
+    assert shown, gloss             # the promise has to show its own case
+    typed, promised = shown.groups()
+    named = [(item.strip(), item.strip()) for item in listed.split(",")]
+    for index, (answer, expected) in enumerate(named + [(typed, promised)]):
+        target = tmp_path / f"named-{index}"
+        assert conductor.init.run(_init_args(target),
+                                  ask=_scripted(["p", answer, "a-reviewer"])) == 0
+        assert _harnesses(target)["implementer"] == expected, answer
+
+
+def test_the_number_the_custom_row_excepts_chooses_that_row_instead(
+        tmp_path, capsys):
+    # The row's second claim, and the half a user is least able to check: a
+    # legal harness id that happens to be a number the menu printed answers
+    # with the ROW, not with itself, so the promise above needs its exception
+    # or it would be false. The exception is demonstrated too, and the
+    # demonstration is run against the menu the wizard actually printed —
+    # a number the row excepts but the menu never printed would fail here,
+    # and so would one that came back as itself after all.
+    _, gloss = conductor.init._custom_row()
+    shown = re.search(r"answer (\S+) and get row (\S+)\.", gloss)
+    assert shown, gloss
+    answer, row = shown.groups()
+    assert answer == row, gloss                  # the same number, both times
+    assert conductor.init.run(_init_args(tmp_path / "menu"),
+                              ask=_scripted(["p"])) == 1      # menu, then EOF
+    printed = dict(re.findall(r"^ {2}(\S+)\) (\S+)", capsys.readouterr().err,
+                              re.MULTILINE))
+    assert answer in printed, printed
+    target = tmp_path / "excepted"
+    assert conductor.init.run(_init_args(target),
+                              ask=_scripted(["p", answer, "a-reviewer"])) == 0
+    written = _harnesses(target)["implementer"]
+    assert written == printed[answer]            # the row it numbers
+    assert written != answer                     # so the exception is real
 
 
 def test_none_means_a_harness_at_both_prompts_now(tmp_path, capsys):
