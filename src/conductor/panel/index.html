@@ -490,8 +490,8 @@ footer{font-size:10px;color:var(--faint);font-family:var(--mono);
 
 <script>
 /* Sections, in DOM order: helpers → brand shell + warnings → KPI rail → map graph
-   → Orbit → attention zone → agents block → findings table → feed →
-   render pipeline → interaction → data source.
+   → harness identity → Orbit → attention zone → agents block → findings table →
+   feed → render pipeline → interaction → data source.
 
    FILE-SIZE WAIVER (owner, 2026-08-03; revised 2026-08-08). The global guard
    caps a file at 800 lines; this one is exempt. Single-file, no-build,
@@ -778,15 +778,7 @@ function renderDetail(nodes){
   }
 }
 
-/* ── Orbit: the declared cycle, drawn from the declared cycle ─ */
-/* The five Default Orbit stages Python ships, and the whole of what the panel
-   is allowed to know about a stage name. Membership decides one thing: whether
-   the label gets .cap, a CSS capital on the same word. It never decides what a
-   stage is called — a project's own `research` stays `research` and is never
-   shown as some canonical term — and it never reaches the text node or an
-   attribute. tests/test_panel_orbit.py fails if this set drifts from
-   conductor.prompts and the default-orbit template. */
-const SHIPPED_STAGES = new Set(["goal", "detect", "diagnose", "design", "deliver"]);
+/* ── harness identity: the registry, resolved ──────────────── */
 /* The harness products conductor/harnesses.py registers, keyed by the id a map
    writes. Two copies of one table is the defect class that cost this project a
    hotfix at the CLI boundary, so this one exists only together with the guard
@@ -911,6 +903,15 @@ function harnessByAuthor(s){
     if (byRole.get(l.role)) out.set(String(l.author), byRole.get(l.role));
   return out;
 }
+/* ── Orbit: the declared cycle, drawn from the declared cycle ─ */
+/* The five Default Orbit stages Python ships, and the whole of what the panel
+   is allowed to know about a stage name. Membership decides one thing: whether
+   the label gets .cap, a CSS capital on the same word. It never decides what a
+   stage is called — a project's own `research` stays `research` and is never
+   shown as some canonical term — and it never reaches the text node or an
+   attribute. tests/test_panel_orbit.py fails if this set drifts from
+   conductor.prompts and the default-orbit template. */
+const SHIPPED_STAGES = new Set(["goal", "detect", "diagnose", "design", "deliver"]);
 /* What a stage can be marked with, and the words each mark spells. Every one
    is a fact already in state.json: `current` is the phase a lane is reporting
    (never an assigned stage), `waiting` is a queue item raised by a lane whose
