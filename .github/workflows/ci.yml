@@ -47,3 +47,21 @@ jobs:
           python -c "from conductor import schema, merge, store, prompts, server, demo"
           demo_dir=$(python -c "import tempfile; from conductor import demo; print(demo.materialize(tempfile.mkdtemp()))")
           conduct validate --dir "$demo_dir"
+
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install browser-test dependencies
+        run: python -m pip install -e ".[browser]"
+
+      - name: Install Chromium
+        run: python -m playwright install --with-deps chromium
+
+      - name: Rendered panel tests
+        run: python -m pytest -q browser_tests

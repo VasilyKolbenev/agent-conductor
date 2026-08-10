@@ -719,7 +719,11 @@ Five items recorded; the first is complete and four remain queued.
   with Playwright driving Chromium, asserting computed styles and composited colours off a
   live page. It is a **dev/CI dependency only**, and it leaves the three product constraints
   intact: the runtime stays stdlib-only, the panel stays a single file, and there is still no
-  build step.
+  build step. **Delivered 2026-08-10:** `browser_tests/test_panel_rendered.py` drives the real
+  loopback server in both December themes, checks rendered status channels and interaction
+  invariance, measures the browser's composited status-chip colours, and exercises both wide
+  and narrow Orbit layouts. `.github/workflows/ci.yml` runs it as an independent Chromium job;
+  the regular suite does not collect it and the runtime dependency set remains empty.
 - **Validate `waits_on_human[].title` as a string.** `schema._validate_lane_waits` checks `id`,
   `kind` and `blocks`, and never touches `title`. Finding titles *are* validated
   (`finding {id} needs a non-empty title`), so the gap is asymmetric. `merge._next_action`
