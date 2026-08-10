@@ -580,6 +580,35 @@ def free_names(source: str, bound: set[str]) -> set[str]:
     return set(re.findall(r"(?<![\w$])[A-Za-z_$][\w$]*", source)) - bound - _JS_WORDS
 
 
+@lru_cache(maxsize=4)
+def script_functions(html: str | None = None) -> frozenset:
+    """Every function the script declares with the ``function`` keyword."""
+    return frozenset(re.findall(r"function\s+([A-Za-z_$][\w$]*)\s*\(", script(html)))
+
+
+def reachable_from(name: str, html: str | None = None) -> set[str]:
+    """``name`` and every declared function reachable from it, transitively.
+
+    "Reachable" is *named*, not *called*: a body that mentions a function counts,
+    whether it calls it, stores it or picks it out of a conditional. The panel
+    does the last of these — `(wide ? drawOrbitRing : drawOrbitColumn)(…)` — and a
+    walk that only recognised `name(` would have stepped straight over both
+    layouts. Over-counting a mention that never runs makes a guard built on this
+    stricter than the truth; under-counting one would make it a guard about a
+    subset of the code while reading like a guard about all of it.
+    """
+    seen, todo = set(), [name]
+    while todo:
+        current = todo.pop()
+        if current in seen:
+            continue
+        seen.add(current)
+        body = function_body(current, html)
+        todo += sorted({other for other in script_functions(html)
+                        if re.search(r"(?<![\w.$])" + other + r"(?![\w$])", body)} - seen)
+    return seen
+
+
 def test_the_parser_reads_every_rule_of_the_panel_to_its_closing_brace():
     # The parser is the foundation every claim below stands on, so it says out
     # loud what it found: the multi-line light rule whose second line used to be

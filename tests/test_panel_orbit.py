@@ -27,7 +27,8 @@ import pytest
 
 from conductor import harnesses, merge, prompts, templates
 from tests.test_panel_cascade import (
-    E, computed, environments, free_names, function_body, panel_html, script)
+    E, computed, environments, free_names, function_body, panel_html,
+    reachable_from, script)
 
 NOW = datetime(2026, 7, 30, 12, 0, tzinfo=timezone.utc)
 RECENT = "2026-07-30T11:00:00+00:00"
@@ -334,12 +335,23 @@ def test_a_cycle_with_no_phases_still_renders_every_role_it_could_not_place():
 
 def test_the_orbit_writes_to_its_own_surfaces_and_to_no_others():
     # §2.4, the part a legacy project depends on: an Orbit that cannot draw
-    # itself must not be able to hide anything else. What renderOrbit can reach
-    # is the field, its two layers, the empty message and the hint — the lanes,
-    # the map and the agents block are not among them, so no state of the Orbit
-    # can remove a lane from the panel.
-    assert set(re.findall(r'\$\("(\w+)"\)', function_body("renderOrbit"))) == \
-        {"orbitField", "orbitSvg", "orbitBody", "cycleEmpty", "cycleHint"}
+    # itself must not be able to hide anything else. The surfaces it may reach
+    # are the field, its two layers, the empty message, the hint, and the group
+    # the roles it could not place go into — the lanes, the map, the agents block
+    # and the findings table are not among them.
+    #
+    # Reading the body of renderOrbit alone was not that claim. renderOrbit calls
+    # renderUnstaged, which the reading never entered, so `$("agents").hidden =
+    # true` inserted into renderUnstaged left this green while the same line
+    # inside renderOrbit reddened it — the guard held the outermost function and
+    # read as if it held the Orbit. So the surfaces are counted over renderOrbit
+    # together with everything it can reach, and the walk is required to reach
+    # renderUnstaged, which is where the hole was.
+    reached = reachable_from("renderOrbit")
+    assert {"renderUnstaged", "drawOrbitRing", "drawOrbitColumn"} <= reached, reached
+    assert {surface for name in reached
+            for surface in re.findall(r'\$\("(\w+)"\)', function_body(name))} == \
+        {"orbitField", "orbitSvg", "orbitBody", "cycleEmpty", "cycleHint", "roles"}
 
 
 def test_both_layouts_are_built_from_the_one_edge_list_and_the_one_stage_builder():
