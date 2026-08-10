@@ -3,7 +3,8 @@
 `build(root, port)` returns a `ThreadingHTTPServer` bound to 127.0.0.1 that
 serves the packaged panel at `/`, the merged state at `/state.json`, the
 bundled harness registry at `/harnesses.json`, raw lane files at
-`/lane/<author>.json`, and a Server-Sent-Events stream at `/events`.
+`/lane/<author>.json`, deterministic packets at `/handoff/<author>.md`, and a
+Server-Sent-Events stream at `/events`.
 
 `/harnesses.json` is a *presentation* route and not part of Protocol v1. It
 answers with `harnesses.as_payload()` — the same bytes for every project,
@@ -32,7 +33,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from conductor import harnesses, merge, store
+from conductor import harnesses, merge, report, store
 
 #: The `/harnesses.json` body, serialized once. The registry is frozen data
 #: that no project can influence, so this is the same answer for every request
@@ -219,7 +220,7 @@ class Watcher(threading.Thread):
 
 
 class Handler(BaseHTTPRequestHandler):
-    """Routes: `/`, `/state.json`, `/harnesses.json`, `/lane/<author>.json`, `/events`."""
+    """Read-only panel, state, registry, lane, handoff and event routes."""
 
     server: ConductServer                  # narrowed for type checkers
 
@@ -236,6 +237,8 @@ class Handler(BaseHTTPRequestHandler):
             self._serve_events()
         elif path.startswith("/lane/"):
             self._serve_lane(path)
+        elif path.startswith("/handoff/"):
+            self._serve_handoff(path)
         else:
             self._send_404()
 
@@ -284,6 +287,24 @@ class Handler(BaseHTTPRequestHandler):
             self._send_404()
             return
         self._send_body(200, "application/json; charset=utf-8", body)
+
+    def _serve_handoff(self, path: str) -> None:
+        """Render one current lane packet; URL input never becomes a path."""
+        name = path[len("/handoff/"):]
+        if not name.endswith(".md"):
+            self._send_404()
+            return
+        author = name[:-len(".md")]
+        if not store.AUTHOR_RE.fullmatch(author):
+            self._send_404()
+            return
+        state = json.loads(self.server.broker.state_bytes())
+        try:
+            body = report.handoff(state, author).encode("utf-8")
+        except KeyError:
+            self._send_404()
+            return
+        self._send_body(200, "text/markdown; charset=utf-8", body)
 
     def _serve_events(self) -> None:
         """Stream SSE: one frame on connect, then one per broker change."""

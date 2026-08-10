@@ -424,6 +424,7 @@ HARNESS_READERS = {
     "renderUnstaged": "draws a badge per role the Orbit could not place",
     "renderAgents": "draws a badge per lane, beside the lane's own status chip",
     "renderDetail": "draws a badge per lane that contested the selected node",
+    "renderLaneDetail": "draws the selected lane's harness in its drill-down",
     "loadHarnesses": "the one request for the registry, made once",
 }
 
@@ -675,15 +676,16 @@ def test_the_product_name_beside_a_swatch_runs_on_a_measured_palette_colour():
 
 
 # ── loading the registry: once, and never at the cost of the panel ────────
-def test_the_panel_asks_for_the_registry_once_and_asks_nothing_else_of_the_network():
-    # Two claims about the one request. It is made once — there is no retry and
-    # no poll, because the bundled registry cannot change under a running panel
-    # and a copy of this file opened without a server would retry forever. And
-    # the panel reaches for three same-origin paths in total: no machine is
-    # probed, no vendor asset is fetched, and nothing is loaded from anywhere
-    # but the server that served the panel.
+def test_the_registry_is_loaded_once_and_every_panel_request_stays_same_origin():
+    # The registry request is made once — there is no retry and no poll, because
+    # the bundled registry cannot change under a running panel and a static copy
+    # would retry forever. The other fetches are the live state and the handoff
+    # packet requested by a click; the EventSource is the fourth same-origin
+    # path. No machine is probed, no vendor asset is fetched, and nothing is
+    # loaded from anywhere but the server that served the panel.
     src = script()
     assert set(re.findall(r'fetch\("([^"]*)"', src)) == {"/state.json", "/harnesses.json"}
+    assert '"/handoff/" + encodeURIComponent(author) + ".md"' in src
     assert set(re.findall(r'new EventSource\("([^"]*)"', src)) == {"/events"}
     assert src.count('fetch("/harnesses.json"') == 1
     # Counting the calls was not counting the loads: `setTimeout(loadHarnesses,

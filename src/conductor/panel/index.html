@@ -299,6 +299,13 @@ svg{width:100%;height:auto;display:block;overflow:visible}
 .det__t{font-size:13.5px;font-weight:640}
 .det__meta{font-family:var(--mono);font-size:10.5px;color:var(--faint)}
 .det__contested{font-size:12px;color:var(--fail)}
+.det__section{border-top:1px solid var(--line);padding-top:7px;margin-top:2px}
+.det__section h3{font-size:10px;letter-spacing:.09em;text-transform:uppercase;
+                 color:var(--faint);margin:0 0 5px}
+.det__row{display:grid;grid-template-columns:minmax(92px,.35fr) 1fr;gap:8px;
+          font-size:11.5px;align-items:baseline}
+.det__row b{font-family:var(--mono);font-size:9.5px;color:var(--faint);font-weight:600}
+.det__list{display:flex;flex-direction:column;gap:5px;font-size:11.5px;color:var(--muted)}
 .pill{font-family:var(--mono);font-size:10px;padding:2px 7px;border-radius:4px;
       align-self:flex-start}
 .p--idle{background:var(--panel)}
@@ -343,6 +350,10 @@ svg{width:100%;height:auto;display:block;overflow:visible}
 .ag{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;font-size:12.5px;
     padding:5px 2px;border-bottom:1px solid var(--line)}
 .ag:last-child{border-bottom:none}
+.ag--pick{cursor:pointer;border-radius:5px}
+.ag--pick:hover{box-shadow:0 0 0 1px var(--faint)}
+.ag--pick:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+.ag[aria-pressed="true"]{box-shadow:0 0 0 1px var(--faint)}
 .ag__who{font-weight:650}
 .ag__task{flex:1;min-width:140px;overflow:hidden;text-overflow:ellipsis;
           white-space:nowrap;color:var(--muted)}
@@ -456,7 +467,7 @@ footer{font-size:10px;color:var(--faint);font-family:var(--mono);
   </div>
 
   <div class="card" id="agents">
-    <div class="card__h"><h2>Agents</h2><span class="hint">one row per lane</span></div>
+    <div class="card__h"><h2>Agents</h2><span class="hint">select a lane for handoff</span></div>
     <div id="agentList"></div>
     <p class="empty" id="agentsEmpty" hidden>No lanes yet.</p>
   </div>
@@ -482,7 +493,8 @@ footer{font-size:10px;color:var(--faint);font-family:var(--mono);
     </div>
     <div class="col">
       <div class="card">
-        <div class="card__h"><h2>Details</h2></div>
+        <div class="card__h"><h2>Details</h2>
+          <span class="hint">map node or harness lane</span></div>
         <div class="det" id="det"></div>
       </div>
     </div>
@@ -606,7 +618,7 @@ const chip = (meta, label) => el("span", { class: "vd vd--" + meta.cls },
                                 el("i", { class: "gl" }, meta.glyph), " " + label);
 
 /* UI state that survives re-renders */
-let LAST = null, SEL = null, warningsOpen = false;
+let LAST = null, SEL = null, LANE_SEL = null, warningsOpen = false;
 const openAsks = new Set(), openFindings = new Set();
 const copyFeedback = new Map();   /* wait id -> {label, timer} for the copy button */
 
@@ -1299,6 +1311,68 @@ function laneChip(l){
   if (l.stale) return chip({ cls: "wait", glyph: "◌" }, "stale");
   return chip({ cls: "ok", glyph: "●" }, "active");
 }
+/* Drawer values are either the bytes state.json records or an explicit
+   statement that the field is not recorded. An em dash would make missing
+   data look like an empty value, and capability placeholders would make v1
+   look as though it had fields it does not. */
+const recorded = value => value == null || value === ""
+  ? "not recorded in state.json" : String(value);
+function detailRow(label, value){
+  return el("div", { class: "det__row" }, el("b", {}, label), el("span", {}, recorded(value)));
+}
+function roleFor(lane, s){
+  return ((s.cycle || {}).roles || []).find(r => r.id === lane.role) || {};
+}
+function renderLaneDetail(lane, s){
+  const box = $("det"), role = roleFor(lane, s), now = lane.now || {};
+  const findings = (s.findings || []).filter(f => f.author === lane.author);
+  const waits = (s.human_queue || []).filter(w => (w.sources || []).includes(lane.author));
+  box.replaceChildren(laneChip(lane),
+    el("span", { class: "det__t" }, String(lane.author)),
+    role.harness ? harnessBadge(role.harness)
+                 : el("span", { class: "det__meta" }, "harness not recorded in state.json"),
+    detailRow("role", lane.role),
+    detailRow("assigned stage", role.stage),
+    detailRow("runtime phase", now.phase),
+    detailRow("current task", now.task),
+    detailRow("task since", now.since),
+    detailRow("updated", lane.updated));
+
+  const findingList = el("div", { class: "det__list" });
+  if (findings.length)
+    for (const f of findings)
+      findingList.append(el("div", {}, String(f.id), " · ", String(f.severity),
+                            " · ", String(f.review_state), " — ", String(f.title)));
+  else findingList.append("No finding names this lane as its author.");
+  box.append(el("div", { class: "det__section" },
+    el("h3", {}, "Open findings · " + findings.length), findingList));
+
+  const waitList = el("div", { class: "det__list" });
+  if (waits.length)
+    for (const w of waits)
+      waitList.append(el("div", {}, String(w.kind), " · ", String(w.id),
+                         " — ", String(w.title)));
+  else waitList.append("No human-queue item names this lane as a source.");
+  box.append(el("div", { class: "det__section" },
+    el("h3", {}, "Waiting on a person · " + waits.length), waitList));
+
+  const copy = el("button", { class: "copy", type: "button" }, "Copy handoff packet");
+  copy.dataset.handoffCopy = String(lane.author);
+  box.append(copy);
+}
+async function copyHandoff(author, button){
+  try {
+    const path = "/handoff/" + encodeURIComponent(author) + ".md";
+    const r = await fetch(path, { cache: "no-store" });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    await writeClipboard(await r.text());
+    button.textContent = "Copied";
+    setTimeout(() => { button.textContent = "Copy handoff packet"; }, 1500);
+  } catch (err) {
+    button.textContent = "Copy unavailable";
+    setTimeout(() => { button.textContent = "Copy handoff packet"; }, 1500);
+  }
+}
 /* One row per lane, in the order the state document lists them. The badge is
    appended to a row that is already built and already carries its own status
    chip: nothing here sorts, filters or re-groups, and no branch reads the
@@ -1307,14 +1381,18 @@ function laneChip(l){
 function renderAgents(lanes, s){
   const box = $("agentList");
   const harnessed = harnessByAuthor(s);
+  if (LANE_SEL && !lanes.some(l => String(l.author) === LANE_SEL)) LANE_SEL = null;
   box.replaceChildren();
   $("agentsEmpty").hidden = lanes.length > 0;
   for (const l of lanes){
     const now = l.now || {};
-    const row = el("div", { class: "ag" },
+    const author = String(l.author);
+    const row = el("div", { class: "ag ag--pick", tabindex: "0", role: "button",
+                             "aria-pressed": String(author === LANE_SEL) },
       el("span", { class: "mono ag__who" }, String(l.author)),
       laneChip(l),
       el("span", { class: "faint" }, String(l.role || "observer")));
+    row.dataset.lane = author;
     const harness = harnessed.get(String(l.author));
     if (harness) row.append(harnessBadge(harness));
     const task = l.broken ? String(l.error || "unreadable") : String(now.task || "");
@@ -1325,6 +1403,8 @@ function renderAgents(lanes, s){
     row.append(el("span", { class: "mono faint ag__ago" }, ago(parseTs(l.updated))));
     box.append(row);
   }
+  const selected = lanes.find(l => String(l.author) === LANE_SEL);
+  if (selected) renderLaneDetail(selected, s);
 }
 
 /* ── findings table ────────────────────────────────────────── */
@@ -1436,6 +1516,8 @@ function render(s){
 /* ── interaction (click + Enter/Space) ─────────────────────── */
 function activate(target){
   if (!(target instanceof Element)) return false;
+  const handoff = target.closest("[data-handoff-copy]");
+  if (handoff){ copyHandoff(handoff.dataset.handoffCopy, handoff); return true; }
   const copy = target.closest("[data-copy]");   // before [data-ask]: nested in the card
   if (copy){ copyBrief(copy.dataset.copy); return true; }
   const jump = target.closest("[data-jump]");   // scrollIntoView default is instant
@@ -1443,10 +1525,26 @@ function activate(target){
              if (dest) dest.scrollIntoView(); return true; }
   const node = target.closest("[data-node]");
   if (node){
+    LANE_SEL = null;
     SEL = node.dataset.node;
+    document.querySelectorAll("[data-lane]").forEach(row =>
+      row.setAttribute("aria-pressed", "false"));
     document.querySelectorAll("[data-node]").forEach(g =>
       g.setAttribute("aria-pressed", String(g.dataset.node === SEL)));
     renderDetail(((LAST && LAST.map) || {}).nodes || []);
+    return true;
+  }
+  const lane = target.closest("[data-lane]");
+  if (lane){
+    SEL = null;
+    LANE_SEL = lane.dataset.lane;
+    document.querySelectorAll("[data-node]").forEach(g =>
+      g.setAttribute("aria-pressed", "false"));
+    document.querySelectorAll("[data-lane]").forEach(row =>
+      row.setAttribute("aria-pressed", String(row.dataset.lane === LANE_SEL)));
+    const selected = ((LAST && LAST.lanes) || []).find(
+      l => String(l.author) === LANE_SEL);
+    if (selected) renderLaneDetail(selected, LAST);
     return true;
   }
   const ask = target.closest("[data-ask]");
