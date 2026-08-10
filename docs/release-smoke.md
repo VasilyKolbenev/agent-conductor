@@ -141,6 +141,9 @@ $html = (Invoke-WebRequest -Uri "http://127.0.0.1:7801/" -UseBasicParsing).Conte
 [regex]::Matches($html, 'https?://[^\s"''<>)]+') | ForEach-Object { $_.Value } | Sort-Object -Unique
 [regex]::Matches($html, '(?:fetch|EventSource|XMLHttpRequest|WebSocket)\s*\(\s*[^)]{0,40}') |
     ForEach-Object { $_.Value.Trim() } | Sort-Object -Unique
+$resource = '(?:\bsrc|\bhref|\bposter)\s*[:=]\s*["'']?[^"''\s>;)]{0,60}' +
+            '|@import[^;]{0,60}|@font-face|url\(\s*[^)]{0,60}'
+[regex]::Matches($html, $resource) | ForEach-Object { $_.Value.Trim() } | Sort-Object -Unique
 ```
 
 Expect the only absolute URL in the served page to be `http://www.w3.org/2000/svg`, which is
@@ -152,8 +155,20 @@ EventSource("/events"
 fetch("/state.json", { cache: "no-store" }
 ```
 
-A CDN script tag, a web font, an analytics beacon or an absolute URL anywhere else is a
-blocker: the panel is offline software and a page that reaches out is not.
+The third scan exists because the first two cannot see the spellings this step's own verdict
+names. A CDN script tag or a web font can be loaded without a scheme — `src="//cdn.example.com/x.js"`,
+`@font-face { src: url(//cdn.example.com/x.woff2) }` — and neither the absolute-URL scan nor
+the call scan reports one. Expect exactly two hits, both fragment references into the page's
+own SVG:
+
+```
+url(#arw
+url(#ctstFill
+```
+
+Every hit from the third scan must be same-origin or a bare `#fragment`. A hit naming a host,
+with a scheme or without one, is a blocker, and so is any absolute URL beyond the namespace
+above: the panel is offline software and a page that reaches out is not.
 
 Stop the demo when you are done with it:
 
@@ -161,7 +176,7 @@ Stop the demo when you are done with it:
 Stop-Process -Id $demo.Id -Force
 ```
 
-## 8. `conduct init` scaffolds a real project without a terminal
+## 8. `conduct init --template` scaffolds a real project without asking anything
 
 ```powershell
 $PROJ = "$SMOKE\proj"
@@ -170,7 +185,10 @@ New-Item -ItemType Directory -Force -Path $PROJ | Out-Null
 ```
 
 `--template` is the automation path: it asks nothing, so this step cannot hang waiting for an
-answer nobody is there to give. Expect exit 0, the scaffold report and the verdict on stderr:
+answer nobody is there to give. Read it for exactly that and no more — the flag returns before
+init ever asks whether it has a terminal, so running it from your own console proves nothing
+about the no-terminal default, which is named below among what this procedure does not check.
+Expect exit 0, the scaffold report and the verdict on stderr:
 
 ```
 scaffolded ...\proj\conductor: map.toml (edit me), lanes/, events.jsonl
@@ -265,6 +283,12 @@ Named so that passing it is not read as more than it is.
   what a browser draws from it, and the live update is checked only as far as the page opening
   an `EventSource`. Open the demo URL, edit a lane file in the printed fixture directory, and
   watch the panel move.
+- **The no-terminal default.** Step 8 passes `--template`, which short-circuits before
+  `conduct init` consults the terminal at all, so nothing above exercises what init does
+  when stdin is a pipe or a CI runner — the path that would hang every runner if it broke.
+  It is held by
+  `tests/test_init.py::test_init_non_tty_uses_the_default_template_and_never_reads_stdin`,
+  and by nothing in this procedure.
 - **Ctrl-C.** The steps above stop the servers with `Stop-Process`, which is not the interrupt
   a person sends. Stop one by hand once.
 - **Any platform but this one.** Everything above ran on Windows. CI covers Windows and Linux
