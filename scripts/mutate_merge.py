@@ -208,6 +208,29 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
         "tests/test_merge_status.py",
     ),
     (
+        # Row 1 of the action ladder against row 2. The status ladder's row 1
+        # is pinned on its own, and the rung-by-rung agreement test cannot
+        # reach this pair: every rung it walks is a `blocked` row, and row 1
+        # is `unknown`. Lanes still parse when the map does not, so the queue
+        # this narrowing defers to is genuinely reachable.
+        "action ladder: fix_map no longer outranks a queued wait",
+        '    if map_error is not None:\n        return _action("fix_map", None,',
+        '    if map_error is not None and not state["human_queue"]:\n'
+        '        return _action("fix_map", None,',
+        "tests/test_merge_status.py",
+    ),
+    (
+        # One entry for the whole kind: broken invariants, review-debt pairs,
+        # disagreements and contested nodes all break ties on sorted id, and
+        # one test pins all four against inputs arriving in the worst order.
+        # Broken invariants stand for the kind here because their per-row test
+        # passes on declaration order alone and so proves nothing by itself.
+        "tie-breaks stop ordering by id (broken invariants stand for the kind)",
+        '    return sorted(i["id"] for i in state["invariants"] if not i["ok"])',
+        '    return list(i["id"] for i in state["invariants"] if not i["ok"])',
+        "tests/test_merge_status.py",
+    ),
+    (
         "role projection: stage presence guard dropped (absent stage becomes null)",
         '    if "stage" in role:\n        out["stage"] = role["stage"]\n',
         '    out["stage"] = role.get("stage")\n',

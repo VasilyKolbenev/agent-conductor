@@ -121,8 +121,10 @@ def test_the_shadowing_fixture_really_does_shadow_the_export(export, shadowing_p
 def test_measuring_an_export_under_an_editable_install_is_honest_not_plausible(
         export, shadowing_python):
     # The acceptance condition: run from an export while an editable install of
-    # the working tree exists. The only two honest outcomes are a true 13/13 or
-    # a refusal — never a score computed against a file nobody imported.
+    # the working tree exists. The only two honest outcomes are a true full
+    # score or a refusal — never a score computed against a file nobody
+    # imported. The count is read off the catalogue, not written down here: a
+    # literal would pass a shrunken catalogue and fail an extended one.
     stale = export / "src" / "conductor" / "__pycache__"
     stale.mkdir(exist_ok=True)
     (stale / "merge.cpython-000.pyc").write_bytes(b"stale bytecode")
@@ -131,7 +133,8 @@ def test_measuring_an_export_under_an_editable_install_is_honest_not_plausible(
     result = run_harness(shadowing_python, "--root", str(export))
 
     assert result.returncode == harness.EXIT_OK, result.stdout + result.stderr
-    assert "VERDICT: PASS - 13/13 mutations killed" in result.stdout
+    total = len(harness.MUTATIONS)
+    assert f"VERDICT: PASS - {total}/{total} mutations killed" in result.stdout
     assert f"conductor.merge: {export / 'src' / 'conductor' / 'merge.py'}" in result.stdout
     assert str(WORKING_TREE_MERGE) not in result.stdout   # the export was measured, not us
     assert WORKING_TREE_MERGE.read_bytes() == working_tree_before
@@ -657,8 +660,8 @@ def pytest_free_python(tmp_path_factory):
 
 def test_an_interpreter_that_cannot_run_a_test_cannot_produce_a_score(
         export, pytest_free_python):
-    # The harness's worst false positive: 13/13 killed, exit 0, from an
-    # interpreter on which not one test can run, because `python -m pytest`
+    # The harness's worst false positive: every mutation killed, exit 0, from
+    # an interpreter on which not one test can run, because `python -m pytest`
     # without pytest exits 1 and exit 1 is what a kill looks like.
     assert "pytest" in harness.IMPORT_PROBE
     would_read_as_a_kill = subprocess.run(
