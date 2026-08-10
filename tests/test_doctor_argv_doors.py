@@ -164,14 +164,65 @@ def root_args_body():
     return [], []
 
 
+def _own_scope(function):
+    """Every node of one function's body that its OWN scope holds.
+
+    A nested `def` or `lambda` is yielded but not descended into: what its
+    body binds it binds inside itself, under a name of its own. A
+    comprehension IS descended into, because a walrus in one binds in the
+    scope AROUND it — only the loop variables below are the comprehension's.
+    """
+    stack = list(function.body)
+    while stack:
+        node = stack.pop()
+        yield node
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef,
+                                 ast.Lambda)):
+            stack.extend(ast.iter_child_nodes(node))
+
+
+def _binds(node):
+    """Every name one node binds, read off the field its form keeps the name in.
+
+    An assignment, a `for` target and a walrus all store to an `ast.Name`.
+    Everything else that binds — `def`, `class`, `except ... as`,
+    `import ... as`, a match pattern — keeps the name in a `name` or `asname`
+    field, and is read that way rather than from a list of statements, so a
+    binding form nobody enumerated here still lands in the set.
+    """
+    if isinstance(node, ast.Name):
+        return {node.id} if isinstance(node.ctx, ast.Store) else set()
+    if isinstance(node, (ast.Global, ast.Nonlocal)):
+        return set(node.names)
+    return {bound for field in ("name", "asname")
+            for bound in (getattr(node, field, None),) if isinstance(bound, str)}
+
+
+def rebound_in(function):
+    """Every name one function binds in its own scope, its parameters aside."""
+    own = list(_own_scope(function))
+    loop_variables = {id(name) for node in own
+                      if isinstance(node, (ast.ListComp, ast.SetComp,
+                                           ast.DictComp, ast.GeneratorExp))
+                      for generator in node.generators
+                      for name in ast.walk(generator.target)
+                      if isinstance(name, ast.Name)}
+    return {bound for node in own if id(node) not in loop_variables
+            for bound in _binds(node)}
+
+
 def root_parameter(function_name):
     """The name one function was handed its root in — its first parameter, if it still holds it.
 
     Returns:
         The first parameter's name, or None when the function has no parameter
-        or assigns to that name anywhere in its body. A rebound name is not
-        the root the caller passed: `root = role["harness"]` before a site
-        leaves the site spelled exactly as it was while meaning something else.
+        or binds that name again in its OWN scope. A rebound name is not the
+        root the caller passed: `root = role["harness"]` before a site leaves
+        the site spelled exactly as it was while meaning something else. Own
+        scope and not anywhere below it: a comprehension's loop variable and a
+        name assigned inside a nested `def` are different names that happen to
+        be spelled the same, and counting those would turn every star in such
+        a function into a door over code that rebinds nothing.
     """
     for function in ast.walk(TREE):
         if (isinstance(function, ast.FunctionDef)
@@ -180,10 +231,7 @@ def root_parameter(function_name):
             if not takes:
                 return None
             first = takes[0].arg
-            rebound = {node.id for node in ast.walk(function)
-                       if isinstance(node, ast.Name)
-                       and isinstance(node.ctx, ast.Store)}
-            return None if first in rebound else first
+            return None if first in rebound_in(function) else first
     return None
 
 
