@@ -385,6 +385,30 @@ def test_a_map_whose_placeholders_a_person_replaced_is_not_called_a_placeholder(
     assert prompts._STEP_SOME_NODES_ARE_PLACEHOLDERS not in text
 
 
+#: A valid map whose one label carries the marker without opening with it —
+#: the shape `templates` never writes and a person easily does.
+_MARKER_MID_LABEL = '''schema_version = 1
+project = "shop"
+
+[[nodes]]
+id = "billing"
+label = "billing (PLACEHOLDER - replace me)"
+kind = "component"
+'''
+
+
+def test_a_label_carrying_the_marker_anywhere_in_it_is_counted_as_marked():
+    # A prefix test called this label unmarked, and the prompt then printed
+    # "no label is marked PLACEHOLDER" about a file where one plainly is —
+    # a false sentence about the reader's own map, and `validate` accepts the
+    # map, so nothing else would have said so.
+    assert schema.validate_map(tomllib.loads(_MARKER_MID_LABEL))[0] == []
+    assert prompts.placeholder_nodes(_MARKER_MID_LABEL) == (1, 1)
+    text = prompts.bootstrap_prompt(prompts.DEFAULT_MAP_PATH, _MARKER_MID_LABEL)
+    assert prompts._STEP_EVERY_NODE_IS_A_PLACEHOLDER in text
+    assert prompts._STEP_NO_NODE_IS_A_PLACEHOLDER not in text
+
+
 def test_a_half_replaced_map_is_told_only_some_of_its_nodes_are_placeholders():
     # The shape a map spends most of its life in. "Every block is a
     # placeholder" and "none is" are both false here, so a two-way answer

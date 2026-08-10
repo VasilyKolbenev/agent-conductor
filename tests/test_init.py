@@ -403,11 +403,12 @@ def _placeholders_in(text):
 
     The PLACEHOLDER convention is restated deliberately: borrowing
     `prompts.placeholder_nodes` would let a miscount agree with itself, and
-    then the test would only prove init is self-consistent.
+    then the test would only prove init is self-consistent. Marked means the
+    label carries the word, wherever in it — the same reading the prose the
+    map is printed with claims for itself.
     """
     nodes = tomllib.loads(text).get("nodes", [])
-    return (sum(1 for n in nodes if n["label"].startswith("PLACEHOLDER")),
-            len(nodes))
+    return (sum(1 for n in nodes if "PLACEHOLDER" in n["label"]), len(nodes))
 
 
 @pytest.mark.parametrize("name", [n for n, _ in templates.names()])

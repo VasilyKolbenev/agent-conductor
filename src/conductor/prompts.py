@@ -6,11 +6,10 @@ tells a role-holding agent how to keep its lane file and which findings still
 owe it a verdict. Both read the artefact they talk about — `bootstrap_prompt`
 takes the map's TEXT, not just its path, because a sentence about what is in
 that file has to be derived from the file rather than from which template
-wrote it. The map example is
-taken from the spec (PROTOCOL.md §2); the lane starter vended by
-`role_prompt` is deliberately NOT the commented §3 excerpt — that one stays
-in PROTOCOL.md as an illustration, while the vended template is a separate,
-copy-safe strict-JSON artifact an agent can write verbatim.
+wrote it. The map example is taken from the spec (PROTOCOL.md §2); the lane
+starter vended by `role_prompt` is deliberately NOT the commented §3 excerpt
+— that one stays in PROTOCOL.md as an illustration, while the vended template
+is a separate, copy-safe strict-JSON artifact an agent can write verbatim.
 """
 from __future__ import annotations
 
@@ -207,12 +206,20 @@ _NODE_FIELDS = '''  id          unique, and the only name a lane may use: a lane
               dependents failing by itself.'''
 
 #: The PLACEHOLDER convention, named once so code can apply it rather than
-#: restate it. A node whose label opens with this word is scaffolding a
+#: restate it. A node whose label CARRIES this word anywhere is scaffolding a
 #: template wrote, not a component of anyone's project: `templates` spells it
 #: into every label it vends, and `placeholder_nodes` reads it back out of a
 #: map that has already been written — which is the only way a sentence about
 #: a map can be true of maps the templates did not write, a hand-edited one
 #: included.
+#:
+#: Anywhere, not at the start, and the choice is forced by the prose: the
+#: prompt says "no label is marked PLACEHOLDER" and init says "the placeholder
+#: nodes". A prefix test called `billing (PLACEHOLDER - replace me)` unmarked
+#: and then printed both sentences about a file where they are false. The two
+#: statements have to be the same statement, so the count was widened to the
+#: word the prose already claims to be looking for rather than the prose
+#: narrowed to the position nobody promised.
 PLACEHOLDER_LABEL = "PLACEHOLDER"
 
 
@@ -220,14 +227,19 @@ def placeholder_nodes(map_text: str) -> tuple[int, int]:
     """Count a written map's placeholder nodes, and its nodes.
 
     Args:
-        map_text: The TOML text of a map that has already been written.
+        map_text: The TOML text of a map that has already been written AND has
+            passed `schema.validate_map` — which requires at least one node
+            (`tests/test_schema_map.py::test_empty_nodes_is_error`). A map with
+            no `[[nodes]]` block is outside this contract: it counts as
+            `(0, 0)`, which every caller reads as "nothing is a placeholder",
+            and the sentences built on that would be vacuous rather than true.
 
     Returns:
-        `(placeholders, nodes)` — how many `[[nodes]]` blocks still carry a
-        `PLACEHOLDER_LABEL` label, and how many there are. The pair, not a
-        boolean: "every node is a placeholder" and "some node is" are
-        different claims, and a prompt that conflates them is false about a
-        half-replaced map.
+        `(placeholders, nodes)` — how many `[[nodes]]` blocks still carry
+        `PLACEHOLDER_LABEL` somewhere in their label, and how many there are.
+        The pair, not a boolean: "every node is a placeholder" and "some node
+        is" are different claims, and a prompt that conflates them is false
+        about a half-replaced map.
 
     Raises:
         tomllib.TOMLDecodeError: If `map_text` is not TOML. Callers hold a map
@@ -235,7 +247,7 @@ def placeholder_nodes(map_text: str) -> tuple[int, int]:
     """
     nodes = tomllib.loads(map_text).get("nodes", [])
     return (sum(1 for node in nodes
-                if str(node.get("label", "")).startswith(PLACEHOLDER_LABEL)),
+                if PLACEHOLDER_LABEL in str(node.get("label", ""))),
             len(nodes))
 
 
@@ -284,10 +296,12 @@ def bootstrap_prompt(map_path: str, map_text: str) -> str:
     Args:
         map_path: The map the agent must edit, named the way the person
             handing this over sees it.
-        map_text: That map's TOML text, as it was written. Required, and the
-            reason is the whole of this function's history: given only a path,
-            the prompt called every node a placeholder for every map, which is
-            false of the `minimal` template and of any map a user has edited.
+        map_text: That map's TOML text, as it was written, and validated —
+            see `placeholder_nodes` for the contract, including why a map with
+            no `[[nodes]]` block is outside it. Required, and the reason is the
+            whole of this function's history: given only a path, the prompt
+            called every node a placeholder for every map, which is false of
+            the `minimal` template and of any map a user has edited.
 
     Returns:
         A deterministic English prompt, self-contained enough to be redirected
