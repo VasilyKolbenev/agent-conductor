@@ -43,10 +43,11 @@ the scenario).
 
 ```sh
 cd your-project
-conduct init        # scaffolds conductor/ — the map it writes is already valid
+conduct init        # asks three questions in a terminal; --template skips them
 # edit conductor/map.toml: swap in your nodes, roles, and phases
 conduct validate    # prints nothing when the map and lanes are valid
 conduct prompt --role implementer --author claude
+conduct report      # the merged state as Markdown, on stdout
 conduct up          # panel at http://127.0.0.1:7777/
 ```
 
@@ -54,6 +55,34 @@ conduct up          # panel at http://127.0.0.1:7777/
 Claude Code, Codex, or whatever harness holds that role. The agent then keeps its lane
 file (`conductor/lanes/claude.json`) up to date, and the panel reflects every write
 live.
+
+`conduct report` renders the same merged state the panel serves, as Markdown on stdout:
+the decision brief, the human queue, the findings, and a section naming what that state
+does not know. Nothing about it is interactive, so it goes in a pull request comment, a
+CI log, or a file.
+
+### What `conduct init` writes
+
+`conduct init` never inspects your machine. It does not look for installed harnesses, and
+the answers it takes only label who does what, in the map and in the panel.
+
+- **In a terminal** it asks three questions — the project name, which harness runs the
+  implementing roles, and which harness reviews their work. Enter takes the default on
+  each. Answering the reviewer question with the `(none)` row writes the `single-harness`
+  map; every other answer writes `default-orbit`.
+- **`--template NAME`** skips the questions. Four maps are vended: `default-orbit`, the
+  recommended five-stage process — goal, detect, diagnose, design, deliver — and the
+  default; `single-harness`, one implementing role plus a human decision and no reviewer;
+  `empty`, the minimum that validates, one placeholder node and no cycle; and `minimal`,
+  the protocol spec's own §2 example map. `conduct init --help` lists them.
+- **Where there is no terminal** — a pipe, a CI runner — it writes `default-orbit`
+  without waiting for an answer, so it cannot block a script.
+
+Every path writes the same three things: `conductor/map.toml`, `conductor/lanes/` and
+`conductor/events.jsonl`. It then validates what it wrote, and puts on stdout — and on
+stdout alone — a bootstrap prompt telling an agent to replace the placeholder nodes with
+your real components, so `conduct init > setup.txt` leaves you that prompt and nothing
+else. An existing `conductor/` is never touched: init says so and exits 1.
 
 ## What it is
 
@@ -88,6 +117,8 @@ agents move on.
 - Current normative protocol: `spec/PROTOCOL.md`
 - Accepted Harness control-plane model: `docs/adr/0001-harness-control-plane-model.md`
 - The demo scenario: `demo/README.md`
+- The release smoke test, run against a release candidate before publishing:
+  `docs/release-smoke.md`
 
 ## Status
 

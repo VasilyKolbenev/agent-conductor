@@ -648,7 +648,13 @@ Five items queued, none attached to a slice.
   because a vocabulary the test owns is still a vocabulary; (3) cannot be closed by a comparison
   whose two sides both derive from `verify()`; and (6) is not closed by a substring match on the
   parenthetical, but by moving each field it names and showing the rendered verdict move with it.
-- **The README does not document `--template` or the wizard.** `conduct init` appears there once,
-  as a bare command annotated with what it scaffolds — and what it scaffolds changed in
-  `2f4aabf`, so that annotation now describes the old default. A small docs slice: the three
-  vended templates, the wizard, the non-TTY path, and what the default scaffold contains today.
+- ~~**The README does not document `--template` or the wizard.**~~ **Closed.** The README now
+  carries a "What `conduct init` writes" section: the wizard's three questions, `--template`,
+  the four vended maps — the item said three, and `templates.names()` returns four — and the
+  path without a terminal, which writes `default-orbit` without waiting for an answer. The same
+  slice added the `conduct report` the README had never mentioned, and `docs/release-smoke.md`,
+  the procedure a person runs against a release candidate before publishing. What holds all of
+  it is a relation rather than a rewrite: `tests/test_docs_commands.py` reads the subcommand
+  list off the parser `__main__._build_parser()` builds and requires the README and the release
+  smoke to name exactly that set, in both directions, so the next command added or renamed
+  moves both documents or reds the suite.
