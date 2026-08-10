@@ -25,7 +25,9 @@ Three instruments, none of them a substring of an expected sentence:
 * the two findings that name authored ids — the only two details that quote
   anything — have the set they print compared with the set computed here from
   the map and the registry, so a finding cannot name the ids sitting beside
-  the ones it is about.
+  the ones it is about. An id too long to show whole is held to arriving
+  closed as well: the quotes are what say where an authored value stops, and
+  a cut that dropped the closing one would leave it reading as continuing.
 
 WHAT NOTHING HERE HOLDS, said plainly so the three above are not read as
 wider than they are. The declarative wording of a detail — everything between
@@ -50,7 +52,7 @@ import pytest
 from conductor import doctor, harnesses, prompts, store, validate
 from conductor.__main__ import main
 from tests.test_doctor import (REAL_MAP, corpus, lane, outcomes, ready_project,
-                               report)
+                               report, role_map)
 from tests.test_store import write_project
 
 #: The five things the closing words of a detail can promise a reader.
@@ -315,6 +317,28 @@ def test_a_finding_quotes_the_values_it_is_about_and_not_the_ones_beside_them(
     assert named.outcome == doctor.FINDING
     assert quoted(named.detail) == {"claud-code", "codx"}
     assert not quoted(named.detail) & {known.id for known in harnesses.known()}
+
+
+def test_an_id_too_long_to_show_whole_is_still_closed_where_the_detail_stops(
+        tmp_path):
+    # What the quotes are for. `_shown` cuts and then hands the cut to `repr`,
+    # in that order, and the order is a claim about what a reader sees: cutting
+    # the repr itself would take its closing quote with it, and the id would
+    # read as running on past where the sentence stops. Stated over a rendered
+    # detail and not against the cut-off, so it holds whatever that constant
+    # becomes — an id far longer than anything a detail shows must come back as
+    # ONE closed quotation, shorter than the id and holding nothing the id did
+    # not.
+    long_id = "z" * 5_000
+    root = write_project(tmp_path, map_toml=role_map(long_id),
+                         lanes={"claude": lane()})
+    roles = next(c for c in doctor.inspect(root) if c.name == "roles")
+    assert roles.outcome == doctor.FINDING
+    values = quoted(roles.detail)
+    assert len(values) == 1, roles.detail      # an unclosed one is no value here
+    (shown,) = values
+    assert set(shown) <= set(long_id) | {"…"}, shown
+    assert 0 < len(shown) < len(long_id), len(shown)
 
 
 def test_the_report_names_the_project_it_was_asked_about_and_no_other(tmp_path,
