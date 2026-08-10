@@ -558,22 +558,60 @@ def test_the_stylesheet_declares_no_interactive_state_this_module_does_not_model
             assert name in modelled or name in inert, rule.selector
 
 
-def function_body(name: str, html: str | None = None) -> str:
-    """Return the source of one top-level ``function``, comments removed.
+# One declared function of the script, in the arrow spelling: the parameter
+# slot is a parenthesised list or a single bare name, then the arrow itself.
+_ARROW = r"const\s+(%s)\s*=\s*(?:\([^()]*\)|[A-Za-z_$][\w$]*)\s*=>"
 
-    Comments are gone before the braces are counted, so an expression left in a
-    comment beside the line that no longer evaluates it is not source any more.
+_STRING = re.compile(r'"(?:[^"\\\n]|\\.)*"'
+                     r"|'(?:[^'\\\n]|\\.)*'"
+                     r"|`(?:[^`\\]|\\.)*`")
+
+
+def _initialiser(src: str, i: int) -> str:
+    """The expression from ``i`` to its terminating top-level ``;``.
+
+    String literals are stepped over whole, so a semicolon or a brace inside
+    one can neither end the expression early nor unbalance the count.
+    """
+    depth, j = 0, i
+    while j < len(src):
+        if src[j] in "\"'`":
+            j = _STRING.match(src, j).end()
+            continue
+        depth += (src[j] in "([{")
+        depth -= (src[j] in ")]}")
+        if src[j] == ";" and depth == 0:
+            return src[i:j]
+        j += 1
+    raise AssertionError(f"no terminating semicolon after offset {i}")
+
+
+def function_body(name: str, html: str | None = None) -> str:
+    """Return the source of one declared function, comments removed.
+
+    A declaration is either the ``function`` keyword or a ``const`` arrow —
+    the panel spells helpers both ways, and a walk that knew only the first
+    form read as if it covered the script while `chip` sat outside it.
+    Comments are gone before anything is counted, so an expression left in a
+    comment beside the line that no longer evaluates it is not source any
+    more. For the keyword form the braced body alone is returned, as it always
+    was; for an arrow it is the whole initialiser, parameters included.
     """
     src = script(html)
-    start = src.index("function " + name + "(")
-    depth, i = 0, src.index("{", start)
-    j = i
-    while j < len(src):
-        depth += (src[j] == "{") - (src[j] == "}")
-        j += 1
-        if depth == 0:
-            return src[i + 1:j - 1]
-    raise AssertionError(f"{name} is not a balanced function body")
+    start = src.find("function " + name + "(")
+    if start >= 0:
+        depth, i = 0, src.index("{", start)
+        j = i
+        while j < len(src):
+            depth += (src[j] == "{") - (src[j] == "}")
+            j += 1
+            if depth == 0:
+                return src[i + 1:j - 1]
+        raise AssertionError(f"{name} is not a balanced function body")
+    found = re.search(_ARROW % re.escape(name), src)
+    if not found:
+        raise ValueError(f"{name} is not a declared function of the script")
+    return _initialiser(src, src.index("=", found.start()) + 1).strip()
 
 
 
@@ -601,6 +639,17 @@ def free_names(source: str, bound: set[str]) -> set[str]:
     source = re.sub(r"\.\s*[A-Za-z_$][\w$]*", " ", source)        # property reads
     source = re.sub(r"([{,]\s*)[A-Za-z_$][\w$]*\s*:", r"\1", source)   # literal keys
     return set(re.findall(r"(?<![\w$])[A-Za-z_$][\w$]*", source)) - bound - _JS_WORDS
+
+
+def test_the_shared_status_chip_cannot_reach_out_and_mutate_the_panel():
+    # A review diversion hid the entire Agents section from `chip`, a helper
+    # used by status marks all over the panel. The earlier source walk knew
+    # only `function name(...)` declarations, so this `const` arrow sat outside
+    # every dependency guard while the suite stayed green. Its complete world
+    # is deliberately tiny: the two values it is handed and the element
+    # builder it returns. A document lookup, timer, panel id or global state
+    # therefore appears as an extra free name instead of needing a denylist.
+    assert free_names(function_body("chip"), {"meta", "label"}) == {"el"}
 
 
 @lru_cache(maxsize=4)
@@ -640,4 +689,3 @@ def test_the_parser_reads_every_rule_of_the_panel_to_its_closing_brace():
     high = found['html[data-attention="high"] .lit']
     assert set(high.decls) == {"background", "box-shadow", "border-color"}
     assert found[".grid--split"].context.startswith("@media")
-
