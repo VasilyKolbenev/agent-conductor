@@ -446,8 +446,10 @@ def test_the_registry_carries_no_lookup_of_its_own_hints(tmp_path):
     #
     # A REPOSITORY GUARD, not a sandbox, and for the same reason the probing
     # ban says so about itself: a name assembled at runtime walks straight
-    # past it. What it stops is a lookup arriving without the ADR the
-    # docstring says one would need.
+    # past it, and so does a positional read of the frozen row —
+    # `astuple(row)[-1]` is this same field with its name gone entirely.
+    # What it stops is a lookup arriving without the ADR the docstring says
+    # one would need.
     paths, findings = _hint_findings(Path(harnesses.__file__).parent)
     assert Path(harnesses.__file__) in paths     # the walk saw the registry
     assert findings == []
