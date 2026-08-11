@@ -14,7 +14,7 @@ import os
 import re
 import shutil
 import tempfile
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
@@ -251,11 +251,20 @@ def _causal_order(
 
 
 class RunStore:
-    """Single-writer store rooted at one project's `conductor/runs` directory."""
+    """Single-writer store rooted at one project's `conductor/runs` directory.
 
-    def __init__(self, project_root: str | os.PathLike[str]) -> None:
+    Repair belongs to that one writer: `recover` may truncate a crash tail and
+    rejoin an orphan receipt, so a second process calling it would rewrite the
+    journal the writer is appending to.  Any other process reads with `read`,
+    which returns the same replayed history and touches no durable byte.
+    """
+
+    def __init__(
+            self, project_root: str | os.PathLike[str], *,
+            on_warning: Callable[[str], None] | None = None) -> None:
         self.project_root = Path(project_root).resolve()
         self.runs_root = self.project_root / "conductor" / "runs"
+        self._on_warning = on_warning
 
     def run_path(self, run_id: str) -> Path:
         try:
@@ -311,6 +320,9 @@ class RunStore:
         kind, identity_field, identity = _record_parts(value)
         run_id = value.run_id
         recovered = self.recover(run_id)
+        if self._on_warning is not None:
+            for warning in recovered.warnings:
+                self._on_warning(warning)
         existing = [row for row in recovered.records if row.kind == kind]
         for row in existing:
             if getattr(row.value, identity_field) == identity:
@@ -336,8 +348,15 @@ class RunStore:
             raise StoreError(f"cannot append {kind} {identity!r}: {e}") from e
         return True
 
+    def read(self, run_id: str) -> RecoveredRun:
+        """Validate and replay a run without editing one durable byte."""
+        return self._replay(run_id, repair=False)
+
     def recover(self, run_id: str) -> RecoveredRun:
-        """Validate the frozen run and replay its durable journal."""
+        """Replay a run and repair what a crash left behind; only the writer may."""
+        return self._replay(run_id, repair=True)
+
+    def _replay(self, run_id: str, *, repair: bool) -> RecoveredRun:
         root = self.run_path(run_id)
         if not root.is_dir():
             raise StoreError(f"run {run_id!r} does not exist")
@@ -355,8 +374,9 @@ class RunStore:
         if secret is not None:
             raise CorruptRun(f"frozen config contains secret-bearing field {secret!r}")
 
-        records, warnings = self._read_journal(root / "records.jsonl", run_id)
-        records, decision_warnings = self._reconcile_decisions(root, envelope, records)
+        records, warnings = self._read_journal(root / "records.jsonl", run_id, repair)
+        records, decision_warnings = self._reconcile_decisions(
+            root, envelope, records, repair)
         self._validate_records(envelope, records)
         return RecoveredRun(
             envelope=envelope,
@@ -366,7 +386,8 @@ class RunStore:
         )
 
     def _read_journal(
-            self, path: Path, run_id: str) -> tuple[list[StoredRecord], list[str]]:
+            self, path: Path, run_id: str,
+            repair: bool) -> tuple[list[StoredRecord], list[str]]:
         try:
             payload = path.read_bytes()
         except OSError as e:
@@ -376,12 +397,19 @@ class RunStore:
         if payload and not payload.endswith(b"\n"):
             cut = payload.rfind(b"\n") + 1
             complete = payload[:cut]
-            try:
-                _replace_bytes(path, complete)
-            except OSError as e:
-                raise CorruptRun(f"cannot remove incomplete records.jsonl tail: {e}") from e
-            warnings.append(
-                "records.jsonl ended with an incomplete record; the incomplete tail was ignored")
+            if not repair:
+                warnings.append(
+                    "records.jsonl ends with an incomplete record; the incomplete tail "
+                    "was ignored and left in place")
+            else:
+                try:
+                    _replace_bytes(path, complete)
+                except OSError as e:
+                    raise CorruptRun(
+                        f"cannot remove incomplete records.jsonl tail: {e}") from e
+                warnings.append(
+                    "records.jsonl ended with an incomplete record; "
+                    "the incomplete tail was ignored")
 
         records: list[StoredRecord] = []
         identities: set[tuple[str, str]] = set()
@@ -478,7 +506,7 @@ class RunStore:
 
     def _reconcile_decisions(
             self, root: Path, envelope: RunEnvelope, records: list[StoredRecord],
-    ) -> tuple[list[StoredRecord], list[str]]:
+            repair: bool) -> tuple[list[StoredRecord], list[str]]:
         run_id = envelope.run_id
         decisions = root / "decisions"
         if not decisions.is_dir():
@@ -525,6 +553,12 @@ class RunStore:
         rejoined = _causal_order(orphans, set(by_id))
         prospective = [*records, *(StoredRecord("decision", row) for row in rejoined)]
         self._validate_records(envelope, prospective)
+        if not repair:
+            return prospective, [
+                f"decision receipt {decision.receipt_id!r} survived without its journal "
+                "line; the line was replayed but not written"
+                for decision in rejoined
+            ]
         for decision in rejoined:
             try:
                 _append_bytes(
@@ -533,9 +567,8 @@ class RunStore:
             except OSError as e:
                 raise CorruptRun(
                     f"cannot recover decision receipt {decision.receipt_id!r}: {e}") from e
-        warnings = [
+        return prospective, [
             f"decision receipt {decision.receipt_id!r} survived without its journal line; "
             "the line was recovered"
             for decision in rejoined
         ]
-        return prospective, warnings

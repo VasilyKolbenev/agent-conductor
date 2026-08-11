@@ -362,6 +362,43 @@ def test_recovery_discards_only_an_incomplete_final_line_and_keeps_durable_recor
     assert journal.read_bytes().endswith(b"\n")
 
 
+def a_torn_run(root, **changes):
+    """A run whose journal lost a decision line and then caught a writer mid-append."""
+    store = RunStore(root, **changes)
+    store.create_run(a_run(), CONFIG)
+    store.append(a_decision())
+    journal = store.run_path("run-001") / "records.jsonl"
+    journal.write_bytes(b'{"record":{"partial')
+    return store, journal
+
+
+def test_reading_a_run_edits_no_durable_byte_and_repair_is_an_explicit_ask(tmp_path):
+    store, journal = a_torn_run(tmp_path)
+    torn = journal.read_bytes()
+
+    read = store.read("run-001")
+    assert [row.value for row in read.records] == [a_decision()]
+    assert journal.read_bytes() == torn
+
+    recovered = store.recover("run-001")
+    assert [row.value for row in recovered.records] == [a_decision()]
+    assert journal.read_bytes() != torn
+    assert store.read("run-001").warnings == ()
+    assert len(read.warnings) == len(recovered.warnings) == 2
+    assert set(read.warnings).isdisjoint(recovered.warnings)
+
+
+def test_append_hands_the_caller_the_repairs_recovery_made_underneath_it(tmp_path):
+    observed = a_torn_run(tmp_path / "observed")[0].recover("run-001").warnings
+    assert observed != ()
+
+    seen = []
+    writer = a_torn_run(tmp_path / "writer", on_warning=seen.append)[0]
+    seen.clear()
+    assert writer.append(evidence()) is True
+    assert tuple(seen) == observed
+
+
 def test_recovery_refuses_a_complete_invalid_record_instead_of_skipping_history(tmp_path):
     store = RunStore(tmp_path)
     store.create_run(a_run(), CONFIG)
