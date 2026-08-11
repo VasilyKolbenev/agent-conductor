@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from ..contracts import (
+    HEALTH_STATES,
     ActionRequest,
     ActionResultReceipt,
     ContractError,
@@ -47,7 +48,6 @@ CAPABILITIES = frozenset({
     "switch",
     "notify",
 })
-HEALTH_STATES = frozenset({"ready", "busy", "offline", "degraded", "unknown"})
 VERIFICATION_STATES = frozenset({"verified", "unavailable", "mismatch", "error"})
 _UNRESTRICTED_COMMAND_FIELDS = frozenset({"cmd", "command", "script", "shell"})
 
