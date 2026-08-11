@@ -8,6 +8,8 @@ import pytest
 
 from conductor.command.adapters import base as adapter_base
 from conductor.command.adapters.base import (
+    CAPABILITIES,
+    Adapter,
     AdapterContractError,
     AdapterManifest,
     AdapterObservation,
@@ -93,6 +95,41 @@ class FakeAdapter:
             observed_at=NOW,
             detail="The fake adapter exposes no verifier.",
         )
+
+
+class RecordingAdapter:
+    """An adapter whose execute and verify -- and, via __getattr__, any other seam
+    reached under any name -- append to a shared list, so a caller can prove the
+    registry never drove a side-effecting seam regardless of the name it was called by.
+    """
+
+    def __init__(self, calls):
+        self._calls = calls
+        self.manifest = AdapterManifest(
+            adapter_id="claude-code", display_name="Claude Code", vendor="Anthropic",
+            version="1", capabilities=tuple(sorted(CAPABILITIES)), docs_url="")
+
+    def observe(self, instance_id, run_id):
+        return AdapterObservation(
+            adapter_id="claude-code", instance_id=instance_id, run_id=run_id,
+            observed_at=NOW, health="ready",
+            available_capabilities=tuple(sorted(CAPABILITIES)))
+
+    def prepare(self, request):
+        return PreparedAction(adapter_id="claude-code", request=request)
+
+    def execute(self, prepared):
+        self._calls.append("execute")
+        return "executed"
+
+    def verify(self, request, result):
+        self._calls.append("verify")
+        return "verified"
+
+    def __getattr__(self, name):
+        if name.startswith("__"):
+            raise AttributeError(name)
+        return lambda *args, **kwargs: self._calls.append(name)
 
 
 @pytest.mark.parametrize("field,value", [
@@ -234,7 +271,30 @@ def test_every_module_of_the_sdk_package_imports_only_the_allowed_value_modules(
         assert "__import__" not in name_calls
 
 
-def test_the_registry_source_contains_no_execution_door_under_any_name():
+def test_no_public_registry_method_ever_drives_an_adapter_side_effect_seam():
+    """Behavioral closure for the execution ban: run an adapter whose execute and
+    verify (and, via __getattr__, any other seam called under any name) record every
+    call through EVERY public registry method over the whole capability set, and prove
+    the recorders stay empty.  This holds no matter what name a method is called by or
+    whether its result is swallowed -- the property the AST name-read below cannot see.
+    """
+    calls: list[str] = []
+    adapter = RecordingAdapter(calls)
+    registry = AdapterRegistry()
+    registry.register(adapter)
+    assert registry.resolve("claude-code") is adapter
+    assert [row.adapter_id for row in registry.manifests()] == ["claude-code"]
+    for capability in sorted(CAPABILITIES):
+        registry.controls("claude-code")
+        registry.observe("claude-code", "claude-dev", "run-001")
+        registry.prepare("claude-code", an_action(capability=capability))
+    assert calls == []
+
+
+def test_reading_the_registry_source_finds_no_literal_execute_call_and_only_six_doors():
+    """A cheap SECOND signal that reads the source for a literal `.execute` call and the
+    public method list; the behavioral guard above is what actually closes the class.
+    """
     tree = ast.parse(Path(adapter_base.__file__).resolve().read_text(encoding="utf-8"))
     registry = next(
         node for node in ast.walk(tree)
@@ -397,3 +457,74 @@ def test_manifests_hands_out_copies_a_caller_cannot_use_to_widen_the_registry():
         observed_at=NOW, health="ready", available_capabilities=("observe", "stop"))
     with pytest.raises(AdapterContractError, match="undeclared"):
         registry.observe("claude-code", "claude-dev", "run-001")
+
+
+def test_prepare_refuses_a_duck_typed_plan_that_never_ran_the_payload_screen():
+    """The isinstance gate is the only thing stopping a lookalike plan whose payload
+    never passed the unrestricted-command screen; the real type refuses it independently.
+    """
+    adapter = FakeAdapter()
+    registry = AdapterRegistry([adapter])
+
+    class LookalikePlan:
+        adapter_id = "claude-code"
+        request = an_action()
+        adapter_payload = {"shell": "codex && erase project"}
+
+    adapter.prepare = lambda request: LookalikePlan()
+    with pytest.raises(AdapterContractError, match="PreparedAction"):
+        registry.prepare("claude-code", an_action())
+
+    with pytest.raises(AdapterContractError, match="unrestricted command field"):
+        PreparedAction(
+            adapter_id="claude-code", request=an_action(),
+            adapter_payload={"shell": "codex && erase project"})
+
+
+def test_observe_refuses_a_duck_typed_observation_that_never_ran_the_health_screen():
+    """The isinstance gate is the only thing stopping a lookalike observation whose
+    health and timestamp never passed validation; the real type refuses both independently.
+    """
+    adapter = FakeAdapter()
+    registry = AdapterRegistry([adapter])
+
+    class LookalikeObservation:
+        adapter_id = "claude-code"
+        instance_id = "claude-dev"
+        run_id = "run-001"
+        observed_at = "not-a-timestamp"
+        health = "totally-ready"
+        available_capabilities = ("observe",)
+        detail = ""
+
+    adapter.observe = lambda instance_id, run_id: LookalikeObservation()
+    with pytest.raises(AdapterContractError, match="AdapterObservation"):
+        registry.observe("claude-code", "claude-dev", "run-001")
+
+    with pytest.raises(AdapterContractError, match="health"):
+        AdapterObservation(
+            adapter_id="claude-code", instance_id="claude-dev", run_id="run-001",
+            observed_at=NOW, health="totally-ready", available_capabilities=("observe",))
+    with pytest.raises(AdapterContractError, match="observed_at"):
+        AdapterObservation(
+            adapter_id="claude-code", instance_id="claude-dev", run_id="run-001",
+            observed_at="not-a-timestamp", health="ready",
+            available_capabilities=("observe",))
+
+
+def test_register_demands_every_callable_seam_the_adapter_protocol_declares():
+    """The set of required seams is read from the Adapter Protocol, not a hand literal,
+    so a register check that quietly drops one of them stops rejecting that missing seam.
+    """
+    declared = {
+        name for name, member in vars(Adapter).items()
+        if not name.startswith("_") and callable(member)
+    }
+    assert declared == {"observe", "prepare", "execute", "verify"}
+    for seam in sorted(declared):
+        registry = AdapterRegistry()
+        adapter = FakeAdapter()
+        setattr(adapter, seam, None)  # a non-callable stands in for a missing seam
+        with pytest.raises(AdapterContractError, match="missing protocol methods"):
+            registry.register(adapter)
+        registry.register(FakeAdapter())  # a whole adapter still registers
