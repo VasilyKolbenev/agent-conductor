@@ -213,6 +213,29 @@ def _record_wrapper(kind: str, value: RecordValue) -> dict[str, Any]:
     return {"record": value.as_dict(), "record_type": kind}
 
 
+def _causal_order(
+        orphans: list[DecisionReceipt], journalled: set[str]) -> list[DecisionReceipt]:
+    """Rejoin orphan receipts when they were decided, and after what they supersede.
+
+    Filename order is not causal order, so a supersedes chain whose receipt ids
+    sort against it would otherwise be unreplayable.  A receipt whose predecessor
+    is nowhere to be found is emitted anyway, so replay validation names the real
+    break instead of this function hiding it in an arbitrary order.
+    """
+    pending = sorted(orphans, key=lambda row: (row.decided_at, row.receipt_id))
+    ordered: list[DecisionReceipt] = []
+    placed = set(journalled)
+    while pending:
+        index = next(
+            (spot for spot, row in enumerate(pending)
+             if row.supersedes is None or row.supersedes in placed),
+            0)
+        row = pending.pop(index)
+        placed.add(row.receipt_id)
+        ordered.append(row)
+    return ordered
+
+
 class RunStore:
     """Single-writer store rooted at one project's `conductor/runs` directory."""
 
@@ -319,7 +342,7 @@ class RunStore:
             raise CorruptRun(f"frozen config contains secret-bearing field {secret!r}")
 
         records, warnings = self._read_journal(root / "records.jsonl", run_id)
-        records, decision_warnings = self._reconcile_decisions(root, run_id, records)
+        records, decision_warnings = self._reconcile_decisions(root, envelope, records)
         self._validate_records(envelope, records)
         return RecoveredRun(
             envelope=envelope,
@@ -440,8 +463,9 @@ class RunStore:
                 f"cannot create decision receipt {decision.receipt_id!r}: {e}") from e
 
     def _reconcile_decisions(
-            self, root: Path, run_id: str, records: list[StoredRecord],
+            self, root: Path, envelope: RunEnvelope, records: list[StoredRecord],
     ) -> tuple[list[StoredRecord], list[str]]:
+        run_id = envelope.run_id
         decisions = root / "decisions"
         if not decisions.is_dir():
             raise CorruptRun("decisions directory is missing")
@@ -449,7 +473,7 @@ class RunStore:
             row.value.receipt_id: row
             for row in records if isinstance(row.value, DecisionReceipt)
         }
-        warnings: list[str] = []
+        orphans: list[DecisionReceipt] = []
         for path in sorted(decisions.glob("*.json"), key=lambda item: item.name):
             wrapper = _json_object(path, f"decision receipt {path.name}")
             try:
@@ -474,20 +498,30 @@ class RunStore:
                     raise CorruptRun(
                         f"decision receipt {decision.receipt_id!r} disagrees with records.jsonl")
                 continue
+            orphans.append(decision)
+        missing = sorted(set(by_id) - {path.stem for path in decisions.glob("*.json")})
+        if missing:
+            raise CorruptRun(f"decision receipts missing exclusive files: {missing}")
+        if not orphans:
+            return records, []
+
+        # Decide the whole rejoined history is replayable BEFORE any of it becomes
+        # durable, so a receipt that cannot be reconciled leaves records.jsonl
+        # byte-identical and the operator can remove the stray file and retry.
+        rejoined = _causal_order(orphans, set(by_id))
+        prospective = [*records, *(StoredRecord("decision", row) for row in rejoined)]
+        self._validate_records(envelope, prospective)
+        for decision in rejoined:
             try:
-                _append_bytes(root / "records.jsonl", _canonical_bytes(wrapper))
+                _append_bytes(
+                    root / "records.jsonl",
+                    _canonical_bytes(_record_wrapper("decision", decision)))
             except OSError as e:
                 raise CorruptRun(
                     f"cannot recover decision receipt {decision.receipt_id!r}: {e}") from e
-            row = StoredRecord("decision", decision)
-            records.append(row)
-            by_id[decision.receipt_id] = row
-            warnings.append(
-                f"decision receipt {decision.receipt_id!r} survived without its journal line; "
-                "the line was recovered")
-        journal_ids = set(by_id)
-        file_ids = {path.stem for path in decisions.glob("*.json")}
-        missing = sorted(journal_ids - file_ids)
-        if missing:
-            raise CorruptRun(f"decision receipts missing exclusive files: {missing}")
-        return records, warnings
+        warnings = [
+            f"decision receipt {decision.receipt_id!r} survived without its journal line; "
+            "the line was recovered"
+            for decision in rejoined
+        ]
+        return prospective, warnings

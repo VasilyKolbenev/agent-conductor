@@ -114,6 +114,21 @@ def evidence(**changes):
     return EvidenceRef(**values)
 
 
+def canonical_line(wrapper):
+    """The one JSON spelling the store accepts, written by hand in the test."""
+    return json.dumps(
+        wrapper, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
+
+
+def write_decision_file(store, decision, stem=None):
+    """Put a durable, canonically spelled receipt file into a run from outside."""
+    path = (store.run_path(decision.run_id) / "decisions"
+            / f"{stem or decision.receipt_id}.json")
+    wrapper = {"record": decision.as_dict(), "record_type": "decision"}
+    path.write_bytes(canonical_line(wrapper).encode("utf-8"))
+    return path
+
+
 def test_create_run_persists_canonical_identity_and_a_frozen_unaliased_snapshot(tmp_path):
     source = json.loads(json.dumps(CONFIG))
     store = RunStore(tmp_path)
@@ -251,6 +266,62 @@ def test_recovery_rejoins_an_exclusive_decision_left_before_its_journal_append(t
         "the line was recovered",
     )
     assert store.recover("run-001").warnings == ()
+
+
+def test_a_decision_file_that_cannot_be_reconciled_leaves_the_journal_byte_identical(
+        tmp_path):
+    store = RunStore(tmp_path)
+    store.create_run(a_run(), CONFIG)
+    store.append(an_action())
+    journal = store.run_path("run-001") / "records.jsonl"
+    before = journal.read_bytes()
+
+    stray = write_decision_file(store, a_decision(
+        receipt_id="decision-bogus", config_digest="sha256:" + "f" * 64))
+    with pytest.raises(CorruptRun, match="config_digest does not match the frozen run"):
+        store.recover("run-001")
+    assert journal.read_bytes() == before
+
+    stray.unlink()
+    assert [row.value for row in store.recover("run-001").records] == [an_action()]
+    assert store.append(evidence()) is True
+
+
+def test_orphan_receipts_rejoin_when_they_were_decided_not_in_filename_order(tmp_path):
+    store = RunStore(tmp_path)
+    store.create_run(a_run(), CONFIG)
+    store.append(a_decision(receipt_id="zzz-early", decided_at="2026-08-11T09:02:00Z"))
+    store.append(a_decision(
+        receipt_id="aaa-late", gate_id="security", decided_at="2026-08-11T09:03:00Z"))
+    journal = store.run_path("run-001") / "records.jsonl"
+    journal.write_bytes(b"")
+
+    names = sorted(
+        path.stem for path in (store.run_path("run-001") / "decisions").glob("*.json"))
+    assert names == ["aaa-late", "zzz-early"]
+    recovered = store.recover("run-001")
+    assert [row.value.receipt_id for row in recovered.records] == ["zzz-early", "aaa-late"]
+    assert [json.loads(line)["record"]["receipt_id"]
+            for line in journal.read_text(encoding="utf-8").splitlines()] == [
+        "zzz-early", "aaa-late"]
+
+
+def test_a_superseding_receipt_rejoins_after_the_receipt_it_supersedes(tmp_path):
+    """Two receipts decided in the same second; the id tie-break opposes causality."""
+    store = RunStore(tmp_path)
+    store.create_run(a_run(), CONFIG)
+    store.append(a_decision(receipt_id="zzz-first", decided_at="2026-08-11T09:02:00Z"))
+    store.append(a_decision(
+        receipt_id="aaa-second", decided_at="2026-08-11T09:02:00Z",
+        supersedes="zzz-first"))
+    journal = store.run_path("run-001") / "records.jsonl"
+    journal.write_bytes(b"")
+
+    recovered = store.recover("run-001")
+    assert [row.value.receipt_id for row in recovered.records] == ["zzz-first", "aaa-second"]
+    assert [json.loads(line)["record"]["receipt_id"]
+            for line in journal.read_text(encoding="utf-8").splitlines()] == [
+        "zzz-first", "aaa-second"]
 
 
 def test_recovery_discards_only_an_incomplete_final_line_and_keeps_durable_records(tmp_path):
