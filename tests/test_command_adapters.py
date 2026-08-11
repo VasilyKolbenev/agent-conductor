@@ -528,3 +528,39 @@ def test_register_demands_every_callable_seam_the_adapter_protocol_declares():
         with pytest.raises(AdapterContractError, match="missing protocol methods"):
             registry.register(adapter)
         registry.register(FakeAdapter())  # a whole adapter still registers
+
+
+def test_register_refuses_a_duck_typed_manifest_the_real_type_would_never_admit():
+    """The isinstance gate is the only thing stopping a lookalike manifest whose
+    capabilities never passed the bounded-control screen; the real type refuses the
+    same payload independently, so reconstruction cannot launder it back in.
+    """
+    class LookalikeManifest:
+        adapter_id = "claude-code"
+        display_name = "Claude Code"
+        vendor = "Anthropic"
+        version = "1"
+        capabilities = ("observe", "arbitrary-shell")
+        docs_url = ""
+
+        def supports(self, capability):
+            return capability in self.capabilities
+
+        def as_payload(self):
+            return {
+                "adapter_id": self.adapter_id,
+                "display_name": self.display_name,
+                "vendor": self.vendor,
+                "version": self.version,
+                "capabilities": list(self.capabilities),
+                "docs_url": self.docs_url,
+            }
+
+    adapter = FakeAdapter()
+    adapter.manifest = LookalikeManifest()
+    registry = AdapterRegistry()
+    with pytest.raises(AdapterContractError, match="AdapterManifest"):
+        registry.register(adapter)
+
+    with pytest.raises(AdapterContractError, match="capabilities"):
+        AdapterManifest(**LookalikeManifest().as_payload())
