@@ -1,8 +1,11 @@
 """Run-store tests: durable facts before December starts a Harness.
 
-The store is intentionally exercised through public methods except where a
-test damages bytes to reproduce a crash.  A partial final journal line is the
-only damage recovery may discard; an invalid complete line is corruption.
+The store is exercised through its public methods, with two deliberate
+exceptions: a test damages durable bytes to reproduce a crash, or it drives the
+private exclusive-receipt publisher `_ensure_decision_file` directly to stand in
+for a second writer racing for the same receipt file.  A partial final journal
+line is the only damage recovery may discard; an invalid complete line is
+corruption.
 """
 from __future__ import annotations
 
@@ -418,17 +421,28 @@ def a_torn_run(root, **changes):
     return store, journal
 
 
+def snapshot_run_bytes(root):
+    """Every durable file of a run directory as {relative posix path -> bytes}."""
+    return {
+        path.relative_to(root).as_posix(): path.read_bytes()
+        for path in sorted(root.rglob("*")) if path.is_file()
+    }
+
+
 def test_reading_a_run_edits_no_durable_byte_and_repair_is_an_explicit_ask(tmp_path):
     store, journal = a_torn_run(tmp_path)
-    torn = journal.read_bytes()
+    root = store.run_path("run-001")
+    before = snapshot_run_bytes(root)
 
     read = store.read("run-001")
     assert [row.value for row in read.records] == [a_decision()]
-    assert journal.read_bytes() == torn
+    # The whole directory, not one file: journal, run.json, config.json, every
+    # receipt -- and the file SET, so a leaked staging .tmp would fail equality too.
+    assert snapshot_run_bytes(root) == before
 
     recovered = store.recover("run-001")
     assert [row.value for row in recovered.records] == [a_decision()]
-    assert journal.read_bytes() != torn
+    assert snapshot_run_bytes(root) != before
     assert store.read("run-001").warnings == ()
     assert len(read.warnings) == len(recovered.warnings) == 2
     assert set(read.warnings).isdisjoint(recovered.warnings)
