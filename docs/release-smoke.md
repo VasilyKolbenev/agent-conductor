@@ -281,6 +281,26 @@ That message does not mention `--port`, though `--port` is the answer to it. Kno
 the plan's backlog, and not a blocker — but it is what a person hits first, so read it here
 once and recognise it there.
 
+## 11. `conduct preview` proposes one dispatch and inspects it without executing
+
+```powershell
+& $CONDUCT preview --dir $PROJ; "preview exit=$LASTEXITCODE"
+& $CONDUCT preview --dir $PROJ --instance ghost; "unknown exit=$LASTEXITCODE"
+& $CONDUCT preview --dir $PROJ --adapter codex; "mismatch exit=$LASTEXITCODE"
+```
+
+Expect the first `conduct preview` to print a single line of canonical JSON on stdout and
+exit 0: one `dispatch` ActionProposal for the `claude-dev` instance, carrying a
+`preview_digest` of the form `sha256:` followed by 64 hex digits. It creates a run under
+`$PROJ\conductor\runs\preview-run` and proposes against it — and it prepares, executes and
+spawns nothing. Run it twice and the line is byte-identical: the preview is deterministic.
+
+Expect the second call to exit 1 with an empty stdout and a stderr line naming `ghost`: the
+frozen config declares no such instance, and an unknown instance is refused before any
+adapter is touched. Expect the third to exit 1 the same way, its stderr naming `claude-dev`
+and `codex`: the caller's adapter is cross-checked against the binding the frozen config
+declares, never trusted over it.
+
 ## Teardown
 
 ```powershell

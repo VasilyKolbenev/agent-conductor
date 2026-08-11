@@ -26,6 +26,7 @@ import pytest
 import conductor.__main__
 from conductor import prompts, report, store, validate
 from conductor.__main__ import main
+from conductor.command.contracts import ActionProposal, canonical_json
 from tests.test_store import write_project, good_lane
 
 
@@ -151,6 +152,58 @@ def test_prompt_no_role_at_all_is_usage_error(tmp_path, capsys):
         main(["prompt", "--dir", str(tmp_path)])
     assert e.value.code == 2
     assert "usage" in capsys.readouterr().err
+
+
+# --- CMD-4 MAJOR-2: the Day-1 preview gate (create run -> propose dispatch -> inspect) ---
+#
+# `conduct preview` drives the fixed CommandService end to end from the CLI: it
+# creates or opens a run with a frozen config and prints one dispatch proposal's
+# canonical form for inspection. It prepares and executes nothing, and it honours
+# the same stdout/stderr/exit-code contract as its neighbours.
+
+
+def test_preview_creates_a_run_and_prints_a_canonical_dispatch_proposal(tmp_path, capsys):
+    assert main(["preview", "--dir", str(tmp_path)]) == 0
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    out = captured.out
+    assert out.endswith("\n") and out.count("\n") == 1  # one clean, redirectable line
+    payload = json.loads(out)
+    # It is a dispatch proposal for the configured instance, and its preview_digest
+    # is a real digest of its own content: reconstructing the contract recomputes it.
+    assert payload["capability"] == "dispatch"
+    assert payload["instance_id"] == "claude-dev"
+    assert re.fullmatch(r"sha256:[0-9a-f]{64}", payload["preview_digest"])
+    assert canonical_json(ActionProposal.from_dict(payload)) == out.rstrip("\n")
+    # The run and its proposal are durable under --dir; nothing was executed.
+    records = tmp_path / "conductor" / "runs" / "preview-run" / "records.jsonl"
+    assert records.is_file()
+
+
+def test_preview_is_deterministic_across_reruns_and_fresh_directories(tmp_path, capsys):
+    assert main(["preview", "--dir", str(tmp_path / "a")]) == 0
+    first = capsys.readouterr().out
+    # Re-running in the same dir opens the existing run and yields identical bytes.
+    assert main(["preview", "--dir", str(tmp_path / "a")]) == 0
+    assert capsys.readouterr().out == first
+    # A fresh dir yields the very same canonical preview: nothing hidden leaks in.
+    assert main(["preview", "--dir", str(tmp_path / "b")]) == 0
+    assert capsys.readouterr().out == first
+
+
+def test_preview_refuses_an_unknown_instance_on_stderr_with_empty_stdout(tmp_path, capsys):
+    assert main(["preview", "--dir", str(tmp_path), "--instance", "ghost"]) == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "ghost" in captured.err
+
+
+def test_preview_refuses_an_adapter_that_mismatches_the_frozen_binding(tmp_path, capsys):
+    assert main(["preview", "--dir", str(tmp_path), "--adapter", "codex"]) == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    # The refusal names the instance and the binding it violates, not the caller's word.
+    assert "claude-dev" in captured.err and "codex" in captured.err
 
 
 # --- the stream contract ---

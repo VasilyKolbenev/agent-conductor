@@ -8,7 +8,10 @@ without reading stdin); `doctor` (report whether this project is set up to
 work and name the command that fixes each problem — exit 1 while anything is
 wrong or could not be checked); `prompt --role R [--author A]` (vend a role's
 working prompt; the positional role form is deprecated); `report` (render the
-merged state as a Markdown report); `up` (serve the panel on 127.0.0.1 with SSE
+merged state as a Markdown report); `preview` (create/open a run with a frozen
+config, propose one dispatch through the command service, and print its canonical
+preview for inspection — it prepares and executes nothing); `up` (serve the panel
+on 127.0.0.1 with SSE
 live updates; Ctrl-C → exit 0); `demo` (materialize the bundled fixture into a
 temp directory and serve it — takes `--port` but no `--dir`). Every other
 command takes `--dir` (the project root, default `.`).
@@ -44,14 +47,14 @@ from pathlib import Path
 
 from conductor import doctor, init, prompts, report, store, templates, validate
 
-# `conductor.demo` and `conductor.server` are imported inside the two commands
-# that need them, not here. Both legitimately touch the machine — demo copies a
-# tree with `shutil`, server reads `os.environ` — and importing them at module
+# `conductor.demo`, `conductor.server`, and `conductor.command.preview` are
+# imported inside the commands that need them, not here. demo copies a tree with
+# `shutil`, server reads `os.environ`, and preview's run store uses `os`/`tempfile`
+# for durable writes — all legitimate, none a probe, but importing them at module
 # scope would put them on the import path of EVERY command, `conduct init`
-# included. The machine-probing guard in tests/test_init_probing_ban.py
-# measures what a real `conduct init` imports, so hoisting either back to the
-# top makes that test fail. That is the point: the boundary is enforced, not
-# asserted.
+# included. The machine-probing guard in tests/test_init_probing_ban.py measures
+# what a real `conduct init` imports, so hoisting any of them back to the top
+# makes that test fail. That is the point: the boundary is enforced, not asserted.
 
 
 def _cmd_validate(args: argparse.Namespace) -> int:
@@ -169,6 +172,30 @@ def _cmd_demo(args: argparse.Namespace) -> int:
     return _serve(root, args.port)
 
 
+def _cmd_preview(args: argparse.Namespace) -> int:
+    """Print the canonical dispatch preview for one configured instance.
+
+    The Day-1 control-loop gate: it opens (or creates) a run with a frozen config,
+    asks the fixed CommandService for one dispatch proposal bound to the instance,
+    and writes that proposal's canonical JSON — preview_digest included — to stdout
+    for inspection. It prepares, executes and spawns nothing. An unknown instance
+    or an adapter that does not match the frozen config's binding is a refusal on
+    stderr with exit 1; stdout stays empty, so a redirected preview is never a
+    half-written one.
+    """
+    from conductor.command import preview          # deferred: see the import block
+    try:
+        rendered = preview.render_dispatch_preview(
+            args.dir, instance_id=args.instance, adapter_id=args.adapter)
+    except preview.PreviewError as e:
+        print(str(e), file=sys.stderr)
+        return 1
+    # write, not print: the canonical preview is one line and gets exactly one
+    # trailing newline, so a redirected preview is a clean single-line document.
+    sys.stdout.write(rendered + "\n")
+    return 0
+
+
 #: The port `up` and `demo` bind, and the one `init` tells the user to open.
 #: One constant, because init advising a port the panel is not on is worse
 #: than init saying nothing about the panel at all.
@@ -231,6 +258,15 @@ def _build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("report", help="print a Markdown report of the merged state")
     _add_dir_and_func(p, _cmd_report)
+
+    p = sub.add_parser(
+        "preview",
+        help="propose one dispatch and print its canonical preview (no execution)")
+    p.add_argument("--instance", default="claude-dev",
+                   help="the configured instance to propose against (default: claude-dev)")
+    p.add_argument("--adapter", default=None,
+                   help="cross-check the adapter the frozen config binds to the instance")
+    _add_dir_and_func(p, _cmd_preview)
 
     p = sub.add_parser("up", help="serve the panel on loopback HTTP with live updates")
     _add_port(p)

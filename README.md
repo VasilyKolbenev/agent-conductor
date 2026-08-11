@@ -49,6 +49,7 @@ conduct validate    # prints nothing when the map and lanes are valid
 conduct doctor      # says what is not ready and gives the next command
 conduct prompt --role implementer --author claude
 conduct report      # the merged state as Markdown, on stdout
+conduct preview     # propose one dispatch and print its canonical preview (no execution)
 conduct up          # panel at http://127.0.0.1:7777/
 ```
 
