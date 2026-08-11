@@ -656,20 +656,16 @@ decision that the first public release must ship as `december-orbit`, and it sup
 Command happens post-alpha, only after trademark, domain, repository and package clearance.
 The alpha scope stays frozen; no v2 execution or orchestration functionality enters it.
 
-**What this changes after the alpha.** The post-alpha delivery contract is the 14-day
-December Command strike as written in the spec: four parallel lanes, daily integration,
-architecture frozen by day 2, features frozen after day 10, release candidate on day 13,
-release on day 14. Phase order: A foundation (recorded alpha quality debt, browser-render
-test job, crash-safe mutation workspace (completed 2026-08-10), Protocol v2 ADRs, run
-identity / evidence / receipts) → B safe control (adapter SDK, Claude Code and Codex adapters, Observe and
-Propose modes, action previews, verified handoff and review dispatch) → C interactive
-execution (Confirm mode, pause / resume / retry / stop, harness switching, run history and
-replay, immutable Human Gate decisions) → D December Command v2 (Policy mode, visual Orbit
-editor, parallel execution, the complete wow path, public launch). The nine ADRs the
-directive lists precede implementation; none of these concepts enters through an
-incidental UI commit or a silent Protocol v1 change. The product laws travel with it:
-Orbit advances only from verified state — an accepted command is never a successful
-result — and there is no hidden fully-autonomous mode.
+**What this changes after the alpha.** The owner superseded the 14-day calendar on
+2026-08-11 with the binding four-day strike in
+`docs/plans/2026-08-11-december-command-v2-four-day-strike.md`: Day 1 contracts, run
+identity, evidence, receipts, adapter SDK, Observe/Propose; Day 2 deep Claude Code and
+Codex execution plus Confirm, recovery and switching; Day 3 Cockpit commands, Human Gates,
+history, Policy, Orbit editing and parallel execution; Day 4 hostile review, packaging,
+demo and conditional public rename. The architecture decisions still precede their code;
+none enters through an incidental UI change or a silent Protocol v1 edit. The product laws
+travel intact: Orbit advances only from verified state, an accepted command is never a
+successful result, and there is no hidden fully-autonomous mode.
 
 ## 9. Still open
 

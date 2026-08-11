@@ -540,13 +540,16 @@ receipts, structured evidence, or runtime actions already exist.
 7. Pass the complete wow path in §4.11 with two real harness products on a
    clean local installation.
 
-### 14-day December Command strike — owner directive 2026-08-10
+### Four-day December Command strike — owner directive 2026-08-11
 
-The owner requires a releasable, high-quality December Command result within
-**10–14 calendar days after the alpha release**. The target is a coherent v2
-technical preview that completes the wow path in §4.11. It is not permission
-to replace verified behavior with decorative controls, fake integrations, or
-unreviewed autonomy.
+The owner supersedes the 2026-08-10 calendar and requires a releasable,
+high-quality December Command v2 technical preview within **3–4 calendar
+days**. The functional target and product laws do not shrink: the result must
+complete the wow path in §4.11. Speed comes from parallel delivery, a narrow
+Policy mode, two deep adapters before breadth, and cutting polish before
+safety. It is not permission to replace verified behavior with decorative
+controls, fake integrations, or unreviewed autonomy. The binding execution
+plan is `docs/plans/2026-08-11-december-command-v2-four-day-strike.md`.
 
 The strike is successful only if it ships one end-to-end system containing:
 
@@ -595,24 +598,20 @@ run. A lane never edits another lane's files in place.
 
 #### Calendar
 
-- **Days 1–2:** freeze ADRs and wire contracts; skeleton runtime, adapter SDK,
-  browser test job, and one integration branch.
-- **Days 3–5:** real Claude Code and Codex dispatch/stream/stop receipts;
-  Observe and Propose in the Cockpit.
-- **Days 6–8:** Confirm, handoff, independent review, Human Gate receipts,
-  run history, recovery, and Harness switching.
-- **Days 9–10:** minimal Orbit editor, parallel branch, narrow Policy mode,
-  Gemini CLI/OpenCode capability adapters, and the first full wow-path run.
-- **Days 11–12:** adversarial review, permission and failure sabotage,
-  cross-platform fixes, documentation, and packaging.
-- **Day 13:** frozen release candidate; complete browser, CLI, mutation,
-  package, and clean-tree gates on that exact revision.
-- **Day 14:** blocker-only fixes, final replayable demo, tag, and release.
+- **Day 1:** accept the five runtime ADR decisions; land v2 contracts, adapter
+  SDK, run/receipt store, recovery, Observe, and Propose.
+- **Day 2:** deep Claude Code and Codex prepare/execute/verify flows; Confirm,
+  streaming, stop/retry, supported pause/resume, and Harness switching.
+- **Day 3:** authenticated Cockpit commands, Human Gate receipts, history and
+  replay, parallel execution, minimal Orbit editor, bounded proactivity, and
+  narrow Policy mode. Feature freeze at the end of the day.
+- **Day 4:** hostile review, cross-platform and browser wow-path tests, clean
+  package, threat model, under-ten-minute demo, rename decision, tag/release.
 
-No new feature enters after day 10. After the day-13 freeze, only a security,
-data-loss, protocol-integrity, installation, or wow-path blocker can change the
-release candidate. Guard-strength debt without a demonstrated product failure
-is recorded and does not restart the strike.
+After the Day-3 freeze, only a security, data-loss, protocol-integrity,
+installation, or wow-path blocker can change the release candidate.
+Guard-strength debt without a demonstrated product failure is recorded and
+does not restart the strike.
 
 ### Later, deliberately not alpha
 
