@@ -253,8 +253,12 @@ class AdapterRegistry:
             raise AdapterContractError(f"adapter {safe!r} is not registered") from e
 
     def manifests(self) -> tuple[AdapterManifest, ...]:
+        # Hand back freshly built values, never the stored objects: a caller that
+        # rewrites a returned manifest through object.__setattr__ must not be able
+        # to reach controls(), _require(), or observation-width behind our back.
         return tuple(
-            self._manifests[adapter_id] for adapter_id in sorted(self._manifests))
+            AdapterManifest(**self._manifests[adapter_id].as_payload())
+            for adapter_id in sorted(self._manifests))
 
     def controls(self, adapter_id: str) -> tuple[str, ...]:
         self.resolve(adapter_id)

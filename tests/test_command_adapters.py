@@ -378,3 +378,22 @@ def test_result_type_stays_separate_from_adapter_verification():
     verification = FakeAdapter().verify(an_action(), result)
     assert result.outcome == "succeeded"
     assert verification.state == "unavailable"
+
+
+def test_manifests_hands_out_copies_a_caller_cannot_use_to_widen_the_registry():
+    """The accessor returns freshly built values; rewriting one reaches nothing."""
+    adapter = FakeAdapter(capabilities=("observe",))
+    registry = AdapterRegistry([adapter])
+
+    assert registry.manifests()[0] is not registry.manifests()[0]
+    leaked = registry.manifests()[0]
+    object.__setattr__(leaked, "capabilities", ("observe", "stop"))
+
+    assert registry.controls("claude-code") == ("observe",)
+    with pytest.raises(UnsupportedCapability, match="stop"):
+        registry.prepare("claude-code", an_action(capability="stop"))
+    adapter.observe = lambda instance_id, run_id: AdapterObservation(
+        adapter_id="claude-code", instance_id=instance_id, run_id=run_id,
+        observed_at=NOW, health="ready", available_capabilities=("observe", "stop"))
+    with pytest.raises(AdapterContractError, match="undeclared"):
+        registry.observe("claude-code", "claude-dev", "run-001")
