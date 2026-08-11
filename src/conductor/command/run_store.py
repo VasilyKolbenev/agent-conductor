@@ -380,9 +380,11 @@ class RunStore:
             raise CorruptRun(f"frozen config contains secret-bearing field {secret!r}")
 
         records, warnings = self._read_journal(root / "records.jsonl", run_id, repair)
+        # _reconcile_decisions validates the final record set once, early enough that
+        # an unreconcilable receipt leaves records.jsonl byte-identical; _replay does
+        # not re-validate the same records a second time.
         records, decision_warnings = self._reconcile_decisions(
             root, envelope, records, repair)
-        self._validate_records(envelope, records)
         return RecoveredRun(
             envelope=envelope,
             config=_freeze_json(config),
@@ -512,7 +514,18 @@ class RunStore:
     def _reconcile_decisions(
             self, root: Path, envelope: RunEnvelope, records: list[StoredRecord],
             repair: bool) -> tuple[list[StoredRecord], list[str]]:
-        run_id = envelope.run_id
+        orphans, by_id = self._collect_decision_files(root, envelope.run_id, records)
+        if not orphans:
+            self._validate_records(envelope, records)
+            return records, []
+        rejoined, prospective = self._decide_rejoined_history(
+            envelope, records, orphans, by_id)
+        return self._publish_rejoined_history(root, rejoined, prospective, repair)
+
+    def _collect_decision_files(
+            self, root: Path, run_id: str,
+            records: list[StoredRecord]) -> tuple[list[DecisionReceipt], set[str]]:
+        """Validate every exclusive receipt file and return the ones with no journal line."""
         decisions = root / "decisions"
         if not decisions.is_dir():
             raise CorruptRun("decisions directory is missing")
@@ -520,8 +533,9 @@ class RunStore:
             row.value.receipt_id: row
             for row in records if isinstance(row.value, DecisionReceipt)
         }
+        files = sorted(decisions.glob("*.json"), key=lambda item: item.name)
         orphans: list[DecisionReceipt] = []
-        for path in sorted(decisions.glob("*.json"), key=lambda item: item.name):
+        for path in files:
             wrapper = _json_object(path, f"decision receipt {path.name}")
             try:
                 if wrapper.get("record_type") != "decision":
@@ -546,18 +560,30 @@ class RunStore:
                         f"decision receipt {decision.receipt_id!r} disagrees with records.jsonl")
                 continue
             orphans.append(decision)
-        missing = sorted(set(by_id) - {path.stem for path in decisions.glob("*.json")})
+        missing = sorted(set(by_id) - {path.stem for path in files})
         if missing:
             raise CorruptRun(f"decision receipts missing exclusive files: {missing}")
-        if not orphans:
-            return records, []
+        return orphans, set(by_id)
 
-        # Decide the whole rejoined history is replayable BEFORE any of it becomes
-        # durable, so a receipt that cannot be reconciled leaves records.jsonl
-        # byte-identical and the operator can remove the stray file and retry.
-        rejoined = _causal_order(orphans, set(by_id))
+    def _decide_rejoined_history(
+            self, envelope: RunEnvelope, records: list[StoredRecord],
+            orphans: list[DecisionReceipt],
+            journalled: set[str]) -> tuple[list[DecisionReceipt], list[StoredRecord]]:
+        """Order the orphans and prove the whole history replays BEFORE anything is written.
+
+        Validating here, before `_publish_rejoined_history` appends, is what leaves
+        records.jsonl byte-identical when a receipt cannot be reconciled, so the
+        operator can remove the stray file and retry.
+        """
+        rejoined = _causal_order(orphans, journalled)
         prospective = [*records, *(StoredRecord("decision", row) for row in rejoined)]
         self._validate_records(envelope, prospective)
+        return rejoined, prospective
+
+    def _publish_rejoined_history(
+            self, root: Path, rejoined: list[DecisionReceipt],
+            prospective: list[StoredRecord],
+            repair: bool) -> tuple[list[StoredRecord], list[str]]:
         if not repair:
             return prospective, [
                 f"decision receipt {decision.receipt_id!r} survived without its journal "
