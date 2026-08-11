@@ -250,18 +250,41 @@ def test_a_record_never_falls_back_to_another_run_when_its_run_is_missing(tmp_pa
         store.append(an_action(run_id="run-other"))
 
 
-def test_human_decision_receipt_is_exclusive_and_tampering_is_corruption(tmp_path):
+def test_repeating_a_decision_dedups_in_the_journal_before_the_receipt_file_is_touched(
+        tmp_path, monkeypatch):
     store = RunStore(tmp_path)
     store.create_run(a_run(), CONFIG)
+    reached = []
+    ensure = RunStore._ensure_decision_file
+
+    def counted(self, decision, wrapper):
+        reached.append(decision.receipt_id)
+        return ensure(self, decision, wrapper)
+
+    monkeypatch.setattr(RunStore, "_ensure_decision_file", counted)
     assert store.append(a_decision()) is True
     assert store.append(a_decision()) is False
+    assert reached == ["decision-001"]
 
-    decision_path = store.run_path("run-001") / "decisions" / "decision-001.json"
-    raw = json.loads(decision_path.read_text(encoding="utf-8"))
-    raw["action"] = "reject"
-    decision_path.write_text(json.dumps(raw) + "\n", encoding="utf-8", newline="\n")
-    with pytest.raises(CorruptRun, match="decision-001"):
-        store.recover("run-001")
+
+def test_a_receipt_file_that_already_holds_different_facts_refuses_the_new_body(tmp_path):
+    """Exclusive creation, not the journal, is what arbitrates two racing writers."""
+    store = RunStore(tmp_path)
+    store.create_run(a_run(), CONFIG)
+    path = store.run_path("run-001") / "decisions" / "decision-001.json"
+    approve, reject = a_decision(), a_decision(action="reject")
+
+    store._ensure_decision_file(
+        approve, {"record": approve.as_dict(), "record_type": "decision"})
+    published = path.read_bytes()
+    with pytest.raises(RecordConflict, match="decision-001"):
+        store._ensure_decision_file(
+            reject, {"record": reject.as_dict(), "record_type": "decision"})
+    assert path.read_bytes() == published
+
+    store._ensure_decision_file(
+        approve, {"record": approve.as_dict(), "record_type": "decision"})
+    assert path.read_bytes() == published
 
 
 def test_a_crash_while_writing_a_decision_receipt_publishes_no_receipt_at_all(
