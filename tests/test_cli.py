@@ -154,6 +154,28 @@ def test_prompt_no_role_at_all_is_usage_error(tmp_path, capsys):
     assert "usage" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize("argv", [
+    ["prompt"],                                   # no role at all
+    ["prompt", "scout", "--role", "scout"],       # both spellings at once
+])
+def test_a_prompt_usage_error_comes_from_the_prompt_subparser_not_the_top_level(
+        argv, tmp_path, capsys):
+    """The reader gets `prompt`'s own usage line, not the whole subcommand list.
+
+    `_cmd_prompt` raises through the parser stored as `prompt_parser`. Binding
+    that to the top-level parser still exits 2 with a usage line, so the suite
+    stays green while the message loses --role/--author and gains the command
+    list — this guards which parser reported it, not the sentence it chose.
+    """
+    with pytest.raises(SystemExit) as e:
+        main([*argv, "--dir", str(tmp_path)])
+    assert e.value.code == 2
+    err = capsys.readouterr().err
+    assert "conduct prompt: error:" in err
+    assert "--role" in err and "--author" in err
+    assert "{validate," not in err
+
+
 # --- CMD-4 MAJOR-2: the Day-1 preview gate (create run -> propose dispatch -> inspect) ---
 #
 # `conduct preview` drives the fixed CommandService end to end from the CLI: it
