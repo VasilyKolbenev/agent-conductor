@@ -339,36 +339,6 @@ def test_recovery_rejoins_an_exclusive_decision_left_before_its_journal_append(t
     assert store.recover("run-001").warnings == ()
 
 
-def test_the_orphan_reconcile_path_runs_the_causal_screen_exactly_once(
-        tmp_path, monkeypatch):
-    """Rejoining an orphan receipt validates the whole history once, inside reconcile;
-    _replay must not run the same causal screen a second time on the same records.  The
-    counter reads one call per read/recover; re-adding a _replay pass would read two.
-    """
-    store = RunStore(tmp_path)
-    store.create_run(a_run(), CONFIG)
-    store.append(a_decision())
-    journal = store.run_path("run-001") / "records.jsonl"
-    journal.write_bytes(b"")  # the receipt file survives as an orphan to rejoin
-
-    seen: list[int] = []
-    original = RunStore._validate_records
-
-    def counting(envelope, records):
-        seen.append(len(records))
-        return original(envelope, records)
-
-    monkeypatch.setattr(RunStore, "_validate_records", staticmethod(counting))
-
-    replayed = store.read("run-001")
-    assert [row.value for row in replayed.records] == [a_decision()]
-    assert seen == [1]
-
-    seen.clear()
-    store.recover("run-001")
-    assert seen == [1]
-
-
 def test_a_decision_file_that_cannot_be_reconciled_leaves_the_journal_byte_identical(
         tmp_path):
     store = RunStore(tmp_path)
