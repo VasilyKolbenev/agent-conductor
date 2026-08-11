@@ -6,6 +6,7 @@ surface is allowed to exist.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from collections.abc import Iterable, Mapping
@@ -46,6 +47,10 @@ _VERIFICATION_STATES = frozenset({
 _DECISION_ACTIONS = frozenset({
     "approve", "reject", "request_changes", "waive",
 })
+# The observation health vocabulary lives in the contract layer so the durable
+# ObservationRecord and the live AdapterObservation read one source of truth; an
+# unknown is one of these states, never silently promoted to a ready.
+HEALTH_STATES = frozenset({"ready", "busy", "offline", "degraded", "unknown"})
 
 
 def _id(name: str, value: object) -> str:
@@ -171,6 +176,15 @@ def _ids(name: str, value: object) -> tuple[str, ...]:
     return tuple(_id(name, item) for item in value)
 
 
+def _unique_ids(name: str, value: object) -> tuple[str, ...]:
+    if isinstance(value, (str, bytes)):
+        raise ContractError(f"{name} must be a list of ids, not a single string")
+    refs = _ids(name, value)
+    if len(set(refs)) != len(refs):
+        raise ContractError(f"{name} must not contain duplicates")
+    return refs
+
+
 def _raw(value: object) -> dict[str, Any]:
     if not isinstance(value, Mapping):
         raise ContractError(f"contract document must be a JSON object, got {value!r}")
@@ -192,6 +206,12 @@ def canonical_json(value: object) -> str:
                           separators=(",", ":"), allow_nan=False)
     except (TypeError, ValueError) as e:
         raise ContractError(f"value is not canonical JSON data: {e}") from e
+
+
+def _content_digest(payload: Mapping[str, Any]) -> str:
+    """Digest the canonical JSON of a payload; the one spelling a preview pins."""
+    return "sha256:" + hashlib.sha256(
+        canonical_json(dict(payload)).encode("utf-8")).hexdigest()
 
 
 @dataclass(frozen=True)
@@ -311,6 +331,157 @@ class ActionRequest:
         required = {name: _take(known, name) for name in cls._FIELDS
                     if name != "schema_version"}
         return cls(**required, schema_version=known.pop("schema_version", 2), extra=data)
+
+
+@dataclass(frozen=True)
+class ActionProposal:
+    """One proposed action; it executes nothing and prepares nothing.
+
+    A Proposal is upstream of an ActionRequest: it records what a lane would
+    like to do and why, bound to the frozen configuration of its Run. Its
+    preview_digest is derived from the whole canonical content except the digest
+    itself, so editing any significant field invalidates it.
+    """
+
+    proposal_id: str
+    run_id: str
+    attempt_id: str
+    instance_id: str
+    capability: str
+    arguments: Mapping[str, Any]
+    scope: tuple[str, ...]
+    proposed_by: str
+    proposed_at: str
+    timeout_seconds: int
+    rationale: str
+    config_digest: str
+    preview_digest: str = ""
+    schema_version: int = 2
+    extra: Mapping[str, Any] = field(default_factory=dict, repr=False)
+
+    _FIELDS = frozenset({
+        "schema_version", "proposal_id", "run_id", "attempt_id", "instance_id",
+        "capability", "arguments", "scope", "proposed_by", "proposed_at",
+        "timeout_seconds", "rationale", "config_digest", "preview_digest",
+    })
+
+    def __post_init__(self) -> None:
+        for name in ("proposal_id", "run_id", "attempt_id", "instance_id",
+                     "capability", "proposed_by"):
+            object.__setattr__(self, name, _id(name, getattr(self, name)))
+        object.__setattr__(self, "arguments", _object("arguments", self.arguments))
+        object.__setattr__(self, "scope", _scope(self.scope))
+        object.__setattr__(self, "proposed_at", _timestamp("proposed_at", self.proposed_at))
+        if (isinstance(self.timeout_seconds, bool)
+                or not isinstance(self.timeout_seconds, int)
+                or not 1 <= self.timeout_seconds <= 86400):
+            raise ContractError("timeout_seconds must be an integer from 1 through 86400")
+        object.__setattr__(self, "rationale", _text("rationale", self.rationale))
+        object.__setattr__(self, "config_digest", _digest("config_digest", self.config_digest))
+        object.__setattr__(self, "schema_version", _schema(self.schema_version))
+        object.__setattr__(self, "extra", _extra(self.extra, self._FIELDS))
+        computed = _content_digest(self._body())
+        provided = self.preview_digest
+        if provided:
+            if not isinstance(provided, str) or _DIGEST_RE.fullmatch(provided) is None:
+                raise ContractError(
+                    "preview_digest must be sha256 followed by 64 lowercase hex digits")
+            if provided != computed:
+                raise ContractError("preview_digest does not match the proposal content")
+        object.__setattr__(self, "preview_digest", computed)
+
+    def _body(self) -> dict[str, Any]:
+        out = _thaw_json(self.extra)
+        out.update({
+            "schema_version": self.schema_version, "proposal_id": self.proposal_id,
+            "run_id": self.run_id, "attempt_id": self.attempt_id,
+            "instance_id": self.instance_id, "capability": self.capability,
+            "arguments": _thaw_json(self.arguments), "scope": list(self.scope),
+            "proposed_by": self.proposed_by, "proposed_at": self.proposed_at,
+            "timeout_seconds": self.timeout_seconds, "rationale": self.rationale,
+            "config_digest": self.config_digest,
+        })
+        return out
+
+    def as_dict(self) -> dict[str, Any]:
+        out = self._body()
+        out["preview_digest"] = self.preview_digest
+        return out
+
+    @classmethod
+    def from_dict(cls, value: object) -> "ActionProposal":
+        data = _raw(value)
+        known = {name: data.pop(name) for name in list(data) if name in cls._FIELDS}
+        required = {name: _take(known, name) for name in cls._FIELDS
+                    if name not in ("schema_version", "preview_digest")}
+        return cls(
+            **required, preview_digest=known.pop("preview_digest", ""),
+            schema_version=known.pop("schema_version", 2), extra=data)
+
+
+@dataclass(frozen=True)
+class ObservationRecord:
+    """A durable, serializable observation an adapter reported for one Run.
+
+    It is the write-boundary twin of the live AdapterObservation: absence and an
+    unknown never become ready, and future fields survive a round trip so a newer
+    writer never loses meaning through an older reader.
+    """
+
+    observation_id: str
+    run_id: str
+    adapter_id: str
+    instance_id: str
+    observed_at: str
+    health: str
+    available_capabilities: tuple[str, ...] = ()
+    detail: str = ""
+    evidence_refs: tuple[str, ...] = ()
+    schema_version: int = 2
+    extra: Mapping[str, Any] = field(default_factory=dict, repr=False)
+
+    _FIELDS = frozenset({
+        "schema_version", "observation_id", "run_id", "adapter_id", "instance_id",
+        "observed_at", "health", "available_capabilities", "detail", "evidence_refs",
+    })
+
+    def __post_init__(self) -> None:
+        for name in ("observation_id", "run_id", "adapter_id", "instance_id"):
+            object.__setattr__(self, name, _id(name, getattr(self, name)))
+        object.__setattr__(self, "observed_at", _timestamp("observed_at", self.observed_at))
+        object.__setattr__(self, "health", _enum("health", self.health, HEALTH_STATES))
+        object.__setattr__(
+            self, "available_capabilities",
+            _unique_ids("available_capabilities", self.available_capabilities))
+        object.__setattr__(self, "detail", _text("detail", self.detail, empty=True))
+        object.__setattr__(
+            self, "evidence_refs", _unique_ids("evidence_refs", self.evidence_refs))
+        object.__setattr__(self, "schema_version", _schema(self.schema_version))
+        object.__setattr__(self, "extra", _extra(self.extra, self._FIELDS))
+
+    def as_dict(self) -> dict[str, Any]:
+        out = _thaw_json(self.extra)
+        out.update({
+            "schema_version": self.schema_version, "observation_id": self.observation_id,
+            "run_id": self.run_id, "adapter_id": self.adapter_id,
+            "instance_id": self.instance_id, "observed_at": self.observed_at,
+            "health": self.health,
+            "available_capabilities": list(self.available_capabilities),
+            "detail": self.detail, "evidence_refs": list(self.evidence_refs),
+        })
+        return out
+
+    @classmethod
+    def from_dict(cls, value: object) -> "ObservationRecord":
+        data = _raw(value)
+        known = {name: data.pop(name) for name in list(data) if name in cls._FIELDS}
+        return cls(
+            observation_id=_take(known, "observation_id"), run_id=_take(known, "run_id"),
+            adapter_id=_take(known, "adapter_id"), instance_id=_take(known, "instance_id"),
+            observed_at=_take(known, "observed_at"), health=_take(known, "health"),
+            available_capabilities=known.pop("available_capabilities", ()),
+            detail=known.pop("detail", ""), evidence_refs=known.pop("evidence_refs", ()),
+            schema_version=known.pop("schema_version", 2), extra=data)
 
 
 @dataclass(frozen=True)
