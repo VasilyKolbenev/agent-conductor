@@ -21,6 +21,12 @@ from conductor.command.contracts import ActionRequest, ActionResultReceipt
 
 NOW = "2026-08-11T10:00:00Z"
 DIGEST = "sha256:" + "a" * 64
+# An allowlist fails closed: a new stdlib door or a new outside dependency is a
+# failure until it is reviewed and named here.
+ALLOWED_SDK_IMPORTS = frozenset({
+    "__future__", "collections.abc", "dataclasses", "types", "typing",
+})
+ALLOWED_SDK_RELATIVE_IMPORTS = frozenset({(2, "contracts")})
 
 
 def an_action(**changes):
@@ -134,8 +140,10 @@ def test_manifest_payload_is_stable_immutable_and_names_only_real_controls():
     {"command": "claude --dangerously-skip-permissions"},
     {"transport": {"shell": "codex && erase project"}},
     {"cmd": "cursor-agent"},
+    {"Script": "erase project"},
+    {"a": {"b": [{"shell": "codex && erase project"}]}},
 ])
-def test_prepared_payload_cannot_smuggle_an_unrestricted_shell_string(payload):
+def test_prepared_payload_refuses_the_four_unrestricted_command_field_names(payload):
     with pytest.raises(AdapterContractError, match="unrestricted command field"):
         PreparedAction(
             adapter_id="claude-code", request=an_action(), adapter_payload=payload)
@@ -143,6 +151,18 @@ def test_prepared_payload_cannot_smuggle_an_unrestricted_shell_string(payload):
         adapter_id="claude-code", request=an_action(),
         adapter_payload={"argv": ["claude", "--print", "packet-001"]})
     assert allowed.adapter_payload["argv"] == ("claude", "--print", "packet-001")
+
+
+@pytest.mark.parametrize("payload", [
+    {"exec": "claude --dangerously-skip-permissions"},
+    {"powershell": "codex && erase project"},
+    {"entrypoint": "sh -c 'erase project'"},
+])
+def test_prepared_payload_does_not_screen_command_strings_under_other_names(payload):
+    """The documented limit of the screen above: it reads key names, not values."""
+    prepared = PreparedAction(
+        adapter_id="claude-code", request=an_action(), adapter_payload=payload)
+    assert dict(prepared.adapter_payload) == payload
 
 
 def test_registry_is_explicit_deterministic_and_never_detects_the_machine():
@@ -180,24 +200,56 @@ def test_registry_keeps_the_manifest_that_was_reviewed_at_registration():
         registry.prepare("claude-code", an_action(capability="stop"))
 
 
-def test_sdk_source_has_no_machine_probe_or_process_door():
-    source_path = Path(adapter_base.__file__).resolve()
-    assert source_path.name == "base.py"
-    source = source_path.read_text(encoding="utf-8")
-    tree = ast.parse(source)
-    imports = {
-        alias.name.split(".")[0]
-        for node in ast.walk(tree)
-        if isinstance(node, (ast.Import, ast.ImportFrom))
-        for alias in node.names
-    }
-    assert not imports & {"os", "pathlib", "shutil", "subprocess"}
-    calls = {
+def test_every_module_of_the_sdk_package_imports_only_the_allowed_value_modules():
+    """A door is a door in any file of the package, and behind any import name."""
+    package = Path(adapter_base.__file__).resolve().parent
+    sources = sorted(package.rglob("*.py"))
+    assert Path(adapter_base.__file__).resolve() in sources
+    for path in sources:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        imported: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                imported.update(alias.name for alias in node.names)
+            elif isinstance(node, ast.ImportFrom):
+                if node.level == 1:
+                    continue  # a sibling of this package, walked by this same loop
+                if (node.level, node.module) in ALLOWED_SDK_RELATIVE_IMPORTS:
+                    continue
+                imported.add("." * node.level + (node.module or ""))
+        assert imported <= ALLOWED_SDK_IMPORTS, (
+            f"{path.name} imports {sorted(imported - ALLOWED_SDK_IMPORTS)}")
+        attribute_calls = {
+            node.func.attr
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+        }
+        assert not attribute_calls & {
+            "which", "exists", "is_file", "run", "Popen", "system", "import_module"}
+        name_calls = {
+            node.func.id
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+        }
+        assert "__import__" not in name_calls
+
+
+def test_the_registry_source_contains_no_execution_door_under_any_name():
+    tree = ast.parse(Path(adapter_base.__file__).resolve().read_text(encoding="utf-8"))
+    registry = next(
+        node for node in ast.walk(tree)
+        if isinstance(node, ast.ClassDef) and node.name == "AdapterRegistry")
+    executing = {
         node.func.attr
-        for node in ast.walk(tree)
+        for node in ast.walk(registry)
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
     }
-    assert not calls & {"which", "exists", "is_file", "run", "Popen", "system"}
+    assert "execute" not in executing
+    public = sorted(
+        node.name for node in registry.body
+        if isinstance(node, ast.FunctionDef) and not node.name.startswith("_"))
+    assert public == [
+        "controls", "manifests", "observe", "prepare", "register", "resolve"]
 
 
 def test_observe_calls_only_an_explicit_adapter_and_validates_its_claims():
@@ -208,13 +260,35 @@ def test_observe_calls_only_an_explicit_adapter_and_validates_its_claims():
     assert observation.available_capabilities == ("observe", "dispatch")
     assert adapter.observations == 1
 
-    adapter.manifest = AdapterManifest(
-        adapter_id="claude-code", display_name="Claude Code", vendor="Anthropic",
-        version="1", capabilities=("observe",), docs_url="")
-    adapter.observe = lambda instance_id, run_id: AdapterObservation(
-        adapter_id="somebody-else", instance_id=instance_id, run_id=run_id,
-        observed_at=NOW, health="ready", available_capabilities=("observe",))
-    with pytest.raises(AdapterContractError, match="returned identity"):
+
+@pytest.mark.parametrize("adapter_id,instance_id,run_id,width,refused", [
+    ("claude-code", "claude-dev", "run-001", ("observe", "dispatch"), None),
+    ("claude-code", "claude-dev", "run-001", ("observe",), None),
+    ("claude-code", "claude-dev", "run-001", (), None),
+    ("somebody-else", "claude-dev", "run-001", ("observe",), "returned identity"),
+    ("claude-code", "other-instance", "run-001", ("observe",), "returned identity"),
+    ("claude-code", "claude-dev", "run-999", ("observe",), "returned identity"),
+    ("somebody-else", "other-instance", "run-999", ("observe",), "returned identity"),
+    ("claude-code", "claude-dev", "run-001", ("observe", "stop"), "undeclared"),
+    ("claude-code", "claude-dev", "run-001",
+     ("observe", "dispatch", "stop"), "undeclared"),
+])
+def test_an_observation_is_accepted_only_when_identity_and_width_match_registration(
+        adapter_id, instance_id, run_id, width, refused):
+    adapter = FakeAdapter(capabilities=("observe", "dispatch"))
+    registry = AdapterRegistry([adapter])
+    adapter.observe = lambda asked_instance, asked_run: AdapterObservation(
+        adapter_id=adapter_id, instance_id=instance_id, run_id=run_id,
+        observed_at=NOW, health="ready", available_capabilities=width)
+
+    if refused is None:
+        observed = registry.observe("claude-code", "claude-dev", "run-001")
+        assert (observed.adapter_id, observed.instance_id, observed.run_id) == (
+            "claude-code", "claude-dev", "run-001")
+        assert observed.available_capabilities == width
+        assert set(width) <= set(registry.controls("claude-code"))
+        return
+    with pytest.raises(AdapterContractError, match=refused):
         registry.observe("claude-code", "claude-dev", "run-001")
 
 
@@ -292,7 +366,6 @@ def test_protocol_keeps_execution_separate_from_preparation():
     registry = AdapterRegistry([adapter])
     prepared = registry.prepare("claude-code", an_action())
     assert isinstance(prepared, PreparedAction)
-    assert not hasattr(registry, "execute")
     with pytest.raises(AssertionError, match="must never call execute"):
         adapter.execute(prepared)
 

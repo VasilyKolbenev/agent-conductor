@@ -3,8 +3,10 @@
 This module has no process, filesystem, environment, or network door.  It
 validates what a configured adapter claims and exposes only declared
 capabilities.  `AdapterRegistry.prepare` is deliberately the last public
-operation here: execution arrives with the owned-process runner and Confirm
-authorization, not by accidentally calling an adapter method from the panel.
+operation here and no registry method calls `execute`: execution arrives with
+the owned-process runner and Confirm authorization.  `resolve` hands back the
+adapter object the configuration supplied, so a caller holding one can still
+call it directly -- the registry bounds itself, not its callers.
 """
 from __future__ import annotations
 
