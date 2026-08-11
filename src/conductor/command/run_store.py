@@ -21,11 +21,13 @@ from types import MappingProxyType
 from typing import Any
 
 from .contracts import (
+    ActionProposal,
     ActionRequest,
     ActionResultReceipt,
     ContractError,
     DecisionReceipt,
     EvidenceRef,
+    ObservationRecord,
     RunEnvelope,
     _freeze_json,
     _id,
@@ -49,7 +51,10 @@ class CorruptRun(StoreError):
     """Durable bytes contradict the contracts or one another."""
 
 
-RecordValue = ActionRequest | ActionResultReceipt | EvidenceRef | DecisionReceipt
+RecordValue = (
+    ActionRequest | ActionResultReceipt | EvidenceRef | DecisionReceipt
+    | ActionProposal | ObservationRecord
+)
 
 
 @dataclass(frozen=True)
@@ -75,6 +80,8 @@ _RECORDS: dict[str, tuple[type[RecordValue], str]] = {
     "action_result": (ActionResultReceipt, "receipt_id"),
     "evidence": (EvidenceRef, "evidence_id"),
     "decision": (DecisionReceipt, "receipt_id"),
+    "action_proposal": (ActionProposal, "proposal_id"),
+    "adapter_observation": (ObservationRecord, "observation_id"),
 }
 
 # A named-key screen, not a proof that the snapshot is secret-free: a key is
@@ -445,6 +452,9 @@ class RunStore:
 
     @staticmethod
     def _validate_new_relation(recovered: RecoveredRun, value: RecordValue) -> None:
+        if isinstance(value, ActionProposal):
+            if value.config_digest != recovered.envelope.config_digest:
+                raise StoreError("proposal config_digest does not match the frozen run")
         if isinstance(value, ActionResultReceipt):
             action = next((row.value for row in recovered.records
                            if isinstance(row.value, ActionRequest)
