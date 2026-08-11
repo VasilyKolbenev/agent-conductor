@@ -202,3 +202,14 @@ and forward-compatible reading. It starts no process, writes no file, and change
 Its tests must prove malformed ids/timestamps/scopes are rejected, unknown fields survive a
 round-trip, accepted is distinct from succeeded, and a Human Gate cannot become satisfied without
 a valid decision receipt.
+
+## 11. Execution ledger
+
+- **CMD-1 — Complete 2026-08-11.** Validated Run, Action, Result, Evidence and Human Decision
+  contracts; canonical serialization; forward-compatible readers; no execution surface.
+- **CMD-2 — Complete 2026-08-11.** Project-local Run Store with exclusive creation, frozen
+  non-secret configuration, canonical append-only replay, idempotency conflicts, causal
+  Action-to-Result validation, immutable Human Decision files, and crash-tail recovery. It starts
+  no process and changes no Protocol v1 output.
+- **Next: CMD-3.** Adapter protocol and capability manifests, followed by Observe and Propose;
+  execution remains disabled until the owned-process runner and Confirm authorization are green.

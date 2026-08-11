@@ -171,17 +171,17 @@ def test_action_result_cannot_report_acceptance_as_success():
 
 def test_evidence_with_a_digest_remains_unverified_until_a_verifier_records_observation():
     claim = EvidenceRef(
-        evidence_id="evidence-001", kind="test", uri="artifacts/test.json",
+        evidence_id="evidence-001", run_id="run-001", kind="test", uri="artifacts/test.json",
         label="pytest result", created_by="claude-dev", observed_at=NOW,
         digest=DIGEST)
     assert claim.verification == "unverified"
     with pytest.raises(ContractError, match="verified_by"):
         EvidenceRef(
-            evidence_id="evidence-001", kind="test", uri="artifacts/test.json",
+            evidence_id="evidence-001", run_id="run-001", kind="test", uri="artifacts/test.json",
             label="pytest result", created_by="claude-dev", observed_at=NOW,
             digest=DIGEST, verification="verified")
     verified = EvidenceRef(
-        evidence_id="evidence-001", kind="test", uri="artifacts/test.json",
+        evidence_id="evidence-001", run_id="run-001", kind="test", uri="artifacts/test.json",
         label="pytest result", created_by="claude-dev", observed_at=NOW,
         digest=DIGEST, verification="verified", verified_by="codex-review",
         verified_at=NOW)
@@ -240,7 +240,7 @@ def test_every_receipt_reader_preserves_future_fields_on_a_round_trip():
         attempt_id="attempt-001", instance_id="claude-dev",
         outcome="failed", observed_at=NOW, detail="adapter refused")
     evidence = EvidenceRef(
-        evidence_id="evidence-001", kind="test", uri="artifacts/test.json",
+        evidence_id="evidence-001", run_id="run-001", kind="test", uri="artifacts/test.json",
         label="pytest result", created_by="claude-dev", observed_at=NOW)
     for value, reader in (
         (result, ActionResultReceipt.from_dict),

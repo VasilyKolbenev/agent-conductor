@@ -382,6 +382,7 @@ class EvidenceRef:
     """An evidence claim whose verification state is never inferred."""
 
     evidence_id: str
+    run_id: str
     kind: str
     uri: str
     label: str
@@ -395,12 +396,12 @@ class EvidenceRef:
     extra: Mapping[str, Any] = field(default_factory=dict, repr=False)
 
     _FIELDS = frozenset({
-        "schema_version", "evidence_id", "kind", "uri", "label", "created_by",
+        "schema_version", "evidence_id", "run_id", "kind", "uri", "label", "created_by",
         "observed_at", "digest", "verification", "verified_by", "verified_at",
     })
 
     def __post_init__(self) -> None:
-        for name in ("evidence_id", "kind", "created_by"):
+        for name in ("evidence_id", "run_id", "kind", "created_by"):
             object.__setattr__(self, name, _id(name, getattr(self, name)))
         object.__setattr__(self, "uri", _text("uri", self.uri))
         object.__setattr__(self, "label", _text("label", self.label))
@@ -426,7 +427,7 @@ class EvidenceRef:
         out = _thaw_json(self.extra)
         out.update({
             "schema_version": self.schema_version, "evidence_id": self.evidence_id,
-            "kind": self.kind, "uri": self.uri, "label": self.label,
+            "run_id": self.run_id, "kind": self.kind, "uri": self.uri, "label": self.label,
             "created_by": self.created_by, "observed_at": self.observed_at,
             "digest": self.digest, "verification": self.verification,
             "verified_by": self.verified_by, "verified_at": self.verified_at,
@@ -438,7 +439,8 @@ class EvidenceRef:
         data = _raw(value)
         known = {name: data.pop(name) for name in list(data) if name in cls._FIELDS}
         return cls(
-            evidence_id=_take(known, "evidence_id"), kind=_take(known, "kind"),
+            evidence_id=_take(known, "evidence_id"), run_id=_take(known, "run_id"),
+            kind=_take(known, "kind"),
             uri=_take(known, "uri"), label=_take(known, "label"),
             created_by=_take(known, "created_by"),
             observed_at=_take(known, "observed_at"),
