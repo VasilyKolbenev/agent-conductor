@@ -531,9 +531,10 @@ def test_register_demands_every_callable_seam_the_adapter_protocol_declares():
 
 
 def test_register_refuses_a_duck_typed_manifest_the_real_type_would_never_admit():
-    """The isinstance gate is the only thing stopping a lookalike manifest whose
-    capabilities never passed the bounded-control screen; the real type refuses the
-    same payload independently, so reconstruction cannot launder it back in.
+    """The isinstance gate refuses a duck-typed manifest at registration; even so the
+    real constructor refuses the same unbounded payload independently, so reconstruction
+    cannot launder it back in. The two refusals come from different code, which is what
+    makes the gate a relation rather than a type name.
     """
     class LookalikeManifest:
         adapter_id = "claude-code"
