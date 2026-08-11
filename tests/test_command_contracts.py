@@ -18,6 +18,7 @@ from conductor.command.contracts import (
     EvidenceRef,
     RunEnvelope,
     canonical_json,
+    frozen_config_bindings,
     gate_decision,
 )
 
@@ -233,6 +234,33 @@ def test_parallel_human_decisions_are_a_conflict_until_one_explicitly_supersedes
     orphan = a_decision(receipt_id="decision-003", supersedes="decision-missing")
     with pytest.raises(ContractError, match="unknown receipt"):
         gate_decision([orphan], "run-001", "release")
+
+
+def test_frozen_config_bindings_read_each_instances_declared_adapter():
+    config = {
+        "instances": [
+            {"id": "claude-dev", "adapter": "claude-code"},
+            {"id": "codex-review", "adapter": "codex", "api_key_env": "OPENAI_API_KEY"},
+        ],
+    }
+    assert frozen_config_bindings(config) == {
+        "claude-dev": "claude-code", "codex-review": "codex"}
+    # A config that declares no instances binds nothing, so every instance is unknown.
+    assert frozen_config_bindings({"cycle": {"id": "orbit"}}) == {}
+
+
+@pytest.mark.parametrize("config,match", [
+    ({"instances": {"id": "a", "adapter": "b"}}, "must be a list"),
+    ({"instances": ["claude-dev"]}, "must be a JSON object"),
+    ({"instances": [{"adapter": "claude-code"}]}, "configured instance id"),
+    ({"instances": [{"id": "claude-dev"}]}, "configured adapter id"),
+    ({"instances": [{"id": "a/b", "adapter": "claude-code"}]}, "configured instance id"),
+    ({"instances": [{"id": "a", "adapter": "claude-code"},
+                    {"id": "a", "adapter": "codex"}]}, "more than once"),
+])
+def test_frozen_config_bindings_reject_a_malformed_or_ambiguous_declaration(config, match):
+    with pytest.raises(ContractError, match=match):
+        frozen_config_bindings(config)
 
 
 def test_unknown_contract_values_must_still_be_canonical_json_data():

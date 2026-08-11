@@ -14,7 +14,12 @@ from collections.abc import Callable, Iterable, Mapping
 from typing import Any
 
 from .adapters import AdapterRegistry, UnsupportedCapability
-from .contracts import ActionProposal, ControlMode, ObservationRecord
+from .contracts import (
+    ActionProposal,
+    ControlMode,
+    ObservationRecord,
+    frozen_config_bindings,
+)
 from .run_store import RunStore
 
 
@@ -33,13 +38,36 @@ class CommandService:
         self._clock = clock
         self._ids = ids
 
+    def _bound_adapter(
+            self, config: Mapping[str, Any], instance_id: str,
+            adapter_id: str | None) -> str:
+        """Derive the adapter the frozen config binds to `instance_id`, or refuse.
+
+        The binding comes from the pinned frozen config, never from the caller: an
+        instance the config does not declare is refused, and an adapter the caller
+        names that is not the bound one is a mismatch. Both refusals happen here, so
+        they precede every adapter seam and every durable append.
+        """
+        bindings = frozen_config_bindings(config)
+        bound = bindings.get(instance_id)
+        if bound is None:
+            raise ServiceError(
+                f"frozen config declares no instance {instance_id!r}; an unknown "
+                "instance cannot be observed or proposed")
+        if adapter_id is not None and adapter_id != bound:
+            raise ServiceError(
+                f"instance {instance_id!r} is bound to adapter {bound!r} by the "
+                f"frozen config, not {adapter_id!r}")
+        return bound
+
     def observe(
-            self, *, run_id: str, adapter_id: str, instance_id: str,
+            self, *, run_id: str, instance_id: str, adapter_id: str | None = None,
             observation_id: str | None = None,
             evidence_refs: Iterable[str] = ()) -> ObservationRecord:
-        """Persist one durable observation from a registered adapter, in any mode."""
-        self._store.read(run_id)  # the run must already exist to be observed
-        observed = self._registry.observe(adapter_id, instance_id, run_id)
+        """Persist one durable observation from the config-bound adapter, in any mode."""
+        recovered = self._store.read(run_id)  # the run must already exist to be observed
+        bound = self._bound_adapter(recovered.config, instance_id, adapter_id)
+        observed = self._registry.observe(bound, instance_id, run_id)
         record = ObservationRecord(
             observation_id=observation_id or self._ids("observation"),
             run_id=run_id,
@@ -55,22 +83,28 @@ class CommandService:
         return record
 
     def propose(
-            self, *, run_id: str, adapter_id: str, instance_id: str, attempt_id: str,
+            self, *, run_id: str, instance_id: str, attempt_id: str,
             capability: str, arguments: Mapping[str, Any], scope: Iterable[str],
             proposed_by: str, rationale: str, timeout_seconds: int,
+            adapter_id: str | None = None,
             proposal_id: str | None = None,
             proposed_at: str | None = None) -> ActionProposal:
         """Persist one immutable proposal; refused in Observe, prepares nothing."""
-        envelope = self._store.read(run_id).envelope
+        recovered = self._store.read(run_id)
+        envelope = recovered.envelope
         if envelope.mode is ControlMode.OBSERVE:
             raise ServiceError(
                 "propose is not permitted in observe mode; observe first, "
                 "then raise the run to propose")
-        # controls() reads the manifest reviewed at registration, never the adapter
-        # object, so an undeclared capability is refused before any seam could run.
-        if capability not in self._registry.controls(adapter_id):
+        # The adapter is derived from the pinned frozen config, so an unknown
+        # instance or a mismatched adapter is refused before the manifest is read.
+        bound = self._bound_adapter(recovered.config, instance_id, adapter_id)
+        # controls() reads the manifest of the config-bound adapter, never the
+        # adapter object and never the caller's choice, so a capability the bound
+        # adapter does not declare cannot be laundered through a foreign manifest.
+        if capability not in self._registry.controls(bound):
             raise UnsupportedCapability(
-                f"adapter {adapter_id!r} does not declare capability {capability!r}")
+                f"adapter {bound!r} does not declare capability {capability!r}")
         proposal = ActionProposal(
             proposal_id=proposal_id or self._ids("proposal"),
             run_id=run_id,

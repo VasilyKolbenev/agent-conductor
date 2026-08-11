@@ -690,6 +690,44 @@ class DecisionReceipt:
             schema_version=known.pop("schema_version", 2), extra=data)
 
 
+def frozen_config_bindings(config: Mapping[str, Any]) -> dict[str, str]:
+    """Read the instance -> adapter bindings a frozen run configuration declares.
+
+    The frozen configuration snapshot is the one authority on which adapter drives
+    each instance; an adapter a caller names alongside an instance is never trusted
+    over it. Each entry of the ``instances`` list names a unique ``id`` and the
+    ``adapter`` bound to it, both validated as ids. A configuration that declares
+    no instances binds nothing, so every instance is unknown against it.
+
+    Args:
+        config: The frozen configuration snapshot, as replayed from a run.
+
+    Returns:
+        A fresh ``{instance_id: adapter_id}`` mapping of every declared binding.
+
+    Raises:
+        ContractError: The snapshot, its ``instances`` list, or one entry is
+            malformed, or an instance id is declared more than once.
+    """
+    if not isinstance(config, Mapping):
+        raise ContractError("frozen config must be a JSON object")
+    declared = config.get("instances", ())
+    if not isinstance(declared, (list, tuple)):
+        raise ContractError(
+            "frozen config 'instances' must be a list of instance objects")
+    bindings: dict[str, str] = {}
+    for entry in declared:
+        if not isinstance(entry, Mapping):
+            raise ContractError("each configured instance must be a JSON object")
+        instance_id = _id("configured instance id", entry.get("id"))
+        adapter_id = _id("configured adapter id", entry.get("adapter"))
+        if instance_id in bindings:
+            raise ContractError(
+                f"frozen config declares instance {instance_id!r} more than once")
+        bindings[instance_id] = adapter_id
+    return bindings
+
+
 def gate_decision(receipts: Iterable[DecisionReceipt], run_id: str, gate_id: str) -> str:
     """Project one run-scoped decision; absence remains idle, never pass."""
     wanted_run = _id("run_id", run_id)

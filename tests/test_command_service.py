@@ -16,7 +16,12 @@ import pytest
 from conductor.command import service as service_module
 from conductor.command.adapters import AdapterContractError, AdapterRegistry
 from conductor.command.adapters.base import CAPABILITIES, UnsupportedCapability
-from conductor.command.contracts import ActionProposal, ControlMode, ObservationRecord
+from conductor.command.contracts import (
+    ActionProposal,
+    ControlMode,
+    ObservationRecord,
+    frozen_config_bindings,
+)
 from conductor.command.run_store import RunStore, snapshot_digest
 from conductor.command.service import CommandService, ServiceError
 
@@ -110,13 +115,17 @@ def test_a_repeated_proposal_does_not_duplicate_the_history(tmp_path):
     assert [row.kind for row in store.read("run-001").records] == ["action_proposal"]
 
 
-def test_only_a_registered_adapter_can_be_observed_or_proposed_through(tmp_path):
-    service, store = a_service(tmp_path)
+def test_an_instance_bound_to_an_unregistered_adapter_cannot_be_reached(tmp_path):
+    # The caller no longer names the adapter; the frozen config binds it. CONFIG
+    # binds 'codex-review' to the 'codex' adapter, which is absent from this
+    # registry, so the instance cannot be observed or proposed through at all --
+    # and neither door writes a record while refusing.
+    service, store = a_service(tmp_path)  # registry holds only 'claude-code'
     with pytest.raises(AdapterContractError, match="not registered"):
-        service.observe(
-            run_id="run-001", adapter_id="ghost", instance_id="claude-dev")
+        service.observe(run_id="run-001", instance_id="codex-review")
     with pytest.raises(AdapterContractError, match="not registered"):
-        service.propose(**propose_kwargs(adapter_id="ghost"))
+        service.propose(**propose_kwargs(
+            instance_id="codex-review", adapter_id=None, capability="observe"))
     assert store.read("run-001").records == ()
 
 
@@ -226,3 +235,100 @@ def test_the_ids_and_clock_are_injected_not_read_from_a_hidden_source(tmp_path):
     assert proposal.proposal_id == "proposal-inj"
     assert proposal.proposed_at == NOW
     assert seen == ["observation", "proposal"]
+
+
+# --- MAJOR-1: the instance -> adapter binding is derived from the frozen config,
+# never trusted from the caller. CONFIG binds 'claude-dev' to 'claude-code' and
+# 'codex-review' to 'codex'. Each guard below holds that RELATION -- the adapter a
+# door touches or stores equals the one the frozen config declares for the
+# instance -- with its two sides drawn from different code.
+
+def _two_adapter_service(tmp_path, *, mode="propose"):
+    """A service whose registry holds both adapters CONFIG binds instances to."""
+    claude = FakeAdapter("claude-code", ("observe", "dispatch"))
+    codex = FakeAdapter("codex", ("observe",))
+    return a_service(tmp_path, mode=mode, adapters=[claude, codex])
+
+
+def test_observe_refuses_an_unknown_instance_before_the_adapter_is_touched(tmp_path):
+    tripwire = FakeAdapter()
+
+    def boom(instance_id, run_id):
+        raise AssertionError("an unknown instance must never reach the adapter")
+
+    tripwire.observe = boom
+    service, store = a_service(tmp_path, mode="observe", adapters=[tripwire])
+    before = len(store.read("run-001").records)
+    with pytest.raises(ServiceError, match="ghost-instance"):
+        service.observe(
+            run_id="run-001", adapter_id="claude-code", instance_id="ghost-instance")
+    assert len(store.read("run-001").records) == before  # the journal did not grow
+    assert tripwire.observations == 0
+
+
+def test_propose_refuses_an_unknown_instance_before_any_record_is_written(tmp_path):
+    service, store = a_service(tmp_path)
+    before = len(store.read("run-001").records)
+    with pytest.raises(ServiceError, match="ghost-instance"):
+        service.propose(**propose_kwargs(instance_id="ghost-instance"))
+    assert len(store.read("run-001").records) == before
+
+
+def test_an_adapter_that_is_not_the_instances_binding_is_refused_on_both_doors(tmp_path):
+    service, store = _two_adapter_service(tmp_path)
+    # 'claude-dev' is bound to 'claude-code'; naming 'codex' is a mismatch, refused
+    # before the adapter is touched and before anything is written.
+    with pytest.raises(ServiceError, match="claude-dev"):
+        service.observe(
+            run_id="run-001", adapter_id="codex", instance_id="claude-dev")
+    with pytest.raises(ServiceError, match="claude-dev"):
+        service.propose(**propose_kwargs(
+            adapter_id="codex", instance_id="claude-dev", capability="observe"))
+    assert store.read("run-001").records == ()
+
+
+def test_a_capability_cannot_be_laundered_through_a_foreign_adapters_manifest(tmp_path):
+    service, store = _two_adapter_service(tmp_path)
+    # 'codex-review' is bound to 'codex', which does not declare 'dispatch'. The
+    # defect let a caller name the foreign 'claude-code' (which does) and launder
+    # the capability past the check; the mismatch is now refused first.
+    with pytest.raises(ServiceError, match="codex-review"):
+        service.propose(**propose_kwargs(
+            instance_id="codex-review", adapter_id="claude-code", capability="dispatch"))
+    # And with the bound adapter named, the capability is judged only by ITS
+    # manifest, so 'dispatch' is still absent and refused.
+    with pytest.raises(UnsupportedCapability, match="dispatch"):
+        service.propose(**propose_kwargs(
+            instance_id="codex-review", adapter_id="codex", capability="dispatch"))
+    assert store.read("run-001").records == ()
+
+
+def test_a_capability_the_bound_adapter_declares_stays_allowed(tmp_path):
+    service, store = _two_adapter_service(tmp_path)
+    proposal = service.propose(**propose_kwargs(
+        instance_id="claude-dev", adapter_id="claude-code", capability="dispatch"))
+    assert proposal.instance_id == "claude-dev"
+    assert proposal.capability == "dispatch"
+    assert [row.kind for row in store.read("run-001").records] == ["action_proposal"]
+
+
+def test_the_instance_adapter_relation_survives_replay_by_a_new_run_store(tmp_path):
+    service, _ = _two_adapter_service(tmp_path)
+    service.observe(run_id="run-001", instance_id="claude-dev")
+    proposal = service.propose(**propose_kwargs(
+        instance_id="claude-dev", capability="dispatch"))
+
+    # A fresh store process replays the durable bytes with no adapter in hand.
+    replayed = RunStore(tmp_path).read("run-001")
+    stored = {row.kind: row.value for row in replayed.records}
+    observation = stored["adapter_observation"]
+
+    # Declaration side: parsed straight from the frozen config by this test.
+    declared = {entry["id"]: entry["adapter"] for entry in replayed.config["instances"]}
+    # The observation carries its adapter durably; it is the one the config declares.
+    assert observation.adapter_id == declared[observation.instance_id] == "claude-code"
+    # The proposal carries no adapter field, yet production derives it unambiguously
+    # and verifiably from the pinned frozen config -- and it agrees with the
+    # declaration this test read independently.
+    derived = frozen_config_bindings(replayed.config)[proposal.instance_id]
+    assert derived == declared[proposal.instance_id] == "claude-code"
