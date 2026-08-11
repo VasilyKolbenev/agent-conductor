@@ -139,14 +139,28 @@ def _write_all(fd: int, payload: bytes) -> None:
 
 
 def _exclusive_bytes(path: Path, payload: bytes) -> None:
-    fd: int | None = None
+    """Publish `payload` at `path` all-or-nothing, and only if `path` is unclaimed.
+
+    The content is staged under a private name and fsynced first, so a crash can
+    never publish a half-written or zero-length file; `os.link` then refuses an
+    already-claimed name on every supported platform, which keeps exclusivity the
+    arbiter between two writers racing for the same identity.
+    """
+    fd, raw = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
+    stage = Path(raw)
     try:
-        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         _write_all(fd, payload)
         os.fsync(fd)
+        os.close(fd)
+        fd = -1
+        os.link(stage, path)
     finally:
-        if fd is not None:
+        if fd >= 0:
             os.close(fd)
+        try:
+            stage.unlink()
+        except FileNotFoundError:
+            pass
 
 
 def _append_bytes(path: Path, payload: bytes) -> None:

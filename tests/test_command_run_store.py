@@ -7,10 +7,12 @@ only damage recovery may discard; an invalid complete line is corruption.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
 
+from conductor.command import run_store
 from conductor.command.contracts import (
     ActionRequest,
     ActionResultReceipt,
@@ -237,6 +239,26 @@ def test_human_decision_receipt_is_exclusive_and_tampering_is_corruption(tmp_pat
     decision_path.write_text(json.dumps(raw) + "\n", encoding="utf-8", newline="\n")
     with pytest.raises(CorruptRun, match="decision-001"):
         store.recover("run-001")
+
+
+def test_a_crash_while_writing_a_decision_receipt_publishes_no_receipt_at_all(
+        tmp_path, monkeypatch):
+    store = RunStore(tmp_path)
+    store.create_run(a_run(), CONFIG)
+    decisions = store.run_path("run-001") / "decisions"
+
+    def tear(fd, payload):
+        os.write(fd, payload[:12])
+        raise OSError("the machine lost power mid-write")
+
+    monkeypatch.setattr(run_store, "_write_all", tear)
+    with pytest.raises(StoreError, match="cannot create decision receipt"):
+        store.append(a_decision())
+    assert list(decisions.iterdir()) == []
+
+    monkeypatch.undo()
+    assert store.append(a_decision()) is True
+    assert [row.value for row in store.recover("run-001").records] == [a_decision()]
 
 
 def test_decision_must_bind_to_this_frozen_config_and_supersede_a_prior_same_gate(tmp_path):
