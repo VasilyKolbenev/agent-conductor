@@ -688,7 +688,7 @@ receipt exists. Is DEC-UI expected to design around that gap as well, or to open
 
 ## 10. Backlog
 
-Five items recorded; the first four are complete and one remains queued.
+Five items recorded; all five are complete.
 
 - **Completed 2026-08-10 — give `scripts/mutate_merge.py` a crash-safe restore.** Atomic restore
   alone cannot cover a hard kill before the restore call. The implemented boundary is stronger:
@@ -734,56 +734,23 @@ Five items recorded; the first four are complete and one remains queued.
   with --port PORT.` to stderr, exit 1 — only the requested port, PORT literal, no probing or retry,
   stdout's bare flushed URL intact. `tests/test_cli.py`: two mocked bind failures whose digit-set
   relation bars any other port name, a `_serve` routing pin, a real child refused by a busy socket.
-- **Six guards on `conduct report` hold their sentence by vocabulary, not by relation.** The
-  report's behaviour is right in all six; the guards are what is thin, so only test-hardening is
-  queued here — the live defects and the false prose the S5 reviews found are fixed on the slice
-  itself, not carried into this item. Each diversion below is applied on its own to a clean tree
-  and the full suite stays green (`971 passed, 4 skipped`), which is the whole complaint:
-  1. **The empty-queue section can be rewritten into consent.**
-     `test_the_empty_queue_section_itself_asserts_no_agreement_anywhere_in_it` reads the section
-     for a ten-word list the test owns (`_AGREEMENT_WORDS`). Rewriting `report._queue`'s empty
-     branch to say that every question the project put to a person *"came back yes"*, that
-     *"the way is clear to merge"*, and that a reviewer may treat everything below as carrying
-     *"the blessing of the people who own it"* stays green: not one of those phrases is in the
-     list (`clear to merge` is not the listed `cleared`), and the rewrite leaves one denial
-     sentence standing, which is all the guard's second assertion asks for.
-  2. **A field §6.1 does not define is displayed, provided it carries no backticks.**
-     `test_no_line_shows_a_value_that_no_field_of_the_document_can_move` sweeps sentinels only
-     over lines matching a code span (`_value_lines`). Two invented header lines rendered as
-     bare prose — `- Release readiness: cleared to merge` and
-     `- Sign-off: all lanes have signed off` — never enter the swept set, so every report can
-     assert a clearance no document records.
-  3. **The vacuous-agreement sentence can be inverted with the guarded substring left in.**
-     `test_agreed_with_nobody_assigned_to_review_it_is_not_rendered_as_checked` asks for
-     `no reviewer assigned` in the vacuous half and its absence in the reviewed half. Rewriting
-     `verify()`'s vacuous label to *"agreed and sound — the phrase no reviewer assigned does not
-     apply here; this finding was reviewed and its agreement stands on a real check"* keeps the
-     substring and leaves `verified` False, so the report calls a finding checked while the
-     unknown section four sections later still lists it as vacuous. The counting guard cannot
-     catch it: `_VERIFIED_LABEL` is derived from `verify()`, so both sides move together.
-  4. **The `## Findings — none` sentence has no guard at all.** Replacing *"That is what the
-     lanes say; it is not a record that anything was checked."* with *"Every lane has looked and
-     every check has passed, so the work is clear to merge."* stays green. It is the same
-     sentence, written for the same reason, as the empty queue's — and the empty queue has one.
-  5. **Document order is claimed and unmeasured.** The module docstring says lists render in the
-     order the merger built them; having `report._findings` iterate its findings sorted by
-     `str(f.get("id"))` in reverse instead stays green. A re-sort is deterministic, so the
-     determinism battery cannot see it, and no other guard looks at sequence.
-  6. **Nothing ties the `Verification` line to the fields it names.** Shortening its
-     parenthetical to ``(read from `review_state` alone)`` stays green, so what the line tells a
-     reader the verdict rests on is held by no test. Both fields it names are live, which is the
-     relation a guard here can reach rather than a vocabulary: with the rest of the document
-     unchanged, taking the author's role out of `cycle.roles[].reviews` flips `verified` from
-     True to False, and so does changing `review_state`.
-
-  **Closed when** each of the six, applied one at a time to an otherwise clean tree and run as
-  `pytest -q` with `PYTHONPATH` on that worktree's `src`, turns the suite red, and the tree with
-  all six reverted is green. Those six runs are the acceptance evidence and belong in the closing
-  report verbatim; a guard that reds only on the exact wording quoted above closes nothing. Three
-  of them constrain the shape of the fix: (1) cannot be closed by lengthening `_AGREEMENT_WORDS`,
-  because a vocabulary the test owns is still a vocabulary; (3) cannot be closed by a comparison
-  whose two sides both derive from `verify()`; and (6) is not closed by a substring match on the
-  parenthetical, but by moving each field it names and showing the rendered verdict move with it.
+- **Completed 2026-08-11 — six guards on `conduct report` now hold their sentence by
+  relation, not by vocabulary.** Each of the six diversions recorded here was first
+  reproduced green on the clean tree, then closed in `tests/test_report_claim_guards.py`:
+  the empty-queue and the empty-findings sections are held whole by canonical snapshots
+  named as change sentinels (1, 4); every non-blank rendered line outside the verbatim
+  fences — heading, bullet and bare paragraph alike, the RG1-1 widening — must move with
+  some §6.1 field or sit on one reviewed static list (2); vacuous `agreed`
+  is judged by an independent truth table over the assigned/nobody pair, its expected side
+  literals the test owns rather than `verify()` output (3); findings order is measured
+  against a document order no sort produces, and forward and reverse re-sorts both red (5);
+  the `Verification` line is pinned whole and each field it names is moved independently,
+  the rendered verdict landing on the reviewed row for that move (6). The vocabulary
+  guards — `_AGREEMENT_WORDS` with its sentence splitter, the code-span-only sentinel
+  sweep, the `no reviewer assigned` substring pair — and their orphaned helpers left
+  `tests/test_report.py` only after every contour was red on the plan's wording and on a
+  reworded twin: twelve single-diversion `pytest -q` runs, all red, and the tree with
+  every diversion reverted green (`1768 passed, 4 skipped`).
 - ~~**The README does not document `--template` or the wizard.**~~ **Closed.** The README now
   carries a "What `conduct init` writes" section: the wizard's three questions, `--template`,
   the four vended maps — the item said three, and `templates.names()` returns four — and the
