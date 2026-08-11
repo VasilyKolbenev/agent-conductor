@@ -28,4 +28,3 @@ applicable valid receipt; deleting a wait or clicking a button is never satisfac
 
 December gains useful interactivity without broad filesystem authority. Browser tests and threat
 tests become release gates, and Orbit writes require a stricter path than ordinary commands.
-

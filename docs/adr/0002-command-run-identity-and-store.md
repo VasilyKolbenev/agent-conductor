@@ -29,4 +29,3 @@ Secret values are excluded. Protocol v1 files and merge semantics are unchanged.
 
 History becomes replayable and causal. Storage grows append-only and needs compaction later, but
 truth is never recovered from a mutable status flag alone.
-

@@ -24,4 +24,3 @@ Private reasoning and secret content are never evidence payloads.
 
 Action success can depend on observable evidence instead of process exit alone. Offline and partial
 adapters degrade to honest unverified states.
-

@@ -30,4 +30,3 @@ December stops only a process created by this runtime and matched to its recorde
 
 Claude Code and Codex can be deep adapters without privileged protocol semantics. Terminal-only
 Harnesses remain usable, but no adapter may smuggle an unrestricted command surface into the UI.
-
