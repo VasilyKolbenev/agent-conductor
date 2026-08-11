@@ -16,7 +16,7 @@ import pytest
 from conductor.command import service as service_module
 from conductor.command.adapters import AdapterContractError, AdapterRegistry
 from conductor.command.adapters.base import CAPABILITIES, UnsupportedCapability
-from conductor.command.contracts import ActionProposal, ObservationRecord
+from conductor.command.contracts import ActionProposal, ControlMode, ObservationRecord
 from conductor.command.run_store import RunStore, snapshot_digest
 from conductor.command.service import CommandService, ServiceError
 
@@ -69,7 +69,7 @@ def propose_kwargs(**changes):
 
 
 def test_observe_works_in_every_mode_and_persists_a_durable_observation(tmp_path):
-    for index, mode in enumerate(("observe", "propose", "confirm", "policy")):
+    for index, mode in enumerate(member.value for member in ControlMode):
         service, store = a_service(tmp_path / f"m{index}", mode=mode)
         record = service.observe(
             run_id="run-001", adapter_id="claude-code", instance_id="claude-dev")
@@ -88,7 +88,8 @@ def test_propose_is_forbidden_in_observe_and_never_records_one(tmp_path):
     assert store.read("run-001").records == ()
 
 
-@pytest.mark.parametrize("mode", ["propose", "confirm", "policy"])
+@pytest.mark.parametrize("mode", [
+    member.value for member in ControlMode if member is not ControlMode.OBSERVE])
 def test_propose_is_allowed_above_observe_and_persists_an_immutable_proposal(tmp_path, mode):
     service, store = a_service(tmp_path / mode, mode=mode)
     proposal = service.propose(**propose_kwargs())

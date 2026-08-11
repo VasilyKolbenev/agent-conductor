@@ -98,6 +98,14 @@ def test_run_boundary_rejects_ambiguous_identity_time_digest_and_authority(field
         a_run(**{field: value})
 
 
+def test_the_authority_ladder_is_exactly_these_four_modes_and_hides_no_fifth():
+    # Relational pin, not a single spelling: the whole serialized member set is
+    # compared against an independent literal, so any added, removed, or renamed
+    # mode reddens here -- a hidden fifth authority cannot slip in named anything.
+    assert {member.value for member in ControlMode} == {
+        "observe", "propose", "confirm", "policy"}
+
+
 def test_tolerant_run_reader_preserves_unknown_fields_without_aliasing_input():
     raw = a_run().as_dict()
     raw["schema_version"] = 3
