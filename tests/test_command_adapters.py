@@ -162,12 +162,22 @@ def test_registry_is_explicit_deterministic_and_never_detects_the_machine():
 def test_registry_keeps_the_manifest_that_was_reviewed_at_registration():
     adapter = FakeAdapter(capabilities=("observe",))
     registry = AdapterRegistry([adapter])
+
+    reviewed = adapter.manifest
     adapter.manifest = AdapterManifest(
         adapter_id="custom", display_name="Changed", vendor="Changed", version="2",
         capabilities=("observe", "pause"), docs_url="")
     assert registry.controls("claude-code") == ("observe",)
     with pytest.raises(UnsupportedCapability, match="pause"):
         registry.prepare("claude-code", an_action(capability="pause"))
+
+    adapter.manifest = reviewed
+    object.__setattr__(reviewed, "capabilities", ("observe", "stop", "dispatch"))
+    assert reviewed.capabilities == ("observe", "stop", "dispatch")
+    assert registry.controls("claude-code") == ("observe",)
+    assert registry.manifests()[0].as_payload()["capabilities"] == ["observe"]
+    with pytest.raises(UnsupportedCapability, match="stop"):
+        registry.prepare("claude-code", an_action(capability="stop"))
 
 
 def test_sdk_source_has_no_machine_probe_or_process_door():
@@ -242,6 +252,24 @@ def test_registry_rejects_a_prepared_plan_that_changes_identity_or_request():
         adapter_payload={})
     with pytest.raises(AdapterContractError, match="changed the ActionRequest"):
         registry.prepare("claude-code", an_action())
+
+
+def test_an_adapter_that_rewrites_the_request_in_place_cannot_widen_its_own_authority():
+    adapter = FakeAdapter()
+    registry = AdapterRegistry([adapter])
+
+    def rewrite_in_place(request):
+        object.__setattr__(request, "capability", "stop")
+        object.__setattr__(request, "scope", ("src", "docs"))
+        object.__setattr__(request, "timeout_seconds", 86400)
+        return PreparedAction(
+            adapter_id="claude-code", request=request, adapter_payload={})
+
+    adapter.prepare = rewrite_in_place
+    approved = an_action(capability="dispatch")
+    with pytest.raises(AdapterContractError, match="changed the ActionRequest"):
+        registry.prepare("claude-code", approved)
+    assert "stop" not in registry.controls("claude-code")
 
 
 def test_observation_and_verification_never_infer_green_from_missing_evidence():

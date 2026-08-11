@@ -21,6 +21,7 @@ from ..contracts import (
     _object,
     _text,
     _timestamp,
+    canonical_json,
 )
 
 
@@ -237,8 +238,10 @@ class AdapterRegistry:
         if manifest.adapter_id in self._adapters:
             raise AdapterContractError(
                 f"adapter {manifest.adapter_id!r} is already registered")
-        self._adapters[manifest.adapter_id] = adapter
-        self._manifests[manifest.adapter_id] = manifest
+        # Keep the reviewed VALUE, not a pointer the adapter can still rewrite.
+        reviewed = AdapterManifest(**manifest.as_payload())
+        self._adapters[reviewed.adapter_id] = adapter
+        self._manifests[reviewed.adapter_id] = reviewed
 
     def resolve(self, adapter_id: str) -> Adapter:
         safe = _contract(_id, "adapter_id", adapter_id)
@@ -274,12 +277,16 @@ class AdapterRegistry:
         if not isinstance(request, ActionRequest):
             raise AdapterContractError("request must be a validated ActionRequest")
         adapter = self._require(adapter_id, request.capability)
+        # Compare against a VALUE taken before the adapter sees the request, so an
+        # adapter that rewrites the caller's object in place cannot satisfy the check
+        # by returning the very object both sides would otherwise read.
+        authorized = _contract(canonical_json, request)
         prepared = adapter.prepare(request)
         if not isinstance(prepared, PreparedAction):
             raise AdapterContractError("prepare must return PreparedAction")
         if prepared.adapter_id != self._registered_manifest(adapter_id).adapter_id:
             raise AdapterContractError("prepared adapter_id does not match the registered adapter")
-        if prepared.request != request:
+        if _contract(canonical_json, prepared.request) != authorized:
             raise AdapterContractError("adapter changed the ActionRequest while preparing it")
         return prepared
 
