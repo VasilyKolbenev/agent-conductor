@@ -211,5 +211,8 @@ a valid decision receipt.
   non-secret configuration, canonical append-only replay, idempotency conflicts, causal
   Action-to-Result validation, immutable Human Decision files, and crash-tail recovery. It starts
   no process and changes no Protocol v1 output.
-- **Next: CMD-3.** Adapter protocol and capability manifests, followed by Observe and Propose;
-  execution remains disabled until the owned-process runner and Confirm authorization are green.
+- **CMD-3 — Complete 2026-08-11.** Explicit non-probing Adapter registry; immutable capability
+  manifests; validated observations, preparations and verification results; four protocol seams;
+  unsupported controls stay absent and no registry execution method exists.
+- **Next: CMD-4.** Persisted Proposals and the Observe/Propose service. Execution remains disabled
+  until the owned-process runner and Confirm authorization are green.
