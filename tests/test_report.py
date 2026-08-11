@@ -18,7 +18,10 @@ demanding that the report tell them apart:
 
 The determinism claim is measured, not asserted, in
 `tests/test_report_determinism.py`, which renders the same document in child
-interpreters and compares the files byte for byte.
+interpreters and compares the files byte for byte. The claim guards that
+replaced this module's former vocabulary guards — the canonical section
+sentinels, the bare-prose sentinel sweep, the verification truth table —
+live in `tests/test_report_claim_guards.py`.
 """
 import ast
 import copy
@@ -176,9 +179,10 @@ def test_fields_the_protocol_does_not_define_are_tolerated_and_not_rendered():
 def _gapless_state():
     """A document that shows every §6.1 field the report reads, and no gap at all.
 
-    Every value in it is distinct, because the guard below asks whether a
-    rendered line can be made to move: two findings agreeing on a field would
-    keep each other's line on the page and read as unattributable.
+    Every value in it is distinct, because the sentinel sweeps over it — in
+    `tests/test_report_claim_guards.py` and `tests/test_report_funnel.py` — ask
+    whether a rendered line can be made to move: two findings agreeing on a
+    field would keep each other's line on the page and read as unattributable.
     """
     roles = [role("impl", stage="implement"), role("rev", ["impl"], stage="review")]
     return merged(
@@ -225,33 +229,6 @@ def _with_a_sentinel_at(state, path, sentinel):
     return doc
 
 
-def _value_lines(text):
-    """Every heading and list item that shows a value, rather than saying something."""
-    return {ln for ln in text.splitlines()
-            if (ln.startswith("#") or ln.lstrip().startswith("- "))
-            and re.search(r"`[^`\n]+`", ln)}
-
-
-def test_no_line_shows_a_value_that_no_field_of_the_document_can_move():
-    # The other direction of "no field is invented", and the one that matters:
-    # the guard above proves an EXTRA field in the document is not displayed,
-    # which says nothing about a field the report displays that the document
-    # has not got. Here every line that shows a value must stop reading as it
-    # does when some §6.1 field moves — an invented field cannot, because
-    # nothing in the document reaches it.
-    state = _gapless_state()
-    text = report.render(state)
-    assert "None of the gaps this report looks for" in section(
-        text, "## What this report does not know")   # the fixture is what it claims
-    unmoved = _value_lines(text)
-    assert len(unmoved) > 15, "the fixture is too thin to hold a guard"
-    for path in _leaf_paths(state):
-        moved = report.render(_with_a_sentinel_at(state, path, "S-E-N-T-I-N-E-L"))
-        unmoved = {ln for ln in unmoved if ln in moved}
-    assert unmoved == set(), (
-        f"these lines show values no document field reaches: {sorted(unmoved)}")
-
-
 def test_an_empty_document_reports_absence_instead_of_inventing_a_state():
     text = report.render({})
     for invented in merge.PROJECT_STATES | merge.STATUS_REASONS:
@@ -286,18 +263,6 @@ def test_the_merger_writes_agreed_for_both_a_reviewed_and_an_unreviewed_finding(
     assert only("D-1", assigned)["review_state"] == "agreed"
     assert only("D-1", nobody)["review_state"] == "agreed"
     assert only("D-1", assigned)["verdicts"] == only("D-1", nobody)["verdicts"]
-
-
-def test_agreed_with_nobody_assigned_to_review_it_is_not_rendered_as_checked():
-    assigned, nobody = _agreed_pair()
-    assert report.verify(only("D-1", assigned), assigned).verified is True
-    assert report.verify(only("D-1", nobody), nobody).verified is False
-    reviewed_text = section(report.render(assigned), "## Findings")
-    vacuous_text = section(report.render(nobody), "## Findings")
-    assert reviewed_text != vacuous_text, (
-        "the report renders a checked finding and a vacuously agreed one alike")
-    assert "no reviewer assigned" in vacuous_text   # §6's own wording for this row
-    assert "no reviewer assigned" not in reviewed_text
 
 
 #: The exact sentence the report renders beside a finding a review confirmed.
@@ -591,47 +556,6 @@ def test_an_empty_queue_is_reported_as_an_absence_of_requests_not_a_decision():
     # from a section that renders as nothing.
     assert "- The human queue is empty" in section(
         empty_text, "## What this report does not know")
-
-
-#: Words a report reaches for when it says something was settled. Owned by this
-#: file rather than read out of the module, so rewriting the module's prose
-#: cannot rewrite the guard along with it.
-_AGREEMENT_WORDS = ("agreed", "answered", "approved", "confirmed", "checked",
-                    "signed off", "cleared", "settled", "resolved", "consent")
-
-#: Enough of English to tell "nothing was answered" from "everything was".
-_DENIALS = frozenset({"not", "no", "none", "nothing", "never", "nobody",
-                      "neither", "cannot"})
-
-
-def _sentences(text):
-    """`text` split where a reader would stop: a full stop, a colon, a new line."""
-    return [s.strip() for s in re.split(r"(?<=[.:!?])\s+|\n", text) if s.strip()]
-
-
-def _claims_agreement(sentence):
-    """True when a sentence says something was settled and does not deny it."""
-    lowered = sentence.lower()
-    return (any(word in lowered for word in _AGREEMENT_WORDS)
-            and not set(re.findall(r"[a-z]+", lowered)) & _DENIALS)
-
-
-def test_the_empty_queue_section_itself_asserts_no_agreement_anywhere_in_it():
-    # The guard above reads the report as a whole, so both of the sentences it
-    # checks live in the section a reader reaches LAST. This one reads the
-    # `## Human queue` section on its own, and reads it as sentences: every
-    # sentence there that mentions a settlement must deny it, and at least one
-    # must, so the disclosure cannot be deleted or reversed unnoticed.
-    empty = merged(a_map(), [a_lane("claude")])
-    assert empty["human_queue"] == []
-    queue = section(report.render(empty), "## Human queue")
-    settled = [s for s in _sentences(queue) if _claims_agreement(s)]
-    assert settled == [], (
-        f"the empty-queue section asserts that something was settled: {settled}")
-    denials = [s for s in _sentences(queue)
-               if any(w in s.lower() for w in _AGREEMENT_WORDS)]
-    assert denials, ("the empty-queue section says nothing about agreement at "
-                     "all, so silence is left to speak for itself")
 
 
 # --- the data defect the schema boundary now stops --------------------------
