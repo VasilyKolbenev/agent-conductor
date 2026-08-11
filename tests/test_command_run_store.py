@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 
 import pytest
@@ -448,6 +449,121 @@ def test_recovery_detects_frozen_configuration_tampering(tmp_path):
     config_path.write_text('{"cycle":{"id":"different"}}\n', encoding="utf-8")
     with pytest.raises(CorruptRun, match="config digest"):
         store.recover("run-001")
+
+
+def append_line(store, wrapper):
+    with (store.run_path("run-001") / "records.jsonl").open("ab") as stream:
+        stream.write(canonical_line(wrapper).encode("utf-8"))
+
+
+def damage_line_from_another_run(store):
+    append_line(store, {
+        "record": an_action(
+            run_id="run-other", action_id="action-002",
+            idempotency_key="dispatch-002").as_dict(),
+        "record_type": "action_request"})
+    return "belongs to run 'run-other'"
+
+
+def damage_duplicate_identity(store):
+    append_line(store, {
+        "record": an_action().as_dict(), "record_type": "action_request"})
+    return "duplicates action_request identity 'action-001'"
+
+
+def damage_duplicate_idempotency_key(store):
+    append_line(store, {
+        "record": an_action(action_id="action-002").as_dict(),
+        "record_type": "action_request"})
+    return "idempotency_key 'dispatch-001' belongs to both 'action-001' and 'action-002'"
+
+
+def damage_result_without_its_action(store):
+    append_line(store, {
+        "record": a_result(receipt_id="result-002", action_id="action-999").as_dict(),
+        "record_type": "action_result"})
+    return "action result names unknown action 'action-999'"
+
+
+def damage_envelope_naming_another_run(store):
+    path = store.run_path("run-001") / "run.json"
+    path.write_bytes(canonical_line(a_run(run_id="run-999").as_dict()).encode("utf-8"))
+    return "run directory 'run-001' contains envelope 'run-999'"
+
+
+def damage_secret_reintroduced_into_the_frozen_config(store):
+    poisoned = {**CONFIG, "adapter": {"api_key": "written-secret"}}
+    root = store.run_path("run-001")
+    (root / "config.json").write_bytes(canonical_line(poisoned).encode("utf-8"))
+    (root / "run.json").write_bytes(canonical_line(
+        a_run(config_digest=snapshot_digest(poisoned)).as_dict()).encode("utf-8"))
+    return "frozen config contains secret-bearing field 'adapter.api_key'"
+
+
+def damage_journalled_decision_without_its_file(store):
+    (store.run_path("run-001") / "decisions" / "decision-001.json").unlink()
+    return "decision receipts missing exclusive files: ['decision-001']"
+
+
+def damage_decision_file_owned_by_another_run(store):
+    write_decision_file(store, a_decision(receipt_id="decision-002"))
+    path = store.run_path("run-001") / "decisions" / "decision-002.json"
+    stray = a_decision(receipt_id="decision-002", run_id="run-other")
+    path.write_bytes(canonical_line(
+        {"record": stray.as_dict(), "record_type": "decision"}).encode("utf-8"))
+    return "decision receipt 'decision-002' belongs to another run"
+
+
+def damage_decision_filename_disagreeing_with_its_receipt(store):
+    write_decision_file(store, a_decision(receipt_id="decision-002"), stem="decision-other")
+    return "decision filename 'decision-other' disagrees with 'decision-002'"
+
+
+def damage_decision_file_edited_after_it_was_written(store):
+    write_decision_file(store, a_decision(action="reject"))
+    return "decision receipt 'decision-001' disagrees with records.jsonl"
+
+
+def damage_decision_file_carrying_an_uncontracted_field(store):
+    decision = a_decision()
+    path = store.run_path("run-001") / "decisions" / "decision-001.json"
+    path.write_bytes(canonical_line({
+        "record": decision.as_dict(), "record_type": "decision",
+        "action": "reject"}).encode("utf-8"))
+    return "decision receipt 'decision-001' has non-canonical or uncontracted fields"
+
+
+@pytest.mark.parametrize("damage", [
+    damage_line_from_another_run,
+    damage_duplicate_identity,
+    damage_duplicate_idempotency_key,
+    damage_result_without_its_action,
+    damage_envelope_naming_another_run,
+    damage_secret_reintroduced_into_the_frozen_config,
+    damage_journalled_decision_without_its_file,
+    damage_decision_file_owned_by_another_run,
+    damage_decision_filename_disagreeing_with_its_receipt,
+    damage_decision_file_edited_after_it_was_written,
+    damage_decision_file_carrying_an_uncontracted_field,
+], ids=lambda call: call.__name__.removeprefix("damage_"))
+def test_replay_refuses_durable_bytes_that_break_a_relation_the_run_already_recorded(
+        tmp_path, damage):
+    store = RunStore(tmp_path)
+    store.create_run(a_run(), CONFIG)
+    store.append(an_action())
+    store.append(evidence())
+    store.append(a_result())
+    store.append(a_decision())
+    assert [row.kind for row in store.read("run-001").records] == [
+        "action_request", "evidence", "action_result", "decision"]
+
+    expected = re.escape(damage(store))
+    with pytest.raises(CorruptRun, match=expected):
+        store.read("run-001")
+    with pytest.raises(CorruptRun, match=expected):
+        store.recover("run-001")
+    with pytest.raises(StoreError, match=expected):
+        store.append(an_action(action_id="action-late", idempotency_key="dispatch-late"))
 
 
 def test_run_path_accepts_only_contract_ids(tmp_path):
