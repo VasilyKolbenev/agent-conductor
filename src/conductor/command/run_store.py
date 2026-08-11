@@ -77,8 +77,13 @@ _RECORDS: dict[str, tuple[type[RecordValue], str]] = {
     "decision": (DecisionReceipt, "receipt_id"),
 }
 
-# A snapshot may name where the runtime should find a secret, never carry its
-# value.  `*_env` and `*_env_var` are references and are deliberately allowed.
+# A named-key screen, not a proof that the snapshot is secret-free: a key is
+# refused when its compact spelling IS one of these parts or it ends in `_<part>`.
+# Prefix and infix forms (`private_key`, `password_hash`, `secret_value`,
+# `token_value`, `apikeys`, `github_pat`, `authorization_header`) and every
+# secret carried in a VALUE pass through, so this raises the cost of the common
+# mistake and is not a containment boundary.  `*_env` and `*_env_var` name where
+# the runtime should find a secret and are deliberately allowed.
 _SECRET_PARTS = frozenset({
     "api_key", "authorization", "cookie", "credential", "password", "secret", "token",
 })

@@ -207,9 +207,11 @@ a valid decision receipt.
 
 - **CMD-1 — Complete 2026-08-11.** Validated Run, Action, Result, Evidence and Human Decision
   contracts; canonical serialization; forward-compatible readers; no execution surface.
-- **CMD-2 — Complete 2026-08-11.** Project-local Run Store with exclusive creation, frozen
-  non-secret configuration, canonical append-only replay, idempotency conflicts, causal
-  Action-to-Result validation, immutable Human Decision files, and crash-tail recovery. It starts
+- **CMD-2 — Complete 2026-08-11.** Project-local Run Store with exclusive creation, a frozen
+  configuration screened against a named list of secret-bearing key names (a screen, not a
+  proof of absence), canonical append-only replay, idempotency conflicts, causal
+  Action-to-Result validation, immutable Human Decision files published all-or-nothing, a
+  non-mutating reader beside the writer's repair path, and crash-tail recovery. It starts
   no process and changes no Protocol v1 output.
 - **CMD-3 — Complete 2026-08-11.** Explicit non-probing Adapter registry; immutable capability
   manifests; validated observations, preparations and verification results; four protocol seams;

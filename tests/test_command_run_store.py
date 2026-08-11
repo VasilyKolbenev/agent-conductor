@@ -163,16 +163,38 @@ def test_create_run_is_exclusive_and_a_digest_mismatch_leaves_no_run(tmp_path):
     {"adapter": {"api_key": "written-secret"}},
     {"adapter": {"apiKey": "written-secret"}},
     {"adapter": {"password": "written-secret"}},
+    {"adapter": {"vendor_token": "written-secret"}},
     {"nested": [{"authorization": "Bearer written-secret"}]},
     {"adapter": {"token_env": "sk-not-an-environment-name"}},
 ])
-def test_frozen_snapshot_rejects_secret_values_but_allows_environment_references(
+def test_frozen_snapshot_rejects_the_known_secret_key_names_and_malformed_env_references(
         tmp_path, snapshot):
     store = RunStore(tmp_path)
     run = a_run(run_id="run-secret", config_digest=snapshot_digest(snapshot))
     with pytest.raises(StoreError, match="secret-bearing field"):
         store.create_run(run, snapshot)
     assert not store.run_path("run-secret").exists()
+
+
+@pytest.mark.parametrize("snapshot", [
+    {"adapter": {"private_key": "written-secret"}},
+    {"adapter": {"password_hash": "written-secret"}},
+    {"adapter": {"secret_value": "written-secret"}},
+    {"adapter": {"token_value": "written-secret"}},
+    {"adapter": {"apikeys": ["written-secret"]}},
+    {"adapter": {"github_pat": "written-secret"}},
+    {"adapter": {"authorization_header": "Bearer written-secret"}},
+    {"adapter": {"url": "https://user:written-secret@example.com/x"}},
+])
+def test_the_frozen_snapshot_screen_reads_key_names_only_and_lets_these_through(
+        tmp_path, snapshot):
+    """The documented limit: the screen is not an absence-of-secrets guarantee."""
+    store = RunStore(tmp_path)
+    run = a_run(run_id="run-secret", config_digest=snapshot_digest(snapshot))
+    store.create_run(run, snapshot)
+    assert store.read("run-secret").envelope == run
+    frozen = (store.run_path("run-secret") / "config.json").read_text(encoding="utf-8")
+    assert "written-secret" in frozen
 
 
 def test_append_and_replay_preserve_causal_order_and_never_fold_acceptance_into_success(tmp_path):
