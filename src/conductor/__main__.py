@@ -216,6 +216,41 @@ def _add_dir_and_func(p: argparse.ArgumentParser,
     p.set_defaults(func=func)
 
 
+def _add_template(p: argparse.ArgumentParser) -> None:
+    """Attach `init`'s `--template`, named from the module that vends the maps."""
+    # Deliberately NOT argparse `choices`: that raises a usage error (exit 2)
+    # and hardcodes a second copy of the list. The explicit check in
+    # `init.run` exits 1 with templates.get()'s own message, so the available
+    # names can never drift from the module that vends them.
+    p.set_defaults(default_port=DEFAULT_PORT)   # init advises it, never binds it
+    p.add_argument("--template", metavar="NAME",
+                   help="starting map: " + ", ".join(n for n, _ in templates.names())
+                        + f" (default: {templates.DEFAULT}; omit it in a terminal "
+                          "to be asked instead)")
+
+
+def _add_role_and_author(p: argparse.ArgumentParser) -> None:
+    """Attach `prompt`'s role addressing, keeping the positional spelling deprecated."""
+    # ADR 0001: the positional is the DEPRECATED spelling of --role and its
+    # meaning must NEVER be silently redefined (e.g. to an instance id in v2) —
+    # any new addressing scheme gets its own flag.
+    p.add_argument("role_positional", nargs="?", metavar="role", default=None,
+                   help="deprecated positional form of --role")
+    p.add_argument("--role", help="a cycle.roles id from map.toml")
+    p.add_argument("--author",
+                   help="your lane author id — fills conductor/lanes/<author>.json "
+                        "into the prompt")
+    p.set_defaults(prompt_parser=p)   # lets _cmd_prompt raise argparse usage errors
+
+
+def _add_instance_and_adapter(p: argparse.ArgumentParser) -> None:
+    """Attach `preview`'s addressing; the frozen config, not this flag, binds the adapter."""
+    p.add_argument("--instance", default="claude-dev",
+                   help="the configured instance to propose against (default: claude-dev)")
+    p.add_argument("--adapter", default=None,
+                   help="cross-check the adapter the frozen config binds to the instance")
+
+
 def _build_parser() -> argparse.ArgumentParser:
     """Build the `conduct` argument parser: one explicit block per subcommand."""
     parser = argparse.ArgumentParser(
@@ -228,15 +263,7 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_dir_and_func(p, _cmd_validate)
 
     p = sub.add_parser("init", help="scaffold conductor/ and print the bootstrap prompt")
-    # Deliberately NOT argparse `choices`: that raises a usage error (exit 2)
-    # and hardcodes a second copy of the list. The explicit check in
-    # `init.run` exits 1 with templates.get()'s own message, so the available
-    # names can never drift from the module that vends them.
-    p.set_defaults(default_port=DEFAULT_PORT)   # init advises it, never binds it
-    p.add_argument("--template", metavar="NAME",
-                   help="starting map: " + ", ".join(n for n, _ in templates.names())
-                        + f" (default: {templates.DEFAULT}; omit it in a terminal "
-                          "to be asked instead)")
+    _add_template(p)
     _add_dir_and_func(p, init.run)
 
     p = sub.add_parser("doctor",
@@ -244,16 +271,7 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_dir_and_func(p, doctor.run)
 
     p = sub.add_parser("prompt", help="print the working prompt for one cycle role")
-    # ADR 0001: the positional is the DEPRECATED spelling of --role and its
-    # meaning must NEVER be silently redefined (e.g. to an instance id in v2) —
-    # any new addressing scheme gets its own flag.
-    p.add_argument("role_positional", nargs="?", metavar="role", default=None,
-                   help="deprecated positional form of --role")
-    p.add_argument("--role", help="a cycle.roles id from map.toml")
-    p.add_argument("--author",
-                   help="your lane author id — fills conductor/lanes/<author>.json "
-                        "into the prompt")
-    p.set_defaults(prompt_parser=p)   # lets _cmd_prompt raise argparse usage errors
+    _add_role_and_author(p)
     _add_dir_and_func(p, _cmd_prompt)
 
     p = sub.add_parser("report", help="print a Markdown report of the merged state")
@@ -262,10 +280,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser(
         "preview",
         help="propose one dispatch and print its canonical preview (no execution)")
-    p.add_argument("--instance", default="claude-dev",
-                   help="the configured instance to propose against (default: claude-dev)")
-    p.add_argument("--adapter", default=None,
-                   help="cross-check the adapter the frozen config binds to the instance")
+    _add_instance_and_adapter(p)
     _add_dir_and_func(p, _cmd_preview)
 
     p = sub.add_parser("up", help="serve the panel on loopback HTTP with live updates")
