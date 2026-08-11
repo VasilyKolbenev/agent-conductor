@@ -217,12 +217,11 @@ def _add_dir_and_func(p: argparse.ArgumentParser,
 
 
 def _add_template(p: argparse.ArgumentParser) -> None:
-    """Attach `init`'s `--template`, named from the module that vends the maps."""
+    """Attach `init`'s `--template`, whose help lists the maps `templates` vends."""
     # Deliberately NOT argparse `choices`: that raises a usage error (exit 2)
     # and hardcodes a second copy of the list. The explicit check in
     # `init.run` exits 1 with templates.get()'s own message, so the available
     # names can never drift from the module that vends them.
-    p.set_defaults(default_port=DEFAULT_PORT)   # init advises it, never binds it
     p.add_argument("--template", metavar="NAME",
                    help="starting map: " + ", ".join(n for n, _ in templates.names())
                         + f" (default: {templates.DEFAULT}; omit it in a terminal "
@@ -263,6 +262,7 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_dir_and_func(p, _cmd_validate)
 
     p = sub.add_parser("init", help="scaffold conductor/ and print the bootstrap prompt")
+    p.set_defaults(default_port=DEFAULT_PORT)   # init advises it, never binds it
     _add_template(p)
     _add_dir_and_func(p, init.run)
 
