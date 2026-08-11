@@ -124,7 +124,12 @@ def _serve(root: Path | str, port: int) -> int:
     try:
         srv = server.build(root, port=port)
     except OSError as e:                  # port busy / unbindable → exit 1
-        print(f"cannot serve on 127.0.0.1:{port}: {e}", file=sys.stderr)
+        # `port` is the one the user asked for, and the ONLY port this message
+        # may name: an OSError is not proof the port is busy, and no other
+        # port is known to be free, so the hint keeps the PORT placeholder
+        # literal instead of volunteering a number.
+        print(f"cannot serve on 127.0.0.1:{port}: {e}. "
+              "To try a different port, rerun with --port PORT.", file=sys.stderr)
         return 1
     host, bound = srv.server_address[:2]
     # The URL is the result; how to stop the server is lifecycle chatter. Split

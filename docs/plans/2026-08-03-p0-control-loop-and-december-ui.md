@@ -692,7 +692,7 @@ receipt exists. Is DEC-UI expected to design around that gap as well, or to open
 
 ## 10. Backlog
 
-Five items recorded; the first three are complete and two remain queued.
+Five items recorded; the first four are complete and one remains queued.
 
 - **Completed 2026-08-10 — give `scripts/mutate_merge.py` a crash-safe restore.** Atomic restore
   alone cannot cover a hard kill before the restore call. The implemented boundary is stronger:
@@ -733,10 +733,11 @@ Five items recorded; the first three are complete and two remain queued.
   reaches the panel's first sentence or the report's Decision brief; the merger still renders
   `title` as given, by design. The former pins in `tests/test_report.py` are rewritten as one
   boundary test plus two outside-the-contract guards on that render-as-given behaviour.
-- **The port-busy message does not mention `--port`.** `__main__._serve` prints
-  `cannot serve on 127.0.0.1:{port}: {e}` and exits 1. The flag exists on both `up` and `demo`,
-  and the README already tells people about it; the error is the one place a person actually
-  needs it and it is the one place that does not say it.
+- **Completed 2026-08-10 — serve failure names `--port`.** `up` and `demo` share `__main__._serve`;
+  on OSError it prints `cannot serve on 127.0.0.1:{port}: {error}. To try a different port, rerun
+  with --port PORT.` to stderr, exit 1 — only the requested port, PORT literal, no probing or retry,
+  stdout's bare flushed URL intact. `tests/test_cli.py`: two mocked bind failures whose digit-set
+  relation bars any other port name, a `_serve` routing pin, a real child refused by a busy socket.
 - **Six guards on `conduct report` hold their sentence by vocabulary, not by relation.** The
   report's behaviour is right in all six; the guards are what is thin, so only test-hardening is
   queued here — the live defects and the false prose the S5 reviews found are fixed on the slice
