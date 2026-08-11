@@ -216,5 +216,15 @@ a valid decision receipt.
 - **CMD-3 — Complete 2026-08-11.** Explicit non-probing Adapter registry; immutable capability
   manifests; validated observations, preparations and verification results; four protocol seams;
   unsupported controls stay absent and no registry execution method exists.
-- **Next: CMD-4.** Persisted Proposals and the Observe/Propose service. Execution remains disabled
-  until the owned-process runner and Confirm authorization are green.
+- **CMD-4 — fixed, pending external re-review 2026-08-11.** Persisted Proposals and the
+  Observe/Propose service. Both Codex REQUEST-CHANGES MAJORs are closed: (1) the instance ->
+  adapter binding is derived from the pinned frozen config, never trusted from the caller, so
+  an unknown instance, an adapter mismatch, and capability laundering through a foreign
+  manifest are all refused before any adapter seam and before any append, on observe and
+  propose alike — the proposal's adapter is derived unambiguously and verifiably from the
+  frozen config it already digests, so no new durable field and no Protocol change were
+  needed; (2) a Day-1 CLI-only gate, `conduct preview`, drives the fixed service end to end
+  (create/open a run with a frozen config, propose one dispatch, print the canonical preview
+  with its preview_digest) and prepares, executes and spawns nothing. Execution remains
+  disabled until the owned-process runner and Confirm authorization are green. Not marked
+  Complete: external APPROVE from Codex is not yet given.
