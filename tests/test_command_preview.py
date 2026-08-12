@@ -10,6 +10,7 @@ in a module of its own rather than among the CLI's general tests.
 """
 import json
 import re
+import shutil
 
 import pytest
 from conductor.__main__ import main
@@ -550,3 +551,64 @@ def test_preview_refuses_a_run_holding_a_file_the_store_does_not_own(
     assert found.records == () and found.warnings == ()
     err = _refuses_and_leaves_the_run_directory_untouched(tmp_path, capsys)
     assert repr(name) in err
+
+
+def test_the_refusal_names_the_run_directory_and_deleting_it_is_the_way_back(
+        tmp_path, capsys):
+    """The price MAJOR-B pays is disclosed, and the way out of it actually leads out.
+
+    Refusing a ragged run costs it its future: nothing here repairs it, so it will
+    never open again at an id that is fixed. The whole mitigation is one appended
+    sentence — the full path of the directory to delete, and the claim that
+    deleting it works — and it is the mitigation the module docstring names by
+    name. Nothing else in this module reads it: the other refusal tests take their
+    expected text from `RunStore.read`'s warnings, which this sentence is not one
+    of, so dropping it or blurring the path to generic prose leaves them all green.
+
+    What is held here is the relation, not the wording. The path is the store's own
+    answer for this run rather than a string spelled out here, and the remedy is
+    carried out: delete exactly that directory, rerun, and the run comes back byte
+    for byte the one a genuine preview writes.
+    """
+    genuine = _the_previews_own_record_bytes(tmp_path / "own", capsys)
+    journal = _seed_run_at_the_previews_identity(
+        tmp_path, cycle_id="preview-orbit", config=preview.FROZEN_CONFIG, mode="propose")
+    journal.write_bytes(genuine.rstrip(b"\n"))
+    err = _refuses_and_leaves_the_run_directory_untouched(tmp_path, capsys)
+    # The directory the refusal names is the one the store would hand this run.
+    named = RunStore(tmp_path).run_path("preview-run")
+    assert str(named) in err
+    assert "never open here again" in err  # change detector on the stated price
+    # And it leads where it says: that directory removed, the preview opens again
+    # and writes the same journal it writes into a directory it has never seen.
+    shutil.rmtree(named)
+    assert main(["preview", "--dir", str(tmp_path)]) == 0
+    capsys.readouterr()
+    assert journal.read_bytes() == genuine
+
+
+def test_the_refusal_names_every_warning_when_one_replay_reports_two(tmp_path, capsys):
+    """More than one warning is reachable, and naming only the first would hide one.
+
+    A run can hold an orphan `decisions/` receipt AND a journal that ends
+    mid-record, and `RunStore.read` reports both. Every refusal above is seeded to
+    produce exactly one warning, so `differences.extend(...)` could be narrowed to
+    `differences.append(found.warnings[0])` with all of them still green — the
+    relation they hold (every warning the store named appears in the refusal) is
+    only worth something once a fixture makes the store name two.
+    """
+    own_line = _the_previews_own_record_bytes(tmp_path / "own", capsys)
+    journal = _seed_run_at_the_previews_identity(
+        tmp_path, cycle_id="preview-orbit", config=preview.FROZEN_CONFIG, mode="propose")
+    RunStore(tmp_path).append(DecisionReceipt(
+        receipt_id="foreign-receipt", run_id="preview-run", gate_id="foreign-gate",
+        action="approve", actor="someone-else", decided_at="2026-08-11T00:00:00Z",
+        reason="a gate this preview never opened", scope_refs=("src",),
+        config_digest=snapshot_digest(preview.FROZEN_CONFIG)))
+    # The receipt's journal line replaced by an unterminated one: the receipt is
+    # now an orphan and the journal is now ragged, two complaints from one replay.
+    journal.write_bytes(own_line.rstrip(b"\n"))
+    found = RunStore(tmp_path).read("preview-run")
+    assert len(found.warnings) == 2
+    err = _refuses_and_leaves_the_run_directory_untouched(tmp_path, capsys)
+    assert all(warning in err for warning in found.warnings)
