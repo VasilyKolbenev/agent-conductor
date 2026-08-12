@@ -237,5 +237,17 @@ a valid decision receipt.
   gone, leaving the sentinel walk as the authority it always was; `preview._shown` is renamed
   away from `doctor._shown`'s opposite guarantee; and the found run's recorded history — the
   journal and `decisions/` alike — is the check named above, which was the last piece of found
-  state nothing held. Execution remains disabled until the owned-process runner and Confirm
+  state nothing held. A second internal review found that round's new authority well guarded
+  from the outside but one of its two branches held by nothing: the empty history — the run
+  this preview created and then died before appending into, which the store is built to
+  survive — so deleting that branch turned a recoverable run into a permanent refusal at a
+  fixed id with the whole suite still green. It is now a resumption test. Two minors came back
+  with it as regressions: the refusal's differences stand one per line, on a boundary `repr`
+  cannot produce, because a found field's value could otherwise synthesize a difference entry
+  the preview never named for any structured reader of stderr; and a stored `absent` joins the
+  values proved distinct from the bare word the refusal speaks for a field that is missing. A
+  run carrying the preview's own proposal id over other facts is refused by the store's
+  immutability, and now says so under test rather than by accident. The preview's tests live in
+  `tests/test_command_preview.py`, split out whole when those regressions took test_cli.py past
+  800 lines. Execution remains disabled until the owned-process runner and Confirm
   authorization are green. Not marked Complete: external APPROVE from Codex is not yet given.
