@@ -262,8 +262,8 @@ a valid decision receipt.
   inside its own append is not a requirement it has, and a tail is evidence of what some writer
   intended, never of which writer it was. The price is stated rather than hidden, in the module
   docstring and in the refusal itself: a run left with a ragged tail will never open in this
-  preview again, and a human must delete its run directory by hand. Codex's re-review of that fix
-  found the shipped refusal unbreakable and its evidence short in four places, all now closed.
+  preview again, and a human must move or delete its run directory by hand. Codex's re-review of
+  that fix found the shipped refusal unbreakable and its evidence short in four places, all closed.
   The immutability guard every refusal leans on — widened from a digest of `records.jsonl` to a
   snapshot of every durable file — was inert: narrowing it back left the whole preview suite
   green, because no production path here leaks a `.tmp` or edits a receipt, and the one staging
@@ -286,6 +286,33 @@ a valid decision receipt.
   `O_BINARY`, so on Windows the CRT turned every LF into CRLF and the durable line was one CR
   longer than the bytes the store composed, while `run.json`, `config.json` and every receipt,
   staged through `mkstemp`, were not — two durable spellings of one record, and a run directory
-  not byte-identical between platforms. Execution remains disabled until the owned-process runner
-  and Confirm authorization are green. Not marked Complete: external APPROVE from Codex is not
-  yet given.
+  not byte-identical between platforms. A third review then found the price itself misstated for
+  half the runs that pay it. Docstring and refusal both said a ragged tail OR a file the store
+  does not own can never be opened again, so delete the run directory — and for the second half
+  that was false twice over: removing the one named file returned the run immediately, journal
+  byte for byte, so the advice destroyed legitimate proposal records where lifting out one blob
+  was enough. It is also the reachable half: an editor swap file, `Thumbs.db`, `.DS_Store`, an
+  antivirus artifact, against a crash inside an append that writes one record. The refusal now
+  ends in exactly one remedy chosen by the owner's taxonomy — name the object and offer to move
+  or delete only it when the run beneath is whole; offer the whole preview run only when the
+  replay itself disagrees, which is where a foreign envelope, a foreign frozen config, a foreign
+  history and a ragged tail all sit, since this module repairs no journal — and neither branch
+  promises a repair, because rerunning either untouched refuses again. Assembling that remedy in
+  `_run_differences` closed a second gap in the same breath: it used to be printed out of the
+  unjudged-bytes check, so a run refused purely on its envelope was told neither where it stood
+  nor what to do. Moving is now offered beside deleting on both roads; a human is not asked to
+  destroy bytes to get moving. `_unowned_files` filtered on `Path.is_file`, which answers False
+  for a dangling link and for a link to a directory, so the taxonomy's "a stray file or a link"
+  held only for files — the walk now skips real directories instead, and an empty directory is
+  still adopted, having no bytes to judge. Held by regressions that execute both roads end to
+  end and carry each remedy out. Three limits stay open and are stated, not hinted away: staging
+  residue at `conductor/runs/.preview-run.<rand>/` lies outside the directory that is checked, an
+  empty directory inside the run is adopted, and an NTFS alternate data stream is not detected —
+  nor is it modified, since the preview's own path only appends to the journal and never runs the
+  repairing replace. Carried with them, a compatibility guard that had none: journals written
+  before `O_BINARY` end their records CR LF, and they replay today only because
+  `bytes.splitlines()` eats the CR. Both halves are now held — such a journal replays to the same
+  records without warnings, and appending the same record is recognised as the retry it is, so
+  the old spelling is never half-rewritten. Execution remains disabled until the owned-process
+  runner and Confirm authorization are green. Not marked Complete: external APPROVE from Codex is
+  not yet given.
