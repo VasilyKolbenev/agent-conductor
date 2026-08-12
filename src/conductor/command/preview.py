@@ -361,14 +361,16 @@ def _run_differences(
 def _refusal(header: str, entries: tuple[str, ...]) -> str:
     """Open with the header sentence, then name each entry on a line of its own.
 
-    The entries are not joined on a separator a found value could contain.
-    Wherever an entry carries a value this preview does not control -- a stored
-    field, a path, a store complaint -- that value is rendered with `repr`, and
-    `repr` never produces a newline: so a stored string reading `a; mode:
-    expected 1, found 2` is one field's found side and cannot become a second
-    entry naming a difference the preview never found. The sentence was already
-    truthful to a human, because the value is quoted; this makes it hold for a
-    reader that splits the message into entries as well.
+    The guarantee here is narrower than entry-forgery being impossible, and it
+    holds only for values and paths: wherever an entry quotes a stored value, a
+    path or a store complaint, that value is rendered with `repr`, which never
+    produces a newline, so a stored string reading `a; mode: expected 1, found
+    2` stays one field's quoted found side. Unknown envelope field NAMES are
+    interpolated into their entry as-is, and a foreign key that itself holds a
+    newline therefore lays out across lines the way a further entry would.
+    stderr is human-readable diagnostics, not a machine protocol of entries: a
+    reader may trust the repr-quoted values, not the line structure around a
+    key it does not know.
     """
     return header + "".join(f"\n  {entry}" for entry in entries)
 
