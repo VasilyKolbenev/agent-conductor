@@ -106,19 +106,65 @@ def _seed_run_at_the_previews_identity(root, *, cycle_id, config, mode, extra=No
 
 
 def _durable_snapshot(root):
-    """Every durable byte of the run at the preview's identity, keyed by relative path.
+    """Every durable byte beneath `conductor/runs`, keyed by path relative to it.
 
-    The whole directory, not records.jsonl alone: a refusal that left a `.tmp`
-    staging file behind or rewrote a receipt under `decisions/` would leave that
-    one journal untouched and still have changed a history it promised not to
-    touch. The set of paths rides along in the mapping's own keys, so a file
-    appearing or vanishing is a difference and not merely a change of content.
+    The whole runs directory, not records.jsonl alone and not even the run
+    directory alone: a refusal that left a `.tmp` staging file inside the run or
+    rewrote a receipt under `decisions/` would leave that one journal untouched
+    and still have changed a history it promised not to touch, and the one
+    staging artifact this command can actually leak — `create_run` mints its
+    staging directory as `conductor/runs/.preview-run.<rand>/` — is a level ABOVE
+    the run directory, so a snapshot rooted there could not see it at all. The
+    set of paths rides along in the mapping's own keys, so a file appearing or
+    vanishing is a difference and not merely a change of content.
+
+    What this helper reports is held directly by
+    `test_the_durable_snapshot_reports_a_file_planted_at_each_path_it_names`:
+    a guard nothing exercises cannot tell a widened snapshot from the digest of
+    one journal it replaced.
     """
-    run = root / "conductor" / "runs" / "preview-run"
+    runs = root / "conductor" / "runs"
     return {
-        path.relative_to(run).as_posix(): path.read_bytes()
-        for path in sorted(run.rglob("*")) if path.is_file()
+        path.relative_to(runs).as_posix(): path.read_bytes()
+        for path in sorted(runs.rglob("*")) if path.is_file()
     }
+
+
+#: The paths a refusal could leave behind, each named in `_durable_snapshot`'s own
+#: reasons for being the whole runs directory: an edited `decisions/` receipt, a
+#: `.tmp` leaked inside the run by a writer that crashed mid-publish, and
+#: `create_run`'s staging directory, which lives one level above the run itself.
+_LEAKABLE_PATHS = [
+    "preview-run/decisions/planted-receipt.json",
+    "preview-run/.records.jsonl.planted.tmp",
+    ".preview-run.planted/records.jsonl",
+]
+
+
+@pytest.mark.parametrize("planted", _LEAKABLE_PATHS)
+def test_the_durable_snapshot_reports_a_file_planted_at_each_path_it_names(
+        planted, tmp_path):
+    """The immutability guard every refusal below rests on, exercised on its own.
+
+    Every refusal test asserts the snapshot is unchanged, and each one of them
+    passes just as well when the snapshot narrows to a digest of `records.jsonl`
+    — no production path this command has leaks any of these files, so the
+    widened guard has power but no witness. This is that witness: it plants one
+    file at each path the docstring names and requires the snapshot to report it
+    as a NEW key, which reds the moment the helper stops looking anywhere but at
+    the journal.
+    """
+    _seed_run_at_the_previews_identity(
+        tmp_path, cycle_id="preview-orbit", config=preview.FROZEN_CONFIG, mode="propose")
+    before = _durable_snapshot(tmp_path)
+    leaked = tmp_path.joinpath("conductor", "runs", *planted.split("/"))
+    leaked.parent.mkdir(parents=True, exist_ok=True)
+    leaked.write_bytes(b"bytes the preview never wrote")
+    after = _durable_snapshot(tmp_path)
+    # A new path, reported as a key of its own: the mapping is the set of files as
+    # much as it is their content, so appearing is itself the difference.
+    assert set(after) - set(before) == {planted}
+    assert after != before
 
 
 def _refuses_and_leaves_the_run_directory_untouched(root, capsys):
