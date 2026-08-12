@@ -237,7 +237,7 @@ def test_preview_refuses_a_run_at_its_identity_opened_in_another_mode(tmp_path, 
     assert own["mode"] != "confirm"
 
 
-@pytest.mark.parametrize("carried", [None, False, 0, "", [], {}])
+@pytest.mark.parametrize("carried", [None, False, 0, "", [], {}, "absent"])
 def test_preview_refuses_a_run_carrying_an_envelope_field_the_preview_never_froze(
         carried, tmp_path, capsys):
     """A durable field the preview does not know is a disagreement, whatever it holds.
@@ -248,6 +248,12 @@ def test_preview_refuses_a_run_carrying_an_envelope_field_the_preview_never_froz
     as null, making those two different durable facts compare equal — the whole
     parametrisation exists to keep every JSON-falsy value on the refusing side of
     that distinction, not just the ones that happen not to collide with None.
+
+    The last value is not falsy. It is the one string that collides with the word
+    the refusal itself speaks for a field that is missing, and the pair below
+    tells the two apart: the marker is bare and a stored value is quoted, so a
+    rendering that collapsed them would report a run carrying `absent` and a run
+    lacking the field in exactly the same words.
     """
     own = _the_previews_own_envelope(tmp_path / "own", capsys)
     journal = _seed_run_at_the_previews_identity(
