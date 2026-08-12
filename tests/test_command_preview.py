@@ -347,10 +347,13 @@ def test_a_value_a_found_run_carries_cannot_forge_a_difference_of_its_own(tmp_pa
         mode="propose", extra={"foreign_authority": forgery})
     err = _refuses_and_leaves_the_run_directory_untouched(tmp_path, capsys)
     # One sentence and one difference, however much punctuation the value carries:
-    # the entries stand on a boundary the found side cannot put inside itself.
+    # the entries stand on a boundary the found side cannot put inside itself. The
+    # second line is the remedy every refusal ends with, and the forgery bought no
+    # line beside those two.
     header, *entries = err.strip().splitlines()
     assert "nothing was proposed into it" in header
-    assert len(entries) == 1
+    differences = [entry for entry in entries if not entry.strip().startswith("remedy: ")]
+    assert len(entries) == 2 and len(differences) == 1
     # And that one entry is the field the preview named, holding the whole forgery
     # quoted as its found side. The mode it spells out is not reported at all —
     # the seeded run's mode is in fact the preview's own, so there is nothing to say.
@@ -612,3 +615,177 @@ def test_the_refusal_names_every_warning_when_one_replay_reports_two(tmp_path, c
     assert len(found.warnings) == 2
     err = _refuses_and_leaves_the_run_directory_untouched(tmp_path, capsys)
     assert all(warning in err for warning in found.warnings)
+
+
+# --- CMD-4 Q2-1: two costs, and the refusal charged both roads the higher one ---
+#
+# The price MAJOR-B pays is not one price. A durable object the store does not own
+# is clutter with a name: the run behind it is whole, and moving or deleting that
+# one object leaves a run this preview opens again with every record already in
+# it. A journal ending mid-record, or an envelope, a frozen config or a history
+# belonging to somebody else, is the dead end -- nothing in this module repairs a
+# journal or adopts a foreign identity -- and there the object to move is the
+# whole run. Charging the first road the second's price tells a human to destroy
+# proposal records nothing ever put in question, and the first road is the
+# reachable one: an editor swap file, `Thumbs.db`, `.DS_Store`, whatever an
+# antivirus dropped beside the journal. The second needs a crash inside an append
+# that writes exactly one record.
+
+
+def _the_refusals_remedy(err):
+    """The one remedy sentence a refusal ends with, whichever road it took.
+
+    Read off the message rather than written down here, so two roads' remedies can
+    be compared without either being a string this module decided in advance.
+    """
+    remedies = [entry.strip() for entry in err.splitlines()
+                if entry.strip().startswith("remedy: ")]
+    assert len(remedies) == 1, f"expected one remedy, found {remedies!r} in {err!r}"
+    return remedies[0]
+
+
+def test_a_stray_file_costs_that_file_and_only_a_dead_end_costs_the_whole_run(
+        tmp_path, capsys):
+    """Both roads refused, both remedies read off production, and both carried out.
+
+    The two runs are seeded in directories neither of which the other touches, and
+    each is given whatever sentence production gives it. What is held is what each
+    sentence claims: move the named object and the run comes back holding the
+    journal it already had, byte for byte; move the whole run and a fresh one is
+    written while the refused bytes stay where they were put. Moving, not
+    deleting, in both -- a human is not made to destroy bytes to get moving again.
+    """
+    genuine = _the_previews_own_record_bytes(tmp_path, capsys)
+    journal = tmp_path / "conductor" / "runs" / "preview-run" / "records.jsonl"
+    stray = journal.parent / "stray.bin"
+    stray.write_bytes(b"an editor's swap file, or whatever the antivirus dropped")
+    clutter = _the_refusals_remedy(
+        _refuses_and_leaves_the_run_directory_untouched(tmp_path, capsys))
+    assert repr("stray.bin") in clutter
+
+    dead = tmp_path / "ragged"
+    assert _the_previews_own_record_bytes(dead, capsys) == genuine
+    ragged_run = RunStore(dead).run_path("preview-run")
+    (ragged_run / "records.jsonl").write_bytes(genuine + genuine.rstrip(b"\n"))
+    dead_end = _the_refusals_remedy(
+        _refuses_and_leaves_the_run_directory_untouched(dead, capsys))
+    assert str(ragged_run) in dead_end
+
+    # Neither road mends by being waited on: rerun either untouched and it refuses
+    # again, so a remedy promising a repair or a later retry would lie on both.
+    for road in (tmp_path, dead):
+        assert main(["preview", "--dir", str(road)]) == 1
+        capsys.readouterr()
+    # Change detector on the wording; the claims under it are carried out below.
+    assert "the whole preview run" in dead_end and "the whole preview run" not in clutter
+
+    # Road one: move out the one object named, and the run is back with its history.
+    shutil.move(str(stray), str(tmp_path / "stray.bin"))
+    assert main(["preview", "--dir", str(tmp_path)]) == 0
+    capsys.readouterr()
+    assert journal.read_bytes() == genuine
+    # Road two: move the whole run aside, and a fresh one is written in its place
+    # while every refused byte survives under the name it was moved to.
+    aside = dead / "kept-aside"
+    shutil.move(str(ragged_run), str(aside))
+    assert main(["preview", "--dir", str(dead)]) == 0
+    capsys.readouterr()
+    assert (ragged_run / "records.jsonl").read_bytes() == genuine
+    assert (aside / "records.jsonl").read_bytes() == genuine + genuine.rstrip(b"\n")
+
+
+# --- CMD-4 Q2-2: the dead end was disclosed to one road out of two ---
+#
+# The run directory reached the message out of the unjudged-bytes check, so it was
+# printed only where a warning or an unowned file had already been found. A run
+# standing at the preview's fixed identity on a foreign cycle, a foreign frozen
+# config or a foreign mode is refused just as permanently and was told neither
+# where it stands nor what to do -- the same "a dead end nobody is told about is a
+# bug of its own" the docstring states, on the road that never reached the check.
+
+#: Refusals whose every difference is a fact the replay STATES: no warning, and no
+#: file the store does not own, so nothing on this road ever entered that check.
+_REPLAY_STATED_REFUSALS = {
+    "another cycle": {
+        "cycle_id": "foreign-orbit", "config": preview.FROZEN_CONFIG, "mode": "propose"},
+    "another frozen config": {
+        "cycle_id": "preview-orbit", "config": _FOREIGN_CONFIG, "mode": "propose"},
+    "another mode": {
+        "cycle_id": "preview-orbit", "config": preview.FROZEN_CONFIG, "mode": "confirm"},
+}
+
+
+@pytest.mark.parametrize("seeded", sorted(_REPLAY_STATED_REFUSALS))
+def test_a_refusal_states_the_way_out_when_no_warning_and_no_file_named_one(
+        seeded, tmp_path, capsys):
+    """Every road out of this command ends in one remedy naming what must move.
+
+    The run here disagrees on a fact the replay states and on nothing else, so the
+    store warns about nothing and there is no unowned file to name. The path is
+    the store's own answer for this run rather than a string spelled out here, and
+    the remedy is carried out: this run is not the preview's, rerunning it changes
+    that in no way, and moving it aside is what gets a preview written again.
+    """
+    _seed_run_at_the_previews_identity(tmp_path, **_REPLAY_STATED_REFUSALS[seeded])
+    found = RunStore(tmp_path).read("preview-run")
+    assert found.warnings == ()
+    err = _refuses_and_leaves_the_run_directory_untouched(tmp_path, capsys)
+    remedy = _the_refusals_remedy(err)
+    named = RunStore(tmp_path).run_path("preview-run")
+    assert str(named) in remedy
+    assert main(["preview", "--dir", str(tmp_path)]) == 1  # waiting mends nothing
+    capsys.readouterr()
+    shutil.move(str(named), str(tmp_path / "kept-aside"))
+    assert main(["preview", "--dir", str(tmp_path)]) == 0
+    capsys.readouterr()
+    assert (named / "records.jsonl").read_bytes() == _the_previews_own_record_bytes(
+        tmp_path / "fresh", capsys)
+
+
+# --- CMD-4 Q2-1, second half of the taxonomy's first branch: "a file OR A LINK" ---
+
+
+def _symlink_or_skip(link, target, *, directory=False):
+    """Make a symbolic link, or skip: Windows grants that privilege, it does not assume it."""
+    try:
+        link.symlink_to(target, target_is_directory=directory)
+    except (OSError, NotImplementedError) as e:  # pragma: no cover - platform policy
+        pytest.skip(f"this platform did not permit a symbolic link: {e}")
+
+
+@pytest.mark.parametrize("points_at", ["a directory", "a name that is not there"])
+def test_preview_names_a_link_the_store_does_not_own_whatever_it_points_at(
+        points_at, tmp_path, capsys):
+    """`Path.is_file` is False for a link to a directory and for a dangling one.
+
+    A walk that keeps only what `is_file` admits therefore steps straight past the
+    two durable objects this preview can judge least: a link points somewhere this
+    command never looked, and it may point nowhere at all. Neither is a file the
+    store wrote, on exactly the ground a stray file is not, and both are clutter
+    with a name -- unlinking that one name, and nothing else, opens the run again.
+    """
+    _seed_run_at_the_previews_identity(
+        tmp_path, cycle_id="preview-orbit", config=preview.FROZEN_CONFIG, mode="propose")
+    run_path = RunStore(tmp_path).run_path("preview-run")
+    link = run_path / "stray-link"
+    if points_at == "a directory":
+        (tmp_path / "elsewhere").mkdir()
+        _symlink_or_skip(link, tmp_path / "elsewhere", directory=True)
+    else:
+        _symlink_or_skip(link, tmp_path / "nowhere")
+    # The filter that walked past it, and every fact the replay can state saying
+    # this run is the preview's own to resume: the link alone refuses it.
+    assert link.is_symlink() and not link.is_file()
+    found = RunStore(tmp_path).read("preview-run")
+    assert found.records == () and found.warnings == ()
+    err = _refuses_and_leaves_the_run_directory_untouched(tmp_path, capsys)
+    assert repr("stray-link") in _the_refusals_remedy(err)
+    # Clutter, not a dead end: that one name removed, the run opens and is written.
+    if link.is_dir():
+        link.rmdir()  # Windows refuses `unlink` on a link that points at a directory
+    else:
+        link.unlink()
+    assert main(["preview", "--dir", str(tmp_path)]) == 0
+    capsys.readouterr()
+    assert (run_path / "records.jsonl").read_bytes() == _the_previews_own_record_bytes(
+        tmp_path / "fresh", capsys)

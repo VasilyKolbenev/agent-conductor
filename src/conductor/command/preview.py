@@ -42,19 +42,25 @@ A warning is only the half of that the store can see. `read` opens four names --
 `run.json`, `config.json`, `records.jsonl` and `decisions/*.json` -- so a
 `.records.jsonl.<rand>.tmp`, the residue of a writer that died inside its own
 publish, replays as a flawless history with nothing at all to report. Any other
-file under the run directory refuses it too, on the same ground and without a
-warning to announce it: this preview did not write that file and cannot say
-whether its writer is finished with it.
+name under the run directory, a symbolic link included, refuses it too, on the
+same ground and without a warning to announce it: this preview did not put that
+object there and cannot say whether whoever did is finished with it.
 
-The price is real and is not hidden: a run left with an incomplete tail, or with
-a file the store does not own, can never be opened by this preview again.
-Nothing here will repair it, so a human must delete the run directory --
-`conductor/runs/preview-run` beneath whatever `--dir` names, e.g.
+The price is real, it is not hidden, and it is not one price. An object the
+store does not own is clutter with a name: the run beneath it is whole, so the
+refusal names that object, and moving or deleting exactly it -- and nothing else
+-- opens the run again holding every record it already held. A run whose own
+replay disagrees is the dead end: a foreign envelope, a foreign frozen config, a
+history this preview never wrote, or an incomplete tail, which the journal is
+not repaired of here. Such a run can never be opened by this preview again, and
+what must move is the whole run -- `conductor/runs/preview-run` beneath whatever
+`--dir` names, e.g. `mv ./conductor/runs/preview-run ./preview-run.kept` or
 `rm -r ./conductor/runs/preview-run` (PowerShell:
-`Remove-Item -Recurse .\\conductor\\runs\\preview-run`) -- and rerun the
-preview, which then creates the run afresh. The refusal names that directory by
-its full path for exactly that reason: a dead end nobody is told about is a bug
-of its own.
+`Remove-Item -Recurse .\\conductor\\runs\\preview-run`) -- after which the
+preview creates the run afresh. Neither road is mended by waiting or by
+rerunning: this preview repairs nothing and promises nothing. The refusal names
+the object to move by its full path on both roads for exactly that reason: a
+dead end nobody is told about is a bug of its own.
 """
 from __future__ import annotations
 
@@ -184,17 +190,22 @@ _RECEIPTS_DIR, _RECEIPT_SUFFIX = "decisions", ".json"
 
 
 def _unowned_files(run_path: Path) -> tuple[str, ...]:
-    """Name every durable file under the run directory the run store does not own.
+    """Name every durable object under the run directory the run store does not own.
 
-    Directories are not named: a directory holds no bytes, and a file inside one
-    is reached by this walk under its own relative name. The `decisions/` check
-    is on the parent rather than on the path's first part, so a receipt-looking
-    name nested deeper than the store ever writes is still named here.
+    A real directory is not named: it holds no bytes, so an empty one is adopted
+    with the run for want of anything to judge, and a file inside one is reached
+    by this walk under its own relative name. A symbolic link IS named, whatever
+    it points at and whether or not the target is there: `is_file` answers False
+    for a link to a directory and for a dangling one, so a walk filtered on it
+    would step past the two objects this preview can judge least -- a link leads
+    somewhere this command never looked. The `decisions/` check is on the parent
+    rather than on the path's first part, so a receipt-looking name nested deeper
+    than the store ever writes is still named here.
     """
     receipts = run_path / _RECEIPTS_DIR
     unowned = []
     for path in sorted(run_path.rglob("*")):
-        if not path.is_file():
+        if path.is_dir() and not path.is_symlink():
             continue
         name = path.relative_to(run_path).as_posix()
         owned = (
@@ -205,42 +216,55 @@ def _unowned_files(run_path: Path) -> tuple[str, ...]:
     return tuple(unowned)
 
 
-def _unjudged_bytes(found: RecoveredRun, run_path: Path) -> tuple[str, ...]:
-    """Name the durable bytes this run holds that no reader here may resolve.
+def _unowned_entries(unowned: tuple[str, ...]) -> tuple[str, ...]:
+    """Name the durable objects that reach this preview without a warning at all.
 
-    These are read off the run itself rather than out of the replayed facts,
-    because they are the one thing those facts cannot say.
-
-    A warning can mean the run holds durable bytes the read-only replay declined
-    to touch and left out of what it returned -- an incomplete journal tail is
-    such a warning, and it is why the facts compared elsewhere can be complete
-    and matching while the run itself is not the one they describe. Not every
-    warning is of that shape; an orphan `decisions/` receipt is replayed into the
-    records and disagrees on history too. Every warning counts all the same,
-    whatever it says: it is the store reporting bytes only a writer may resolve,
-    and this preview is not that run's writer.
-
-    A file the store does not own is that same class reached without a warning at
-    all, because no reader looked: `read` opens four names, so a
-    `.records.jsonl.<rand>.tmp` left by a writer that crashed inside its own
-    publish replays as a flawless history. It is named here for the reason a tail
-    is -- this preview did not write it and cannot say whether it is finished.
+    `read` opens four names, so a `.records.jsonl.<rand>.tmp` left by a writer
+    that crashed inside its own publish replays as a flawless history with
+    nothing whatever to report. Each is named on the ground a crash tail is named
+    -- this preview did not put it there and cannot say whether whoever did is
+    finished with it -- and each differs from a tail in what it costs: the run
+    underneath is whole, so lifting exactly these objects out is the whole
+    remedy, which is why `_remedy` is told which of them were found.
     """
-    unjudged = [f"replay: {warning}" for warning in found.warnings]
-    unjudged.extend(
-        f"files: {name!r} is not a file this run's store writes, so only its "
-        "writer can say whether it is finished"
-        for name in _unowned_files(run_path))
-    if unjudged:
-        unjudged.append(
-            "remedy: resolving those bytes is their writer's to do and not this "
-            f"preview's, so this run will never open here again; delete {run_path} "
-            "by hand and rerun the preview to get a fresh one")
-    return tuple(unjudged)
+    return tuple(
+        f"files: {name!r} is not a name this run's store writes, so only whoever "
+        "put it there can say whether it is finished"
+        for name in unowned)
 
 
-def _run_differences(
-        found: RecoveredRun, expected: RunEnvelope, run_path: Path) -> tuple[str, ...]:
+def _remedy(run_path: Path, unowned: tuple[str, ...], irresolvable: bool) -> str:
+    """Name the object a human must move or delete, and name only the true one.
+
+    There are two costs here and they are not one cost. An object the store does
+    not own is clutter with a name: the run under it is whole, so that object is
+    named and moving or deleting exactly it -- and nothing else -- leaves a run
+    this preview opens again holding every record it already held. A run the
+    replay itself disagrees with is the dead end: a foreign envelope, a foreign
+    frozen config, a history this preview never wrote, or a journal ending
+    mid-record that nothing in this module repairs. There the object is the whole
+    preview run, and only there; charging the first road that price tells a human
+    to destroy proposal records nothing ever put in question.
+
+    Deleting is never the only way through. Moving the object aside satisfies
+    both roads, and a human is not asked to destroy durable bytes to get moving.
+    Neither sentence promises a repair, because there is none to promise: this
+    preview mends nothing, so rerunning either road untouched refuses it again.
+    """
+    if irresolvable:
+        return (
+            "remedy: nothing here resolves any of those, so this run will never "
+            f"open here again; move or delete the whole preview run {run_path} by "
+            "hand, then rerun the preview, which creates a fresh one")
+    return (
+        "remedy: only whoever put them there can resolve those, and this preview "
+        f"will not; move or delete exactly {', '.join(map(repr, unowned))} out of "
+        f"{run_path} by hand, then rerun the preview, which opens this run again "
+        "with every record it already holds")
+
+
+def _irresolvable_differences(
+        found: RecoveredRun, expected: RunEnvelope) -> tuple[str, ...]:
     """Name every fact on which a found run disagrees with the preview's frozen one.
 
     The authority is the per-field walk over the two serialized envelopes, read
@@ -261,9 +285,16 @@ def _run_differences(
     holding anything else — a journal line or a `decisions/` receipt this
     preview never minted — is a history it must not append to.
 
-    Everything above is a fact stated by the replay. What `_unjudged_bytes` adds
-    is the disagreement no replayed fact can state: durable bytes lying in the
-    run that only their writer may resolve.
+    A warning is a fact of the replay too and is named with them. An incomplete
+    journal tail is such a warning -- durable bytes `read` declined to touch and
+    left out of what it returned, which is why every fact above can match while
+    the run itself is not the one they describe -- and an orphan `decisions/`
+    receipt is another, replayed into the records and disagreeing on history as
+    well. Every warning counts whatever it says, and every one of them is
+    irresolvable where it lies: this module repairs no journal and adopts no
+    foreign identity, so no object can be lifted out of such a run to make it the
+    preview's own. What `_unowned_entries` adds is the other half -- an object no
+    replayed fact can state at all, because `read` never opened it.
     """
     found_row, expected_row = found.envelope.as_dict(), expected.as_dict()
     differences = [
@@ -279,8 +310,30 @@ def _run_differences(
         differences.append(
             f"history: expected nothing yet or [{_OWN_LINE}], "
             f"found [{', '.join(history)}]")
-    differences.extend(_unjudged_bytes(found, run_path))
+    differences.extend(f"replay: {warning}" for warning in found.warnings)
     return tuple(differences)
+
+
+def _run_differences(
+        found: RecoveredRun, expected: RunEnvelope, run_path: Path) -> tuple[str, ...]:
+    """Name every point on which a found run is not this preview's, and what to do.
+
+    Two kinds, held apart because they cost different things: what the replay
+    states, which nothing a human lifts out of the run can settle, and the
+    durable objects lying beside it that `read` never opened, which lifting out
+    settles entirely. The remedy is chosen from exactly that split, and it is
+    appended to every refusal there is -- so the run's full path reaches a reader
+    on the road where an object was named and on the road where only the envelope
+    disagreed. A dead end nobody is told about is a bug of its own, and until the
+    remedy was assembled here only the first road was told about theirs.
+    """
+    irresolvable = _irresolvable_differences(found, expected)
+    unowned = _unowned_files(run_path)
+    if not (irresolvable or unowned):
+        return ()
+    return (
+        *irresolvable, *_unowned_entries(unowned),
+        _remedy(run_path, unowned, bool(irresolvable)))
 
 
 def _refusal(differences: tuple[str, ...]) -> str:
