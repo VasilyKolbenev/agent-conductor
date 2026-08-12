@@ -8,7 +8,6 @@ wrote, and a refusal message with structure of its own. That circuit brings its
 own seeded-run helpers and its own reader for the refusal, which is why it lives
 in a module of its own rather than among the CLI's general tests.
 """
-import hashlib
 import json
 import re
 
@@ -106,14 +105,30 @@ def _seed_run_at_the_previews_identity(root, *, cycle_id, config, mode, extra=No
     return root / "conductor" / "runs" / "preview-run" / "records.jsonl"
 
 
-def _refuses_and_leaves_the_history_untouched(root, journal, capsys):
+def _durable_snapshot(root):
+    """Every durable byte of the run at the preview's identity, keyed by relative path.
+
+    The whole directory, not records.jsonl alone: a refusal that left a `.tmp`
+    staging file behind or rewrote a receipt under `decisions/` would leave that
+    one journal untouched and still have changed a history it promised not to
+    touch. The set of paths rides along in the mapping's own keys, so a file
+    appearing or vanishing is a difference and not merely a change of content.
+    """
+    run = root / "conductor" / "runs" / "preview-run"
+    return {
+        path.relative_to(run).as_posix(): path.read_bytes()
+        for path in sorted(run.rglob("*")) if path.is_file()
+    }
+
+
+def _refuses_and_leaves_the_run_directory_untouched(root, capsys):
     """Run the preview against the seeded run; return the refusal's stderr."""
-    before = hashlib.sha256(journal.read_bytes()).hexdigest()
+    before = _durable_snapshot(root)
     assert main(["preview", "--dir", str(root)]) == 1
     captured = capsys.readouterr()
     assert captured.out == ""
-    # Byte-identical by digest: a refusal that appended anyway would be the defect.
-    assert hashlib.sha256(journal.read_bytes()).hexdigest() == before
+    # Byte for byte and path for path: a refusal that wrote anyway is the defect.
+    assert _durable_snapshot(root) == before
     assert captured.err.strip()
     return captured.err
 
@@ -199,9 +214,9 @@ def test_preview_resumes_a_run_of_its_own_that_was_created_but_never_appended_to
 
 def test_preview_refuses_a_run_at_its_identity_that_belongs_to_another_cycle(tmp_path, capsys):
     own = _the_previews_own_envelope(tmp_path / "own", capsys)
-    journal = _seed_run_at_the_previews_identity(
+    _seed_run_at_the_previews_identity(
         tmp_path, cycle_id="foreign-orbit", config=preview.FROZEN_CONFIG, mode="propose")
-    err = _refuses_and_leaves_the_history_untouched(tmp_path, journal, capsys)
+    err = _refuses_and_leaves_the_run_directory_untouched(tmp_path, capsys)
     # Which cycle stands on which side is the whole claim: the expected side is the
     # one the preview itself froze, the found side is the one this test seeded.
     # Swapping them would make the refusal an exact inversion of the truth.
@@ -211,9 +226,9 @@ def test_preview_refuses_a_run_at_its_identity_that_belongs_to_another_cycle(tmp
 
 def test_preview_refuses_a_run_at_its_identity_frozen_on_another_config(tmp_path, capsys):
     own = _the_previews_own_envelope(tmp_path / "own", capsys)
-    journal = _seed_run_at_the_previews_identity(
+    _seed_run_at_the_previews_identity(
         tmp_path, cycle_id="preview-orbit", config=_FOREIGN_CONFIG, mode="propose")
-    err = _refuses_and_leaves_the_history_untouched(tmp_path, journal, capsys)
+    err = _refuses_and_leaves_the_run_directory_untouched(tmp_path, capsys)
     # Both digests are named, and neither is written down here: the expected side is
     # the digest the preview froze, the found side the one this test seeded — named
     # in that order, or the refusal accuses the frozen config of being the foreign one.
@@ -227,9 +242,9 @@ def test_preview_refuses_a_run_at_its_identity_frozen_on_another_config(tmp_path
 
 def test_preview_refuses_a_run_at_its_identity_opened_in_another_mode(tmp_path, capsys):
     own = _the_previews_own_envelope(tmp_path / "own", capsys)
-    journal = _seed_run_at_the_previews_identity(
+    _seed_run_at_the_previews_identity(
         tmp_path, cycle_id="preview-orbit", config=preview.FROZEN_CONFIG, mode="confirm")
-    err = _refuses_and_leaves_the_history_untouched(tmp_path, journal, capsys)
+    err = _refuses_and_leaves_the_run_directory_untouched(tmp_path, capsys)
     # `confirm` is not `observe`, so the service would have proposed into this run
     # without complaint: nothing but the identity check stands between them. The
     # expected side is the mode the preview opens its own run in, not the seeded one.
@@ -256,10 +271,10 @@ def test_preview_refuses_a_run_carrying_an_envelope_field_the_preview_never_froz
     lacking the field in exactly the same words.
     """
     own = _the_previews_own_envelope(tmp_path / "own", capsys)
-    journal = _seed_run_at_the_previews_identity(
+    _seed_run_at_the_previews_identity(
         tmp_path, cycle_id="preview-orbit", config=preview.FROZEN_CONFIG,
         mode="propose", extra={"foreign_authority": carried})
-    err = _refuses_and_leaves_the_history_untouched(tmp_path, journal, capsys)
+    err = _refuses_and_leaves_the_run_directory_untouched(tmp_path, capsys)
     # `absent` is what the preview's own envelope is, and the carried value is what
     # the found run holds — in that order. Inverted, the refusal would report the
     # foreign run as the one lacking the field and the preview as the one carrying it.
@@ -280,10 +295,10 @@ def test_a_value_a_found_run_carries_cannot_forge_a_difference_of_its_own(tmp_pa
     """
     forgery = "a; mode: expected 1, found 2"
     own = _the_previews_own_envelope(tmp_path / "own", capsys)
-    journal = _seed_run_at_the_previews_identity(
+    _seed_run_at_the_previews_identity(
         tmp_path, cycle_id="preview-orbit", config=preview.FROZEN_CONFIG,
         mode="propose", extra={"foreign_authority": forgery})
-    err = _refuses_and_leaves_the_history_untouched(tmp_path, journal, capsys)
+    err = _refuses_and_leaves_the_run_directory_untouched(tmp_path, capsys)
     # One sentence and one difference, however much punctuation the value carries:
     # the entries stand on a boundary the found side cannot put inside itself.
     header, *entries = err.strip().splitlines()
@@ -336,7 +351,7 @@ def test_preview_refuses_a_run_at_its_identity_holding_a_record_it_never_wrote(
         config_digest=snapshot_digest(preview.FROZEN_CONFIG)))
     if only_the_receipt_file:
         journal.write_bytes(b"")
-    err = _refuses_and_leaves_the_history_untouched(tmp_path, journal, capsys)
+    err = _refuses_and_leaves_the_run_directory_untouched(tmp_path, capsys)
     # The expected side is the history the preview writes for itself; the found side
     # is the one this test planted. Inverted, the refusal would blame its own run.
     assert _refusal_sides(err, "history") == (f"nothing yet or [{own[0]}]", "[decision]")
@@ -360,7 +375,7 @@ def test_preview_refuses_a_run_holding_its_own_proposal_id_on_other_facts(tmp_pa
     assert main(["preview", "--dir", str(tmp_path / "own")]) == 0
     capsys.readouterr()
     own = RunStore(tmp_path / "own").read("preview-run").records[0].value
-    journal = _seed_run_at_the_previews_identity(
+    _seed_run_at_the_previews_identity(
         tmp_path, cycle_id="preview-orbit", config=preview.FROZEN_CONFIG, mode="propose")
     # Same id, same run, same frozen config — one different fact, and the digest
     # recomputed over it, so what stands at the identity is a genuine other record.
@@ -369,5 +384,85 @@ def test_preview_refuses_a_run_holding_its_own_proposal_id_on_other_facts(tmp_pa
         "preview_digest": ""})
     assert forged.proposal_id == own.proposal_id and forged != own
     assert RunStore(tmp_path).append(forged) is True
-    err = _refuses_and_leaves_the_history_untouched(tmp_path, journal, capsys)
+    err = _refuses_and_leaves_the_run_directory_untouched(tmp_path, capsys)
     assert own.proposal_id in err
+
+
+# --- CMD-4 MAJOR-B: an incomplete crash tail is not a history the preview may adopt ---
+#
+# `RunStore.read` replays read-only, so a journal ending mid-record keeps those bytes
+# where they lie and the incomplete tail is reported as a WARNING rather than as a
+# record. Judging a found run by its replayed records alone therefore reads a
+# permitted history out of a journal that still carries unjudged bytes — and the
+# first append goes through the repairing store, which truncates them away. The run
+# is adopted, the proposal lands in it, and durable bytes the preview never wrote are
+# silently gone. So any warning at all from the read-only replay refuses the run,
+# before one byte is appended.
+
+
+def _the_previews_own_record_bytes(root, capsys):
+    """The exact journal line a genuine `conduct preview` writes, terminator included."""
+    assert main(["preview", "--dir", str(root)]) == 0
+    capsys.readouterr()
+    return (root / "conductor" / "runs" / "preview-run" / "records.jsonl").read_bytes()
+
+
+#: Incomplete final fragments a crash mid-append can leave, built from the record the
+#: preview itself would write. The last two are the ones that matter: the preview's
+#: own intent whole but unterminated, and a strict prefix of it. Were "the tail looks
+#: like mine" ever enough, those two would be adopted — and a tail is evidence of what
+#: some writer intended, never of which writer it was.
+_TAILS = {
+    "foreign bytes": lambda own: b'{"record_type":"foreign-partial"',
+    "the preview's own record, unterminated": lambda own: own.rstrip(b"\n"),
+    "a strict prefix of the preview's own record": lambda own: own[:len(own) // 2],
+}
+
+
+@pytest.mark.parametrize("tail", sorted(_TAILS))
+def test_preview_refuses_an_otherwise_empty_run_whose_journal_ends_mid_record(
+        tail, tmp_path, capsys):
+    """What may be resumed is an EMPTY journal, not a journal that REPLAYS as empty.
+
+    A run created and never appended to is the preview's own to resume, and the
+    records replayed out of this one say exactly that — because `read` dropped the
+    unterminated tail from what it returns and left it on disk for its writer. Resume
+    it and the very next append runs the repairing store over those bytes and deletes
+    them: durable bytes this preview never wrote, changed by this preview.
+    """
+    own_line = _the_previews_own_record_bytes(tmp_path / "own", capsys)
+    journal = _seed_run_at_the_previews_identity(
+        tmp_path, cycle_id="preview-orbit", config=preview.FROZEN_CONFIG, mode="propose")
+    journal.write_bytes(_TAILS[tail](own_line))
+    # The replayed records are the empty history the preview is allowed to resume:
+    # nothing but the warning stands between this run and an append into it.
+    found = RunStore(tmp_path).read("preview-run")
+    assert found.records == ()
+    err = _refuses_and_leaves_the_run_directory_untouched(tmp_path, capsys)
+    # And the refusal says what the store said, taken from the store rather than
+    # written down here, so the two cannot drift into naming different complaints.
+    assert found.warnings and all(warning in err for warning in found.warnings)
+
+
+@pytest.mark.parametrize("tail", sorted(_TAILS))
+def test_preview_refuses_its_own_completed_run_whose_journal_ends_mid_record(
+        tail, tmp_path, capsys):
+    """The completed history the preview owns does not vouch for bytes written after it.
+
+    Reopening its own finished run is free — the proposal is immutable and the store
+    recognises the retry — and this is the one thing that freedom does not extend to:
+    bytes past the record it wrote. They replay away into a warning, leaving a history
+    that is the preview's own to the letter, so this run is adopted on exactly the
+    same evidence as a genuine reopen unless the warning itself refuses it.
+    """
+    own_line = _the_previews_own_record_bytes(tmp_path / "own", capsys)
+    journal = _seed_run_at_the_previews_identity(
+        tmp_path, cycle_id="preview-orbit", config=preview.FROZEN_CONFIG, mode="propose")
+    journal.write_bytes(own_line + _TAILS[tail](own_line))
+    # Record for record the preview's own, compared against a run production wrote in
+    # a directory this one never touched — the permitted history, not a lookalike.
+    found = RunStore(tmp_path).read("preview-run")
+    assert ([row.value for row in found.records]
+            == [row.value for row in RunStore(tmp_path / "own").read("preview-run").records])
+    err = _refuses_and_leaves_the_run_directory_untouched(tmp_path, capsys)
+    assert found.warnings and all(warning in err for warning in found.warnings)

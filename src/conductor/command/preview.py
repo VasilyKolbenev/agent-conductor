@@ -25,10 +25,31 @@ mints -- so anything else in the journal or in `decisions/` is a history the
 preview never wrote and must not append to. Reopening the preview's own run
 stays free: the proposal is immutable and identical, so the store recognises the
 retry and writes nothing.
+
+A fourth thing is held, and it is held over the replay itself rather than over
+any fact in it: a read-only replay that reports ANY warning refuses the run.
+`RunStore.read` warns instead of repairing -- a journal ending mid-record keeps
+those bytes where they lie and they appear in no replayed record -- so a run can
+replay as a history this preview is allowed to resume while still carrying bytes
+nobody has judged. Appending would send them through the repairing store, which
+truncates them: durable bytes this preview never wrote, deleted by it. No
+incomplete tail is adopted as the preview's own, not even one that is a byte
+prefix of the record this preview would itself have written, because a tail is
+evidence of what some writer intended and never of which writer it was.
+
+The price is real and is not hidden: a run left with an incomplete tail can
+never be opened by this preview again. Nothing here will repair it, so a human
+must delete the run directory -- `conductor/runs/preview-run` beneath whatever
+`--dir` names, e.g. `rm -r ./conductor/runs/preview-run` (PowerShell:
+`Remove-Item -Recurse .\\conductor\\runs\\preview-run`) -- and rerun the
+preview, which then creates the run afresh. The refusal names that directory by
+its full path for exactly that reason: a dead end nobody is told about is a bug
+of its own.
 """
 from __future__ import annotations
 
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any
 
 from .adapters import (
@@ -145,7 +166,8 @@ def _history(records: tuple[StoredRecord, ...]) -> tuple[str, ...]:
         for row in records)
 
 
-def _run_differences(found: RecoveredRun, expected: RunEnvelope) -> tuple[str, ...]:
+def _run_differences(
+        found: RecoveredRun, expected: RunEnvelope, run_path: Path) -> tuple[str, ...]:
     """Name every fact on which a found run disagrees with the preview's frozen one.
 
     The authority is the per-field walk over the two serialized envelopes, read
@@ -165,6 +187,15 @@ def _run_differences(found: RecoveredRun, expected: RunEnvelope) -> tuple[str, .
     history is compared too: the preview's own is fully predictable, so a run
     holding anything else — a journal line or a `decisions/` receipt this
     preview never minted — is a history it must not append to.
+
+    The replay's warnings are a disagreement in their own right, and they are
+    read here rather than in the comparisons above because they are the one
+    thing the replayed facts cannot say. A warning means the run holds durable
+    bytes the read-only replay declined to touch and left out of what it
+    returned — so the facts compared above are complete and matching while the
+    run itself is not the one they describe. Every warning counts, whatever it
+    says: it is the store reporting bytes only a writer may resolve, and this
+    preview is not that run's writer.
     """
     found_row, expected_row = found.envelope.as_dict(), expected.as_dict()
     differences = [
@@ -180,6 +211,12 @@ def _run_differences(found: RecoveredRun, expected: RunEnvelope) -> tuple[str, .
         differences.append(
             f"history: expected nothing yet or [{_OWN_LINE}], "
             f"found [{', '.join(history)}]")
+    if found.warnings:
+        differences.extend(f"replay: {warning}" for warning in found.warnings)
+        differences.append(
+            "replay: repairing that is the writing store's to do and not this "
+            f"preview's, so this run will never open here again; delete {run_path} "
+            "by hand and rerun the preview to get a fresh one")
     return tuple(differences)
 
 
@@ -229,11 +266,13 @@ def render_dispatch_preview(
             store.create_run(envelope, FROZEN_CONFIG)
         except RunExists:
             # A run already at this identity is state the preview FOUND, not state
-            # it froze. Replay it read-only and hold its envelope, its frozen config
-            # and its recorded history against what this preview would itself have
-            # written, BEFORE anything is appended: only the very same preview run
-            # may be reopened, and one that is not keeps its history byte for byte.
-            differences = _run_differences(store.read(_RUN_ID), envelope)
+            # it froze. Replay it read-only and hold its envelope, its frozen config,
+            # its recorded history and the replay's own warnings against what this
+            # preview would itself have written, BEFORE anything is appended: only
+            # the very same preview run may be reopened, and one that is not keeps
+            # every durable byte of its directory exactly as it was found.
+            differences = _run_differences(
+                store.read(_RUN_ID), envelope, store.run_path(_RUN_ID))
             if differences:
                 raise PreviewError(_refusal(differences))
         service = CommandService(
