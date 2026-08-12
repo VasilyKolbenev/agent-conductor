@@ -273,6 +273,39 @@ def _refuses_and_leaves_the_history_untouched(root, journal, capsys):
     return captured.err
 
 
+def _the_previews_own_envelope(root, capsys):
+    """The envelope a genuine `conduct preview` freezes, read back off its own disk.
+
+    This is the expected side of every refusal below, and it is produced by
+    production code in a directory the refusing test never touches — so a test
+    comparing it against a value the test itself seeded is comparing two facts
+    that came from two different places, never one echoed back at itself.
+    """
+    assert main(["preview", "--dir", str(root)]) == 0
+    capsys.readouterr()
+    return RunStore(root).read("preview-run").envelope.as_dict()
+
+
+#: One difference entry of the refusal, in the order the refusal put its sides in.
+_SIDES = re.compile(r"(?P<field>\w+): expected (?P<expected>.*?), found (?P<found>.*)\Z")
+
+
+def _refusal_sides(err, field):
+    """Return `(expected, found)` for `field` exactly as the refusal ordered them.
+
+    The shape is a change detector for the wording; the load-bearing claim is
+    what each caller does with the pair. Asserting that a value merely APPEARS
+    in the refusal cannot tell "expected preview-orbit, found foreign-orbit"
+    from its exact inversion — a pair can, because the two sides come from
+    different code and only one arrangement of them is true.
+    """
+    for entry in err.strip().split("; "):
+        found = _SIDES.search(entry)
+        if found is not None and found.group("field") == field:
+            return found.group("expected"), found.group("found")
+    raise AssertionError(f"the refusal states no {field!r} difference: {err!r}")
+
+
 def test_preview_reopens_its_own_run_without_appending_a_second_proposal(tmp_path, capsys):
     assert main(["preview", "--dir", str(tmp_path)]) == 0
     first = capsys.readouterr().out
@@ -287,32 +320,43 @@ def test_preview_reopens_its_own_run_without_appending_a_second_proposal(tmp_pat
 
 
 def test_preview_refuses_a_run_at_its_identity_that_belongs_to_another_cycle(tmp_path, capsys):
+    own = _the_previews_own_envelope(tmp_path / "own", capsys)
     journal = _seed_run_at_the_previews_identity(
         tmp_path, cycle_id="foreign-orbit", config=preview.FROZEN_CONFIG, mode="propose")
     err = _refuses_and_leaves_the_history_untouched(tmp_path, journal, capsys)
-    assert "cycle_id" in err and "foreign-orbit" in err and "preview-orbit" in err
+    # Which cycle stands on which side is the whole claim: the expected side is the
+    # one the preview itself froze, the found side is the one this test seeded.
+    # Swapping them would make the refusal an exact inversion of the truth.
+    assert _refusal_sides(err, "cycle_id") == (repr(own["cycle_id"]), repr("foreign-orbit"))
+    assert own["cycle_id"] == preview.FROZEN_CONFIG["cycle"]["id"] != "foreign-orbit"
 
 
 def test_preview_refuses_a_run_at_its_identity_frozen_on_another_config(tmp_path, capsys):
+    own = _the_previews_own_envelope(tmp_path / "own", capsys)
     journal = _seed_run_at_the_previews_identity(
         tmp_path, cycle_id="preview-orbit", config=_FOREIGN_CONFIG, mode="propose")
     err = _refuses_and_leaves_the_history_untouched(tmp_path, journal, capsys)
-    # Both digests are named, and neither is written down here: one comes from the
-    # module's constant, the other from the configuration replayed off disk.
-    assert snapshot_digest(preview.FROZEN_CONFIG) in err
-    assert snapshot_digest(_FOREIGN_CONFIG) in err
+    # Both digests are named, and neither is written down here: the expected side is
+    # the digest the preview froze, the found side the one this test seeded — named
+    # in that order, or the refusal accuses the frozen config of being the foreign one.
+    assert _refusal_sides(err, "config_digest") == (
+        repr(own["config_digest"]), repr(snapshot_digest(_FOREIGN_CONFIG)))
+    assert own["config_digest"] == snapshot_digest(preview.FROZEN_CONFIG)
     # And the configuration itself is reported as differing, in its own entry —
     # `config_digest` alone would mean the refusal rested on sha256 and nothing else.
-    assert re.search(r"(^|; )config: ", err) and "config_digest" in err
+    assert re.search(r"(^|; )config: ", err)
 
 
 def test_preview_refuses_a_run_at_its_identity_opened_in_another_mode(tmp_path, capsys):
+    own = _the_previews_own_envelope(tmp_path / "own", capsys)
     journal = _seed_run_at_the_previews_identity(
         tmp_path, cycle_id="preview-orbit", config=preview.FROZEN_CONFIG, mode="confirm")
     err = _refuses_and_leaves_the_history_untouched(tmp_path, journal, capsys)
     # `confirm` is not `observe`, so the service would have proposed into this run
-    # without complaint: nothing but the identity check stands between them.
-    assert "mode" in err and "confirm" in err and "propose" in err
+    # without complaint: nothing but the identity check stands between them. The
+    # expected side is the mode the preview opens its own run in, not the seeded one.
+    assert _refusal_sides(err, "mode") == (repr(own["mode"]), repr("confirm"))
+    assert own["mode"] != "confirm"
 
 
 @pytest.mark.parametrize("carried", [None, False, 0, "", [], {}])
@@ -327,11 +371,16 @@ def test_preview_refuses_a_run_carrying_an_envelope_field_the_preview_never_froz
     parametrisation exists to keep every JSON-falsy value on the refusing side of
     that distinction, not just the ones that happen not to collide with None.
     """
+    own = _the_previews_own_envelope(tmp_path / "own", capsys)
     journal = _seed_run_at_the_previews_identity(
         tmp_path, cycle_id="preview-orbit", config=preview.FROZEN_CONFIG,
         mode="propose", extra={"foreign_authority": carried})
     err = _refuses_and_leaves_the_history_untouched(tmp_path, journal, capsys)
-    assert "foreign_authority" in err and "absent" in err
+    # `absent` is what the preview's own envelope is, and the carried value is what
+    # the found run holds — in that order. Inverted, the refusal would report the
+    # foreign run as the one lacking the field and the preview as the one carrying it.
+    assert "foreign_authority" not in own
+    assert _refusal_sides(err, "foreign_authority") == ("absent", repr(carried))
 
 
 # --- the stream contract ---
