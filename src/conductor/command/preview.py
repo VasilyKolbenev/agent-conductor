@@ -12,6 +12,13 @@ time, which is what lets a reader trust the printed preview_digest. What a calle
 chooses is only the instance (and, to exercise the binding, the adapter it claims
 drives that instance) -- and neither is trusted over the frozen config: an unknown
 instance or a mismatched adapter is refused by the same seam MAJOR-1 fixed.
+
+The run directory is state too, and it is trusted no further. The preview's run
+id is fixed, so a run at that identity may be one this command never created; it
+is replayed and checked against the constants below before a single record is
+appended, and a run that disagrees on any of them is refused with its history
+untouched. Reopening the preview's own run stays free: the proposal is immutable
+and identical, so the store recognises the retry and writes nothing.
 """
 from __future__ import annotations
 
@@ -24,8 +31,8 @@ from .adapters import (
     AdapterObservation,
     AdapterRegistry,
 )
-from .contracts import RunEnvelope, canonical_json
-from .run_store import RunExists, RunStore, StoreError, snapshot_digest
+from .contracts import RunEnvelope, _freeze_json, canonical_json
+from .run_store import RecoveredRun, RunExists, RunStore, StoreError, snapshot_digest
 from .service import CommandService, ServiceError
 
 #: The one frozen configuration the preview run pins. Its instances section is the
@@ -39,6 +46,11 @@ FROZEN_CONFIG: Mapping[str, Any] = {
 
 #: The instance the preview proposes against unless the caller names another.
 DEFAULT_INSTANCE = "claude-dev"
+
+#: The frozen configuration in the shape `RunStore` replays a stored one, so a
+#: found run's durable configuration can be compared against this module's own
+#: constant directly, structure to structure, and not through its digest alone.
+_REPLAYED_FROZEN_CONFIG = _freeze_json(dict(FROZEN_CONFIG))
 
 _RUN_ID = "preview-run"
 _ATTEMPT_ID = "preview-attempt"
@@ -82,6 +94,26 @@ class _PreviewAdapter:
         raise PreviewError("the preview never verifies an action")
 
 
+def _run_differences(found: RecoveredRun, expected: RunEnvelope) -> tuple[str, ...]:
+    """Name every fact on which a found run disagrees with the preview's frozen one.
+
+    The fields are not listed here: they are whatever `RunEnvelope` serializes,
+    so a field added to the contract is compared without this function learning
+    about it. The configuration is compared as well as its digest, because
+    "the digest matches" is a statement about sha256 and this is a statement
+    about the configuration the service is about to work from.
+    """
+    found_row, expected_row = found.envelope.as_dict(), expected.as_dict()
+    differences = [
+        f"{name}: expected {expected_row.get(name)!r}, found {found_row.get(name)!r}"
+        for name in sorted(set(expected_row) | set(found_row))
+        if expected_row.get(name) != found_row.get(name)
+    ]
+    if found.config != _REPLAYED_FROZEN_CONFIG:
+        differences.append("config: the stored configuration is not the frozen one")
+    return tuple(differences)
+
+
 def render_dispatch_preview(
         project_root: str, *, instance_id: str = DEFAULT_INSTANCE,
         adapter_id: str | None = None) -> str:
@@ -97,9 +129,10 @@ def render_dispatch_preview(
         The canonical JSON of the ActionProposal, including its preview_digest.
 
     Raises:
-        PreviewError: The run cannot be created or opened, the instance is unknown,
-            the claimed adapter mismatches the binding, or the capability is not
-            declared by the bound adapter.
+        PreviewError: The run cannot be created, a run already stands at the
+            preview's identity without being the preview's own run, the instance
+            is unknown, the claimed adapter mismatches the binding, or the
+            capability is not declared by the bound adapter.
     """
     store = RunStore(project_root)
     envelope = RunEnvelope(
@@ -109,7 +142,15 @@ def render_dispatch_preview(
         try:
             store.create_run(envelope, FROZEN_CONFIG)
         except RunExists:
-            pass  # opening an existing preview run is fine; propose is idempotent
+            # A run already at this identity is state the preview FOUND, not state
+            # it froze. Replay it read-only and hold it against this module's own
+            # constants BEFORE anything is appended: only the very same preview run
+            # may be reopened, and one that is not keeps its history byte for byte.
+            differences = _run_differences(store.read(_RUN_ID), envelope)
+            if differences:
+                raise PreviewError(
+                    f"run {_RUN_ID!r} already exists and is not this preview's run, "
+                    "so nothing was proposed into it: " + "; ".join(differences))
         service = CommandService(
             store, AdapterRegistry([_PreviewAdapter()]),
             clock=lambda: _NOW, ids=lambda purpose: f"{purpose}-{_RUN_ID}")

@@ -178,10 +178,11 @@ def _cmd_preview(args: argparse.Namespace) -> int:
     The Day-1 control-loop gate: it opens (or creates) a run with a frozen config,
     asks the fixed CommandService for one dispatch proposal bound to the instance,
     and writes that proposal's canonical JSON — preview_digest included — to stdout
-    for inspection. It prepares, executes and spawns nothing. An unknown instance
-    or an adapter that does not match the frozen config's binding is a refusal on
-    stderr with exit 1; stdout stays empty, so a redirected preview is never a
-    half-written one.
+    for inspection. It prepares, executes and spawns nothing. An unknown instance,
+    an adapter that does not match the frozen config's binding, and a run already
+    standing at the preview's identity that is not the preview's own run are each
+    a refusal on stderr with exit 1; stdout stays empty, so a redirected preview
+    is never a half-written one.
     """
     from conductor.command import preview          # deferred: see the import block
     try:

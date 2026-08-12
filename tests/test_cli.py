@@ -13,6 +13,7 @@ and they can hang where an in-process test merely fails.
 The stream contract these tests enforce is stated in `conductor.__main__`'s
 module docstring; the contract section below is its enforcement.
 """
+import hashlib
 import json
 import os
 import re
@@ -26,7 +27,9 @@ import pytest
 import conductor.__main__
 from conductor import prompts, report, store, validate
 from conductor.__main__ import main
-from conductor.command.contracts import ActionProposal, canonical_json
+from conductor.command import preview
+from conductor.command.contracts import ActionProposal, RunEnvelope, canonical_json
+from conductor.command.run_store import RunStore, snapshot_digest
 from tests.test_store import write_project, good_lane
 
 
@@ -226,6 +229,87 @@ def test_preview_refuses_an_adapter_that_mismatches_the_frozen_binding(tmp_path,
     assert captured.out == ""
     # The refusal names the instance and the binding it violates, not the caller's word.
     assert "claude-dev" in captured.err and "codex" in captured.err
+
+
+# --- CMD-4 MAJOR-3: the preview opens ITS run, or none at all ---
+#
+# `preview-run` is a fixed identity inside whatever directory `--dir` names, so
+# the command can FIND a run it never created. Trusting what it finds would let a
+# foreign cycle, a foreign frozen config or a foreign mode decide what the printed
+# proposal says and whose append-only history it lands in — the same class as
+# MAJOR-1: trusting discovered state instead of checking it against the frozen
+# identity. So an existing run is replayed and held against the preview's own
+# constants before one byte is appended, and a run that differs is left alone.
+
+#: A configuration that is NOT the preview's frozen one, yet binds `claude-dev`
+#: to `claude-code` exactly as it does — so every check downstream of identity
+#: passes and only the identity check can refuse it.
+_FOREIGN_CONFIG = {
+    "cycle": {"id": "preview-orbit", "phases": ["dispatch", "review"]},
+    "instances": [{"id": "claude-dev", "adapter": "claude-code"}],
+}
+
+
+def _seed_run_at_the_previews_identity(root, *, cycle_id, config, mode):
+    """Create the run `conduct preview` will find, from facts the caller chooses."""
+    RunStore(root).create_run(
+        RunEnvelope(run_id="preview-run", cycle_id=cycle_id,
+                    created_at="2026-08-11T00:00:00Z",
+                    config_digest=snapshot_digest(config), mode=mode),
+        config)
+    return root / "conductor" / "runs" / "preview-run" / "records.jsonl"
+
+
+def _refuses_and_leaves_the_history_untouched(root, journal, capsys):
+    """Run the preview against the seeded run; return the refusal's stderr."""
+    before = hashlib.sha256(journal.read_bytes()).hexdigest()
+    assert main(["preview", "--dir", str(root)]) == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    # Byte-identical by digest: a refusal that appended anyway would be the defect.
+    assert hashlib.sha256(journal.read_bytes()).hexdigest() == before
+    assert captured.err.strip()
+    return captured.err
+
+
+def test_preview_reopens_its_own_run_without_appending_a_second_proposal(tmp_path, capsys):
+    assert main(["preview", "--dir", str(tmp_path)]) == 0
+    first = capsys.readouterr().out
+    journal = tmp_path / "conductor" / "runs" / "preview-run" / "records.jsonl"
+    written = journal.read_bytes()
+    assert len(written.splitlines()) == 1
+    # The identical run is the one run this command may reopen, and reopening it
+    # costs the history nothing: the proposal is the same immutable record.
+    assert main(["preview", "--dir", str(tmp_path)]) == 0
+    assert capsys.readouterr().out == first
+    assert journal.read_bytes() == written
+
+
+def test_preview_refuses_a_run_at_its_identity_that_belongs_to_another_cycle(tmp_path, capsys):
+    journal = _seed_run_at_the_previews_identity(
+        tmp_path, cycle_id="foreign-orbit", config=preview.FROZEN_CONFIG, mode="propose")
+    err = _refuses_and_leaves_the_history_untouched(tmp_path, journal, capsys)
+    assert "cycle_id" in err and "foreign-orbit" in err and "preview-orbit" in err
+
+
+def test_preview_refuses_a_run_at_its_identity_frozen_on_another_config(tmp_path, capsys):
+    journal = _seed_run_at_the_previews_identity(
+        tmp_path, cycle_id="preview-orbit", config=_FOREIGN_CONFIG, mode="propose")
+    err = _refuses_and_leaves_the_history_untouched(tmp_path, journal, capsys)
+    # Both digests are named, and neither is written down here: one comes from the
+    # module's constant, the other from the configuration replayed off disk.
+    assert "config" in err
+    assert snapshot_digest(preview.FROZEN_CONFIG) in err
+    assert snapshot_digest(_FOREIGN_CONFIG) in err
+
+
+def test_preview_refuses_a_run_at_its_identity_opened_in_another_mode(tmp_path, capsys):
+    journal = _seed_run_at_the_previews_identity(
+        tmp_path, cycle_id="preview-orbit", config=preview.FROZEN_CONFIG, mode="confirm")
+    err = _refuses_and_leaves_the_history_untouched(tmp_path, journal, capsys)
+    # `confirm` is not `observe`, so the service would have proposed into this run
+    # without complaint: nothing but the identity check stands between them.
+    assert "mode" in err and "confirm" in err and "propose" in err
 
 
 # --- the stream contract ---
