@@ -249,5 +249,22 @@ a valid decision receipt.
   run carrying the preview's own proposal id over other facts is refused by the store's
   immutability, and now says so under test rather than by accident. The preview's tests live in
   `tests/test_command_preview.py`, split out whole when those regressions took test_cli.py past
-  800 lines. Execution remains disabled until the owned-process runner and Confirm
-  authorization are green. Not marked Complete: external APPROVE from Codex is not yet given.
+  800 lines. Codex's re-review of 7f30176 then found a fourth MAJOR, MAJOR-B, in that very
+  history check: `RunStore.read` replays read-only, so a journal ending mid-record leaves those
+  bytes on disk and reports them as a WARNING rather than as a record — and a check reading only
+  the replayed records saw a permitted, empty history in a run that still carried unjudged bytes.
+  `propose` then appended through the repairing store, which truncated the tail away: exit 0, a
+  proposal printed, and durable bytes the preview never wrote silently gone. Any warning from the
+  read-only replay is now a disagreement in its own right, named before one byte is appended, so
+  no incomplete tail is adopted as the preview's own — not even one that is a byte prefix of the
+  record the preview would itself have written. The alternative, proving such a tail a prefix of
+  that exact canonical record, was declined: the preview executes nothing, so surviving a crash
+  inside its own append is not a requirement it has, and a tail is evidence of what some writer
+  intended, never of which writer it was. The price is stated rather than hidden, in the module
+  docstring and in the refusal itself: a run left with a ragged tail will never open in this
+  preview again, and a human must delete its run directory by hand. The immutability guard is now
+  a snapshot of every durable file in the run directory, by relative path and bytes, instead of a
+  digest of `records.jsonl` alone, so a leaked `.tmp` or an edited `decisions/` receipt would be
+  caught too; every earlier refusal test was moved onto it. Execution remains disabled until the
+  owned-process runner and Confirm authorization are green. Not marked Complete: external APPROVE
+  from Codex is not yet given.
