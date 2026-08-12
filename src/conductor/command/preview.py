@@ -15,10 +15,16 @@ instance or a mismatched adapter is refused by the same seam MAJOR-1 fixed.
 
 The run directory is state too, and it is trusted no further. The preview's run
 id is fixed, so a run at that identity may be one this command never created; it
-is replayed and checked against the constants below before a single record is
-appended, and a run that disagrees on any of them is refused with its history
-untouched. Reopening the preview's own run stays free: the proposal is immutable
-and identical, so the store recognises the retry and writes nothing.
+is replayed and checked before a single record is appended, and a run that
+disagrees on any point is refused with its history untouched. Three things are
+held: the durable envelope and the frozen configuration against the constants
+below, and the run's own recorded history against what this preview would have
+written into it. That third check is here because the preview's history is
+entirely predictable -- nothing yet, or the one immutable proposal this preview
+mints -- so anything else in the journal or in `decisions/` is a history the
+preview never wrote and must not append to. Reopening the preview's own run
+stays free: the proposal is immutable and identical, so the store recognises the
+retry and writes nothing.
 """
 from __future__ import annotations
 
@@ -32,7 +38,14 @@ from .adapters import (
     AdapterRegistry,
 )
 from .contracts import RunEnvelope, _freeze_json, canonical_json
-from .run_store import RecoveredRun, RunExists, RunStore, StoreError, snapshot_digest
+from .run_store import (
+    RecoveredRun,
+    RunExists,
+    RunStore,
+    StoredRecord,
+    StoreError,
+    snapshot_digest,
+)
 from .service import CommandService, ServiceError
 
 #: The one frozen configuration the preview run pins. Its instances section is the
@@ -60,6 +73,20 @@ _SCOPE = ("src",)
 _PROPOSED_BY = "preview"
 _RATIONALE = "Day-1 preview: propose one dispatch and inspect its canonical form."
 _TIMEOUT_SECONDS = 900
+
+
+def _preview_id(purpose: str) -> str:
+    """Mint every id this preview uses; deterministic, so its own history is known."""
+    return f"{purpose}-{_RUN_ID}"
+
+
+#: How `_history` names the one record a completed preview run holds.
+_OWN_LINE = f"action_proposal {_preview_id('proposal')!r}"
+
+#: Every history the preview may find in a run it may reopen: nothing appended
+#: yet, or exactly the one proposal line this very preview mints. There is no
+#: third, because the preview writes nothing else and never runs a gate.
+_OWN_HISTORIES: tuple[tuple[str, ...], ...] = ((), (_OWN_LINE,))
 
 
 class PreviewError(RuntimeError):
@@ -110,6 +137,14 @@ def _field_for_message(row: Mapping[str, Any], name: str) -> str:
     return "absent" if value is _ABSENT else repr(value)
 
 
+def _history(records: tuple[StoredRecord, ...]) -> tuple[str, ...]:
+    """Name a run's records in durable order, identifying a proposal by its id."""
+    return tuple(
+        f"{row.kind} {row.value.proposal_id!r}" if row.kind == "action_proposal"
+        else row.kind
+        for row in records)
+
+
 def _run_differences(found: RecoveredRun, expected: RunEnvelope) -> tuple[str, ...]:
     """Name every fact on which a found run disagrees with the preview's frozen one.
 
@@ -126,7 +161,10 @@ def _run_differences(found: RecoveredRun, expected: RunEnvelope) -> tuple[str, .
     so a field added to the contract is compared without this function learning
     about it. The configuration is compared as well as its digest, because
     "the digest matches" is a statement about sha256 and this is a statement
-    about the configuration the service is about to work from.
+    about the configuration the service is about to work from. The recorded
+    history is compared too: the preview's own is fully predictable, so a run
+    holding anything else — a journal line or a `decisions/` receipt this
+    preview never minted — is a history it must not append to.
     """
     found_row, expected_row = found.envelope.as_dict(), expected.as_dict()
     differences = [
@@ -137,6 +175,11 @@ def _run_differences(found: RecoveredRun, expected: RunEnvelope) -> tuple[str, .
     ]
     if found.config != _REPLAYED_FROZEN_CONFIG:
         differences.append("config: the stored configuration is not the frozen one")
+    history = _history(found.records)
+    if history not in _OWN_HISTORIES:
+        differences.append(
+            f"history: expected nothing yet or [{_OWN_LINE}], "
+            f"found [{', '.join(history)}]")
     return tuple(differences)
 
 
@@ -169,8 +212,9 @@ def render_dispatch_preview(
             store.create_run(envelope, FROZEN_CONFIG)
         except RunExists:
             # A run already at this identity is state the preview FOUND, not state
-            # it froze. Replay it read-only and hold it against this module's own
-            # constants BEFORE anything is appended: only the very same preview run
+            # it froze. Replay it read-only and hold its envelope, its frozen config
+            # and its recorded history against what this preview would itself have
+            # written, BEFORE anything is appended: only the very same preview run
             # may be reopened, and one that is not keeps its history byte for byte.
             differences = _run_differences(store.read(_RUN_ID), envelope)
             if differences:
@@ -179,7 +223,7 @@ def render_dispatch_preview(
                     "so nothing was proposed into it: " + "; ".join(differences))
         service = CommandService(
             store, AdapterRegistry([_PreviewAdapter()]),
-            clock=lambda: _NOW, ids=lambda purpose: f"{purpose}-{_RUN_ID}")
+            clock=lambda: _NOW, ids=_preview_id)
         proposal = service.propose(
             run_id=_RUN_ID, instance_id=instance_id, adapter_id=adapter_id,
             attempt_id=_ATTEMPT_ID, capability="dispatch", arguments=_ARGUMENTS,

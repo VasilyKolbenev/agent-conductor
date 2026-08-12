@@ -28,7 +28,12 @@ import conductor.__main__
 from conductor import prompts, report, store, validate
 from conductor.__main__ import main
 from conductor.command import preview
-from conductor.command.contracts import ActionProposal, RunEnvelope, canonical_json
+from conductor.command.contracts import (
+    ActionProposal,
+    DecisionReceipt,
+    RunEnvelope,
+    canonical_json,
+)
 from conductor.command.run_store import RunStore, snapshot_digest
 from tests.test_store import write_project, good_lane
 
@@ -381,6 +386,50 @@ def test_preview_refuses_a_run_carrying_an_envelope_field_the_preview_never_froz
     # foreign run as the one lacking the field and the preview as the one carrying it.
     assert "foreign_authority" not in own
     assert _refusal_sides(err, "foreign_authority") == ("absent", repr(carried))
+
+
+def _the_previews_own_history(root, capsys):
+    """The records a genuine `conduct preview` leaves in its own run, named as it names them.
+
+    Spelled out here rather than imported, so the expectation below is an
+    independent restatement of the history and not the module's own answer.
+    """
+    assert main(["preview", "--dir", str(root)]) == 0
+    capsys.readouterr()
+    records = RunStore(root).read("preview-run").records
+    return tuple(f"{row.kind} {row.value.proposal_id!r}" for row in records)
+
+
+@pytest.mark.parametrize("only_the_receipt_file", [False, True])
+def test_preview_refuses_a_run_at_its_identity_holding_a_record_it_never_wrote(
+        only_the_receipt_file, tmp_path, capsys):
+    """A found run's HISTORY is state too, and an envelope that matches does not vouch for it.
+
+    Envelope and frozen config can agree byte for byte while the journal holds a
+    record this preview never minted. Appending into that run would put the
+    proposal into somebody else's history — no worse a printed preview, but the
+    same class one level down: state found and not checked. The preview's own
+    history is fully predictable, so it is checked against exactly that.
+
+    `decisions/` is durable state of its own, and the parametrisation covers both
+    ways a receipt can reach a replay: journalled, and surviving only as its
+    exclusive file with the journal line lost to a crash.
+    """
+    own = _the_previews_own_history(tmp_path / "own", capsys)
+    assert len(own) == 1
+    journal = _seed_run_at_the_previews_identity(
+        tmp_path, cycle_id="preview-orbit", config=preview.FROZEN_CONFIG, mode="propose")
+    RunStore(tmp_path).append(DecisionReceipt(
+        receipt_id="foreign-receipt", run_id="preview-run", gate_id="foreign-gate",
+        action="approve", actor="someone-else", decided_at="2026-08-11T00:00:00Z",
+        reason="a gate this preview never opened", scope_refs=("src",),
+        config_digest=snapshot_digest(preview.FROZEN_CONFIG)))
+    if only_the_receipt_file:
+        journal.write_bytes(b"")
+    err = _refuses_and_leaves_the_history_untouched(tmp_path, journal, capsys)
+    # The expected side is the history the preview writes for itself; the found side
+    # is the one this test planted. Inverted, the refusal would blame its own run.
+    assert _refusal_sides(err, "history") == (f"nothing yet or [{own[0]}]", "[decision]")
 
 
 # --- the stream contract ---
