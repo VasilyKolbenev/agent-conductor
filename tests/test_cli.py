@@ -250,12 +250,13 @@ _FOREIGN_CONFIG = {
 }
 
 
-def _seed_run_at_the_previews_identity(root, *, cycle_id, config, mode):
+def _seed_run_at_the_previews_identity(root, *, cycle_id, config, mode, extra=None):
     """Create the run `conduct preview` will find, from facts the caller chooses."""
     RunStore(root).create_run(
         RunEnvelope(run_id="preview-run", cycle_id=cycle_id,
                     created_at="2026-08-11T00:00:00Z",
-                    config_digest=snapshot_digest(config), mode=mode),
+                    config_digest=snapshot_digest(config), mode=mode,
+                    extra=extra or {}),
         config)
     return root / "conductor" / "runs" / "preview-run" / "records.jsonl"
 
@@ -312,6 +313,25 @@ def test_preview_refuses_a_run_at_its_identity_opened_in_another_mode(tmp_path, 
     # `confirm` is not `observe`, so the service would have proposed into this run
     # without complaint: nothing but the identity check stands between them.
     assert "mode" in err and "confirm" in err and "propose" in err
+
+
+@pytest.mark.parametrize("carried", [None, False, 0, "", [], {}])
+def test_preview_refuses_a_run_carrying_an_envelope_field_the_preview_never_froze(
+        carried, tmp_path, capsys):
+    """A durable field the preview does not know is a disagreement, whatever it holds.
+
+    The contracts keep unknown fields on purpose, so a foreign run can carry one
+    while every named field matches. Reading the two rows with `dict.get` would
+    answer None for the key this preview lacks AND for a key the found run holds
+    as null, making those two different durable facts compare equal — the whole
+    parametrisation exists to keep every JSON-falsy value on the refusing side of
+    that distinction, not just the ones that happen not to collide with None.
+    """
+    journal = _seed_run_at_the_previews_identity(
+        tmp_path, cycle_id="preview-orbit", config=preview.FROZEN_CONFIG,
+        mode="propose", extra={"foreign_authority": carried})
+    err = _refuses_and_leaves_the_history_untouched(tmp_path, journal, capsys)
+    assert "foreign_authority" in err and "absent" in err
 
 
 # --- the stream contract ---

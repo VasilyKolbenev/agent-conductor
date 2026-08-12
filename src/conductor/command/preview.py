@@ -94,8 +94,25 @@ class _PreviewAdapter:
         raise PreviewError("the preview never verifies an action")
 
 
+_ABSENT: Any = object()
+"""Stands for a key a row does not carry, which `None` cannot stand for."""
+
+
+def _shown(row: Mapping[str, Any], name: str) -> str:
+    """Render one field for the refusal message, saying `absent` when it is missing."""
+    value = row.get(name, _ABSENT)
+    return "absent" if value is _ABSENT else repr(value)
+
+
 def _run_differences(found: RecoveredRun, expected: RunEnvelope) -> tuple[str, ...]:
     """Name every fact on which a found run disagrees with the preview's frozen one.
+
+    The authority is the whole serialized envelope: the two rows must be equal,
+    so a run whose durable envelope differs at all is not this preview's run.
+    The per-field walk below only explains that disagreement, and it reads both
+    rows through `_ABSENT` rather than `dict.get`, because `get` answers None
+    both for a key that is missing and for a key that holds null — two
+    different durable facts, and the contracts keep unknown fields on purpose.
 
     The fields are not listed here: they are whatever `RunEnvelope` serializes,
     so a field added to the contract is compared without this function learning
@@ -104,11 +121,16 @@ def _run_differences(found: RecoveredRun, expected: RunEnvelope) -> tuple[str, .
     about the configuration the service is about to work from.
     """
     found_row, expected_row = found.envelope.as_dict(), expected.as_dict()
-    differences = [
-        f"{name}: expected {expected_row.get(name)!r}, found {found_row.get(name)!r}"
-        for name in sorted(set(expected_row) | set(found_row))
-        if expected_row.get(name) != found_row.get(name)
-    ]
+    differences = []
+    if found_row != expected_row:
+        differences = [
+            f"{name}: expected {_shown(expected_row, name)}, "
+            f"found {_shown(found_row, name)}"
+            for name in sorted(set(expected_row) | set(found_row))
+            if expected_row.get(name, _ABSENT) != found_row.get(name, _ABSENT)
+        ]
+        if not differences:      # unequal rows the field walk could not name
+            differences = ["envelope: the stored envelope is not this preview's"]
     if found.config != _REPLAYED_FROZEN_CONFIG:
         differences.append("config: the stored configuration is not the frozen one")
     return tuple(differences)
