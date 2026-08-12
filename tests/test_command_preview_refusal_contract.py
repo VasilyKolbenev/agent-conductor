@@ -18,6 +18,11 @@ walk — structure, bytes and link targets, read with pathlib and os.lstat alone
 never with the production `snapshot_digest` — so the check cannot be satisfied
 by the very code it judges. Expected paths are computed from the fixture root,
 never from the production function whose message they check.
+
+The changed-nothing words are additionally held road-wide at the bottom of this
+module, as a relation rather than a presence: they must appear exactly when the
+call refused AND a before/after snapshot of the exact run path is identical, so
+a road that creates the run and then refuses may not carry them.
 """
 import os
 import re
@@ -378,3 +383,159 @@ def test_a_creation_failure_refuses_with_facts_and_leaves_the_whole_tree_unchang
     (tmp_path / "conductor" / "runs").write_bytes(b"not a directory")
     err = _refusal_holding_the_contract(tmp_path, capsys, watched=tmp_path)
     assert "detected" in err
+
+
+# --- the changed-nothing words, held road-wide as a measured relation ---
+#
+# The words `changed nothing in the run directory` are a claim about what one
+# call did, so their presence may not be pinned road by road: the expected side
+# below is derived, per driven road, from a snapshot of the exact run path taken
+# before and after the call by this module's own walk. The pre-existing-run
+# service refusals — e.g. an adapter mismatch on a run already standing — are
+# not driven here.
+
+
+_CHANGED_NOTHING = "changed nothing in the run directory"
+
+
+def _run_path_state(path):
+    """Test-local state of the exact run path: absent, a portal, a file, or its tree.
+
+    Absence is a state of its own, not an error: on the creation roads the path
+    is not there before the call, and whether it is there after is precisely
+    what the relation needs to see. A portal at the path is recorded by its
+    target and never entered, on the ground `_tree_state` states for entries.
+    """
+    if not os.path.lexists(path):
+        return ("absent",)
+    if _lies_elsewhere(path):
+        return ("link", os.readlink(path))
+    if path.is_dir():
+        return ("dir", _tree_state(path))
+    return ("file", path.read_bytes())
+
+
+def _drive_holding_the_phrase_to_the_snapshot(root, capsys, *argv):
+    """Drive one preview call and hold the changed-nothing words to the relation.
+
+    The one guard every road below shares: the words appear on stderr exactly
+    when the call both refused (exit 1) and left the exact run path — its state
+    snapshotted before and after by `_run_path_state`, never by production code
+    — as it was found. The expected side is derived from that measurement, not
+    picked per road. Returns the exit code, both snapshots and the captured
+    streams, so each road can witness what it additionally knows.
+    """
+    run_path = root / "conductor" / "runs" / "preview-run"
+    before = _run_path_state(run_path)
+    code = main(["preview", "--dir", str(root), *argv])
+    captured = capsys.readouterr()
+    after = _run_path_state(run_path)
+    expected = code == 1 and before == after
+    present = _CHANGED_NOTHING in captured.err
+    assert present == expected, (
+        "the changed-nothing words must ride exactly the refusals that hold "
+        f"them true: exit {code}, run path "
+        f"{'unchanged' if before == after else 'changed'}, phrase "
+        f"{'present' if present else 'absent'} in {captured.err!r}")
+    return code, before, after, captured
+
+
+def test_the_run_path_state_tells_absence_a_file_and_a_tree_apart(tmp_path):
+    spot = tmp_path / "spot"
+    assert _run_path_state(spot) == ("absent",)
+    spot.write_bytes(b"a file where the run would stand")
+    assert _run_path_state(spot) == ("file", b"a file where the run would stand")
+    spot.unlink()
+    spot.mkdir()
+    (spot / "a.txt").write_bytes(b"one")
+    assert _run_path_state(spot) == ("dir", {"a.txt": ("file", b"one")})
+
+
+def test_the_run_path_state_records_a_portal_at_the_path_without_entering_it(tmp_path):
+    target = tmp_path / "elsewhere"
+    target.mkdir()
+    (target / "inside.txt").write_bytes(b"content that lies elsewhere")
+    _junction_or_skip(tmp_path / "spot", target)
+    kind, pointed = _run_path_state(tmp_path / "spot")
+    assert kind == "link" and str(target) in pointed
+
+
+def test_a_successful_creation_says_no_phrase_and_the_snapshot_sees_the_run_appear(
+        tmp_path, capsys):
+    """Exit 0 and a run path gone from absent to a tree: no refusal, no phrase.
+
+    This road doubles as the witness that the snapshot machinery sees change:
+    were `_run_path_state` blind, `before != after` could not hold here.
+    """
+    code, before, after, captured = _drive_holding_the_phrase_to_the_snapshot(
+        tmp_path, capsys)
+    assert code == 0
+    assert before == ("absent",) and after[0] == "dir"
+    assert captured.err == ""
+
+
+def test_reopening_the_previews_own_run_says_no_phrase_and_leaves_the_path_as_it_was(
+        tmp_path, capsys):
+    """Exit 0 on the reopen and a snapshot identical before and after.
+
+    The witness that the machinery sees no-change where there is none: the
+    reopen writes nothing, and the relation requires the phrase absent all the
+    same, because the exit code is 0.
+    """
+    assert main(["preview", "--dir", str(tmp_path)]) == 0
+    capsys.readouterr()
+    code, before, after, _ = _drive_holding_the_phrase_to_the_snapshot(
+        tmp_path, capsys)
+    assert code == 0
+    assert before[0] == "dir" and before == after
+
+
+def test_a_service_refusal_that_created_the_run_does_not_claim_it_changed_nothing(
+        tmp_path, capsys):
+    """An unknown instance is refused downstream of creation: the run appears, exit 1.
+
+    The road where exit 1 and a changed run path meet: `create_run` succeeds,
+    then the service refuses the instance in its own words, so the
+    changed-nothing words would be false and the relation requires their
+    absence. The service refusal of a run already standing (an adapter
+    mismatch, say) is a different road, not driven here.
+    """
+    code, before, after, captured = _drive_holding_the_phrase_to_the_snapshot(
+        tmp_path, capsys, "--instance", "unknown-instance")
+    assert code == 1
+    assert before == ("absent",) and after[0] == "dir"  # this very call made the run
+    assert captured.out == ""
+
+
+def test_a_foreign_object_refusal_says_the_phrase_the_snapshot_measures_true(
+        tmp_path, capsys):
+    run_dir = _seed_the_previews_identity(tmp_path)
+    (run_dir / "stray.bin").write_bytes(b"foreign, and left exactly as found")
+    code, before, after, _ = _drive_holding_the_phrase_to_the_snapshot(
+        tmp_path, capsys)
+    assert code == 1 and before == after
+
+
+def test_an_unreplayable_run_refusal_says_the_phrase_the_snapshot_measures_true(
+        tmp_path, capsys):
+    run_dir = _seed_the_previews_identity(tmp_path)
+    (run_dir / "run.json").write_bytes(b"{ this is not json")
+    code, before, after, _ = _drive_holding_the_phrase_to_the_snapshot(
+        tmp_path, capsys)
+    assert code == 1 and before == after
+
+
+def test_an_uncreatable_run_path_refusal_says_the_phrase_with_the_path_absent_throughout(
+        tmp_path, capsys):
+    """A FILE at `conductor/runs` fails creation below the run path itself.
+
+    The exact run path is absent before and absent after — absence being a
+    state the snapshot records — so the relation requires the phrase, exactly
+    as the refusal owes it.
+    """
+    (tmp_path / "conductor").mkdir()
+    (tmp_path / "conductor" / "runs").write_bytes(b"not a directory")
+    code, before, after, _ = _drive_holding_the_phrase_to_the_snapshot(
+        tmp_path, capsys)
+    assert code == 1
+    assert before == ("absent",) and after == ("absent",)
