@@ -322,9 +322,10 @@ def test_corruption_the_store_raises_on_still_names_the_limit_beside_a_foreign_o
     """When the store raises, the refusal owes the limit and the path, not a guess.
 
     With `run.json` unreadable, nothing can safely establish what the stray
-    file beside it is to this run, so the message does not enumerate it; it
-    names what was reliably detected, the run path, and the stated limit —
-    no safe automatic remediation is defined.
+    file beside it is to this run, so the message does not enumerate it —
+    neither the planted object's exact path nor its bare name reaches stderr;
+    the message names what was reliably detected, the run path, and the
+    stated limit — no safe automatic remediation is defined.
     """
     run_dir = _seed_the_previews_identity(tmp_path)
     (run_dir / "run.json").write_bytes(b"{ this is not json")
@@ -333,6 +334,8 @@ def test_corruption_the_store_raises_on_still_names_the_limit_beside_a_foreign_o
     assert "run.json" in err
     assert "no safe automatic remediation is defined" in err
     assert "investigate" in err
+    assert repr(str(_run_dir(tmp_path) / "stray.bin")) not in err
+    assert "stray.bin" not in err
 
 
 # --- closure G: StoreError/CorruptRun raised directly by the store ---
