@@ -340,3 +340,34 @@ def test_preview_refuses_a_run_at_its_identity_holding_a_record_it_never_wrote(
     # The expected side is the history the preview writes for itself; the found side
     # is the one this test planted. Inverted, the refusal would blame its own run.
     assert _refusal_sides(err, "history") == (f"nothing yet or [{own[0]}]", "[decision]")
+
+
+def test_preview_refuses_a_run_holding_its_own_proposal_id_on_other_facts(tmp_path, capsys):
+    """A history that reads as the preview's own is still held to the facts under it.
+
+    `_history` names a proposal by kind and id, and the preview's id is
+    deterministic — so a run holding a proposal at that id, minted by someone else
+    with a rationale this preview never wrote, passes the identity check as the
+    preview's own reopened run. What refuses it is the store one level down: an
+    identity that already records different facts is a conflict, not the identical
+    retry that makes a genuine reopen free.
+
+    The outcome is what is held here, not the wording, because this refusal is the
+    store's sentence and not the preview's: exit 1, nothing on stdout, and a
+    journal byte for byte. Without it the defence in depth would be an accident of
+    a seam two modules away rather than a claim of this command's.
+    """
+    assert main(["preview", "--dir", str(tmp_path / "own")]) == 0
+    capsys.readouterr()
+    own = RunStore(tmp_path / "own").read("preview-run").records[0].value
+    journal = _seed_run_at_the_previews_identity(
+        tmp_path, cycle_id="preview-orbit", config=preview.FROZEN_CONFIG, mode="propose")
+    # Same id, same run, same frozen config — one different fact, and the digest
+    # recomputed over it, so what stands at the identity is a genuine other record.
+    forged = ActionProposal.from_dict({
+        **own.as_dict(), "rationale": "a rationale this preview never wrote",
+        "preview_digest": ""})
+    assert forged.proposal_id == own.proposal_id and forged != own
+    assert RunStore(tmp_path).append(forged) is True
+    err = _refuses_and_leaves_the_history_untouched(tmp_path, journal, capsys)
+    assert own.proposal_id in err
