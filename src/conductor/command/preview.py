@@ -42,28 +42,35 @@ A warning is only the half of that the store can see. `read` opens four names --
 `run.json`, `config.json`, `records.jsonl` and `decisions/*.json` -- so a
 `.records.jsonl.<rand>.tmp`, the residue of a writer that died inside its own
 publish, replays as a flawless history with nothing at all to report. Any other
-name under the run directory, a symbolic link included, refuses it too, on the
-same ground and without a warning to announce it: this preview did not put that
-object there and cannot say whether whoever did is finished with it.
+name under the run directory, a symbolic link or a directory junction included,
+refuses it too, on the same ground and without a warning to announce it: this
+preview did not put that object there and cannot say whether whoever did is
+finished with it.
 
-The price is real, it is not hidden, and it is not one price. An object the
-store does not own is clutter with a name: the run beneath it is whole, so the
-refusal names that object, and moving or deleting exactly it -- and nothing else
--- opens the run again holding every record it already held. A run whose own
-replay disagrees is the dead end: a foreign envelope, a foreign frozen config, a
-history this preview never wrote, or an incomplete tail, which the journal is
-not repaired of here. Such a run can never be opened by this preview again, and
-what must move is the whole run -- `conductor/runs/preview-run` beneath whatever
-`--dir` names, e.g. `mv ./conductor/runs/preview-run ./preview-run.kept` or
-`rm -r ./conductor/runs/preview-run` (PowerShell:
-`Remove-Item -Recurse .\\conductor\\runs\\preview-run`) -- after which the
-preview creates the run afresh. Neither road is mended by waiting or by
-rerunning: this preview repairs nothing and promises nothing. The refusal names
-the object to move by its full path on both roads for exactly that reason: a
-dead end nobody is told about is a bug of its own.
+Refusing that found state follows one narrowed contract (owner decision,
+2026-08-12), which covers every refusal that declines a run directory this
+preview found or failed to read, and every store-level creation failure --
+the service's own refusals of an unknown instance or a mismatched adapter
+speak in the service's words, upstream of it. Each such refusal exits 1 with
+an empty stdout and changes nothing: a found run directory is left byte for
+byte and structurally as it was found -- journal, receipts, links and nested
+objects included, because every check above works by reading alone -- and a
+failed creation leaves nothing behind. The message names what was reliably
+detected, the exact path of the preview's run directory, and the exact path of
+every foreign object the ownership walk itself saw; it states in so many words
+that the preview changed nothing in the run directory; and it advises nothing
+-- no object is proposed for deletion or moving, and no minimal remediation is
+promised, because this module cannot know what a foreign object is to whoever
+wrote it. Accuracy over pseudo-actionability. When the store cannot safely
+replay what stands at the identity at all -- a StoreError or CorruptRun in
+place of a replayed run -- no fact about the directory's objects can be safely
+established, so the message enumerates none; it names the run path and states
+the limit directly: no safe automatic remediation is defined; preserve the run
+directory and investigate it separately.
 """
 from __future__ import annotations
 
+import stat
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -189,81 +196,97 @@ _STORE_OWNED_FILES = frozenset({"run.json", "config.json", "records.jsonl"})
 _RECEIPTS_DIR, _RECEIPT_SUFFIX = "decisions", ".json"
 
 
+#: A junction's reparse tag. The constant lives in `stat` on every platform;
+#: the `st_reparse_tag` attribute exists only on Windows, so elsewhere the
+#: getattr in `_points_elsewhere` answers 0 and no path ever carries the tag.
+_JUNCTION_TAG = getattr(stat, "IO_REPARSE_TAG_MOUNT_POINT", 0xA0000003)
+
+
+def _points_elsewhere(path: Path) -> bool:
+    """A symbolic link or an NTFS junction: a name whose content lies elsewhere.
+
+    `is_symlink` alone is not the test: a junction answers `is_dir()` True and
+    -- on the interpreters this project runs -- `is_symlink()` False, so a walk
+    keeping only that filter adopts one as a plain directory and recurses
+    through it into a tree the run directory does not hold. The reparse tag is
+    the junction's own durable mark, read from `lstat` without following
+    anything, and it survives the target's disappearance.
+    """
+    return (path.is_symlink()
+            or getattr(path.lstat(), "st_reparse_tag", 0) == _JUNCTION_TAG)
+
+
 def _unowned_files(run_path: Path) -> tuple[str, ...]:
     """Name every durable object under the run directory the run store does not own.
 
-    A real directory is not named: it holds no bytes, so an empty one is adopted
-    with the run for want of anything to judge, and a file inside one is reached
-    by this walk under its own relative name. A symbolic link IS named, whatever
-    it points at and whether or not the target is there: `is_file` answers False
-    for a link to a directory and for a dangling one, so a walk filtered on it
-    would step past the two objects this preview can judge least -- a link leads
-    somewhere this command never looked. The `decisions/` check is on the parent
-    rather than on the path's first part, so a receipt-looking name nested deeper
-    than the store ever writes is still named here.
+    A plain directory is not named: it holds no bytes, so an empty one is
+    adopted with the run for want of anything to judge, and a file inside one
+    is reached by this walk under its own relative name. A symbolic link and a
+    junction ARE named, whatever they point at and whether or not the target is
+    there, and the walk never steps through one: what lies behind such a name
+    lies outside the run, so entering it would judge -- and name -- objects
+    this refusal has no standing over. The `decisions/` check is on the parent
+    rather than on the path's first part, so a receipt-looking name nested
+    deeper than the store ever writes is still named here.
     """
     receipts = run_path / _RECEIPTS_DIR
-    unowned = []
-    for path in sorted(run_path.rglob("*")):
-        if path.is_dir() and not path.is_symlink():
-            continue
-        name = path.relative_to(run_path).as_posix()
-        owned = (
-            name in _STORE_OWNED_FILES
-            or (path.parent == receipts and path.suffix == _RECEIPT_SUFFIX))
-        if not owned:
-            unowned.append(name)
-    return tuple(unowned)
+    unowned: list[str] = []
+    stack = [run_path]
+    while stack:
+        for path in sorted(stack.pop().iterdir()):
+            if _points_elsewhere(path):
+                unowned.append(path.relative_to(run_path).as_posix())
+                continue
+            if path.is_dir():
+                stack.append(path)
+                continue
+            name = path.relative_to(run_path).as_posix()
+            owned = (
+                name in _STORE_OWNED_FILES
+                or (path.parent == receipts and path.suffix == _RECEIPT_SUFFIX))
+            if not owned:
+                unowned.append(name)
+    return tuple(sorted(unowned))
 
 
-def _unowned_entries(unowned: tuple[str, ...]) -> tuple[str, ...]:
+def _unowned_entries(run_path: Path, unowned: tuple[str, ...]) -> tuple[str, ...]:
     """Name the durable objects that reach this preview without a warning at all.
 
     `read` opens four names, so a `.records.jsonl.<rand>.tmp` left by a writer
     that crashed inside its own publish replays as a flawless history with
-    nothing whatever to report. Each is named on the ground a crash tail is named
-    -- this preview did not put it there and cannot say whether whoever did is
-    finished with it -- and each differs from a tail in what it costs: the run
-    underneath is whole, so lifting exactly these objects out is the whole
-    remedy, which is why `_remedy` is told which of them were found.
+    nothing whatever to report; only the walk above can see it. Each object is
+    named by the exact path it stands at -- the walk reliably established
+    exactly that much -- and nothing more is said about it: this preview cannot
+    know what the object is to whoever put it there, so it does not advise
+    anyone to touch it.
     """
     return tuple(
-        f"files: {name!r} is not a name this run's store writes, so only whoever "
-        "put it there can say whether it is finished"
+        f"files: {str(run_path / name)!r} is not an object this run's store writes"
         for name in unowned)
 
 
-def _remedy(run_path: Path, unowned: tuple[str, ...], irresolvable: bool) -> str:
-    """Name the object a human must move or delete, and name only the true one.
+def _contract_facts(run_path: Path) -> tuple[str, str]:
+    """The two facts every refusal of a found run carries, whichever road raised it.
 
-    There are two costs here and they are not one cost. An object the store does
-    not own is clutter with a name: the run under it is whole, so that object is
-    named and moving or deleting exactly it -- and nothing else -- leaves a run
-    this preview opens again holding every record it already held. A run the
-    replay itself disagrees with is the dead end: a foreign envelope, a foreign
-    frozen config, a history this preview never wrote, or a journal ending
-    mid-record that nothing in this module repairs. There the object is the whole
-    preview run, and only there; charging the first road that price tells a human
-    to destroy proposal records nothing ever put in question.
-
-    Deleting is never the only way through. Moving the object aside satisfies
-    both roads, and a human is not asked to destroy durable bytes to get moving.
-    Neither sentence promises a repair, because there is none to promise: this
-    preview mends nothing, so rerunning either road untouched refuses it again.
+    The exact run path, so a reader knows where the refused state stands, and
+    the statement that nothing in it was changed -- true on every road, because
+    everything a refusal knows was learned by reading alone, and held from the
+    outside by a snapshot test that walks bytes, structure and link targets.
     """
-    if irresolvable:
-        return (
-            "remedy: nothing here resolves any of those, so this run will never "
-            f"open here again; move or delete the whole preview run {run_path} by "
-            "hand, then rerun the preview, which creates a fresh one")
     return (
-        "remedy: only whoever put them there can resolve those, and this preview "
-        f"will not; move or delete exactly {', '.join(map(repr, unowned))} out of "
-        f"{run_path} by hand, then rerun the preview, which opens this run again "
-        "with every record it already holds")
+        f"run directory: {str(run_path)!r}",
+        "the preview changed nothing in the run directory: every byte, every "
+        "entry and every link is exactly as it was found")
 
 
-def _irresolvable_differences(
+#: What a refusal says when the store itself could not safely replay the state:
+#: the owner's stated limit, in place of any guess about the directory's objects.
+_DIAGNOSTIC_LIMIT = (
+    "no safe automatic remediation is defined; preserve the run directory and "
+    "investigate it separately")
+
+
+def _replay_differences(
         found: RecoveredRun, expected: RunEnvelope) -> tuple[str, ...]:
     """Name every fact on which a found run disagrees with the preview's frozen one.
 
@@ -290,11 +313,10 @@ def _irresolvable_differences(
     left out of what it returned, which is why every fact above can match while
     the run itself is not the one they describe -- and an orphan `decisions/`
     receipt is another, replayed into the records and disagreeing on history as
-    well. Every warning counts whatever it says, and every one of them is
-    irresolvable where it lies: this module repairs no journal and adopts no
-    foreign identity, so no object can be lifted out of such a run to make it the
-    preview's own. What `_unowned_entries` adds is the other half -- an object no
-    replayed fact can state at all, because `read` never opened it.
+    well. Every warning counts whatever it says: this module repairs no journal
+    and adopts no foreign identity. What `_unowned_entries` adds is the other
+    half -- an object no replayed fact can state at all, because `read` never
+    opened it.
     """
     found_row, expected_row = found.envelope.as_dict(), expected.as_dict()
     differences = [
@@ -316,41 +338,105 @@ def _irresolvable_differences(
 
 def _run_differences(
         found: RecoveredRun, expected: RunEnvelope, run_path: Path) -> tuple[str, ...]:
-    """Name every point on which a found run is not this preview's, and what to do.
+    """Name every reliably established point on which a found run is not this preview's.
 
-    Two kinds, held apart because they cost different things: what the replay
-    states, which nothing a human lifts out of the run can settle, and the
-    durable objects lying beside it that `read` never opened, which lifting out
-    settles entirely. The remedy is chosen from exactly that split, and it is
-    appended to every refusal there is -- so the run's full path reaches a reader
-    on the road where an object was named and on the road where only the envelope
-    disagreed. A dead end nobody is told about is a bug of its own, and until the
-    remedy was assembled here only the first road was told about theirs.
+    Two kinds: the facts the replay states -- envelope fields, the frozen
+    configuration, the recorded history, the replay's own warnings -- and the
+    durable objects lying beside them that `read` never opened, each named by
+    its exact path. Either kind alone refuses the run, and every refusal closes
+    on the same two contract facts: the run directory's exact path, and the
+    statement that nothing in it was changed. No remedy is appended anywhere,
+    because none is promised: this preview cannot know what any of those
+    objects is to whoever wrote it, and a guessed instruction would trade
+    accuracy for pseudo-actionability.
     """
-    irresolvable = _irresolvable_differences(found, expected)
+    replay = _replay_differences(found, expected)
     unowned = _unowned_files(run_path)
-    if not (irresolvable or unowned):
+    if not (replay or unowned):
         return ()
     return (
-        *irresolvable, *_unowned_entries(unowned),
-        _remedy(run_path, unowned, bool(irresolvable)))
+        *replay, *_unowned_entries(run_path, unowned), *_contract_facts(run_path))
 
 
-def _refusal(differences: tuple[str, ...]) -> str:
-    """Say that nothing was proposed, then name each disagreement on its own line.
+def _refusal(header: str, entries: tuple[str, ...]) -> str:
+    """Open with the header sentence, then name each entry on a line of its own.
 
-    The entries are not joined on a separator a found value could contain. One
-    side of an entry is a value this preview does not control, rendered with
-    `repr`, and `repr` never produces a newline -- so a stored string reading
-    `a; mode: expected 1, found 2` is one field's found side and cannot become a
-    second entry naming a difference the preview never found. The sentence was
-    already truthful to a human, because the value is quoted; this makes it hold
-    for a reader that splits the message into entries as well.
+    The entries are not joined on a separator a found value could contain.
+    Wherever an entry carries a value this preview does not control -- a stored
+    field, a path, a store complaint -- that value is rendered with `repr`, and
+    `repr` never produces a newline: so a stored string reading `a; mode:
+    expected 1, found 2` is one field's found side and cannot become a second
+    entry naming a difference the preview never found. The sentence was already
+    truthful to a human, because the value is quoted; this makes it hold for a
+    reader that splits the message into entries as well.
     """
-    return (
-        f"run {_RUN_ID!r} already exists and is not this preview's run, "
-        "so nothing was proposed into it:"
-        + "".join(f"\n  {entry}" for entry in differences))
+    return header + "".join(f"\n  {entry}" for entry in entries)
+
+
+def _unreplayable_refusal(run_path: Path, error: StoreError) -> str:
+    """Refuse an identity the store cannot safely replay, naming the stated limit.
+
+    A StoreError or CorruptRun in place of a replayed run means nothing can
+    safely establish what any object in the directory is, so no object is
+    enumerated and nothing is guessed. What IS reliably established is named:
+    the store's own complaint where a directory stands at the path, or -- where
+    none does -- the fact that the path is claimed by something the store
+    cannot replay. The store's sentence for that second case is `does not
+    exist`, the exact opposite of what `create_run` just proved by refusing the
+    name, so it is not repeated here.
+    """
+    if run_path.is_dir():
+        detected = f"detected: {str(error)!r}"
+    else:
+        detected = (
+            "detected: the run's path is already claimed, but what stands at it "
+            "is not a run directory the store can replay")
+    return _refusal(
+        f"run {_RUN_ID!r} already exists and cannot be safely replayed, "
+        "so nothing was proposed into it:",
+        (detected, *_contract_facts(run_path), _DIAGNOSTIC_LIMIT))
+
+
+def _uncreatable_refusal(run_path: Path, error: Exception) -> str:
+    """Refuse when the store cannot create the run at all, leaving nothing behind.
+
+    Reached when `create_run` fails below `RunExists` -- for example something
+    other than a directory standing at `conductor/runs` -- so no run directory
+    exists and none was made. The contract facts are still owed and still
+    stated: the exact path the run would occupy, and that nothing was changed.
+    """
+    return _refusal(
+        f"run {_RUN_ID!r} cannot be created, so nothing was proposed:",
+        (f"detected: {str(error)!r}",
+         f"run directory: {str(run_path)!r}",
+         "the preview created nothing and changed nothing in the run directory"))
+
+
+def _check_found_run(store: RunStore, envelope: RunEnvelope) -> None:
+    """Adopt the found run only if it is provably this preview's own; else refuse.
+
+    A run already at this identity is state the preview FOUND, not state it
+    froze. It is replayed read-only and held -- envelope, frozen config,
+    recorded history, replay warnings, and the durable objects beside them --
+    against what this preview would itself have written, BEFORE anything is
+    appended: only the very same preview run may be reopened, and one that is
+    not keeps every durable byte of its directory exactly as it was found. A
+    replay the store itself refuses is a refusal too, on the narrower facts
+    that are still reliable; caught here, because the module-level catch in
+    `render_dispatch_preview` would surface the bare StoreError without the
+    run path, without the changed-nothing statement, and -- for a file
+    standing at the run's path -- claiming the run does not exist.
+    """
+    run_path = store.run_path(_RUN_ID)
+    try:
+        found = store.read(_RUN_ID)
+    except StoreError as e:
+        raise PreviewError(_unreplayable_refusal(run_path, e)) from e
+    differences = _run_differences(found, envelope, run_path)
+    if differences:
+        raise PreviewError(_refusal(
+            f"run {_RUN_ID!r} already exists and is not this preview's run, "
+            "so nothing was proposed into it:", differences))
 
 
 def render_dispatch_preview(
@@ -369,8 +455,9 @@ def render_dispatch_preview(
 
     Raises:
         PreviewError: The run cannot be created, a run already stands at the
-            preview's identity without being the preview's own run, the instance
-            is unknown, the claimed adapter mismatches the binding, or the
+            preview's identity without being provably the preview's own run --
+            or without being safely replayable at all -- the instance is
+            unknown, the claimed adapter mismatches the binding, or the
             capability is not declared by the bound adapter.
     """
     store = RunStore(project_root)
@@ -381,16 +468,13 @@ def render_dispatch_preview(
         try:
             store.create_run(envelope, FROZEN_CONFIG)
         except RunExists:
-            # A run already at this identity is state the preview FOUND, not state
-            # it froze. Replay it read-only and hold its envelope, its frozen config,
-            # its recorded history and the replay's own warnings against what this
-            # preview would itself have written, BEFORE anything is appended: only
-            # the very same preview run may be reopened, and one that is not keeps
-            # every durable byte of its directory exactly as it was found.
-            differences = _run_differences(
-                store.read(_RUN_ID), envelope, store.run_path(_RUN_ID))
-            if differences:
-                raise PreviewError(_refusal(differences))
+            # Found state, not frozen state: see _check_found_run.
+            _check_found_run(store, envelope)
+        except (StoreError, OSError) as e:
+            # A store-level creation failure -- e.g. a FILE at conductor/runs --
+            # is a refusal under the same contract, not a bare error or a
+            # traceback: nothing exists at the run's path and nothing was made.
+            raise PreviewError(_uncreatable_refusal(store.run_path(_RUN_ID), e)) from e
         service = CommandService(
             store, AdapterRegistry([_PreviewAdapter()]),
             clock=lambda: _NOW, ids=_preview_id)
