@@ -183,6 +183,23 @@ def _run_differences(found: RecoveredRun, expected: RunEnvelope) -> tuple[str, .
     return tuple(differences)
 
 
+def _refusal(differences: tuple[str, ...]) -> str:
+    """Say that nothing was proposed, then name each disagreement on its own line.
+
+    The entries are not joined on a separator a found value could contain. One
+    side of an entry is a value this preview does not control, rendered with
+    `repr`, and `repr` never produces a newline -- so a stored string reading
+    `a; mode: expected 1, found 2` is one field's found side and cannot become a
+    second entry naming a difference the preview never found. The sentence was
+    already truthful to a human, because the value is quoted; this makes it hold
+    for a reader that splits the message into entries as well.
+    """
+    return (
+        f"run {_RUN_ID!r} already exists and is not this preview's run, "
+        "so nothing was proposed into it:"
+        + "".join(f"\n  {entry}" for entry in differences))
+
+
 def render_dispatch_preview(
         project_root: str, *, instance_id: str = DEFAULT_INSTANCE,
         adapter_id: str | None = None) -> str:
@@ -218,9 +235,7 @@ def render_dispatch_preview(
             # may be reopened, and one that is not keeps its history byte for byte.
             differences = _run_differences(store.read(_RUN_ID), envelope)
             if differences:
-                raise PreviewError(
-                    f"run {_RUN_ID!r} already exists and is not this preview's run, "
-                    "so nothing was proposed into it: " + "; ".join(differences))
+                raise PreviewError(_refusal(differences))
         service = CommandService(
             store, AdapterRegistry([_PreviewAdapter()]),
             clock=lambda: _NOW, ids=_preview_id)

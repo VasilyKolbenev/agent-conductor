@@ -132,7 +132,7 @@ def _the_previews_own_envelope(root, capsys):
 
 
 #: One difference entry of the refusal, in the order the refusal put its sides in.
-_SIDES = re.compile(r"(?P<field>\w+): expected (?P<expected>.*?), found (?P<found>.*)\Z")
+_SIDES = re.compile(r"(?P<field>\w+): expected (?P<expected>.*?), found (?P<found>.*)")
 
 
 def _refusal_sides(err, field):
@@ -143,9 +143,13 @@ def _refusal_sides(err, field):
     in the refusal cannot tell "expected preview-orbit, found foreign-orbit"
     from its exact inversion — a pair can, because the two sides come from
     different code and only one arrangement of them is true.
+
+    One entry per line, matched whole: the found side of an entry is a value the
+    preview does not control, so a reader that let it open an entry of its own
+    would report differences the preview never named.
     """
-    for entry in err.strip().split("; "):
-        found = _SIDES.search(entry)
+    for entry in err.splitlines():
+        found = _SIDES.fullmatch(entry.strip())
         if found is not None and found.group("field") == field:
             return found.group("expected"), found.group("found")
     raise AssertionError(f"the refusal states no {field!r} difference: {err!r}")
@@ -218,7 +222,7 @@ def test_preview_refuses_a_run_at_its_identity_frozen_on_another_config(tmp_path
     assert own["config_digest"] == snapshot_digest(preview.FROZEN_CONFIG)
     # And the configuration itself is reported as differing, in its own entry —
     # `config_digest` alone would mean the refusal rested on sha256 and nothing else.
-    assert re.search(r"(^|; )config: ", err)
+    assert any(entry.strip().startswith("config: ") for entry in err.splitlines())
 
 
 def test_preview_refuses_a_run_at_its_identity_opened_in_another_mode(tmp_path, capsys):
@@ -255,6 +259,37 @@ def test_preview_refuses_a_run_carrying_an_envelope_field_the_preview_never_froz
     # foreign run as the one lacking the field and the preview as the one carrying it.
     assert "foreign_authority" not in own
     assert _refusal_sides(err, "foreign_authority") == ("absent", repr(carried))
+
+
+def test_a_value_a_found_run_carries_cannot_forge_a_difference_of_its_own(tmp_path, capsys):
+    """The refusal's entries are the preview's; a found value may only be one side of one.
+
+    Every entry pairs a field the preview named with a value it does not control,
+    rendered into the same message. Joined on a separator that value could itself
+    contain, a run could carry `a; mode: expected 1, found 2` and any reader that
+    split the message up would read a mode difference the preview never found —
+    the same "found state decides what we say" class as the refusal above, one
+    level down and diagnostic only. `repr` cannot produce a newline, so an entry
+    per line is a boundary the found side cannot cross.
+    """
+    forgery = "a; mode: expected 1, found 2"
+    own = _the_previews_own_envelope(tmp_path / "own", capsys)
+    journal = _seed_run_at_the_previews_identity(
+        tmp_path, cycle_id="preview-orbit", config=preview.FROZEN_CONFIG,
+        mode="propose", extra={"foreign_authority": forgery})
+    err = _refuses_and_leaves_the_history_untouched(tmp_path, journal, capsys)
+    # One sentence and one difference, however much punctuation the value carries:
+    # the entries stand on a boundary the found side cannot put inside itself.
+    header, *entries = err.strip().splitlines()
+    assert "nothing was proposed into it" in header
+    assert len(entries) == 1
+    # And that one entry is the field the preview named, holding the whole forgery
+    # quoted as its found side. The mode it spells out is not reported at all —
+    # the seeded run's mode is in fact the preview's own, so there is nothing to say.
+    assert _refusal_sides(err, "foreign_authority") == ("absent", repr(forgery))
+    assert own["mode"] == "propose"
+    with pytest.raises(AssertionError, match="the refusal states no 'mode' difference"):
+        _refusal_sides(err, "mode")
 
 
 def _the_previews_own_history(root, capsys):
