@@ -227,9 +227,15 @@ a valid decision receipt.
   (create/open a run with a frozen config, propose one dispatch, print the canonical preview
   with its preview_digest) and prepares, executes and spawns nothing; (3) the preview's run id
   is fixed, so it can find a run it never created — the existing run is now replayed read-only
-  and held against the module's frozen envelope and configuration before any append, and one
-  that disagrees on any field is refused with exit 1, an empty stdout and its append-only
-  history byte for byte untouched. That third is the same class as the first: check the state
-  you found against the frozen identity, never work from it. Execution remains disabled until
-  the owned-process runner and Confirm authorization are green. Not marked Complete: external
-  APPROVE from Codex is not yet given.
+  and held against the module's frozen envelope and configuration, and against the history the
+  preview itself would have written, before any append; one that disagrees on any point is
+  refused with exit 1, an empty stdout and its append-only history byte for byte untouched.
+  That third is the same class as the first: check the state you found against the frozen
+  identity, never work from it. Internal review of d25ea05 then closed four more: the refusal
+  tests now pin which side of each difference is whose rather than that both words appear; a
+  pair of unreachable, coupled envelope-equality lines the docstring called the authority are
+  gone, leaving the sentinel walk as the authority it always was; `preview._shown` is renamed
+  away from `doctor._shown`'s opposite guarantee; and the found run's recorded history — the
+  journal and `decisions/` alike — is the check named above, which was the last piece of found
+  state nothing held. Execution remains disabled until the owned-process runner and Confirm
+  authorization are green. Not marked Complete: external APPROVE from Codex is not yet given.
