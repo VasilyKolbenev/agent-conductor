@@ -262,9 +262,30 @@ a valid decision receipt.
   inside its own append is not a requirement it has, and a tail is evidence of what some writer
   intended, never of which writer it was. The price is stated rather than hidden, in the module
   docstring and in the refusal itself: a run left with a ragged tail will never open in this
-  preview again, and a human must delete its run directory by hand. The immutability guard is now
-  a snapshot of every durable file in the run directory, by relative path and bytes, instead of a
-  digest of `records.jsonl` alone, so a leaked `.tmp` or an edited `decisions/` receipt would be
-  caught too; every earlier refusal test was moved onto it. Execution remains disabled until the
-  owned-process runner and Confirm authorization are green. Not marked Complete: external APPROVE
-  from Codex is not yet given.
+  preview again, and a human must delete its run directory by hand. Codex's re-review of that fix
+  found the shipped refusal unbreakable and its evidence short in four places, all now closed.
+  The immutability guard every refusal leans on — widened from a digest of `records.jsonl` to a
+  snapshot of every durable file — was inert: narrowing it back left the whole preview suite
+  green, because no production path here leaks a `.tmp` or edits a receipt, and the one staging
+  artifact this command can leak is minted at `conductor/runs/.preview-run.<rand>/`, one level
+  ABOVE the run directory the snapshot was rooted at. It is now rooted at `conductor/runs`, and a
+  test plants a file at each path its docstring names and requires the snapshot to report it. The
+  same review's second door is closed in production rather than in prose: `RunStore.read` opens
+  four names, so a `.records.jsonl.<rand>.tmp` — the residue of a writer that died inside its own
+  publish — replayed as a flawless, warning-free history and was ADOPTED, exit 0 and the proposal
+  appended. Any file under the run directory the store does not own now refuses it on the same
+  ground a tail does. Two guards that broke silently under review are permanent tests: the
+  refusal's remedy sentence, which is the whole mitigation for the price above and could be
+  deleted or blurred off the run's full path with everything green, is now held by a test that
+  takes the path from the store and carries the remedy out — delete that directory, rerun, and
+  the journal comes back byte for byte a genuine one; and a replay reporting TWO warnings, which
+  no fixture produced, so naming only the first was green. One false universal in the prose was
+  narrowed: not every warning names bytes the replay left out of what it returned, because an
+  orphan `decisions/` receipt is replayed into the records. Carried with them, a pre-existing
+  durability defect the same argument rests on: `_append_bytes` opened the journal without
+  `O_BINARY`, so on Windows the CRT turned every LF into CRLF and the durable line was one CR
+  longer than the bytes the store composed, while `run.json`, `config.json` and every receipt,
+  staged through `mkstemp`, were not — two durable spellings of one record, and a run directory
+  not byte-identical between platforms. Execution remains disabled until the owned-process runner
+  and Confirm authorization are green. Not marked Complete: external APPROVE from Codex is not
+  yet given.
