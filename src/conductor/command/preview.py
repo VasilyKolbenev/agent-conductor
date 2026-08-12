@@ -26,21 +26,31 @@ preview never wrote and must not append to. Reopening the preview's own run
 stays free: the proposal is immutable and identical, so the store recognises the
 retry and writes nothing.
 
-A fourth thing is held, and it is held over the replay itself rather than over
-any fact in it: a read-only replay that reports ANY warning refuses the run.
-`RunStore.read` warns instead of repairing -- a journal ending mid-record keeps
-those bytes where they lie and they appear in no replayed record -- so a run can
-replay as a history this preview is allowed to resume while still carrying bytes
-nobody has judged. Appending would send them through the repairing store, which
-truncates them: durable bytes this preview never wrote, deleted by it. No
-incomplete tail is adopted as the preview's own, not even one that is a byte
-prefix of the record this preview would itself have written, because a tail is
-evidence of what some writer intended and never of which writer it was.
+A fourth thing is held, and it is held over the run's own durable bytes rather
+than over any fact the replay states: nothing unjudged may be lying in the run
+directory. `RunStore.read` warns instead of repairing -- a journal ending
+mid-record keeps those bytes where they lie and they appear in no replayed
+record -- so a run can replay as a history this preview is allowed to resume
+while still carrying bytes nobody has judged. Appending would send them through
+the repairing store, which truncates them: durable bytes this preview never
+wrote, deleted by it. So ANY warning refuses the run. No incomplete tail is
+adopted as the preview's own, not even one that is a byte prefix of the record
+this preview would itself have written, because a tail is evidence of what some
+writer intended and never of which writer it was.
 
-The price is real and is not hidden: a run left with an incomplete tail can
-never be opened by this preview again. Nothing here will repair it, so a human
-must delete the run directory -- `conductor/runs/preview-run` beneath whatever
-`--dir` names, e.g. `rm -r ./conductor/runs/preview-run` (PowerShell:
+A warning is only the half of that the store can see. `read` opens four names --
+`run.json`, `config.json`, `records.jsonl` and `decisions/*.json` -- so a
+`.records.jsonl.<rand>.tmp`, the residue of a writer that died inside its own
+publish, replays as a flawless history with nothing at all to report. Any other
+file under the run directory refuses it too, on the same ground and without a
+warning to announce it: this preview did not write that file and cannot say
+whether its writer is finished with it.
+
+The price is real and is not hidden: a run left with an incomplete tail, or with
+a file the store does not own, can never be opened by this preview again.
+Nothing here will repair it, so a human must delete the run directory --
+`conductor/runs/preview-run` beneath whatever `--dir` names, e.g.
+`rm -r ./conductor/runs/preview-run` (PowerShell:
 `Remove-Item -Recurse .\\conductor\\runs\\preview-run`) -- and rerun the
 preview, which then creates the run afresh. The refusal names that directory by
 its full path for exactly that reason: a dead end nobody is told about is a bug
@@ -166,6 +176,69 @@ def _history(records: tuple[StoredRecord, ...]) -> tuple[str, ...]:
         for row in records)
 
 
+#: The only names `RunStore.read` opens directly beneath a run directory.
+_STORE_OWNED_FILES = frozenset({"run.json", "config.json", "records.jsonl"})
+
+#: The one directory the store owns, and the only suffix it reads inside it.
+_RECEIPTS_DIR, _RECEIPT_SUFFIX = "decisions", ".json"
+
+
+def _unowned_files(run_path: Path) -> tuple[str, ...]:
+    """Name every durable file under the run directory the run store does not own.
+
+    Directories are not named: a directory holds no bytes, and a file inside one
+    is reached by this walk under its own relative name. The `decisions/` check
+    is on the parent rather than on the path's first part, so a receipt-looking
+    name nested deeper than the store ever writes is still named here.
+    """
+    receipts = run_path / _RECEIPTS_DIR
+    unowned = []
+    for path in sorted(run_path.rglob("*")):
+        if not path.is_file():
+            continue
+        name = path.relative_to(run_path).as_posix()
+        owned = (
+            name in _STORE_OWNED_FILES
+            or (path.parent == receipts and path.suffix == _RECEIPT_SUFFIX))
+        if not owned:
+            unowned.append(name)
+    return tuple(unowned)
+
+
+def _unjudged_bytes(found: RecoveredRun, run_path: Path) -> tuple[str, ...]:
+    """Name the durable bytes this run holds that no reader here may resolve.
+
+    These are read off the run itself rather than out of the replayed facts,
+    because they are the one thing those facts cannot say.
+
+    A warning can mean the run holds durable bytes the read-only replay declined
+    to touch and left out of what it returned -- an incomplete journal tail is
+    such a warning, and it is why the facts compared elsewhere can be complete
+    and matching while the run itself is not the one they describe. Not every
+    warning is of that shape; an orphan `decisions/` receipt is replayed into the
+    records and disagrees on history too. Every warning counts all the same,
+    whatever it says: it is the store reporting bytes only a writer may resolve,
+    and this preview is not that run's writer.
+
+    A file the store does not own is that same class reached without a warning at
+    all, because no reader looked: `read` opens four names, so a
+    `.records.jsonl.<rand>.tmp` left by a writer that crashed inside its own
+    publish replays as a flawless history. It is named here for the reason a tail
+    is -- this preview did not write it and cannot say whether it is finished.
+    """
+    unjudged = [f"replay: {warning}" for warning in found.warnings]
+    unjudged.extend(
+        f"files: {name!r} is not a file this run's store writes, so only its "
+        "writer can say whether it is finished"
+        for name in _unowned_files(run_path))
+    if unjudged:
+        unjudged.append(
+            "remedy: resolving those bytes is their writer's to do and not this "
+            f"preview's, so this run will never open here again; delete {run_path} "
+            "by hand and rerun the preview to get a fresh one")
+    return tuple(unjudged)
+
+
 def _run_differences(
         found: RecoveredRun, expected: RunEnvelope, run_path: Path) -> tuple[str, ...]:
     """Name every fact on which a found run disagrees with the preview's frozen one.
@@ -188,14 +261,9 @@ def _run_differences(
     holding anything else — a journal line or a `decisions/` receipt this
     preview never minted — is a history it must not append to.
 
-    The replay's warnings are a disagreement in their own right, and they are
-    read here rather than in the comparisons above because they are the one
-    thing the replayed facts cannot say. A warning means the run holds durable
-    bytes the read-only replay declined to touch and left out of what it
-    returned — so the facts compared above are complete and matching while the
-    run itself is not the one they describe. Every warning counts, whatever it
-    says: it is the store reporting bytes only a writer may resolve, and this
-    preview is not that run's writer.
+    Everything above is a fact stated by the replay. What `_unjudged_bytes` adds
+    is the disagreement no replayed fact can state: durable bytes lying in the
+    run that only their writer may resolve.
     """
     found_row, expected_row = found.envelope.as_dict(), expected.as_dict()
     differences = [
@@ -211,12 +279,7 @@ def _run_differences(
         differences.append(
             f"history: expected nothing yet or [{_OWN_LINE}], "
             f"found [{', '.join(history)}]")
-    if found.warnings:
-        differences.extend(f"replay: {warning}" for warning in found.warnings)
-        differences.append(
-            "replay: repairing that is the writing store's to do and not this "
-            f"preview's, so this run will never open here again; delete {run_path} "
-            "by hand and rerun the preview to get a fresh one")
+    differences.extend(_unjudged_bytes(found, run_path))
     return tuple(differences)
 
 

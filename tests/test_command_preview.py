@@ -512,3 +512,41 @@ def test_preview_refuses_its_own_completed_run_whose_journal_ends_mid_record(
             == [row.value for row in RunStore(tmp_path / "own").read("preview-run").records])
     err = _refuses_and_leaves_the_run_directory_untouched(tmp_path, capsys)
     assert found.warnings and all(warning in err for warning in found.warnings)
+
+
+#: Files a run directory can hold that `RunStore.read` never opens: it reads
+#: `run.json`, `config.json`, `records.jsonl` and `decisions/*.json` and nothing
+#: else. The first is the signature of a writer that crashed inside its own
+#: publish — the same unfinished durable bytes an incomplete tail is, reaching the
+#: preview without a warning to announce them, because no reader looked.
+_UNOWNED_FILES = {
+    "a staging file a crashed writer left inside the run":
+        ".records.jsonl.7f3a.tmp",
+    "a foreign file beside the journal": "stray.bin",
+    "a non-receipt file under decisions/": "decisions/notes.txt",
+}
+
+
+@pytest.mark.parametrize("planted", sorted(_UNOWNED_FILES))
+def test_preview_refuses_a_run_holding_a_file_the_store_does_not_own(
+        planted, tmp_path, capsys):
+    """Unjudged durable bytes reach the preview without a warning when nobody reads them.
+
+    The warning check above catches unfinished bytes the store SAW and declined to
+    touch. These are unfinished bytes the store never looked at: `read` opens four
+    names and no others, so a `.records.jsonl.<rand>.tmp` — exactly what a writer
+    that died inside `_exclusive_bytes` or `_replace_bytes` leaves — replays as a
+    flawless, permitted, warning-free history. Adopting that run is the same class
+    MAJOR-B closes, reached by a door the replay cannot see through.
+    """
+    _seed_run_at_the_previews_identity(
+        tmp_path, cycle_id="preview-orbit", config=preview.FROZEN_CONFIG, mode="propose")
+    name = _UNOWNED_FILES[planted]
+    tmp_path.joinpath("conductor", "runs", "preview-run", *name.split("/")).write_bytes(
+        b"bytes only their writer can finish")
+    # Every fact the replay can state is one the preview may resume: the empty
+    # history it created for itself, and not one warning. The file alone refuses.
+    found = RunStore(tmp_path).read("preview-run")
+    assert found.records == () and found.warnings == ()
+    err = _refuses_and_leaves_the_run_directory_untouched(tmp_path, capsys)
+    assert repr(name) in err
