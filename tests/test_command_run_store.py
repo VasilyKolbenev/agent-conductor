@@ -631,6 +631,42 @@ def test_the_journal_holds_the_exact_bytes_the_store_composed_for_each_record(tm
     assert b"\r" not in journal
 
 
+def test_a_journal_whose_records_end_crlf_replays_and_re_appends_without_a_byte_moving(
+        tmp_path):
+    """The spelling this store itself left on Windows before it opened the journal binary.
+
+    Until `_append_bytes` passed `O_BINARY`, the CRT translated every LF written
+    through that descriptor, so a run recorded by an earlier build carries a
+    journal whose every record ends CR LF. Those runs replay today for one reason:
+    `bytes.splitlines()` treats CR LF as one terminator and hands the parser the
+    same bytes the store composed. Nothing held that reason. Spelling the split as
+    `split(b"\\n")` leaves a CR on the end of every line and an empty final element,
+    which is corruption on the very first record -- and the whole suite stayed
+    green, because every other run in it was written by this build.
+
+    Both halves are held, because a reader that survives is only half of
+    compatibility: such a journal must also be recognised as already holding the
+    record, so appending it again writes nothing and the old spelling is never
+    half-rewritten into the new one under a run nobody asked to convert.
+    """
+    store = RunStore(tmp_path)
+    store.create_run(a_run(), CONFIG)
+    store.append(an_action())
+    store.append(evidence())
+    journal = store.run_path("run-001") / "records.jsonl"
+    old = journal.read_bytes().replace(b"\n", b"\r\n")
+    assert old.count(b"\r\n") == 2 and old != journal.read_bytes()
+    journal.write_bytes(old)
+
+    replayed = RunStore(tmp_path).read("run-001")
+    assert [row.value for row in replayed.records] == [an_action(), evidence()]
+    assert replayed.warnings == ()
+    # The retry is recognised through the old spelling, so nothing is appended and
+    # the durable bytes are the ones this test found there.
+    assert RunStore(tmp_path).append(an_action()) is False
+    assert journal.read_bytes() == old
+
+
 def test_run_path_accepts_only_contract_ids(tmp_path):
     store = RunStore(tmp_path)
     with pytest.raises(StoreError, match="run_id"):
