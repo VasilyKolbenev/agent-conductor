@@ -400,18 +400,20 @@ def _unreplayable_refusal(run_path: Path, error: StoreError) -> str:
 
 
 def _uncreatable_refusal(run_path: Path, error: Exception) -> str:
-    """Refuse when the store cannot create the run at all, leaving nothing behind.
+    """Refuse when the store cannot create the run at all.
 
     Reached when `create_run` fails below `RunExists` -- for example something
-    other than a directory standing at `conductor/runs` -- so no run directory
-    exists and none was made. The contract facts are still owed and still
-    stated: the exact path the run would occupy, and that nothing was changed.
+    other than a directory standing at `conductor/runs`. The call may have
+    made parent directories before it failed, so the message does not claim
+    the preview created nothing at all; the claim owed and stated is exact and
+    narrower: the path the run would occupy, and that nothing in the run
+    directory at that path was changed.
     """
     return _refusal(
         f"run {_RUN_ID!r} cannot be created, so nothing was proposed:",
         (f"detected: {str(error)!r}",
          f"run directory: {str(run_path)!r}",
-         "the preview created nothing and changed nothing in the run directory"))
+         "the preview changed nothing in the run directory"))
 
 
 def _check_found_run(store: RunStore, envelope: RunEnvelope) -> None:
