@@ -298,9 +298,11 @@ def test_preview_refuses_a_run_at_its_identity_frozen_on_another_config(tmp_path
     err = _refuses_and_leaves_the_history_untouched(tmp_path, journal, capsys)
     # Both digests are named, and neither is written down here: one comes from the
     # module's constant, the other from the configuration replayed off disk.
-    assert "config" in err
     assert snapshot_digest(preview.FROZEN_CONFIG) in err
     assert snapshot_digest(_FOREIGN_CONFIG) in err
+    # And the configuration itself is reported as differing, in its own entry —
+    # `config_digest` alone would mean the refusal rested on sha256 and nothing else.
+    assert re.search(r"(^|; )config: ", err) and "config_digest" in err
 
 
 def test_preview_refuses_a_run_at_its_identity_opened_in_another_mode(tmp_path, capsys):
