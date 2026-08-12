@@ -603,6 +603,34 @@ def test_replay_refuses_durable_bytes_that_break_a_relation_the_run_already_reco
         store.append(an_action(action_id="action-late", idempotency_key="dispatch-late"))
 
 
+def test_the_journal_holds_the_exact_bytes_the_store_composed_for_each_record(tmp_path):
+    """The durable journal is the canonical record, not the platform's spelling of it.
+
+    `_append_bytes` opened the journal without `O_BINARY`, so on Windows the CRT
+    translated every LF on the way out and each appended line landed one CR longer
+    than the bytes the store composed. Nothing failed: `bytes.splitlines()` eats
+    that CR before the canonicality check, so every replay stayed green while the
+    same run directory was not byte-identical between platforms — and `run.json`,
+    `config.json` and every `decisions/*.json`, all staged through `mkstemp`,
+    which sets the flag, already carried the composed bytes. Two durable spellings
+    of one record is one too many when the store's whole argument is durable bytes.
+
+    Held against the canonical line this module spells out for itself rather than
+    against a replay: a re-parse cannot tell the two spellings apart, which is
+    exactly why this went unnoticed.
+    """
+    store = RunStore(tmp_path)
+    store.create_run(a_run(), CONFIG)
+    store.append(an_action())
+    store.append(evidence())
+    journal = (store.run_path("run-001") / "records.jsonl").read_bytes()
+    assert journal == (
+        canonical_line({"record": an_action().as_dict(), "record_type": "action_request"})
+        + canonical_line({"record": evidence().as_dict(), "record_type": "evidence"})
+    ).encode("utf-8")
+    assert b"\r" not in journal
+
+
 def test_run_path_accepts_only_contract_ids(tmp_path):
     store = RunStore(tmp_path)
     with pytest.raises(StoreError, match="run_id"):

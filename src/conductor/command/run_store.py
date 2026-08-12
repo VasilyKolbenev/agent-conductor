@@ -175,10 +175,19 @@ def _exclusive_bytes(path: Path, payload: bytes) -> None:
             pass
 
 
+#: Windows opens a descriptor in text mode unless told otherwise, and the CRT
+#: then translates every LF written through it into CRLF. `tempfile.mkstemp`
+#: already sets this flag for the staged writes, so without it here the two
+#: durable spellings of one record would differ by a CR each: the journal line is
+#: appended, while `run.json`, `config.json` and every `decisions/*.json` are
+#: staged. Absent on POSIX, where `getattr` supplies the no-op 0.
+_O_BINARY = getattr(os, "O_BINARY", 0)
+
+
 def _append_bytes(path: Path, payload: bytes) -> None:
     fd: int | None = None
     try:
-        fd = os.open(path, os.O_WRONLY | os.O_APPEND)
+        fd = os.open(path, os.O_WRONLY | os.O_APPEND | _O_BINARY)
         _write_all(fd, payload)
         os.fsync(fd)
     finally:
