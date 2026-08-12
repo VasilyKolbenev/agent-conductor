@@ -324,6 +324,35 @@ def test_preview_reopens_its_own_run_without_appending_a_second_proposal(tmp_pat
     assert journal.read_bytes() == written
 
 
+def test_preview_resumes_a_run_of_its_own_that_was_created_but_never_appended_to(
+        tmp_path, capsys):
+    """A run this preview created and then died before appending into is still its own.
+
+    `create_run` publishes the envelope, the frozen config and an EMPTY journal in
+    one exclusive step, so the window between creating the run and appending the
+    proposal leaves exactly this on disk — the crash the run store is built to
+    survive. It is one of the two histories the preview may own; the other, the
+    completed one, is held by the reopen test above. Held apart from that one
+    because the two are separate alternatives in the same authority: without this,
+    dropping "nothing yet" would turn every half-written preview run into a
+    permanent refusal at a fixed id, and no test would feel the difference.
+    """
+    # The expected stdout comes from a fresh directory the seeded run never touches:
+    # what a resumed run must print is what production prints with nothing found.
+    assert main(["preview", "--dir", str(tmp_path / "fresh")]) == 0
+    fresh = capsys.readouterr().out
+    journal = _seed_run_at_the_previews_identity(
+        tmp_path, cycle_id="preview-orbit", config=preview.FROZEN_CONFIG, mode="propose")
+    assert journal.read_bytes() == b""
+    assert main(["preview", "--dir", str(tmp_path)]) == 0
+    captured = capsys.readouterr()
+    # Resumed, not refused and not restarted: the same canonical preview, and the
+    # one proposal the empty journal was still owed, appended into the found run.
+    assert captured.err == ""
+    assert captured.out == fresh
+    assert len(journal.read_bytes().splitlines()) == 1
+
+
 def test_preview_refuses_a_run_at_its_identity_that_belongs_to_another_cycle(tmp_path, capsys):
     own = _the_previews_own_envelope(tmp_path / "own", capsys)
     journal = _seed_run_at_the_previews_identity(
