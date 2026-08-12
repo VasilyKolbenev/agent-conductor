@@ -51,6 +51,23 @@ _TEMPLATE_BULLET_RE = re.compile(r"^- \*\*`--template NAME`\*\*.*?(?=^\S|\Z)",
 #: the sub-list cannot pass for a name.
 _TEMPLATE_NAME_RE = re.compile(r"^ +- `([a-z][a-z0-9-]*)` — ", re.M)
 
+#: The usage line the release smoke quotes as what `conduct --help` prints, and
+#: which its own step 2 calls a blocker when it does not match.
+_SMOKE_USAGE_RE = re.compile(r"^usage: conduct \[-h\] \{([^{}]*)\} \.\.\.$", re.M)
+
+#: How many steps the release smoke declares it has, and the step headings it
+#: then writes. The count is spelled out in words in a sentence a person reads,
+#: so the spellings a step count could plausibly take are mapped below; one this
+#: map does not know fails the guard rather than passing it quietly.
+_SMOKE_COUNT_RE = re.compile(r"^(\w+) steps, in order\.", re.M)
+_SMOKE_STEP_RE = re.compile(r"^## (\d+)\. ", re.M)
+_NUMBER_WORDS = {
+    word: value for value, word in enumerate((
+        "zero", "one", "two", "three", "four", "five", "six", "seven", "eight",
+        "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen",
+        "sixteen", "seventeen", "eighteen", "nineteen", "twenty"))
+}
+
 
 def readme_template_names() -> set[str]:
     """Every template name the README's `--template` bullet offers a reader."""
@@ -70,6 +87,13 @@ def subcommands() -> set[str]:
                 if isinstance(a, argparse._SubParsersAction)]
     assert len(choosers) == 1, choosers
     return set(choosers[0].choices)
+
+
+def smoke_usage_commands() -> set[str]:
+    """The exact subcommand list the release smoke says `conduct --help` prints."""
+    usage = _SMOKE_USAGE_RE.search(SMOKE.read_text(encoding="utf-8"))
+    assert usage, "the release smoke no longer quotes conduct's usage line"
+    return set(usage.group(1).split(","))
 
 
 def named_in(path: Path) -> set[str]:
@@ -110,6 +134,32 @@ def test_the_release_smoke_exercises_every_subcommand_the_release_ships():
     # command published untried.
     assert subcommands() <= named_in(SMOKE), \
         sorted(subcommands() - named_in(SMOKE))
+
+
+def test_the_usage_line_the_release_smoke_quotes_is_the_parsers_own_command_list():
+    # The guards above are satisfied by a mention anywhere in the file, which is
+    # how the quoted usage line went on listing seven commands after `preview`
+    # shipped as the eighth. This one holds the EXACT list step 2 tells the
+    # reader to expect "no more, no fewer" against the list argparse would print,
+    # so the two cannot drift in either direction.
+    quoted, real = smoke_usage_commands(), subcommands()
+    assert quoted == real, {"only in the document": sorted(quoted - real),
+                            "only in the CLI": sorted(real - quoted)}
+
+
+def test_the_release_smoke_declares_the_number_of_steps_it_actually_writes():
+    # The document opens by telling a reader how many steps to expect and closes
+    # by calling any mismatch with what it does a release blocker, so its own
+    # count is a claim like every other. It said ten while writing eleven.
+    text = SMOKE.read_text(encoding="utf-8")
+    declared = _SMOKE_COUNT_RE.search(text)
+    assert declared, "the release smoke no longer says how many steps it has"
+    word = declared.group(1).casefold()
+    assert word in _NUMBER_WORDS, f"unmapped step-count spelling {word!r}"
+    steps = [int(number) for number in _SMOKE_STEP_RE.findall(text)]
+    # Numbered 1..N with no gap, so counting the headings counts the steps.
+    assert steps == list(range(1, len(steps) + 1)), steps
+    assert _NUMBER_WORDS[word] == len(steps)
 
 
 def test_every_template_name_the_readme_lists_is_one_conduct_init_accepts():

@@ -6,7 +6,7 @@ already runs in CI, and this procedure exists to check the things a suite cannot
 built artifact installs, that the console script appears on PATH, that the panel answers a
 real browser request on a real socket, and that it answers on loopback and nowhere else.
 
-Ten steps, in order. Every one of them names what you must see. A step whose output does not
+Eleven steps, in order. Every one of them names what you must see. A step whose output does not
 match is a release blocker, not a note for later.
 
 **Shell.** The commands below are Windows PowerShell, because that is the shell the procedure
@@ -55,7 +55,7 @@ you are shipping.
 Expect exit 0, and this list of subcommands — no more, no fewer:
 
 ```
-usage: conduct [-h] {validate,init,doctor,prompt,report,up,demo} ...
+usage: conduct [-h] {validate,init,doctor,prompt,report,preview,up,demo} ...
 ```
 
 If a subcommand you expected is missing, the wheel is not built from what you think it is.
