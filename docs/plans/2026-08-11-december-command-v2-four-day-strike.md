@@ -316,3 +316,34 @@ a valid decision receipt.
   the old spelling is never half-rewritten. Execution remains disabled until the owned-process
   runner and Confirm authorization are green. Not marked Complete: external APPROVE from Codex is
   not yet given.
+- **CMD-4 round 4 — owner decision 2026-08-12: the remediation contract is narrowed.** This
+  supersedes the round-3 two-road remedy taxonomy recorded above, which stays as what WAS.
+  Refusals no longer classify a run into locally-fixable and irresolvable, compute no minimal
+  deletion set, and give no advice to move or delete a file, a receipt, or the whole run —
+  accuracy over pseudo-actionability, because naming the wrong object to destroy is worse than
+  naming none. Every refusal that declines a run directory the preview found or failed to read,
+  and every store-level creation failure, now holds six points by execution: exit 1; an empty
+  stdout; the run tree byte for byte and structurally unchanged, links included; stderr naming
+  what was reliably detected, the exact preview-run path and the exact paths of foreign objects
+  where they are reliably established, and stating in so many words that the preview changed
+  nothing in the run directory; no remediation promise and no destructive command; and, where
+  StoreError/CorruptRun prevents establishing what a local object is, the stated limit — no safe
+  automatic remediation is defined; preserve the run and investigate it separately. Closed with
+  it, each established by execution first: an NTFS junction inside the run answered `is_dir()`
+  True and `is_symlink()` False and `rglob` recursed straight through it, so an empty-target
+  junction was silently ADOPTED — exit 0, proposal appended — and a populated one was named by
+  paths that lie outside the run; the walk now names a symlink or junction by its own exact path
+  and never steps through one, on the junction's reparse tag, which needs no privilege to plant.
+  A FILE standing at the run's own path was reported as "run 'preview-run' does not exist" — the
+  exact opposite of the truth — and a FILE at `conductor/runs` was an uncaught traceback; both
+  are contract refusals now, and StoreError/CorruptRun raised by `store.read` inside the
+  RunExists branch no longer bypasses the contract facts through the module-level catch. The
+  message circuit lives in `tests/test_command_preview_refusal_contract.py` — self-contained,
+  its immutability snapshot a test-local walk over bytes, structure and link targets, its
+  expected paths computed from the fixture root, never from the production function under test —
+  and the old remedy-text tests were reworked into behavioral regressions of the system property
+  the advice traded on: out-of-band removal of exactly the foreign object, or of the whole run,
+  still reopens or recreates it with every surviving record intact. The service-level refusal
+  road (unknown instance / adapter mismatch after a fresh creation) keeps its own words and
+  carries no changed-nothing claim, which belongs only where it is byte-for-byte true. Status
+  unchanged: external APPROVE from Codex is not yet given.
