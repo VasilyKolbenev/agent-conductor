@@ -520,4 +520,4 @@ class ProcessAdapter:
             detail="the owned-process adapter observes the process outcome only; it "
                    "holds no independent check of the requested effect",
             evidence_refs=())
-    argument_schema = "structured-process-v1"
+    argument_schemas = {DISPATCH_CAPABILITY: "structured-process-v1"}

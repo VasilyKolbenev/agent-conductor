@@ -284,13 +284,8 @@ def test_every_value_module_of_the_sdk_package_imports_only_the_allowed_value_mo
         assert "__import__" not in name_calls
 
 
-def test_no_public_registry_method_ever_drives_an_adapter_side_effect_seam():
-    """Behavioral closure for the execution ban: run an adapter whose execute and
-    verify (and, via __getattr__, any other seam called under any name) record every
-    call through EVERY public registry method over the whole capability set, and prove
-    the recorders stay empty.  This holds no matter what name a method is called by or
-    whether its result is swallowed -- the property the AST name-read below cannot see.
-    """
+def test_registry_value_and_prepare_doors_do_not_drive_execute_or_verify():
+    """Only the explicitly called execute/verify wrappers reach effect seams."""
     calls: list[str] = []
     adapter = RecordingAdapter(calls)
     registry = AdapterRegistry()
@@ -304,26 +299,17 @@ def test_no_public_registry_method_ever_drives_an_adapter_side_effect_seam():
     assert calls == []
 
 
-def test_reading_the_registry_source_finds_no_literal_execute_call_and_only_six_doors():
-    """A cheap SECOND signal that reads the source for a literal `.execute` call and the
-    public method list; the behavioral guard above is what actually closes the class.
-    """
+def test_registry_public_surface_names_the_two_explicit_effect_wrappers():
     tree = ast.parse(Path(adapter_base.__file__).resolve().read_text(encoding="utf-8"))
     registry = next(
         node for node in ast.walk(tree)
         if isinstance(node, ast.ClassDef) and node.name == "AdapterRegistry")
-    executing = {
-        node.func.attr
-        for node in ast.walk(registry)
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
-    }
-    assert "execute" not in executing
     public = sorted(
         node.name for node in registry.body
         if isinstance(node, ast.FunctionDef) and not node.name.startswith("_"))
     assert public == [
-        "controls", "manifests", "observe", "prepare", "register", "resolve",
-        "validate_arguments"]
+        "controls", "execute", "manifests", "observe", "prepare", "register",
+        "resolve", "validate_arguments", "verify"]
 
 
 def test_observe_calls_only_an_explicit_adapter_and_validates_its_claims():
@@ -400,6 +386,22 @@ def test_registry_rejects_a_prepared_plan_that_changes_identity_or_request():
         adapter_payload={})
     with pytest.raises(AdapterContractError, match="changed the ActionRequest"):
         registry.prepare("claude-code", an_action())
+
+
+def test_registry_reconstructs_prepared_values_and_rejects_foreign_adapter_identity():
+    adapter = FakeAdapter()
+    registry = AdapterRegistry([adapter])
+    approved = an_action()
+    adapter.prepare = lambda request: PreparedAction(
+        adapter_id="foreign-adapter", request=request, adapter_payload={})
+    with pytest.raises(AdapterContractError, match="adapter_id"):
+        registry.prepare("claude-code", approved)
+
+    adapter.prepare = lambda request: PreparedAction(
+        adapter_id="claude-code", request=request, adapter_payload={})
+    prepared = registry.prepare("claude-code", approved)
+    object.__setattr__(prepared.request, "action_id", "mutated-after-return")
+    assert approved.action_id == "action-001"
 
 
 def test_an_adapter_that_rewrites_the_request_in_place_cannot_widen_its_own_authority():
@@ -582,9 +584,11 @@ def test_register_refuses_a_duck_typed_manifest_the_real_type_would_never_admit(
 
 
 def test_an_unknown_argument_schema_cannot_partially_register_an_adapter():
+    class PoisonAdapter(FakeAdapter):
+        argument_schemas = {"dispatch": "unreviewed-side-effecting-schema"}
+
     registry = AdapterRegistry([FakeAdapter("claude-code")])
-    poison = FakeAdapter("poison")
-    poison.argument_schema = "unreviewed-side-effecting-schema"
+    poison = PoisonAdapter("poison")
     before = registry.manifests()
     with pytest.raises(AdapterContractError, match="unknown argument schema"):
         registry.register(poison)
@@ -592,3 +596,53 @@ def test_an_unknown_argument_schema_cannot_partially_register_an_adapter():
     with pytest.raises(AdapterContractError, match="not registered"):
         registry.resolve("poison")
     assert registry.controls("claude-code") == ("observe", "dispatch")
+
+
+def test_a_slotted_protocol_adapter_registers_without_an_instance_dict():
+    class SlottedAdapter:
+        __slots__ = ("manifest",)
+
+        def __init__(self):
+            self.manifest = AdapterManifest(
+                adapter_id="slotted", display_name="Slotted", vendor="Test",
+                version="1", capabilities=("observe",))
+
+        def observe(self, instance_id, run_id):
+            return AdapterObservation(
+                adapter_id="slotted", instance_id=instance_id, run_id=run_id,
+                observed_at=NOW, health="unknown")
+
+        def prepare(self, request):
+            raise AssertionError("unsupported")
+
+        def execute(self, prepared):
+            raise AssertionError("unsupported")
+
+        def verify(self, request, result):
+            raise AssertionError("unsupported")
+
+    registry = AdapterRegistry([SlottedAdapter()])
+    assert registry.controls("slotted") == ("observe",)
+
+
+def test_argument_schema_is_per_capability_and_snapshotted_at_registration():
+    class StructuredAdapter(FakeAdapter):
+        argument_schemas = {"dispatch": "structured-process-v1"}
+
+    adapter = StructuredAdapter()
+    registry = AdapterRegistry([adapter])
+    StructuredAdapter.argument_schemas.clear()
+    with pytest.raises(ValueError, match="literal env values"):
+        registry.validate_arguments(
+            "claude-code", "dispatch",
+            {"argv": ["tool"], "cwd": "work", "env": {"TOKEN": "secret"}})
+    # Observe has no dispatch schema and accepts its own unrelated observation shape.
+    registry.validate_arguments("claude-code", "observe", {"health": "unknown"})
+
+
+def test_argument_validation_normalizes_unknown_adapter_and_capability():
+    registry = AdapterRegistry([FakeAdapter(capabilities=("observe",))])
+    with pytest.raises(AdapterContractError, match="not registered"):
+        registry.validate_arguments("missing", "observe", {})
+    with pytest.raises(UnsupportedCapability, match="dispatch"):
+        registry.validate_arguments("claude-code", "dispatch", {})

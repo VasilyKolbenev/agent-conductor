@@ -1,17 +1,17 @@
 """Adapter contracts and an explicit, non-probing registry.
 
-This module has no process, filesystem, environment, or network door.  It
+This module has no process, filesystem, environment, or network door. It
 validates what a configured adapter claims and exposes only declared
-capabilities.  `AdapterRegistry.prepare` is deliberately the last public
-operation here and no registry method calls `execute`: execution arrives with
-the owned-process runner and Confirm authorization.  `resolve` hands back the
-adapter object the configuration supplied, so a caller holding one can still
-call it directly -- the registry bounds itself, not its callers.
+capabilities. The registry wraps prepare, execute, and verify so each untrusted
+seam receives reconstructed contract values and each return crosses validation
+again. `resolve` still hands back the configured adapter for internal binding;
+the Confirm runtime performs effects only through the wrappers.
 """
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
+from types import MappingProxyType
 from typing import Any, Protocol
 
 from ..contracts import (
@@ -205,7 +205,7 @@ class AdapterVerification:
 
 
 class Adapter(Protocol):
-    """The four adapter seams; only observe and prepare are callable in CMD-3."""
+    """The four adapter seams driven by the Confirm runtime after authorization."""
 
     manifest: AdapterManifest
 
@@ -226,7 +226,7 @@ class AdapterRegistry:
     def __init__(self, adapters: Iterable[Adapter] = ()) -> None:
         self._adapters: dict[str, Adapter] = {}
         self._manifests: dict[str, AdapterManifest] = {}
-        self._argument_schemas: dict[str, str | None] = {}
+        self._argument_schemas: dict[str, Mapping[str, str]] = {}
         for adapter in adapters:
             self.register(adapter)
 
@@ -243,14 +243,22 @@ class AdapterRegistry:
                 f"adapter {manifest.adapter_id!r} is already registered")
         # Keep the reviewed VALUE, not a pointer the adapter can still rewrite.
         reviewed = AdapterManifest(**manifest.as_payload())
-        schema = vars(adapter).get(
-            "argument_schema", getattr(type(adapter), "argument_schema", None))
-        if schema not in (None, "structured-process-v1"):
-            raise AdapterContractError(f"adapter declares unknown argument schema {schema!r}")
+        schemas = getattr(type(adapter), "argument_schemas", {})
+        if not isinstance(schemas, Mapping):
+            raise AdapterContractError("adapter argument_schemas must be a capability mapping")
+        reviewed_schemas: dict[str, str] = {}
+        for capability, schema in schemas.items():
+            if capability not in reviewed.capabilities:
+                raise AdapterContractError(
+                    f"argument schema names undeclared capability {capability!r}")
+            if schema != "structured-process-v1":
+                raise AdapterContractError(
+                    f"adapter declares unknown argument schema {schema!r}")
+            reviewed_schemas[capability] = schema
         # Publish the registration only after every supplied claim validated.
         self._adapters[reviewed.adapter_id] = adapter
         self._manifests[reviewed.adapter_id] = reviewed
-        self._argument_schemas[reviewed.adapter_id] = schema
+        self._argument_schemas[reviewed.adapter_id] = MappingProxyType(reviewed_schemas)
 
     def resolve(self, adapter_id: str) -> Adapter:
         safe = _contract(_id, "adapter_id", adapter_id)
@@ -295,20 +303,61 @@ class AdapterRegistry:
         # adapter that rewrites the caller's object in place cannot satisfy the check
         # by returning the very object both sides would otherwise read.
         authorized = _contract(canonical_json, request)
-        prepared = adapter.prepare(request)
+        handed = ActionRequest.from_dict(request.as_dict())
+        prepared = adapter.prepare(handed)
         if not isinstance(prepared, PreparedAction):
             raise AdapterContractError("prepare must return PreparedAction")
         if prepared.adapter_id != self._registered_manifest(adapter_id).adapter_id:
             raise AdapterContractError("prepared adapter_id does not match the registered adapter")
         if _contract(canonical_json, prepared.request) != authorized:
             raise AdapterContractError("adapter changed the ActionRequest while preparing it")
-        return prepared
+        return PreparedAction(
+            adapter_id=prepared.adapter_id,
+            request=ActionRequest.from_dict(request.as_dict()),
+            adapter_payload=prepared.adapter_payload)
+
+    def execute(
+            self, adapter_id: str, prepared: PreparedAction) -> ActionResultReceipt:
+        """Call execute with a reconstructed request and return a reconstructed receipt."""
+        if not isinstance(prepared, PreparedAction):
+            raise AdapterContractError("execute requires a validated PreparedAction")
+        adapter = self._require(adapter_id, prepared.request.capability)
+        handed = PreparedAction(
+            adapter_id=prepared.adapter_id,
+            request=ActionRequest.from_dict(prepared.request.as_dict()),
+            adapter_payload=prepared.adapter_payload)
+        reported = adapter.execute(handed)
+        if not isinstance(reported, ActionResultReceipt):
+            raise AdapterContractError("execute must return ActionResultReceipt")
+        return ActionResultReceipt.from_dict(reported.as_dict())
+
+    def verify(
+            self, adapter_id: str, request: ActionRequest,
+            result: ActionResultReceipt) -> AdapterVerification:
+        """Call verify with reconstructed facts and return a reconstructed value."""
+        adapter = self._require(adapter_id, request.capability)
+        verification = adapter.verify(
+            ActionRequest.from_dict(request.as_dict()),
+            ActionResultReceipt.from_dict(result.as_dict()))
+        if not isinstance(verification, AdapterVerification):
+            raise AdapterContractError("verify must return AdapterVerification")
+        return AdapterVerification(
+            adapter_id=verification.adapter_id,
+            action_id=verification.action_id,
+            state=verification.state,
+            observed_at=verification.observed_at,
+            detail=verification.detail,
+            evidence_refs=verification.evidence_refs)
 
     def validate_arguments(
             self, adapter_id: str, capability: str, arguments: Mapping[str, Any]) -> None:
         """Run one registry-owned pure schema; never call the mutable adapter."""
         safe = _contract(_id, "adapter_id", adapter_id)
-        if self._argument_schemas[safe] == "structured-process-v1":
+        manifest = self._registered_manifest(safe)
+        if not manifest.supports(capability):
+            raise UnsupportedCapability(
+                f"adapter {safe!r} does not declare capability {capability!r}")
+        if self._argument_schemas[safe].get(capability) == "structured-process-v1":
             validate_dispatch_arguments(arguments)
 
     def _require(self, adapter_id: str, capability: str) -> Adapter:

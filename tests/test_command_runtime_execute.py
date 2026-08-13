@@ -26,7 +26,7 @@ from conductor.command.adapters import (
     AdapterVerification,
     PreparedAction,
 )
-from conductor.command.contracts import ActionResultReceipt
+from conductor.command.contracts import ActionResultReceipt, EvidenceRef
 from conductor.command.run_store import RecordConflict, RunStore
 from conductor.command.runtime import (
     AttemptState,
@@ -41,6 +41,7 @@ from tests.test_command_runtime_authorize import (
     a_confirmation,
     a_proposal,
     a_store,
+    counting_ids,
     fixed_clock,
     fixed_ids,
 )
@@ -55,8 +56,9 @@ class ScriptedAdapter:
     """
 
     def __init__(self, adapter_id="claude-code", *, execute_outcome="succeeded",
-                 verify_state="verified", execute_raises=False, verify_raises=False,
+                 verify_state="unavailable", execute_raises=False, verify_raises=False,
                  foreign_result=False, non_receipt=False,
+                 result_changes=None, verification_changes=None,
                  capabilities=("observe", "dispatch")):
         self.manifest = AdapterManifest(
             adapter_id=adapter_id, display_name="Scripted", vendor="Test",
@@ -67,6 +69,8 @@ class ScriptedAdapter:
         self._verify_raises = verify_raises
         self._foreign_result = foreign_result
         self._non_receipt = non_receipt
+        self._result_changes = dict(result_changes or {})
+        self._verification_changes = dict(verification_changes or {})
         self.prepare_calls = 0
         self.execute_calls = 0
         self.verify_calls = 0
@@ -89,21 +93,28 @@ class ScriptedAdapter:
         if self._non_receipt:
             return "not a receipt"
         req = prepared.request
-        return ActionResultReceipt(
-            receipt_id="adapter-result",
-            action_id="action-other" if self._foreign_result else req.action_id,
-            run_id=req.run_id, attempt_id=req.attempt_id, instance_id=req.instance_id,
-            outcome=self._execute_outcome, observed_at=NOW, exit_code=0)
+        values = {
+            "receipt_id": "adapter-result",
+            "action_id": "action-other" if self._foreign_result else req.action_id,
+            "run_id": req.run_id, "attempt_id": req.attempt_id,
+            "instance_id": req.instance_id, "outcome": self._execute_outcome,
+            "observed_at": NOW, "exit_code": 0,
+        }
+        values.update(self._result_changes)
+        return ActionResultReceipt(**values)
 
     def verify(self, request, result):
         self.verify_calls += 1
         if self._verify_raises:
             raise RuntimeError("scripted verify failure")
         refs = ("scripted-evidence",) if self._verify_state == "verified" else ()
-        return AdapterVerification(
-            adapter_id=self.manifest.adapter_id, action_id=request.action_id,
-            state=self._verify_state, observed_at=NOW, detail="scripted verification",
-            evidence_refs=refs)
+        values = {
+            "adapter_id": self.manifest.adapter_id, "action_id": request.action_id,
+            "state": self._verify_state, "observed_at": NOW,
+            "detail": "scripted verification", "evidence_refs": refs,
+        }
+        values.update(self._verification_changes)
+        return AdapterVerification(**values)
 
 
 def a_runtime(store, adapter, *, clock=None, ids=None):
@@ -123,13 +134,25 @@ def kinds(store, run_id="run-001"):
     return [row.kind for row in store.read(run_id).records]
 
 
+def seed_verified_evidence(store, adapter_id="claude-code", *,
+                           action_id="action-fixed", evidence_id="scripted-evidence"):
+    evidence = EvidenceRef(
+        evidence_id=evidence_id, run_id="run-001", kind="verification",
+        uri=f"verification/{action_id}", label="test-local verified fact",
+        created_by=adapter_id, observed_at=NOW, verification="verified",
+        verified_by=adapter_id, verified_at=NOW)
+    store.append(evidence)
+    return evidence
+
+
 # -- positive path: a verified success records evidence then a succeeded receipt --
 
 def test_a_verified_success_records_evidence_then_a_succeeded_receipt(tmp_path):
     store = a_store(tmp_path)
-    adapter = ScriptedAdapter()
+    adapter = ScriptedAdapter(verify_state="verified")
     runtime, authorization = authorized(store, adapter)
-    assert kinds(store) == ["action_proposal", "action_request"]  # before execute
+    evidence = seed_verified_evidence(store)
+    assert kinds(store) == ["action_proposal", "action_request", "evidence"]
 
     attempt = runtime.execute(authorization)
 
@@ -137,10 +160,9 @@ def test_a_verified_success_records_evidence_then_a_succeeded_receipt(tmp_path):
     assert attempt.history == (
         AttemptState.ACCEPTED, AttemptState.STARTED, AttemptState.SUCCEEDED)
     assert attempt.receipt.outcome == "succeeded"
-    # The verify result is durable evidence the receipt points at, and it is verified.
-    assert attempt.verification_evidence is not None
-    assert attempt.verification_evidence.verification == "verified"
-    assert attempt.receipt.evidence_refs == (attempt.verification_evidence.evidence_id,)
+    # Verification resolves an already-durable fact; it never mints one from prose.
+    assert attempt.verification_evidence == (evidence,)
+    assert attempt.receipt.evidence_refs == (evidence.evidence_id,)
     assert kinds(store) == [
         "action_proposal", "action_request", "evidence", "action_result"]
     assert adapter.execute_calls == 1 and adapter.verify_calls == 1
@@ -157,7 +179,7 @@ def test_a_verify_that_refutes_success_reaches_verification_failed(tmp_path, ver
     assert attempt.state is AttemptState.VERIFICATION_FAILED
     assert attempt.state is not AttemptState.SUCCEEDED
     assert attempt.receipt.outcome == "verification_failed"
-    assert attempt.verification_evidence.verification == verify_state
+    assert attempt.verification_evidence == ()
 
 
 def test_a_verify_that_raises_cannot_confirm_success(tmp_path):
@@ -176,7 +198,7 @@ def test_an_unavailable_verifier_leaves_success_standing_but_unverified(tmp_path
     # The observed process success stands, but nothing is recorded as verified.
     assert attempt.state is AttemptState.SUCCEEDED
     assert attempt.receipt.outcome == "succeeded"
-    assert attempt.verification_evidence is None
+    assert attempt.verification_evidence == ()
     assert attempt.receipt.evidence_refs == ()
     assert "no verifier" in attempt.receipt.detail
     assert "evidence" not in kinds(store)
@@ -242,7 +264,7 @@ def test_the_seven_attempt_states_are_seven_distinct_values():
 
 def test_the_terminal_outcomes_reached_across_scenarios_do_not_collapse(tmp_path):
     scenarios = {
-        "verified": ScriptedAdapter(verify_state="verified"),
+        "succeeded": ScriptedAdapter(verify_state="unavailable"),
         "mismatch": ScriptedAdapter(verify_state="mismatch"),
         "failed": ScriptedAdapter(execute_outcome="failed"),
         "cancelled": ScriptedAdapter(execute_outcome="cancelled"),
@@ -327,6 +349,62 @@ def test_execute_refuses_same_id_with_changed_facts_before_prepare_or_append(tmp
     assert store.run_path("run-001").joinpath("records.jsonl").read_bytes() == before
 
 
+@pytest.mark.parametrize("field,foreign", [
+    ("run_id", "run-foreign"),
+    ("action_id", "action-foreign"),
+    ("attempt_id", "attempt-foreign"),
+    ("instance_id", "instance-foreign"),
+])
+def test_execute_rejects_every_foreign_result_binding_field(
+        tmp_path, field, foreign):
+    store = a_store(tmp_path)
+    adapter = ScriptedAdapter(result_changes={field: foreign})
+    runtime, authorization = authorized(store, adapter)
+    attempt = runtime.execute(authorization)
+    assert attempt.state is AttemptState.UNKNOWN
+    assert attempt.receipt.outcome == "unknown"
+    assert adapter.verify_calls == 0
+
+
+def test_verify_rejects_a_foreign_adapter_identity(tmp_path):
+    store = a_store(tmp_path)
+    adapter = ScriptedAdapter(
+        verify_state="verified",
+        verification_changes={"adapter_id": "foreign-adapter"})
+    runtime, authorization = authorized(store, adapter)
+    seed_verified_evidence(store)
+    attempt = runtime.execute(authorization)
+    assert attempt.state is AttemptState.VERIFICATION_FAILED
+    assert attempt.receipt.evidence_refs == ()
+    assert attempt.verification_evidence == ()
+
+
+@pytest.mark.parametrize("evidence_changes", [
+    {"evidence_id": "different-evidence"},
+    {"uri": "verification/different-action"},
+    {"created_by": "foreign-adapter", "verified_by": "foreign-adapter"},
+    {"verification": "mismatch"},
+])
+def test_verified_claim_requires_each_bound_durable_evidence_relation(
+        tmp_path, evidence_changes):
+    store = a_store(tmp_path)
+    adapter = ScriptedAdapter(verify_state="verified")
+    runtime, authorization = authorized(store, adapter)
+    values = {
+        "evidence_id": "scripted-evidence", "run_id": "run-001",
+        "kind": "verification", "uri": "verification/action-fixed",
+        "label": "test-local fact", "created_by": "claude-code",
+        "observed_at": NOW, "verification": "verified",
+        "verified_by": "claude-code", "verified_at": NOW,
+    }
+    values.update(evidence_changes)
+    store.append(EvidenceRef(**values))
+    attempt = runtime.execute(authorization)
+    assert attempt.state is AttemptState.VERIFICATION_FAILED
+    assert attempt.receipt.evidence_refs == ()
+    assert attempt.verification_evidence == ()
+
+
 def test_direct_execute_refuses_a_hard_linked_journal_before_prepare(tmp_path):
     store = a_store(tmp_path)
     adapter = ScriptedAdapter()
@@ -361,6 +439,113 @@ def test_execute_replays_a_durable_result_without_executing_twice(tmp_path):
     replayed = a_runtime(store, fresh_adapter).execute(authorization)
     assert replayed.receipt == first.receipt
     assert fresh_adapter.execute_calls == 0
+
+
+@pytest.mark.parametrize("evidence_changes", [
+    {"kind": "log"},
+    {"uri": "verification/other-action"},
+    {"created_by": "foreign-adapter", "verified_by": "foreign-adapter"},
+    {"verification": "mismatch"},
+])
+def test_terminal_replay_revalidates_durable_evidence_provenance(
+        tmp_path, evidence_changes):
+    store = a_store(tmp_path)
+    adapter = ScriptedAdapter()
+    runtime, authorization = authorized(store, adapter)
+    values = {
+        "evidence_id": "tampered-evidence", "run_id": "run-001",
+        "kind": "verification", "uri": "verification/action-fixed",
+        "label": "durable but unbound", "created_by": "claude-code",
+        "observed_at": NOW, "verification": "verified",
+        "verified_by": "claude-code", "verified_at": NOW,
+    }
+    values.update(evidence_changes)
+    store.append(EvidenceRef(**values))
+    store.append(ActionResultReceipt(
+        receipt_id="tampered-result", action_id=authorization.request.action_id,
+        run_id="run-001", attempt_id=authorization.request.attempt_id,
+        instance_id=authorization.request.instance_id, outcome="succeeded",
+        observed_at=NOW, evidence_refs=("tampered-evidence",)))
+    fresh = ScriptedAdapter()
+    with pytest.raises(ExecutionError, match="unbound verification evidence"):
+        a_runtime(store, fresh).execute(authorization)
+    assert fresh.prepare_calls == fresh.execute_calls == fresh.verify_calls == 0
+
+
+def test_fresh_runtime_refuses_request_only_history_without_reexecuting(tmp_path):
+    store = a_store(tmp_path)
+    adapter = ScriptedAdapter()
+    runtime, authorization = authorized(store, adapter)
+    before = store.run_path("run-001").joinpath("records.jsonl").read_bytes()
+    fresh_adapter = ScriptedAdapter()
+    with pytest.raises(ExecutionError, match="requires reconciliation"):
+        a_runtime(store, fresh_adapter).execute(authorization)
+    assert fresh_adapter.prepare_calls == fresh_adapter.execute_calls == 0
+    assert store.run_path("run-001").joinpath("records.jsonl").read_bytes() == before
+
+
+def test_post_effect_pre_result_retry_consumes_grant_and_refuses_second_effect(
+        tmp_path, monkeypatch):
+    store = a_store(tmp_path)
+    adapter = ScriptedAdapter()
+    runtime, authorization = authorized(store, adapter)
+    before = store.run_path("run-001").joinpath("records.jsonl").read_bytes()
+
+    def crash_before_result(*args, **kwargs):
+        raise ExecutionError("simulated crash before result append")
+
+    monkeypatch.setattr(runtime, "_finish", crash_before_result)
+    with pytest.raises(ExecutionError, match="simulated crash"):
+        runtime.execute(authorization)
+    assert adapter.execute_calls == 1
+    with pytest.raises(ExecutionError, match="requires reconciliation"):
+        runtime.execute(authorization)
+    assert adapter.execute_calls == 1
+    assert store.run_path("run-001").joinpath("records.jsonl").read_bytes() == before
+
+
+@pytest.mark.parametrize("phase", ["prepare", "execute", "verify"])
+def test_untrusted_in_place_identity_rewrite_cannot_steal_another_authorization(
+        tmp_path, phase):
+    class MutatingAdapter(ScriptedAdapter):
+        target = None
+
+        def _rewrite(self, request):
+            for field in ("run_id", "action_id", "attempt_id", "instance_id"):
+                object.__setattr__(request, field, getattr(self.target, field))
+
+        def prepare(self, request):
+            if phase == "prepare":
+                self._rewrite(request)
+            return super().prepare(request)
+
+        def execute(self, prepared):
+            if phase == "execute":
+                self._rewrite(prepared.request)
+            return super().execute(prepared)
+
+        def verify(self, request, result):
+            if phase == "verify":
+                self._rewrite(request)
+            return super().verify(request, result)
+
+    store = a_store(tmp_path)
+    adapter = MutatingAdapter()
+    runtime = a_runtime(store, adapter, ids=counting_ids())
+    first_proposal = a_proposal(store, proposal_id="proposal-first")
+    first = runtime.authorize(a_confirmation(first_proposal), budget=a_budget())
+    second_proposal = a_proposal(
+        store, proposal_id="proposal-second", attempt_id="attempt-second")
+    second = runtime.authorize(a_confirmation(second_proposal), budget=a_budget())
+    adapter.target = second.request
+
+    attempt = runtime.execute(first)
+    assert attempt.request.action_id == first.request.action_id
+    assert attempt.request.action_id != second.request.action_id
+    results = [row.value for row in store.read("run-001").records
+               if row.kind == "action_result"]
+    assert len(results) == 1 and results[0].action_id == first.request.action_id
+    assert all(result.action_id != second.request.action_id for result in results)
 
 
 def test_prepare_failure_records_unknown_and_never_executes(tmp_path):
@@ -404,6 +589,39 @@ def test_adapter_exception_secrets_never_reach_durable_or_returned_receipts(
     runtime, authorization = authorized(store, SecretAdapter())
     attempt = runtime.execute(authorization)
     assert secret not in str(attempt.receipt.as_dict())
+    assert secret.encode() not in store.run_path("run-001").joinpath(
+        "records.jsonl").read_bytes()
+
+
+@pytest.mark.parametrize("outcome", [
+    "succeeded", "failed", "cancelled", "rejected", "unknown",
+    "verification_failed",
+])
+def test_adapter_result_free_text_never_reaches_attempt_or_durable_state(
+        tmp_path, outcome):
+    secret = f"RESULT-SECRET-{outcome}"
+    store = a_store(tmp_path)
+    adapter = ScriptedAdapter(
+        execute_outcome=outcome,
+        result_changes={"detail": secret})
+    runtime, authorization = authorized(store, adapter)
+    attempt = runtime.execute(authorization)
+    assert secret not in repr(attempt)
+    assert secret.encode() not in store.run_path("run-001").joinpath(
+        "records.jsonl").read_bytes()
+
+
+@pytest.mark.parametrize("state", ["verified", "unavailable", "mismatch", "error"])
+def test_verifier_free_text_never_reaches_attempt_evidence_or_journal(tmp_path, state):
+    secret = f"VERIFY-SECRET-{state}"
+    store = a_store(tmp_path)
+    adapter = ScriptedAdapter(
+        verify_state=state, verification_changes={"detail": secret})
+    runtime, authorization = authorized(store, adapter)
+    if state == "verified":
+        seed_verified_evidence(store)
+    attempt = runtime.execute(authorization)
+    assert secret not in repr(attempt)
     assert secret.encode() not in store.run_path("run-001").joinpath(
         "records.jsonl").read_bytes()
 
