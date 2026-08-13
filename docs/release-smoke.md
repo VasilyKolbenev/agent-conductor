@@ -302,11 +302,11 @@ adapter is touched. Expect the third to exit 1 the same way, its stderr naming `
 and `codex`: the caller's adapter is cross-checked against the binding the frozen config
 declares, never trusted over it.
 
-Expect `conduct confirm` to complete the Day-1 control loop against an in-process fake
+Expect `conduct confirm` to complete the fixed Day-1 loop through the owned-process
 adapter and exit 0: it opens a run under `$PROJ\conductor\runs\control-loop-run`, confirms
 one dispatch, executes it, verifies, and prints a single line of canonical JSON on stdout —
-one immutable `ActionResultReceipt` whose `outcome` is `succeeded`, pointing at the
-verification evidence it recorded. It spawns no process. Run it twice and the line is
+one immutable `ActionResultReceipt` whose `outcome` is `succeeded` and whose empty
+evidence list honestly says the process adapter has no independent verifier. Run it twice and the line is
 byte-identical: the receipt is deterministic, and reopening the run appends nothing.
 
 ## Teardown

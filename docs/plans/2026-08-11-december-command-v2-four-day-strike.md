@@ -578,6 +578,26 @@ All existing v1 and CMD-1..4 regressions stay green.
   2087 passed, 4 skipped (0:02:09) with the three former no-execution-door guards updated in
   lockstep and one confinement guard added.
 
+- **Day-1 A+B integration and hardening — integrated on `codex/v2-day1-integration`.**
+  Lane A and B now meet at one executable CLI gate: `conduct confirm` proposes a fixed
+  structured command, records a fresh Human confirmation, executes the packaged deterministic
+  no-op through `ProcessAdapter`/`ProcessRunner`, reports verification honestly unavailable, and
+  persists one immutable result. A shared command-layer containment engine holds preview,
+  direct `ControlRuntime` entry, and runner cwd routes before replay, prepare, every durable
+  append, and spawn; it refuses symlink, junction, any reparse point, irregular owned files and
+  hard-link aliases. A found control-loop run is checked read-only against contract-derived
+  envelope/config/history prefixes before proposal append. Execution holds the complete durable
+  `ActionRequest`, suppresses a repeated process when an exact terminal result already exists,
+  and treats a request-without-result as ambiguous instead of retrying it. Adapter exceptions
+  persist only phase and exception type, never attacker-controlled text. Public process dispatch
+  persists only structured argv/cwd/output bound and environment variable names; literal env
+  values refuse before proposal append. The Windows child starts suspended and is assigned to a
+  configured kill-on-close Job before resume; every post-Popen construction failure uses bounded
+  kill/wait/close cleanup, and descendant groups are retired before output-pipe join. Accepted
+  limits stay explicit: structural checks are check-then-act rather than an OS sandbox, NTFS ADS
+  is not inspected, and operator `--dir` defines a resolved authority root. Day-2 still owns
+  crash-safe attempt persistence/reconciliation beyond the current fail-closed ambiguous state.
+
 ### 12.4 Day 2 — two deep adapters and the writable Cockpit
 
 Deadline: 2026-08-14 end of day.

@@ -50,7 +50,7 @@ conduct doctor      # says what is not ready and gives the next command
 conduct prompt --role implementer --author claude
 conduct report      # the merged state as Markdown, on stdout
 conduct preview     # propose one dispatch and print its canonical preview (no execution)
-conduct confirm     # run the Day-1 control loop (in-process) and print the result receipt
+conduct confirm     # run the fixed Day-1 owned-process loop and print its receipt
 conduct up          # panel at http://127.0.0.1:7777/
 ```
 
