@@ -117,14 +117,18 @@ def test_exception_type_precedence_distinguishes_store_subclasses():
 
 
 def test_api_refusal_shape_is_exact_and_rejects_secret_or_path_detail_fields():
-    refusal = ApiRefusal(
-        "service_refused", "command service refused the request",
-        {"run_id": "run-001", "instance_id": "instance-001"})
+    refusal = ApiRefusal.fixed(
+        "service_refused", {"run_id": "run-001", "instance_id": "instance-001"})
     assert set(refusal.as_dict()) == {"error"}
     assert set(refusal.as_dict()["error"]) == {"code", "message", "detail"}
     for key in ("csrf_token", "secret", "filesystem_path", "cookie"):
         with pytest.raises(ValueError):
-            ApiRefusal("service_refused", "fixed", {key: "unsafe"})
+            ApiRefusal.fixed("service_refused", {key: "unsafe"})
+
+
+def test_api_refusal_cannot_be_constructed_with_submitted_or_exception_prose():
+    with pytest.raises(ValueError, match="fixed code message"):
+        ApiRefusal("store_error", "APIKEY_SECRET exception prose", {})
 
 
 @pytest.mark.parametrize("parser,name", [

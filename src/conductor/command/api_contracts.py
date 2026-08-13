@@ -91,8 +91,8 @@ class ApiRefusal(Exception):
     def __post_init__(self) -> None:
         if self.code not in ERROR_STATUS:
             raise ValueError("unknown API refusal code")
-        if not isinstance(self.message, str) or not self.message:
-            raise ValueError("API refusal message must be fixed non-empty text")
+        if self.message != _FIXED_MESSAGES[self.code]:
+            raise ValueError("API refusal message must equal the fixed code message")
         if not isinstance(self.detail, Mapping):
             raise ValueError("API refusal detail must be a string mapping")
         copied: dict[str, str] = {}
@@ -189,19 +189,19 @@ class DecisionInput:
 
 def _closed(body: object, fields: frozenset[str]) -> dict[str, Any]:
     if not isinstance(body, Mapping) or any(not isinstance(key, str) for key in body):
-        raise ApiRefusal("contract_invalid", "request body has an invalid shape", {})
+        raise ApiRefusal.fixed("contract_invalid")
     supplied = set(body)
     if supplied != fields:
-        raise ApiRefusal("contract_invalid", "request fields do not match the route", {})
+        raise ApiRefusal.fixed("contract_invalid")
     return dict(body)
 
 
 def _proposal_body(body: object) -> dict[str, Any]:
     if not isinstance(body, Mapping) or any(not isinstance(key, str) for key in body):
-        raise ApiRefusal("contract_invalid", "request body has an invalid shape", {})
+        raise ApiRefusal.fixed("contract_invalid")
     supplied = set(body)
     if not _PROPOSAL_REQUIRED <= supplied <= _PROPOSAL_FIELDS:
-        raise ApiRefusal("contract_invalid", "request fields do not match the route", {})
+        raise ApiRefusal.fixed("contract_invalid")
     return dict(body)
 
 
@@ -209,22 +209,18 @@ def _contract(call, *args, **kwargs):
     try:
         return call(*args, **kwargs)
     except (ContractError, TypeError) as error:
-        raise ApiRefusal(
-            "contract_invalid", "request values do not satisfy the contract", {}) from error
+        raise ApiRefusal.fixed("contract_invalid") from error
 
 
 def _capabilities(values: Iterable[str]) -> frozenset[str]:
     if isinstance(values, (str, bytes)):
-        raise ApiRefusal(
-            "capability_unsupported", "adapter does not support this capability", {})
+        raise ApiRefusal.fixed("capability_unsupported")
     try:
         rows = frozenset(values)
     except TypeError as error:
-        raise ApiRefusal(
-            "capability_unsupported", "adapter does not support this capability", {}) from error
+        raise ApiRefusal.fixed("capability_unsupported") from error
     if any(not isinstance(row, str) for row in rows):
-        raise ApiRefusal(
-            "capability_unsupported", "adapter does not support this capability", {})
+        raise ApiRefusal.fixed("capability_unsupported")
     return rows
 
 
@@ -235,15 +231,13 @@ def _argument_values(capability: str, arguments: Mapping[str, Any]) -> None:
         else:
             valid = isinstance(value, str) and _ID_RE.fullmatch(value) is not None
         if not valid:
-            raise ApiRefusal(
-                "contract_invalid", "capability arguments do not match the schema", {})
+            raise ApiRefusal.fixed("contract_invalid")
 
 
 def _json_array(values: dict[str, Any], name: str) -> list[Any]:
     value = values[name]
     if not isinstance(value, list):
-        raise ApiRefusal(
-            "contract_invalid", "request values do not satisfy the contract", {})
+        raise ApiRefusal.fixed("contract_invalid")
     return value
 
 
@@ -255,13 +249,11 @@ def parse_proposal(
     capabilities = _capabilities(adapter_capabilities)
     if (not isinstance(capability, str) or capability == "observe"
             or capability not in ARGUMENT_SCHEMAS or capability not in capabilities):
-        raise ApiRefusal(
-            "capability_unsupported", "adapter does not support this capability", {})
+        raise ApiRefusal.fixed("capability_unsupported")
     arguments = values["arguments"]
     if not isinstance(arguments, Mapping) or set(arguments) != set(
             ARGUMENT_SCHEMAS[capability]):
-        raise ApiRefusal(
-            "contract_invalid", "capability arguments do not match the schema", {})
+        raise ApiRefusal.fixed("contract_invalid")
     _argument_values(capability, arguments)
     scope = _json_array(values, "scope")
     probe = _contract(
@@ -275,8 +267,7 @@ def parse_proposal(
     adapter_id = values.get("adapter_id")
     if adapter_id is not None and (
             not isinstance(adapter_id, str) or _ID_RE.fullmatch(adapter_id) is None):
-        raise ApiRefusal(
-            "contract_invalid", "request values do not satisfy the contract", {})
+        raise ApiRefusal.fixed("contract_invalid")
     return ProposalInput(
         instance_id=probe.instance_id, attempt_id=probe.attempt_id,
         capability=probe.capability, arguments=probe.arguments, scope=probe.scope,
