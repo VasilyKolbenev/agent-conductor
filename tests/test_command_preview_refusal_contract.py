@@ -19,10 +19,12 @@ never with the production `snapshot_digest` — so the check cannot be satisfied
 by the very code it judges. Expected paths are computed from the fixture root,
 never from the production function whose message they check.
 
-The changed-nothing words are additionally held road-wide at the bottom of this
-module, as a relation rather than a presence: they must appear exactly when the
-call refused AND a before/after snapshot of the exact run path is identical, so
-a road that creates the run and then refuses may not carry them.
+The changed-nothing words are additionally held at the bottom of this module,
+as a relation rather than a presence: on each driven road they must appear
+exactly when the call refused AND a before/after snapshot of the exact run path
+is identical, so a road that creates the run and then refuses may not carry
+them. The relation is checked on the six enumerated representative roads driven
+there, and on no others: no coverage of all possible roads is promised.
 """
 import os
 import re
@@ -386,6 +388,7 @@ def test_a_creation_failure_refuses_with_facts_and_leaves_the_whole_tree_unchang
     (tmp_path / "conductor" / "runs").write_bytes(b"not a directory")
     err = _refusal_holding_the_contract(tmp_path, capsys, watched=tmp_path)
     assert "detected" in err
+    assert "created nothing" not in err  # the retired claim must not return
 
 
 # --- the changed-nothing words, held road-wide as a measured relation ---
@@ -454,7 +457,7 @@ def test_the_run_path_state_tells_absence_a_file_and_a_tree_apart(tmp_path):
     assert _run_path_state(spot) == ("dir", {"a.txt": ("file", b"one")})
 
 
-def test_the_run_path_state_records_a_portal_at_the_path_without_entering_it(tmp_path):
+def test_the_run_path_state_records_a_portal_as_a_link_and_keeps_its_target(tmp_path):
     target = tmp_path / "elsewhere"
     target.mkdir()
     (target / "inside.txt").write_bytes(b"content that lies elsewhere")

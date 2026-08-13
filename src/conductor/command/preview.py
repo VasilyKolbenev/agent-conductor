@@ -55,9 +55,10 @@ speak in the service's words, upstream of it. Each such refusal exits 1 with
 an empty stdout and changes nothing: a found run directory is left byte for
 byte and structurally as it was found -- journal, receipts, links and nested
 objects included, because every check above works by reading alone -- and a
-failed creation leaves nothing behind. The message names what was reliably
-detected, the exact path of the preview's run directory, and the exact path of
-every foreign object the ownership walk itself saw; it states in so many words
+failed creation leaves the exact preview-run path unchanged. The message
+names what was reliably detected, the exact path of the preview's run
+directory, and the exact path of every foreign object the ownership walk
+itself saw; it states in so many words
 that the preview changed nothing in the run directory; and it advises nothing
 -- no object is proposed for deletion or moving, and no minimal remediation is
 promised, because this module cannot know what a foreign object is to whoever
@@ -362,10 +363,11 @@ def _refusal(header: str, entries: tuple[str, ...]) -> str:
     """Open with the header sentence, then name each entry on a line of its own.
 
     The guarantee here is narrower than entry-forgery being impossible, and it
-    holds only for values and paths: wherever an entry quotes a stored value, a
-    path or a store complaint, that value is rendered with `repr`, which never
-    produces a newline, so a stored string reading `a; mode: expected 1, found
-    2` stays one field's quoted found side. Unknown envelope field NAMES are
+    holds only for the values and paths the specific calling code actually
+    passes through `repr`, which never produces a newline, so a stored string
+    reading `a; mode: expected 1, found 2` stays one field's quoted found
+    side. Replay warnings are human-readable store prose and are outside this
+    guarantee. Unknown envelope field NAMES are
     interpolated into their entry as-is, and a foreign key that itself holds a
     newline therefore lays out across lines the way a further entry would.
     stderr is human-readable diagnostics, not a machine protocol of entries: a
@@ -476,8 +478,8 @@ def render_dispatch_preview(
             _check_found_run(store, envelope)
         except (StoreError, OSError) as e:
             # A store-level creation failure -- e.g. a FILE at conductor/runs --
-            # is a refusal under the same contract, not a bare error or a
-            # traceback: nothing exists at the run's path and nothing was made.
+            # is a refusal through the contract diagnostics, not a bare error
+            # or a traceback: the message names the exact run path.
             raise PreviewError(_uncreatable_refusal(store.run_path(_RUN_ID), e)) from e
         service = CommandService(
             store, AdapterRegistry([_PreviewAdapter()]),
