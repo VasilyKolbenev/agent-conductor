@@ -145,8 +145,11 @@ def _same_origin(pairs: tuple[tuple[str, str], ...], host: str) -> None:
     if origins:
         valid = origins[0] == expected
     elif len(referers) == 1:
-        parsed = urlsplit(referers[0])
-        valid = f"{parsed.scheme}://{parsed.netloc}" == expected
+        try:
+            parsed = urlsplit(referers[0])
+            valid = f"{parsed.scheme}://{parsed.netloc}" == expected
+        except ValueError:
+            valid = False
     else:
         valid = False
     if not valid:
@@ -156,7 +159,13 @@ def _same_origin(pairs: tuple[tuple[str, str], ...], host: str) -> None:
 def _csrf(
         pairs: tuple[tuple[str, str], ...], current_token: str) -> None:
     presented = _values(pairs, "X-Conduct-CSRF")
-    if len(presented) != 1 or not hmac.compare_digest(presented[0], current_token):
+    try:
+        supplied = presented[0].encode("ascii") if len(presented) == 1 else b""
+        expected = current_token.encode("ascii")
+        valid = len(presented) == 1 and hmac.compare_digest(supplied, expected)
+    except (AttributeError, UnicodeEncodeError):
+        valid = False
+    if not valid:
         raise HttpRefusal("csrf") from None
 
 
@@ -197,10 +206,11 @@ def _json_object(raw_body: bytes) -> dict[str, Any]:
         value = json.loads(
             decoded, object_pairs_hook=unique_object,
             parse_constant=reject_constant)
-    except (UnicodeDecodeError, ValueError, json.JSONDecodeError):
+        invalid = not isinstance(value, dict) or not _finite_json(value)
+    except (UnicodeDecodeError, ValueError, json.JSONDecodeError, RecursionError):
         invalid = True
         value = None
-    if invalid or not isinstance(value, dict) or not _finite_json(value):
+    if invalid:
         raise HttpRefusal("body") from None
     return value
 

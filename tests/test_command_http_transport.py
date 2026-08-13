@@ -252,3 +252,77 @@ def test_http_refusal_phase_is_the_only_constructor_authority():
         HttpRefusal("not-a-phase")
     with pytest.raises(TypeError):
         HttpRefusal("host", 403)
+
+
+@pytest.mark.parametrize("referer", ["http://[", "http://]", "http://[::1"])
+def test_malformed_referer_is_one_detached_fixed_origin_refusal(referer):
+    headers = [
+        ("Host", f"127.0.0.1:{PORT}"), ("Referer", referer),
+        ("X-Conduct-CSRF", TOKEN), ("Content-Type", "application/json"),
+    ]
+    with pytest.raises(HttpRefusal) as caught:
+        validate_command_mutation(
+            headers, b"{}", allowed_hosts=HOSTS, current_token=TOKEN)
+    refusal = caught.value
+    assert (refusal.phase, refusal.code, refusal.message) == (
+        "origin", "same_origin_denied", "request origin is not allowed")
+    assert refusal.__cause__ is refusal.__context__ is None
+    assert referer not in _object_graph_text(refusal)
+
+
+def test_malformed_origin_is_the_same_detached_fixed_origin_refusal():
+    hostile = "http://["
+    headers = [
+        ("Host", f"127.0.0.1:{PORT}"), ("Origin", hostile),
+        ("X-Conduct-CSRF", TOKEN), ("Content-Type", "application/json"),
+    ]
+    with pytest.raises(HttpRefusal) as caught:
+        validate_command_mutation(
+            headers, b"{}", allowed_hosts=HOSTS, current_token=TOKEN)
+    refusal = caught.value
+    assert (refusal.phase, refusal.code, refusal.message) == (
+        "origin", "same_origin_denied", "request origin is not allowed")
+    assert refusal.__cause__ is refusal.__context__ is None
+    assert hostile not in _object_graph_text(refusal)
+
+
+def test_non_ascii_csrf_is_one_detached_fixed_csrf_refusal():
+    headers = [
+        ("Host", f"127.0.0.1:{PORT}"),
+        ("Origin", f"http://127.0.0.1:{PORT}"),
+        ("X-Conduct-CSRF", "APIKEY_SECRET_\u03bb"),
+        ("Content-Type", "application/json"),
+    ]
+    with pytest.raises(HttpRefusal) as caught:
+        validate_command_mutation(
+            headers, b"{}", allowed_hosts=HOSTS, current_token=TOKEN)
+    refusal = caught.value
+    assert (refusal.phase, refusal.code, refusal.message) == (
+        "csrf", "csrf_denied", "request CSRF token is not current")
+    assert refusal.__cause__ is refusal.__context__ is None
+    assert "APIKEY_SECRET" not in _object_graph_text(refusal)
+
+
+def test_excessive_json_depth_is_one_detached_fixed_body_refusal():
+    body = b'{"nested":' + b"[" * 1100 + b"0" + b"]" * 1100 + b"}"
+    row = next(item for item in DATA["raw_transport_cases"]
+               if item["name"] == "raw_valid_transport")
+    with pytest.raises(HttpRefusal) as caught:
+        validate_command_mutation(
+            _replace_port(row["raw_header_pairs"]), body,
+            allowed_hosts=HOSTS, current_token=TOKEN)
+    refusal = caught.value
+    assert (refusal.phase, refusal.code, refusal.message) == (
+        "body", "malformed_request", "request body is not one JSON object")
+    assert refusal.__cause__ is refusal.__context__ is None
+
+
+def test_escape_paths_do_not_change_frozen_origin_first_precedence():
+    headers = [
+        ("Host", f"127.0.0.1:{PORT}"), ("Referer", "http://["),
+        ("X-Conduct-CSRF", "\u03bb"), ("Content-Type", "text/plain"),
+    ]
+    with pytest.raises(HttpRefusal) as caught:
+        validate_command_mutation(
+            headers, b"[", allowed_hosts=HOSTS, current_token=TOKEN)
+    assert caught.value.phase == "origin"

@@ -208,6 +208,43 @@ def test_every_frozen_code_builds_one_exact_sanitized_refusal_shape():
         assert set(refusal.as_dict()["error"]) == {"code", "message", "detail"}
 
 
+def test_every_fixed_code_has_one_test_owned_exact_message_and_empty_detail():
+    expected = {
+        "same_origin_denied": "request origin is not allowed",
+        "csrf_denied": "request CSRF token is not current",
+        "method_not_allowed": "request method is not allowed for this route",
+        "route_not_found": "command route does not exist",
+        "malformed_request": "request transport or JSON shape is malformed",
+        "contract_invalid": "request values do not satisfy the contract",
+        "run_corrupt": "stored run is corrupt",
+        "store_error": "run store could not complete the request",
+        "route_unsafe": "run route is not structurally contained",
+        "service_refused": "command service refused the request",
+        "capability_unsupported": "adapter does not support this capability",
+        "authorization_refused": "confirmation did not authorize the request",
+        "record_conflict": "durable record identity conflicts",
+    }
+    assert set(expected) == set(ERROR_STATUS)
+    for code, message in expected.items():
+        refusal = ApiRefusal.fixed(code)
+        assert refusal.message == message
+        assert refusal.detail == {}
+
+
+def test_structured_service_fact_requires_exact_keys_values_and_template():
+    build = api_contracts._REFUSAL_BUILD
+    wrong_details = (
+        {"run_id": "run-001"},
+        {"run_id": "run-001", "instance": "ghost-dev"},
+        {"run_id": "run-001", "instance_id": "ghost-dev", "field": "extra"},
+    )
+    for detail in wrong_details:
+        with pytest.raises(ValueError, match="reviewed fact"):
+            ApiRefusal(
+                build, "service_refused",
+                "frozen config declares no instance 'ghost-dev'", detail)
+
+
 @pytest.mark.parametrize("capability", [None, True, False, "", 7, [], {}])
 def test_malformed_capability_is_a_contract_error(capability):
     body = {**_canon("propose_request"), "capability": capability}
