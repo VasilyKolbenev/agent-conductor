@@ -3,172 +3,537 @@
   "proposal_cases": [
     {
       "name": "valid_declared_dispatch",
-      "adapter_capabilities": ["observe", "dispatch", "review"],
+      "adapter_capabilities": [
+        "observe",
+        "dispatch",
+        "review"
+      ],
       "body": {
         "instance_id": "claude-dev",
         "attempt_id": "attempt-cockpit-001",
         "capability": "dispatch",
-        "arguments": {"handoff": "handoff-cockpit-001"},
-        "scope": ["src", "tests"],
+        "arguments": {
+          "handoff": "handoff-cockpit-001"
+        },
+        "scope": [
+          "src",
+          "tests"
+        ],
         "proposed_by": "claude-dev",
         "rationale": "Dispatch the reviewed handoff.",
         "timeout_seconds": 900,
         "adapter_id": "claude-code"
       },
-      "expected": {"disposition": "accept", "error_code": null}
+      "expected": {
+        "disposition": "accept",
+        "error_code": null
+      }
     },
     {
       "name": "unknown_top_level_is_not_extra_mutation_surface",
-      "adapter_capabilities": ["dispatch"],
+      "adapter_capabilities": [
+        "dispatch"
+      ],
       "body": {
         "instance_id": "claude-dev",
         "attempt_id": "attempt-cockpit-001",
         "capability": "dispatch",
-        "arguments": {"handoff": "handoff-cockpit-001"},
-        "scope": ["src"],
+        "arguments": {
+          "handoff": "handoff-cockpit-001"
+        },
+        "scope": [
+          "src"
+        ],
         "proposed_by": "claude-dev",
         "rationale": "Dispatch the reviewed handoff.",
         "timeout_seconds": 900,
         "debug_override": true
       },
-      "expected": {"disposition": "refuse", "error_code": "contract_invalid"}
+      "expected": {
+        "disposition": "refuse",
+        "error_code": "contract_invalid"
+      }
     },
     {
       "name": "shell_field_is_refused",
-      "adapter_capabilities": ["dispatch"],
+      "adapter_capabilities": [
+        "dispatch"
+      ],
       "body": {
         "instance_id": "claude-dev",
         "attempt_id": "attempt-cockpit-001",
         "capability": "dispatch",
-        "arguments": {"shell": "rm -rf project"},
-        "scope": ["src"],
+        "arguments": {
+          "shell": "rm -rf project"
+        },
+        "scope": [
+          "src"
+        ],
         "proposed_by": "claude-dev",
         "rationale": "Unsafe shape.",
         "timeout_seconds": 900
       },
-      "expected": {"disposition": "refuse", "error_code": "contract_invalid"}
+      "expected": {
+        "disposition": "refuse",
+        "error_code": "contract_invalid"
+      }
     },
     {
       "name": "argv_field_is_refused",
-      "adapter_capabilities": ["dispatch"],
+      "adapter_capabilities": [
+        "dispatch"
+      ],
       "body": {
         "instance_id": "claude-dev",
         "attempt_id": "attempt-cockpit-001",
         "capability": "dispatch",
-        "arguments": {"argv": ["powershell", "-Command", "Remove-Item"]},
-        "scope": ["src"],
+        "arguments": {
+          "argv": [
+            "powershell",
+            "-Command",
+            "Remove-Item"
+          ]
+        },
+        "scope": [
+          "src"
+        ],
         "proposed_by": "claude-dev",
         "rationale": "Unsafe shape.",
         "timeout_seconds": 900
       },
-      "expected": {"disposition": "refuse", "error_code": "contract_invalid"}
+      "expected": {
+        "disposition": "refuse",
+        "error_code": "contract_invalid"
+      }
     },
     {
       "name": "cwd_field_is_refused",
-      "adapter_capabilities": ["dispatch"],
+      "adapter_capabilities": [
+        "dispatch"
+      ],
       "body": {
         "instance_id": "claude-dev",
         "attempt_id": "attempt-cockpit-001",
         "capability": "dispatch",
-        "arguments": {"cwd": "C:/outside"},
-        "scope": ["src"],
+        "arguments": {
+          "cwd": "C:/outside"
+        },
+        "scope": [
+          "src"
+        ],
         "proposed_by": "claude-dev",
         "rationale": "Unsafe shape.",
         "timeout_seconds": 900
       },
-      "expected": {"disposition": "refuse", "error_code": "contract_invalid"}
+      "expected": {
+        "disposition": "refuse",
+        "error_code": "contract_invalid"
+      }
     },
     {
       "name": "absolute_scope_is_refused",
-      "adapter_capabilities": ["dispatch"],
+      "adapter_capabilities": [
+        "dispatch"
+      ],
       "body": {
         "instance_id": "claude-dev",
         "attempt_id": "attempt-cockpit-001",
         "capability": "dispatch",
-        "arguments": {"handoff": "handoff-cockpit-001"},
-        "scope": ["C:/outside"],
+        "arguments": {
+          "handoff": "handoff-cockpit-001"
+        },
+        "scope": [
+          "C:/outside"
+        ],
         "proposed_by": "claude-dev",
         "rationale": "Unsafe scope.",
         "timeout_seconds": 900
       },
-      "expected": {"disposition": "refuse", "error_code": "contract_invalid"}
+      "expected": {
+        "disposition": "refuse",
+        "error_code": "contract_invalid"
+      }
     },
     {
       "name": "parent_scope_is_refused",
-      "adapter_capabilities": ["dispatch"],
+      "adapter_capabilities": [
+        "dispatch"
+      ],
       "body": {
         "instance_id": "claude-dev",
         "attempt_id": "attempt-cockpit-001",
         "capability": "dispatch",
-        "arguments": {"handoff": "handoff-cockpit-001"},
-        "scope": ["../outside"],
+        "arguments": {
+          "handoff": "handoff-cockpit-001"
+        },
+        "scope": [
+          "../outside"
+        ],
         "proposed_by": "claude-dev",
         "rationale": "Unsafe scope.",
         "timeout_seconds": 900
       },
-      "expected": {"disposition": "refuse", "error_code": "contract_invalid"}
+      "expected": {
+        "disposition": "refuse",
+        "error_code": "contract_invalid"
+      }
     },
     {
       "name": "adapter_owned_observe_is_not_browser_writable",
-      "adapter_capabilities": ["observe"],
+      "adapter_capabilities": [
+        "observe"
+      ],
       "body": {
         "instance_id": "claude-dev",
         "attempt_id": "attempt-cockpit-001",
         "capability": "observe",
         "arguments": {},
-        "scope": ["src"],
+        "scope": [
+          "src"
+        ],
         "proposed_by": "claude-dev",
         "rationale": "Browser cannot author an observation.",
         "timeout_seconds": 900
       },
-      "expected": {"disposition": "refuse", "error_code": "capability_unsupported"}
+      "expected": {
+        "disposition": "refuse",
+        "error_code": "capability_unsupported"
+      }
     },
     {
       "name": "manifest_does_not_declare_stop",
-      "adapter_capabilities": ["observe", "dispatch"],
+      "adapter_capabilities": [
+        "observe",
+        "dispatch"
+      ],
       "body": {
         "instance_id": "claude-dev",
         "attempt_id": "attempt-cockpit-001",
         "capability": "stop",
-        "arguments": {"action_id": "action-cockpit-001"},
-        "scope": ["src"],
+        "arguments": {
+          "action_id": "action-cockpit-001"
+        },
+        "scope": [
+          "src"
+        ],
         "proposed_by": "claude-dev",
         "rationale": "Stop the owned action.",
         "timeout_seconds": 900
       },
-      "expected": {"disposition": "refuse", "error_code": "capability_unsupported"}
+      "expected": {
+        "disposition": "refuse",
+        "error_code": "capability_unsupported"
+      }
     },
     {
       "name": "dispatch_cannot_borrow_message_arguments",
-      "adapter_capabilities": ["dispatch", "message"],
+      "adapter_capabilities": [
+        "dispatch",
+        "message"
+      ],
       "body": {
         "instance_id": "claude-dev",
         "attempt_id": "attempt-cockpit-001",
         "capability": "dispatch",
-        "arguments": {"message": "please dispatch"},
-        "scope": ["src"],
+        "arguments": {
+          "message": "please dispatch"
+        },
+        "scope": [
+          "src"
+        ],
         "proposed_by": "claude-dev",
         "rationale": "Wrong capability schema.",
         "timeout_seconds": 900
       },
-      "expected": {"disposition": "refuse", "error_code": "contract_invalid"}
+      "expected": {
+        "disposition": "refuse",
+        "error_code": "contract_invalid"
+      }
     }
   ],
   "control_cases": [
     {
       "name": "only_declared_and_schema_backed_controls_render",
-      "manifest_capabilities": ["observe", "dispatch", "review", "stop"],
-      "expected_controls": ["dispatch", "review", "stop"]
+      "manifest_capabilities": [
+        "observe",
+        "dispatch",
+        "review",
+        "stop"
+      ],
+      "expected_controls": [
+        "dispatch",
+        "review",
+        "stop"
+      ]
     },
     {
       "name": "observe_only_has_no_browser_control",
-      "manifest_capabilities": ["observe"],
+      "manifest_capabilities": [
+        "observe"
+      ],
       "expected_controls": []
     },
     {
       "name": "unknown_manifest_value_never_becomes_decorative",
-      "manifest_capabilities": ["observe", "teleport"],
+      "manifest_capabilities": [
+        "observe",
+        "teleport"
+      ],
       "expected_controls": []
+    }
+  ],
+  "closed_request_cases": [
+    {
+      "name": "confirm_confirmation_id_is_server_owned",
+      "endpoint": "confirm",
+      "field": "confirmation_id",
+      "value": "confirmation-browser",
+      "expected": {
+        "disposition": "refuse",
+        "error_code": "contract_invalid"
+      }
+    },
+    {
+      "name": "confirm_action_id_is_server_owned",
+      "endpoint": "confirm",
+      "field": "action_id",
+      "value": "action-browser",
+      "expected": {
+        "disposition": "refuse",
+        "error_code": "contract_invalid"
+      }
+    },
+    {
+      "name": "confirm_idempotency_key_is_server_owned",
+      "endpoint": "confirm",
+      "field": "idempotency_key",
+      "value": "browser-key",
+      "expected": {
+        "disposition": "refuse",
+        "error_code": "contract_invalid"
+      }
+    },
+    {
+      "name": "confirm_mode_is_server_owned",
+      "endpoint": "confirm",
+      "field": "mode",
+      "value": "policy",
+      "expected": {
+        "disposition": "refuse",
+        "error_code": "contract_invalid"
+      }
+    },
+    {
+      "name": "confirm_confirmed_at_is_server_owned",
+      "endpoint": "confirm",
+      "field": "confirmed_at",
+      "value": "2026-08-13T12:02:00Z",
+      "expected": {
+        "disposition": "refuse",
+        "error_code": "contract_invalid"
+      }
+    },
+    {
+      "name": "confirm_requested_at_is_server_owned",
+      "endpoint": "confirm",
+      "field": "requested_at",
+      "value": "2026-08-13T12:02:00Z",
+      "expected": {
+        "disposition": "refuse",
+        "error_code": "contract_invalid"
+      }
+    },
+    {
+      "name": "confirm_budget_object_is_server_owned",
+      "endpoint": "confirm",
+      "field": "budget",
+      "value": {
+        "max_actions": 99
+      },
+      "expected": {
+        "disposition": "refuse",
+        "error_code": "contract_invalid"
+      }
+    },
+    {
+      "name": "confirm_attempt_id_comes_from_proposal",
+      "endpoint": "confirm",
+      "field": "attempt_id",
+      "value": "attempt-browser",
+      "expected": {
+        "disposition": "refuse",
+        "error_code": "contract_invalid"
+      }
+    },
+    {
+      "name": "confirm_instance_id_comes_from_proposal",
+      "endpoint": "confirm",
+      "field": "instance_id",
+      "value": "instance-browser",
+      "expected": {
+        "disposition": "refuse",
+        "error_code": "contract_invalid"
+      }
+    },
+    {
+      "name": "confirm_arguments_come_from_proposal",
+      "endpoint": "confirm",
+      "field": "arguments",
+      "value": {
+        "shell": "not authority"
+      },
+      "expected": {
+        "disposition": "refuse",
+        "error_code": "contract_invalid"
+      }
+    },
+    {
+      "name": "confirm_requested_by_is_derived",
+      "endpoint": "confirm",
+      "field": "requested_by",
+      "value": "browser-override",
+      "expected": {
+        "disposition": "refuse",
+        "error_code": "contract_invalid"
+      }
+    },
+    {
+      "name": "confirm_timeout_comes_from_proposal",
+      "endpoint": "confirm",
+      "field": "timeout_seconds",
+      "value": 9999,
+      "expected": {
+        "disposition": "refuse",
+        "error_code": "contract_invalid"
+      }
+    },
+    {
+      "name": "confirm_max_actions_is_server_owned",
+      "endpoint": "confirm",
+      "field": "max_actions",
+      "value": 99,
+      "expected": {
+        "disposition": "refuse",
+        "error_code": "contract_invalid"
+      }
+    },
+    {
+      "name": "confirm_max_action_seconds_is_server_owned",
+      "endpoint": "confirm",
+      "field": "max_action_seconds",
+      "value": 9999,
+      "expected": {
+        "disposition": "refuse",
+        "error_code": "contract_invalid"
+      }
+    },
+    {
+      "name": "confirm_max_confirmation_age_is_server_owned",
+      "endpoint": "confirm",
+      "field": "max_confirmation_age_seconds",
+      "value": 9999,
+      "expected": {
+        "disposition": "refuse",
+        "error_code": "contract_invalid"
+      }
+    },
+    {
+      "name": "confirm_run_id_comes_from_path",
+      "endpoint": "confirm",
+      "field": "run_id",
+      "value": "run-browser",
+      "expected": {
+        "disposition": "refuse",
+        "error_code": "contract_invalid"
+      }
+    },
+    {
+      "name": "confirm_schema_version_is_server_owned",
+      "endpoint": "confirm",
+      "field": "schema_version",
+      "value": 2,
+      "expected": {
+        "disposition": "refuse",
+        "error_code": "contract_invalid"
+      }
+    },
+    {
+      "name": "confirm_tolerant_extra_is_not_writable",
+      "endpoint": "confirm",
+      "field": "future_hint",
+      "value": {
+        "nested": {
+          "shell": "not authority"
+        }
+      },
+      "expected": {
+        "disposition": "refuse",
+        "error_code": "contract_invalid"
+      }
+    },
+    {
+      "name": "decision_decided_at_is_server_owned",
+      "endpoint": "decision",
+      "field": "decided_at",
+      "value": "2026-08-13T12:30:00Z",
+      "expected": {
+        "disposition": "refuse",
+        "error_code": "contract_invalid"
+      }
+    },
+    {
+      "name": "decision_config_digest_is_server_owned",
+      "endpoint": "decision",
+      "field": "config_digest",
+      "value": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "expected": {
+        "disposition": "refuse",
+        "error_code": "contract_invalid"
+      }
+    },
+    {
+      "name": "decision_run_id_comes_from_path",
+      "endpoint": "decision",
+      "field": "run_id",
+      "value": "run-browser",
+      "expected": {
+        "disposition": "refuse",
+        "error_code": "contract_invalid"
+      }
+    },
+    {
+      "name": "decision_schema_version_is_server_owned",
+      "endpoint": "decision",
+      "field": "schema_version",
+      "value": 2,
+      "expected": {
+        "disposition": "refuse",
+        "error_code": "contract_invalid"
+      }
+    },
+    {
+      "name": "decision_action_id_is_unknown",
+      "endpoint": "decision",
+      "field": "action_id",
+      "value": "action-browser",
+      "expected": {
+        "disposition": "refuse",
+        "error_code": "contract_invalid"
+      }
+    },
+    {
+      "name": "decision_tolerant_extra_is_not_writable",
+      "endpoint": "decision",
+      "field": "future_hint",
+      "value": {
+        "nested": {
+          "path": "C:/outside"
+        }
+      },
+      "expected": {
+        "disposition": "refuse",
+        "error_code": "contract_invalid"
+      }
     }
   ]
 }

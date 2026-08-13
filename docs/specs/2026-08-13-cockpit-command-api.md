@@ -105,6 +105,15 @@ scope, not permission for C/API-1 to invent a generic file-write endpoint.
    `application/json` or `application/json; charset=utf-8`, with a UTF-8 body.
    Any other parameter/media type, a non-object JSON body, duplicate JSON key,
    or invalid UTF-8/JSON is refused `malformed_request` (400).
+   Validation starts from ordered raw header pairs and raw body bytes; it MUST
+   NOT first collapse headers into a mapping. Header names compare
+   case-insensitively. `Host`, `Content-Type`, and `X-Conduct-CSRF` occur exactly
+   once; `Origin` and `Referer` occur at most once. A duplicate is refused even
+   when its values agree. Precedence is: Host cardinality/allowlist →
+   Origin/Referer cardinality/relation → CSRF cardinality/equality → Content-Type
+   cardinality/value → UTF-8, JSON duplicate-key, syntax, and object checks.
+   Their codes are respectively `same_origin_denied`, `same_origin_denied`,
+   `csrf_denied`, `malformed_request`, and `malformed_request`.
 6. These checks are the structural expression of safety law 4 ("every browser
    mutation requires same-origin validation and a per-process anti-CSRF token").
 7. Command responses never emit `Access-Control-Allow-Origin` and the server
@@ -116,6 +125,24 @@ scope, not permission for C/API-1 to invent a generic file-write endpoint.
    its owned files. A portal, reparse point, hard-link alias, or irregular owned
    file is `route_unsafe`; the endpoint does not invoke the service/store/runtime
    mutation and returns an empty-effect refusal.
+
+That last rule has a **blocking integration dependency**. The planning base has
+only private `PreviewError`/`tuple[str, ...]` prose, not a public typed result.
+C/API-1 MUST NOT implement a mutating route until integration supplies this
+exact import relation; any non-empty typed result maps to `route_unsafe` without
+inspecting its fields or text:
+
+<!-- CANONICAL:route_dependency -->
+```json
+{
+  "api_slice": "C/API-1",
+  "public_module": "conductor.command.containment",
+  "public_relation": "run_route_violations",
+  "public_violation_type": "RouteViolation",
+  "state": "blocking_until_typed",
+  "parse_exception_prose": false
+}
+```
 
 ## 2. The per-process anti-CSRF token — FROZEN CONTRACT
 
@@ -150,7 +177,7 @@ scope, not permission for C/API-1 to invent a generic file-write endpoint.
   `Cache-Control: no-store`; the token is never embedded in static HTML or a URL.
 - Every mutating request MUST carry the token in the custom request header
   `X-Conduct-CSRF`. The token MUST NOT be transported as a cookie: the surface
-  uses **no cookies and no ambient authority**, so a classic form-POST CSRF has
+  uses **no cookies and no cookie-carried ambient authority**, so a classic form-POST CSRF has
   no credential to ride, and a custom header cannot be set by a cross-origin
   `<form>` or simple `fetch` without a CORS preflight the server never approves.
 
@@ -168,8 +195,8 @@ scope, not permission for C/API-1 to invent a generic file-write endpoint.
   each token (`current_process`, `prior_process`, `attacker`, `none`) precisely
   so a Day-2 test cannot accidentally satisfy both sides from one source.
 - The token does not rotate per request; within one live process a valid token
-  is reusable by the same-origin panel. Its security comes from **secrecy plus
-  origin**, not from single use:
+  is reusable by the same-origin panel. Against a browser-origin attacker its
+  security comes from **secrecy plus origin**, not from single use:
   - **missing** (`X-Conduct-CSRF` absent) → refused `csrf_denied`.
   - **stale** (a token minted by a *previous* process) → unequal to this
     process's token → refused `csrf_denied`.
@@ -179,6 +206,13 @@ scope, not permission for C/API-1 to invent a generic file-write endpoint.
     this one) → unequal to this process's token → refused `csrf_denied`. A
     cross-origin page cannot read `/command/session` under the same-origin
     policy, so it cannot capture a *current* token to replay.
+
+This is deliberately a **trusted single-user-host boundary**, not local-process
+authentication. Any process running as the same OS user (including local
+malware) can call `GET /command/session`, read the current token, and act as the
+panel. The token and same-origin checks protect against browser cross-origin
+requests and DNS rebinding only. Peer credentials, OS-user authentication, and
+defence against a hostile local process are outside this preview/API freeze.
 
 ## 3. Envelope, status codes, and refusal shape — FROZEN CONTRACT
 
@@ -261,8 +295,10 @@ choose a code.
 - `authorization_refused` is one `AuthorizationError`: absent proposal,
   mismatched facts, changed digest, and temporal expiry are not falsely split
   into codes the current gate cannot type-distinguish.
-- `route_unsafe` comes from the route gate's structured violation result before
-  a store operation. No code is selected by parsing an exception message.
+- `route_unsafe` remains reserved behind the blocking typed dependency in
+  section 1. Current `tuple[str, ...]`/`PreviewError` prose is not that seam and
+  MUST NOT be parsed. API-1 cannot implement the route before the typed import
+  relation exists.
 
 ## 4. Command endpoints — FROZEN CONTRACT
 
@@ -379,6 +415,12 @@ the proposal facts the Human saw: `preview_digest`, `capability`, `scope`, and
 `confirmation_id` and `confirmed_at` from its id/clock providers, and supplies
 the server-owned action/time/age budget. No caller controls an action id,
 idempotency key, mode, timestamp, or budget.
+Unknown fields are refused even when a CMD-1 response contract would preserve
+them through `extra`. In particular the caller cannot supply `confirmation_id`,
+`action_id`, `idempotency_key`, `mode`, either confirmation/request timestamp,
+`run_id`, `schema_version`, or any budget field/object. Attempt, instance,
+arguments, requested actor, and timeout come from the proposal/confirmation and
+cannot be overridden either.
 
 <!-- CANONICAL:confirm_request -->
 ```json
@@ -452,6 +494,11 @@ so an exact retry can find the same immutable decision. The server injects
   "supersedes": null
 }
 ```
+
+The request is closed: `run_id` comes from the path; `decided_at`,
+`config_digest`, and `schema_version` are server-owned. `action_id` and any
+unknown or recursively nested extension are refused rather than admitted via a
+response contract's tolerant `extra` channel.
 
 `action` MUST be one of `approve | reject | request_changes | waive`; `reason` is
 required for `request_changes` and `waive` (the contract enforces this). A
@@ -723,3 +770,5 @@ or a new request field is a contract change, not harmless implementation detail.
   real mismatch, not a word game. They are data for tests that do not exist yet,
   not a claim that any endpoint passes today. The pin test validates their
   internal accept/refuse relation against the frozen vocabulary above.
+  Its hostile transport cases retain ordered raw header pairs and exact body
+  bytes (hex-encoded); no fixture pre-normalizes away duplicates.

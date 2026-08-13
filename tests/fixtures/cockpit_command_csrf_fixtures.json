@@ -257,5 +257,210 @@
       },
       "expected": { "disposition": "refuse", "error_code": "malformed_request", "status": 400 }
     }
+  ],
+  "transport_precedence": [
+    "host_cardinality_and_allowlist",
+    "origin_or_referer_cardinality_and_relation",
+    "csrf_cardinality_and_equality",
+    "content_type_cardinality_and_value",
+    "utf8_json_object_without_duplicate_keys"
+  ],
+  "raw_transport_cases": [
+    {
+      "name": "raw_valid_transport",
+      "raw_header_pairs": [
+        ["Host", "127.0.0.1:{port}"],
+        ["Origin", "http://127.0.0.1:{port}"],
+        ["Content-Type", "application/json"],
+        ["X-Conduct-CSRF", "csrf-current-R7a9pQ2kLm4nX8sV3wZ6cD1fH5jT0bY"]
+      ],
+      "body_utf8_hex": "7b2278223a317d",
+      "expected": {"disposition": "transport_pass", "error_code": null, "phase": "contract"}
+    },
+    {
+      "name": "raw_duplicate_json_key",
+      "raw_header_pairs": [
+        ["Host", "127.0.0.1:{port}"],
+        ["Origin", "http://127.0.0.1:{port}"],
+        ["Content-Type", "application/json"],
+        ["X-Conduct-CSRF", "csrf-current-R7a9pQ2kLm4nX8sV3wZ6cD1fH5jT0bY"]
+      ],
+      "body_utf8_hex": "7b2278223a312c2278223a327d",
+      "expected": {"disposition": "refuse", "error_code": "malformed_request", "phase": "body"}
+    },
+    {
+      "name": "raw_duplicate_content_type",
+      "raw_header_pairs": [
+        ["Host", "127.0.0.1:{port}"],
+        ["Origin", "http://127.0.0.1:{port}"],
+        ["Content-Type", "application/json"],
+        ["content-type", "application/json"],
+        ["X-Conduct-CSRF", "csrf-current-R7a9pQ2kLm4nX8sV3wZ6cD1fH5jT0bY"]
+      ],
+      "body_utf8_hex": "7b2278223a317d",
+      "expected": {
+        "disposition": "refuse", "error_code": "malformed_request",
+        "phase": "content_type"
+      }
+    },
+    {
+      "name": "raw_conflicting_content_type",
+      "raw_header_pairs": [
+        ["Host", "127.0.0.1:{port}"],
+        ["Origin", "http://127.0.0.1:{port}"],
+        ["Content-Type", "text/plain"],
+        ["content-type", "application/json"],
+        ["X-Conduct-CSRF", "csrf-current-R7a9pQ2kLm4nX8sV3wZ6cD1fH5jT0bY"]
+      ],
+      "body_utf8_hex": "7b2278223a317d",
+      "expected": {
+        "disposition": "refuse", "error_code": "malformed_request",
+        "phase": "content_type"
+      }
+    },
+    {
+      "name": "raw_duplicate_host",
+      "raw_header_pairs": [
+        ["Host", "127.0.0.1:{port}"],
+        ["host", "127.0.0.1:{port}"],
+        ["Origin", "http://127.0.0.1:{port}"],
+        ["Content-Type", "application/json"],
+        ["X-Conduct-CSRF", "csrf-current-R7a9pQ2kLm4nX8sV3wZ6cD1fH5jT0bY"]
+      ],
+      "body_utf8_hex": "7b2278223a317d",
+      "expected": {"disposition": "refuse", "error_code": "same_origin_denied", "phase": "host"}
+    },
+    {
+      "name": "raw_conflicting_host",
+      "raw_header_pairs": [
+        ["Host", "evil.example:{port}"],
+        ["host", "127.0.0.1:{port}"],
+        ["Origin", "http://127.0.0.1:{port}"],
+        ["Content-Type", "application/json"],
+        ["X-Conduct-CSRF", "csrf-current-R7a9pQ2kLm4nX8sV3wZ6cD1fH5jT0bY"]
+      ],
+      "body_utf8_hex": "7b2278223a317d",
+      "expected": {"disposition": "refuse", "error_code": "same_origin_denied", "phase": "host"}
+    },
+    {
+      "name": "raw_duplicate_origin",
+      "raw_header_pairs": [
+        ["Host", "127.0.0.1:{port}"],
+        ["Origin", "http://127.0.0.1:{port}"],
+        ["origin", "http://127.0.0.1:{port}"],
+        ["Content-Type", "application/json"],
+        ["X-Conduct-CSRF", "csrf-current-R7a9pQ2kLm4nX8sV3wZ6cD1fH5jT0bY"]
+      ],
+      "body_utf8_hex": "7b2278223a317d",
+      "expected": {"disposition": "refuse", "error_code": "same_origin_denied", "phase": "origin"}
+    },
+    {
+      "name": "raw_conflicting_origin",
+      "raw_header_pairs": [
+        ["Host", "127.0.0.1:{port}"],
+        ["Origin", "http://evil.example"],
+        ["origin", "http://127.0.0.1:{port}"],
+        ["Content-Type", "application/json"],
+        ["X-Conduct-CSRF", "csrf-current-R7a9pQ2kLm4nX8sV3wZ6cD1fH5jT0bY"]
+      ],
+      "body_utf8_hex": "7b2278223a317d",
+      "expected": {"disposition": "refuse", "error_code": "same_origin_denied", "phase": "origin"}
+    },
+    {
+      "name": "raw_duplicate_referer",
+      "raw_header_pairs": [
+        ["Host", "127.0.0.1:{port}"],
+        ["Referer", "http://127.0.0.1:{port}/"],
+        ["referer", "http://127.0.0.1:{port}/"],
+        ["Content-Type", "application/json"],
+        ["X-Conduct-CSRF", "csrf-current-R7a9pQ2kLm4nX8sV3wZ6cD1fH5jT0bY"]
+      ],
+      "body_utf8_hex": "7b2278223a317d",
+      "expected": {"disposition": "refuse", "error_code": "same_origin_denied", "phase": "origin"}
+    },
+    {
+      "name": "raw_conflicting_referer",
+      "raw_header_pairs": [
+        ["Host", "127.0.0.1:{port}"],
+        ["Referer", "http://evil.example/attack"],
+        ["referer", "http://127.0.0.1:{port}/"],
+        ["Content-Type", "application/json"],
+        ["X-Conduct-CSRF", "csrf-current-R7a9pQ2kLm4nX8sV3wZ6cD1fH5jT0bY"]
+      ],
+      "body_utf8_hex": "7b2278223a317d",
+      "expected": {"disposition": "refuse", "error_code": "same_origin_denied", "phase": "origin"}
+    },
+    {
+      "name": "raw_duplicate_csrf",
+      "raw_header_pairs": [
+        ["Host", "127.0.0.1:{port}"],
+        ["Origin", "http://127.0.0.1:{port}"],
+        ["Content-Type", "application/json"],
+        ["X-Conduct-CSRF", "csrf-current-R7a9pQ2kLm4nX8sV3wZ6cD1fH5jT0bY"],
+        ["x-conduct-csrf", "csrf-current-R7a9pQ2kLm4nX8sV3wZ6cD1fH5jT0bY"]
+      ],
+      "body_utf8_hex": "7b2278223a317d",
+      "expected": {"disposition": "refuse", "error_code": "csrf_denied", "phase": "csrf"}
+    },
+    {
+      "name": "raw_conflicting_csrf",
+      "raw_header_pairs": [
+        ["Host", "127.0.0.1:{port}"],
+        ["Origin", "http://127.0.0.1:{port}"],
+        ["Content-Type", "application/json"],
+        ["X-Conduct-CSRF", "csrf-attacker-T3m7xV9bN2cQ5wE8rY1uI4oP6aS0dFgH"],
+        ["x-conduct-csrf", "csrf-current-R7a9pQ2kLm4nX8sV3wZ6cD1fH5jT0bY"]
+      ],
+      "body_utf8_hex": "7b2278223a317d",
+      "expected": {"disposition": "refuse", "error_code": "csrf_denied", "phase": "csrf"}
+    },
+    {
+      "name": "raw_origin_precedes_csrf",
+      "raw_header_pairs": [
+        ["Host", "127.0.0.1:{port}"],
+        ["Origin", "http://evil.example"],
+        ["Content-Type", "application/json"],
+        ["X-Conduct-CSRF", "csrf-attacker-T3m7xV9bN2cQ5wE8rY1uI4oP6aS0dFgH"]
+      ],
+      "body_utf8_hex": "7b2278223a317d",
+      "expected": {"disposition": "refuse", "error_code": "same_origin_denied", "phase": "origin"}
+    },
+    {
+      "name": "raw_csrf_precedes_content_type",
+      "raw_header_pairs": [
+        ["Host", "127.0.0.1:{port}"],
+        ["Origin", "http://127.0.0.1:{port}"],
+        ["Content-Type", "text/plain"],
+        ["X-Conduct-CSRF", "csrf-attacker-T3m7xV9bN2cQ5wE8rY1uI4oP6aS0dFgH"]
+      ],
+      "body_utf8_hex": "7b2278223a317d",
+      "expected": {"disposition": "refuse", "error_code": "csrf_denied", "phase": "csrf"}
+    },
+    {
+      "name": "raw_content_type_precedes_invalid_utf8",
+      "raw_header_pairs": [
+        ["Host", "127.0.0.1:{port}"],
+        ["Origin", "http://127.0.0.1:{port}"],
+        ["Content-Type", "text/plain"],
+        ["X-Conduct-CSRF", "csrf-current-R7a9pQ2kLm4nX8sV3wZ6cD1fH5jT0bY"]
+      ],
+      "body_utf8_hex": "7b22ff227d",
+      "expected": {
+        "disposition": "refuse", "error_code": "malformed_request",
+        "phase": "content_type"
+      }
+    },
+    {
+      "name": "raw_host_failure_precedes_invalid_utf8",
+      "raw_header_pairs": [
+        ["Host", "evil.example:{port}"],
+        ["host", "127.0.0.1:{port}"],
+        ["Origin", "http://127.0.0.1:{port}"],
+        ["Content-Type", "application/json"],
+        ["X-Conduct-CSRF", "csrf-current-R7a9pQ2kLm4nX8sV3wZ6cD1fH5jT0bY"]
+      ],
+      "body_utf8_hex": "7b22ff227d",
+      "expected": {"disposition": "refuse", "error_code": "same_origin_denied", "phase": "host"}
+    }
   ]
 }

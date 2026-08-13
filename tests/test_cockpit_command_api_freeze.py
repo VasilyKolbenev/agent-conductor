@@ -19,9 +19,11 @@ that any server accepts or refuses them today.
 from __future__ import annotations
 
 import hmac
+import importlib
 import json
 import re
 from pathlib import Path
+from typing import get_args, get_origin, get_type_hints
 from urllib.parse import urlsplit
 
 import pytest
@@ -49,8 +51,8 @@ RUN_ID = "run-cockpit-001"
 
 #: Every canonical example the freeze document is required to carry.
 REQUIRED_EXAMPLES = frozenset({
-    "route_table", "session_response", "refusal_shape", "error_codes", "config",
-    "argument_schemas",
+    "route_table", "route_dependency", "session_response", "refusal_shape",
+    "error_codes", "config", "argument_schemas",
     "propose_request", "action_proposal", "confirm_request", "action_request",
     "decision_request", "decision_receipt", "run_read_response", "controls_response",
     "action_result_receipt", "evidence_ref", "stream_frames", "mutation_boundary",
@@ -115,6 +117,16 @@ DECISION_FIELDS = frozenset({
     "receipt_id", "gate_id", "action", "actor", "reason", "scope_refs",
     "evidence_refs", "supersedes",
 })
+CONFIRM_FORBIDDEN = frozenset({
+    "confirmation_id", "action_id", "idempotency_key", "mode", "confirmed_at",
+    "requested_at", "budget", "max_actions", "max_action_seconds",
+    "max_confirmation_age_seconds", "run_id", "schema_version", "attempt_id",
+    "instance_id", "arguments", "requested_by", "timeout_seconds", "future_hint",
+})
+DECISION_FORBIDDEN = frozenset({
+    "decided_at", "config_digest", "run_id", "schema_version", "action_id",
+    "future_hint",
+})
 UNRESTRICTED_KEYS = frozenset({
     "cmd", "command", "script", "shell", "argv", "executable", "cwd", "path",
     "env", "env_allow",
@@ -165,6 +177,51 @@ def test_api_zero_has_no_production_command_endpoint_yet():
     server = _SERVER.read_text(encoding="utf-8")
     assert "/command/" not in server
     assert "X-Conduct-CSRF" not in server
+
+
+def _typed_route_dependency_ready(dependency: dict) -> bool:
+    try:
+        module = importlib.import_module(dependency["public_module"])
+    except ModuleNotFoundError:
+        return False
+    violation = getattr(module, dependency["public_violation_type"], None)
+    relation = getattr(module, dependency["public_relation"], None)
+    if not isinstance(violation, type) or not callable(relation):
+        return False
+    try:
+        returned = get_type_hints(relation)["return"]
+    except (KeyError, NameError, TypeError):
+        return False
+    return get_origin(returned) is tuple and get_args(returned) == (violation, Ellipsis)
+
+
+def test_route_unsafe_is_blocked_on_a_public_typed_relation_not_prose():
+    dependency = CANON["route_dependency"]
+    assert dependency == {
+        "api_slice": "C/API-1",
+        "public_module": "conductor.command.containment",
+        "public_relation": "run_route_violations",
+        "public_violation_type": "RouteViolation",
+        "state": "blocking_until_typed",
+        "parse_exception_prose": False,
+    }
+    server = _SERVER.read_text(encoding="utf-8")
+    if not _typed_route_dependency_ready(dependency):
+        assert "/command/runs/" not in server
+        assert "route_unsafe" not in server
+    assert "PreviewError" not in server
+
+
+def test_csrf_contract_names_its_trusted_local_process_limit():
+    text = " ".join(_SPEC.read_text(encoding="utf-8").split())
+    required = (
+        "trusted single-user-host boundary",
+        "not local-process authentication",
+        "same OS user",
+        "can call `GET /command/session`",
+        "browser cross-origin requests and DNS rebinding only",
+    )
+    assert all(statement in text for statement in required)
 
 
 def test_session_and_stream_shapes_carry_no_durable_payload_or_secret_field():
@@ -469,6 +526,116 @@ def test_presented_token_and_process_memory_token_are_two_real_sides():
     assert not hmac.compare_digest(data["attacker_token"], expected)
 
 
+def _raw_header_values(pairs: list[list[str]], name: str) -> list[str]:
+    wanted = name.casefold()
+    return [value for key, value in pairs if key.casefold() == wanted]
+
+
+def _raw_body_is_one_json_object(body_hex: str) -> bool:
+    def unique_object(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError("duplicate JSON key")
+            result[key] = value
+        return result
+
+    try:
+        body = bytes.fromhex(body_hex).decode("utf-8", errors="strict")
+        decoded = json.loads(body, object_pairs_hook=unique_object)
+    except (UnicodeDecodeError, ValueError, json.JSONDecodeError):
+        return False
+    return isinstance(decoded, dict)
+
+
+def _raw_transport_result(case: dict) -> tuple[str, str | None, str]:
+    data, pairs = _load_fixtures(), case["raw_header_pairs"]
+    hosts = _raw_header_values(pairs, "Host")
+    if len(hosts) != 1 or hosts[0] not in data["loopback_hosts"]:
+        return "refuse", "same_origin_denied", "host"
+    expected_origin = f"http://{hosts[0]}"
+    origins = _raw_header_values(pairs, "Origin")
+    referers = _raw_header_values(pairs, "Referer")
+    if len(origins) > 1 or len(referers) > 1:
+        return "refuse", "same_origin_denied", "origin"
+    origin_ok = (origins[0] == expected_origin if origins else
+                 len(referers) == 1 and
+                 f"{urlsplit(referers[0]).scheme}://{urlsplit(referers[0]).netloc}"
+                 == expected_origin)
+    if not origin_ok:
+        return "refuse", "same_origin_denied", "origin"
+    tokens = _raw_header_values(pairs, data["csrf_header"])
+    if len(tokens) != 1 or not hmac.compare_digest(tokens[0], data["current_process_token"]):
+        return "refuse", "csrf_denied", "csrf"
+    content = _raw_header_values(pairs, "Content-Type")
+    if len(content) != 1 or content[0].casefold() not in {
+            "application/json", "application/json; charset=utf-8"}:
+        return "refuse", "malformed_request", "content_type"
+    if not _raw_body_is_one_json_object(case["body_utf8_hex"]):
+        return "refuse", "malformed_request", "body"
+    return "transport_pass", None, "contract"
+
+
+def _raw_transport_cases():
+    return _load_fixtures()["raw_transport_cases"]
+
+
+@pytest.mark.parametrize("case", _raw_transport_cases(), ids=lambda row: row["name"])
+def test_raw_transport_fixtures_hold_order_bytes_precedence_and_code(case):
+    assert isinstance(case["raw_header_pairs"], list)
+    assert all(isinstance(pair, list) and len(pair) == 2
+               for pair in case["raw_header_pairs"])
+    bytes.fromhex(case["body_utf8_hex"])
+    disposition, code, phase = _raw_transport_result(case)
+    assert (disposition, code, phase) == (
+        case["expected"]["disposition"], case["expected"]["error_code"],
+        case["expected"]["phase"])
+
+
+def test_duplicate_headers_cannot_be_hidden_by_dict_get_or_last_wins():
+    duplicate_names = {
+        "raw_duplicate_content_type", "raw_conflicting_content_type",
+        "raw_duplicate_host", "raw_conflicting_host", "raw_duplicate_origin",
+        "raw_conflicting_origin", "raw_duplicate_referer", "raw_conflicting_referer",
+        "raw_duplicate_csrf", "raw_conflicting_csrf",
+    }
+    cases = {row["name"]: row for row in _raw_transport_cases()}
+    assert duplicate_names <= set(cases)
+    for name in duplicate_names:
+        case = cases[name]
+        collapsed = {key.casefold(): [key, value] for key, value in case["raw_header_pairs"]}
+        last_wins = {**case, "raw_header_pairs": list(collapsed.values())}
+        assert _raw_transport_result(last_wins) != _raw_transport_result(case)
+
+
+def test_duplicate_json_key_is_visible_before_normal_json_last_wins():
+    case = next(row for row in _raw_transport_cases()
+                if row["name"] == "raw_duplicate_json_key")
+    body = bytes.fromhex(case["body_utf8_hex"]).decode("utf-8")
+    assert json.loads(body) == {"x": 2}
+    assert not _raw_body_is_one_json_object(case["body_utf8_hex"])
+
+
+def test_raw_transport_precedence_is_pairwise_and_phase_visible():
+    assert _load_fixtures()["transport_precedence"] == [
+        "host_cardinality_and_allowlist",
+        "origin_or_referer_cardinality_and_relation",
+        "csrf_cardinality_and_equality",
+        "content_type_cardinality_and_value",
+        "utf8_json_object_without_duplicate_keys",
+    ]
+    cases = {row["name"]: _raw_transport_result(row)
+             for row in _raw_transport_cases()}
+    assert cases["raw_origin_precedes_csrf"] == (
+        "refuse", "same_origin_denied", "origin")
+    assert cases["raw_csrf_precedes_content_type"] == (
+        "refuse", "csrf_denied", "csrf")
+    assert cases["raw_content_type_precedes_invalid_utf8"] == (
+        "refuse", "malformed_request", "content_type")
+    assert cases["raw_host_failure_precedes_invalid_utf8"] == (
+        "refuse", "same_origin_denied", "host")
+
+
 def _boundary_cases():
     return _load_boundary_fixtures()["proposal_cases"]
 
@@ -511,6 +678,33 @@ def test_boundary_fixture_relation_is_fail_closed(case):
     actual_disposition, actual_code = _proposal_disposition(case)
     assert actual_disposition == case["expected"]["disposition"]
     assert actual_code == case["expected"]["error_code"]
+
+
+def _closed_request_cases():
+    return _load_boundary_fixtures()["closed_request_cases"]
+
+
+@pytest.mark.parametrize("case", _closed_request_cases(), ids=lambda row: row["name"])
+def test_confirm_and_decision_requests_refuse_every_extra_field(case):
+    fields = CONFIRM_FIELDS if case["endpoint"] == "confirm" else DECISION_FIELDS
+    base_name = "confirm_request" if case["endpoint"] == "confirm" else "decision_request"
+    submitted = {**CANON[base_name], case["field"]: case["value"]}
+    assert set(submitted) - fields == {case["field"]}
+    assert case["expected"] == {
+        "disposition": "refuse", "error_code": "contract_invalid"}
+
+
+def test_closed_request_fixture_matrix_is_exhaustive_and_pins_nested_extras():
+    by_endpoint = {
+        endpoint: {row["field"] for row in _closed_request_cases()
+                   if row["endpoint"] == endpoint}
+        for endpoint in ("confirm", "decision")
+    }
+    assert by_endpoint == {
+        "confirm": set(CONFIRM_FORBIDDEN), "decision": set(DECISION_FORBIDDEN)}
+    nested = [row for row in _closed_request_cases() if row["field"] == "future_hint"]
+    assert {row["endpoint"] for row in nested} == {"confirm", "decision"}
+    assert all(isinstance(row["value"].get("nested"), dict) for row in nested)
 
 
 @pytest.mark.parametrize(
