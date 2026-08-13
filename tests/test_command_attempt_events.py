@@ -29,7 +29,7 @@ def an_event(**changes):
         "event_id": "event-lease", "run_id": request.run_id,
         "action_id": request.action_id, "attempt_id": request.attempt_id,
         "instance_id": request.instance_id, "adapter_id": "claude-code",
-        "phase": "lease", "recorded_at": NOW,
+        "phase": "effect_lease", "recorded_at": NOW,
         "request_digest": action_request_digest(request),
         "recovery_ref": "recovery-001", "outcome": None, "exit_code": None,
         "schema_version": 2,
@@ -49,22 +49,27 @@ def test_attempt_event_round_trip_is_frozen_and_has_exactly_thirteen_fields():
     assert payload["outcome"] is None and payload["exit_code"] is None
     assert AttemptEvent.from_dict(payload) == event
     with pytest.raises(AttributeError):
-        event.phase = "observed"
+        event.phase = "execution_observed"
 
 
 @pytest.mark.parametrize("change", [
     {"phase": "started"},
-    {"phase": "lease", "outcome": "unknown"},
-    {"phase": "lease", "exit_code": 0},
-    {"phase": "observed", "outcome": None},
-    {"phase": "observed", "outcome": "verification_failed"},
-    {"phase": "observed", "outcome": "succeeded", "exit_code": True},
-    {"phase": "observed", "outcome": "succeeded", "exit_code": 1},
-    {"phase": "observed", "outcome": "failed", "exit_code": 0},
-    {"phase": "observed", "outcome": "cancelled", "exit_code": 1},
-    {"phase": "observed", "outcome": "rejected", "exit_code": 1},
-    {"phase": "observed", "outcome": "unknown", "exit_code": 1},
+    {"phase": ["effect_lease"]},
+    {"phase": "effect_lease", "outcome": "unknown"},
+    {"phase": "effect_lease", "exit_code": 0},
+    {"phase": "execution_observed", "outcome": None},
+    {"phase": "execution_observed", "outcome": {"succeeded": True}},
+    {"phase": "execution_observed", "outcome": "verification_failed"},
+    {"phase": "execution_observed", "outcome": "succeeded", "exit_code": True},
+    {"phase": "execution_observed", "outcome": "succeeded", "exit_code": 1},
+    {"phase": "execution_observed", "outcome": "failed", "exit_code": 0},
+    {"phase": "execution_observed", "outcome": "cancelled", "exit_code": 1},
+    {"phase": "execution_observed", "outcome": "rejected", "exit_code": 1},
+    {"phase": "execution_observed", "outcome": "unknown", "exit_code": 1},
     {"recovery_ref": "not an id"},
+    {"schema_version": 3},
+    {"schema_version": 1},
+    {"schema_version": True},
 ])
 def test_phase_outcome_exit_and_recovery_ref_contract_is_strict(change):
     with pytest.raises(ContractError):
@@ -75,7 +80,7 @@ def test_observed_accepts_only_the_five_effect_facts_and_nullable_integer_exit()
     outcomes = ("succeeded", "failed", "cancelled", "rejected", "unknown")
     for index, outcome in enumerate(outcomes):
         event = an_event(
-            event_id=f"event-{index}", phase="observed", outcome=outcome,
+            event_id=f"event-{index}", phase="execution_observed", outcome=outcome,
             exit_code=0 if outcome == "succeeded" else (-1 if outcome == "failed" else None))
         assert event.outcome == outcome
 
@@ -86,6 +91,27 @@ def test_from_dict_refuses_missing_or_extra_fields_instead_of_preserving_them():
                     {**payload, "future": "meaning"}):
         with pytest.raises(ContractError, match="fields must be exact"):
             AttemptEvent.from_dict(changed)
+    for invalid in ([], {1: "non-string-key"}):
+        with pytest.raises(ContractError, match="JSON object with string keys"):
+            AttemptEvent.from_dict(invalid)
+
+
+@pytest.mark.parametrize("field", [
+    "event_id", "run_id", "action_id", "attempt_id", "instance_id",
+    "adapter_id", "recovery_ref",
+])
+def test_every_attempt_identity_field_is_validated(field):
+    with pytest.raises(ContractError, match=field):
+        an_event(**{field: "not an id"})
+
+
+@pytest.mark.parametrize("field,value", [
+    ("recorded_at", "not-a-time"),
+    ("request_digest", "not-a-digest"),
+])
+def test_time_and_digest_fields_are_validated(field, value):
+    with pytest.raises(ContractError, match=field):
+        an_event(**{field: value})
 
 
 def test_request_digest_covers_every_canonical_request_field_and_extra():

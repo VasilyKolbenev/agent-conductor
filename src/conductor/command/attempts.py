@@ -15,13 +15,12 @@ from .contracts import (
     ContractError,
     _digest,
     _id,
-    _schema,
     _timestamp,
     canonical_json,
 )
 
 
-ATTEMPT_PHASES = frozenset({"lease", "observed"})
+ATTEMPT_PHASES = frozenset({"effect_lease", "execution_observed"})
 OBSERVED_OUTCOMES = frozenset({
     "succeeded", "failed", "cancelled", "rejected", "unknown",
 })
@@ -64,7 +63,7 @@ class AttemptEvent:
                 "event_id", "run_id", "action_id", "attempt_id", "instance_id",
                 "adapter_id", "recovery_ref"):
             object.__setattr__(self, name, _id(name, getattr(self, name)))
-        if self.phase not in ATTEMPT_PHASES:
+        if not isinstance(self.phase, str) or self.phase not in ATTEMPT_PHASES:
             raise ContractError(
                 f"phase must be one of {sorted(ATTEMPT_PHASES)}, got {self.phase!r}")
         object.__setattr__(self, "recorded_at", _timestamp("recorded_at", self.recorded_at))
@@ -73,10 +72,10 @@ class AttemptEvent:
         if self.exit_code is not None and (
                 isinstance(self.exit_code, bool) or not isinstance(self.exit_code, int)):
             raise ContractError("exit_code must be an integer or null")
-        if self.phase == "lease":
+        if self.phase == "effect_lease":
             if self.outcome is not None or self.exit_code is not None:
-                raise ContractError("a lease event must have null outcome and exit_code")
-        elif self.outcome not in OBSERVED_OUTCOMES:
+                raise ContractError("an effect_lease event must have null outcome and exit_code")
+        elif not isinstance(self.outcome, str) or self.outcome not in OBSERVED_OUTCOMES:
             raise ContractError(
                 "an observed event outcome must be succeeded, failed, cancelled, "
                 "rejected, or unknown")
@@ -88,7 +87,8 @@ class AttemptEvent:
             if self.exit_code is not None:
                 raise ContractError(
                     f"a {self.outcome} observed event exit_code must be null")
-        object.__setattr__(self, "schema_version", _schema(self.schema_version))
+        if isinstance(self.schema_version, bool) or self.schema_version != 2:
+            raise ContractError("AttemptEvent schema_version must be exactly 2")
 
     def as_dict(self) -> dict[str, Any]:
         """Return exactly the thirteen contracted fields, including nulls."""
