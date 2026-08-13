@@ -19,6 +19,7 @@ from urllib.parse import urlsplit
 _JSON_MEDIA_TYPES = frozenset({
     "application/json", "application/json; charset=utf-8",
 })
+MAX_COMMAND_BODY_BYTES = 64 * 1024
 _REFUSALS = MappingProxyType({
     "host": (
         "same_origin_denied", 403, "request Host is not allowed"),
@@ -134,6 +135,23 @@ def validate_command_host(
         allowed_hosts: frozenset[str]) -> str:
     """Validate exact Host cardinality and allowlist for a command GET."""
     return _host(_header_pairs(raw_header_pairs), allowed_hosts)
+
+
+def command_content_length(
+        raw_header_pairs: Iterable[tuple[str, str]]) -> int:
+    """Return one bounded command body length or a fixed malformed refusal."""
+    pairs = _header_pairs(raw_header_pairs)
+    values = _values(pairs, "Content-Length")
+    transfer = _values(pairs, "Transfer-Encoding")
+    if (transfer or len(values) != 1 or not values[0].isascii()
+            or not values[0].isdigit()):
+        raise HttpRefusal("body") from None
+    normalized = values[0].lstrip("0") or "0"
+    ceiling = str(MAX_COMMAND_BODY_BYTES)
+    if (len(normalized) > len(ceiling)
+            or (len(normalized) == len(ceiling) and normalized > ceiling)):
+        raise HttpRefusal("body") from None
+    return int(normalized)
 
 
 def _same_origin(pairs: tuple[tuple[str, str], ...], host: str) -> None:
