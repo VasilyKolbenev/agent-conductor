@@ -586,8 +586,9 @@ All existing v1 and CMD-1..4 regressions stay green.
   server-owned time/identity arrive with C/API-1. A shared command-layer containment engine holds
   preview, direct `ControlRuntime` entry, and runner cwd routes before replay, prepare, every
   durable append, and spawn; it refuses symlink, junction, any reparse point, irregular owned
-  files and hard-link aliases. A found control-loop run is checked read-only against contract-derived
-  envelope/config/history prefixes before proposal append. Execution holds the complete durable
+  files and hard-link aliases. A found control-loop run is checked read-only against
+  contract-derived envelope/config/history prefixes before proposal append. Execution holds the
+  complete durable
   `ActionRequest`, reconstructs private canonical values at each untrusted adapter seam, consumes
   a memory-only one-shot grant before prepare, suppresses an exact terminal replay, and treats a
   request-without-result as ambiguous instead of retrying it across a crash or restart. Returned
