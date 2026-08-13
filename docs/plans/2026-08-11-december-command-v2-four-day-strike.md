@@ -487,6 +487,35 @@ verify -> immutable receipt from CLI; stale confirmation, changed digest, path e
 shell text, timeout, duplicate idempotency, and foreign PID are independently red under sabotage.
 All existing v1 and CMD-1..4 regressions stay green.
 
+- **A/CONF-1 + A/RT-1 — landed on `track/v2a-runtime` (lane A Day-1).** New
+  `src/conductor/command/runtime.py` is the Confirm state machine over the frozen CMD-1..3
+  surfaces: it edits none of them and adds no store record type — every durable fact is one of
+  the six the store already knows. `ControlRuntime.authorize` holds a fresh Human `Confirmation`
+  against the run's own durable proposal — canonical preview digest, scope, capability, frozen
+  config — plus freshness and the action/time budgets, and refuses ANY changed or stale fact
+  before preparation and before one byte is written; a clean confirmation mints and appends the
+  `ActionRequest` that records the confirmation as its own store record (the confirming human,
+  the freshness instant, the confirmed digest), separate from any result and guarded by the
+  store's RecordConflict/idempotency (CMD-2). `ControlRuntime.execute` drives the authorized
+  request prepare -> execute -> verify -> one immutable result receipt, keeping accepted,
+  started, succeeded, failed, cancelled, unknown, and verification_failed distinct: a crashed,
+  empty, or foreign result is unknown, never success; a reported success reaches succeeded only
+  through an explicit `verified` verification, with mismatch/error -> verification_failed and
+  unavailable -> success left explicitly unverified. The runtime is adapter-agnostic — it
+  resolves the adapter from the frozen-config binding, never a caller's word — and its source
+  imports no process or machine door. The four owned sabotage classes each ship a permanent
+  regression born of an executed red (the guard was disabled, the test observed red, then
+  reverted): stale confirmation refused, changed preview digest refused, duplicate idempotency
+  refused with no second durable effect, and a crashed/lost attempt never read as success. Path
+  escape, shell text, timeout and foreign PID were left to lane B. A deferred CLI verb
+  `conduct confirm` (`src/conductor/command/control_loop.py`) runs the whole loop against an
+  in-process fake adapter and prints the immutable result receipt; README and the release smoke
+  name it and the exact usage-line guard matches; the machine-probing ban stays green because
+  the import is deferred. Tests: `tests/test_command_runtime_authorize.py`,
+  `tests/test_command_runtime_execute.py`, `tests/test_command_control_loop.py`. Targeted gate
+  76 passed; full suite 2087 passed, 4 platform skips. Policy (Day-3), attempt persistence,
+  restart recovery and switch (Day-2) are not built here.
+
 ### 12.4 Day 2 — two deep adapters and the writable Cockpit
 
 Deadline: 2026-08-14 end of day.
