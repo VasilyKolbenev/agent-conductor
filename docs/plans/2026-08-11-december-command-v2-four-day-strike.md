@@ -591,14 +591,19 @@ All existing v1 and CMD-1..4 regressions stay green.
   complete durable
   `ActionRequest`, reconstructs private canonical values at each untrusted adapter seam, consumes
   a memory-only one-shot grant before prepare, suppresses an exact terminal replay, and treats a
-  request-without-result as ambiguous instead of retrying it across a crash or restart. Returned
+  request-only restart as ambiguous instead of inventing fresh execution authority. Before the
+  first effect it durably appends `effect_lease`; a validated returned effect becomes
+  `execution_observed` before verification or a terminal result. Lease-only recovery never
+  executes again and closes as `unknown`; observed recovery is verify-only; terminal replay calls
+  no adapter seam. Returned
   requests execute only when the durable Run envelope itself remains in Confirm mode; authorize
   and execute hold that authority independently before append, replay, or any adapter seam.
   Returned observation/result/verification identities are reconstructed and held against the
-  frozen binding; arbitrary adapter prose is never persisted. Day-1 cannot causally bind
-  post-action evidence without a durable
-  `execution_observed` fact, so every `verified` response remains `verification_failed` and every
-  terminal receipt with evidence refs is refused on replay; verified success belongs to A/RT-2.
+  frozen binding; arbitrary adapter prose is never persisted. Verified evidence can succeed only
+  when its durable record follows `execution_observed` and the store proves its run, action,
+  adapter, URI, and verification bindings. Preplanted, absent, or foreign evidence cannot become
+  success. Recovery still has no vendor reconcile/adoption seam: PID or token text grants no
+  authority, and this slice adopts or kills no process.
   Adapter failures persist only runtime-owned phase classifications; exception type names and
   messages are both untrusted and never durable. Public process dispatch
   persists only structured argv/cwd/output bound and environment variable names; literal env
@@ -606,8 +611,8 @@ All existing v1 and CMD-1..4 regressions stay green.
   configured kill-on-close Job before resume; every post-Popen construction failure uses bounded
   kill/wait/close cleanup, and descendant groups are retired before output-pipe join. Accepted
   limits stay explicit: structural checks are check-then-act rather than an OS sandbox, NTFS ADS
-  is not inspected, and operator `--dir` defines a resolved authority root. Day-2 still owns
-  crash-safe attempt persistence/reconciliation beyond the current fail-closed ambiguous state.
+  is not inspected, and operator `--dir` defines a resolved authority root. A later typed adapter
+  recovery seam may reconcile lease-only effects; until then ambiguity remains fail-closed.
 
 ### 12.4 Day 2 — two deep adapters and the writable Cockpit
 
