@@ -698,5 +698,8 @@ def test_the_runtime_source_opens_no_machine_or_process_door():
             if node.level >= 1:
                 continue  # a sibling module inside the command package
             imported.add(node.module or "")
-    allowed = {"__future__", "collections.abc", "dataclasses", "datetime", "enum", "typing"}
+    allowed = {
+        "__future__", "collections.abc", "dataclasses", "datetime", "enum",
+        "threading", "typing",
+    }
     assert imported <= allowed, sorted(imported - allowed)

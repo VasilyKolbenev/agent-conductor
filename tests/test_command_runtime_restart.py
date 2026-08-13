@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import pytest
 
+from conductor.command.adapters import AdapterVerification
 from conductor.command.attempts import AttemptEvent, action_request_digest
 from conductor.command.contracts import canonical_json
 from conductor.command.run_store import CorruptRun, RunStore
@@ -130,7 +131,6 @@ def test_observed_restart_is_verify_only_and_events_are_exactly_once(
     assert adapter.execute_calls == 1
     assert [row.phase for row in attempt_events(store)] == [
         "effect_lease", "execution_observed"]
-
     fresh = ScriptedAdapter()
     recovered = a_runtime(RunStore(tmp_path), fresh).execute(authorization)
     assert recovered.state is AttemptState.SUCCEEDED
@@ -145,6 +145,56 @@ def test_observed_restart_is_verify_only_and_events_are_exactly_once(
     assert (store.run_path("run-001") / "records.jsonl").read_bytes() == before
     assert [row.phase for row in attempt_events(store)] == [
         "effect_lease", "execution_observed"]
+
+
+def test_live_and_restart_verify_receive_the_same_observed_event_receipt(
+        tmp_path, monkeypatch):
+    expected_receipt = "execution_observed-event-fixed"
+
+    class ReceiptSensitive(ScriptedAdapter):
+        def __init__(self):
+            super().__init__(result_changes={
+                "receipt_id": "adapter-private-result",
+                "observed_at": "2026-08-11T11:59:00Z",
+                "detail": "APIKEY_ADAPTER_DETAIL",
+                "evidence_refs": ("adapter-private-evidence",),
+            })
+            self.verify_inputs = []
+
+        def verify(self, request, result):
+            self.verify_calls += 1
+            self.verify_inputs.append(result)
+            state = "unavailable" if result.receipt_id == expected_receipt else "failed"
+            return AdapterVerification(
+                adapter_id=self.manifest.adapter_id, action_id=request.action_id,
+                state=state, observed_at=NOW, detail="receipt identity control")
+
+    live_store = a_store(tmp_path / "live")
+    live_adapter = ReceiptSensitive()
+    live_runtime, live_authorization = authorized(live_store, live_adapter)
+    live = live_runtime.execute(live_authorization)
+
+    restart_store = a_store(tmp_path / "restart")
+    initial_adapter = ScriptedAdapter()
+    initial, restart_authorization = authorized(restart_store, initial_adapter)
+    monkeypatch.setattr(
+        initial, "_resolve",
+        lambda *args: (_ for _ in ()).throw(RuntimeError("crash after observed")))
+    with pytest.raises(RuntimeError, match="crash after observed"):
+        initial.execute(restart_authorization)
+    restart_adapter = ReceiptSensitive()
+    resumed = a_runtime(
+        RunStore(tmp_path / "restart"), restart_adapter).execute(
+            restart_authorization)
+
+    assert live.state is resumed.state is AttemptState.SUCCEEDED
+    assert live_adapter.verify_inputs[0].as_dict() == (
+        restart_adapter.verify_inputs[0].as_dict())
+    canonical = live_adapter.verify_inputs[0]
+    assert canonical.receipt_id == expected_receipt
+    assert canonical.observed_at == NOW
+    assert canonical.detail is None and canonical.evidence_refs == ()
+    assert "APIKEY_ADAPTER_DETAIL" not in repr(canonical.as_dict())
 
 
 @pytest.mark.parametrize("field,foreign", [

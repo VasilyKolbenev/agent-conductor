@@ -42,6 +42,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
+from threading import Lock
 from typing import Any
 
 from .adapters import AdapterRegistry, AdapterVerification, PreparedAction
@@ -100,6 +101,20 @@ _NON_SUCCESS: dict[str, AttemptState] = {
     "unknown": AttemptState.UNKNOWN,
     "rejected": AttemptState.FAILED,
 }
+
+# Process-local only: distinct Runtime/RunStore objects sharing one canonical
+# project root use the same retained lock. Cross-process exclusion is not claimed.
+_LOCKS_GUARD = Lock()
+_OPERATION_LOCKS: dict[tuple[Any, ...], Any] = {}
+
+
+def _operation_lock(key: tuple[Any, ...]):
+    with _LOCKS_GUARD:
+        lock = _OPERATION_LOCKS.get(key)
+        if lock is None:
+            lock = Lock()
+            _OPERATION_LOCKS[key] = lock
+        return lock
 
 
 def _instant(name: str, value: object) -> datetime:
@@ -227,6 +242,15 @@ class ControlRuntime:
             raise AuthorizationError("authorize requires a validated Confirmation")
         if not isinstance(budget, Budget):
             raise AuthorizationError("authorize requires a validated Budget")
+        logical = f"dispatch-{confirmation.proposal_id}"
+        key = self._lock_key(
+            "authorize", confirmation.run_id, confirmation.proposal_id, logical)
+        with _operation_lock(key):
+            return self._authorize_locked(confirmation, budget)
+
+    def _authorize_locked(
+            self, confirmation: Confirmation, budget: Budget) -> Authorization:
+        """Hold one proposal transition from authoritative read through grant."""
         self._hold_route(confirmation.run_id, AuthorizationError)
         recovered = self._store.read(confirmation.run_id)
         if recovered.envelope.mode is not ControlMode.CONFIRM:
@@ -260,6 +284,9 @@ class ControlRuntime:
         if appended:
             self._grants.add((canonical.run_id, canonical.action_id))
         return Authorization(request=ActionRequest.from_dict(canonical.as_dict()))
+
+    def _lock_key(self, operation: str, *parts: str) -> tuple[Any, ...]:
+        return (operation, self._store.project_root, *parts)
 
     @staticmethod
     def _stored_proposal(recovered: RecoveredRun, proposal_id: str) -> ActionProposal:
@@ -339,6 +366,16 @@ class ControlRuntime:
 
     def execute(self, authorization: Authorization) -> Attempt:
         """Drive the authorized request; return the attempt with its terminal state."""
+        if not isinstance(authorization, Authorization):
+            raise ExecutionError("execute requires an Authorization from authorize")
+        claimed = ActionRequest.from_dict(authorization.request.as_dict())
+        copied = Authorization(request=claimed)
+        key = self._lock_key("execute", claimed.run_id, claimed.action_id)
+        with _operation_lock(key):
+            return self._execute_locked(copied)
+
+    def _execute_locked(self, authorization: Authorization) -> Attempt:
+        """Hold recovery through the one terminal append for this action."""
         canonical, recovered = self._recover_authorized(authorization)
         replayed = self._replayed_attempt(canonical, recovered)
         if replayed is not None:
@@ -410,7 +447,8 @@ class ControlRuntime:
             exit_code=report.exit_code if report is not None else None)
         if report is None:
             return self._finish(canonical, AttemptState.UNKNOWN, history, detail=note)
-        return self._resolve(canonical, bound, report, observed, history)
+        canonical_report = self._observed_report(canonical, observed)
+        return self._resolve(canonical, bound, canonical_report, observed, history)
 
     @staticmethod
     def _replayed_attempt(request: ActionRequest, recovered: RecoveredRun) -> Attempt | None:
@@ -517,14 +555,20 @@ class ControlRuntime:
             observed: AttemptEvent) -> Attempt:
         """Resolve a durable observation without preparing or executing again."""
         _, bound = self._bound_adapter(recovered, request.instance_id)
-        report = ActionResultReceipt(
+        report = self._observed_report(request, observed)
+        history = (AttemptState.ACCEPTED, AttemptState.STARTED)
+        return self._resolve(request, bound, report, observed, history)
+
+    @staticmethod
+    def _observed_report(
+            request: ActionRequest, observed: AttemptEvent) -> ActionResultReceipt:
+        """Project the sole live/restart verify input from the durable event."""
+        return ActionResultReceipt(
             receipt_id=observed.event_id,
             action_id=request.action_id, run_id=request.run_id,
             attempt_id=request.attempt_id, instance_id=request.instance_id,
             outcome=observed.outcome, observed_at=observed.recorded_at,
-            detail=None, exit_code=observed.exit_code)
-        history = (AttemptState.ACCEPTED, AttemptState.STARTED)
-        return self._resolve(request, bound, report, observed, history)
+            evidence_refs=(), detail=None, exit_code=observed.exit_code)
 
     def _observe_execute(
             self, bound: str, prepared: PreparedAction,
