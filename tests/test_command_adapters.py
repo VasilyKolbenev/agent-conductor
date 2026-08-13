@@ -404,6 +404,15 @@ def test_registry_reconstructs_prepared_values_and_rejects_foreign_adapter_ident
     assert approved.action_id == "action-001"
 
 
+def test_registry_execute_refuses_a_prepared_value_for_a_foreign_adapter():
+    adapter = FakeAdapter()
+    registry = AdapterRegistry([adapter])
+    foreign = PreparedAction(
+        adapter_id="foreign-adapter", request=an_action(), adapter_payload={})
+    with pytest.raises(AdapterContractError, match="adapter_id"):
+        registry.execute("claude-code", foreign)
+
+
 def test_an_adapter_that_rewrites_the_request_in_place_cannot_widen_its_own_authority():
     adapter = FakeAdapter()
     registry = AdapterRegistry([adapter])

@@ -26,7 +26,7 @@ from conductor.command.adapters import (
     AdapterVerification,
     PreparedAction,
 )
-from conductor.command.contracts import ActionResultReceipt, EvidenceRef
+from conductor.command.contracts import ActionRequest, ActionResultReceipt, EvidenceRef
 from conductor.command.run_store import RecordConflict, RunStore
 from conductor.command.runtime import (
     AttemptState,
@@ -132,6 +132,17 @@ def authorized(store, adapter, *, proposal_changes=None, **runtime):
 
 def kinds(store, run_id="run-001"):
     return [row.kind for row in store.read(run_id).records]
+
+
+def request_for(proposal):
+    return ActionRequest(
+        action_id="action-preexisting", run_id=proposal.run_id,
+        attempt_id=proposal.attempt_id, instance_id=proposal.instance_id,
+        capability=proposal.capability, arguments=proposal.arguments,
+        scope=proposal.scope, requested_by="owner", requested_at=NOW,
+        idempotency_key=f"dispatch-{proposal.proposal_id}",
+        timeout_seconds=proposal.timeout_seconds,
+        preview_digest=proposal.preview_digest, mode="confirm")
 
 
 def seed_verified_evidence(store, adapter_id="claude-code", *,
@@ -332,6 +343,22 @@ def test_execute_refuses_a_request_the_store_never_authorized(tmp_path):
     with pytest.raises(ExecutionError, match="never authorized"):
         runtime.execute(forged)
     assert adapter.execute_calls == 0
+
+
+@pytest.mark.parametrize("mode", ["observe", "propose", "policy"])
+def test_direct_execute_refuses_preexisting_request_in_every_non_confirm_run(
+        tmp_path, mode):
+    store = a_store(tmp_path, mode=mode)
+    proposal = a_proposal(store)
+    request = request_for(proposal)
+    store.append(request)
+    journal = store.run_path("run-001") / "records.jsonl"
+    before = journal.read_bytes()
+    adapter = ScriptedAdapter()
+    with pytest.raises(ExecutionError, match="requires run mode 'confirm'"):
+        a_runtime(store, adapter).execute(Authorization(request=request))
+    assert adapter.prepare_calls == adapter.execute_calls == adapter.verify_calls == 0
+    assert journal.read_bytes() == before
 
 
 def test_execute_refuses_same_id_with_changed_facts_before_prepare_or_append(tmp_path):

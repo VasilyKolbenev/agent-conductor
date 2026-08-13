@@ -65,7 +65,7 @@ def counting_ids():
     return ids
 
 
-def a_store(tmp_path, *, mode="propose"):
+def a_store(tmp_path, *, mode="confirm"):
     store = RunStore(tmp_path)
     store.create_run(a_run(mode=mode, config_digest=snapshot_digest(CONFIG)), CONFIG)
     return store
@@ -181,6 +181,18 @@ def test_a_clean_confirmation_records_the_request_separately_from_any_result(tmp
     # It landed as its own record beside the proposal, and no result exists.
     assert [row.kind for row in after] == ["action_proposal", "action_request"]
     assert after[1].value == request
+
+
+@pytest.mark.parametrize("mode", ["observe", "propose", "policy"])
+def test_confirm_authorize_refuses_every_non_confirm_run_before_append(tmp_path, mode):
+    store = a_store(tmp_path, mode=mode)
+    proposal = a_proposal(store)
+    journal = store.run_path("run-001") / "records.jsonl"
+    before = journal.read_bytes()
+    with pytest.raises(AuthorizationError, match="requires run mode 'confirm'"):
+        a_runtime(store).authorize(a_confirmation(proposal), budget=a_budget())
+    assert journal.read_bytes() == before
+    assert action_requests(store) == []
 
 
 def test_an_identical_confirmation_replayed_adds_no_second_request(tmp_path):

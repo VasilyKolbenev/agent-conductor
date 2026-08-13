@@ -322,6 +322,9 @@ class AdapterRegistry:
         if not isinstance(prepared, PreparedAction):
             raise AdapterContractError("execute requires a validated PreparedAction")
         adapter = self._require(adapter_id, prepared.request.capability)
+        if prepared.adapter_id != self._registered_manifest(adapter_id).adapter_id:
+            raise AdapterContractError(
+                "prepared adapter_id does not match the registered adapter")
         handed = PreparedAction(
             adapter_id=prepared.adapter_id,
             request=ActionRequest.from_dict(prepared.request.as_dict()),

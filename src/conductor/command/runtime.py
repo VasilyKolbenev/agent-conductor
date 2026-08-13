@@ -229,6 +229,8 @@ class ControlRuntime:
             raise AuthorizationError("authorize requires a validated Budget")
         self._hold_route(confirmation.run_id, AuthorizationError)
         recovered = self._store.read(confirmation.run_id)
+        if recovered.envelope.mode is not ControlMode.CONFIRM:
+            raise AuthorizationError("Confirm runtime requires run mode 'confirm'")
         if recovered.warnings:
             raise AuthorizationError(
                 "authorize refuses a run whose replay left unjudged durable bytes")
@@ -342,6 +344,8 @@ class ControlRuntime:
         claimed = ActionRequest.from_dict(authorization.request.as_dict())
         self._hold_route(claimed.run_id, ExecutionError)
         recovered = self._store.read(claimed.run_id)
+        if recovered.envelope.mode is not ControlMode.CONFIRM:
+            raise ExecutionError("Confirm runtime requires run mode 'confirm'")
         if recovered.warnings:
             raise ExecutionError(
                 "execute refuses a run whose replay left unjudged durable bytes")
