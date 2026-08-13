@@ -1,9 +1,16 @@
 """Strict value-contract tests for RT-2 AttemptEvent facts."""
 from __future__ import annotations
 
+import hashlib
+
 import pytest
 
-from conductor.command.attempts import AttemptEvent, action_request_digest
+from conductor.command.attempts import (
+    ATTEMPT_PHASES,
+    OBSERVED_OUTCOMES,
+    AttemptEvent,
+    action_request_digest,
+)
 from conductor.command.contracts import ActionRequest, ContractError, canonical_json
 
 
@@ -52,6 +59,12 @@ def test_attempt_event_round_trip_is_frozen_and_has_exactly_thirteen_fields():
         event.phase = "execution_observed"
 
 
+def test_attempt_vocabularies_are_exact_closed_sets():
+    assert ATTEMPT_PHASES == frozenset({"effect_lease", "execution_observed"})
+    assert OBSERVED_OUTCOMES == frozenset({
+        "succeeded", "failed", "cancelled", "rejected", "unknown"})
+
+
 @pytest.mark.parametrize("change", [
     {"phase": "started"},
     {"phase": ["effect_lease"]},
@@ -83,6 +96,10 @@ def test_observed_accepts_only_the_five_effect_facts_and_nullable_integer_exit()
             event_id=f"event-{index}", phase="execution_observed", outcome=outcome,
             exit_code=0 if outcome == "succeeded" else (-1 if outcome == "failed" else None))
         assert event.outcome == outcome
+    assert an_event(
+        phase="execution_observed", outcome="succeeded", exit_code=None).exit_code is None
+    assert an_event(
+        phase="execution_observed", outcome="failed", exit_code=None).exit_code is None
 
 
 def test_from_dict_refuses_missing_or_extra_fields_instead_of_preserving_them():
@@ -116,7 +133,9 @@ def test_time_and_digest_fields_are_validated(field, value):
 
 def test_request_digest_covers_every_canonical_request_field_and_extra():
     baseline = an_action()
-    assert action_request_digest(baseline).startswith("sha256:")
+    expected = "sha256:" + hashlib.sha256(
+        canonical_json(baseline.as_dict()).encode("utf-8")).hexdigest()
+    assert action_request_digest(baseline) == expected
     variants = [
         an_action(arguments={"handoff": "changed"}),
         an_action(scope=("tests",)),
