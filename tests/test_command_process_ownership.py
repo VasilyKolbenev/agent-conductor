@@ -31,6 +31,7 @@ from tests._fakeproc import (
     HEARTBEAT_INTERVAL,
     PID_FILE,
     SPAWN_HB_FILE,
+    SPAWN_READY_FILE,
     fake_argv,
     read_int,
     wait_for_int,
@@ -80,9 +81,10 @@ def _assert_frozen(beat):
 
 
 def _assert_advancing(beat):
-    before = read_int(beat)
+    before = wait_for_int(beat)
     time.sleep(0.1)
-    assert read_int(beat) > before  # still ticking: alive and running
+    after = wait_for_int(beat)
+    assert after > before  # still ticking: alive and running
 
 
 # --- the runner records the exact child it started ---
@@ -200,3 +202,20 @@ def test_stop_reaches_the_childs_grandchild_through_the_group(root, runners, tmp
     _assert_frozen(parent_beat)
     _assert_frozen(child_beat)  # and dies with the group, not orphaned
     assert runner.active_tokens() == ()
+
+
+def test_run_retires_a_grandchild_that_outlives_its_leader_without_pipe_hang(
+        root, runners, tmp_path):
+    """A leader exits after spawn; inherited stdout cannot block group retirement."""
+    child_beat, ready = tmp_path / "orphan-candidate", tmp_path / "child-ready"
+    runner = runners(root)
+    outcome = runner.run(CommandSpec(
+        argv=fake_argv(), cwd="work",
+        env={SPAWN_HB_FILE: str(child_beat), SPAWN_READY_FILE: str(ready),
+             HEARTBEAT_INTERVAL: "0.02"},
+        timeout_seconds=5))
+    assert outcome.status == "completed"
+    assert runner.active_tokens() == ()
+    assert ready.read_text(encoding="ascii") == "1"
+    assert read_int(child_beat) is not None
+    _assert_frozen(child_beat)

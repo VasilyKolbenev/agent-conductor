@@ -20,6 +20,7 @@ from .contracts import (
     ObservationRecord,
     frozen_config_bindings,
 )
+from .dispatch import DispatchArgumentError
 from .run_store import RunStore
 
 
@@ -105,6 +106,10 @@ class CommandService:
         if capability not in self._registry.controls(bound):
             raise UnsupportedCapability(
                 f"adapter {bound!r} does not declare capability {capability!r}")
+        try:
+            self._registry.validate_arguments(bound, capability, arguments)
+        except DispatchArgumentError as e:
+            raise ServiceError(str(e)) from e
         proposal = ActionProposal(
             proposal_id=proposal_id or self._ids("proposal"),
             run_id=run_id,

@@ -16,6 +16,7 @@ import json
 
 import pytest
 
+from conductor.command.adapters import process as process_module
 from conductor.command.adapters.process import (
     CommandSpec,
     CommandSpecError,
@@ -258,3 +259,63 @@ def test_wait_for_int_is_a_real_witness(tmp_path):
     assert wait_for_int(beat, timeout=1.0) == 5
     with pytest.raises(AssertionError):
         wait_for_int(tmp_path / "absent", timeout=0.2)
+
+
+def test_token_entropy_failure_reaps_the_child_and_leaves_no_ownership(
+        root, runners, monkeypatch):
+    """Mint failure happens after spawn/group creation and must still fail closed."""
+    runner = runners(root)
+    spawned = []
+    real_popen = process_module.subprocess.Popen
+
+    def recording_popen(*args, **kwargs):
+        proc = real_popen(*args, **kwargs)
+        spawned.append(proc)
+        return proc
+
+    monkeypatch.setattr(process_module.subprocess, "Popen", recording_popen)
+    monkeypatch.setattr(
+        process_module.secrets, "token_hex",
+        lambda size: (_ for _ in ()).throw(OSError("entropy unavailable")))
+    with pytest.raises(OSError, match="entropy unavailable"):
+        runner.start(CommandSpec(argv=fake_argv(), cwd="work"))
+    assert len(spawned) == 1 and spawned[0].poll() is not None
+    assert runner.active_tokens() == ()
+
+
+def test_cleanup_reaps_directly_even_when_group_termination_raises(
+        root, runners, monkeypatch):
+    runner = runners(root)
+    spawned, groups = [], []
+    real_popen = process_module.subprocess.Popen
+
+    class BrokenGroup:
+        def __init__(self):
+            self.closed = False
+
+        def terminate(self):
+            raise OSError("group termination failed")
+
+        def close(self):
+            self.closed = True
+
+    def recording_popen(*args, **kwargs):
+        proc = real_popen(*args, **kwargs)
+        spawned.append(proc)
+        return proc
+
+    def broken_group(proc):
+        group = BrokenGroup()
+        groups.append(group)
+        return group
+
+    monkeypatch.setattr(process_module.subprocess, "Popen", recording_popen)
+    monkeypatch.setattr(process_module._procgroup, "make_group", broken_group)
+    monkeypatch.setattr(
+        process_module.secrets, "token_hex",
+        lambda size: (_ for _ in ()).throw(OSError("entropy unavailable")))
+    with pytest.raises(OSError, match="entropy unavailable"):
+        runner.start(CommandSpec(argv=fake_argv(), cwd="work"))
+    assert len(spawned) == 1 and spawned[0].poll() is not None
+    assert len(groups) == 1 and groups[0].closed
+    assert runner.active_tokens() == ()

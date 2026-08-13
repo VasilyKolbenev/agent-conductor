@@ -30,6 +30,7 @@ HEARTBEAT_FILE = "FAKEPROC_HEARTBEAT_FILE"
 HEARTBEAT_MAX = "FAKEPROC_HEARTBEAT_MAX"
 HEARTBEAT_INTERVAL = "FAKEPROC_HEARTBEAT_INTERVAL"
 SPAWN_HB_FILE = "FAKEPROC_SPAWN_HB_FILE"
+SPAWN_READY_FILE = "FAKEPROC_SPAWN_READY_FILE"
 SLEEP = "FAKEPROC_SLEEP"
 EMIT_BYTES = "FAKEPROC_EMIT_BYTES"
 EMIT_STDOUT = "FAKEPROC_EMIT_STDOUT"
@@ -102,6 +103,10 @@ def _spawn_grandchild(heartbeat_file: str) -> None:
     env.pop(PID_FILE, None)
     env[HEARTBEAT_FILE] = heartbeat_file
     subprocess.Popen(fake_argv(), env=env)
+    ready = env.get(SPAWN_READY_FILE)
+    if ready:
+        wait_for_int(heartbeat_file)
+        _write_atomic(ready, "1")
 
 
 def _heartbeat(path: str) -> None:

@@ -39,7 +39,6 @@ from __future__ import annotations
 import os
 import re
 import secrets
-import stat
 import subprocess
 import threading
 from collections.abc import Callable, Mapping, Sequence
@@ -51,6 +50,8 @@ from ..contracts import (
     ActionRequest,
     ActionResultReceipt,
 )
+from ..containment import contained_directory, detected_portal as _detected_portal
+from ..dispatch import DispatchArgumentError, validate_dispatch_arguments
 from . import _procgroup
 from .base import (
     AdapterContractError,
@@ -67,10 +68,6 @@ DEFAULT_OUTPUT_LIMIT = 64 * 1024
 _READ_CHUNK = 64 * 1024
 #: A POSIX environment variable name; the same shape run_store screens against.
 _ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
-#: A junction's reparse tag, read from lstat without following anything. The
-#: constant exists on every platform; the attribute is Windows-only, so the
-#: getattr in ``_detected_portal`` answers 0 elsewhere and no path is a portal.
-_JUNCTION_TAG = getattr(stat, "IO_REPARSE_TAG_MOUNT_POINT", 0xA0000003)
 #: The one capability this adapter executes; every other control stays absent.
 DISPATCH_CAPABILITY = "dispatch"
 
@@ -188,26 +185,6 @@ class ProcessOutcome:
     token: str
 
 
-def _detected_portal(found: os.stat_result) -> str | None:
-    """Name the reparse fact lstat established, or None for an ordinary object."""
-    if stat.S_ISLNK(found.st_mode):
-        return "a symbolic link"
-    tag = getattr(found, "st_reparse_tag", 0)
-    if tag == _JUNCTION_TAG:
-        return "a directory junction"
-    if tag:
-        return f"a reparse point (tag {tag:#010x})"
-    return None
-
-
-def _lstat_or_none(path: Path) -> os.stat_result | None:
-    """Read one route component without following anything; None if it cannot be."""
-    try:
-        return os.lstat(path)
-    except OSError:
-        return None
-
-
 class _Owned:
     """A live child, its termination group, and a bounded pump over its output."""
 
@@ -273,7 +250,12 @@ class ProcessRunner:
         self._lock = threading.Lock()
 
     def start(self, spec: CommandSpec) -> OwnedProcess:
-        """Spawn the child and record it; the pump bounds its output immediately."""
+        """Spawn and return an ownership token that must be explicitly stopped.
+
+        Day-1 exposes no asynchronous success/reap claim: launchers may exit
+        before their real child, so the group token remains owned until ``stop``
+        retires the whole group.  Synchronous completion belongs to ``run``.
+        """
         owned = self._spawn(spec)
         return OwnedProcess(token=owned.token, pid=owned.pid)
 
@@ -288,6 +270,10 @@ class ProcessRunner:
                 owned.group.terminate()
                 owned.proc.wait()
                 status = "timed_out"
+            # A leader may exit while descendants still run.  Terminate the
+            # group BEFORE joining the inherited output pipe: a descendant may
+            # still hold that pipe open after the leader exits.
+            owned.group.terminate()
             return owned.finish(status)
         finally:
             self._release(owned)
@@ -300,6 +286,17 @@ class ProcessRunner:
             raise OwnershipError(
                 f"stop names token {token!r}, which this runner did not mint or no "
                 "longer holds; it terminates only a child it started and still owns")
+        if owned.proc.poll() is not None:
+            try:
+                # The group handle, not a caller PID, remains the ownership
+                # witness; retire descendants before retiring the token.
+                owned.group.terminate()
+                owned.finish("stopped")  # join the pump after descendants close the pipe
+            finally:
+                self._release(owned)
+            raise OwnershipError(
+                f"stop names token {token!r}, whose leader already finished; "
+                "its owned descendants were retired with the group")
         owned.group.terminate()
         owned.proc.wait()
         try:
@@ -319,12 +316,44 @@ class ProcessRunner:
             list(spec.argv), cwd=str(cwd), env=env, shell=False, bufsize=0,
             stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT, **_procgroup.popen_kwargs())
-        group = _procgroup.make_group(proc)
-        token = secrets.token_hex(16)
-        owned = _Owned(proc, token, spec.output_limit, group)
+        try:
+            group = _procgroup.make_group(proc)
+        except BaseException:
+            self._cleanup_failed_spawn(proc, None)
+            raise
+        try:
+            token = secrets.token_hex(16)
+            owned = _Owned(proc, token, spec.output_limit, group)
+        except BaseException:
+            self._cleanup_failed_spawn(proc, group)
+            raise
         with self._lock:
             self._owned[token] = owned
         return owned
+
+    @staticmethod
+    def _cleanup_failed_spawn(
+            proc: "subprocess.Popen[bytes]",
+            group: _procgroup.ProcessGroup | None) -> None:
+        """Bounded fail-closed cleanup after Popen but before ownership publish."""
+        try:
+            if group is not None:
+                try:
+                    group.terminate()
+                except BaseException:
+                    pass  # direct handle kill below remains mandatory
+            if proc.poll() is None:
+                proc.kill()
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait(timeout=5)
+        finally:
+            if group is not None:
+                group.close()
+            if proc.stdout is not None:
+                proc.stdout.close()
 
     def _release(self, owned: _Owned) -> None:
         with self._lock:
@@ -351,22 +380,12 @@ class ProcessRunner:
         return self._walk_route(rel)
 
     def _walk_route(self, rel: Path) -> Path:
-        walked = self._root
-        for part in rel.parts:
-            walked = walked / part
-            found = _lstat_or_none(walked)
-            if found is None:
-                raise ContainmentError(
-                    f"cwd route component {str(walked)!r} does not exist or cannot "
-                    "be read")
-            portal = _detected_portal(found)
-            if portal is not None:
-                raise ContainmentError(
-                    f"cwd route component {str(walked)!r} is {portal}: a name whose "
-                    "content lies elsewhere")
-            if not stat.S_ISDIR(found.st_mode):
-                raise ContainmentError(
-                    f"cwd route component {str(walked)!r} is not a directory")
+        walked, violation = contained_directory(self._root, rel)
+        if violation is not None:
+            # Keep the runner's established public prefix while reusing the one
+            # structural fact engine shared with preview and Confirm.
+            fact = violation.removeprefix("route: ")
+            raise ContainmentError(f"cwd route component {fact}")
         return walked
 
     def _child_env(self, spec: CommandSpec) -> dict[str, str]:
@@ -385,14 +404,14 @@ def _spec_from_arguments(
     if not isinstance(arguments, Mapping):
         raise AdapterContractError("dispatch arguments must be a JSON object")
     try:
+        validate_dispatch_arguments(arguments)
         return CommandSpec(
             argv=arguments.get("argv"),
             cwd=arguments.get("cwd"),
-            env_allow=tuple(arguments.get("env_allow", ())),
-            env=dict(arguments.get("env", {})),
-            output_limit=int(arguments.get("output_limit", DEFAULT_OUTPUT_LIMIT)),
+            env_allow=arguments.get("env_allow", ()),
+            output_limit=arguments.get("output_limit", DEFAULT_OUTPUT_LIMIT),
             timeout_seconds=timeout_seconds)
-    except (CommandSpecError, TypeError, ValueError) as e:
+    except (CommandSpecError, DispatchArgumentError, TypeError, ValueError) as e:
         raise AdapterContractError(
             f"dispatch arguments are not a valid command: {e}") from e
 
@@ -401,7 +420,7 @@ def _payload_from_spec(spec: CommandSpec) -> dict[str, object]:
     """The adapter payload: a plain-JSON echo of the validated command."""
     return {
         "argv": list(spec.argv), "cwd": spec.cwd,
-        "env_allow": list(spec.env_allow), "env": dict(spec.env),
+        "env_allow": list(spec.env_allow),
         "output_limit": spec.output_limit,
     }
 
@@ -409,7 +428,7 @@ def _payload_from_spec(spec: CommandSpec) -> dict[str, object]:
 def _spec_from_payload(payload: Mapping[str, object], timeout_seconds: int) -> CommandSpec:
     return CommandSpec(
         argv=tuple(payload["argv"]), cwd=payload["cwd"],
-        env_allow=tuple(payload["env_allow"]), env=dict(payload["env"]),
+        env_allow=payload["env_allow"],
         output_limit=payload["output_limit"], timeout_seconds=timeout_seconds)
 
 
@@ -501,3 +520,4 @@ class ProcessAdapter:
             detail="the owned-process adapter observes the process outcome only; it "
                    "holds no independent check of the requested effect",
             evidence_refs=())
+    argument_schema = "structured-process-v1"

@@ -1,40 +1,51 @@
-"""The Day-1 control-loop gate, driven from the CLI against an in-process adapter.
+"""The Day-1 control-loop gate, driven through the owned-process adapter.
 
-`conduct confirm` runs the whole lane-A loop end to end on a fixed, deterministic
+`conduct confirm` runs the whole Day-1 A+B loop end to end on a fixed, deterministic
 scenario: it opens (or creates) a run with a frozen config, proposes one dispatch,
 authorizes a fresh Human confirmation of that exact proposal, executes it through
-an in-process fake adapter, verifies, and prints the canonical result receipt --
-the immutable outcome record -- for inspection. It spawns no process and reaches
-no browser; the adapter is in-process and its "execution" is a deterministic
-return, so the receipt proves the state machine, not a real harness.
+the owned-process adapter against a packaged no-op executable, verifies honestly
+as unavailable, and prints the canonical result receipt --
+the immutable outcome record -- for inspection. It reaches no browser and accepts
+no caller command text; the fixed structured argv still crosses the real spawn,
+timeout, process-group ownership and bounded-output surface.
 
 The scenario is fixed so the printed receipt is reproducible: the same frozen
 config, the same deterministic ids and clock, and the same fresh confirmation
 every time. Reopening the run is idempotent -- the proposal, the authorized
-request, the verification evidence, and the result receipt are all immutable, so a
+request and the result receipt are immutable, so a
 second run appends nothing and prints the same bytes.
 
-The gate does NOT carry `conduct preview`'s byte-level route containment: it opens
-a run at a fixed id under whatever `--dir` names, and a foreign run standing at
-that id is refused (exit 1) when its frozen config or recorded facts disagree with
-this scenario, but the guarantee here is an honest refusal, not preview's proven
-inertness. The whole flow is upstream of any real execution surface.
+The same command-layer containment and identity doors used by preview run before
+creation, replay, confirmation, or execution.  A foreign run or a portal/alias
+on the store route is refused read-only: no proposal is first planted into state
+the gate did not create. A refused road reaches no spawn; the successful road
+does cross the owned-process surface described above.
 """
 from __future__ import annotations
 
 from collections.abc import Mapping
+from pathlib import Path
+import sys
 from typing import Any
 
 from .adapters import (
     AdapterContractError,
-    AdapterManifest,
-    AdapterObservation,
     AdapterRegistry,
-    AdapterVerification,
-    PreparedAction,
 )
-from .contracts import ActionResultReceipt, RunEnvelope, canonical_json
-from .run_store import RunExists, RunStore, StoreError, snapshot_digest
+from .adapters.process import ProcessAdapter, ProcessRunner
+from . import _smoke_exec
+from .containment import run_route_violations, unowned_paths
+from .contracts import (
+    ActionProposal,
+    ActionRequest,
+    ActionResultReceipt,
+    ControlMode,
+    RunEnvelope,
+    _freeze_json,
+    canonical_json,
+)
+from .identity import history_is_one_of, mapping_differences
+from .run_store import RunExists, RunStore, StoreError, StoredRecord, snapshot_digest
 from .runtime import (
     AuthorizationError,
     Budget,
@@ -45,17 +56,23 @@ from .runtime import (
 from .service import CommandService, ServiceError
 
 #: The one frozen configuration this gate pins; its instances section binds the
-#: instance the loop drives to the in-process adapter registered below.
+#: instance the loop drives to the owned-process adapter registered below.
 FROZEN_CONFIG: Mapping[str, Any] = {
     "cycle": {"id": "control-loop-orbit", "phases": ["dispatch"]},
-    "instances": [{"id": "claude-dev", "adapter": "claude-code"}],
+    "instances": [{"id": "claude-dev", "adapter": "owned-process"}],
 }
+_REPLAYED_FROZEN_CONFIG = _freeze_json(dict(FROZEN_CONFIG))
 
 _RUN_ID = "control-loop-run"
 _ATTEMPT_ID = "control-loop-attempt"
 _INSTANCE_ID = "claude-dev"
 _NOW = "2026-08-11T00:00:00Z"
-_ARGUMENTS: Mapping[str, Any] = {"handoff": "control-loop-packet"}
+_ARGUMENTS: Mapping[str, Any] = {
+    "argv": [sys.executable, str(Path(_smoke_exec.__file__).resolve())],
+    "cwd": "conductor/runs",
+    "env_allow": [],
+    "output_limit": 4096,
+}
 _SCOPE = ("src",)
 _ACTOR = "release-owner"
 _RATIONALE = "Day-1 control loop: confirm one dispatch and execute it end to end."
@@ -72,52 +89,67 @@ def _loop_id(purpose: str) -> str:
     return f"{purpose}-{_RUN_ID}"
 
 
-class _LoopAdapter:
-    """A minimal in-process adapter: it dispatches deterministically and verifies.
-
-    Unlike the preview's adapter, this one implements execute and verify, because
-    the loop drives them. Both are pure returns -- no process is ever spawned.
-    """
-
-    def __init__(self) -> None:
-        self.manifest = AdapterManifest(
-            adapter_id="claude-code", display_name="Claude Code", vendor="Anthropic",
-            version="1", capabilities=("observe", "dispatch"), docs_url="")
-
-    def observe(self, instance_id: str, run_id: str) -> AdapterObservation:
-        return AdapterObservation(
-            adapter_id="claude-code", instance_id=instance_id, run_id=run_id,
-            observed_at=_NOW, health="ready", available_capabilities=("observe", "dispatch"))
-
-    def prepare(self, request: Any) -> PreparedAction:
-        return PreparedAction(
-            adapter_id="claude-code", request=request,
-            adapter_payload={"operation": "dispatch", "handoff": "control-loop-packet"})
-
-    def execute(self, prepared: Any) -> ActionResultReceipt:
-        req = prepared.request
-        return ActionResultReceipt(
-            receipt_id=_loop_id("adapter-result"), action_id=req.action_id,
-            run_id=req.run_id, attempt_id=req.attempt_id, instance_id=req.instance_id,
-            outcome="succeeded", observed_at=_NOW, exit_code=0,
-            detail="the in-process adapter dispatched the handoff deterministically")
-
-    def verify(self, request: Any, result: Any) -> AdapterVerification:
-        return AdapterVerification(
-            adapter_id="claude-code", action_id=request.action_id, state="verified",
-            observed_at=_NOW, detail="handoff packet observed in the fake transport",
-            evidence_refs=("adapter-evidence",))
-
-
 def _open_run(store: RunStore) -> RunEnvelope:
     envelope = RunEnvelope(
         run_id=_RUN_ID, cycle_id="control-loop-orbit", created_at=_NOW,
         config_digest=snapshot_digest(FROZEN_CONFIG), mode="confirm")
+    violations = run_route_violations(store, _RUN_ID)
+    if violations:
+        raise GateError(
+            f"run {_RUN_ID!r} is not on a contained writable route: "
+            + "; ".join(violations))
     try:
         store.create_run(envelope, FROZEN_CONFIG)
     except RunExists:
-        pass  # reopen: every record below is immutable, so the rerun is idempotent
+        found = store.read(_RUN_ID)
+        differences = mapping_differences(envelope.as_dict(), found.envelope.as_dict())
+        if differences or found.config != _REPLAYED_FROZEN_CONFIG:
+            raise GateError(
+                f"run {_RUN_ID!r} already exists with foreign envelope/config facts")
+        expected = _expected_histories(envelope)
+        if found.warnings or not history_is_one_of(found.records, expected):
+            raise GateError(
+                f"run {_RUN_ID!r} already exists with history this loop did not write")
+        try:
+            foreign = unowned_paths(store.run_path(_RUN_ID))
+        except OSError as e:
+            raise GateError(
+                f"run {_RUN_ID!r} contains state the identity gate cannot read") from e
+        if foreign:
+            raise GateError(
+                f"run {_RUN_ID!r} holds unowned durable objects: {list(foreign)!r}")
     return envelope
+
+
+def _expected_histories(envelope: RunEnvelope) -> tuple[tuple[StoredRecord, ...], ...]:
+    """Every prefix this deterministic loop may itself leave, contract-derived."""
+    proposal = ActionProposal(
+        proposal_id=_loop_id("proposal"), run_id=_RUN_ID, attempt_id=_ATTEMPT_ID,
+        instance_id=_INSTANCE_ID, capability="dispatch", arguments=_ARGUMENTS,
+        scope=_SCOPE, proposed_by="control-loop", proposed_at=_NOW,
+        timeout_seconds=_TIMEOUT_SECONDS, rationale=_RATIONALE,
+        config_digest=envelope.config_digest)
+    request = ActionRequest(
+        action_id=_loop_id("action"), run_id=_RUN_ID, attempt_id=_ATTEMPT_ID,
+        instance_id=_INSTANCE_ID, capability="dispatch", arguments=_ARGUMENTS,
+        scope=_SCOPE, requested_by=_ACTOR, requested_at=_NOW,
+        idempotency_key=f"dispatch-{proposal.proposal_id}",
+        timeout_seconds=_TIMEOUT_SECONDS, preview_digest=proposal.preview_digest,
+        mode=ControlMode.CONFIRM)
+    result = ActionResultReceipt(
+        receipt_id=_loop_id("result"), action_id=request.action_id, run_id=_RUN_ID,
+        attempt_id=_ATTEMPT_ID, instance_id=_INSTANCE_ID, outcome="succeeded",
+        observed_at=_NOW, evidence_refs=(),
+        detail="the process reported success; the adapter exposed no verifier",
+        exit_code=0)
+    rows = (
+        StoredRecord("action_proposal", proposal),
+        StoredRecord("action_request", request),
+        StoredRecord("action_result", result),
+    )
+    # A durable request without a terminal result is ambiguous: execution may
+    # have happened before a crash.  It must not be resumed automatically.
+    return ((), rows[:1], rows)
 
 
 def render_control_loop(project_root: str) -> str:
@@ -135,7 +167,9 @@ def render_control_loop(project_root: str) -> str:
             from the service, store, or runtime that refused it.
     """
     store = RunStore(project_root)
-    registry = AdapterRegistry([_LoopAdapter()])
+    runner = ProcessRunner(store.project_root)
+    registry = AdapterRegistry([ProcessAdapter(
+        "owned-process", runner, clock=lambda: _NOW, ids=_loop_id)])
     clock, ids = (lambda: _NOW), _loop_id
     try:
         envelope = _open_run(store)

@@ -28,7 +28,7 @@ DIGEST = "sha256:" + "a" * 64
 ALLOWED_SDK_IMPORTS = frozenset({
     "__future__", "collections.abc", "dataclasses", "types", "typing",
 })
-ALLOWED_SDK_RELATIVE_IMPORTS = frozenset({(2, "contracts")})
+ALLOWED_SDK_RELATIVE_IMPORTS = frozenset({(2, "contracts"), (2, "dispatch")})
 # The owned-process runner (B/RUN-1) is the one reviewed execution door in the
 # package; it necessarily imports subprocess and calls Popen, so this value-core
 # import guard exempts it. Its safety is proven behaviourally by
@@ -322,7 +322,8 @@ def test_reading_the_registry_source_finds_no_literal_execute_call_and_only_six_
         node.name for node in registry.body
         if isinstance(node, ast.FunctionDef) and not node.name.startswith("_"))
     assert public == [
-        "controls", "manifests", "observe", "prepare", "register", "resolve"]
+        "controls", "manifests", "observe", "prepare", "register", "resolve",
+        "validate_arguments"]
 
 
 def test_observe_calls_only_an_explicit_adapter_and_validates_its_claims():
@@ -578,3 +579,16 @@ def test_register_refuses_a_duck_typed_manifest_the_real_type_would_never_admit(
 
     with pytest.raises(AdapterContractError, match="capabilities"):
         AdapterManifest(**LookalikeManifest().as_payload())
+
+
+def test_an_unknown_argument_schema_cannot_partially_register_an_adapter():
+    registry = AdapterRegistry([FakeAdapter("claude-code")])
+    poison = FakeAdapter("poison")
+    poison.argument_schema = "unreviewed-side-effecting-schema"
+    before = registry.manifests()
+    with pytest.raises(AdapterContractError, match="unknown argument schema"):
+        registry.register(poison)
+    assert registry.manifests() == before
+    with pytest.raises(AdapterContractError, match="not registered"):
+        registry.resolve("poison")
+    assert registry.controls("claude-code") == ("observe", "dispatch")

@@ -99,8 +99,6 @@ directory and investigate it separately.
 """
 from __future__ import annotations
 
-import os
-import stat
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -112,6 +110,13 @@ from .adapters import (
     AdapterRegistry,
 )
 from .contracts import RunEnvelope, _freeze_json, canonical_json
+from .containment import (
+    JUNCTION_TAG as _JUNCTION_TAG,
+    detected_portal as _detected_portal,
+    run_route_violations,
+    unowned_paths,
+)
+from .identity import mapping_differences
 from .run_store import (
     RecoveredRun,
     RunExists,
@@ -219,141 +224,6 @@ def _history(records: tuple[StoredRecord, ...]) -> tuple[str, ...]:
         for row in records)
 
 
-#: The only names `RunStore.read` opens directly beneath a run directory.
-_STORE_OWNED_FILES = frozenset({"run.json", "config.json", "records.jsonl"})
-
-#: The one directory the store owns, and the only suffix it reads inside it.
-_RECEIPTS_DIR, _RECEIPT_SUFFIX = "decisions", ".json"
-
-
-#: A junction's reparse tag. The constant lives in `stat` on every platform;
-#: the `st_reparse_tag` attribute exists only on Windows, so elsewhere the
-#: getattr in `_points_elsewhere` answers 0 and no path ever carries the tag.
-_JUNCTION_TAG = getattr(stat, "IO_REPARSE_TAG_MOUNT_POINT", 0xA0000003)
-
-
-def _points_elsewhere(path: Path) -> bool:
-    """A symbolic link or an NTFS junction: a name whose content lies elsewhere.
-
-    `is_symlink` alone is not the test: a junction answers `is_dir()` True and
-    -- on the interpreters this project runs -- `is_symlink()` False, so a walk
-    keeping only that filter adopts one as a plain directory and recurses
-    through it into a tree the run directory does not hold. The reparse tag is
-    the junction's own durable mark, read from `lstat` without following
-    anything, and it survives the target's disappearance.
-    """
-    return (path.is_symlink()
-            or getattr(path.lstat(), "st_reparse_tag", 0) == _JUNCTION_TAG)
-
-
-def _detected_portal(found: os.stat_result) -> str | None:
-    """Name the reparse fact `lstat` established, or None for an ordinary object.
-
-    Three spellings, so a refusal can say what was reliably detected: the
-    symlink bit; the junction's own tag -- the same durable mark
-    `_points_elsewhere` reads on objects inside the run; or, for any other
-    tag, the tag itself. Whatever a reparse point resolves to, its content is
-    not plainly the local bytes at this name, which is the one fact the
-    writable route may not tolerate.
-    """
-    if stat.S_ISLNK(found.st_mode):
-        return "a symbolic link"
-    tag = getattr(found, "st_reparse_tag", 0)
-    if tag == _JUNCTION_TAG:
-        return "a directory junction"
-    if tag:
-        return f"a reparse point (tag {tag:#010x})"
-    return None
-
-
-def _lstat_or_absent(path: Path) -> os.stat_result | None:
-    """Read one route component without following anything; None when that cannot be.
-
-    FileNotFoundError is the absent component itself -- the creation road's
-    to make. Any other OSError (a parent that is a plain file, a permission
-    the caller lacks) answers None too: the gate cannot establish a violation
-    it cannot read, and the roads below refuse those states in their own
-    words rather than this one guessing.
-    """
-    try:
-        return os.lstat(path)
-    except OSError:
-        return None
-
-
-def _portal_entry(path: Path, portal: str) -> str:
-    """One refusal entry for a route component whose content lies elsewhere."""
-    return f"route: {str(path)!r} is {portal}: a name whose content lies elsewhere"
-
-
-def _owned_file_violations(run_path: Path) -> tuple[str, ...]:
-    """Judge every file the store writes: ordinary, local, and singly named.
-
-    The three top names, plus every `decisions/*.json` receipt -- the names
-    `RunStore` appends to or publishes; only `records.jsonl` is appended.
-    Each present one must be a regular file per `lstat`, with no reparse
-    point and exactly one hard link: a second link means the same bytes
-    answer to another name, so writing or publishing through this name
-    touches the same bytes under another name this preview cannot see --
-    MAJOR-2's laundering, closed as a relation over the file instead of a
-    judgement of its name. A `decisions` entry that is no portal and not a
-    receipt-shaped regular file is not judged here: `_unowned_files` speaks
-    for foreign clutter after the replay, on its own stated terms.
-    """
-    receipts = run_path / _RECEIPTS_DIR
-    try:
-        entries = sorted(receipts.iterdir())
-    except OSError:
-        entries = []
-    violations: list[str] = []
-    for path in (*(run_path / name for name in sorted(_STORE_OWNED_FILES)),
-                 *entries):
-        found = _lstat_or_absent(path)
-        if found is None:
-            continue
-        portal = _detected_portal(found)
-        if portal is not None:
-            violations.append(_portal_entry(path, portal))
-            continue
-        if path.parent == receipts and (
-                path.suffix != _RECEIPT_SUFFIX or not stat.S_ISREG(found.st_mode)):
-            continue
-        if not stat.S_ISREG(found.st_mode):
-            violations.append(
-                f"route: {str(path)!r} is not a regular file where the store "
-                "writes one")
-        elif found.st_nlink != 1:
-            violations.append(
-                f"route: {str(path)!r} carries {found.st_nlink} hard links: "
-                "its bytes stand at another name as well")
-    return tuple(violations)
-
-
-def _route_violations(store: RunStore, run_path: Path) -> tuple[str, ...]:
-    """One containment door over every component of the preview's writable route.
-
-    The route is read from the resolved project root downward -- `conductor`,
-    `conductor/runs`, the run directory, its `decisions` directory -- and then
-    across every file the store owns there, each with `os.lstat` alone,
-    following nothing. A directory component that is a portal is the single
-    violation returned, and the walk stops with it: every lstat below such a
-    name would already read through the portal it just refused. The owned
-    files are then judged together, so one refusal names every aliased or
-    irregular file at once. What passing proves is one relation, uniform over
-    the components rather than named per attack: every name on the route, as
-    read at that moment, held its content locally and nowhere else. The
-    limits -- check-then-act, alternate data streams -- are the module
-    docstring's, stated there.
-    """
-    for path in (store.project_root / "conductor", store.runs_root,
-                 run_path, run_path / _RECEIPTS_DIR):
-        found = _lstat_or_absent(path)
-        portal = None if found is None else _detected_portal(found)
-        if portal is not None:
-            return (_portal_entry(path, portal),)
-    return _owned_file_violations(run_path)
-
-
 def _check_route(store: RunStore) -> None:
     """Refuse before anything durable when the writable route is not contained.
 
@@ -363,7 +233,7 @@ def _check_route(store: RunStore) -> None:
     standing behind the refused component -- has been touched when it speaks.
     """
     run_path = store.run_path(_RUN_ID)
-    violations = _route_violations(store, run_path)
+    violations = run_route_violations(store, _RUN_ID)
     if violations:
         raise PreviewError(_refusal(
             f"run {_RUN_ID!r} does not stand on a contained writable route, "
@@ -386,24 +256,7 @@ def _unowned_files(run_path: Path) -> tuple[str, ...]:
     rather than on the path's first part, so a receipt-looking name nested
     deeper than the store ever writes is still named here.
     """
-    receipts = run_path / _RECEIPTS_DIR
-    unowned: list[str] = []
-    stack = [run_path]
-    while stack:
-        for path in sorted(stack.pop().iterdir()):
-            if _points_elsewhere(path):
-                unowned.append(path.relative_to(run_path).as_posix())
-                continue
-            if path.is_dir():
-                stack.append(path)
-                continue
-            name = path.relative_to(run_path).as_posix()
-            owned = (
-                name in _STORE_OWNED_FILES
-                or (path.parent == receipts and path.suffix == _RECEIPT_SUFFIX))
-            if not owned:
-                unowned.append(name)
-    return tuple(sorted(unowned))
+    return unowned_paths(run_path)
 
 
 def _unowned_entries(run_path: Path, unowned: tuple[str, ...]) -> tuple[str, ...]:
@@ -479,8 +332,7 @@ def _replay_differences(
     differences = [
         f"{name}: expected {_field_for_message(expected_row, name)}, "
         f"found {_field_for_message(found_row, name)}"
-        for name in sorted(set(expected_row) | set(found_row))
-        if expected_row.get(name, _ABSENT) != found_row.get(name, _ABSENT)
+        for name in mapping_differences(expected_row, found_row)
     ]
     if found.config != _REPLAYED_FROZEN_CONFIG:
         differences.append("config: the stored configuration is not the frozen one")

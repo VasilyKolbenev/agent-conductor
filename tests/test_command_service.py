@@ -15,6 +15,7 @@ import pytest
 
 from conductor.command import service as service_module
 from conductor.command.adapters import AdapterContractError, AdapterRegistry
+from conductor.command.adapters.process import ProcessAdapter, ProcessRunner
 from conductor.command.adapters.base import CAPABILITIES, UnsupportedCapability
 from conductor.command.contracts import (
     ActionProposal,
@@ -131,6 +132,8 @@ def test_an_instance_bound_to_an_unregistered_adapter_cannot_be_reached(tmp_path
 
 def test_a_capability_outside_the_manifest_is_refused_before_the_adapter_is_touched(tmp_path):
     adapter = FakeAdapter(capabilities=("observe",))
+    adapter.validate_arguments = lambda *args: (_ for _ in ()).throw(
+        AssertionError("unsupported capability touched mutable adapter validation"))
     service, store = a_service(tmp_path, adapters=[adapter])
     with pytest.raises(UnsupportedCapability, match="dispatch"):
         service.propose(**propose_kwargs(capability="dispatch"))
@@ -138,6 +141,34 @@ def test_a_capability_outside_the_manifest_is_refused_before_the_adapter_is_touc
     assert adapter.observations == 0
     assert adapter.preparations == 0
     assert store.read("run-001").records == ()
+
+
+def test_process_dispatch_rejects_literal_env_before_proposal_or_spawn(tmp_path):
+    secret = "APIKEY-proposal-must-not-persist"
+    config = {
+        "cycle": {"id": "orbit-001", "phases": ["dispatch"]},
+        "instances": [{"id": "worker", "adapter": "owned-process"}],
+    }
+    store = RunStore(tmp_path)
+    store.create_run(
+        a_run(mode="propose", config_digest=snapshot_digest(config)), config)
+    (tmp_path / "work").mkdir()
+    runner = ProcessRunner(tmp_path, environ={})
+    adapter = ProcessAdapter(
+        "owned-process", runner, clock=fixed_clock(), ids=fixed_ids())
+    subject = CommandService(
+        store, AdapterRegistry([adapter]), clock=fixed_clock(), ids=fixed_ids())
+    before = store.run_path("run-001").joinpath("records.jsonl").read_bytes()
+    with pytest.raises(ServiceError, match="literal env values"):
+        subject.propose(**propose_kwargs(
+            adapter_id="owned-process", instance_id="worker",
+            arguments={
+                "argv": ["python", "tool.py"], "cwd": "work",
+                "env": {"API_TOKEN": secret},
+            }))
+    after = store.run_path("run-001").joinpath("records.jsonl").read_bytes()
+    assert after == before and secret.encode() not in after
+    assert runner.active_tokens() == ()
 
 
 def test_propose_never_prepares_the_action(tmp_path):

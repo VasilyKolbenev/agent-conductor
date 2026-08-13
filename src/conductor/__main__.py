@@ -11,8 +11,8 @@ working prompt; the positional role form is deprecated); `report` (render the
 merged state as a Markdown report); `preview` (create/open a run with a frozen
 config, propose one dispatch through the command service, and print its canonical
 preview for inspection — it prepares and executes nothing); `confirm` (run the
-Day-1 control loop against an in-process fake adapter — confirm one dispatch,
-execute, verify, and print the immutable result receipt; it spawns no process);
+fixed Day-1 loop through the owned-process adapter, verify honestly, and print
+the immutable result receipt);
 `up` (serve the panel
 on 127.0.0.1 with SSE
 live updates; Ctrl-C → exit 0); `demo` (materialize the bundled fixture into a
@@ -205,8 +205,8 @@ def _cmd_confirm(args: argparse.Namespace) -> int:
     """Run the Day-1 control loop and print the immutable result receipt.
 
     The companion to `preview`: it opens the fixed scenario's run, confirms one
-    dispatch, executes it through an in-process fake adapter, verifies, and writes
-    the canonical result receipt to stdout. It spawns no process. A run at the
+    fixed dispatch, executes it through the owned-process adapter, verifies, and
+    writes the canonical result receipt to stdout. A run at the
     scenario's fixed identity that disagrees with it is a refusal on stderr with
     exit 1; stdout stays empty, so a redirected receipt is never a half-written one.
     """
@@ -311,7 +311,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser(
         "confirm",
-        help="run the Day-1 control loop against an in-process adapter and print the receipt")
+        help="run the Day-1 owned-process control loop and print the receipt")
     _add_dir_and_func(p, _cmd_confirm)
 
     p = sub.add_parser("up", help="serve the panel on loopback HTTP with live updates")

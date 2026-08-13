@@ -67,6 +67,7 @@ class ScriptedAdapter:
         self._verify_raises = verify_raises
         self._foreign_result = foreign_result
         self._non_receipt = non_receipt
+        self.prepare_calls = 0
         self.execute_calls = 0
         self.verify_calls = 0
 
@@ -76,6 +77,7 @@ class ScriptedAdapter:
             observed_at=NOW, health="ready", available_capabilities=())
 
     def prepare(self, request):
+        self.prepare_calls += 1
         return PreparedAction(
             adapter_id=self.manifest.adapter_id, request=request,
             adapter_payload={"operation": "dispatch"})
@@ -309,6 +311,101 @@ def test_execute_refuses_a_request_the_store_never_authorized(tmp_path):
     with pytest.raises(ExecutionError, match="never authorized"):
         runtime.execute(forged)
     assert adapter.execute_calls == 0
+
+
+def test_execute_refuses_same_id_with_changed_facts_before_prepare_or_append(tmp_path):
+    store = a_store(tmp_path)
+    adapter = ScriptedAdapter()
+    runtime, authorization = authorized(store, adapter)
+    before = store.run_path("run-001").joinpath("records.jsonl").read_bytes()
+    forged = Authorization(request=authorization.request.__class__.from_dict({
+        **authorization.request.as_dict(), "arguments": {"handoff": "forged"},
+    }))
+    with pytest.raises(ExecutionError, match="differs from its durable authorization"):
+        runtime.execute(forged)
+    assert adapter.execute_calls == 0
+    assert store.run_path("run-001").joinpath("records.jsonl").read_bytes() == before
+
+
+def test_direct_execute_refuses_a_hard_linked_journal_before_prepare(tmp_path):
+    store = a_store(tmp_path)
+    adapter = ScriptedAdapter()
+    runtime, authorization = authorized(store, adapter)
+    journal = store.run_path("run-001") / "records.jsonl"
+    alias = tmp_path / "outside-journal.jsonl"
+    try:
+        import os
+        os.link(journal, alias)
+    except OSError as e:
+        pytest.skip(f"hard links unavailable: {e}")
+    before = alias.read_bytes()
+    with pytest.raises(ExecutionError, match="hard links"):
+        runtime.execute(authorization)
+    assert adapter.prepare_calls == 0 and adapter.execute_calls == 0
+    assert alias.read_bytes() == before and journal.read_bytes() == before
+
+
+def test_execute_replays_a_durable_result_without_executing_twice(tmp_path):
+    store = a_store(tmp_path)
+    adapter = ScriptedAdapter()
+    runtime, authorization = authorized(store, adapter)
+    first = runtime.execute(authorization)
+    before = store.run_path("run-001").joinpath("records.jsonl").read_bytes()
+    second = runtime.execute(authorization)
+    assert second.receipt == first.receipt and second.state == first.state
+    assert second.history == (AttemptState.ACCEPTED, AttemptState.SUCCEEDED)
+    assert adapter.execute_calls == 1
+    assert store.run_path("run-001").joinpath("records.jsonl").read_bytes() == before
+    # A new runtime/process reconstructs from durable facts just as safely.
+    fresh_adapter = ScriptedAdapter()
+    replayed = a_runtime(store, fresh_adapter).execute(authorization)
+    assert replayed.receipt == first.receipt
+    assert fresh_adapter.execute_calls == 0
+
+
+def test_prepare_failure_records_unknown_and_never_executes(tmp_path):
+    class BrokenPrepare(ScriptedAdapter):
+        def prepare(self, request):
+            raise RuntimeError("prepare broke")
+
+    store = a_store(tmp_path)
+    adapter = BrokenPrepare()
+    runtime, authorization = authorized(store, adapter)
+    attempt = runtime.execute(authorization)
+    assert attempt.state is AttemptState.UNKNOWN
+    assert attempt.history == (AttemptState.ACCEPTED, AttemptState.UNKNOWN)
+    assert attempt.receipt.outcome == "unknown"
+    assert adapter.execute_calls == 0
+    assert kinds(store) == ["action_proposal", "action_request", "action_result"]
+
+
+@pytest.mark.parametrize("phase", ["prepare", "execute", "verify"])
+def test_adapter_exception_secrets_never_reach_durable_or_returned_receipts(
+        tmp_path, phase):
+    secret = "APIKEY-do-not-persist-unique"
+
+    class SecretAdapter(ScriptedAdapter):
+        def prepare(self, request):
+            if phase == "prepare":
+                raise RuntimeError(secret)
+            return super().prepare(request)
+
+        def execute(self, prepared):
+            if phase == "execute":
+                raise RuntimeError(secret)
+            return super().execute(prepared)
+
+        def verify(self, request, result):
+            if phase == "verify":
+                raise RuntimeError(secret)
+            return super().verify(request, result)
+
+    store = a_store(tmp_path)
+    runtime, authorization = authorized(store, SecretAdapter())
+    attempt = runtime.execute(authorization)
+    assert secret not in str(attempt.receipt.as_dict())
+    assert secret.encode() not in store.run_path("run-001").joinpath(
+        "records.jsonl").read_bytes()
 
 
 # -- the runtime starts no process itself; every execution goes through an adapter --

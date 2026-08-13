@@ -25,6 +25,7 @@ from ..contracts import (
     _timestamp,
     canonical_json,
 )
+from ..dispatch import validate_dispatch_arguments
 
 
 class AdapterContractError(ValueError):
@@ -225,6 +226,7 @@ class AdapterRegistry:
     def __init__(self, adapters: Iterable[Adapter] = ()) -> None:
         self._adapters: dict[str, Adapter] = {}
         self._manifests: dict[str, AdapterManifest] = {}
+        self._argument_schemas: dict[str, str | None] = {}
         for adapter in adapters:
             self.register(adapter)
 
@@ -241,8 +243,13 @@ class AdapterRegistry:
                 f"adapter {manifest.adapter_id!r} is already registered")
         # Keep the reviewed VALUE, not a pointer the adapter can still rewrite.
         reviewed = AdapterManifest(**manifest.as_payload())
+        schema = vars(adapter).get("argument_schema", getattr(type(adapter), "argument_schema", None))
+        if schema not in (None, "structured-process-v1"):
+            raise AdapterContractError(f"adapter declares unknown argument schema {schema!r}")
+        # Publish the registration only after every supplied claim validated.
         self._adapters[reviewed.adapter_id] = adapter
         self._manifests[reviewed.adapter_id] = reviewed
+        self._argument_schemas[reviewed.adapter_id] = schema
 
     def resolve(self, adapter_id: str) -> Adapter:
         safe = _contract(_id, "adapter_id", adapter_id)
@@ -294,6 +301,13 @@ class AdapterRegistry:
         if _contract(canonical_json, prepared.request) != authorized:
             raise AdapterContractError("adapter changed the ActionRequest while preparing it")
         return prepared
+
+    def validate_arguments(
+            self, adapter_id: str, capability: str, arguments: Mapping[str, Any]) -> None:
+        """Run one registry-owned pure schema; never call the mutable adapter."""
+        safe = _contract(_id, "adapter_id", adapter_id)
+        if self._argument_schemas[safe] == "structured-process-v1":
+            validate_dispatch_arguments(arguments)
 
     def _require(self, adapter_id: str, capability: str) -> Adapter:
         adapter = self.resolve(adapter_id)

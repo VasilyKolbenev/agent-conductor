@@ -47,8 +47,8 @@ def adapters(tmp_path):
     (tmp_path / "project" / "work").mkdir(parents=True)
     built = []
 
-    def make():
-        runner = ProcessRunner(tmp_path / "project")
+    def make(environ=None):
+        runner = ProcessRunner(tmp_path / "project", environ=environ)
         adapter = ProcessAdapter("owned-process", runner, clock=lambda: NOW, ids=_ids())
         built.append(runner)
         return adapter
@@ -73,7 +73,7 @@ def _request(*, capability="dispatch", arguments=None, timeout=10):
 
 def _args(env_knobs=None, argv_extra=()):
     return {"argv": fake_argv(*argv_extra), "cwd": "work",
-            "env": dict(env_knobs or {}), "output_limit": 65536}
+            "env_allow": list((env_knobs or {}).keys()), "output_limit": 65536}
 
 
 # --- manifest honesty: only the controls it holds ---
@@ -129,11 +129,42 @@ def test_prepare_refuses_dispatch_arguments_without_a_command(adapters):
         adapters().prepare(_request(arguments={"cwd": "work"}))
 
 
+def test_prepare_refuses_a_literal_environment_secret_before_spawn(adapters):
+    request = _request(arguments={
+        "argv": fake_argv(), "cwd": "work",
+        "env": {"API_TOKEN": "secret-value-that-must-not-be-persisted"},
+    })
+    with pytest.raises(AdapterContractError, match="literal env values"):
+        adapters().prepare(request)
+
+
+@pytest.mark.parametrize("arguments", [
+    {"argv": fake_argv(), "cwd": "work", "env_allow": "PATH"},
+    {"argv": fake_argv(), "cwd": "work", "output_limit": "65536"},
+    {"argv": fake_argv(), "cwd": "work", "shell": True},
+])
+def test_prepare_refuses_coerced_or_unknown_public_command_fields(adapters, arguments):
+    with pytest.raises(AdapterContractError, match="valid command|unsupported fields"):
+        adapters().prepare(_request(arguments=arguments))
+
+
+def test_an_env_name_reference_is_resolved_live_and_not_disclosed(adapters):
+    secret = "live-secret-not-durable"
+    adapter = adapters({EMIT_STDOUT: secret})
+    request = _request(arguments=_args({EMIT_STDOUT: secret}))
+    assert secret not in canonical_json(request)
+    prepared = adapter.prepare(request)
+    assert secret not in repr(prepared.adapter_payload)
+    receipt = adapter.execute(prepared)
+    assert receipt.outcome == "succeeded"
+    assert secret not in canonical_json(receipt)
+
+
 # --- execute maps the process outcome honestly ---
 
 
 def test_execute_maps_a_zero_exit_to_succeeded(adapters):
-    adapter = adapters()
+    adapter = adapters({EMIT_STDOUT: "done"})
     receipt = adapter.execute(adapter.prepare(_request(
         arguments=_args({EMIT_STDOUT: "done"}))))
     assert receipt.outcome == "succeeded"
@@ -142,7 +173,7 @@ def test_execute_maps_a_zero_exit_to_succeeded(adapters):
 
 
 def test_execute_maps_a_nonzero_exit_to_failed(adapters):
-    adapter = adapters()
+    adapter = adapters({EXIT: "3"})
     receipt = adapter.execute(adapter.prepare(_request(arguments=_args({EXIT: "3"}))))
     assert receipt.outcome == "failed"
     assert receipt.exit_code == 3
@@ -150,7 +181,7 @@ def test_execute_maps_a_nonzero_exit_to_failed(adapters):
 
 def test_execute_maps_a_timeout_to_failed_never_succeeded(adapters):
     """The runner's distinct timeout fact reaches the receipt as failure, not success."""
-    adapter = adapters()
+    adapter = adapters({SLEEP: "5"})
     receipt = adapter.execute(adapter.prepare(_request(
         arguments=_args({SLEEP: "5"}), timeout=1)))
     assert receipt.outcome == "failed"
@@ -160,7 +191,7 @@ def test_execute_maps_a_timeout_to_failed_never_succeeded(adapters):
 
 
 def test_verify_reports_unavailable_never_verified(adapters):
-    adapter = adapters()
+    adapter = adapters({EMIT_STDOUT: "ok"})
     request = _request()
     receipt = adapter.execute(adapter.prepare(request))
     verification = adapter.verify(request, receipt)

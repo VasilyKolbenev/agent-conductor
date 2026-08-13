@@ -44,6 +44,7 @@ from enum import Enum
 from typing import Any
 
 from .adapters import AdapterRegistry, AdapterVerification, PreparedAction
+from .containment import run_route_violations
 from .contracts import (
     ActionProposal,
     ActionRequest,
@@ -175,11 +176,12 @@ class Authorization:
 class Attempt:
     """One executed attempt: its terminal state, the state path it took, and receipt.
 
-    ``history`` records the ordered states the attempt passed through -- always
-    beginning ``accepted``, ``started`` -- so a caller can prove the machine
-    entered ``started`` and yet did not read it as success. ``receipt`` is the one
-    durable result receipt; ``verification_evidence`` is the durable evidence the
-    verify seam produced, or None when none was recorded.
+    ``history`` records only states this process observed. A live execute that
+    crossed preparation includes ``accepted, started, terminal``; prepare refusal
+    is ``accepted, unknown``; replay of an existing result is ``accepted,
+    terminal`` because v2 durable records cannot prove a prior process entered
+    started. ``receipt`` is the immutable terminal record; verification evidence
+    is the durable evidence the verify seam produced, or None.
     """
 
     request: ActionRequest
@@ -214,12 +216,30 @@ class ControlRuntime:
             raise AuthorizationError("authorize requires a validated Confirmation")
         if not isinstance(budget, Budget):
             raise AuthorizationError("authorize requires a validated Budget")
+        self._hold_route(confirmation.run_id, AuthorizationError)
         recovered = self._store.read(confirmation.run_id)
+        if recovered.warnings:
+            raise AuthorizationError(
+                "authorize refuses a run whose replay left unjudged durable bytes")
         proposal = self._stored_proposal(recovered, confirmation.proposal_id)
         self._hold_facts(confirmation, proposal, recovered.envelope.config_digest)
         self._hold_freshness(confirmation, budget)
+        key = f"dispatch-{proposal.proposal_id}"
+        prior = next((
+            row.value for row in recovered.records
+            if row.kind == "action_request" and row.value.idempotency_key == key), None)
+        if prior is not None:
+            expected = self._mint_request(
+                confirmation, proposal, action_id=prior.action_id)
+            if prior != expected:
+                raise AuthorizationError(
+                    f"proposal {proposal.proposal_id!r} was already confirmed with "
+                    "different durable facts")
+            # An identical retry is not a new budget action and writes nothing.
+            return Authorization(request=prior)
         self._hold_budget(proposal, recovered, budget)
         request = self._mint_request(confirmation, proposal)
+        self._hold_route(confirmation.run_id, AuthorizationError)
         # The store appends the request as its own record, refuses a fresh id that
         # reuses the idempotency key (RecordConflict), and no-ops an identical retry.
         self._store.append(request)
@@ -281,9 +301,10 @@ class ControlRuntime:
                 f"{budget.max_action_seconds}s time budget")
 
     def _mint_request(
-            self, confirmation: Confirmation, proposal: ActionProposal) -> ActionRequest:
+            self, confirmation: Confirmation, proposal: ActionProposal, *,
+            action_id: str | None = None) -> ActionRequest:
         return ActionRequest(
-            action_id=self._ids("action"),
+            action_id=action_id or self._ids("action"),
             run_id=confirmation.run_id,
             attempt_id=proposal.attempt_id,
             instance_id=proposal.instance_id,
@@ -305,18 +326,83 @@ class ControlRuntime:
         if not isinstance(authorization, Authorization):
             raise ExecutionError("execute requires an Authorization from authorize")
         request = authorization.request
+        self._hold_route(request.run_id, ExecutionError)
         recovered = self._store.read(request.run_id)
-        if not any(row.kind == "action_request" and row.value.action_id == request.action_id
-                   for row in recovered.records):
+        if recovered.warnings:
+            raise ExecutionError(
+                "execute refuses a run whose replay left unjudged durable bytes")
+        stored = next((
+            row.value for row in recovered.records
+            if row.kind == "action_request" and row.value.action_id == request.action_id), None)
+        if stored is None:
             raise ExecutionError(
                 f"action {request.action_id!r} was never authorized in run {request.run_id!r}")
+        if stored.as_dict() != request.as_dict():
+            raise ExecutionError(
+                f"action {request.action_id!r} differs from its durable authorization")
+        replayed = self._replayed_attempt(request, recovered)
+        if replayed is not None:
+            return replayed
         adapter, bound = self._bound_adapter(recovered, request.instance_id)
-        prepared = self._registry.prepare(bound, request)
+        self._hold_route(request.run_id, ExecutionError)
+        try:
+            prepared = self._registry.prepare(bound, request)
+        except Exception as e:  # noqa: BLE001 -- refusal becomes a durable unknown
+            return self._finish(
+                request, AttemptState.UNKNOWN, (AttemptState.ACCEPTED,),
+                detail=f"the adapter raised {type(e).__name__} during prepare")
         history = (AttemptState.ACCEPTED, AttemptState.STARTED)
+        self._hold_route(request.run_id, ExecutionError)
         report, note = self._observe_execute(adapter, prepared, request)
         if report is None:
             return self._finish(request, AttemptState.UNKNOWN, history, detail=note)
         return self._resolve(request, adapter, report, history)
+
+    @staticmethod
+    def _replayed_attempt(request: ActionRequest, recovered: RecoveredRun) -> Attempt | None:
+        """Return an already-durable terminal attempt; never execute it twice."""
+        results = [
+            row.value for row in recovered.records
+            if row.kind == "action_result" and row.value.action_id == request.action_id
+        ]
+        if len(results) > 1:
+            raise ExecutionError(
+                f"action {request.action_id!r} has more than one terminal result")
+        evidence = [
+            row.value for row in recovered.records
+            if row.kind == "evidence"
+            and row.value.uri == f"verification/{request.action_id}"
+        ]
+        if not results:
+            if evidence:
+                raise ExecutionError(
+                    f"action {request.action_id!r} has verification evidence but no result")
+            return None
+        receipt = results[0]
+        refs = tuple(item.evidence_id for item in evidence)
+        if tuple(receipt.evidence_refs) != refs:
+            raise ExecutionError(
+                f"action {request.action_id!r} result disagrees with its evidence records")
+        try:
+            state = AttemptState(receipt.outcome)
+        except ValueError as e:
+            raise ExecutionError(
+                f"action {request.action_id!r} has unsupported terminal outcome "
+                f"{receipt.outcome!r}") from e
+        return Attempt(
+            request=request, state=state, receipt=receipt,
+            # Durable v2 records do not say whether preparation/execute started.
+            # Replay therefore reconstructs only accepted + terminal facts.
+            history=(AttemptState.ACCEPTED, state),
+            verification_evidence=evidence[0] if len(evidence) == 1 else None)
+
+    def _hold_route(self, run_id: str, error: type[RuntimeError]) -> None:
+        """Refuse a non-local/aliased store route before the next durable effect."""
+        violations = run_route_violations(self._store, run_id)
+        if violations:
+            raise error(
+                f"run {run_id!r} is not on a contained writable route: "
+                + "; ".join(violations))
 
     def _bound_adapter(self, recovered: RecoveredRun, instance_id: str) -> tuple[Any, str]:
         bindings = frozen_config_bindings(recovered.config)
@@ -340,7 +426,7 @@ class ControlRuntime:
         try:
             report = adapter.execute(prepared)
         except Exception as e:  # noqa: BLE001 -- a broken adapter's failure is a lost result
-            return None, f"the adapter raised {type(e).__name__} during execute: {e}"
+            return None, f"the adapter raised {type(e).__name__} during execute"
         if not isinstance(report, ActionResultReceipt):
             return None, "the adapter returned no observed result receipt"
         if (report.action_id != request.action_id
@@ -367,7 +453,7 @@ class ControlRuntime:
         except Exception as e:  # noqa: BLE001 -- a broken verifier cannot confirm success
             return self._finish(
                 request, AttemptState.VERIFICATION_FAILED, history,
-                detail=f"the adapter raised {type(e).__name__} during verify: {e}",
+                detail=f"the adapter raised {type(e).__name__} during verify",
                 exit_code=report.exit_code)
         if (not isinstance(verification, AdapterVerification)
                 or verification.action_id != request.action_id):
@@ -412,8 +498,10 @@ class ControlRuntime:
         receipt's ``evidence_refs`` name a record that already exists. Both appends
         are immutable through the store: a receipt id is never rewritten in place.
         """
+        self._hold_route(request.run_id, ExecutionError)
         if evidence is not None:
             self._store.append(evidence)
+            self._hold_route(request.run_id, ExecutionError)
         receipt = ActionResultReceipt(
             receipt_id=self._ids("result"),
             action_id=request.action_id,

@@ -219,6 +219,24 @@ def test_a_changed_preview_digest_is_refused_and_nothing_is_authorized(tmp_path)
     assert action_requests(store) == []
 
 
+def test_direct_authorize_refuses_a_hard_linked_journal_before_append(tmp_path):
+    store = a_store(tmp_path)
+    proposal = a_proposal(store)
+    journal = store.run_path("run-001") / "records.jsonl"
+    alias = tmp_path / "outside-authorize-journal.jsonl"
+    try:
+        import os
+        os.link(journal, alias)
+    except OSError as e:
+        pytest.skip(f"hard links unavailable: {e}")
+    before = alias.read_bytes()
+    runtime = a_runtime(store)
+    with pytest.raises(AuthorizationError, match="hard links"):
+        runtime.authorize(a_confirmation(proposal), budget=a_budget())
+    assert alias.read_bytes() == before and journal.read_bytes() == before
+    assert action_requests(store) == []
+
+
 def test_a_confirmation_older_than_the_freshness_budget_is_refused(tmp_path):
     # SABOTAGE (stale confirmation refused). now and confirmed_at are set by the
     # test, an hour apart; a ten-minute budget refuses it, a two-hour one would not.
@@ -287,8 +305,21 @@ def test_the_action_budget_refuses_one_more_than_it_allows(tmp_path):
     # a fresh action id (counting ids) rather than an idempotent retry.
     runtime.authorize(a_confirmation(proposal), budget=a_budget(max_actions=1))
     assert len(action_requests(store)) == 1
+    other = a_proposal(
+        store, proposal_id="proposal-002", attempt_id="attempt-002",
+        arguments={"handoff": "packet-002"})
     with pytest.raises(AuthorizationError, match="action budget"):
-        runtime.authorize(a_confirmation(proposal), budget=a_budget(max_actions=1))
+        runtime.authorize(a_confirmation(other), budget=a_budget(max_actions=1))
+    assert len(action_requests(store)) == 1
+
+
+def test_an_identical_retry_is_not_a_new_action_at_the_budget_limit(tmp_path):
+    store = a_store(tmp_path)
+    proposal = a_proposal(store)
+    runtime = a_runtime(store)
+    first = runtime.authorize(a_confirmation(proposal), budget=a_budget(max_actions=1))
+    second = runtime.authorize(a_confirmation(proposal), budget=a_budget(max_actions=1))
+    assert second.request == first.request
     assert len(action_requests(store)) == 1
 
 
@@ -306,17 +337,16 @@ def test_the_time_budget_refuses_a_proposal_that_asks_for_longer(tmp_path):
 
 # -- SABOTAGE (duplicate idempotency refused): no second durable effect --
 
-def test_a_replayed_confirmation_with_a_fresh_action_id_is_refused_by_idempotency(tmp_path):
+def test_a_replayed_confirmation_reuses_the_durable_idempotent_request(tmp_path):
     store = a_store(tmp_path)
     proposal = a_proposal(store)
     runtime = a_runtime(store, ids=counting_ids())
     first = runtime.authorize(a_confirmation(proposal), budget=a_budget())
     assert len(action_requests(store)) == 1
-    # A second authorization of the same proposal mints a NEW action id (action-2)
-    # but derives the SAME idempotency key from the proposal, so the store refuses
-    # the reuse and leaves exactly one authorized request behind.
-    with pytest.raises(RecordConflict, match="idempotency"):
-        runtime.authorize(a_confirmation(proposal, confirmation_id="confirmation-002"),
-                          budget=a_budget())
+    # The durable idempotency key is consulted before minting a new action id.
+    second = runtime.authorize(
+        a_confirmation(proposal, confirmation_id="confirmation-002"),
+        budget=a_budget())
     remaining = action_requests(store)
     assert len(remaining) == 1 and remaining[0] == first.request
+    assert second.request == first.request
