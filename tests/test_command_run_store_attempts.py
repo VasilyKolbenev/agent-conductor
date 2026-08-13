@@ -27,6 +27,25 @@ from tests.test_command_run_store import (
 
 
 NOW = "2026-08-13T18:00:00Z"
+FINAL_OUTCOMES = (
+    "succeeded", "failed", "cancelled", "rejected", "unknown",
+    "verification_failed",
+)
+OBSERVED_FINALS = {
+    "succeeded": frozenset({"succeeded", "verification_failed"}),
+    "failed": frozenset({"failed"}),
+    "cancelled": frozenset({"cancelled"}),
+    "rejected": frozenset({"failed"}),
+    "unknown": frozenset({"unknown"}),
+}
+OBSERVED_EXITS = {
+    "succeeded": 0, "failed": -1, "cancelled": None,
+    "rejected": None, "unknown": None,
+}
+OBSERVED_PRIMARY_FINAL = {
+    "succeeded": "succeeded", "failed": "failed", "cancelled": "cancelled",
+    "rejected": "failed", "unknown": "unknown",
+}
 
 
 def an_event(phase="effect_lease", **changes):
@@ -206,43 +225,71 @@ def test_event_bearing_action_has_at_most_one_terminal_result(tmp_path):
         store.append(a_result(receipt_id="result-002", outcome="unknown", exit_code=None))
 
 
-@pytest.mark.parametrize("changes", [
-    {"outcome": "succeeded", "exit_code": None},
-    {"outcome": "unknown", "exit_code": 1},
-    {"outcome": "unknown", "evidence_refs": ("evidence-001",)},
+@pytest.mark.parametrize("outcome", FINAL_OUTCOMES)
+def test_lease_only_final_matrix_allows_exactly_unknown_null_and_evidence_free(
+        tmp_path, outcome):
+    store = a_store(tmp_path)
+    store.append(an_event())
+    before = journal(store).read_bytes()
+    result = a_result(outcome=outcome, exit_code=None)
+    if outcome == "unknown":
+        assert store.append(result) is True
+    else:
+        with pytest.raises(StoreError, match="lease-only"):
+            store.append(result)
+        assert journal(store).read_bytes() == before
+
+
+@pytest.mark.parametrize("outcome,exit_code,evidence_refs", [
+    ("unknown", 1, ()),
+    ("unknown", None, ("evidence-001",)),
 ])
-def test_lease_only_result_must_be_unknown_null_and_evidence_free(tmp_path, changes):
+def test_lease_only_unknown_still_requires_null_exit_and_empty_evidence(
+        tmp_path, outcome, exit_code, evidence_refs):
     store = a_store(tmp_path)
     store.append(an_event())
     before = journal(store).read_bytes()
     with pytest.raises(StoreError, match="lease-only"):
-        store.append(a_result(**changes))
+        store.append(a_result(
+            outcome=outcome, exit_code=exit_code, evidence_refs=evidence_refs))
     assert journal(store).read_bytes() == before
 
 
-@pytest.mark.parametrize("observed,final", [
-    ("succeeded", "succeeded"), ("succeeded", "verification_failed"),
-    ("failed", "failed"), ("cancelled", "cancelled"),
-    ("rejected", "failed"), ("unknown", "unknown"),
+@pytest.mark.parametrize("observed", tuple(OBSERVED_FINALS))
+@pytest.mark.parametrize("final", FINAL_OUTCOMES)
+def test_observed_to_final_cross_product_holds_the_exact_frozen_map(
+        tmp_path, observed, final):
+    store = a_store(tmp_path)
+    store.append(an_event())
+    exit_code = OBSERVED_EXITS[observed]
+    store.append(an_event(
+        "execution_observed", outcome=observed, exit_code=exit_code))
+    result = a_result(outcome=final, exit_code=exit_code)
+    if final in OBSERVED_FINALS[observed]:
+        assert store.append(result) is True
+    else:
+        with pytest.raises(StoreError, match="contradicts"):
+            store.append(result)
+
+
+@pytest.mark.parametrize("observed,event_exit,result_exit", [
+    ("succeeded", 0, None),
+    ("succeeded", None, 0),
+    ("failed", -1, None),
+    ("failed", None, -1),
+    ("cancelled", None, 1),
+    ("rejected", None, 1),
+    ("unknown", None, 1),
 ])
-def test_observed_outcome_maps_only_to_its_frozen_final_set(tmp_path, observed, final):
+def test_result_exit_must_exactly_equal_every_valid_observed_exit_form(
+        tmp_path, observed, event_exit, result_exit):
     store = a_store(tmp_path)
     store.append(an_event())
-    exit_code = 0 if observed == "succeeded" else (-1 if observed == "failed" else None)
-    store.append(an_event("execution_observed", outcome=observed, exit_code=exit_code))
-    assert store.append(a_result(outcome=final, exit_code=exit_code)) is True
-
-
-def test_result_exit_and_outcome_must_equal_the_observed_fact_relation(tmp_path):
-    store = a_store(tmp_path)
-    store.append(an_event())
-    store.append(an_event("execution_observed"))
-    for changes, match in [
-        ({"outcome": "failed", "exit_code": 0}, "contradicts"),
-        ({"outcome": "succeeded", "exit_code": None}, "exit_code"),
-    ]:
-        with pytest.raises(StoreError, match=match):
-            store.append(a_result(**changes))
+    store.append(an_event(
+        "execution_observed", outcome=observed, exit_code=event_exit))
+    final = OBSERVED_PRIMARY_FINAL[observed]
+    with pytest.raises(StoreError, match="exit_code"):
+        store.append(a_result(outcome=final, exit_code=result_exit))
 
 
 def test_verified_evidence_must_follow_observed_and_precede_succeeded_result(tmp_path):
@@ -251,6 +298,31 @@ def test_verified_evidence_must_follow_observed_and_precede_succeeded_result(tmp
     store.append(an_event("execution_observed"))
     store.append(verified_evidence())
     assert store.append(a_result(evidence_refs=("evidence-001",))) is True
+
+
+@pytest.mark.parametrize("final,observed", [
+    ("succeeded", "succeeded"),
+    ("failed", "failed"),
+    ("cancelled", "cancelled"),
+    ("failed", "rejected"),
+    ("unknown", "unknown"),
+    ("verification_failed", "succeeded"),
+])
+def test_causal_bound_evidence_is_accepted_if_and_only_if_final_succeeded(
+        tmp_path, final, observed):
+    store = a_store(tmp_path)
+    store.append(an_event())
+    exit_code = OBSERVED_EXITS[observed]
+    store.append(an_event(
+        "execution_observed", outcome=observed, exit_code=exit_code))
+    store.append(verified_evidence())
+    result = a_result(
+        outcome=final, exit_code=exit_code, evidence_refs=("evidence-001",))
+    if final == "succeeded":
+        assert store.append(result) is True
+    else:
+        with pytest.raises(StoreError):
+            store.append(result)
 
 
 @pytest.mark.parametrize("changes", [
