@@ -13,7 +13,11 @@
         "attempt_id": "attempt-cockpit-001",
         "capability": "dispatch",
         "arguments": {
-          "handoff": "handoff-cockpit-001"
+          "work_item_id": "work-cockpit-001",
+          "instruction_ref": "instruction-cockpit-001",
+          "profile": "implement",
+          "artifact_refs": ["artifact-cockpit-001"],
+          "output_limit_profile": "normal"
         },
         "scope": [
           "src",
@@ -30,6 +34,75 @@
       }
     },
     {
+      "name": "valid_declared_review",
+      "adapter_capabilities": ["review"],
+      "body": {
+        "instance_id": "codex-review", "attempt_id": "attempt-cockpit-002",
+        "capability": "review",
+        "arguments": {
+          "work_item_id": "work-cockpit-001",
+          "target_artifact_refs": ["artifact-cockpit-001"],
+          "review_profile": "quality"
+        },
+        "scope": ["src", "tests"], "proposed_by": "codex-review",
+        "rationale": "Review the bounded artifact.", "timeout_seconds": 900
+      },
+      "expected": {"disposition": "accept", "error_code": null}
+    },
+    {
+      "name": "valid_declared_evidence",
+      "adapter_capabilities": ["evidence"],
+      "body": {
+        "instance_id": "claude-dev", "attempt_id": "attempt-cockpit-003",
+        "capability": "evidence",
+        "arguments": {
+          "target_action_id": "action-cockpit-001", "kinds": ["result", "tests"]
+        },
+        "scope": ["src"], "proposed_by": "claude-dev",
+        "rationale": "Collect bounded evidence.", "timeout_seconds": 900
+      },
+      "expected": {"disposition": "accept", "error_code": null}
+    },
+    {
+      "name": "valid_declared_stop",
+      "adapter_capabilities": ["stop"],
+      "body": {
+        "instance_id": "claude-dev", "attempt_id": "attempt-cockpit-004",
+        "capability": "stop",
+        "arguments": {"target_attempt_id": "attempt-cockpit-001", "reason": "user"},
+        "scope": ["src"], "proposed_by": "release-owner",
+        "rationale": "Stop the owned attempt.", "timeout_seconds": 60
+      },
+      "expected": {"disposition": "accept", "error_code": null}
+    },
+    {
+      "name": "valid_declared_retry",
+      "adapter_capabilities": ["retry"],
+      "body": {
+        "instance_id": "claude-dev", "attempt_id": "attempt-cockpit-005",
+        "capability": "retry",
+        "arguments": {"prior_action_id": "action-cockpit-001", "reason": "unknown"},
+        "scope": ["src"], "proposed_by": "release-owner",
+        "rationale": "Retry the reviewed action.", "timeout_seconds": 900
+      },
+      "expected": {"disposition": "accept", "error_code": null}
+    },
+    {
+      "name": "valid_declared_switch",
+      "adapter_capabilities": ["switch"],
+      "body": {
+        "instance_id": "claude-dev", "attempt_id": "attempt-cockpit-006",
+        "capability": "switch",
+        "arguments": {
+          "prior_action_id": "action-cockpit-001", "target_instance_id": "codex-review",
+          "handoff_ref": "handoff-cockpit-001"
+        },
+        "scope": ["src"], "proposed_by": "release-owner",
+        "rationale": "Switch with a bounded handoff.", "timeout_seconds": 900
+      },
+      "expected": {"disposition": "accept", "error_code": null}
+    },
+    {
       "name": "unknown_top_level_is_not_extra_mutation_surface",
       "adapter_capabilities": [
         "dispatch"
@@ -39,7 +112,11 @@
         "attempt_id": "attempt-cockpit-001",
         "capability": "dispatch",
         "arguments": {
-          "handoff": "handoff-cockpit-001"
+          "work_item_id": "work-cockpit-001",
+          "instruction_ref": "instruction-cockpit-001",
+          "profile": "implement",
+          "artifact_refs": ["artifact-cockpit-001"],
+          "output_limit_profile": "normal"
         },
         "scope": [
           "src"
@@ -140,7 +217,11 @@
         "attempt_id": "attempt-cockpit-001",
         "capability": "dispatch",
         "arguments": {
-          "handoff": "handoff-cockpit-001"
+          "work_item_id": "work-cockpit-001",
+          "instruction_ref": "instruction-cockpit-001",
+          "profile": "implement",
+          "artifact_refs": ["artifact-cockpit-001"],
+          "output_limit_profile": "normal"
         },
         "scope": [
           "C:/outside"
@@ -164,7 +245,11 @@
         "attempt_id": "attempt-cockpit-001",
         "capability": "dispatch",
         "arguments": {
-          "handoff": "handoff-cockpit-001"
+          "work_item_id": "work-cockpit-001",
+          "instruction_ref": "instruction-cockpit-001",
+          "profile": "implement",
+          "artifact_refs": ["artifact-cockpit-001"],
+          "output_limit_profile": "normal"
         },
         "scope": [
           "../outside"
@@ -211,7 +296,8 @@
         "attempt_id": "attempt-cockpit-001",
         "capability": "stop",
         "arguments": {
-          "action_id": "action-cockpit-001"
+          "target_attempt_id": "attempt-cockpit-001",
+          "reason": "user"
         },
         "scope": [
           "src"
@@ -226,10 +312,9 @@
       }
     },
     {
-      "name": "dispatch_cannot_borrow_message_arguments",
+      "name": "dispatch_cannot_borrow_retired_message_arguments",
       "adapter_capabilities": [
-        "dispatch",
-        "message"
+        "dispatch"
       ],
       "body": {
         "instance_id": "claude-dev",
@@ -251,7 +336,39 @@
       }
     }
   ],
+  "retired_argument_cases": [
+    {
+      "capability": "dispatch", "arguments": {"handoff": "handoff-cockpit-001"}
+    },
+    {
+      "capability": "review", "arguments": {"handoff": "handoff-cockpit-001"}
+    },
+    {
+      "capability": "evidence", "arguments": {"action_id": "action-cockpit-001"}
+    },
+    {
+      "capability": "stop", "arguments": {"action_id": "action-cockpit-001"}
+    },
+    {
+      "capability": "retry", "arguments": {"action_id": "action-cockpit-001"}
+    },
+    {
+      "capability": "switch",
+      "arguments": {"action_id": "action-cockpit-001", "instance_id": "codex-review"}
+    }
+  ],
+  "retired_capabilities": ["message", "pause", "resume", "notify"],
   "control_cases": [
+    {
+      "name": "all_and_only_deep_schemas_render",
+      "manifest_capabilities": [
+        "dispatch", "review", "evidence", "stop", "retry", "switch",
+        "observe", "message", "pause", "resume", "notify"
+      ],
+      "expected_controls": [
+        "dispatch", "evidence", "retry", "review", "stop", "switch"
+      ]
+    },
     {
       "name": "only_declared_and_schema_backed_controls_render",
       "manifest_capabilities": [

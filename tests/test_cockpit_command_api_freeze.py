@@ -29,7 +29,11 @@ from urllib.parse import urlsplit
 import pytest
 
 from conductor.command import run_store as run_store_module
+from conductor.command.adapters.deep_commands import DEEP_ARGUMENT_TYPES
+from conductor.command.adapters.deep_contracts import DeepContractError
+from conductor.command.api_contracts import ApiRefusal
 from conductor.command.attempts import AttemptEvent, action_request_digest
+from conductor.command.containment import RouteViolation, run_route_violations
 from conductor.command.contracts import (
     ActionProposal,
     ActionRequest,
@@ -113,11 +117,14 @@ EXPECTED_ROUTES = (
 )
 
 EXPECTED_ARGUMENT_SCHEMAS = {
-    "message": ("message",), "dispatch": ("handoff",), "review": ("handoff",),
-    "evidence": ("action_id",), "pause": ("action_id",),
-    "resume": ("action_id",), "retry": ("action_id",),
-    "stop": ("action_id",), "switch": ("action_id", "instance_id"),
-    "notify": ("message",),
+    "dispatch": (
+        "work_item_id", "instruction_ref", "profile", "artifact_refs",
+        "output_limit_profile"),
+    "review": ("work_item_id", "target_artifact_refs", "review_profile"),
+    "evidence": ("target_action_id", "kinds"),
+    "stop": ("target_attempt_id", "reason"),
+    "retry": ("prior_action_id", "reason"),
+    "switch": ("prior_action_id", "target_instance_id", "handoff_ref"),
 }
 
 PROPOSE_REQUIRED = frozenset({
@@ -211,21 +218,27 @@ def _typed_route_dependency_ready(dependency: dict) -> bool:
     return get_origin(returned) is tuple and get_args(returned) == (violation, Ellipsis)
 
 
-def test_route_unsafe_is_blocked_on_a_public_typed_relation_not_prose():
+def test_route_unsafe_is_held_by_a_public_typed_relation_not_prose():
     dependency = CANON["route_dependency"]
     assert dependency == {
         "api_slice": "C/API-1",
         "public_module": "conductor.command.containment",
         "public_relation": "run_route_violations",
         "public_violation_type": "RouteViolation",
-        "state": "blocking_until_typed",
+        "state": "held",
+        "nonempty_result": "route_unsafe",
         "parse_exception_prose": False,
     }
-    server = _SERVER.read_text(encoding="utf-8")
-    if not _typed_route_dependency_ready(dependency):
-        assert "/command/runs/" not in server
-        assert "route_unsafe" not in server
-    assert "PreviewError" not in server
+    assert _typed_route_dependency_ready(dependency)
+
+
+def test_held_route_relation_maps_nonempty_typed_facts_without_rendering(tmp_path):
+    (tmp_path / "conductor").write_text("not a directory", encoding="utf-8")
+    store = run_store_module.RunStore(tmp_path)
+    violations = run_route_violations(store, RUN_ID)
+    assert violations and all(type(row) is RouteViolation for row in violations)
+    refusal = ApiRefusal.fixed(CANON["route_dependency"]["nonempty_result"])
+    assert (refusal.code, refusal.status) == ("route_unsafe", 409)
 
 
 def test_csrf_contract_names_its_trusted_local_process_limit():
@@ -279,6 +292,7 @@ def test_run_envelope_and_run_read_response_bind_to_the_run_contract():
     envelope = RunEnvelope.from_dict(read["run"])
     assert envelope.as_dict() == read["run"]
     assert envelope.run_id == RUN_ID
+    assert envelope.config_digest == run_store_module.snapshot_digest(read["config"])
     kinds = ("action_proposal", "action_request", "attempt_event", "attempt_event")
     assert tuple(row["record_type"] for row in read["records"]) == kinds
     assert read["records"][0]["record"] == CANON["action_proposal"]
@@ -700,21 +714,13 @@ def _proposal_disposition(case: dict) -> tuple[str, str | None]:
     if not isinstance(body, dict) or not PROPOSE_REQUIRED <= set(body) <= PROPOSE_ALLOWED:
         return "refuse", "contract_invalid"
     capability = body["capability"]
-    schema = EXPECTED_ARGUMENT_SCHEMAS.get(capability)
-    if schema is None or capability not in case["adapter_capabilities"]:
+    argument_type = DEEP_ARGUMENT_TYPES.get(capability)
+    if argument_type is None or capability not in case["adapter_capabilities"]:
         return "refuse", "capability_unsupported"
-    arguments = body["arguments"]
-    if not isinstance(arguments, dict) or set(arguments) != set(schema):
+    try:
+        arguments = argument_type.from_dict(body["arguments"]).as_dict()
+    except DeepContractError:
         return "refuse", "contract_invalid"
-    if set(arguments) & UNRESTRICTED_KEYS:
-        return "refuse", "contract_invalid"
-    id_pattern = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
-    for name, value in arguments.items():
-        if name == "message":
-            if not isinstance(value, str) or not value.strip() or "\x00" in value:
-                return "refuse", "contract_invalid"
-        elif not isinstance(value, str) or id_pattern.fullmatch(value) is None:
-            return "refuse", "contract_invalid"
     try:
         ActionProposal(
             proposal_id="proposal-boundary", run_id=RUN_ID,

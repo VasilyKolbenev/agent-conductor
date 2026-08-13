@@ -5,19 +5,19 @@ runtime, adapter, filesystem, process, or server seam.
 """
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
 import re
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass, fields
 from types import MappingProxyType
 from typing import Any
 
 from .adapters import UnsupportedCapability
+from .adapters.deep_commands import DEEP_ARGUMENT_TYPES
 from .contracts import ActionProposal, ContractError, DecisionReceipt
+from .http_transport import HttpRefusal
 from .run_store import CorruptRun, RecordConflict, StoreError
 from .runtime import AuthorizationError, Confirmation
 from .service import ServiceError
-from .http_transport import HttpRefusal
-
 
 ERROR_STATUS = MappingProxyType({
     "same_origin_denied": 403,
@@ -52,16 +52,8 @@ _FIXED_MESSAGES = MappingProxyType({
 })
 
 ARGUMENT_SCHEMAS = MappingProxyType({
-    "message": ("message",),
-    "dispatch": ("handoff",),
-    "review": ("handoff",),
-    "evidence": ("action_id",),
-    "pause": ("action_id",),
-    "resume": ("action_id",),
-    "retry": ("action_id",),
-    "stop": ("action_id",),
-    "switch": ("action_id", "instance_id"),
-    "notify": ("message",),
+    capability: tuple(field.name for field in fields(contract))
+    for capability, contract in DEEP_ARGUMENT_TYPES.items()
 })
 
 _PROPOSAL_REQUIRED = frozenset({
@@ -268,16 +260,6 @@ def _capabilities(values: Iterable[str]) -> frozenset[str]:
     return rows
 
 
-def _argument_values(capability: str, arguments: Mapping[str, Any]) -> None:
-    for name, value in arguments.items():
-        if name == "message":
-            valid = isinstance(value, str) and bool(value.strip()) and "\x00" not in value
-        else:
-            valid = isinstance(value, str) and _ID_RE.fullmatch(value) is not None
-        if not valid:
-            raise ApiRefusal.fixed("contract_invalid")
-
-
 def _json_array(values: dict[str, Any], name: str) -> list[Any]:
     value = values[name]
     if not isinstance(value, list):
@@ -293,20 +275,17 @@ def parse_proposal(
     capabilities = _capabilities(adapter_capabilities)
     if not _safe_id(capability):
         raise ApiRefusal.fixed("contract_invalid") from None
-    if (capability == "observe" or capability not in ARGUMENT_SCHEMAS
-            or capability not in capabilities):
+    argument_type = DEEP_ARGUMENT_TYPES.get(capability)
+    if argument_type is None or capability not in capabilities:
         raise ApiRefusal.fixed("capability_unsupported")
-    arguments = values["arguments"]
-    if not isinstance(arguments, Mapping) or set(arguments) != set(
-            ARGUMENT_SCHEMAS[capability]):
-        raise ApiRefusal.fixed("contract_invalid")
-    _argument_values(capability, arguments)
+    arguments = _contract(argument_type.from_dict, values["arguments"])
+    canonical_arguments = _contract(arguments.as_dict)
     scope = _json_array(values, "scope")
     probe = _contract(
         ActionProposal,
         proposal_id="api-proposal-validation", run_id="api-run-validation",
         attempt_id=values["attempt_id"], instance_id=values["instance_id"],
-        capability=capability, arguments=arguments, scope=scope,
+        capability=capability, arguments=canonical_arguments, scope=scope,
         proposed_by=values["proposed_by"], proposed_at="2000-01-01T00:00:00Z",
         timeout_seconds=values["timeout_seconds"], rationale=values["rationale"],
         config_digest="sha256:" + "0" * 64)

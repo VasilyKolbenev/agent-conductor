@@ -126,11 +126,9 @@ scope, not permission for C/API-1 to invent a generic file-write endpoint.
    file is `route_unsafe`; the endpoint does not invoke the service/store/runtime
    mutation and returns an empty-effect refusal.
 
-That last rule has a **blocking integration dependency**. The planning base has
-only private `PreviewError`/`tuple[str, ...]` prose, not a public typed result.
-C/API-1 MUST NOT implement a mutating route until integration supplies this
-exact import relation; any non-empty typed result maps to `route_unsafe` without
-inspecting its fields or text:
+That last rule is **HELD** by the shared typed relation below. C/API-1 imports
+the type and relation directly; any non-empty result maps to `route_unsafe`
+without inspecting a violation's fields, renderer, exception, or text:
 
 <!-- CANONICAL:route_dependency -->
 ```json
@@ -139,7 +137,8 @@ inspecting its fields or text:
   "public_module": "conductor.command.containment",
   "public_relation": "run_route_violations",
   "public_violation_type": "RouteViolation",
-  "state": "blocking_until_typed",
+  "state": "held",
+  "nonempty_result": "route_unsafe",
   "parse_exception_prose": false
 }
 ```
@@ -295,15 +294,13 @@ choose a code.
 - `authorization_refused` is one `AuthorizationError`: absent proposal,
   mismatched facts, changed digest, and temporal expiry are not falsely split
   into codes the current gate cannot type-distinguish.
-- `route_unsafe` remains reserved behind the blocking typed dependency in
-  section 1. Current `tuple[str, ...]`/`PreviewError` prose is not that seam and
-  MUST NOT be parsed. API-1 cannot implement the route before the typed import
-  relation exists.
+- `route_unsafe` is held by the public typed dependency in section 1. API-1
+  consumes only whether `run_route_violations` is empty; it never parses a
+  rendered violation or `PreviewError` prose.
 
 ## 4. Command endpoints — FROZEN CONTRACT
 
-The shared config the examples pin (its `instances` list is the authority the
-service derives each instance's adapter from, per CMD-4):
+The shared config's `instances` list is the adapter-binding authority (CMD-4):
 
 <!-- CANONICAL:config -->
 ```json
@@ -311,8 +308,7 @@ service derives each instance's adapter from, per CMD-4):
   "cycle": { "id": "cockpit-orbit", "phases": ["dispatch", "review"] },
   "instances": [
     { "id": "claude-dev", "adapter": "claude-code", "token_env": "ANTHROPIC_API_KEY" },
-    { "id": "codex-review", "adapter": "codex", "api_key_env": "OPENAI_API_KEY" }
-  ]
+    { "id": "codex-review", "adapter": "codex", "api_key_env": "OPENAI_API_KEY" }]
 }
 ```
 
@@ -327,26 +323,24 @@ the service. Every listed key is required and no other key is accepted:
 <!-- CANONICAL:argument_schemas -->
 ```json
 {
-  "message":  ["message"],
-  "dispatch": ["handoff"],
-  "review":   ["handoff"],
-  "evidence": ["action_id"],
-  "pause":    ["action_id"],
-  "resume":   ["action_id"],
-  "retry":    ["action_id"],
-  "stop":     ["action_id"],
-  "switch":   ["action_id", "instance_id"],
-  "notify":   ["message"]
+  "dispatch": ["work_item_id", "instruction_ref", "profile", "artifact_refs",
+    "output_limit_profile"],
+  "review": ["work_item_id", "target_artifact_refs", "review_profile"],
+  "evidence": ["target_action_id", "kinds"],
+  "stop": ["target_attempt_id", "reason"],
+  "retry": ["prior_action_id", "reason"],
+  "switch": ["prior_action_id", "target_instance_id", "handoff_ref"]
 }
 ```
 
-`handoff`, `action_id`, and `instance_id` are contract ids. `message` is
-non-empty contract text and is always data passed as one adapter argument,
-never parsed or executed as a command. `observe` is absent: observations are
-adapter-owned facts and the browser has no route that authors one. A capability
-not present here, not declared by the config-bound adapter, or not proven by its
-implementation is `capability_unsupported`; it does not acquire a generic
-arguments escape hatch.
+This registry is derived from the six exact public types in
+`DEEP_ARGUMENT_TYPES`; their `from_dict`/`as_dict` round trip is the authority,
+including exact JSON-list fields and closed enum values. `message`, `pause`,
+`resume`, and `notify` are absent because no proven deep adapter owns them.
+`observe` is absent because observations are adapter-authored facts. A
+capability absent here or from the bound adapter manifest is
+`capability_unsupported`; malformed arguments for a present capability are
+`contract_invalid`, never a generic arguments escape hatch.
 
 ### 4.1 `POST /command/runs/<run_id>/proposals` — mint an ActionProposal
 
@@ -360,12 +354,14 @@ Request:
 <!-- CANONICAL:propose_request -->
 ```json
 {
-  "instance_id": "claude-dev",
-  "attempt_id": "attempt-cockpit-001",
+  "instance_id": "claude-dev", "attempt_id": "attempt-cockpit-001",
   "capability": "dispatch",
-  "arguments": { "handoff": "handoff-cockpit-001" },
-  "scope": ["src", "tests"],
-  "proposed_by": "claude-dev",
+  "arguments": {
+    "work_item_id": "work-cockpit-001", "instruction_ref": "instruction-cockpit-001",
+    "profile": "implement", "artifact_refs": ["artifact-cockpit-001"],
+    "output_limit_profile": "normal"
+  },
+  "scope": ["src", "tests"], "proposed_by": "claude-dev",
   "rationale": "The lane finished its handoff and asks to dispatch implementation.",
   "timeout_seconds": 900,
   "adapter_id": "claude-code"
@@ -385,20 +381,19 @@ the request is refused `service_refused` (409). Response `201` — an
 <!-- CANONICAL:action_proposal -->
 ```json
 {
-  "schema_version": 2,
-  "proposal_id": "proposal-cockpit-001",
-  "run_id": "run-cockpit-001",
-  "attempt_id": "attempt-cockpit-001",
-  "instance_id": "claude-dev",
-  "capability": "dispatch",
-  "arguments": { "handoff": "handoff-cockpit-001" },
-  "scope": ["src", "tests"],
-  "proposed_by": "claude-dev",
-  "proposed_at": "2026-08-13T12:01:00Z",
-  "timeout_seconds": 900,
+  "schema_version": 2, "proposal_id": "proposal-cockpit-001",
+  "run_id": "run-cockpit-001", "attempt_id": "attempt-cockpit-001",
+  "instance_id": "claude-dev", "capability": "dispatch",
+  "arguments": {
+    "work_item_id": "work-cockpit-001", "instruction_ref": "instruction-cockpit-001",
+    "profile": "implement", "artifact_refs": ["artifact-cockpit-001"],
+    "output_limit_profile": "normal"
+  },
+  "scope": ["src", "tests"], "proposed_by": "claude-dev",
+  "proposed_at": "2026-08-13T12:01:00Z", "timeout_seconds": 900,
   "rationale": "The lane finished its handoff and asks to dispatch implementation.",
   "config_digest": "sha256:0e0efae86b6ea79a902ef02935a2515e561e22de6b9bd6abebe8f4f174efa2e5",
-  "preview_digest": "sha256:973b35dfda3582c5c472217e320a2dd87650fc67706136d854c863dcde1661ae"
+  "preview_digest": "sha256:ef21f1ef6bfa392a6c6acb57469261a9b034fdb55cec95c2cf77db7ef2856c7f"
 }
 ```
 
@@ -426,7 +421,7 @@ cannot be overridden either.
 ```json
 {
   "proposal_id": "proposal-cockpit-001",
-  "preview_digest": "sha256:973b35dfda3582c5c472217e320a2dd87650fc67706136d854c863dcde1661ae",
+  "preview_digest": "sha256:ef21f1ef6bfa392a6c6acb57469261a9b034fdb55cec95c2cf77db7ef2856c7f",
   "capability": "dispatch",
   "scope": ["src", "tests"],
   "config_digest": "sha256:0e0efae86b6ea79a902ef02935a2515e561e22de6b9bd6abebe8f4f174efa2e5",
@@ -446,19 +441,19 @@ arguments, and timeout from the proposal. Response `201` is its
 <!-- CANONICAL:action_request -->
 ```json
 {
-  "schema_version": 2,
-  "action_id": "action-cockpit-001",
-  "run_id": "run-cockpit-001",
-  "attempt_id": "attempt-cockpit-001",
-  "instance_id": "claude-dev",
-  "capability": "dispatch",
-  "arguments": { "handoff": "handoff-cockpit-001" },
-  "scope": ["src", "tests"],
-  "requested_by": "release-owner",
+  "schema_version": 2, "action_id": "action-cockpit-001",
+  "run_id": "run-cockpit-001", "attempt_id": "attempt-cockpit-001",
+  "instance_id": "claude-dev", "capability": "dispatch",
+  "arguments": {
+    "work_item_id": "work-cockpit-001", "instruction_ref": "instruction-cockpit-001",
+    "profile": "implement", "artifact_refs": ["artifact-cockpit-001"],
+    "output_limit_profile": "normal"
+  },
+  "scope": ["src", "tests"], "requested_by": "release-owner",
   "requested_at": "2026-08-13T12:02:00Z",
   "idempotency_key": "dispatch-proposal-cockpit-001",
   "timeout_seconds": 900,
-  "preview_digest": "sha256:973b35dfda3582c5c472217e320a2dd87650fc67706136d854c863dcde1661ae",
+  "preview_digest": "sha256:ef21f1ef6bfa392a6c6acb57469261a9b034fdb55cec95c2cf77db7ef2856c7f",
   "mode": "confirm"
 }
 ```
@@ -484,13 +479,10 @@ so an exact retry can find the same immutable decision. The server injects
 <!-- CANONICAL:decision_request -->
 ```json
 {
-  "receipt_id": "decision-cockpit-001",
-  "gate_id": "release",
-  "action": "approve",
-  "actor": "release-owner",
+  "receipt_id": "decision-cockpit-001", "gate_id": "release",
+  "action": "approve", "actor": "release-owner",
   "reason": "Reviewed the streamed evidence; approving the release gate.",
-  "scope_refs": ["src", "tests"],
-  "evidence_refs": ["evidence-cockpit-001"],
+  "scope_refs": ["src", "tests"], "evidence_refs": ["evidence-cockpit-001"],
   "supersedes": null
 }
 ```
@@ -511,18 +503,14 @@ Response `201` is a new `DecisionReceipt.as_dict()`:
 <!-- CANONICAL:decision_receipt -->
 ```json
 {
-  "schema_version": 2,
-  "receipt_id": "decision-cockpit-001",
-  "run_id": "run-cockpit-001",
-  "gate_id": "release",
-  "action": "approve",
-  "actor": "release-owner",
+  "schema_version": 2, "receipt_id": "decision-cockpit-001",
+  "run_id": "run-cockpit-001", "gate_id": "release",
+  "action": "approve", "actor": "release-owner",
   "decided_at": "2026-08-13T12:30:00Z",
   "reason": "Reviewed the streamed evidence; approving the release gate.",
   "scope_refs": ["src", "tests"],
   "config_digest": "sha256:0e0efae86b6ea79a902ef02935a2515e561e22de6b9bd6abebe8f4f174efa2e5",
-  "evidence_refs": ["evidence-cockpit-001"],
-  "supersedes": null
+  "evidence_refs": ["evidence-cockpit-001"], "supersedes": null
 }
 ```
 
@@ -571,34 +559,40 @@ and `attempt_event` (`AttemptEvent`).
       "schema_version": 2, "proposal_id": "proposal-cockpit-001", "run_id": "run-cockpit-001",
       "attempt_id": "attempt-cockpit-001",
       "instance_id": "claude-dev", "capability": "dispatch",
-      "arguments": { "handoff": "handoff-cockpit-001" }, "scope": ["src", "tests"],
+      "arguments": {
+        "work_item_id": "work-cockpit-001", "instruction_ref": "instruction-cockpit-001",
+        "profile": "implement", "artifact_refs": ["artifact-cockpit-001"],
+        "output_limit_profile": "normal" }, "scope": ["src", "tests"],
       "proposed_by": "claude-dev", "proposed_at": "2026-08-13T12:01:00Z",
       "timeout_seconds": 900,
       "rationale": "The lane finished its handoff and asks to dispatch implementation.",
       "config_digest": "sha256:0e0efae86b6ea79a902ef02935a2515e561e22de6b9bd6abebe8f4f174efa2e5",
-      "preview_digest": "sha256:973b35dfda3582c5c472217e320a2dd87650fc67706136d854c863dcde1661ae"
+      "preview_digest": "sha256:ef21f1ef6bfa392a6c6acb57469261a9b034fdb55cec95c2cf77db7ef2856c7f"
     } },
     { "record_type": "action_request", "record": {
       "schema_version": 2, "action_id": "action-cockpit-001", "run_id": "run-cockpit-001",
       "attempt_id": "attempt-cockpit-001", "instance_id": "claude-dev", "capability": "dispatch",
-      "arguments": { "handoff": "handoff-cockpit-001" }, "scope": ["src", "tests"],
+      "arguments": {
+        "work_item_id": "work-cockpit-001", "instruction_ref": "instruction-cockpit-001",
+        "profile": "implement", "artifact_refs": ["artifact-cockpit-001"],
+        "output_limit_profile": "normal" }, "scope": ["src", "tests"],
       "requested_by": "release-owner", "requested_at": "2026-08-13T12:02:00Z",
       "idempotency_key": "dispatch-proposal-cockpit-001", "timeout_seconds": 900,
-      "preview_digest": "sha256:973b35dfda3582c5c472217e320a2dd87650fc67706136d854c863dcde1661ae",
+      "preview_digest": "sha256:ef21f1ef6bfa392a6c6acb57469261a9b034fdb55cec95c2cf77db7ef2856c7f",
       "mode": "confirm" } },
     { "record_type": "attempt_event", "record": {
       "schema_version": 2, "event_id": "event-lease-cockpit-001", "run_id": "run-cockpit-001",
       "action_id": "action-cockpit-001", "attempt_id": "attempt-cockpit-001",
       "instance_id": "claude-dev", "adapter_id": "claude-code", "phase": "effect_lease",
       "recorded_at": "2026-08-13T12:03:00Z",
-      "request_digest": "sha256:b93e3ca30f0abe3848052a0e4d4dcf6cc66249a4b229d2a334cc268afce85a3f",
+      "request_digest": "sha256:4ff0ae5768792e2d8161e993399d2fc0720e1d2a42bde0380929f0688bc1c7a2",
       "recovery_ref": "recovery-cockpit-001", "outcome": null, "exit_code": null } },
     { "record_type": "attempt_event", "record": {
       "schema_version": 2, "event_id": "event-observed-cockpit-001", "run_id": "run-cockpit-001",
       "action_id": "action-cockpit-001", "attempt_id": "attempt-cockpit-001",
       "instance_id": "claude-dev", "adapter_id": "claude-code", "phase": "execution_observed",
       "recorded_at": "2026-08-13T12:20:00Z",
-      "request_digest": "sha256:b93e3ca30f0abe3848052a0e4d4dcf6cc66249a4b229d2a334cc268afce85a3f",
+      "request_digest": "sha256:4ff0ae5768792e2d8161e993399d2fc0720e1d2a42bde0380929f0688bc1c7a2",
       "recovery_ref": "recovery-cockpit-001", "outcome": "succeeded", "exit_code": 0 } }
   ],
   "warnings": []
@@ -615,7 +609,7 @@ durable request, frozen adapter, attempt, and opaque recovery reference:
   "action_id": "action-cockpit-001", "attempt_id": "attempt-cockpit-001",
   "instance_id": "claude-dev", "adapter_id": "claude-code", "phase": "effect_lease",
   "recorded_at": "2026-08-13T12:03:00Z",
-  "request_digest": "sha256:b93e3ca30f0abe3848052a0e4d4dcf6cc66249a4b229d2a334cc268afce85a3f",
+  "request_digest": "sha256:4ff0ae5768792e2d8161e993399d2fc0720e1d2a42bde0380929f0688bc1c7a2",
   "recovery_ref": "recovery-cockpit-001", "outcome": null, "exit_code": null
 }
 ```
@@ -626,7 +620,7 @@ durable request, frozen adapter, attempt, and opaque recovery reference:
   "action_id": "action-cockpit-001", "attempt_id": "attempt-cockpit-001",
   "instance_id": "claude-dev", "adapter_id": "claude-code", "phase": "execution_observed",
   "recorded_at": "2026-08-13T12:20:00Z",
-  "request_digest": "sha256:b93e3ca30f0abe3848052a0e4d4dcf6cc66249a4b229d2a334cc268afce85a3f",
+  "request_digest": "sha256:4ff0ae5768792e2d8161e993399d2fc0720e1d2a42bde0380929f0688bc1c7a2",
   "recovery_ref": "recovery-cockpit-001", "outcome": "succeeded", "exit_code": 0
 }
 ```
@@ -637,35 +631,23 @@ frozen so the UI does not invent them:
 <!-- CANONICAL:action_result_receipt -->
 ```json
 {
-  "schema_version": 2,
-  "receipt_id": "receipt-cockpit-001",
-  "action_id": "action-cockpit-001",
-  "run_id": "run-cockpit-001",
-  "attempt_id": "attempt-cockpit-001",
-  "instance_id": "claude-dev",
-  "outcome": "succeeded",
-  "observed_at": "2026-08-13T12:20:00Z",
-  "evidence_refs": ["evidence-cockpit-001"],
-  "detail": null,
-  "exit_code": 0
+  "schema_version": 2, "receipt_id": "receipt-cockpit-001",
+  "action_id": "action-cockpit-001", "run_id": "run-cockpit-001",
+  "attempt_id": "attempt-cockpit-001", "instance_id": "claude-dev",
+  "outcome": "succeeded", "observed_at": "2026-08-13T12:20:00Z",
+  "evidence_refs": ["evidence-cockpit-001"], "detail": null, "exit_code": 0
 }
 ```
 
 <!-- CANONICAL:evidence_ref -->
 ```json
 {
-  "schema_version": 2,
-  "evidence_id": "evidence-cockpit-001",
-  "run_id": "run-cockpit-001",
-  "kind": "log",
+  "schema_version": 2, "evidence_id": "evidence-cockpit-001",
+  "run_id": "run-cockpit-001", "kind": "log",
   "uri": "conductor/runs/run-cockpit-001/evidence/dispatch.log",
-  "label": "dispatch stdout",
-  "created_by": "claude-code",
-  "observed_at": "2026-08-13T12:19:00Z",
-  "digest": null,
-  "verification": "unverified",
-  "verified_by": null,
-  "verified_at": null
+  "label": "dispatch stdout", "created_by": "claude-code",
+  "observed_at": "2026-08-13T12:19:00Z", "digest": null,
+  "verification": "unverified", "verified_by": null, "verified_at": null
 }
 ```
 
@@ -682,13 +664,11 @@ placeholder that could become a decorative unsupported control.
 {
   "instances": [
     {
-      "instance_id": "claude-dev",
-      "adapter_id": "claude-code",
+      "instance_id": "claude-dev", "adapter_id": "claude-code",
       "controls": ["dispatch", "retry", "review", "stop"]
     },
     {
-      "instance_id": "codex-review",
-      "adapter_id": "codex",
+      "instance_id": "codex-review", "adapter_id": "codex",
       "controls": ["dispatch", "retry", "review", "stop"]
     }
   ]
@@ -794,8 +774,8 @@ or a new request field is a contract change, not harmless implementation detail.
   reviewed additive API freeze; no generic path or file body is allowed.
 - **Policy authorization** (A/POL-1): it is a separate Day-3 authority seam.
   This browser confirmation endpoint cannot select Policy mode.
-- **Pause/resume/retry/stop/switch controls**: capability-derived (C/UI-1) and
-  each a `POST …/actions` with the matching `capability`; a control whose bound
+- **Dispatch/review/evidence/stop/retry/switch controls**: capability-derived
+  (C/UI-1) and each a `POST …/actions` with the matching `capability`; a control whose bound
   adapter does not declare the capability is **absent**, never a disabled button
   (safety law 10). No separate endpoint shape is frozen for them.
 

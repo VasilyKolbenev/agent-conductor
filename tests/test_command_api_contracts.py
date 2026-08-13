@@ -6,8 +6,17 @@ from pathlib import Path
 
 import pytest
 
-import conductor.command.api_contracts as api_contracts
+from conductor.command import api_contracts
 from conductor.command.adapters import UnsupportedCapability
+from conductor.command.adapters.deep_commands import (
+    DEEP_ARGUMENT_TYPES,
+    DeepDispatchArgs,
+    DeepEvidenceArgs,
+    DeepRetryArgs,
+    DeepReviewArgs,
+    DeepStopArgs,
+    DeepSwitchArgs,
+)
 from conductor.command.api_contracts import (
     ARGUMENT_SCHEMAS,
     ERROR_STATUS,
@@ -17,18 +26,30 @@ from conductor.command.api_contracts import (
     parse_proposal,
     refusal_from_exception,
 )
-from conductor.command.contracts import ContractError
+from conductor.command.contracts import ContractError, canonical_json
 from conductor.command.http_transport import HttpRefusal
 from conductor.command.run_store import CorruptRun, RecordConflict, StoreError
 from conductor.command.runtime import AuthorizationError, Confirmation
 from conductor.command.service import ServiceError
-
 
 _ROOT = Path(__file__).resolve().parents[1]
 _BOUNDARY = json.loads((
     _ROOT / "tests" / "fixtures" / "cockpit_command_boundary_fixtures.json"
 ).read_text(encoding="utf-8"))
 _SPEC = (_ROOT / "docs" / "specs" / "2026-08-13-cockpit-command-api.md")
+
+EXPECTED_DEEP_ARGUMENTS = {
+    "dispatch": (DeepDispatchArgs, (
+        "work_item_id", "instruction_ref", "profile", "artifact_refs",
+        "output_limit_profile")),
+    "review": (DeepReviewArgs, (
+        "work_item_id", "target_artifact_refs", "review_profile")),
+    "evidence": (DeepEvidenceArgs, ("target_action_id", "kinds")),
+    "stop": (DeepStopArgs, ("target_attempt_id", "reason")),
+    "retry": (DeepRetryArgs, ("prior_action_id", "reason")),
+    "switch": (DeepSwitchArgs, (
+        "prior_action_id", "target_instance_id", "handoff_ref")),
+}
 
 
 def _canon(name):
@@ -48,6 +69,9 @@ def test_frozen_proposal_fixtures_drive_the_real_closed_mapper(row):
     else:
         actual = ("accept", None)
         assert parsed.capability == row["body"]["capability"]
+        contract = EXPECTED_DEEP_ARGUMENTS[parsed.capability][0]
+        assert json.loads(canonical_json(dict(parsed.arguments))) == contract.from_dict(
+            row["body"]["arguments"]).as_dict()
     assert actual == (
         row["expected"]["disposition"], row["expected"]["error_code"])
 
@@ -87,10 +111,61 @@ def test_decision_mapper_accepts_only_caller_facts_and_injects_server_facts():
 
 
 def test_argument_schema_and_error_vocabularies_equal_the_frozen_examples():
-    assert {key: list(value) for key, value in ARGUMENT_SCHEMAS.items()} == _canon(
+    expected_schemas = {
+        name: fields for name, (_contract, fields) in EXPECTED_DEEP_ARGUMENTS.items()}
+    assert dict(DEEP_ARGUMENT_TYPES) == {
+        name: contract for name, (contract, _fields) in EXPECTED_DEEP_ARGUMENTS.items()}
+    assert dict(ARGUMENT_SCHEMAS) == expected_schemas
+    assert {key: list(value) for key, value in expected_schemas.items()} == _canon(
         "argument_schemas")
     expected = {row["code"]: row["status"] for row in _canon("error_codes")}
     assert dict(ERROR_STATUS) == expected
+
+
+def test_fixture_has_one_real_positive_for_each_deep_capability():
+    accepted = {
+        row["body"]["capability"] for row in _BOUNDARY["proposal_cases"]
+        if row["expected"] == {"disposition": "accept", "error_code": None}}
+    assert accepted == set(EXPECTED_DEEP_ARGUMENTS)
+
+
+@pytest.mark.parametrize(
+    "row", _BOUNDARY["retired_argument_cases"], ids=lambda row: row["capability"])
+def test_each_retired_shallow_argument_shape_is_contract_invalid(row):
+    body = {
+        **_canon("propose_request"), "capability": row["capability"],
+        "arguments": row["arguments"],
+    }
+    with pytest.raises(ApiRefusal) as caught:
+        parse_proposal(body, adapter_capabilities={row["capability"]})
+    assert (caught.value.code, caught.value.status) == ("contract_invalid", 422)
+
+
+@pytest.mark.parametrize("capability", _BOUNDARY["retired_capabilities"])
+def test_each_unproven_retired_capability_stays_unsupported_even_if_declared(capability):
+    body = {**_canon("propose_request"), "capability": capability, "arguments": {}}
+    with pytest.raises(ApiRefusal) as caught:
+        parse_proposal(body, adapter_capabilities={capability})
+    assert (caught.value.code, caught.value.status) == ("capability_unsupported", 409)
+
+
+@pytest.mark.parametrize("capability,array_field", [
+    ("dispatch", "artifact_refs"),
+    ("review", "target_artifact_refs"),
+    ("evidence", "kinds"),
+])
+def test_deep_argument_arrays_must_arrive_as_json_lists(capability, array_field):
+    row = next(
+        item for item in _BOUNDARY["proposal_cases"]
+        if item["expected"]["disposition"] == "accept"
+        and item["body"]["capability"] == capability)
+    arguments = dict(row["body"]["arguments"])
+    arguments[array_field] = tuple(arguments[array_field])
+    with pytest.raises(ApiRefusal) as caught:
+        parse_proposal(
+            {**row["body"], "arguments": arguments},
+            adapter_capabilities={capability})
+    assert (caught.value.code, caught.value.status) == ("contract_invalid", 422)
 
 
 @pytest.mark.parametrize("error,code", [
