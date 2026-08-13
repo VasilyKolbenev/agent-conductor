@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+import conductor.command.api_contracts as api_contracts
 from conductor.command.adapters import UnsupportedCapability
 from conductor.command.api_contracts import (
     ARGUMENT_SCHEMAS,
@@ -17,6 +18,7 @@ from conductor.command.api_contracts import (
     refusal_from_exception,
 )
 from conductor.command.contracts import ContractError
+from conductor.command.http_transport import HttpRefusal
 from conductor.command.run_store import CorruptRun, RecordConflict, StoreError
 from conductor.command.runtime import AuthorizationError, Confirmation
 from conductor.command.service import ServiceError
@@ -116,19 +118,46 @@ def test_exception_type_precedence_distinguishes_store_subclasses():
         refusal_from_exception(RuntimeError("same prose"))
 
 
-def test_api_refusal_shape_is_exact_and_rejects_secret_or_path_detail_fields():
-    refusal = ApiRefusal.fixed(
-        "service_refused", {"run_id": "run-001", "instance_id": "instance-001"})
+def test_api_refusal_shape_is_exact_and_validates_each_detail_identifier():
+    refusal = ApiRefusal.service_missing_instance("run-001", "instance-001")
     assert set(refusal.as_dict()) == {"error"}
     assert set(refusal.as_dict()["error"]) == {"code", "message", "detail"}
-    for key in ("csrf_token", "secret", "filesystem_path", "cookie"):
+    assert set(refusal.detail) == {"run_id", "instance_id"}
+    for value in ("../run", "ghost/dev", "secret key", "", None, True):
         with pytest.raises(ValueError):
-            ApiRefusal.fixed("service_refused", {key: "unsafe"})
+            ApiRefusal.service_missing_instance("run-001", value)
+        with pytest.raises(ValueError):
+            ApiRefusal.service_missing_instance(value, "instance-001")
 
 
 def test_api_refusal_cannot_be_constructed_with_submitted_or_exception_prose():
-    with pytest.raises(ValueError, match="fixed code message"):
-        ApiRefusal("store_error", "APIKEY_SECRET exception prose", {})
+    with pytest.raises(ValueError, match="reviewed factory"):
+        ApiRefusal(
+            object(), "store_error", "APIKEY_SECRET exception prose",
+            {"arbitrary": "C:/APIKEY_SECRET"})
+    with pytest.raises(ValueError, match="reviewed template"):
+        ApiRefusal(
+            api_contracts._REFUSAL_BUILD, "store_error",
+            "APIKEY_SECRET exception prose", {})
+    with pytest.raises(ValueError, match="reviewed fact"):
+        ApiRefusal(
+            api_contracts._REFUSAL_BUILD, "service_refused",
+            "frozen config declares no instance 'different'",
+            {"run_id": "run-001", "instance_id": "instance-001"})
+
+
+def test_service_missing_instance_factory_equals_the_frozen_refusal_example():
+    assert ApiRefusal.service_missing_instance(
+        "run-cockpit-001", "ghost-dev").as_dict() == _canon("refusal_shape")
+
+
+def test_http_translation_preserves_each_reviewed_phase_message():
+    host = refusal_from_exception(HttpRefusal("host"))
+    origin = refusal_from_exception(HttpRefusal("origin"))
+    assert host.code == origin.code == "same_origin_denied"
+    assert host.message == "request Host is not allowed"
+    assert origin.message == "request origin is not allowed"
+    assert host.message != origin.message
 
 
 @pytest.mark.parametrize("parser,name", [
@@ -177,3 +206,71 @@ def test_every_frozen_code_builds_one_exact_sanitized_refusal_shape():
         assert refusal.status == status
         assert set(refusal.as_dict()) == {"error"}
         assert set(refusal.as_dict()["error"]) == {"code", "message", "detail"}
+
+
+@pytest.mark.parametrize("capability", [None, True, False, "", 7, [], {}])
+def test_malformed_capability_is_a_contract_error(capability):
+    body = {**_canon("propose_request"), "capability": capability}
+    with pytest.raises(ApiRefusal) as caught:
+        parse_proposal(body, adapter_capabilities={"dispatch", "observe"})
+    assert caught.value.code == "contract_invalid"
+    assert caught.value.status == 422
+
+
+@pytest.mark.parametrize("capability", ["observe", "future-capability", "stop"])
+def test_well_formed_but_unavailable_capability_is_unsupported(capability):
+    body = {**_canon("propose_request"), "capability": capability}
+    with pytest.raises(ApiRefusal) as caught:
+        parse_proposal(body, adapter_capabilities={"dispatch"})
+    assert caught.value.code == "capability_unsupported"
+    assert caught.value.status == 409
+
+
+@pytest.mark.parametrize("adapter_id", [None, True, False, "", "bad/id", [], {}])
+def test_adapter_id_may_be_omitted_but_never_present_with_an_invalid_value(adapter_id):
+    body = {**_canon("propose_request"), "adapter_id": adapter_id}
+    with pytest.raises(ApiRefusal) as caught:
+        parse_proposal(body, adapter_capabilities={"dispatch"})
+    assert caught.value.code == "contract_invalid"
+
+
+def test_omitted_adapter_id_remains_the_only_empty_optional_form():
+    body = _canon("propose_request")
+    body.pop("adapter_id")
+    assert parse_proposal(body, adapter_capabilities={"dispatch"}).adapter_id is None
+
+
+def _assert_refusal_graph_is_detached(refusal, sentinel):
+    assert refusal.__cause__ is None
+    assert refusal.__context__ is None
+    graph = repr((refusal, refusal.args, refusal.__dict__))
+    assert sentinel not in graph
+
+
+@pytest.mark.parametrize("parser,name,field", [
+    (lambda body: parse_proposal(body, adapter_capabilities={"dispatch"}),
+     "propose_request", "attempt_id"),
+    (parse_confirmation, "confirm_request", "confirmed_by"),
+    (parse_decision, "decision_request", "reason"),
+])
+def test_contract_sanitization_drops_submitted_values_from_exception_graph(
+        parser, name, field):
+    sentinel = "APIKEY_SECRET_SUBMITTED_VALUE"
+    body = {**_canon(name), field: {"value": sentinel}}
+    with pytest.raises(ApiRefusal) as caught:
+        parser(body)
+    _assert_refusal_graph_is_detached(caught.value, sentinel)
+
+
+def test_capability_iterable_failure_is_not_retained_in_exception_graph():
+    sentinel = "APIKEY_SECRET_CAPABILITY_ITERATOR"
+
+    def broken_capabilities():
+        raise RuntimeError(sentinel)
+        yield "dispatch"
+
+    with pytest.raises(ApiRefusal) as caught:
+        parse_proposal(
+            _canon("propose_request"),
+            adapter_capabilities=broken_capabilities())
+    _assert_refusal_graph_is_detached(caught.value, sentinel)

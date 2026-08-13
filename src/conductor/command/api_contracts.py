@@ -78,9 +78,23 @@ _DECISION_FIELDS = frozenset({
     "evidence_refs", "supersedes",
 })
 _ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
+_REFUSAL_BUILD = object()
+_PHASE_MESSAGES = MappingProxyType({
+    "same_origin_denied": frozenset({
+        "request Host is not allowed", "request origin is not allowed"}),
+    "malformed_request": frozenset({
+        "request transport or JSON shape is malformed",
+        "request Content-Type is not supported",
+        "request body is not one JSON object",
+    }),
+})
 
 
-@dataclass(frozen=True)
+def _safe_id(value: object) -> bool:
+    return isinstance(value, str) and _ID_RE.fullmatch(value) is not None
+
+
+@dataclass(frozen=True, init=False)
 class ApiRefusal(Exception):
     """One closed browser-safe refusal; no exception prose is carried through."""
 
@@ -88,23 +102,30 @@ class ApiRefusal(Exception):
     message: str
     detail: Mapping[str, str]
 
-    def __post_init__(self) -> None:
-        if self.code not in ERROR_STATUS:
+    def __init__(
+            self, build: object, code: str, message: str,
+            detail: Mapping[str, str]) -> None:
+        if build is not _REFUSAL_BUILD:
+            raise ValueError("API refusals require a reviewed factory")
+        if code not in ERROR_STATUS:
             raise ValueError("unknown API refusal code")
-        if self.message != _FIXED_MESSAGES[self.code]:
-            raise ValueError("API refusal message must equal the fixed code message")
-        if not isinstance(self.detail, Mapping):
-            raise ValueError("API refusal detail must be a string mapping")
-        copied: dict[str, str] = {}
-        for key, value in self.detail.items():
-            if not isinstance(key, str) or not isinstance(value, str):
-                raise ValueError("API refusal detail must contain only strings")
-            folded = key.casefold().replace("-", "_")
-            if any(part in folded for part in (
-                    "csrf", "token", "secret", "password", "cookie", "path")):
-                raise ValueError("API refusal detail cannot carry secret or path fields")
-            copied[key] = value
+        copied = dict(detail)
+        if copied:
+            expected = {"run_id", "instance_id"}
+            if (code != "service_refused" or set(copied) != expected
+                    or any(not _safe_id(copied[key]) for key in expected)
+                    or message != (
+                        f"frozen config declares no instance '{copied['instance_id']}'")):
+                raise ValueError("API refusal detail must match a reviewed fact")
+        else:
+            messages = _PHASE_MESSAGES.get(code, frozenset()) | {
+                _FIXED_MESSAGES[code]}
+            if message not in messages:
+                raise ValueError("API refusal message must match a reviewed template")
+        object.__setattr__(self, "code", code)
+        object.__setattr__(self, "message", message)
         object.__setattr__(self, "detail", MappingProxyType(copied))
+        Exception.__init__(self, message)
 
     @property
     def status(self) -> int:
@@ -116,14 +137,28 @@ class ApiRefusal(Exception):
             "code": self.code, "message": self.message, "detail": dict(self.detail)}}
 
     @classmethod
-    def fixed(
-            cls, code: str, detail: Mapping[str, str] | None = None) -> "ApiRefusal":
-        """Build one vocabulary-complete refusal from trusted fixed text."""
-        try:
-            message = _FIXED_MESSAGES[code]
-        except KeyError as error:
-            raise ValueError("unknown API refusal code") from error
-        return cls(code, message, detail or {})
+    def fixed(cls, code: str) -> "ApiRefusal":
+        """Build one vocabulary-complete refusal with no submitted detail."""
+        if code not in _FIXED_MESSAGES:
+            raise ValueError("unknown API refusal code") from None
+        return cls(_REFUSAL_BUILD, code, _FIXED_MESSAGES[code], {})
+
+    @classmethod
+    def from_http(cls, refusal: HttpRefusal) -> "ApiRefusal":
+        """Preserve the transport's reviewed phase-specific safe message."""
+        if not isinstance(refusal, HttpRefusal):
+            raise ValueError("HTTP refusal must be typed")
+        return cls(_REFUSAL_BUILD, refusal.code, refusal.message, {})
+
+    @classmethod
+    def service_missing_instance(
+            cls, run_id: str, instance_id: str) -> "ApiRefusal":
+        """Name one validated frozen-config relation without exception prose."""
+        if not _safe_id(run_id) or not _safe_id(instance_id):
+            raise ValueError("service refusal identifiers must be safe IDs") from None
+        detail = {"run_id": run_id, "instance_id": instance_id}
+        message = f"frozen config declares no instance '{instance_id}'"
+        return cls(_REFUSAL_BUILD, "service_refused", message, detail)
 
 
 @dataclass(frozen=True)
@@ -206,21 +241,30 @@ def _proposal_body(body: object) -> dict[str, Any]:
 
 
 def _contract(call, *args, **kwargs):
+    invalid = False
     try:
-        return call(*args, **kwargs)
-    except (ContractError, TypeError) as error:
-        raise ApiRefusal.fixed("contract_invalid") from error
+        result = call(*args, **kwargs)
+    except (ContractError, TypeError):
+        invalid = True
+        result = None
+    if invalid:
+        raise ApiRefusal.fixed("contract_invalid") from None
+    return result
 
 
 def _capabilities(values: Iterable[str]) -> frozenset[str]:
     if isinstance(values, (str, bytes)):
-        raise ApiRefusal.fixed("capability_unsupported")
+        raise ApiRefusal.fixed("capability_unsupported") from None
+    invalid = False
     try:
         rows = frozenset(values)
-    except TypeError as error:
-        raise ApiRefusal.fixed("capability_unsupported") from error
+    except Exception:  # noqa: BLE001 -- adapter iterable prose is discarded
+        invalid = True
+        rows = frozenset()
+    if invalid:
+        raise ApiRefusal.fixed("capability_unsupported") from None
     if any(not isinstance(row, str) for row in rows):
-        raise ApiRefusal.fixed("capability_unsupported")
+        raise ApiRefusal.fixed("capability_unsupported") from None
     return rows
 
 
@@ -247,8 +291,10 @@ def parse_proposal(
     values = _proposal_body(body)
     capability = values["capability"]
     capabilities = _capabilities(adapter_capabilities)
-    if (not isinstance(capability, str) or capability == "observe"
-            or capability not in ARGUMENT_SCHEMAS or capability not in capabilities):
+    if not _safe_id(capability):
+        raise ApiRefusal.fixed("contract_invalid") from None
+    if (capability == "observe" or capability not in ARGUMENT_SCHEMAS
+            or capability not in capabilities):
         raise ApiRefusal.fixed("capability_unsupported")
     arguments = values["arguments"]
     if not isinstance(arguments, Mapping) or set(arguments) != set(
@@ -265,9 +311,8 @@ def parse_proposal(
         timeout_seconds=values["timeout_seconds"], rationale=values["rationale"],
         config_digest="sha256:" + "0" * 64)
     adapter_id = values.get("adapter_id")
-    if adapter_id is not None and (
-            not isinstance(adapter_id, str) or _ID_RE.fullmatch(adapter_id) is None):
-        raise ApiRefusal.fixed("contract_invalid")
+    if "adapter_id" in values and not _safe_id(adapter_id):
+        raise ApiRefusal.fixed("contract_invalid") from None
     return ProposalInput(
         instance_id=probe.instance_id, attempt_id=probe.attempt_id,
         capability=probe.capability, arguments=probe.arguments, scope=probe.scope,
@@ -316,7 +361,7 @@ def parse_decision(body: object) -> DecisionInput:
 def refusal_from_exception(error: Exception) -> ApiRefusal:
     """Translate only exception types; submitted/OS/adapter prose is discarded."""
     if isinstance(error, HttpRefusal):
-        return ApiRefusal.fixed(error.code)
+        return ApiRefusal.from_http(error)
     if isinstance(error, CorruptRun):
         return ApiRefusal.fixed("run_corrupt")
     if isinstance(error, RecordConflict):
