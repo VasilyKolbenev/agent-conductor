@@ -243,7 +243,8 @@ class AdapterRegistry:
                 f"adapter {manifest.adapter_id!r} is already registered")
         # Keep the reviewed VALUE, not a pointer the adapter can still rewrite.
         reviewed = AdapterManifest(**manifest.as_payload())
-        schema = vars(adapter).get("argument_schema", getattr(type(adapter), "argument_schema", None))
+        schema = vars(adapter).get(
+            "argument_schema", getattr(type(adapter), "argument_schema", None))
         if schema not in (None, "structured-process-v1"):
             raise AdapterContractError(f"adapter declares unknown argument schema {schema!r}")
         # Publish the registration only after every supplied claim validated.
@@ -278,7 +279,8 @@ class AdapterRegistry:
         registered = self._registered_manifest(adapter_id)
         if (observed.adapter_id != registered.adapter_id
                 or observed.instance_id != instance_id or observed.run_id != run_id):
-            raise AdapterContractError("adapter returned identity for another adapter, instance, or run")
+            raise AdapterContractError(
+                "adapter returned identity for another adapter, instance, or run")
         undeclared = set(observed.available_capabilities) - set(registered.capabilities)
         if undeclared:
             raise AdapterContractError(
