@@ -28,6 +28,8 @@ from urllib.parse import urlsplit
 
 import pytest
 
+from conductor.command import run_store as run_store_module
+from conductor.command.attempts import AttemptEvent, action_request_digest
 from conductor.command.contracts import (
     ActionProposal,
     ActionRequest,
@@ -35,6 +37,7 @@ from conductor.command.contracts import (
     ContractError,
     DecisionReceipt,
     EvidenceRef,
+    ObservationRecord,
     RunEnvelope,
     canonical_json,
     gate_decision,
@@ -55,7 +58,8 @@ REQUIRED_EXAMPLES = frozenset({
     "error_codes", "config", "argument_schemas",
     "propose_request", "action_proposal", "confirm_request", "action_request",
     "decision_request", "decision_receipt", "run_read_response", "controls_response",
-    "action_result_receipt", "evidence_ref", "stream_frames", "mutation_boundary",
+    "action_result_receipt", "evidence_ref", "attempt_event_effect_lease",
+    "attempt_event_execution_observed", "stream_frames", "mutation_boundary",
 })
 
 #: Canonical examples that are a full contract serialization, mapped to the
@@ -66,6 +70,18 @@ CONTRACT_EXAMPLES = {
     "decision_receipt": DecisionReceipt,
     "action_result_receipt": ActionResultReceipt,
     "evidence_ref": EvidenceRef,
+    "attempt_event_effect_lease": AttemptEvent,
+    "attempt_event_execution_observed": AttemptEvent,
+}
+
+EXPECTED_RECORDS = {
+    "action_request": (ActionRequest, "action_id"),
+    "action_result": (ActionResultReceipt, "receipt_id"),
+    "evidence": (EvidenceRef, "evidence_id"),
+    "decision": (DecisionReceipt, "receipt_id"),
+    "action_proposal": (ActionProposal, "proposal_id"),
+    "adapter_observation": (ObservationRecord, "observation_id"),
+    "attempt_event": (AttemptEvent, "event_id"),
 }
 
 #: The frozen refusal vocabulary, written out here so the spec cannot drift it
@@ -263,12 +279,51 @@ def test_run_envelope_and_run_read_response_bind_to_the_run_contract():
     envelope = RunEnvelope.from_dict(read["run"])
     assert envelope.as_dict() == read["run"]
     assert envelope.run_id == RUN_ID
-    # Every read record is wrapped exactly as RunStore wraps a journal line.
-    for wrapper in read["records"]:
+    kinds = ("action_proposal", "action_request", "attempt_event", "attempt_event")
+    assert tuple(row["record_type"] for row in read["records"]) == kinds
+    assert read["records"][0]["record"] == CANON["action_proposal"]
+    assert read["records"][1]["record"] == CANON["action_request"]
+    for wrapper, kind in zip(read["records"], kinds, strict=True):
         assert set(wrapper) == {"record_type", "record"}
-        assert wrapper["record_type"] == "action_proposal"
-        proposal = ActionProposal.from_dict(wrapper["record"])
-        assert proposal.as_dict() == wrapper["record"]
+        contract = EXPECTED_RECORDS[kind][0]
+        assert contract.from_dict(wrapper["record"]).as_dict() == wrapper["record"]
+
+
+def test_attempt_event_registry_and_two_phase_shapes_are_closed_and_causal():
+    assert run_store_module._RECORDS == EXPECTED_RECORDS
+    wrapped_request = CANON["run_read_response"]["records"][1]["record"]
+    request = ActionRequest.from_dict(wrapped_request)
+    lease = AttemptEvent.from_dict(CANON["attempt_event_effect_lease"])
+    observed = AttemptEvent.from_dict(CANON["attempt_event_execution_observed"])
+    expected_fields = {
+        "event_id", "run_id", "action_id", "attempt_id", "instance_id",
+        "adapter_id", "phase", "recorded_at", "request_digest", "recovery_ref",
+        "outcome", "exit_code", "schema_version",
+    }
+    assert set(lease.as_dict()) == set(observed.as_dict()) == expected_fields
+    assert (lease.phase, observed.phase) == ("effect_lease", "execution_observed")
+    assert (lease.event_id, lease.recorded_at) == (
+        "event-lease-cockpit-001", "2026-08-13T12:03:00Z")
+    assert (observed.event_id, observed.recorded_at) == (
+        "event-observed-cockpit-001", "2026-08-13T12:20:00Z")
+    assert (lease.outcome, lease.exit_code) == (None, None)
+    assert (observed.outcome, observed.exit_code) == ("succeeded", 0)
+    for field in ("run_id", "action_id", "attempt_id", "instance_id", "adapter_id",
+                  "request_digest", "recovery_ref"):
+        assert getattr(lease, field) == getattr(observed, field)
+    binding = {row["id"]: row["adapter"] for row in CANON["config"]["instances"]}
+    assert binding[request.instance_id] == lease.adapter_id
+    assert lease.request_digest == action_request_digest(request)
+
+
+def test_attempt_event_mutations_are_born_red_at_the_frozen_read_boundary():
+    rows = CANON["run_read_response"]["records"]
+    assert rows[2]["record"] == CANON["attempt_event_effect_lease"]
+    assert rows[3]["record"] == CANON["attempt_event_execution_observed"]
+    assert set(EXPECTED_RECORDS) == {
+        "action_request", "action_result", "evidence", "decision",
+        "action_proposal", "adapter_observation", "attempt_event",
+    }
 
 
 def test_proposal_response_is_the_request_plus_only_server_injected_fields():

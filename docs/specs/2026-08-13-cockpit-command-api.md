@@ -545,34 +545,31 @@ is the append-ordered journal each wrapped exactly as the store wraps it
 (`{ "record_type": <kind>, "record": <contract as_dict> }`), and `warnings` is
 the replay warning list. A missing run is currently `store_error` (500), because
 the planning-base store has no typed not-found branch and the endpoint may not
-infer one from prose. The record kinds and their contracts are the CMD-2 vocabulary:
+infer one from prose. The record kinds and their contracts are the closed v2 vocabulary:
 `action_request` (`ActionRequest`), `action_result` (`ActionResultReceipt`),
 `evidence` (`EvidenceRef`), `decision` (`DecisionReceipt`),
-`action_proposal` (`ActionProposal`), `adapter_observation` (`ObservationRecord`).
+`action_proposal` (`ActionProposal`), `adapter_observation` (`ObservationRecord`),
+and `attempt_event` (`AttemptEvent`).
 
 <!-- CANONICAL:run_read_response -->
 ```json
 {
   "run": {
-    "schema_version": 2,
-    "run_id": "run-cockpit-001",
-    "cycle_id": "cockpit-orbit",
+    "schema_version": 2, "run_id": "run-cockpit-001", "cycle_id": "cockpit-orbit",
     "created_at": "2026-08-13T12:00:00Z",
     "config_digest": "sha256:0e0efae86b6ea79a902ef02935a2515e561e22de6b9bd6abebe8f4f174efa2e5",
-    "mode": "confirm",
-    "status": "active"
+    "mode": "confirm", "status": "active"
   },
   "config": {
     "cycle": { "id": "cockpit-orbit", "phases": ["dispatch", "review"] },
     "instances": [
       { "id": "claude-dev", "adapter": "claude-code", "token_env": "ANTHROPIC_API_KEY" },
-      { "id": "codex-review", "adapter": "codex", "api_key_env": "OPENAI_API_KEY" }
-    ]
+      { "id": "codex-review", "adapter": "codex", "api_key_env": "OPENAI_API_KEY" }]
   },
   "records": [
     { "record_type": "action_proposal", "record": {
-      "schema_version": 2, "proposal_id": "proposal-cockpit-001",
-      "run_id": "run-cockpit-001", "attempt_id": "attempt-cockpit-001",
+      "schema_version": 2, "proposal_id": "proposal-cockpit-001", "run_id": "run-cockpit-001",
+      "attempt_id": "attempt-cockpit-001",
       "instance_id": "claude-dev", "capability": "dispatch",
       "arguments": { "handoff": "handoff-cockpit-001" }, "scope": ["src", "tests"],
       "proposed_by": "claude-dev", "proposed_at": "2026-08-13T12:01:00Z",
@@ -580,9 +577,57 @@ infer one from prose. The record kinds and their contracts are the CMD-2 vocabul
       "rationale": "The lane finished its handoff and asks to dispatch implementation.",
       "config_digest": "sha256:0e0efae86b6ea79a902ef02935a2515e561e22de6b9bd6abebe8f4f174efa2e5",
       "preview_digest": "sha256:973b35dfda3582c5c472217e320a2dd87650fc67706136d854c863dcde1661ae"
-    } }
+    } },
+    { "record_type": "action_request", "record": {
+      "schema_version": 2, "action_id": "action-cockpit-001", "run_id": "run-cockpit-001",
+      "attempt_id": "attempt-cockpit-001", "instance_id": "claude-dev", "capability": "dispatch",
+      "arguments": { "handoff": "handoff-cockpit-001" }, "scope": ["src", "tests"],
+      "requested_by": "release-owner", "requested_at": "2026-08-13T12:02:00Z",
+      "idempotency_key": "dispatch-proposal-cockpit-001", "timeout_seconds": 900,
+      "preview_digest": "sha256:973b35dfda3582c5c472217e320a2dd87650fc67706136d854c863dcde1661ae",
+      "mode": "confirm" } },
+    { "record_type": "attempt_event", "record": {
+      "schema_version": 2, "event_id": "event-lease-cockpit-001", "run_id": "run-cockpit-001",
+      "action_id": "action-cockpit-001", "attempt_id": "attempt-cockpit-001",
+      "instance_id": "claude-dev", "adapter_id": "claude-code", "phase": "effect_lease",
+      "recorded_at": "2026-08-13T12:03:00Z",
+      "request_digest": "sha256:b93e3ca30f0abe3848052a0e4d4dcf6cc66249a4b229d2a334cc268afce85a3f",
+      "recovery_ref": "recovery-cockpit-001", "outcome": null, "exit_code": null } },
+    { "record_type": "attempt_event", "record": {
+      "schema_version": 2, "event_id": "event-observed-cockpit-001", "run_id": "run-cockpit-001",
+      "action_id": "action-cockpit-001", "attempt_id": "attempt-cockpit-001",
+      "instance_id": "claude-dev", "adapter_id": "claude-code", "phase": "execution_observed",
+      "recorded_at": "2026-08-13T12:20:00Z",
+      "request_digest": "sha256:b93e3ca30f0abe3848052a0e4d4dcf6cc66249a4b229d2a334cc268afce85a3f",
+      "recovery_ref": "recovery-cockpit-001", "outcome": "succeeded", "exit_code": 0 } }
   ],
   "warnings": []
+}
+```
+
+The two attempt phases are separate append-ordered facts. They bind to the same
+durable request, frozen adapter, attempt, and opaque recovery reference:
+
+<!-- CANONICAL:attempt_event_effect_lease -->
+```json
+{
+  "schema_version": 2, "event_id": "event-lease-cockpit-001", "run_id": "run-cockpit-001",
+  "action_id": "action-cockpit-001", "attempt_id": "attempt-cockpit-001",
+  "instance_id": "claude-dev", "adapter_id": "claude-code", "phase": "effect_lease",
+  "recorded_at": "2026-08-13T12:03:00Z",
+  "request_digest": "sha256:b93e3ca30f0abe3848052a0e4d4dcf6cc66249a4b229d2a334cc268afce85a3f",
+  "recovery_ref": "recovery-cockpit-001", "outcome": null, "exit_code": null
+}
+```
+<!-- CANONICAL:attempt_event_execution_observed -->
+```json
+{
+  "schema_version": 2, "event_id": "event-observed-cockpit-001", "run_id": "run-cockpit-001",
+  "action_id": "action-cockpit-001", "attempt_id": "attempt-cockpit-001",
+  "instance_id": "claude-dev", "adapter_id": "claude-code", "phase": "execution_observed",
+  "recorded_at": "2026-08-13T12:20:00Z",
+  "request_digest": "sha256:b93e3ca30f0abe3848052a0e4d4dcf6cc66249a4b229d2a334cc268afce85a3f",
+  "recovery_ref": "recovery-cockpit-001", "outcome": "succeeded", "exit_code": 0
 }
 ```
 
