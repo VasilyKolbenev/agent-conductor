@@ -303,6 +303,25 @@ def test_non_ascii_csrf_is_one_detached_fixed_csrf_refusal():
     assert "APIKEY_SECRET" not in _object_graph_text(refusal)
 
 
+@pytest.mark.parametrize("presented", ["\u03bb-secret", "ascii-presented"])
+def test_non_ascii_current_token_never_becomes_header_authority(presented):
+    current = "\u03bb-secret"
+    headers = [
+        ("Host", f"127.0.0.1:{PORT}"),
+        ("Origin", f"http://127.0.0.1:{PORT}"),
+        ("X-Conduct-CSRF", presented),
+        ("Content-Type", "application/json"),
+    ]
+    with pytest.raises(HttpRefusal) as caught:
+        validate_command_mutation(
+            headers, b"{}", allowed_hosts=HOSTS, current_token=current)
+    refusal = caught.value
+    assert (refusal.phase, refusal.code, refusal.message) == (
+        "csrf", "csrf_denied", "request CSRF token is not current")
+    assert refusal.__cause__ is refusal.__context__ is None
+    assert "secret" not in _object_graph_text(refusal)
+
+
 def test_excessive_json_depth_is_one_detached_fixed_body_refusal():
     body = b'{"nested":' + b"[" * 1100 + b"0" + b"]" * 1100 + b"}"
     row = next(item for item in DATA["raw_transport_cases"]
