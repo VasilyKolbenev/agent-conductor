@@ -11,7 +11,10 @@ no remediation promise and no destructive command; and, where StoreError or
 CorruptRun prevents establishing what a local object is, the stated limit that
 no safe automatic remediation is defined. Accuracy over pseudo-actionability:
 the preview does not guess which object a human should delete, so no message
-may advise deleting or moving anything.
+may advise deleting or moving anything. The route-gate refusals of the owner
+round of 2026-08-13 hold the same contract; their both-sides regressions live
+in tests/test_command_preview_route_containment.py, and this module drives one
+such road below only for the phrase relation.
 
 Self-contained on purpose: the immutability snapshot below is this module's own
 walk — structure, bytes and link targets, read with pathlib and os.lstat alone,
@@ -23,8 +26,8 @@ The changed-nothing words are additionally held at the bottom of this module,
 as a relation rather than a presence: on each driven road they must appear
 exactly when the call refused AND a before/after snapshot of the exact run path
 is identical, so a road that creates the run and then refuses may not carry
-them. The relation is checked on the six enumerated representative roads driven
-there, and on no others: no coverage of all possible roads is promised.
+them. The relation is checked on the seven enumerated representative roads
+driven there, and on no others: no coverage of all possible roads is promised.
 """
 import os
 import re
@@ -545,3 +548,24 @@ def test_an_uncreatable_run_path_refusal_says_the_phrase_with_the_path_absent_th
         tmp_path, capsys)
     assert code == 1
     assert before == ("absent",) and after == ("absent",)
+
+
+def test_a_portal_at_the_run_boundary_refusal_says_the_phrase_the_snapshot_measures_true(
+        tmp_path, capsys):
+    """A junction standing AT the run's own path: the route gate refuses, link untouched.
+
+    The snapshot records the portal by its own target and never enters it, so
+    `before == after` is a statement about the link itself; exit 1 beside it
+    requires the phrase, which the gate makes true by reading with lstat
+    alone. The valid run behind the portal has its own both-sides inertness
+    regression in tests/test_command_preview_route_containment.py; this road
+    holds only the relation.
+    """
+    target = _seed_the_previews_identity(tmp_path / "outside")
+    runs = tmp_path / "conductor" / "runs"
+    runs.mkdir(parents=True)
+    _junction_or_skip(runs / "preview-run", target)
+    code, before, after, _ = _drive_holding_the_phrase_to_the_snapshot(
+        tmp_path, capsys)
+    assert code == 1
+    assert before[0] == "link" and before == after
