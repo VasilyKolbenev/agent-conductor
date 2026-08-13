@@ -583,18 +583,19 @@ All existing v1 and CMD-1..4 regressions stay green.
   a fixed structured no-op, records deterministic fixture authorization facts, executes through
   `ProcessAdapter`/`ProcessRunner`, reports verification honestly unavailable, and persists one
   immutable result. It is not a product Human Confirm surface; that explicit action and its
-  server-owned time/identity arrive with C/API-1. A shared command-layer containment engine holds preview,
-  direct `ControlRuntime` entry, and runner cwd routes before replay, prepare, every durable
-  append, and spawn; it refuses symlink, junction, any reparse point, irregular owned files and
-  hard-link aliases. A found control-loop run is checked read-only against contract-derived
+  server-owned time/identity arrive with C/API-1. A shared command-layer containment engine holds
+  preview, direct `ControlRuntime` entry, and runner cwd routes before replay, prepare, every
+  durable append, and spawn; it refuses symlink, junction, any reparse point, irregular owned
+  files and hard-link aliases. A found control-loop run is checked read-only against contract-derived
   envelope/config/history prefixes before proposal append. Execution holds the complete durable
   `ActionRequest`, reconstructs private canonical values at each untrusted adapter seam, consumes
   a memory-only one-shot grant before prepare, suppresses an exact terminal replay, and treats a
   request-without-result as ambiguous instead of retrying it across a crash or restart. Returned
   requests execute only when the durable Run envelope itself remains in Confirm mode; authorize
   and execute hold that authority independently before append, replay, or any adapter seam.
-  Returned result/verification identities are held against the frozen binding; arbitrary adapter
-  prose is never persisted. Day-1 cannot causally bind post-action evidence without a durable
+  Returned observation/result/verification identities are reconstructed and held against the
+  frozen binding; arbitrary adapter prose is never persisted. Day-1 cannot causally bind
+  post-action evidence without a durable
   `execution_observed` fact, so every `verified` response remains `verification_failed` and every
   terminal receipt with evidence refs is refused on replay; verified success belongs to A/RT-2.
   Adapter failures persist only runtime-owned phase classifications; exception type names and

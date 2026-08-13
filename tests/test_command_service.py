@@ -87,6 +87,92 @@ def test_observe_works_in_every_mode_and_persists_a_durable_observation(tmp_path
         assert stored[0].value == record
 
 
+def test_observe_discards_untrusted_adapter_detail_from_return_and_journal(tmp_path):
+    secret = "APIKEY_SECRET_IN_OBSERVATION_DETAIL"
+    adapter = FakeAdapter()
+    adapter.observe = lambda instance_id, run_id: __import__(
+        "conductor.command.adapters.base", fromlist=["AdapterObservation"]
+    ).AdapterObservation(
+        adapter_id="claude-code", instance_id=instance_id, run_id=run_id,
+        observed_at=NOW, health="ready", available_capabilities=("observe",),
+        detail=secret)
+    service, store = a_service(tmp_path, adapters=[adapter])
+    record = service.observe(run_id="run-001", instance_id="claude-dev")
+    journal = store.run_path("run-001").joinpath("records.jsonl").read_bytes()
+    assert record.detail == ""
+    assert secret not in repr(record)
+    assert secret.encode() not in journal
+
+
+def test_observe_snapshots_stateful_adapter_claims_once_and_persists_bound_facts(tmp_path):
+    secret = "APIKEY_SECRET_IN_SHIFTING_OBSERVATION"
+
+    class ShiftingObservation(__import__(
+            "conductor.command.adapters.base",
+            fromlist=["AdapterObservation"]).AdapterObservation):
+        def __getattribute__(self, name):
+            if name in {
+                    "adapter_id", "instance_id", "run_id",
+                    "available_capabilities", "detail"}:
+                armed = object.__getattribute__(self, "__dict__").get("_armed", False)
+                if armed:
+                    reads = object.__getattribute__(self, "__dict__").setdefault(
+                        "_reads", {})
+                    count = reads.get(name, 0)
+                    reads[name] = count + 1
+                    if count:
+                        return {
+                            "adapter_id": "foreign-adapter",
+                            "instance_id": "foreign-instance",
+                            "run_id": "foreign-run",
+                            "available_capabilities": ("stop",),
+                            "detail": secret,
+                        }[name]
+            return super().__getattribute__(name)
+
+    raw = ShiftingObservation(
+        adapter_id="claude-code", instance_id="claude-dev", run_id="run-001",
+        observed_at=NOW, health="ready", available_capabilities=("observe",),
+        detail=secret)
+    object.__setattr__(raw, "_armed", True)
+    adapter = FakeAdapter()
+    adapter.observe = lambda instance_id, run_id: raw
+    service, store = a_service(tmp_path, adapters=[adapter])
+    record = service.observe(run_id="run-001", instance_id="claude-dev")
+    journal = store.run_path("run-001").joinpath("records.jsonl").read_bytes()
+    assert (record.adapter_id, record.instance_id, record.run_id) == (
+        "claude-code", "claude-dev", "run-001")
+    assert record.health == "ready"
+    assert record.available_capabilities == ("observe",)
+    assert "stop" not in record.available_capabilities
+    assert secret not in repr(record) and secret.encode() not in journal
+
+
+@pytest.mark.parametrize("secret", [
+    "APIKEY_SECRET_IN_OBSERVE_EXCEPTION_CLASS",
+    "APIKEY_SECRET_IN_OBSERVE_EXCEPTION_MESSAGE",
+])
+def test_observe_failure_exposes_only_runtime_owned_wording_and_appends_nothing(
+        tmp_path, secret):
+    adapter = FakeAdapter()
+    exception_type = type(
+        "APIKEY_SECRET_IN_OBSERVE_EXCEPTION_CLASS", (RuntimeError,), {})
+
+    def fail(instance_id, run_id):
+        raise exception_type("APIKEY_SECRET_IN_OBSERVE_EXCEPTION_MESSAGE")
+
+    adapter.observe = fail
+    service, store = a_service(tmp_path, adapters=[adapter])
+    journal = store.run_path("run-001").joinpath("records.jsonl")
+    before = journal.read_bytes()
+    with pytest.raises(ServiceError) as caught:
+        service.observe(run_id="run-001", instance_id="claude-dev")
+    assert str(caught.value) == "adapter observe failed"
+    assert secret not in str(caught.value)
+    assert journal.read_bytes() == before
+    assert secret.encode() not in journal.read_bytes()
+
+
 def test_propose_is_forbidden_in_observe_and_never_records_one(tmp_path):
     service, store = a_service(tmp_path, mode="observe")
     with pytest.raises(ServiceError, match="observe"):
@@ -122,7 +208,7 @@ def test_an_instance_bound_to_an_unregistered_adapter_cannot_be_reached(tmp_path
     # registry, so the instance cannot be observed or proposed through at all --
     # and neither door writes a record while refusing.
     service, store = a_service(tmp_path)  # registry holds only 'claude-code'
-    with pytest.raises(AdapterContractError, match="not registered"):
+    with pytest.raises(ServiceError, match="adapter observe failed"):
         service.observe(run_id="run-001", instance_id="codex-review")
     with pytest.raises(AdapterContractError, match="not registered"):
         service.propose(**propose_kwargs(
@@ -243,7 +329,7 @@ def test_an_adapter_that_reports_a_foreign_identity_yields_no_observation(tmp_pa
     ).AdapterObservation(
         adapter_id="somebody-else", instance_id=instance_id, run_id=run_id,
         observed_at=NOW, health="ready", available_capabilities=())
-    with pytest.raises(AdapterContractError, match="returned identity"):
+    with pytest.raises(ServiceError, match="adapter observe failed"):
         service.observe(
             run_id="run-001", adapter_id="claude-code", instance_id="claude-dev")
     assert store.read("run-001").records == ()

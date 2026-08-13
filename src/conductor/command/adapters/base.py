@@ -281,19 +281,37 @@ class AdapterRegistry:
 
     def observe(self, adapter_id: str, instance_id: str, run_id: str) -> AdapterObservation:
         adapter = self._require(adapter_id, "observe")
-        observed = adapter.observe(instance_id, run_id)
+        registered = self._registered_manifest(adapter_id)
+        expected_instance = _contract(_id, "instance_id", instance_id)
+        expected_run = _contract(_id, "run_id", run_id)
+        observed = adapter.observe(expected_instance, expected_run)
         if not isinstance(observed, AdapterObservation):
             raise AdapterContractError("observe must return AdapterObservation")
-        registered = self._registered_manifest(adapter_id)
-        if (observed.adapter_id != registered.adapter_id
-                or observed.instance_id != instance_id or observed.run_id != run_id):
+        claimed_adapter = observed.adapter_id
+        claimed_instance = observed.instance_id
+        claimed_run = observed.run_id
+        claimed_at = observed.observed_at
+        claimed_health = observed.health
+        claimed_capabilities = observed.available_capabilities
+        normalized = AdapterObservation(
+            adapter_id=claimed_adapter,
+            instance_id=claimed_instance,
+            run_id=claimed_run,
+            observed_at=claimed_at,
+            health=claimed_health,
+            available_capabilities=claimed_capabilities,
+            detail="",
+        )
+        if (normalized.adapter_id != registered.adapter_id
+                or normalized.instance_id != expected_instance
+                or normalized.run_id != expected_run):
             raise AdapterContractError(
                 "adapter returned identity for another adapter, instance, or run")
-        undeclared = set(observed.available_capabilities) - set(registered.capabilities)
+        undeclared = set(normalized.available_capabilities) - set(registered.capabilities)
         if undeclared:
             raise AdapterContractError(
                 f"observation reports undeclared capabilities {sorted(undeclared)}")
-        return observed
+        return normalized
 
     def prepare(self, adapter_id: str, request: ActionRequest) -> PreparedAction:
         if not isinstance(request, ActionRequest):

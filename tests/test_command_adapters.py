@@ -321,6 +321,18 @@ def test_observe_calls_only_an_explicit_adapter_and_validates_its_claims():
     assert adapter.observations == 1
 
 
+def test_observe_returns_a_plain_reconstructed_value_without_adapter_prose():
+    adapter = FakeAdapter()
+    raw = adapter.observe("claude-dev", "run-001")
+    adapter.observe = lambda instance_id, run_id: raw
+    observed = AdapterRegistry([adapter]).observe(
+        "claude-code", "claude-dev", "run-001")
+    assert observed is not raw
+    assert type(observed) is AdapterObservation
+    assert observed.detail == ""
+    assert observed.available_capabilities == ("observe", "dispatch")
+
+
 @pytest.mark.parametrize("adapter_id,instance_id,run_id,width,refused", [
     ("claude-code", "claude-dev", "run-001", ("observe", "dispatch"), None),
     ("claude-code", "claude-dev", "run-001", ("observe",), None),

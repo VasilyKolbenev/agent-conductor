@@ -1,7 +1,8 @@
 """Observe/Propose service: the read side of December Command, and no more.
 
-The service has two doors. `observe` turns a registered adapter's live report
-into a durable ObservationRecord, and it works in every control mode. `propose`
+The service has two doors. `observe` turns a registered adapter's validated
+health and capability facts into a durable ObservationRecord while discarding
+untrusted prose, and it works in every control mode. `propose`
 turns a lane's intent into an immutable ActionProposal, and it is refused in
 Observe mode. Neither door prepares an action, executes one, spawns a process,
 or writes through a browser: preparation begins only after a proposal is
@@ -68,16 +69,19 @@ class CommandService:
         """Persist one durable observation from the config-bound adapter, in any mode."""
         recovered = self._store.read(run_id)  # the run must already exist to be observed
         bound = self._bound_adapter(recovered.config, instance_id, adapter_id)
-        observed = self._registry.observe(bound, instance_id, run_id)
+        try:
+            observed = self._registry.observe(bound, instance_id, run_id)
+        except Exception:
+            raise ServiceError("adapter observe failed") from None
         record = ObservationRecord(
             observation_id=observation_id or self._ids("observation"),
             run_id=run_id,
-            adapter_id=observed.adapter_id,
-            instance_id=observed.instance_id,
-            observed_at=observed.observed_at,
+            adapter_id=bound,
+            instance_id=instance_id,
+            observed_at=self._clock(),
             health=observed.health,
             available_capabilities=observed.available_capabilities,
-            detail=observed.detail,
+            detail="",
             evidence_refs=tuple(evidence_refs),
         )
         self._store.append(record)
