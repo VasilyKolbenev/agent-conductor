@@ -99,8 +99,9 @@ def _open_run(store: RunStore) -> RunEnvelope:
     envelope = RunEnvelope(
         run_id=_RUN_ID, cycle_id="control-loop-orbit", created_at=_NOW,
         config_digest=snapshot_digest(FROZEN_CONFIG), mode="confirm")
+    run_path = store.run_path(_RUN_ID)
     violations = run_route_violations(store, _RUN_ID)
-    facts = render_legacy_run_route_violations(violations)
+    facts = render_legacy_run_route_violations(violations, run_path)
     if facts:
         raise GateError(
             f"run {_RUN_ID!r} is not on a contained writable route: "

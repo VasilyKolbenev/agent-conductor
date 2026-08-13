@@ -29,9 +29,10 @@ from conductor.command.run_store import RunStore, snapshot_digest
 from tests.test_command_run_store import CONFIG, a_run
 
 
-def a_store(tmp_path: Path) -> RunStore:
+def a_store(tmp_path: Path, run_id: str = "run-001") -> RunStore:
     store = RunStore(tmp_path)
-    store.create_run(a_run(config_digest=snapshot_digest(CONFIG)), CONFIG)
+    store.create_run(
+        a_run(run_id=run_id, config_digest=snapshot_digest(CONFIG)), CONFIG)
     return store
 
 
@@ -150,7 +151,8 @@ def test_run_relation_types_irregular_owned_file_without_parsing_its_text(tmp_pa
     assert [(row.code, row.path) for row in violations] == [
         (RouteViolationCode.IRREGULAR_FILE, journal)]
     assert "not a regular file" in render_route_violation(violations[0])
-    assert "not a regular file" in render_legacy_run_route_violations(violations)[0]
+    assert "not a regular file" in render_legacy_run_route_violations(
+        violations, store.run_path("run-001"))[0]
 
 
 def test_receipt_shaped_directory_is_typed_but_legacy_rendering_stays_deferred(tmp_path):
@@ -160,7 +162,8 @@ def test_receipt_shaped_directory_is_typed_but_legacy_rendering_stays_deferred(t
     violations = run_route_violations(store, "run-001")
     assert violations == (RouteViolation(
         RouteViolationCode.IRREGULAR_FILE, receipt),)
-    assert render_legacy_run_route_violations(violations) == ()
+    assert render_legacy_run_route_violations(
+        violations, store.run_path("run-001")) == ()
 
 
 def test_receipt_shaped_fifo_is_typed_without_requiring_platform_fifo_support(
@@ -181,7 +184,8 @@ def test_receipt_shaped_fifo_is_typed_without_requiring_platform_fifo_support(
     violations = run_route_violations(store, "run-001")
     assert violations == (RouteViolation(
         RouteViolationCode.IRREGULAR_FILE, receipt),)
-    assert render_legacy_run_route_violations(violations) == ()
+    assert render_legacy_run_route_violations(
+        violations, store.run_path("run-001")) == ()
 
 
 @pytest.mark.parametrize("target", ["conductor", "runs", "decisions"])
@@ -207,7 +211,36 @@ def test_plain_file_at_final_run_name_is_typed_but_legacy_rendering_stays_deferr
     run_path.write_bytes(b"claimed by an ordinary file")
     violations = run_route_violations(store, "run-001")
     assert violations == (RouteViolation(RouteViolationCode.NOT_DIRECTORY, run_path),)
-    assert render_legacy_run_route_violations(violations) == ()
+    assert render_legacy_run_route_violations(violations, run_path) == ()
+
+
+@pytest.mark.parametrize("run_id", ["run-001", "decisions"])
+@pytest.mark.parametrize("name", ["config.json", "run.json"])
+def test_top_level_owned_irregular_is_never_laundered_by_run_or_file_name(
+        tmp_path, run_id, name):
+    store = a_store(tmp_path, run_id)
+    path = store.run_path(run_id) / name
+    path.unlink()
+    path.mkdir()
+    violations = run_route_violations(store, run_id)
+    assert violations == (RouteViolation(RouteViolationCode.IRREGULAR_FILE, path),)
+    rendered = render_legacy_run_route_violations(
+        violations, store.run_path(run_id))
+    assert len(rendered) == 1
+    assert "not a regular file" in rendered[0]
+
+
+@pytest.mark.parametrize("run_id", ["run-001", "decisions"])
+@pytest.mark.parametrize("name", ["config.json", "run.json"])
+def test_direct_receipt_irregular_remains_deferred_by_exact_location(
+        tmp_path, run_id, name):
+    store = a_store(tmp_path, run_id)
+    path = store.run_path(run_id) / "decisions" / name
+    path.mkdir()
+    violations = run_route_violations(store, run_id)
+    assert violations == (RouteViolation(RouteViolationCode.IRREGULAR_FILE, path),)
+    assert render_legacy_run_route_violations(
+        violations, store.run_path(run_id)) == ()
 
 
 @pytest.mark.parametrize("target", ["conductor", "runs", "run", "decisions", "owned"])

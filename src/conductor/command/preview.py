@@ -235,7 +235,7 @@ def _check_route(store: RunStore) -> None:
     """
     run_path = store.run_path(_RUN_ID)
     violations = run_route_violations(store, _RUN_ID)
-    facts = render_legacy_run_route_violations(violations)
+    facts = render_legacy_run_route_violations(violations, run_path)
     if facts:
         raise PreviewError(_refusal(
             f"run {_RUN_ID!r} does not stand on a contained writable route, "

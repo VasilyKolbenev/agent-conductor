@@ -186,19 +186,20 @@ def render_route_violations(violations: Iterable[RouteViolation]) -> tuple[str, 
 
 
 def render_legacy_run_route_violations(
-        violations: Iterable[RouteViolation]) -> tuple[str, ...]:
+        violations: Iterable[RouteViolation], run_path: Path) -> tuple[str, ...]:
     """Preserve the old store-owned timing for typed non-file objects.
 
-    The typed API sees a non-directory run name and a non-regular receipt name.
+    The typed API sees a non-directory route component and a non-regular receipt.
     Existing command callers continue to let their create/replay operation own
     those refusals, as before ROUTE-1.
     """
+    receipts = run_path / RECEIPTS_DIR
     return render_route_violations(
         row for row in violations
         if row.code is not RouteViolationCode.NOT_DIRECTORY
         and not (
             row.code is RouteViolationCode.IRREGULAR_FILE
-            and row.path.parent.name == RECEIPTS_DIR
+            and row.path.parent == receipts
             and row.path.suffix == RECEIPT_SUFFIX))
 
 

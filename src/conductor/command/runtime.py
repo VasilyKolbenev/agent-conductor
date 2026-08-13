@@ -420,8 +420,9 @@ class ControlRuntime:
 
     def _hold_route(self, run_id: str, error: type[RuntimeError]) -> None:
         """Refuse a non-local/aliased store route before the next durable effect."""
+        run_path = self._store.run_path(run_id)
         violations = run_route_violations(self._store, run_id)
-        facts = render_legacy_run_route_violations(violations)
+        facts = render_legacy_run_route_violations(violations, run_path)
         if facts:
             raise error(
                 f"run {run_id!r} is not on a contained writable route: "
