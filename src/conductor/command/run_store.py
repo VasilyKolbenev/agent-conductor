@@ -21,8 +21,9 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import wraps
 from pathlib import Path
-from threading import Lock, RLock
+from threading import Lock, RLock, local
 from typing import Any
+from weakref import WeakValueDictionary
 
 from .attempt_replay import (
     AttemptRelationError,
@@ -59,13 +60,27 @@ class RecordConflict(StoreError):
     """An immutable identity or idempotency key was reused with new meaning."""
 
 
-_ROOT_LOCKS_GUARD = Lock()
-_ROOT_LOCKS: dict[Path, RLock] = {}
+class _RootGate:
+    """One weakly indexed, strongly store-owned process-local root gate."""
+
+    __slots__ = ("lock", "__weakref__")
+
+    def __init__(self) -> None:
+        self.lock = RLock()
 
 
-def _root_lock(root: Path) -> RLock:
-    with _ROOT_LOCKS_GUARD:
-        return _ROOT_LOCKS.setdefault(root, RLock())
+_ROOT_GATES_GUARD = Lock()
+_ROOT_GATES: WeakValueDictionary[Path, _RootGate] = WeakValueDictionary()
+_ROOT_TRANSACTION_STATE = local()
+
+
+def _root_gate(root: Path) -> _RootGate:
+    with _ROOT_GATES_GUARD:
+        gate = _ROOT_GATES.get(root)
+        if gate is None:
+            gate = _RootGate()
+            _ROOT_GATES[root] = gate
+        return gate
 
 
 def _transactional(method):
@@ -317,6 +332,7 @@ class RunStore:
         self.project_root = Path(project_root).resolve()
         self.runs_root = self.project_root / "conductor" / "runs"
         self._on_warning = on_warning
+        self._root_gate = _root_gate(self.project_root)
 
     def run_path(self, run_id: str) -> Path:
         try:
@@ -328,8 +344,18 @@ class RunStore:
     @contextmanager
     def transaction(self):
         """Serialize one process-local transaction for this resolved project root."""
-        with _root_lock(self.project_root):
-            yield
+        with self._root_gate.lock:
+            depth = getattr(_ROOT_TRANSACTION_STATE, "depth", 0)
+            _ROOT_TRANSACTION_STATE.depth = depth + 1
+            try:
+                yield
+            finally:
+                _ROOT_TRANSACTION_STATE.depth = depth
+
+    @staticmethod
+    def current_thread_holds_transaction() -> bool:
+        """Report a root lock held by this thread, independent of its project."""
+        return bool(getattr(_ROOT_TRANSACTION_STATE, "depth", 0))
 
     @_transactional
     def create_run(self, envelope: RunEnvelope, snapshot: Mapping[str, Any]) -> Path:

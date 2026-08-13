@@ -244,6 +244,7 @@ class ControlRuntime:
             raise AuthorizationError("authorize requires a validated Confirmation")
         if not isinstance(budget, Budget):
             raise AuthorizationError("authorize requires a validated Budget")
+        self._hold_lock_order(AuthorizationError)
         logical = f"dispatch-{confirmation.proposal_id}"
         key = self._lock_key(
             "authorize", confirmation.run_id, confirmation.proposal_id, logical)
@@ -371,6 +372,7 @@ class ControlRuntime:
         """Drive the authorized request; return the attempt with its terminal state."""
         if not isinstance(authorization, Authorization):
             raise ExecutionError("execute requires an Authorization from authorize")
+        self._hold_lock_order(ExecutionError)
         claimed = ActionRequest.from_dict(authorization.request.as_dict())
         copied = Authorization(request=claimed)
         key = self._lock_key("execute", claimed.run_id, claimed.action_id)
@@ -527,6 +529,11 @@ class ControlRuntime:
             raise error(
                 f"run {run_id!r} is not on a contained writable route: "
                 + "; ".join(facts))
+
+    def _hold_lock_order(self, error: type[RuntimeError]) -> None:
+        """Refuse public operation entry from below the operation-lock layer."""
+        if self._store.current_thread_holds_transaction():
+            raise error("runtime operation cannot start inside a store transaction")
 
     def _bound_adapter(self, recovered: RecoveredRun, instance_id: str) -> tuple[Any, str]:
         bindings = frozen_config_bindings(recovered.config)

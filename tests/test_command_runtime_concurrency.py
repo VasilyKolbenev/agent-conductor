@@ -54,14 +54,19 @@ def test_operation_gate_identity_survives_waiters_then_idle_key_is_released():
 
 def _race_journal_kind(monkeypatch, kind):
     """Pause two appends at the old check/write gap and report true overlap."""
+    return _race_journal_kinds(monkeypatch, (kind,))
+
+
+def _race_journal_kinds(monkeypatch, kinds):
+    """Witness whether any selected durable writes overlap another writer."""
     original = run_store_module._append_bytes
     barrier = threading.Barrier(2)
     witness: list[bool] = []
     guard = threading.Lock()
-    token = f'"record_type":"{kind}"'.encode()
+    tokens = tuple(f'"record_type":"{kind}"'.encode() for kind in kinds)
 
     def racing_append(path, payload):
-        if token in payload:
+        if any(token in payload for token in tokens):
             try:
                 barrier.wait(timeout=0.1)
             except threading.BrokenBarrierError:
@@ -74,6 +79,132 @@ def _race_journal_kind(monkeypatch, kind):
 
     monkeypatch.setattr(run_store_module, "_append_bytes", racing_append)
     return witness
+
+
+class EffectOverlapAdapter(ScriptedAdapter):
+    """Prove both fresh untrusted seams run outside the root transaction."""
+
+    def __init__(self, store, prepare_barrier, execute_barrier):
+        super().__init__()
+        self._store = store
+        self._prepare_barrier = prepare_barrier
+        self._execute_barrier = execute_barrier
+        self.prepare_overlap = []
+        self.execute_overlap = []
+
+    def _wait(self, barrier, witness):
+        assert not self._store.current_thread_holds_transaction()
+        try:
+            barrier.wait(timeout=1)
+        except threading.BrokenBarrierError:
+            witness.append(False)
+        else:
+            witness.append(True)
+
+    def prepare(self, request):
+        self._wait(self._prepare_barrier, self.prepare_overlap)
+        return super().prepare(request)
+
+    def execute(self, prepared):
+        self._wait(self._execute_barrier, self.execute_overlap)
+        return super().execute(prepared)
+
+
+def test_fresh_distinct_effects_overlap_while_every_durable_write_serializes(
+        tmp_path, monkeypatch):
+    store = a_store(tmp_path)
+    prepare_barrier = threading.Barrier(2)
+    execute_barrier = threading.Barrier(2)
+    adapter = EffectOverlapAdapter(store, prepare_barrier, execute_barrier)
+    runtime = a_runtime(store, adapter, ids=counting_ids())
+    first = a_proposal(store)
+    second = a_proposal(
+        store, proposal_id="proposal-002", attempt_id="attempt-002",
+        arguments={"handoff": "packet-002"})
+    authorizations = (
+        runtime.authorize(a_confirmation(first), budget=a_budget()),
+        runtime.authorize(a_confirmation(second), budget=a_budget()),
+    )
+    writes = _race_journal_kinds(monkeypatch, ("attempt_event", "action_result"))
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        attempts = [
+            future.result(timeout=4) for future in (
+                pool.submit(runtime.execute, authorizations[0]),
+                pool.submit(runtime.execute, authorizations[1]),
+            )]
+
+    assert adapter.prepare_overlap == [True, True]
+    assert adapter.execute_overlap == [True, True]
+    assert writes == [False] * 6
+    assert adapter.prepare_calls == adapter.execute_calls == adapter.verify_calls == 2
+    assert all(attempt.history == (
+        AttemptState.ACCEPTED, AttemptState.STARTED, AttemptState.SUCCEEDED)
+        for attempt in attempts)
+    recovered = store.read("run-001")
+    for authorization in authorizations:
+        action_id = authorization.request.action_id
+        action_rows = [
+            row for row in recovered.records
+            if getattr(row.value, "action_id", None) == action_id]
+        assert [row.kind for row in action_rows] == [
+            "action_request", "attempt_event", "attempt_event", "action_result"]
+    assert recovered.warnings == ()
+
+
+@pytest.mark.parametrize("held_root", ["same", "other"])
+def test_authorize_refuses_before_operation_lock_when_a_root_transaction_is_held(
+        tmp_path, monkeypatch, held_root):
+    store = a_store(tmp_path / "subject")
+    proposal = a_proposal(store)
+    runtime = confirmation_runtime(store)
+    held = store if held_root == "same" else RunStore(tmp_path / "other")
+    journal = store.run_path("run-001") / "records.jsonl"
+    before = journal.read_bytes()
+    operation_calls = []
+
+    def touched_operation_lock(key):
+        operation_calls.append(key)
+        raise AssertionError("operation lock was touched below a root transaction")
+
+    monkeypatch.setattr(runtime_module, "_operation_lock", touched_operation_lock)
+
+    with held.transaction():
+        with pytest.raises(
+                AuthorizationError,
+                match="runtime operation cannot start inside a store transaction"):
+            runtime.authorize(a_confirmation(proposal), budget=a_budget())
+
+    assert journal.read_bytes() == before
+    assert operation_calls == []
+
+
+def test_execute_refuses_before_operation_lock_when_a_root_transaction_is_held(
+        tmp_path, monkeypatch):
+    store = a_store(tmp_path)
+    adapter = ScriptedAdapter()
+    runtime, authorization = authorized(store, adapter)
+    journal = store.run_path("run-001") / "records.jsonl"
+    before = journal.read_bytes()
+    operation_calls = []
+
+    def touched_operation_lock(key):
+        operation_calls.append(key)
+        raise AssertionError("operation lock was touched below a root transaction")
+
+    monkeypatch.setattr(runtime_module, "_operation_lock", touched_operation_lock)
+
+    with store.transaction():
+        with pytest.raises(
+                ExecutionError,
+                match="runtime operation cannot start inside a store transaction"):
+            runtime.execute(authorization)
+
+    assert journal.read_bytes() == before
+    assert operation_calls == []
+    assert adapter.prepare_calls == adapter.execute_calls == adapter.verify_calls == 0
+    monkeypatch.undo()
+    assert runtime.execute(authorization).state is AttemptState.SUCCEEDED
 
 
 @pytest.mark.parametrize("separate_runtimes", [False, True])
