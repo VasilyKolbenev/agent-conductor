@@ -32,7 +32,7 @@ import pytest
 
 from conductor.command import preview
 from conductor.command.contracts import ActionRequest, ContractError, RunEnvelope
-from conductor.command.run_store import RunStore, snapshot_digest
+from conductor.command.run_store import CorruptRun, RunStore, snapshot_digest
 
 from tests import sabotage_fixtures as sf
 
@@ -125,6 +125,35 @@ def test_stale_receipt_names_a_different_run_than_the_gate_it_would_satisfy():
     assert honest.run_id == "run-001"
     assert stale["run_id"] == "run-old"
     assert stale["gate_id"] == honest.gate_id  # same gate, a foreign run
+
+
+@pytest.mark.parametrize(
+    "damage, message",
+    [(sf.tampered_receipt_bytes, "disagrees with records.jsonl"),
+     (sf.uncontracted_receipt_bytes, "non-canonical or uncontracted fields")],
+)
+def test_receipt_damage_fixture_trips_real_run_store_replay(damage, message, tmp_path):
+    """Our hostile bytes reach CMD-2's durable receipt-reconciliation door."""
+    config = {"cycle": {"id": "orbit-001"}}
+    digest = snapshot_digest(config)
+    store = RunStore(tmp_path)
+    store.create_run(
+        RunEnvelope(
+            run_id="run-001", cycle_id="orbit-001",
+            created_at="2026-08-13T08:00:00Z", config_digest=digest),
+        config)
+    decision = sf.decision_receipt(config_digest=digest)
+    store.append(decision)
+    path = store.run_path("run-001") / "decisions" / "decision-001.json"
+    journal = store.run_path("run-001") / "records.jsonl"
+    journal_before = journal.read_bytes()
+    path.write_bytes(damage(decision))
+    damaged_before = path.read_bytes()
+
+    with pytest.raises(CorruptRun, match=message):
+        store.read("run-001")
+    assert path.read_bytes() == damaged_before
+    assert journal.read_bytes() == journal_before
 
 
 # --- Confirm freshness and duplicate-idempotency inputs ---

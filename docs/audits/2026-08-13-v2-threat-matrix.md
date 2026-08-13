@@ -62,16 +62,16 @@ green test. It is written only when its production slice lands, born red against
 - Status: `PENDING`
 - Slice: `B/RUN-1`, `A/RT-1`
 - Fixture: `write_blocking_executable`
-- Expected invariant: Timeout stops only the owned group and records timed out, never succeeded.
-- Regression: `PENDING: test_timeout_stops_the_owned_group_and_records_a_terminal_failure`
+- Expected invariant: Stop only the owned group; record outcome failed plus the timed-out fact.
+- Regression: `PENDING: test_timeout_stops_the_owned_group_and_records_failed_with_timeout`
 
 ### OUTPUT-BOMB — child floods captured output
 
 - Status: `PENDING`
 - Slice: `B/RUN-1`
 - Fixture: `write_output_bomb`
-- Expected invariant: Capture stays bounded and reports truncation without hiding process outcome.
-- Regression: `PENDING: test_runner_bounds_each_output_stream_and_records_truncation`
+- Expected invariant: Combined capture stays bounded and reports truncation without hiding outcome.
+- Regression: `PENDING: test_runner_bounds_combined_output_and_records_truncation`
 
 ### DUPLICATE-IDEMPOTENCY — one key is reused with new meaning
 
@@ -125,11 +125,12 @@ green test. It is written only when its production slice lands, born red against
 
 ### RECEIPT-TAMPER — published receipt bytes are replaced or rewritten
 
-- Status: `PENDING`
-- Slice: `A/RT-2`, `C/HG-1`
+- Status: `HELD`
+- Slice: `CMD-2`
 - Fixture: `tampered_receipt_bytes`, `uncontracted_receipt_bytes`
 - Expected invariant: Replay refuses changed identity bytes and never projects them as a decision.
-- Regression: `PENDING: test_replay_refuses_a_tampered_or_uncontracted_published_receipt`
+- Regression:
+  `tests/test_sabotage_fixtures.py::test_receipt_damage_fixture_trips_real_run_store_replay`
 
 ### RESTART — coordinator restarts while a child may still be live
 
