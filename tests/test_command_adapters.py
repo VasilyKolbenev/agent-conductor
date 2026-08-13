@@ -29,6 +29,12 @@ ALLOWED_SDK_IMPORTS = frozenset({
     "__future__", "collections.abc", "dataclasses", "types", "typing",
 })
 ALLOWED_SDK_RELATIVE_IMPORTS = frozenset({(2, "contracts")})
+# The owned-process runner (B/RUN-1) is the one reviewed execution door in the
+# package; it necessarily imports subprocess and calls Popen, so this value-core
+# import guard exempts it. Its safety is proven behaviourally by
+# tests/test_command_process_*.py, and tests/test_command_package_doors.py proves
+# the door is confined to exactly these two modules.
+SDK_EXECUTION_DOOR = frozenset({"process.py", "_procgroup.py"})
 
 
 def an_action(**changes):
@@ -237,12 +243,19 @@ def test_registry_keeps_the_manifest_that_was_reviewed_at_registration():
         registry.prepare("claude-code", an_action(capability="stop"))
 
 
-def test_every_module_of_the_sdk_package_imports_only_the_allowed_value_modules():
-    """A door is a door in any file of the package, and behind any import name."""
+def test_every_value_module_of_the_sdk_package_imports_only_the_allowed_value_modules():
+    """A door is a door in any value file of the package, and behind any import name.
+
+    The owned-process runner is the package's one sanctioned execution door and
+    is exempted here (see SDK_EXECUTION_DOOR); every other module is held to the
+    value-only import allowlist and the exec/spawn call ban.
+    """
     package = Path(adapter_base.__file__).resolve().parent
     sources = sorted(package.rglob("*.py"))
     assert Path(adapter_base.__file__).resolve() in sources
     for path in sources:
+        if path.name in SDK_EXECUTION_DOOR:
+            continue
         tree = ast.parse(path.read_text(encoding="utf-8"))
         imported: set[str] = set()
         for node in ast.walk(tree):

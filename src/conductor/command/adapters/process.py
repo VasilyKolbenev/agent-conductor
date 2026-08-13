@@ -1,0 +1,503 @@
+"""The owned-process runner and a thin process-backed adapter over it.
+
+This is the one door December Command uses to start a real child process. Every
+safety property the plan's law 1-2 name is enforced here as a *relation*, not a
+name check, and each is provable by executing the child:
+
+- **Structured argv only.** A command is a list of strings; a shell string is
+  refused at the boundary and ``shell=False`` is never negotiable, so arbitrary
+  shell text in any argument reaches the child as one inert token and no shell
+  ever interprets it.
+- **Contained cwd.** The child's working directory must be strictly beneath the
+  resolved project root, proven by reading every component of the route from the
+  root down with ``os.lstat`` alone, following nothing: a symlink, an NTFS
+  junction, any other reparse point, a ``..`` segment, or a path that simply is
+  not under the root refuses *before* the child is spawned. This is the CMD-4
+  boundary lesson -- the check covers the whole route, not just the leaf.
+- **Sanitized environment.** The child never inherits the parent environment
+  wholesale. It receives exactly the parent variables an explicit allowlist
+  names (the reference set for secrets, per law 8) plus explicit literal extras;
+  a parent variable outside the allowlist never reaches the child.
+- **Bounded output.** Captured output is truncated at a stated byte bound and
+  the outcome says so; a runaway child cannot exhaust the parent, because the
+  pump keeps draining the pipe while discarding everything past the bound.
+- **Timeout is its own fact.** A child that overruns its timeout is terminated
+  and reported ``timed_out`` -- never ``completed``, never a silent success.
+- **Ownership.** The runner mints an unguessable token for each child it starts
+  and can stop only a token it minted; there is no method that kills a PID, so a
+  foreign or recycled PID cannot be named, let alone signalled.
+
+Two limits are stated rather than hidden. The containment check reads and then
+spawns, so a local writer that swaps a route component between the ``lstat`` and
+``CreateProcess``/``execve`` is not stopped -- within one project the tree is
+single-writer by contract, and against a concurrent adversary this boundary is
+best-effort. And an NTFS alternate data stream is not a component of any route
+this walk reads, so it is neither detected nor traversed.
+"""
+from __future__ import annotations
+
+import os
+import re
+import secrets
+import stat
+import subprocess
+import threading
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, field
+from pathlib import Path
+from types import MappingProxyType
+
+from ..contracts import (
+    ActionRequest,
+    ActionResultReceipt,
+)
+from . import _procgroup
+from .base import (
+    AdapterContractError,
+    AdapterManifest,
+    AdapterObservation,
+    AdapterVerification,
+    PreparedAction,
+    UnsupportedCapability,
+)
+
+#: Default ceiling on captured output; a child cannot push the parent past it.
+DEFAULT_OUTPUT_LIMIT = 64 * 1024
+#: One read from the child's merged pipe; the pump loops over these.
+_READ_CHUNK = 64 * 1024
+#: A POSIX environment variable name; the same shape run_store screens against.
+_ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
+#: A junction's reparse tag, read from lstat without following anything. The
+#: constant exists on every platform; the attribute is Windows-only, so the
+#: getattr in ``_detected_portal`` answers 0 elsewhere and no path is a portal.
+_JUNCTION_TAG = getattr(stat, "IO_REPARSE_TAG_MOUNT_POINT", 0xA0000003)
+#: The one capability this adapter executes; every other control stays absent.
+DISPATCH_CAPABILITY = "dispatch"
+
+
+class ProcessRunnerError(RuntimeError):
+    """The runner cannot safely honour the request as stated."""
+
+
+class CommandSpecError(ProcessRunnerError):
+    """A command is not structured argv, or its environment names are malformed."""
+
+
+class ContainmentError(ProcessRunnerError):
+    """The requested cwd is not strictly, locally beneath the project root."""
+
+
+class OwnershipError(ProcessRunnerError):
+    """A stop names no child this runner started and still holds."""
+
+
+def _argv(value: object) -> tuple[str, ...]:
+    """A non-empty list of NUL-free strings; a shell string is not a command."""
+    if isinstance(value, (str, bytes)) or not isinstance(value, Sequence):
+        raise CommandSpecError("argv must be a list of strings, never a shell string")
+    rows = tuple(value)
+    if not rows:
+        raise CommandSpecError("argv must name at least the executable to run")
+    for item in rows:
+        if not isinstance(item, str):
+            raise CommandSpecError(f"argv element must be a string, got {item!r}")
+        if "\x00" in item:
+            raise CommandSpecError("argv element must not contain NUL")
+    return rows
+
+
+def _env_names(value: object) -> tuple[str, ...]:
+    """The allowlist: distinct, valid environment variable names to reference."""
+    if isinstance(value, (str, bytes)) or not isinstance(value, Sequence):
+        raise CommandSpecError("env_allow must be a list of environment variable names")
+    names = tuple(value)
+    for name in names:
+        if not isinstance(name, str) or _ENV_NAME.fullmatch(name) is None:
+            raise CommandSpecError(f"env_allow names an invalid variable: {name!r}")
+    if len(set(names)) != len(names):
+        raise CommandSpecError("env_allow must not repeat a variable name")
+    return names
+
+
+def _env_map(value: object) -> Mapping[str, str]:
+    """Explicit literal variables: valid names to NUL-free string values."""
+    if not isinstance(value, Mapping):
+        raise CommandSpecError("env must map variable names to string values")
+    out: dict[str, str] = {}
+    for name, item in value.items():
+        if not isinstance(name, str) or _ENV_NAME.fullmatch(name) is None:
+            raise CommandSpecError(f"env names an invalid variable: {name!r}")
+        if not isinstance(item, str) or "\x00" in item:
+            raise CommandSpecError(f"env[{name!r}] must be a string without NUL")
+        out[name] = item
+    return MappingProxyType(out)
+
+
+@dataclass(frozen=True)
+class CommandSpec:
+    """One structured command; validated at construction, never a shell string."""
+
+    argv: tuple[str, ...]
+    cwd: str
+    env_allow: tuple[str, ...] = ()
+    env: Mapping[str, str] = field(default_factory=dict)
+    output_limit: int = DEFAULT_OUTPUT_LIMIT
+    timeout_seconds: float | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "argv", _argv(self.argv))
+        if not isinstance(self.cwd, str) or not self.cwd:
+            raise CommandSpecError("cwd must be a non-empty path string")
+        object.__setattr__(self, "env_allow", _env_names(self.env_allow))
+        object.__setattr__(self, "env", _env_map(self.env))
+        if (isinstance(self.output_limit, bool)
+                or not isinstance(self.output_limit, int) or self.output_limit <= 0):
+            raise CommandSpecError("output_limit must be a positive integer byte count")
+        timeout = self.timeout_seconds
+        if timeout is not None and (
+                isinstance(timeout, bool) or not isinstance(timeout, (int, float))
+                or timeout <= 0):
+            raise CommandSpecError("timeout_seconds must be a positive number or None")
+
+
+@dataclass(frozen=True)
+class OwnedProcess:
+    """The identity a started child answers to: an unguessable token plus its pid."""
+
+    token: str
+    pid: int
+
+
+@dataclass(frozen=True)
+class ProcessOutcome:
+    """The runner's account of a finished child; the status is its own fact.
+
+    ``status`` is one of ``completed`` (the child exited on its own within the
+    timeout), ``timed_out`` (it overran and was terminated), or ``stopped`` (a
+    ``stop`` terminated it). ``exit_code`` is the child's real code only when it
+    completed; a terminated child carries ``None``, because the code a kill
+    leaves behind is not the child's own answer.
+    """
+
+    status: str
+    exit_code: int | None
+    output: bytes
+    output_truncated: bool
+    output_limit: int
+    pid: int
+    token: str
+
+
+def _detected_portal(found: os.stat_result) -> str | None:
+    """Name the reparse fact lstat established, or None for an ordinary object."""
+    if stat.S_ISLNK(found.st_mode):
+        return "a symbolic link"
+    tag = getattr(found, "st_reparse_tag", 0)
+    if tag == _JUNCTION_TAG:
+        return "a directory junction"
+    if tag:
+        return f"a reparse point (tag {tag:#010x})"
+    return None
+
+
+def _lstat_or_none(path: Path) -> os.stat_result | None:
+    """Read one route component without following anything; None if it cannot be."""
+    try:
+        return os.lstat(path)
+    except OSError:
+        return None
+
+
+class _Owned:
+    """A live child, its termination group, and a bounded pump over its output."""
+
+    def __init__(self, proc: "subprocess.Popen[bytes]", token: str, limit: int,
+                 group: _procgroup.ProcessGroup) -> None:
+        self.proc = proc
+        self.token = token
+        self.pid = proc.pid
+        self.limit = limit
+        self.group = group
+        self._buf = bytearray()
+        self._truncated = False
+        self._lock = threading.Lock()
+        self._pump = threading.Thread(target=self._drain, daemon=True)
+        self._pump.start()
+
+    def _drain(self) -> None:
+        stream = self.proc.stdout
+        if stream is None:
+            return
+        fd = stream.fileno()
+        while True:
+            try:
+                chunk = os.read(fd, _READ_CHUNK)
+            except OSError:
+                break
+            if not chunk:
+                break
+            with self._lock:
+                room = self.limit - len(self._buf)
+                if room > 0:
+                    self._buf += chunk[:room]
+                    if len(chunk) > room:
+                        self._truncated = True
+                else:
+                    self._truncated = True
+
+    def finish(self, status: str) -> ProcessOutcome:
+        self._pump.join()
+        with self._lock:
+            output, truncated = bytes(self._buf), self._truncated
+        code = self.proc.returncode
+        return ProcessOutcome(
+            status=status, exit_code=code if status == "completed" else None,
+            output=output, output_truncated=truncated, output_limit=self.limit,
+            pid=self.pid, token=self.token)
+
+
+class ProcessRunner:
+    """Starts, bounds, times out, and stops only the children it started.
+
+    A runner is bound to one project root at construction; every cwd it accepts
+    is validated strictly beneath that resolved root. The parent variables it
+    may reference come from ``environ`` (the live process environment by
+    default), never from an implicit inheritance of it into the child.
+    """
+
+    def __init__(self, project_root: str | os.PathLike[str], *,
+                 environ: Mapping[str, str] | None = None) -> None:
+        self._root = Path(project_root).resolve()
+        self._environ = dict(os.environ if environ is None else environ)
+        self._owned: dict[str, _Owned] = {}
+        self._lock = threading.Lock()
+
+    def start(self, spec: CommandSpec) -> OwnedProcess:
+        """Spawn the child and record it; the pump bounds its output immediately."""
+        owned = self._spawn(spec)
+        return OwnedProcess(token=owned.token, pid=owned.pid)
+
+    def run(self, spec: CommandSpec) -> ProcessOutcome:
+        """Spawn, wait up to the timeout, terminate on overrun, and account for it."""
+        owned = self._spawn(spec)
+        try:
+            try:
+                owned.proc.wait(timeout=spec.timeout_seconds)
+                status = "completed"
+            except subprocess.TimeoutExpired:
+                owned.group.terminate()
+                owned.proc.wait()
+                status = "timed_out"
+            return owned.finish(status)
+        finally:
+            self._release(owned)
+
+    def stop(self, token: str) -> ProcessOutcome:
+        """Terminate the child this token names; refuse a token never minted here."""
+        with self._lock:
+            owned = self._owned.get(token)
+        if owned is None:
+            raise OwnershipError(
+                f"stop names token {token!r}, which this runner did not mint or no "
+                "longer holds; it terminates only a child it started and still owns")
+        owned.group.terminate()
+        owned.proc.wait()
+        try:
+            return owned.finish("stopped")
+        finally:
+            self._release(owned)
+
+    def active_tokens(self) -> tuple[str, ...]:
+        """The tokens of children this runner still owns; empty means none leaked."""
+        with self._lock:
+            return tuple(sorted(self._owned))
+
+    def _spawn(self, spec: CommandSpec) -> _Owned:
+        cwd = self._resolve_cwd(spec.cwd)  # refuses before any child exists
+        env = self._child_env(spec)
+        proc = subprocess.Popen(
+            list(spec.argv), cwd=str(cwd), env=env, shell=False, bufsize=0,
+            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT, **_procgroup.popen_kwargs())
+        group = _procgroup.make_group(proc)
+        token = secrets.token_hex(16)
+        owned = _Owned(proc, token, spec.output_limit, group)
+        with self._lock:
+            self._owned[token] = owned
+        return owned
+
+    def _release(self, owned: _Owned) -> None:
+        with self._lock:
+            self._owned.pop(owned.token, None)
+        owned.group.close()
+
+    def _resolve_cwd(self, raw_cwd: str) -> Path:
+        candidate = Path(raw_cwd)
+        if not candidate.is_absolute():
+            candidate = self._root / candidate
+        try:
+            rel = candidate.relative_to(self._root)
+        except ValueError:
+            raise ContainmentError(
+                f"cwd {str(candidate)!r} is not beneath the project root "
+                f"{str(self._root)!r}") from None
+        if not rel.parts:
+            raise ContainmentError(
+                "cwd must be strictly beneath the project root, not the root itself: "
+                f"{str(self._root)!r}")
+        if os.pardir in rel.parts:
+            raise ContainmentError(
+                f"cwd {str(candidate)!r} escapes the project root through '..'")
+        return self._walk_route(rel)
+
+    def _walk_route(self, rel: Path) -> Path:
+        walked = self._root
+        for part in rel.parts:
+            walked = walked / part
+            found = _lstat_or_none(walked)
+            if found is None:
+                raise ContainmentError(
+                    f"cwd route component {str(walked)!r} does not exist or cannot "
+                    "be read")
+            portal = _detected_portal(found)
+            if portal is not None:
+                raise ContainmentError(
+                    f"cwd route component {str(walked)!r} is {portal}: a name whose "
+                    "content lies elsewhere")
+            if not stat.S_ISDIR(found.st_mode):
+                raise ContainmentError(
+                    f"cwd route component {str(walked)!r} is not a directory")
+        return walked
+
+    def _child_env(self, spec: CommandSpec) -> dict[str, str]:
+        env: dict[str, str] = {}
+        for name in spec.env_allow:
+            if name in self._environ:
+                env[name] = self._environ[name]
+        for name, value in spec.env.items():
+            env[name] = value
+        return env
+
+
+def _spec_from_arguments(
+        arguments: Mapping[str, object], timeout_seconds: int) -> CommandSpec:
+    """Read a dispatch request's structured command; refuse a malformed one."""
+    if not isinstance(arguments, Mapping):
+        raise AdapterContractError("dispatch arguments must be a JSON object")
+    try:
+        return CommandSpec(
+            argv=arguments.get("argv"),
+            cwd=arguments.get("cwd"),
+            env_allow=tuple(arguments.get("env_allow", ())),
+            env=dict(arguments.get("env", {})),
+            output_limit=int(arguments.get("output_limit", DEFAULT_OUTPUT_LIMIT)),
+            timeout_seconds=timeout_seconds)
+    except (CommandSpecError, TypeError, ValueError) as e:
+        raise AdapterContractError(
+            f"dispatch arguments are not a valid command: {e}") from e
+
+
+def _payload_from_spec(spec: CommandSpec) -> dict[str, object]:
+    """The adapter payload: a plain-JSON echo of the validated command."""
+    return {
+        "argv": list(spec.argv), "cwd": spec.cwd,
+        "env_allow": list(spec.env_allow), "env": dict(spec.env),
+        "output_limit": spec.output_limit,
+    }
+
+
+def _spec_from_payload(payload: Mapping[str, object], timeout_seconds: int) -> CommandSpec:
+    return CommandSpec(
+        argv=tuple(payload["argv"]), cwd=payload["cwd"],
+        env_allow=tuple(payload["env_allow"]), env=dict(payload["env"]),
+        output_limit=payload["output_limit"], timeout_seconds=timeout_seconds)
+
+
+def _detail(outcome: ProcessOutcome, summary: str) -> str:
+    note = f"{summary}; captured {len(outcome.output)} bytes"
+    if outcome.output_truncated:
+        note += f", truncated at the {outcome.output_limit}-byte capture bound"
+    return note
+
+
+def _map_outcome(outcome: ProcessOutcome) -> tuple[str, str]:
+    """Project a process outcome onto the receipt vocabulary; timeout is not success."""
+    if outcome.status == "completed":
+        if outcome.exit_code == 0:
+            return "succeeded", _detail(outcome, "the process exited zero")
+        return "failed", _detail(outcome, f"the process exited {outcome.exit_code}")
+    if outcome.status == "timed_out":
+        return "failed", _detail(
+            outcome, "the process exceeded its timeout and was terminated")
+    if outcome.status == "stopped":
+        return "cancelled", _detail(outcome, "the process was stopped by the runner")
+    raise AdapterContractError(f"unknown process status {outcome.status!r}")
+
+
+class ProcessAdapter:
+    """A minimal CMD-3 adapter that dispatches through the owned-process runner.
+
+    It holds exactly two controls and says so: it can ``observe`` (honestly, and
+    without probing the machine) and ``dispatch`` (run one structured command and
+    report the result). It claims no pause, resume, stop, retry, switch, review,
+    evidence, or independent verification -- those controls are absent from its
+    manifest, never present-but-empty. ``verify`` returns ``unavailable`` because
+    watching a process exit is not evidence that the requested effect occurred.
+    """
+
+    def __init__(self, adapter_id: str, runner: ProcessRunner, *,
+                 clock: Callable[[], str], ids: Callable[[str], str],
+                 display_name: str = "Owned Process",
+                 vendor: str = "December Command", version: str = "1") -> None:
+        self.manifest = AdapterManifest(
+            adapter_id=adapter_id, display_name=display_name, vendor=vendor,
+            version=version, capabilities=("observe", DISPATCH_CAPABILITY))
+        self._runner = runner
+        self._clock = clock
+        self._ids = ids
+
+    def observe(self, instance_id: str, run_id: str) -> AdapterObservation:
+        return AdapterObservation(
+            adapter_id=self.manifest.adapter_id, instance_id=instance_id,
+            run_id=run_id, observed_at=self._clock(), health="unknown",
+            available_capabilities=(),
+            detail="the owned-process adapter does not probe; liveness is unknown "
+                   "until a dispatch runs")
+
+    def prepare(self, request: ActionRequest) -> PreparedAction:
+        if not isinstance(request, ActionRequest):
+            raise AdapterContractError("request must be a validated ActionRequest")
+        if request.capability != DISPATCH_CAPABILITY:
+            raise UnsupportedCapability(
+                f"the owned-process adapter only prepares {DISPATCH_CAPABILITY!r}, "
+                f"not {request.capability!r}")
+        spec = _spec_from_arguments(request.arguments, request.timeout_seconds)
+        return PreparedAction(
+            adapter_id=self.manifest.adapter_id, request=request,
+            adapter_payload=_payload_from_spec(spec))
+
+    def execute(self, prepared: PreparedAction) -> ActionResultReceipt:
+        if not isinstance(prepared, PreparedAction):
+            raise AdapterContractError("prepared must be a validated PreparedAction")
+        request = prepared.request
+        spec = _spec_from_payload(prepared.adapter_payload, request.timeout_seconds)
+        outcome = self._runner.run(spec)
+        mapped, detail = _map_outcome(outcome)
+        return ActionResultReceipt(
+            receipt_id=self._ids("receipt"), action_id=request.action_id,
+            run_id=request.run_id, attempt_id=request.attempt_id,
+            instance_id=request.instance_id, outcome=mapped,
+            observed_at=self._clock(), detail=detail, exit_code=outcome.exit_code)
+
+    def verify(
+            self, request: ActionRequest, result: ActionResultReceipt,
+    ) -> AdapterVerification:
+        if not isinstance(request, ActionRequest) or not isinstance(
+                result, ActionResultReceipt):
+            raise AdapterContractError("verify needs a validated request and result")
+        return AdapterVerification(
+            adapter_id=self.manifest.adapter_id, action_id=request.action_id,
+            state="unavailable", observed_at=self._clock(),
+            detail="the owned-process adapter observes the process outcome only; it "
+                   "holds no independent check of the requested effect",
+            evidence_refs=())

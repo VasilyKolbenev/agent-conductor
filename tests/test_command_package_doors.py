@@ -1,11 +1,18 @@
-"""No module of the December Command package opens a network or execution door.
+"""The December Command package opens an execution door in exactly one place.
 
-The adapter SDK is fenced by its own strict import allowlist. This guard is the
-package-wide complement: across every module -- contracts, the run store, the
-service, and the adapters -- no import reaches a subprocess, a socket, or a
-browser, and no call names a system-exec, spawn, or network primitive under any
-import name. It fails closed on the dangerous names, so a new door is a failure
-until it is removed, not until someone remembers to list it.
+Through CMD-1..4 the package had no execution surface at all. B/RUN-1 adds the
+owned-process runner -- the one reviewed door where a child process may be
+started -- so this guard is now a confinement, not a blanket ban: across every
+module OTHER THAN the runner (`process.py`) and its process-group helper
+(`_procgroup.py`), no import reaches a subprocess, a socket, or a browser, and
+no call names a system-exec, spawn, or network primitive under any import name.
+A separate test proves the door has not spread beyond those two modules, and
+that the runner really does hold it. The runner's own safety -- structured
+argv, contained cwd, sanitized environment, bounded output, timeout, and
+ownership -- is proven behaviourally by `tests/test_command_process_*.py`, not
+by an AST name check, which is why the door is exempted here rather than
+pretended away. It fails closed on the dangerous names: a new door in any other
+module is a failure until it is removed.
 """
 from __future__ import annotations
 
@@ -34,6 +41,9 @@ FORBIDDEN_CALLS = frozenset({
     "check_output", "check_call", "getoutput", "getstatusoutput",
 })
 FORBIDDEN_NAMES = frozenset({"__import__", "eval", "exec", "compile"})
+# The one reviewed execution door: the owned-process runner and the helper that
+# terminates only the group it started. Every other module stays fenced.
+EXECUTION_DOOR = frozenset({"process.py", "_procgroup.py"})
 
 
 def _package_sources():
@@ -43,38 +53,67 @@ def _package_sources():
     return package, sources
 
 
-def test_no_command_module_imports_a_network_or_subprocess_module():
+def _imported_modules(tree: ast.AST) -> set[str]:
+    imported: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            imported.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.level == 0:
+            imported.add(node.module or "")
+    return imported
+
+
+def _called_names(tree: ast.AST) -> set[str]:
+    attribute_calls = {
+        node.func.attr for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+    }
+    name_calls = {
+        node.func.id for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+    }
+    return (attribute_calls & FORBIDDEN_CALLS) | (name_calls & (FORBIDDEN_CALLS | FORBIDDEN_NAMES))
+
+
+def test_no_command_module_outside_the_runner_imports_a_network_or_subprocess_module():
     _, sources = _package_sources()
     offenders: dict[str, list[str]] = {}
     for path in sources:
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        imported: set[str] = set()
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Import):
-                imported.update(alias.name for alias in node.names)
-            elif isinstance(node, ast.ImportFrom) and node.level == 0:
-                imported.add(node.module or "")
-        hit = sorted(imported & FORBIDDEN_MODULES)
+        if path.name in EXECUTION_DOOR:
+            continue
+        hit = sorted(_imported_modules(ast.parse(path.read_text(encoding="utf-8")))
+                     & FORBIDDEN_MODULES)
         if hit:
             offenders[path.name] = hit
     assert offenders == {}, f"forbidden imports reached: {offenders}"
 
 
-def test_no_command_module_calls_an_exec_spawn_or_network_primitive():
+def test_no_command_module_outside_the_runner_calls_an_exec_spawn_or_network_primitive():
     _, sources = _package_sources()
     offenders: dict[str, list[str]] = {}
     for path in sources:
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        attribute_calls = {
-            node.func.attr for node in ast.walk(tree)
-            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
-        }
-        name_calls = {
-            node.func.id for node in ast.walk(tree)
-            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
-        }
-        hit = sorted((attribute_calls & FORBIDDEN_CALLS)
-                     | (name_calls & (FORBIDDEN_CALLS | FORBIDDEN_NAMES)))
+        if path.name in EXECUTION_DOOR:
+            continue
+        hit = sorted(_called_names(ast.parse(path.read_text(encoding="utf-8"))))
         if hit:
             offenders[path.name] = hit
     assert offenders == {}, f"forbidden calls reached: {offenders}"
+
+
+def test_the_execution_door_is_confined_to_the_owned_process_runner():
+    """The door exists in the runner modules and nowhere else -- present, not spread.
+
+    A module holds an execution door if it imports a forbidden module or calls a
+    forbidden exec/spawn/network primitive. The set of such modules must equal
+    the sanctioned runner set exactly: an escape into any other module reds the
+    subset check, and silently removing the runner's door reds the presence check.
+    """
+    _, sources = _package_sources()
+    door_holders: set[str] = set()
+    for path in sources:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        if (_imported_modules(tree) & FORBIDDEN_MODULES) or _called_names(tree):
+            door_holders.add(path.name)
+    escaped = sorted(door_holders - EXECUTION_DOOR)
+    assert escaped == [], f"an execution door appeared outside the runner: {escaped}"
+    assert "process.py" in door_holders, "the runner's execution door has vanished"

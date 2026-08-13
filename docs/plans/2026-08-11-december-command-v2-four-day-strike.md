@@ -534,6 +534,49 @@ All existing v1 and CMD-1..4 regressions stay green.
   confirms, executes, and appends all four records into the foreign run, and it goes red.
   Production code is byte-for-byte unchanged; only the one test file was edited. Targeted lane-A
   gate 43 passed; full suite green.
+- **B/RUN-1 — owned-process runner and thin process adapter, committed.** New additive modules
+  `adapters/process.py` (the `ProcessRunner`, its `CommandSpec`/`OwnedProcess`/`ProcessOutcome`
+  value types, and the thin `ProcessAdapter`) and `adapters/_procgroup.py` (POSIX session /
+  Windows kill-on-close Job Object group termination). No frozen surface changed; the adapters
+  `__init__`/`base` are untouched and callers import from `conductor.command.adapters.process`.
+  The runner enforces each safety rule as a relation the child witnesses: structured argv only
+  (a shell string is refused; `shell=False`); cwd strictly beneath the resolved root, proven by an
+  `os.lstat` route walk that follows nothing and refuses a symlink/junction/reparse-point/`..`/
+  outside/root-itself/non-directory BEFORE spawn (the CMD-4 route-covers-the-container lesson,
+  reusing preview's portal idiom); a sanitized environment built from an explicit allowlist plus
+  literal extras, never the parent wholesale; bounded capture (merged stdout+stderr) truncated at a
+  stated byte bound by a pump that keeps draining so the parent cannot be exhausted; timeout as its
+  own `timed_out` fact, never `completed`/success/silent; and an ownership token minted per start
+  where `stop` terminates only a live token's child/group and there is no PID-killing method at all.
+  The thin `ProcessAdapter` implements the frozen CMD-3 seams over the runner: `dispatch` +
+  `observe` are the only declared capabilities (pause/resume/stop/retry/switch/review/evidence/
+  notify/message are absent, not stubbed); `observe` reports `unknown` without probing; `execute`
+  maps completed-zero->succeeded, completed-nonzero->failed, timeout->failed (never succeeded),
+  stopped->cancelled; `verify` returns `unavailable`, never `verified`, because watching a process
+  exit is not evidence of the requested effect. Deterministic fake executables live in
+  `tests/_fakeproc.py` (driven via `sys.executable` + script path with env knobs: output size, exit
+  code, sleep, heartbeat, grandchild spawn, argv/env/cwd dumps; no installed tool relied on).
+  The four owned sabotage classes each ship a permanent regression proven born-red by mutation on
+  this tree: shell text/injection (a space-free `&`-chain reaches the child as one inert token and
+  no file is created; `shell=True` reds both witnesses), cwd + argv-target path escape (a portal on
+  the route refuses before spawn; neutering the portal detector reds all route cases), timeout
+  (mislabelling it `completed` reds), and foreign PID (accepting an unminted or finished token
+  reds). Each rule also carries positive, refusing, and before/after assertions; test helpers take
+  their witness (the child's own pid/ppid, os.environ, heartbeat) independently of the runner.
+  The execution surface the CMD-1..4 door guards forbade is now confined, not banned: those guards
+  (`test_command_package_doors.py`, and the SDK import guard in `test_command_adapters.py`) are
+  renamed to their true claim and exempt exactly the two runner modules, with a new
+  `test_the_execution_door_is_confined_to_the_owned_process_runner` proving the door has not spread
+  and the runner still holds it. Stated limits, not hidden: the containment gate is check-then-act
+  (a local component swap between lstat and spawn is not stopped) and an NTFS alternate data stream
+  is neither detected nor traversed; on this machine the venv `python.exe` is a re-exec launcher, so
+  the recorded pid is the child or its launcher parent, both self-reported by the child. NOT in this
+  slice and left to lane A / the coordinator: Confirm authorization and the CLI propose -> confirm ->
+  execute -> verify -> receipt gate wiring (which the adapter is built to be wired into after lanes
+  A and B merge); stale confirmation / changed digest / duplicate idempotency belong to lane A's
+  store/confirm surface and are not faked here. Targeted process suite 88 passed; full suite
+  2087 passed, 4 skipped (0:02:09) with the three former no-execution-door guards updated in
+  lockstep and one confinement guard added.
 
 ### 12.4 Day 2 — two deep adapters and the writable Cockpit
 
