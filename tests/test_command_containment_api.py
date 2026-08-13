@@ -19,6 +19,7 @@ from conductor.command.containment import (
     contained_directory,
     portal_violation,
     render_cwd_violation,
+    render_legacy_run_route_violations,
     render_route_violation,
     render_route_violations,
     run_route_violations,
@@ -149,6 +150,38 @@ def test_run_relation_types_irregular_owned_file_without_parsing_its_text(tmp_pa
     assert [(row.code, row.path) for row in violations] == [
         (RouteViolationCode.IRREGULAR_FILE, journal)]
     assert "not a regular file" in render_route_violation(violations[0])
+    assert "not a regular file" in render_legacy_run_route_violations(violations)[0]
+
+
+def test_receipt_shaped_directory_is_typed_but_legacy_rendering_stays_deferred(tmp_path):
+    store = a_store(tmp_path)
+    receipt = store.run_path("run-001") / "decisions" / "receipt-001.json"
+    receipt.mkdir()
+    violations = run_route_violations(store, "run-001")
+    assert violations == (RouteViolation(
+        RouteViolationCode.IRREGULAR_FILE, receipt),)
+    assert render_legacy_run_route_violations(violations) == ()
+
+
+def test_receipt_shaped_fifo_is_typed_without_requiring_platform_fifo_support(
+        tmp_path, monkeypatch):
+    store = a_store(tmp_path)
+    receipt = store.run_path("run-001") / "decisions" / "receipt-001.json"
+    real_lstat = containment.os.lstat
+    real_iterdir = Path.iterdir
+    fifo = types.SimpleNamespace(
+        st_mode=stat.S_IFIFO | 0o600, st_reparse_tag=0, st_nlink=1)
+
+    def planted(path):
+        return fifo if Path(path) == receipt else real_lstat(path)
+
+    monkeypatch.setattr(containment.os, "lstat", planted)
+    monkeypatch.setattr(Path, "iterdir", lambda path: iter((receipt,))
+                        if path == receipt.parent else real_iterdir(path))
+    violations = run_route_violations(store, "run-001")
+    assert violations == (RouteViolation(
+        RouteViolationCode.IRREGULAR_FILE, receipt),)
+    assert render_legacy_run_route_violations(violations) == ()
 
 
 @pytest.mark.parametrize("target", ["conductor", "runs", "decisions"])
@@ -167,13 +200,14 @@ def test_existing_non_directory_route_component_is_typed(tmp_path, target):
     assert violations == (RouteViolation(RouteViolationCode.NOT_DIRECTORY, path),)
 
 
-def test_plain_file_at_final_run_name_defers_to_the_existing_store_refusal(tmp_path):
+def test_plain_file_at_final_run_name_is_typed_but_legacy_rendering_stays_deferred(tmp_path):
     store = RunStore(tmp_path)
     run_path = store.run_path("run-001")
     run_path.parent.mkdir(parents=True)
     run_path.write_bytes(b"claimed by an ordinary file")
-    assert run_route_violations(store, "run-001") == ()
-    assert "empty result is not run authorization" in run_route_violations.__doc__
+    violations = run_route_violations(store, "run-001")
+    assert violations == (RouteViolation(RouteViolationCode.NOT_DIRECTORY, run_path),)
+    assert render_legacy_run_route_violations(violations) == ()
 
 
 @pytest.mark.parametrize("target", ["conductor", "runs", "run", "decisions", "owned"])

@@ -187,17 +187,22 @@ def render_route_violations(violations: Iterable[RouteViolation]) -> tuple[str, 
 
 def render_legacy_run_route_violations(
         violations: Iterable[RouteViolation]) -> tuple[str, ...]:
-    """Preserve the old store-owned timing for an ordinary non-directory.
+    """Preserve the old store-owned timing for typed non-file objects.
 
-    The typed API sees ``NOT_DIRECTORY``. Existing command callers continue to
-    let their create/replay operation own that refusal, as before ROUTE-1.
+    The typed API sees a non-directory run name and a non-regular receipt name.
+    Existing command callers continue to let their create/replay operation own
+    those refusals, as before ROUTE-1.
     """
     return render_route_violations(
-        row for row in violations if row.code is not RouteViolationCode.NOT_DIRECTORY)
+        row for row in violations
+        if row.code is not RouteViolationCode.NOT_DIRECTORY
+        and not (
+            row.code is RouteViolationCode.IRREGULAR_FILE
+            and row.path.parent.name == RECEIPTS_DIR
+            and row.path.suffix == RECEIPT_SUFFIX))
 
 
-def first_directory_violation(
-        paths: Iterable[Path], *, defer_plain_last: bool = False) -> RouteViolation | None:
+def first_directory_violation(paths: Iterable[Path]) -> RouteViolation | None:
     """Find the first unreadable, non-directory, or portal route component.
 
     A missing component remains admissible because create_run may own its
@@ -205,7 +210,7 @@ def first_directory_violation(
     never guessed safe and the walk stops before looking below it.
     """
     route = tuple(paths)
-    for index, path in enumerate(route):
+    for path in route:
         found, failure = _optional_lstat(path)
         if failure is not None:
             return failure
@@ -215,8 +220,6 @@ def first_directory_violation(
         if violation is not None:
             return violation
         if not stat.S_ISDIR(found.st_mode):
-            if defer_plain_last and index == len(route) - 1:
-                return None
             return RouteViolation(RouteViolationCode.NOT_DIRECTORY, path)
     return None
 
@@ -249,8 +252,7 @@ def owned_file_violations(run_path: Path) -> tuple[RouteViolation, ...]:
         if portal is not None:
             violations.append(portal)
             continue
-        if path.parent == receipts and (
-                path.suffix != RECEIPT_SUFFIX or not stat.S_ISREG(found.st_mode)):
+        if path.parent == receipts and path.suffix != RECEIPT_SUFFIX:
             continue
         if not stat.S_ISREG(found.st_mode):
             violations.append(RouteViolation(RouteViolationCode.IRREGULAR_FILE, path))
@@ -263,22 +265,20 @@ def owned_file_violations(run_path: Path) -> tuple[RouteViolation, ...]:
 def run_route_violations(store: StoreRoute, run_id: str) -> tuple[RouteViolation, ...]:
     """Inspect the structural route; an empty result is not run authorization.
 
-    A caller must still create or replay the run through ``RunStore``. In
-    particular, an ordinary file at the final run name is left to that existing
-    operation so its established refusal remains authoritative.
+    A caller must still create or replay the run through ``RunStore``. Legacy
+    command callers render selected typed facts through their compatibility
+    boundary so the existing store refusal remains authoritative.
     """
     run_path = store.run_path(run_id)
     first = first_directory_violation((
         store.project_root / "conductor", store.runs_root, run_path,
-    ), defer_plain_last=True)
+    ))
     if first is None:
         found, failure = _optional_lstat(run_path)
         if failure is not None:
             return (failure,)
         if found is not None and stat.S_ISDIR(found.st_mode):
             first = first_directory_violation((run_path / RECEIPTS_DIR,))
-        elif found is not None:
-            return ()
     return (first,) if first is not None else owned_file_violations(run_path)
 
 
