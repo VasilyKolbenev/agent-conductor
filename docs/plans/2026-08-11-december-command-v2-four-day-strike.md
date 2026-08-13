@@ -515,6 +515,25 @@ All existing v1 and CMD-1..4 regressions stay green.
   `tests/test_command_runtime_execute.py`, `tests/test_command_control_loop.py`. Targeted gate
   76 passed; full suite 2087 passed, 4 platform skips. Policy (Day-3), attempt persistence,
   restart recovery and switch (Day-2) are not built here.
+- **A/CONF-1 + A/RT-1 fix batch (F1) — landed on `track/v2a-runtime`.** The combined
+  spec+quality review found one blocking MAJOR, F1, a false-public-claim confined to the
+  foreign-run refusal test in `tests/test_command_control_loop.py`: its comment claimed the
+  gate "refuses it rather than appending into it," which execution disproves. Reproduced on
+  the exact SHA, seeding a run at the fixed id `control-loop-run` under a different valid
+  frozen config and running `conduct confirm` once grows the foreign
+  `runs/control-loop-run/records.jsonl` from 0 to 634 bytes with one `action_proposal`:
+  `propose` derives the proposal's `config_digest` from the FOUND run's envelope and the store
+  accepts it, then `authorize` refuses at the config-digest check. The production contract was
+  already honest -- `control_loop.py` discloses "an honest refusal, not preview's proven
+  inertness" -- and `authorize` appends nothing itself, so the defect was the test's comment
+  plus the before/after state assertion the evidence rule mandates for a refusing path. Fixed
+  by correcting the comment to the module's honest contract and adding the assertion: before,
+  the run holds no records; after the refusal, exactly one `action_proposal` stands -- no
+  `action_request` (no confirmation recorded), no evidence, no `action_result`. That assertion
+  is a real regression door: with the `authorize` config-digest guard neutered the loop
+  confirms, executes, and appends all four records into the foreign run, and it goes red.
+  Production code is byte-for-byte unchanged; only the one test file was edited. Targeted lane-A
+  gate 43 passed; full suite green.
 
 ### 12.4 Day 2 — two deep adapters and the writable Cockpit
 
