@@ -1,9 +1,11 @@
 """Strict common value contracts for future deep adapters."""
 from __future__ import annotations
 
+import ast
+import importlib
+import sys
 from dataclasses import FrozenInstanceError
 from pathlib import Path
-import sys
 
 import pytest
 
@@ -12,31 +14,31 @@ from conductor.command.adapters.deep_commands import (
     DEEP_OUTPUT_LIMIT,
     DEEP_PROTOCOL_FLAGS,
     DISPATCH_PROFILES,
-    DeepCommandSpec,
-    DeepDispatchArgs,
-    DeepEvidenceArgs,
-    DeepReviewArgs,
-    DeepRetryArgs,
-    DeepStopArgs,
-    DeepSwitchArgs,
     OUTPUT_LIMIT_PROFILES,
     REQUESTED_EVIDENCE_KINDS,
     RETRY_REASONS,
     REVIEW_PROFILES,
     STOP_REASONS,
+    DeepCommandSpec,
+    DeepDispatchArgs,
+    DeepEvidenceArgs,
+    DeepRetryArgs,
+    DeepReviewArgs,
+    DeepStopArgs,
+    DeepSwitchArgs,
 )
 from conductor.command.adapters.deep_contracts import (
     ADAPTER_FAILURE_CODES,
     ADAPTER_FAILURE_PHASES,
+    OBSERVED_OUTCOMES,
+    RECOVERY_OUTCOMES,
+    RECOVERY_STATES,
     AdapterFailure,
     AdapterRecovery,
     DeepAdapterConfig,
     DeepContractError,
     DeepProtocol,
     NormalizedResult,
-    OBSERVED_OUTCOMES,
-    RECOVERY_OUTCOMES,
-    RECOVERY_STATES,
     RecoveryRef,
 )
 from conductor.command.adapters.deep_evidence import (
@@ -45,7 +47,6 @@ from conductor.command.adapters.deep_evidence import (
     AdapterEvidence,
 )
 from conductor.command.adapters.process import ProcessRunner
-
 
 NOW = "2026-08-13T20:00:00Z"
 DIGEST = "sha256:" + "a" * 64
@@ -286,6 +287,30 @@ def test_from_dict_requires_json_arrays_while_constructors_accept_immutable_tupl
         type(value).from_dict(data)
 
 
+@pytest.mark.parametrize("value,array_field", [
+    (DeepAdapterConfig("C:/fake/tool.exe", "fake-claude-jsonl-v1"), "env_allow"),
+    (DeepDispatchArgs("work", "instruction", "review", (), "normal"),
+     "artifact_refs"),
+    (DeepReviewArgs("work", ("artifact",), "quality"), "target_artifact_refs"),
+    (DeepEvidenceArgs("action", ("result",)), "kinds"),
+])
+def test_from_dict_rejects_hostile_json_array_subclasses_before_iteration(
+        value, array_field):
+    class HostileList(list):
+        iterated = False
+
+        def __iter__(self):
+            type(self).iterated = True
+            raise RuntimeError("APIKEY_SECRET_ITERATOR")
+
+    data = value.as_dict()
+    data[array_field] = HostileList(data[array_field])
+    with pytest.raises(DeepContractError, match="JSON array") as stopped:
+        type(value).from_dict(data)
+    assert not HostileList.iterated
+    assert stopped.value.__cause__ is None and stopped.value.__context__ is None
+
+
 @pytest.mark.parametrize("base", [
     DeepDispatchArgs, DeepReviewArgs, DeepEvidenceArgs,
     DeepStopArgs, DeepRetryArgs, DeepSwitchArgs,
@@ -453,6 +478,46 @@ def test_public_constructors_refuse_string_subclasses_before_using_their_behavio
         assert "APIKEY_SECRET" not in graph
 
 
+def test_public_collections_require_exact_list_or_tuple_before_iteration():
+    cases = (
+        (lambda rows: DeepAdapterConfig(
+            "C:/fake/tool.exe", "fake-claude-jsonl-v1", rows), ["PATH"],
+         "env_allow must contain unique environment names"),
+        (lambda rows: DeepDispatchArgs(
+            "work", "instruction", "review", rows, "normal"), ["artifact"],
+         "artifact_refs must be a list of ids"),
+        (lambda rows: DeepReviewArgs(
+            "work", rows, "quality"), ["artifact"],
+         "target_artifact_refs must be a list of ids"),
+        (lambda rows: DeepEvidenceArgs("action", rows), ["result"],
+         "kinds must be a list"),
+        (lambda rows: DeepCommandSpec(
+            rows, "work", (), "bounded-jsonl-v1", 10),
+         ["C:/fake/tool.exe", "--fake-claude-jsonl-v1"],
+         "argv must be the exact reviewed two-value tuple"),
+        (lambda rows: DeepCommandSpec(
+            ("C:/fake/tool.exe", "--fake-claude-jsonl-v1"), "work", rows,
+            "bounded-jsonl-v1", 10), ["PATH"],
+         "env_allow must contain unique environment names"),
+    )
+    for base in (list, tuple):
+        class HostileRows(base):
+            iterated = False
+
+            def __iter__(self):
+                type(self).iterated = True
+                raise RuntimeError("APIKEY_SECRET_ITERATOR")
+
+        for build, values, message in cases:
+            HostileRows.iterated = False
+            with pytest.raises(DeepContractError) as stopped:
+                build(HostileRows(values))
+            assert str(stopped.value) == message
+            assert not HostileRows.iterated
+            assert stopped.value.__cause__ is None
+            assert stopped.value.__context__ is None
+
+
 def test_public_constructors_require_exact_integer_types_not_equal_subclasses():
     class HostileInt(int):
         pass
@@ -463,3 +528,29 @@ def test_public_constructors_require_exact_integer_types_not_equal_subclasses():
         DeepCommandSpec(
             ("C:/fake/tool.exe", "--fake-claude-jsonl-v1"), "work", (),
             "bounded-jsonl-v1", HostileInt(10))
+
+
+def test_deep_value_modules_have_the_exact_reviewed_import_surface():
+    expected = {
+        "conductor.command.adapters.deep_contracts": {
+            "__future__", "re", "dataclasses", "enum", "pathlib", "types",
+            "typing", "..contracts"},
+        "conductor.command.adapters.deep_commands": {
+            "__future__", "dataclasses", "pathlib", "types", "typing",
+            ".deep_contracts", ".process"},
+        "conductor.command.adapters.deep_codecs": {
+            "__future__", "json", "math", "collections.abc", "typing",
+            "..contracts", ".deep_contracts"},
+        "conductor.command.adapters.deep_evidence": {
+            "__future__", "dataclasses", "typing", ".deep_contracts"},
+    }
+    for module_name, allowed in expected.items():
+        module = importlib.import_module(module_name)
+        tree = ast.parse(Path(module.__file__).read_text(encoding="utf-8"))
+        imported = {
+            alias.name for node in ast.walk(tree) if isinstance(node, ast.Import)
+            for alias in node.names}
+        imported.update(
+            "." * node.level + (node.module or "")
+            for node in ast.walk(tree) if isinstance(node, ast.ImportFrom))
+        assert imported == allowed

@@ -111,7 +111,7 @@ class DeepEvidenceArgs(_StrictArguments):
     def __post_init__(self) -> None:
         object.__setattr__(self, "target_action_id", _closed_id(
             "target_action_id", self.target_action_id))
-        if isinstance(self.kinds, (str, bytes)) or not isinstance(self.kinds, (list, tuple)):
+        if type(self.kinds) not in (list, tuple):
             raise DeepContractError("kinds must be a list")
         kinds = tuple(self.kinds)
         if not kinds or any(

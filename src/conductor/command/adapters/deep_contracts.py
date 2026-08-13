@@ -7,7 +7,6 @@ fake protocols; real modes remain explicitly unavailable until separately proven
 from __future__ import annotations
 
 import re
-from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import PurePosixPath, PureWindowsPath
@@ -64,17 +63,14 @@ def _enum(name: str, value: object, allowed: frozenset[str]) -> str:
 
 
 def _ids(name: str, value: object, *, empty: bool = False) -> tuple[str, ...]:
-    if isinstance(value, (str, bytes)) or not isinstance(value, Sequence):
+    if type(value) not in (list, tuple):
         raise DeepContractError(f"{name} must be a list of ids")
-    failed = False
-    if any(type(item) is not str for item in value):
+    rows = tuple(value)
+    if any(type(item) is not str for item in rows):
         raise DeepContractError(f"{name} must contain only contract ids")
     try:
-        rows = tuple(_id(name, item) for item in value)
+        rows = tuple(_id(name, item) for item in rows)
     except ContractError:
-        failed = True
-        rows = ()
-    if failed:
         raise DeepContractError(f"{name} must contain only contract ids") from None
     if not empty and not rows:
         raise DeepContractError(f"{name} must not be empty")
@@ -127,7 +123,7 @@ def _closed_timestamp(name: str, value: object) -> str:
 
 
 def _env_names(value: object) -> tuple[str, ...]:
-    if isinstance(value, (str, bytes)) or not isinstance(value, (list, tuple)):
+    if type(value) not in (list, tuple):
         raise DeepContractError("env_allow must contain unique environment names")
     names = tuple(value)
     if (any(type(row) is not str or _ENV_NAME.fullmatch(row) is None

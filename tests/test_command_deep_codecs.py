@@ -17,12 +17,12 @@ from conductor.command.adapters.deep_codecs import (
     FakeClaudeCodec,
     FakeCodexCodec,
 )
+from conductor.command.adapters.deep_commands import DEEP_OUTPUT_LIMIT
 from conductor.command.adapters.deep_contracts import (
     AdapterFailure,
     NormalizedResult,
 )
 from conductor.command.contracts import canonical_json
-
 
 NOW = "2026-08-13T20:00:00Z"
 
@@ -108,9 +108,22 @@ def test_truncated_multi_empty_or_nonobject_frame_refuses(frame):
         FakeClaudeCodec.decode_result(frame)
 
 
-def test_oversized_frame_refuses_before_parsing():
+def test_oversized_frame_refuses_before_parsing(monkeypatch):
+    parsed = []
+
+    def forbidden_parse(payload):
+        parsed.append(payload)
+        raise AssertionError("oversized frame reached the JSON parser")
+
+    monkeypatch.setattr(
+        "conductor.command.adapters.deep_codecs._parse_json", forbidden_parse)
     with pytest.raises(DeepCodecError, match="rejected"):
         FakeClaudeCodec.decode_result(b"{" + b" " * MAX_FRAME_BYTES + b"}\n")
+    assert parsed == []
+
+
+def test_frame_and_runner_output_limits_are_the_same_literal_budget():
+    assert MAX_FRAME_BYTES == DEEP_OUTPUT_LIMIT == 16 * 1024
 
 
 @pytest.mark.parametrize("literal", [b"NaN", b"Infinity", b"-Infinity", b"1e999"])
