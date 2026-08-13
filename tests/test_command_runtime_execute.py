@@ -577,30 +577,34 @@ def test_prepare_failure_records_unknown_and_never_executes(tmp_path):
 @pytest.mark.parametrize("phase", ["prepare", "execute", "verify"])
 def test_adapter_exception_secrets_never_reach_durable_or_returned_receipts(
         tmp_path, phase):
-    secret = "APIKEY-do-not-persist-unique"
+    class_secret = "APIKEY_SECRET_IN_CLASS_NAME"
+    message_secret = "APIKEY-secret-in-exception-message"
+    SecretFailure = type(class_secret, (RuntimeError,), {})
 
     class SecretAdapter(ScriptedAdapter):
         def prepare(self, request):
             if phase == "prepare":
-                raise RuntimeError(secret)
+                raise SecretFailure(message_secret)
             return super().prepare(request)
 
         def execute(self, prepared):
             if phase == "execute":
-                raise RuntimeError(secret)
+                raise SecretFailure(message_secret)
             return super().execute(prepared)
 
         def verify(self, request, result):
             if phase == "verify":
-                raise RuntimeError(secret)
+                raise SecretFailure(message_secret)
             return super().verify(request, result)
 
     store = a_store(tmp_path)
     runtime, authorization = authorized(store, SecretAdapter())
     attempt = runtime.execute(authorization)
-    assert secret not in str(attempt.receipt.as_dict())
-    assert secret.encode() not in store.run_path("run-001").joinpath(
-        "records.jsonl").read_bytes()
+    durable = store.run_path("run-001").joinpath("records.jsonl").read_bytes()
+    for secret in (class_secret, message_secret):
+        assert secret not in repr(attempt)
+        assert secret not in str(attempt.receipt.as_dict())
+        assert secret.encode() not in durable
 
 
 @pytest.mark.parametrize("outcome", [

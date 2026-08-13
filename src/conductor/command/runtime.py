@@ -371,10 +371,10 @@ class ControlRuntime:
         try:
             prepared = self._registry.prepare(
                 bound, ActionRequest.from_dict(canonical.as_dict()))
-        except Exception as e:  # noqa: BLE001 -- refusal becomes a durable unknown
+        except Exception:  # noqa: BLE001 -- refusal becomes a durable unknown
             return self._finish(
                 canonical, AttemptState.UNKNOWN, (AttemptState.ACCEPTED,),
-                detail=f"the adapter raised {type(e).__name__} during prepare")
+                detail="adapter prepare failed")
         history = (AttemptState.ACCEPTED, AttemptState.STARTED)
         self._hold_route(canonical.run_id, ExecutionError)
         report, note = self._observe_execute(bound, prepared, canonical)
@@ -442,8 +442,8 @@ class ControlRuntime:
         """
         try:
             report = self._registry.execute(bound, prepared)
-        except Exception as e:  # noqa: BLE001 -- a broken adapter's failure is a lost result
-            return None, f"the adapter raised {type(e).__name__} during execute"
+        except Exception:  # noqa: BLE001 -- a broken adapter's failure is a lost result
+            return None, "adapter execute lost its result"
         if not isinstance(report, ActionResultReceipt):
             return None, "the adapter returned no observed result receipt"
         if (report.run_id != request.run_id
@@ -468,10 +468,10 @@ class ControlRuntime:
         """A reported success is not the terminal word until verify confirms it."""
         try:
             verification = self._registry.verify(bound, request, report)
-        except Exception as e:  # noqa: BLE001 -- a broken verifier cannot confirm success
+        except Exception:  # noqa: BLE001 -- a broken verifier cannot confirm success
             return self._finish(
                 request, AttemptState.VERIFICATION_FAILED, history,
-                detail=f"the adapter raised {type(e).__name__} during verify",
+                detail="adapter verify failed",
                 exit_code=report.exit_code)
         if (not isinstance(verification, AdapterVerification)
                 or verification.action_id != request.action_id
