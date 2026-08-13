@@ -290,11 +290,12 @@ def _owned_file_violations(run_path: Path) -> tuple[str, ...]:
     """Judge every file the store writes: ordinary, local, and singly named.
 
     The three top names, plus every `decisions/*.json` receipt -- the names
-    `RunStore` appends to or publishes. Each present one must be a regular
-    file per `lstat`, with no reparse point and exactly one hard link: a
-    second link means the same bytes answer to another name, so an append
-    through this one lands simultaneously somewhere this preview cannot see
-    -- MAJOR-2's laundering, closed as a relation over the file instead of a
+    `RunStore` appends to or publishes; only `records.jsonl` is appended.
+    Each present one must be a regular file per `lstat`, with no reparse
+    point and exactly one hard link: a second link means the same bytes
+    answer to another name, so writing or publishing through this name
+    touches the same bytes under another name this preview cannot see --
+    MAJOR-2's laundering, closed as a relation over the file instead of a
     judgement of its name. A `decisions` entry that is no portal and not a
     receipt-shaped regular file is not judged here: `_unowned_files` speaks
     for foreign clutter after the replay, on its own stated terms.
@@ -615,12 +616,13 @@ def render_dispatch_preview(
         The canonical JSON of the ActionProposal, including its preview_digest.
 
     Raises:
-        PreviewError: The writable route holds a link, junction, reparse point
-            or hard-link alias; the run cannot be created; a run already
-            stands at the preview's identity without being provably the
-            preview's own run -- or without being safely replayable at all;
-            the instance is unknown; the claimed adapter mismatches the
-            binding; or the capability is not declared by the bound adapter.
+        PreviewError: The writable route holds a link, junction, reparse
+            point, hard-link alias, or an owned file that is not a regular
+            file; the run cannot be created; a run already stands at the
+            preview's identity without being provably the preview's own run
+            -- or without being safely replayable at all; the instance is
+            unknown; the claimed adapter mismatches the binding; or the
+            capability is not declared by the bound adapter.
     """
     store = RunStore(project_root)
     _check_route(store)

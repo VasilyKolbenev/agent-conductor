@@ -23,6 +23,12 @@ changed-nothing statement, no advisory or destructive word — AND byte-for-byte
 inertness of the found state and of the external target, via this module's own
 before/after snapshots.
 
+Two guards speak more narrowly and say so where they stand: the unit
+regression drives `_detected_portal` alone, over fabricated stat-like objects
+with its expected messages written here; and the planted directory at the
+journal's name has no external target, so its snapshots hold the found run
+and the whole fixture tree.
+
 Self-contained on purpose: the snapshot walk reads with pathlib and os.lstat
 alone, records a portal by its own target and never steps through it, and
 every expected path is computed from the fixture roots — both sides of a check
@@ -32,6 +38,7 @@ supply its own witness.
 import os
 import re
 import stat
+import types
 
 import pytest
 from conductor.__main__ import main
@@ -184,6 +191,31 @@ def test_the_tree_state_records_a_portal_by_its_target_and_never_reads_through_i
     assert "portal/inside.txt" not in state  # never entered
 
 
+# --- the portal detector itself: its four relations, over fabricated stats ---
+
+
+def test_the_portal_detector_names_its_three_kinds_and_answers_none_for_an_ordinary_object():
+    """`_detected_portal` over the four relations `lstat` can hand it, unit-level.
+
+    Both sides are test-local: the driven side is fabricated stat-like
+    objects, never a filesystem, and every expected message is written here,
+    not computed by production. The symlink mode bit; the junction's own tag,
+    equal to the production constant; any OTHER non-zero tag, whose refusal
+    must carry that exact tag -- 0x80000017 is WOF, the accepted conservative
+    residual; and an ordinary object with tag 0, which is no portal at all.
+    """
+    symlink = types.SimpleNamespace(st_mode=stat.S_IFLNK | 0o777, st_reparse_tag=0)
+    assert preview._detected_portal(symlink) == "a symbolic link"
+    junction = types.SimpleNamespace(
+        st_mode=stat.S_IFDIR | 0o755, st_reparse_tag=preview._JUNCTION_TAG)
+    assert preview._detected_portal(junction) == "a directory junction"
+    wof = types.SimpleNamespace(
+        st_mode=stat.S_IFREG | 0o644, st_reparse_tag=0x80000017)
+    assert preview._detected_portal(wof) == "a reparse point (tag 0x80000017)"
+    ordinary = types.SimpleNamespace(st_mode=stat.S_IFREG | 0o644, st_reparse_tag=0)
+    assert preview._detected_portal(ordinary) is None
+
+
 # --- the owner's portal scenarios, and the same relation one and two levels up ---
 
 
@@ -333,3 +365,40 @@ def test_a_decisions_directory_that_is_a_portal_is_refused_as_the_route(
     err = _refused_with_both_sides_inert(project, outside, capsys)
     assert repr(str(_named_run_dir(project) / "decisions")) in err
     assert "route:" in err and "a symbolic link" in err
+
+
+# --- an owned name held by a directory: the route gate, not the store's limit ---
+
+
+def test_a_directory_at_the_journals_name_is_refused_by_the_route_gate_before_any_replay(
+        tmp_path, capsys):
+    """A DIRECTORY standing at `records.jsonl` is the gate's not-a-regular-file arm.
+
+    Neither a portal nor an alias: a directory is simply not a file the store
+    writes, and a replay that reached it would fail inside the store and
+    speak the unreplayable limit instead. Which door spoke is proved by
+    wording -- the gate's own route sentence present, the store's limit
+    sentence absent. No external target exists here, so this test's own
+    snapshots hold the found run and the whole fixture tree byte for byte.
+    """
+    project = tmp_path / "project"
+    run_dir = _seed_the_previews_identity(project)
+    journal = run_dir / "records.jsonl"
+    journal.unlink()
+    journal.mkdir()
+    run_before = _tree_state(run_dir)
+    project_before = _tree_state(project)
+    assert main(["preview", "--dir", str(project)]) == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert _tree_state(run_dir) == run_before
+    assert _tree_state(project) == project_before
+    err = captured.err
+    assert "does not stand on a contained writable route" in err
+    journal_name = _named_run_dir(project) / "records.jsonl"
+    assert (f"route: {str(journal_name)!r} is not a regular file "
+            "where the store writes one") in err
+    assert "no safe automatic remediation is defined" not in err  # no replay spoke
+    assert "changed nothing in the run directory" in err
+    advice = _ADVICE.search(err)
+    assert advice is None, f"a refusal advised {advice.group(0)!r}: {err!r}"
