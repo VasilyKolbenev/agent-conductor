@@ -65,7 +65,12 @@ def test_confirm_is_idempotent_across_reruns_and_fresh_directories(tmp_path, cap
 
 def test_confirm_refuses_a_foreign_run_at_its_identity_with_empty_stdout(tmp_path, capsys):
     # A run standing at the gate's fixed id under a different frozen config is not
-    # this scenario's own; the gate refuses it rather than appending into it.
+    # this scenario's own. The gate refuses it (exit 1, empty stdout) -- but this is
+    # an honest refusal, NOT preview's proven inertness (control_loop docstring):
+    # propose first appends one proposal bearing the FOUND run's config digest, then
+    # authorize refuses at the config-digest check -- before any confirmation is
+    # recorded, before execution, before a receipt. So the appended proposal is the
+    # only durable trace, and the loop never reaches a request, evidence, or result.
     foreign = {"cycle": {"id": "control-loop-orbit", "phases": ["dispatch", "review"]},
                "instances": [{"id": "claude-dev", "adapter": "claude-code"}]}
     assert snapshot_digest(foreign) != snapshot_digest(control_loop.FROZEN_CONFIG)
@@ -74,7 +79,12 @@ def test_confirm_refuses_a_foreign_run_at_its_identity_with_empty_stdout(tmp_pat
                     created_at="2026-08-11T00:00:00Z",
                     config_digest=snapshot_digest(foreign), mode="confirm"),
         foreign)
+    assert [row.kind for row in _records(tmp_path)] == []  # before: the run holds nothing
     assert main(["confirm", "--dir", str(tmp_path)]) == 1
     captured = capsys.readouterr()
     assert captured.out == ""
     assert captured.err.strip() != ""
+    # After the refusal, exactly the appended proposal stands: no action_request (no
+    # confirmation recorded), no evidence, no action_result. Were the config-digest
+    # guard removed, the loop would confirm, execute, and append all three here.
+    assert [row.kind for row in _records(tmp_path)] == ["action_proposal"]
