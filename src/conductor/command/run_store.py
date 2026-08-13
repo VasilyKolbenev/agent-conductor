@@ -17,9 +17,16 @@ import tempfile
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from types import MappingProxyType
 from typing import Any
 
+from .attempt_replay import (
+    AttemptRelationError,
+    action_request_for,
+    attempt_events_for,
+    validate_attempt_event,
+    validate_event_result,
+)
+from .attempts import AttemptEvent
 from .contracts import (
     ActionProposal,
     ActionRequest,
@@ -53,7 +60,7 @@ class CorruptRun(StoreError):
 
 RecordValue = (
     ActionRequest | ActionResultReceipt | EvidenceRef | DecisionReceipt
-    | ActionProposal | ObservationRecord
+    | ActionProposal | ObservationRecord | AttemptEvent
 )
 
 
@@ -82,6 +89,7 @@ _RECORDS: dict[str, tuple[type[RecordValue], str]] = {
     "decision": (DecisionReceipt, "receipt_id"),
     "action_proposal": (ActionProposal, "proposal_id"),
     "adapter_observation": (ObservationRecord, "observation_id"),
+    "attempt_event": (AttemptEvent, "event_id"),
 }
 
 # A named-key screen, not a proof that the snapshot is secret-free: a key is
@@ -400,7 +408,7 @@ class RunStore:
         # an unreconcilable receipt leaves records.jsonl byte-identical; _replay does
         # not re-validate the same records a second time.
         records, decision_warnings = self._reconcile_decisions(
-            root, envelope, records, repair)
+            root, envelope, config, records, repair)
         return RecoveredRun(
             envelope=envelope,
             config=_freeze_json(config),
@@ -461,19 +469,29 @@ class RunStore:
 
     @staticmethod
     def _validate_new_relation(recovered: RecoveredRun, value: RecordValue) -> None:
+        prior_values = tuple(row.value for row in recovered.records)
         if isinstance(value, ActionProposal):
             if value.config_digest != recovered.envelope.config_digest:
                 raise StoreError("proposal config_digest does not match the frozen run")
         if isinstance(value, ActionResultReceipt):
-            action = next((row.value for row in recovered.records
-                           if isinstance(row.value, ActionRequest)
-                           and row.value.action_id == value.action_id), None)
+            action = action_request_for(prior_values, value.action_id)
             if action is None:
                 raise StoreError(f"action result names unknown action {value.action_id!r}")
             for field in ("attempt_id", "instance_id"):
                 if getattr(action, field) != getattr(value, field):
                     raise StoreError(
                         f"action result {field} does not match action {value.action_id!r}")
+            events = attempt_events_for(prior_values, value.action_id)
+            if events:
+                try:
+                    validate_event_result(prior_values, value, events)
+                except AttemptRelationError as e:
+                    raise StoreError(str(e)) from e
+        if isinstance(value, AttemptEvent):
+            try:
+                validate_attempt_event(recovered.config, prior_values, value)
+            except AttemptRelationError as e:
+                raise StoreError(str(e)) from e
         if isinstance(value, DecisionReceipt):
             if value.config_digest != recovered.envelope.config_digest:
                 raise StoreError("decision config_digest does not match the frozen run")
@@ -490,7 +508,9 @@ class RunStore:
                         f"decision {value.receipt_id!r} cannot supersede a different gate")
 
     @classmethod
-    def _validate_records(cls, envelope: RunEnvelope, records: list[StoredRecord]) -> None:
+    def _validate_records(
+            cls, envelope: RunEnvelope, config: Mapping[str, Any],
+            records: list[StoredRecord]) -> None:
         """Hold causal relations even when bytes were written outside this process."""
         seen: list[StoredRecord] = []
         idempotency: dict[str, str] = {}
@@ -503,7 +523,7 @@ class RunStore:
                         f"{previous!r} and {row.value.action_id!r}")
                 idempotency[row.value.idempotency_key] = row.value.action_id
             recovered = RecoveredRun(
-                envelope=envelope, config=MappingProxyType({}),
+                envelope=envelope, config=_freeze_json(config),
                 records=tuple(seen), warnings=())
             try:
                 cls._validate_new_relation(recovered, row.value)
@@ -531,14 +551,15 @@ class RunStore:
                 f"cannot create decision receipt {decision.receipt_id!r}: {e}") from e
 
     def _reconcile_decisions(
-            self, root: Path, envelope: RunEnvelope, records: list[StoredRecord],
-            repair: bool) -> tuple[list[StoredRecord], list[str]]:
+            self, root: Path, envelope: RunEnvelope, config: Mapping[str, Any],
+            records: list[StoredRecord], repair: bool,
+    ) -> tuple[list[StoredRecord], list[str]]:
         orphans, by_id = self._collect_decision_files(root, envelope.run_id, records)
         if not orphans:
-            self._validate_records(envelope, records)
+            self._validate_records(envelope, config, records)
             return records, []
         rejoined, prospective = self._decide_rejoined_history(
-            envelope, records, orphans, by_id)
+            envelope, config, records, orphans, by_id)
         return self._publish_rejoined_history(root, rejoined, prospective, repair)
 
     def _collect_decision_files(
@@ -585,7 +606,8 @@ class RunStore:
         return orphans, set(by_id)
 
     def _decide_rejoined_history(
-            self, envelope: RunEnvelope, records: list[StoredRecord],
+            self, envelope: RunEnvelope, config: Mapping[str, Any],
+            records: list[StoredRecord],
             orphans: list[DecisionReceipt],
             journalled: set[str]) -> tuple[list[DecisionReceipt], list[StoredRecord]]:
         """Order the orphans and prove the whole history replays BEFORE anything is written.
@@ -596,7 +618,7 @@ class RunStore:
         """
         rejoined = _causal_order(orphans, journalled)
         prospective = [*records, *(StoredRecord("decision", row) for row in rejoined)]
-        self._validate_records(envelope, prospective)
+        self._validate_records(envelope, config, prospective)
         return rejoined, prospective
 
     def _publish_rejoined_history(

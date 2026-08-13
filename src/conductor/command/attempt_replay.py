@@ -1,0 +1,159 @@
+"""Pure replay relations for durable RT-2 attempt facts."""
+from __future__ import annotations
+
+from collections.abc import Mapping, Sequence
+from typing import Any
+
+from .attempts import AttemptEvent, action_request_digest
+from .contracts import (
+    ActionRequest,
+    ActionResultReceipt,
+    ContractError,
+    EvidenceRef,
+    frozen_config_bindings,
+)
+
+
+class AttemptRelationError(ValueError):
+    """A sequence of individually valid attempt facts contradicts itself."""
+
+
+def action_request_for(values: Sequence[object], action_id: str) -> ActionRequest | None:
+    return next((
+        value for value in values
+        if isinstance(value, ActionRequest) and value.action_id == action_id
+    ), None)
+
+
+def attempt_events_for(values: Sequence[object], action_id: str) -> list[AttemptEvent]:
+    return [
+        value for value in values
+        if isinstance(value, AttemptEvent) and value.action_id == action_id
+    ]
+
+
+def _bound_adapter(config: Mapping[str, Any], instance_id: str) -> str:
+    try:
+        bound = frozen_config_bindings(config).get(instance_id)
+    except ContractError as e:
+        raise AttemptRelationError(f"frozen config cannot bind attempt events: {e}") from e
+    if bound is None:
+        raise AttemptRelationError(f"frozen config declares no instance {instance_id!r}")
+    return bound
+
+
+def _hold_event_identity(action: ActionRequest, event: AttemptEvent) -> None:
+    for field in ("run_id", "attempt_id", "instance_id"):
+        if getattr(event, field) != getattr(action, field):
+            raise AttemptRelationError(
+                f"attempt event {field} does not match action {event.action_id!r}")
+    if event.request_digest != action_request_digest(action):
+        raise AttemptRelationError(
+            f"attempt event request_digest does not match action {event.action_id!r}")
+
+
+def validate_attempt_event(
+        config: Mapping[str, Any], values: Sequence[object], event: AttemptEvent) -> None:
+    action = action_request_for(values, event.action_id)
+    if action is None:
+        raise AttemptRelationError(f"attempt event names unknown action {event.action_id!r}")
+    _hold_event_identity(action, event)
+    if event.adapter_id != _bound_adapter(config, action.instance_id):
+        raise AttemptRelationError(
+            f"attempt event adapter does not match frozen binding for {action.instance_id!r}")
+    events = attempt_events_for(values, event.action_id)
+    if any(prior.phase == event.phase for prior in events):
+        raise AttemptRelationError(
+            f"action {event.action_id!r} already has an {event.phase!r} attempt event")
+    for prior in (value for value in values if isinstance(value, AttemptEvent)):
+        if prior.attempt_id == event.attempt_id and prior.action_id != event.action_id:
+            raise AttemptRelationError(
+                f"attempt_id {event.attempt_id!r} already belongs to another action")
+        if prior.recovery_ref == event.recovery_ref and prior.action_id != event.action_id:
+            raise AttemptRelationError(
+                f"recovery_ref {event.recovery_ref!r} already belongs to another action")
+    if any(isinstance(value, ActionResultReceipt) and value.action_id == event.action_id
+           for value in values):
+        raise AttemptRelationError(
+            f"attempt event cannot follow terminal result for {event.action_id!r}")
+    if event.phase == "execution_observed":
+        _validate_observed(events, event)
+
+
+def _validate_observed(events: Sequence[AttemptEvent], observed: AttemptEvent) -> None:
+    lease = next((event for event in events if event.phase == "effect_lease"), None)
+    if lease is None:
+        raise AttemptRelationError(
+            f"observed attempt event has no lease for {observed.action_id!r}")
+    for field in ("request_digest", "adapter_id", "recovery_ref"):
+        if getattr(observed, field) != getattr(lease, field):
+            raise AttemptRelationError(f"observed attempt event {field} does not match its lease")
+
+
+_OBSERVED_FINALS = {
+    "succeeded": frozenset({"succeeded", "verification_failed"}),
+    "failed": frozenset({"failed"}),
+    "cancelled": frozenset({"cancelled"}),
+    "rejected": frozenset({"failed"}),
+    "unknown": frozenset({"unknown"}),
+}
+
+
+def _validate_result_evidence(
+        values: Sequence[object], result: ActionResultReceipt,
+        observed: AttemptEvent) -> None:
+    if len(set(result.evidence_refs)) != len(result.evidence_refs):
+        raise AttemptRelationError("event-bearing result evidence_refs must be unique")
+    if result.evidence_refs and result.outcome != "succeeded":
+        raise AttemptRelationError("only a succeeded event-bearing result may reference evidence")
+    observed_index = next(index for index, value in enumerate(values) if value is observed)
+    eligible = {
+        value.evidence_id: value for value in values[observed_index + 1:]
+        if isinstance(value, EvidenceRef)
+    }
+    for evidence_id in result.evidence_refs:
+        _validate_evidence(eligible.get(evidence_id), evidence_id, result, observed)
+
+
+def _validate_evidence(
+        evidence: EvidenceRef | None, evidence_id: str,
+        result: ActionResultReceipt, observed: AttemptEvent) -> None:
+    if evidence is None:
+        raise AttemptRelationError(
+            f"result evidence {evidence_id!r} must follow its observed attempt event")
+    expected_uri = f"verification/{result.action_id}"
+    if (evidence.run_id != result.run_id
+            or evidence.kind != "verification" or evidence.uri != expected_uri
+            or evidence.created_by != observed.adapter_id
+            or evidence.verified_by != observed.adapter_id
+            or evidence.verification != "verified"):
+        raise AttemptRelationError(
+            f"result evidence {evidence_id!r} is not verified by the bound adapter")
+
+
+def validate_event_result(
+        values: Sequence[object], result: ActionResultReceipt,
+        events: Sequence[AttemptEvent]) -> None:
+    if any(isinstance(value, ActionResultReceipt) and value.action_id == result.action_id
+           for value in values):
+        raise AttemptRelationError(f"action {result.action_id!r} already has a terminal result")
+    lease = next((event for event in events if event.phase == "effect_lease"), None)
+    if lease is None:
+        raise AttemptRelationError(f"event-bearing result has no lease for {result.action_id!r}")
+    observed = next((
+        event for event in events if event.phase == "execution_observed"), None)
+    if observed is None:
+        _validate_lease_only_result(result)
+        return
+    if result.outcome not in _OBSERVED_FINALS[observed.outcome]:
+        raise AttemptRelationError(
+            f"result outcome {result.outcome!r} contradicts observed {observed.outcome!r}")
+    if result.exit_code != observed.exit_code:
+        raise AttemptRelationError("result exit_code does not match the observed attempt event")
+    _validate_result_evidence(values, result, observed)
+
+
+def _validate_lease_only_result(result: ActionResultReceipt) -> None:
+    if result.outcome != "unknown" or result.exit_code is not None or result.evidence_refs:
+        raise AttemptRelationError(
+            "a lease-only result must be unknown with null exit_code and empty evidence")
