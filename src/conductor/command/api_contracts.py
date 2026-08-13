@@ -11,7 +11,7 @@ from dataclasses import dataclass, fields
 from types import MappingProxyType
 from typing import Any
 
-from .adapters import UnsupportedCapability
+from .adapters import AdapterContractError, UnsupportedCapability
 from .adapters.deep_commands import DEEP_ARGUMENT_TYPES
 from .contracts import ActionProposal, ContractError, DecisionReceipt
 from .http_transport import HttpRefusal
@@ -349,6 +349,8 @@ def refusal_from_exception(error: Exception) -> ApiRefusal:
         return ApiRefusal.fixed("store_error")
     if isinstance(error, UnsupportedCapability):
         return ApiRefusal.fixed("capability_unsupported")
+    if isinstance(error, AdapterContractError):
+        return ApiRefusal.fixed("service_refused")
     if isinstance(error, ServiceError):
         return ApiRefusal.fixed("service_refused")
     if isinstance(error, AuthorizationError):
