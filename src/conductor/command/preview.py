@@ -13,6 +13,33 @@ chooses is only the instance (and, to exercise the binding, the adapter it claim
 drives that instance) -- and neither is trusted over the frozen config: an unknown
 instance or a mismatched adapter is refused by the same seam MAJOR-1 fixed.
 
+Before either road touches anything durable, the route itself is checked. The
+preview writes through `conductor/runs/preview-run` beneath the resolved
+project root, and every component of that writable route is read with
+`os.lstat` alone, following nothing: `conductor`, `runs`, the run directory,
+its `decisions` directory, and every file the store owns there -- `run.json`,
+`config.json`, `records.jsonl`, each `decisions/*.json`. A component that is a
+symbolic link, an NTFS junction or any other reparse point is a name whose
+content lies elsewhere; an owned file that is not a regular file, or that
+carries a second hard link, is bytes that also answer to a name this preview
+cannot see. Either refuses the preview before `create_run` runs and before a
+found run is replayed: created or appended through such a name, durable bytes
+would stand wherever the portal or the second link reaches -- outside the
+project entirely, in the reproductions that forced this gate -- and not only
+in the run directory this module names. It is one door over the whole route,
+not a list of known attacks: what passing proves is that every name on the
+route, as read at that moment, held its content locally and nowhere else.
+
+Three limits are stated, not hinted away. The gate reads and then acts, so a
+writer that swaps a component between the check and the append is not stopped
+-- within one project the store is single-writer by contract, and against a
+concurrent adversary this boundary is best-effort. An NTFS alternate data
+stream is not a component of any path this walk reads, so bytes tucked into
+one go undetected. And a creation that fails below the gate may still have
+made parent directories or left staging residue above the run directory,
+which is why the changed-nothing statement is scoped to the run directory
+alone.
+
 The run directory is state too, and it is trusted no further. The preview's run
 id is fixed, so a run at that identity may be one this command never created; it
 is replayed and checked before a single record is appended, and a run that
@@ -47,18 +74,19 @@ refuses it too, on the same ground and without a warning to announce it: this
 preview did not put that object there and cannot say whether whoever did is
 finished with it.
 
-Refusing that found state follows one narrowed contract (owner decision,
-2026-08-12), which covers every refusal that declines a run directory this
-preview found or failed to read, and every store-level creation failure --
-the service's own refusals of an unknown instance or a mismatched adapter
-speak in the service's words, upstream of it. Each such refusal exits 1 with
-an empty stdout and changes nothing: a found run directory is left byte for
-byte and structurally as it was found -- journal, receipts, links and nested
-objects included, because every check above works by reading alone -- and a
-failed creation leaves the exact preview-run path unchanged. The message
-names what was reliably detected, the exact path of the preview's run
-directory, and the exact path of every foreign object the ownership walk
-itself saw; it states in so many words
+Refusing that found or unowned state follows one narrowed contract (owner
+decision, 2026-08-12), which covers the route gate's refusals, every refusal
+that declines a run directory this preview found or failed to read, and every
+store-level creation failure -- the service's own refusals of an unknown
+instance or a mismatched adapter speak in the service's words, upstream of
+it. Each such refusal exits 1 with an empty stdout and changes nothing in the
+run directory: a found run directory is left byte for byte and structurally
+as it was found -- journal, receipts, links and nested objects included,
+because every check above works by reading alone -- and a route or creation
+refusal leaves the exact preview-run path unchanged. The message names what
+was reliably detected, the exact path of the preview's run directory, the
+exact path of every route component the gate refused, and the exact path of
+every foreign object the ownership walk itself saw; it states in so many words
 that the preview changed nothing in the run directory; and it advises nothing
 -- no object is proposed for deletion or moving, and no minimal remediation is
 promised, because this module cannot know what a foreign object is to whoever
@@ -71,6 +99,7 @@ directory and investigate it separately.
 """
 from __future__ import annotations
 
+import os
 import stat
 from collections.abc import Mapping
 from pathlib import Path
@@ -215,6 +244,132 @@ def _points_elsewhere(path: Path) -> bool:
     """
     return (path.is_symlink()
             or getattr(path.lstat(), "st_reparse_tag", 0) == _JUNCTION_TAG)
+
+
+def _detected_portal(found: os.stat_result) -> str | None:
+    """Name the reparse fact `lstat` established, or None for an ordinary object.
+
+    Three spellings, so a refusal can say what was reliably detected: the
+    symlink bit; the junction's own tag -- the same durable mark
+    `_points_elsewhere` reads on objects inside the run; or, for any other
+    tag, the tag itself. Whatever a reparse point resolves to, its content is
+    not plainly the local bytes at this name, which is the one fact the
+    writable route may not tolerate.
+    """
+    if stat.S_ISLNK(found.st_mode):
+        return "a symbolic link"
+    tag = getattr(found, "st_reparse_tag", 0)
+    if tag == _JUNCTION_TAG:
+        return "a directory junction"
+    if tag:
+        return f"a reparse point (tag {tag:#010x})"
+    return None
+
+
+def _lstat_or_absent(path: Path) -> os.stat_result | None:
+    """Read one route component without following anything; None when that cannot be.
+
+    FileNotFoundError is the absent component itself -- the creation road's
+    to make. Any other OSError (a parent that is a plain file, a permission
+    the caller lacks) answers None too: the gate cannot establish a violation
+    it cannot read, and the roads below refuse those states in their own
+    words rather than this one guessing.
+    """
+    try:
+        return os.lstat(path)
+    except OSError:
+        return None
+
+
+def _portal_entry(path: Path, portal: str) -> str:
+    """One refusal entry for a route component whose content lies elsewhere."""
+    return f"route: {str(path)!r} is {portal}: a name whose content lies elsewhere"
+
+
+def _owned_file_violations(run_path: Path) -> tuple[str, ...]:
+    """Judge every file the store writes: ordinary, local, and singly named.
+
+    The three top names, plus every `decisions/*.json` receipt -- the names
+    `RunStore` appends to or publishes. Each present one must be a regular
+    file per `lstat`, with no reparse point and exactly one hard link: a
+    second link means the same bytes answer to another name, so an append
+    through this one lands simultaneously somewhere this preview cannot see
+    -- MAJOR-2's laundering, closed as a relation over the file instead of a
+    judgement of its name. A `decisions` entry that is no portal and not a
+    receipt-shaped regular file is not judged here: `_unowned_files` speaks
+    for foreign clutter after the replay, on its own stated terms.
+    """
+    receipts = run_path / _RECEIPTS_DIR
+    try:
+        entries = sorted(receipts.iterdir())
+    except OSError:
+        entries = []
+    violations: list[str] = []
+    for path in (*(run_path / name for name in sorted(_STORE_OWNED_FILES)),
+                 *entries):
+        found = _lstat_or_absent(path)
+        if found is None:
+            continue
+        portal = _detected_portal(found)
+        if portal is not None:
+            violations.append(_portal_entry(path, portal))
+            continue
+        if path.parent == receipts and (
+                path.suffix != _RECEIPT_SUFFIX or not stat.S_ISREG(found.st_mode)):
+            continue
+        if not stat.S_ISREG(found.st_mode):
+            violations.append(
+                f"route: {str(path)!r} is not a regular file where the store "
+                "writes one")
+        elif found.st_nlink != 1:
+            violations.append(
+                f"route: {str(path)!r} carries {found.st_nlink} hard links: "
+                "its bytes stand at another name as well")
+    return tuple(violations)
+
+
+def _route_violations(store: RunStore, run_path: Path) -> tuple[str, ...]:
+    """One containment door over every component of the preview's writable route.
+
+    The route is read from the resolved project root downward -- `conductor`,
+    `conductor/runs`, the run directory, its `decisions` directory -- and then
+    across every file the store owns there, each with `os.lstat` alone,
+    following nothing. A directory component that is a portal is the single
+    violation returned, and the walk stops with it: every lstat below such a
+    name would already read through the portal it just refused. The owned
+    files are then judged together, so one refusal names every aliased or
+    irregular file at once. What passing proves is one relation, uniform over
+    the components rather than named per attack: every name on the route, as
+    read at that moment, held its content locally and nowhere else. The
+    limits -- check-then-act, alternate data streams -- are the module
+    docstring's, stated there.
+    """
+    for path in (store.project_root / "conductor", store.runs_root,
+                 run_path, run_path / _RECEIPTS_DIR):
+        found = _lstat_or_absent(path)
+        portal = None if found is None else _detected_portal(found)
+        if portal is not None:
+            return (_portal_entry(path, portal),)
+    return _owned_file_violations(run_path)
+
+
+def _check_route(store: RunStore) -> None:
+    """Refuse before anything durable when the writable route is not contained.
+
+    Raised ahead of `create_run` and ahead of the found run's replay, so the
+    bare changed-nothing statement is exactly true: the gate reads with
+    `os.lstat` alone, and nothing at the run's path -- present, absent, or
+    standing behind the refused component -- has been touched when it speaks.
+    """
+    run_path = store.run_path(_RUN_ID)
+    violations = _route_violations(store, run_path)
+    if violations:
+        raise PreviewError(_refusal(
+            f"run {_RUN_ID!r} does not stand on a contained writable route, "
+            "so nothing was proposed:",
+            (*violations,
+             f"run directory: {str(run_path)!r}",
+             "the preview changed nothing in the run directory")))
 
 
 def _unowned_files(run_path: Path) -> tuple[str, ...]:
@@ -460,13 +615,15 @@ def render_dispatch_preview(
         The canonical JSON of the ActionProposal, including its preview_digest.
 
     Raises:
-        PreviewError: The run cannot be created, a run already stands at the
-            preview's identity without being provably the preview's own run --
-            or without being safely replayable at all -- the instance is
-            unknown, the claimed adapter mismatches the binding, or the
-            capability is not declared by the bound adapter.
+        PreviewError: The writable route holds a link, junction, reparse point
+            or hard-link alias; the run cannot be created; a run already
+            stands at the preview's identity without being provably the
+            preview's own run -- or without being safely replayable at all;
+            the instance is unknown; the claimed adapter mismatches the
+            binding; or the capability is not declared by the bound adapter.
     """
     store = RunStore(project_root)
+    _check_route(store)
     envelope = RunEnvelope(
         run_id=_RUN_ID, cycle_id="preview-orbit", created_at=_NOW,
         config_digest=snapshot_digest(FROZEN_CONFIG), mode="propose")
