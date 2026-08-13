@@ -347,3 +347,47 @@ a valid decision receipt.
   road (unknown instance / adapter mismatch after a fresh creation) keeps its own words and
   carries no changed-nothing claim, which belongs only where it is byte-for-byte true. Status
   unchanged: external APPROVE from Codex is not yet given.
+- **CMD-4 ownership-boundary round — owner request changes 2026-08-13.** The internal double
+  APPROVE is withdrawn: the owner personally reproduced LIVE defects of found state on the
+  exact committed SHA, behavioral, not prose — while confirming alongside that the v1 pin
+  matched, the v1 core sat outside the diff, the mutation gate stood 15/15 at baseline 104,
+  and e0ec984 was justified and minimal; the blocker was solely the preview's ownership
+  boundary. MAJOR-1: `_points_elsewhere` was applied only to objects INSIDE the run and never
+  to the route that reaches it, so a directory symlink or an NTFS junction standing AT
+  `conductor/runs/preview-run` was followed, the valid run behind it adopted as the preview's
+  own, and the proposal appended into the EXTERNAL journal — exit 0, stderr empty, the
+  external records.jsonl grown 0 to 609 bytes, reproduced with both portal kinds. MAJOR-2:
+  `records.jsonl` replaced by a hard link to an empty file outside the run laundered the
+  append through the permitted name — samefile True, st_nlink 2, exit 0, the external file
+  grown 0 to 609 bytes — falsifying the module's claim that a found run is checked before
+  append and that foreign state is never modified. Same class one level up: with
+  `conductor/runs` itself a portal, a fresh run was created and filled outside the project
+  with exit 0. Closed with ONE containment mechanism rather than name-by-name exceptions, in
+  `preview.py` alone — `run_store.py` stays outside the diff as in every previous round:
+  before any durable action on either road, every component of the writable route is read
+  with `os.lstat` alone, following nothing — `conductor`, `runs`, the run directory,
+  `decisions`, and every store-owned file present (`run.json`, `config.json`,
+  `records.jsonl`, each `decisions/*.json`). A component that is a symlink, junction or any
+  other reparse point, and an owned file that is not a regular file with exactly one hard
+  link, refuses the preview before `create_run` and before the found run is even replayed,
+  under the same narrowed contract: exit 1, empty stdout, the detected fact and the exact
+  paths on stderr, the changed-nothing statement scoped to the run directory, no advice.
+  Every owner scenario was first reproduced as a born-red regression on the committed SHA —
+  red precisely because the command exited 0 there — in
+  `tests/test_command_preview_route_containment.py`, self-contained, asserting BOTH sides
+  each time: the refusal, and byte-for-byte inertness of the found state AND of the external
+  target, via test-local snapshots that record a portal by its own target and never step
+  through it. The same door is proven one and two levels up (junction and symlink at
+  `conductor` and at `conductor/runs`), across `run.json` and a `decisions/*.json` receipt
+  hard-linked outward, and at a symlinked `decisions` directory — the gate now speaks before
+  the store reads through any of them. The relational changed-nothing driver gained the
+  run-boundary portal as its seventh road. Residual R1 closed in the same breath,
+  coordinator-authorized: the module docstring's umbrella clause "exits 1 with an empty
+  stdout and changes nothing" is narrowed to the run-directory scope every road is measured
+  at, and the boundary paragraphs now state the mechanism instead of the claim MAJOR-2
+  falsified. Three limits stay open and are stated in the module docstring, not hinted away:
+  the gate is check-then-act, so a local process swapping a component between the check and
+  the append is not stopped; an NTFS alternate data stream is not a component of any path the
+  walk reads and goes undetected; and a failed creation may still leave parent directories or
+  staging residue above the run directory. Merge, push, and the runner/Confirm surface stay
+  blocked; the two review stages run again on the new SHA.
