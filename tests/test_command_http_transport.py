@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 
 import pytest
@@ -171,3 +172,83 @@ def test_transport_refusals_are_fixed_and_carry_no_submitted_secret_or_os_text()
         validate_command_mutation(
             headers, b"{}", allowed_hosts=HOSTS, current_token=TOKEN)
     assert secret not in str(caught.value) and secret not in caught.value.message
+
+
+@pytest.mark.parametrize("literal", [
+    "NaN", "Infinity", "-Infinity", "1e999", "-1e999", "+1e999",
+])
+def test_every_non_finite_json_spelling_is_refused_at_the_body_phase(literal):
+    row = next(item for item in DATA["raw_transport_cases"]
+               if item["name"] == "raw_valid_transport")
+    headers = _replace_port(row["raw_header_pairs"])
+    disposition = _run(headers, f'{{"outer":[{{"value":{literal}}}]}}'.encode())
+    assert disposition[:4] == ("refuse", "malformed_request", 400, "body")
+
+
+def test_nested_finite_json_numbers_remain_the_independent_accept_side():
+    row = next(item for item in DATA["raw_transport_cases"]
+               if item["name"] == "raw_valid_transport")
+    headers = _replace_port(row["raw_header_pairs"])
+    result = _run(headers, b'{"outer":[1.25,{"value":-1e308}]}')
+    assert result[:4] == ("accept", None, 201, "contract")
+    assert math.isfinite(result[-1]["outer"][1]["value"])
+
+
+def _object_graph_text(root):
+    seen, pending, fragments = set(), [root], []
+    while pending:
+        value = pending.pop()
+        if id(value) in seen:
+            continue
+        seen.add(id(value))
+        fragments.extend((repr(value), str(value), repr(getattr(value, "__dict__", {}))))
+        for name in ("__cause__", "__context__"):
+            nested = getattr(value, name, None)
+            if nested is not None:
+                pending.append(nested)
+    return " ".join(fragments)
+
+
+def test_body_refusal_object_graph_retains_no_invalid_utf8_or_json_sentinel():
+    row = next(item for item in DATA["raw_transport_cases"]
+               if item["name"] == "raw_valid_transport")
+    headers = _replace_port(row["raw_header_pairs"])
+    for body in (b'APIKEY_SECRET_JSON', b'\xffAPIKEY_SECRET_UTF8'):
+        with pytest.raises(HttpRefusal) as caught:
+            validate_command_mutation(
+                headers, body, allowed_hosts=HOSTS, current_token=TOKEN)
+        graph = _object_graph_text(caught.value)
+        assert "APIKEY_SECRET" not in graph
+        assert caught.value.__cause__ is None and caught.value.__context__ is None
+
+
+def test_header_iterator_refusal_object_graph_retains_no_iterator_exception():
+    def hostile_headers():
+        raise RuntimeError("APIKEY_SECRET_HEADER_ITERATOR")
+        yield ("Host", "unreachable")
+
+    with pytest.raises(HttpRefusal) as caught:
+        validate_command_mutation(
+            hostile_headers(), b"{}", allowed_hosts=HOSTS, current_token=TOKEN)
+    assert (caught.value.code, caught.value.phase) == ("same_origin_denied", "host")
+    assert "APIKEY_SECRET" not in _object_graph_text(caught.value)
+    assert caught.value.__cause__ is None and caught.value.__context__ is None
+
+
+def test_http_refusal_phase_is_the_only_constructor_authority():
+    expected = {
+        "host": ("same_origin_denied", 403, "request Host is not allowed"),
+        "origin": ("same_origin_denied", 403, "request origin is not allowed"),
+        "csrf": ("csrf_denied", 403, "request CSRF token is not current"),
+        "content_type": (
+            "malformed_request", 400, "request Content-Type is not supported"),
+        "body": ("malformed_request", 400, "request body is not one JSON object"),
+    }
+    for phase, relation in expected.items():
+        refusal = HttpRefusal(phase)
+        assert (refusal.code, refusal.status, refusal.message) == relation
+        assert refusal.__dict__ == {"phase": phase}
+    with pytest.raises(ValueError, match="phase"):
+        HttpRefusal("not-a-phase")
+    with pytest.raises(TypeError):
+        HttpRefusal("host", 403)
