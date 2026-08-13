@@ -1,15 +1,16 @@
-"""Tests for `conduct confirm` — the Day-1 control-loop gate from the CLI.
+"""Tests for the explicitly synthetic `conduct integration-smoke` CLI gate.
 
 The command is driven through `main(argv)` exactly as its neighbours are, and it
 honours the same stdout/stderr/exit-code contract: the canonical result receipt
 on stdout, diagnostics on stderr, exit 0 only on a produced receipt. What is held
 here is the circuit only this command has -- a fixed run driven through
-confirm -> execute -> verify -> receipt through a deterministic child process, and a
+authorize -> execute -> verify -> receipt through a deterministic child process, and a
 refusal when a foreign run stands at its identity. That circuit brings its own
 seeding helper, which is why it lives in a module of its own.
 """
 import json
 import os
+from pathlib import Path
 import stat
 
 import pytest
@@ -18,6 +19,27 @@ from conductor.command import control_loop
 from conductor.command.contracts import ActionResultReceipt, RunEnvelope, canonical_json
 from conductor.command.run_store import RunStore, snapshot_digest
 from conductor.command.adapters.process import ProcessRunner
+
+
+def test_cli_exposes_only_the_synthetic_smoke_not_a_product_confirm(capsys):
+    with pytest.raises(SystemExit) as stopped:
+        main(["confirm"])
+    assert stopped.value.code == 2
+    assert "invalid choice" in capsys.readouterr().err
+
+
+def test_public_smoke_prose_cannot_claim_a_product_human_confirm():
+    root = Path(__file__).parents[1]
+    files = [
+        Path(control_loop.__file__),
+        root / "src" / "conductor" / "__main__.py",
+        root / "README.md", root / "docs" / "release-smoke.md",
+    ]
+    joined = "\n".join(path.read_text(encoding="utf-8") for path in files)
+    for retired in ("conduct confirm", "fresh Human", "confirming human"):
+        assert retired not in joined
+    assert "integration-smoke" in joined
+    assert "not a product Human Confirm surface" in joined
 
 
 def _records(root, run_id=control_loop._RUN_ID):
@@ -61,8 +83,8 @@ def _plant_portal(link, target, kind):
             pytest.skip(f"directory symlink unavailable: {e}")
 
 
-def test_confirm_runs_the_loop_and_prints_a_succeeded_result_receipt(tmp_path, capsys):
-    assert main(["confirm", "--dir", str(tmp_path)]) == 0
+def test_integration_smoke_runs_and_prints_a_succeeded_result_receipt(tmp_path, capsys):
+    assert main(["integration-smoke", "--dir", str(tmp_path)]) == 0
     captured = capsys.readouterr()
     assert captured.err == ""
     out = captured.out
@@ -75,37 +97,39 @@ def test_confirm_runs_the_loop_and_prints_a_succeeded_result_receipt(tmp_path, c
     assert "no verifier" in payload["detail"]
 
 
-def test_confirm_records_the_confirmation_and_owned_process_receipt(tmp_path, capsys):
-    assert main(["confirm", "--dir", str(tmp_path)]) == 0
+def test_integration_smoke_records_synthetic_fixture_and_owned_process_receipt(
+        tmp_path, capsys):
+    assert main(["integration-smoke", "--dir", str(tmp_path)]) == 0
     capsys.readouterr()
     records = _records(tmp_path)
     # The full loop is durable: a proposal, the request that records the
-    # confirmation and the immutable result receipt. Unavailable verification
+    # synthetic authorization fixture and immutable result receipt. Unavailable verification
     # creates no false evidence record.
     assert [row.kind for row in records] == [
         "action_proposal", "action_request", "action_result"]
     by_kind = {row.kind: row.value for row in records}
-    # The request IS the recorded confirmation, separate from the result, and it
-    # names the confirming human and the exact confirmed digest.
+    # The request is the recorded synthetic fixture, separate from the result,
+    # and names its fixture actor and exact preview digest.
     request, proposal = by_kind["action_request"], by_kind["action_proposal"]
-    assert request.requested_by == "release-owner"
+    assert request.requested_by == "synthetic-integration-smoke"
     assert request.preview_digest == proposal.preview_digest
     assert by_kind["action_result"].outcome == "succeeded"
     assert by_kind["action_result"].evidence_refs == ()
 
 
-def test_confirm_is_idempotent_across_reruns_and_fresh_directories(tmp_path, capsys):
-    assert main(["confirm", "--dir", str(tmp_path / "a")]) == 0
+def test_integration_smoke_is_idempotent_across_reruns_and_fresh_directories(
+        tmp_path, capsys):
+    assert main(["integration-smoke", "--dir", str(tmp_path / "a")]) == 0
     first = capsys.readouterr().out
     # Re-running opens the same immutable run and yields identical bytes.
-    assert main(["confirm", "--dir", str(tmp_path / "a")]) == 0
+    assert main(["integration-smoke", "--dir", str(tmp_path / "a")]) == 0
     assert capsys.readouterr().out == first
     # A fresh dir yields the very same receipt: nothing hidden leaks in.
-    assert main(["confirm", "--dir", str(tmp_path / "b")]) == 0
+    assert main(["integration-smoke", "--dir", str(tmp_path / "b")]) == 0
     assert capsys.readouterr().out == first
 
 
-def test_confirm_refuses_a_foreign_run_at_its_identity_with_empty_stdout(tmp_path, capsys):
+def test_integration_smoke_refuses_a_foreign_run_with_empty_stdout(tmp_path, capsys):
     # A run standing at the gate's fixed id under a different frozen config is not
     # this scenario's own. Identity is checked read-only before propose, so the
     # foreign run remains byte-for-byte as found.
@@ -120,7 +144,7 @@ def test_confirm_refuses_a_foreign_run_at_its_identity_with_empty_stdout(tmp_pat
     journal = tmp_path / "conductor" / "runs" / control_loop._RUN_ID / "records.jsonl"
     before = journal.read_bytes()
     assert [row.kind for row in _records(tmp_path)] == []
-    assert main(["confirm", "--dir", str(tmp_path)]) == 1
+    assert main(["integration-smoke", "--dir", str(tmp_path)]) == 1
     captured = capsys.readouterr()
     assert captured.out == "" and captured.err.strip()
     assert journal.read_bytes() == before
@@ -129,10 +153,10 @@ def test_confirm_refuses_a_foreign_run_at_its_identity_with_empty_stdout(tmp_pat
 
 @pytest.mark.parametrize("kind", ["symlink", "junction"])
 @pytest.mark.parametrize("spot", ["run-root", "runs-root"])
-def test_confirm_refuses_a_route_portal_before_spawn_and_leaves_both_sides_inert(
+def test_integration_smoke_refuses_route_portal_before_spawn_and_leaves_sides_inert(
         kind, spot, tmp_path, capsys, monkeypatch):
     project, outside = tmp_path / "project", tmp_path / "outside"
-    assert main(["confirm", "--dir", str(outside)]) == 0
+    assert main(["integration-smoke", "--dir", str(outside)]) == 0
     capsys.readouterr()
     target_runs = outside / "conductor" / "runs"
     if spot == "run-root":
@@ -149,17 +173,17 @@ def test_confirm_refuses_a_route_portal_before_spawn_and_leaves_both_sides_inert
         raise AssertionError("containment refusal reached process spawn")
 
     monkeypatch.setattr(ProcessRunner, "_spawn", forbidden_spawn)
-    assert main(["confirm", "--dir", str(project)]) == 1
+    assert main(["integration-smoke", "--dir", str(project)]) == 1
     captured = capsys.readouterr()
     assert captured.out == "" and "content lies elsewhere" in captured.err
     assert _state(project) == before_project
     assert _state(outside) == before_outside
 
 
-def test_confirm_refuses_a_hard_linked_journal_before_spawn_and_changes_no_alias(
+def test_integration_smoke_refuses_hard_linked_journal_before_spawn_and_changes_no_alias(
         tmp_path, capsys, monkeypatch):
     project, outside = tmp_path / "project", tmp_path / "outside"
-    assert main(["confirm", "--dir", str(project)]) == 0
+    assert main(["integration-smoke", "--dir", str(project)]) == 0
     capsys.readouterr()
     outside.mkdir()
     journal = project / "conductor" / "runs" / control_loop._RUN_ID / "records.jsonl"
@@ -173,16 +197,16 @@ def test_confirm_refuses_a_hard_linked_journal_before_spawn_and_changes_no_alias
         ProcessRunner, "_spawn",
         lambda *args, **kwargs: (_ for _ in ()).throw(
             AssertionError("containment refusal reached process spawn")))
-    assert main(["confirm", "--dir", str(project)]) == 1
+    assert main(["integration-smoke", "--dir", str(project)]) == 1
     captured = capsys.readouterr()
     assert captured.out == "" and "hard links" in captured.err
     assert _state(project) == before_project
     assert _state(outside) == before_outside
 
 
-def test_confirm_turns_an_unreadable_identity_walk_into_an_inert_cli_refusal(
+def test_integration_smoke_turns_unreadable_identity_walk_into_inert_cli_refusal(
         tmp_path, capsys, monkeypatch):
-    assert main(["confirm", "--dir", str(tmp_path)]) == 0
+    assert main(["integration-smoke", "--dir", str(tmp_path)]) == 0
     capsys.readouterr()
     journal = tmp_path / "conductor" / "runs" / control_loop._RUN_ID / "records.jsonl"
     before = journal.read_bytes()
@@ -193,7 +217,7 @@ def test_confirm_turns_an_unreadable_identity_walk_into_an_inert_cli_refusal(
         ProcessRunner, "_spawn",
         lambda *args, **kwargs: (_ for _ in ()).throw(
             AssertionError("unreadable-state refusal reached process spawn")))
-    assert main(["confirm", "--dir", str(tmp_path)]) == 1
+    assert main(["integration-smoke", "--dir", str(tmp_path)]) == 1
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "cannot read" in captured.err

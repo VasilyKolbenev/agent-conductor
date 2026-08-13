@@ -579,16 +579,20 @@ All existing v1 and CMD-1..4 regressions stay green.
   lockstep and one confinement guard added.
 
 - **Day-1 A+B integration and hardening — integrated on `codex/v2-day1-integration`.**
-  Lane A and B now meet at one executable CLI gate: `conduct confirm` proposes a fixed
-  structured command, records a fresh Human confirmation, executes the packaged deterministic
-  no-op through `ProcessAdapter`/`ProcessRunner`, reports verification honestly unavailable, and
-  persists one immutable result. A shared command-layer containment engine holds preview,
+  Lane A and B meet at one explicitly synthetic CLI gate: `conduct integration-smoke` proposes
+  a fixed structured no-op, records deterministic fixture authorization facts, executes through
+  `ProcessAdapter`/`ProcessRunner`, reports verification honestly unavailable, and persists one
+  immutable result. It is not a product Human Confirm surface; that explicit action and its
+  server-owned time/identity arrive with C/API-1. A shared command-layer containment engine holds preview,
   direct `ControlRuntime` entry, and runner cwd routes before replay, prepare, every durable
   append, and spawn; it refuses symlink, junction, any reparse point, irregular owned files and
   hard-link aliases. A found control-loop run is checked read-only against contract-derived
   envelope/config/history prefixes before proposal append. Execution holds the complete durable
-  `ActionRequest`, suppresses a repeated process when an exact terminal result already exists,
-  and treats a request-without-result as ambiguous instead of retrying it. Adapter exceptions
+  `ActionRequest`, reconstructs private canonical values at each untrusted adapter seam, consumes
+  a memory-only one-shot grant before prepare, suppresses an exact terminal replay, and treats a
+  request-without-result as ambiguous instead of retrying it across a crash or restart. Returned
+  result/verification identities and pre-existing evidence provenance are held against the frozen
+  binding; arbitrary adapter prose is never persisted. Adapter exceptions
   persist only phase and exception type, never attacker-controlled text. Public process dispatch
   persists only structured argv/cwd/output bound and environment variable names; literal env
   values refuse before proposal append. The Windows child starts suspended and is assigned to a

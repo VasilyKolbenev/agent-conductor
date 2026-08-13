@@ -1,16 +1,18 @@
 """The Day-1 control-loop gate, driven through the owned-process adapter.
 
-`conduct confirm` runs the whole Day-1 A+B loop end to end on a fixed, deterministic
-scenario: it opens (or creates) a run with a frozen config, proposes one dispatch,
-authorizes a fresh Human confirmation of that exact proposal, executes it through
+`conduct integration-smoke` runs the whole Day-1 A+B loop end to end on a fixed,
+deterministic synthetic scenario: it opens (or creates) a run with a frozen config,
+proposes one dispatch, records a labelled synthetic confirmation fixture, executes it through
 the owned-process adapter against a packaged no-op executable, verifies honestly
 as unavailable, and prints the canonical result receipt --
 the immutable outcome record -- for inspection. It reaches no browser and accepts
 no caller command text; the fixed structured argv still crosses the real spawn,
 timeout, process-group ownership and bounded-output surface.
 
-The scenario is fixed so the printed receipt is reproducible: the same frozen
-config, the same deterministic ids and clock, and the same fresh confirmation
+This is not the product Confirm surface and records no Human assertion. Product
+confirmation arrives through the later server-owned API boundary. The fixture is
+fixed so the printed receipt is reproducible: the same frozen
+config, the same deterministic ids and clock, and the same synthetic fixture confirmation
 every time. Reopening the run is idempotent -- the proposal, the authorized
 request and the result receipt are immutable, so a
 second run appends nothing and prints the same bytes.
@@ -74,8 +76,8 @@ _ARGUMENTS: Mapping[str, Any] = {
     "output_limit": 4096,
 }
 _SCOPE = ("src",)
-_ACTOR = "release-owner"
-_RATIONALE = "Day-1 control loop: confirm one dispatch and execute it end to end."
+_ACTOR = "synthetic-integration-smoke"
+_RATIONALE = "Synthetic integration smoke: authorize one no-op dispatch end to end."
 _TIMEOUT_SECONDS = 900
 _BUDGET = Budget(max_actions=8, max_action_seconds=3600, max_confirmation_age_seconds=3600)
 
@@ -152,8 +154,8 @@ def _expected_histories(envelope: RunEnvelope) -> tuple[tuple[StoredRecord, ...]
     return ((), rows[:1], rows)
 
 
-def render_control_loop(project_root: str) -> str:
-    """Run the fixed control loop and return the canonical result receipt.
+def render_integration_smoke(project_root: str) -> str:
+    """Run the fixed synthetic loop and return the canonical result receipt.
 
     Args:
         project_root: The directory holding (or to hold) ``conductor/runs``.

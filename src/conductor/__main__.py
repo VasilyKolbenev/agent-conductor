@@ -10,9 +10,9 @@ wrong or could not be checked); `prompt --role R [--author A]` (vend a role's
 working prompt; the positional role form is deprecated); `report` (render the
 merged state as a Markdown report); `preview` (create/open a run with a frozen
 config, propose one dispatch through the command service, and print its canonical
-preview for inspection — it prepares and executes nothing); `confirm` (run the
-fixed Day-1 loop through the owned-process adapter, verify honestly, and print
-the immutable result receipt);
+preview for inspection — it prepares and executes nothing); `integration-smoke`
+(run the fixed synthetic Day-1 loop through the owned-process adapter, verify
+honestly, and print the immutable result receipt; it is not Human Confirm);
 `up` (serve the panel
 on 127.0.0.1 with SSE
 live updates; Ctrl-C → exit 0); `demo` (materialize the bundled fixture into a
@@ -201,18 +201,18 @@ def _cmd_preview(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_confirm(args: argparse.Namespace) -> int:
-    """Run the Day-1 control loop and print the immutable result receipt.
+def _cmd_integration_smoke(args: argparse.Namespace) -> int:
+    """Run the synthetic Day-1 loop and print the immutable result receipt.
 
-    The companion to `preview`: it opens the fixed scenario's run, confirms one
-    fixed dispatch, executes it through the owned-process adapter, verifies, and
+    The synthetic companion to `preview`: it opens the fixed fixture run,
+    authorizes one synthetic dispatch, executes it through the owned-process adapter, and
     writes the canonical result receipt to stdout. A run at the
     scenario's fixed identity that disagrees with it is a refusal on stderr with
     exit 1; stdout stays empty, so a redirected receipt is never a half-written one.
     """
     from conductor.command import control_loop      # deferred: see the import block
     try:
-        rendered = control_loop.render_control_loop(args.dir)
+        rendered = control_loop.render_integration_smoke(args.dir)
     except control_loop.GateError as e:
         print(str(e), file=sys.stderr)
         return 1
@@ -310,9 +310,9 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_dir_and_func(p, _cmd_preview)
 
     p = sub.add_parser(
-        "confirm",
-        help="run the Day-1 owned-process control loop and print the receipt")
-    _add_dir_and_func(p, _cmd_confirm)
+        "integration-smoke",
+        help="run the synthetic Day-1 owned-process loop (not Human Confirm)")
+    _add_dir_and_func(p, _cmd_integration_smoke)
 
     p = sub.add_parser("up", help="serve the panel on loopback HTTP with live updates")
     _add_port(p)

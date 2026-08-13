@@ -55,7 +55,7 @@ you are shipping.
 Expect exit 0, and this list of subcommands — no more, no fewer:
 
 ```
-usage: conduct [-h] {validate,init,doctor,prompt,report,preview,confirm,up,demo} ...
+usage: conduct [-h] {validate,init,doctor,prompt,report,preview,integration-smoke,up,demo} ...
 ```
 
 If a subcommand you expected is missing, the wheel is not built from what you think it is.
@@ -287,7 +287,7 @@ once and recognise it there.
 & $CONDUCT preview --dir $PROJ; "preview exit=$LASTEXITCODE"
 & $CONDUCT preview --dir $PROJ --instance ghost; "unknown exit=$LASTEXITCODE"
 & $CONDUCT preview --dir $PROJ --adapter codex; "mismatch exit=$LASTEXITCODE"
-& $CONDUCT confirm --dir $PROJ; "confirm exit=$LASTEXITCODE"
+& $CONDUCT integration-smoke --dir $PROJ; "integration-smoke exit=$LASTEXITCODE"
 ```
 
 Expect the first `conduct preview` to print a single line of canonical JSON on stdout and
@@ -302,9 +302,11 @@ adapter is touched. Expect the third to exit 1 the same way, its stderr naming `
 and `codex`: the caller's adapter is cross-checked against the binding the frozen config
 declares, never trusted over it.
 
-Expect `conduct confirm` to complete the fixed Day-1 loop through the owned-process
-adapter and exit 0: it opens a run under `$PROJ\conductor\runs\control-loop-run`, confirms
-one dispatch, executes it, verifies, and prints a single line of canonical JSON on stdout —
+Expect `conduct integration-smoke` to complete the fixed synthetic Day-1 loop through the
+owned-process adapter and exit 0. It is explicitly not a product Human Confirm surface: its
+actor, time, ids and no-op effect are deterministic fixture facts. It opens a run under
+`$PROJ\conductor\runs\control-loop-run`, executes and verifies one synthetic dispatch, and
+prints a single line of canonical JSON on stdout —
 one immutable `ActionResultReceipt` whose `outcome` is `succeeded` and whose empty
 evidence list honestly says the process adapter has no independent verifier. Run it twice and the line is
 byte-identical: the receipt is deterministic, and reopening the run appends nothing.
