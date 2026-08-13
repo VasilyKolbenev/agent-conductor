@@ -1,11 +1,12 @@
-"""The minimal Confirm state machine: authorize -> prepare -> execute -> verify -> result.
+"""The Confirm state machine with durable effect boundaries and restart replay.
 
 This module is the runtime seam A/CONF-1 and A/RT-1 own. It executes nothing on
 import, spawns no process, and reaches no browser: it drives whatever adapter a
 run's frozen configuration binds to an instance, through the CMD-3 adapter seams,
-and records durable facts through the frozen CMD-2 run store. It never adds a
-store record type and never edits a frozen surface -- every durable fact here is
-one of the six the store already knows.
+and records durable facts through the frozen run store. Before the first effect
+seam it appends an ``effect_lease``; after execute returns it appends the exact
+``execution_observed`` outcome. These facts prevent a restart from repeating an
+ambiguous effect and let an observed success resume at verify without executing.
 
 Authorization comes first, and it refuses BEFORE preparation. `authorize` takes a
 fresh Human `Confirmation` for one already-proposed dispatch and holds every fact
@@ -28,12 +29,12 @@ Its states -- accepted, started, succeeded, failed, cancelled, unknown, and
 verification_failed -- stay DISTINCT: none is inferred from the absence of
 another, and an attempt whose adapter crashed, returned no result, or reported a
 result for another action is `unknown`, never converted into success. A process
-that reports success is put to the adapter's verify seam, but Day-1 has no durable
-execution-observed fact that could bind later evidence causally. Therefore a
-`verified`, `mismatch`, or `error` response reaches `verification_failed`, while
-`unavailable` leaves observed success standing but explicitly unverified. The
-runtime owns one durable result receipt per attempt; its outcome is the reconciled
-terminal state, appended beside -- never over -- the request that authorized it.
+that reports success is put to the adapter's verify seam only after its durable
+observation. Verified evidence must follow that observation and match the frozen
+adapter relation; unavailable verification leaves observed success explicitly
+unverified. Request-only recovery has no fresh effect authority and fails closed.
+Lease-only recovery becomes terminal ``unknown`` without another execute;
+observed recovery never executes. Terminal replay calls no adapter seam.
 """
 from __future__ import annotations
 
@@ -44,6 +45,7 @@ from enum import Enum
 from typing import Any
 
 from .adapters import AdapterRegistry, AdapterVerification, PreparedAction
+from .attempts import AttemptEvent, OBSERVED_OUTCOMES, action_request_digest
 from .containment import render_legacy_run_route_violations, run_route_violations
 from .contracts import (
     ActionProposal,
@@ -97,7 +99,6 @@ _NON_SUCCESS: dict[str, AttemptState] = {
     "cancelled": AttemptState.CANCELLED,
     "unknown": AttemptState.UNKNOWN,
     "rejected": AttemptState.FAILED,
-    "verification_failed": AttemptState.VERIFICATION_FAILED,
 }
 
 
@@ -184,12 +185,11 @@ class Authorization:
 class Attempt:
     """One executed attempt: its terminal state, the state path it took, and receipt.
 
-    ``history`` records only states this process observed. A live execute that
-    crossed preparation includes ``accepted, started, terminal``; prepare refusal
-    is ``accepted, unknown``; replay of an existing result is ``accepted,
-    terminal`` because v2 durable records cannot prove a prior process entered
-    started. ``receipt`` is the immutable terminal record; verification evidence
-    is empty in Day-1; RT-2 must add causal attempt facts before evidence can bind.
+    ``history`` records states supported by this process or durable attempt facts.
+    A live execute and a replay carrying an effect lease include ``started``;
+    prepare refusal and legacy result replay do not. ``receipt`` is the immutable
+    terminal record. Verification evidence is returned only when it follows a
+    durable observation and is bound to the frozen adapter by the store relation.
     """
 
     request: ActionRequest
@@ -339,6 +339,28 @@ class ControlRuntime:
 
     def execute(self, authorization: Authorization) -> Attempt:
         """Drive the authorized request; return the attempt with its terminal state."""
+        canonical, recovered = self._recover_authorized(authorization)
+        replayed = self._replayed_attempt(canonical, recovered)
+        if replayed is not None:
+            return replayed
+        lease, observed = self._durable_events(canonical, recovered)
+        if observed is not None:
+            return self._resume_observed(canonical, recovered, observed)
+        if lease is not None:
+            return self._finish(
+                canonical, AttemptState.UNKNOWN,
+                (AttemptState.ACCEPTED, AttemptState.STARTED),
+                detail="effect lease has no durable observation; execution was not repeated")
+        grant = (canonical.run_id, canonical.action_id)
+        if grant not in self._grants:
+            raise ExecutionError(
+                f"action {canonical.action_id!r} has no live execution grant; its durable "
+                "request is ambiguous and requires reconciliation")
+        return self._execute_granted(canonical, recovered, grant)
+
+    def _recover_authorized(
+            self, authorization: Authorization) -> tuple[ActionRequest, RecoveredRun]:
+        """Recover the canonical durable request before any adapter seam."""
         if not isinstance(authorization, Authorization):
             raise ExecutionError("execute requires an Authorization from authorize")
         claimed = ActionRequest.from_dict(authorization.request.as_dict())
@@ -359,14 +381,12 @@ class ControlRuntime:
         if canonical.as_dict() != claimed.as_dict():
             raise ExecutionError(
                 f"action {claimed.action_id!r} differs from its durable authorization")
-        replayed = self._replayed_attempt(canonical, recovered)
-        if replayed is not None:
-            return replayed
-        grant = (canonical.run_id, canonical.action_id)
-        if grant not in self._grants:
-            raise ExecutionError(
-                f"action {canonical.action_id!r} has no live execution grant; its durable "
-                "request is ambiguous and requires reconciliation")
+        return canonical, recovered
+
+    def _execute_granted(
+            self, canonical: ActionRequest, recovered: RecoveredRun,
+            grant: tuple[str, str]) -> Attempt:
+        """Consume fresh authority, then bracket the one effect with durable events."""
         # Consume before the first untrusted adapter seam. Every later retry is
         # fail-closed even if an effect happened but no terminal receipt landed.
         self._grants.remove(grant)
@@ -381,10 +401,16 @@ class ControlRuntime:
                 detail="adapter prepare failed")
         history = (AttemptState.ACCEPTED, AttemptState.STARTED)
         self._hold_route(canonical.run_id, ExecutionError)
+        lease = self._append_event(canonical, bound, phase="effect_lease")
         report, note = self._observe_execute(bound, prepared, canonical)
+        observed = self._append_event(
+            canonical, bound, phase="execution_observed",
+            recovery_ref=lease.recovery_ref,
+            outcome=report.outcome if report is not None else "unknown",
+            exit_code=report.exit_code if report is not None else None)
         if report is None:
             return self._finish(canonical, AttemptState.UNKNOWN, history, detail=note)
-        return self._resolve(canonical, bound, report, history)
+        return self._resolve(canonical, bound, report, observed, history)
 
     @staticmethod
     def _replayed_attempt(request: ActionRequest, recovered: RecoveredRun) -> Attempt | None:
@@ -402,21 +428,54 @@ class ControlRuntime:
         if len(receipt.evidence_refs) != len(set(receipt.evidence_refs)):
             raise ExecutionError(
                 f"action {request.action_id!r} result repeats an evidence ref")
-        if receipt.evidence_refs:
+        events = [
+            row.value for row in recovered.records
+            if row.kind == "attempt_event" and row.value.action_id == request.action_id
+        ]
+        if receipt.evidence_refs and not events:
             raise ExecutionError(
                 "verified evidence requires RT-2 causal attempt facts")
+        evidence = ControlRuntime._receipt_evidence(receipt, recovered)
         try:
             state = AttemptState(receipt.outcome)
         except ValueError as e:
             raise ExecutionError(
                 f"action {request.action_id!r} has unsupported terminal outcome "
                 f"{receipt.outcome!r}") from e
+        history = ((AttemptState.ACCEPTED, AttemptState.STARTED, state)
+                   if events else (AttemptState.ACCEPTED, state))
         return Attempt(
             request=request, state=state, receipt=receipt,
-            # Durable v2 records do not say whether preparation/execute started.
-            # Replay therefore reconstructs only accepted + terminal facts.
-            history=(AttemptState.ACCEPTED, state),
-            verification_evidence=())
+            history=history, verification_evidence=evidence)
+
+    @staticmethod
+    def _receipt_evidence(
+            receipt: ActionResultReceipt,
+            recovered: RecoveredRun) -> tuple[EvidenceRef, ...]:
+        """Resolve receipt refs from the already-validated durable record order."""
+        by_id = {
+            row.value.evidence_id: row.value for row in recovered.records
+            if row.kind == "evidence"
+        }
+        try:
+            return tuple(EvidenceRef.from_dict(by_id[ref].as_dict())
+                         for ref in receipt.evidence_refs)
+        except KeyError as e:
+            raise ExecutionError(
+                f"result references missing evidence {e.args[0]!r}") from None
+
+    @staticmethod
+    def _durable_events(
+            request: ActionRequest,
+            recovered: RecoveredRun) -> tuple[AttemptEvent | None, AttemptEvent | None]:
+        events = [
+            row.value for row in recovered.records
+            if row.kind == "attempt_event" and row.value.action_id == request.action_id
+        ]
+        lease = next((row for row in events if row.phase == "effect_lease"), None)
+        observed = next((
+            row for row in events if row.phase == "execution_observed"), None)
+        return lease, observed
 
     def _hold_route(self, run_id: str, error: type[RuntimeError]) -> None:
         """Refuse a non-local/aliased store route before the next durable effect."""
@@ -435,6 +494,37 @@ class ControlRuntime:
             raise ExecutionError(
                 f"frozen config declares no instance {instance_id!r} to drive")
         return self._registry.resolve(bound), bound
+
+    def _append_event(
+            self, request: ActionRequest, bound: str, *, phase: str,
+            recovery_ref: str | None = None, outcome: str | None = None,
+            exit_code: int | None = None) -> AttemptEvent:
+        """Append one contract-derived boundary immediately around the effect seam."""
+        self._hold_route(request.run_id, ExecutionError)
+        event = AttemptEvent(
+            event_id=self._ids(f"{phase}-event"),
+            run_id=request.run_id, action_id=request.action_id,
+            attempt_id=request.attempt_id, instance_id=request.instance_id,
+            adapter_id=bound, phase=phase, recorded_at=self._clock(),
+            request_digest=action_request_digest(request),
+            recovery_ref=recovery_ref or self._ids("recovery"),
+            outcome=outcome, exit_code=exit_code, schema_version=2)
+        self._store.append(event)
+        return AttemptEvent.from_dict(event.as_dict())
+
+    def _resume_observed(
+            self, request: ActionRequest, recovered: RecoveredRun,
+            observed: AttemptEvent) -> Attempt:
+        """Resolve a durable observation without preparing or executing again."""
+        _, bound = self._bound_adapter(recovered, request.instance_id)
+        report = ActionResultReceipt(
+            receipt_id=observed.event_id,
+            action_id=request.action_id, run_id=request.run_id,
+            attempt_id=request.attempt_id, instance_id=request.instance_id,
+            outcome=observed.outcome, observed_at=observed.recorded_at,
+            detail=None, exit_code=observed.exit_code)
+        history = (AttemptState.ACCEPTED, AttemptState.STARTED)
+        return self._resolve(request, bound, report, observed, history)
 
     def _observe_execute(
             self, bound: str, prepared: PreparedAction,
@@ -457,19 +547,34 @@ class ControlRuntime:
                 or report.attempt_id != request.attempt_id
                 or report.instance_id != request.instance_id):
             return None, "the adapter reported a result for another action"
+        if not self._valid_observed_result(report):
+            return None, "the adapter returned no recognized effect outcome"
         return report, None
+
+    @staticmethod
+    def _valid_observed_result(report: ActionResultReceipt) -> bool:
+        """Hold the event vocabulary and exit relation before durable observation."""
+        if report.outcome not in OBSERVED_OUTCOMES:
+            return False
+        if report.outcome == "succeeded":
+            return report.exit_code in (None, 0)
+        if report.outcome == "failed":
+            return report.exit_code is None or report.exit_code != 0
+        return report.exit_code is None
 
     def _resolve(
             self, request: ActionRequest, bound: str, report: ActionResultReceipt,
+            observed: AttemptEvent,
             history: tuple[AttemptState, ...]) -> Attempt:
         if report.outcome != "succeeded":
             return self._finish(
                 request, _NON_SUCCESS[report.outcome], history,
                 detail=f"adapter reported {report.outcome}", exit_code=report.exit_code)
-        return self._verify(request, bound, report, history)
+        return self._verify(request, bound, report, observed, history)
 
     def _verify(
             self, request: ActionRequest, bound: str, report: ActionResultReceipt,
+            observed: AttemptEvent,
             history: tuple[AttemptState, ...]) -> Attempt:
         """A reported success is not the terminal word until verify confirms it."""
         try:
@@ -491,22 +596,61 @@ class ControlRuntime:
                 request, AttemptState.SUCCEEDED, history,
                 detail="the process reported success; the adapter exposed no verifier",
                 exit_code=report.exit_code)
+        if verification.state == "verified":
+            evidence = self._causal_evidence(
+                request, bound, observed, verification.evidence_refs)
+            if evidence is not None:
+                return self._finish(
+                    request, AttemptState.SUCCEEDED, history,
+                    detail="post-effect evidence was verified by the bound adapter",
+                    exit_code=report.exit_code, evidence=evidence)
+            return self._finish(
+                request, AttemptState.VERIFICATION_FAILED, history,
+                detail="verified evidence did not satisfy the causal store relation",
+                exit_code=report.exit_code)
         state = AttemptState.VERIFICATION_FAILED
-        detail = ("verified evidence requires RT-2 causal attempt facts"
-                  if verification.state == "verified"
-                  else f"adapter verification was {verification.state}")
+        detail = f"adapter verification was {verification.state}"
         return self._finish(
             request, state, history, detail=detail,
             exit_code=report.exit_code)
 
+    def _causal_evidence(
+            self, request: ActionRequest, bound: str, observed: AttemptEvent,
+            refs: tuple[str, ...]) -> tuple[EvidenceRef, ...] | None:
+        """Resolve only bound verification evidence recorded after observation."""
+        self._hold_route(request.run_id, ExecutionError)
+        recovered = self._store.read(request.run_id)
+        rows = list(recovered.records)
+        index = next((
+            position for position, row in enumerate(rows)
+            if row.kind == "attempt_event" and row.value == observed), None)
+        if index is None:
+            return None
+        eligible = {
+            row.value.evidence_id: row.value for row in rows[index + 1:]
+            if row.kind == "evidence"
+        }
+        evidence = tuple(eligible.get(ref) for ref in refs)
+        if any(row is None for row in evidence):
+            return None
+        expected_uri = f"verification/{request.action_id}"
+        if any(
+                row.run_id != request.run_id or row.kind != "verification"
+                or row.uri != expected_uri or row.created_by != bound
+                or row.verification != "verified" or row.verified_by != bound
+                for row in evidence):
+            return None
+        return tuple(EvidenceRef.from_dict(row.as_dict()) for row in evidence)
+
     def _finish(
             self, request: ActionRequest, state: AttemptState,
             history: tuple[AttemptState, ...], *, detail: str | None = None,
-            exit_code: int | None = None) -> Attempt:
+            exit_code: int | None = None,
+            evidence: tuple[EvidenceRef, ...] = ()) -> Attempt:
         """Append the one durable result receipt for this attempt and return it.
 
-        Day-1 result receipts carry no evidence refs: RT-2 must first add a durable
-        execution-observed fact. The receipt identity is never rewritten in place.
+        Evidence refs are accepted only after a durable execution observation.
+        The receipt identity is never rewritten in place.
         """
         self._hold_route(request.run_id, ExecutionError)
         receipt = ActionResultReceipt(
@@ -517,11 +661,11 @@ class ControlRuntime:
             instance_id=request.instance_id,
             outcome=state.value,
             observed_at=self._clock(),
-            evidence_refs=(),
+            evidence_refs=tuple(row.evidence_id for row in evidence),
             detail=detail,
             exit_code=exit_code,
         )
         self._store.append(receipt)
         return Attempt(
             request=request, state=state, receipt=receipt,
-            history=(*history, state), verification_evidence=())
+            history=(*history, state), verification_evidence=evidence)

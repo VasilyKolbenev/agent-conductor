@@ -93,12 +93,16 @@ class ScriptedAdapter:
         if self._non_receipt:
             return "not a receipt"
         req = prepared.request
+        exits = {
+            "succeeded": 0, "failed": 7, "cancelled": None,
+            "rejected": None, "unknown": None, "verification_failed": None,
+        }
         values = {
             "receipt_id": "adapter-result",
             "action_id": "action-other" if self._foreign_result else req.action_id,
             "run_id": req.run_id, "attempt_id": req.attempt_id,
             "instance_id": req.instance_id, "outcome": self._execute_outcome,
-            "observed_at": NOW, "exit_code": 0,
+            "observed_at": NOW, "exit_code": exits[self._execute_outcome],
         }
         values.update(self._result_changes)
         return ActionResultReceipt(**values)
@@ -156,7 +160,7 @@ def seed_verified_evidence(store, adapter_id="claude-code", *,
     return evidence
 
 
-# -- Day-1 has no causal evidence binding; verified cannot become success yet --
+# -- Verified evidence must follow the durable effect observation --
 
 def test_preplanted_verified_evidence_cannot_become_post_action_success(tmp_path):
     store = a_store(tmp_path)
@@ -174,7 +178,8 @@ def test_preplanted_verified_evidence_cannot_become_post_action_success(tmp_path
     assert attempt.verification_evidence == ()
     assert attempt.receipt.evidence_refs == ()
     assert kinds(store) == [
-        "action_proposal", "action_request", "evidence", "action_result"]
+        "action_proposal", "action_request", "evidence",
+        "attempt_event", "attempt_event", "action_result"]
     assert adapter.execute_calls == 1 and adapter.verify_calls == 1
 
 
@@ -248,7 +253,9 @@ def test_a_missing_or_foreign_result_is_unknown_never_success(tmp_path, adapter)
     assert attempt.receipt.outcome == "unknown"
     # A lost result is never verified as a success, and it still lands one receipt.
     assert adapter.verify_calls == 0
-    assert kinds(store) == ["action_proposal", "action_request", "action_result"]
+    assert kinds(store) == [
+        "action_proposal", "action_request",
+        "attempt_event", "attempt_event", "action_result"]
 
 
 def test_started_is_entered_and_is_not_read_as_success(tmp_path):
@@ -405,9 +412,11 @@ def test_verify_rejects_a_foreign_adapter_identity(tmp_path):
     assert attempt.verification_evidence == ()
 
 
-def test_evidence_appended_during_verify_still_cannot_gain_causal_authority(tmp_path):
+def test_evidence_appended_after_observation_can_gain_causal_authority(tmp_path):
     class SideEffectVerifier(ScriptedAdapter):
         def verify(self, request, result):
+            # Test-only stand-in for the independent evidence writer. The adapter
+            # API returns refs only; it receives neither this store nor append power.
             store.append(EvidenceRef(
                 evidence_id="during-verify", run_id=request.run_id,
                 kind="verification", uri=f"verification/{request.action_id}",
@@ -423,9 +432,10 @@ def test_evidence_appended_during_verify_still_cannot_gain_causal_authority(tmp_
     adapter = SideEffectVerifier(verify_state="verified")
     runtime, authorization = authorized(store, adapter)
     attempt = runtime.execute(authorization)
-    assert attempt.state is AttemptState.VERIFICATION_FAILED
-    assert attempt.receipt.evidence_refs == ()
-    assert attempt.verification_evidence == ()
+    assert attempt.state is AttemptState.SUCCEEDED
+    assert attempt.receipt.evidence_refs == ("during-verify",)
+    assert tuple(row.evidence_id for row in attempt.verification_evidence) == (
+        "during-verify",)
 
 
 def test_direct_execute_refuses_a_hard_linked_journal_before_prepare(tmp_path):
@@ -454,7 +464,8 @@ def test_execute_replays_a_durable_result_without_executing_twice(tmp_path):
     before = store.run_path("run-001").joinpath("records.jsonl").read_bytes()
     second = runtime.execute(authorization)
     assert second.receipt == first.receipt and second.state == first.state
-    assert second.history == (AttemptState.ACCEPTED, AttemptState.SUCCEEDED)
+    assert second.history == (
+        AttemptState.ACCEPTED, AttemptState.STARTED, AttemptState.SUCCEEDED)
     assert adapter.execute_calls == 1
     assert store.run_path("run-001").joinpath("records.jsonl").read_bytes() == before
     # A new runtime/process reconstructs from durable facts just as safely.
@@ -521,7 +532,7 @@ def test_fresh_runtime_refuses_request_only_history_without_reexecuting(tmp_path
     assert store.run_path("run-001").joinpath("records.jsonl").read_bytes() == before
 
 
-def test_post_effect_pre_result_retry_consumes_grant_and_refuses_second_effect(
+def test_observed_pre_result_retry_resolves_without_a_second_effect(
         tmp_path, monkeypatch):
     store = a_store(tmp_path)
     adapter = ScriptedAdapter()
@@ -531,14 +542,16 @@ def test_post_effect_pre_result_retry_consumes_grant_and_refuses_second_effect(
     def crash_before_result(*args, **kwargs):
         raise ExecutionError("simulated crash before result append")
 
+    finish = runtime._finish
     monkeypatch.setattr(runtime, "_finish", crash_before_result)
     with pytest.raises(ExecutionError, match="simulated crash"):
         runtime.execute(authorization)
     assert adapter.execute_calls == 1
-    with pytest.raises(ExecutionError, match="requires reconciliation"):
-        runtime.execute(authorization)
+    monkeypatch.setattr(runtime, "_finish", finish)
+    attempt = runtime.execute(authorization)
+    assert attempt.state is AttemptState.SUCCEEDED
     assert adapter.execute_calls == 1
-    assert store.run_path("run-001").joinpath("records.jsonl").read_bytes() == before
+    assert store.run_path("run-001").joinpath("records.jsonl").read_bytes() != before
 
 
 @pytest.mark.parametrize("phase", ["prepare", "execute", "verify"])

@@ -36,6 +36,7 @@ from .adapters import (
 )
 from .adapters.process import ProcessAdapter, ProcessRunner
 from . import _smoke_exec
+from .attempts import AttemptEvent, action_request_digest
 from .containment import (
     render_legacy_run_route_violations,
     run_route_violations,
@@ -129,6 +130,20 @@ def _open_run(store: RunStore) -> RunEnvelope:
     return envelope
 
 
+def _loop_event(
+        request: ActionRequest, phase: str, *,
+        outcome: str | None = None, exit_code: int | None = None) -> AttemptEvent:
+    """Build one deterministic event for the fixed synthetic scenario."""
+    return AttemptEvent(
+        event_id=_loop_id(f"{phase}-event"), run_id=_RUN_ID,
+        action_id=request.action_id, attempt_id=request.attempt_id,
+        instance_id=request.instance_id, adapter_id="owned-process",
+        phase=phase, recorded_at=_NOW,
+        request_digest=action_request_digest(request),
+        recovery_ref=_loop_id("recovery"), outcome=outcome,
+        exit_code=exit_code, schema_version=2)
+
+
 def _expected_histories(envelope: RunEnvelope) -> tuple[tuple[StoredRecord, ...], ...]:
     """Every prefix this deterministic loop may itself leave, contract-derived."""
     proposal = ActionProposal(
@@ -150,14 +165,24 @@ def _expected_histories(envelope: RunEnvelope) -> tuple[tuple[StoredRecord, ...]
         observed_at=_NOW, evidence_refs=(),
         detail="the process reported success; the adapter exposed no verifier",
         exit_code=0)
+    lease = _loop_event(request, "effect_lease")
+    observed = _loop_event(
+        request, "execution_observed", outcome="succeeded", exit_code=0)
     rows = (
         StoredRecord("action_proposal", proposal),
         StoredRecord("action_request", request),
+        StoredRecord("attempt_event", lease),
+        StoredRecord("attempt_event", observed),
         StoredRecord("action_result", result),
     )
+    unknown = ActionResultReceipt.from_dict({
+        **result.as_dict(), "outcome": "unknown", "exit_code": None,
+        "detail": "effect lease has no durable observation; execution was not repeated",
+    })
     # A durable request without a terminal result is ambiguous: execution may
     # have happened before a crash.  It must not be resumed automatically.
-    return ((), rows[:1], rows)
+    return ((), rows[:1], rows[:2], rows[:3], rows[:4], rows,
+            (*rows[:3], StoredRecord("action_result", unknown)))
 
 
 def render_integration_smoke(project_root: str) -> str:

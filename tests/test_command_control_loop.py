@@ -106,7 +106,8 @@ def test_integration_smoke_records_synthetic_fixture_and_owned_process_receipt(
     # synthetic authorization fixture and immutable result receipt. Unavailable verification
     # creates no false evidence record.
     assert [row.kind for row in records] == [
-        "action_proposal", "action_request", "action_result"]
+        "action_proposal", "action_request",
+        "attempt_event", "attempt_event", "action_result"]
     by_kind = {row.kind: row.value for row in records}
     # The request is the recorded synthetic fixture, separate from the result,
     # and names its fixture actor and exact preview digest.
@@ -127,6 +128,31 @@ def test_integration_smoke_is_idempotent_across_reruns_and_fresh_directories(
     # A fresh dir yields the very same receipt: nothing hidden leaks in.
     assert main(["integration-smoke", "--dir", str(tmp_path / "b")]) == 0
     assert capsys.readouterr().out == first
+
+
+def test_request_only_smoke_history_is_owned_but_refuses_without_effect_authority(
+        tmp_path, capsys, monkeypatch):
+    store = RunStore(tmp_path)
+    envelope = RunEnvelope(
+        run_id=control_loop._RUN_ID, cycle_id="control-loop-orbit",
+        created_at=control_loop._NOW,
+        config_digest=snapshot_digest(control_loop.FROZEN_CONFIG), mode="confirm")
+    store.create_run(envelope, control_loop.FROZEN_CONFIG)
+    own_request_prefix = next(
+        rows for rows in control_loop._expected_histories(envelope) if len(rows) == 2)
+    for row in own_request_prefix:
+        store.append(row.value)
+    journal = store.run_path(control_loop._RUN_ID) / "records.jsonl"
+    before = journal.read_bytes()
+    monkeypatch.setattr(
+        ProcessRunner, "_spawn",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("request-only recovery reached spawn")))
+    assert main(["integration-smoke", "--dir", str(tmp_path)]) == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "requires reconciliation" in captured.err
+    assert journal.read_bytes() == before
 
 
 def test_integration_smoke_refuses_a_foreign_run_with_empty_stdout(tmp_path, capsys):
