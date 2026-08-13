@@ -50,7 +50,11 @@ from ..contracts import (
     ActionRequest,
     ActionResultReceipt,
 )
-from ..containment import contained_directory, detected_portal as _detected_portal
+from ..containment import (
+    assess_cwd_route,
+    detected_portal as _detected_portal,
+    render_cwd_violation,
+)
 from ..dispatch import DispatchArgumentError, validate_dispatch_arguments
 from . import _procgroup
 from .base import (
@@ -361,31 +365,9 @@ class ProcessRunner:
         owned.group.close()
 
     def _resolve_cwd(self, raw_cwd: str) -> Path:
-        candidate = Path(raw_cwd)
-        if not candidate.is_absolute():
-            candidate = self._root / candidate
-        try:
-            rel = candidate.relative_to(self._root)
-        except ValueError:
-            raise ContainmentError(
-                f"cwd {str(candidate)!r} is not beneath the project root "
-                f"{str(self._root)!r}") from None
-        if not rel.parts:
-            raise ContainmentError(
-                "cwd must be strictly beneath the project root, not the root itself: "
-                f"{str(self._root)!r}")
-        if os.pardir in rel.parts:
-            raise ContainmentError(
-                f"cwd {str(candidate)!r} escapes the project root through '..'")
-        return self._walk_route(rel)
-
-    def _walk_route(self, rel: Path) -> Path:
-        walked, violation = contained_directory(self._root, rel)
+        walked, violation = assess_cwd_route(self._root, raw_cwd)
         if violation is not None:
-            # Keep the runner's established public prefix while reusing the one
-            # structural fact engine shared with preview and Confirm.
-            fact = violation.removeprefix("route: ")
-            raise ContainmentError(f"cwd route component {fact}")
+            raise ContainmentError(render_cwd_violation(violation))
         return walked
 
     def _child_env(self, spec: CommandSpec) -> dict[str, str]:

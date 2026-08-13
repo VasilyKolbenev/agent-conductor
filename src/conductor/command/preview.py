@@ -113,6 +113,7 @@ from .contracts import RunEnvelope, _freeze_json, canonical_json
 from .containment import (
     JUNCTION_TAG as _JUNCTION_TAG,
     detected_portal as _detected_portal,
+    render_legacy_run_route_violations,
     run_route_violations,
     unowned_paths,
 )
@@ -234,11 +235,12 @@ def _check_route(store: RunStore) -> None:
     """
     run_path = store.run_path(_RUN_ID)
     violations = run_route_violations(store, _RUN_ID)
-    if violations:
+    facts = render_legacy_run_route_violations(violations)
+    if facts:
         raise PreviewError(_refusal(
             f"run {_RUN_ID!r} does not stand on a contained writable route, "
             "so nothing was proposed:",
-            (*violations,
+            (*facts,
              f"run directory: {str(run_path)!r}",
              "the preview changed nothing in the run directory")))
 

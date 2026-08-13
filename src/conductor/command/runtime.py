@@ -44,7 +44,7 @@ from enum import Enum
 from typing import Any
 
 from .adapters import AdapterRegistry, AdapterVerification, PreparedAction
-from .containment import run_route_violations
+from .containment import render_legacy_run_route_violations, run_route_violations
 from .contracts import (
     ActionProposal,
     ActionRequest,
@@ -421,10 +421,11 @@ class ControlRuntime:
     def _hold_route(self, run_id: str, error: type[RuntimeError]) -> None:
         """Refuse a non-local/aliased store route before the next durable effect."""
         violations = run_route_violations(self._store, run_id)
-        if violations:
+        facts = render_legacy_run_route_violations(violations)
+        if facts:
             raise error(
                 f"run {run_id!r} is not on a contained writable route: "
-                + "; ".join(violations))
+                + "; ".join(facts))
 
     def _bound_adapter(self, recovered: RecoveredRun, instance_id: str) -> tuple[Any, str]:
         bindings = frozen_config_bindings(recovered.config)

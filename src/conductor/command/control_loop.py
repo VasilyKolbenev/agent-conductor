@@ -36,7 +36,11 @@ from .adapters import (
 )
 from .adapters.process import ProcessAdapter, ProcessRunner
 from . import _smoke_exec
-from .containment import run_route_violations, unowned_paths
+from .containment import (
+    render_legacy_run_route_violations,
+    run_route_violations,
+    unowned_paths,
+)
 from .contracts import (
     ActionProposal,
     ActionRequest,
@@ -96,10 +100,11 @@ def _open_run(store: RunStore) -> RunEnvelope:
         run_id=_RUN_ID, cycle_id="control-loop-orbit", created_at=_NOW,
         config_digest=snapshot_digest(FROZEN_CONFIG), mode="confirm")
     violations = run_route_violations(store, _RUN_ID)
-    if violations:
+    facts = render_legacy_run_route_violations(violations)
+    if facts:
         raise GateError(
             f"run {_RUN_ID!r} is not on a contained writable route: "
-            + "; ".join(violations))
+            + "; ".join(facts))
     try:
         store.create_run(envelope, FROZEN_CONFIG)
     except RunExists:
