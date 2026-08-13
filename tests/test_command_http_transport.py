@@ -100,6 +100,14 @@ def test_duplicate_json_key_cannot_be_hidden_by_normal_json_last_wins():
         "refuse", "malformed_request", 400, "body")
 
 
+def test_raw_fixture_header_pairs_are_accepted_without_pre_normalization():
+    row = next(item for item in DATA["raw_transport_cases"]
+               if item["name"] == "raw_valid_transport")
+    pairs = _replace_port(row["raw_header_pairs"])
+    assert isinstance(pairs[0], list)
+    assert _run(pairs, bytes.fromhex(row["body_utf8_hex"]))[-1] == {"x": 1}
+
+
 def test_each_precedence_door_wins_over_a_later_failure():
     expected = {
         "raw_origin_precedes_csrf": ("same_origin_denied", "origin"),

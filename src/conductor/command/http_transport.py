@@ -90,11 +90,11 @@ def _header_pairs(raw: Iterable[tuple[str, str]]) -> tuple[tuple[str, str], ...]
     except TypeError as error:
         raise HttpRefusal(
             "malformed_request", 400, "body", "request headers are malformed") from error
-    if any(not isinstance(row, tuple) or len(row) != 2
+    if any(not isinstance(row, (tuple, list)) or len(row) != 2
            or not all(isinstance(part, str) for part in row) for row in pairs):
         raise HttpRefusal(
             "malformed_request", 400, "body", "request headers are malformed")
-    return pairs
+    return tuple((row[0], row[1]) for row in pairs)
 
 
 def _values(pairs: tuple[tuple[str, str], ...], name: str) -> tuple[str, ...]:
