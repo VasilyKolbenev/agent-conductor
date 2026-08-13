@@ -145,24 +145,23 @@ def seed_verified_evidence(store, adapter_id="claude-code", *,
     return evidence
 
 
-# -- positive path: a verified success records evidence then a succeeded receipt --
+# -- Day-1 has no causal evidence binding; verified cannot become success yet --
 
-def test_a_verified_success_records_evidence_then_a_succeeded_receipt(tmp_path):
+def test_preplanted_verified_evidence_cannot_become_post_action_success(tmp_path):
     store = a_store(tmp_path)
     adapter = ScriptedAdapter(verify_state="verified")
     runtime, authorization = authorized(store, adapter)
-    evidence = seed_verified_evidence(store)
+    seed_verified_evidence(store)
     assert kinds(store) == ["action_proposal", "action_request", "evidence"]
 
     attempt = runtime.execute(authorization)
 
-    assert attempt.state is AttemptState.SUCCEEDED
+    assert attempt.state is AttemptState.VERIFICATION_FAILED
     assert attempt.history == (
-        AttemptState.ACCEPTED, AttemptState.STARTED, AttemptState.SUCCEEDED)
-    assert attempt.receipt.outcome == "succeeded"
-    # Verification resolves an already-durable fact; it never mints one from prose.
-    assert attempt.verification_evidence == (evidence,)
-    assert attempt.receipt.evidence_refs == (evidence.evidence_id,)
+        AttemptState.ACCEPTED, AttemptState.STARTED, AttemptState.VERIFICATION_FAILED)
+    assert attempt.receipt.outcome == "verification_failed"
+    assert attempt.verification_evidence == ()
+    assert attempt.receipt.evidence_refs == ()
     assert kinds(store) == [
         "action_proposal", "action_request", "evidence", "action_result"]
     assert adapter.execute_calls == 1 and adapter.verify_calls == 1
@@ -379,26 +378,23 @@ def test_verify_rejects_a_foreign_adapter_identity(tmp_path):
     assert attempt.verification_evidence == ()
 
 
-@pytest.mark.parametrize("evidence_changes", [
-    {"evidence_id": "different-evidence"},
-    {"uri": "verification/different-action"},
-    {"created_by": "foreign-adapter", "verified_by": "foreign-adapter"},
-    {"verification": "mismatch"},
-])
-def test_verified_claim_requires_each_bound_durable_evidence_relation(
-        tmp_path, evidence_changes):
+def test_evidence_appended_during_verify_still_cannot_gain_causal_authority(tmp_path):
+    class SideEffectVerifier(ScriptedAdapter):
+        def verify(self, request, result):
+            store.append(EvidenceRef(
+                evidence_id="during-verify", run_id=request.run_id,
+                kind="verification", uri=f"verification/{request.action_id}",
+                label="adapter side effect", created_by=self.manifest.adapter_id,
+                observed_at=NOW, verification="verified",
+                verified_by=self.manifest.adapter_id, verified_at=NOW))
+            return AdapterVerification(
+                adapter_id=self.manifest.adapter_id, action_id=request.action_id,
+                state="verified", observed_at=NOW, detail="self assertion",
+                evidence_refs=("during-verify",))
+
     store = a_store(tmp_path)
-    adapter = ScriptedAdapter(verify_state="verified")
+    adapter = SideEffectVerifier(verify_state="verified")
     runtime, authorization = authorized(store, adapter)
-    values = {
-        "evidence_id": "scripted-evidence", "run_id": "run-001",
-        "kind": "verification", "uri": "verification/action-fixed",
-        "label": "test-local fact", "created_by": "claude-code",
-        "observed_at": NOW, "verification": "verified",
-        "verified_by": "claude-code", "verified_at": NOW,
-    }
-    values.update(evidence_changes)
-    store.append(EvidenceRef(**values))
     attempt = runtime.execute(authorization)
     assert attempt.state is AttemptState.VERIFICATION_FAILED
     assert attempt.receipt.evidence_refs == ()
@@ -441,34 +437,48 @@ def test_execute_replays_a_durable_result_without_executing_twice(tmp_path):
     assert fresh_adapter.execute_calls == 0
 
 
-@pytest.mark.parametrize("evidence_changes", [
-    {"kind": "log"},
-    {"uri": "verification/other-action"},
-    {"created_by": "foreign-adapter", "verified_by": "foreign-adapter"},
-    {"verification": "mismatch"},
+@pytest.mark.parametrize("outcome", [
+    "succeeded", "failed", "cancelled", "rejected", "unknown",
+    "verification_failed",
 ])
-def test_terminal_replay_revalidates_durable_evidence_provenance(
-        tmp_path, evidence_changes):
+def test_terminal_replay_refuses_every_day1_outcome_with_evidence_refs(
+        tmp_path, outcome):
     store = a_store(tmp_path)
     adapter = ScriptedAdapter()
     runtime, authorization = authorized(store, adapter)
-    values = {
-        "evidence_id": "tampered-evidence", "run_id": "run-001",
-        "kind": "verification", "uri": "verification/action-fixed",
-        "label": "durable but unbound", "created_by": "claude-code",
-        "observed_at": NOW, "verification": "verified",
-        "verified_by": "claude-code", "verified_at": NOW,
-    }
-    values.update(evidence_changes)
-    store.append(EvidenceRef(**values))
     store.append(ActionResultReceipt(
         receipt_id="tampered-result", action_id=authorization.request.action_id,
         run_id="run-001", attempt_id=authorization.request.attempt_id,
-        instance_id=authorization.request.instance_id, outcome="succeeded",
+        instance_id=authorization.request.instance_id, outcome=outcome,
         observed_at=NOW, evidence_refs=("tampered-evidence",)))
     fresh = ScriptedAdapter()
-    with pytest.raises(ExecutionError, match="unbound verification evidence"):
+    with pytest.raises(ExecutionError, match="requires RT-2 causal attempt facts"):
         a_runtime(store, fresh).execute(authorization)
+    assert fresh.prepare_calls == fresh.execute_calls == fresh.verify_calls == 0
+
+
+def test_terminal_replay_refuses_duplicate_evidence_refs_before_any_adapter(tmp_path):
+    store = a_store(tmp_path)
+    runtime, authorization = authorized(store, ScriptedAdapter())
+    store.append(ActionResultReceipt(
+        receipt_id="duplicate-result", action_id=authorization.request.action_id,
+        run_id="run-001", attempt_id=authorization.request.attempt_id,
+        instance_id=authorization.request.instance_id, outcome="failed",
+        observed_at=NOW, evidence_refs=("same-evidence", "same-evidence")))
+    fresh = ScriptedAdapter()
+    with pytest.raises(ExecutionError, match="repeats an evidence ref"):
+        a_runtime(store, fresh).execute(authorization)
+    assert fresh.prepare_calls == fresh.execute_calls == fresh.verify_calls == 0
+
+
+def test_empty_ref_unavailable_success_replays_without_adapter_calls(tmp_path):
+    store = a_store(tmp_path)
+    runtime, authorization = authorized(store, ScriptedAdapter())
+    first = runtime.execute(authorization)
+    assert first.state is AttemptState.SUCCEEDED and first.receipt.evidence_refs == ()
+    fresh = ScriptedAdapter()
+    replayed = a_runtime(store, fresh).execute(authorization)
+    assert replayed.receipt == first.receipt
     assert fresh.prepare_calls == fresh.execute_calls == fresh.verify_calls == 0
 
 

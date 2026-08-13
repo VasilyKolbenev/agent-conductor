@@ -591,8 +591,11 @@ All existing v1 and CMD-1..4 regressions stay green.
   `ActionRequest`, reconstructs private canonical values at each untrusted adapter seam, consumes
   a memory-only one-shot grant before prepare, suppresses an exact terminal replay, and treats a
   request-without-result as ambiguous instead of retrying it across a crash or restart. Returned
-  result/verification identities and pre-existing evidence provenance are held against the frozen
-  binding; arbitrary adapter prose is never persisted. Adapter exceptions
+  result/verification identities are held against the frozen binding; arbitrary adapter prose is
+  never persisted. Day-1 cannot causally bind post-action evidence without a durable
+  `execution_observed` fact, so every `verified` response remains `verification_failed` and every
+  terminal receipt with evidence refs is refused on replay; verified success belongs to A/RT-2.
+  Adapter exceptions
   persist only phase and exception type, never attacker-controlled text. Public process dispatch
   persists only structured argv/cwd/output bound and environment variable names; literal env
   values refuse before proposal append. The Windows child starts suspended and is assigned to a
