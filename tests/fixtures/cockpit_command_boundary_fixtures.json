@@ -1,0 +1,174 @@
+{
+  "_readme": "PENDING C/API-1 cases; API-0 evaluates them with a test-local relation.",
+  "proposal_cases": [
+    {
+      "name": "valid_declared_dispatch",
+      "adapter_capabilities": ["observe", "dispatch", "review"],
+      "body": {
+        "instance_id": "claude-dev",
+        "attempt_id": "attempt-cockpit-001",
+        "capability": "dispatch",
+        "arguments": {"handoff": "handoff-cockpit-001"},
+        "scope": ["src", "tests"],
+        "proposed_by": "claude-dev",
+        "rationale": "Dispatch the reviewed handoff.",
+        "timeout_seconds": 900,
+        "adapter_id": "claude-code"
+      },
+      "expected": {"disposition": "accept", "error_code": null}
+    },
+    {
+      "name": "unknown_top_level_is_not_extra_mutation_surface",
+      "adapter_capabilities": ["dispatch"],
+      "body": {
+        "instance_id": "claude-dev",
+        "attempt_id": "attempt-cockpit-001",
+        "capability": "dispatch",
+        "arguments": {"handoff": "handoff-cockpit-001"},
+        "scope": ["src"],
+        "proposed_by": "claude-dev",
+        "rationale": "Dispatch the reviewed handoff.",
+        "timeout_seconds": 900,
+        "debug_override": true
+      },
+      "expected": {"disposition": "refuse", "error_code": "contract_invalid"}
+    },
+    {
+      "name": "shell_field_is_refused",
+      "adapter_capabilities": ["dispatch"],
+      "body": {
+        "instance_id": "claude-dev",
+        "attempt_id": "attempt-cockpit-001",
+        "capability": "dispatch",
+        "arguments": {"shell": "rm -rf project"},
+        "scope": ["src"],
+        "proposed_by": "claude-dev",
+        "rationale": "Unsafe shape.",
+        "timeout_seconds": 900
+      },
+      "expected": {"disposition": "refuse", "error_code": "contract_invalid"}
+    },
+    {
+      "name": "argv_field_is_refused",
+      "adapter_capabilities": ["dispatch"],
+      "body": {
+        "instance_id": "claude-dev",
+        "attempt_id": "attempt-cockpit-001",
+        "capability": "dispatch",
+        "arguments": {"argv": ["powershell", "-Command", "Remove-Item"]},
+        "scope": ["src"],
+        "proposed_by": "claude-dev",
+        "rationale": "Unsafe shape.",
+        "timeout_seconds": 900
+      },
+      "expected": {"disposition": "refuse", "error_code": "contract_invalid"}
+    },
+    {
+      "name": "cwd_field_is_refused",
+      "adapter_capabilities": ["dispatch"],
+      "body": {
+        "instance_id": "claude-dev",
+        "attempt_id": "attempt-cockpit-001",
+        "capability": "dispatch",
+        "arguments": {"cwd": "C:/outside"},
+        "scope": ["src"],
+        "proposed_by": "claude-dev",
+        "rationale": "Unsafe shape.",
+        "timeout_seconds": 900
+      },
+      "expected": {"disposition": "refuse", "error_code": "contract_invalid"}
+    },
+    {
+      "name": "absolute_scope_is_refused",
+      "adapter_capabilities": ["dispatch"],
+      "body": {
+        "instance_id": "claude-dev",
+        "attempt_id": "attempt-cockpit-001",
+        "capability": "dispatch",
+        "arguments": {"handoff": "handoff-cockpit-001"},
+        "scope": ["C:/outside"],
+        "proposed_by": "claude-dev",
+        "rationale": "Unsafe scope.",
+        "timeout_seconds": 900
+      },
+      "expected": {"disposition": "refuse", "error_code": "contract_invalid"}
+    },
+    {
+      "name": "parent_scope_is_refused",
+      "adapter_capabilities": ["dispatch"],
+      "body": {
+        "instance_id": "claude-dev",
+        "attempt_id": "attempt-cockpit-001",
+        "capability": "dispatch",
+        "arguments": {"handoff": "handoff-cockpit-001"},
+        "scope": ["../outside"],
+        "proposed_by": "claude-dev",
+        "rationale": "Unsafe scope.",
+        "timeout_seconds": 900
+      },
+      "expected": {"disposition": "refuse", "error_code": "contract_invalid"}
+    },
+    {
+      "name": "adapter_owned_observe_is_not_browser_writable",
+      "adapter_capabilities": ["observe"],
+      "body": {
+        "instance_id": "claude-dev",
+        "attempt_id": "attempt-cockpit-001",
+        "capability": "observe",
+        "arguments": {},
+        "scope": ["src"],
+        "proposed_by": "claude-dev",
+        "rationale": "Browser cannot author an observation.",
+        "timeout_seconds": 900
+      },
+      "expected": {"disposition": "refuse", "error_code": "capability_unsupported"}
+    },
+    {
+      "name": "manifest_does_not_declare_stop",
+      "adapter_capabilities": ["observe", "dispatch"],
+      "body": {
+        "instance_id": "claude-dev",
+        "attempt_id": "attempt-cockpit-001",
+        "capability": "stop",
+        "arguments": {"action_id": "action-cockpit-001"},
+        "scope": ["src"],
+        "proposed_by": "claude-dev",
+        "rationale": "Stop the owned action.",
+        "timeout_seconds": 900
+      },
+      "expected": {"disposition": "refuse", "error_code": "capability_unsupported"}
+    },
+    {
+      "name": "dispatch_cannot_borrow_message_arguments",
+      "adapter_capabilities": ["dispatch", "message"],
+      "body": {
+        "instance_id": "claude-dev",
+        "attempt_id": "attempt-cockpit-001",
+        "capability": "dispatch",
+        "arguments": {"message": "please dispatch"},
+        "scope": ["src"],
+        "proposed_by": "claude-dev",
+        "rationale": "Wrong capability schema.",
+        "timeout_seconds": 900
+      },
+      "expected": {"disposition": "refuse", "error_code": "contract_invalid"}
+    }
+  ],
+  "control_cases": [
+    {
+      "name": "only_declared_and_schema_backed_controls_render",
+      "manifest_capabilities": ["observe", "dispatch", "review", "stop"],
+      "expected_controls": ["dispatch", "review", "stop"]
+    },
+    {
+      "name": "observe_only_has_no_browser_control",
+      "manifest_capabilities": ["observe"],
+      "expected_controls": []
+    },
+    {
+      "name": "unknown_manifest_value_never_becomes_decorative",
+      "manifest_capabilities": ["observe", "teleport"],
+      "expected_controls": []
+    }
+  ]
+}

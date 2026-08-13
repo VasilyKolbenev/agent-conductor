@@ -1,0 +1,261 @@
+{
+  "_readme": "PENDING C/API-1 fixtures; NOT a claim that an endpoint exists at this SHA.",
+  "_pending_gate": "C/API-1 (Day 2)",
+  "csrf_header": "X-Conduct-CSRF",
+  "current_process_token": "csrf-current-R7a9pQ2kLm4nX8sV3wZ6cD1fH5jT0bY",
+  "prior_process_token": "csrf-prior-N4u8eK1mS6xC9vB2qW5zA7dF0gH3jLrP",
+  "attacker_token": "csrf-attacker-T3m7xV9bN2cQ5wE8rY1uI4oP6aS0dFgH",
+  "loopback_hosts": ["127.0.0.1:{port}", "localhost:{port}"],
+  "loopback_origins": ["http://127.0.0.1:{port}", "http://localhost:{port}"],
+  "token_sources": ["current_process", "prior_process", "attacker", "none"],
+  "substitution_note": "Tests substitute {port}; token source records independent provenance.",
+  "fixtures": [
+    {
+      "name": "valid_same_origin_with_token",
+      "note": "Loopback host, same-origin, current-process token: the only accept case.",
+      "request": {
+        "method": "POST",
+        "path": "/command/runs/run-cockpit-001/proposals",
+        "headers": {
+          "Host": "127.0.0.1:{port}",
+          "Origin": "http://127.0.0.1:{port}",
+          "Content-Type": "application/json; charset=utf-8",
+          "X-Conduct-CSRF": "csrf-current-R7a9pQ2kLm4nX8sV3wZ6cD1fH5jT0bY"
+        },
+        "csrf_token_source": "current_process",
+        "json_body": {
+          "instance_id": "claude-dev",
+          "attempt_id": "attempt-cockpit-001",
+          "capability": "dispatch",
+          "arguments": { "handoff": "handoff-cockpit-001" },
+          "scope": ["src", "tests"],
+          "proposed_by": "claude-dev",
+          "rationale": "The lane finished its handoff and asks to dispatch implementation.",
+          "timeout_seconds": 900,
+          "adapter_id": "claude-code"
+        }
+      },
+      "expected": { "disposition": "accept", "error_code": null, "status": 201 }
+    },
+    {
+      "name": "valid_localhost_alias_with_token",
+      "note": "The localhost alias of the loopback origin is accepted like 127.0.0.1.",
+      "request": {
+        "method": "POST",
+        "path": "/command/runs/run-cockpit-001/proposals",
+        "headers": {
+          "Host": "localhost:{port}",
+          "Origin": "http://localhost:{port}",
+          "Content-Type": "application/json; charset=utf-8",
+          "X-Conduct-CSRF": "csrf-current-R7a9pQ2kLm4nX8sV3wZ6cD1fH5jT0bY"
+        },
+        "csrf_token_source": "current_process",
+        "json_body": {
+          "instance_id": "claude-dev",
+          "attempt_id": "attempt-cockpit-001",
+          "capability": "dispatch",
+          "arguments": { "handoff": "handoff-cockpit-001" },
+          "scope": ["src", "tests"],
+          "proposed_by": "claude-dev",
+          "rationale": "The lane finished its handoff and asks to dispatch implementation.",
+          "timeout_seconds": 900
+        }
+      },
+      "expected": { "disposition": "accept", "error_code": null, "status": 201 }
+    },
+    {
+      "name": "valid_referer_fallback_with_token",
+      "note": "When Origin is absent, an exact same-origin Referer is accepted.",
+      "request": {
+        "method": "POST",
+        "path": "/command/runs/run-cockpit-001/proposals",
+        "headers": {
+          "Host": "127.0.0.1:{port}",
+          "Referer": "http://127.0.0.1:{port}/",
+          "Content-Type": "application/json",
+          "X-Conduct-CSRF": "csrf-current-R7a9pQ2kLm4nX8sV3wZ6cD1fH5jT0bY"
+        },
+        "csrf_token_source": "current_process",
+        "json_body": {
+          "instance_id": "claude-dev",
+          "attempt_id": "attempt-cockpit-001",
+          "capability": "dispatch",
+          "arguments": { "handoff": "handoff-cockpit-001" },
+          "scope": ["src"],
+          "proposed_by": "claude-dev",
+          "rationale": "Dispatch the reviewed handoff.",
+          "timeout_seconds": 900
+        }
+      },
+      "expected": { "disposition": "accept", "error_code": null, "status": 201 }
+    },
+    {
+      "name": "loopback_aliases_do_not_cross_authorize",
+      "note": "Allowed Host and allowed Origin still refuse when their aliases differ.",
+      "request": {
+        "method": "POST",
+        "path": "/command/runs/run-cockpit-001/proposals",
+        "headers": {
+          "Host": "localhost:{port}",
+          "Origin": "http://127.0.0.1:{port}",
+          "Content-Type": "application/json",
+          "X-Conduct-CSRF": "csrf-current-R7a9pQ2kLm4nX8sV3wZ6cD1fH5jT0bY"
+        },
+        "csrf_token_source": "current_process",
+        "json_body": { "instance_id": "claude-dev", "capability": "dispatch" }
+      },
+      "expected": { "disposition": "refuse", "error_code": "same_origin_denied", "status": 403 }
+    },
+    {
+      "name": "foreign_referer_without_origin",
+      "note": "The Referer fallback is exact-origin, not merely present.",
+      "request": {
+        "method": "POST",
+        "path": "/command/runs/run-cockpit-001/proposals",
+        "headers": {
+          "Host": "127.0.0.1:{port}",
+          "Referer": "http://evil.example/attack",
+          "Content-Type": "application/json",
+          "X-Conduct-CSRF": "csrf-current-R7a9pQ2kLm4nX8sV3wZ6cD1fH5jT0bY"
+        },
+        "csrf_token_source": "current_process",
+        "json_body": { "instance_id": "claude-dev", "capability": "dispatch" }
+      },
+      "expected": { "disposition": "refuse", "error_code": "same_origin_denied", "status": 403 }
+    },
+    {
+      "name": "cross_origin",
+      "note": "A foreign Origin is refused before the token is even weighed.",
+      "request": {
+        "method": "POST",
+        "path": "/command/runs/run-cockpit-001/proposals",
+        "headers": {
+          "Host": "127.0.0.1:{port}",
+          "Origin": "http://evil.example",
+          "Content-Type": "application/json; charset=utf-8",
+          "X-Conduct-CSRF": "csrf-current-R7a9pQ2kLm4nX8sV3wZ6cD1fH5jT0bY"
+        },
+        "csrf_token_source": "current_process",
+        "json_body": { "instance_id": "claude-dev", "capability": "dispatch" }
+      },
+      "expected": { "disposition": "refuse", "error_code": "same_origin_denied", "status": 403 }
+    },
+    {
+      "name": "host_rebinding",
+      "note": "A DNS-rebinding Host outside the loopback allowlist is refused.",
+      "request": {
+        "method": "POST",
+        "path": "/command/runs/run-cockpit-001/proposals",
+        "headers": {
+          "Host": "evil.example:{port}",
+          "Origin": "http://evil.example:{port}",
+          "Content-Type": "application/json; charset=utf-8",
+          "X-Conduct-CSRF": "csrf-current-R7a9pQ2kLm4nX8sV3wZ6cD1fH5jT0bY"
+        },
+        "csrf_token_source": "current_process",
+        "json_body": { "instance_id": "claude-dev", "capability": "dispatch" }
+      },
+      "expected": { "disposition": "refuse", "error_code": "same_origin_denied", "status": 403 }
+    },
+    {
+      "name": "no_origin_no_referer",
+      "note": "A mutating request with neither Origin nor Referer is refused fail-closed.",
+      "request": {
+        "method": "POST",
+        "path": "/command/runs/run-cockpit-001/proposals",
+        "headers": {
+          "Host": "127.0.0.1:{port}",
+          "Content-Type": "application/json; charset=utf-8",
+          "X-Conduct-CSRF": "csrf-current-R7a9pQ2kLm4nX8sV3wZ6cD1fH5jT0bY"
+        },
+        "csrf_token_source": "current_process",
+        "json_body": { "instance_id": "claude-dev", "capability": "dispatch" }
+      },
+      "expected": { "disposition": "refuse", "error_code": "same_origin_denied", "status": 403 }
+    },
+    {
+      "name": "missing_token",
+      "note": "Same-origin but no X-Conduct-CSRF header at all.",
+      "request": {
+        "method": "POST",
+        "path": "/command/runs/run-cockpit-001/proposals",
+        "headers": {
+          "Host": "127.0.0.1:{port}",
+          "Origin": "http://127.0.0.1:{port}",
+          "Content-Type": "application/json; charset=utf-8"
+        },
+        "csrf_token_source": "none",
+        "json_body": { "instance_id": "claude-dev", "capability": "dispatch" }
+      },
+      "expected": { "disposition": "refuse", "error_code": "csrf_denied", "status": 403 }
+    },
+    {
+      "name": "stale_token",
+      "note": "A token minted by a previous process; unequal to this process's token.",
+      "request": {
+        "method": "POST",
+        "path": "/command/runs/run-cockpit-001/proposals",
+        "headers": {
+          "Host": "127.0.0.1:{port}",
+          "Origin": "http://127.0.0.1:{port}",
+          "Content-Type": "application/json; charset=utf-8",
+          "X-Conduct-CSRF": "csrf-prior-N4u8eK1mS6xC9vB2qW5zA7dF0gH3jLrP"
+        },
+        "csrf_token_source": "prior_process",
+        "json_body": { "instance_id": "claude-dev", "capability": "dispatch" }
+      },
+      "expected": { "disposition": "refuse", "error_code": "csrf_denied", "status": 403 }
+    },
+    {
+      "name": "foreign_token",
+      "note": "An attacker-chosen token no Conduct process ever minted.",
+      "request": {
+        "method": "POST",
+        "path": "/command/runs/run-cockpit-001/proposals",
+        "headers": {
+          "Host": "127.0.0.1:{port}",
+          "Origin": "http://127.0.0.1:{port}",
+          "Content-Type": "application/json; charset=utf-8",
+          "X-Conduct-CSRF": "csrf-attacker-T3m7xV9bN2cQ5wE8rY1uI4oP6aS0dFgH"
+        },
+        "csrf_token_source": "attacker",
+        "json_body": { "instance_id": "claude-dev", "capability": "dispatch" }
+      },
+      "expected": { "disposition": "refuse", "error_code": "csrf_denied", "status": 403 }
+    },
+    {
+      "name": "replayed_token",
+      "note": "A prior-process token is unequal to the current process token.",
+      "request": {
+        "method": "POST",
+        "path": "/command/runs/run-cockpit-001/proposals",
+        "headers": {
+          "Host": "127.0.0.1:{port}",
+          "Origin": "http://127.0.0.1:{port}",
+          "Content-Type": "application/json; charset=utf-8",
+          "X-Conduct-CSRF": "csrf-prior-N4u8eK1mS6xC9vB2qW5zA7dF0gH3jLrP"
+        },
+        "csrf_token_source": "prior_process",
+        "json_body": { "instance_id": "claude-dev", "capability": "dispatch" }
+      },
+      "expected": { "disposition": "refuse", "error_code": "csrf_denied", "status": 403 }
+    },
+    {
+      "name": "non_json_content_type",
+      "note": "A fully authorized mutation still needs a JSON object body.",
+      "request": {
+        "method": "POST",
+        "path": "/command/runs/run-cockpit-001/proposals",
+        "headers": {
+          "Host": "127.0.0.1:{port}",
+          "Origin": "http://127.0.0.1:{port}",
+          "Content-Type": "text/plain",
+          "X-Conduct-CSRF": "csrf-current-R7a9pQ2kLm4nX8sV3wZ6cD1fH5jT0bY"
+        },
+        "csrf_token_source": "current_process",
+        "json_body": "dispatch --shell arbitrary"
+      },
+      "expected": { "disposition": "refuse", "error_code": "malformed_request", "status": 400 }
+    }
+  ]
+}
