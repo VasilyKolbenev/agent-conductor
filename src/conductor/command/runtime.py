@@ -184,10 +184,16 @@ class Budget:
 
 @dataclass(frozen=True)
 class Authorization:
-    """A cleared confirmation: the durable authorized request, held at ``accepted``."""
+    """A cleared confirmation and whether this call created its durable request.
+
+    ``record_created`` is a response disposition, not execution authority.  It is
+    true only for the runtime call that appended the request; an exact immutable
+    retry returns the same request with it false.
+    """
 
     request: ActionRequest
     state: AttemptState = AttemptState.ACCEPTED
+    record_created: bool = False
 
     def __post_init__(self) -> None:
         if not isinstance(self.request, ActionRequest):
@@ -196,6 +202,8 @@ class Authorization:
             self, "request", ActionRequest.from_dict(self.request.as_dict()))
         if self.state is not AttemptState.ACCEPTED:
             raise ContractError("Authorization starts in accepted state")
+        if type(self.record_created) is not bool:
+            raise ContractError("Authorization.record_created must be a boolean")
 
 
 @dataclass(frozen=True)
@@ -264,20 +272,21 @@ class ControlRuntime:
                 "authorize refuses a run whose replay left unjudged durable bytes")
         proposal = self._stored_proposal(recovered, confirmation.proposal_id)
         self._hold_facts(confirmation, proposal, recovered.envelope.config_digest)
-        self._hold_freshness(confirmation, budget)
         key = f"dispatch-{proposal.proposal_id}"
         prior = next((
             row.value for row in recovered.records
             if row.kind == "action_request" and row.value.idempotency_key == key), None)
         if prior is not None:
             expected = self._mint_request(
-                confirmation, proposal, action_id=prior.action_id)
+                confirmation, proposal, action_id=prior.action_id,
+                requested_at=prior.requested_at)
             if prior != expected:
                 raise AuthorizationError(
                     f"proposal {proposal.proposal_id!r} was already confirmed with "
                     "different durable facts")
             # An identical retry is not a new budget action and writes nothing.
-            return Authorization(request=prior)
+            return Authorization(request=prior, record_created=False)
+        self._hold_freshness(confirmation, budget)
         self._hold_budget(proposal, recovered, budget)
         request = self._mint_request(confirmation, proposal)
         self._hold_route(confirmation.run_id, AuthorizationError)
@@ -287,7 +296,9 @@ class ControlRuntime:
         canonical = ActionRequest.from_dict(request.as_dict())
         if appended:
             self._grants.add((canonical.run_id, canonical.action_id))
-        return Authorization(request=ActionRequest.from_dict(canonical.as_dict()))
+        return Authorization(
+            request=ActionRequest.from_dict(canonical.as_dict()),
+            record_created=appended)
 
     def _lock_key(self, operation: str, *parts: str) -> tuple[Any, ...]:
         return (operation, self._store.project_root, *parts)
@@ -349,7 +360,8 @@ class ControlRuntime:
 
     def _mint_request(
             self, confirmation: Confirmation, proposal: ActionProposal, *,
-            action_id: str | None = None) -> ActionRequest:
+            action_id: str | None = None,
+            requested_at: str | None = None) -> ActionRequest:
         return ActionRequest(
             action_id=action_id or self._ids("action"),
             run_id=confirmation.run_id,
@@ -359,7 +371,7 @@ class ControlRuntime:
             arguments=_thaw_json(proposal.arguments),
             scope=proposal.scope,
             requested_by=confirmation.confirmed_by,
-            requested_at=confirmation.confirmed_at,
+            requested_at=requested_at or confirmation.confirmed_at,
             idempotency_key=f"dispatch-{proposal.proposal_id}",
             timeout_seconds=proposal.timeout_seconds,
             preview_digest=proposal.preview_digest,
