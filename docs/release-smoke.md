@@ -55,7 +55,7 @@ you are shipping.
 Expect exit 0, and this list of subcommands — no more, no fewer:
 
 ```
-usage: conduct [-h] {validate,init,doctor,prompt,report,preview,up,demo} ...
+usage: conduct [-h] {validate,init,doctor,prompt,report,preview,confirm,up,demo} ...
 ```
 
 If a subcommand you expected is missing, the wheel is not built from what you think it is.
@@ -287,6 +287,7 @@ once and recognise it there.
 & $CONDUCT preview --dir $PROJ; "preview exit=$LASTEXITCODE"
 & $CONDUCT preview --dir $PROJ --instance ghost; "unknown exit=$LASTEXITCODE"
 & $CONDUCT preview --dir $PROJ --adapter codex; "mismatch exit=$LASTEXITCODE"
+& $CONDUCT confirm --dir $PROJ; "confirm exit=$LASTEXITCODE"
 ```
 
 Expect the first `conduct preview` to print a single line of canonical JSON on stdout and
@@ -300,6 +301,13 @@ frozen config declares no such instance, and an unknown instance is refused befo
 adapter is touched. Expect the third to exit 1 the same way, its stderr naming `claude-dev`
 and `codex`: the caller's adapter is cross-checked against the binding the frozen config
 declares, never trusted over it.
+
+Expect `conduct confirm` to complete the Day-1 control loop against an in-process fake
+adapter and exit 0: it opens a run under `$PROJ\conductor\runs\control-loop-run`, confirms
+one dispatch, executes it, verifies, and prints a single line of canonical JSON on stdout —
+one immutable `ActionResultReceipt` whose `outcome` is `succeeded`, pointing at the
+verification evidence it recorded. It spawns no process. Run it twice and the line is
+byte-identical: the receipt is deterministic, and reopening the run appends nothing.
 
 ## Teardown
 
