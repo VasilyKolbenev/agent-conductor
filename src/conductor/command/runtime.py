@@ -44,6 +44,7 @@ from datetime import datetime
 from enum import Enum
 from threading import Lock
 from typing import Any
+from weakref import WeakValueDictionary
 
 from .adapters import AdapterRegistry, AdapterVerification, PreparedAction
 from .attempts import AttemptEvent, OBSERVED_OUTCOMES, action_request_digest
@@ -102,10 +103,11 @@ _NON_SUCCESS: dict[str, AttemptState] = {
     "rejected": AttemptState.FAILED,
 }
 
-# Process-local only: distinct Runtime/RunStore objects sharing one canonical
-# project root use the same retained lock. Cross-process exclusion is not claimed.
+# Process-local only: concurrent operations sharing one logical key hold the
+# same live lock. The weak table releases idle keys; cross-process exclusion is
+# separately out of scope for both this operation gate and RunStore transactions.
 _LOCKS_GUARD = Lock()
-_OPERATION_LOCKS: dict[tuple[Any, ...], Any] = {}
+_OPERATION_LOCKS: WeakValueDictionary[tuple[Any, ...], Any] = WeakValueDictionary()
 
 
 def _operation_lock(key: tuple[Any, ...]):
@@ -246,7 +248,8 @@ class ControlRuntime:
         key = self._lock_key(
             "authorize", confirmation.run_id, confirmation.proposal_id, logical)
         with _operation_lock(key):
-            return self._authorize_locked(confirmation, budget)
+            with self._store.transaction():
+                return self._authorize_locked(confirmation, budget)
 
     def _authorize_locked(
             self, confirmation: Confirmation, budget: Budget) -> Authorization:

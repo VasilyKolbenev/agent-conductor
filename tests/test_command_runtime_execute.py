@@ -700,6 +700,6 @@ def test_the_runtime_source_opens_no_machine_or_process_door():
             imported.add(node.module or "")
     allowed = {
         "__future__", "collections.abc", "dataclasses", "datetime", "enum",
-        "threading", "typing",
+        "threading", "typing", "weakref",
     }
     assert imported <= allowed, sorted(imported - allowed)

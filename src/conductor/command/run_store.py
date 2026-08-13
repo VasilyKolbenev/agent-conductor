@@ -1,10 +1,12 @@
 """Crash-aware, append-only storage for December Command runs.
 
-The store records facts; it does not execute a Harness or infer success.  A
+The store records facts; it does not execute a Harness or infer success. A
 run directory is created as one staged snapshot, its configuration is frozen
 by digest, journal records are canonical JSON lines, and Human decisions get
 an additional exclusive-created receipt file.  Mutable projections belong in
-later runtime code and must always be rebuildable from this store.
+later runtime code and must always be rebuildable from this store. Store
+transactions serialize resolved project roots inside this process only; they
+claim no cross-process filesystem exclusion.
 """
 from __future__ import annotations
 
@@ -15,8 +17,11 @@ import re
 import shutil
 import tempfile
 from collections.abc import Callable, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass
+from functools import wraps
 from pathlib import Path
+from threading import Lock, RLock
 from typing import Any
 
 from .attempt_replay import (
@@ -52,6 +57,24 @@ class RunExists(StoreError):
 
 class RecordConflict(StoreError):
     """An immutable identity or idempotency key was reused with new meaning."""
+
+
+_ROOT_LOCKS_GUARD = Lock()
+_ROOT_LOCKS: dict[Path, RLock] = {}
+
+
+def _root_lock(root: Path) -> RLock:
+    with _ROOT_LOCKS_GUARD:
+        return _ROOT_LOCKS.setdefault(root, RLock())
+
+
+def _transactional(method):
+    """Hold one process-local root writer transaction for a store operation."""
+    @wraps(method)
+    def wrapped(self, *args, **kwargs):
+        with self.transaction():
+            return method(self, *args, **kwargs)
+    return wrapped
 
 
 class CorruptRun(StoreError):
@@ -302,6 +325,13 @@ class RunStore:
             raise StoreError(str(e)) from e
         return self.runs_root / safe
 
+    @contextmanager
+    def transaction(self):
+        """Serialize one process-local transaction for this resolved project root."""
+        with _root_lock(self.project_root):
+            yield
+
+    @_transactional
     def create_run(self, envelope: RunEnvelope, snapshot: Mapping[str, Any]) -> Path:
         """Exclusively create a complete run envelope and frozen configuration."""
         if not isinstance(envelope, RunEnvelope):
@@ -344,6 +374,7 @@ class RunStore:
             if stage.exists():
                 shutil.rmtree(stage)
 
+    @_transactional
     def append(self, value: RecordValue) -> bool:
         """Append one immutable record; return False for an identical retry."""
         kind, identity_field, identity = _record_parts(value)
@@ -377,10 +408,12 @@ class RunStore:
             raise StoreError(f"cannot append {kind} {identity!r}: {e}") from e
         return True
 
+    @_transactional
     def read(self, run_id: str) -> RecoveredRun:
         """Validate and replay a run without editing one durable byte."""
         return self._replay(run_id, repair=False)
 
+    @_transactional
     def recover(self, run_id: str) -> RecoveredRun:
         """Replay a run and repair what a crash left behind; only the writer may."""
         return self._replay(run_id, repair=True)
