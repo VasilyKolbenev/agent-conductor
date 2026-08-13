@@ -26,7 +26,8 @@ DIGEST = "sha256:" + "a" * 64
 # An allowlist fails closed: a new stdlib door or a new outside dependency is a
 # failure until it is reviewed and named here.
 ALLOWED_SDK_IMPORTS = frozenset({
-    "__future__", "collections.abc", "dataclasses", "types", "typing",
+    "__future__", "collections.abc", "dataclasses", "enum", "json", "math",
+    "pathlib", "re", "types", "typing",
 })
 ALLOWED_SDK_RELATIVE_IMPORTS = frozenset({(2, "contracts"), (2, "dispatch")})
 # The owned-process runner (B/RUN-1) is the one reviewed execution door in the
