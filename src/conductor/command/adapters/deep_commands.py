@@ -11,8 +11,8 @@ from .deep_contracts import (
     DeepContractError,
     DeepProtocol,
     _closed_id,
-    _env_names,
     _enum,
+    _env_names,
     _exact,
     _ids,
 )
@@ -221,13 +221,26 @@ class DeepCommandSpec:
     @classmethod
     def from_config(
             cls, config: DeepAdapterConfig, *, timeout_seconds: int) -> "DeepCommandSpec":
+        if cls is not DeepCommandSpec:
+            raise DeepContractError("from_config requires the exact spec base type")
         if type(config) is not DeepAdapterConfig:
             raise DeepContractError("from_config requires a DeepAdapterConfig")
         if type(timeout_seconds) is not int or timeout_seconds < 1:
             raise DeepContractError("timeout_seconds must be a positive integer")
-        return cls(
-            (config.executable, DEEP_PROTOCOL_FLAGS[config.protocol.value]),
-            DEEP_WORKING_DIRECTORY, config.env_allow, DEEP_OUTPUT_PROFILE,
+        failed = False
+        try:
+            canonical = DeepAdapterConfig(
+                config.executable, config.protocol, config.env_allow, config.real_mode)
+        except Exception:  # noqa: BLE001 -- a mutated config remains untrusted
+            failed = True
+            canonical = None
+        if failed:
+            raise DeepContractError(
+                "from_config requires a canonical DeepAdapterConfig") from None
+        assert canonical is not None
+        return DeepCommandSpec(
+            (canonical.executable, DEEP_PROTOCOL_FLAGS[canonical.protocol.value]),
+            DEEP_WORKING_DIRECTORY, canonical.env_allow, DEEP_OUTPUT_PROFILE,
             timeout_seconds)
 
     def to_runner_spec(self, config: DeepAdapterConfig) -> CommandSpec:

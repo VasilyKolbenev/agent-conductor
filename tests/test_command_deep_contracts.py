@@ -378,6 +378,39 @@ def test_command_spec_revalidates_every_fact_and_rederives_config_before_runner_
         spec.to_runner_spec(config)
 
 
+def test_command_spec_from_config_reconstructs_exact_values_without_hostile_behavior():
+    class EvilSpec(DeepCommandSpec):
+        pass
+
+    class HostileProtocol:
+        @property
+        def value(self):
+            raise RuntimeError("APIKEY_SECRET_PROTOCOL")
+
+    class HostileExecutable(str):
+        def __fspath__(self):
+            raise RuntimeError("APIKEY_SECRET_EXECUTABLE")
+
+    config = DeepAdapterConfig("C:/fake/tool.exe", "fake-claude-jsonl-v1")
+    assert type(DeepCommandSpec.from_config(config, timeout_seconds=10)) is DeepCommandSpec
+    with pytest.raises(DeepContractError, match="exact spec base type") as stopped:
+        EvilSpec.from_config(config, timeout_seconds=10)
+    assert stopped.value.__cause__ is None and stopped.value.__context__ is None
+    for field, hostile in (
+            ("protocol", HostileProtocol()),
+            ("executable", HostileExecutable("C:/fake/tool.exe")),
+            ("env_allow", _HostileTuple(["PATH"]))):
+        mutated = DeepAdapterConfig("C:/fake/tool.exe", "fake-claude-jsonl-v1")
+        object.__setattr__(mutated, field, hostile)
+        with pytest.raises(DeepContractError) as stopped:
+            DeepCommandSpec.from_config(mutated, timeout_seconds=10)
+        assert str(stopped.value) == "from_config requires a canonical DeepAdapterConfig"
+        graph = repr((stopped.value, stopped.value.__cause__, stopped.value.__context__))
+        assert "APIKEY_SECRET" not in graph
+        assert stopped.value.__cause__ is None and stopped.value.__context__ is None
+    assert not _HostileTuple.iterated and not _HostileTuple.compared
+
+
 @pytest.mark.parametrize("changes", [
     {"argv": ("C:/fake/tool.exe", "--future-protocol")},
     {"cwd": "."}, {"cwd": "../work"}, {"env_allow": ("BAD-NAME",)},
