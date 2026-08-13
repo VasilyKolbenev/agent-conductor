@@ -3,10 +3,15 @@ from __future__ import annotations
 
 from dataclasses import FrozenInstanceError
 from pathlib import Path
+import sys
 
 import pytest
 
 from conductor.command.adapters.deep_commands import (
+    DEEP_ARGUMENT_TYPES,
+    DEEP_OUTPUT_LIMIT,
+    DEEP_PROTOCOL_FLAGS,
+    DISPATCH_PROFILES,
     DeepCommandSpec,
     DeepDispatchArgs,
     DeepEvidenceArgs,
@@ -14,17 +19,32 @@ from conductor.command.adapters.deep_commands import (
     DeepRetryArgs,
     DeepStopArgs,
     DeepSwitchArgs,
+    OUTPUT_LIMIT_PROFILES,
+    REQUESTED_EVIDENCE_KINDS,
+    RETRY_REASONS,
+    REVIEW_PROFILES,
+    STOP_REASONS,
 )
 from conductor.command.adapters.deep_contracts import (
+    ADAPTER_FAILURE_CODES,
+    ADAPTER_FAILURE_PHASES,
     AdapterFailure,
     AdapterRecovery,
     DeepAdapterConfig,
     DeepContractError,
     DeepProtocol,
     NormalizedResult,
+    OBSERVED_OUTCOMES,
+    RECOVERY_OUTCOMES,
+    RECOVERY_STATES,
     RecoveryRef,
 )
-from conductor.command.adapters.deep_evidence import AdapterEvidence
+from conductor.command.adapters.deep_evidence import (
+    EVIDENCE_KINDS,
+    EVIDENCE_VERIFICATIONS,
+    AdapterEvidence,
+)
+from conductor.command.adapters.process import ProcessRunner
 
 
 NOW = "2026-08-13T20:00:00Z"
@@ -190,7 +210,256 @@ def test_command_spec_is_code_owned_argv_with_fixed_cwd_and_no_shell_suffix():
         "C:/fake/codex.exe", "fake-codex-jsonl-v1", ["PATH", "OPENAI_API_KEY"])
     spec = DeepCommandSpec.from_config(config, timeout_seconds=90)
     assert spec.argv == ("C:/fake/codex.exe", "--fake-codex-jsonl-v1")
-    assert spec.cwd == "." and spec.env_allow == ("PATH", "OPENAI_API_KEY")
+    assert spec.cwd == "work" and spec.env_allow == ("PATH", "OPENAI_API_KEY")
     assert spec.output_profile == "bounded-jsonl-v1" and spec.timeout_seconds == 90
-    with pytest.raises(DeepContractError, match="code-owned"):
+    with pytest.raises(DeepContractError, match="two-value tuple"):
         DeepCommandSpec(("sh", "-c", "APIKEY"), ".", (), "whole", 1)
+
+
+def test_all_deep_vocabularies_and_protocol_flags_are_exactly_pinned():
+    assert set(DeepProtocol) == {
+        DeepProtocol.FAKE_CLAUDE_V1, DeepProtocol.FAKE_CODEX_V1}
+    assert dict(DEEP_PROTOCOL_FLAGS) == {
+        "fake-claude-jsonl-v1": "--fake-claude-jsonl-v1",
+        "fake-codex-jsonl-v1": "--fake-codex-jsonl-v1",
+    }
+    assert OBSERVED_OUTCOMES == {
+        "succeeded", "failed", "cancelled", "rejected", "unknown"}
+    assert ADAPTER_FAILURE_CODES == {
+        "invalid_arguments", "executable_unavailable", "spawn_refused", "timeout",
+        "stopped", "protocol_error", "output_limit", "lost_result",
+        "recovery_unavailable", "identity_mismatch", "evidence_unavailable",
+        "evidence_mismatch", "ownership_lost", "unsupported"}
+    assert ADAPTER_FAILURE_PHASES == {
+        "prepare", "execute", "observe", "verify", "recover", "stop"}
+    assert RECOVERY_STATES == {
+        "running", "succeeded", "failed", "cancelled", "unknown"}
+    assert dict(RECOVERY_OUTCOMES) == {
+        "succeeded": {"succeeded"}, "failed": {"failed", "rejected"},
+        "cancelled": {"cancelled"}, "unknown": {"unknown"}}
+    assert EVIDENCE_KINDS == {"result", "diff", "tests", "status"}
+    assert EVIDENCE_VERIFICATIONS == {
+        "verified", "unavailable", "mismatch", "error"}
+    assert DISPATCH_PROFILES == {"implement", "review"}
+    assert OUTPUT_LIMIT_PROFILES == {"small", "normal"}
+    assert REVIEW_PROFILES == {"quality", "security", "spec"}
+    assert REQUESTED_EVIDENCE_KINDS == {"result", "diff", "tests", "status"}
+    assert STOP_REASONS == {"user", "timeout", "switch"}
+    assert RETRY_REASONS == {"failed", "unknown", "verification_failed", "user"}
+
+
+def test_public_deep_schema_authority_names_each_exact_argument_base_type():
+    expected_types = {
+        "dispatch": DeepDispatchArgs, "review": DeepReviewArgs,
+        "evidence": DeepEvidenceArgs, "stop": DeepStopArgs,
+        "retry": DeepRetryArgs, "switch": DeepSwitchArgs,
+    }
+    assert dict(DEEP_ARGUMENT_TYPES) == expected_types
+    assert {
+        capability: value._FIELDS for capability, value in DEEP_ARGUMENT_TYPES.items()
+    } == {
+        "dispatch": {
+            "work_item_id", "instruction_ref", "profile", "artifact_refs",
+            "output_limit_profile"},
+        "review": {"work_item_id", "target_artifact_refs", "review_profile"},
+        "evidence": {"target_action_id", "kinds"},
+        "stop": {"target_attempt_id", "reason"},
+        "retry": {"prior_action_id", "reason"},
+        "switch": {"prior_action_id", "target_instance_id", "handoff_ref"},
+    }
+    with pytest.raises(TypeError):
+        DEEP_ARGUMENT_TYPES["future"] = DeepDispatchArgs
+
+
+@pytest.mark.parametrize("value,array_field", [
+    (DeepAdapterConfig("C:/fake/tool.exe", "fake-claude-jsonl-v1"), "env_allow"),
+    (DeepDispatchArgs("work", "instruction", "review", (), "normal"),
+     "artifact_refs"),
+    (DeepReviewArgs("work", ("artifact",), "quality"), "target_artifact_refs"),
+    (DeepEvidenceArgs("action", ("result",)), "kinds"),
+])
+def test_from_dict_requires_json_arrays_while_constructors_accept_immutable_tuples(
+        value, array_field):
+    data = value.as_dict()
+    data[array_field] = tuple(data[array_field])
+    with pytest.raises(DeepContractError, match="JSON array"):
+        type(value).from_dict(data)
+
+
+@pytest.mark.parametrize("base", [
+    DeepDispatchArgs, DeepReviewArgs, DeepEvidenceArgs,
+    DeepStopArgs, DeepRetryArgs, DeepSwitchArgs,
+])
+def test_argument_from_dict_reconstructs_only_the_exact_public_base_type(base):
+    class Hostile(base):
+        pass
+
+    sample = {
+        DeepDispatchArgs: DeepDispatchArgs("work", "instruction", "review", [], "small"),
+        DeepReviewArgs: DeepReviewArgs("work", ["artifact"], "quality"),
+        DeepEvidenceArgs: DeepEvidenceArgs("action", ["result"]),
+        DeepStopArgs: DeepStopArgs("attempt", "user"),
+        DeepRetryArgs: DeepRetryArgs("action", "failed"),
+        DeepSwitchArgs: DeepSwitchArgs("action", "instance", "handoff"),
+    }[base]
+    assert type(base.from_dict(sample.as_dict())) is base
+    with pytest.raises(DeepContractError, match="exact base type"):
+        Hostile.from_dict(sample.as_dict())
+
+
+def test_command_spec_revalidates_every_fact_and_rederives_config_before_runner_use(
+        tmp_path):
+    work = tmp_path / "work"
+    work.mkdir()
+    config = DeepAdapterConfig(
+        sys.executable, "fake-claude-jsonl-v1", ["PATH"])
+    spec = DeepCommandSpec.from_config(config, timeout_seconds=10)
+    runner_spec = spec.to_runner_spec(config)
+    assert runner_spec.argv == (sys.executable, "--fake-claude-jsonl-v1")
+    assert runner_spec.cwd == "work" and runner_spec.output_limit == DEEP_OUTPUT_LIMIT
+    runner = ProcessRunner(tmp_path, environ={"PATH": "reviewed-path"})
+    outcome = runner.run(runner_spec)
+    assert outcome.status == "completed" and runner.active_tokens() == ()
+
+    foreign = DeepAdapterConfig(sys.executable, "fake-codex-jsonl-v1", ["PATH"])
+    with pytest.raises(DeepContractError, match="does not equal"):
+        spec.to_runner_spec(foreign)
+    object.__setattr__(spec, "cwd", ".")
+    with pytest.raises(DeepContractError, match="does not equal"):
+        spec.to_runner_spec(config)
+
+
+@pytest.mark.parametrize("changes", [
+    {"argv": ("C:/fake/tool.exe", "--future-protocol")},
+    {"cwd": "."}, {"cwd": "../work"}, {"env_allow": ("BAD-NAME",)},
+    {"output_profile": "whole-output"}, {"timeout_seconds": True},
+])
+def test_public_command_spec_constructor_cannot_bypass_structural_invariants(changes):
+    values = {
+        "argv": ("C:/fake/tool.exe", "--fake-claude-jsonl-v1"),
+        "cwd": "work", "env_allow": (), "output_profile": "bounded-jsonl-v1",
+        "timeout_seconds": 10,
+    }
+    values.update(changes)
+    with pytest.raises(DeepContractError):
+        DeepCommandSpec(**values)
+
+
+def test_command_spec_subclass_cannot_override_comparison_authority():
+    class HostileSpec(DeepCommandSpec):
+        def __eq__(self, _other):
+            return True
+
+    config = DeepAdapterConfig("C:/fake/tool.exe", "fake-claude-jsonl-v1")
+    hostile = HostileSpec(
+        ("C:/fake/tool.exe", "--fake-claude-jsonl-v1"), "work", (),
+        "bounded-jsonl-v1", 10)
+    with pytest.raises(DeepContractError, match="exact spec base type"):
+        hostile.to_runner_spec(config)
+
+
+def test_public_from_dict_rejects_mapping_subclasses_without_reading_hostile_values():
+    class HostileDict(dict):
+        def __iter__(self):
+            raise RuntimeError("APIKEY_SECRET_ITERATOR")
+
+    with pytest.raises(DeepContractError) as stopped:
+        RecoveryRef.from_dict(HostileDict(recovery_ref().as_dict()))
+    graph = repr((stopped.value, stopped.value.__cause__, stopped.value.__context__))
+    assert "APIKEY" not in graph
+
+
+def test_nested_value_subclasses_cannot_cross_exact_public_contract_boundaries():
+    class HostileFailure(AdapterFailure):
+        pass
+
+    class HostileRef(RecoveryRef):
+        pass
+
+    hostile_failure = HostileFailure("lost_result", "execute", True)
+    with pytest.raises(DeepContractError, match="closed AdapterFailure"):
+        result(outcome="unknown", exit_code=None, failure=hostile_failure)
+    hostile_ref = HostileRef(
+        "fake-ledger-v1", "deep-claude", "action-001", DIGEST)
+    with pytest.raises(DeepContractError, match="RecoveryRef"):
+        AdapterRecovery(
+            "run-001", "action-001", "attempt-001", "claude-dev", "deep-claude",
+            hostile_ref, "running", None)
+
+
+@pytest.mark.parametrize("value", [
+    DeepAdapterConfig("C:/fake/tool.exe", "fake-claude-jsonl-v1", ["PATH"]),
+    recovery_ref(), failure(), result(),
+    AdapterRecovery(
+        "run-001", "action-001", "attempt-001", "claude-dev", "deep-claude",
+        recovery_ref(), "running", None),
+    AdapterEvidence(
+        "evidence", "run-001", "action-001", "attempt-001", "claude-dev",
+        "deep-claude", "result", "artifact", DIGEST, NOW, "unavailable", None),
+])
+def test_every_public_from_dict_returns_the_exact_base_not_the_calling_subclass(value):
+    hostile = type(f"Hostile{type(value).__name__}", (type(value),), {})
+    reconstructed = hostile.from_dict(value.as_dict())
+    assert type(reconstructed) is type(value)
+
+
+@pytest.mark.parametrize("constructor,changes", [
+    (RecoveryRef.from_dict, {"action_id": "APIKEY/SECRET"}),
+    (NormalizedResult.from_dict, {"action_id": "APIKEY/SECRET"}),
+    (DeepAdapterConfig.from_dict, {"protocol": "APIKEY_SECRET_PROTOCOL"}),
+])
+def test_untrusted_value_failures_retain_no_secret_cause_or_context(constructor, changes):
+    if constructor == RecoveryRef.from_dict:
+        body = recovery_ref().as_dict()
+    elif constructor == NormalizedResult.from_dict:
+        body = result().as_dict()
+    else:
+        body = DeepAdapterConfig(
+            "C:/fake/tool.exe", "fake-claude-jsonl-v1").as_dict()
+    body.update(changes)
+    with pytest.raises(DeepContractError) as stopped:
+        constructor(body)
+    graph = repr((stopped.value, stopped.value.__cause__, stopped.value.__context__))
+    assert "APIKEY" not in graph
+    assert stopped.value.__cause__ is None and stopped.value.__context__ is None
+
+
+def test_public_constructors_refuse_string_subclasses_before_using_their_behavior():
+    class HostileString(str):
+        def __eq__(self, _other):
+            raise RuntimeError("APIKEY_SECRET_EQUALITY")
+
+        def __hash__(self):
+            return str.__hash__(self)
+
+    cases = (
+        lambda: DeepAdapterConfig(HostileString("C:/fake/tool.exe"),
+                                  "fake-claude-jsonl-v1"),
+        lambda: DeepAdapterConfig("C:/fake/tool.exe",
+                                  HostileString("fake-claude-jsonl-v1")),
+        lambda: RecoveryRef(
+            "fake-ledger-v1", "deep-claude", HostileString("action-001"), DIGEST),
+        lambda: AdapterFailure(HostileString("lost_result"), "execute", True),
+        lambda: DeepAdapterConfig(
+            "C:/fake/tool.exe", "fake-claude-jsonl-v1", [HostileString("PATH")]),
+        lambda: DeepCommandSpec(
+            ("C:/fake/tool.exe", HostileString("--fake-claude-jsonl-v1")),
+            "work", (), "bounded-jsonl-v1", 10),
+    )
+    for build in cases:
+        with pytest.raises(DeepContractError) as stopped:
+            build()
+        graph = repr((stopped.value, stopped.value.__cause__, stopped.value.__context__))
+        assert "APIKEY_SECRET" not in graph
+
+
+def test_public_constructors_require_exact_integer_types_not_equal_subclasses():
+    class HostileInt(int):
+        pass
+
+    with pytest.raises(DeepContractError, match="exit_code"):
+        result(exit_code=HostileInt(0))
+    with pytest.raises(DeepContractError, match="timeout_seconds"):
+        DeepCommandSpec(
+            ("C:/fake/tool.exe", "--fake-claude-jsonl-v1"), "work", (),
+            "bounded-jsonl-v1", HostileInt(10))

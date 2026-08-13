@@ -6,6 +6,12 @@ import json
 import pytest
 
 from conductor.command.adapters.deep_codecs import (
+    CLAUDE_FRAME_KIND,
+    CLAUDE_VENDOR,
+    CODEC_VERSION,
+    CODEX_EVENT_KIND,
+    CODEX_PROTOCOL,
+    CODEX_VENDOR,
     MAX_FRAME_BYTES,
     DeepCodecError,
     FakeClaudeCodec,
@@ -160,3 +166,95 @@ def test_invalid_nested_identity_is_normalized_without_echoing_secret():
         FakeClaudeCodec.decode_result(canonical_json(frame).encode() + b"\n")
     assert "APIKEY" not in repr(stopped.value)
     assert stopped.value.__cause__ is None
+
+
+def test_codec_vendor_version_and_kind_vocabularies_are_exactly_pinned():
+    assert (CODEC_VERSION, type(CODEC_VERSION)) == (1, int)
+    assert (CLAUDE_VENDOR, CLAUDE_FRAME_KIND) == ("fake-claude", "result")
+    assert (CODEX_VENDOR, CODEX_PROTOCOL, CODEX_EVENT_KIND) == (
+        "fake-codex", "fake-codex-jsonl", "completed")
+
+
+@pytest.mark.parametrize("codec,path", [
+    (FakeClaudeCodec, ("version",)),
+    (FakeCodexCodec, ("protocol", "version")),
+])
+@pytest.mark.parametrize("version", [True, False, 1.0, "1", None])
+def test_codec_version_is_the_exact_integer_one_not_an_equal_coercion(
+        codec, path, version):
+    frame = json.loads(codec.encode_result(result()))
+    target = frame
+    for part in path[:-1]:
+        target = target[part]
+    target[path[-1]] = version
+    with pytest.raises(DeepCodecError):
+        codec.decode_result(canonical_json(frame).encode() + b"\n")
+
+
+def test_encode_is_bounded_and_must_roundtrip_through_its_own_decoder(monkeypatch):
+    monkeypatch.setattr("conductor.command.adapters.deep_codecs.MAX_FRAME_BYTES", 1)
+    with pytest.raises(DeepCodecError, match="encoded"):
+        FakeClaudeCodec.encode_result(result())
+
+
+@pytest.mark.parametrize("codec", [FakeClaudeCodec, FakeCodexCodec])
+def test_encode_rejects_hostile_result_subclass_without_calling_polymorphic_as_dict(codec):
+    class HostileResult(NormalizedResult):
+        def as_dict(self):
+            raise AssertionError("polymorphic APIKEY_SECRET as_dict called")
+
+    hostile = HostileResult(**result().as_dict())
+    with pytest.raises(DeepCodecError) as stopped:
+        codec.encode_result(hostile)
+    assert "APIKEY" not in repr(stopped.value)
+    assert stopped.value.__cause__ is None and stopped.value.__context__ is None
+
+
+@pytest.mark.parametrize("codec", [FakeClaudeCodec, FakeCodexCodec])
+def test_encode_reconstructs_mutated_exact_values_before_serializing(codec):
+    hostile = result()
+    object.__setattr__(hostile, "action_id", "APIKEY/SECRET")
+    with pytest.raises(DeepCodecError) as stopped:
+        codec.encode_result(hostile)
+    assert "APIKEY" not in repr(stopped.value)
+    assert stopped.value.__cause__ is None and stopped.value.__context__ is None
+
+
+def test_codec_subclasses_cannot_override_vendor_wrap_or_unwrap_authority():
+    class EvilClaudeCodec(FakeClaudeCodec):
+        VENDOR = "attacker"
+
+        @classmethod
+        def _wrap(cls, normalized):
+            return {"APIKEY_SECRET": normalized}
+
+    with pytest.raises(DeepCodecError, match="exact reviewed"):
+        EvilClaudeCodec.encode_result(result())
+    with pytest.raises(DeepCodecError, match="exact reviewed"):
+        EvilClaudeCodec.decode_result(FakeClaudeCodec.encode_result(result()))
+
+
+@pytest.mark.parametrize("codec", [FakeClaudeCodec, FakeCodexCodec])
+def test_canonicalization_failures_are_fixed_and_drop_dynamic_exception_graph(
+        codec, monkeypatch):
+    SecretError = type("APIKEY_SECRET_EXCEPTION", (Exception,), {})
+
+    def explode(_value):
+        raise SecretError("APIKEY_SECRET_MESSAGE")
+
+    monkeypatch.setattr("conductor.command.adapters.deep_codecs.canonical_json", explode)
+    for call in (
+            lambda: codec.encode_result(result()),
+            lambda: codec.decode_result(b"{}\n")):
+        with pytest.raises(DeepCodecError) as stopped:
+            call()
+        graph = repr((stopped.value, stopped.value.__cause__, stopped.value.__context__))
+        assert "APIKEY_SECRET" not in graph
+
+
+def test_decoder_rejects_extreme_recursive_json_with_a_fixed_error():
+    frame = (b'{"vendor":"fake-claude","version":1,"frame":"result",'
+             b'"payload":' + b"[" * 1200 + b"0" + b"]" * 1200 + b"}\n")
+    with pytest.raises(DeepCodecError) as stopped:
+        FakeClaudeCodec.decode_result(frame)
+    assert stopped.value.__cause__ is None and stopped.value.__context__ is None

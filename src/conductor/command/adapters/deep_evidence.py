@@ -4,8 +4,19 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, ClassVar
 
-from ..contracts import _digest, _id, _timestamp
-from .deep_contracts import DeepContractError, _enum, _exact
+from .deep_contracts import (
+    DeepContractError,
+    _closed_digest,
+    _closed_id,
+    _closed_timestamp,
+    _enum,
+    _exact,
+)
+
+
+EVIDENCE_KINDS = frozenset({"result", "diff", "tests", "status"})
+EVIDENCE_VERIFICATIONS = frozenset({
+    "verified", "unavailable", "mismatch", "error"})
 
 
 @dataclass(frozen=True)
@@ -31,17 +42,17 @@ class AdapterEvidence:
         for name in (
                 "evidence_id", "run_id", "action_id", "attempt_id", "instance_id",
                 "adapter_id", "artifact_ref"):
-            object.__setattr__(self, name, _id(name, getattr(self, name)))
+            object.__setattr__(self, name, _closed_id(name, getattr(self, name)))
         object.__setattr__(self, "kind", _enum(
-            "kind", self.kind,
-            frozenset({"result", "diff", "tests", "status"})))
-        object.__setattr__(self, "digest", _digest("evidence digest", self.digest))
-        object.__setattr__(self, "observed_at", _timestamp("observed_at", self.observed_at))
+            "kind", self.kind, EVIDENCE_KINDS))
+        object.__setattr__(
+            self, "digest", _closed_digest("evidence digest", self.digest))
+        object.__setattr__(
+            self, "observed_at", _closed_timestamp("observed_at", self.observed_at))
         object.__setattr__(self, "verification", _enum(
-            "verification", self.verification,
-            frozenset({"verified", "unavailable", "mismatch", "error"})))
+            "verification", self.verification, EVIDENCE_VERIFICATIONS))
         if self.verification == "verified":
-            object.__setattr__(self, "verified_at", _timestamp(
+            object.__setattr__(self, "verified_at", _closed_timestamp(
                 "verified_at", self.verified_at))
         elif self.verified_at is not None:
             raise DeepContractError("only verified evidence may carry verified_at")
@@ -51,4 +62,5 @@ class AdapterEvidence:
 
     @classmethod
     def from_dict(cls, value: object) -> "AdapterEvidence":
-        return cls(**_exact(value, cls._FIELDS, "adapter evidence"))
+        return AdapterEvidence(**_exact(
+            value, AdapterEvidence._FIELDS, "adapter evidence"))
