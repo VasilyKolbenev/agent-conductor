@@ -16,6 +16,7 @@ from conductor.command.containment import (
     RouteViolation,
     RouteViolationCode,
     assess_cwd_route,
+    contained_directory,
     portal_violation,
     render_cwd_violation,
     render_route_violation,
@@ -230,6 +231,21 @@ def test_cwd_unreadable_is_distinct_from_missing_but_intentionally_renders_the_s
     assert violation == RouteViolation(RouteViolationCode.UNREADABLE, denied)
     assert render_cwd_violation(violation) == (
         f"cwd route component {str(denied)!r} does not exist or cannot be read")
+
+
+@pytest.mark.parametrize("leaf,make,expected", [
+    ("missing", lambda path: None, "does not exist or cannot be read"),
+    ("plain", lambda path: path.write_bytes(b"file"), "is not a directory"),
+])
+def test_contained_directory_wrapper_preserves_legacy_route_fact_bytes(
+        tmp_path, leaf, make, expected):
+    root = tmp_path.resolve()
+    (root / "work").mkdir()
+    target = root / "work" / leaf
+    make(target)
+    walked, fact = contained_directory(root, Path("work") / leaf)
+    assert walked == target
+    assert fact == f"route: {str(target)!r} {expected}"
 
 
 def test_missing_run_remains_safe_for_create_and_is_not_a_typed_violation(tmp_path):
