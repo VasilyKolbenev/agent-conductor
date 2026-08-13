@@ -59,6 +59,11 @@ def test_attempt_event_round_trip_is_frozen_and_has_exactly_thirteen_fields():
     {"phase": "observed", "outcome": None},
     {"phase": "observed", "outcome": "verification_failed"},
     {"phase": "observed", "outcome": "succeeded", "exit_code": True},
+    {"phase": "observed", "outcome": "succeeded", "exit_code": 1},
+    {"phase": "observed", "outcome": "failed", "exit_code": 0},
+    {"phase": "observed", "outcome": "cancelled", "exit_code": 1},
+    {"phase": "observed", "outcome": "rejected", "exit_code": 1},
+    {"phase": "observed", "outcome": "unknown", "exit_code": 1},
     {"recovery_ref": "not an id"},
 ])
 def test_phase_outcome_exit_and_recovery_ref_contract_is_strict(change):
@@ -71,7 +76,7 @@ def test_observed_accepts_only_the_five_effect_facts_and_nullable_integer_exit()
     for index, outcome in enumerate(outcomes):
         event = an_event(
             event_id=f"event-{index}", phase="observed", outcome=outcome,
-            exit_code=None if outcome in {"cancelled", "unknown"} else index)
+            exit_code=0 if outcome == "succeeded" else (-1 if outcome == "failed" else None))
         assert event.outcome == outcome
 
 

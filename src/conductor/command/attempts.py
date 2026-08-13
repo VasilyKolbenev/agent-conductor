@@ -80,6 +80,14 @@ class AttemptEvent:
             raise ContractError(
                 "an observed event outcome must be succeeded, failed, cancelled, "
                 "rejected, or unknown")
+        elif self.outcome == "succeeded" and self.exit_code not in (None, 0):
+            raise ContractError("a succeeded observed event exit_code must be zero or null")
+        elif self.outcome == "failed" and self.exit_code == 0:
+            raise ContractError("a failed observed event exit_code must be nonzero or null")
+        elif self.outcome in {"cancelled", "rejected", "unknown"}:
+            if self.exit_code is not None:
+                raise ContractError(
+                    f"a {self.outcome} observed event exit_code must be null")
         object.__setattr__(self, "schema_version", _schema(self.schema_version))
 
     def as_dict(self) -> dict[str, Any]:
