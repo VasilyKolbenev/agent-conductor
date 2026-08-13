@@ -2,6 +2,7 @@
 
 - **Status:** binding execution plan
 - **Owner directive:** 2026-08-11
+- **Recovery re-baseline:** 2026-08-13; release-candidate deadline 2026-08-16
 - **Base:** `codex/integration-alpha` at `3a31b1f`
 - **Target:** a releasable v2 technical preview in 3–4 calendar days
 - **Supersedes:** the 14-day calendar in the competitive product direction; the product laws,
@@ -216,7 +217,7 @@ a valid decision receipt.
 - **CMD-3 — Complete 2026-08-11.** Explicit non-probing Adapter registry; immutable capability
   manifests; validated observations, preparations and verification results; four protocol seams;
   unsupported controls stay absent and no registry execution method exists.
-- **CMD-4 — fixed, pending external re-review 2026-08-11.** Persisted Proposals and the
+- **CMD-4 — Complete 2026-08-13 at `63d261a`.** Persisted Proposals and the
   Observe/Propose service. All three Codex REQUEST-CHANGES MAJORs are closed: (1) the instance ->
   adapter binding is derived from the pinned frozen config, never trusted from the caller, so
   an unknown instance, an adapter mismatch, and capability laundering through a foreign
@@ -391,3 +392,212 @@ a valid decision receipt.
   walk reads and goes undetected; and a failed creation may still leave parent directories or
   staging residue above the run directory. Merge, push, and the runner/Confirm surface stay
   blocked; the two review stages run again on the new SHA.
+- **CMD-4 final gate — external APPROVE 2026-08-13 at `63d261a`.** The final tests-and-prose
+  delta pins the generic reparse-tag detector and the irregular-owned-file route arm; both named
+  removals fail their own permanent regression. Its only production-file edits are docstrings,
+  and the docstring-stripped `preview.py` AST is identical to `f172bb6`; `merge.py` is the same
+  blob. Two internal reviews and the external delta review approved the exact SHA. The external
+  targeted gate passed 79 tests and the full gate passed 2044 with 4 platform skips. CMD-4 is
+  Complete; runner/Confirm may now consume its frozen boundary.
+
+## 12. Four-day recovery schedule — binding from 2026-08-13
+
+This section supersedes the sequencing in section 6 where the dates conflict. It does not relax
+the outcome, safety laws, cut order, or release acceptance above. The elapsed first two days were
+spent hardening the Day-1 boundary; the recovery schedule earns that time back through parallel
+work on disjoint files, smaller vertical slices, and one frozen integration decision per slice.
+Correctness, security, receipts, verification, and release evidence are not schedule variables.
+
+### 12.1 Scope freeze and completion accounting
+
+At this re-baseline, CMD-1 through CMD-4 are Complete; the final external approval is `63d261a`.
+The reusable v0.1.0 alpha already supplies the read-only panel, SSE foundation, report, doctor,
+packaging baseline, rendered-browser job, mutation isolation, and release-smoke procedure. This is
+roughly 30% of the v2 technical preview by acceptance surface: the safe read/propose foundation
+exists, while the execution runtime, deep adapters, writable Cockpit, Human Gate, Policy, editor,
+parallel wow path, and frozen release gates remain.
+
+The following breadth reductions are applied now, using section 8's approved cut order. They are
+scope choices, not quality waivers:
+
+1. Gemini CLI and OpenCode ship as explicit manifests plus Observe only. They do not execute.
+2. The Orbit editor is form/source based: preview, validation, diff, confirmation, atomic write,
+   stages, edges, assignments, gates, and one parallel branch. Drag-and-drop polish is excluded.
+3. Policy authorizes dispatch and independent review only. Retry and notification stay Confirm.
+4. Pause/resume is present only where an adapter proves it. Stop and retry remain mandatory.
+5. The public distribution/repository rename is not applied without all external clearances.
+
+No further capability enters before the release candidate. Marketplace/gallery work, remote
+multi-user operation, billing, mobile-specific polish, and broad adapter parity are post-preview.
+
+### 12.2 Parallel lanes and dependency rule
+
+The four lanes work in separate worktrees with disjoint primary ownership. A lane may branch and
+commit against `f172bb6` immediately to save elapsed time, but no Day-2 code integrates until the
+CMD-4 micro-delta has two approvals on one exact committed SHA.
+
+- **A — runtime:** owns `policy.py`, `runtime.py`, authorization freshness, attempts, receipts,
+  and recovery. Contracts and fake-adapter tests may start before CMD-4 integrates.
+- **B — adapters:** owns `adapters/process.py`, Claude Code, Codex, and Observe-only
+  Gemini/OpenCode. The owned runner and deterministic fake executables may start immediately.
+- **C — Cockpit:** owns command HTTP endpoints, CSRF, run SSE/history, capability controls,
+  Human Gate, and editor. Its API/UI shell may start now, but execution wiring waits for CMD-4.
+- **D — assurance:** owns the threat matrix, sabotage fixtures, browser path, package, demo, and
+  docs. Tests and fixtures against frozen interfaces may start immediately.
+
+The hard dependency is deliberately short:
+
+```text
+CMD-4 approved
+  -> Confirm freshness + owned runner
+  -> execute/verify receipts + Claude/Codex adapters
+  -> authenticated Cockpit + Human Gate/history
+  -> Policy + parallel wow path
+  -> frozen release candidate
+```
+
+Runner, Cockpit shell, threat fixtures, and adapter argument builders proceed in parallel around
+that chain. They merge only when the upstream contract they consume is frozen and green.
+
+### 12.3 Day 1 — close the boundary and reach one fake executable
+
+Deadline: 2026-08-13 end of day.
+
+- **CMD4-R8-CLOSE — Complete at `63d261a`:** the generic-reparse relation test, the
+  irregular-owned-file planting test, and the two scoped prose corrections passed two internal
+  reviews and the external gate. Production behavior is unchanged. The boundary is available to
+  runner/Confirm after this plan-only recovery record is committed.
+- **ALPHA-DEBT-1:** integrate the already double-approved REPORT-GUARD-1 branch at `5f69207`
+  after a compact rebase/provenance gate. It changes report guards and plan history, not product
+  behavior. The tracked HCP specification and completed DO-7 gates are reused, not reimplemented.
+- **A/CONF-1:** authorize one unchanged proposal by its canonical preview digest, a fresh Human
+  confirmation, mode, scope, capability, action/time budgets, and frozen config. Any changed or
+  stale fact refuses before preparation. Record the confirmation separately from result.
+- **A/RT-1:** implement the minimal `prepare -> authorize -> execute -> verify -> result receipt`
+  state machine against a fake adapter. Accepted, started, succeeded, failed, cancelled, unknown,
+  and verification_failed remain distinct.
+- **B/RUN-1:** implement the owned-process runner with structured argv, explicit cwd beneath the
+  project root, sanitized environment references, timeout, bounded capture/streaming, and an
+  ownership token. It may stop only the exact child/process group it started and recorded.
+- **C/API-0 and D/THREAT-0:** freeze endpoint schemas, same-origin/CSRF fixtures, and the attack
+  matrix early so runtime and UI do not invent incompatible command shapes later.
+
+Day-1 recovery gate: one deterministic fake executable completes propose -> confirm -> execute ->
+verify -> immutable receipt from CLI; stale confirmation, changed digest, path escape, arbitrary
+shell text, timeout, duplicate idempotency, and foreign PID are independently red under sabotage.
+All existing v1 and CMD-1..4 regressions stay green.
+
+### 12.4 Day 2 — two deep adapters and the writable Cockpit
+
+Deadline: 2026-08-14 end of day.
+
+- **B/CC-1 and B/CX-1:** Claude Code and Codex each implement manifest, prepare, dispatch,
+  observable progress, evidence/status request, stop, retry, and verify. Deterministic fake
+  executables are mandatory; real-adapter smoke is opt-in and never replaces them.
+- **B/BREADTH-1:** Gemini CLI and OpenCode receive honest manifests and Observe only. No command
+  endpoint or control claims execution, pause, resume, stop, or verification for them.
+- **A/RT-2:** persist attempts and output/evidence/result receipts; recover after restart without
+  converting unknown execution into success; retry receives new action/attempt ids with causal
+  links; switch supersedes an attempt only after the old process is stopped or marked unresolved.
+- **C/API-1:** add authenticated same-origin command and Human-decision endpoints with a
+  per-process anti-CSRF token. The browser writes only validated command requests, decision
+  receipts, and explicitly confirmed design edits. Run events extend the existing SSE path.
+- **C/UI-1:** render capability-derived controls and run history. Unsupported controls are absent,
+  never decorative disabled buttons. Add dispatch/review/stop/retry and only proven pause/resume.
+- **D/ASSURE-1:** run injection, path escape, duplicate, stale confirmation, PID ownership,
+  disconnect, restart, receipt tamper, and verification-failure sabotage as each seam lands.
+
+Day-2 gate: both deep adapters pass fake-executable CLI end-to-end through prepare -> confirm ->
+execute -> verify -> receipt. Failure, timeout, duplicate, restart, stop, retry, switch, and
+unsupported capability each have a permanent regression. At least one opt-in real smoke per
+available adapter runs on the release machine; an unavailable product is reported, never faked.
+
+### 12.5 Day 3 — complete the browser wow path and freeze features
+
+Feature freeze: 2026-08-15 14:00 Europe/Moscow. After that time only a release blocker, installation
+failure, or wow-path defect may change production code.
+
+- **C/HG-1:** show the Human Gate as a real lifecycle backed by immutable approve, reject,
+  request-changes, and waive receipts; absence is idle, never satisfied.
+- **C/EDIT-1:** ship the source-preserving minimal editor from the cut scope: form/source preview,
+  validation, diff, explicit confirmation, atomic write, and one parallel branch.
+- **A/POL-1:** implement narrow Policy for dispatch and independent review only, with explicit
+  capability, project-root, concurrency, action-count, and time budgets. It cannot expand
+  permissions, weaken gates, switch harnesses, make Human decisions, or perform arbitrary or
+  destructive actions.
+- **A/PRO-1:** propose bounded ready work, independent review, stale retry, and Human-Gate
+  attention. Policy may execute only dispatch/review; retry and every Human decision stay Confirm.
+- **A/PAR-1:** execute one bounded parallel branch; deterministic handoff routes implementation to
+  one adapter and independent review to the other; Orbit advances only from verified result state.
+- **C/D/WOW-1:** automate the complete browser path: open Orbit, preview, confirm dispatch, observe
+  real streamed progress/evidence, hand off, review, stop at Human Gate, decide, and replay all
+  attempts/receipts. Then execute the same path manually and reduce it below ten minutes.
+- **D/REL-0:** finish English quickstart, threat model, demo fixture/script, and clean-wheel smoke
+  while the interfaces are still fresh. Prepare but do not apply the public rename patch unless
+  every external clearance is affirmative. Documentation may describe only behavior held by a
+  gate.
+
+Day-3 gate: the complete wow path passes in Chromium from a clean installed wheel with two adapter
+implementations, one parallel branch, a Human Gate, history/replay, and no fake telemetry. The
+feature-freeze SHA is committed and clean. Missing optional breadth is cut according to section 8,
+not left half-present.
+
+### 12.6 Day 4 — frozen release candidate only
+
+Deadline: 2026-08-16. No feature development is scheduled on this day.
+
+1. Freeze one release-candidate SHA before the first gate. Every result names that exact SHA and
+   proves its import path; any blocker fix creates a new SHA and restarts the affected gates.
+2. Run the full suite on Windows and Linux, the mutation harness, browser suite, deterministic
+   fake-adapter e2e, available opt-in real-adapter smokes, package build/install, release smoke,
+   threat/sabotage suite, Protocol-v1 byte pin, and committed-clean check.
+3. Run two independent release reviews in parallel: one against the product/safety contract and
+   one against code quality, packaging, and evidence. Both review the same SHA.
+4. Execute and time the manual wow path from the clean wheel. Archive exact commands, receipts,
+   screenshots/logs, limitations, and the under-ten-minute result.
+5. Tag the technical preview only after every required gate is green. A missed required gate is a
+   delayed release, never an inferred pass or a quality waiver.
+
+Day 4 deliberately holds roughly one third of the recovery window for integration defects and
+hostile review. If a blocker consumes that reserve, cut optional breadth before moving the safety
+boundary. The two-adapter wow path, confirmation freshness, owned-process rule, receipts,
+verification, restart truth, Human Gate truth, v1 compatibility, browser path, and clean-package
+evidence are never cut.
+
+### 12.7 Review and integration rules for speed without weaker evidence
+
+- A slice is a narrow vertical behavior with its tests and truthful documentation, not a layer of
+  unintegrated scaffolding. Production, tests, and plan record land before review on one clean SHA.
+- The specification and quality reviews start concurrently and independently on that SHA. Their
+  findings are combined into one fix batch; both re-review the resulting exact SHA.
+- A repeated finding of the same class triggers structural redesign, not another enumeration of
+  examples. Live defects, safety-contract gaps, false public claims, and missing regression doors
+  block. True internal prose/style observations with no behavioral or public-contract consequence
+  are recorded for cleanup and do not manufacture another feature cycle.
+- Every safety rule has a positive path, a refusing path, a before/after state assertion, and at
+  least one named sabotage that becomes a permanent regression. Test helpers obtain their witness
+  independently from the production function they judge.
+- Integrate at 13:00 and 20:00 Europe/Moscow. Each integration runs impacted tests, v1 pin, and a
+  clean-tree/import-provenance check; the full suite runs nightly. Day 4 alone produces release
+  numbers from one frozen SHA.
+- No approved implementation receives a later behavior or public-contract change disguised as
+  bookkeeping. A ledger-only transition from pending review to Complete is allowed after APPROVE
+  only when a whitelist diff proves that one status/approved-SHA record is the entire change and
+  production, tests, specifications, and public docs are byte-identical. It receives a compact
+  provenance/delta review rather than reopening the implementation cycle. Any broader change is
+  a new reviewed SHA. In all cases, the final release gates run on the exact release-candidate SHA.
+- Existing structural limits remain: Python/test files stay below 800 lines, functions below 50
+  lines, and changed lines at or below 100 characters unless an explicit, recorded exception is
+  reviewed. A self-contained test circuit is split before it reaches the ceiling.
+
+### 12.8 Progress reporting and stop conditions
+
+At each 13:00/20:00 integration, report only executed facts: exact SHA, completed slice ids,
+passed/failed/skipped counts, sabotage score, changed files/stat, residuals, and the next critical
+dependency. Percentages are derived from the day gates: foundation 30%, Day-1 recovery gate 45%,
+Day-2 gate 70%, Day-3 feature-freeze gate 90%, frozen Day-4 release acceptance 100%.
+
+Stop and escalate immediately for a safety-law conflict, an interface change that invalidates two
+active lanes, a repeated class defect after structural redesign, unavailable evidence for either
+deep adapter, or a release gate that cannot run on the frozen SHA. Do not silently consume Day 4
+with feature work, and do not report 100% until section 9 is green in full.
