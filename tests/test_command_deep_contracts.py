@@ -52,6 +52,30 @@ NOW = "2026-08-13T20:00:00Z"
 DIGEST = "sha256:" + "a" * 64
 
 
+class _HostileList(list):
+    iterated = compared = False
+
+    def __iter__(self):
+        type(self).iterated = True
+        raise RuntimeError("APIKEY_SECRET_ITERATOR")
+
+    def __eq__(self, _other):
+        type(self).compared = True
+        raise RuntimeError("APIKEY_SECRET_EQUALITY")
+
+
+class _HostileTuple(tuple):
+    iterated = compared = False
+
+    def __iter__(self):
+        type(self).iterated = True
+        raise RuntimeError("APIKEY_SECRET_ITERATOR")
+
+    def __eq__(self, _other):
+        type(self).compared = True
+        raise RuntimeError("APIKEY_SECRET_EQUALITY")
+
+
 def failure(**changes):
     values = {"code": "lost_result", "phase": "execute", "retryable": True}
     values.update(changes)
@@ -518,6 +542,68 @@ def test_public_collections_require_exact_list_or_tuple_before_iteration():
             assert stopped.value.__context__ is None
 
 
+def test_consumers_revalidate_mutated_collections_before_iteration_or_equality():
+    def config_call(rows):
+        value = DeepAdapterConfig("C:/fake/tool.exe", "fake-claude-jsonl-v1")
+        object.__setattr__(value, "env_allow", rows)
+        return value.as_dict
+
+    def spec_call(rows):
+        config = DeepAdapterConfig("C:/fake/tool.exe", "fake-claude-jsonl-v1")
+        value = DeepCommandSpec.from_config(config, timeout_seconds=10)
+        object.__setattr__(value, "env_allow", rows)
+        return lambda: value.to_runner_spec(config)
+
+    def argument_call(value, field, rows):
+        object.__setattr__(value, field, rows)
+        return value.as_dict
+
+    cases = (
+        (config_call, ["PATH"], "deep adapter config must remain canonical"),
+        (spec_call, ["PATH"], "command spec must remain canonical"),
+        (lambda rows: argument_call(
+            DeepDispatchArgs("work", "instruction", "review", [], "normal"),
+            "artifact_refs", rows), ["artifact"],
+         "deep arguments must remain canonical"),
+        (lambda rows: argument_call(
+            DeepReviewArgs("work", ["artifact"], "quality"),
+            "target_artifact_refs", rows), ["artifact"],
+         "deep arguments must remain canonical"),
+        (lambda rows: argument_call(
+            DeepEvidenceArgs("action", ["result"]), "kinds", rows), ["result"],
+         "deep arguments must remain canonical"),
+    )
+    for hostile_type in (_HostileList, _HostileTuple):
+        for make_call, rows, message in cases:
+            hostile_type.iterated = hostile_type.compared = False
+            call = make_call(hostile_type(rows))
+            with pytest.raises(DeepContractError) as stopped:
+                call()
+            assert str(stopped.value) == message
+            assert not hostile_type.iterated and not hostile_type.compared
+            assert stopped.value.__cause__ is None
+            assert stopped.value.__context__ is None
+
+
+def test_consumers_reconstruct_mutated_exact_base_collections():
+    config = DeepAdapterConfig("C:/fake/tool.exe", "fake-claude-jsonl-v1")
+    object.__setattr__(config, "env_allow", ["PATH"])
+    assert config.as_dict()["env_allow"] == ["PATH"]
+    spec = DeepCommandSpec.from_config(config, timeout_seconds=10)
+    object.__setattr__(spec, "env_allow", ["PATH"])
+    assert spec.to_runner_spec(config).env_allow == ("PATH",)
+    values = (
+        (DeepDispatchArgs("work", "instruction", "review", [], "normal"),
+         "artifact_refs", ["artifact"]),
+        (DeepReviewArgs("work", ["artifact"], "quality"),
+         "target_artifact_refs", ["artifact"]),
+        (DeepEvidenceArgs("action", ["result"]), "kinds", ["result"]),
+    )
+    for value, field, rows in values:
+        object.__setattr__(value, field, rows)
+        assert value.as_dict()[field] == rows
+
+
 def test_public_constructors_require_exact_integer_types_not_equal_subclasses():
     class HostileInt(int):
         pass
@@ -554,3 +640,16 @@ def test_deep_value_modules_have_the_exact_reviewed_import_surface():
             "." * node.level + (node.module or "")
             for node in ast.walk(tree) if isinstance(node, ast.ImportFrom))
         assert imported == allowed
+        dynamic_doors = {
+            node.func.id for node in ast.walk(tree)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+            and node.func.id in {"__import__", "import_module"}}
+        dynamic_doors.update(
+            node.func.attr for node in ast.walk(tree)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+            and node.func.attr in {"__import__", "import_module"})
+        dynamic_doors.update(
+            node.value for node in ast.walk(tree)
+            if isinstance(node, ast.Constant)
+            and node.value in {"__import__", "import_module"})
+        assert dynamic_doors == set()

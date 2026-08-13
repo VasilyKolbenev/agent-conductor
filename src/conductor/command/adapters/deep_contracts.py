@@ -181,8 +181,22 @@ class DeepAdapterConfig:
         object.__setattr__(self, "env_allow", names)
 
     def as_dict(self) -> dict[str, Any]:
-        return {"executable": self.executable, "protocol": self.protocol.value,
-                "env_allow": list(self.env_allow), "real_mode": self.real_mode}
+        if type(self) is not DeepAdapterConfig:
+            raise DeepContractError("deep adapter config must remain canonical")
+        failed = False
+        try:
+            canonical = DeepAdapterConfig(
+                self.executable, self.protocol, self.env_allow, self.real_mode)
+        except Exception:  # noqa: BLE001 -- a mutated value remains untrusted
+            failed = True
+            canonical = None
+        if failed:
+            raise DeepContractError(
+                "deep adapter config must remain canonical") from None
+        assert canonical is not None
+        return {
+            "executable": canonical.executable, "protocol": canonical.protocol.value,
+            "env_allow": list(canonical.env_allow), "real_mode": canonical.real_mode}
 
     @classmethod
     def from_dict(cls, value: object) -> "DeepAdapterConfig":

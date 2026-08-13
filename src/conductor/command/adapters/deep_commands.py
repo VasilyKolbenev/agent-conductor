@@ -42,9 +42,22 @@ class _StrictArguments:
     _ARRAY_FIELDS: ClassVar[frozenset[str]] = frozenset()
 
     def as_dict(self) -> dict[str, Any]:
+        if type(self) not in DEEP_ARGUMENT_TYPES.values():
+            raise DeepContractError("deep arguments must remain canonical")
+        failed = False
+        try:
+            canonical = type(self)(**{
+                name: getattr(self, name) for name in self._FIELDS})
+        except Exception:  # noqa: BLE001 -- a mutated value remains untrusted
+            failed = True
+            canonical = None
+        if failed:
+            raise DeepContractError("deep arguments must remain canonical") from None
+        assert canonical is not None
         return {
-            name: list(value) if isinstance(value, tuple) else value
-            for name in self._FIELDS if (value := getattr(self, name)) is not None
+            name: list(value) if type(value) is tuple else value
+            for name in canonical._FIELDS
+            if (value := getattr(canonical, name)) is not None
         }
 
     @classmethod
@@ -223,9 +236,29 @@ class DeepCommandSpec:
 
         if type(self) is not DeepCommandSpec:
             raise DeepContractError("runner conversion requires the exact spec base type")
-        canonical = DeepCommandSpec.from_config(
-            config, timeout_seconds=self.timeout_seconds)
-        if self != canonical:
+        if type(config) is not DeepAdapterConfig:
+            raise DeepContractError("from_config requires a DeepAdapterConfig")
+        if (type(self.argv) is not tuple
+                or type(self.env_allow) not in (list, tuple)
+                or type(config.env_allow) not in (list, tuple)):
+            raise DeepContractError("command spec must remain canonical")
+        failed = False
+        try:
+            candidate = DeepCommandSpec(
+                self.argv, self.cwd, self.env_allow, self.output_profile,
+                self.timeout_seconds)
+            reviewed_config = DeepAdapterConfig(
+                config.executable, config.protocol, config.env_allow, config.real_mode)
+            canonical = DeepCommandSpec.from_config(
+                reviewed_config, timeout_seconds=candidate.timeout_seconds)
+        except Exception:  # noqa: BLE001 -- a mutated value remains untrusted
+            failed = True
+            candidate = canonical = None
+        if failed:
+            raise DeepContractError(
+                "command spec does not equal its frozen config") from None
+        assert candidate is not None and canonical is not None
+        if candidate != canonical:
             raise DeepContractError("command spec does not equal its frozen config")
         return CommandSpec(
             argv=canonical.argv, cwd=canonical.cwd,

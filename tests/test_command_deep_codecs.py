@@ -108,18 +108,24 @@ def test_truncated_multi_empty_or_nonobject_frame_refuses(frame):
         FakeClaudeCodec.decode_result(frame)
 
 
-def test_oversized_frame_refuses_before_parsing(monkeypatch):
-    parsed = []
+def test_exact_frame_limit_reaches_parser_and_next_byte_does_not(monkeypatch):
+    parsed: list[int] = []
 
     def forbidden_parse(payload):
-        parsed.append(payload)
-        raise AssertionError("oversized frame reached the JSON parser")
+        parsed.append(len(payload))
+        return None
 
     monkeypatch.setattr(
         "conductor.command.adapters.deep_codecs._parse_json", forbidden_parse)
+    at_limit = b"{" + b" " * (16 * 1024 - 3) + b"}\n"
+    over_limit = b"{" + b" " * (16 * 1024 - 2) + b"}\n"
     with pytest.raises(DeepCodecError, match="rejected"):
-        FakeClaudeCodec.decode_result(b"{" + b" " * MAX_FRAME_BYTES + b"}\n")
-    assert parsed == []
+        FakeClaudeCodec.decode_result(at_limit)
+    assert (len(at_limit), parsed) == (16 * 1024, [16 * 1024 - 1])
+    parsed.clear()
+    with pytest.raises(DeepCodecError, match="rejected"):
+        FakeClaudeCodec.decode_result(over_limit)
+    assert (len(over_limit), parsed) == (16 * 1024 + 1, [])
 
 
 def test_frame_and_runner_output_limits_are_the_same_literal_budget():
