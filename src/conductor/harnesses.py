@@ -45,15 +45,11 @@ colour-vision deficiency, and an HSV gap is not evidence that two things
 cannot be confused. The scope restrictions above, plus a contrast audit, do
 the work — downstream, where the colours are used.
 
-DeepSeek deliberately has no `deepseek` registry entry. DeepSeek currently
-provides models, APIs and official integration guides for third-party
-harnesses; it does not identify a first-party public coding Harness named
-DeepSeek. Third-party Harness products are registered under their own product
-identities. Revisit if DeepSeek ships and documents a first-party Harness. The
-distinction that decides every future row is the same one the product
-direction draws when it says December has no model marketplace and no
-inference routing: this registry lists harness products, not model or API
-providers.
+DeepSeek's model and API family is still not a harness identity. Its official
+first-party product is registered under the distinct `deepseek-harness` id,
+after DeepSeek published DeepSeek Harness in August 2026. That distinction is
+the same one the product direction applies to Gemini CLI: this registry lists
+harness products, not model families or inference providers.
 """
 from __future__ import annotations
 
@@ -172,6 +168,18 @@ _KNOWN: tuple[Harness, ...] = (
             accent_dark="#d3a88c", accent_light="#7d4a2c",
             docs="https://opencode.ai/docs/",
             adapter="opencode", executable_hints=("opencode",)),
+    # DH-1. OFFICIAL-SOURCE-VERIFIED 2026-08-13. The official DeepSeek
+    # repository names the product `DeepSeek Harness`, publishes it under the
+    # MIT licence, and documents `dsh` as the launcher, including the headless
+    # profile. The repository also calls the product a developer preview with
+    # compatibility-breaking changes expected. This row is presentation
+    # metadata only: it neither installs nor discovers `dsh`, and it promises
+    # no executable capability. Any adapter must pin and review its own exact
+    # dependency separately.
+    Harness(id="deepseek-harness", display_name="DeepSeek Harness",
+            monogram="DH", accent_dark="#63c8b3", accent_light="#176b5b",
+            docs="https://github.com/deepseek-ai/deepseek-harness",
+            adapter="deepseek-harness", executable_hints=("dsh",)),
     Harness(id=CUSTOM, display_name="Custom harness", monogram="CH",
             accent_dark=NEUTRAL_DARK, accent_light=NEUTRAL_LIGHT,
             docs="", adapter="", executable_hints=()),

@@ -55,29 +55,52 @@ def test_the_registry_lists_the_products_it_says_it_does():
     assert [h.id for h in harnesses.known()] == [
         "claude-code", "codex", "cursor", "windsurf", "kimi-code",
         "qwen-code", "grok-build", "github-copilot", "gemini-cli", "opencode",
-        "custom"]
+        "deepseek-harness", "custom"]
 
-def test_deepseek_is_deliberately_absent():
-    # Not because the integration story is missing — DeepSeek publishes models,
-    # APIs and official guides for integrating them with third-party harnesses.
-    # Because this registry lists HARNESS PRODUCTS, and DeepSeek identifies no
-    # first-party public coding harness of its own; a third-party harness is
-    # registered under its own product identity. Revisit if that changes. The
-    # test exists so the row is a decision someone argues with, not a helpful
-    # two-line edit.
-    text = " ".join(f"{h.id} {h.display_name}" for h in harnesses.known()).lower()
-    assert "deepseek" not in text
+
+def test_deepseek_harness_is_the_product_and_not_the_model_family():
+    # DeepSeek now ships a first-party Harness, so the old absence assertion is
+    # false. Keep the product id distinct from the model/provider name: typing
+    # `deepseek` still means an unregistered custom harness, never an inferred
+    # alias for the official product.
+    row = harnesses.get("deepseek-harness")
+    assert row is not None
+    assert (row.display_name, row.monogram, row.docs, row.adapter,
+            row.executable_hints) == (
+        "DeepSeek Harness",
+        "DH",
+        "https://github.com/deepseek-ai/deepseek-harness",
+        "deepseek-harness",
+        ("dsh",),
+    )
     assert harnesses.get("deepseek") is None
+    assert harnesses.resolve("deepseek").accent_dark == harnesses.NEUTRAL_DARK
+
+
+def test_deepseek_registry_disclosure_does_not_claim_runtime_support():
+    lines = Path(harnesses.__file__).read_text(encoding="utf-8").splitlines()
+    start = next(index for index, line in enumerate(lines)
+                 if line.strip().startswith("# DH-1."))
+    block = []
+    for line in lines[start:]:
+        if not line.strip().startswith("#"):
+            break
+        block.append(line.strip().removeprefix("#").strip())
+    disclosure = " ".join(block)
+    assert "OFFICIAL-SOURCE-VERIFIED 2026-08-13" in disclosure
+    assert "developer preview" in disclosure
+    assert "promises no executable capability" in disclosure
+    assert "pin and review its own exact dependency" in disclosure
 
 def test_the_gemini_row_is_the_cli_product_and_not_the_model_family():
-    # The same rule that keeps DeepSeek out decides how Google gets in. Google
-    # ships both a model family reached over an API and a first-party terminal
-    # harness built on it, and only the second is a harness product — so the
-    # row is `gemini-cli`/`Gemini CLI`, and the bare model name stays
-    # unregistered. A user who types `gemini` gets that exact string and the
-    # neutral badge, which is the honest answer: this file knows a CLI, not a
-    # model. OpenCode needs no such distinction — it ships no model at all and
-    # is pointed at whichever provider its user configures.
+    # The same rule that separates DeepSeek Harness from DeepSeek decides how
+    # Google gets in. Google ships both a model family reached over an API and
+    # a first-party terminal harness built on it, and only the second is a
+    # harness product — so the row is `gemini-cli`/`Gemini CLI`, and the bare
+    # model name stays unregistered. A user who types `gemini` gets that exact
+    # string and the neutral badge, which is the honest answer: this file knows
+    # a CLI, not a model. OpenCode needs no such distinction — it ships no model
+    # at all and is pointed at whichever provider its user configures.
     assert harnesses.get("gemini-cli") is not None
     assert harnesses.get("gemini") is None
     assert harnesses.resolve("gemini").accent_dark == harnesses.NEUTRAL_DARK
