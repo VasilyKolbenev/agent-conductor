@@ -16,24 +16,30 @@ def test_panel_mounts_packaged_command_assets_and_one_semantic_region():
     html = HTML.read_text(encoding="utf-8")
     assert html.count('id="commandCockpit"') == 1
     assert '<section class="card" id="commandCockpit"' in html
+    assert "proposal-only control · durable history" in html
     assert '<link rel="stylesheet" href="/panel/command.css">' in html
     assert '<script src="/panel/command.js" defer></script>' in html
     assert html.index("/panel/command.js") < html.index("<body>")
 
 
-def test_command_script_has_no_mutation_or_browser_persistence_door():
+def test_command_script_has_one_proposal_only_mutation_door():
     source = SCRIPT.read_text(encoding="utf-8")
     lowered = source.lower()
     for forbidden in (
             "innerhtml", "localstorage", "sessionstorage", "document.cookie",
-            "console.", 'method: "post"', "/proposals", "/actions", "/decisions",
-            "csrf_token"):
+            "console.", "/actions", "/decisions"):
         assert forbidden not in lowered
-    assert source.count("fetch(") == 1
+    assert source.count('method: "POST"') == 1
+    assert source.count("/proposals") == 1
+    assert source.count("fetch(") == 3
     assert "new EventSource" not in source
     assert "setInterval" not in source and "setTimeout" not in source
     assert 'readJson(`${base}/controls`)' in source
     assert "textContent" in source and "replaceChildren" in source
+    assert 'csrfToken = ""' in source
+    assert 'fetch("/command/session", {cache: "no-store"})' in source
+    assert '"X-Conduct-CSRF": session.token' in source
+    assert "No action was confirmed or executed." in source
 
 
 def test_command_projection_is_closed_and_drops_sensitive_durable_fields():
@@ -54,13 +60,60 @@ def test_command_projection_is_closed_and_drops_sensitive_durable_fields():
     assert "run.warnings.join" not in source
 
 
-def test_only_the_run_selector_is_an_input_and_it_matches_the_server_id_shape():
+def test_proposal_composer_has_only_reviewed_closed_fields():
     source = SCRIPT.read_text(encoding="utf-8")
-    assert source.count('element("input"') == 1
     assert 'name: "run_id"' in source
     assert 'pattern: "[A-Za-z0-9][A-Za-z0-9._-]{0,127}"' in source
     for forbidden in ("argv", "cwd", "environment", "executable", "generic json"):
         assert forbidden not in source.lower()
+    exact_fields = {
+        "dispatch": (
+            "work_item_id", "instruction_ref", "profile", "artifact_refs",
+            "output_limit_profile"),
+        "review": ("work_item_id", "target_artifact_refs", "review_profile"),
+        "evidence": ("target_action_id", "kinds"),
+        "stop": ("target_attempt_id", "reason"),
+        "retry": ("prior_action_id", "reason"),
+        "switch": ("prior_action_id", "target_instance_id", "handoff_ref"),
+    }
+    table = re.search(
+        r"const CAPABILITY_FIELDS = Object\.freeze\(\{(.*?)\n  \}\);", source, re.S)
+    assert table
+    body = table.group(1)
+    assert set(re.findall(r"^    ([a-z]+): Object\.freeze", body, re.M)) == set(
+        exact_fields)
+    for capability, fields in exact_fields.items():
+        start = body.index(f"    {capability}: Object.freeze")
+        next_starts = [
+            body.find(f"    {name}: Object.freeze", start + 1)
+            for name in exact_fields if body.find(f"    {name}: Object.freeze", start + 1) >= 0
+        ]
+        section = body[start:min(next_starts) if next_starts else len(body)]
+        assert tuple(re.findall(r'\["([a-z_]+)", "(?:id|ids|ids-required|enum|enum-list)"',
+                                section)) == fields
+    assert '"implement", "review"' in body
+    assert '"quality", "security", "spec"' in body
+    assert '"result", "diff", "tests", "status"' in body
+    assert '"failed", "unknown", "verification_failed", "user"' in body
+
+
+def test_proposal_response_is_bound_and_never_automatically_retried_or_confirmed():
+    source = SCRIPT.read_text(encoding="utf-8")
+    assert source.count("submitProposal") == 2
+    assert 'proposalForm.addEventListener("submit", submitProposal)' in source
+    assert "canonicalJson(payload.arguments) !== canonicalJson(submitted.arguments)" in source
+    assert "canonicalJson(payload.scope) !== canonicalJson(submitted.scope)" in source
+    assert "session.generation !== sessionEpoch" in source
+    assert '["csrf_denied", "same_origin_denied"].includes(code)' in source
+    assert "Outcome unknown. Reload the authoritative run." in source
+    assert '["submitting", "outcome-unknown"].includes(state.proposalPhase)' in source
+    assert 'state.proposalNotice = "Authoritative run reloaded."' in source
+    assert "Proposal created — review only" in source
+    assert 'id: "commandReviewTitle"' in source
+    for fact in (
+            "proposal_id", "preview_digest", "config_digest", "instance",
+            "capability", "arguments", "scope", "timeout_seconds", "rationale"):
+        assert f"      {fact}:" in source
 
 
 def test_command_styles_are_scoped_responsive_and_keyboard_visible():
