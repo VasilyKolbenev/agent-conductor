@@ -55,6 +55,12 @@ from conductor.command.runtime import Budget
 HARNESSES_JSON = json.dumps(harnesses.as_payload(),
                             ensure_ascii=False).encode("utf-8")
 
+# Exact package resources, never a path derived from the request target.
+PANEL_ASSETS = {
+    "/panel/command.css": ("text/css; charset=utf-8", "command.css"),
+    "/panel/command.js": ("text/javascript; charset=utf-8", "command.js"),
+}
+
 POLL_INTERVAL = 0.5   # seconds between conductor/ fingerprint polls
 TICK_INTERVAL = 60.0  # seconds between unconditional re-merges (staleness tick)
 SSE_WAIT = 1.0        # seconds an SSE loop waits before re-checking shutdown
@@ -314,6 +320,8 @@ class Handler(BaseHTTPRequestHandler):
             self._serve_command("GET")
         elif path == "/":
             self._serve_panel()
+        elif self.path in PANEL_ASSETS:
+            self._serve_panel_asset(self.path)
         elif path == "/state.json":
             self._serve_state()
         elif path == "/harnesses.json":
@@ -415,6 +423,11 @@ class Handler(BaseHTTPRequestHandler):
     def _serve_panel(self) -> None:
         panel = importlib.resources.files("conductor") / "panel" / "index.html"
         self._send_body(200, "text/html; charset=utf-8", panel.read_bytes())
+
+    def _serve_panel_asset(self, target: str) -> None:
+        content_type, name = PANEL_ASSETS[target]
+        asset = importlib.resources.files("conductor") / "panel" / name
+        self._send_body(200, content_type, asset.read_bytes())
 
     def _serve_state(self) -> None:
         self._send_body(200, "application/json; charset=utf-8",

@@ -1,0 +1,38 @@
+#commandCockpit{min-width:0}
+#commandCockpit .command-form{display:grid;grid-template-columns:minmax(12rem,1fr) auto;
+  align-items:end;gap:10px;margin-top:8px}
+#commandCockpit .command-field{display:grid;gap:5px;min-width:0}
+#commandCockpit .command-field span{color:var(--muted);font-size:11px;font-weight:650;
+  letter-spacing:.04em;text-transform:uppercase}
+#commandCockpit input,#commandCockpit button{min-height:44px;border:1px solid var(--line);
+  border-radius:7px;font:inherit}
+#commandCockpit input{min-width:0;background:var(--sunk);color:var(--ink);padding:0 11px}
+#commandCockpit button{background:var(--panel-lit);color:var(--ink);font-weight:700;
+  padding:0 16px;cursor:pointer}
+#commandCockpit button:disabled{cursor:not-allowed;opacity:.58}
+#commandCockpit input:focus-visible,#commandCockpit button:focus-visible{
+  outline:2px solid var(--accent);outline-offset:2px}
+#commandCockpit .command-status{color:var(--muted);margin:10px 0 0;min-height:1.4em}
+#commandCockpit .command-summary{display:flex;flex-wrap:wrap;gap:7px;margin:12px 0 0}
+#commandCockpit .command-fact{background:var(--sunk);border:1px solid var(--line);
+  border-radius:6px;color:var(--muted);font-family:var(--mono);font-size:10.5px;
+  padding:4px 7px}
+#commandCockpit .command-controls{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 0}
+#commandCockpit .command-control{border:1px solid var(--contour-lit);border-radius:999px;
+  color:var(--ink);font-size:11px;padding:3px 8px}
+#commandCockpit .command-history{margin:12px 0 0;padding:0;list-style:none;
+  display:grid;gap:7px;max-height:22rem;overflow:auto}
+#commandCockpit .command-record{background:var(--sunk);border:1px solid var(--line);
+  border-radius:7px;padding:9px 10px;min-width:0}
+#commandCockpit .command-record strong{display:block;color:var(--ink);font-size:12px}
+#commandCockpit .command-meta{display:flex;flex-wrap:wrap;gap:5px 10px;margin-top:4px;
+  color:var(--muted);font-family:var(--mono);font-size:10.5px;overflow-wrap:anywhere}
+#commandCockpit[data-phase="refused"] .command-status{color:var(--fail)}
+#commandCockpit[data-phase="ready"] .command-status{color:var(--pass)}
+@media (max-width:760px){
+  #commandCockpit .command-form{grid-template-columns:1fr}
+  #commandCockpit button{width:100%}
+}
+@media (prefers-reduced-motion:reduce){
+  #commandCockpit *{scroll-behavior:auto}
+}
