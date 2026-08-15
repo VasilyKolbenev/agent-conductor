@@ -31,9 +31,15 @@
     decision: ["receipt_id", "gate_id", "action", "decided_at"],
     evidence: ["evidence_id", "kind", "verification", "observed_at"],
   });
+  const DECISION_STATES = Object.freeze({
+    approve: "satisfied",
+    reject: "failed",
+    request_changes: "changes_requested",
+    waive: "waived",
+  });
   const state = {
-    controls: [], mode: "unknown", phase: "idle", records: [], runId: "",
-    warningCount: 0,
+    controls: [], gates: {corrupt: false, rows: []}, mode: "unknown",
+    phase: "idle", records: [], runId: "", warningCount: 0,
   };
   let epoch = 0;
   let refreshDirty = false;
@@ -77,11 +83,18 @@
   const controls = element("div", {
     "aria-label": "Available controls", className: "command-controls",
   });
+  const gates = element("section", {
+    "aria-labelledby": "commandGateTitle", className: "command-gates",
+  }, [
+    element("h3", {id: "commandGateTitle", text: "Human gates"}),
+  ]);
+  const gateList = element("ul", {className: "command-gate-list"});
+  gates.append(gateList);
   const history = element("ol", {
     "aria-label": "Durable command history", className: "command-history",
   });
   mount.querySelector(".empty")?.remove();
-  mount.append(form, status, summary, controls, history);
+  mount.append(form, status, summary, controls, gates, history);
 
   function safeMode(value) {
     return ["observe", "propose", "confirm"].includes(value) ? value : "unknown";
@@ -112,6 +125,68 @@
     return [...new Set(names.filter((name) => CONTROL_NAMES.has(name)))].sort();
   }
 
+  function isId(value) {
+    return typeof value === "string" && RUN_ID.test(value);
+  }
+
+  function isIdList(value) {
+    return Array.isArray(value) && value.every(isId);
+  }
+
+  function projectDecision(value) {
+    if (!value || typeof value !== "object") return null;
+    if (!Number.isInteger(value.schema_version) || value.schema_version < 2) return null;
+    if (![value.receipt_id, value.run_id, value.gate_id, value.actor].every(isId)) {
+      return null;
+    }
+    if (!DECISION_STATES[value.action] || typeof value.decided_at !== "string") {
+      return null;
+    }
+    if (typeof value.reason !== "string"
+        || (["request_changes", "waive"].includes(value.action)
+            && !value.reason.trim())) return null;
+    if (!isIdList(value.scope_refs) || !isIdList(value.evidence_refs)) return null;
+    if (typeof value.config_digest !== "string"
+        || !/^sha256:[0-9a-f]{64}$/.test(value.config_digest)) return null;
+    if (value.supersedes !== null && !isId(value.supersedes)) return null;
+    if (value.supersedes === value.receipt_id) return null;
+    return {
+      action: value.action, gateId: value.gate_id, receiptId: value.receipt_id,
+      runId: value.run_id, supersedes: value.supersedes,
+    };
+  }
+
+  function projectGates(wrappers, runId) {
+    if (!Array.isArray(wrappers)) return {corrupt: true, rows: []};
+    const receipts = [];
+    for (const wrapper of wrappers) {
+      if (!wrapper || wrapper.record_type !== "decision") continue;
+      const receipt = projectDecision(wrapper.record);
+      if (!receipt || receipt.runId !== runId) return {corrupt: true, rows: []};
+      receipts.push(receipt);
+    }
+    const byId = new Map(receipts.map((receipt) => [receipt.receiptId, receipt]));
+    if (byId.size !== receipts.length) return {corrupt: true, rows: []};
+    const gateIds = [...new Set(receipts.map((receipt) => receipt.gateId))].sort();
+    const rows = [];
+    for (const gateId of gateIds) {
+      const matching = receipts.filter((receipt) => receipt.gateId === gateId);
+      for (const receipt of matching) {
+        if (receipt.supersedes === null) continue;
+        const prior = byId.get(receipt.supersedes);
+        if (!prior || prior.runId !== runId || prior.gateId !== gateId) {
+          return {corrupt: true, rows: []};
+        }
+      }
+      const superseded = new Set(matching.flatMap((receipt) =>
+        receipt.supersedes === null ? [] : [receipt.supersedes]));
+      const current = matching.filter((receipt) => !superseded.has(receipt.receiptId));
+      if (current.length !== 1) return {corrupt: true, rows: []};
+      rows.push({gateId, state: DECISION_STATES[current[0].action]});
+    }
+    return {corrupt: false, rows};
+  }
+
   function render() {
     mount.dataset.phase = state.phase;
     const busy = state.phase === "loading" || state.phase === "refreshing";
@@ -120,6 +195,7 @@
     button.disabled = busy;
     summary.replaceChildren();
     controls.replaceChildren();
+    gateList.replaceChildren();
     history.replaceChildren();
     if (!hasFacts) return;
     summary.append(
@@ -132,12 +208,36 @@
     for (const name of state.controls) {
       controls.append(element("span", {className: "command-control", text: name}));
     }
+    if (state.gates.corrupt) {
+      gateList.append(gateRow("corrupt", "Decision receipt relation is corrupt."));
+    } else if (!state.gates.rows.length) {
+      gateList.append(gateRow("idle", "No Human decision receipt."));
+    } else {
+      for (const gate of state.gates.rows) {
+        gateList.append(gateRow(gate.state, `${gate.gateId}: ${gateLabel(gate.state)}`));
+      }
+    }
     for (const record of state.records) {
       history.append(element("li", {className: "command-record"}, [
         element("strong", {text: record.kind}),
         element("span", {className: "command-meta", text: record.facts.join(" · ")}),
       ]));
     }
+  }
+
+  function gateLabel(value) {
+    return {
+      changes_requested: "■ changes requested",
+      failed: "✕ rejected",
+      satisfied: "✓ approved",
+      waived: "◇ waived",
+    }[value] || "✕ corrupt";
+  }
+
+  function gateRow(gateState, text) {
+    return element("li", {
+      className: "command-gate", "data-gate-state": gateState, text,
+    });
   }
 
   function refusalCode(payload) {
@@ -171,6 +271,7 @@
       ]);
       if (requestEpoch !== epoch) return;
       state.controls = projectControls(available);
+      state.gates = projectGates(run && run.records, runId);
       state.mode = safeMode(run && run.run && run.run.mode);
       state.phase = "ready";
       state.records = projectRecords(run && run.records);
@@ -192,6 +293,7 @@
     if (!RUN_ID.test(runId)) return;
     if (explicit && runId !== state.runId) {
       state.controls = [];
+      state.gates = {corrupt: false, rows: []};
       state.mode = "unknown";
       state.records = [];
       state.warningCount = 0;

@@ -96,3 +96,33 @@ def test_run_signals_coalesce_to_authoritative_gets_and_disconnect_preserves_fac
     assert 'window.addEventListener("conduct:disconnected"' in source
     assert '["ready", "refreshing", "stale"].includes(state.phase)' in source
     assert "Showing the last authoritative facts." in source
+
+
+def test_human_gate_projection_is_closed_and_absence_is_idle():
+    source = SCRIPT.read_text(encoding="utf-8")
+    states = re.search(
+        r"const DECISION_STATES = Object\.freeze\(\{(.*?)\n  \}\);", source, re.S)
+    assert states
+    assert dict(re.findall(r"^    ([a-z_]+): \"([a-z_]+)\"", states.group(1), re.M)) == {
+        "approve": "satisfied",
+        "reject": "failed",
+        "request_changes": "changes_requested",
+        "waive": "waived",
+    }
+    assert 'gateRow("idle", "No Human decision receipt.")' in source
+    assert "current.length !== 1" in source
+    assert "byId.size !== receipts.length" in source
+    assert "prior.runId !== runId || prior.gateId !== gateId" in source
+
+
+def test_gate_projection_does_not_render_reasons_or_unreviewed_receipt_data():
+    source = SCRIPT.read_text(encoding="utf-8")
+    render = re.search(r"function render\(\) \{(.*?)\n  \}", source, re.S)
+    assert render
+    body = render.group(1)
+    for forbidden in (
+            ".reason", ".actor", ".config_digest", ".evidence_refs",
+            ".scope_refs", ".supersedes"):
+        assert forbidden not in body
+    assert "gate.gateId" in body and "gate.state" in body
+    assert 'gateRow("corrupt", "Decision receipt relation is corrupt.")' in body

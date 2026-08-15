@@ -20,6 +20,18 @@
 #commandCockpit .command-controls{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 0}
 #commandCockpit .command-control{border:1px solid var(--contour-lit);border-radius:999px;
   color:var(--ink);font-size:11px;padding:3px 8px}
+#commandCockpit .command-gates{margin-top:12px}
+#commandCockpit .command-gates h3{color:var(--muted);font-size:11px;letter-spacing:.04em;
+  margin:0;text-transform:uppercase}
+#commandCockpit .command-gate-list{display:flex;flex-wrap:wrap;gap:6px;list-style:none;
+  margin:7px 0 0;padding:0}
+#commandCockpit .command-gate{background:var(--sunk);border:1px solid var(--line);
+  border-radius:6px;color:var(--muted);font-size:11px;padding:5px 8px}
+#commandCockpit .command-gate[data-gate-state="satisfied"]{color:var(--pass)}
+#commandCockpit .command-gate[data-gate-state="failed"],
+#commandCockpit .command-gate[data-gate-state="corrupt"]{color:var(--fail)}
+#commandCockpit .command-gate[data-gate-state="changes_requested"],
+#commandCockpit .command-gate[data-gate-state="waived"]{color:var(--wait)}
 #commandCockpit .command-history{margin:12px 0 0;padding:0;list-style:none;
   display:grid;gap:7px;max-height:22rem;overflow:auto}
 #commandCockpit .command-record{background:var(--sunk);border:1px solid var(--line);
