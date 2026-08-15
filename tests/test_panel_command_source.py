@@ -30,6 +30,8 @@ def test_command_script_has_no_mutation_or_browser_persistence_door():
             "csrf_token"):
         assert forbidden not in lowered
     assert source.count("fetch(") == 1
+    assert "new EventSource" not in source
+    assert "setInterval" not in source and "setTimeout" not in source
     assert 'readJson(`${base}/controls`)' in source
     assert "textContent" in source and "replaceChildren" in source
 
@@ -71,3 +73,26 @@ def test_command_styles_are_scoped_responsive_and_keyboard_visible():
     assert "@media (max-width:760px)" in css
     assert "@media (prefers-reduced-motion:reduce)" in css
     assert ":focus-visible" in css and "min-height:44px" in css
+
+
+def test_one_existing_sse_boundary_relays_only_valid_run_identifiers():
+    html = HTML.read_text(encoding="utf-8")
+    assert html.count('new EventSource("/events")') == 1
+    assert 'frame.kind !== "run"' in html
+    assert 'typeof frame.run_id !== "string"' in html
+    assert "COMMAND_RUN_SIGNAL.test(frame.run_id)" in html
+    assert 'new CustomEvent("conduct:run", { detail })' in html
+    assert 'Object.freeze({ run_id: frame.run_id })' in html
+    assert 'es.addEventListener("message", relayCommandRun)' in html
+
+
+def test_run_signals_coalesce_to_authoritative_gets_and_disconnect_preserves_facts():
+    source = SCRIPT.read_text(encoding="utf-8")
+    assert "refreshDirty = true" in source
+    assert "if (refreshInFlight) return" in source
+    assert "while (refreshDirty)" in source
+    assert 'window.addEventListener("conduct:run"' in source
+    assert 'window.addEventListener("conduct:connected"' in source
+    assert 'window.addEventListener("conduct:disconnected"' in source
+    assert '["ready", "refreshing", "stale"].includes(state.phase)' in source
+    assert "Showing the last authoritative facts." in source

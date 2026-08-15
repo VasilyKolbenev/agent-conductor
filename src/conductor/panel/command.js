@@ -32,9 +32,13 @@
     evidence: ["evidence_id", "kind", "verification", "observed_at"],
   });
   const state = {
-    controls: [], phase: "idle", records: [], runId: "", warningCount: 0,
+    controls: [], mode: "unknown", phase: "idle", records: [], runId: "",
+    warningCount: 0,
   };
   let epoch = 0;
+  let refreshDirty = false;
+  let refreshExplicit = false;
+  let refreshInFlight = false;
 
   function element(tag, attributes = {}, children = []) {
     const node = document.createElement(tag);
@@ -110,12 +114,14 @@
 
   function render() {
     mount.dataset.phase = state.phase;
-    mount.setAttribute("aria-busy", String(state.phase === "loading"));
-    button.disabled = state.phase === "loading";
+    const busy = state.phase === "loading" || state.phase === "refreshing";
+    const hasFacts = ["ready", "refreshing", "stale"].includes(state.phase);
+    mount.setAttribute("aria-busy", String(busy));
+    button.disabled = busy;
     summary.replaceChildren();
     controls.replaceChildren();
     history.replaceChildren();
-    if (state.phase !== "ready") return;
+    if (!hasFacts) return;
     summary.append(
       element("span", {className: "command-fact", text: `run: ${state.runId}`}),
       element("span", {className: "command-fact", text: `mode: ${state.mode}`}),
@@ -151,18 +157,12 @@
     return payload;
   }
 
-  form.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const runId = input.value.trim();
-    if (!RUN_ID.test(runId)) {
-      state.phase = "refused";
-      status.textContent = "Use a valid run id.";
-      render();
-      return;
-    }
-    const requestEpoch = ++epoch;
-    state.phase = "loading";
-    status.textContent = "Loading durable command facts…";
+  async function loadSelectedRun(runId, explicit) {
+    const requestEpoch = epoch;
+    state.phase = explicit ? "loading" : "refreshing";
+    status.textContent = explicit
+      ? "Loading durable command facts…"
+      : "Refreshing authoritative command facts…";
     render();
     try {
       const base = `/command/runs/${encodeURIComponent(runId)}`;
@@ -182,9 +182,62 @@
     } catch (error) {
       if (requestEpoch !== epoch) return;
       const code = error instanceof Error ? error.message : "store_error";
-      state.phase = "refused";
+      state.phase = explicit ? "refused" : "stale";
       status.textContent = ERROR_LABELS[code] || ERROR_LABELS.store_error;
     }
     render();
+  }
+
+  async function refreshSelectedRun(runId, explicit = false) {
+    if (!RUN_ID.test(runId)) return;
+    if (explicit && runId !== state.runId) {
+      state.controls = [];
+      state.mode = "unknown";
+      state.records = [];
+      state.warningCount = 0;
+    }
+    state.runId = runId;
+    epoch += 1;
+    refreshDirty = true;
+    refreshExplicit = refreshExplicit || explicit;
+    if (refreshInFlight) return;
+    refreshInFlight = true;
+    while (refreshDirty) {
+      refreshDirty = false;
+      const announce = refreshExplicit;
+      refreshExplicit = false;
+      const selected = state.runId;
+      await loadSelectedRun(selected, announce);
+    }
+    refreshInFlight = false;
+  }
+
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const runId = input.value.trim();
+    if (!RUN_ID.test(runId)) {
+      state.phase = "refused";
+      status.textContent = "Use a valid run id.";
+      render();
+      return;
+    }
+    refreshSelectedRun(runId, true);
+  });
+
+  window.addEventListener("conduct:run", (event) => {
+    const runId = event.detail && event.detail.run_id;
+    if (typeof runId === "string" && runId === state.runId && RUN_ID.test(runId)) {
+      refreshSelectedRun(runId);
+    }
+  });
+  window.addEventListener("conduct:disconnected", () => {
+    epoch += 1;
+    if (!state.runId) return;
+    state.phase = "stale";
+    status.textContent = "Connection lost. Showing the last authoritative facts.";
+    render();
+  });
+  window.addEventListener("conduct:connected", () => {
+    if (state.runId) refreshSelectedRun(state.runId);
   });
 })();

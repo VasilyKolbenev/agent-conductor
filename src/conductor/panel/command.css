@@ -29,6 +29,7 @@
   color:var(--muted);font-family:var(--mono);font-size:10.5px;overflow-wrap:anywhere}
 #commandCockpit[data-phase="refused"] .command-status{color:var(--fail)}
 #commandCockpit[data-phase="ready"] .command-status{color:var(--pass)}
+#commandCockpit[data-phase="stale"] .command-status{color:var(--wait)}
 @media (max-width:760px){
   #commandCockpit .command-form{grid-template-columns:1fr}
   #commandCockpit button{width:100%}

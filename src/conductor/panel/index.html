@@ -1658,10 +1658,26 @@ async function loadHarnesses(){
   }
   if (LAST) render(LAST);
 }
+const COMMAND_RUN_SIGNAL = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+function relayCommandRun(event){
+  let frame;
+  try {
+    frame = JSON.parse(event.data);
+  } catch (error) {
+    return;
+  }
+  if (!frame || frame.kind !== "run" || typeof frame.run_id !== "string"
+      || !COMMAND_RUN_SIGNAL.test(frame.run_id)) return;
+  const detail = Object.freeze({ run_id: frame.run_id });
+  window.dispatchEvent(new CustomEvent("conduct:run", { detail }));
+}
 const es = new EventSource("/events");         // greeting on connect, one frame per change
 es.onmessage = () => refresh(true);            // the one caller that may report a change
 es.onopen = () => refresh(false);              // resync on every (re)connect, not just the greeting
 es.onerror = () => { EPOCH++; streamed = false; setLive(false); };  // EventSource reconnects on its own
+es.addEventListener("message", relayCommandRun);
+es.addEventListener("open", () => window.dispatchEvent(new Event("conduct:connected")));
+es.addEventListener("error", () => window.dispatchEvent(new Event("conduct:disconnected")));
 loadHarnesses();
 refresh(false);                                // page load: the first drawing, nothing before it
 </script>
