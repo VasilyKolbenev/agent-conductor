@@ -98,6 +98,13 @@ class CommandSession:
             raw_header_pairs, raw_body,
             allowed_hosts=self._allowed_hosts, current_token=self._token)
 
+    def body_length(
+            self, raw_header_pairs: Iterable[tuple[str, str]]) -> int:
+        """Validate mutation headers in precedence and return the bounded length."""
+        return validate_command_mutation_headers(
+            raw_header_pairs, allowed_hosts=self._allowed_hosts,
+            current_token=self._token)
+
     def __repr__(self) -> str:
         return "CommandSession(<process-memory token>)"
 
@@ -152,6 +159,18 @@ def command_content_length(
             or (len(normalized) == len(ceiling) and normalized > ceiling)):
         raise HttpRefusal("body") from None
     return int(normalized)
+
+
+def validate_command_mutation_headers(
+        raw_header_pairs: Iterable[tuple[str, str]], *,
+        allowed_hosts: frozenset[str], current_token: str) -> int:
+    """Validate through framing without reading or parsing the declared body."""
+    pairs = _header_pairs(raw_header_pairs)
+    host = _host(pairs, allowed_hosts)
+    _same_origin(pairs, host)
+    _csrf(pairs, current_token)
+    _content_type(pairs)
+    return command_content_length(pairs)
 
 
 def _same_origin(pairs: tuple[tuple[str, str], ...], host: str) -> None:
@@ -237,9 +256,9 @@ def validate_command_mutation(
         raw_header_pairs: Iterable[tuple[str, str]], raw_body: bytes, *,
         allowed_hosts: frozenset[str], current_token: str) -> dict[str, Any]:
     """Validate in frozen precedence, returning only the decoded JSON object."""
-    pairs = _header_pairs(raw_header_pairs)
-    host = _host(pairs, allowed_hosts)
-    _same_origin(pairs, host)
-    _csrf(pairs, current_token)
-    _content_type(pairs)
+    length = validate_command_mutation_headers(
+        raw_header_pairs, allowed_hosts=allowed_hosts,
+        current_token=current_token)
+    if len(raw_body) != length:
+        raise HttpRefusal("body") from None
     return _json_object(raw_body)

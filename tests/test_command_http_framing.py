@@ -85,3 +85,17 @@ def test_exact_cap_reaches_the_json_parser_instead_of_the_size_refusal():
     assert command_content_length(raw) == len(body)
     assert CommandSession(7802, TOKEN).validate_mutation(raw, body) == {
         "accepted": True}
+
+
+def test_header_preflight_and_full_validation_share_one_length_authority():
+    body = b'{"accepted":true}'
+    raw = headers(
+        ("Origin", "http://127.0.0.1:7802"),
+        ("X-Conduct-CSRF", TOKEN),
+        ("Content-Type", "application/json"),
+        ("Content-Length", str(len(body))))
+    session = CommandSession(7802, TOKEN)
+    assert session.body_length(raw) == len(body)
+    assert session.validate_mutation(raw, body) == {"accepted": True}
+    with pytest.raises(HttpRefusal):
+        session.validate_mutation(raw, body[:-1])

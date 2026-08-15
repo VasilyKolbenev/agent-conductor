@@ -25,8 +25,6 @@ from .containment import run_route_violations
 from .contracts import ContractError, frozen_config_bindings
 from .http_transport import (
     CommandSession,
-    HttpRefusal,
-    command_content_length,
     validate_command_host,
 )
 from .run_store import CorruptRun, RecordConflict, RunStore
@@ -78,14 +76,16 @@ class CommandApi:
             publish_run: Callable[[str], None]) -> None:
         if not isinstance(store, RunStore) or not isinstance(registry, AdapterRegistry):
             raise TypeError("CommandApi requires a RunStore and AdapterRegistry")
-        if not isinstance(session, CommandSession) or not isinstance(budget, Budget):
+        if not isinstance(session, CommandSession) or type(budget) is not Budget:
             raise TypeError("CommandApi requires a CommandSession and Budget")
         if not all(callable(value) for value in (clock, ids, publish_run)):
             raise TypeError("CommandApi providers must be callable")
         self._store = store
         self._registry = registry
         self._session = session
-        self._budget = budget
+        self._budget = Budget(
+            budget.max_actions, budget.max_action_seconds,
+            budget.max_confirmation_age_seconds)
         self._clock = clock
         self._ids = ids
         self._publish_run = publish_run
@@ -102,17 +102,12 @@ class CommandApi:
             raw_headers: Iterable[tuple[str, str]], raw_body: bytes = b"") -> CommandResponse:
         """Dispatch one command request and normalize every expected refusal."""
         try:
-            route = _match_route(method, urlsplit(target).path)
+            route = _match_route(method, _target_path(target))
             pairs = tuple(raw_headers)
             if method == "GET":
                 host = validate_command_host(pairs, self._session.allowed_hosts)
                 return self._get(route, host)
-            try:
-                length = command_content_length(pairs)
-            except HttpRefusal:
-                length = None
-            bounded = raw_body if length == len(raw_body) else b""
-            body = self._session.validate_mutation(pairs, bounded)
+            body = self._session.validate_mutation(pairs, raw_body)
             return self._post(route, body)
         except ApiRefusal as refusal:
             return CommandResponse(refusal.status, refusal.as_dict())
@@ -122,6 +117,13 @@ class CommandApi:
             except TypeError:
                 raise
             return CommandResponse(refusal.status, refusal.as_dict())
+
+    def body_length(
+            self, target: str,
+            raw_headers: Iterable[tuple[str, str]]) -> int:
+        """Hold the exact POST route and transport headers before a body read."""
+        _match_route("POST", _target_path(target))
+        return self._session.body_length(raw_headers)
 
     def _get(self, route: _Route, host: str) -> CommandResponse:
         if route.name == "session":
@@ -152,6 +154,7 @@ class CommandApi:
         if submitted.capability not in self._registry.controls(bound):
             raise UnsupportedCapability("bound adapter lacks submitted capability")
         with self._store.transaction():
+            self._hold_route(run_id)
             recovered = self._store.read(run_id)
             prior_ids = {
                 row.value.proposal_id for row in recovered.records
@@ -185,6 +188,7 @@ class CommandApi:
         submitted = parse_decision(body)
         self._hold_route(run_id)
         with self._store.transaction():
+            self._hold_route(run_id)
             recovered = self._store.read(run_id)
             prior = next((
                 row.value for row in recovered.records
@@ -249,6 +253,14 @@ def _match_route(method: str, path: str) -> _Route:
     if method != expected:
         raise ApiRefusal.fixed("method_not_allowed")
     return _Route(name, run_id)
+
+
+def _target_path(target: str) -> str:
+    """Accept an exact origin-form path; command routes have no query surface."""
+    parsed = urlsplit(target)
+    if parsed.scheme or parsed.netloc or parsed.query or parsed.fragment:
+        raise ApiRefusal.fixed("route_not_found")
+    return parsed.path
 
 
 def _recovered_payload(recovered) -> dict[str, object]:
