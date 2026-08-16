@@ -59,6 +59,10 @@ HARNESSES_JSON = json.dumps(harnesses.as_payload(),
 PANEL_ASSETS = {
     "/panel/command.css": ("text/css; charset=utf-8", "command.css"),
     "/panel/command.js": ("text/javascript; charset=utf-8", "command.js"),
+    "/panel/command-projection.js": (
+        "text/javascript; charset=utf-8", "command-projection.js"),
+    "/panel/command-view.js": (
+        "text/javascript; charset=utf-8", "command-view.js"),
 }
 
 POLL_INTERVAL = 0.5   # seconds between conductor/ fingerprint polls

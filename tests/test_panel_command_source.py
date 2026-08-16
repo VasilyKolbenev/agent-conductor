@@ -9,7 +9,15 @@ ROOT = Path(__file__).resolve().parents[1]
 PANEL = ROOT / "src" / "conductor" / "panel"
 HTML = PANEL / "index.html"
 SCRIPT = PANEL / "command.js"
+PROJECTION = PANEL / "command-projection.js"
+VIEW = PANEL / "command-view.js"
 STYLE = PANEL / "command.css"
+#: The Cockpit's script surface is split across three packaged modules, so every
+#: whole-surface guard below reads their union — a rule that a later split could
+#: satisfy by moving a forbidden string into a sibling file would guard nothing.
+SCRIPTS = (SCRIPT, PROJECTION, VIEW)
+SOURCE = "\n".join(path.read_text(encoding="utf-8") for path in SCRIPTS)
+IMPORTS = r'from "(\./[a-z-]+\.js)";'
 
 
 def test_panel_mounts_packaged_command_assets_and_one_semantic_region():
@@ -18,12 +26,24 @@ def test_panel_mounts_packaged_command_assets_and_one_semantic_region():
     assert '<section class="card" id="commandCockpit"' in html
     assert "proposal-only control · durable history" in html
     assert '<link rel="stylesheet" href="/panel/command.css">' in html
-    assert '<script src="/panel/command.js" defer></script>' in html
+    assert '<script src="/panel/command.js" type="module"></script>' in html
+    assert html.count("<script src=") == 1
     assert html.index("/panel/command.js") < html.index("<body>")
 
 
+def test_the_cockpit_module_graph_is_three_packaged_siblings_with_no_cycle():
+    assert all(path.is_file() and path.parent == PANEL for path in SCRIPTS)
+    assert sorted(re.findall(IMPORTS, SCRIPT.read_text(encoding="utf-8"))) == [
+        "./command-projection.js", "./command-view.js"]
+    assert re.findall(IMPORTS, VIEW.read_text(encoding="utf-8")) == [
+        "./command-projection.js"]
+    assert not re.findall(IMPORTS, PROJECTION.read_text(encoding="utf-8"))
+    assert "document" not in PROJECTION.read_text(encoding="utf-8")
+    assert "fetch(" not in VIEW.read_text(encoding="utf-8")
+
+
 def test_command_script_has_one_proposal_only_mutation_door():
-    source = SCRIPT.read_text(encoding="utf-8")
+    source = SOURCE
     lowered = source.lower()
     for forbidden in (
             "innerhtml", "localstorage", "sessionstorage", "document.cookie",
@@ -43,12 +63,12 @@ def test_command_script_has_one_proposal_only_mutation_door():
 
 
 def test_command_projection_is_closed_and_drops_sensitive_durable_fields():
-    source = SCRIPT.read_text(encoding="utf-8")
+    source = SOURCE
     table = re.search(
-        r"const RECORD_FIELDS = Object\.freeze\(\{(.*?)\n  \}\);", source, re.S)
+        r"const RECORD_FIELDS = Object\.freeze\(\{(.*?)\n\}\);", source, re.S)
     assert table
     fields = table.group(1)
-    assert set(re.findall(r"^    ([a-z_]+):", fields, re.M)) == {
+    assert set(re.findall(r"^  ([a-z_]+):", fields, re.M)) == {
         "action_proposal", "action_request", "action_result",
         "adapter_observation", "attempt_event", "decision", "evidence",
     }
@@ -61,7 +81,7 @@ def test_command_projection_is_closed_and_drops_sensitive_durable_fields():
 
 
 def test_proposal_composer_has_only_reviewed_closed_fields():
-    source = SCRIPT.read_text(encoding="utf-8")
+    source = SOURCE
     assert 'name: "run_id"' in source
     assert 'pattern: "[A-Za-z0-9][A-Za-z0-9._-]{0,127}"' in source
     for forbidden in ("argv", "cwd", "environment", "executable", "generic json"):
@@ -77,16 +97,16 @@ def test_proposal_composer_has_only_reviewed_closed_fields():
         "switch": ("prior_action_id", "target_instance_id", "handoff_ref"),
     }
     table = re.search(
-        r"const CAPABILITY_FIELDS = Object\.freeze\(\{(.*?)\n  \}\);", source, re.S)
+        r"const CAPABILITY_FIELDS = Object\.freeze\(\{(.*?)\n\}\);", source, re.S)
     assert table
     body = table.group(1)
-    assert set(re.findall(r"^    ([a-z]+): Object\.freeze", body, re.M)) == set(
+    assert set(re.findall(r"^  ([a-z]+): Object\.freeze", body, re.M)) == set(
         exact_fields)
     for capability, fields in exact_fields.items():
-        start = body.index(f"    {capability}: Object.freeze")
+        start = body.index(f"  {capability}: Object.freeze")
         next_starts = [
-            body.find(f"    {name}: Object.freeze", start + 1)
-            for name in exact_fields if body.find(f"    {name}: Object.freeze", start + 1) >= 0
+            body.find(f"  {name}: Object.freeze", start + 1)
+            for name in exact_fields if body.find(f"  {name}: Object.freeze", start + 1) >= 0
         ]
         section = body[start:min(next_starts) if next_starts else len(body)]
         assert tuple(re.findall(r'\["([a-z_]+)", "(?:id|ids|ids-required|enum|enum-list)"',
@@ -98,9 +118,9 @@ def test_proposal_composer_has_only_reviewed_closed_fields():
 
 
 def test_proposal_response_is_bound_and_never_automatically_retried_or_confirmed():
-    source = SCRIPT.read_text(encoding="utf-8")
+    source = SOURCE
     assert source.count("submitProposal") == 2
-    assert 'proposalForm.addEventListener("submit", submitProposal)' in source
+    assert 'proposalForm.addEventListener("submit", onSubmit)' in source
     assert "canonicalJson(payload.arguments) !== canonicalJson(submitted.arguments)" in source
     assert "canonicalJson(payload.scope) !== canonicalJson(submitted.scope)" in source
     assert "session.generation !== sessionEpoch" in source
@@ -113,7 +133,7 @@ def test_proposal_response_is_bound_and_never_automatically_retried_or_confirmed
     for fact in (
             "proposal_id", "preview_digest", "config_digest", "instance",
             "capability", "arguments", "scope", "timeout_seconds", "rationale"):
-        assert f"      {fact}:" in source
+        assert f"    {fact}:" in source
 
 
 def test_command_styles_are_scoped_responsive_and_keyboard_visible():
@@ -140,7 +160,7 @@ def test_one_existing_sse_boundary_relays_only_valid_run_identifiers():
 
 
 def test_run_signals_coalesce_to_authoritative_gets_and_disconnect_preserves_facts():
-    source = SCRIPT.read_text(encoding="utf-8")
+    source = SOURCE
     assert "refreshDirty = true" in source
     assert "if (refreshInFlight) return" in source
     assert "while (refreshDirty)" in source
@@ -152,11 +172,11 @@ def test_run_signals_coalesce_to_authoritative_gets_and_disconnect_preserves_fac
 
 
 def test_human_gate_projection_is_closed_and_absence_is_idle():
-    source = SCRIPT.read_text(encoding="utf-8")
+    source = SOURCE
     states = re.search(
-        r"const DECISION_STATES = Object\.freeze\(\{(.*?)\n  \}\);", source, re.S)
+        r"const DECISION_STATES = Object\.freeze\(\{(.*?)\n\}\);", source, re.S)
     assert states
-    assert dict(re.findall(r"^    ([a-z_]+): \"([a-z_]+)\"", states.group(1), re.M)) == {
+    assert dict(re.findall(r"^  ([a-z_]+): \"([a-z_]+)\"", states.group(1), re.M)) == {
         "approve": "satisfied",
         "reject": "failed",
         "request_changes": "changes_requested",
