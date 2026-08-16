@@ -28,6 +28,9 @@ from ..contracts import (
 from ..dispatch import validate_dispatch_arguments
 
 
+_ARGUMENT_SCHEMAS = frozenset({"structured-process-v1", "deep-arguments-v1"})
+
+
 class AdapterContractError(ValueError):
     """An adapter claim is malformed or contradicts its registered identity."""
 
@@ -251,7 +254,7 @@ class AdapterRegistry:
             if capability not in reviewed.capabilities:
                 raise AdapterContractError(
                     f"argument schema names undeclared capability {capability!r}")
-            if schema != "structured-process-v1":
+            if schema not in _ARGUMENT_SCHEMAS:
                 raise AdapterContractError(
                     f"adapter declares unknown argument schema {schema!r}")
             reviewed_schemas[capability] = schema
@@ -380,6 +383,15 @@ class AdapterRegistry:
                 f"adapter {safe!r} does not declare capability {capability!r}")
         if self._argument_schemas[safe].get(capability) == "structured-process-v1":
             validate_dispatch_arguments(arguments)
+        if self._argument_schemas[safe].get(capability) == "deep-arguments-v1":
+            from .deep_commands import DEEP_ARGUMENT_TYPES
+
+            try:
+                argument_type = DEEP_ARGUMENT_TYPES[capability]
+                argument_type.from_dict(_plain_json(arguments))
+            except Exception:
+                raise AdapterContractError(
+                    "arguments do not match the capability's closed deep schema") from None
 
     def _require(self, adapter_id: str, capability: str) -> Adapter:
         adapter = self.resolve(adapter_id)
@@ -396,3 +408,12 @@ class AdapterRegistry:
             return self._manifests[safe]
         except KeyError as e:
             raise AdapterContractError(f"adapter {safe!r} is not registered") from e
+
+
+def _plain_json(value: object) -> Any:
+    """Rebuild one frozen contract value as exact JSON containers."""
+    if isinstance(value, Mapping):
+        return {key: _plain_json(item) for key, item in value.items()}
+    if isinstance(value, tuple):
+        return [_plain_json(item) for item in value]
+    return value
