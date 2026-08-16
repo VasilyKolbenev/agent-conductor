@@ -242,13 +242,16 @@ import {
       setConfirm("refused", "Name the Human confirming this exact snapshot.");
       return;
     }
+    // Held before the await: a run switch in flight clears the snapshot, and
+    // the response must still be checked against the facts it was built from.
+    const binding = state.proposal.binding;
     setConfirm("submitting", "Recording one authorized action request…");
     const result = await submitJson(runTarget("/actions"), submitted);
     if (result.status !== "accepted") {
       setConfirm(failurePhase(result), failureNotice(result));
       return;
     }
-    const action = projectAction(result.payload, submitted, state.runId);
+    const action = projectAction(result.payload, submitted, state.runId, binding);
     if (!action) {
       setConfirm("outcome-unknown", UNKNOWN);
       return;

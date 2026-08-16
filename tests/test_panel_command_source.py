@@ -204,8 +204,8 @@ def test_the_confirm_control_is_named_human_work_that_never_claims_execution():
             'type: "submit"', "state.action"):
         assert fact in confirm.group(0)
     action = re.search(
-        r"export function projectAction\(payload, submitted, runId\) \{(.*?)\n\}",
-        projection, re.S)
+        r"export function projectAction\(payload, submitted, runId, binding\) "
+        r"\{(.*?)\n\}", projection, re.S)
     assert action
     assert set(re.findall(r"^    ([a-z_]+):", action.group(1), re.M)) == {
         "action_id", "capability", "mode"}
@@ -217,6 +217,89 @@ def test_the_confirm_control_is_named_human_work_that_never_claims_execution():
     # Change-detectors for the two sentences that carry that fact to the Human.
     assert "Action request accepted and recorded. Nothing was executed." in source
     assert "Acceptance records one authorized request; nothing is executed." in view
+
+
+ACTION_ARMS = [
+    'if (payload.mode !== "confirm") return null;',
+    "if (payload.requested_by !== submitted.confirmed_by) return null;",
+    "if (!actionEchoesSnapshot(payload, binding)) return null;",
+    "if (!binding || payload.idempotency_key !== binding.idempotency_key) return null;",
+]
+ECHOED = {
+    "attempt_id", "instance_id", "capability", "preview_digest",
+    "timeout_seconds", "arguments", "scope",
+}
+
+
+def test_an_accepted_action_must_be_a_confirm_by_the_named_human_on_the_snapshot():
+    """The four refusals, each its own statement, none of them a default."""
+    projection = PROJECTION.read_text(encoding="utf-8")
+    body = re.search(
+        r"export function projectAction\(payload, submitted, runId, binding\) "
+        r"\{(.*?)\n\}", projection, re.S)
+    assert body
+    assert [
+        line.strip() for line in body.group(1).splitlines()
+        if line.startswith("  if (") and line.rstrip().endswith("return null;")
+    ] == ACTION_ARMS
+    # The endpoint is Confirm-only; Policy is a separate authority seam that no
+    # Human click stands in for, so the old two-value admission is gone.
+    assert '["confirm", "policy"].includes(payload.mode)' not in projection
+    assert "projectAction(result.payload, submitted, state.runId, binding)" in (
+        SCRIPT.read_text(encoding="utf-8"))
+
+
+def test_the_frozen_snapshot_carries_every_fact_the_action_response_must_echo():
+    projection = PROJECTION.read_text(encoding="utf-8")
+    binding = re.search(
+        r"function proposalBinding\(payload\) \{(.*?)\n\}", projection, re.S)
+    assert binding
+    assert set(re.findall(r"^    ([a-z_]+):", binding.group(1), re.M)) == (
+        ECHOED | {"idempotency_key"})
+    assert all(f"{name}: payload.{name}" in binding.group(1) for name in (
+        "attempt_id", "instance_id", "capability", "preview_digest",
+        "timeout_seconds"))
+    echo = re.search(
+        r"function actionEchoesSnapshot\(payload, binding\) \{(.*?)\n\}",
+        projection, re.S)
+    assert echo
+    assert set(re.findall(r"payload\.([a-z_]+)", echo.group(1))) == ECHOED
+    assert "if (!binding || typeof binding !== \"object\") return false;" in echo.group(1)
+    assert (
+        "  return Object.freeze({binding: proposalBinding(payload), "
+        "confirmation, facts});") in projection
+    # The confirmed body is still copied from `confirmation` alone: the binding
+    # is a fact the Cockpit checks against, never a field it sends.
+    assert "binding" not in re.search(
+        r"export function confirmationBody\(proposal, confirmedBy\) \{(.*?)\n\}",
+        projection, re.S).group(1)
+
+
+def test_the_cockpit_recomputes_the_runtime_idempotency_derivation_it_checks():
+    """The key is derived, never echoed — so both sides of it are pinned here."""
+    runtime = (ROOT / "src" / "conductor" / "command" / "runtime.py").read_text(
+        encoding="utf-8")
+    assert 'idempotency_key=f"dispatch-{proposal.proposal_id}"' in runtime
+    projection = PROJECTION.read_text(encoding="utf-8")
+    assert "idempotency_key: `dispatch-${payload.proposal_id}`," in projection
+    assert "payload.idempotency_key !== binding.idempotency_key" in projection
+
+
+def test_the_action_response_must_carry_every_mandatory_id_and_one_utc_instant():
+    projection = PROJECTION.read_text(encoding="utf-8")
+    ids = re.search(
+        r"const ACTION_IDS = Object\.freeze\(\[(.*?)\]\);", projection, re.S)
+    assert ids
+    assert set(re.findall(r'"([a-z_]+)"', ids.group(1))) == {
+        "action_id", "run_id", "attempt_id", "instance_id", "capability",
+        "requested_by", "idempotency_key"}
+    present = re.search(
+        r"function actionFactsPresent\(payload\) \{(.*?)\n\}", projection, re.S)
+    assert present
+    assert "ACTION_IDS.every((name) => isId(payload[name]))" in present.group(1)
+    assert "UTC_INSTANT.test(payload.requested_at)" in present.group(1)
+    assert "DIGEST.test(payload.preview_digest" in present.group(1)
+    assert "Number.isInteger(payload.timeout_seconds)" in present.group(1)
 
 
 def test_mutation_controls_are_disabled_while_disconnected_stale_or_uncertain():
