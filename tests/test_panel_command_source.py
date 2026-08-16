@@ -42,13 +42,16 @@ def test_the_cockpit_module_graph_is_three_packaged_siblings_with_no_cycle():
     assert "fetch(" not in VIEW.read_text(encoding="utf-8")
 
 
-def test_command_script_has_one_proposal_only_mutation_door():
+def test_command_script_has_one_post_door_reaching_two_named_routes():
     source = SOURCE
     lowered = source.lower()
     for forbidden in (
             "innerhtml", "localstorage", "sessionstorage", "document.cookie",
-            "console.", "/actions", "/decisions"):
+            "console.", "/decisions"):
         assert forbidden not in lowered
+    assert lowered.count("/actions") == 1
+    assert re.findall(r'submitJson\(runTarget\("(/[a-z]+)"\)', source) == [
+        "/proposals", "/actions"]
     assert source.count('method: "POST"') == 1
     assert source.count("/proposals") == 1
     assert source.count("fetch(") == 3
@@ -134,6 +137,128 @@ def test_proposal_response_is_bound_and_never_automatically_retried_or_confirmed
             "proposal_id", "preview_digest", "config_digest", "instance",
             "capability", "arguments", "scope", "timeout_seconds", "rationale"):
         assert f"    {fact}:" in source
+
+
+def test_the_only_action_route_is_the_separate_human_confirm_submission():
+    source = SCRIPT.read_text(encoding="utf-8")
+    view = VIEW.read_text(encoding="utf-8")
+    assert SOURCE.count("/actions") == 1
+    body = re.search(
+        r"  async function confirmProposal\(event\) \{(.*?)\n  \}", source, re.S)
+    assert body
+    assert body.group(1).count('runTarget("/actions")') == 1
+    assert body.group(1).lstrip().startswith("event.preventDefault();")
+    assert source.count("confirmProposal") == 2
+    assert (
+        "renderConfirm(confirmMount, confirmStatus, state, draft, confirmProposal)"
+        in source)
+    assert view.count("onConfirm") == 2
+    assert 'form.addEventListener("submit", onConfirm)' in view
+    tail = source[source.index('window.addEventListener("conduct:run"'):]
+    assert "confirmProposal" not in tail and "/actions" not in tail
+
+
+def test_the_confirmation_body_is_copied_only_from_the_frozen_snapshot():
+    projection = PROJECTION.read_text(encoding="utf-8")
+    source = SCRIPT.read_text(encoding="utf-8")
+    snapshot = re.search(
+        r"  const confirmation = Object\.freeze\(\{(.*?)\n  \}\);", projection, re.S)
+    assert snapshot
+    assert set(re.findall(r"^    ([a-z_]+):", snapshot.group(1), re.M)) == {
+        "proposal_id", "preview_digest", "capability", "scope", "config_digest"}
+    assert all(
+        f"{name}: payload.{name}" in snapshot.group(1)
+        for name in ("proposal_id", "preview_digest", "capability", "config_digest"))
+    body = re.search(
+        r"export function confirmationBody\(proposal, confirmedBy\) \{(.*?)\n\}",
+        projection, re.S)
+    assert body
+    assert set(re.findall(r"^    ([a-z_]+):", body.group(1), re.M)) == {
+        "proposal_id", "preview_digest", "capability", "scope", "config_digest",
+        "confirmed_by"}
+    assert "const snapshot = proposal.confirmation;" in body.group(1)
+    assert body.group(1).count("snapshot.") == 5
+    assert re.findall(r"^    confirmed_by: (\w+),", body.group(1), re.M) == ["actor"]
+    for live in ("draft", "state.", "document", "FormData", "composer"):
+        assert live not in body.group(1)
+    # The whole confirmed body, pinned as one statement: a spread that overrides
+    # a field from the live composer is exactly what this refuses to admit.
+    assert (
+        "\n    const submitted = confirmationBody(\n"
+        '      state.proposal, String(data.get("confirmed_by") || ""));\n'
+    ) in source
+    assert SOURCE.count("confirmationBody") == 3
+
+
+def test_the_confirm_control_is_named_human_work_that_never_claims_execution():
+    view = VIEW.read_text(encoding="utf-8")
+    source = SCRIPT.read_text(encoding="utf-8")
+    projection = PROJECTION.read_text(encoding="utf-8")
+    confirm = re.search(
+        r"export function renderConfirm\(.*?\n\}", view, re.S)
+    assert confirm
+    for fact in (
+            'text: "Confirm unchanged proposal"', 'id: "commandConfirmTitle"',
+            '"aria-describedby": "commandConfirmNote"', 'name: "confirmed_by"',
+            r'pattern: "[A-Za-z0-9][A-Za-z0-9._\\-]{0,127}"', 'element("form"',
+            'type: "submit"', "state.action"):
+        assert fact in confirm.group(0)
+    action = re.search(
+        r"export function projectAction\(payload, submitted, runId\) \{(.*?)\n\}",
+        projection, re.S)
+    assert action
+    assert set(re.findall(r"^    ([a-z_]+):", action.group(1), re.M)) == {
+        "action_id", "capability", "mode"}
+    # The load-bearing fact: an accepted authorization projects request identity
+    # only, so no execution outcome exists for the Cockpit to render or imply.
+    for outcome in ("outcome", "result", "stdout", "stderr", "exit_code",
+                    "finished_at", "receipt_id", "verification"):
+        assert outcome not in action.group(1)
+    # Change-detectors for the two sentences that carry that fact to the Human.
+    assert "Action request accepted and recorded. Nothing was executed." in source
+    assert "Acceptance records one authorized request; nothing is executed." in view
+
+
+def test_mutation_controls_are_disabled_while_disconnected_stale_or_uncertain():
+    view = VIEW.read_text(encoding="utf-8")
+    source = SCRIPT.read_text(encoding="utf-8")
+    assert view.count('const disabled = state.phase !== "ready"') == 2
+    assert view.count('["submitting", "outcome-unknown"].includes') == 2
+    assert view.count("for (const control of ") == 2
+    assert "includes(state.confirmPhase)" in view
+    disconnected = source[
+        source.index('window.addEventListener("conduct:disconnected"'):]
+    for fact in ("epoch += 1", "sessionEpoch += 1", 'csrfToken = ""',
+                 'state.phase = "stale"'):
+        assert fact in disconnected
+    fresh = re.search(
+        r"if \(explicit && runId !== state\.runId\) \{(.*?)\n    \}", source, re.S)
+    assert fresh
+    for reset in ("state.action = null", 'state.confirmPhase = "idle"',
+                  'state.confirmNotice = ""'):
+        assert reset in fresh.group(1)
+    assert 'state.confirmNotice = "Authoritative run reloaded."' in source
+
+
+def test_the_local_session_token_is_only_ever_a_header_value_in_memory():
+    for forbidden in (
+            "localStorage", "sessionStorage", "document.cookie", "searchParams",
+            "URLSearchParams", "location.search", "history.replaceState"):
+        assert forbidden not in SOURCE
+    assert "csrf" not in VIEW.read_text(encoding="utf-8").lower()
+    assert "token" not in PROJECTION.read_text(encoding="utf-8").lower()
+    source = SCRIPT.read_text(encoding="utf-8")
+    assert source.count('"X-Conduct-CSRF": session.token') == 1
+    # Every line that touches the token, enumerated: a DOM, URL or storage sink
+    # cannot be added without appearing here.
+    assert [line.strip() for line in source.splitlines() if "csrfToken" in line] == [
+        'let epoch = 0, csrfToken = "", sessionEpoch = 0;',
+        "if (csrfToken) return {generation: sessionEpoch, token: csrfToken};",
+        "csrfToken = payload.csrf_token;",
+        "return {generation, token: csrfToken};",
+        'csrfToken = "";',
+        'csrfToken = "";',
+    ]
 
 
 def test_command_styles_are_scoped_responsive_and_keyboard_visible():

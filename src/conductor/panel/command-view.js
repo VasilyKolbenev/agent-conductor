@@ -130,9 +130,51 @@ export function renderProposalReview(review, proposal) {
   review.append(element("h3", {
     id: "commandReviewTitle", text: "Proposal created — review only",
   }));
-  for (const [label, value] of Object.entries(proposal)) {
+  for (const [label, value] of Object.entries(proposal.facts)) {
     review.append(element("p", {className: "command-review-fact"}, [
       element("strong", {text: label}), element("span", {text: value}),
     ]));
   }
+}
+export const CONFIRM_NOTE = "This sends only the frozen snapshot above plus the "
+  + "name you type. Acceptance records one authorized request; nothing is executed.";
+export function renderConfirm(confirm, confirmStatus, state, draft, onConfirm) {
+  // Focus intent outlives the disabled in-flight render, so a keyboard Human is
+  // never dropped to the top of the document by their own confirmation.
+  const keepFocus = confirm.contains(document.activeElement) || draft.confirmFocus;
+  confirm.replaceChildren();
+  confirmStatus.textContent = state.confirmNotice;
+  confirmStatus.dataset.confirmState = state.confirmPhase;
+  if (!state.proposal) return;
+  // The escaped hyphen is load-bearing: a browser compiles `pattern` with the
+  // RegExp `v` flag first, where a bare trailing `-` in a class is a syntax
+  // error — and a pattern that fails to compile is IGNORED, not enforced.
+  const actor = element("input", {
+    "aria-describedby": "commandConfirmNote", autocomplete: "off",
+    id: "commandConfirmedBy", maxlength: "128", name: "confirmed_by",
+    pattern: "[A-Za-z0-9][A-Za-z0-9._\\-]{0,127}", required: "",
+    spellcheck: "false", type: "text", value: draft.confirmedBy,
+  });
+  draft.confirmFocus = keepFocus;
+  actor.addEventListener("blur", () => { draft.confirmFocus = false; });
+  actor.addEventListener("input", () => { draft.confirmedBy = actor.value; });
+  const form = element("form", {className: "command-confirm-form"}, [
+    element("h3", {id: "commandConfirmTitle", text: "Confirm unchanged proposal"}),
+    element("p", {className: "command-confirm-note", id: "commandConfirmNote",
+      text: CONFIRM_NOTE}),
+    field("Confirmed by", actor),
+    element("button", {className: "command-confirm-submit", type: "submit",
+      text: "Confirm unchanged proposal"}),
+  ]);
+  form.addEventListener("submit", onConfirm);
+  confirm.append(form);
+  for (const [label, value] of Object.entries(state.action || {})) {
+    confirm.append(element("p", {className: "command-action-fact"}, [
+      element("strong", {text: label}), element("span", {text: value}),
+    ]));
+  }
+  const disabled = state.phase !== "ready"
+    || ["submitting", "outcome-unknown"].includes(state.confirmPhase);
+  for (const control of form.elements) control.disabled = disabled;
+  if (keepFocus && !disabled) actor.focus();
 }

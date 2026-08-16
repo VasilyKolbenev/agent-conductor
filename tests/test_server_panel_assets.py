@@ -4,12 +4,17 @@ from __future__ import annotations
 import importlib.resources
 import urllib.error
 import urllib.request
+import zipfile
+from pathlib import Path
+
+import pytest
 
 from conductor import server
 from tests.test_server import start
 from tests.test_store import good_lane, write_project
 
 
+ROOT = Path(__file__).resolve().parents[1]
 ASSETS = {
     "/panel/command.css": "text/css; charset=utf-8",
     "/panel/command.js": "text/javascript; charset=utf-8",
@@ -32,6 +37,22 @@ def _status(url, *, data=None):
             return response.status, response.read(), dict(response.headers)
     except urllib.error.HTTPError as error:
         return error.code, error.read(), dict(error.headers)
+
+
+def _post_refusal(url):
+    """POST one body to a GET-only asset and name the shape of the refusal.
+
+    The handler answers 404 without draining the request body, so the refusal
+    can reach the client as an aborted connection instead of a response. Both
+    are refusals; the point of the caller is that neither serves a byte.
+    """
+    try:
+        with urllib.request.urlopen(url, data=b"{}", timeout=5) as response:
+            return response.status
+    except urllib.error.HTTPError as error:
+        return error.code
+    except OSError:
+        return "aborted"
 
 
 def test_server_returns_only_the_four_exact_package_resources(tmp_path):
@@ -60,7 +81,7 @@ def test_panel_assets_are_get_only_and_post_is_byte_inert(tmp_path):
     before = {name: (panel / name).read_bytes() for name in names}
     try:
         for target in ASSETS:
-            assert _status(base + target, data=b"{}")[0] == 404
+            assert _post_refusal(base + target) in (404, "aborted")
     finally:
         server_.shutdown()
         server_.server_close()
@@ -82,3 +103,24 @@ def test_every_packaged_panel_script_and_style_is_an_allowlisted_asset():
         entry.name for entry in panel.iterdir()
         if entry.name.endswith((".js", ".css")))
     assert packaged == sorted(name for _, name in server.PANEL_ASSETS.values())
+
+
+def test_the_built_wheel_carries_exactly_the_panel_resources_the_server_serves(
+        tmp_path):
+    """A user receives the wheel, not the source tree — assert on the artifact."""
+    wheel_module = pytest.importorskip("hatchling.builders.wheel")
+    artifacts = list(
+        wheel_module.WheelBuilder(str(ROOT)).build(directory=str(tmp_path)))
+    assert len(artifacts) == 1
+    with zipfile.ZipFile(artifacts[0]) as wheel:
+        shipped = {
+            name for name in wheel.namelist()
+            if name.startswith("conductor/panel/")}
+    panel = importlib.resources.files("conductor") / "panel"
+    assert shipped == {
+        f"conductor/panel/{entry.name}" for entry in panel.iterdir()
+        if entry.is_file()}
+    assert "conductor/panel/index.html" in shipped
+    assert {
+        f"conductor/panel/{name}" for _, name in server.PANEL_ASSETS.values()
+    } < shipped

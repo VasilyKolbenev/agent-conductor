@@ -204,15 +204,53 @@ export function projectProposal(payload, submitted, runId) {
   }
   if (canonicalJson(payload.arguments) !== canonicalJson(submitted.arguments)
       || canonicalJson(payload.scope) !== canonicalJson(submitted.scope)) return null;
-  return Object.freeze({
+  const confirmation = Object.freeze({
+    proposal_id: payload.proposal_id,
+    preview_digest: payload.preview_digest,
+    capability: payload.capability,
+    scope: Object.freeze([...payload.scope]),
+    config_digest: payload.config_digest,
+  });
+  const facts = Object.freeze({
     proposal_id: payload.proposal_id,
     preview_digest: payload.preview_digest,
     config_digest: payload.config_digest,
     instance: payload.instance_id,
     capability: payload.capability,
     arguments: canonicalJson(payload.arguments),
-    scope: payload.scope.join(", "),
+    scope: confirmation.scope.join(", "),
     timeout_seconds: String(payload.timeout_seconds),
     rationale: payload.rationale,
+  });
+  return Object.freeze({confirmation, facts});
+}
+// The Human supplies one fact — who confirms. Every other field is copied from
+// the frozen snapshot, so editing the composer afterwards cannot reach the wire.
+export function confirmationBody(proposal, confirmedBy) {
+  const actor = String(confirmedBy || "").trim();
+  if (!proposal || !isId(actor)) return null;
+  const snapshot = proposal.confirmation;
+  return {
+    proposal_id: snapshot.proposal_id,
+    preview_digest: snapshot.preview_digest,
+    capability: snapshot.capability,
+    scope: [...snapshot.scope],
+    config_digest: snapshot.config_digest,
+    confirmed_by: actor,
+  };
+}
+// An accepted authorization is one prepared request, never a result: only the
+// request's own identity is projected, and no outcome field exists to show.
+export function projectAction(payload, submitted, runId) {
+  if (!payload || typeof payload !== "object" || payload.schema_version !== 2
+      || payload.run_id !== runId || !isId(payload.action_id)
+      || payload.capability !== submitted.capability
+      || payload.preview_digest !== submitted.preview_digest
+      || canonicalJson(payload.scope) !== canonicalJson(submitted.scope)
+      || !["confirm", "policy"].includes(payload.mode)) return null;
+  return Object.freeze({
+    action_id: payload.action_id,
+    capability: payload.capability,
+    mode: payload.mode,
   });
 }
