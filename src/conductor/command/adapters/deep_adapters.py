@@ -13,12 +13,14 @@ capability bodies produce byte-identical specs.  Carrying a capability body to
 a real CLI is exactly the transport work that stays pending; nothing here
 smuggles one through argv, cwd, or the environment.
 
-Class-owned identity is re-derived at every seam, stdout is decoded into a
-closed value, and no raw output, vendor prose, or exception text is copied into
-a durable receipt.
+Class-owned identity is re-derived at every seam, every supplied contract value
+is rebuilt as its exact base value before a single field of it is read, stdout
+is decoded into a closed value, and no raw output, vendor prose, or exception
+text is copied into a durable receipt.
 """
 from __future__ import annotations
 
+import json
 from collections.abc import Callable, Mapping
 from typing import Any, ClassVar
 
@@ -110,8 +112,7 @@ class _DeepAdapter:
 
     def prepare(self, request: ActionRequest) -> PreparedAction:
         """Purely bind one unchanged request to its closed capability body."""
-        if type(request) is not ActionRequest:
-            raise AdapterContractError("deep prepare requires an ActionRequest")
+        request = _canonical_request(request, "deep prepare requires an ActionRequest")
         arguments = _request_arguments(request)
         return PreparedAction(
             adapter_id=self._reviewed.ADAPTER_ID,
@@ -148,6 +149,8 @@ class _DeepAdapter:
             self, request: ActionRequest, result: ActionResultReceipt,
     ) -> AdapterVerification:
         """Verify only an independently supplied fact keyed by action identity."""
+        request = _canonical_request(request, "deep verify requires an ActionRequest")
+        result = _canonical_receipt(result, "deep verify requires a result receipt")
         if not _receipt_matches(result, request):
             return self._verification(request, "mismatch")
         if result.outcome != "succeeded" or self._evidence_source is None:
@@ -166,9 +169,11 @@ class _DeepAdapter:
 
     def _prepared_request(self, prepared: PreparedAction) -> ActionRequest:
         own = self._reviewed.ADAPTER_ID
-        if type(prepared) is not PreparedAction or prepared.adapter_id != own:
-            raise AdapterContractError("deep execute requires its own PreparedAction")
-        request = ActionRequest.from_dict(prepared.request.as_dict())
+        message = "deep execute requires its own PreparedAction"
+        prepared = _canonical_prepared(prepared, message)
+        if prepared.adapter_id != own:
+            raise AdapterContractError(message)
+        request = prepared.request
         payload = _plain_json(prepared.adapter_payload)
         expected = {
             "capability": request.capability,
@@ -296,6 +301,60 @@ def _canonical_config(config: DeepAdapterConfig) -> DeepAdapterConfig:
         raise AdapterContractError("deep adapter config is not canonical") from None
     assert canonical is not None
     return canonical
+
+
+def _canonical(build: Callable[[], Any], message: str) -> Any:
+    """Run one reconstruction behind the seam's single fixed refusal.
+
+    Everything a supplied value can still control -- a rewritten frozen field, a
+    subclass's ``as_dict``, a hostile ``__hash__``, ``__eq__``, or ``items`` --
+    is consumed inside this contour.  The refusal is raised after the handler
+    has ended and ``from None``, so neither the vendor's text nor its exception
+    type survives in ``__cause__`` or ``__context__``.
+    """
+    failed = False
+    try:
+        value = build()
+    except Exception:  # noqa: BLE001 -- a supplied value leaves no exception graph
+        failed = True
+        value = None
+    if failed:
+        raise AdapterContractError(message) from None
+    assert value is not None
+    return value
+
+
+def _plain(value: object) -> Any:
+    """Re-read one value as exact JSON data, dropping every supplied identity."""
+    return json.loads(canonical_json(value))
+
+
+def _canonical_request(request: object, message: str) -> ActionRequest:
+    """Rebuild the exact base ActionRequest before one field of it is read."""
+    if type(request) is not ActionRequest:
+        raise AdapterContractError(message)
+    return _canonical(
+        lambda: ActionRequest.from_dict(_plain(ActionRequest.as_dict(request))), message)
+
+
+def _canonical_prepared(prepared: object, message: str) -> PreparedAction:
+    """Rebuild the exact base PreparedAction, request and payload included."""
+    if type(prepared) is not PreparedAction:
+        raise AdapterContractError(message)
+    return _canonical(
+        lambda: PreparedAction(
+            adapter_id=_plain(prepared.adapter_id),
+            request=_canonical_request(prepared.request, message),
+            adapter_payload=_plain(_plain_json(prepared.adapter_payload))), message)
+
+
+def _canonical_receipt(result: object, message: str) -> ActionResultReceipt:
+    """Rebuild the exact base ActionResultReceipt before identity is compared."""
+    if type(result) is not ActionResultReceipt:
+        raise AdapterContractError(message)
+    return _canonical(
+        lambda: ActionResultReceipt.from_dict(
+            _plain(ActionResultReceipt.as_dict(result))), message)
 
 
 def _request_arguments(request: ActionRequest) -> dict[str, Any]:
