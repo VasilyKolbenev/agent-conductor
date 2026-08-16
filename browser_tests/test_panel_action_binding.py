@@ -27,9 +27,10 @@ from collections.abc import Iterator
 import pytest
 from playwright.sync_api import Browser, Page, Route
 
-# ``chromium`` and ``cockpit_url`` are imported to be used as fixtures: one
-# confirm-mode run with a bound adapter, served by the real loopback server, is
-# exactly what both levels below need, and it already exists next door.
+# ``cockpit_url`` is imported to be used as a fixture: one confirm-mode run with
+# a bound adapter, served by the real loopback server, is exactly what both
+# levels below need, and it already exists next door. The browser itself comes
+# from the one session-scoped fixture in ``conftest.py``.
 from browser_tests.test_panel_confirm import (  # noqa: F401
     ACCEPTED,
     RUN_ID,
@@ -37,7 +38,6 @@ from browser_tests.test_panel_confirm import (  # noqa: F401
     _load_run,
     _open,
     _snapshot,
-    chromium,
     cockpit_url,
 )
 

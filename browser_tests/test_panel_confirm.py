@@ -17,7 +17,7 @@ import threading
 from collections.abc import Iterator
 
 import pytest
-from playwright.sync_api import Browser, Page, sync_playwright
+from playwright.sync_api import Browser, Page
 
 from browser_tests.test_panel_rendered import _contrast
 from conductor import server
@@ -33,17 +33,6 @@ RUN_ID = "run-cockpit-confirm"
 TOKEN = "browser-only-process-token"
 HOSTILE = '<img src=x onerror="window.__pwned = 1">'
 ACCEPTED = "Action request accepted and recorded. Nothing was executed."
-
-
-@pytest.fixture(scope="module")
-def chromium() -> Iterator[Browser]:
-    """Launch the same Chromium engine the independent CI job installs."""
-    with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(headless=True)
-        try:
-            yield browser
-        finally:
-            browser.close()
 
 
 @pytest.fixture

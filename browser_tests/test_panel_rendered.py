@@ -17,7 +17,7 @@ from io import BytesIO
 
 import pytest
 from PIL import Image
-from playwright.sync_api import Browser, Page, sync_playwright
+from playwright.sync_api import Browser, Page
 
 from conductor import demo, server
 
@@ -37,17 +37,6 @@ def panel_url(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
         thread.join(timeout=5)
         httpd.server_close()
         assert not thread.is_alive(), "panel server did not stop"
-
-
-@pytest.fixture(scope="session")
-def chromium() -> Iterator[Browser]:
-    """Launch the same Chromium engine the independent CI job installs."""
-    with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(headless=True)
-        try:
-            yield browser
-        finally:
-            browser.close()
 
 
 @pytest.fixture(params=("dark", "light"))
