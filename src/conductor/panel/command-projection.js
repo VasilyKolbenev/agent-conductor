@@ -259,12 +259,37 @@ export function confirmationBody(proposal, confirmedBy) {
 //: malformed one is a fact the Cockpit does not have, never a default.
 const ACTION_IDS = Object.freeze(["action_id", "run_id", "attempt_id",
   "instance_id", "capability", "requested_by", "idempotency_key"]);
-const UTC_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|\+00:00)$/;
+const UTC_INSTANT =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(?:Z|\+00:00)$/;
 const DIGEST = /^sha256:[0-9a-f]{64}$/;
+const MONTH_LENGTHS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+// A string that matched UTC_INSTANT is still only a shape. This decides whether
+// it names a real UTC instant, agreeing case-for-case with the production
+// contract (command/contracts.py _timestamp -> datetime.fromisoformat): an
+// invalid month, day, calendar day (incl. a non-leap Feb 29), hour, minute or
+// second is refused; the ISO end-of-day 24:00:00 that production accepts — only
+// when minute, second and microsecond are zero — is accepted here too.
+function instantIsValid(value) {
+  const m = UTC_INSTANT.exec(value);
+  if (!m) return false;
+  const year = Number(m[1]), month = Number(m[2]), day = Number(m[3]);
+  if (year < 1 || month < 1 || month > 12) return false;
+  const leap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+  const maxDay = month === 2 && leap ? 29 : MONTH_LENGTHS[month - 1];
+  if (day < 1 || day > maxDay) return false;
+  const hour = Number(m[4]), minute = Number(m[5]), second = Number(m[6]);
+  if (minute > 59 || second > 59) return false;
+  if (hour === 24) {
+    return minute === 0 && second === 0
+      && Number(((m[7] || "") + "000000").slice(0, 6)) === 0;
+  }
+  return hour <= 23;
+}
 function actionFactsPresent(payload) {
   return ACTION_IDS.every((name) => isId(payload[name]))
     && typeof payload.requested_at === "string"
     && UTC_INSTANT.test(payload.requested_at)
+    && instantIsValid(payload.requested_at)
     && DIGEST.test(payload.preview_digest || "")
     && Number.isInteger(payload.timeout_seconds);
 }

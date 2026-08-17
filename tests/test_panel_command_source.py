@@ -302,6 +302,35 @@ def test_the_action_response_must_carry_every_mandatory_id_and_one_utc_instant()
     assert "Number.isInteger(payload.timeout_seconds)" in present.group(1)
 
 
+def test_the_requested_at_instant_is_validated_by_calendar_not_only_the_regex():
+    """A UTC_INSTANT match is a shape; a real instant is a calendar fact too.
+
+    The projection must accept for ``requested_at`` exactly what the production
+    ActionRequest contract accepts (``command/contracts.py`` ``_timestamp`` ->
+    ``datetime.fromisoformat``): so the regex can never stand in for the fact,
+    and a value like ``2026-99-99T99:99:99Z`` is refused, not accepted. This
+    pins the semantic gate so a revert to regex-only reds a source guard too.
+    """
+    projection = PROJECTION.read_text(encoding="utf-8")
+    present = re.search(
+        r"function actionFactsPresent\(payload\) \{(.*?)\n\}", projection, re.S)
+    assert present
+    # Both gates, in order: the shape, then the instant it must name.
+    assert "UTC_INSTANT.test(payload.requested_at)" in present.group(1)
+    assert "instantIsValid(payload.requested_at)" in present.group(1)
+    body = re.search(
+        r"function instantIsValid\(value\) \{(.*?)\n\}", projection, re.S)
+    assert body
+    checks = body.group(1)
+    # The proleptic-Gregorian leap rule, the month and day bounds, and the ISO
+    # end-of-day 24:00:00 that production accepts only at exact midnight.
+    assert "year % 4 === 0 && year % 100 !== 0" in checks and "year % 400" in checks
+    assert "month < 1 || month > 12" in checks
+    assert "day < 1 || day > maxDay" in checks
+    assert "minute > 59 || second > 59" in checks
+    assert "hour === 24" in checks and "hour <= 23" in checks
+
+
 def test_mutation_controls_are_disabled_while_disconnected_stale_or_uncertain():
     view = VIEW.read_text(encoding="utf-8")
     source = SCRIPT.read_text(encoding="utf-8")
