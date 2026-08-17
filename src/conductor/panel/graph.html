@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>December — Graph</title>
+<!-- ALPHA-2 Cockpit/Graph window. Served by no production route yet: server.py
+     is frozen until the runtime side hands over its API fixtures, so this
+     entry is opened by the browser suite through its own static server. Every
+     asset path is relative for exactly that reason. -->
+<link rel="stylesheet" href="graph.css">
+<script src="graph.js" type="module"></script>
+</head>
+<body>
+<div class="wrap">
+  <header class="shell">
+    <span class="wordmark">December — Graph</span>
+    <span class="mono" id="runFacts"></span>
+    <p class="g-notice" aria-live="polite" id="notice"></p>
+  </header>
+  <div class="grid">
+    <div class="col">
+      <section class="card" id="fieldCard" aria-label="Run graph">
+        <h2>Run graph</h2>
+        <div class="g-field-scroll">
+          <div class="g-field" id="field">
+            <svg id="edges" aria-hidden="true"></svg>
+          </div>
+        </div>
+        <p class="empty" id="fieldEmpty">No run graph loaded.
+          This window renders fixture data only.</p>
+      </section>
+      <section class="card" id="timelineCard" aria-label="Execution timeline">
+      </section>
+    </div>
+    <div class="col">
+      <section class="card" id="paletteCard" aria-label="Harness palette"></section>
+      <section class="card" id="composerCard" aria-label="Compose"></section>
+      <section class="card" id="detailCard" aria-label="Node card"></section>
+      <section class="card" id="gatesCard" aria-label="Human gates"></section>
+    </div>
+  </div>
+</div>
+<noscript><p class="empty">The Graph window needs JavaScript.</p></noscript>
+</body>
+</html>

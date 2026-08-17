@@ -22,13 +22,24 @@ ASSETS = {
     "/panel/command-view.js": "text/javascript; charset=utf-8",
 }
 #: Every shape the split must never turn into a route: a guessed sibling, a
-#: traversal, a query, a directory listing, a case fold, a trailing slash.
+#: traversal, a query, a directory listing, a case fold, a trailing slash —
+#: and every ALPHA-2 Graph file, packaged but deliberately not served yet.
 REFUSED = (
     "/panel/command.json", "/panel/../server.py", "/panel/command.js?cache=1",
     "/panel/command-view.js?v=2", "/panel/%2e%2e/server.py", "/panel/",
     "/panel/index.html", "/panel/COMMAND-VIEW.JS", "/panel/command-view.js/",
     "/panel/command-view.js.map", "/panel/command-projection.js%00.txt",
+    "/panel/graph.html", "/panel/graph.css", "/panel/graph.js",
+    "/panel/graph-store.js", "/panel/graph-view.js",
 )
+#: The ALPHA-2 Graph window ships in the package beside the Cockpit but is
+#: served by no route: server.py is frozen until the runtime side hands over
+#: its API fixtures, so the browser suite serves these files through its own
+#: static server (browser_tests/test_graph_rendered.py) and the production
+#: server refuses them above. The moment a graph route lands in PANEL_ASSETS,
+#: its file must leave this exact list — the allowlist check below reddens on
+#: a stale entry as it does on a missing one.
+UNSERVED = ("graph.css", "graph.js", "graph-store.js", "graph-view.js")
 
 
 def _status(url, *, data=None):
@@ -99,9 +110,12 @@ def test_the_allowlist_is_exact_literals_and_never_a_derived_path():
 
 def test_every_packaged_panel_script_and_style_is_an_allowlisted_asset():
     panel = importlib.resources.files("conductor") / "panel"
+    names = {entry.name for entry in panel.iterdir()}
+    assert set(UNSERVED) <= names, "stale UNSERVED entry names no packaged file"
+    assert not set(UNSERVED) & {name for _, name in server.PANEL_ASSETS.values()}
     packaged = sorted(
         entry.name for entry in panel.iterdir()
-        if entry.name.endswith((".js", ".css")))
+        if entry.name.endswith((".js", ".css")) and entry.name not in UNSERVED)
     assert packaged == sorted(name for _, name in server.PANEL_ASSETS.values())
 
 
