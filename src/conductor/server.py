@@ -30,7 +30,7 @@ import secrets
 import sys
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -38,6 +38,7 @@ from urllib.parse import urlsplit
 
 from conductor import harnesses, merge, report, store
 from conductor.command.adapters import AdapterRegistry
+from conductor.command.adapters.provider import ProviderConfig, ProviderConfigError
 from conductor.command.api_contracts import ApiRefusal
 from conductor.command.contracts import canonical_json
 from conductor.command.http_api import (
@@ -45,6 +46,7 @@ from conductor.command.http_api import (
     CommandApi,
 )
 from conductor.command.http_transport import CommandSession, HttpRefusal
+from conductor.command.providers import ProviderResolution, resolve_providers
 from conductor.command.run_store import RunStore
 from conductor.command.runtime import Budget
 
@@ -505,6 +507,27 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.flush()
 
 
+def _resolved_providers(
+        registry: AdapterRegistry | None,
+        providers: Sequence[ProviderConfig], root: Path,
+        clock: Callable[[], str], ids: Callable[[str], str]) -> ProviderResolution:
+    """Take an explicit registry OR the operator provider config, never both.
+
+    An explicitly injected registry is a test/embedding seam and is used verbatim,
+    with no descriptors; supplying provider config beside it is refused rather
+    than silently ignored. The default resolves the provider config through the
+    factory, which is empty by default, so the production server never pretends a
+    real provider is available until real providers are configured and resolve to
+    available.
+    """
+    if registry is not None:
+        if providers:
+            raise ProviderConfigError(
+                "pass either an explicit adapter registry or provider config, not both")
+        return ProviderResolution(registry=registry, contracts=())
+    return resolve_providers(providers, root=root, clock=clock, ids=ids)
+
+
 class ConductServer(ThreadingHTTPServer):
     """ThreadingHTTPServer wiring the broker, watcher and SSE registry."""
 
@@ -517,6 +540,7 @@ class ConductServer(ThreadingHTTPServer):
     def __init__(
             self, address: tuple[str, int], root: Path, cdir: Path, *,
             registry: AdapterRegistry | None = None,
+            providers: Sequence[ProviderConfig] = (),
             budget: Budget = PRODUCT_COMMAND_BUDGET,
             clock: Callable[[], str] = _command_clock,
             ids: Callable[[str], str] = _command_id,
@@ -531,7 +555,9 @@ class ConductServer(ThreadingHTTPServer):
         assigned_port = self.server_address[1]
         self.command_session = CommandSession.mint(assigned_port, token_factory)
         self.command_store = RunStore(root)
-        self.command_registry = registry or AdapterRegistry()
+        resolution = _resolved_providers(registry, providers, root, clock, ids)
+        self.command_registry = resolution.registry
+        self.command_providers = resolution.contracts
         self.command_api = CommandApi(
             self.command_store, self.command_registry,
             session=self.command_session, budget=budget, clock=clock, ids=ids,
@@ -568,6 +594,7 @@ class ConductServer(ThreadingHTTPServer):
 def build(
         root: Path | str, port: int, *,
         registry: AdapterRegistry | None = None,
+        providers: Sequence[ProviderConfig] = (),
         budget: Budget = PRODUCT_COMMAND_BUDGET,
         clock: Callable[[], str] = _command_clock,
         ids: Callable[[str], str] = _command_id,
@@ -595,4 +622,5 @@ def build(
         raise store.StoreError(f"refusing to start: {loaded.map_error}")
     return ConductServer(
         ("127.0.0.1", port), Path(root), cdir, registry=registry,
-        budget=budget, clock=clock, ids=ids, token_factory=token_factory)
+        providers=providers, budget=budget, clock=clock, ids=ids,
+        token_factory=token_factory)

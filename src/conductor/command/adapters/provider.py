@@ -1,0 +1,480 @@
+"""Immutable provider contract, the one registration door, and the projection.
+
+This value module probes nothing: it opens no process, filesystem, environment,
+or network door. It holds the two halves of a configured provider and keeps them
+apart on purpose:
+
+- ``ProviderConfig`` is the operator's durable input. It stores a provider id, one
+  ABSOLUTE operator-pinned executable path, a reviewed protocol token, and
+  allowlisted environment NAMES. It stores no secret value, no argv, no cwd, no
+  token, and no raw output; a secret is referenced by name and read from the live
+  environment at spawn time, never written here.
+- ``ProviderContract`` is the public descriptor the Cockpit may see. It carries
+  identity, resolved availability, declared capabilities, the CLOSED
+  per-capability argument-schema relation, and the lifecycle seams the provider
+  really implements -- and it never carries the executable, a path, an env value,
+  a token, a PID, or raw output.
+
+``ProviderRegistry`` is the one door between the two. The factory admits every
+provider through it, so a descriptor the Cockpit can see and an adapter the
+runtime can spawn exist only for a provider that passed. It refuses -- at
+registration -- a partial schema relation, a duplicate identity, a lifecycle
+claim the adapter class does not implement, and an adapter offered for a
+provider that is not available.
+
+Every supplied value is reconstructed to its exact base type before one field of
+it is read, so a hostile subclass, an ``object.__setattr__`` mutation, or a
+mutated frozen value is refused rather than trusted. Availability resolution and
+adapter construction -- the only seams that touch the filesystem or build a
+spawning adapter -- live in ``conductor.command.providers``, never in this
+module.
+"""
+from __future__ import annotations
+
+import json
+from collections.abc import Callable, Iterable, Mapping
+from dataclasses import dataclass
+from pathlib import PurePosixPath, PureWindowsPath
+from typing import Any, ClassVar
+
+from ..contracts import ContractError, _id, _text, canonical_json
+from .base import CAPABILITIES, _ARGUMENT_SCHEMAS, AdapterContractError, AdapterRegistry
+from .deep_contracts import DeepProtocol, _env_names
+
+#: Every reviewed provider protocol/version token an operator may pin.
+KNOWN_PROTOCOLS = frozenset(protocol.value for protocol in DeepProtocol)
+#: The reviewed argument-schema names any capability may bind to.
+KNOWN_SCHEMAS = frozenset(_ARGUMENT_SCHEMAS)
+#: The three resolved states; ``available`` is the only spawn-capable one.
+AVAILABILITY_STATES = frozenset({"available", "executable_absent", "version_mismatch"})
+#: The one lifecycle capability that carries no argument schema: an observation is
+#: an adapter-authored fact, never a browser-submitted argument body.
+SCHEMALESS_CAPABILITIES = frozenset({"observe"})
+#: Every adapter lifecycle seam a provider may claim it implements.
+LIFECYCLE_SEAMS = frozenset({"observe", "prepare", "execute", "verify", "recover"})
+#: The seams no provider may omit. ``recover`` is optional and must be declared
+#: to be claimed, because no adapter in this build implements recovery yet.
+REQUIRED_SEAMS = frozenset({"observe", "prepare", "execute", "verify"})
+
+
+class ProviderConfigError(ContractError):
+    """A provider config or contract value is open-ended, secret-bearing, or partial."""
+
+
+def _provider_id(value: object) -> str:
+    try:
+        return _id("provider_id", value)
+    except ContractError as error:
+        raise ProviderConfigError(str(error)) from None
+
+
+def _reviewed_text(name: str, value: object) -> str:
+    try:
+        return _text(name, value)
+    except ContractError as error:
+        raise ProviderConfigError(str(error)) from None
+
+
+def _reviewed_env_names(value: object) -> tuple[str, ...]:
+    try:
+        return _env_names(value)
+    except ContractError:
+        raise ProviderConfigError(
+            "env_allow must contain unique environment NAMES, never values") from None
+
+
+def _is_absolute(path: str) -> bool:
+    return PurePosixPath(path).is_absolute() or PureWindowsPath(path).is_absolute()
+
+
+def _exact_fields(value: object, fields: frozenset[str], name: str) -> dict[str, Any]:
+    if type(value) is not dict or any(type(key) is not str for key in value):
+        raise ProviderConfigError(f"{name} must be an object with string keys")
+    if set(value) != fields:
+        raise ProviderConfigError(f"{name} fields must be exact; nothing missing or extra")
+    return dict(value)
+
+
+def _plain(value: object) -> Any:
+    """Re-read one value as exact JSON data, dropping every supplied identity."""
+    return json.loads(canonical_json(value))
+
+
+def _closed(build: Callable[[], Any], message: str) -> Any:
+    """Run one rebuild; every failure becomes the same closed refusal.
+
+    A value mutated past its constructor can fail the rebuild in many ways -- an
+    unreadable field, an unserializable field, a broken invariant. All of them
+    mean the same thing here, and none of them may report the hostile detail on.
+    """
+    failed = False
+    try:
+        result = build()
+    except Exception:  # noqa: BLE001 -- a mutated value keeps no hostile graph
+        failed = True
+        result = None
+    if failed:
+        raise ProviderConfigError(message) from None
+    return result
+
+
+def _reviewed_capabilities(value: object) -> tuple[str, ...]:
+    if type(value) not in (list, tuple):
+        raise ProviderConfigError("capabilities must be a list of declared capability ids")
+    rows = tuple(value)
+    if any(type(row) is not str or row not in CAPABILITIES for row in rows):
+        raise ProviderConfigError("capabilities contain an unsupported value")
+    if len(set(rows)) != len(rows):
+        raise ProviderConfigError("capabilities must not repeat a value")
+    return rows
+
+
+def _reviewed_schema_relation(
+        capabilities: tuple[str, ...],
+        pairs: object) -> tuple[tuple[str, str], ...]:
+    """Close the per-capability schema relation: total over controls, injective, exact.
+
+    The relation is supplied as DATA (capability/schema pairs), so a repeated
+    capability, a schema for an undeclared or schemaless capability, and a control
+    left without a schema are each visible and each refused here.
+    """
+    if type(pairs) not in (list, tuple):
+        raise ProviderConfigError("schema relation must be a list of capability/schema pairs")
+    rows: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for pair in pairs:
+        if type(pair) not in (list, tuple) or len(pair) != 2:
+            raise ProviderConfigError(
+                "each schema relation row must be one capability/schema pair")
+        capability, schema = pair
+        if type(capability) is not str or capability not in capabilities:
+            raise ProviderConfigError("schema relation names an undeclared capability")
+        if type(schema) is not str or schema not in KNOWN_SCHEMAS:
+            raise ProviderConfigError("schema relation names an unreviewed schema")
+        if capability in seen:
+            raise ProviderConfigError("schema relation must not repeat a capability")
+        seen.add(capability)
+        rows.append((capability, schema))
+    controls = set(capabilities) - SCHEMALESS_CAPABILITIES
+    if seen != controls:
+        raise ProviderConfigError(
+            "every control capability requires exactly one argument schema")
+    return tuple(sorted(rows))
+
+
+def _reviewed_lifecycle(value: object) -> tuple[str, ...]:
+    """Close the lifecycle claim: reviewed seam names, no repeat, nothing required missing."""
+    if type(value) not in (list, tuple):
+        raise ProviderConfigError("lifecycle must be a list of reviewed seam names")
+    rows = tuple(value)
+    if any(type(row) is not str or row not in LIFECYCLE_SEAMS for row in rows):
+        raise ProviderConfigError("lifecycle names an unreviewed seam")
+    if len(set(rows)) != len(rows):
+        raise ProviderConfigError("lifecycle must not repeat a seam")
+    if not REQUIRED_SEAMS.issubset(rows):
+        raise ProviderConfigError(
+            "lifecycle must declare observe, prepare, execute and verify")
+    return tuple(sorted(rows))
+
+
+@dataclass(frozen=True)
+class ProviderConfig:
+    """Operator-pinned provider configuration: the only durable provider input."""
+
+    provider_id: str
+    executable: str
+    protocol: str
+    env_allow: tuple[str, ...] | list[str] = ()
+    _FIELDS: ClassVar[frozenset[str]] = frozenset({
+        "provider_id", "executable", "protocol", "env_allow"})
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "provider_id", _provider_id(self.provider_id))
+        if type(self.executable) is not str or "\x00" in self.executable:
+            raise ProviderConfigError("executable must be a NUL-free absolute path string")
+        if not _is_absolute(self.executable):
+            raise ProviderConfigError("executable must be an absolute operator-pinned path")
+        if type(self.protocol) is not str or self.protocol not in KNOWN_PROTOCOLS:
+            raise ProviderConfigError("protocol must name a reviewed provider protocol")
+        object.__setattr__(self, "env_allow", _reviewed_env_names(self.env_allow))
+
+    def as_dict(self) -> dict[str, Any]:
+        if type(self) is not ProviderConfig:
+            raise ProviderConfigError("provider config must remain canonical")
+        canonical = _rebuilt_config(self)
+        return {
+            "provider_id": canonical.provider_id, "executable": canonical.executable,
+            "protocol": canonical.protocol, "env_allow": list(canonical.env_allow)}
+
+    @classmethod
+    def from_dict(cls, value: object) -> "ProviderConfig":
+        data = _exact_fields(value, ProviderConfig._FIELDS, "provider config")
+        if type(data["env_allow"]) is not list:
+            raise ProviderConfigError("env_allow must be a JSON array of names")
+        return ProviderConfig(**data)
+
+
+def _rebuilt_config(config: ProviderConfig) -> ProviderConfig:
+    failed = False
+    try:
+        rebuilt = ProviderConfig(
+            config.provider_id, config.executable, config.protocol, config.env_allow)
+    except Exception:  # noqa: BLE001 -- a mutated value retains no hostile graph
+        failed = True
+        rebuilt = None
+    if failed:
+        raise ProviderConfigError("provider config must remain canonical") from None
+    assert rebuilt is not None
+    return rebuilt
+
+
+def reconstruct_config(value: object) -> ProviderConfig:
+    """Rebuild the exact base ProviderConfig before one field of it is read."""
+    if type(value) is not ProviderConfig:
+        raise ProviderConfigError("provider config must be an exact ProviderConfig")
+    return ProviderConfig.from_dict(_plain(value.as_dict()))
+
+
+@dataclass(frozen=True)
+class ProviderCatalogEntry:
+    """A code-owned, reviewed provider template the factory resolves against."""
+
+    provider_id: str
+    display_name: str
+    vendor: str
+    protocol: str
+    capabilities: tuple[str, ...]
+    schema_pairs: tuple[tuple[str, str], ...]
+    lifecycle: tuple[str, ...]
+    adapter_class: type
+    _DATA: ClassVar[frozenset[str]] = frozenset({
+        "provider_id", "display_name", "vendor", "protocol", "capabilities",
+        "schema_pairs", "lifecycle"})
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "provider_id", _provider_id(self.provider_id))
+        object.__setattr__(self, "display_name", _reviewed_text("display_name", self.display_name))
+        object.__setattr__(self, "vendor", _reviewed_text("vendor", self.vendor))
+        if type(self.protocol) is not str or self.protocol not in KNOWN_PROTOCOLS:
+            raise ProviderConfigError("protocol must name a reviewed provider protocol")
+        object.__setattr__(self, "capabilities", _reviewed_capabilities(self.capabilities))
+        object.__setattr__(self, "schema_pairs", _reviewed_schema_relation(
+            self.capabilities, self.schema_pairs))
+        object.__setattr__(self, "lifecycle", _reviewed_lifecycle(self.lifecycle))
+        if not isinstance(self.adapter_class, type):
+            raise ProviderConfigError("adapter_class must be an adapter type")
+
+    def as_data(self) -> dict[str, Any]:
+        """Every JSON-able field of this entry; the adapter class is carried apart."""
+        if type(self) is not ProviderCatalogEntry:
+            raise ProviderConfigError("provider catalog entry must remain canonical")
+        return {
+            "provider_id": self.provider_id, "display_name": self.display_name,
+            "vendor": self.vendor, "protocol": self.protocol,
+            "capabilities": list(self.capabilities),
+            "schema_pairs": [list(pair) for pair in self.schema_pairs],
+            "lifecycle": list(self.lifecycle)}
+
+
+def reconstruct_entry(value: object) -> ProviderCatalogEntry:
+    """Rebuild the exact base catalog entry before one field of it is read.
+
+    A subclass is refused outright, so a lying ``as_data`` never runs; every other
+    field is re-read as plain JSON data and re-validated, so a value mutated past
+    its constructor with ``object.__setattr__`` cannot reach the door intact.
+    """
+    if type(value) is not ProviderCatalogEntry:
+        raise ProviderConfigError("catalog entry must be an exact ProviderCatalogEntry")
+    adapter_class = value.adapter_class
+    if not isinstance(adapter_class, type):
+        raise ProviderConfigError("adapter_class must be an adapter type")
+    return _closed(
+        lambda: ProviderCatalogEntry(
+            adapter_class=adapter_class,
+            **_exact_fields(_plain(value.as_data()), ProviderCatalogEntry._DATA, "entry")),
+        "catalog entry must remain canonical")
+
+
+@dataclass(frozen=True)
+class ProviderContract:
+    """One immutable provider descriptor: identity, availability, and controls.
+
+    It carries no executable, no argv, no cwd, no env value, no token, no PID, and
+    no raw output -- only what the Cockpit may see. ``available`` is derived from
+    ``availability`` and is true only in the ``available`` state. ``lifecycle``
+    names the adapter seams the provider implements; ``ProviderRegistry`` refuses
+    a seam the adapter class does not really carry.
+    """
+
+    provider_id: str
+    display_name: str
+    vendor: str
+    version: str
+    capabilities: tuple[str, ...]
+    schema_pairs: tuple[tuple[str, str], ...]
+    lifecycle: tuple[str, ...]
+    availability: str
+    available: bool
+    _FIELDS: ClassVar[frozenset[str]] = frozenset({
+        "provider_id", "display_name", "vendor", "version", "capabilities",
+        "schema_pairs", "lifecycle", "availability", "available"})
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "provider_id", _provider_id(self.provider_id))
+        for name in ("display_name", "vendor", "version"):
+            object.__setattr__(self, name, _reviewed_text(name, getattr(self, name)))
+        object.__setattr__(self, "capabilities", _reviewed_capabilities(self.capabilities))
+        object.__setattr__(self, "schema_pairs", _reviewed_schema_relation(
+            self.capabilities, self.schema_pairs))
+        object.__setattr__(self, "lifecycle", _reviewed_lifecycle(self.lifecycle))
+        if self.availability not in AVAILABILITY_STATES:
+            raise ProviderConfigError("availability must name a reviewed state")
+        if type(self.available) is not bool:
+            raise ProviderConfigError("available must be a boolean")
+        if self.available is not (self.availability == "available"):
+            raise ProviderConfigError("available must equal the resolved availability state")
+
+    def as_dict(self) -> dict[str, Any]:
+        if type(self) is not ProviderContract:
+            raise ProviderConfigError("provider contract must remain canonical")
+        return {
+            "provider_id": self.provider_id, "display_name": self.display_name,
+            "vendor": self.vendor, "version": self.version,
+            "capabilities": list(self.capabilities),
+            "schema_pairs": [list(pair) for pair in self.schema_pairs],
+            "lifecycle": list(self.lifecycle),
+            "availability": self.availability, "available": self.available}
+
+
+def reconstruct_contract(value: object) -> ProviderContract:
+    """Rebuild the exact base ProviderContract before one field of it is read."""
+    if type(value) is not ProviderContract:
+        raise ProviderConfigError("provider contract must be an exact ProviderContract")
+    return _closed(
+        lambda: ProviderContract(
+            **_exact_fields(_plain(value.as_dict()), ProviderContract._FIELDS, "contract")),
+        "provider contract must remain canonical")
+
+
+def _prove_schema_relation(entry: ProviderCatalogEntry) -> None:
+    """Prove the declared relation IS the adapter class's own schema mapping.
+
+    The class's mapping is re-read as plain pairs and compared as a WHOLE, so a
+    declared control the class binds no schema to, a schema the entry invented,
+    and a schema bound under another name are each refused here, at registration.
+    """
+    schemas = getattr(entry.adapter_class, "argument_schemas", None)
+    if not isinstance(schemas, Mapping):
+        raise ProviderConfigError("adapter class must declare an argument schema mapping")
+    declared: list[tuple[str, str]] = []
+    for capability, schema in dict(schemas).items():
+        if type(capability) is not str or type(schema) is not str:
+            raise ProviderConfigError("adapter argument schemas must be name/schema strings")
+        declared.append((capability, schema))
+    if tuple(sorted(declared)) != entry.schema_pairs:
+        raise ProviderConfigError(
+            "every declared capability requires the adapter's own exact argument schema")
+
+
+def _prove_lifecycle(entry: ProviderCatalogEntry) -> None:
+    """Prove every declared lifecycle seam is a real callable on the adapter class."""
+    missing = sorted(
+        seam for seam in entry.lifecycle
+        if not callable(getattr(entry.adapter_class, seam, None)))
+    if missing:
+        raise ProviderConfigError(
+            f"adapter class does not implement declared lifecycle seams {missing}")
+
+
+class ProviderRegistry:
+    """The one door a provider passes before it can be described or spawned.
+
+    Registration is refused unless the supplied catalog entry reconstructs to its
+    exact base value, binds exactly the adapter class's own argument schema to
+    each declared control, declares only lifecycle seams that class really
+    implements, and carries an identity no registered provider already holds. An
+    AVAILABLE provider must hand over an instance of its catalogued adapter; an
+    unavailable one must hand over none, so an unavailable provider owns no
+    adapter and no spawn is reachable through it. Every refusal happens before
+    anything is stored, so a refused provider leaves no trace. This door opens no
+    process, filesystem, environment, or network door of its own.
+    """
+
+    def __init__(self) -> None:
+        self._adapters = AdapterRegistry()
+        self._contracts: dict[str, ProviderContract] = {}
+
+    @property
+    def adapters(self) -> AdapterRegistry:
+        """The adapters of AVAILABLE providers only: the runtime's whole spawn surface."""
+        return self._adapters
+
+    def contracts(self) -> tuple[ProviderContract, ...]:
+        """Every registered provider's descriptor, rebuilt before it is handed out."""
+        return tuple(
+            reconstruct_contract(self._contracts[key]) for key in sorted(self._contracts))
+
+    def register(
+            self, entry: object, *, availability: str,
+            adapter: object = None) -> ProviderContract:
+        """Admit one provider, or refuse it and change nothing."""
+        canonical = reconstruct_entry(entry)
+        if type(availability) is not str or availability not in AVAILABILITY_STATES:
+            raise ProviderConfigError("availability must name a reviewed state")
+        if canonical.provider_id in self._contracts:
+            raise ProviderConfigError(
+                f"provider {canonical.provider_id!r} is already registered")
+        _prove_schema_relation(canonical)
+        _prove_lifecycle(canonical)
+        contract = ProviderContract(
+            provider_id=canonical.provider_id, display_name=canonical.display_name,
+            vendor=canonical.vendor, version=canonical.protocol,
+            capabilities=canonical.capabilities, schema_pairs=canonical.schema_pairs,
+            lifecycle=canonical.lifecycle, availability=availability,
+            available=(availability == "available"))
+        self._admit_adapter(canonical, adapter, contract.available)
+        self._contracts[canonical.provider_id] = contract
+        return contract
+
+    def _admit_adapter(
+            self, entry: ProviderCatalogEntry, adapter: object, available: bool) -> None:
+        if not available:
+            if adapter is not None:
+                raise ProviderConfigError(
+                    "an unavailable provider must be given no adapter to spawn")
+            return
+        if type(adapter) is not entry.adapter_class:
+            raise ProviderConfigError(
+                "an available provider requires an instance of its catalogued adapter")
+        manifest = getattr(adapter, "manifest", None)
+        if getattr(manifest, "adapter_id", None) != entry.provider_id:
+            raise ProviderConfigError(
+                "adapter identity does not match the provider identity")
+        try:
+            self._adapters.register(adapter)
+        except AdapterContractError as error:
+            raise ProviderConfigError(str(error)) from None
+
+
+def provider_projection(contracts: Iterable[ProviderContract]) -> list[dict[str, Any]]:
+    """Project reviewed provider contracts onto the closed Cockpit surface.
+
+    Each row carries exactly the names the UI may see -- provider id, display
+    name, availability, and the PROVEN controls -- and nothing a provider did not
+    declare. A control is proven when the contract binds it to an argument
+    schema, which ``ProviderRegistry.register`` admits only after matching the
+    whole relation against the adapter class's own schemas. No executable, argv,
+    cwd, env value, protocol token, secret, PID, lifecycle seam, or raw output
+    ever reaches this projection.
+    """
+    if isinstance(contracts, (str, bytes)):
+        raise ProviderConfigError("provider contracts must be an iterable of contracts")
+    return [
+        {
+            "provider_id": contract.provider_id,
+            "display_name": contract.display_name,
+            "available": contract.available,
+            "controls": sorted(capability for capability, _ in contract.schema_pairs),
+        }
+        for contract in (reconstruct_contract(row) for row in contracts)
+    ]
