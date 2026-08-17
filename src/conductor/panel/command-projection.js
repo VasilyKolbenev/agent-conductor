@@ -96,7 +96,11 @@ function projectDecision(value) {
   if (![value.receipt_id, value.run_id, value.gate_id, value.actor].every(isId)) {
     return null;
   }
-  if (!DECISION_STATES[value.action] || typeof value.decided_at !== "string") {
+  // decided_at is the instant a Human decided. Production refuses a receipt
+  // whose instant never existed, so a shape-only check here would let the wire
+  // show an approval the durable store would never hold.
+  if (!DECISION_STATES[value.action] || typeof value.decided_at !== "string"
+      || !instantIsValid(value.decided_at)) {
     return null;
   }
   if (typeof value.reason !== "string"
