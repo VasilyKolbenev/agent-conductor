@@ -14,6 +14,7 @@ import {renderComposer, renderDetail, renderGates, renderGraph, renderPalette,
   if (!field) return;
   const mounts = {
     composer: document.getElementById("composerCard"),
+    composeStatus: document.getElementById("composeStatus"),
     decideStatus: document.getElementById("decideStatus"),
     detailBody: document.getElementById("detailBody"),
     edges: document.getElementById("edges"),
@@ -90,6 +91,7 @@ import {renderComposer, renderDetail, renderGates, renderGraph, renderPalette,
     const target = focusTarget();
     document.body.dataset.phase = state.phase;
     mounts.notice.textContent = state.notice;
+    mounts.composeStatus.textContent = state.composeNotice;
     mounts.decideStatus.textContent = state.decisionNotice;
     mounts.runFacts.textContent = state.phase === "loaded"
       ? `run: ${state.run.runId} · mode: ${state.run.mode} · fixture` : "";

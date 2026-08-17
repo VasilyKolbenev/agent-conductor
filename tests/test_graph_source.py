@@ -122,6 +122,10 @@ def test_the_store_vocabularies_are_copies_of_the_layers_that_own_them():
     kinds = re.search(r'\["kinds", "enum-list", \[(.*?)\]\]', projection).group(1)
     assert _js_list(store, "EVIDENCE_KINDS") == set(re.findall(r'"(\w+)"', kinds))
     assert _js_list(store, "GATE_STATES") == {"pending"} | set(decisions.values())
+    # Harness-level availability: the December Command's own three words, and
+    # no fourth invented beside them.
+    assert _js_list(store, "AVAILABILITY_STATES") == {
+        "available", "experimental", "unavailable"}
 
 
 def test_local_only_actions_say_so_where_they_land():
@@ -153,5 +157,5 @@ def test_every_refusal_arm_of_the_store_is_pinned_by_count():
     vanish while the many-fault payload still refuses for another reason.
     """
     store = STORE.read_text(encoding="utf-8")
-    assert store.count("return null;") == 33
+    assert store.count("return null;") == 35
     assert store.count("return false;") == 4

@@ -4,7 +4,8 @@
 // the badge swatch and nothing else; status reaches the glyph, the word and
 // the chip contour, exactly the split index.html documents for the panel.
 import {element, field} from "./command-view.js";
-import {DECISION_ACTIONS, GATE_CHANNEL, PHASE_CHANNEL} from "./graph-store.js";
+import {AVAILABILITY_STATES, DECISION_ACTIONS, GATE_CHANNEL,
+  PHASE_CHANNEL} from "./graph-store.js";
 
 // Geometry constants the layout renders and the browser suite measures.
 export const CELL = Object.freeze({width: 210, height: 118, gapX: 46, gapY: 18});
@@ -20,6 +21,9 @@ const HEALTH_CHANNEL = Object.freeze({
   ready: "pass", busy: "wait", offline: "fail", degraded: "wait",
   unknown: "none",
 });
+// AVAILABILITY_STATES in channel order: available, experimental, unavailable.
+const AVAILABILITY_CHANNEL = Object.freeze(Object.fromEntries(
+  AVAILABILITY_STATES.map((state, index) => [state, ["pass", "wait", "fail"][index]])));
 // The glyph half of the status channel, so no chip speaks through colour
 // alone — the same three-carrier rule (glyph, word, contour) the panel's
 // pills follow. Gate chips carry their own glyph inside GATE_GLYPHS.
@@ -77,6 +81,11 @@ export function renderPalette(mount, state) {
     const item = element("li", {className: "g-palette__row"}, [
       badge(state.registry, row.id),
     ]);
+    // A row that names its availability gets the chip; one that does not
+    // claims nothing and shows nothing — never a default.
+    if (row.availability) {
+      item.append(chip(AVAILABILITY_CHANNEL[row.availability], row.availability));
+    }
     // projectRegistry admits only https docs, and this arm re-states the
     // gate where the href is written, as index.html harnessBadge does.
     if (row.docs.startsWith("https://")) {
@@ -274,7 +283,7 @@ export function renderTimeline(mount, state) {
 }
 
 export function renderComposer(mount, state, draft, onCompose) {
-  mount.replaceChildren(element("h2", {text: "Compose"}));
+  mount.replaceChildren();
   if (!state.nodes.length) return;
   const form = element("form", {className: "g-compose"});
   const title = draftInput(draft, "title", {autocomplete: "off",

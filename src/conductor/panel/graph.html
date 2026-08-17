@@ -35,7 +35,13 @@
     </div>
     <div class="col">
       <section class="card" id="paletteCard" aria-label="Harness palette"></section>
-      <section class="card" id="composerCard" aria-label="Compose"></section>
+      <section class="card" aria-label="Compose">
+        <h2>Compose</h2>
+        <div id="composerCard"></div>
+        <!-- Persistent for the same reason as #decideStatus: a refusal must
+             be announced, and it must land beside the form it answers. -->
+        <p aria-live="polite" class="g-note g-compose-status" id="composeStatus"></p>
+      </section>
       <section class="card" id="detailCard" aria-label="Node card">
         <h2>Node card</h2>
         <div id="detailBody"></div>

@@ -358,7 +358,11 @@ def test_composer_adds_a_parallel_step_as_data_and_keeps_geometry_closed(
     form.locator('[name="placement"]').select_option("parallel")
     form.locator('[name="anchor"]').select_option("impl-a")
     form.locator('button[type="submit"]').click()
-    assert "Nothing was executed" in graph_page.locator("#notice").inner_text()
+    # The composer answers beside the composer, not in the page-top shell.
+    assert "Nothing was executed" in graph_page.locator(
+        "#composeStatus").inner_text()
+    assert "Nothing was executed" not in graph_page.locator(
+        "#notice").inner_text()
     assert graph_page.locator(".g-node").count() == 7
     added = graph_page.locator('[data-node-id="step-7"]')
     assert "Shadow review" in added.inner_text()
@@ -423,65 +427,82 @@ def test_a_refused_load_clears_the_previous_canvas(graph_page: Page) -> None:
     assert graph_page.locator(".g-node").count() == 0
 
 
-def _one_fault_cases() -> list[tuple[str, object]]:
-    """One structural fault per case, applied to a copy of parallel_review."""
-    def fault(name: str, apply) -> tuple[str, object]:
-        return (name, apply)
-
-    return [
-        fault("wrong-schema", lambda p: p.update(fixture_schema=2)),
-        fault("bad-run-id", lambda p: p["run"].update(run_id="bad id!")),
-        fault("health-out-of-vocab", lambda p: p["nodes"][0].update(health="excellent")),
-        fault("phase-out-of-vocab", lambda p: p["nodes"][0].update(phase="running")),
-        fault("kind-out-of-vocab", lambda p: p["nodes"][0].update(kind="step")),
-        fault("title-over-limit", lambda p: p["nodes"][0].update(title="x" * 81)),
-        fault("title-blank", lambda p: p["nodes"][0].update(title="   ")),
-        fault("capability-duplicate",
-              lambda p: p["nodes"][1].update(capabilities=["dispatch", "dispatch"])),
-        fault("capability-out-of-vocab",
-              lambda p: p["nodes"][1].update(capabilities=["deploy"])),
-        fault("evidence-kind", lambda p: p["nodes"][1]["evidence"][0].update(kind="log")),
-        fault("evidence-verification",
-              lambda p: p["nodes"][1]["evidence"][0].update(verification="maybe")),
-        fault("gate-on-task",
-              lambda p: p["nodes"][0].update(gate={"gate_id": "g-x", "state": "pending"})),
-        fault("gate-missing-on-gate", lambda p: p["nodes"][5].update(gate=None)),
-        fault("gate-state-out-of-vocab",
-              lambda p: p["nodes"][5]["gate"].update(state="open")),
-        fault("duplicate-node-id", lambda p: p["nodes"][1].update(node_id="plan")),
-        fault("duplicate-gate-id", lambda p: p["nodes"].append(
-            {**p["nodes"][5], "node_id": "ship-gate-2"})),
-        fault("dangling-edge", lambda p: p["edges"].append(
-            {"from": "ghost", "to": "review"})),
-        fault("duplicate-edge", lambda p: p["edges"].append(dict(p["edges"][0]))),
-        fault("self-loop", lambda p: p["edges"].append({"from": "plan", "to": "plan"})),
-        fault("cycle", lambda p: p["edges"].append({"from": "ship-gate", "to": "plan"})),
-        fault("bad-instant", lambda p: p["timeline"][0].update(at="2026-02-30T09:00:00Z")),
-        fault("timeline-ghost-node", lambda p: p["timeline"][0].update(node_id="ghost")),
-        fault("duplicate-event-id", lambda p: p["timeline"][1].update(
-            event_id=p["timeline"][0]["event_id"])),
-        fault("timeline-phase-out-of-vocab",
-              lambda p: p["timeline"][0].update(phase="warming")),
-    ]
+#: One structural fault per case, applied to a fresh copy of parallel_review.
+#: The last block closes the boundary by key, level by level: an unknown field
+#: is schema drift and is refused, never carried, at every depth — including
+#: keys that are prototype names on an honest object.
+_ONE_FAULT_CASES = [
+    ("wrong-schema", lambda p: p.update(fixture_schema=2)),
+    ("bad-run-id", lambda p: p["run"].update(run_id="bad id!")),
+    ("health-out-of-vocab", lambda p: p["nodes"][0].update(health="excellent")),
+    ("phase-out-of-vocab", lambda p: p["nodes"][0].update(phase="running")),
+    ("kind-out-of-vocab", lambda p: p["nodes"][0].update(kind="step")),
+    ("title-over-limit", lambda p: p["nodes"][0].update(title="x" * 81)),
+    ("title-blank", lambda p: p["nodes"][0].update(title="   ")),
+    ("capability-duplicate",
+     lambda p: p["nodes"][1].update(capabilities=["dispatch", "dispatch"])),
+    ("capability-out-of-vocab",
+     lambda p: p["nodes"][1].update(capabilities=["deploy"])),
+    ("evidence-kind", lambda p: p["nodes"][1]["evidence"][0].update(kind="log")),
+    ("evidence-verification",
+     lambda p: p["nodes"][1]["evidence"][0].update(verification="maybe")),
+    ("gate-on-task",
+     lambda p: p["nodes"][0].update(gate={"gate_id": "g-x", "state": "pending"})),
+    ("gate-missing-on-gate", lambda p: p["nodes"][5].update(gate=None)),
+    ("gate-state-out-of-vocab",
+     lambda p: p["nodes"][5]["gate"].update(state="open")),
+    ("duplicate-node-id", lambda p: p["nodes"][1].update(node_id="plan")),
+    ("duplicate-gate-id", lambda p: p["nodes"].append(
+        {**p["nodes"][5], "node_id": "ship-gate-2"})),
+    ("dangling-edge", lambda p: p["edges"].append(
+        {"from": "ghost", "to": "review"})),
+    ("duplicate-edge", lambda p: p["edges"].append(dict(p["edges"][0]))),
+    ("self-loop", lambda p: p["edges"].append({"from": "plan", "to": "plan"})),
+    ("cycle", lambda p: p["edges"].append({"from": "ship-gate", "to": "plan"})),
+    ("bad-instant", lambda p: p["timeline"][0].update(at="2026-02-30T09:00:00Z")),
+    ("timeline-ghost-node", lambda p: p["timeline"][0].update(node_id="ghost")),
+    ("duplicate-event-id", lambda p: p["timeline"][1].update(
+        event_id=p["timeline"][0]["event_id"])),
+    ("timeline-phase-out-of-vocab",
+     lambda p: p["timeline"][0].update(phase="warming")),
+    ("unknown-top-level-key", lambda p: p.update(queue="fifo")),
+    ("unknown-run-key", lambda p: p["run"].update(endpoint="http://x")),
+    ("unknown-node-key", lambda p: p["nodes"][0].update(argv=["--x"])),
+    ("unknown-gate-key",
+     lambda p: p["nodes"][5]["gate"].update(webhook="https://x")),
+    ("unknown-evidence-key",
+     lambda p: p["nodes"][1]["evidence"][0].update(path="C:/x")),
+    ("unknown-edge-key", lambda p: p["edges"][0].update(weight=2)),
+    ("unknown-timeline-key",
+     lambda p: p["timeline"][0].update(detail="raw")),
+    ("prototype-key-on-node",
+     lambda p: p["nodes"][0].update(__proto__={"kind": "task"})),
+    ("prototype-key-top-level", lambda p: p.update(constructor="x")),
+]
 
 
 def test_each_boundary_arm_refuses_its_own_single_fault(
         graph_page: Page) -> None:
     """One fault per payload, so no refusal can hide behind a neighbour's."""
     registry = _registry_payload()
-    for name, apply in _one_fault_cases():
+    for name, apply in _ONE_FAULT_CASES:
         payload = json.loads(json.dumps(_FIXTURES["parallel_review"]))
         payload["registry"] = registry
         apply(payload)
+        # Through JSON.parse in the page, so a "__proto__" key arrives as an
+        # own property the way a fixture file would deliver it — a structured
+        # clone would quietly turn it into a prototype assignment instead.
         accepted = graph_page.evaluate(
-            "payload => window.conductGraph.load(payload)", payload)
+            "text => window.conductGraph.load(JSON.parse(text))",
+            json.dumps(payload))
         assert accepted is False, f"{name}: the boundary accepted the fault"
         assert graph_page.locator(".g-node").count() == 0, name
     # The unfaulted copy still loads, so every refusal above was the fault's.
     payload = json.loads(json.dumps(_FIXTURES["parallel_review"]))
     payload["registry"] = registry
     assert graph_page.evaluate(
-        "payload => window.conductGraph.load(payload)", payload)
+        "text => window.conductGraph.load(JSON.parse(text))",
+        json.dumps(payload))
 
 
 _STORE_UNIT = """([payload, event]) => import("./graph-store.js").then(store => {
@@ -492,6 +513,7 @@ _STORE_UNIT = """([payload, event]) => import("./graph-store.js").then(store => 
   return {
     loaded: true,
     notice: next.notice,
+    composeNotice: next.composeNotice,
     decisionNotice: next.decisionNotice,
     nodes: next.nodes.length,
     gateStates: next.nodes.flatMap(n => n.gate ? [n.gate.state] : []),
@@ -522,7 +544,7 @@ def test_the_reducer_refuses_what_the_forms_cannot_send(
         result = graph_page.evaluate(_STORE_UNIT, [payload, event])
         assert result["loaded"], why
         assert result["nodes"] == 6, why
-        assert "Composition refused" in result["notice"], why
+        assert "Composition refused" in result["composeNotice"], why
     for event, why in [
         ({"type": "decide", "gateId": "gate-release", "action": "constructor",
           "actor": "reviewer-1", "reason": ""}, "inherited action name"),
@@ -547,6 +569,169 @@ def test_a_selection_change_dismisses_the_recorded_decision_status(
     assert "Decision recorded" in status.inner_text()
     graph_page.locator('[data-node-id="plan"]').click()
     assert status.inner_text() == ""
+
+
+def test_an_unreadable_payload_is_refused_whole(graph_page: Page) -> None:
+    """null, a list, a string, a number: refused, not coerced."""
+    for hostile in (None, [], "graph", 7, True):
+        accepted = graph_page.evaluate(
+            "payload => window.conductGraph.load(payload)", hostile)
+        assert accepted is False, repr(hostile)
+        assert graph_page.locator(".g-node").count() == 0, repr(hostile)
+
+
+_HOSTILE_MARKERS = (
+    "sk-live-4f9a2b7c1d",
+    "C:/secrets/.env",
+    "https://exfil.example/collect",
+    "--argv-inject",
+    "Traceback (most recent call last)",
+)
+
+
+def test_a_hostile_refusal_leaks_nothing_and_leaves_no_partial_state(
+        graph_page: Page) -> None:
+    """A refused payload's strings never reach the DOM, and the state that
+    was on screen is replaced whole, not patched."""
+    _load(graph_page, "parallel_review")
+    graph_page.locator('[data-node-id="ship-gate"]').click()
+    form = graph_page.locator("#detailCard .g-decide")
+    form.locator('[name="actor"]').fill("reviewer-1")
+    form.locator('button[type="submit"]').click()
+    assert graph_page.evaluate(
+        "Object.keys(window.conductGraph.state().decisions)") == ["gate-release"]
+
+    hostile = json.loads(json.dumps(_FIXTURES["parallel_review"]))
+    hostile["registry"] = _registry_payload()
+    hostile["token"] = _HOSTILE_MARKERS[0]
+    hostile["run"]["env"] = _HOSTILE_MARKERS[1]
+    hostile["nodes"][0]["uri"] = _HOSTILE_MARKERS[2]
+    hostile["nodes"][1]["argv"] = _HOSTILE_MARKERS[3]
+    hostile["timeline"][0]["detail"] = _HOSTILE_MARKERS[4]
+    assert graph_page.evaluate(
+        "payload => window.conductGraph.load(payload)", hostile) is False
+
+    body = graph_page.locator("body").inner_text()
+    for marker in _HOSTILE_MARKERS:
+        assert marker not in body, marker
+    state = graph_page.evaluate(
+        """() => { const s = window.conductGraph.state();
+             return {phase: s.phase, nodes: s.nodes.length,
+                     selection: s.selection,
+                     decisions: Object.keys(s.decisions),
+                     notice: s.notice}; }""")
+    assert state == {"phase": "refused", "nodes": 0, "selection": None,
+                     "decisions": [],
+                     "notice": "The fixture payload was refused: it does not "
+                               "name a valid graph."}
+
+
+def _availability_registry() -> list[dict]:
+    """The one registry, with fixture-side availability on six rows."""
+    stated = {"claude-code": "available", "codex": "available",
+              "deepseek-harness": "experimental", "kimi-code": "unavailable",
+              "cursor": "available", "gemini-cli": "experimental"}
+    rows = []
+    for row in _registry_payload():
+        extra = ({"availability": stated[row["id"]]}
+                 if row["id"] in stated else {})
+        rows.append({**row, **extra})
+    return rows
+
+
+def _load_provider_mix(page: Page) -> None:
+    payload = dict(_FIXTURES["provider_mix"])
+    payload["registry"] = _availability_registry()
+    assert page.evaluate("payload => window.conductGraph.load(payload)", payload)
+
+
+def test_six_providers_share_the_field_and_each_wears_its_own_accent(
+        graph_page: Page) -> None:
+    """Vendor difference is registry data: six accents, one code path."""
+    _load_provider_mix(graph_page)
+    dark = graph_page.evaluate(
+        "matchMedia('(prefers-color-scheme: dark)').matches")
+    field = "accent_dark" if dark else "accent_light"
+    accents = {row["id"]: _hex_to_rgb(row[field]) for row in _registry_payload()}
+    placed = {"plan": "claude-code", "impl-a": "codex",
+              "impl-b": "deepseek-harness", "impl-c": "kimi-code",
+              "probe": "gemini-cli", "review": "cursor"}
+    seen = set()
+    for node_id, harness in placed.items():
+        swatch = graph_page.locator(f'[data-node-id="{node_id}"] .hb__m')
+        colour = swatch.evaluate("n => getComputedStyle(n).borderTopColor")
+        assert colour == accents[harness], (node_id, harness)
+        seen.add(colour)
+    assert len(seen) == 6, "six products must be six distinguishable accents"
+    assert graph_page.locator('[data-node-id="ship-gate"] .hb__m').count() == 0
+
+
+def test_availability_arrives_as_data_and_absence_claims_nothing(
+        graph_page: Page) -> None:
+    """available, experimental and unavailable are three distinct chips; a
+    row that states none shows none."""
+    _load_provider_mix(graph_page)
+    palette = graph_page.locator("#paletteCard")
+    for state, channel in (("available", "pass"), ("experimental", "wait"),
+                           ("unavailable", "fail")):
+        chips = palette.locator(f".g-chip--{channel}")
+        texts = [chips.nth(i).text_content() for i in range(chips.count())]
+        assert any(state in (text or "") for text in texts), state
+    total = sum(
+        1 for row in _availability_registry() if "availability" in row)
+    assert palette.locator(
+        ".g-chip--pass, .g-chip--wait, .g-chip--fail").count() == total
+    # An out-of-vocabulary availability drops the row, as any ill-formed
+    # presentational row is dropped: the harness keeps its neutral badge.
+    payload = dict(_FIXTURES["provider_mix"])
+    payload["registry"] = [
+        {**row, "availability": "beta"} if row["id"] == "codex" else row
+        for row in _availability_registry()]
+    assert graph_page.evaluate(
+        "payload => window.conductGraph.load(payload)", payload)
+    assert graph_page.locator(
+        '[data-node-id="impl-a"] .hb').get_attribute("style") is None
+    assert graph_page.locator("#paletteCard").locator(
+        ".g-palette__row").count() == len(_registry_payload()) - 1
+
+
+def test_the_palette_claims_no_capability_for_any_product(
+        graph_page: Page) -> None:
+    """A capability is proven per node by the fixture or absent; the palette
+    never presents one."""
+    _load_provider_mix(graph_page)
+    palette = graph_page.locator("#paletteCard").inner_text()
+    for name in ("dispatch", "review", "evidence", "stop", "retry", "switch"):
+        assert name not in palette, name
+
+
+def test_no_viewport_lets_the_page_scroll_sideways_or_nodes_collide(
+        graph_page: Page) -> None:
+    """360, 768 and 1440: the page never scrolls horizontally (the field
+    scrolls inside itself), and placed nodes never overlap."""
+    _load_provider_mix(graph_page)
+    for width in (360, 768, 1440):
+        graph_page.set_viewport_size({"width": width, "height": 1200})
+        assert graph_page.evaluate(
+            "document.documentElement.scrollWidth"
+            " <= document.documentElement.clientWidth"), width
+        if width >= 768:
+            geometry = graph_page.locator("#field").evaluate(_GEOMETRY)
+            assert geometry["overlaps"] == 0, width
+
+
+def test_every_form_control_offers_at_least_a_44px_target(
+        graph_page: Page) -> None:
+    """Measured boxes, not declared intent: composer and decision controls."""
+    _load_provider_mix(graph_page)
+    graph_page.locator('[data-node-id="ship-gate"]').click()
+    controls = graph_page.locator(
+        "#composerCard input, #composerCard select, #composerCard button,"
+        " #detailCard input, #detailCard select, #detailCard button")
+    assert controls.count() >= 9
+    for index in range(controls.count()):
+        box = controls.nth(index).bounding_box()
+        assert box is not None and box["height"] >= 44, index
 
 
 def test_fractional_instants_order_by_time_not_by_string(

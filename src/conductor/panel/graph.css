@@ -87,8 +87,11 @@ button{font:inherit;cursor:pointer;background:none;border:none;color:inherit}
 .g-node__chips{display:flex;gap:4px;flex-wrap:wrap}
 /* the "after …" line is each edge's textual carrier. At desktop widths the
    SVG draws the edge for sighted readers and this line is clipped, not
-   removed — the aria-hidden SVG must never be the structure's only carrier. */
-.g-node__from{font-size:10px;color:var(--faint)}
+   removed — the aria-hidden SVG must never be the structure's only carrier.
+   --muted, not --faint: on --sunk in the light theme --faint measures 3.94:1
+   (the panel's recorded shortfall), and a structural carrier may not ship
+   below the text floor. */
+.g-node__from{font-size:10px;color:var(--muted)}
 @media(min-width:768px){
   .g-node__from{position:absolute;width:1px;height:1px;overflow:hidden;
                 clip-path:inset(50%);white-space:nowrap}
@@ -125,13 +128,15 @@ button{font:inherit;cursor:pointer;background:none;border:none;color:inherit}
                  flex-wrap:wrap}
 .g-timeline__at{color:var(--faint)}
 
-/* forms (composer, decision) — the command-field arrangement. */
+/* forms (composer, decision) — the command-field arrangement. Every control
+   holds the command window's 44px minimum target height. */
 .command-field{display:flex;flex-direction:column;gap:2px;font-size:11px;
                color:var(--muted)}
 .command-field input,.command-field select{font:inherit;font-family:var(--mono);
   font-size:12px;color:var(--ink);background:var(--sunk);
-  border:1px solid var(--line);border-radius:6px;padding:5px 7px}
+  border:1px solid var(--line);border-radius:6px;padding:5px 7px;
+  min-height:44px}
 .g-compose,.g-decide{display:flex;flex-direction:column;gap:7px}
 .g-compose button[type="submit"],.g-decide button[type="submit"]{
   align-self:flex-start;border:1px solid var(--line);border-radius:6px;
-  padding:5px 10px;background:var(--sunk)}
+  padding:5px 10px;background:var(--sunk);min-height:44px}

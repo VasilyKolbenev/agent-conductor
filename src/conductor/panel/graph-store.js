@@ -18,6 +18,13 @@ import {isId, safeMode} from "./command-projection.js";
 export const NODE_KINDS = Object.freeze(["task", "gate"]);
 export const HEALTH_STATES = Object.freeze(
   ["ready", "busy", "offline", "degraded", "unknown"]);
+// Harness-level availability, distinct from a node's health: whether the
+// product itself is offered as stable, offered behind a flag, or not offered.
+// A fixture-interface vocabulary (the wording is the December Command's, not
+// this module's invention); a registry row that omits it claims nothing and
+// gets no chip.
+export const AVAILABILITY_STATES = Object.freeze(
+  ["available", "experimental", "unavailable"]);
 export const CAPABILITY_NAMES = Object.freeze(
   ["dispatch", "review", "evidence", "stop", "retry", "switch"]);
 export const EVIDENCE_KINDS = Object.freeze(["result", "diff", "tests", "status"]);
@@ -73,19 +80,31 @@ export function instantIsValid(value) {
   return hour <= 23 && minute <= 59 && second <= 59;
 }
 
+// A closed shape: every level of the payload may carry exactly its own keys.
+// Object.keys sees "__proto__" and "constructor" arriving as JSON own
+// properties, so a prototype name is refused as any other unknown key is.
+function ownKeysOnly(row, allowed) {
+  return Object.keys(row).every((key) => allowed.includes(key));
+}
+
 // Registry rows are presentational: an ill-formed row is dropped and its
 // harness draws the neutral badge, exactly as index.html loadRegistry decides.
 // The graph structure below is not presentational, so there the same finding
 // refuses the whole payload instead.
 const HEX_RE = /^#[0-9a-f]{6}$/i;
+const REGISTRY_KEYS = ["id", "display_name", "monogram", "accent_dark",
+  "accent_light", "docs", "availability"];
 export function projectRegistry(rows) {
   if (!Array.isArray(rows)) return [];
   const out = [];
   for (const row of rows) {
-    if (!row || typeof row !== "object") continue;
+    if (!row || typeof row !== "object" || Array.isArray(row)) continue;
+    if (!ownKeysOnly(row, REGISTRY_KEYS)) continue;
     const texts = [row.id, row.display_name, row.monogram];
     if (!texts.every((value) => typeof value === "string" && value)) continue;
     if (!HEX_RE.test(row.accent_dark) || !HEX_RE.test(row.accent_light)) continue;
+    if ("availability" in row
+        && !AVAILABILITY_STATES.includes(row.availability)) continue;
     out.push(Object.freeze({
       id: row.id, name: row.display_name, monogram: row.monogram,
       dark: row.accent_dark, light: row.accent_light,
@@ -94,6 +113,7 @@ export function projectRegistry(rows) {
       // javascript: or data: string arriving as registry data never renders.
       docs: typeof row.docs === "string" && row.docs.startsWith("https://")
         ? row.docs : "",
+      availability: row.availability || "",
     }));
   }
   return out;
@@ -103,7 +123,9 @@ function projectEvidence(rows) {
   if (!Array.isArray(rows)) return null;
   const out = [];
   for (const row of rows) {
-    if (!row || !isId(row.evidence_id)
+    if (!row || typeof row !== "object"
+        || !ownKeysOnly(row, ["evidence_id", "kind", "verification"])
+        || !isId(row.evidence_id)
         || !EVIDENCE_KINDS.includes(row.kind)
         || !VERIFICATION_STATES.includes(row.verification)) return null;
     out.push(Object.freeze({evidence_id: row.evidence_id, kind: row.kind,
@@ -119,8 +141,11 @@ function projectCapabilities(names) {
   return Object.freeze([...names].sort());
 }
 
+const NODE_KEYS = ["node_id", "kind", "title", "harness", "health", "phase",
+  "capabilities", "evidence", "gate"];
 function projectNode(row) {
   if (!row || typeof row !== "object" || !isId(row.node_id)) return null;
+  if (!ownKeysOnly(row, NODE_KEYS)) return null;
   if (!NODE_KINDS.includes(row.kind)) return null;
   if (typeof row.title !== "string" || !row.title.trim()
       || row.title.length > TITLE_LIMIT) return null;
@@ -133,7 +158,9 @@ function projectNode(row) {
   if (!capabilities || !evidence) return null;
   let gate = null;
   if (row.kind === "gate") {
-    if (!row.gate || !isId(row.gate.gate_id)
+    if (!row.gate || typeof row.gate !== "object"
+        || !ownKeysOnly(row.gate, ["gate_id", "state"])
+        || !isId(row.gate.gate_id)
         || !GATE_STATES.includes(row.gate.state)) return null;
     gate = Object.freeze({gate_id: row.gate.gate_id, state: row.gate.state});
   } else if (row.gate !== null && row.gate !== undefined) {
@@ -149,7 +176,9 @@ function projectEdges(rows, ids) {
   const seen = new Set();
   const out = [];
   for (const row of rows) {
-    if (!row || !isId(row.from) || !isId(row.to)) return null;
+    if (!row || typeof row !== "object"
+        || !ownKeysOnly(row, ["from", "to"])
+        || !isId(row.from) || !isId(row.to)) return null;
     if (!ids.has(row.from) || !ids.has(row.to) || row.from === row.to) return null;
     const key = `${row.from} ${row.to}`;
     if (seen.has(key)) return null;
@@ -164,7 +193,9 @@ function projectTimeline(rows, ids) {
   const seen = new Set();
   const out = [];
   for (const row of rows) {
-    if (!row || !isId(row.event_id) || seen.has(row.event_id)) return null;
+    if (!row || typeof row !== "object"
+        || !ownKeysOnly(row, ["event_id", "at", "node_id", "phase"])
+        || !isId(row.event_id) || seen.has(row.event_id)) return null;
     if (!instantIsValid(row.at) || !ids.has(row.node_id)
         || !NODE_PHASES.includes(row.phase)) return null;
     seen.add(row.event_id);
@@ -223,9 +254,17 @@ export function computeLayout(nodes, edges) {
 }
 
 export function projectPayload(payload) {
-  if (!payload || typeof payload !== "object") return null;
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return null;
+  }
+  if (!ownKeysOnly(payload,
+    ["fixture_schema", "run", "registry", "nodes", "edges", "timeline"])) {
+    return null;
+  }
   if (payload.fixture_schema !== 1) return null;
-  if (!payload.run || !isId(payload.run.run_id)) return null;
+  if (!payload.run || typeof payload.run !== "object"
+      || !ownKeysOnly(payload.run, ["run_id", "mode"])
+      || !isId(payload.run.run_id)) return null;
   if (!Array.isArray(payload.nodes) || !payload.nodes.length) return null;
   const nodes = payload.nodes.map(projectNode);
   if (nodes.some((node) => node === null)) return null;
@@ -262,6 +301,9 @@ export const EMPTY = Object.freeze({
   // records it in this window and nowhere else; the notice says so.
   decisions: Object.freeze({}),
   decisionNotice: "",
+  // The composer's own status line, rendered beside the composer form; the
+  // shell notice above stays reserved for load-level facts.
+  composeNotice: "",
 });
 
 function withGateState(nodes, gateId, state) {
@@ -309,7 +351,7 @@ function compose(state, event) {
   const placed = ["after", "parallel"].includes(event.placement);
   if (!anchor || !title || title.length > TITLE_LIMIT || !registered || !placed
       || !isId(event.nodeId) || state.nodes.some((n) => n.node_id === event.nodeId)) {
-    return Object.freeze({...state, notice:
+    return Object.freeze({...state, composeNotice:
       "Composition refused: use a fresh id, a title and a registered harness."});
   }
   const node = Object.freeze({node_id: event.nodeId, kind: "task", title,
@@ -323,10 +365,10 @@ function compose(state, event) {
   const edges = Object.freeze([...state.edges, ...added]);
   const layout = computeLayout(nodes, edges);
   if (!layout) {
-    return Object.freeze({...state, notice: "Composition refused: cycle."});
+    return Object.freeze({...state, composeNotice: "Composition refused: cycle."});
   }
-  return Object.freeze({...state, nodes, edges, layout,
-    notice: `Step "${title}" added to the fixture graph. Nothing was executed.`});
+  return Object.freeze({...state, nodes, edges, layout, composeNotice:
+    `Step "${title}" added to the fixture graph. Nothing was executed.`});
 }
 
 export function reduce(state, event) {
