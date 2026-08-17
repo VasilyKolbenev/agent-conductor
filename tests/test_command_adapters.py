@@ -36,6 +36,15 @@ ALLOWED_SDK_RELATIVE_IMPORTS = frozenset({(2, "contracts"), (2, "dispatch")})
 # tests/test_command_process_*.py, and tests/test_command_package_doors.py proves
 # the door is confined to exactly these two modules.
 SDK_EXECUTION_DOOR = frozenset({"process.py", "_procgroup.py"})
+# Names that would let a value module reach an executable, the filesystem, or the
+# import system on its own.
+BANNED_SDK_CALLS = frozenset({
+    "which", "exists", "is_file", "run", "Popen", "system", "import_module"})
+# The deep adapters hold NO execution door: they import no subprocess module and
+# spawn nothing. They call `.run()` on the runner configuration handed them, so
+# they are exempted from that ONE name and stay held to the import allowlist and
+# to every other banned name -- a far narrower exemption than the runner's.
+SDK_INJECTED_RUNNER_CALLERS = frozenset({"deep_adapters.py"})
 
 
 def an_action(**changes):
@@ -275,8 +284,10 @@ def test_every_value_module_of_the_sdk_package_imports_only_the_allowed_value_mo
             for node in ast.walk(tree)
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
         }
-        assert not attribute_calls & {
-            "which", "exists", "is_file", "run", "Popen", "system", "import_module"}
+        banned = BANNED_SDK_CALLS - (
+            {"run"} if path.name in SDK_INJECTED_RUNNER_CALLERS else frozenset())
+        assert not attribute_calls & banned, (
+            f"{path.name} calls {sorted(attribute_calls & banned)}")
         name_calls = {
             node.func.id
             for node in ast.walk(tree)

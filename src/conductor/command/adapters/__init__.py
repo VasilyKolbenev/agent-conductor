@@ -14,6 +14,7 @@ from .base import (
     PreparedAction,
     UnsupportedCapability,
 )
+from .deep_adapters import ClaudeCodeAdapter, CodexAdapter
 
 __all__ = [
     "Adapter",
@@ -24,4 +25,6 @@ __all__ = [
     "AdapterVerification",
     "PreparedAction",
     "UnsupportedCapability",
+    "ClaudeCodeAdapter",
+    "CodexAdapter",
 ]

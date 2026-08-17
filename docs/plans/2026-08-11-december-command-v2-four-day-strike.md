@@ -639,6 +639,44 @@ execute -> verify -> receipt. Failure, timeout, duplicate, restart, stop, retry,
 unsupported capability each have a permanent regression. At least one opt-in real smoke per
 available adapter runs on the release machine; an unavailable product is reported, never faked.
 
+- **B/CC-1 + B/CX-1 (first slice) — thin fake-protocol deep adapters, on
+  `codex/v2-deep-adapters`.** `ClaudeCodeAdapter` and `CodexAdapter` land in the new
+  `adapters/deep_adapters.py` over the already-frozen deep contract, command, codec, and evidence
+  values. They speak ONLY the two deterministic fake JSON-line protocols review approved. **The
+  real Claude Code and the real Codex CLI transport is PENDING and is NOT implemented here:** the
+  adapters discover no executable, read no home directory, and invent no vendor flag, stdin
+  protocol, session recovery, or evidence semantics for either real tool. The manifest says so in
+  its display name, its `fake-protocol-v1` version and its fixture vendor, and it carries no
+  `docs_url` because there is no real integration to point at. The default `AdapterRegistry()` is
+  empty and no shipped module constructs either adapter, so nothing in the product pretends the
+  real tools are available. Each adapter declares `observe` plus exactly the six
+  `DEEP_ARGUMENT_TYPES` capabilities under one closed per-capability schema relation — a sibling
+  capability's body is refused, never coerced — while message/notify/pause/resume are absent, not
+  stubbed, and stay refused even after a widened manifest. Those six are argument-closed only:
+  `stop`, `retry` and `switch` carry validated bodies and drive the same code-owned spec; they do
+  not yet terminate, re-drive, or supersede a real attempt. Identity is re-derived from the owning
+  class at every seam through a data descriptor, so neither assignment, `object.__setattr__`, a
+  rewritten `__class__`, nor a hostile subclass can borrow the other vendor's id, protocol, or
+  decoder, and a swapped config refuses before it can spawn. `prepare` is pure and binds the
+  capability body to the action, but the body is deliberately NOT delivered to the child: all six
+  capabilities produce byte-identical code-owned specs, because carrying a body to a real CLI is
+  exactly the pending transport work. Every malformed, cross-wired, duplicated, truncated,
+  oversized, or non-canonical frame dies at the adapter seam as one fixed refusal with no
+  exception chain and no raw bytes; a fake Claude frame is refused by the Codex decoder and the
+  reverse. Verification reads only an independently supplied fact bound to
+  run/action/attempt/instance/adapter: an exit code or model text proves nothing, a non-success
+  never consults the source at all, and a supplied value is re-derived rather than trusted, so a
+  lying or post-mutated evidence object buys nothing. Raw stdout/stderr, vendor prose, exception
+  type and message, and runner secrets reach neither the receipts nor the durable journal, proven
+  by scanning every durable byte of runs driven end-to-end through `ControlRuntime`. RT-2 holds
+  for these adapters: the effect fires only after `effect_lease` is already durable, and a crash
+  between lease and observation resolves on restart as `unknown` without repeating the effect.
+  Tests: `tests/test_command_deep_adapters.py`, `tests/test_command_deep_adapter_frames.py`.
+  Twenty-four named mutations were each applied, observed red, and reverted independently; none
+  is committed. Targeted gate 139 passed; full suite 3009 passed, 4 skipped. NOT in this slice
+  and not claimed: the real-CLI transport (PENDING), any opt-in real-adapter smoke, observable
+  progress streaming, B/BREADTH-1, C/API-1, C/UI-1, and D/ASSURE-1.
+
 ### 12.5 Day 3 — complete the browser wow path and freeze features
 
 Feature freeze: 2026-08-15 14:00 Europe/Moscow. After that time only a release blocker, installation
