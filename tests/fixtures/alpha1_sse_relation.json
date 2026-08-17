@@ -1,0 +1,15 @@
+{
+  "connect_frame": "data: {\"kind\":\"state\"}\n\n",
+  "run_frame": "data: {\"kind\":\"run\",\"run_id\":\"run-001\"}\n\n",
+  "run_frame_payload_keys": [
+    "kind",
+    "run_id"
+  ],
+  "frames_read_in_order": [
+    "data: {\"kind\":\"state\"}\n\n",
+    "data: {\"kind\":\"run\",\"run_id\":\"run-001\"}\n\n",
+    "data: {\"kind\":\"run\",\"run_id\":\"run-001\"}\n\n",
+    "data: {\"kind\":\"run\",\"run_id\":\"run-001\"}\n\n"
+  ],
+  "note": "A run frame carries the run id and nothing else -- no outcome, no detail, no exit code, no adapter output -- and the v1 state frame keeps flowing beside it unchanged."
+}

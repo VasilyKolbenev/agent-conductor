@@ -1,0 +1,85 @@
+{
+  "refusal_codes": {
+    "authorization_refused": 409,
+    "capability_unsupported": 409,
+    "contract_invalid": 422,
+    "csrf_denied": 403,
+    "malformed_request": 400,
+    "method_not_allowed": 405,
+    "record_conflict": 409,
+    "route_not_found": 404,
+    "route_unsafe": 409,
+    "run_corrupt": 409,
+    "same_origin_denied": 403,
+    "service_refused": 409,
+    "store_error": 500
+  },
+  "attempt_states": [
+    "accepted",
+    "started",
+    "succeeded",
+    "failed",
+    "cancelled",
+    "unknown",
+    "verification_failed"
+  ],
+  "terminal_states": [
+    "succeeded",
+    "failed",
+    "cancelled",
+    "unknown",
+    "verification_failed"
+  ],
+  "pre_terminal_states": [
+    "accepted",
+    "started"
+  ],
+  "receipt_outcomes": [
+    "cancelled",
+    "failed",
+    "rejected",
+    "succeeded",
+    "unknown",
+    "verification_failed"
+  ],
+  "receipt_only_outcomes": [
+    "rejected"
+  ],
+  "observed_outcomes": [
+    "cancelled",
+    "failed",
+    "rejected",
+    "succeeded",
+    "unknown"
+  ],
+  "attempt_event_phases": [
+    "effect_lease",
+    "execution_observed"
+  ],
+  "availability_states": [
+    "available",
+    "executable_absent",
+    "version_mismatch"
+  ],
+  "observed_in_the_derived_runs": {
+    "attempt_event_phases": [
+      "effect_lease",
+      "execution_observed"
+    ],
+    "observed_outcomes": [
+      "succeeded"
+    ],
+    "terminal_outcomes": [
+      "succeeded"
+    ],
+    "availability_states": [
+      "available",
+      "executable_absent",
+      "version_mismatch"
+    ],
+    "refusal_codes": [
+      "authorization_refused"
+    ]
+  },
+  "note": "`rejected` is an outcome an adapter may report and a durable receipt will hold, but it is never an attempt state: the runtime resolves a rejected report to the terminal state `failed`, which the pinning contract test drives and asserts."
+}

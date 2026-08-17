@@ -72,6 +72,10 @@ POLL_INTERVAL = 0.5   # seconds between conductor/ fingerprint polls
 TICK_INTERVAL = 60.0  # seconds between unconditional re-merges (staleness tick)
 SSE_WAIT = 1.0        # seconds an SSE loop waits before re-checking shutdown
 MAX_PENDING_RUNS = 256
+#: Worker threads the server-owned coordinator mints. More than one so two runs
+#: bound to two different provider instances really do execute at the same time;
+#: bounded, because the coordinator's own queue capacity is what caps admission.
+EXECUTION_WORKERS = 4
 _COMMAND_RUN_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
 
 
@@ -564,12 +568,14 @@ class ConductServer(ThreadingHTTPServer):
             self.command_store, self.command_registry,
             session=self.command_session, budget=budget, clock=clock, ids=ids,
             publish_run=self.clients.publish_run)
-        # The effect belongs to a server-owned worker, never to a request thread:
+        # The effect belongs to server-owned workers, never to a request thread:
         # the coordinator holds the API's own runtime, so it spends exactly the
-        # grants that boundary minted and can spend no others.
+        # grants that boundary minted and can spend no others. Each start() mints
+        # one worker with its own queue and one token that retires only it.
         self.command_execution = ExecutionCoordinator(self.command_api.runtime)
         self.command_api.attach_execution(self.command_execution)
-        self.command_execution.start()
+        for _worker in range(EXECUTION_WORKERS):
+            self.command_execution.start()
         self.broker.refresh()               # initial state before serving
         self.watcher.start()
 

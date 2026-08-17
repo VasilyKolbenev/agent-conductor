@@ -1,8 +1,8 @@
-"""The server-owned execution coordinator: a bounded queue and one owned worker.
+"""The server-owned execution coordinator: a bounded queue and owned workers.
 
 `POST /command/runs/<run_id>/actions` records a confirmation and answers; it must
 never perform the effect on the request thread. This module is the seam that
-carries the recorded action from that answer to the effect, and it holds four
+carries the recorded action from that answer to the effect, and it holds five
 relations the HTTP boundary cannot hold by itself:
 
 - **Fresh authority only.** The coordinator carries an ``Authorization`` value,
@@ -16,23 +16,40 @@ relations the HTTP boundary cannot hold by itself:
   runtime that authorizes.
 - **Bounded admission, refused before any effect.** A slot is claimed BEFORE the
   durable request is appended and released only when its attempt has settled, so
-  at most ``capacity`` actions are outstanding and an overflow refuses the Confirm
-  with nothing durable written and no adapter seam reached.
-- **Owned shutdown.** The coordinator mints an unguessable token for the worker it
-  starts and retires only a token it minted. There is no method that stops a
-  thread by name, identity, or PID, so one coordinator cannot retire another's
-  worker.
-- **Nothing is resumed.** The queue is memory-only and is never seeded from the
-  store. A restarted process therefore enqueues nothing: a durable request with no
-  terminal result stays ambiguous, exactly as the runtime requires, and no effect
-  is repeated.
+  at most ``capacity`` actions are outstanding ACROSS ALL WORKERS and an overflow
+  refuses the Confirm with nothing durable written and no adapter seam reached.
+- **Fan-out.** :meth:`start` mints one worker per call, so a coordinator can hold
+  several. Each admitted action is assigned, at placement time, to the LIVE
+  worker carrying the fewest outstanding actions, ties broken by token order, so
+  two actions bound to two different provider instances are driven by two
+  different threads and can be inside their adapters' execute seams at the same
+  instant. Assignment is deterministic and reads only live workers, so a retired
+  worker is never given another action.
+- **Owned, per-worker shutdown.** The coordinator mints an unguessable token for
+  each worker it starts and gives that worker its OWN queue. A stop places the
+  retiring sentinel on exactly that worker's queue, which no other worker ever
+  reads, so the token retires the worker it names and cannot retire another --
+  the guarantee a single shared queue could not make, because there any idle
+  worker may consume any sentinel. The worker is removed from the roster before
+  its sentinel is placed, so nothing further is assigned to it while everything
+  already queued to it still runs first. There is no method that stops a thread
+  by name, identity, or PID, so one coordinator cannot retire another's worker.
+- **Nothing is resumed.** The queues are memory-only and are never seeded from
+  the store. A restarted process therefore enqueues nothing: a durable request
+  with no terminal result stays ambiguous, exactly as the runtime requires, and
+  no effect is repeated.
 
-Shutdown puts its retiring sentinel BEHIND whatever is already queued, so an
-action admitted before it still runs; the join is bounded, so a worker still
-inside an attempt is left to finish as a daemon thread rather than holding the
-process open. An attempt that never ran leaves its durable request without a
-terminal result -- the same ambiguity a crash leaves -- and the runtime refuses to
-resume that without a fresh grant.
+Shutdown puts each retiring sentinel BEHIND whatever is already queued to that
+worker, so an action admitted before it still runs; the join is bounded, so a
+worker still inside an attempt is left to finish as a daemon thread rather than
+holding the process open. An attempt that never ran leaves its durable request
+without a terminal result -- the same ambiguity a crash leaves -- and the runtime
+refuses to resume that without a fresh grant.
+
+Serialization is not this module's to invent: every durable write goes through
+``RunStore``, whose process-local root transaction admits one writer at a time,
+so concurrent workers append a well-formed, replayable journal without any
+adapter seam being reached while a transaction is held.
 """
 from __future__ import annotations
 
@@ -46,6 +63,8 @@ from .service import ServiceError
 
 #: How many authorized actions may be outstanding (queued or running) at once.
 MAX_OUTSTANDING_ACTIONS = 64
+#: How many workers one coordinator may mint; fan-out is bounded, not unbounded.
+MAX_EXECUTION_WORKERS = 16
 #: How long a retiring worker is joined for before the caller stops waiting.
 JOIN_TIMEOUT_SECONDS = 5.0
 
@@ -58,11 +77,29 @@ class ExecutionOwnershipError(RuntimeError):
     """A stop names a worker token this coordinator did not mint or no longer holds."""
 
 
+class _Worker:
+    """One minted worker: its private inbox, its thread, and its current load.
+
+    The inbox is the whole of this worker's addressability. Only ``_work`` for
+    THIS worker reads it, so an authorization or a retiring sentinel placed on it
+    can reach no other worker.
+    """
+
+    __slots__ = ("inbox", "load", "thread", "token")
+
+    def __init__(self, token: str) -> None:
+        self.token = token
+        self.inbox: queue.SimpleQueue[Any] = queue.SimpleQueue()
+        self.thread: threading.Thread | None = None
+        self.load = 0
+
+
 class _Slot:
     """One claimed admission slot: placed at most once, then released for good.
 
     ``release`` is idempotent and is a no-op once the slot has been placed, so the
-    caller can release it in a ``finally`` without knowing which road it took.
+    caller can release it in a ``finally`` without knowing which road it took. A
+    placement that was refused placed nothing, so its slot is still releasable.
     """
 
     def __init__(self, coordinator: "ExecutionCoordinator") -> None:
@@ -70,7 +107,7 @@ class _Slot:
         self._settled = False
 
     def place(self, authorization: Authorization) -> None:
-        """Hand exactly one fresh authorization to the worker; refuse anything else."""
+        """Hand exactly one fresh authorization to a worker; refuse anything else."""
         if self._settled:
             raise ExecutionRefused("an admission slot may be placed only once")
         if not isinstance(authorization, Authorization):
@@ -78,8 +115,8 @@ class _Slot:
         if authorization.record_created is not True:
             raise ExecutionRefused(
                 "execution requires the authorization that created the durable request")
-        self._settled = True
         self._coordinator._enqueue(authorization)
+        self._settled = True
 
     def release(self) -> None:
         """Give an unplaced slot back; a placed slot keeps it until its attempt settles."""
@@ -90,7 +127,7 @@ class _Slot:
 
 
 class ExecutionCoordinator:
-    """Run authorized actions off the request thread, bounded and owned.
+    """Run authorized actions off the request thread, bounded, owned, and in parallel.
 
     The coordinator drives the runtime it was given and nothing else: it does not
     read the store, prepare an adapter, or interpret an attempt. It counts what it
@@ -107,14 +144,13 @@ class ExecutionCoordinator:
             raise ValueError("capacity must be an integer >= 1")
         self._runtime = runtime
         self._capacity = capacity
-        self._queue: queue.SimpleQueue[Any] = queue.SimpleQueue()
         self._lock = threading.Lock()
         self._settled = threading.Condition(self._lock)
         self._outstanding = 0
         self._placed = 0
         self._refused: list[str] = []
         self._accepting = False
-        self._workers: dict[str, threading.Thread] = {}
+        self._workers: dict[str, _Worker] = {}
 
     @property
     def runtime(self) -> ControlRuntime:
@@ -123,11 +159,11 @@ class ExecutionCoordinator:
 
     @property
     def capacity(self) -> int:
-        """The ceiling on outstanding actions; a claim past it is refused."""
+        """The ceiling on outstanding actions across every worker; a claim past it is refused."""
         return self._capacity
 
     def placements(self) -> int:
-        """How many authorizations reached the queue, counted independently of the store."""
+        """How many authorizations reached a worker, counted independently of the store."""
         with self._lock:
             return self._placed
 
@@ -142,16 +178,19 @@ class ExecutionCoordinator:
             return tuple(sorted(self._workers))
 
     def start(self) -> str:
-        """Mint one worker token, start its thread, and begin accepting claims."""
+        """Mint one more worker with its own queue and begin accepting claims."""
         with self._lock:
-            if self._workers:
-                raise ExecutionOwnershipError("this coordinator already owns a worker")
+            if len(self._workers) >= MAX_EXECUTION_WORKERS:
+                raise ExecutionOwnershipError(
+                    "this coordinator already owns its full fan-out of workers")
             token = secrets.token_hex(16)
-            thread = threading.Thread(
-                target=self._work, name="conduct-execution", daemon=True)
-            self._workers[token] = thread
+            worker = _Worker(token)
+            worker.thread = threading.Thread(
+                target=self._work, args=(worker,), name="conduct-execution",
+                daemon=True)
+            self._workers[token] = worker
             self._accepting = True
-            thread.start()
+            worker.thread.start()
         return token
 
     def claim(self) -> _Slot:
@@ -173,41 +212,59 @@ class ExecutionCoordinator:
 
     def stop_worker(
             self, token: str, *, timeout: float = JOIN_TIMEOUT_SECONDS) -> None:
-        """Retire exactly the worker this token names; refuse a token minted elsewhere."""
+        """Retire exactly the worker this token names; refuse a token minted elsewhere.
+
+        The sentinel goes on that worker's own inbox, which no other worker reads,
+        so this retires the named worker and never a sibling that happens to be
+        idle. Workers minted afterwards keep running and claims keep being
+        accepted while any worker remains.
+        """
         with self._lock:
-            thread = self._workers.pop(token, None)
-            if thread is None:
+            worker = self._workers.pop(token, None)
+            if worker is None:
                 raise ExecutionOwnershipError(
                     f"stop names worker token {token!r}, which this coordinator did "
                     "not mint or no longer holds")
-            self._accepting = False
-        self._queue.put(None)
-        thread.join(timeout)
+            self._accepting = bool(self._workers)
+        worker.inbox.put(None)
+        assert worker.thread is not None
+        worker.thread.join(timeout)
 
     def shutdown(self, *, timeout: float = JOIN_TIMEOUT_SECONDS) -> None:
         """Retire only the workers this coordinator minted; safe to call twice."""
         with self._lock:
-            retiring = tuple(self._workers.items())
+            retiring = tuple(self._workers.values())
             self._workers.clear()
             self._accepting = False
-        for _token, thread in retiring:
-            self._queue.put(None)
-            thread.join(timeout)
+        for worker in retiring:
+            worker.inbox.put(None)
+        for worker in retiring:
+            assert worker.thread is not None
+            worker.thread.join(timeout)
 
     def _enqueue(self, authorization: Authorization) -> None:
+        """Assign one authorization to the least loaded live worker's own inbox."""
         with self._lock:
+            live = [self._workers[token] for token in sorted(self._workers)]
+            if not live:
+                raise ExecutionRefused(
+                    "this coordinator holds no worker to run the action")
+            worker = min(live, key=lambda row: row.load)
+            worker.load += 1
             self._placed += 1
-        self._queue.put(authorization)
+        worker.inbox.put(authorization)
 
-    def _settle(self) -> None:
+    def _settle(self, worker: _Worker | None = None) -> None:
         with self._settled:
+            if worker is not None:
+                worker.load -= 1
             self._outstanding -= 1
             self._settled.notify_all()
 
-    def _work(self) -> None:
-        """Drive one authorization at a time until a sentinel retires this worker."""
+    def _work(self, worker: _Worker) -> None:
+        """Drive one authorization at a time until THIS worker's sentinel arrives."""
         while True:
-            authorization = self._queue.get()
+            authorization = worker.inbox.get()
             if authorization is None:
                 return
             try:
@@ -216,4 +273,4 @@ class ExecutionCoordinator:
                 with self._lock:
                     self._refused.append(authorization.request.action_id)
             finally:
-                self._settle()
+                self._settle(worker)

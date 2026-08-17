@@ -142,11 +142,11 @@ def test_execution_signals_stay_identifier_only_beside_the_v1_state_frame(tmp_pa
         subject.server_close()
 
 
-def test_server_shutdown_retires_the_worker_token_the_server_minted(tmp_path):
+def test_server_shutdown_retires_every_worker_token_the_server_minted(tmp_path):
     subject, _store, _adapter = _start(tmp_path)
     coordinator = subject.command_execution
     try:
-        assert len(coordinator.owned_tokens()) == 1
+        assert len(coordinator.owned_tokens()) == server.EXECUTION_WORKERS
         assert coordinator.runtime is subject.command_api.runtime
     finally:
         subject.shutdown()

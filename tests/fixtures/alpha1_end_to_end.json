@@ -1,0 +1,299 @@
+{
+  "run_id": "run-001",
+  "transport": "the six frozen command routes over a real loopback socket",
+  "steps": [
+    {
+      "step": "propose",
+      "method": "POST",
+      "path": "/command/runs/run-001/proposals",
+      "status": 201,
+      "response": {
+        "arguments": {
+          "artifact_refs": [
+            "artifact-001"
+          ],
+          "instruction_ref": "instruction-001",
+          "output_limit_profile": "small",
+          "profile": "implement",
+          "work_item_id": "work-001"
+        },
+        "attempt_id": "attempt-001",
+        "capability": "dispatch",
+        "config_digest": "sha256:d37d5ce92fbbfc0e736a215d7dbab9e216837d56c48705b9d5fdefc032fbbbbb",
+        "instance_id": "claude-dev",
+        "preview_digest": "sha256:e85b464251fe23eb47bab1239221f196b03ff02bdb86cceac29a329c5692e23e",
+        "proposal_id": "proposal-1",
+        "proposed_at": "2026-08-17T12:00:00Z",
+        "proposed_by": "claude-dev",
+        "rationale": "Implement the reviewed work item.",
+        "run_id": "run-001",
+        "schema_version": 2,
+        "scope": [
+          "src",
+          "tests"
+        ],
+        "timeout_seconds": 900
+      }
+    },
+    {
+      "step": "confirm",
+      "method": "POST",
+      "path": "/command/runs/run-001/actions",
+      "status": 201,
+      "response": {
+        "action_id": "action-1",
+        "arguments": {
+          "artifact_refs": [
+            "artifact-001"
+          ],
+          "instruction_ref": "instruction-001",
+          "output_limit_profile": "small",
+          "profile": "implement",
+          "work_item_id": "work-001"
+        },
+        "attempt_id": "attempt-001",
+        "capability": "dispatch",
+        "idempotency_key": "dispatch-proposal-1",
+        "instance_id": "claude-dev",
+        "mode": "confirm",
+        "preview_digest": "sha256:e85b464251fe23eb47bab1239221f196b03ff02bdb86cceac29a329c5692e23e",
+        "requested_at": "2026-08-17T12:00:00Z",
+        "requested_by": "release-owner",
+        "run_id": "run-001",
+        "schema_version": 2,
+        "scope": [
+          "src",
+          "tests"
+        ],
+        "timeout_seconds": 900
+      },
+      "durable_record_types_at_response": [
+        "action_proposal",
+        "action_request"
+      ],
+      "note": "The Confirm answered with the recorded action_request while the adapter was still held inside execute, so no result existed yet: the effect is asynchronous."
+    },
+    {
+      "step": "duplicate_confirm",
+      "method": "POST",
+      "path": "/command/runs/run-001/actions",
+      "status": 200,
+      "response": {
+        "action_id": "action-1",
+        "arguments": {
+          "artifact_refs": [
+            "artifact-001"
+          ],
+          "instruction_ref": "instruction-001",
+          "output_limit_profile": "small",
+          "profile": "implement",
+          "work_item_id": "work-001"
+        },
+        "attempt_id": "attempt-001",
+        "capability": "dispatch",
+        "idempotency_key": "dispatch-proposal-1",
+        "instance_id": "claude-dev",
+        "mode": "confirm",
+        "preview_digest": "sha256:e85b464251fe23eb47bab1239221f196b03ff02bdb86cceac29a329c5692e23e",
+        "requested_at": "2026-08-17T12:00:00Z",
+        "requested_by": "release-owner",
+        "run_id": "run-001",
+        "schema_version": 2,
+        "scope": [
+          "src",
+          "tests"
+        ],
+        "timeout_seconds": 900
+      },
+      "note": "The same request, answered 200, queued nothing and re-ran nothing."
+    },
+    {
+      "step": "refused_confirm",
+      "method": "POST",
+      "path": "/command/runs/run-001/actions",
+      "status": 409,
+      "response": {
+        "error": {
+          "code": "authorization_refused",
+          "detail": {},
+          "message": "confirmation did not authorize the request"
+        }
+      },
+      "note": "A confirmation restating a changed preview digest is refused before preparation and writes no durable byte."
+    },
+    {
+      "step": "authoritative_refresh",
+      "method": "GET",
+      "path": "/command/runs/run-001",
+      "status": 200,
+      "response": {
+        "config": {
+          "cycle": {
+            "id": "default-orbit",
+            "phases": [
+              "goal",
+              "detect",
+              "design"
+            ]
+          },
+          "instances": [
+            {
+              "adapter": "claude-code",
+              "id": "claude-dev",
+              "token_env": "ANTHROPIC_API_KEY"
+            },
+            {
+              "adapter": "codex",
+              "api_key_env": "OPENAI_API_KEY",
+              "id": "codex-review"
+            }
+          ]
+        },
+        "records": [
+          {
+            "record": {
+              "arguments": {
+                "artifact_refs": [
+                  "artifact-001"
+                ],
+                "instruction_ref": "instruction-001",
+                "output_limit_profile": "small",
+                "profile": "implement",
+                "work_item_id": "work-001"
+              },
+              "attempt_id": "attempt-001",
+              "capability": "dispatch",
+              "config_digest": "sha256:d37d5ce92fbbfc0e736a215d7dbab9e216837d56c48705b9d5fdefc032fbbbbb",
+              "instance_id": "claude-dev",
+              "preview_digest": "sha256:e85b464251fe23eb47bab1239221f196b03ff02bdb86cceac29a329c5692e23e",
+              "proposal_id": "proposal-1",
+              "proposed_at": "2026-08-17T12:00:00Z",
+              "proposed_by": "claude-dev",
+              "rationale": "Implement the reviewed work item.",
+              "run_id": "run-001",
+              "schema_version": 2,
+              "scope": [
+                "src",
+                "tests"
+              ],
+              "timeout_seconds": 900
+            },
+            "record_type": "action_proposal"
+          },
+          {
+            "record": {
+              "action_id": "action-1",
+              "arguments": {
+                "artifact_refs": [
+                  "artifact-001"
+                ],
+                "instruction_ref": "instruction-001",
+                "output_limit_profile": "small",
+                "profile": "implement",
+                "work_item_id": "work-001"
+              },
+              "attempt_id": "attempt-001",
+              "capability": "dispatch",
+              "idempotency_key": "dispatch-proposal-1",
+              "instance_id": "claude-dev",
+              "mode": "confirm",
+              "preview_digest": "sha256:e85b464251fe23eb47bab1239221f196b03ff02bdb86cceac29a329c5692e23e",
+              "requested_at": "2026-08-17T12:00:00Z",
+              "requested_by": "release-owner",
+              "run_id": "run-001",
+              "schema_version": 2,
+              "scope": [
+                "src",
+                "tests"
+              ],
+              "timeout_seconds": 900
+            },
+            "record_type": "action_request"
+          },
+          {
+            "record": {
+              "action_id": "action-1",
+              "adapter_id": "claude-code",
+              "attempt_id": "attempt-001",
+              "event_id": "effect_lease-event-1",
+              "exit_code": null,
+              "instance_id": "claude-dev",
+              "outcome": null,
+              "phase": "effect_lease",
+              "recorded_at": "2026-08-17T12:00:00Z",
+              "recovery_ref": "recovery-1",
+              "request_digest": "sha256:6baff3e6aa465eed1f810c6f7dde63f92e64574867245476ec837736d8e7436f",
+              "run_id": "run-001",
+              "schema_version": 2
+            },
+            "record_type": "attempt_event"
+          },
+          {
+            "record": {
+              "action_id": "action-1",
+              "adapter_id": "claude-code",
+              "attempt_id": "attempt-001",
+              "event_id": "execution_observed-event-1",
+              "exit_code": 0,
+              "instance_id": "claude-dev",
+              "outcome": "succeeded",
+              "phase": "execution_observed",
+              "recorded_at": "2026-08-17T12:00:00Z",
+              "recovery_ref": "recovery-1",
+              "request_digest": "sha256:6baff3e6aa465eed1f810c6f7dde63f92e64574867245476ec837736d8e7436f",
+              "run_id": "run-001",
+              "schema_version": 2
+            },
+            "record_type": "attempt_event"
+          },
+          {
+            "record": {
+              "created_by": "claude-code",
+              "digest": null,
+              "evidence_id": "evidence-1",
+              "kind": "verification",
+              "label": "the fixture's own post-effect check",
+              "observed_at": "2026-08-17T12:00:00Z",
+              "run_id": "run-001",
+              "schema_version": 2,
+              "uri": "verification/action-1",
+              "verification": "verified",
+              "verified_at": "2026-08-17T12:00:00Z",
+              "verified_by": "claude-code"
+            },
+            "record_type": "evidence"
+          },
+          {
+            "record": {
+              "action_id": "action-1",
+              "attempt_id": "attempt-001",
+              "detail": "post-effect evidence was verified by the bound adapter",
+              "evidence_refs": [
+                "evidence-1"
+              ],
+              "exit_code": 0,
+              "instance_id": "claude-dev",
+              "observed_at": "2026-08-17T12:00:00Z",
+              "outcome": "succeeded",
+              "receipt_id": "result-1",
+              "run_id": "run-001",
+              "schema_version": 2
+            },
+            "record_type": "action_result"
+          }
+        ],
+        "run": {
+          "config_digest": "sha256:d37d5ce92fbbfc0e736a215d7dbab9e216837d56c48705b9d5fdefc032fbbbbb",
+          "created_at": "2026-08-11T09:00:00Z",
+          "cycle_id": "default-orbit",
+          "mode": "confirm",
+          "run_id": "run-001",
+          "schema_version": 2,
+          "status": "created"
+        },
+        "warnings": []
+      },
+      "note": "The whole durable truth after the effect: the request, both attempt_events, the verification evidence and the terminal action_result that references it."
+    }
+  ]
+}

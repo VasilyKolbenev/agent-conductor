@@ -1,0 +1,72 @@
+{
+  "derived_from": "conductor.command.adapters.provider.provider_projection over the ProviderResolution that drove the gated run",
+  "availability_vocabulary": [
+    "available",
+    "executable_absent",
+    "version_mismatch"
+  ],
+  "resolved_availability": {
+    "claude-code": "available",
+    "codex": "executable_absent",
+    "codex-preview": "version_mismatch"
+  },
+  "row_fields": [
+    "available",
+    "controls",
+    "display_name",
+    "provider_id"
+  ],
+  "rows": [
+    {
+      "provider_id": "claude-code",
+      "display_name": "Claude Code (ALPHA-1 gated fixture)",
+      "available": true,
+      "controls": [
+        "dispatch",
+        "evidence",
+        "retry",
+        "review",
+        "stop",
+        "switch"
+      ]
+    },
+    {
+      "provider_id": "codex",
+      "display_name": "Codex (ALPHA-1 gated fixture)",
+      "available": false,
+      "controls": [
+        "dispatch",
+        "evidence",
+        "retry",
+        "review",
+        "stop",
+        "switch"
+      ]
+    },
+    {
+      "provider_id": "codex-preview",
+      "display_name": "Codex preview (ALPHA-1 gated fixture)",
+      "available": false,
+      "controls": [
+        "dispatch",
+        "evidence",
+        "retry",
+        "review",
+        "stop",
+        "switch"
+      ]
+    }
+  ],
+  "withheld_from_rows": [
+    "availability",
+    "capabilities",
+    "env_allow",
+    "executable",
+    "lifecycle",
+    "protocol",
+    "schema_pairs",
+    "vendor",
+    "version"
+  ],
+  "note": "A row says whether a provider is usable with the boolean `available` and nothing more. The three-state `availability` lives on the provider contract, is frozen here beside the rows, and is NOT part of the projection. Everything else the operator config and the reviewed contract carry is withheld."
+}
