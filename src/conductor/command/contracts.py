@@ -11,7 +11,7 @@ import json
 import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime
 from enum import Enum
 from pathlib import PurePosixPath
 from types import MappingProxyType
@@ -33,6 +33,13 @@ class ControlMode(str, Enum):
 
 _ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
 _DIGEST_RE = re.compile(r"sha256:[0-9a-f]{64}\Z")
+# The one UTC instant spelling this contract will ever hold, character for
+# character the same grammar the Cockpit's UTC_INSTANT holds. The digit classes
+# are spelled [0-9] rather than \d on purpose: Python's \d also matches non-ASCII
+# decimal digits, which JavaScript's does not, and int() would then read them.
+_UTC_INSTANT_RE = re.compile(
+    r"([0-9]{4})-([0-9]{2})-([0-9]{2})T([0-9]{2}):([0-9]{2}):([0-9]{2})"
+    r"(?:\.[0-9]+)?(?:Z|\+00:00)\Z")
 _RUN_STATES = frozenset({
     "created", "active", "paused", "blocked", "complete", "failed",
     "cancelled", "unknown",
@@ -69,14 +76,45 @@ def _text(name: str, value: object, *, empty: bool = False) -> str:
 
 
 def _timestamp(name: str, value: object) -> str:
-    if not isinstance(value, str):
+    """Accept exactly one frozen UTC grammar, identically on every Python we support.
+
+    The grammar is ``YYYY-MM-DDTHH:MM:SS`` with an optional fractional second and
+    a ``Z`` or ``+00:00`` suffix; the hour is 00..23, so the ISO end-of-day
+    ``24:00:00`` names no instant here. ``panel/command-projection.js``
+    ``instantIsValid`` holds the same grammar, so the durable store and the Human
+    Gate accept one set of facts rather than two.
+
+    The accept path deliberately never calls ``datetime.fromisoformat``: what that
+    function accepts widens between the Pythons this package supports (>=3.11).
+    3.11 and 3.12 refuse ``24:00:00`` where 3.14 accepts it, and they also accept
+    a space separator, a basic or week date, a comma fraction, ``-00:00`` and
+    arbitrary single separators that the Cockpit refuses. Delegating to it would
+    make the valid-fact set a property of the interpreter. Here the regex fixes
+    the spelling, the captured integers are range-checked outright, and calendar
+    truth comes from the ``datetime`` constructor, whose meaning does not vary —
+    so no supported interpreter can widen this set, by construction.
+
+    Args:
+        name: The field being validated, quoted back in any refusal.
+        value: The candidate instant.
+
+    Returns:
+        The value unchanged, once it names a real UTC instant.
+
+    Raises:
+        ContractError: The value is not a string, does not match the frozen
+            grammar, or names no day on the proleptic Gregorian calendar.
+    """
+    matched = _UTC_INSTANT_RE.fullmatch(value) if isinstance(value, str) else None
+    if matched is None:
+        raise ContractError(f"{name} must be an RFC 3339 UTC string, got {value!r}")
+    year, month, day, hour, minute, second = (int(part) for part in matched.groups())
+    if hour > 23 or minute > 59 or second > 59:
         raise ContractError(f"{name} must be an RFC 3339 UTC string, got {value!r}")
     try:
-        parsed = datetime.fromisoformat(value[:-1] + "+00:00" if value.endswith("Z") else value)
+        datetime(year, month, day, hour, minute, second)
     except ValueError as e:
         raise ContractError(f"{name} must be an RFC 3339 UTC string, got {value!r}") from e
-    if parsed.tzinfo is None or parsed.utcoffset() != timedelta(0):
-        raise ContractError(f"{name} must carry the UTC offset, got {value!r}")
     return value
 
 
