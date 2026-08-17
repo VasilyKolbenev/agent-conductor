@@ -108,7 +108,7 @@ def test_the_allowlist_is_exact_literals_and_never_a_derived_path():
         assert name and not set(name) & set("/\\%?:*")
 
 
-def test_every_packaged_panel_script_and_style_is_an_allowlisted_asset():
+def test_every_packaged_panel_script_and_style_is_allowlisted_or_named_unserved():
     panel = importlib.resources.files("conductor") / "panel"
     names = {entry.name for entry in panel.iterdir()}
     assert set(UNSERVED) <= names, "stale UNSERVED entry names no packaged file"

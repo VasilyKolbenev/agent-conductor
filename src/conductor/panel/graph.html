@@ -36,7 +36,13 @@
     <div class="col">
       <section class="card" id="paletteCard" aria-label="Harness palette"></section>
       <section class="card" id="composerCard" aria-label="Compose"></section>
-      <section class="card" id="detailCard" aria-label="Node card"></section>
+      <section class="card" id="detailCard" aria-label="Node card">
+        <h2>Node card</h2>
+        <div id="detailBody"></div>
+        <!-- Persistent, so a refused decision is actually announced: an
+             aria-live region rebuilt in the same pass as its text is not. -->
+        <p aria-live="polite" class="g-note g-decide-status" id="decideStatus"></p>
+      </section>
       <section class="card" id="gatesCard" aria-label="Human gates"></section>
     </div>
   </div>

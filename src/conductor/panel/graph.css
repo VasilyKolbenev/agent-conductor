@@ -56,13 +56,19 @@ button{font:inherit;cursor:pointer;background:none;border:none;color:inherit}
        text-decoration:underline}
 .hb__d:hover{text-decoration-thickness:2px}
 
-/* status chips — semantic colour on glyph and contour, text on --ink. */
+/* status chips — three carriers, like the panel's pills: the glyph and the
+   contour take the semantic colour, the word runs on --ink. */
 .g-chip{font-family:var(--mono);font-size:10px;padding:1px 6px;border-radius:4px;
         border:1px solid var(--line);color:var(--ink);white-space:nowrap}
+.g-chip .gl{font-style:normal}
 .g-chip--pass{border-color:var(--pass)}
+.g-chip--pass .gl{color:var(--pass)}
 .g-chip--wait{border-color:var(--wait)}
+.g-chip--wait .gl{color:var(--wait)}
 .g-chip--fail{border-color:var(--fail)}
+.g-chip--fail .gl{color:var(--fail)}
 .g-chip--none{color:var(--muted)}
+.g-chip--none .gl{color:var(--faint)}
 
 /* the graph field: absolute cells over an SVG of edges; scrolls inside
    itself so the page never scrolls horizontally. */
@@ -79,17 +85,23 @@ button{font:inherit;cursor:pointer;background:none;border:none;color:inherit}
 .g-node__head{display:flex;gap:6px;align-items:baseline;min-width:0}
 .g-node__title{font-size:12.5px;font-weight:640;overflow-wrap:anywhere}
 .g-node__chips{display:flex;gap:4px;flex-wrap:wrap}
-.g-node__from{display:none;font-size:10px;color:var(--faint)}
+/* the "after …" line is each edge's textual carrier. At desktop widths the
+   SVG draws the edge for sighted readers and this line is clipped, not
+   removed — the aria-hidden SVG must never be the structure's only carrier. */
+.g-node__from{font-size:10px;color:var(--faint)}
+@media(min-width:768px){
+  .g-node__from{position:absolute;width:1px;height:1px;overflow:hidden;
+                clip-path:inset(50%);white-space:nowrap}
+}
 @media (prefers-reduced-motion:no-preference){
   .g-node{transition:border-color .15s ease-out}
 }
 /* under 768px the field is a single reading column: geometry leaves, the
-   "after …" text carries each edge instead of a line. */
+   "after …" text carries each edge visibly instead of a line. */
 @media(max-width:767px){
   .g-field svg{display:none}
   .g-field{display:flex;flex-direction:column;gap:10px}
   .g-node{position:static;width:100%;height:auto}
-  .g-node__from{display:block}
 }
 
 /* rail cards */

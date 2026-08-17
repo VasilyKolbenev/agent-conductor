@@ -49,6 +49,9 @@ export const GATE_CHANNEL = Object.freeze({
   changes_requested: "wait", waived: "none",
 });
 const TITLE_LIMIT = 80;
+// The boundary twin of the reason input's maxlength: the DOM cap is advice,
+// this one is the rule.
+const REASON_LIMIT = 200;
 
 // The frozen UTC-instant grammar (command-projection.js instantIsValid states
 // the same rule beside the production contract). Both copies answer the one
@@ -86,7 +89,11 @@ export function projectRegistry(rows) {
     out.push(Object.freeze({
       id: row.id, name: row.display_name, monogram: row.monogram,
       dark: row.accent_dark, light: row.accent_light,
-      docs: typeof row.docs === "string" ? row.docs : "",
+      // The one field that becomes an href. Anything but https is dropped —
+      // the same gate index.html applies before drawing its docs link — so a
+      // javascript: or data: string arriving as registry data never renders.
+      docs: typeof row.docs === "string" && row.docs.startsWith("https://")
+        ? row.docs : "",
     }));
   }
   return out;
@@ -164,11 +171,16 @@ function projectTimeline(rows, ids) {
     out.push(Object.freeze({event_id: row.event_id, at: row.at,
       node_id: row.node_id, phase: row.phase}));
   }
-  // A stable sort by instant: the grammar is fixed-width per field, so the
-  // string order is the time order.
-  return Object.freeze(out.map((row, index) => [row, index])
-    .sort((a, b) => a[0].at.localeCompare(b[0].at) || a[1] - b[1])
-    .map(([row]) => row));
+  // Raw string order is NOT time order: the grammar admits a variable-width
+  // fraction and two UTC spellings, and "…00Z" sorts after "…00.900Z". The
+  // key is the genuinely fixed-width 19-character prefix plus the fraction
+  // padded to nine digits, which collapses Z against +00:00 and makes plain
+  // code-unit comparison the time comparison. The index keeps ties stable.
+  const keyOf = (at) =>
+    `${at.slice(0, 19)}.${(UTC_INSTANT.exec(at)[7] || "").padEnd(9, "0")}`;
+  return Object.freeze(out.map((row, index) => [keyOf(row.at), index, row])
+    .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : a[1] - b[1]))
+    .map((entry) => entry[2]));
 }
 
 // Layered layout, computed once per load. Depth is the longest path from a
@@ -219,6 +231,11 @@ export function projectPayload(payload) {
   if (nodes.some((node) => node === null)) return null;
   const ids = new Set(nodes.map((node) => node.node_id));
   if (ids.size !== nodes.length) return null;
+  // A gate id is a decision key — the ledger and every state rewrite go
+  // through it — so two gates sharing one would let a single Human decision
+  // flip a gate nobody decided. The same ambiguity node ids are refused for.
+  const gateIds = nodes.flatMap((node) => (node.gate ? [node.gate.gate_id] : []));
+  if (new Set(gateIds).size !== gateIds.length) return null;
   const edges = projectEdges(payload.edges, ids);
   const timeline = projectTimeline(payload.timeline, ids);
   if (!edges || !timeline) return null;
@@ -256,13 +273,16 @@ function withGateState(nodes, gateId, state) {
 }
 
 function decide(state, event) {
-  const nextState = DECISION_ACTIONS[event.action];
+  // An own-key check, not a lookup: a plain object inherits "constructor"
+  // and friends, and an inherited truthy value must not become a gate state.
+  const nextState = Object.hasOwn(DECISION_ACTIONS, event.action)
+    ? DECISION_ACTIONS[event.action] : null;
   const gateNode = state.nodes.find((node) =>
     node.gate && node.gate.gate_id === event.gateId);
   const reason = typeof event.reason === "string" ? event.reason.trim() : "";
   const needsReason = ["request_changes", "waive"].includes(event.action);
   if (!gateNode || !nextState || !isId(event.actor)
-      || (needsReason && !reason)) {
+      || reason.length > REASON_LIMIT || (needsReason && !reason)) {
     return Object.freeze({...state, decisionNotice:
       "Name the deciding Human and give a reason where one is required."});
   }
@@ -324,10 +344,13 @@ export function reduce(state, event) {
     const known = state.nodes.some((node) => node.node_id === event.nodeId);
     if (!known) return state;
     const selection = state.selection === event.nodeId ? null : event.nodeId;
-    return Object.freeze({...state, selection});
+    // A decision status names the gate that was on screen when it was made;
+    // carrying it under a different selection would assert a recording that
+    // never happened there, so a selection change dismisses it.
+    return Object.freeze({...state, selection, decisionNotice: ""});
   }
   if (event.type === "deselect") {
-    return Object.freeze({...state, selection: null});
+    return Object.freeze({...state, selection: null, decisionNotice: ""});
   }
   if (event.type === "decide") return decide(state, event);
   if (event.type === "compose") return compose(state, event);

@@ -13,7 +13,7 @@
        "gate": null},
       {"node_id": "impl-a", "kind": "task", "title": "Implement lane A",
        "harness": "claude-code", "health": "busy", "phase": "requested",
-       "capabilities": ["dispatch", "evidence", "stop"],
+       "capabilities": ["stop", "dispatch", "evidence"],
        "evidence": [{"evidence_id": "ev-a-diff", "kind": "diff",
                      "verification": "unverified"}],
        "gate": null},

@@ -243,8 +243,11 @@ def test_node_card_shows_provider_availability_capability_phase_evidence(
     detail = graph_page.locator("#detailCard")
     assert detail.locator(".g-det__title").inner_text() == "Implement lane A"
     assert detail.locator(".hb__n").first.inner_text() == "Claude Code"
-    assert detail.locator(".g-chip--wait").first.inner_text() == "availability: busy"
+    assert detail.locator(
+        ".g-chip--wait").first.text_content() == "● availability: busy"
     assert "phase: requested" in detail.inner_text()
+    # The fixture declares ["stop", "dispatch", "evidence"]; the sorted line
+    # below is therefore the projection's doing, not the fixture's.
     assert "capabilities: dispatch, evidence, stop" in detail.inner_text()
     evidence = detail.locator(".g-evidence")
     assert evidence.count() == 1
@@ -254,13 +257,56 @@ def test_node_card_shows_provider_availability_capability_phase_evidence(
     graph_page.locator('[data-node-id="impl-c"]').click()
     assert detail.locator(".hb__n").first.inner_text() == "local-fork"
     assert detail.locator(".hb__m").first.inner_text() == "LF"
-    swatch_style = detail.locator(".hb__m").first.get_attribute("style")
-    assert not swatch_style, "unregistered harness must keep the neutral badge"
+    badge_style = detail.locator(".hb").first.get_attribute("style")
+    assert not badge_style, "unregistered harness must keep the neutral badge"
+
+
+def _hex_to_rgb(value: str) -> str:
+    return f"rgb({int(value[1:3], 16)}, {int(value[3:5], 16)}, {int(value[5:7], 16)})"
+
+
+def test_a_registered_accent_reaches_the_swatch_in_the_active_scheme(
+        graph_page: Page) -> None:
+    """The validated accent pair is not inert: the composited swatch wears it."""
+    _load(graph_page, "parallel_review")
+    dark = graph_page.evaluate(
+        "matchMedia('(prefers-color-scheme: dark)').matches")
+    row = next(r for r in _registry_payload() if r["id"] == "claude-code")
+    expected = _hex_to_rgb(row["accent_dark" if dark else "accent_light"])
+    swatch = graph_page.locator('[data-node-id="impl-a"] .hb__m')
+    assert swatch.evaluate(
+        "node => getComputedStyle(node).borderTopColor") == expected
+    neutral = graph_page.locator('[data-node-id="impl-c"] .hb__m')
+    assert neutral.evaluate(
+        "node => getComputedStyle(node).borderTopColor") != expected
+
+
+def test_docs_links_render_only_for_https_targets_and_leave_this_window(
+        graph_page: Page) -> None:
+    """A javascript: docs string is data that never becomes an anchor."""
+    payload = dict(_FIXTURES["gate_satisfied"])
+    payload["registry"] = [
+        {"id": "honest", "display_name": "Honest", "monogram": "HO",
+         "accent_dark": "#6ea8ff", "accent_light": "#2258c9",
+         "docs": "https://example.com/docs"},
+        {"id": "hostile", "display_name": "Hostile", "monogram": "HX",
+         "accent_dark": "#63c8b3", "accent_light": "#176b5b",
+         "docs": "javascript:document.title='pwned'"},
+    ]
+    assert graph_page.evaluate(
+        "payload => window.conductGraph.load(payload)", payload)
+    palette = graph_page.locator("#paletteCard")
+    assert palette.locator(".g-palette__row").count() == 2
+    anchors = palette.locator("a.hb__d")
+    assert anchors.count() == 1
+    assert anchors.get_attribute("href") == "https://example.com/docs"
+    assert anchors.get_attribute("target") == "_blank"
+    assert anchors.get_attribute("rel") == "noreferrer noopener"
 
 
 def test_gate_decision_form_updates_the_gate_and_stays_fixture_only(
         graph_page: Page) -> None:
-    """A refused draft names what is missing; a valid one lands locally only."""
+    """A refused draft keeps what was typed; a valid one lands locally only."""
     _load(graph_page, "parallel_review")
     graph_page.locator('[data-node-id="ship-gate"]').click()
     detail = graph_page.locator("#detailCard")
@@ -271,10 +317,17 @@ def test_gate_decision_form_updates_the_gate_and_stays_fixture_only(
     form.locator('[name="actor"]').fill("reviewer-1")
     form.locator('button[type="submit"]').click()
     assert "give a reason" in detail.locator(".g-decide-status").inner_text()
-
+    # The refusal changed nothing durable and erased nothing typed: the gate
+    # is still pending, the ledger is empty, the draft survived the
+    # re-render, and focus stayed on the control that submitted.
+    assert graph_page.evaluate("window.conductGraph.state().decisions") == {}
+    assert "○ pending" in detail.inner_text()
     form = detail.locator(".g-decide")
-    form.locator('[name="action"]').select_option("request_changes")
-    form.locator('[name="actor"]').fill("reviewer-1")
+    assert form.locator('[name="action"]').input_value() == "request_changes"
+    assert form.locator('[name="actor"]').input_value() == "reviewer-1"
+    assert graph_page.evaluate(
+        "document.activeElement.getAttribute('name')") == "record"
+
     form.locator('[name="reason"]').fill("needs tests")
     form.locator('button[type="submit"]').click()
     assert "Nothing was executed" in detail.locator(
@@ -288,6 +341,8 @@ def test_gate_decision_form_updates_the_gate_and_stays_fixture_only(
     assert recorded == {"gate-release": {
         "action": "request_changes", "actor": "reviewer-1",
         "reason": "needs tests", "recorded": "fixture-only"}}
+    # A landed decision clears the draft for the next one.
+    assert graph_page.locator('[name="actor"]').input_value() == ""
 
     _load(graph_page, "gate_satisfied")
     assert "✓ approved" in graph_page.locator("#gatesCard").inner_text()
@@ -307,8 +362,205 @@ def test_composer_adds_a_parallel_step_as_data_and_keeps_geometry_closed(
     assert graph_page.locator(".g-node").count() == 7
     added = graph_page.locator('[data-node-id="step-7"]')
     assert "Shadow review" in added.inner_text()
-    # Hidden at 1440 (the SVG carries the edge there); the fact still holds.
+    # Clipped at 1440 (the SVG carries the edge there); the fact still holds.
     assert added.locator(".g-node__from").text_content() == "after plan"
     geometry = graph_page.locator("#field").evaluate(_GEOMETRY)
     assert geometry["overlaps"] == 0
     assert ["plan", "step-7"] in geometry["links"]
+    # A landed composition clears the drafted title for the next step.
+    assert graph_page.locator('[name="title"]').input_value() == ""
+
+
+def test_a_composer_draft_survives_selecting_a_node_mid_thought(
+        graph_page: Page) -> None:
+    """Inspecting a node to pick an anchor must not erase the typed step."""
+    _load(graph_page, "parallel_review")
+    graph_page.locator('[name="title"]').fill("Half-typed step")
+    graph_page.locator('[name="placement"]').select_option("parallel")
+    graph_page.locator('[data-node-id="impl-b"]').click()
+    assert graph_page.locator('[name="title"]').input_value() == "Half-typed step"
+    assert graph_page.locator('[name="placement"]').input_value() == "parallel"
+
+
+def test_selecting_a_node_keeps_focus_on_that_node_through_the_rerender(
+        graph_page: Page) -> None:
+    """A keyboard selection must not drop the Human to the document body."""
+    _load(graph_page, "parallel_review")
+    node = graph_page.locator('[data-node-id="impl-b"]')
+    node.focus()
+    graph_page.keyboard.press("Enter")
+    assert node.get_attribute("aria-pressed") == "true"
+    assert graph_page.evaluate(
+        "document.activeElement.dataset.nodeId") == "impl-b"
+
+
+def test_the_seam_is_load_and_state_and_nothing_else(graph_page: Page) -> None:
+    """No public door may commit facts that skipped the boundary."""
+    assert graph_page.evaluate(
+        "Object.keys(window.conductGraph).sort()") == ["load", "state"]
+
+
+def test_timeline_and_palette_render_every_row_the_fixture_holds(
+        graph_page: Page) -> None:
+    """The two cards are rendered claims, not dead fixture weight."""
+    _load(graph_page, "parallel_review")
+    rows = graph_page.locator("#timelineCard .g-timeline__row")
+    assert rows.count() == 5
+    assert "plan" in rows.first.inner_text()
+    assert "2026-08-17T09:00:00Z" in rows.first.inner_text()
+    assert "impl-c" in rows.last.inner_text()
+    assert graph_page.locator("#paletteCard .g-palette__row").count() == len(
+        _registry_payload())
+
+
+def test_a_refused_load_clears_the_previous_canvas(graph_page: Page) -> None:
+    """The last graph's SVG must not outlive the state that drew it."""
+    _load(graph_page, "parallel_review")
+    assert graph_page.locator("#edges").get_attribute("width") is not None
+    assert not graph_page.evaluate("window.conductGraph.load({})")
+    assert graph_page.locator("#edges").get_attribute("width") is None
+    assert graph_page.locator(".g-edge").count() == 0
+    assert graph_page.locator(".g-node").count() == 0
+
+
+def _one_fault_cases() -> list[tuple[str, object]]:
+    """One structural fault per case, applied to a copy of parallel_review."""
+    def fault(name: str, apply) -> tuple[str, object]:
+        return (name, apply)
+
+    return [
+        fault("wrong-schema", lambda p: p.update(fixture_schema=2)),
+        fault("bad-run-id", lambda p: p["run"].update(run_id="bad id!")),
+        fault("health-out-of-vocab", lambda p: p["nodes"][0].update(health="excellent")),
+        fault("phase-out-of-vocab", lambda p: p["nodes"][0].update(phase="running")),
+        fault("kind-out-of-vocab", lambda p: p["nodes"][0].update(kind="step")),
+        fault("title-over-limit", lambda p: p["nodes"][0].update(title="x" * 81)),
+        fault("title-blank", lambda p: p["nodes"][0].update(title="   ")),
+        fault("capability-duplicate",
+              lambda p: p["nodes"][1].update(capabilities=["dispatch", "dispatch"])),
+        fault("capability-out-of-vocab",
+              lambda p: p["nodes"][1].update(capabilities=["deploy"])),
+        fault("evidence-kind", lambda p: p["nodes"][1]["evidence"][0].update(kind="log")),
+        fault("evidence-verification",
+              lambda p: p["nodes"][1]["evidence"][0].update(verification="maybe")),
+        fault("gate-on-task",
+              lambda p: p["nodes"][0].update(gate={"gate_id": "g-x", "state": "pending"})),
+        fault("gate-missing-on-gate", lambda p: p["nodes"][5].update(gate=None)),
+        fault("gate-state-out-of-vocab",
+              lambda p: p["nodes"][5]["gate"].update(state="open")),
+        fault("duplicate-node-id", lambda p: p["nodes"][1].update(node_id="plan")),
+        fault("duplicate-gate-id", lambda p: p["nodes"].append(
+            {**p["nodes"][5], "node_id": "ship-gate-2"})),
+        fault("dangling-edge", lambda p: p["edges"].append(
+            {"from": "ghost", "to": "review"})),
+        fault("duplicate-edge", lambda p: p["edges"].append(dict(p["edges"][0]))),
+        fault("self-loop", lambda p: p["edges"].append({"from": "plan", "to": "plan"})),
+        fault("cycle", lambda p: p["edges"].append({"from": "ship-gate", "to": "plan"})),
+        fault("bad-instant", lambda p: p["timeline"][0].update(at="2026-02-30T09:00:00Z")),
+        fault("timeline-ghost-node", lambda p: p["timeline"][0].update(node_id="ghost")),
+        fault("duplicate-event-id", lambda p: p["timeline"][1].update(
+            event_id=p["timeline"][0]["event_id"])),
+        fault("timeline-phase-out-of-vocab",
+              lambda p: p["timeline"][0].update(phase="warming")),
+    ]
+
+
+def test_each_boundary_arm_refuses_its_own_single_fault(
+        graph_page: Page) -> None:
+    """One fault per payload, so no refusal can hide behind a neighbour's."""
+    registry = _registry_payload()
+    for name, apply in _one_fault_cases():
+        payload = json.loads(json.dumps(_FIXTURES["parallel_review"]))
+        payload["registry"] = registry
+        apply(payload)
+        accepted = graph_page.evaluate(
+            "payload => window.conductGraph.load(payload)", payload)
+        assert accepted is False, f"{name}: the boundary accepted the fault"
+        assert graph_page.locator(".g-node").count() == 0, name
+    # The unfaulted copy still loads, so every refusal above was the fault's.
+    payload = json.loads(json.dumps(_FIXTURES["parallel_review"]))
+    payload["registry"] = registry
+    assert graph_page.evaluate(
+        "payload => window.conductGraph.load(payload)", payload)
+
+
+_STORE_UNIT = """([payload, event]) => import("./graph-store.js").then(store => {
+  const facts = store.projectPayload(payload);
+  if (!facts) return {loaded: false};
+  const loaded = store.reduce(store.EMPTY, {type: "loaded", facts});
+  const next = store.reduce(loaded, event);
+  return {
+    loaded: true,
+    notice: next.notice,
+    decisionNotice: next.decisionNotice,
+    nodes: next.nodes.length,
+    gateStates: next.nodes.flatMap(n => n.gate ? [n.gate.state] : []),
+    decisions: Object.keys(next.decisions),
+    timeline: next.timeline.map(row => row.event_id),
+  };
+})"""
+
+
+def test_the_reducer_refuses_what_the_forms_cannot_send(
+        graph_page: Page) -> None:
+    """The compose and decide arms hold even against events no UI can build."""
+    payload = dict(_FIXTURES["parallel_review"])
+    payload["registry"] = _registry_payload()
+    cases = [
+        ({"type": "compose", "nodeId": "step-x", "title": "T",
+          "harness": "not-registered", "placement": "after",
+          "anchorId": "plan"}, "unregistered harness"),
+        ({"type": "compose", "nodeId": "plan", "title": "T", "harness": None,
+          "placement": "after", "anchorId": "review"}, "duplicate node id"),
+        ({"type": "compose", "nodeId": "step-x", "title": "x" * 81,
+          "harness": None, "placement": "after", "anchorId": "plan"},
+         "over-limit title"),
+        ({"type": "compose", "nodeId": "step-x", "title": "T", "harness": None,
+          "placement": "sideways", "anchorId": "plan"}, "unknown placement"),
+    ]
+    for event, why in cases:
+        result = graph_page.evaluate(_STORE_UNIT, [payload, event])
+        assert result["loaded"], why
+        assert result["nodes"] == 6, why
+        assert "Composition refused" in result["notice"], why
+    for event, why in [
+        ({"type": "decide", "gateId": "gate-release", "action": "constructor",
+          "actor": "reviewer-1", "reason": ""}, "inherited action name"),
+        ({"type": "decide", "gateId": "gate-release", "action": "approve",
+          "actor": "reviewer-1", "reason": "x" * 201}, "over-limit reason"),
+    ]:
+        result = graph_page.evaluate(_STORE_UNIT, [payload, event])
+        assert result["gateStates"] == ["pending"], why
+        assert result["decisions"] == [], why
+        assert "Name the deciding Human" in result["decisionNotice"], why
+
+
+def test_a_selection_change_dismisses_the_recorded_decision_status(
+        graph_page: Page) -> None:
+    """The status names the gate on screen when it was made, or nothing."""
+    _load(graph_page, "parallel_review")
+    graph_page.locator('[data-node-id="ship-gate"]').click()
+    form = graph_page.locator("#detailCard .g-decide")
+    form.locator('[name="actor"]').fill("reviewer-1")
+    form.locator('button[type="submit"]').click()
+    status = graph_page.locator("#decideStatus")
+    assert "Decision recorded" in status.inner_text()
+    graph_page.locator('[data-node-id="plan"]').click()
+    assert status.inner_text() == ""
+
+
+def test_fractional_instants_order_by_time_not_by_string(
+        graph_page: Page) -> None:
+    """…00Z sorts before …00.900Z even though the strings say otherwise."""
+    payload = json.loads(json.dumps(_FIXTURES["gate_satisfied"]))
+    payload["registry"] = _registry_payload()
+    payload["timeline"] = [
+        {"event_id": "t-frac", "at": "2026-08-17T09:00:00.900Z",
+         "node_id": "plan", "phase": "requested"},
+        {"event_id": "t-whole", "at": "2026-08-17T09:00:00Z",
+         "node_id": "plan", "phase": "proposed"},
+        {"event_id": "t-offset", "at": "2026-08-17T08:59:59+00:00",
+         "node_id": "plan", "phase": "idle"},
+    ]
+    result = graph_page.evaluate(_STORE_UNIT, [payload, {"type": "deselect"}])
+    assert result["timeline"] == ["t-offset", "t-whole", "t-frac"]
