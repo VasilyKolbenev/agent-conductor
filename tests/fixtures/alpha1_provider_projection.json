@@ -60,6 +60,7 @@
   "withheld_from_rows": [
     "availability",
     "capabilities",
+    "entrypoint",
     "env_allow",
     "executable",
     "lifecycle",

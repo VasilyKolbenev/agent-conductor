@@ -5,10 +5,13 @@ or network door. It holds the two halves of a configured provider and keeps them
 apart on purpose:
 
 - ``ProviderConfig`` is the operator's durable input. It stores a provider id, one
-  ABSOLUTE operator-pinned executable path, a reviewed protocol token, and
-  allowlisted environment NAMES. It stores no secret value, no argv, no cwd, no
-  token, and no raw output; a secret is referenced by name and read from the live
-  environment at spawn time, never written here.
+  ABSOLUTE operator-pinned executable path, a reviewed protocol token, allowlisted
+  environment NAMES, and -- for a provider whose executable is an interpreter --
+  one further ABSOLUTE operator-pinned entrypoint path under the same gate. It
+  stores no secret value, no argv, no cwd, no token, and no raw output; a secret
+  is referenced by name and read from the live environment at spawn time, never
+  written here. An empty ``entrypoint`` means the operator pinned none, which is
+  the whole shape for a provider that is its own executable.
 - ``ProviderContract`` is the public descriptor the Cockpit may see. It carries
   identity, resolved availability, declared capabilities, the CLOSED
   per-capability argument-schema relation, and the lifecycle seams the provider
@@ -185,8 +188,9 @@ class ProviderConfig:
     executable: str
     protocol: str
     env_allow: tuple[str, ...] | list[str] = ()
+    entrypoint: str = ""
     _FIELDS: ClassVar[frozenset[str]] = frozenset({
-        "provider_id", "executable", "protocol", "env_allow"})
+        "provider_id", "executable", "protocol", "env_allow", "entrypoint"})
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "provider_id", _provider_id(self.provider_id))
@@ -197,6 +201,10 @@ class ProviderConfig:
         if type(self.protocol) is not str or self.protocol not in KNOWN_PROTOCOLS:
             raise ProviderConfigError("protocol must name a reviewed provider protocol")
         object.__setattr__(self, "env_allow", _reviewed_env_names(self.env_allow))
+        if type(self.entrypoint) is not str or "\x00" in self.entrypoint:
+            raise ProviderConfigError("entrypoint must be a NUL-free absolute path string")
+        if self.entrypoint and not _is_absolute(self.entrypoint):
+            raise ProviderConfigError("entrypoint must be an absolute operator-pinned path")
 
     def as_dict(self) -> dict[str, Any]:
         if type(self) is not ProviderConfig:
@@ -204,7 +212,8 @@ class ProviderConfig:
         canonical = _rebuilt_config(self)
         return {
             "provider_id": canonical.provider_id, "executable": canonical.executable,
-            "protocol": canonical.protocol, "env_allow": list(canonical.env_allow)}
+            "protocol": canonical.protocol, "env_allow": list(canonical.env_allow),
+            "entrypoint": canonical.entrypoint}
 
     @classmethod
     def from_dict(cls, value: object) -> "ProviderConfig":
@@ -218,7 +227,8 @@ def _rebuilt_config(config: ProviderConfig) -> ProviderConfig:
     failed = False
     try:
         rebuilt = ProviderConfig(
-            config.provider_id, config.executable, config.protocol, config.env_allow)
+            config.provider_id, config.executable, config.protocol, config.env_allow,
+            config.entrypoint)
     except Exception:  # noqa: BLE001 -- a mutated value retains no hostile graph
         failed = True
         rebuilt = None

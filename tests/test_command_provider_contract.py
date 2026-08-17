@@ -160,8 +160,12 @@ def test_provider_config_stores_only_the_operator_pin_and_env_names():
     config = ProviderConfig(
         provider_id="claude-code", executable=ABS_EXECUTABLE,
         protocol="fake-claude-jsonl-v1", env_allow=("ANTHROPIC_API_KEY",))
-    assert set(config.as_dict()) == {"provider_id", "executable", "protocol", "env_allow"}
+    assert set(config.as_dict()) == {
+        "provider_id", "executable", "protocol", "env_allow", "entrypoint"}
     assert config.as_dict()["env_allow"] == ["ANTHROPIC_API_KEY"]
+    # An unpinned entrypoint is empty, never a guess: a provider that is its own
+    # executable carries no second path at all.
+    assert config.as_dict()["entrypoint"] == ""
     with pytest.raises(ProviderConfigError, match="env_allow"):
         ProviderConfig(
             provider_id="claude-code", executable=ABS_EXECUTABLE,
@@ -169,6 +173,25 @@ def test_provider_config_stores_only_the_operator_pin_and_env_names():
     blob = canonical_json(config.as_dict())
     for banned in ("argv", "cwd", "token", "secret", "pid", "raw_output"):
         assert banned not in blob
+
+
+def test_the_second_pin_passes_the_same_absolute_gate_and_survives_a_round_trip():
+    """The entrypoint is an operator pin under the executable's own gate."""
+    pinned = ProviderConfig(
+        provider_id="claude-code", executable=ABS_EXECUTABLE,
+        protocol="fake-claude-jsonl-v1", entrypoint="C:/dsh/lib/bin.js")
+    assert pinned.entrypoint == "C:/dsh/lib/bin.js"
+    # The durable JSON carries it, and reading that JSON back rebuilds the value.
+    assert ProviderConfig.from_dict(pinned.as_dict()) == pinned
+    for relative in ("lib/bin.js", "./bin.js", "bin.js"):
+        with pytest.raises(ProviderConfigError, match="entrypoint must be an absolute"):
+            ProviderConfig(
+                provider_id="claude-code", executable=ABS_EXECUTABLE,
+                protocol="fake-claude-jsonl-v1", entrypoint=relative)
+    with pytest.raises(ProviderConfigError, match="entrypoint must be a NUL-free"):
+        ProviderConfig(
+            provider_id="claude-code", executable=ABS_EXECUTABLE,
+            protocol="fake-claude-jsonl-v1", entrypoint="C:/dsh/bin.js\x00evil")
 
 
 def test_provider_config_refuses_a_relative_path_or_unreviewed_protocol():

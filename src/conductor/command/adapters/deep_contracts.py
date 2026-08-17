@@ -1,8 +1,12 @@
 """Immutable, value-only contracts shared by future deep adapters.
 
 Nothing here probes an executable, reads an environment value, starts a process,
-or claims a real Claude/Codex integration.  The only protocols are deterministic
-fake protocols; real modes remain explicitly unavailable until separately proven.
+or claims a real Claude/Codex integration.  The Claude and Codex protocols are
+deterministic fake protocols and their real modes remain explicitly unavailable
+until separately proven.  ``DSH_HEADLESS_V1`` is the one token naming a protocol
+published by a real vendor; naming it here buys no availability and no claim that
+the tool is installed -- the harness adapter still spawns nothing until an
+operator pins both absolute paths and an exact version preflight agrees.
 """
 from __future__ import annotations
 
@@ -23,6 +27,7 @@ class DeepContractError(ContractError):
 class DeepProtocol(str, Enum):
     FAKE_CLAUDE_V1 = "fake-claude-jsonl-v1"
     FAKE_CODEX_V1 = "fake-codex-jsonl-v1"
+    DSH_HEADLESS_V1 = "dsh-headless-v1"
 
 
 _ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
