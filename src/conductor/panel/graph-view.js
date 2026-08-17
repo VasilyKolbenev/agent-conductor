@@ -226,7 +226,9 @@ export function renderDetail(mount, state, decisionDraft, onDecide) {
     element("p", {className: "mono g-det__meta",
       text: `${node.node_id} · ${node.kind}`}),
     element("div", {className: "g-det__chips"}, [
-      chip(HEALTH_CHANNEL[node.health], `availability: ${node.health}`),
+      // "health", not "availability": that word now names the harness-level
+      // state in the palette, and one word must not carry two claims.
+      chip(HEALTH_CHANNEL[node.health], `health: ${node.health}`),
       chip(PHASE_CHANNEL[node.phase], `phase: ${node.phase}`),
     ]));
   const names = node.capabilities.length ? node.capabilities.join(", ") : "none";
@@ -257,7 +259,10 @@ export function renderGates(mount, state) {
       element("span", {className: "mono", text: node.gate.gate_id}),
       chip(GATE_CHANNEL[node.gate.state], GATE_GLYPHS[node.gate.state], true),
     ]);
-    const local = state.decisions[node.gate.gate_id];
+    // An own-key read: "constructor" is a valid gate id, and an inherited
+    // member must never render as an attribution nobody recorded.
+    const local = Object.hasOwn(state.decisions, node.gate.gate_id)
+      ? state.decisions[node.gate.gate_id] : null;
     if (local) item.append(element("span", {className: "g-note",
       text: `by ${local.actor} (fixture-only)`}));
     list.append(item);

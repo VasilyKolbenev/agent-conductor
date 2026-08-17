@@ -48,7 +48,7 @@ button{font:inherit;cursor:pointer;background:none;border:none;color:inherit}
 @media (prefers-color-scheme:light){.hb{--hb:var(--hb-light,var(--faint))}}
 .hb__m{font-family:var(--mono);font-size:9.5px;font-weight:700;
        letter-spacing:.06em;color:var(--ink);border:1px solid var(--hb);
-       border-radius:4px;padding:0 3px;
+       border-radius:4px;padding:0 3px;overflow-wrap:anywhere;
        background:color-mix(in srgb,var(--hb) 14%,transparent)}
 .hb__n{font-family:var(--mono);font-size:10.5px;color:var(--muted);
        overflow-wrap:anywhere}
@@ -110,8 +110,11 @@ button{font:inherit;cursor:pointer;background:none;border:none;color:inherit}
 /* rail cards */
 .g-palette{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;
            gap:6px}
-.g-palette__row{display:flex;justify-content:space-between;align-items:baseline;
-                gap:8px}
+.g-palette__row{display:flex;justify-content:space-between;align-items:center;
+                gap:8px;min-width:0}
+/* the docs anchor is a standalone control in the row, not a link in a line
+   of text, so the 44px floor applies to it as to any control. */
+.g-palette__row .hb__d{min-height:44px;display:inline-flex;align-items:center}
 .g-det__title{font-size:13.5px;font-weight:640;margin:0}
 .g-det__meta{font-size:10.5px;color:var(--faint);margin:0}
 .g-det__chips{display:flex;gap:4px;flex-wrap:wrap}

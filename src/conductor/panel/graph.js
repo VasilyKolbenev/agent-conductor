@@ -41,7 +41,8 @@ import {renderComposer, renderDetail, renderGates, renderGraph, renderPalette,
   }
   const onSelect = (nodeId) => dispatch({type: "select", nodeId});
   function onDecide(facts) {
-    const before = state.decisions[facts.gateId];
+    const before = Object.hasOwn(state.decisions, facts.gateId)
+      ? state.decisions[facts.gateId] : undefined;
     dispatch({type: "decide", ...facts});
     if (state.decisions[facts.gateId] !== before) {
       decisionDraft.action = "approve";

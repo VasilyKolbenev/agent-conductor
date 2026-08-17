@@ -159,3 +159,7 @@ def test_every_refusal_arm_of_the_store_is_pinned_by_count():
     store = STORE.read_text(encoding="utf-8")
     assert store.count("return null;") == 35
     assert store.count("return false;") == 4
+    # The registry's arms refuse by dropping a row, so they are pinned by
+    # their own spelling: deleting one reds this line, not only the rendered
+    # drop-row test in the browser suite.
+    assert store.count("continue;") == 7

@@ -244,7 +244,7 @@ def test_node_card_shows_provider_availability_capability_phase_evidence(
     assert detail.locator(".g-det__title").inner_text() == "Implement lane A"
     assert detail.locator(".hb__n").first.inner_text() == "Claude Code"
     assert detail.locator(
-        ".g-chip--wait").first.text_content() == "● availability: busy"
+        ".g-chip--wait").first.text_content() == "● health: busy"
     assert "phase: requested" in detail.inner_text()
     # The fixture declares ["stop", "dispatch", "evidence"]; the sorted line
     # below is therefore the projection's doing, not the fixture's.
@@ -478,6 +478,7 @@ _ONE_FAULT_CASES = [
     ("prototype-key-on-node",
      lambda p: p["nodes"][0].update(__proto__={"kind": "task"})),
     ("prototype-key-top-level", lambda p: p.update(constructor="x")),
+    ("run-id-missing", lambda p: p["run"].pop("run_id")),
 ]
 
 
@@ -693,6 +694,62 @@ def test_availability_arrives_as_data_and_absence_claims_nothing(
         '[data-node-id="impl-a"] .hb').get_attribute("style") is None
     assert graph_page.locator("#paletteCard").locator(
         ".g-palette__row").count() == len(_registry_payload()) - 1
+
+
+def test_a_prototype_named_gate_id_earns_no_phantom_attribution(
+        graph_page: Page) -> None:
+    """"constructor" is a valid id; an inherited member is not a decision."""
+    payload = json.loads(json.dumps(_FIXTURES["gate_satisfied"]))
+    payload["registry"] = _registry_payload()
+    for hostile in ("constructor", "toString", "hasOwnProperty"):
+        payload["nodes"][1]["gate"] = {"gate_id": hostile, "state": "pending"}
+        assert graph_page.evaluate(
+            "text => window.conductGraph.load(JSON.parse(text))",
+            json.dumps(payload))
+        gates = graph_page.locator("#gatesCard")
+        assert "fixture-only" not in gates.inner_text(), hostile
+        assert "undefined" not in gates.inner_text(), hostile
+    # And the ledger still works for such an id when a Human really decides.
+    graph_page.locator('[data-node-id="ship-gate"]').click()
+    form = graph_page.locator("#detailCard .g-decide")
+    form.locator('[name="actor"]').fill("reviewer-1")
+    form.locator('button[type="submit"]').click()
+    assert "by reviewer-1 (fixture-only)" in graph_page.locator(
+        "#gatesCard").inner_text()
+
+
+def test_an_ill_shaped_registry_row_is_dropped_alone_not_carried(
+        graph_page: Page) -> None:
+    """Unknown keys, prototype keys, over-cap text and duplicate ids each
+    drop their row; the payload and every other row still load."""
+    payload = json.loads(json.dumps(_FIXTURES["gate_satisfied"]))
+    good = len(_registry_payload())
+    payload["registry"] = _registry_payload() + [
+        {"id": "extra-key", "display_name": "Extra", "monogram": "EK",
+         "accent_dark": "#6ea8ff", "accent_light": "#2258c9",
+         "endpoint": "https://exfil.example"},
+        {"id": "proto-key", "display_name": "Proto", "monogram": "PK",
+         "accent_dark": "#6ea8ff", "accent_light": "#2258c9",
+         "__proto__": {"docs": "https://x"}},
+        {"id": "long-monogram", "display_name": "Long", "monogram": "M" * 4000,
+         "accent_dark": "#6ea8ff", "accent_light": "#2258c9"},
+        {"id": "claude-code", "display_name": "Impostor", "monogram": "IM",
+         "accent_dark": "#000000", "accent_light": "#ffffff",
+         "availability": "unavailable"},
+    ]
+    assert graph_page.evaluate(
+        "text => window.conductGraph.load(JSON.parse(text))",
+        json.dumps(payload))
+    palette = graph_page.locator("#paletteCard")
+    assert palette.locator(".g-palette__row").count() == good
+    assert "Impostor" not in palette.inner_text()
+    assert "exfil" not in graph_page.locator("body").inner_text()
+    # No sideways scroll survives the attempt either.
+    for width in (360, 768, 1440):
+        graph_page.set_viewport_size({"width": width, "height": 1200})
+        assert graph_page.evaluate(
+            "document.documentElement.scrollWidth"
+            " <= document.documentElement.clientWidth"), width
 
 
 def test_the_palette_claims_no_capability_for_any_product(

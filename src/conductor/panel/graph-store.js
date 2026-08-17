@@ -94,17 +94,28 @@ function ownKeysOnly(row, allowed) {
 const HEX_RE = /^#[0-9a-f]{6}$/i;
 const REGISTRY_KEYS = ["id", "display_name", "monogram", "accent_dark",
   "accent_light", "docs", "availability"];
+// Registered monograms are two graphemes by the registry's own rule; eight
+// code units leave unicode headroom without letting one unbroken mono token
+// widen the rail. Names and ids share the node-title cap.
+const MONOGRAM_LIMIT = 8;
 export function projectRegistry(rows) {
   if (!Array.isArray(rows)) return [];
+  const seen = new Set();
   const out = [];
   for (const row of rows) {
     if (!row || typeof row !== "object" || Array.isArray(row)) continue;
     if (!ownKeysOnly(row, REGISTRY_KEYS)) continue;
     const texts = [row.id, row.display_name, row.monogram];
     if (!texts.every((value) => typeof value === "string" && value)) continue;
+    if (row.id.length > TITLE_LIMIT || row.display_name.length > TITLE_LIMIT
+        || row.monogram.length > MONOGRAM_LIMIT) continue;
+    // One row per id, first row wins — the same row every badge lookup
+    // (registry.find) already answers with, so palette and badges agree.
+    if (seen.has(row.id)) continue;
     if (!HEX_RE.test(row.accent_dark) || !HEX_RE.test(row.accent_light)) continue;
     if ("availability" in row
         && !AVAILABILITY_STATES.includes(row.availability)) continue;
+    seen.add(row.id);
     out.push(Object.freeze({
       id: row.id, name: row.display_name, monogram: row.monogram,
       dark: row.accent_dark, light: row.accent_light,
@@ -298,8 +309,10 @@ export const EMPTY = Object.freeze({
   timeline: Object.freeze([]),
   selection: null,
   // The local decision ledger: gate_id → what the Human drafted here. Alpha
-  // records it in this window and nowhere else; the notice says so.
-  decisions: Object.freeze({}),
+  // records it in this window and nowhere else; the notice says so. A null
+  // prototype, because gate ids are data and "constructor" is a valid id —
+  // an inherited member must never read as a recorded decision.
+  decisions: Object.freeze(Object.create(null)),
   decisionNotice: "",
   // The composer's own status line, rendered beside the composer form; the
   // shell notice above stays reserved for load-level facts.
@@ -330,9 +343,11 @@ function decide(state, event) {
   }
   return Object.freeze({...state,
     nodes: withGateState(state.nodes, event.gateId, nextState),
-    decisions: Object.freeze({...state.decisions,
-      [event.gateId]: Object.freeze({action: event.action, actor: event.actor,
-        reason, recorded: "fixture-only"})}),
+    // Rebuilt on a null prototype, for the reason EMPTY.decisions states.
+    decisions: Object.freeze(Object.assign(Object.create(null),
+      state.decisions,
+      {[event.gateId]: Object.freeze({action: event.action, actor: event.actor,
+        reason, recorded: "fixture-only"})})),
     decisionNotice:
       "Decision recorded in this window's fixture only. Nothing was executed.",
   });
