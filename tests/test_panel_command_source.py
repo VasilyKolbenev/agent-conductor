@@ -388,12 +388,15 @@ def test_command_styles_are_scoped_responsive_and_keyboard_visible():
 def test_one_existing_sse_boundary_relays_only_valid_run_identifiers():
     html = HTML.read_text(encoding="utf-8")
     assert html.count('new EventSource("/events")') == 1
+    # One door for every frame. A second message listener cannot read the same
+    # frame under a second set of rules if there is nowhere for it to attach.
+    assert html.count("es.onmessage") == 1
+    assert 'addEventListener("message"' not in html
     assert 'frame.kind !== "run"' in html
     assert 'typeof frame.run_id !== "string"' in html
     assert "COMMAND_RUN_SIGNAL.test(frame.run_id)" in html
     assert 'new CustomEvent("conduct:run", { detail })' in html
     assert 'Object.freeze({ run_id: frame.run_id })' in html
-    assert 'es.addEventListener("message", relayCommandRun)' in html
 
 
 def test_run_signals_coalesce_to_authoritative_gets_and_disconnect_preserves_facts():

@@ -1658,24 +1658,39 @@ async function loadHarnesses(){
   }
   if (LAST) render(LAST);
 }
+/* One dispatcher, because two independent readers of the same frame had no way
+   to agree: a run signal that carries no state fact still bought a /state.json
+   read, and a kind the contract never froze was ignored by one reader while the
+   other took it for a change report. The frozen stream names two kinds and no
+   more. `state` says the merged state document may have moved, and the selected
+   command run with it — the server also stands a state frame in for a run
+   signal it had to drop from a full mailbox, so re-reading the run is what
+   keeps a dropped signal from leaving that run stale forever. `run` names one
+   run and nothing besides, so it buys that run and never the state document.
+   Anything else reports nothing, and nothing is what it may move. */
 const COMMAND_RUN_SIGNAL = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
-function relayCommandRun(event){
+function onSignal(event){
   let frame;
   try {
     frame = JSON.parse(event.data);
   } catch (error) {
     return;
   }
-  if (!frame || frame.kind !== "run" || typeof frame.run_id !== "string"
+  if (!frame || typeof frame !== "object") return;
+  if (frame.kind === "state") {
+    refresh(true);                             // the one caller that may report a change
+    window.dispatchEvent(new Event("conduct:state"));
+    return;
+  }
+  if (frame.kind !== "run" || typeof frame.run_id !== "string"
       || !COMMAND_RUN_SIGNAL.test(frame.run_id)) return;
   const detail = Object.freeze({ run_id: frame.run_id });
   window.dispatchEvent(new CustomEvent("conduct:run", { detail }));
 }
 const es = new EventSource("/events");         // greeting on connect, one frame per change
-es.onmessage = () => refresh(true);            // the one caller that may report a change
+es.onmessage = onSignal;                       // the single door every frame comes through
 es.onopen = () => refresh(false);              // resync on every (re)connect, not just the greeting
 es.onerror = () => { EPOCH++; streamed = false; setLive(false); };  // EventSource reconnects on its own
-es.addEventListener("message", relayCommandRun);
 es.addEventListener("open", () => window.dispatchEvent(new Event("conduct:connected")));
 es.addEventListener("error", () => window.dispatchEvent(new Event("conduct:disconnected")));
 loadHarnesses();

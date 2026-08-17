@@ -57,13 +57,32 @@ def phase_reader() -> str:
 
 
 def refresh_calls() -> list[tuple[str, str]]:
-    """Every call to ``refresh``: what triggers it, and the argument it passes."""
-    out = []
-    for line in script().splitlines():
-        if "refresh(" not in line or "function refresh(" in line:
-            continue
-        trigger, _, call = line.partition("refresh(")
-        out.append((" ".join(trigger.split()), call.split(")")[0]))
+    """Every call to ``refresh``: what triggers it, and the argument it passes.
+
+    The trigger is the innermost declared function the call sits inside, and
+    where it sits inside none, the text that precedes it on its own line. The
+    leading text alone used to stand in for both, and that reading held only
+    while every framed call was written on the line that handled the frame:
+    the moment one moved into a named dispatcher, an empty trigger stopped
+    meaning "outside every function" and started meaning "indented".
+    """
+    src = script()
+    spans = {}
+    for name in script_functions():
+        body = function_body(name)
+        start = src.find(body)
+        spans[name] = (start, start + len(body))
+    out, offset = [], 0
+    for line in src.splitlines(keepends=True):
+        if "refresh(" in line and "function refresh(" not in line:
+            at = offset + line.index("refresh(")
+            enclosing = sorted(
+                (low, name) for name, (low, high) in spans.items()
+                if low <= at < high)
+            trigger, _, call = line.partition("refresh(")
+            out.append((enclosing[-1][1] if enclosing else " ".join(trigger.split()),
+                        call.split(")")[0]))
+        offset += len(line)
     return out
 
 
@@ -174,7 +193,7 @@ def test_the_first_frame_after_a_connection_opens_reports_no_change():
     # frame itself is framed, but the document before it was the reconnect resync
     # or the page load, and neither is — so `streamed` is down when the first
     # frame is weighed, and the frame's own job is to put it up for the next one.
-    assert refresh_calls() == [("es.onmessage = () =>", "true"),
+    assert refresh_calls() == [("onSignal", "true"),
                                ("es.onopen = () =>", "false"),
                                ("", "false")]
     assert "streamed = framed;" in function_body("noteState")

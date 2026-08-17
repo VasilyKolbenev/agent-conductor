@@ -353,6 +353,12 @@ import {
       refreshSelectedRun(runId);
     }
   });
+  // A state signal is also what the server sends when a full mailbox forced it
+  // to drop a run signal, so the selected run is re-read from the authoritative
+  // routes rather than assumed unchanged.
+  window.addEventListener("conduct:state", () => {
+    if (state.runId) refreshSelectedRun(state.runId);
+  });
   window.addEventListener("conduct:disconnected", () => {
     epoch += 1;
     sessionEpoch += 1;
