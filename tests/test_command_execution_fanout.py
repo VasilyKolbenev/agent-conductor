@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import threading
+from contextlib import contextmanager
 
 import pytest
 
@@ -38,6 +39,10 @@ from tests.test_command_http_api import (
 
 BOTH = ("claude-code", "codex")
 WAIT = 20.0
+#: How long the first writer parks inside its transaction watching for a second.
+#: A store that excludes can never admit one in that window, however slow the
+#: machine; a store that does not admits one in microseconds.
+HELD_WATCH = 1.0
 
 
 def a_registry(root, mint):
@@ -49,10 +54,10 @@ def a_registry(root, mint):
     return resolution.registry
 
 
-def an_api(tmp_path, *, workers=2, capacity=8, published=None):
+def an_api(tmp_path, *, workers=2, capacity=8, published=None, store=None):
     """A command API whose coordinator owns `workers` independently retirable workers."""
     mint = ids()
-    store = a_store(tmp_path)
+    store = a_store(tmp_path) if store is None else store
     registry = a_registry(tmp_path, mint)
     signals = [] if published is None else published
     api = CommandApi(
@@ -162,6 +167,94 @@ def test_two_workers_appending_at_once_leave_one_replayable_journal(tmp_path):
             receipt = _receipt(replayed, action_id)
             assert (receipt.outcome, receipt.exit_code) == ("succeeded", 0)
             assert len(receipt.evidence_refs) == 1
+    finally:
+        barrier.abort()
+        coordinator.shutdown()
+
+
+class _TransactionWitness(RunStore):
+    """A RunStore that reports whether two worker threads are ever inside at once.
+
+    Exclusion decides the answer, not timing. The first worker thread that gets
+    inside a root transaction parks there and watches for a second one; a store
+    that admits one writer at a time can never let a second in while the first
+    is parked, so the watch always expires. A store that lost its gate admits
+    the second immediately, which is what ``admitted_while_held`` reports and
+    what raises ``overlap_max`` above one.
+
+    Only the FIRST transaction each non-request thread takes is armed, so the
+    nested transactions one append opens are left alone.
+    """
+
+    def __init__(self, project_root) -> None:
+        super().__init__(project_root)
+        self._request_thread = threading.get_ident()
+        self._witness = threading.Lock()
+        self._seen: set[int] = set()
+        self._armed = 0
+        self._inside = 0
+        self.overlap_max = 0
+        self.second_inside = threading.Event()
+        self.admitted_while_held: bool | None = None
+
+    @property
+    def worker_threads(self) -> int:
+        """How many threads other than the request thread wrote through this store."""
+        with self._witness:
+            return len(self._seen)
+
+    @contextmanager
+    def transaction(self):
+        with super().transaction():
+            role = self._arm()
+            if role == 0:
+                yield
+                return
+            try:
+                if role == 1:
+                    self.admitted_while_held = self.second_inside.wait(HELD_WATCH)
+                else:
+                    self.second_inside.set()
+                yield
+            finally:
+                with self._witness:
+                    self._inside -= 1
+
+    def _arm(self) -> int:
+        ident = threading.get_ident()
+        with self._witness:
+            if ident == self._request_thread or ident in self._seen:
+                return 0
+            self._seen.add(ident)
+            self._armed += 1
+            self._inside += 1
+            self.overlap_max = max(self.overlap_max, self._inside)
+            return self._armed
+
+
+def test_two_workers_are_never_inside_a_run_store_transaction_at_once(tmp_path):
+    """Serialization by exclusion: the second writer waits outside, it never joins."""
+    witness = a_store(tmp_path, store_class=_TransactionWitness)
+    api, store, coordinator, adapters, _tokens, _signals = an_api(
+        tmp_path, store=witness)
+    barrier = barriered(adapters)
+    try:
+        assert (witness.worker_threads, witness.overlap_max) == (0, 0)
+        confirm(api, instance_id="claude-dev",
+                attempt_id="attempt-001", work_item_id="work-001")
+        confirm(api, instance_id="codex-review",
+                attempt_id="attempt-002", work_item_id="work-002")
+        assert coordinator.wait_idle(WAIT) is True
+
+        # Two worker threads really did write, they really were both inside
+        # execute at once, and still no two of them shared a transaction.
+        assert witness.worker_threads == 2
+        assert barrier.broken is False
+        assert witness.admitted_while_held is False
+        assert witness.overlap_max == 1
+        assert sorted(row.outcome for row in records(store, "action_result")) == [
+            "succeeded", "succeeded"]
+        assert store.read(RUN_ID).warnings == ()
     finally:
         barrier.abort()
         coordinator.shutdown()

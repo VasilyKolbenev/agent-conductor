@@ -236,9 +236,13 @@ def resolve(root, mint, *, available=("claude-code",), mismatched=("codex-previe
         configs, root=root, clock=lambda: NOW, ids=mint, catalog=entries)
 
 
-def a_store(root) -> RunStore:
-    """One confirm-mode run over the frozen two-instance configuration."""
-    store = RunStore(root)
+def a_store(root, *, store_class=RunStore) -> RunStore:
+    """One confirm-mode run over the frozen two-instance configuration.
+
+    `store_class` lets a caller substitute a RunStore subclass that witnesses
+    what the real store does; the run is created through whatever it is given.
+    """
+    store = store_class(root)
     store.create_run(a_run(
         run_id=RUN_ID, mode="confirm", config_digest=snapshot_digest(CONFIG)), CONFIG)
     return store
