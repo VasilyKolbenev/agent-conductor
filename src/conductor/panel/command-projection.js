@@ -269,10 +269,13 @@ const DIGEST = /^sha256:[0-9a-f]{64}$/;
 const MONTH_LENGTHS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 // A string that matched UTC_INSTANT is still only a shape. This decides whether
 // it names a real UTC instant, agreeing case-for-case with the production
-// contract (command/contracts.py _timestamp -> datetime.fromisoformat): an
-// invalid month, day, calendar day (incl. a non-leap Feb 29), hour, minute or
-// second is refused; the ISO end-of-day 24:00:00 that production accepts — only
-// when minute, second and microsecond are zero — is accepted here too.
+// contract (command/contracts.py _timestamp): an invalid month, day, calendar
+// day (incl. a non-leap Feb 29), hour, minute or second is refused. The ISO
+// end-of-day 24:00:00 is refused on both sides. It used to be accepted here to
+// match datetime.fromisoformat — but that function's accepted set changes with
+// the interpreter (3.11 and 3.12 refuse 24:00:00, 3.14 accepts it), so the
+// contract froze this grammar instead and neither side may widen it. The one
+// corpus both sides answer is tests/fixtures/utc_instant_parity_corpus.json.
 function instantIsValid(value) {
   const m = UTC_INSTANT.exec(value);
   if (!m) return false;
@@ -282,12 +285,7 @@ function instantIsValid(value) {
   const maxDay = month === 2 && leap ? 29 : MONTH_LENGTHS[month - 1];
   if (day < 1 || day > maxDay) return false;
   const hour = Number(m[4]), minute = Number(m[5]), second = Number(m[6]);
-  if (minute > 59 || second > 59) return false;
-  if (hour === 24) {
-    return minute === 0 && second === 0
-      && Number(((m[7] || "") + "000000").slice(0, 6)) === 0;
-  }
-  return hour <= 23;
+  return hour <= 23 && minute <= 59 && second <= 59;
 }
 function actionFactsPresent(payload) {
   return ACTION_IDS.every((name) => isId(payload[name]))

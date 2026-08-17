@@ -40,6 +40,7 @@ from browser_tests.test_panel_confirm import (  # noqa: F401
     _snapshot,
     cockpit_url,
 )
+from tests.utc_instant_corpus import IDS, PARAMS
 
 
 UNKNOWN = "Outcome unknown. Reload the authoritative run."
@@ -204,57 +205,33 @@ def test_the_projection_refuses_every_action_response_that_is_not_this_confirm(
     assert _project(projection_page, response) == {"action": None, "stage": "action"}
 
 
-#: requested_at values the production ActionRequest contract accepts: drive
-#: ``command/contracts.py`` ``_timestamp`` over each and it returns the string.
-#: The projection must accept exactly these among well-formed responses, so each
-#: keeps the one snapshot-vouched response ACCEPTED.
-REQUESTED_AT_ACCEPTED = (
-    ("trailing-z", "2026-08-16T09:00:02Z"),
-    ("utc-offset", "2026-08-16T09:00:02+00:00"),
-    ("fractional-second", "2026-08-16T09:00:02.5Z"),
-    ("leap-day", "2024-02-29T09:00:02Z"),
-    # ISO end-of-day midnight: production (datetime.fromisoformat) accepts it, so
-    # parity — not a stricter UI rule — governs and the Cockpit accepts it too.
-    ("end-of-day-midnight", "2026-08-16T24:00:00Z"),
-)
-#: requested_at values production refuses: a shape that passes UTC_INSTANT but is
-#: no real UTC instant. Born red at 0b401e7 — the projection took the regex for
-#: the fact and accepted the impossible instant among these.
-REQUESTED_AT_REFUSED = (
-    ("impossible-instant", "2026-99-99T99:99:99Z"),
-    ("month-00", "2026-00-15T12:00:00Z"),
-    ("month-13", "2026-13-15T12:00:00Z"),
-    ("day-00", "2026-08-00T12:00:00Z"),
-    ("day-32", "2026-08-32T12:00:00Z"),
-    ("april-31", "2026-04-31T12:00:00Z"),
-    ("feb-29-non-leap", "2026-02-29T12:00:00Z"),
-    ("hour-25", "2026-08-17T25:00:00Z"),
-    ("hour-24-second-set", "2026-08-17T24:00:01Z"),
-    ("minute-60", "2026-08-17T12:60:00Z"),
-    ("second-60", "2026-08-17T12:00:60Z"),
-    ("year-0000", "0000-08-17T12:00:00Z"),
-)
+@pytest.mark.parametrize("value,accepted", PARAMS, ids=IDS)
+def test_the_projection_answers_the_shared_instant_corpus_for_requested_at(
+        projection_page: Page, value: str, accepted: bool) -> None:
+    """Binding three of four: the browser's own verdict on ``requested_at``.
 
+    The same corpus decides here, in the engine that ships the module, as
+    decides for ``ActionRequest`` in ``tests/test_command_instant_parity.py``.
+    An accepted instant must leave the one snapshot-vouched response ACCEPTED —
+    otherwise a matrix that refused everything would pass — and a refused one
+    must take it to unknown, because a request the store would never hold is not
+    an authorization to display.
 
-@pytest.mark.parametrize("requested_at", [ts for _name, ts in REQUESTED_AT_ACCEPTED],
-                         ids=[name for name, _ts in REQUESTED_AT_ACCEPTED])
-def test_the_projection_accepts_exactly_the_utc_instants_the_contract_accepts(
-        projection_page: Page, requested_at: str) -> None:
-    """Positive controls and the ISO midnight production's ``_timestamp`` accepts."""
-    assert _project(projection_page, _mutated(requested_at=requested_at)) == {
-        "action": {
-            "action_id": "action-001", "capability": "dispatch", "mode": "confirm"},
-        "stage": "action",
-    }
-
-
-@pytest.mark.parametrize("requested_at", [ts for _name, ts in REQUESTED_AT_REFUSED],
-                         ids=[name for name, _ts in REQUESTED_AT_REFUSED])
-def test_the_projection_refuses_a_regex_shaped_requested_at_that_names_no_instant(
-        projection_page: Page, requested_at: str) -> None:
-    """Born red at 0b401e7: a regex-only check accepted ``2026-99-99T99:99:99Z``."""
-    assert _project(projection_page, _mutated(requested_at=requested_at)) == {
-        "action": None, "stage": "action"}
+    Born red at 0b401e7 for the impossible instant (a regex-only check accepted
+    ``2026-99-99T99:99:99Z``) and again this round for the ISO end-of-day
+    ``24:00:00Z``, which both sides had accepted by delegating to a parser whose
+    answer depends on the Python version underneath.
+    """
+    projected = _project(projection_page, _mutated(requested_at=value))
+    if accepted:
+        assert projected == {
+            "action": {
+                "action_id": "action-001", "capability": "dispatch",
+                "mode": "confirm"},
+            "stage": "action",
+        }
+        return
+    assert projected == {"action": None, "stage": "action"}
 
 
 def _intercepted_body(facts: dict[str, str], **changes: object) -> dict[str, object]:

@@ -306,10 +306,12 @@ def test_the_requested_at_instant_is_validated_by_calendar_not_only_the_regex():
     """A UTC_INSTANT match is a shape; a real instant is a calendar fact too.
 
     The projection must accept for ``requested_at`` exactly what the production
-    ActionRequest contract accepts (``command/contracts.py`` ``_timestamp`` ->
-    ``datetime.fromisoformat``): so the regex can never stand in for the fact,
-    and a value like ``2026-99-99T99:99:99Z`` is refused, not accepted. This
-    pins the semantic gate so a revert to regex-only reds a source guard too.
+    ActionRequest contract accepts (``command/contracts.py`` ``_timestamp``): so
+    the regex can never stand in for the fact, and a value like
+    ``2026-99-99T99:99:99Z`` is refused, not accepted. This pins the semantic
+    gate so a revert to regex-only reds a source guard too. *Which* instants the
+    two sides agree on is not pinned by these substrings but by the shared
+    corpus, driven through both validators in the fast suite and the browser.
     """
     projection = PROJECTION.read_text(encoding="utf-8")
     present = re.search(
@@ -322,13 +324,14 @@ def test_the_requested_at_instant_is_validated_by_calendar_not_only_the_regex():
         r"function instantIsValid\(value\) \{(.*?)\n\}", projection, re.S)
     assert body
     checks = body.group(1)
-    # The proleptic-Gregorian leap rule, the month and day bounds, and the ISO
-    # end-of-day 24:00:00 that production accepts only at exact midnight.
+    # The proleptic-Gregorian leap rule and the month and day bounds. The clock
+    # fields carry no special case: 24:00:00 is outside the frozen grammar, so
+    # an hour above 23 is refused like any other impossible field.
     assert "year % 4 === 0 && year % 100 !== 0" in checks and "year % 400" in checks
     assert "month < 1 || month > 12" in checks
     assert "day < 1 || day > maxDay" in checks
-    assert "minute > 59 || second > 59" in checks
-    assert "hour === 24" in checks and "hour <= 23" in checks
+    assert "hour <= 23 && minute <= 59 && second <= 59" in checks
+    assert "24" not in checks
 
 
 def test_mutation_controls_are_disabled_while_disconnected_stale_or_uncertain():
