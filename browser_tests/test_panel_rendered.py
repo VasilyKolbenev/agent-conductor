@@ -17,7 +17,7 @@ from io import BytesIO
 
 import pytest
 from PIL import Image
-from playwright.sync_api import Browser, Page, sync_playwright
+from playwright.sync_api import Browser, Page
 
 from conductor import demo, server
 
@@ -37,17 +37,6 @@ def panel_url(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
         thread.join(timeout=5)
         httpd.server_close()
         assert not thread.is_alive(), "panel server did not stop"
-
-
-@pytest.fixture(scope="session")
-def chromium() -> Iterator[Browser]:
-    """Launch the same Chromium engine the independent CI job installs."""
-    with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(headless=True)
-        try:
-            yield browser
-        finally:
-            browser.close()
 
 
 @pytest.fixture(params=("dark", "light"))
@@ -310,6 +299,41 @@ def test_rendered_orbit_keeps_order_return_and_non_overlapping_stages(panel_page
     assert panel_page.locator("#orbitBody .lnk:not(.lnk--next)").count() == len(names) - 1
     assert panel_page.locator("#orbitBody .lnk--next").count() == 1
     assert "next Run" in panel_page.locator("#orbitBody .lnk--next").inner_text()
+
+
+def test_the_split_cockpit_modules_boot_as_one_script_without_a_console_error(
+        chromium: Browser, panel_url: str) -> None:
+    """Chromium must resolve the whole module graph and mount the live Cockpit."""
+    context = chromium.new_context(viewport={"width": 1440, "height": 1200})
+    page = context.new_page()
+    problems: list[str] = []
+    served: list[tuple[str, int]] = []
+
+    def note_console(message: object) -> None:
+        if getattr(message, "type", "") == "error":
+            problems.append(getattr(message, "text", ""))
+
+    page.on("console", note_console)
+    page.on("pageerror", lambda error: problems.append(str(error)))
+    page.on("response", lambda response: served.append(
+        (response.url, response.status)))
+    try:
+        page.goto(panel_url, wait_until="load")
+        cockpit = page.locator("#commandCockpit")
+        cockpit.locator("#commandRunId").wait_for(state="visible")
+        assert cockpit.locator(".command-status").inner_text().startswith(
+            "Enter a run id")
+        assert cockpit.locator(".empty").count() == 0
+        assert {
+            url.rsplit("/", 1)[1]: status for url, status in served
+            if "/panel/" in url
+        } == {
+            "command.css": 200, "command.js": 200,
+            "command-projection.js": 200, "command-view.js": 200,
+        }
+        assert problems == []
+    finally:
+        context.close()
 
 
 def test_attention_light_is_derived_from_the_served_project_state(panel_page: Page) -> None:

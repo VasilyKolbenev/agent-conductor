@@ -19,6 +19,7 @@ from urllib.parse import urlsplit
 _JSON_MEDIA_TYPES = frozenset({
     "application/json", "application/json; charset=utf-8",
 })
+MAX_COMMAND_BODY_BYTES = 64 * 1024
 _REFUSALS = MappingProxyType({
     "host": (
         "same_origin_denied", 403, "request Host is not allowed"),
@@ -97,6 +98,13 @@ class CommandSession:
             raw_header_pairs, raw_body,
             allowed_hosts=self._allowed_hosts, current_token=self._token)
 
+    def body_length(
+            self, raw_header_pairs: Iterable[tuple[str, str]]) -> int:
+        """Validate mutation headers in precedence and return the bounded length."""
+        return validate_command_mutation_headers(
+            raw_header_pairs, allowed_hosts=self._allowed_hosts,
+            current_token=self._token)
+
     def __repr__(self) -> str:
         return "CommandSession(<process-memory token>)"
 
@@ -134,6 +142,35 @@ def validate_command_host(
         allowed_hosts: frozenset[str]) -> str:
     """Validate exact Host cardinality and allowlist for a command GET."""
     return _host(_header_pairs(raw_header_pairs), allowed_hosts)
+
+
+def command_content_length(
+        raw_header_pairs: Iterable[tuple[str, str]]) -> int:
+    """Return one bounded command body length or a fixed malformed refusal."""
+    pairs = _header_pairs(raw_header_pairs)
+    values = _values(pairs, "Content-Length")
+    transfer = _values(pairs, "Transfer-Encoding")
+    if (transfer or len(values) != 1 or not values[0].isascii()
+            or not values[0].isdigit()):
+        raise HttpRefusal("body") from None
+    normalized = values[0].lstrip("0") or "0"
+    ceiling = str(MAX_COMMAND_BODY_BYTES)
+    if (len(normalized) > len(ceiling)
+            or (len(normalized) == len(ceiling) and normalized > ceiling)):
+        raise HttpRefusal("body") from None
+    return int(normalized)
+
+
+def validate_command_mutation_headers(
+        raw_header_pairs: Iterable[tuple[str, str]], *,
+        allowed_hosts: frozenset[str], current_token: str) -> int:
+    """Validate through framing without reading or parsing the declared body."""
+    pairs = _header_pairs(raw_header_pairs)
+    host = _host(pairs, allowed_hosts)
+    _same_origin(pairs, host)
+    _csrf(pairs, current_token)
+    _content_type(pairs)
+    return command_content_length(pairs)
 
 
 def _same_origin(pairs: tuple[tuple[str, str], ...], host: str) -> None:
@@ -219,9 +256,9 @@ def validate_command_mutation(
         raw_header_pairs: Iterable[tuple[str, str]], raw_body: bytes, *,
         allowed_hosts: frozenset[str], current_token: str) -> dict[str, Any]:
     """Validate in frozen precedence, returning only the decoded JSON object."""
-    pairs = _header_pairs(raw_header_pairs)
-    host = _host(pairs, allowed_hosts)
-    _same_origin(pairs, host)
-    _csrf(pairs, current_token)
-    _content_type(pairs)
+    length = validate_command_mutation_headers(
+        raw_header_pairs, allowed_hosts=allowed_hosts,
+        current_token=current_token)
+    if len(raw_body) != length:
+        raise HttpRefusal("body") from None
     return _json_object(raw_body)

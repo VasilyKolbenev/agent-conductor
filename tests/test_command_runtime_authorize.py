@@ -169,6 +169,7 @@ def test_a_clean_confirmation_records_the_request_separately_from_any_result(tmp
 
     assert isinstance(authorization, Authorization)
     assert authorization.state is AttemptState.ACCEPTED
+    assert authorization.record_created is True
     request = authorization.request
     assert isinstance(request, ActionRequest)
     # The request IS the recorded confirmation: it carries the confirming human,
@@ -202,7 +203,40 @@ def test_an_identical_confirmation_replayed_adds_no_second_request(tmp_path):
     first = runtime.authorize(a_confirmation(proposal), budget=a_budget())
     second = runtime.authorize(a_confirmation(proposal), budget=a_budget())
     assert first.request == second.request
+    assert (first.record_created, second.record_created) == (True, False)
     assert len(action_requests(store)) == 1
+
+
+def test_an_exact_retry_keeps_the_first_server_time_and_reports_no_new_record(
+        tmp_path):
+    store = a_store(tmp_path)
+    proposal = a_proposal(store)
+    runtime = a_runtime(store)
+    first = runtime.authorize(a_confirmation(proposal), budget=a_budget())
+    journal = store.run_path("run-001") / "records.jsonl"
+    before = journal.read_bytes()
+
+    retry = runtime.authorize(a_confirmation(
+        proposal, confirmation_id="confirmation-002",
+        confirmed_at="2026-08-11T12:00:01Z"), budget=a_budget())
+
+    assert retry.request == first.request
+    assert retry.request.requested_at == NOW
+    assert retry.record_created is False
+    assert journal.read_bytes() == before
+
+
+@pytest.mark.parametrize("value", [None, 0, 1, "true"])
+def test_authorization_disposition_requires_an_exact_boolean(value):
+    request = ActionRequest(
+        action_id="action-001", run_id="run-001", attempt_id="attempt-001",
+        instance_id="claude-dev", capability="dispatch",
+        arguments={"handoff": "packet-001"}, scope=("src",),
+        requested_by="release-owner", requested_at=NOW,
+        idempotency_key="dispatch-proposal-001", timeout_seconds=900,
+        preview_digest="sha256:" + "0" * 64, mode="confirm")
+    with pytest.raises(ContractError, match="record_created"):
+        Authorization(request=request, record_created=value)
 
 
 def test_authorize_refuses_a_confirmation_for_a_proposal_the_run_never_held(tmp_path):

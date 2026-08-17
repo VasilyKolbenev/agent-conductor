@@ -35,14 +35,22 @@ def _replace_port(value):
 
 def _legacy_case(row):
     request = _replace_port(row["request"])
-    headers = tuple(request["headers"].items())
     body = json.dumps(
         request.get("json_body"), ensure_ascii=False,
         sort_keys=True, separators=(",", ":")).encode("utf-8")
+    headers = _with_length(tuple(request["headers"].items()), body)
     return headers, body
 
 
+def _with_length(headers, body):
+    """Give legacy transport fixtures the framing the frozen HTTP door requires."""
+    if any(name.casefold() == "content-length" for name, _value in headers):
+        return headers
+    return (*headers, ("Content-Length", str(len(body))))
+
+
 def _run(headers, body):
+    headers = _with_length(headers, body)
     try:
         decoded = validate_command_mutation(
             headers, body, allowed_hosts=HOSTS, current_token=TOKEN)
@@ -216,7 +224,8 @@ def test_body_refusal_object_graph_retains_no_invalid_utf8_or_json_sentinel():
     for body in (b'APIKEY_SECRET_JSON', b'\xffAPIKEY_SECRET_UTF8'):
         with pytest.raises(HttpRefusal) as caught:
             validate_command_mutation(
-                headers, body, allowed_hosts=HOSTS, current_token=TOKEN)
+                _with_length(headers, body), body,
+                allowed_hosts=HOSTS, current_token=TOKEN)
         graph = _object_graph_text(caught.value)
         assert "APIKEY_SECRET" not in graph
         assert caught.value.__cause__ is None and caught.value.__context__ is None

@@ -411,6 +411,8 @@ td.ft{max-width:380px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 footer{font-size:10px;color:var(--faint);font-family:var(--mono);
        border-top:1px solid var(--line);padding-top:9px;word-break:break-all}
 </style>
+<link rel="stylesheet" href="/panel/command.css">
+<script src="/panel/command.js" type="module"></script>
 </head>
 <body>
 <div class="wrap">
@@ -430,6 +432,15 @@ footer{font-size:10px;color:var(--faint);font-family:var(--mono);
       <span id="projInfo" class="mono"></span>
     </span>
   </header>
+
+  <section class="card" id="commandCockpit" aria-labelledby="commandCockpitTitle">
+    <div class="card__h">
+      <h2 id="commandCockpitTitle">Cockpit</h2>
+      <span class="hint">proposal-only control · durable history</span>
+    </div>
+    <p class="empty">Loading the cockpit foundation…</p>
+    <noscript><p class="empty">JavaScript is required for the cockpit.</p></noscript>
+  </section>
 
   <div class="banner" id="warnings" hidden>
     <button class="banner__head" id="warnHead" type="button" aria-expanded="false">
@@ -1647,10 +1658,26 @@ async function loadHarnesses(){
   }
   if (LAST) render(LAST);
 }
+const COMMAND_RUN_SIGNAL = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+function relayCommandRun(event){
+  let frame;
+  try {
+    frame = JSON.parse(event.data);
+  } catch (error) {
+    return;
+  }
+  if (!frame || frame.kind !== "run" || typeof frame.run_id !== "string"
+      || !COMMAND_RUN_SIGNAL.test(frame.run_id)) return;
+  const detail = Object.freeze({ run_id: frame.run_id });
+  window.dispatchEvent(new CustomEvent("conduct:run", { detail }));
+}
 const es = new EventSource("/events");         // greeting on connect, one frame per change
 es.onmessage = () => refresh(true);            // the one caller that may report a change
 es.onopen = () => refresh(false);              // resync on every (re)connect, not just the greeting
 es.onerror = () => { EPOCH++; streamed = false; setLive(false); };  // EventSource reconnects on its own
+es.addEventListener("message", relayCommandRun);
+es.addEventListener("open", () => window.dispatchEvent(new Event("conduct:connected")));
+es.addEventListener("error", () => window.dispatchEvent(new Event("conduct:disconnected")));
 loadHarnesses();
 refresh(false);                                // page load: the first drawing, nothing before it
 </script>

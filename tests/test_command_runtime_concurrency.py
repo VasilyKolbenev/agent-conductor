@@ -390,6 +390,38 @@ def test_concurrent_distinct_proposals_share_one_action_budget_transaction(
     assert RunStore(tmp_path).read("run-001").warnings == ()
 
 
+def test_concurrent_exact_confirmation_has_one_created_disposition_and_one_retry(
+        tmp_path):
+    store = a_store(tmp_path)
+    proposal = a_proposal(store)
+    server_clock = lambda: "2026-08-11T12:00:02Z"
+    runtimes = (
+        confirmation_runtime(
+            RunStore(tmp_path), clock=server_clock, ids=counting_ids()),
+        confirmation_runtime(
+            RunStore(tmp_path), clock=server_clock, ids=counting_ids()),
+    )
+    confirmations = (
+        a_confirmation(proposal),
+        a_confirmation(
+            proposal, confirmation_id="confirmation-002",
+            confirmed_at="2026-08-11T12:00:01Z"),
+    )
+    start = threading.Barrier(2)
+
+    def authorize_one(index):
+        start.wait(timeout=2)
+        return runtimes[index].authorize(confirmations[index], budget=a_budget())
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = [future.result(timeout=3) for future in (
+            pool.submit(authorize_one, 0), pool.submit(authorize_one, 1))]
+
+    assert {result.record_created for result in results} == {True, False}
+    assert results[0].request == results[1].request
+    assert len(action_requests(RunStore(tmp_path))) == 1
+
+
 def test_authorize_and_terminal_append_are_both_durable_and_replayable(
         tmp_path, monkeypatch):
     store = a_store(tmp_path)

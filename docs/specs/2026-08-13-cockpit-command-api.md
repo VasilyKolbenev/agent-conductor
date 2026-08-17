@@ -112,8 +112,15 @@ scope, not permission for C/API-1 to invent a generic file-write endpoint.
    when its values agree. Precedence is: Host cardinality/allowlist →
    Origin/Referer cardinality/relation → CSRF cardinality/equality → Content-Type
    cardinality/value → UTF-8, JSON duplicate-key, syntax, and object checks.
-   Their codes are respectively `same_origin_denied`, `same_origin_denied`,
-   `csrf_denied`, `malformed_request`, and `malformed_request`.
+    Their codes are respectively `same_origin_denied`, `same_origin_denied`,
+    `csrf_denied`, `malformed_request`, and `malformed_request`.
+   A known command POST has exactly one decimal, non-negative `Content-Length`
+   no greater than 65,536 bytes. Missing, duplicate, negative, non-decimal, or
+   larger lengths are `malformed_request`; any `Transfer-Encoding`, including a
+   request that also carries `Content-Length`, is refused. The server rejects an
+   unsafe framing declaration before reading a body and closes the connection
+   after an over-limit or short read. Framing belongs to the final body phase:
+   Host, Origin/Referer, CSRF, and Content-Type keep the precedence above.
 6. These checks are the structural expression of safety law 4 ("every browser
    mutation requires same-origin validation and a per-process anti-CSRF token").
 7. Command responses never emit `Access-Control-Allow-Origin` and the server
