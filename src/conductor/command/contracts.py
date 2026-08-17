@@ -78,32 +78,18 @@ def _text(name: str, value: object, *, empty: bool = False) -> str:
 def _timestamp(name: str, value: object) -> str:
     """Accept exactly one frozen UTC grammar, identically on every Python we support.
 
-    The grammar is ``YYYY-MM-DDTHH:MM:SS`` with an optional fractional second and
-    a ``Z`` or ``+00:00`` suffix; the hour is 00..23, so the ISO end-of-day
-    ``24:00:00`` names no instant here. ``panel/command-projection.js``
-    ``instantIsValid`` holds the same grammar, so the durable store and the Human
-    Gate accept one set of facts rather than two.
-
-    The accept path deliberately never calls ``datetime.fromisoformat``: what that
-    function accepts widens between the Pythons this package supports (>=3.11).
-    3.11 and 3.12 refuse ``24:00:00`` where 3.14 accepts it, and they also accept
-    a space separator, a basic or week date, a comma fraction, ``-00:00`` and
-    arbitrary single separators that the Cockpit refuses. Delegating to it would
-    make the valid-fact set a property of the interpreter. Here the regex fixes
-    the spelling, the captured integers are range-checked outright, and calendar
-    truth comes from the ``datetime`` constructor, whose meaning does not vary —
-    so no supported interpreter can widen this set, by construction.
-
-    Args:
-        name: The field being validated, quoted back in any refusal.
-        value: The candidate instant.
-
-    Returns:
-        The value unchanged, once it names a real UTC instant.
+    The grammar is ``YYYY-MM-DDTHH:MM:SS`` with an optional fractional second and a
+    ``Z`` or ``+00:00`` suffix; the hour is 00..23, so ``24:00:00`` names no instant
+    here, and ``instantIsValid`` in ``panel/command-projection.js`` holds the same
+    grammar. The accept path deliberately never calls ``datetime.fromisoformat``,
+    whose accepted set widens between the Pythons this package supports: here the
+    regex fixes the spelling, the captured integers are range-checked outright, and
+    calendar truth comes from the ``datetime`` constructor.
+    ``tests/test_command_instant_parity.py`` records the interpreter differences.
 
     Raises:
-        ContractError: The value is not a string, does not match the frozen
-            grammar, or names no day on the proleptic Gregorian calendar.
+        ContractError: The value is not a string, does not match the frozen grammar,
+            or names no day on the proleptic Gregorian calendar.
     """
     matched = _UTC_INSTANT_RE.fullmatch(value) if isinstance(value, str) else None
     if matched is None:
