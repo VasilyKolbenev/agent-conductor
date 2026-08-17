@@ -41,6 +41,7 @@ from conductor.command.adapters import AdapterRegistry
 from conductor.command.adapters.provider import ProviderConfig, ProviderConfigError
 from conductor.command.api_contracts import ApiRefusal
 from conductor.command.contracts import canonical_json
+from conductor.command.coordinator import ExecutionCoordinator
 from conductor.command.http_api import (
     PRODUCT_COMMAND_BUDGET,
     CommandApi,
@@ -529,7 +530,7 @@ def _resolved_providers(
 
 
 class ConductServer(ThreadingHTTPServer):
-    """ThreadingHTTPServer wiring the broker, watcher and SSE registry."""
+    """ThreadingHTTPServer wiring broker, watcher, SSE registry and execution worker."""
 
     daemon_threads = True  # SSE handler threads must never block process exit
     # On Windows, SO_REUSEADDR lets a second bind HIJACK a live port instead
@@ -551,6 +552,7 @@ class ConductServer(ThreadingHTTPServer):
         self.broker = Broker(root)
         self.clients = _Clients()
         self.watcher = Watcher(self.broker, cdir, self.clients)
+        self.command_execution: ExecutionCoordinator | None = None
         super().__init__(address, Handler)  # binds; EADDRINUSE raises here
         assigned_port = self.server_address[1]
         self.command_session = CommandSession.mint(assigned_port, token_factory)
@@ -562,19 +564,32 @@ class ConductServer(ThreadingHTTPServer):
             self.command_store, self.command_registry,
             session=self.command_session, budget=budget, clock=clock, ids=ids,
             publish_run=self.clients.publish_run)
+        # The effect belongs to a server-owned worker, never to a request thread:
+        # the coordinator holds the API's own runtime, so it spends exactly the
+        # grants that boundary minted and can spend no others.
+        self.command_execution = ExecutionCoordinator(self.command_api.runtime)
+        self.command_api.attach_execution(self.command_execution)
+        self.command_execution.start()
         self.broker.refresh()               # initial state before serving
         self.watcher.start()
 
     def shutdown(self) -> None:
-        """Stop serve_forever and wake all SSE loops so they exit promptly."""
+        """Stop serve_forever, retire the owned worker, wake all SSE loops."""
         self.shutting_down = True
         self.clients.wake_all()
+        self._retire_execution()
         super().shutdown()
 
+    def _retire_execution(self) -> None:
+        """Retire only the worker this server's coordinator minted a token for."""
+        if self.command_execution is not None:
+            self.command_execution.shutdown()
+
     def server_close(self) -> None:
-        """Stop and join the watcher, wake SSE loops, close the socket."""
+        """Stop and join the watcher and worker, wake SSE loops, close the socket."""
         self.shutting_down = True
         self.clients.wake_all()
+        self._retire_execution()
         self.watcher.stop()
         if self.watcher.is_alive():        # never started on a failed bind
             self.watcher.join(timeout=POLL_INTERVAL * 2)

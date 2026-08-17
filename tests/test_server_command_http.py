@@ -115,6 +115,9 @@ def test_real_http_propose_confirm_decide_and_retries_are_durable(tmp_path):
             subject, "POST", prefix + "/actions", confirm_body(proposed[1]))
         retry = _request(
             subject, "POST", prefix + "/actions", confirm_body(proposed[1]))
+        # The server performs the confirmed effect on its own worker; waiting for
+        # that worker to settle is what makes the durable order below fixed.
+        assert subject.command_execution.wait_idle(10) is True
         decided = _request(subject, "POST", prefix + "/decisions", decision_body())
         decision_retry = _request(
             subject, "POST", prefix + "/decisions", decision_body())
@@ -124,11 +127,17 @@ def test_real_http_propose_confirm_decide_and_retries_are_durable(tmp_path):
         assert retry[1] == confirmed[1]
         assert [row[0] for row in (decided, decision_retry)] == [201, 200]
         assert decision_retry[1] == decided[1]
-        assert [row["record_type"] for row in read[1]["records"]] == [
-            "action_proposal", "action_request", "decision"]
-        assert [row.kind for row in store.read(RUN_ID).records] == [
-            "action_proposal", "action_request", "decision"]
-        assert adapter.preparations == 0
+        expected = [
+            "action_proposal", "action_request", "attempt_event", "attempt_event",
+            "action_result", "decision"]
+        assert [row["record_type"] for row in read[1]["records"]] == expected
+        assert [row.kind for row in store.read(RUN_ID).records] == expected
+        # The duplicate Confirm authorized nothing new, so exactly one action was
+        # prepared. This fixture refuses to execute, and a lost result closes the
+        # attempt `unknown` -- it is never promoted to success.
+        assert adapter.preparations == 1
+        assert [row["record"]["outcome"] for row in read[1]["records"]
+                if row["record_type"] == "action_result"] == ["unknown"]
     finally:
         subject.shutdown()
         subject.server_close()

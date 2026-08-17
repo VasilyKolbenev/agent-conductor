@@ -119,6 +119,10 @@ def _operation_lock(key: tuple[Any, ...]):
         return lock
 
 
+def _no_notify(run_id: str) -> None:
+    """The default listener: a runtime nobody is watching announces nothing."""
+
+
 def _instant(name: str, value: object) -> datetime:
     """Parse one validated RFC 3339 UTC timestamp into an aware datetime."""
     text = _timestamp(name, value)
@@ -231,15 +235,25 @@ class ControlRuntime:
     configuration binding, never from a caller's word, so it drives whatever
     adapter a project configured. Ids and the clock arrive through injected
     deterministic providers; nothing here reads a hidden clock or invents an id.
+
+    Every attempt event and every terminal receipt this runtime appends is
+    announced to ``notify`` with the run id ALONE. The listener is told a run
+    changed, never what changed, so no adapter detail, output, or state ever
+    leaves through that seam.
     """
 
     def __init__(
             self, store: RunStore, registry: AdapterRegistry, *,
-            clock: Callable[[], str], ids: Callable[[str], str]) -> None:
+            clock: Callable[[], str], ids: Callable[[str], str],
+            notify: Callable[[str], None] = _no_notify) -> None:
         self._store = store
         self._registry = registry
         self._clock = clock
         self._ids = ids
+        # Called with the run id ALONE after each attempt fact lands, so a
+        # listener learns that a run changed and must re-read it -- never what
+        # changed, what an adapter reported, or what any output held.
+        self._notify = notify
         # Memory-only execution authority. A durable request recovered by a new
         # runtime is evidence of authorization, not proof its effect never ran.
         self._grants: set[tuple[str, str]] = set()
@@ -570,6 +584,7 @@ class ControlRuntime:
             recovery_ref=recovery_ref or self._ids("recovery"),
             outcome=outcome, exit_code=exit_code, schema_version=2)
         self._store.append(event)
+        self._notify(request.run_id)
         return AttemptEvent.from_dict(event.as_dict())
 
     def _resume_observed(
@@ -732,6 +747,7 @@ class ControlRuntime:
             exit_code=exit_code,
         )
         self._store.append(receipt)
+        self._notify(request.run_id)
         return Attempt(
             request=request, state=state, receipt=receipt,
             history=(*history, state), verification_evidence=evidence)

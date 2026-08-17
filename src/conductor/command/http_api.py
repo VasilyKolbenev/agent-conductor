@@ -2,7 +2,13 @@
 
 The facade accepts ordered raw header pairs and raw JSON bytes.  It emits only
 validated contract payloads or closed :class:`ApiRefusal` envelopes; adapters
-are never called directly and this boundary never executes an action.
+are never called directly and no request thread here performs an effect.
+
+A Confirm records the durable action request and answers with it. When a
+server-owned :class:`ExecutionCoordinator` is attached, that recorded action is
+handed to its bounded queue and a worker thread performs the effect afterwards,
+so the response never waits on an adapter. With no coordinator attached this
+boundary executes nothing at all.
 """
 from __future__ import annotations
 
@@ -23,6 +29,7 @@ from .api_contracts import (
 )
 from .containment import run_route_violations
 from .contracts import ContractError, frozen_config_bindings
+from .coordinator import ExecutionCoordinator
 from .http_transport import (
     CommandSession,
     validate_command_host,
@@ -90,12 +97,36 @@ class CommandApi:
         self._ids = ids
         self._publish_run = publish_run
         self._service = CommandService(store, registry, clock=clock, ids=ids)
-        self._runtime = ControlRuntime(store, registry, clock=clock, ids=ids)
+        self._runtime = ControlRuntime(
+            store, registry, clock=clock, ids=ids, notify=publish_run)
+        self._execution: ExecutionCoordinator | None = None
 
     @property
     def runtime(self) -> ControlRuntime:
         """Expose the same runtime whose fresh authorization grant execution needs."""
         return self._runtime
+
+    @property
+    def execution(self) -> ExecutionCoordinator | None:
+        """The bound coordinator, or None while this API executes nothing at all."""
+        return self._execution
+
+    def attach_execution(self, execution: ExecutionCoordinator) -> None:
+        """Bind the one server-owned coordinator that may spend this API's grants.
+
+        The coordinator must already hold THIS api's runtime: execution authority
+        is that runtime's memory-only grant, so a coordinator built over any other
+        runtime could never execute what this boundary authorized. Binding happens
+        once; this boundary never builds, starts, or stops a worker itself.
+        """
+        if not isinstance(execution, ExecutionCoordinator):
+            raise TypeError("attach_execution requires an ExecutionCoordinator")
+        if self._execution is not None:
+            raise ValueError("a command API binds exactly one execution coordinator")
+        if execution.runtime is not self._runtime:
+            raise ValueError(
+                "the coordinator must hold the runtime that authorizes on this API")
+        self._execution = execution
 
     def handle(
             self, method: str, target: str,
@@ -172,14 +203,28 @@ class CommandApi:
         return CommandResponse(201 if created else 200, proposal.as_dict())
 
     def _authorize(self, run_id: str, body: Mapping[str, Any]) -> CommandResponse:
+        """Record the confirmation and answer; the effect happens off this thread.
+
+        The admission slot is claimed BEFORE authorize, so a full execution queue
+        refuses the Confirm with nothing durable written. Only the call that
+        created the durable request places it, so a duplicate Confirm returns the
+        same request, queues nothing, and causes no second effect.
+        """
         submitted = parse_confirmation(body)
         self._hold_route(run_id)
         confirmation = submitted.build(
             confirmation_id=self._ids("confirmation"), run_id=run_id,
             confirmed_at=self._clock())
-        authorization = self._runtime.authorize(confirmation, budget=self._budget)
-        if authorization.record_created:
-            self._publish_run(run_id)
+        slot = None if self._execution is None else self._execution.claim()
+        try:
+            authorization = self._runtime.authorize(confirmation, budget=self._budget)
+            if authorization.record_created:
+                self._publish_run(run_id)
+                if slot is not None:
+                    slot.place(authorization)
+        finally:
+            if slot is not None:
+                slot.release()
         return CommandResponse(
             201 if authorization.record_created else 200,
             authorization.request.as_dict())
