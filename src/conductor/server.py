@@ -46,7 +46,8 @@ from conductor.command.http_api import (
     PRODUCT_COMMAND_BUDGET,
     CommandApi,
 )
-from conductor.command.http_transport import CommandSession, HttpRefusal
+from conductor.command.http_transport import (
+    CommandSession, HttpRefusal, command_content_length)
 from conductor.command.providers import ProviderResolution, resolve_providers
 from conductor.command.run_store import RunStore
 from conductor.command.runtime import Budget
@@ -351,7 +352,39 @@ class Handler(BaseHTTPRequestHandler):
         if urlsplit(self.path).path.startswith("/command"):
             self._serve_command("POST", read_body=True)
         else:
+            self._drain_refused_body()
             self._send_404()
+
+    def _drain_refused_body(self) -> None:
+        """Consume a refused POST body before answering it with a 404.
+
+        A route this server does not own still owes an ANSWER, and answering
+        over a body still sitting unread leaves what the client reads to the
+        platform rather than to this code. Draining first removes that from
+        chance. It is deliberately not claimed to fix an observed reset: on the
+        machine this landed on, the 404 arrived either way at every size the
+        ceiling admits.
+
+        The framing is the SAME bounded door the command route trusts -- one
+        Content-Length, no Transfer-Encoding, under the fixed ceiling -- so
+        there is no second dialect here, and nothing parses, retains or serves a
+        byte of what it drains. A body that door cannot measure is not consumed
+        on the client's word at all, and neither is one the client never
+        finishes: both close the connection, which is the only honest end for a
+        request whose length this server does not know.
+        """
+        try:
+            length = command_content_length(self.headers.raw_items())
+        except HttpRefusal:
+            self.close_connection = True
+            return
+        try:
+            drained = self.rfile.read(length)
+        except OSError:
+            self.close_connection = True
+            return
+        if len(drained) != length:
+            self.close_connection = True
 
     def do_HEAD(self) -> None:             # required BaseHTTPRequestHandler name
         self._serve_wrong_method("HEAD", head=True)
