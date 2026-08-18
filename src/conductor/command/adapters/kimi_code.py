@@ -1,64 +1,65 @@
 """Kimi Code: catalogued so it can be seen, and given no control to spend.
 
-The vendor contract below was read from Moonshot AI's own published sources on
-2026-08-18 and is recorded here so a later reader can re-check it rather than
-trust this prose:
+Re-audited 2026-08-18 against Moonshot AI's own published pages, and the audit
+OVERTURNED two of the three grounds this module used to carry. They are named
+here rather than quietly deleted, because a reader who met the old reasoning is
+owed the correction:
 
-- the product is Kimi Code CLI, binary name ``kimi``, distributed as a single
-  native binary by an install script -- ``code.kimi.com/kimi-code/install.sh``,
-  or ``install.ps1`` on Windows -- and its README says the binary needs "no
-  Node.js setup", so it is its own executable and pins no interpreter entrypoint
-  (README, github.com/MoonshotAI/kimi-code);
-- the predecessor repository ``MoonshotAI/kimi-cli`` is the Python build and
-  says of itself that it "will be gradually wound down"
-  (github.com/MoonshotAI/kimi-cli), so the Python CLI is not what this build
-  would pin;
-- a non-interactive transport IS documented: ``-p``/``--prompt <prompt>`` runs
-  "a single prompt non-interactively and stream[s] the Assistant output to
-  stdout", ``--output-format`` accepts ``text`` and ``stream-json``, and
-  ``-V``/``--version`` prints the version and exits
-  (moonshotai.github.io/kimi-code/en/reference/kimi-command.html);
+- **A credential CAN come from the shell.** The environment reference says
+  credential variables such as ``KIMI_API_KEY``, ``ANTHROPIC_API_KEY`` and
+  ``OPENAI_API_KEY`` are "not read automatically from shell environment
+  variables" -- and then names the exception: the ``KIMI_MODEL_*`` family "is an
+  explicit channel that does read credentials from the shell", with
+  ``KIMI_MODEL_API_KEY`` required once ``KIMI_MODEL_NAME`` is set. This module
+  had generalised the first sentence over the second and concluded that
+  dispatching would force this build to write an operator's key to disk. It
+  would not: that channel is the exact shape this build's provider door already
+  uses -- environment NAMES pinned in config, values read at spawn and never
+  written down (moonshotai.github.io/kimi-code/en/configuration/env-vars.html).
+- **Telemetry HAS an environment switch.** ``KIMI_DISABLE_TELEMETRY`` set to
+  ``1`` turns off anonymous telemetry reporting (same page). This module had
+  claimed the only route was authoring a ``config.toml`` whose schema it had not
+  read, and called a fresh isolated home telemetry-ON for that reason.
+
+What the audit left standing:
+
+- the one-shot transport is documented: ``-p``/``--prompt <prompt>`` runs a
+  single prompt non-interactively and streams to stdout, ``--output-format``
+  takes ``text`` or ``stream-json`` and only alongside ``--prompt``, and
+  ``-V``/``--version`` prints the version and exits;
+- exit-code meanings are published for ``kimi login`` and ``kimi doctor`` only
+  (``0`` on success, ``1`` on failure); the reference states none for a
+  ``--prompt`` run (moonshotai.github.io/kimi-code/en/reference/kimi-command.html);
 - configuration and session state live in ``~/.kimi-code`` and relocate with
-  ``KIMI_CODE_HOME``; credentials, however, are read ONLY from ``config.toml``,
-  where that same page states the CLI "does not fall back to shell environment
-  variables automatically", and telemetry is on by default and is turned off
-  ONLY by writing ``telemetry = false`` into that file -- no environment
-  variable is offered for it
-  (moonshotai.github.io/kimi-code/en/configuration/config-files.html);
-- the latest published release is 0.36.1, dated 2026-08-14
-  (moonshotai.github.io/kimi-code/en/release-notes/changelog.html);
-- the npm package third-party write-ups name, ``@kimi-code/cli``, does not
-  exist: ``registry.npmjs.org/@kimi-code/cli`` answers 404. Only the install
-  script is a distribution this build could honestly pin.
+  ``KIMI_CODE_HOME``;
+- the binary installs by script and needs no Node.js, so it pins no interpreter
+  entrypoint, and the npm name third-party write-ups repeat, ``@kimi-code/cli``,
+  answers 404 on the registry.
 
-So the one-shot transport is real -- and this build still dispatches nothing
-through it, for three reasons that are facts about that contract rather than
-preferences:
+So the honest state was never "the vendor makes this impossible". It is that
+THIS BUILD has neither implemented nor proven that transport -- which is what
+the catalogue entry's ``unproven`` implementation says, and what every refusal
+below reports. Everything named in this module is a fact about this build's
+proof; nothing is a claim about the product.
 
-1. **A credential cannot come from the environment.** A provider config in this
-   build stores environment NAMES only and never a secret value; the value is
-   read from the live environment at spawn time and is never written down. Kimi
-   Code reads its key from ``config.toml`` and documents that it does not fall
-   back to the environment, so dispatching would mean this build writing an
-   operator's key to disk -- the one thing the config door exists to prevent.
-2. **Telemetry cannot be disabled without authoring an unverified file.** There
-   is no environment switch, so a fresh isolated ``KIMI_CODE_HOME`` boots with
-   telemetry ON unless this build writes a ``config.toml`` whose exact schema it
-   has not read. Guessing that schema is a fabrication, and shipping a spawn
-   that quietly phones home is worse than shipping no spawn.
-3. **The non-interactive exit codes are undocumented.** The reference publishes
-   exit-code meanings for ``kimi login`` alone. "The process was observed to
-   exit zero" needs a published meaning before a receipt may carry it.
+Driving it is a slice of its own, behind the doors DeepSeek already passes: an
+operator-pinned absolute executable with no PATH discovery, an isolated
+per-attempt ``KIMI_CODE_HOME``, ``KIMI_DISABLE_TELEMETRY=1``, an exact version
+preflight, code-owned headless argv, bounded and drained output that reaches no
+journal, API, SSE or evidence, and a deterministic fake executable with any real
+smoke kept opt-in. The undocumented ``--prompt`` exit codes no longer block that
+work -- they bound what it may CLAIM: under this build's law an exit code buys
+``execution_observed`` and never success, so a Kimi dispatch could reach exactly
+as far as DeepSeek reaches today, and no further.
 
-Therefore Kimi Code is catalogued so the Cockpit can SEE it, named Experimental
-where a reader will see that too, resolved unavailable whatever the operator
-pinned, and given NO control at all -- an honest unavailable beats a fabricated
-integration, and the registration door already refuses an undeclared control.
-The class below exists only to satisfy that door's lifecycle proof, and every
-one of its seams refuses, its constructor first, so no instance of it can exist
-to spawn anything. When an environment-carried credential path and published
-exit-code semantics land, this module is where the real transport goes.
+Until that lands Kimi Code is catalogued so the Cockpit can SEE it, named
+experimental where a reader will see that too, resolved unavailable whatever the
+operator pinned, and given NO control at all -- the registration door already
+refuses an undeclared control. The class below exists only to satisfy that
+door's lifecycle proof, and every one of its seams refuses, its constructor
+first, so no instance of it can exist to spawn anything.
 """
+
 from __future__ import annotations
 
 from .base import AdapterContractError
@@ -72,8 +73,9 @@ KIMI_PROVIDER_ID = "kimi-code"
 #: purpose: no adapter here implements it, and the factory refuses to resolve a
 #: provider available when it declares nothing to dispatch.
 KIMI_PROTOCOL = DeepProtocol.KIMI_UNPROVEN_V0.value
-#: Experimental is said in the one field the Cockpit projection actually carries.
-KIMI_DISPLAY_NAME = "Kimi Code (experimental, no proven transport)"
+#: Experimental is said in the one field the Cockpit projection actually carries,
+#: and it says whose proof is missing: this build drives it, or nothing does.
+KIMI_DISPLAY_NAME = "Kimi Code (experimental, not driven by this build)"
 #: Observation only. Not one control is declared, because not one is proven.
 KIMI_CAPABILITIES = ("observe",)
 #: No control, so no argument schema binds -- and the door proves that emptiness
