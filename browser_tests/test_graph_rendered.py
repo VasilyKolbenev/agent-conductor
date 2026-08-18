@@ -462,12 +462,15 @@ def test_availability_arrives_as_data_and_absence_claims_nothing(
     _load_provider_mix(graph_page)
     palette = graph_page.locator("#paletteCard")
     # The label is the vocabulary word in capitals — EXPERIMENTAL and
-    # UNAVAILABLE must be unmistakable at a glance.
+    # UNAVAILABLE must be unmistakable at a glance. Equality on the label
+    # span, not containment: "AVAILABLE" is a substring of "UNAVAILABLE",
+    # and this assertion must be able to tell them apart.
     for state, channel in (("AVAILABLE", "pass"), ("EXPERIMENTAL", "wait"),
                            ("UNAVAILABLE", "fail")):
         chips = palette.locator(f".g-chip--{channel}")
-        texts = [chips.nth(i).text_content() for i in range(chips.count())]
-        assert any(state in (text or "") for text in texts), state
+        labels = [chips.nth(i).locator("span").last.text_content()
+                  for i in range(chips.count())]
+        assert set(labels) == {state}, (state, labels)
     total = sum(
         1 for row in _availability_registry() if "availability" in row)
     assert palette.locator(
@@ -518,6 +521,19 @@ def test_resources_render_as_closed_attachments_of_their_node(
     graph_page.locator('[data-node-id="verify"]').click()
     assert detail.locator(".g-resources").count() == 0
     assert "Resources" not in detail.inner_text()
+    # A boundary-legal name is 128 unbroken characters; the row wraps it
+    # rather than widening the page at 360.
+    payload = json.loads(json.dumps(_FIXTURES["loop_and_resources"]))
+    payload["registry"] = _registry_payload()
+    payload["nodes"][0]["resources"] = [
+        {"kind": "filesystem", "name": "a" * 128}]
+    assert graph_page.evaluate(
+        "payload => window.conductGraph.load(payload)", payload)
+    graph_page.locator('[data-node-id="plan"]').click()
+    graph_page.set_viewport_size({"width": 360, "height": 1400})
+    assert graph_page.evaluate(
+        "document.documentElement.scrollWidth"
+        " <= document.documentElement.clientWidth")
 
 
 def test_a_composed_step_wears_the_local_draft_label_everywhere_it_lands(
@@ -537,6 +553,17 @@ def test_a_composed_step_wears_the_local_draft_label_everywhere_it_lands(
     # Fixture-fed steps carry no such label: the claim is drafts-only.
     assert "LOCAL DRAFT" not in graph_page.locator(
         '[data-node-id="plan"]').inner_text()
+    # The anchor dropdown is a landing surface too, and must say it there.
+    options = graph_page.locator('[name="anchor"] option')
+    texts = [options.nth(i).text_content() for i in range(options.count())]
+    assert "Shadow check — LOCAL DRAFT" in texts
+    assert "Plan the slice" in texts
+    # And the sentence-length draft chip wraps: composing and selecting a
+    # draft at 360 must not widen the page.
+    graph_page.set_viewport_size({"width": 360, "height": 1400})
+    assert graph_page.evaluate(
+        "document.documentElement.scrollWidth"
+        " <= document.documentElement.clientWidth")
 
 
 def test_the_palette_claims_no_capability_for_any_product(

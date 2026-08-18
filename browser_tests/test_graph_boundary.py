@@ -117,6 +117,20 @@ _ONE_FAULT_CASES = [
                    {"kind": "tool", "name": "pytest"}])),
     ("resources-not-a-list",
      lambda p: p["nodes"][0].update(resources="model")),
+    ("resources-over-limit", lambda p: p["nodes"][0].update(
+        resources=[{"kind": "tool", "name": f"t-{i}"} for i in range(17)])),
+]
+
+#: The other side of the arms above: payloads one step INSIDE the contract
+#: edge must load, or a refusal case was never one fault from acceptance.
+_EDGE_ACCEPTED_CASES = [
+    ("resources-at-limit", lambda p: p["nodes"][0].update(
+        resources=[{"kind": "tool", "name": f"t-{i}"} for i in range(16)])),
+    ("loop-explicit-null-on-task", lambda p: p["nodes"][0].update(loop=None)),
+    ("loop-bound-floor", lambda p: p["nodes"][4].update(
+        kind="loop", loop={"bound": 1})),
+    ("loop-bound-ceiling", lambda p: p["nodes"][4].update(
+        kind="loop", loop={"bound": 99})),
 ]
 
 
@@ -136,16 +150,24 @@ def test_each_boundary_arm_refuses_its_own_single_fault(
             json.dumps(payload))
         assert accepted is False, f"{name}: the boundary accepted the fault"
         assert graph_page.locator(".g-node").count() == 0, name
-    # The unfaulted copy still loads, so every refusal above was the fault's.
-    payload = json.loads(json.dumps(_FIXTURES["parallel_review"]))
-    payload["registry"] = registry
-    assert graph_page.evaluate(
-        "text => window.conductGraph.load(JSON.parse(text))",
-        json.dumps(payload))
+    # The unfaulted copy still loads, so every refusal above was the fault's —
+    # and so does each edge-of-contract copy, so the loop and resource arms
+    # were exactly one fault from acceptance, at the boundary values 1, 99
+    # and 16 no other test reaches.
+    for name, apply in [("unfaulted", lambda p: None)] + _EDGE_ACCEPTED_CASES:
+        payload = json.loads(json.dumps(_FIXTURES["parallel_review"]))
+        payload["registry"] = registry
+        apply(payload)
+        assert graph_page.evaluate(
+            "text => window.conductGraph.load(JSON.parse(text))",
+            json.dumps(payload)), name
 
 
-_STORE_UNIT = """([payload, event]) => import("./graph-store.js").then(store => {
-  const facts = store.projectPayload(payload);
+_STORE_UNIT = """([payload, event]) =>
+Promise.all([import("./graph-adapter.js"), import("./graph-store.js")])
+.then(([adapter, store]) => {
+  const adapted = adapter.adaptPayload(payload);
+  const facts = adapted === null ? null : store.projectPayload(adapted);
   if (!facts) return {loaded: false};
   const loaded = store.reduce(store.EMPTY, {type: "loaded", facts});
   const next = store.reduce(loaded, event);

@@ -244,8 +244,11 @@ export function renderDetail(mount, state, decisionDraft, onDecide) {
       text: `bounded loop · at most ×${node.loop.bound} passes`}));
   }
   if (node.draft) {
-    mount.append(chip("none",
-      "LOCAL DRAFT — this window's fixture only, submitted nowhere"));
+    const draftChip = chip("none",
+      "LOCAL DRAFT — this window's fixture only, submitted nowhere");
+    // The one sentence-length chip: it must wrap, not widen the page.
+    draftChip.classList.add("g-chip--long");
+    mount.append(draftChip);
   }
   const names = node.capabilities.length ? node.capabilities.join(", ") : "none";
   mount.append(element("p", {className: "mono g-det__meta",
@@ -324,7 +327,8 @@ export function renderComposer(mount, state, draft, onCompose) {
       element("option", {text: row.name, value: row.id})),
   ]);
   const anchor = draftSelect(draft, "anchor", state.nodes.map((node) =>
-    element("option", {text: node.title, value: node.node_id})));
+    element("option", {value: node.node_id, text:
+      node.draft ? `${node.title} — LOCAL DRAFT` : node.title})));
   const placement = draftSelect(draft, "placement", [
     element("option", {text: "after", value: "after"}),
     element("option", {text: "parallel with", value: "parallel"}),

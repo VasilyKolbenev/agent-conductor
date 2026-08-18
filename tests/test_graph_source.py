@@ -178,7 +178,11 @@ def test_every_refusal_arm_of_the_store_is_pinned_by_count():
     """
     store = STORE.read_text(encoding="utf-8")
     assert store.count("return null;") == 38
-    assert store.count("return false;") == 5
+    assert store.count("return false;") == 6
+    # The resource cap shares its return with the array check, so the arm is
+    # pinned by its own spelling beside the behavioural over-limit case.
+    assert "const RESOURCE_LIMIT = 16;" in store
+    assert "rows.length > RESOURCE_LIMIT" in store
     # The registry's arms refuse by dropping a row, so they are pinned by
     # their own spelling: deleting one reds this line, not only the rendered
     # drop-row test in the browser suite.

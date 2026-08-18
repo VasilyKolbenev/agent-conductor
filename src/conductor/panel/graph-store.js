@@ -188,7 +188,8 @@ function projectResources(rows) {
 // define, so any further key is refused until the runtime freezes one.
 function projectLoop(row) {
   if (row.kind !== "loop") {
-    return row.loop === null || row.loop === undefined ? null : false;
+    if (row.loop === null || row.loop === undefined) return null;
+    return false;
   }
   if (!row.loop || typeof row.loop !== "object"
       || !ownKeysOnly(row.loop, ["bound"])
@@ -316,11 +317,12 @@ export function projectPayload(payload) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     return null;
   }
+  // No fixture_schema here: the version pin is the adapter's fact alone,
+  // stripped before the payload reaches this module.
   if (!ownKeysOnly(payload,
-    ["fixture_schema", "run", "registry", "nodes", "edges", "timeline"])) {
+    ["run", "registry", "nodes", "edges", "timeline"])) {
     return null;
   }
-  if (payload.fixture_schema !== 1) return null;
   if (!payload.run || typeof payload.run !== "object"
       || !ownKeysOnly(payload.run, ["run_id", "mode"])
       || !isId(payload.run.run_id)) return null;

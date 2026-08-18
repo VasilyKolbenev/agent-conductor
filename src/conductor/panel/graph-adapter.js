@@ -19,5 +19,10 @@ export function adaptPayload(external) {
     return null;
   }
   if (external.fixture_schema !== INTERNAL_SCHEMA) return null;
-  return external;
+  // The schema pin is this adapter's own fact and travels no further: the
+  // store never sees the field, so a load that skipped this function would
+  // hand the store a key it refuses — every fixture in the suite then pins
+  // the call site behaviourally, not by a source grep.
+  const {fixture_schema: _, ...internal} = external;
+  return internal;
 }
