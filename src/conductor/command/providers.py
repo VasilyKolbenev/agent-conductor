@@ -6,12 +6,12 @@ present -- the executable, and for a provider whose executable is an interpreter
 the entrypoint it runs. It never searches ``PATH``, scans a home directory,
 resolves ``npx`` or ``latest``, installs anything, or spawns a process to probe;
 an interpreter-backed provider with no entrypoint pinned resolves UNAVAILABLE
-rather than having its missing half guessed. A provider that
-is absent or whose pinned protocol does not match the catalogued provider
-resolves UNAVAILABLE, and no adapter is built for it -- so it can never spawn a
-process (spawn count 0). A provider this build catalogues but proved no
-transport for declares no control, and a provider with nothing to dispatch is
-refused availability before its pins are even read. Only an available provider's adapter enters the returned
+rather than having its missing half guessed. A provider that is absent or whose
+pinned protocol does not match the catalogued provider resolves UNAVAILABLE, and
+no adapter is built for it -- so it can never spawn a process (spawn count 0). A
+provider this build catalogues but proved no transport for declares no control,
+and a provider with nothing to dispatch is refused availability before its pins
+are even read. Only an available provider's adapter enters the returned
 ``AdapterRegistry``; with no configs the registry stays honestly empty, so the
 default production server never pretends a real provider is available.
 """
