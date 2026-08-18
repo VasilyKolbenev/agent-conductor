@@ -26,6 +26,14 @@ export const NODE_KINDS = Object.freeze(["task", "gate", "loop"]);
 //: so no path, URI or free JSON can ride in as a resource.
 export const RESOURCE_KINDS = Object.freeze(
   ["model", "tool", "skill", "session", "sandbox", "filesystem"]);
+//: The five semantic stages of the default process, in their one order —
+//: Dalio's five steps, fixed by the December Command as the product's
+//: default graph. A stage is NOT the runtime phase: phase says what the
+//: records prove happened; stage says which step of the process a task is.
+//: The wire spelling of this attribute is the runtime side's to freeze;
+//: until then it is a panel-internal fixture field like the rest.
+export const STAGE_NAMES = Object.freeze(
+  ["goal", "identify", "diagnose", "design", "do"]);
 export const HEALTH_STATES = Object.freeze(
   ["ready", "busy", "offline", "degraded", "unknown"]);
 // Harness-level availability, distinct from a node's health: whether the
@@ -183,23 +191,40 @@ function projectResources(rows) {
   return Object.freeze(out);
 }
 
-// The one fact a loop node declares: how many passes it is allowed. Anything
-// executional — what a pass does, when it stops early — is the runtime's to
-// define, so any further key is refused until the runtime freezes one.
+// The facts a loop node declares: how many passes it is allowed, which pass
+// it is on, and which step a pass reopens. A pass REOPENS work — it never
+// executes anything and never counts as an effect; every effect still walks
+// through its own Human gate. Anything executional beyond these three facts
+// is the runtime's to define, so any further key is refused until the
+// runtime freezes one. back_to is display data validated against the graph
+// at the payload level; it adds no edge and closes no cycle.
 function projectLoop(row) {
   if (row.kind !== "loop") {
     if (row.loop === null || row.loop === undefined) return null;
     return false;
   }
   if (!row.loop || typeof row.loop !== "object"
-      || !ownKeysOnly(row.loop, ["bound"])
+      || !ownKeysOnly(row.loop, ["bound", "pass", "back_to"])
       || !Number.isInteger(row.loop.bound)
       || row.loop.bound < 1 || row.loop.bound > 99) return false;
-  return Object.freeze({bound: row.loop.bound});
+  const pass = "pass" in row.loop ? row.loop.pass : null;
+  if (pass !== null && (!Number.isInteger(pass)
+      || pass < 1 || pass > row.loop.bound)) return false;
+  const backTo = "back_to" in row.loop ? row.loop.back_to : null;
+  if (backTo !== null && !isId(backTo)) return false;
+  return Object.freeze({bound: row.loop.bound, pass, backTo});
+}
+
+// A stage is optional, task-only, and unique: two nodes claiming one stage
+// would let a later step absorb an earlier one — exactly the collapse the
+// five-step process forbids (Diagnose is not a part of Identify).
+function stageIsValid(row) {
+  if (!("stage" in row) || row.stage === null) return true;
+  return row.kind === "task" && STAGE_NAMES.includes(row.stage);
 }
 
 const NODE_KEYS = ["node_id", "kind", "title", "harness", "health", "phase",
-  "capabilities", "evidence", "gate", "loop", "resources"];
+  "capabilities", "evidence", "gate", "loop", "resources", "stage"];
 function projectNode(row) {
   if (!row || typeof row !== "object" || !isId(row.node_id)) return null;
   if (!ownKeysOnly(row, NODE_KEYS)) return null;
@@ -215,6 +240,8 @@ function projectNode(row) {
   const resources = projectResources(row.resources);
   const loop = projectLoop(row);
   if (!capabilities || !evidence || !resources || loop === false) return null;
+  if (!stageIsValid(row)) return null;
+  const stage = "stage" in row && row.stage !== null ? row.stage : null;
   let gate = null;
   if (row.kind === "gate") {
     if (!row.gate || typeof row.gate !== "object"
@@ -227,7 +254,7 @@ function projectNode(row) {
   }
   return Object.freeze({node_id: row.node_id, kind: row.kind,
     title: row.title.trim(), harness: row.harness, health: row.health,
-    phase: row.phase, capabilities, evidence, gate, loop, resources,
+    phase: row.phase, capabilities, evidence, gate, loop, resources, stage,
     draft: false});
 }
 
@@ -336,6 +363,16 @@ export function projectPayload(payload) {
   // flip a gate nobody decided. The same ambiguity node ids are refused for.
   const gateIds = nodes.flatMap((node) => (node.gate ? [node.gate.gate_id] : []));
   if (new Set(gateIds).size !== gateIds.length) return null;
+  // One node per stage: a duplicate would let one step absorb another.
+  const stages = nodes.flatMap((node) => (node.stage ? [node.stage] : []));
+  if (new Set(stages).size !== stages.length) return null;
+  // A loop's return target is display data, but it must name a real other
+  // node — a ghost or self target would draw a promise the graph cannot keep.
+  for (const node of nodes) {
+    if (node.loop && node.loop.backTo !== null
+        && (!ids.has(node.loop.backTo)
+            || node.loop.backTo === node.node_id)) return null;
+  }
   const edges = projectEdges(payload.edges, ids);
   const timeline = projectTimeline(payload.timeline, ids);
   if (!edges || !timeline) return null;
@@ -424,7 +461,7 @@ function compose(state, event) {
   const node = Object.freeze({node_id: event.nodeId, kind: "task", title,
     harness, health: "unknown", phase: "idle",
     capabilities: Object.freeze([]), evidence: Object.freeze([]), gate: null,
-    loop: null, resources: Object.freeze([]), draft: true});
+    loop: null, resources: Object.freeze([]), stage: null, draft: true});
   const nodes = Object.freeze([...state.nodes, node]);
   const added = event.placement === "after"
     ? [Object.freeze({from: anchor.node_id, to: event.nodeId})]

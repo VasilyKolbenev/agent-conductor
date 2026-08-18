@@ -88,6 +88,9 @@ button{font:inherit;cursor:pointer;background:none;border:none;color:inherit}
    marker beside the chips says how far it may. */
 .g-node--loop{border-style:double;border-width:3px}
 .g-loop-bound{font-size:10px}
+/* the numbered semantic stage: --muted like the after-line, because --faint
+   ships below the text floor on --sunk in the light theme. */
+.g-stage{font-size:10px;color:var(--muted)}
 .g-resources{list-style:none;margin:0;padding:0;display:flex;
              flex-direction:column;gap:3px;font-size:11px;
              overflow-wrap:anywhere}

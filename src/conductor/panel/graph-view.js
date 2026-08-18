@@ -5,7 +5,7 @@
 // the chip contour, exactly the split index.html documents for the panel.
 import {element, field} from "./command-view.js";
 import {AVAILABILITY_STATES, DECISION_ACTIONS, GATE_CHANNEL,
-  PHASE_CHANNEL} from "./graph-store.js";
+  PHASE_CHANNEL, STAGE_NAMES} from "./graph-store.js";
 
 // Geometry constants the layout renders and the browser suite measures.
 export const CELL = Object.freeze({width: 210, height: 118, gapX: 46, gapY: 18});
@@ -121,8 +121,12 @@ function nodeButton(state, node, onSelect) {
   const head = element("span", {className: "g-node__head"});
   if (node.harness !== null) head.append(badge(state.registry, node.harness));
   else head.append(element("span", {className: "hb__n", text: "no harness"}));
-  button.append(head,
-    element("span", {className: "g-node__title", text: node.title}));
+  button.append(head);
+  // The semantic stage is its own numbered line — never inferred from the
+  // runtime phase, which says what happened, not which step this is.
+  if (node.stage) button.append(element("span", {className: "mono g-stage",
+    text: `${STAGE_NAMES.indexOf(node.stage) + 1}/5 · ${node.stage}`}));
+  button.append(element("span", {className: "g-node__title", text: node.title}));
   const chips = element("span", {className: "g-node__chips"}, [
     chip(HEALTH_CHANNEL[node.health], node.health),
     chip(PHASE_CHANNEL[node.phase], node.phase),
@@ -130,9 +134,12 @@ function nodeButton(state, node, onSelect) {
   if (node.gate) chips.append(
     chip(GATE_CHANNEL[node.gate.state], GATE_GLYPHS[node.gate.state], true));
   // A loop wears its bound where the graph is read: the one sanctioned
-  // shape of a cycle is "at most ×N", said out loud.
+  // shape of a cycle is "at most ×N", said out loud — and when the pass is
+  // known, said as "pass P/N" so nobody mistakes where the process stands.
   if (node.loop) chips.append(element("span",
-    {className: "mono g-loop-bound", text: `↻ ×${node.loop.bound}`}));
+    {className: "mono g-loop-bound", text: node.loop.pass !== null
+      ? `↻ pass ${node.loop.pass}/${node.loop.bound}`
+      : `↻ ×${node.loop.bound}`}));
   if (node.draft) chips.append(chip("none", "LOCAL DRAFT"));
   button.append(chips);
   const parents = state.edges.filter((edge) => edge.to === node.node_id);
@@ -223,10 +230,23 @@ function decisionForm(node, draft, onDecide) {
 // The card's middle: the loop bound, the draft label, capabilities, and the
 // closed resource attachments — a node that attaches nothing shows no
 // Resources section, claiming nothing.
-function appendDetailFacts(mount, node) {
-  if (node.loop) {
+function appendDetailFacts(mount, node, nodes) {
+  if (node.stage) {
     mount.append(element("p", {className: "mono g-det__meta",
-      text: `bounded loop · at most ×${node.loop.bound} passes`}));
+      text: `stage ${STAGE_NAMES.indexOf(node.stage) + 1} of 5 — ${node.stage}`}));
+  }
+  if (node.loop) {
+    const passText = node.loop.pass !== null
+      ? `pass ${node.loop.pass} of ${node.loop.bound}`
+      : `at most ×${node.loop.bound} passes`;
+    const target = node.loop.backTo === null ? null
+      : nodes.find((row) => row.node_id === node.loop.backTo);
+    mount.append(element("p", {className: "mono g-det__meta",
+      text: `bounded loop · ${passText}`
+        + (target ? ` · reopens: ${target.title}` : "")}));
+    mount.append(element("p", {className: "g-note", text:
+      "A pass reopens work — it executes nothing, and every effect still "
+      + "needs its own fresh Confirm."}));
   }
   if (node.draft) {
     const draftChip = chip("none",
@@ -265,7 +285,7 @@ export function renderDetail(mount, state, decisionDraft, onDecide) {
       chip(HEALTH_CHANNEL[node.health], `health: ${node.health}`),
       chip(PHASE_CHANNEL[node.phase], `phase: ${node.phase}`),
     ]));
-  appendDetailFacts(mount, node);
+  appendDetailFacts(mount, node, state.nodes);
   mount.append(element("h3", {text: "Evidence"}));
   mount.append(node.evidence.length
     ? element("ul", {className: "g-evidence-list"}, node.evidence.map(evidenceRow))

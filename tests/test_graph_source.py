@@ -21,8 +21,9 @@ STORE = PANEL / "graph-store.js"
 VIEW = PANEL / "graph-view.js"
 BOOT = PANEL / "graph.js"
 ADAPTER = PANEL / "graph-adapter.js"
+DEFAULT = PANEL / "graph-default.js"
 STYLE = PANEL / "graph.css"
-SCRIPTS = (STORE, VIEW, BOOT, ADAPTER)
+SCRIPTS = (STORE, VIEW, BOOT, ADAPTER, DEFAULT)
 SOURCE = "\n".join(path.read_text(encoding="utf-8") for path in SCRIPTS)
 IMPORTS = r'from "(\./[a-z-]+\.js)";'
 
@@ -34,7 +35,7 @@ def test_the_contract_module_resolves_inside_this_tree():
 
 
 def test_graph_window_files_sit_in_the_panel_under_the_line_cap():
-    for path in (HTML, STORE, VIEW, BOOT, ADAPTER, STYLE):
+    for path in (HTML, STORE, VIEW, BOOT, ADAPTER, DEFAULT, STYLE):
         assert path.is_file() and path.parent == PANEL
         assert len(path.read_text(encoding="utf-8").splitlines()) <= 800
 
@@ -45,11 +46,14 @@ def test_the_graph_module_graph_is_acyclic_and_the_store_stays_pure():
     assert sorted(re.findall(IMPORTS, VIEW.read_text(encoding="utf-8"))) == [
         "./command-view.js", "./graph-store.js"]
     assert sorted(re.findall(IMPORTS, BOOT.read_text(encoding="utf-8"))) == [
-        "./graph-adapter.js", "./graph-store.js", "./graph-view.js"]
+        "./graph-adapter.js", "./graph-default.js", "./graph-store.js",
+        "./graph-view.js"]
     # The adapter imports nothing: it is the outermost shell of the boundary
     # and may depend on no inner layer, so no mapping can smuggle a projection.
+    # The default fixture imports nothing either: it is data with a name.
     assert re.findall(IMPORTS, ADAPTER.read_text(encoding="utf-8")) == []
-    for pure in (STORE, ADAPTER):
+    assert re.findall(IMPORTS, DEFAULT.read_text(encoding="utf-8")) == []
+    for pure in (STORE, ADAPTER, DEFAULT):
         source = pure.read_text(encoding="utf-8")
         assert "document" not in source
         assert "window." not in source
@@ -146,6 +150,10 @@ def test_the_store_vocabularies_are_copies_of_the_layers_that_own_them():
     assert _js_list(store, "NODE_KINDS") == {"task", "gate", "loop"}
     assert _js_list(store, "RESOURCE_KINDS") == {
         "model", "tool", "skill", "session", "sandbox", "filesystem"}
+    # The five semantic stages, Dalio's five steps in the Command's fixing:
+    # a stage is not a phase, and no sixth word may appear beside these.
+    assert _js_list(store, "STAGE_NAMES") == {
+        "goal", "identify", "diagnose", "design", "do"}
 
 
 def test_local_only_actions_say_so_where_they_land():
@@ -177,8 +185,8 @@ def test_every_refusal_arm_of_the_store_is_pinned_by_count():
     vanish while the many-fault payload still refuses for another reason.
     """
     store = STORE.read_text(encoding="utf-8")
-    assert store.count("return null;") == 38
-    assert store.count("return false;") == 6
+    assert store.count("return null;") == 41
+    assert store.count("return false;") == 8
     # The resource cap shares its return with the array check, so the arm is
     # pinned by its own spelling beside the behavioural over-limit case.
     assert "const RESOURCE_LIMIT = 16;" in store

@@ -31,6 +31,7 @@ REFUSED = (
     "/panel/command-view.js.map", "/panel/command-projection.js%00.txt",
     "/panel/graph.html", "/panel/graph.css", "/panel/graph.js",
     "/panel/graph-store.js", "/panel/graph-view.js", "/panel/graph-adapter.js",
+    "/panel/graph-default.js",
 )
 #: The ALPHA-2 Graph window ships in the package beside the Cockpit but is
 #: served by no route: server.py is frozen until the runtime side hands over
@@ -39,8 +40,8 @@ REFUSED = (
 #: server refuses them above. The moment a graph route lands in PANEL_ASSETS,
 #: its file must leave this exact list — the allowlist check below reddens on
 #: a stale entry as it does on a missing one.
-UNSERVED = ("graph.css", "graph.js", "graph-adapter.js", "graph-store.js",
-            "graph-view.js")
+UNSERVED = ("graph.css", "graph.js", "graph-adapter.js", "graph-default.js",
+            "graph-store.js", "graph-view.js")
 
 
 def _status(url, *, data=None):

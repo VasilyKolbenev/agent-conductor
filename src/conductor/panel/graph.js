@@ -6,6 +6,7 @@
 // the coming HTTP source will use. The visual layer cannot tell which source
 // fed it; that is what keeps it stable when the real API arrives.
 import {adaptPayload} from "./graph-adapter.js";
+import {DALIO_DEFAULT} from "./graph-default.js";
 import {EMPTY, projectPayload, reduce} from "./graph-store.js";
 import {renderComposer, renderDetail, renderGates, renderGraph, renderPalette,
   renderTimeline} from "./graph-view.js";
@@ -120,4 +121,8 @@ import {renderComposer, renderDetail, renderGates, renderGraph, renderPalette,
     state: () => state,
   });
   render();
+  // The window opens on the product's default graph — the five-step process
+  // the December Command fixed — through the same public seam any other
+  // fixture uses. A later load simply replaces it.
+  window.conductGraph.load(DALIO_DEFAULT);
 })();

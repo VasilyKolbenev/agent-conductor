@@ -119,6 +119,22 @@ _ONE_FAULT_CASES = [
      lambda p: p["nodes"][0].update(resources="model")),
     ("resources-over-limit", lambda p: p["nodes"][0].update(
         resources=[{"kind": "tool", "name": f"t-{i}"} for i in range(17)])),
+    ("stage-out-of-vocab", lambda p: p["nodes"][0].update(stage="plan")),
+    ("stage-on-gate", lambda p: p["nodes"][5].update(stage="goal")),
+    ("stage-on-loop", lambda p: p["nodes"][4].update(
+        kind="loop", loop={"bound": 2}, stage="do")),
+    ("stage-duplicate", lambda p: (p["nodes"][0].update(stage="goal"),
+                                   p["nodes"][1].update(stage="goal"))),
+    ("loop-pass-over-bound", lambda p: p["nodes"][4].update(
+        kind="loop", loop={"bound": 3, "pass": 4})),
+    ("loop-pass-zero", lambda p: p["nodes"][4].update(
+        kind="loop", loop={"bound": 3, "pass": 0})),
+    ("loop-pass-fractional", lambda p: p["nodes"][4].update(
+        kind="loop", loop={"bound": 3, "pass": 1.5})),
+    ("loop-back-to-ghost", lambda p: p["nodes"][4].update(
+        kind="loop", loop={"bound": 3, "back_to": "ghost"})),
+    ("loop-back-to-self", lambda p: p["nodes"][4].update(
+        kind="loop", loop={"bound": 3, "back_to": "review"})),
 ]
 
 #: The other side of the arms above: payloads one step INSIDE the contract
@@ -131,6 +147,13 @@ _EDGE_ACCEPTED_CASES = [
         kind="loop", loop={"bound": 1})),
     ("loop-bound-ceiling", lambda p: p["nodes"][4].update(
         kind="loop", loop={"bound": 99})),
+    ("loop-pass-at-bound", lambda p: p["nodes"][4].update(
+        kind="loop", loop={"bound": 3, "pass": 3})),
+    ("loop-back-to-another", lambda p: p["nodes"][4].update(
+        kind="loop", loop={"bound": 3, "back_to": "plan"})),
+    ("stage-full-set", lambda p: [node.update(stage=name) for node, name in
+                                  zip(p["nodes"][:5], ["goal", "identify",
+                                      "diagnose", "design", "do"])]),
 ]
 
 

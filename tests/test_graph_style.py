@@ -75,6 +75,7 @@ MEASURED = {
         (FIELD + [E("button", "g-node", **{"aria-pressed": "true"})],
          "border-color", NONTEXT_MIN, "--panel")],
     ".g-node__from": [_rows_on(NODE, E("span", "g-node__from"))],
+    ".g-stage": [_rows_on(NODE, E("span", "g-stage"))],
     ".g-det__meta": [_rows_on(CARD, E("p", "g-det__meta"))],
     ".g-note": [_rows_on(CARD, E("p", "g-note"))],
     ".g-timeline__at": [_rows_on(CARD, E("span", "g-timeline__at"))],

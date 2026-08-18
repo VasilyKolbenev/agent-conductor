@@ -95,9 +95,10 @@ def _load(page: Page, name: str) -> None:
     assert page.evaluate("payload => window.conductGraph.load(payload)", payload)
 
 
-def test_the_graph_modules_boot_without_a_console_error_and_render_empty(
+def test_the_graph_modules_boot_into_the_dalio_default_without_an_error(
         chromium: Browser, graph_url: str) -> None:
-    """Chromium resolves the module graph; the empty state names its honesty."""
+    """Chromium resolves the module graph and the window opens on the
+    product's default five-step graph, loaded through the public seam."""
     context = chromium.new_context(viewport={"width": 1440, "height": 1200})
     page = context.new_page()
     problems: list[str] = []
@@ -111,14 +112,14 @@ def test_the_graph_modules_boot_without_a_console_error_and_render_empty(
     try:
         page.goto(graph_url, wait_until="load")
         page.wait_for_function("Boolean(window.conductGraph)")
-        assert page.locator("#fieldEmpty").is_visible()
-        assert "fixture data only" in page.locator("#notice").inner_text()
-        assert page.locator(".g-node").count() == 0
+        assert not page.locator("#fieldEmpty").is_visible()
+        assert page.locator(".g-node").count() == 8
+        assert "run-dalio-default" in page.locator("#runFacts").inner_text()
         names = {url.rsplit("/", 1)[1]: status for url, status in served}
         assert names == {
             "graph.html": 200, "graph.css": 200, "graph.js": 200,
-            "graph-adapter.js": 200, "graph-store.js": 200,
-            "graph-view.js": 200,
+            "graph-adapter.js": 200, "graph-default.js": 200,
+            "graph-store.js": 200, "graph-view.js": 200,
             "command-projection.js": 200, "command-view.js": 200,
         }
         assert problems == []
@@ -487,6 +488,89 @@ def test_availability_arrives_as_data_and_absence_claims_nothing(
         '[data-node-id="impl-a"] .hb').get_attribute("style") is None
     assert graph_page.locator("#paletteCard").locator(
         ".g-palette__row").count() == len(_registry_payload()) - 1
+
+
+def test_the_default_graph_is_dalios_five_steps_in_their_one_order(
+        graph_page: Page) -> None:
+    """Five numbered stages, each its own node: Detect never absorbs
+    Diagnose, and the order is the process's, not the renderer's."""
+    stages = graph_page.locator(".g-stage")
+    assert [stages.nth(i).inner_text() for i in range(stages.count())] == [
+        "1/5 · goal", "2/5 · identify", "3/5 · diagnose", "4/5 · design",
+        "5/5 · do"]
+    titles = {row["node_id"]: row["title"] for row in graph_page.evaluate(
+        "window.conductGraph.state().nodes.map(n =>"
+        " ({node_id: n.node_id, title: n.title, stage: n.stage}))")}
+    assert titles["identify"] == "Identify Problems"
+    assert titles["diagnose"] == "Diagnose Root Causes"
+    geometry = graph_page.locator("#field").evaluate(_GEOMETRY)
+    assert geometry["overlaps"] == 0
+    assert geometry["links"] == [
+        ["goal", "identify"], ["identify", "diagnose"],
+        ["diagnose", "design"], ["design", "confirm-gate"],
+        ["confirm-gate", "do"], ["do", "result-gate"],
+        ["result-gate", "retry-loop"]]
+
+
+def test_do_is_the_only_effect_capable_step_and_sits_behind_its_own_gate(
+        graph_page: Page) -> None:
+    """One dispatch in the whole graph, and no path reaches it around the
+    Human gate."""
+    nodes = graph_page.evaluate(
+        "window.conductGraph.state().nodes.map(n =>"
+        " ({id: n.node_id, caps: n.capabilities}))")
+    effectful = [row["id"] for row in nodes if "dispatch" in row["caps"]]
+    assert effectful == ["do"]
+    edges = graph_page.evaluate("window.conductGraph.state().edges")
+    into_do = [edge["from"] for edge in edges if edge["to"] == "do"]
+    assert into_do == ["confirm-gate"]
+    assert {"from": "design", "to": "do"} not in edges
+
+
+def test_the_loop_reopens_identify_and_never_executes(
+        graph_page: Page) -> None:
+    """pass 1/3 on the node; the card names the reopened step and the rule."""
+    loop = graph_page.locator('[data-node-id="retry-loop"]')
+    assert loop.locator(".g-loop-bound").inner_text() == "↻ pass 1/3"
+    nodes = graph_page.evaluate(
+        "window.conductGraph.state().nodes.map(n =>"
+        " ({id: n.node_id, caps: n.capabilities, loop: n.loop}))")
+    retry = next(row for row in nodes if row["id"] == "retry-loop")
+    assert "dispatch" not in retry["caps"]
+    assert retry["loop"] == {"bound": 3, "pass": 1, "backTo": "identify"}
+    edges = graph_page.evaluate("window.conductGraph.state().edges")
+    assert not [edge for edge in edges if edge["from"] == "retry-loop"]
+    loop.click()
+    detail = graph_page.locator("#detailCard")
+    assert "pass 1 of 3" in detail.inner_text()
+    assert "reopens: Identify Problems" in detail.inner_text()
+    assert "it executes nothing" in detail.inner_text()
+    assert "fresh Confirm" in detail.inner_text()
+
+
+def test_the_default_never_claims_completion_without_a_verified_result(
+        graph_page: Page) -> None:
+    """Both gates pend, Do is idle with no evidence: nothing reads as done."""
+    nodes = {row["id"]: row for row in graph_page.evaluate(
+        "window.conductGraph.state().nodes.map(n => ({id: n.node_id,"
+        " phase: n.phase, evidence: n.evidence,"
+        " gate: n.gate ? n.gate.state : null}))")}
+    assert nodes["do"]["phase"] == "idle" and nodes["do"]["evidence"] == []
+    assert nodes["confirm-gate"]["gate"] == "pending"
+    assert nodes["result-gate"]["gate"] == "pending"
+    assert "✓ approved" not in graph_page.locator("#gatesCard").inner_text()
+
+
+def test_the_default_spreads_the_steps_across_different_products(
+        graph_page: Page) -> None:
+    """Provider-neutrality shown, not claimed: four products hold the five
+    stages as data, with no vendor branch to render any of them."""
+    nodes = graph_page.evaluate(
+        "window.conductGraph.state().nodes.map(n =>"
+        " ({stage: n.stage, harness: n.harness}))")
+    staffed = {row["stage"]: row["harness"] for row in nodes if row["stage"]}
+    assert len(set(staffed.values())) >= 4
+    assert staffed["do"] == "kimi-code"
 
 
 def test_a_bounded_loop_renders_its_bound_and_the_field_stays_a_dag(
