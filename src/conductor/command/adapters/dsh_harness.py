@@ -65,6 +65,16 @@ per SPAWN, is never read by anything here, and is discarded when the spawn
 returns; a home a crash left behind is swept at the next dispatch. Nothing from
 it reaches a receipt, the journal, evidence, the API or an exception message, and
 no dsh home is ever a durable record of model text.
+
+That promise is kept against a HOSTILE child too, which is what it was missing.
+A child can replace the home directory this process minted with a portal; the
+entry is still one this process created and remembers, so it is removed by its
+own entry and the tree it named keeps every byte. When a discard genuinely
+cannot happen, the failure is COUNTED rather than swallowed: every receipt the
+dispatch goes on to build states it beside -- never instead of -- what the spawn
+did. And the standing home is not merely reported at the next dispatch, it stops
+it: a sweep that cannot take everything under the home root refuses the whole
+dispatch, spawning nothing at all, until an operator has cleared it.
 """
 from __future__ import annotations
 
@@ -128,6 +138,19 @@ __all__ = [
 UNCONTAINED_DETAIL = (
     "a name on the dsh workspace's own writable route is not locally contained, "
     "so nothing was minted, claimed or spawned")
+#: What a dispatch reports when the home root holds state this build did not
+#: mint and may not delete. It carries no name and no count: the residue is
+#: operator state, and the operator reads it from the disk, not from a receipt.
+RESIDUE_DETAIL = (
+    "the dsh home root holds state this build did not mint and may not delete, "
+    "so nothing was preflighted, claimed or spawned; a dispatch runs again once "
+    "an operator has cleared it")
+#: Appended to whatever a receipt already says when an attempt home outlived its
+#: spawn. It never replaces the observed outcome it accompanies: a cleanup that
+#: did not happen is a second fact about the attempt, not a different result.
+RETAINED_DETAIL = (
+    " an attempt home could not be discarded and was left standing, so the next "
+    "dispatch is blocked until an operator has cleared the dsh home root")
 
 
 class DshHarnessError(AdapterContractError):
@@ -260,6 +283,11 @@ class DshHarnessAdapter:
         self._clock = clock
         self._ids = ids
         self._attempts: dict[str, _Attempt] = {}
+        #: How many homes this dispatch could not discard. A COUNT, never a
+        #: name: the number is what a receipt may say, the name is operator
+        #: state. It is re-derived per dispatch, because the standing residue
+        #: itself is what the next sweep reads.
+        self._retained = 0
 
     # -- observation: no probe, no spawn, no claim ------------------------------
 
@@ -332,6 +360,7 @@ class DshHarnessAdapter:
     def _dispatch(
             self, request: ActionRequest, args: DeepDispatchArgs) -> ActionResultReceipt:
         """Claim-check, materialize, sweep, preflight, then spawn exactly once."""
+        self._retained = 0
         if self._workspace.is_claimed(request.action_id):
             # A marker already claims this action: an earlier attempt reached the
             # spawn. Whether it finished is genuinely unknown, and guessing would
@@ -343,8 +372,13 @@ class DshHarnessAdapter:
                 "dsh task is never repeated after a crash")
         instruction = self._workspace.read_instruction(args.instruction_ref)
         # A home a crashed attempt left behind is model text this build promised
-        # not to retain, so it goes before this attempt mints its own.
-        self._workspace.sweep_homes()
+        # not to retain, so it goes before this attempt mints its own. What the
+        # sweep could NOT take is the whole reason this dispatch stops: state of
+        # unknown ownership under the home root is either somebody else's or the
+        # residue of a cleanup that failed, and running a task over either would
+        # be building on a promise this build has already broken once.
+        if self._workspace.sweep_homes():
+            return self._receipt(request, "failed", None, RESIDUE_DETAIL)
         preflight = self._preflight(request)
         if preflight is not None:
             return preflight
@@ -389,7 +423,7 @@ class DshHarnessAdapter:
         lifetime of the spawn. The discard runs on every road out, including a
         raise. A home this door may NOT delete -- one holding a name whose kind
         it cannot establish -- is left standing rather than guessed at, and the
-        next dispatch's sweep reports it rather than deleting through it.
+        next dispatch's sweep refuses over it rather than deleting through it.
         """
         home = self._mint_home()
         try:
@@ -398,11 +432,20 @@ class DshHarnessAdapter:
             self._discard(home)
 
     def _discard(self, home: Path) -> None:
-        """Discard one attempt home; a refusal leaves it, and never raises here."""
+        """Discard one attempt home, or COUNT the failure; never raise, never hide.
+
+        This runs in a ``finally``, so raising here would replace whatever the
+        spawn did with a cleanup error -- which is why the old body swallowed the
+        refusal. Swallowing it was worse: the home survived, the next dispatch
+        ran anyway, and the retention promise was silently broken. The refusal is
+        counted instead, so every receipt this dispatch goes on to build states
+        it alongside its own outcome, and the standing home stops the next
+        dispatch at the sweep.
+        """
         try:
             self._workspace.discard_home(home)
-        except (WorkspaceNotContained, OSError):  # noqa: BLE001 -- a leak, not a lie
-            pass
+        except (WorkspaceNotContained, OSError):  # noqa: BLE001 -- carry no path onward
+            self._retained += 1
 
     def _spawn(
             self, argv: tuple[str, ...], home: Path, cwd: str, *,
@@ -466,11 +509,14 @@ class DshHarnessAdapter:
     def _receipt(
             self, request: ActionRequest, observed: str, exit_code: int | None,
             detail: str) -> ActionResultReceipt:
+        """The one receipt funnel, so an undiscarded home cannot escape unsaid."""
         return ActionResultReceipt(
             receipt_id=self._ids("receipt"), action_id=request.action_id,
             run_id=request.run_id, attempt_id=request.attempt_id,
             instance_id=request.instance_id, outcome=observed,
-            observed_at=self._clock(), detail=detail, exit_code=exit_code)
+            observed_at=self._clock(),
+            detail=detail + RETAINED_DETAIL if self._retained else detail,
+            exit_code=exit_code)
 
     # -- verification: independent workspace evidence only ----------------------
 

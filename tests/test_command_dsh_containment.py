@@ -30,6 +30,7 @@ from pathlib import Path
 
 import pytest
 
+import conductor.command.adapters.dsh_workspace as dsh_workspace
 from conductor.command.adapters.dsh_workspace import (
     HOME_DIR,
     MARKER_DIR,
@@ -294,6 +295,44 @@ def test_the_sweep_removes_every_home_a_crashed_attempt_left_behind(tmp_path):
     assert sorted(path.name for path in (root / HOME_DIR).iterdir()) == []
 
 
+def test_a_minted_home_replaced_by_a_portal_is_removed_by_its_own_entry(tmp_path):
+    """The case the contained-route idiom missed: the portal IS the home root.
+
+    A portal met INSIDE a home was already removed by its own entry. A portal
+    standing WHERE the home stands was refused instead -- correct for a name
+    nobody here minted, wrong for the one this process just created and still
+    remembers. The refusal is what left model-text state standing.
+    """
+    workspace, root = _rooted(tmp_path)
+    outside = _outside(tmp_path)
+    home = workspace.mint_home("attempt-1")
+    home.rmdir()
+    with skip_when_unavailable():
+        plant_route_portal(home, outside, kind="junction")
+    before = _tree(outside)
+
+    workspace.discard_home(home)
+
+    assert _tree(outside) == before, "OUTSIDE_DELETED=True"
+    assert sorted((root / HOME_DIR).iterdir()) == [], "HOME_ENTRY_EXISTS True"
+
+
+def test_a_portal_standing_where_no_minted_home_ever_stood_is_still_refused(tmp_path):
+    """The other half of the same door: unminted names keep their old refusal."""
+    workspace, root = _rooted(tmp_path)
+    outside = _outside(tmp_path)
+    (root / HOME_DIR).mkdir()
+    with skip_when_unavailable():
+        plant_route_portal(root / HOME_DIR / "foreign", outside, kind="junction")
+    before = _tree(outside)
+
+    refusal = _refusal(workspace.discard_home, root / HOME_DIR / "foreign")
+
+    assert _tree(outside) == before, "OUTSIDE_DELETED=True"
+    assert (root / HOME_DIR / "foreign").exists(), "FOREIGN_ENTRY_DELETED=True"
+    assert refusal is not None, "a name this workspace never minted must refuse"
+
+
 # --- the same relations, driven through the real adapter ----------------------
 
 
@@ -329,6 +368,92 @@ def test_no_attempt_home_survives_a_completed_dispatch(tmp_path):
         path for path in root.rglob("*")
         if path.is_file() and b"MODEL TEXT PLANTED HERE" in path.read_bytes()]
     assert planted == [], f"MODEL_TEXT_RETAINED={planted}"
+
+
+def _portal_kind(root: Path, work_item_id: str = "work-001") -> str:
+    """What the child itself recorded about the portal it tried to plant."""
+    witness = root / WORK_DIR / work_item_id / _fakedsh.PORTAL_WITNESS
+    return witness.read_text(encoding="utf-8") if witness.exists() else "none"
+
+
+def test_a_child_that_replaces_its_own_home_leaves_no_entry_and_no_damage(tmp_path):
+    """Codex's probe, driven end to end through the real adapter.
+
+    Verbatim, at the prior SHA::
+
+        DISCARD=refused WorkspaceNotContained
+        HOME_ENTRY_EXISTS True
+
+    The child swapped the directory this process minted for a portal, so the
+    contained-route walk refused the cleanup and the entry survived pointing at
+    a tree nobody here owns.
+    """
+    outside = _outside(tmp_path)
+    adapter, root, log = a_harness(tmp_path, FAKEDSH_HOME_PORTAL=str(outside))
+    before = _tree(outside)
+
+    receipt = run_once(adapter, a_request())
+
+    if _portal_kind(root) == "none":
+        pytest.skip("this platform granted the child neither junction nor symlink")
+    assert _tree(outside) == before, "OUTSIDE_DELETED=True"
+    assert sorted((root / HOME_DIR).iterdir()) == [], "HOME_ENTRY_EXISTS True"
+    # The cleanup succeeded, so it says nothing beyond what the spawn observed.
+    assert receipt.outcome == "succeeded" and receipt.exit_code == 0
+    assert len(_fakedsh.task_spawns(log)) == 1
+
+
+def test_a_discard_that_cannot_happen_is_stated_and_never_rewrites_the_spawn(
+        tmp_path, monkeypatch):
+    """Clause (b) and (c) as one relation: stated, unmasking, and then closed.
+
+    At the prior SHA the refusal was a bare ``pass`` and the next dispatch ran
+    anyway -- Codex read ``SWEEP ('attempt',)`` and ``HOME_AFTER_SWEEP True``
+    while a second task still spawned.
+    """
+    outside = _outside(tmp_path)
+    adapter, root, log = a_harness(tmp_path, FAKEDSH_HOME_PORTAL=str(outside))
+    before = _tree(outside)
+
+    def refuses(path, found):
+        raise OSError("the entry could not be removed")
+
+    monkeypatch.setattr(dsh_workspace, "_remove_portal", refuses)
+    first = run_once(adapter, a_request(action_id="act-1"))
+    monkeypatch.undo()
+    if _portal_kind(root) == "none":
+        pytest.skip("this platform granted the child neither junction nor symlink")
+    spawned_first = len(_fakedsh.spawns(log))
+
+    second = run_once(adapter, a_request(action_id="act-2", work_item_id="work-002"))
+
+    # (b) the retention is stated, and the spawn's own outcome is left standing.
+    assert first.outcome == "succeeded" and first.exit_code == 0
+    assert "could not be discarded" in first.detail, f"RETENTION_SILENT={first.detail}"
+    # (c) the next dispatch is blocked, and the child's own log counts the zero.
+    assert second.outcome == "failed" and second.exit_code is None
+    assert len(_fakedsh.spawns(log)) == spawned_first, "SPAWNED_OVER_RESIDUE=True"
+    assert _tree(outside) == before, "OUTSIDE_DELETED=True"
+    assert (root / HOME_DIR).exists()
+
+
+@pytest.mark.parametrize("kind", PORTALS)
+def test_crash_residue_the_sweep_refuses_blocks_the_next_dispatch(tmp_path, kind):
+    """A home the sweep may not delete is a block, never a line nobody reads."""
+    adapter, root, log = a_harness(tmp_path)
+    outside = _outside(tmp_path)
+    (root / HOME_DIR).mkdir()
+    with skip_when_unavailable():
+        plant_route_portal(root / HOME_DIR / "residue", outside, kind=kind)
+    before = _tree(outside)
+
+    receipt = run_once(adapter, a_request())
+
+    assert _fakedsh.spawns(log) == [], "SPAWNED_OVER_RESIDUE=True"
+    assert receipt.outcome == "failed" and receipt.exit_code is None
+    assert (root / HOME_DIR / "residue").exists(), "RESIDUE_DELETED=True"
+    assert _tree(outside) == before, "OUTSIDE_DELETED=True"
+    assert not (root / MARKER_DIR / "act-1.marker").exists()
 
 
 def test_the_adapter_reports_a_refusal_and_never_claims_a_marker_it_could_not_write(

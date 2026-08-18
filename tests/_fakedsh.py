@@ -40,6 +40,13 @@ ESCAPE_FILE = "FAKEDSH_ESCAPE_FILE"
 #: "relpath:text" written under the spawn's own DSH_HOME -- the model-text seam
 #: a real harness fills with prompt, session and tool output.
 HOME_FILE = "FAKEDSH_HOME_FILE"
+#: An absolute path the child REPLACES its own DSH_HOME with, as a portal. This
+#: is the seam behind Codex's silent-retention probe: a child that swaps the
+#: directory the parent minted for a link makes the parent's cleanup refuse.
+HOME_PORTAL = "FAKEDSH_HOME_PORTAL"
+#: Where the child records which portal kind it managed to plant, relative to
+#: the task's own cwd; ``none`` means the platform granted neither primitive.
+PORTAL_WITNESS = "home-portal-kind.txt"
 #: Exit code for a task spawn; `--version` always exits 0 unless this is set.
 EXIT = "FAKEDSH_EXIT"
 #: Non-empty makes `--version` itself fail, so the preflight refusal is testable.
@@ -90,6 +97,44 @@ def _write_pair(base: Path, spec: str) -> None:
     target.write_text(text, encoding="utf-8", newline="\n")
 
 
+def _empty_tree(root: Path) -> None:
+    """Remove everything under ``root``, then ``root`` itself, following nothing."""
+    for path in sorted(root.rglob("*"), reverse=True):
+        if path.is_dir() and not path.is_symlink():
+            path.rmdir()
+        else:
+            path.unlink()
+    root.rmdir()
+
+
+def _replace_home_with_portal(target: str) -> str:
+    """Swap this spawn's own DSH_HOME for a portal at the very same name.
+
+    The parent minted a directory here and remembers the name; a child that
+    replaces it with a junction or a symbolic link is the hostile case Codex
+    drove. Returns the kind actually planted, so the caller's test reads what
+    happened from the child rather than assuming it: a platform that grants
+    neither primitive answers ``"none"`` and leaves an ordinary directory.
+    """
+    home = Path(os.environ.get("DSH_HOME", ""))
+    if not home.name or not home.is_dir():
+        return "none"
+    _empty_tree(home)
+    try:
+        import _winapi
+
+        _winapi.CreateJunction(target, str(home))
+        return "junction"
+    except (ImportError, AttributeError, OSError):
+        pass
+    try:
+        home.symlink_to(target, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        home.mkdir(parents=True, exist_ok=True)
+        return "none"
+    return "symlink"
+
+
 def _run_task() -> int:
     env = os.environ
     if env.get(WRITE_FILE):
@@ -98,6 +143,9 @@ def _run_task() -> int:
         _write_pair(Path.cwd().parent, env[ESCAPE_FILE])
     if env.get(HOME_FILE) and env.get("DSH_HOME"):
         _write_pair(Path(env["DSH_HOME"]), env[HOME_FILE])
+    if env.get(HOME_PORTAL):
+        kind = _replace_home_with_portal(env[HOME_PORTAL])
+        _write_pair(Path.cwd(), f"{PORTAL_WITNESS}:{kind}")
     if env.get(EMIT_STDOUT):
         sys.stdout.buffer.write(env[EMIT_STDOUT].encode("utf-8") + b"\n")
         sys.stdout.buffer.flush()

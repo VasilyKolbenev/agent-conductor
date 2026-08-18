@@ -36,10 +36,12 @@ Cleanup is the same relation again, and it is the one place where getting it
 wrong is worse than the leak it fixes. Every delete is bounded to ONE fixed
 root -- `<project>/.dsh-home` -- and to a container this workspace itself
 minted. A portal met inside such a container is removed by its OWN entry, so
-whatever it named keeps every byte; a portal standing where a home would stand
-is refused and named, never touched, because this door did not mint it and
-cannot say whose it is. A name whose kind cannot be established at all refuses
-rather than being guessed at.
+whatever it named keeps every byte. The home ROOT is the same case once a child
+replaces the directory this process minted: the entry is one this workspace
+created and still remembers, so it too goes by its own entry and never through
+it. A portal standing at a home name this workspace never minted is refused and
+named, never touched, because this door cannot say whose it is. A name whose
+kind cannot be established at all refuses rather than being guessed at.
 
 Two properties stay mechanical rather than advisory. A home is created with
 ``exist_ok=False``, so reusing one is an error rather than a silent overwrite.
@@ -53,7 +55,7 @@ from __future__ import annotations
 import hashlib
 import os
 import stat
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from ..containment import (
@@ -149,6 +151,11 @@ class DshWorkspace:
     """Every filesystem effect the harness is allowed, bound to one project root."""
 
     root: Path
+    #: The home names THIS workspace minted and has not yet discarded. It is the
+    #: only ground on which cleanup may remove a name whose kind is a portal:
+    #: this process created that entry, so removing the entry alone destroys
+    #: nothing it did not make. A name absent from here is somebody else's.
+    minted: set[str] = field(default_factory=set, compare=False, repr=False)
 
     @classmethod
     def at(cls, root: str | os.PathLike[str]) -> "DshWorkspace":
@@ -194,6 +201,7 @@ class DshWorkspace:
         """A fresh home. ``exist_ok=False`` makes reuse a hard error, not a merge."""
         home = self._directory_route(HOME_DIR, name)
         home.mkdir(parents=True, exist_ok=False)
+        self.minted.add(home.name)
         return home
 
     def discard_home(self, home: str | os.PathLike[str]) -> None:
@@ -203,18 +211,36 @@ class DshWorkspace:
         a path that does not stand directly beneath it is refused without a
         single entry being read, so this cleanup cannot reach outside its own
         root even when it is handed a path that does.
+
+        A child may REPLACE the directory this process minted with a portal, and
+        the home root is then exactly the case the contained-route walk was built
+        to refuse. For a name this workspace minted the refusal is the wrong
+        answer: the entry is ours, so it is removed by its OWN entry -- the same
+        idiom already used for a portal met INSIDE a home -- and whatever it
+        named keeps every byte. For any other name the refusal stands.
         """
         path = Path(home)
         if path.parent != self.homes_root():
             raise WorkspaceNotContained(
                 f"{str(path)!r} is not a home beneath this workspace's fixed root")
-        target = self._directory_route(HOME_DIR, path.name)
+        target = self._directory_route(HOME_DIR) / _component(path.name)
         found = _leaf(target)
         if found is None:
+            self.minted.discard(target.name)
             return
-        if not stat.S_ISDIR(found.st_mode):
-            raise _refuse(RouteViolation(RouteViolationCode.NOT_DIRECTORY, target))
+        if portal_violation(target, found) is not None or not stat.S_ISDIR(
+                found.st_mode):
+            self._discard_replaced_home(target, found)
+            return
         _remove_tree(target)
+        self.minted.discard(target.name)
+
+    def _discard_replaced_home(self, target: Path, found: os.stat_result) -> None:
+        """Remove a minted home's own entry once its kind is no longer a directory."""
+        if target.name not in self.minted:
+            raise _refuse(RouteViolation(RouteViolationCode.NOT_DIRECTORY, target))
+        _remove_portal(target, found)
+        self.minted.discard(target.name)
 
     def sweep_homes(self) -> tuple[str, ...]:
         """Discard every home a crashed attempt left, naming what it refused.
@@ -239,6 +265,7 @@ class DshWorkspace:
                 refused.append(path.name)
                 continue
             _remove_tree(path)
+            self.minted.discard(path.name)
         return tuple(refused)
 
     # -- the crash-proof marker -----------------------------------------------
