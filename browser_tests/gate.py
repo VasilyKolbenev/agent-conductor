@@ -10,13 +10,20 @@ This runner is the replacement discipline:
   cannot poison the next, and the crash surface is one module wide;
 - a module runs exactly once. There is no retry, no rerun flag, no xfail
   ladder and no statistical waiver anywhere in this file — a red module is a
-  red gate, full stop, and the gate stops at the first one;
-- every run leaves a record (module, exit code, duration, output tail, the
-  Playwright and Chromium versions the gate ran on), and a failing run
-  leaves everything: full stdout, full stderr with Playwright's browser
-  channel logging (DEBUG=pw:browser*), the failing node ids, and whatever
-  screenshots and tracebacks the conftest evidence hook captured while the
-  failing test's pages were still alive.
+  red gate, full stop, and the gate stops at the first one. A skipped test
+  is a waiver by another name, so any skip also reds the gate; ambient
+  pytest configuration (PYTEST_ADDOPTS, PYTEST_PLUGINS) is stripped from
+  the child so nothing outside this file can soften the command line;
+- every run leaves a record (module, exit code, duration, skip count, output
+  tail, the engine versions) plus its full stderr with Playwright's browser
+  channel logging (DEBUG=pw:browser*), ALWAYS — a green run's stderr is
+  where a near-miss crash leaves its words. A failing run also leaves full
+  stdout and the failing node ids, beside whatever screenshots and
+  tracebacks the conftest evidence hook captured while the failing test's
+  pages were still alive;
+- a module that hangs is killed at a stated timeout and recorded as
+  timed-out, and the gate report is rewritten after every module, so even a
+  killed gate leaves the records accumulated so far.
 
 Not a test module: pytest ignores it (no ``test_`` prefix), and the fast
 suite pins its discipline in tests/test_browser_gate.py.
@@ -24,6 +31,7 @@ suite pins its discipline in tests/test_browser_gate.py.
 Usage:
     python -m browser_tests.gate [--reverse] [--artifacts DIR]
                                  [--modules-dir DIR] [--skip-version-probe]
+                                 [--module-timeout SECONDS]
 """
 from __future__ import annotations
 
@@ -39,7 +47,11 @@ import time
 from pathlib import Path
 
 LOG = logging.getLogger("browser-gate")
-_FAILED_NODE = re.compile(r"^(?:FAILED|ERROR) (\S+)", re.MULTILINE)
+#: The whole node id from a -rEf summary line, without the trailing message —
+#: a parametrized id may contain spaces, so this must not stop at the first.
+_FAILED_NODE = re.compile(r"^(?:FAILED|ERROR) (.+?)(?:\s+-\s.*)?$", re.MULTILINE)
+_SKIPPED = re.compile(r"(\d+) skipped")
+MODULE_TIMEOUT_SECONDS = 600
 
 
 def discover_modules(modules_dir: Path, reverse: bool) -> list[Path]:
@@ -69,39 +81,70 @@ def probe_versions(artifacts: Path) -> dict[str, str]:
     return versions
 
 
-def run_module(module: Path, artifacts: Path, repo: Path) -> dict[str, object]:
-    """Run one module once, in a fresh pytest/Chromium process."""
+def _child_environment(artifacts: Path, repo: Path) -> dict[str, str]:
+    """The child's world: evidence armed, ambient pytest channels stripped."""
     environment = dict(os.environ)
     environment["CONDUCT_GATE_ARTIFACTS"] = str(artifacts)
     environment["PYTHONPATH"] = str(repo / "src")
     # Playwright's browser channel: launch lines and Chromium's own stderr
     # land in the subprocess stderr, so a renderer crash leaves its words.
     environment["DEBUG"] = "pw:browser*"
+    # Ambient configuration could append --collect-only or a rerun flag to
+    # the pinned command line below; the gate listens to nobody but itself.
+    environment.pop("PYTEST_ADDOPTS", None)
+    environment.pop("PYTEST_PLUGINS", None)
+    return environment
+
+
+def run_module(module: Path, artifacts: Path, repo: Path,
+               timeout: float) -> dict[str, object]:
+    """Run one module once, in a fresh pytest/Chromium process."""
     started = time.monotonic()
-    completed = subprocess.run(
-        [sys.executable, "-m", "pytest", str(module), "-q", "--tb=long", "-rEf",
-         "-p", "no:cacheprovider"],
-        capture_output=True, text=True, encoding="utf-8", errors="replace",
-        cwd=str(repo), env=environment, check=False)
+    try:
+        completed = subprocess.run(
+            [sys.executable, "-m", "pytest", str(module), "-q", "--tb=long",
+             "-rEf", "-p", "no:cacheprovider"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            cwd=str(repo), env=_child_environment(artifacts, repo),
+            timeout=timeout, check=False)
+        exit_code: object = completed.returncode
+        stdout, stderr = completed.stdout, completed.stderr
+    except subprocess.TimeoutExpired as expired:
+        exit_code = "timed-out"
+        stdout = (expired.stdout or b"").decode("utf-8", "replace") \
+            if isinstance(expired.stdout, bytes) else (expired.stdout or "")
+        stderr = (expired.stderr or b"").decode("utf-8", "replace") \
+            if isinstance(expired.stderr, bytes) else (expired.stderr or "")
     duration = round(time.monotonic() - started, 2)
+    skipped = _SKIPPED.search(stdout)
     record = {
         "module": module.name,
-        "exit_code": completed.returncode,
+        "exit_code": exit_code,
         "duration_seconds": duration,
-        "failed_nodes": _FAILED_NODE.findall(completed.stdout),
-        "tail": completed.stdout.strip().splitlines()[-1:],
+        "skipped": int(skipped.group(1)) if skipped else 0,
+        "failed_nodes": _FAILED_NODE.findall(stdout),
+        "tail": stdout.strip().splitlines()[-1:],
     }
-    if completed.returncode != 0:
-        stem = artifacts / module.stem
-        stem.with_suffix(".stdout.txt").write_text(
-            completed.stdout, encoding="utf-8")
-        stem.with_suffix(".stderr.txt").write_text(
-            completed.stderr, encoding="utf-8")
+    stem = artifacts / module.stem
+    # stderr is recorded ALWAYS: a green run's browser channel is the
+    # diagnostic corpus a crash-on-close flake leaves its near-misses in.
+    stem.with_suffix(".stderr.txt").write_text(stderr, encoding="utf-8")
+    if record["exit_code"] != 0 or record["skipped"]:
+        stem.with_suffix(".stdout.txt").write_text(stdout, encoding="utf-8")
     return record
 
 
+def _write_report(artifacts: Path, reverse: bool, result: str,
+                  records: list[dict[str, object]]) -> None:
+    (artifacts / "gate.json").write_text(
+        json.dumps({"order": "reverse" if reverse else "normal",
+                    "result": result, "records": records}, indent=2),
+        encoding="utf-8")
+
+
 def run_gate(modules_dir: Path, artifacts: Path, reverse: bool,
-             skip_version_probe: bool) -> int:
+             skip_version_probe: bool,
+             timeout: float = MODULE_TIMEOUT_SECONDS) -> int:
     """The gate: modules in order, one process and one chance each."""
     repo = modules_dir.resolve().parent
     artifacts.mkdir(parents=True, exist_ok=True)
@@ -110,22 +153,21 @@ def run_gate(modules_dir: Path, artifacts: Path, reverse: bool,
         LOG.info("engine: playwright %s, chromium %s",
                  versions["playwright"], versions["chromium"])
     records: list[dict[str, object]] = []
-    exit_code = 0
     for module in discover_modules(modules_dir, reverse):
-        record = run_module(module, artifacts, repo)
+        record = run_module(module, artifacts, repo, timeout)
         records.append(record)
         LOG.info("%s: exit %s in %ss %s", record["module"], record["exit_code"],
                  record["duration_seconds"], record["tail"])
-        if record["exit_code"] != 0:
-            LOG.error("gate stops at first failure: %s (nodes: %s)",
-                      record["module"], record["failed_nodes"])
-            exit_code = 1
-            break
-    (artifacts / "gate.json").write_text(
-        json.dumps({"order": "reverse" if reverse else "normal",
-                    "result": "red" if exit_code else "green",
-                    "records": records}, indent=2), encoding="utf-8")
-    return exit_code
+        red = record["exit_code"] != 0 or record["skipped"]
+        # The report survives a kill: rewritten after every module.
+        _write_report(artifacts, reverse, "red" if red else "running", records)
+        if red:
+            LOG.error("gate stops at first failure: %s (nodes: %s, skipped: %s)",
+                      record["module"], record["failed_nodes"],
+                      record["skipped"])
+            return 1
+    _write_report(artifacts, reverse, "green", records)
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -140,13 +182,16 @@ def main(argv: list[str] | None = None) -> int:
                         help="directory holding the browser test modules")
     parser.add_argument("--skip-version-probe", action="store_true",
                         help="skip the engine version launch (unit tests)")
+    parser.add_argument("--module-timeout", type=float,
+                        default=MODULE_TIMEOUT_SECONDS,
+                        help="seconds before a hanging module is killed")
     arguments = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     artifacts = arguments.artifacts or Path(tempfile.gettempdir()) / (
         "conduct-browser-gate-" + time.strftime("%Y%m%d-%H%M%S"))
     LOG.info("artifacts: %s", artifacts)
     return run_gate(arguments.modules_dir, artifacts, arguments.reverse,
-                    arguments.skip_version_probe)
+                    arguments.skip_version_probe, arguments.module_timeout)
 
 
 if __name__ == "__main__":
