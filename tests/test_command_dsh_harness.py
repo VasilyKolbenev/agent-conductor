@@ -23,6 +23,7 @@ from conductor.command.adapters.base import AdapterVerification
 from conductor.command.adapters.dsh_harness import (
     DSH_PROTOCOL,
     HOME_DIR,
+    INSTRUCTION_DIR,
     MARKER_DIR,
     REVIEWED_DSH_VERSION,
     DshHarnessAdapter,
@@ -63,10 +64,21 @@ def _config(node: str, entrypoint: str, names: tuple[str, ...]) -> ProviderConfi
         env_allow=names, entrypoint=entrypoint)
 
 
+#: The instruction body every dispatch below materializes. A dispatch that
+#: cannot read one refuses, so seeding it is part of standing a harness up --
+#: which is exactly the relation `test_command_dsh_trust_scale` holds from the
+#: other side by taking it away again.
+INSTRUCTION_BODY = "Add the missing guard and prove it with one failing test."
+
+
 def a_harness(tmp_path: Path, **knobs: str):
     """A registered, available harness over the fake, plus its root and spawn log."""
     root = tmp_path / "root"
     root.mkdir(exist_ok=True)
+    instructions = root / INSTRUCTION_DIR
+    instructions.mkdir(exist_ok=True)
+    (instructions / "instr-001.md").write_text(
+        INSTRUCTION_BODY, encoding="utf-8", newline="\n")
     log = tmp_path / "spawns.log"
     node, entrypoint = _fakedsh.fake_pins()
     environ = {_fakedsh.SPAWN_LOG: str(log), **knobs}
@@ -167,9 +179,13 @@ def test_every_spawn_mints_a_fresh_home_that_no_earlier_spawn_used(tmp_path):
     assert len(homes) == 4  # two preflights and two tasks
     assert len(set(homes)) == 4, "a home was reused across spawns"
     for home in homes:
+        # The child recorded the home it actually ran in, and every one of them
+        # stood directly beneath the ONE root this workspace cleans up within.
         assert Path(home).parent == (root / HOME_DIR).resolve() or Path(
             home).parent == root / HOME_DIR
-        assert Path(home).is_dir()
+        # None of them survives the spawn: retention is per-attempt by relation,
+        # which `test_command_dsh_containment` holds against planted model text.
+        assert not Path(home).exists()
 
 
 def test_the_child_never_inherits_the_operator_home_and_telemetry_stays_disabled(
@@ -478,19 +494,25 @@ def test_exit_zero_with_no_workspace_change_is_never_a_verified_success(tmp_path
     assert "not a verification" in receipt.detail
     verification = adapter.verify(request, receipt)
     assert isinstance(verification, AdapterVerification)
-    assert verification.state == "unavailable"
+    # `error`, not `unavailable`: the runtime resolves an unavailable verifier to
+    # observed success, which is exactly what absence of proof may never buy.
+    assert verification.state == "error"
+    assert verification.state != "unavailable"
     assert verification.evidence_refs == ()
 
 
-def test_only_a_real_change_inside_the_authorized_subtree_verifies(tmp_path):
-    adapter, _root, _log = a_harness(
+def test_a_real_change_is_read_but_this_build_can_verify_no_success_from_it(tmp_path):
+    """The change is seen; the claim is not made, because nothing durable backs it."""
+    adapter, root, _log = a_harness(
         tmp_path, FAKEDSH_WRITE_FILE="src/added.txt:written by the task")
     request = a_request()
     receipt = run_once(adapter, request)
+    assert (root / "work" / "work-001" / "src" / "added.txt").exists()
     verification = adapter.verify(request, receipt)
-    assert verification.state == "verified"
-    assert len(verification.evidence_refs) == 1
-    assert "not from the task's output" in verification.detail
+    assert verification.state == "error"
+    assert verification.state not in {"verified", "unavailable"}
+    assert verification.evidence_refs == (), "an unbacked identifier is not evidence"
+    assert "no durable evidence record" in verification.detail
 
 
 def test_a_change_outside_the_authorized_subtree_is_a_mismatch(tmp_path):
@@ -506,7 +528,7 @@ def test_a_change_outside_the_authorized_subtree_is_a_mismatch(tmp_path):
     assert (root / "work" / "other-item" / "stolen.txt").exists()
 
 
-def test_verification_without_a_snapshot_is_unavailable_not_a_guess(tmp_path):
+def test_verification_without_a_snapshot_is_an_error_not_an_absent_verifier(tmp_path):
     adapter, _root, _log = a_harness(tmp_path)
     request = a_request()
     receipt = run_once(adapter, request)
@@ -514,7 +536,8 @@ def test_verification_without_a_snapshot_is_unavailable_not_a_guess(tmp_path):
         adapter._pin, adapter._runner, root=adapter._root, clock=lambda: NOW,
         ids=_Ids(), adapter_id=PROVIDER_ID)
     verification = fresh.verify(request, receipt)
-    assert verification.state == "unavailable"
+    assert verification.state == "error"
+    assert verification.state != "unavailable"
     assert "no pre-task snapshot" in verification.detail
 
 

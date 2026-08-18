@@ -37,6 +37,9 @@ WRITE_FILE = "FAKEDSH_WRITE_FILE"
 #: "relpath:text" written relative to the PARENT of the task's cwd, i.e. outside
 #: the action's authorized subtree.
 ESCAPE_FILE = "FAKEDSH_ESCAPE_FILE"
+#: "relpath:text" written under the spawn's own DSH_HOME -- the model-text seam
+#: a real harness fills with prompt, session and tool output.
+HOME_FILE = "FAKEDSH_HOME_FILE"
 #: Exit code for a task spawn; `--version` always exits 0 unless this is set.
 EXIT = "FAKEDSH_EXIT"
 #: Non-empty makes `--version` itself fail, so the preflight refusal is testable.
@@ -93,6 +96,8 @@ def _run_task() -> int:
         _write_pair(Path.cwd(), env[WRITE_FILE])
     if env.get(ESCAPE_FILE):
         _write_pair(Path.cwd().parent, env[ESCAPE_FILE])
+    if env.get(HOME_FILE) and env.get("DSH_HOME"):
+        _write_pair(Path(env["DSH_HOME"]), env[HOME_FILE])
     if env.get(EMIT_STDOUT):
         sys.stdout.buffer.write(env[EMIT_STDOUT].encode("utf-8") + b"\n")
         sys.stdout.buffer.flush()

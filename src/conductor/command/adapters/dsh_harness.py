@@ -33,13 +33,38 @@ identifiers, and no value from it can be read by the launcher as one of its own
 flags. Raw child output is bounded, drained, and discarded -- it never reaches a
 receipt, the journal, the API, an SSE frame, evidence, or an exception message.
 
-Exit 0 means the process was OBSERVED to end, never that the work is right.
-Verification is a separate seam and reads only INDEPENDENT workspace evidence:
-files that actually changed under the action's own authorized subtree. With no
-such change there is nothing to verify and the seam says ``unavailable``; with a
-change outside the authorized subtree it says ``mismatch``. And a task is never
-run twice: a marker written before the spawn survives a crash, so a restart that
-finds it reports an honest ``unknown`` instead of repeating the work.
+Exit 0 means the process was OBSERVED to end, never that the work is right, and
+in this build it can never mean more than that. Verification is a separate seam
+and reads only INDEPENDENT workspace evidence: files that actually changed under
+the action's own authorized subtree. This build writes NO durable evidence
+record, so the seam never answers ``verified`` and never mints an evidence
+identifier it cannot back -- absence of proof is reported as ``error``, which
+the runtime resolves to ``verification_failed``, and a change outside the
+authorized subtree is ``mismatch``. ``unavailable`` is never used at all: the
+runtime reserves that token for an adapter that exposes no verifier, and reading
+absence of proof as absence of a verifier is how exit zero became success. The
+day a durable evidence-writer lands, what changes a terminal state is the
+EVIDENCE; it is never the exit code.
+
+The prompt is held to the same standard. A task sentence naming only an
+instruction REFERENCE would send the real dsh something that is not the user's
+task, so the instruction TEXT is materialized through the workspace door from
+one contained file, and a dispatch that cannot materialize it refuses before any
+child exists rather than dispatching a vague prompt.
+
+Every name this adapter writes through -- the per-attempt home, the marker, the
+work subtree and the instruction -- is proved contained by the workspace door
+before the write, with the typed lstat-only relation the preview's route gate
+and the owned runner's cwd walk already use. And a task is never run twice: a
+marker written before the spawn survives a crash, so a restart that finds it
+reports an honest ``unknown`` instead of repeating the work.
+
+DSH_HOME retention is stated, not implied. A real harness may write prompt,
+session, tool output and model text into its home, so the home is minted fresh
+per SPAWN, is never read by anything here, and is discarded when the spawn
+returns; a home a crash left behind is swept at the next dispatch. Nothing from
+it reaches a receipt, the journal, evidence, the API or an exception message, and
+no dsh home is ever a durable record of model text.
 """
 from __future__ import annotations
 
@@ -58,7 +83,14 @@ from .base import (
 )
 from .deep_commands import DeepDispatchArgs
 from .deep_contracts import DeepProtocol
-from .dsh_workspace import HOME_DIR, MARKER_DIR, WORK_DIR, DshWorkspace
+from .dsh_workspace import (
+    HOME_DIR,
+    INSTRUCTION_DIR,
+    MARKER_DIR,
+    WORK_DIR,
+    DshWorkspace,
+    WorkspaceNotContained,
+)
 from .process import CommandSpec, ProcessOutcome, ProcessRunner, ProcessRunnerError
 
 #: The exact published version this build was reviewed against. A preflight that
@@ -86,9 +118,16 @@ DSH_CAPABILITY = "dispatch"
 #: Re-exported from the workspace door so a reader of this module can see the
 #: subtrees it owns without following an import.
 __all__ = [
-    "DSH_PROTOCOL", "HOME_DIR", "MARKER_DIR", "REVIEWED_DSH_VERSION", "WORK_DIR",
+    "DSH_PROTOCOL", "HOME_DIR", "INSTRUCTION_DIR", "MARKER_DIR",
+    "REVIEWED_DSH_VERSION", "WORK_DIR",
     "DshHarnessAdapter", "DshHarnessError", "DshPin",
 ]
+#: What a refused workspace route reports. It carries no path and no child
+#: detail: the route is operator state, and naming it here would put it in a
+#: receipt, the journal and the API at once.
+UNCONTAINED_DETAIL = (
+    "a name on the dsh workspace's own writable route is not locally contained, "
+    "so nothing was minted, claimed or spawned")
 
 
 class DshHarnessError(AdapterContractError):
@@ -140,16 +179,22 @@ def _flagless(token: str, what: str) -> str:
     return token
 
 
-def _task_text(args: DeepDispatchArgs) -> str:
-    """The task sentence, written HERE from identifiers the request validated.
+def _task_text(args: DeepDispatchArgs, instruction: str) -> str:
+    """A code-owned frame, then the MATERIALIZED instruction the user asked for.
 
-    Every substituted value is a contract id or a reviewed profile name, so no
-    free caller text reaches the child at all -- there is no body to smuggle.
+    The frame is written here from identifiers the request validated, and it
+    stands FIRST so that no byte of the instruction can occupy the launcher's
+    flag position; `_flagless` proves that at the argv boundary anyway. The
+    instruction itself is the task, read by the workspace door from one contained
+    file -- a dispatch that could not read it never reaches this function,
+    because a sentence built from the reference alone is not the user's task and
+    dispatching it would be a lie about what the child was asked to do.
     """
     refs = " ".join(args.artifact_refs) or "none"
     return _flagless(
         f"conduct work item {args.work_item_id} under the {args.profile} profile "
-        f"following instruction {args.instruction_ref} over artifacts {refs}",
+        f"over artifacts {refs}. instruction {args.instruction_ref} reads:\n"
+        f"{instruction}",
         "task text")
 
 
@@ -264,10 +309,29 @@ class DshHarnessAdapter:
     # -- execution: preflight, mark, spawn once ---------------------------------
 
     def execute(self, prepared: PreparedAction) -> ActionResultReceipt:
+        """Dispatch one task, or refuse; an uncontained route reaches no child.
+
+        Every workspace road below can refuse, and a refusal is reported as this
+        adapter's own fixed sentence rather than as the door's: the door's
+        message names the exact path it refused, which is operator state and has
+        no business in a receipt, the journal or the API.
+        """
         if not isinstance(prepared, PreparedAction):
             raise DshHarnessError("execute requires a validated PreparedAction")
         request = prepared.request
         args = self._dispatch_args(prepared.adapter_payload)
+        failed = False
+        try:
+            return self._dispatch(request, args)
+        except WorkspaceNotContained:  # noqa: BLE001 -- carry no path onward
+            failed = True
+        if failed:
+            return self._receipt(request, "failed", None, UNCONTAINED_DETAIL)
+        raise DshHarnessError("unreachable")
+
+    def _dispatch(
+            self, request: ActionRequest, args: DeepDispatchArgs) -> ActionResultReceipt:
+        """Claim-check, materialize, sweep, preflight, then spawn exactly once."""
         if self._workspace.is_claimed(request.action_id):
             # A marker already claims this action: an earlier attempt reached the
             # spawn. Whether it finished is genuinely unknown, and guessing would
@@ -277,25 +341,27 @@ class DshHarnessAdapter:
                 request, "unknown", None,
                 "a marker from an earlier attempt already claims this action; the "
                 "dsh task is never repeated after a crash")
+        instruction = self._workspace.read_instruction(args.instruction_ref)
+        # A home a crashed attempt left behind is model text this build promised
+        # not to retain, so it goes before this attempt mints its own.
+        self._workspace.sweep_homes()
         preflight = self._preflight(request)
         if preflight is not None:
             return preflight
-        home = self._mint_home()
         work = self._workspace.work_dir(args.work_item_id)
         before = self._workspace.digest_work_tree()
         self._workspace.claim(request.action_id)
-        outcome = self._spawn(
-            (*HEADLESS_ARGV, _task_text(args)), home,
+        outcome = self._attempt(
+            (*HEADLESS_ARGV, _task_text(args, instruction)),
             f"{WORK_DIR}/{args.work_item_id}", timeout=request.timeout_seconds)
         self._attempts[request.action_id] = _Attempt(work_dir=work, before=before)
         return self._observed(request, outcome)
 
     def _preflight(self, request: ActionRequest) -> ActionResultReceipt | None:
         """Prove the pinned build's EXACT version, or refuse before any task runs."""
-        home = self._mint_home()
         self._workspace.work_root()
-        outcome = self._spawn(
-            VERSION_ARGV, home, WORK_DIR,
+        outcome = self._attempt(
+            VERSION_ARGV, WORK_DIR,
             timeout=min(VERSION_TIMEOUT_SECONDS, request.timeout_seconds))
         if outcome.status != "completed" or outcome.exit_code != 0:
             return self._receipt(
@@ -311,6 +377,32 @@ class DshHarnessAdapter:
                 f"{REVIEWED_DSH_VERSION} this adapter was written against, so no "
                 f"task was spawned")
         return None
+
+    def _attempt(
+            self, argv: tuple[str, ...], cwd: str, *,
+            timeout: int | float) -> ProcessOutcome:
+        """One spawn inside one FRESH home, and the home goes when the spawn does.
+
+        This is the whole of the retention promise: a real dsh may write prompt,
+        session, tool output and model text under DSH_HOME, and nothing here ever
+        reads a byte of it, so the honest lifetime of that state is exactly the
+        lifetime of the spawn. The discard runs on every road out, including a
+        raise. A home this door may NOT delete -- one holding a name whose kind
+        it cannot establish -- is left standing rather than guessed at, and the
+        next dispatch's sweep reports it rather than deleting through it.
+        """
+        home = self._mint_home()
+        try:
+            return self._spawn(argv, home, cwd, timeout=timeout)
+        finally:
+            self._discard(home)
+
+    def _discard(self, home: Path) -> None:
+        """Discard one attempt home; a refusal leaves it, and never raises here."""
+        try:
+            self._workspace.discard_home(home)
+        except (WorkspaceNotContained, OSError):  # noqa: BLE001 -- a leak, not a lie
+            pass
 
     def _spawn(
             self, argv: tuple[str, ...], home: Path, cwd: str, *,
@@ -365,7 +457,8 @@ class DshHarnessAdapter:
             return self._receipt(
                 request, "succeeded", 0,
                 "the dsh task was observed to exit zero; that is an observation of "
-                "the process only and is not a verification of the work")
+                "the process only, it is not a verification of the work, and this "
+                "build cannot turn it into one")
         return self._receipt(
             request, "failed", outcome.exit_code,
             "the dsh task was observed to exit non-zero")
@@ -384,19 +477,50 @@ class DshHarnessAdapter:
     def verify(
             self, request: ActionRequest, result: ActionResultReceipt,
     ) -> AdapterVerification:
+        """Read independent workspace evidence, and claim nothing it cannot back.
+
+        ``unavailable`` is never returned from here: the runtime spends that
+        token on an adapter that exposes NO verifier and lets observed process
+        success stand, so an adapter that HAS a verifier and found no proof must
+        not borrow it. Absence of proof is ``error``.
+        """
         if not isinstance(request, ActionRequest) or not isinstance(
                 result, ActionResultReceipt):
             raise DshHarnessError("verify needs a validated request and result")
         attempt = self._attempts.get(request.action_id)
         if attempt is None:
             return self._verification(
-                request, "unavailable", (),
+                request, "error", (),
                 "this adapter holds no pre-task snapshot for the action, so there "
-                "is no independent evidence to read")
-        changed = _changed(attempt.before, self._workspace.digest_work_tree())
+                "is no independent evidence to read; absence of proof is not "
+                "absence of a verifier and is never an observed success")
+        failed = False
+        try:
+            after = self._workspace.digest_work_tree()
+        except WorkspaceNotContained:  # noqa: BLE001 -- carry no path onward
+            failed = True
+            after = {}
+        if failed:
+            return self._verification(
+                request, "error", (),
+                "the authorized work tree does not stand on a contained route, so "
+                "no independent evidence could be read from it")
+        return self._read_change(request, attempt, after)
+
+    def _read_change(
+            self, request: ActionRequest, attempt: "_Attempt",
+            after: Mapping[str, str]) -> AdapterVerification:
+        """Judge the snapshot difference. No ``verified``, and no minted id.
+
+        This build writes no durable ``EvidenceRef``, and an evidence identifier
+        with no durable record behind it is a claim about evidence that does not
+        exist -- which is why none is minted here rather than minted and then
+        rejected downstream.
+        """
+        changed = _changed(attempt.before, after)
         if not changed:
             return self._verification(
-                request, "unavailable", (),
+                request, "error", (),
                 "the dsh task changed nothing under the authorized work tree, so "
                 "there is no independent evidence that it did the work")
         scope = f"{attempt.work_dir.name}/"
@@ -407,9 +531,10 @@ class DshHarnessAdapter:
                 f"{len(outside)} changed path(s) lie outside the action's "
                 f"authorized work subtree")
         return self._verification(
-            request, "verified", tuple(self._ids("evidence") for _ in changed),
+            request, "error", (),
             f"{len(changed)} file(s) changed inside the action's authorized work "
-            f"subtree, read from the workspace and not from the task's output")
+            f"subtree, but this build writes no durable evidence record for them, "
+            f"so no verified success may be claimed on their account")
 
     def _verification(
             self, request: ActionRequest, state: str, refs: tuple[str, ...],
