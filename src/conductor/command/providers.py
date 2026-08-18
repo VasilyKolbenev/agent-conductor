@@ -13,7 +13,10 @@ provider this build catalogues but proved no transport for declares no control,
 and a provider with nothing to dispatch is refused availability before its pins
 are even read. Only an available provider's adapter enters the returned
 ``AdapterRegistry``; with no configs the registry stays honestly empty, so the
-default production server never pretends a real provider is available.
+default production server never pretends a real provider is available. The
+descriptors are the other half of that honesty: every CATALOGUED provider is
+described, and one no operator config named is ``unconfigured`` -- this build
+knows it, nothing was looked at for it, and nothing can be dispatched through it.
 """
 from __future__ import annotations
 
@@ -77,22 +80,26 @@ PROVIDER_CATALOG = MappingProxyType({
         provider_id="claude-code", display_name="Claude Code (fake protocol)",
         vendor="Anthropic-compatible test fixture", protocol="fake-claude-jsonl-v1",
         capabilities=DEEP_CONTROLS, schema_pairs=_DEEP_SCHEMA_PAIRS,
-        lifecycle=_DEEP_LIFECYCLE, adapter_class=ClaudeCodeAdapter),
+        lifecycle=_DEEP_LIFECYCLE, adapter_class=ClaudeCodeAdapter,
+        implementation="fixture_only"),
     "codex": ProviderCatalogEntry(
         provider_id="codex", display_name="Codex (fake protocol)",
         vendor="OpenAI-compatible test fixture", protocol="fake-codex-jsonl-v1",
         capabilities=DEEP_CONTROLS, schema_pairs=_DEEP_SCHEMA_PAIRS,
-        lifecycle=_DEEP_LIFECYCLE, adapter_class=CodexAdapter),
+        lifecycle=_DEEP_LIFECYCLE, adapter_class=CodexAdapter,
+        implementation="fixture_only"),
     "deepseek-harness": ProviderCatalogEntry(
         provider_id="deepseek-harness", display_name="DeepSeek Harness (dsh, headless)",
         vendor="DeepSeek", protocol=DSH_PROTOCOL,
         capabilities=_DSH_CAPABILITIES, schema_pairs=_DSH_SCHEMA_PAIRS,
-        lifecycle=_DEEP_LIFECYCLE, adapter_class=DshHarnessAdapter),
+        lifecycle=_DEEP_LIFECYCLE, adapter_class=DshHarnessAdapter,
+        implementation="real_experimental"),
     KIMI_PROVIDER_ID: ProviderCatalogEntry(
         provider_id=KIMI_PROVIDER_ID, display_name=KIMI_DISPLAY_NAME,
         vendor="Moonshot AI", protocol=KIMI_PROTOCOL,
         capabilities=KIMI_CAPABILITIES, schema_pairs=KIMI_SCHEMA_PAIRS,
-        lifecycle=KIMI_LIFECYCLE, adapter_class=KimiCodeContractAdapter),
+        lifecycle=KIMI_LIFECYCLE, adapter_class=KimiCodeContractAdapter,
+        implementation="unproven"),
 })
 
 
@@ -102,7 +109,8 @@ class ProviderResolution:
 
     ``registry`` holds only the adapters of AVAILABLE providers, so the runtime
     can resolve and later spawn exactly those. ``contracts`` describes every
-    configured provider, available or not, for the Cockpit projection.
+    CATALOGUED provider -- configured or not, available or not -- for the Cockpit
+    projection, so the roster a person can see is the roster this build knows.
     """
 
     registry: AdapterRegistry
@@ -209,12 +217,24 @@ def resolve_providers(
     An adapter -- and with it the owned process runner it would spawn through --
     is built only for a provider that resolved AVAILABLE, so an absent or
     version-mismatched provider reaches no runner at all.
+
+    Every CATALOGUED provider is registered, configured or not. One the operator
+    never named resolves ``unconfigured``: nothing on the machine was looked at
+    for it, it owns no adapter, and it is spawn-capable through nothing -- but the
+    Cockpit can still see that this build knows it exists and can say what would
+    have to be configured. That is the honest answer to "what could I run here?",
+    and it is a different answer from "the pinned file is missing".
     """
     reviewed = _reviewed_configs(configs)
     providers = ProviderRegistry()
     runner: ProcessRunner | None = None
-    for config in reviewed:
-        entry = _catalogued(catalog, config.provider_id)
+    configured = {config.provider_id: config for config in reviewed}
+    for provider_id in _catalogued_ids(catalog, configured):
+        entry = _catalogued(catalog, provider_id)
+        config = configured.get(provider_id)
+        if config is None:
+            providers.register(entry, availability="unconfigured", adapter=None)
+            continue
         availability = _resolve_availability(config, entry)
         adapter: object = None
         if availability == "available":
@@ -225,3 +245,19 @@ def resolve_providers(
         providers.register(entry, availability=availability, adapter=adapter)
     return ProviderResolution(
         registry=providers.adapters, contracts=providers.contracts())
+
+
+def _catalogued_ids(
+        catalog: object, configured: Mapping[str, ProviderConfig]) -> tuple[str, ...]:
+    """Every reviewed provider id, in a stable order, with the configured held first.
+
+    A configured provider is resolved first so a config naming a provider this
+    build does not catalogue is refused before an unrelated provider is described.
+    """
+    if not isinstance(catalog, Mapping):
+        raise ProviderConfigError("provider catalog must be a mapping of reviewed entries")
+    if any(type(key) is not str for key in catalog):
+        raise ProviderConfigError("provider catalog keys must be provider id strings")
+    known = tuple(sorted(catalog))
+    return tuple(sorted(configured)) + tuple(
+        provider_id for provider_id in known if provider_id not in configured)

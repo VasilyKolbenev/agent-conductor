@@ -26,6 +26,7 @@ from pathlib import Path
 from conductor import server
 from conductor.command.adapters.provider import (
     AVAILABILITY_STATES,
+    IMPLEMENTATION_STATES,
     ProviderConfig,
     ProviderContract,
     provider_projection,
@@ -195,6 +196,8 @@ def _observed_vocabulary(store, resolution) -> dict:
             row.value.outcome for row in rows if row.kind == "action_result"}),
         "availability_states": sorted(
             {row.availability for row in resolution.contracts}),
+        "implementation_states": sorted(
+            {row.implementation for row in resolution.contracts}),
     }
 
 
@@ -264,16 +267,21 @@ def _projection_document(resolution) -> dict:
             "conductor.command.adapters.provider.provider_projection over the "
             "ProviderResolution that drove the gated run"),
         "availability_vocabulary": sorted(AVAILABILITY_STATES),
+        "implementation_vocabulary": sorted(IMPLEMENTATION_STATES),
         "resolved_availability": {
             row.provider_id: row.availability for row in resolution.contracts},
+        "declared_implementation": {
+            row.provider_id: row.implementation for row in resolution.contracts},
         "row_fields": row_fields,
         "rows": rows,
         "withheld_from_rows": sorted(carried - set(row_fields)),
-        "note": ("A row says whether a provider is usable with the boolean "
-                 "`available` and nothing more. The three-state `availability` "
-                 "lives on the provider contract, is frozen here beside the "
-                 "rows, and is NOT part of the projection. Everything else the "
-                 "operator config and the reviewed contract carry is withheld."),
+        "note": ("A row answers two separate questions and keeps them apart: "
+                 "`availability` is about the operator's machine, "
+                 "`implementation` is about this build's transport, and the two "
+                 "vocabularies share no value. Rows are joined by `provider_id`; "
+                 "`display_name` is a label to render and never a fact to parse. "
+                 "Everything else the operator config and the reviewed contract "
+                 "carry is withheld."),
     }
 
 
@@ -442,6 +450,7 @@ def _vocabulary_document(observed: dict) -> dict:
         "observed_outcomes": sorted(OBSERVED_OUTCOMES),
         "attempt_event_phases": sorted(ATTEMPT_PHASES),
         "availability_states": sorted(AVAILABILITY_STATES),
+        "implementation_states": sorted(IMPLEMENTATION_STATES),
         "observed_in_the_derived_runs": observed,
         "note": ("`rejected` is an outcome an adapter may report and a durable "
                  "receipt will hold, but it is never an attempt state: the "

@@ -23,6 +23,7 @@ import pytest
 from conductor import server
 from conductor.command.adapters.provider import (
     AVAILABILITY_STATES,
+    IMPLEMENTATION_STATES,
     ProviderConfig,
     ProviderContract,
 )
@@ -74,15 +75,50 @@ def test_a_projection_row_carries_the_row_fields_and_none_of_the_withheld_names(
     assert carried - row_fields == withheld
 
 
-def test_the_projected_boolean_agrees_with_the_three_state_availability_beside_it():
+def test_the_projected_row_carries_the_resolved_availability_state_itself():
     document = load("alpha1_provider_projection")
     assert set(document["availability_vocabulary"]) == set(AVAILABILITY_STATES)
     resolved = document["resolved_availability"]
+    # The frozen run stands in every availability state, so a consumer written
+    # against this artifact has seen each one at least once.
     assert set(resolved.values()) == set(AVAILABILITY_STATES)
     assert set(resolved) == {row["provider_id"] for row in document["rows"]}
     for row in document["rows"]:
-        assert row["available"] is (resolved[row["provider_id"]] == "available")
-        assert "availability" not in row
+        assert row["availability"] == resolved[row["provider_id"]]
+        assert "available" not in row
+
+
+def test_the_two_dimensions_are_carried_side_by_side_and_never_mixed():
+    """Two questions, two closed vocabularies, no value that could be either."""
+    document = load("alpha1_provider_projection")
+    assert set(document["implementation_vocabulary"]) == set(IMPLEMENTATION_STATES)
+    assert AVAILABILITY_STATES.isdisjoint(IMPLEMENTATION_STATES)
+    declared = document["declared_implementation"]
+    assert set(declared.values()) == set(IMPLEMENTATION_STATES)
+    resolved = document["resolved_availability"]
+    for row in document["rows"]:
+        assert row["implementation"] == declared[row["provider_id"]]
+        assert row["availability"] in AVAILABILITY_STATES
+        assert row["implementation"] in IMPLEMENTATION_STATES
+    # Neither dimension can be recovered from the other: the same availability
+    # carries more than one implementation, and the same implementation carries
+    # more than one availability.
+    pairs = {(resolved[name], declared[name]) for name in resolved}
+    assert len({pair[0] for pair in pairs}) > 1
+    assert len({pair[1] for pair in pairs}) > 1
+    assert len(pairs) > max(
+        len({pair[0] for pair in pairs}), len({pair[1] for pair in pairs})) - 1
+
+
+def test_no_row_fact_can_be_recovered_from_the_label_it_is_shown_with():
+    """The join key is provider_id; a display name is rendered, never parsed."""
+    document = load("alpha1_provider_projection")
+    rows = document["rows"]
+    assert len({row["provider_id"] for row in rows}) == len(rows)
+    for row in rows:
+        label = row["display_name"].lower()
+        assert row["availability"] not in label
+        assert row["implementation"] not in label
 
 
 # -- artifact 2: one canonical snapshot per state, honest about durability --
@@ -134,6 +170,7 @@ def test_the_frozen_vocabulary_is_exactly_the_closed_sets_production_holds():
     assert set(document["observed_outcomes"]) == set(OBSERVED_OUTCOMES)
     assert set(document["attempt_event_phases"]) == set(ATTEMPT_PHASES)
     assert set(document["availability_states"]) == set(AVAILABILITY_STATES)
+    assert set(document["implementation_states"]) == set(IMPLEMENTATION_STATES)
     terminal, pre = set(document["terminal_states"]), set(document["pre_terminal_states"])
     assert terminal.isdisjoint(pre)
     assert terminal | pre == set(document["attempt_states"])
@@ -150,6 +187,7 @@ def test_nothing_the_derived_runs_observed_falls_outside_the_frozen_sets():
             ("observed_outcomes", "observed_outcomes"),
             ("terminal_outcomes", "terminal_states"),
             ("availability_states", "availability_states"),
+            ("implementation_states", "implementation_states"),
             ("refusal_codes", "refusal_codes")):
         assert set(observed[name]) <= set(document[closed]), name
 

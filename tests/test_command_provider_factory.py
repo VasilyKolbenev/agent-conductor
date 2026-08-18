@@ -63,14 +63,22 @@ def _counted_runner(monkeypatch) -> dict[str, int]:
     return counts
 
 
+def _resolved_availability(resolution) -> dict:
+    """Every described provider's resolved state, keyed by identity, never by order."""
+    return {row.provider_id: row.availability for row in resolution.contracts}
+
+
 def test_an_available_provider_registers_its_adapter_and_is_spawn_capable(tmp_path):
     executable = _present(tmp_path, "claude.exe")
     resolution = resolve_providers(
         [_config("claude-code", executable, "fake-claude-jsonl-v1")],
         root=tmp_path, clock=lambda: NOW, ids=_ids())
-    assert [row.provider_id for row in resolution.contracts] == ["claude-code"]
-    assert resolution.contracts[0].availability == "available"
-    assert resolution.contracts[0].available is True
+    resolved = _resolved_availability(resolution)
+    assert set(resolved) == set(PROVIDER_CATALOG)
+    assert resolved["claude-code"] == "available"
+    # Only the provider the operator pinned was looked at on disk; the rest of
+    # the reviewed roster is described without anything being probed for it.
+    assert set(resolved.values()) - {"available"} == {"unconfigured"}
     assert resolution.registry.resolve("claude-code").manifest.adapter_id == "claude-code"
     assert resolution.spawn_capable("claude-code") is True
 
@@ -114,10 +122,15 @@ def test_a_config_naming_an_uncatalogued_provider_is_refused(tmp_path):
             root=tmp_path, clock=lambda: NOW, ids=_ids())
 
 
-def test_the_default_resolution_is_empty_and_pretends_no_provider(tmp_path):
+def test_the_default_resolution_spawns_nothing_and_calls_every_provider_unconfigured(
+        tmp_path):
+    """With no operator config the roster is describable and nothing is runnable."""
     resolution = resolve_providers([], root=tmp_path, clock=lambda: NOW, ids=_ids())
-    assert resolution.contracts == ()
+    assert _resolved_availability(resolution) == {
+        provider_id: "unconfigured" for provider_id in PROVIDER_CATALOG}
     assert resolution.registry.manifests() == ()
+    assert not any(
+        resolution.spawn_capable(provider_id) for provider_id in PROVIDER_CATALOG)
 
 
 def test_both_fake_adapters_register_through_the_factory(tmp_path):
@@ -127,8 +140,10 @@ def test_both_fake_adapters_register_through_the_factory(tmp_path):
         root=tmp_path, clock=lambda: NOW, ids=_ids())
     assert [row.adapter_id for row in resolution.registry.manifests()] == ["claude-code", "codex"]
     rows = provider_projection(resolution.contracts)
-    assert {row["provider_id"] for row in rows} == {"claude-code", "codex"}
-    assert all(row["available"] for row in rows)
+    assert {row["provider_id"] for row in rows} == set(PROVIDER_CATALOG)
+    configured = {row["provider_id"]: row for row in rows}
+    assert [configured[name]["availability"] for name in ("claude-code", "codex")] == [
+        "available", "available"]
     assert all("observe" not in row["controls"] for row in rows)
 
 
@@ -138,8 +153,9 @@ def test_an_unavailable_provider_reaches_no_runner_and_spawns_nothing(tmp_path, 
         [_config("claude-code", str(tmp_path / "missing.exe"), "fake-claude-jsonl-v1"),
          _config("codex", str(tmp_path / "also-missing.exe"), "fake-claude-jsonl-v1")],
         root=tmp_path, clock=lambda: NOW, ids=_ids())
-    assert [row.availability for row in resolution.contracts] == [
-        "executable_absent", "version_mismatch"]
+    resolved = _resolved_availability(resolution)
+    assert (resolved["claude-code"], resolved["codex"]) == (
+        "executable_absent", "version_mismatch")
     assert counts == {"constructed": 0, "spawned": 0}
     assert resolution.registry.manifests() == ()
 
@@ -196,7 +212,10 @@ def test_build_resolves_provider_config_into_the_command_registry(tmp_path):
     try:
         adapter = subject.command_registry.resolve("claude-code")
         assert adapter.manifest.adapter_id == "claude-code"
-        assert [row.provider_id for row in subject.command_providers] == ["claude-code"]
+        resolved = {row.provider_id: row.availability
+                    for row in subject.command_providers}
+        assert resolved["claude-code"] == "available"
+        assert set(resolved) == set(PROVIDER_CATALOG)
     finally:
         subject.server_close()
 
@@ -206,7 +225,8 @@ def test_build_without_providers_keeps_the_command_registry_empty(tmp_path):
     subject = server.build(root, 0, clock=lambda: NOW, ids=_ids())
     try:
         assert subject.command_registry.manifests() == ()
-        assert subject.command_providers == ()
+        assert {row.availability for row in subject.command_providers} == {
+            "unconfigured"}
     finally:
         subject.server_close()
 

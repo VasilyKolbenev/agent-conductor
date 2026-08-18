@@ -181,10 +181,22 @@ class PreviewGatedProvider(GatedProvider):
     display_name = "Codex preview (ALPHA-1 gated fixture)"
 
 
-_ENTRY_PROTOCOLS = {
-    ClaudeGatedProvider: CLAUDE_PROTOCOL,
-    CodexGatedProvider: CODEX_PROTOCOL,
-    PreviewGatedProvider: CODEX_PROTOCOL,
+class UnpinnedGatedProvider(GatedProvider):
+    """A fourth catalogued provider the fixture operator config never names."""
+
+    provider_id = "codex-unpinned"
+    display_name = "Codex unpinned (ALPHA-1 gated fixture)"
+
+
+#: adapter class -> (protocol, declared implementation). The four entries stand
+#: in all three implementation states and, once resolved, in all four
+#: availability states, so the frozen artifact shows the UI lane every value it
+#: can ever receive rather than one comfortable corner of the vocabulary.
+_ENTRY_KINDS = {
+    ClaudeGatedProvider: (CLAUDE_PROTOCOL, "fixture_only"),
+    CodexGatedProvider: (CODEX_PROTOCOL, "fixture_only"),
+    PreviewGatedProvider: (CODEX_PROTOCOL, "unproven"),
+    UnpinnedGatedProvider: (CODEX_PROTOCOL, "real_experimental"),
 }
 
 
@@ -196,8 +208,8 @@ def catalog() -> dict[str, ProviderCatalogEntry]:
             display_name=adapter_class.display_name, vendor=VENDOR,
             protocol=protocol, capabilities=DEEP_CONTROLS,
             schema_pairs=SCHEMA_PAIRS, lifecycle=LIFECYCLE,
-            adapter_class=adapter_class)
-        for adapter_class, protocol in _ENTRY_PROTOCOLS.items()
+            adapter_class=adapter_class, implementation=implementation)
+        for adapter_class, (protocol, implementation) in _ENTRY_KINDS.items()
     }
 
 
@@ -214,16 +226,22 @@ def ids():
     return mint
 
 
-def resolve(root, mint, *, available=("claude-code",), mismatched=("codex-preview",)):
+def resolve(root, mint, *, available=("claude-code",), mismatched=("codex-preview",),
+            unpinned=("codex-unpinned",)):
     """Resolve the fixture providers through the real factory door.
 
     A provider in `available` gets its operator-pinned executable created; one in
-    `mismatched` is pinned to another catalogued provider's protocol; the rest
-    resolve `executable_absent`. No adapter is built for anything but available.
+    `mismatched` is pinned to another catalogued provider's protocol; one in
+    `unpinned` gets no operator config at all and resolves `unconfigured`; the
+    rest resolve `executable_absent`. No adapter is built for anything but
+    available, so the four states differ in what they say and not only in how
+    they are spelled.
     """
     entries = catalog()
     configs = []
     for provider_id in sorted(entries):
+        if provider_id in unpinned:
+            continue
         executable = root / f"{provider_id}.exe"
         if provider_id in available:
             executable.write_text("", encoding="utf-8")

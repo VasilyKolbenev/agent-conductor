@@ -59,7 +59,13 @@
   "availability_states": [
     "available",
     "executable_absent",
+    "unconfigured",
     "version_mismatch"
+  ],
+  "implementation_states": [
+    "fixture_only",
+    "real_experimental",
+    "unproven"
   ],
   "observed_in_the_derived_runs": {
     "attempt_event_phases": [
@@ -75,7 +81,13 @@
     "availability_states": [
       "available",
       "executable_absent",
+      "unconfigured",
       "version_mismatch"
+    ],
+    "implementation_states": [
+      "fixture_only",
+      "real_experimental",
+      "unproven"
     ],
     "refusal_codes": [
       "authorization_refused"

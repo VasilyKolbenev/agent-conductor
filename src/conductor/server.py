@@ -567,7 +567,7 @@ class ConductServer(ThreadingHTTPServer):
         self.command_api = CommandApi(
             self.command_store, self.command_registry,
             session=self.command_session, budget=budget, clock=clock, ids=ids,
-            publish_run=self.clients.publish_run)
+            publish_run=self.clients.publish_run, providers=self.command_providers)
         # The effect belongs to server-owned workers, never to a request thread:
         # the coordinator holds the API's own runtime, so it spends exactly the
         # grants that boundary minted and can spend no others. Each start() mints

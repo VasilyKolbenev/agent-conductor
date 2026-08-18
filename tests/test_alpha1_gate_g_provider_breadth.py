@@ -292,7 +292,7 @@ def test_a_provider_added_through_the_registry_alone_reaches_the_projection(tmp_
     resolution = _probe_resolution(tmp_path, _probe_entry())
     rows = provider_projection(resolution.contracts)
     assert [row["provider_id"] for row in rows] == [PROBE_ID]
-    assert rows[0]["available"] is True
+    assert rows[0]["availability"] == "available"
     assert rows[0]["controls"] == [PROBE_CONTROL]
     assert resolution.spawn_capable(PROBE_ID) is True
     assert resolution.registry.resolve(PROBE_ID).manifest.adapter_id == PROBE_ID

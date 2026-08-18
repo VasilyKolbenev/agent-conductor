@@ -64,6 +64,11 @@ def _resolved(tmp_path, config: ProviderConfig):
         [config], root=root, clock=lambda: NOW, ids=_Ids(), environ={})
 
 
+def _contract(resolution, provider_id: str):
+    """One described provider, read by identity rather than by list position."""
+    return next(row for row in resolution.contracts if row.provider_id == provider_id)
+
+
 def _kimi_config(tmp_path, *, protocol: str = KIMI_PROTOCOL) -> ProviderConfig:
     return ProviderConfig(
         provider_id=KIMI_PROVIDER_ID, executable=_real_file(tmp_path, "kimi.exe"),
@@ -75,10 +80,11 @@ def _kimi_config(tmp_path, *, protocol: str = KIMI_PROTOCOL) -> ProviderConfig:
 
 def test_kimi_is_graph_visible_with_no_control_at_all(tmp_path):
     resolution = _resolved(tmp_path, _kimi_config(tmp_path))
-    rows = provider_projection(resolution.contracts)
-    assert [row["provider_id"] for row in rows] == [KIMI_PROVIDER_ID]
-    row = rows[0]
-    assert row["available"] is False
+    rows = {row["provider_id"]: row for row in provider_projection(resolution.contracts)}
+    assert KIMI_PROVIDER_ID in rows
+    row = rows[KIMI_PROVIDER_ID]
+    assert row["availability"] == "version_mismatch"
+    assert row["implementation"] == "unproven"
     assert row["controls"] == [], "an unproven transport may declare no control"
     assert "experimental" in row["display_name"].lower()
 
@@ -88,9 +94,10 @@ def test_an_executable_that_really_exists_still_buys_kimi_no_spawn(tmp_path):
     config = _kimi_config(tmp_path)
     assert os.path.isfile(config.executable), "the pin must really be on disk"
     resolution = _resolved(tmp_path, config)
+    kimi = _contract(resolution, KIMI_PROVIDER_ID)
     assert resolution.spawn_capable(KIMI_PROVIDER_ID) is False
-    assert resolution.contracts[0].available is False
-    assert resolution.contracts[0].availability != "available"
+    assert kimi.available is False
+    assert kimi.availability != "available"
     assert resolution.registry.manifests() == ()
 
 
@@ -131,7 +138,7 @@ def test_only_a_provider_with_a_control_can_ever_resolve_available(tmp_path):
             provider_id=provider_id, executable=_real_file(tmp_path, f"{provider_id}.bin"),
             protocol=entry.protocol,
             entrypoint=_real_file(tmp_path, f"{provider_id}.entry"))
-        available = _resolved(tmp_path, config).contracts[0].available
+        available = _contract(_resolved(tmp_path, config), provider_id).available
         assert available is bool(controls), (
             f"{provider_id}: available={available} with controls {sorted(controls)}")
 

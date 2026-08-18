@@ -9,6 +9,11 @@ server-owned :class:`ExecutionCoordinator` is attached, that recorded action is
 handed to its bounded queue and a worker thread performs the effect afterwards,
 so the response never waits on an adapter. With no coordinator attached this
 boundary executes nothing at all.
+
+The controls route answers with two arrays: the run's own instance bindings, and
+the reviewed provider roster this build was given. The roster is descriptors
+only -- the boundary resolves nothing, reads no path, and holds no adapter of its
+own -- and it is projected through the one reviewed provider projection.
 """
 from __future__ import annotations
 
@@ -19,6 +24,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from .adapters import AdapterContractError, AdapterRegistry, UnsupportedCapability
+from .adapters.provider import ProviderContract, provider_projection
 from .api_contracts import (
     ARGUMENT_SCHEMAS,
     ApiRefusal,
@@ -80,13 +86,17 @@ class CommandApi:
             self, store: RunStore, registry: AdapterRegistry, *,
             session: CommandSession, budget: Budget,
             clock: Callable[[], str], ids: Callable[[str], str],
-            publish_run: Callable[[str], None]) -> None:
+            publish_run: Callable[[str], None],
+            providers: Iterable[ProviderContract] = ()) -> None:
         if not isinstance(store, RunStore) or not isinstance(registry, AdapterRegistry):
             raise TypeError("CommandApi requires a RunStore and AdapterRegistry")
         if not isinstance(session, CommandSession) or type(budget) is not Budget:
             raise TypeError("CommandApi requires a CommandSession and Budget")
         if not all(callable(value) for value in (clock, ids, publish_run)):
             raise TypeError("CommandApi providers must be callable")
+        # Reviewed descriptors only, rebuilt by the projection before one field of
+        # them is read; the boundary never resolves or probes a provider itself.
+        self._providers = tuple(providers)
         self._store = store
         self._registry = registry
         self._session = session
@@ -273,6 +283,14 @@ class CommandApi:
         return bound
 
     def _controls(self, config: Mapping[str, Any]) -> dict[str, object]:
+        """Answer the run's instance controls, plus the reviewed provider roster.
+
+        The two arrays answer two different questions and are kept apart. An
+        ``instances`` row is about THIS RUN's frozen binding; a ``providers`` row
+        is about the build and the machine, and carries only what
+        ``provider_projection`` admits. A consumer joins them by identity, never
+        by a displayed label.
+        """
         rows = []
         for instance_id, adapter_id in sorted(_bindings(config).items()):
             try:
@@ -284,7 +302,7 @@ class CommandApi:
                 "adapter_id": adapter_id,
                 "controls": sorted(set(declared) & set(ARGUMENT_SCHEMAS)),
             })
-        return {"instances": rows}
+        return {"instances": rows, "providers": provider_projection(self._providers)}
 
 
 def _match_route(method: str, path: str) -> _Route:

@@ -3,24 +3,39 @@
   "availability_vocabulary": [
     "available",
     "executable_absent",
+    "unconfigured",
     "version_mismatch"
+  ],
+  "implementation_vocabulary": [
+    "fixture_only",
+    "real_experimental",
+    "unproven"
   ],
   "resolved_availability": {
     "claude-code": "available",
     "codex": "executable_absent",
-    "codex-preview": "version_mismatch"
+    "codex-preview": "version_mismatch",
+    "codex-unpinned": "unconfigured"
+  },
+  "declared_implementation": {
+    "claude-code": "fixture_only",
+    "codex": "fixture_only",
+    "codex-preview": "unproven",
+    "codex-unpinned": "real_experimental"
   },
   "row_fields": [
-    "available",
+    "availability",
     "controls",
     "display_name",
+    "implementation",
     "provider_id"
   ],
   "rows": [
     {
       "provider_id": "claude-code",
       "display_name": "Claude Code (ALPHA-1 gated fixture)",
-      "available": true,
+      "availability": "available",
+      "implementation": "fixture_only",
       "controls": [
         "dispatch",
         "evidence",
@@ -33,7 +48,8 @@
     {
       "provider_id": "codex",
       "display_name": "Codex (ALPHA-1 gated fixture)",
-      "available": false,
+      "availability": "executable_absent",
+      "implementation": "fixture_only",
       "controls": [
         "dispatch",
         "evidence",
@@ -46,7 +62,22 @@
     {
       "provider_id": "codex-preview",
       "display_name": "Codex preview (ALPHA-1 gated fixture)",
-      "available": false,
+      "availability": "version_mismatch",
+      "implementation": "unproven",
+      "controls": [
+        "dispatch",
+        "evidence",
+        "retry",
+        "review",
+        "stop",
+        "switch"
+      ]
+    },
+    {
+      "provider_id": "codex-unpinned",
+      "display_name": "Codex unpinned (ALPHA-1 gated fixture)",
+      "availability": "unconfigured",
+      "implementation": "real_experimental",
       "controls": [
         "dispatch",
         "evidence",
@@ -58,7 +89,7 @@
     }
   ],
   "withheld_from_rows": [
-    "availability",
+    "available",
     "capabilities",
     "entrypoint",
     "env_allow",
@@ -69,5 +100,5 @@
     "vendor",
     "version"
   ],
-  "note": "A row says whether a provider is usable with the boolean `available` and nothing more. The three-state `availability` lives on the provider contract, is frozen here beside the rows, and is NOT part of the projection. Everything else the operator config and the reviewed contract carry is withheld."
+  "note": "A row answers two separate questions and keeps them apart: `availability` is about the operator's machine, `implementation` is about this build's transport, and the two vocabularies share no value. Rows are joined by `provider_id`; `display_name` is a label to render and never a fact to parse. Everything else the operator config and the reviewed contract carry is withheld."
 }

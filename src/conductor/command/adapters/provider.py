@@ -13,10 +13,13 @@ apart on purpose:
   written here. An empty ``entrypoint`` means the operator pinned none, which is
   the whole shape for a provider that is its own executable.
 - ``ProviderContract`` is the public descriptor the Cockpit may see. It carries
-  identity, resolved availability, declared capabilities, the CLOSED
-  per-capability argument-schema relation, and the lifecycle seams the provider
-  really implements -- and it never carries the executable, a path, an env value,
-  a token, a PID, or raw output.
+  identity, resolved availability, the declared implementation of this build's
+  transport, declared capabilities, the CLOSED per-capability argument-schema
+  relation, and the lifecycle seams the provider really implements -- and it
+  never carries the executable, a path, an env value, a token, a PID, or raw
+  output. Availability and implementation are separate questions in separate
+  closed vocabularies and are never mixed: the machine's state cannot be read off
+  the build's, or the other way round.
 
 ``ProviderRegistry`` is the one door between the two. The factory admits every
 provider through it, so a descriptor the Cockpit can see and an adapter the
@@ -48,8 +51,19 @@ from .deep_contracts import DeepProtocol, _env_names
 KNOWN_PROTOCOLS = frozenset(protocol.value for protocol in DeepProtocol)
 #: The reviewed argument-schema names any capability may bind to.
 KNOWN_SCHEMAS = frozenset(_ARGUMENT_SCHEMAS)
-#: The three resolved states; ``available`` is the only spawn-capable one.
-AVAILABILITY_STATES = frozenset({"available", "executable_absent", "version_mismatch"})
+#: The four resolved states of the OPERATOR'S MACHINE; ``available`` is the only
+#: spawn-capable one and ``unconfigured`` means no operator config named this
+#: provider at all, so nothing about its files has been looked at.
+AVAILABILITY_STATES = frozenset({
+    "available", "executable_absent", "version_mismatch", "unconfigured"})
+#: The three states of THIS BUILD's transport for a provider. It is a different
+#: question from availability and shares no value with it, so neither can be
+#: read as the other: a provider can be available and only a fixture, or carry a
+#: real transport and be unconfigured.
+IMPLEMENTATION_STATES = frozenset({"real_experimental", "fixture_only", "unproven"})
+#: What a provider that declares no implementation claims: the weakest of the
+#: three. A stronger claim has to be written down to be made.
+WEAKEST_IMPLEMENTATION = "unproven"
 #: The one lifecycle capability that carries no argument schema: an observation is
 #: an adapter-authored fact, never a browser-submitted argument body.
 SCHEMALESS_CAPABILITIES = frozenset({"observe"})
@@ -257,9 +271,10 @@ class ProviderCatalogEntry:
     schema_pairs: tuple[tuple[str, str], ...]
     lifecycle: tuple[str, ...]
     adapter_class: type
+    implementation: str = WEAKEST_IMPLEMENTATION
     _DATA: ClassVar[frozenset[str]] = frozenset({
         "provider_id", "display_name", "vendor", "protocol", "capabilities",
-        "schema_pairs", "lifecycle"})
+        "schema_pairs", "lifecycle", "implementation"})
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "provider_id", _provider_id(self.provider_id))
@@ -273,6 +288,8 @@ class ProviderCatalogEntry:
         object.__setattr__(self, "lifecycle", _reviewed_lifecycle(self.lifecycle))
         if not isinstance(self.adapter_class, type):
             raise ProviderConfigError("adapter_class must be an adapter type")
+        if self.implementation not in IMPLEMENTATION_STATES:
+            raise ProviderConfigError("implementation must name a reviewed state")
 
     def as_data(self) -> dict[str, Any]:
         """Every JSON-able field of this entry; the adapter class is carried apart."""
@@ -283,7 +300,7 @@ class ProviderCatalogEntry:
             "vendor": self.vendor, "protocol": self.protocol,
             "capabilities": list(self.capabilities),
             "schema_pairs": [list(pair) for pair in self.schema_pairs],
-            "lifecycle": list(self.lifecycle)}
+            "lifecycle": list(self.lifecycle), "implementation": self.implementation}
 
 
 def reconstruct_entry(value: object) -> ProviderCatalogEntry:
@@ -325,9 +342,10 @@ class ProviderContract:
     lifecycle: tuple[str, ...]
     availability: str
     available: bool
+    implementation: str = WEAKEST_IMPLEMENTATION
     _FIELDS: ClassVar[frozenset[str]] = frozenset({
         "provider_id", "display_name", "vendor", "version", "capabilities",
-        "schema_pairs", "lifecycle", "availability", "available"})
+        "schema_pairs", "lifecycle", "availability", "available", "implementation"})
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "provider_id", _provider_id(self.provider_id))
@@ -339,6 +357,8 @@ class ProviderContract:
         object.__setattr__(self, "lifecycle", _reviewed_lifecycle(self.lifecycle))
         if self.availability not in AVAILABILITY_STATES:
             raise ProviderConfigError("availability must name a reviewed state")
+        if self.implementation not in IMPLEMENTATION_STATES:
+            raise ProviderConfigError("implementation must name a reviewed state")
         if type(self.available) is not bool:
             raise ProviderConfigError("available must be a boolean")
         if self.available is not (self.availability == "available"):
@@ -353,7 +373,8 @@ class ProviderContract:
             "capabilities": list(self.capabilities),
             "schema_pairs": [list(pair) for pair in self.schema_pairs],
             "lifecycle": list(self.lifecycle),
-            "availability": self.availability, "available": self.available}
+            "availability": self.availability, "available": self.available,
+            "implementation": self.implementation}
 
 
 def reconstruct_contract(value: object) -> ProviderContract:
@@ -441,7 +462,8 @@ class ProviderRegistry:
             vendor=canonical.vendor, version=canonical.protocol,
             capabilities=canonical.capabilities, schema_pairs=canonical.schema_pairs,
             lifecycle=canonical.lifecycle, availability=availability,
-            available=(availability == "available"))
+            available=(availability == "available"),
+            implementation=canonical.implementation)
         self._admit_adapter(canonical, adapter, contract.available)
         self._contracts[canonical.provider_id] = contract
         return contract
@@ -469,13 +491,20 @@ class ProviderRegistry:
 def provider_projection(contracts: Iterable[ProviderContract]) -> list[dict[str, Any]]:
     """Project reviewed provider contracts onto the closed Cockpit surface.
 
-    Each row carries exactly the names the UI may see -- provider id, display
-    name, availability, and the PROVEN controls -- and nothing a provider did not
-    declare. A control is proven when the contract binds it to an argument
-    schema, which ``ProviderRegistry.register`` admits only after matching the
-    whole relation against the adapter class's own schemas. No executable, argv,
-    cwd, env value, protocol token, secret, PID, lifecycle seam, or raw output
-    ever reaches this projection.
+    Each row carries exactly the five names the UI may see -- provider id,
+    display name, availability, implementation, and the PROVEN controls -- and
+    nothing a provider did not declare. A control is proven when the contract
+    binds it to an argument schema, which ``ProviderRegistry.register`` admits
+    only after matching the whole relation against the adapter class's own
+    schemas. No executable, argv, cwd, env value, protocol token, secret, PID,
+    lifecycle seam, or raw output ever reaches this projection.
+
+    ``availability`` and ``implementation`` answer two different questions and
+    are carried side by side, each in its own closed vocabulary
+    (:data:`AVAILABILITY_STATES` and :data:`IMPLEMENTATION_STATES`, which share no
+    value). Neither is derived from the other and neither is derived from the
+    display name: a consumer joins these rows by ``provider_id``, and a display
+    name is a label to show, never a fact to parse.
     """
     if isinstance(contracts, (str, bytes)):
         raise ProviderConfigError("provider contracts must be an iterable of contracts")
@@ -483,7 +512,8 @@ def provider_projection(contracts: Iterable[ProviderContract]) -> list[dict[str,
         {
             "provider_id": contract.provider_id,
             "display_name": contract.display_name,
-            "available": contract.available,
+            "availability": contract.availability,
+            "implementation": contract.implementation,
             "controls": sorted(capability for capability, _ in contract.schema_pairs),
         }
         for contract in (reconstruct_contract(row) for row in contracts)

@@ -138,12 +138,16 @@ def test_projection_exposes_only_names_availability_and_proven_controls():
     rows = provider_projection([available, unavailable])
     assert rows == [
         {"provider_id": "claude-code", "display_name": "Claude Code",
-         "available": True, "controls": sorted(CONTROLS)},
+         "availability": "available", "implementation": "unproven",
+         "controls": sorted(CONTROLS)},
         {"provider_id": "codex", "display_name": "Codex",
-         "available": False, "controls": sorted(CONTROLS)},
+         "availability": "executable_absent", "implementation": "unproven",
+         "controls": sorted(CONTROLS)},
     ]
     for row in rows:
-        assert set(row) == {"provider_id", "display_name", "available", "controls"}
+        assert set(row) == {
+            "provider_id", "display_name", "availability", "implementation",
+            "controls"}
         assert "observe" not in row["controls"]
 
 
