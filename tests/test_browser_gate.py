@@ -18,6 +18,7 @@ import sys
 from pathlib import Path
 
 from browser_tests import conftest as gate_conftest
+from browser_tests import gate
 
 ROOT = Path(__file__).resolve().parents[1]
 GATE = ROOT / "browser_tests" / "gate.py"
@@ -34,11 +35,14 @@ _DEFAULT_MODULES = {
 
 def _run_gate(tmp_path: Path, *flags: str,
               modules: dict[str, str] | None = None,
+              conftest: str | None = None,
               extra_env: dict[str, str] | None = None) -> tuple[int, dict]:
     modules_dir = tmp_path / "modules"
     modules_dir.mkdir(exist_ok=True)
     for name, body in (modules or _DEFAULT_MODULES).items():
         (modules_dir / name).write_text(body, encoding="utf-8")
+    if conftest is not None:
+        (modules_dir / "conftest.py").write_text(conftest, encoding="utf-8")
     artifacts = tmp_path / "artifacts"
     environment = {**os.environ, **(extra_env or {})}
     completed = subprocess.run(
@@ -95,6 +99,78 @@ def test_a_skipped_test_is_a_waiver_and_reds_the_gate(tmp_path: Path) -> None:
     assert code == 1 and report["result"] == "red"
     assert report["records"][-1]["skipped"] == 1
     assert report["records"][-1]["exit_code"] == 0
+
+
+def test_the_record_counts_every_way_a_test_can_avoid_passing(
+        tmp_path: Path) -> None:
+    """The four waiver outcomes are named in the record, always."""
+    _, report = _run_gate(tmp_path, modules={"test_only.py": _PASSING})
+    record = report["records"][-1]
+    assert all(record[name] == 0 for name in gate.WAIVER_OUTCOMES)
+    assert set(gate.WAIVER_OUTCOMES) == {
+        "skipped", "xfailed", "xpassed", "deselected"}
+
+
+#: A conftest hook that waives a failing test at collection time. No word of
+#: it appears in any test source, so only counting outcomes catches it.
+_DYNAMIC_XFAIL_CONFTEST = (
+    "import pytest\n\n"
+    "def pytest_collection_modifyitems(items):\n"
+    "    for item in items:\n"
+    "        item.add_marker(pytest.mark.xfail(reason='dynamic waiver'))\n")
+_DYNAMIC_DESELECT_CONFTEST = (
+    "def pytest_collection_modifyitems(config, items):\n"
+    "    config.hook.pytest_deselected(items=list(items))\n"
+    "    items[:] = []\n")
+
+
+def test_a_dynamically_waived_failure_reds_the_gate(tmp_path: Path) -> None:
+    """A conftest that xfails everything leaves exit 0 and '1 xfailed' —
+    a green-looking run in which the guard never actually held."""
+    code, report = _run_gate(
+        tmp_path, modules={"test_only.py": _FAILING},
+        conftest=_DYNAMIC_XFAIL_CONFTEST)
+    assert code == 1 and report["result"] == "red"
+    record = report["records"][-1]
+    assert record["exit_code"] == 0 and record["xfailed"] == 1
+
+
+def test_a_dynamically_deselected_test_reds_the_gate(tmp_path: Path) -> None:
+    """Deselection removes a guard just as completely as a skip does."""
+    code, report = _run_gate(
+        tmp_path, modules={"test_only.py": _PASSING},
+        conftest=_DYNAMIC_DESELECT_CONFTEST)
+    assert code == 1 and report["result"] == "red"
+    assert report["records"][-1]["deselected"] == 1
+
+
+def test_the_gate_owns_its_temporary_root_and_ignores_the_machines(
+        tmp_path: Path) -> None:
+    """A module using tmp_path stays green when the shared temporary
+    directory is unusable — the gate's verdict is about the code, not the
+    host's leftovers or ACLs."""
+    using_tmp = ("def test_writes(tmp_path):\n"
+                 "    (tmp_path / 'x').write_text('ok')\n"
+                 "    assert (tmp_path / 'x').read_text() == 'ok'\n")
+    missing = tmp_path / "no-such-temp-dir"
+    code, report = _run_gate(
+        tmp_path, modules={"test_only.py": using_tmp},
+        extra_env={"TEMP": str(missing), "TMP": str(missing),
+                   "TMPDIR": str(missing)})
+    assert code == 0 and report["result"] == "green"
+    record = report["records"][-1]
+    # The basetemp is the gate's own, inside the artifacts, and recorded.
+    basetemp = Path(record["basetemp"])
+    assert basetemp.parent == tmp_path / "artifacts" / "basetemp"
+    assert basetemp.name == "test_only" and basetemp.exists()
+
+
+def test_each_module_gets_a_basetemp_of_its_own(tmp_path: Path) -> None:
+    code, report = _run_gate(
+        tmp_path, modules={"test_a.py": _PASSING, "test_b.py": _PASSING})
+    assert code == 0
+    roots = [row["basetemp"] for row in report["records"]]
+    assert len(set(roots)) == 2, roots
 
 
 def test_a_hanging_module_is_killed_recorded_and_the_report_survives(
@@ -220,12 +296,20 @@ def test_the_gate_runs_each_module_exactly_once_with_no_second_chances():
     # One subprocess call in the whole runner, inside no retry construct:
     # the only loop is the module walk in run_gate, which returns on red.
     assert source.count("subprocess.run(") == 1
-    # The docstring DENIES these words, so the scan reads the code alone —
-    # a guard that greps prose fails on the sentence stating the rule.
-    code = source.split('"""', 2)[2]
-    for forbidden in ("reruns", "rerun_", "flaky", "xfail", "retry",
-                      "max_tries"):
+    # The prose DENIES these words, so the scan reads executable code alone:
+    # a guard that greps a docstring or a comment fails on the very sentence
+    # that states the rule (tests/test_panel_cascade.py makes the same
+    # distinction for the panel's sources).
+    body = source.split('"""', 2)[2]
+    code = "\n".join(line.split("#", 1)[0] for line in body.splitlines())
+    for forbidden in ("reruns", "rerun_", "flaky", "retry", "max_tries",
+                      "mark.xfail", "runxfail"):
         assert forbidden not in code, forbidden
+    # "xfail" may appear in the runner only as the outcome noun it REDS on:
+    # never as a marker it applies and never as a flag it passes.
+    for line in code.splitlines():
+        if "xfail" in line:
+            assert "xfailed" in line, line
     # And the browser suite itself carries no escape hatch a gate must fear —
     # skips included (the gate additionally reds on any skip at runtime).
     # These are code tokens, not bare words: prose saying "skipped the
@@ -244,3 +328,8 @@ def test_the_gate_names_the_engine_it_ran_on():
     assert 'environment["DEBUG"] = "pw:browser*"' in source
     assert 'environment.pop("PYTEST_ADDOPTS", None)' in source
     assert 'environment.pop("PYTEST_PLUGINS", None)' in source
+    # All four configuration channels shut, including the project's own
+    # addopts and any plugin that would load itself into the run.
+    assert 'environment["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"' in source
+    assert '"-o", "addopts="' in source
+    assert '"--basetemp", str(basetemp)' in source

@@ -10,10 +10,19 @@ This runner is the replacement discipline:
   cannot poison the next, and the crash surface is one module wide;
 - a module runs exactly once. There is no retry, no rerun flag, no xfail
   ladder and no statistical waiver anywhere in this file — a red module is a
-  red gate, full stop, and the gate stops at the first one. A skipped test
-  is a waiver by another name, so any skip also reds the gate; ambient
-  pytest configuration (PYTEST_ADDOPTS, PYTEST_PLUGINS) is stripped from
-  the child so nothing outside this file can soften the command line;
+  red gate, full stop, and the gate stops at the first one. Every way a test
+  can leave the count without passing is a waiver by another name: skipped,
+  xfailed, xpassed and deselected all red the gate, because a marker applied
+  dynamically in a conftest hook is invisible to any scan of test sources.
+  Ambient pytest configuration is stripped from the child on all four of its
+  channels — PYTEST_ADDOPTS and PYTEST_PLUGINS leave the environment,
+  ``-o addopts=`` empties the project's own, and plugin autoload is
+  disabled, so nothing outside this file can soften the command line;
+- every module gets its OWN empty temporary root inside the artifacts
+  directory, handed over with ``--basetemp`` and reused by nothing: the
+  gate's verdict must not depend on the state or the permissions of the
+  machine's shared temporary directory, and a module's temporary files must
+  not outlive their process into the next one;
 - every run leaves a record (module, exit code, duration, skip count, output
   tail, the engine versions) plus its full stderr with Playwright's browser
   channel logging (DEBUG=pw:browser*), ALWAYS — a green run's stderr is
@@ -40,6 +49,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -50,7 +60,11 @@ LOG = logging.getLogger("browser-gate")
 #: The whole node id from a -rEf summary line, without the trailing message —
 #: a parametrized id may contain spaces, so this must not stop at the first.
 _FAILED_NODE = re.compile(r"^(?:FAILED|ERROR) (.+?)(?:\s+-\s.*)?$", re.MULTILINE)
-_SKIPPED = re.compile(r"(\d+) skipped")
+#: Every outcome that is a test not passing while the exit code stays 0.
+#: A dynamic marker in a conftest hook leaves no trace in any test source,
+#: so these counts — not a text scan — are what closes that door.
+WAIVER_OUTCOMES = ("skipped", "xfailed", "xpassed", "deselected")
+_WAIVERS = {name: re.compile(rf"(\d+) {name}") for name in WAIVER_OUTCOMES}
 MODULE_TIMEOUT_SECONDS = 600
 
 
@@ -93,17 +107,38 @@ def _child_environment(artifacts: Path, repo: Path) -> dict[str, str]:
     # the pinned command line below; the gate listens to nobody but itself.
     environment.pop("PYTEST_ADDOPTS", None)
     environment.pop("PYTEST_PLUGINS", None)
+    # And no third-party plugin loads itself into the run: the browser suite
+    # asks for none (it builds its own Playwright fixture), so an installed
+    # rerun or xfail-manipulating plugin has no way in.
+    environment["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
     return environment
+
+
+def _own_basetemp(artifacts: Path, module: Path) -> Path:
+    """A fresh, empty, gate-owned temporary root for one module process.
+
+    Never the machine's shared temporary directory and never reused: a
+    stale ACL or a neighbour's leftovers there once turned a trivially
+    green module red, which would make the gate's verdict a fact about the
+    host rather than about the code.
+    """
+    basetemp = artifacts / "basetemp" / module.stem
+    if basetemp.exists():
+        shutil.rmtree(basetemp, ignore_errors=True)
+    basetemp.mkdir(parents=True)
+    return basetemp
 
 
 def run_module(module: Path, artifacts: Path, repo: Path,
                timeout: float) -> dict[str, object]:
     """Run one module once, in a fresh pytest/Chromium process."""
+    basetemp = _own_basetemp(artifacts, module)
     started = time.monotonic()
     try:
         completed = subprocess.run(
             [sys.executable, "-m", "pytest", str(module), "-q", "--tb=long",
-             "-rEf", "-p", "no:cacheprovider"],
+             "-rEf", "-p", "no:cacheprovider", "-o", "addopts=",
+             "--basetemp", str(basetemp)],
             capture_output=True, text=True, encoding="utf-8", errors="replace",
             cwd=str(repo), env=_child_environment(artifacts, repo),
             timeout=timeout, check=False)
@@ -116,22 +151,30 @@ def run_module(module: Path, artifacts: Path, repo: Path,
         stderr = (expired.stderr or b"").decode("utf-8", "replace") \
             if isinstance(expired.stderr, bytes) else (expired.stderr or "")
     duration = round(time.monotonic() - started, 2)
-    skipped = _SKIPPED.search(stdout)
+    waivers = {name: int(found.group(1)) if (found := pattern.search(stdout))
+               else 0 for name, pattern in _WAIVERS.items()}
     record = {
         "module": module.name,
         "exit_code": exit_code,
         "duration_seconds": duration,
-        "skipped": int(skipped.group(1)) if skipped else 0,
+        "basetemp": str(basetemp),
         "failed_nodes": _FAILED_NODE.findall(stdout),
         "tail": stdout.strip().splitlines()[-1:],
+        **waivers,
     }
     stem = artifacts / module.stem
     # stderr is recorded ALWAYS: a green run's browser channel is the
     # diagnostic corpus a crash-on-close flake leaves its near-misses in.
     stem.with_suffix(".stderr.txt").write_text(stderr, encoding="utf-8")
-    if record["exit_code"] != 0 or record["skipped"]:
+    if is_red(record):
         stem.with_suffix(".stdout.txt").write_text(stdout, encoding="utf-8")
     return record
+
+
+def is_red(record: dict[str, object]) -> bool:
+    """A module is red on any non-zero exit and on any waived outcome."""
+    return record["exit_code"] != 0 or any(
+        record[name] for name in WAIVER_OUTCOMES)
 
 
 def _write_report(artifacts: Path, reverse: bool, result: str,
@@ -158,13 +201,14 @@ def run_gate(modules_dir: Path, artifacts: Path, reverse: bool,
         records.append(record)
         LOG.info("%s: exit %s in %ss %s", record["module"], record["exit_code"],
                  record["duration_seconds"], record["tail"])
-        red = record["exit_code"] != 0 or record["skipped"]
+        red = is_red(record)
         # The report survives a kill: rewritten after every module.
         _write_report(artifacts, reverse, "red" if red else "running", records)
         if red:
-            LOG.error("gate stops at first failure: %s (nodes: %s, skipped: %s)",
+            LOG.error("gate stops at first failure: %s (nodes: %s, waived: %s)",
                       record["module"], record["failed_nodes"],
-                      record["skipped"])
+                      {name: record[name] for name in WAIVER_OUTCOMES
+                       if record[name]})
             return 1
     _write_report(artifacts, reverse, "green", records)
     return 0
