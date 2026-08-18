@@ -9,7 +9,9 @@ an interpreter-backed provider with no entrypoint pinned resolves UNAVAILABLE
 rather than having its missing half guessed. A provider that
 is absent or whose pinned protocol does not match the catalogued provider
 resolves UNAVAILABLE, and no adapter is built for it -- so it can never spawn a
-process (spawn count 0). Only an available provider's adapter enters the returned
+process (spawn count 0). A provider this build catalogues but proved no
+transport for declares no control, and a provider with nothing to dispatch is
+refused availability before its pins are even read. Only an available provider's adapter enters the returned
 ``AdapterRegistry``; with no configs the registry stays honestly empty, so the
 default production server never pretends a real provider is available.
 """
@@ -30,8 +32,18 @@ from .adapters.deep_adapters import (
 )
 from .adapters.deep_contracts import DeepAdapterConfig
 from .adapters.dsh_harness import DSH_PROTOCOL, DshHarnessAdapter, DshPin
+from .adapters.kimi_code import (
+    KIMI_CAPABILITIES,
+    KIMI_DISPLAY_NAME,
+    KIMI_LIFECYCLE,
+    KIMI_PROTOCOL,
+    KIMI_PROVIDER_ID,
+    KIMI_SCHEMA_PAIRS,
+    KimiCodeContractAdapter,
+)
 from .adapters.process import ProcessRunner
 from .adapters.provider import (
+    SCHEMALESS_CAPABILITIES,
     ProviderCatalogEntry,
     ProviderConfig,
     ProviderConfigError,
@@ -76,6 +88,11 @@ PROVIDER_CATALOG = MappingProxyType({
         vendor="DeepSeek", protocol=DSH_PROTOCOL,
         capabilities=_DSH_CAPABILITIES, schema_pairs=_DSH_SCHEMA_PAIRS,
         lifecycle=_DEEP_LIFECYCLE, adapter_class=DshHarnessAdapter),
+    KIMI_PROVIDER_ID: ProviderCatalogEntry(
+        provider_id=KIMI_PROVIDER_ID, display_name=KIMI_DISPLAY_NAME,
+        vendor="Moonshot AI", protocol=KIMI_PROTOCOL,
+        capabilities=KIMI_CAPABILITIES, schema_pairs=KIMI_SCHEMA_PAIRS,
+        lifecycle=KIMI_LIFECYCLE, adapter_class=KimiCodeContractAdapter),
 })
 
 
@@ -123,8 +140,21 @@ def _executable_present(path: str) -> bool:
         return False
 
 
+def _dispatchable_controls(entry: ProviderCatalogEntry) -> frozenset[str]:
+    """The controls a provider offers the runtime. An observation is not one."""
+    return frozenset(entry.capabilities) - SCHEMALESS_CAPABILITIES
+
+
 def _resolve_availability(config: ProviderConfig, entry: ProviderCatalogEntry) -> str:
     """Availability is a fact about pinned FILES, never about a name or a hope."""
+    if not _dispatchable_controls(entry):
+        # A provider this build proved no transport for declares no control at
+        # all, so there is nothing the runtime could dispatch through it and no
+        # pin on the machine can change that. Calling it available would tell the
+        # Cockpit a usable provider is there while the projection handed it an
+        # empty control list; the protocol it carries is not one this build
+        # implements, which is exactly what version_mismatch says.
+        return "version_mismatch"
     if config.protocol != entry.protocol:
         return "version_mismatch"
     if entry.protocol in _ENTRYPOINT_PROTOCOLS and not config.entrypoint:

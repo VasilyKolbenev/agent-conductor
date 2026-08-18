@@ -28,6 +28,10 @@ class DeepProtocol(str, Enum):
     FAKE_CLAUDE_V1 = "fake-claude-jsonl-v1"
     FAKE_CODEX_V1 = "fake-codex-jsonl-v1"
     DSH_HEADLESS_V1 = "dsh-headless-v1"
+    #: Catalogued so Kimi Code can be SEEN, and unproven on purpose: no
+    #: adapter in this build implements it, so it binds no argv flag and
+    #: resolves no spawnable provider. See adapters/kimi_code.py.
+    KIMI_UNPROVEN_V0 = "kimi-code-unproven-v0"
 
 
 _ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
