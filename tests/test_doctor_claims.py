@@ -114,7 +114,7 @@ def a_server(served):
         def server_close(self):
             pass
 
-    def build(root, port=0):
+    def build(root, port=0, **kwargs):
         served.append(str(root))
         return Bound()
     return build

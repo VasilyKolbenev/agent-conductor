@@ -15,7 +15,9 @@ preview for inspection — it prepares and executes nothing); `integration-smoke
 honestly, and print the immutable result receipt; it is not Human Confirm);
 `up` (serve the panel
 on 127.0.0.1 with SSE
-live updates; Ctrl-C → exit 0); `demo` (materialize the bundled fixture into a
+live updates; Ctrl-C → exit 0; `--providers PATH` names the operator provider
+file, default `conductor/providers.json`, and an absent one configures nothing);
+`demo` (materialize the bundled fixture into a
 temp directory and serve it — takes `--port` but no `--dir`). Every other
 command takes `--dir` (the project root, default `.`).
 
@@ -125,11 +127,26 @@ def _cmd_report(args: argparse.Namespace) -> int:
     return 0
 
 
-def _serve(root: Path | str, port: int) -> int:
-    """Serve the panel for `root` on 127.0.0.1; Ctrl-C shuts down cleanly."""
+def _serve(root: Path | str, port: int, providers: str | None = None) -> int:
+    """Serve the panel for `root` on 127.0.0.1; Ctrl-C shuts down cleanly.
+
+    `providers` names the operator's provider file; without it the default under
+    the project's own `conductor/` is read, and an absent file configures nothing.
+    A file that IS there and cannot be honoured is a refusal on stderr with exit
+    1 and no server at all — starting with a provider the operator asked for
+    silently dropped would be the worse answer.
+    """
     from conductor import server              # deferred: see the import block
+    from conductor.command import operator_config   # deferred: see the import block
+    path = (Path(providers) if providers is not None
+            else operator_config.provider_config_path(store.conductor_dir(root)))
     try:
-        srv = server.build(root, port=port)
+        pinned = operator_config.load_provider_configs(path)
+    except operator_config.OperatorConfigError as e:
+        print(str(e), file=sys.stderr)
+        return 1
+    try:
+        srv = server.build(root, port=port, providers=pinned)
     except OSError as e:                  # port busy / unbindable → exit 1
         # `port` is the one the user asked for, and the ONLY port this message
         # may name: an OSError is not proof the port is busy, and no other
@@ -160,7 +177,7 @@ def _serve(root: Path | str, port: int) -> int:
 
 def _cmd_up(args: argparse.Namespace) -> int:
     """Serve the panel on 127.0.0.1; Ctrl-C shuts down cleanly (exit 0)."""
-    return _serve(args.dir, args.port)
+    return _serve(args.dir, args.port, args.providers)
 
 
 def _cmd_demo(args: argparse.Namespace) -> int:
@@ -232,6 +249,22 @@ def _add_port(p: argparse.ArgumentParser) -> None:
     """Attach the shared `--port` option to a serving subparser."""
     p.add_argument("--port", type=int, default=DEFAULT_PORT,
                    help=f"TCP port on 127.0.0.1 (default: {DEFAULT_PORT})")
+
+
+def _add_providers(p: argparse.ArgumentParser) -> None:
+    """Attach `up`'s operator provider file, the one surface that configures a provider."""
+    # Deliberately a PATH and nothing else. What may be inside that file is
+    # closed by `conductor.command.operator_config`, so no provider setting is
+    # ever spelled on a command line and no secret value can be. The default is
+    # spelled out here rather than imported: importing the command package at
+    # parser-build time would put it on `conduct init`'s import path, which
+    # tests/test_init_probing_ban.py measures. The behaviour test in
+    # tests/test_operator_provider_config.py holds the two spellings together.
+    p.add_argument("--providers", metavar="PATH", default=None,
+                   help="operator provider file pinning each provider's absolute "
+                        "executable, protocol and environment NAMES "
+                        "(default: conductor/providers.json; absent configures "
+                        "nothing)")
 
 
 def _add_dir_and_func(p: argparse.ArgumentParser,
@@ -316,6 +349,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("up", help="serve the panel on loopback HTTP with live updates")
     _add_port(p)
+    _add_providers(p)
     _add_dir_and_func(p, _cmd_up)
 
     # No --dir: demo materializes its own throwaway root.
