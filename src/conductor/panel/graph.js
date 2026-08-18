@@ -5,6 +5,7 @@
 // the only way facts enter this window is `conductGraph.load`, the same door
 // the coming HTTP source will use. The visual layer cannot tell which source
 // fed it; that is what keeps it stable when the real API arrives.
+import {adaptPayload} from "./graph-adapter.js";
 import {EMPTY, projectPayload, reduce} from "./graph-store.js";
 import {renderComposer, renderDetail, renderGates, renderGraph, renderPalette,
   renderTimeline} from "./graph-view.js";
@@ -105,12 +106,14 @@ import {renderComposer, renderDetail, renderGates, renderGraph, renderPalette,
     renderTimeline(mounts.timeline, state);
     restoreFocus(target);
   }
-  // The fixture seam, and the whole of it: load validates at the boundary and
-  // refuses rather than repairs; state answers with the current frozen value
-  // so a test can read without reaching into module internals.
+  // The fixture seam, and the whole of it: the adapter names the accepted
+  // schema, the projection validates at the boundary, and both refuse rather
+  // than repair; state answers with the current frozen value so a test can
+  // read without reaching into module internals.
   window.conductGraph = Object.freeze({
     load(payload) {
-      const facts = projectPayload(payload);
+      const adapted = adaptPayload(payload);
+      const facts = adapted === null ? null : projectPayload(adapted);
       dispatch(facts ? {type: "loaded", facts} : {type: "refused"});
       return facts !== null;
     },

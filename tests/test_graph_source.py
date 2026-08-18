@@ -20,8 +20,9 @@ HTML = PANEL / "graph.html"
 STORE = PANEL / "graph-store.js"
 VIEW = PANEL / "graph-view.js"
 BOOT = PANEL / "graph.js"
+ADAPTER = PANEL / "graph-adapter.js"
 STYLE = PANEL / "graph.css"
-SCRIPTS = (STORE, VIEW, BOOT)
+SCRIPTS = (STORE, VIEW, BOOT, ADAPTER)
 SOURCE = "\n".join(path.read_text(encoding="utf-8") for path in SCRIPTS)
 IMPORTS = r'from "(\./[a-z-]+\.js)";'
 
@@ -33,7 +34,7 @@ def test_the_contract_module_resolves_inside_this_tree():
 
 
 def test_graph_window_files_sit_in_the_panel_under_the_line_cap():
-    for path in (HTML, STORE, VIEW, BOOT, STYLE):
+    for path in (HTML, STORE, VIEW, BOOT, ADAPTER, STYLE):
         assert path.is_file() and path.parent == PANEL
         assert len(path.read_text(encoding="utf-8").splitlines()) <= 800
 
@@ -44,11 +45,25 @@ def test_the_graph_module_graph_is_acyclic_and_the_store_stays_pure():
     assert sorted(re.findall(IMPORTS, VIEW.read_text(encoding="utf-8"))) == [
         "./command-view.js", "./graph-store.js"]
     assert sorted(re.findall(IMPORTS, BOOT.read_text(encoding="utf-8"))) == [
-        "./graph-store.js", "./graph-view.js"]
-    store = STORE.read_text(encoding="utf-8")
-    assert "document" not in store
-    assert "window." not in store
-    assert "getElementById" not in store
+        "./graph-adapter.js", "./graph-store.js", "./graph-view.js"]
+    # The adapter imports nothing: it is the outermost shell of the boundary
+    # and may depend on no inner layer, so no mapping can smuggle a projection.
+    assert re.findall(IMPORTS, ADAPTER.read_text(encoding="utf-8")) == []
+    for pure in (STORE, ADAPTER):
+        source = pure.read_text(encoding="utf-8")
+        assert "document" not in source
+        assert "window." not in source
+        assert "getElementById" not in source
+
+
+def test_the_adapter_names_the_internal_schema_and_never_a_wire_form():
+    """The panel-internal shape is not the wire contract, and says so."""
+    source = ADAPTER.read_text(encoding="utf-8")
+    assert "NOT the wire" in source
+    assert "INTERNAL_SCHEMA = 1" in source
+    # No mapping exists yet: the adapter body reads no field but the schema
+    # pin, so it cannot have guessed at an unfrozen wire shape.
+    assert source.count("external.") == 1
 
 
 def test_the_graph_window_opens_no_wire_and_parses_no_markup():
@@ -126,6 +141,11 @@ def test_the_store_vocabularies_are_copies_of_the_layers_that_own_them():
     # no fourth invented beside them.
     assert _js_list(store, "AVAILABILITY_STATES") == {
         "available", "experimental", "unavailable"}
+    # The step model: task, gate, and the explicit bounded loop — the only
+    # sanctioned shape of a cycle. Resources are the Command's six words.
+    assert _js_list(store, "NODE_KINDS") == {"task", "gate", "loop"}
+    assert _js_list(store, "RESOURCE_KINDS") == {
+        "model", "tool", "skill", "session", "sandbox", "filesystem"}
 
 
 def test_local_only_actions_say_so_where_they_land():
@@ -157,8 +177,8 @@ def test_every_refusal_arm_of_the_store_is_pinned_by_count():
     vanish while the many-fault payload still refuses for another reason.
     """
     store = STORE.read_text(encoding="utf-8")
-    assert store.count("return null;") == 35
-    assert store.count("return false;") == 4
+    assert store.count("return null;") == 38
+    assert store.count("return false;") == 5
     # The registry's arms refuse by dropping a row, so they are pinned by
     # their own spelling: deleting one reds this line, not only the rendered
     # drop-row test in the browser suite.

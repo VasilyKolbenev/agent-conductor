@@ -82,6 +82,12 @@ button{font:inherit;cursor:pointer;background:none;border:none;color:inherit}
         padding:8px 10px;text-align:left;overflow:hidden}
 .g-node[aria-pressed="true"]{border-color:var(--ink)}
 .g-node--gate{border-style:dashed}
+/* the loop step: a doubled contour says "this stage repeats", the ↻ ×N
+   marker beside the chips says how far it may. */
+.g-node--loop{border-style:double;border-width:3px}
+.g-loop-bound{font-size:10px}
+.g-resources{list-style:none;margin:0;padding:0;display:flex;
+             flex-direction:column;gap:3px;font-size:11px}
 .g-node__head{display:flex;gap:6px;align-items:baseline;min-width:0}
 .g-node__title{font-size:12.5px;font-weight:640;overflow-wrap:anywhere}
 .g-node__chips{display:flex;gap:4px;flex-wrap:wrap}

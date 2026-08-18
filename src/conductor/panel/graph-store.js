@@ -15,7 +15,17 @@ import {isId, safeMode} from "./command-projection.js";
 // Closed vocabularies, copied case-for-case from the contract layer
 // (command/contracts.py, command-projection.js). None of these is invented
 // here; tests/test_graph_source.py holds each copy to its source.
-export const NODE_KINDS = Object.freeze(["task", "gate"]);
+// A loop is a first-class step: the one way a cycle may appear on this field
+// is an explicit bounded loop node ("repeat what feeds me, at most ×bound"),
+// so the geometry stays a DAG while orchestration loops stay representable.
+// The execution semantics of a pass belong to the runtime side; this window
+// renders the declared bound and nothing more.
+export const NODE_KINDS = Object.freeze(["task", "gate", "loop"]);
+//: What a step may attach as configuration: the December Command's own six
+//: resource words. Closed rows of {kind, name} — a name obeys the id grammar,
+//: so no path, URI or free JSON can ride in as a resource.
+export const RESOURCE_KINDS = Object.freeze(
+  ["model", "tool", "skill", "session", "sandbox", "filesystem"]);
 export const HEALTH_STATES = Object.freeze(
   ["ready", "busy", "offline", "degraded", "unknown"]);
 // Harness-level availability, distinct from a node's health: whether the
@@ -152,8 +162,43 @@ function projectCapabilities(names) {
   return Object.freeze([...names].sort());
 }
 
+// Sixteen rows bound the DOM the way the monogram cap bounds the rail; a
+// fixture attaching more configuration than that is asking for a viewer,
+// not a card.
+const RESOURCE_LIMIT = 16;
+function projectResources(rows) {
+  if (rows === undefined) return Object.freeze([]);
+  if (!Array.isArray(rows) || rows.length > RESOURCE_LIMIT) return null;
+  const seen = new Set();
+  const out = [];
+  for (const row of rows) {
+    if (!row || typeof row !== "object"
+        || !ownKeysOnly(row, ["kind", "name"])
+        || !RESOURCE_KINDS.includes(row.kind) || !isId(row.name)) return null;
+    const key = `${row.kind} ${row.name}`;
+    if (seen.has(key)) return null;
+    seen.add(key);
+    out.push(Object.freeze({kind: row.kind, name: row.name}));
+  }
+  return Object.freeze(out);
+}
+
+// The one fact a loop node declares: how many passes it is allowed. Anything
+// executional — what a pass does, when it stops early — is the runtime's to
+// define, so any further key is refused until the runtime freezes one.
+function projectLoop(row) {
+  if (row.kind !== "loop") {
+    return row.loop === null || row.loop === undefined ? null : false;
+  }
+  if (!row.loop || typeof row.loop !== "object"
+      || !ownKeysOnly(row.loop, ["bound"])
+      || !Number.isInteger(row.loop.bound)
+      || row.loop.bound < 1 || row.loop.bound > 99) return false;
+  return Object.freeze({bound: row.loop.bound});
+}
+
 const NODE_KEYS = ["node_id", "kind", "title", "harness", "health", "phase",
-  "capabilities", "evidence", "gate"];
+  "capabilities", "evidence", "gate", "loop", "resources"];
 function projectNode(row) {
   if (!row || typeof row !== "object" || !isId(row.node_id)) return null;
   if (!ownKeysOnly(row, NODE_KEYS)) return null;
@@ -166,7 +211,9 @@ function projectNode(row) {
   if (!NODE_PHASES.includes(row.phase)) return null;
   const capabilities = projectCapabilities(row.capabilities);
   const evidence = projectEvidence(row.evidence);
-  if (!capabilities || !evidence) return null;
+  const resources = projectResources(row.resources);
+  const loop = projectLoop(row);
+  if (!capabilities || !evidence || !resources || loop === false) return null;
   let gate = null;
   if (row.kind === "gate") {
     if (!row.gate || typeof row.gate !== "object"
@@ -179,7 +226,8 @@ function projectNode(row) {
   }
   return Object.freeze({node_id: row.node_id, kind: row.kind,
     title: row.title.trim(), harness: row.harness, health: row.health,
-    phase: row.phase, capabilities, evidence, gate});
+    phase: row.phase, capabilities, evidence, gate, loop, resources,
+    draft: false});
 }
 
 function projectEdges(rows, ids) {
@@ -348,8 +396,8 @@ function decide(state, event) {
       state.decisions,
       {[event.gateId]: Object.freeze({action: event.action, actor: event.actor,
         reason, recorded: "fixture-only"})})),
-    decisionNotice:
-      "Decision recorded in this window's fixture only. Nothing was executed.",
+    decisionNotice: "Decision recorded as a LOCAL DRAFT in this window's "
+      + "fixture — nothing submitted. Nothing was executed.",
   });
 }
 
@@ -369,9 +417,12 @@ function compose(state, event) {
     return Object.freeze({...state, composeNotice:
       "Composition refused: use a fresh id, a title and a registered harness."});
   }
+  // A composed step is a LOCAL DRAFT: it exists in this window's fixture,
+  // is submitted nowhere, and says so on its own card.
   const node = Object.freeze({node_id: event.nodeId, kind: "task", title,
     harness, health: "unknown", phase: "idle",
-    capabilities: Object.freeze([]), evidence: Object.freeze([]), gate: null});
+    capabilities: Object.freeze([]), evidence: Object.freeze([]), gate: null,
+    loop: null, resources: Object.freeze([]), draft: true});
   const nodes = Object.freeze([...state.nodes, node]);
   const added = event.placement === "after"
     ? [Object.freeze({from: anchor.node_id, to: event.nodeId})]
@@ -383,7 +434,8 @@ function compose(state, event) {
     return Object.freeze({...state, composeNotice: "Composition refused: cycle."});
   }
   return Object.freeze({...state, nodes, edges, layout, composeNotice:
-    `Step "${title}" added to the fixture graph. Nothing was executed.`});
+    `Step "${title}" added as a LOCAL DRAFT to this window's fixture. `
+    + "Nothing was executed."});
 }
 
 export function reduce(state, event) {

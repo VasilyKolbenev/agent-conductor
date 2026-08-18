@@ -82,9 +82,12 @@ export function renderPalette(mount, state) {
       badge(state.registry, row.id),
     ]);
     // A row that names its availability gets the chip; one that does not
-    // claims nothing and shows nothing — never a default.
+    // claims nothing and shows nothing — never a default. The label is the
+    // vocabulary word in capitals, so EXPERIMENTAL and UNAVAILABLE cannot be
+    // read as anything softer.
     if (row.availability) {
-      item.append(chip(AVAILABILITY_CHANNEL[row.availability], row.availability));
+      item.append(chip(AVAILABILITY_CHANNEL[row.availability],
+        row.availability.toUpperCase()));
     }
     // projectRegistry admits only https docs, and this arm re-states the
     // gate where the href is written, as index.html harnessBadge does.
@@ -126,6 +129,11 @@ function nodeButton(state, node, onSelect) {
   ]);
   if (node.gate) chips.append(
     chip(GATE_CHANNEL[node.gate.state], GATE_GLYPHS[node.gate.state], true));
+  // A loop wears its bound where the graph is read: the one sanctioned
+  // shape of a cycle is "at most ×N", said out loud.
+  if (node.loop) chips.append(element("span",
+    {className: "mono g-loop-bound", text: `↻ ×${node.loop.bound}`}));
+  if (node.draft) chips.append(chip("none", "LOCAL DRAFT"));
   button.append(chips);
   const parents = state.edges.filter((edge) => edge.to === node.node_id);
   button.append(element("span", {className: "g-node__from mono", text:
@@ -231,9 +239,25 @@ export function renderDetail(mount, state, decisionDraft, onDecide) {
       chip(HEALTH_CHANNEL[node.health], `health: ${node.health}`),
       chip(PHASE_CHANNEL[node.phase], `phase: ${node.phase}`),
     ]));
+  if (node.loop) {
+    mount.append(element("p", {className: "mono g-det__meta",
+      text: `bounded loop · at most ×${node.loop.bound} passes`}));
+  }
+  if (node.draft) {
+    mount.append(chip("none",
+      "LOCAL DRAFT — this window's fixture only, submitted nowhere"));
+  }
   const names = node.capabilities.length ? node.capabilities.join(", ") : "none";
   mount.append(element("p", {className: "mono g-det__meta",
     text: `capabilities: ${names}`}));
+  // Attached configuration is a closed list of {kind, name} rows; a node
+  // that attaches nothing shows no section, claiming nothing.
+  if (node.resources.length) {
+    mount.append(element("h3", {text: "Resources"}));
+    mount.append(element("ul", {className: "g-resources"},
+      node.resources.map((row) => element("li", {className: "mono",
+        text: `${row.kind}: ${row.name}`}))));
+  }
   mount.append(element("h3", {text: "Evidence"}));
   mount.append(node.evidence.length
     ? element("ul", {className: "g-evidence-list"}, node.evidence.map(evidenceRow))
@@ -264,7 +288,7 @@ export function renderGates(mount, state) {
     const local = Object.hasOwn(state.decisions, node.gate.gate_id)
       ? state.decisions[node.gate.gate_id] : null;
     if (local) item.append(element("span", {className: "g-note",
-      text: `by ${local.actor} (fixture-only)`}));
+      text: `LOCAL DRAFT by ${local.actor} — not submitted`}));
     list.append(item);
   }
   mount.append(list);

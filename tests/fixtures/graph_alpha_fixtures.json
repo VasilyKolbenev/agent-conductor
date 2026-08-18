@@ -126,6 +126,49 @@
        "node_id": "probe", "phase": "cancelled"}
     ]
   },
+  "loop_and_resources": {
+    "fixture_schema": 1,
+    "run": {"run_id": "run-alpha-2-loop", "mode": "confirm"},
+    "registry": [],
+    "nodes": [
+      {"node_id": "plan", "kind": "task", "title": "Plan the slice",
+       "harness": "claude-code", "health": "ready", "phase": "succeeded",
+       "capabilities": ["dispatch"],
+       "evidence": [],
+       "gate": null,
+       "resources": [{"kind": "model", "name": "opus-5"},
+                     {"kind": "skill", "name": "writing-plans"},
+                     {"kind": "filesystem", "name": "workspace-ro"}]},
+      {"node_id": "fix-loop", "kind": "loop", "title": "Fix until green",
+       "harness": "codex", "health": "busy", "phase": "requested",
+       "capabilities": ["dispatch", "retry"],
+       "evidence": [],
+       "gate": null,
+       "loop": {"bound": 3},
+       "resources": [{"kind": "tool", "name": "pytest"},
+                     {"kind": "sandbox", "name": "worktree-a"},
+                     {"kind": "session", "name": "sess-41"}]},
+      {"node_id": "verify", "kind": "task", "title": "Verify the batch",
+       "harness": "claude-code", "health": "ready", "phase": "idle",
+       "capabilities": ["evidence"],
+       "evidence": [],
+       "gate": null},
+      {"node_id": "ship-gate", "kind": "gate", "title": "Release gate",
+       "harness": null, "health": "unknown", "phase": "idle",
+       "capabilities": [],
+       "evidence": [],
+       "gate": {"gate_id": "gate-release", "state": "pending"}}
+    ],
+    "edges": [
+      {"from": "plan", "to": "fix-loop"},
+      {"from": "fix-loop", "to": "verify"},
+      {"from": "verify", "to": "ship-gate"}
+    ],
+    "timeline": [
+      {"event_id": "t-loop-requested", "at": "2026-08-17T10:00:00Z",
+       "node_id": "fix-loop", "phase": "requested"}
+    ]
+  },
   "gate_satisfied": {
     "fixture_schema": 1,
     "run": {"run_id": "run-alpha-2-decided", "mode": "confirm"},

@@ -96,6 +96,27 @@ _ONE_FAULT_CASES = [
      lambda p: p["nodes"][0].update(__proto__={"kind": "task"})),
     ("prototype-key-top-level", lambda p: p.update(constructor="x")),
     ("run-id-missing", lambda p: p["run"].pop("run_id")),
+    ("loop-on-task", lambda p: p["nodes"][0].update(loop={"bound": 3})),
+    ("loop-kind-without-bound", lambda p: p["nodes"][4].update(kind="loop")),
+    ("loop-bound-zero",
+     lambda p: p["nodes"][4].update(kind="loop", loop={"bound": 0})),
+    ("loop-bound-unbounded",
+     lambda p: p["nodes"][4].update(kind="loop", loop={"bound": 100})),
+    ("loop-bound-fractional",
+     lambda p: p["nodes"][4].update(kind="loop", loop={"bound": 2.5})),
+    ("loop-unknown-key", lambda p: p["nodes"][4].update(
+        kind="loop", loop={"bound": 2, "body": ["impl-a"]})),
+    ("resource-kind-out-of-vocab",
+     lambda p: p["nodes"][0].update(resources=[{"kind": "gpu", "name": "a100"}])),
+    ("resource-name-with-a-path", lambda p: p["nodes"][0].update(
+        resources=[{"kind": "filesystem", "name": "C:/secrets"}])),
+    ("resource-unknown-key", lambda p: p["nodes"][0].update(
+        resources=[{"kind": "model", "name": "m", "uri": "https://x"}])),
+    ("resource-duplicate-row", lambda p: p["nodes"][0].update(
+        resources=[{"kind": "tool", "name": "pytest"},
+                   {"kind": "tool", "name": "pytest"}])),
+    ("resources-not-a-list",
+     lambda p: p["nodes"][0].update(resources="model")),
 ]
 
 
@@ -241,14 +262,14 @@ def test_a_prototype_named_gate_id_earns_no_phantom_attribution(
             "text => window.conductGraph.load(JSON.parse(text))",
             json.dumps(payload))
         gates = graph_page.locator("#gatesCard")
-        assert "fixture-only" not in gates.inner_text(), hostile
+        assert "LOCAL DRAFT" not in gates.inner_text(), hostile
         assert "undefined" not in gates.inner_text(), hostile
     # And the ledger still works for such an id when a Human really decides.
     graph_page.locator('[data-node-id="ship-gate"]').click()
     form = graph_page.locator("#detailCard .g-decide")
     form.locator('[name="actor"]').fill("reviewer-1")
     form.locator('button[type="submit"]').click()
-    assert "by reviewer-1 (fixture-only)" in graph_page.locator(
+    assert "LOCAL DRAFT by reviewer-1 — not submitted" in graph_page.locator(
         "#gatesCard").inner_text()
 
 

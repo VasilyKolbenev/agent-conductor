@@ -117,7 +117,8 @@ def test_the_graph_modules_boot_without_a_console_error_and_render_empty(
         names = {url.rsplit("/", 1)[1]: status for url, status in served}
         assert names == {
             "graph.html": 200, "graph.css": 200, "graph.js": 200,
-            "graph-store.js": 200, "graph-view.js": 200,
+            "graph-adapter.js": 200, "graph-store.js": 200,
+            "graph-view.js": 200,
             "command-projection.js": 200, "command-view.js": 200,
         }
         assert problems == []
@@ -323,7 +324,7 @@ def test_gate_decision_form_updates_the_gate_and_stays_fixture_only(
         ".g-decide-status").inner_text()
     gates = graph_page.locator("#gatesCard")
     assert "■ changes requested" in gates.inner_text()
-    assert "by reviewer-1 (fixture-only)" in gates.inner_text()
+    assert "LOCAL DRAFT by reviewer-1 — not submitted" in gates.inner_text()
     assert "■ changes requested" in graph_page.locator(
         '[data-node-id="ship-gate"]').inner_text()
     recorded = graph_page.evaluate("window.conductGraph.state().decisions")
@@ -460,8 +461,10 @@ def test_availability_arrives_as_data_and_absence_claims_nothing(
     row that states none shows none."""
     _load_provider_mix(graph_page)
     palette = graph_page.locator("#paletteCard")
-    for state, channel in (("available", "pass"), ("experimental", "wait"),
-                           ("unavailable", "fail")):
+    # The label is the vocabulary word in capitals — EXPERIMENTAL and
+    # UNAVAILABLE must be unmistakable at a glance.
+    for state, channel in (("AVAILABLE", "pass"), ("EXPERIMENTAL", "wait"),
+                           ("UNAVAILABLE", "fail")):
         chips = palette.locator(f".g-chip--{channel}")
         texts = [chips.nth(i).text_content() for i in range(chips.count())]
         assert any(state in (text or "") for text in texts), state
@@ -481,6 +484,59 @@ def test_availability_arrives_as_data_and_absence_claims_nothing(
         '[data-node-id="impl-a"] .hb').get_attribute("style") is None
     assert graph_page.locator("#paletteCard").locator(
         ".g-palette__row").count() == len(_registry_payload()) - 1
+
+
+def test_a_bounded_loop_renders_its_bound_and_the_field_stays_a_dag(
+        graph_page: Page) -> None:
+    """The one sanctioned cycle shape: an explicit loop step saying ×N."""
+    _load(graph_page, "loop_and_resources")
+    loop = graph_page.locator('[data-node-id="fix-loop"]')
+    assert "g-node--loop" in (loop.get_attribute("class") or "")
+    assert loop.locator(".g-loop-bound").inner_text() == "↻ ×3"
+    geometry = graph_page.locator("#field").evaluate(_GEOMETRY)
+    assert geometry["overlaps"] == 0
+    assert geometry["links"] == [
+        ["plan", "fix-loop"], ["fix-loop", "verify"], ["verify", "ship-gate"]]
+    loop.click()
+    detail = graph_page.locator("#detailCard")
+    assert "bounded loop · at most ×3 passes" in detail.inner_text()
+
+
+def test_resources_render_as_closed_attachments_of_their_node(
+        graph_page: Page) -> None:
+    """Configuration arrives as {kind, name} rows; absence claims nothing."""
+    _load(graph_page, "loop_and_resources")
+    graph_page.locator('[data-node-id="plan"]').click()
+    detail = graph_page.locator("#detailCard")
+    rows = detail.locator(".g-resources li")
+    assert [rows.nth(i).inner_text() for i in range(rows.count())] == [
+        "model: opus-5", "skill: writing-plans", "filesystem: workspace-ro"]
+    graph_page.locator('[data-node-id="fix-loop"]').click()
+    rows = detail.locator(".g-resources li")
+    assert [rows.nth(i).inner_text() for i in range(rows.count())] == [
+        "tool: pytest", "sandbox: worktree-a", "session: sess-41"]
+    graph_page.locator('[data-node-id="verify"]').click()
+    assert detail.locator(".g-resources").count() == 0
+    assert "Resources" not in detail.inner_text()
+
+
+def test_a_composed_step_wears_the_local_draft_label_everywhere_it_lands(
+        graph_page: Page) -> None:
+    """Nothing composed here may read as durable or submitted."""
+    _load(graph_page, "loop_and_resources")
+    form = graph_page.locator("#composerCard .g-compose")
+    form.locator('[name="title"]').fill("Shadow check")
+    form.locator('[name="anchor"]').select_option("verify")
+    form.locator('button[type="submit"]').click()
+    assert "LOCAL DRAFT" in graph_page.locator("#composeStatus").inner_text()
+    added = graph_page.locator('[data-node-id="step-5"]')
+    assert "LOCAL DRAFT" in added.inner_text()
+    added.click()
+    assert "LOCAL DRAFT — this window's fixture only, submitted nowhere" in \
+        graph_page.locator("#detailCard").inner_text()
+    # Fixture-fed steps carry no such label: the claim is drafts-only.
+    assert "LOCAL DRAFT" not in graph_page.locator(
+        '[data-node-id="plan"]').inner_text()
 
 
 def test_the_palette_claims_no_capability_for_any_product(
