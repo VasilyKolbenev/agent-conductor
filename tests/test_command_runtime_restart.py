@@ -11,6 +11,7 @@ from conductor.command.runtime import AttemptState
 
 from tests.test_command_runtime_execute import (
     ScriptedAdapter,
+    VerifiedAdapter,
     a_runtime,
     authorized,
 )
@@ -59,7 +60,10 @@ def test_effect_lease_is_durable_before_the_adapter_effect(tmp_path):
     adapter = Witness()
     runtime, authorization = authorized(store, adapter)
     attempt = runtime.execute(authorization)
-    assert attempt.state is AttemptState.SUCCEEDED
+    # The lease was already durable when the effect fired; the terminal state is
+    # `verification_failed` because this adapter verifies nothing, which does not
+    # change the ordering this test is about.
+    assert attempt.state is AttemptState.VERIFICATION_FAILED
     assert adapter.lease_visible is True
     assert [row.phase for row in attempt_events(store)] == [
         "effect_lease", "execution_observed"]
@@ -131,8 +135,11 @@ def test_observed_restart_is_verify_only_and_events_are_exactly_once(
     assert adapter.execute_calls == 1
     assert [row.phase for row in attempt_events(store)] == [
         "effect_lease", "execution_observed"]
-    fresh = ScriptedAdapter()
+    fresh = VerifiedAdapter(store)
     recovered = a_runtime(RunStore(tmp_path), fresh).execute(authorization)
+    # Resuming at verify can still reach a real success: the observation is
+    # durable, the resumed verifier answers `verified`, and its evidence record
+    # lands after that observation -- the whole triple, across a restart.
     assert recovered.state is AttemptState.SUCCEEDED
     assert fresh.prepare_calls == fresh.execute_calls == 0
     assert fresh.verify_calls == 1
@@ -151,9 +158,17 @@ def test_live_and_restart_verify_receive_the_same_observed_event_receipt(
         tmp_path, monkeypatch):
     expected_receipt = "execution_observed-event-fixed"
 
-    class ReceiptSensitive(ScriptedAdapter):
-        def __init__(self):
-            super().__init__(result_changes={
+    class ReceiptSensitive(VerifiedAdapter):
+        """Reaches a real success only when it is handed the canonical receipt.
+
+        The control is the terminal state: a verifier that recognizes the
+        observed-event receipt earns the whole triple, and one handed anything
+        else answers `failed`. Both roads had to be distinguishable outcomes for
+        the comparison below to mean anything.
+        """
+
+        def __init__(self, store):
+            super().__init__(store, result_changes={
                 "receipt_id": "adapter-private-result",
                 "observed_at": "2026-08-11T11:59:00Z",
                 "detail": "APIKEY_ADAPTER_DETAIL",
@@ -162,15 +177,16 @@ def test_live_and_restart_verify_receive_the_same_observed_event_receipt(
             self.verify_inputs = []
 
         def verify(self, request, result):
-            self.verify_calls += 1
             self.verify_inputs.append(result)
-            state = "unavailable" if result.receipt_id == expected_receipt else "failed"
-            return AdapterVerification(
-                adapter_id=self.manifest.adapter_id, action_id=request.action_id,
-                state=state, observed_at=NOW, detail="receipt identity control")
+            if result.receipt_id != expected_receipt:
+                self.verify_calls += 1
+                return AdapterVerification(
+                    adapter_id=self.manifest.adapter_id, action_id=request.action_id,
+                    state="failed", observed_at=NOW, detail="receipt identity control")
+            return super().verify(request, result)
 
     live_store = a_store(tmp_path / "live")
-    live_adapter = ReceiptSensitive()
+    live_adapter = ReceiptSensitive(live_store)
     live_runtime, live_authorization = authorized(live_store, live_adapter)
     live = live_runtime.execute(live_authorization)
 
@@ -182,7 +198,7 @@ def test_live_and_restart_verify_receive_the_same_observed_event_receipt(
         lambda *args: (_ for _ in ()).throw(RuntimeError("crash after observed")))
     with pytest.raises(RuntimeError, match="crash after observed"):
         initial.execute(restart_authorization)
-    restart_adapter = ReceiptSensitive()
+    restart_adapter = ReceiptSensitive(restart_store)
     resumed = a_runtime(
         RunStore(tmp_path / "restart"), restart_adapter).execute(
             restart_authorization)

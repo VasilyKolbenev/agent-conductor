@@ -307,9 +307,13 @@ owned-process adapter and exit 0. It is explicitly not a product Human Confirm s
 actor, time, ids and no-op effect are deterministic fixture facts. It opens a run under
 `$PROJ\conductor\runs\control-loop-run`, executes and verifies one synthetic dispatch, and
 prints a single line of canonical JSON on stdout —
-one immutable `ActionResultReceipt` whose `outcome` is `succeeded` and whose empty
-evidence list honestly says the process adapter has no independent verifier. Run it twice and the line is
-byte-identical: the receipt is deterministic, and reopening the run appends nothing.
+one immutable `ActionResultReceipt` whose `outcome` is `verification_failed`, whose
+`exit_code` is `0`, and whose empty evidence list says why: the owned-process adapter
+watches a process and holds no independent check of the work, so it exposes no verifier,
+and this product never turns an exit code into a success. **`verification_failed` is the
+expected pass here.** The exit status to read is the command's own `exit=0`, and the proof
+that the loop ran is the durable record it left, not a success token. Run it twice and the
+line is byte-identical: the receipt is deterministic, and reopening the run appends nothing.
 
 ## Teardown
 

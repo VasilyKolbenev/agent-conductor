@@ -246,7 +246,10 @@ def test_confirm_answers_with_the_recorded_request_while_the_effect_is_still_hel
         assert kinds(store) == [
             "action_proposal", "action_request", "attempt_event", "attempt_event",
             "action_result"]
-        assert [row.outcome for row in results(store)] == ["succeeded"]
+        # The fixture provider holds no independent check of its own effect, so
+        # its terminal result is `verification_failed`; the relation held here is
+        # that exactly one result was appended, by exactly one worker.
+        assert [row.outcome for row in results(store)] == ["verification_failed"]
         assert (adapter.executions, coordinator.placements()) == (1, 1)
     finally:
         adapter.gate.set()
@@ -401,7 +404,7 @@ def test_an_observed_action_is_verified_and_never_executed_again(tmp_path):
     try:
         _place(coordinator, authorization)
         assert coordinator.wait_idle(10) is True
-        assert [row.outcome for row in results(store)] == ["succeeded"]
+        assert [row.outcome for row in results(store)] == ["verification_failed"]
         assert adapter.executions == 0
         assert adapter.verifications == 1
         assert [seam for seam, _held in adapter.held_transactions] == ["verify"]
@@ -504,7 +507,7 @@ def test_a_coordinator_retires_only_the_worker_whose_token_it_minted(tmp_path):
         assert owner.owned_tokens() == (owner_token,)
         _place(owner, authorization)
         assert owner.wait_idle(10) is True
-        assert [row.outcome for row in results(store)] == ["succeeded"]
+        assert [row.outcome for row in results(store)] == ["verification_failed"]
     finally:
         owner.shutdown()
         stranger.shutdown()

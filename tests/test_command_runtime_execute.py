@@ -121,6 +121,37 @@ class ScriptedAdapter:
         return AdapterVerification(**values)
 
 
+class VerifiedAdapter(ScriptedAdapter):
+    """The only adapter here that can reach ``succeeded``, and it earns it.
+
+    Succeeded is a three-legged relation: the process was OBSERVED to succeed,
+    the bound adapter answered ``verified``, and the refs it named resolve to a
+    durable ``EvidenceRef`` the store recorded AFTER that observation. This
+    adapter writes that record itself -- the test-local stand-in for an
+    independent evidence writer, since the adapter API returns refs and receives
+    no append power of its own. Every other adapter in this module now
+    terminates short of success, which is the point: no verifier is no proof.
+    """
+
+    def __init__(self, store, *, evidence_id="durable-evidence", **knobs):
+        super().__init__(verify_state="verified", **knobs)
+        self._store = store
+        self._evidence_id = evidence_id
+
+    def verify(self, request, result):
+        self.verify_calls += 1
+        self._store.append(EvidenceRef(
+            evidence_id=self._evidence_id, run_id=request.run_id,
+            kind="verification", uri=f"verification/{request.action_id}",
+            label="durable verification fact", created_by=self.manifest.adapter_id,
+            observed_at=NOW, verification="verified",
+            verified_by=self.manifest.adapter_id, verified_at=NOW))
+        return AdapterVerification(
+            adapter_id=self.manifest.adapter_id, action_id=request.action_id,
+            state="verified", observed_at=NOW, detail="durable verification",
+            evidence_refs=(self._evidence_id,))
+
+
 def a_runtime(store, adapter, *, clock=None, ids=None):
     registry = AdapterRegistry([adapter])
     return ControlRuntime(store, registry, clock=clock or fixed_clock(), ids=ids or fixed_ids())
@@ -148,75 +179,6 @@ def request_for(proposal):
         timeout_seconds=proposal.timeout_seconds,
         preview_digest=proposal.preview_digest, mode="confirm")
 
-
-def seed_verified_evidence(store, adapter_id="claude-code", *,
-                           action_id="action-fixed", evidence_id="scripted-evidence"):
-    evidence = EvidenceRef(
-        evidence_id=evidence_id, run_id="run-001", kind="verification",
-        uri=f"verification/{action_id}", label="test-local verified fact",
-        created_by=adapter_id, observed_at=NOW, verification="verified",
-        verified_by=adapter_id, verified_at=NOW)
-    store.append(evidence)
-    return evidence
-
-
-# -- Verified evidence must follow the durable effect observation --
-
-def test_preplanted_verified_evidence_cannot_become_post_action_success(tmp_path):
-    store = a_store(tmp_path)
-    adapter = ScriptedAdapter(verify_state="verified")
-    runtime, authorization = authorized(store, adapter)
-    seed_verified_evidence(store)
-    assert kinds(store) == ["action_proposal", "action_request", "evidence"]
-
-    attempt = runtime.execute(authorization)
-
-    assert attempt.state is AttemptState.VERIFICATION_FAILED
-    assert attempt.history == (
-        AttemptState.ACCEPTED, AttemptState.STARTED, AttemptState.VERIFICATION_FAILED)
-    assert attempt.receipt.outcome == "verification_failed"
-    assert attempt.verification_evidence == ()
-    assert attempt.receipt.evidence_refs == ()
-    assert kinds(store) == [
-        "action_proposal", "action_request", "evidence",
-        "attempt_event", "attempt_event", "action_result"]
-    assert adapter.execute_calls == 1 and adapter.verify_calls == 1
-
-
-# -- a reported success is not the terminal word until verify confirms it --
-
-@pytest.mark.parametrize("verify_state", ["mismatch", "error"])
-def test_a_verify_that_refutes_success_reaches_verification_failed(tmp_path, verify_state):
-    store = a_store(tmp_path)
-    adapter = ScriptedAdapter(verify_state=verify_state)
-    runtime, authorization = authorized(store, adapter)
-    attempt = runtime.execute(authorization)
-    assert attempt.state is AttemptState.VERIFICATION_FAILED
-    assert attempt.state is not AttemptState.SUCCEEDED
-    assert attempt.receipt.outcome == "verification_failed"
-    assert attempt.verification_evidence == ()
-
-
-def test_a_verify_that_raises_cannot_confirm_success(tmp_path):
-    store = a_store(tmp_path)
-    adapter = ScriptedAdapter(verify_raises=True)
-    attempt = (lambda r, a: r.execute(a))(*authorized(store, adapter))
-    assert attempt.state is AttemptState.VERIFICATION_FAILED
-    assert attempt.receipt.outcome == "verification_failed"
-
-
-def test_an_unavailable_verifier_leaves_success_standing_but_unverified(tmp_path):
-    store = a_store(tmp_path)
-    adapter = ScriptedAdapter(verify_state="unavailable")
-    runtime, authorization = authorized(store, adapter)
-    attempt = runtime.execute(authorization)
-    # The observed process success stands, but nothing is recorded as verified.
-    assert attempt.state is AttemptState.SUCCEEDED
-    assert attempt.receipt.outcome == "succeeded"
-    assert attempt.verification_evidence == ()
-    assert attempt.receipt.evidence_refs == ()
-    assert "no verifier" in attempt.receipt.detail
-    assert "evidence" not in kinds(store)
 
 
 # -- non-success outcomes are themselves, and never trigger a verification --
@@ -280,17 +242,20 @@ def test_the_seven_attempt_states_are_seven_distinct_values():
 
 
 def test_the_terminal_outcomes_reached_across_scenarios_do_not_collapse(tmp_path):
+    # The succeeded scenario is the only one that earns its state: it observes a
+    # success, verifies it, and leaves a causal durable record behind. The rest
+    # reach four other terminals, and none of the five folds into another.
     scenarios = {
-        "succeeded": ScriptedAdapter(verify_state="unavailable"),
-        "mismatch": ScriptedAdapter(verify_state="mismatch"),
-        "failed": ScriptedAdapter(execute_outcome="failed"),
-        "cancelled": ScriptedAdapter(execute_outcome="cancelled"),
-        "crash": ScriptedAdapter(execute_raises=True),
+        "succeeded": VerifiedAdapter,
+        "mismatch": lambda _store: ScriptedAdapter(verify_state="mismatch"),
+        "failed": lambda _store: ScriptedAdapter(execute_outcome="failed"),
+        "cancelled": lambda _store: ScriptedAdapter(execute_outcome="cancelled"),
+        "crash": lambda _store: ScriptedAdapter(execute_raises=True),
     }
     reached = set()
-    for index, adapter in enumerate(scenarios.values()):
+    for index, build in enumerate(scenarios.values()):
         store = a_store(tmp_path / f"s{index}")
-        runtime, authorization = authorized(store, adapter)
+        runtime, authorization = authorized(store, build(store))
         reached.add(runtime.execute(authorization).state)
     # Five scenarios, five different terminal states -- none folded into another.
     assert reached == {
@@ -304,7 +269,7 @@ def test_the_runtime_drives_whatever_adapter_the_frozen_config_binds(tmp_path):
     # CONFIG binds 'codex-review' to the 'codex' adapter. The runtime resolves that
     # binding itself; it never names an adapter, so a scripted 'codex' is driven.
     store = a_store(tmp_path)
-    adapter = ScriptedAdapter(adapter_id="codex")
+    adapter = VerifiedAdapter(store, adapter_id="codex")
     runtime, authorization = authorized(
         store, adapter, proposal_changes={"instance_id": "codex-review"})
     attempt = runtime.execute(authorization)
@@ -331,7 +296,7 @@ def test_a_recorded_result_receipt_cannot_be_rewritten(tmp_path):
         store.append(rewrite)
     results = [row.value for row in store.read("run-001").records
                if row.kind == "action_result"]
-    assert len(results) == 1 and results[0].outcome == "succeeded"
+    assert len(results) == 1 and results == [recorded]
 
 
 # -- execute refuses a request the store never authorized --
@@ -399,45 +364,6 @@ def test_execute_rejects_every_foreign_result_binding_field(
     assert adapter.verify_calls == 0
 
 
-def test_verify_rejects_a_foreign_adapter_identity(tmp_path):
-    store = a_store(tmp_path)
-    adapter = ScriptedAdapter(
-        verify_state="verified",
-        verification_changes={"adapter_id": "foreign-adapter"})
-    runtime, authorization = authorized(store, adapter)
-    seed_verified_evidence(store)
-    attempt = runtime.execute(authorization)
-    assert attempt.state is AttemptState.VERIFICATION_FAILED
-    assert attempt.receipt.evidence_refs == ()
-    assert attempt.verification_evidence == ()
-
-
-def test_evidence_appended_after_observation_can_gain_causal_authority(tmp_path):
-    class SideEffectVerifier(ScriptedAdapter):
-        def verify(self, request, result):
-            # Test-only stand-in for the independent evidence writer. The adapter
-            # API returns refs only; it receives neither this store nor append power.
-            store.append(EvidenceRef(
-                evidence_id="during-verify", run_id=request.run_id,
-                kind="verification", uri=f"verification/{request.action_id}",
-                label="adapter side effect", created_by=self.manifest.adapter_id,
-                observed_at=NOW, verification="verified",
-                verified_by=self.manifest.adapter_id, verified_at=NOW))
-            return AdapterVerification(
-                adapter_id=self.manifest.adapter_id, action_id=request.action_id,
-                state="verified", observed_at=NOW, detail="self assertion",
-                evidence_refs=("during-verify",))
-
-    store = a_store(tmp_path)
-    adapter = SideEffectVerifier(verify_state="verified")
-    runtime, authorization = authorized(store, adapter)
-    attempt = runtime.execute(authorization)
-    assert attempt.state is AttemptState.SUCCEEDED
-    assert attempt.receipt.evidence_refs == ("during-verify",)
-    assert tuple(row.evidence_id for row in attempt.verification_evidence) == (
-        "during-verify",)
-
-
 def test_direct_execute_refuses_a_hard_linked_journal_before_prepare(tmp_path):
     store = a_store(tmp_path)
     adapter = ScriptedAdapter()
@@ -457,8 +383,10 @@ def test_direct_execute_refuses_a_hard_linked_journal_before_prepare(tmp_path):
 
 
 def test_execute_replays_a_durable_result_without_executing_twice(tmp_path):
+    # A verified success is the richest thing to replay -- it carries evidence
+    # refs the replay must resolve -- so the adapter here earns its state.
     store = a_store(tmp_path)
-    adapter = ScriptedAdapter()
+    adapter = VerifiedAdapter(store)
     runtime, authorization = authorized(store, adapter)
     first = runtime.execute(authorization)
     before = store.run_path("run-001").joinpath("records.jsonl").read_bytes()
@@ -509,11 +437,19 @@ def test_terminal_replay_refuses_duplicate_evidence_refs_before_any_adapter(tmp_
     assert fresh.prepare_calls == fresh.execute_calls == fresh.verify_calls == 0
 
 
-def test_empty_ref_unavailable_success_replays_without_adapter_calls(tmp_path):
+def test_an_evidence_free_terminal_result_replays_without_adapter_calls(tmp_path):
+    """A terminal receipt naming no evidence is still terminal, and still replays.
+
+    This used to be the unavailable-success case. The outcome it lands on has
+    changed -- an adapter with no verifier proves nothing -- but the relation is
+    the same one it always held: once a terminal result is durable, a second
+    execute reproduces it out of the journal and touches no adapter seam.
+    """
     store = a_store(tmp_path)
     runtime, authorization = authorized(store, ScriptedAdapter())
     first = runtime.execute(authorization)
-    assert first.state is AttemptState.SUCCEEDED and first.receipt.evidence_refs == ()
+    assert first.state is AttemptState.VERIFICATION_FAILED
+    assert first.receipt.evidence_refs == ()
     fresh = ScriptedAdapter()
     replayed = a_runtime(store, fresh).execute(authorization)
     assert replayed.receipt == first.receipt
@@ -549,7 +485,9 @@ def test_observed_pre_result_retry_resolves_without_a_second_effect(
     assert adapter.execute_calls == 1
     monkeypatch.setattr(runtime, "_finish", finish)
     attempt = runtime.execute(authorization)
-    assert attempt.state is AttemptState.SUCCEEDED
+    # The retry resolves from the durable observation alone: no second effect,
+    # and no verifier behind this adapter, so it resolves short of success.
+    assert attempt.state is AttemptState.VERIFICATION_FAILED
     assert adapter.execute_calls == 1
     assert store.run_path("run-001").joinpath("records.jsonl").read_bytes() != before
 
@@ -663,22 +601,6 @@ def test_adapter_result_free_text_never_reaches_attempt_or_durable_state(
     assert secret not in repr(attempt)
     assert secret.encode() not in store.run_path("run-001").joinpath(
         "records.jsonl").read_bytes()
-
-
-@pytest.mark.parametrize("state", ["verified", "unavailable", "mismatch", "error"])
-def test_verifier_free_text_never_reaches_attempt_evidence_or_journal(tmp_path, state):
-    secret = f"VERIFY-SECRET-{state}"
-    store = a_store(tmp_path)
-    adapter = ScriptedAdapter(
-        verify_state=state, verification_changes={"detail": secret})
-    runtime, authorization = authorized(store, adapter)
-    if state == "verified":
-        seed_verified_evidence(store)
-    attempt = runtime.execute(authorization)
-    assert secret not in repr(attempt)
-    assert secret.encode() not in store.run_path("run-001").joinpath(
-        "records.jsonl").read_bytes()
-
 
 # -- the runtime starts no process itself; every execution goes through an adapter --
 

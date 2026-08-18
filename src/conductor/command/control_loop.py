@@ -3,11 +3,19 @@
 `conduct integration-smoke` runs the whole Day-1 A+B loop end to end on a fixed,
 deterministic synthetic scenario: it opens (or creates) a run with a frozen config,
 proposes one dispatch, records a labelled synthetic confirmation fixture, executes it through
-the owned-process adapter against a packaged no-op executable, verifies honestly
-as unavailable, and prints the canonical result receipt --
-the immutable outcome record -- for inspection. It reaches no browser and accepts
+the owned-process adapter against a packaged no-op executable, and prints the
+canonical result receipt -- the immutable outcome record -- for inspection. It
+reaches no browser and accepts
 no caller command text; the fixed structured argv still crosses the real spawn,
 timeout, process-group ownership and bounded-output surface.
+
+The receipt this gate prints is ``verification_failed``, and that IS the passing
+result. The owned-process adapter watches a process; it holds no independent
+check of what the process did, so it answers ``unavailable`` -- and the runtime
+never turns that into product success. The loop is proved end to end by the
+durable record it leaves (a proposal, a request, a lease, an observation whose
+own outcome is ``succeeded``, and one immutable result), not by a success token
+this build cannot back with evidence.
 
 This is not the product Confirm surface and records no Human assertion. Product
 confirmation arrives through the later server-owned API boundary. The fixture is
@@ -161,9 +169,10 @@ def _expected_histories(envelope: RunEnvelope) -> tuple[tuple[StoredRecord, ...]
         mode=ControlMode.CONFIRM)
     result = ActionResultReceipt(
         receipt_id=_loop_id("result"), action_id=request.action_id, run_id=_RUN_ID,
-        attempt_id=_ATTEMPT_ID, instance_id=_INSTANCE_ID, outcome="succeeded",
-        observed_at=_NOW, evidence_refs=(),
-        detail="the process reported success; the adapter exposed no verifier",
+        attempt_id=_ATTEMPT_ID, instance_id=_INSTANCE_ID,
+        outcome="verification_failed", observed_at=_NOW, evidence_refs=(),
+        detail="execution observed; the adapter exposed no verifier, so nothing "
+               "about the work is verified",
         exit_code=0)
     lease = _loop_event(request, "effect_lease")
     observed = _loop_event(

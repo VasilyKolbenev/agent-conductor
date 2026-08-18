@@ -86,7 +86,9 @@ def test_a_client_that_vanishes_mid_effect_neither_cancels_nor_repeats_it(tmp_pa
             "action_result"]
         results = [row.value for row in store.read(RUN_ID).records
                    if row.kind == "action_result"]
-        assert [row.outcome for row in results] == ["succeeded"]
+        # The effect completed and left ONE terminal result; the fixture adapter
+        # verifies nothing, so that result is `verification_failed`.
+        assert [row.outcome for row in results] == ["verification_failed"]
     finally:
         adapter.gate.set()
         subject.shutdown()

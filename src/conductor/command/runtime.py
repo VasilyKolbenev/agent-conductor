@@ -30,9 +30,15 @@ verification_failed -- stay DISTINCT: none is inferred from the absence of
 another, and an attempt whose adapter crashed, returned no result, or reported a
 result for another action is `unknown`, never converted into success. A process
 that reports success is put to the adapter's verify seam only after its durable
-observation. Verified evidence must follow that observation and match the frozen
-adapter relation; unavailable verification leaves observed success explicitly
-unverified. Request-only recovery has no fresh effect authority and fails closed.
+observation. There is exactly ONE road to `succeeded`, and it has three legs:
+execution observed as succeeded, a bound adapter that answers `verified`, and a
+causal durable EvidenceRef the store recorded after that observation. Every
+other verification answer -- `mismatch`, `error`, a verifier that raised, and
+`unavailable` -- is `verification_failed` with EMPTY evidence. `unavailable` in
+particular is never success: an adapter that exposes no verifier has proved
+nothing, and the product says execution observed and unverified rather than
+letting an exit code stand in for proof.
+Request-only recovery has no fresh effect authority and fails closed.
 Lease-only recovery becomes terminal ``unknown`` without another execute;
 observed recovery never executes. Terminal replay calls no adapter seam.
 """
@@ -701,9 +707,15 @@ class ControlRuntime:
                 detail="the adapter returned no verification for this action",
                 exit_code=report.exit_code)
         if verification.state == "unavailable":
+            # No verifier is no proof, and no proof is not a success. This is the
+            # one place the whole product could be talked into believing an exit
+            # code, so the refusal lives HERE rather than inside whichever
+            # adapter happens to be honest today: any next harness may answer
+            # `unavailable`, and none of them may be believed for it.
             return self._finish(
-                request, AttemptState.SUCCEEDED, history,
-                detail="the process reported success; the adapter exposed no verifier",
+                request, AttemptState.VERIFICATION_FAILED, history,
+                detail="execution observed; the adapter exposed no verifier, so "
+                       "nothing about the work is verified",
                 exit_code=report.exit_code)
         if verification.state == "verified":
             evidence = self._causal_evidence(

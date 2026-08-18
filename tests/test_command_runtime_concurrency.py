@@ -1,4 +1,13 @@
-"""Process-local RT-2 serialization holds one logical durable transition."""
+"""Process-local RT-2 serialization holds one logical durable transition.
+
+What is held here is the SHAPE of concurrent durable work: which seams overlap,
+which journal writes serialize, and that one logical action leaves exactly one
+terminal result. The terminal state itself is incidental to that -- these
+scripted adapters expose no verifier, so every attempt below terminates
+`verification_failed`, and the runtime never spends `succeeded` on a process
+that nothing verified. The counts, the overlaps and the one-result relations are
+what these tests are about, and none of them moved.
+"""
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
@@ -139,7 +148,8 @@ def test_fresh_distinct_effects_overlap_while_every_durable_write_serializes(
     assert writes == [False] * 6
     assert adapter.prepare_calls == adapter.execute_calls == adapter.verify_calls == 2
     assert all(attempt.history == (
-        AttemptState.ACCEPTED, AttemptState.STARTED, AttemptState.SUCCEEDED)
+        AttemptState.ACCEPTED, AttemptState.STARTED,
+        AttemptState.VERIFICATION_FAILED)
         for attempt in attempts)
     recovered = store.read("run-001")
     for authorization in authorizations:
@@ -204,7 +214,8 @@ def test_execute_refuses_before_operation_lock_when_a_root_transaction_is_held(
     assert operation_calls == []
     assert adapter.prepare_calls == adapter.execute_calls == adapter.verify_calls == 0
     monkeypatch.undo()
-    assert runtime.execute(authorization).state is AttemptState.SUCCEEDED
+    assert runtime.execute(authorization).state is (
+        AttemptState.VERIFICATION_FAILED)
 
 
 @pytest.mark.parametrize("separate_runtimes", [False, True])
@@ -347,7 +358,7 @@ def test_different_actions_overlap_but_journal_writes_serialize(
             )]
 
     assert [attempt.state for attempt in attempts] == [
-        AttemptState.SUCCEEDED, AttemptState.SUCCEEDED]
+        AttemptState.VERIFICATION_FAILED, AttemptState.VERIFICATION_FAILED]
     assert seam_overlap == [True, True]
     assert witness == [False, False]
     recovered = RunStore(tmp_path).read("run-001")
@@ -457,7 +468,8 @@ def test_authorize_and_terminal_append_are_both_durable_and_replayable(
         executed = pool.submit(execution.execute, first_authorization)
         authorized = pool.submit(
             second_runtime.authorize, a_confirmation(second), budget=a_budget())
-        assert executed.result(timeout=3).state is AttemptState.SUCCEEDED
+        assert executed.result(timeout=3).state is (
+            AttemptState.VERIFICATION_FAILED)
         second_authorization = authorized.result(timeout=3)
 
     recovered = RunStore(tmp_path).read("run-001")
@@ -500,7 +512,8 @@ def test_separate_project_roots_do_not_share_a_writer_or_action_lock(
                 pool.submit(runtimes[1].execute, pairs[1][1]),
             )]
 
-    assert all(attempt.state is AttemptState.SUCCEEDED for attempt in attempts)
+    assert all(
+        attempt.state is AttemptState.VERIFICATION_FAILED for attempt in attempts)
     assert seam_overlap == [True, True]
     assert witness == [True, True]
     for root in roots:

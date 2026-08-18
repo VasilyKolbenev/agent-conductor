@@ -122,7 +122,7 @@ def test_two_different_provider_instances_are_inside_execute_at_the_same_instant
                    for _action, ident in adapter.execute_threads}
         assert len(entered) == 2
         assert sorted(row.outcome for row in records(store, "action_result")) == [
-            "succeeded", "succeeded"]
+            "verification_failed", "verification_failed"]
     finally:
         barrier.abort()
         coordinator.shutdown()
@@ -253,7 +253,7 @@ def test_two_workers_are_never_inside_a_run_store_transaction_at_once(tmp_path):
         assert witness.admitted_while_held is False
         assert witness.overlap_max == 1
         assert sorted(row.outcome for row in records(store, "action_result")) == [
-            "succeeded", "succeeded"]
+            "verification_failed", "verification_failed"]
         assert store.read(RUN_ID).warnings == ()
     finally:
         barrier.abort()

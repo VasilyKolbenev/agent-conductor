@@ -83,18 +83,30 @@ def _plant_portal(link, target, kind):
             pytest.skip(f"directory symlink unavailable: {e}")
 
 
-def test_integration_smoke_runs_and_prints_a_succeeded_result_receipt(tmp_path, capsys):
+def test_integration_smoke_prints_an_observed_but_unverified_result_receipt(
+        tmp_path, capsys):
+    """The gate passes on an UNVERIFIED receipt, and that is the honest result.
+
+    The child really did exit zero -- the durable observation next door holds
+    that -- but the owned-process adapter checks nothing about the work, so it
+    exposes no verifier, and the runtime refuses to spend `succeeded` on a
+    process exit. Exit 0 here means the loop produced its immutable receipt,
+    never that anything about the work was proved.
+    """
     assert main(["integration-smoke", "--dir", str(tmp_path)]) == 0
     captured = capsys.readouterr()
     assert captured.err == ""
     out = captured.out
     assert out.endswith("\n") and out.count("\n") == 1  # one clean, redirectable line
     payload = json.loads(out)
-    # The child exited zero; verification is honestly unavailable, never invented.
-    assert payload["outcome"] == "succeeded"
+    assert payload["outcome"] == "verification_failed"
+    assert payload["outcome"] != "succeeded"
     assert canonical_json(ActionResultReceipt.from_dict(payload)) == out.rstrip("\n")
     assert payload["evidence_refs"] == []
     assert "no verifier" in payload["detail"]
+    # The process exit is still reported, and it is still zero: unverified is
+    # not the same claim as failed, and the receipt keeps the two apart.
+    assert payload["exit_code"] == 0
 
 
 def test_integration_smoke_records_synthetic_fixture_and_owned_process_receipt(
@@ -103,8 +115,8 @@ def test_integration_smoke_records_synthetic_fixture_and_owned_process_receipt(
     capsys.readouterr()
     records = _records(tmp_path)
     # The full loop is durable: a proposal, the request that records the
-    # synthetic authorization fixture and immutable result receipt. Unavailable verification
-    # creates no false evidence record.
+    # synthetic authorization fixture and immutable result receipt. A verifier
+    # this adapter does not have creates no evidence record to point at.
     assert [row.kind for row in records] == [
         "action_proposal", "action_request",
         "attempt_event", "attempt_event", "action_result"]
@@ -114,8 +126,14 @@ def test_integration_smoke_records_synthetic_fixture_and_owned_process_receipt(
     request, proposal = by_kind["action_request"], by_kind["action_proposal"]
     assert request.requested_by == "synthetic-integration-smoke"
     assert request.preview_digest == proposal.preview_digest
-    assert by_kind["action_result"].outcome == "succeeded"
+    assert by_kind["action_result"].outcome == "verification_failed"
     assert by_kind["action_result"].evidence_refs == ()
+    # The observation is the half that IS proved: the child was watched exiting
+    # zero, and that event keeps saying so beneath an unverified terminal result.
+    observed = [
+        row.value for row in records
+        if row.kind == "attempt_event" and row.value.phase == "execution_observed"]
+    assert [row.outcome for row in observed] == ["succeeded"]
 
 
 def test_integration_smoke_is_idempotent_across_reruns_and_fresh_directories(

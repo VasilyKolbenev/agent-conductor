@@ -525,10 +525,11 @@ class DshHarnessAdapter:
     ) -> AdapterVerification:
         """Read independent workspace evidence, and claim nothing it cannot back.
 
-        ``unavailable`` is never returned from here: the runtime spends that
-        token on an adapter that exposes NO verifier and lets observed process
-        success stand, so an adapter that HAS a verifier and found no proof must
-        not borrow it. Absence of proof is ``error``.
+        ``unavailable`` is never returned from here: that token says an adapter
+        exposes NO verifier, and this one HAS one. Both answers now land on
+        ``verification_failed``, so borrowing it would buy nothing and would
+        still misreport which of the two happened. Absence of proof is
+        ``error``.
         """
         if not isinstance(request, ActionRequest) or not isinstance(
                 result, ActionResultReceipt):
