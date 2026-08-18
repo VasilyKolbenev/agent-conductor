@@ -220,6 +220,32 @@ function decisionForm(node, draft, onDecide) {
   return form;
 }
 
+// The card's middle: the loop bound, the draft label, capabilities, and the
+// closed resource attachments — a node that attaches nothing shows no
+// Resources section, claiming nothing.
+function appendDetailFacts(mount, node) {
+  if (node.loop) {
+    mount.append(element("p", {className: "mono g-det__meta",
+      text: `bounded loop · at most ×${node.loop.bound} passes`}));
+  }
+  if (node.draft) {
+    const draftChip = chip("none",
+      "LOCAL DRAFT — this window's fixture only, submitted nowhere");
+    // The one sentence-length chip: it must wrap, not widen the page.
+    draftChip.classList.add("g-chip--long");
+    mount.append(draftChip);
+  }
+  const names = node.capabilities.length ? node.capabilities.join(", ") : "none";
+  mount.append(element("p", {className: "mono g-det__meta",
+    text: `capabilities: ${names}`}));
+  if (node.resources.length) {
+    mount.append(element("h3", {text: "Resources"}));
+    mount.append(element("ul", {className: "g-resources"},
+      node.resources.map((row) => element("li", {className: "mono",
+        text: `${row.kind}: ${row.name}`}))));
+  }
+}
+
 export function renderDetail(mount, state, decisionDraft, onDecide) {
   mount.replaceChildren();
   const node = state.nodes.find((row) => row.node_id === state.selection);
@@ -239,28 +265,7 @@ export function renderDetail(mount, state, decisionDraft, onDecide) {
       chip(HEALTH_CHANNEL[node.health], `health: ${node.health}`),
       chip(PHASE_CHANNEL[node.phase], `phase: ${node.phase}`),
     ]));
-  if (node.loop) {
-    mount.append(element("p", {className: "mono g-det__meta",
-      text: `bounded loop · at most ×${node.loop.bound} passes`}));
-  }
-  if (node.draft) {
-    const draftChip = chip("none",
-      "LOCAL DRAFT — this window's fixture only, submitted nowhere");
-    // The one sentence-length chip: it must wrap, not widen the page.
-    draftChip.classList.add("g-chip--long");
-    mount.append(draftChip);
-  }
-  const names = node.capabilities.length ? node.capabilities.join(", ") : "none";
-  mount.append(element("p", {className: "mono g-det__meta",
-    text: `capabilities: ${names}`}));
-  // Attached configuration is a closed list of {kind, name} rows; a node
-  // that attaches nothing shows no section, claiming nothing.
-  if (node.resources.length) {
-    mount.append(element("h3", {text: "Resources"}));
-    mount.append(element("ul", {className: "g-resources"},
-      node.resources.map((row) => element("li", {className: "mono",
-        text: `${row.kind}: ${row.name}`}))));
-  }
+  appendDetailFacts(mount, node);
   mount.append(element("h3", {text: "Evidence"}));
   mount.append(node.evidence.length
     ? element("ul", {className: "g-evidence-list"}, node.evidence.map(evidenceRow))
