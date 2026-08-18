@@ -60,6 +60,12 @@ def test_the_graph_module_graph_is_acyclic_and_the_store_stays_pure():
         assert "getElementById" not in source
 
 
+def test_the_default_fixture_ships_an_empty_registry():
+    """Vendor rows arrive from the one registry as data, never as a second
+    copy inside the default — the rendered half lives in the boot test."""
+    assert "registry: [],\n" in DEFAULT.read_text(encoding="utf-8")
+
+
 def test_the_adapter_names_the_internal_schema_and_never_a_wire_form():
     """The panel-internal shape is not the wire contract, and says so."""
     source = ADAPTER.read_text(encoding="utf-8")
@@ -111,11 +117,15 @@ def test_the_graph_palette_is_a_value_for_value_copy_of_the_december_palette():
         assert value == panel_light[name], name
 
 
-def _js_list(source: str, name: str) -> set[str]:
+def _js_ordered(source: str, name: str) -> list[str]:
     body = re.search(
         rf"{name} = Object\.freeze\(\s*\[(.*?)\]\)", source, re.DOTALL)
     assert body, name
-    return set(re.findall(r'"([a-z_]+)"', body.group(1)))
+    return re.findall(r'"([a-z_]+)"', body.group(1))
+
+
+def _js_list(source: str, name: str) -> set[str]:
+    return set(_js_ordered(source, name))
 
 
 def test_the_store_vocabularies_are_copies_of_the_layers_that_own_them():
@@ -151,9 +161,10 @@ def test_the_store_vocabularies_are_copies_of_the_layers_that_own_them():
     assert _js_list(store, "RESOURCE_KINDS") == {
         "model", "tool", "skill", "session", "sandbox", "filesystem"}
     # The five semantic stages, Dalio's five steps in the Command's fixing:
-    # a stage is not a phase, and no sixth word may appear beside these.
-    assert _js_list(store, "STAGE_NAMES") == {
-        "goal", "identify", "diagnose", "design", "do"}
+    # a stage is not a phase, no sixth word may appear beside these, and the
+    # ORDER is the vocabulary's fact — the view numbers stages by index.
+    assert _js_ordered(store, "STAGE_NAMES") == [
+        "goal", "identify", "diagnose", "design", "do"]
 
 
 def test_local_only_actions_say_so_where_they_land():
@@ -162,6 +173,10 @@ def test_local_only_actions_say_so_where_they_land():
     assert store.count("Nothing was executed") == 2
     assert store.count("Composition refused") == 2
     assert '"fixture-only"' in store
+    # The load notice and the run-facts suffix carry the same honesty for
+    # the boot path; the rendered halves live in the browser boot test.
+    assert "Nothing here reaches a server" in store
+    assert "· fixture" in BOOT.read_text(encoding="utf-8")
     view = VIEW.read_text(encoding="utf-8")
     assert "Nothing is executed or sent" in view
 

@@ -115,6 +115,15 @@ def test_the_graph_modules_boot_into_the_dalio_default_without_an_error(
         assert not page.locator("#fieldEmpty").is_visible()
         assert page.locator(".g-node").count() == 8
         assert "run-dalio-default" in page.locator("#runFacts").inner_text()
+        # The boot state says what it is: a fixture, reaching no server —
+        # and the default ships an EMPTY registry, never a second copy of
+        # vendor rows.
+        assert page.locator("#runFacts").inner_text().endswith("· fixture")
+        assert "Nothing here reaches a server" in page.locator(
+            "#notice").inner_text()
+        assert page.evaluate("window.conductGraph.state().registry") == []
+        assert "No registry rows in this fixture." in page.locator(
+            "#paletteCard").inner_text()
         names = {url.rsplit("/", 1)[1]: status for url, status in served}
         assert names == {
             "graph.html": 200, "graph.css": 200, "graph.js": 200,
@@ -180,7 +189,9 @@ _GEOMETRY = """field => {
   for (const center of centers) {
     (columns[Math.round(center.box.left)] ||= []).push(center.id);
   }
-  return {links, overlaps, columns: Object.values(columns)};
+  const lefts = Object.fromEntries(
+    centers.map(center => [center.id, center.box.left]));
+  return {links, overlaps, columns: Object.values(columns), lefts};
 }"""
 
 
@@ -492,7 +503,7 @@ def test_availability_arrives_as_data_and_absence_claims_nothing(
 
 def test_the_default_graph_is_dalios_five_steps_in_their_one_order(
         graph_page: Page) -> None:
-    """Five numbered stages, each its own node: Detect never absorbs
+    """Five numbered stages, each its own node: Identify never absorbs
     Diagnose, and the order is the process's, not the renderer's."""
     stages = graph_page.locator(".g-stage")
     assert [stages.nth(i).inner_text() for i in range(stages.count())] == [
@@ -510,6 +521,17 @@ def test_the_default_graph_is_dalios_five_steps_in_their_one_order(
         ["diagnose", "design"], ["design", "confirm-gate"],
         ["confirm-gate", "do"], ["do", "result-gate"],
         ["result-gate", "retry-loop"]]
+    # Rendered left-to-right, not merely declared in order: a column remap
+    # that mirrored or shuffled the flow would pass every link check while
+    # drawing Do first. The measured x-positions are the process's order.
+    lefts = geometry["lefts"]
+    chain = ["goal", "identify", "diagnose", "design", "confirm-gate",
+             "do", "result-gate", "retry-loop"]
+    assert all(lefts[a] < lefts[b] for a, b in zip(chain, chain[1:])), lefts
+    # The card names the stage the same way the node does.
+    graph_page.locator('[data-node-id="do"]').click()
+    assert "stage 5 of 5 — do" in graph_page.locator(
+        "#detailCard").inner_text()
 
 
 def test_do_is_the_only_effect_capable_step_and_sits_behind_its_own_gate(
