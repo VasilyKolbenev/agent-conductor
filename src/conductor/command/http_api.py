@@ -205,25 +205,31 @@ class CommandApi:
     def _authorize(self, run_id: str, body: Mapping[str, Any]) -> CommandResponse:
         """Record the confirmation and answer; the effect happens off this thread.
 
-        The admission slot is claimed BEFORE authorize, so a full execution queue
-        refuses the Confirm with nothing durable written. Only the call that
-        created the durable request places it, so a duplicate Confirm returns the
-        same request, queues nothing, and causes no second effect.
+        The admission slot is claimed INSIDE authorize, on the one path that is
+        about to append a fresh request and immediately before it does, so the two
+        are bound: a full execution queue refuses the Confirm with nothing durable
+        written, and a request that did become durable is already held by a live
+        reservation a worker will drain. A duplicate Confirm appends nothing and
+        therefore reaches no admission at all: it returns the same request through
+        a full queue, queues nothing, and causes no second effect.
         """
         submitted = parse_confirmation(body)
         self._hold_route(run_id)
         confirmation = submitted.build(
             confirmation_id=self._ids("confirmation"), run_id=run_id,
             confirmed_at=self._clock())
-        slot = None if self._execution is None else self._execution.claim()
+        claimed: list[Any] = []
         try:
-            authorization = self._runtime.authorize(confirmation, budget=self._budget)
+            authorization = self._runtime.authorize(
+                confirmation, budget=self._budget,
+                admit=None if self._execution is None else (
+                    lambda: claimed.append(self._execution.claim())))
             if authorization.record_created:
                 self._publish_run(run_id)
-                if slot is not None:
+                for slot in claimed:
                     slot.place(authorization)
         finally:
-            if slot is not None:
+            for slot in claimed:
                 slot.release()
         return CommandResponse(
             201 if authorization.record_created else 200,

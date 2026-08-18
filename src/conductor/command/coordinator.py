@@ -18,8 +18,18 @@ relations the HTTP boundary cannot hold by itself:
   durable request is appended and released only when its attempt has settled, so
   at most ``capacity`` actions are outstanding ACROSS ALL WORKERS and an overflow
   refuses the Confirm with nothing durable written and no adapter seam reached.
+  Admission gates NEW work only: the boundary claims a slot on the one path that
+  is about to append a request, so an exact retry -- which appends nothing and
+  queues nothing -- passes a full queue untouched.
+- **A reservation is live before the request is durable.** :meth:`claim` does not
+  merely count; it takes a place in one named worker's own inbox and hands back
+  a slot bound to that place. Everything a retirement can put on that inbox goes
+  BEHIND the reservation, so the worker that owns it drains it whatever happens
+  next, and there is no window in which a durable ``ActionRequest`` exists with
+  nothing live to carry it. A slot released without a placement cancels its
+  reservation, and the worker steps over it.
 - **Fan-out.** :meth:`start` mints one worker per call, so a coordinator can hold
-  several. Each admitted action is assigned, at placement time, to the LIVE
+  several. Each admitted action is assigned, at admission time, to the LIVE
   worker carrying the fewest outstanding actions, ties broken by token order, so
   two actions bound to two different provider instances are driven by two
   different threads and can be inside their adapters' execute seams at the same
@@ -56,6 +66,7 @@ from __future__ import annotations
 import queue
 import secrets
 import threading
+from collections import deque
 from typing import Any
 
 from .runtime import Authorization, ControlRuntime
@@ -67,6 +78,10 @@ MAX_OUTSTANDING_ACTIONS = 64
 MAX_EXECUTION_WORKERS = 16
 #: How long a retiring worker is joined for before the caller stops waiting.
 JOIN_TIMEOUT_SECONDS = 5.0
+#: How many refused action ids a coordinator remembers. The record is a bounded
+#: tail, not a history: a long-lived coordinator cannot grow by refusing, and the
+#: durable fate of every refused attempt was written by the runtime regardless.
+REFUSAL_MEMORY = 64
 
 
 class ExecutionRefused(ServiceError):
@@ -81,8 +96,9 @@ class _Worker:
     """One minted worker: its private inbox, its thread, and its current load.
 
     The inbox is the whole of this worker's addressability. Only ``_work`` for
-    THIS worker reads it, so an authorization or a retiring sentinel placed on it
-    can reach no other worker.
+    THIS worker reads it, so a reservation or a retiring sentinel placed on it
+    can reach no other worker, and the order they were placed in is the order
+    this worker honours.
     """
 
     __slots__ = ("inbox", "load", "thread", "token")
@@ -94,20 +110,56 @@ class _Worker:
         self.load = 0
 
 
+class _Reservation:
+    """One admitted action's place in a worker's own inbox, settled exactly once.
+
+    The reservation is queued while the authorization it will carry does not yet
+    exist. Its owning worker takes it off the inbox and waits here, so everything
+    the coordinator queues afterwards -- another action, the retiring sentinel --
+    stays behind it. The wait ends when the request thread either fills the
+    reservation or cancels it, and that thread always does one of the two.
+    """
+
+    __slots__ = ("_filled", "authorization")
+
+    def __init__(self) -> None:
+        self.authorization: Authorization | None = None
+        self._filled = threading.Event()
+
+    def fill(self, authorization: Authorization) -> None:
+        self.authorization = authorization
+        self._filled.set()
+
+    def cancel(self) -> None:
+        self._filled.set()
+
+    def awaited(self) -> Authorization | None:
+        """Block until this reservation is filled or cancelled; report which."""
+        self._filled.wait()
+        return self.authorization
+
+
 class _Slot:
     """One claimed admission slot: placed at most once, then released for good.
 
-    ``release`` is idempotent and is a no-op once the slot has been placed, so the
-    caller can release it in a ``finally`` without knowing which road it took. A
-    placement that was refused placed nothing, so its slot is still releasable.
+    The slot names the worker and the reservation ``claim`` bound it to, so a
+    placement reaches exactly that live place in the queue and can no longer fail
+    for want of a worker. ``release`` is idempotent and is a no-op once the slot
+    has been placed, so the caller can release it in a ``finally`` without knowing
+    which road it took; an unplaced release cancels the reservation and gives the
+    admission back.
     """
 
-    def __init__(self, coordinator: "ExecutionCoordinator") -> None:
+    def __init__(
+            self, coordinator: "ExecutionCoordinator", worker: "_Worker",
+            reservation: _Reservation) -> None:
         self._coordinator = coordinator
+        self._worker = worker
+        self._reservation = reservation
         self._settled = False
 
     def place(self, authorization: Authorization) -> None:
-        """Hand exactly one fresh authorization to a worker; refuse anything else."""
+        """Fill this reservation with one fresh authorization; refuse anything else."""
         if self._settled:
             raise ExecutionRefused("an admission slot may be placed only once")
         if not isinstance(authorization, Authorization):
@@ -115,7 +167,8 @@ class _Slot:
         if authorization.record_created is not True:
             raise ExecutionRefused(
                 "execution requires the authorization that created the durable request")
-        self._coordinator._enqueue(authorization)
+        self._coordinator._placed_one()
+        self._reservation.fill(authorization)
         self._settled = True
 
     def release(self) -> None:
@@ -123,7 +176,8 @@ class _Slot:
         if self._settled:
             return
         self._settled = True
-        self._coordinator._settle()
+        self._reservation.cancel()
+        self._coordinator._settle(self._worker)
 
 
 class ExecutionCoordinator:
@@ -131,8 +185,9 @@ class ExecutionCoordinator:
 
     The coordinator drives the runtime it was given and nothing else: it does not
     read the store, prepare an adapter, or interpret an attempt. It counts what it
-    admitted and what it refused so those facts can be held as data rather than
-    inferred from durable side effects.
+    placed and keeps a BOUNDED tail of what it refused, so those facts can be held
+    as data rather than inferred from durable side effects -- and so nothing it
+    holds grows without limit while it runs.
     """
 
     def __init__(
@@ -148,7 +203,7 @@ class ExecutionCoordinator:
         self._settled = threading.Condition(self._lock)
         self._outstanding = 0
         self._placed = 0
-        self._refused: list[str] = []
+        self._refused: deque[str] = deque(maxlen=REFUSAL_MEMORY)
         self._accepting = False
         self._workers: dict[str, _Worker] = {}
 
@@ -167,8 +222,19 @@ class ExecutionCoordinator:
         with self._lock:
             return self._placed
 
+    @property
+    def refusal_memory(self) -> int:
+        """How many refused action ids are remembered; older ones are dropped."""
+        return REFUSAL_MEMORY
+
     def refusals(self) -> tuple[str, ...]:
-        """The action ids whose execute refused; the runtime wrote their fate, not this."""
+        """The newest refused action ids, oldest first; the runtime wrote their fate.
+
+        This is a bounded tail of at most :attr:`refusal_memory` ids, not a
+        history: refusing does not grow the coordinator. Nothing durable is
+        inferred from it -- the refused attempt's fate was already written by the
+        runtime -- so a dropped id loses no fact the store does not hold.
+        """
         with self._lock:
             return tuple(self._refused)
 
@@ -194,7 +260,14 @@ class ExecutionCoordinator:
         return token
 
     def claim(self) -> _Slot:
-        """Reserve one admission slot, or refuse before anything durable happens."""
+        """Take one live place in a worker's inbox, or refuse before anything durable.
+
+        The reservation is queued to the least loaded LIVE worker here, not when
+        it is filled, so from this moment a real worker is committed to draining
+        it and every later retirement queues behind it. Assignment stays
+        deterministic: fewest outstanding actions first, ties broken by token
+        order.
+        """
         with self._lock:
             if not self._accepting:
                 raise ExecutionRefused(
@@ -202,8 +275,16 @@ class ExecutionCoordinator:
             if self._outstanding >= self._capacity:
                 raise ExecutionRefused(
                     "the bounded execution queue holds its full capacity of actions")
+            live = [self._workers[token] for token in sorted(self._workers)]
+            if not live:
+                raise ExecutionRefused(
+                    "this coordinator holds no worker to run the action")
+            worker = min(live, key=lambda row: row.load)
+            worker.load += 1
             self._outstanding += 1
-        return _Slot(self)
+            reservation = _Reservation()
+        worker.inbox.put(reservation)
+        return _Slot(self, worker, reservation)
 
     def wait_idle(self, timeout: float = JOIN_TIMEOUT_SECONDS) -> bool:
         """Block until every claimed slot has settled; report whether it did."""
@@ -242,17 +323,10 @@ class ExecutionCoordinator:
             assert worker.thread is not None
             worker.thread.join(timeout)
 
-    def _enqueue(self, authorization: Authorization) -> None:
-        """Assign one authorization to the least loaded live worker's own inbox."""
+    def _placed_one(self) -> None:
+        """Count one filled reservation, independently of any durable side effect."""
         with self._lock:
-            live = [self._workers[token] for token in sorted(self._workers)]
-            if not live:
-                raise ExecutionRefused(
-                    "this coordinator holds no worker to run the action")
-            worker = min(live, key=lambda row: row.load)
-            worker.load += 1
             self._placed += 1
-        worker.inbox.put(authorization)
 
     def _settle(self, worker: _Worker | None = None) -> None:
         with self._settled:
@@ -262,11 +336,20 @@ class ExecutionCoordinator:
             self._settled.notify_all()
 
     def _work(self, worker: _Worker) -> None:
-        """Drive one authorization at a time until THIS worker's sentinel arrives."""
+        """Drain THIS worker's inbox in order until its own sentinel arrives.
+
+        A reservation is waited on rather than skipped: it was queued ahead of
+        everything that follows, so honouring its order is what keeps a durable
+        request from being stranded by a retirement. A cancelled reservation has
+        already given its admission back and is simply stepped over.
+        """
         while True:
-            authorization = worker.inbox.get()
-            if authorization is None:
+            reservation = worker.inbox.get()
+            if reservation is None:
                 return
+            authorization = reservation.awaited()
+            if authorization is None:
+                continue
             try:
                 self._runtime.execute(authorization)
             except Exception:  # noqa: BLE001 -- a refused attempt must not kill the worker

@@ -260,22 +260,45 @@ class ControlRuntime:
 
     # -- authorize (A/CONF-1): refuse before preparation, else record the confirmation --
 
-    def authorize(self, confirmation: Confirmation, *, budget: Budget) -> Authorization:
-        """Authorize one confirmed proposal, or refuse; record the cleared request."""
+    def authorize(
+            self, confirmation: Confirmation, *, budget: Budget,
+            admit: Callable[[], None] | None = None) -> Authorization:
+        """Authorize one confirmed proposal, or refuse; record the cleared request.
+
+        Args:
+            confirmation: The fresh Human confirmation restating the proposal.
+            budget: The server-owned action/time/age budget to hold it against.
+            admit: Optional admission hook, called exactly once on the ONE path
+                that is about to append a fresh request, immediately before the
+                append and after every other fact has cleared. It is the caller's
+                place to bind that request to somewhere that will carry it; if it
+                raises, nothing durable is written and the refusal is the answer.
+                It is never called for a retry that appends nothing, so a caller
+                gating on admission cannot gate an exact retry.
+
+        Returns:
+            The cleared `Authorization`, carrying the recorded request.
+
+        Raises:
+            AuthorizationError: Any restated fact is changed, stale, or missing.
+        """
         if not isinstance(confirmation, Confirmation):
             raise AuthorizationError("authorize requires a validated Confirmation")
         if not isinstance(budget, Budget):
             raise AuthorizationError("authorize requires a validated Budget")
+        if admit is not None and not callable(admit):
+            raise AuthorizationError("authorize requires a callable admission hook")
         self._hold_lock_order(AuthorizationError)
         logical = f"dispatch-{confirmation.proposal_id}"
         key = self._lock_key(
             "authorize", confirmation.run_id, confirmation.proposal_id, logical)
         with _operation_lock(key):
             with self._store.transaction():
-                return self._authorize_locked(confirmation, budget)
+                return self._authorize_locked(confirmation, budget, admit)
 
     def _authorize_locked(
-            self, confirmation: Confirmation, budget: Budget) -> Authorization:
+            self, confirmation: Confirmation, budget: Budget,
+            admit: Callable[[], None] | None = None) -> Authorization:
         """Hold one proposal transition from authoritative read through grant."""
         self._hold_route(confirmation.run_id, AuthorizationError)
         recovered = self._store.read(confirmation.run_id)
@@ -304,6 +327,11 @@ class ControlRuntime:
         self._hold_budget(proposal, recovered, budget)
         request = self._mint_request(confirmation, proposal)
         self._hold_route(confirmation.run_id, AuthorizationError)
+        if admit is not None:
+            # The last gate before the request becomes durable, and the only one
+            # a retry never reaches: an admission refused here leaves the journal
+            # exactly as it was.
+            admit()
         # The store appends the request as its own record, refuses a fresh id that
         # reuses the idempotency key (RecordConflict), and no-ops an identical retry.
         appended = self._store.append(request)
