@@ -481,8 +481,15 @@ A_RETIRED_PAYLOAD = {"body": "hello"}
      "capability_unsupported"),
     (RetiredCapabilityAdapter, "message", A_RETIRED_PAYLOAD, 409,
      "capability_unsupported"),
+    # The product the diagonal missed: an unsupported pair is unsupported
+    # whatever its payload says, and answering the payload's question first
+    # gave `contract_invalid` on one road for a fact about the pair.
+    (FakeAdapter, "dispatch", A_BAD_PAYLOAD, 409, "capability_unsupported"),
+    (ProcessDispatchAdapter, "dispatch", A_BAD_PAYLOAD, 409,
+     "capability_unsupported"),
 ], ids=["deep-valid", "deep-invalid", "schema-less", "structured-process",
-        "retired-capability"])
+        "retired-capability", "schema-less-and-invalid",
+        "structured-process-and-invalid"])
 def test_one_payload_gets_one_verdict_on_both_roads(
         tmp_path, adapter, capability, arguments, status, code):
     """A plan and a proposal describe the same work; they may not disagree.

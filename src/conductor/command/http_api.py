@@ -30,6 +30,7 @@ from .api_contracts import (
     COMMAND_ARGUMENT_SCHEMA,
     ApiRefusal,
     GraphInput,
+    canonical_arguments,
     parse_confirmation,
     parse_decision,
     parse_graph,
@@ -282,11 +283,14 @@ class CommandApi:
         self._hold_route(run_id)
         initial = self._store.read(run_id)
         bound = self._bound_adapter(initial.config, run_id, submitted.instance_id)
-        # The same pair authority a plan meets. Without it a proposal reached
-        # Confirm through an adapter that never declared how it reads these
-        # arguments, while the plan describing that very work was refused.
+        # The same pair authority a plan meets, and BEFORE the payload is
+        # judged or rebuilt: an unsupported pair is unsupported whatever its
+        # arguments say, and answering the payload's question first gave two
+        # different words for one fact about one pair.
         _servable_pair(
             self._registry, bound, submitted.capability, submitted.arguments)
+        arguments = canonical_arguments(
+            submitted.capability, submitted.arguments)
         with self._store.transaction():
             self._hold_route(run_id)
             recovered = self._store.read(run_id)
@@ -296,7 +300,7 @@ class CommandApi:
             proposal = self._service.propose(
                 run_id=run_id, instance_id=submitted.instance_id,
                 attempt_id=submitted.attempt_id, capability=submitted.capability,
-                arguments=submitted.arguments, scope=submitted.scope,
+                arguments=arguments, scope=submitted.scope,
                 proposed_by=submitted.proposed_by, rationale=submitted.rationale,
                 timeout_seconds=submitted.timeout_seconds,
                 adapter_id=submitted.adapter_id, node_id=submitted.node_id)

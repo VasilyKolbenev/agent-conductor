@@ -247,6 +247,8 @@ def test_the_spec_says_both_roads_ask_one_pair_authority():
         "`(bound adapter, capability, arguments)`, in this order",
         "MUST be exactly `deep-arguments-v1`, the one family this frozen API "
         "speaks",
+        "MUST NOT be judged **and MUST NOT be rebuilt into their canonical "
+        "form** either",
         "Steps 1 and 2 are `capability_unsupported` (409)",
         "Step 3 is `contract_invalid` (422)",
         "No refusal at any step writes a proposal or a graph, and none "

@@ -366,7 +366,14 @@ over the triple `(bound adapter, capability, arguments)`, in this order:**
 3. `arguments` MUST satisfy that pair's schema through
    `AdapterRegistry.validate_arguments`.
 
-The order IS the taxonomy. Steps 1 and 2 are `capability_unsupported` (409):
+The order IS the taxonomy, and it binds the payload twice over: until steps 1
+and 2 have answered, `arguments` MUST NOT be judged **and MUST NOT be rebuilt
+into their canonical form** either. An unsupported pair is unsupported whatever
+its payload says. Canonicalizing first is how the proposal road came to answer
+`contract_invalid` for an unsupported pair while the plan road answered
+`capability_unsupported` for the same pair and the same payload.
+
+Steps 1 and 2 are `capability_unsupported` (409):
 this build cannot carry out that work at all, whatever the request said, so an
 absent schema, a `structured-process-v1` schema, a schema swapped for one
 capability of an otherwise conforming adapter, and a capability retired from

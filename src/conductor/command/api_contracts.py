@@ -329,25 +329,51 @@ def _json_array(values: dict[str, Any], name: str) -> list[Any]:
     return value
 
 
+def canonical_arguments(
+        capability: str, arguments: object) -> Mapping[str, Any]:
+    """Rebuild one ADMITTED payload in its capability's canonical form.
+
+    A transformation, not a second judgement: it runs only after the pair
+    authority has said the bound adapter serves this capability through the one
+    family this API speaks, and has put these very values through that pair's
+    schema. Judging here as well would be two doors over one value.
+
+    It is separate from the envelope parse because the order is a contract: a
+    payload may not be judged, or rebuilt, until the pair is known to support
+    it at all. Doing both in one pass answered `contract_invalid` for an
+    unsupported pair, where the plan route answered `capability_unsupported`
+    for the same pair and the same payload.
+    """
+    argument_type = DEEP_ARGUMENT_TYPES.get(capability)
+    if argument_type is None:
+        raise ApiRefusal.fixed("capability_unsupported")
+    return _contract(_contract(argument_type.from_dict, arguments).as_dict)
+
+
 def parse_proposal(
         body: object, *, adapter_capabilities: Iterable[str]) -> ProposalInput:
-    """Validate the closed capability request without proposing or appending."""
+    """Validate the closed propose ENVELOPE, and not what its payload means.
+
+    Everything here is about the request's own shape: a closed field set, ids
+    and timestamps and a scope the contract accepts, a capability this API
+    carries a schema for and some registered adapter declares. `arguments` is
+    held to being a JSON object of canonical data and nothing more -- the pair
+    that will carry it out judges its meaning, through
+    :func:`canonical_arguments` once that pair has said yes.
+    """
     values = _proposal_body(body)
     capability = values["capability"]
     capabilities = _capabilities(adapter_capabilities)
     if not _safe_id(capability):
         raise ApiRefusal.fixed("contract_invalid") from None
-    argument_type = DEEP_ARGUMENT_TYPES.get(capability)
-    if argument_type is None or capability not in capabilities:
+    if capability not in DEEP_ARGUMENT_TYPES or capability not in capabilities:
         raise ApiRefusal.fixed("capability_unsupported")
-    arguments = _contract(argument_type.from_dict, values["arguments"])
-    canonical_arguments = _contract(arguments.as_dict)
     scope = _json_array(values, "scope")
     probe = _contract(
         ActionProposal,
         proposal_id="api-proposal-validation", run_id="api-run-validation",
         attempt_id=values["attempt_id"], instance_id=values["instance_id"],
-        capability=capability, arguments=canonical_arguments, scope=scope,
+        capability=capability, arguments=values["arguments"], scope=scope,
         proposed_by=values["proposed_by"], proposed_at="2000-01-01T00:00:00Z",
         timeout_seconds=values["timeout_seconds"], rationale=values["rationale"],
         config_digest="sha256:" + "0" * 64)
@@ -362,7 +388,14 @@ def parse_proposal(
         raise ApiRefusal.fixed("contract_invalid") from None
     return ProposalInput(
         instance_id=probe.instance_id, attempt_id=probe.attempt_id,
-        capability=probe.capability, arguments=probe.arguments, scope=probe.scope,
+        # The submitted value travels on, NOT the probe's copy. The contract
+        # freezes what it validates, and freezing turns a sequence into a
+        # tuple -- which would launder the one thing the capability schemas
+        # check by exact type, that an array arrived as a JSON array. The probe
+        # has already proved this is a JSON object of canonical data; what it
+        # MEANS is the pair's question, and the pair must see it unaltered.
+        capability=probe.capability, arguments=values["arguments"],
+        scope=probe.scope,
         proposed_by=probe.proposed_by, rationale=probe.rationale,
         timeout_seconds=probe.timeout_seconds, adapter_id=adapter_id,
         node_id=node_id)

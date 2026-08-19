@@ -24,6 +24,7 @@ from conductor.command.adapters.deep_commands import (
 )
 from conductor.command.api_contracts import (
     ARGUMENT_SCHEMAS,
+    canonical_arguments,
     COMMAND_ARGUMENT_SCHEMA,
     ERROR_STATUS,
     ApiRefusal,
@@ -64,11 +65,29 @@ def _canon(name):
     return json.loads(text.split(marker, 1)[1].split("\n```", 1)[0])
 
 
+def a_submitted_proposal(body, *, adapter_capabilities):
+    """The two value doors of a propose request, in their contracted order.
+
+    The envelope is parsed first and answers for the request's own shape; the
+    payload is judged second, and only its capability's schema judges it. On
+    the route the pair authority stands between them and needs an adapter
+    registry, which this value layer deliberately has none of -- so what is
+    driven here is the pair of value doors and the order they keep.
+
+    They used to be one call, and that WAS the defect: an unsupported pair with
+    an invalid payload answered for the payload, so the propose road said
+    `contract_invalid` where the plan road said `capability_unsupported` about
+    the very same pair.
+    """
+    submitted = parse_proposal(body, adapter_capabilities=adapter_capabilities)
+    return submitted, canonical_arguments(submitted.capability, submitted.arguments)
+
+
 @pytest.mark.parametrize(
     "row", _BOUNDARY["proposal_cases"], ids=lambda row: row["name"])
 def test_frozen_proposal_fixtures_drive_the_real_closed_mapper(row):
     try:
-        parsed = parse_proposal(
+        parsed, arguments = a_submitted_proposal(
             row["body"], adapter_capabilities=row["adapter_capabilities"])
     except ApiRefusal as refusal:
         actual = ("refuse", refusal.code)
@@ -76,7 +95,7 @@ def test_frozen_proposal_fixtures_drive_the_real_closed_mapper(row):
         actual = ("accept", None)
         assert parsed.capability == row["body"]["capability"]
         contract = EXPECTED_DEEP_ARGUMENTS[parsed.capability][0]
-        assert json.loads(canonical_json(dict(parsed.arguments))) == contract.from_dict(
+        assert json.loads(canonical_json(dict(arguments))) == contract.from_dict(
             row["body"]["arguments"]).as_dict()
     assert actual == (
         row["expected"]["disposition"], row["expected"]["error_code"])
@@ -143,7 +162,7 @@ def test_each_retired_shallow_argument_shape_is_contract_invalid(row):
         "arguments": row["arguments"],
     }
     with pytest.raises(ApiRefusal) as caught:
-        parse_proposal(body, adapter_capabilities={row["capability"]})
+        a_submitted_proposal(body, adapter_capabilities={row["capability"]})
     assert (caught.value.code, caught.value.status) == ("contract_invalid", 422)
 
 
@@ -168,7 +187,7 @@ def test_deep_argument_arrays_must_arrive_as_json_lists(capability, array_field)
     arguments = dict(row["body"]["arguments"])
     arguments[array_field] = tuple(arguments[array_field])
     with pytest.raises(ApiRefusal) as caught:
-        parse_proposal(
+        a_submitted_proposal(
             {**row["body"], "arguments": arguments},
             adapter_capabilities={capability})
     assert (caught.value.code, caught.value.status) == ("contract_invalid", 422)
