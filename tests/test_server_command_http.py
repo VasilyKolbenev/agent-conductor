@@ -1,4 +1,4 @@
-"""Real loopback coverage for the six frozen Cockpit command routes."""
+"""Real loopback coverage for the frozen Cockpit command routes."""
 from __future__ import annotations
 
 import http.client
@@ -11,6 +11,7 @@ from conductor.command.adapters import AdapterRegistry
 from conductor.command.run_store import RunStore, snapshot_digest
 
 from tests.test_command_adapters import FakeAdapter
+from tests.test_command_graph_route import graph_body
 from tests.test_command_http_api import (
     NOW,
     RUN_ID,
@@ -44,6 +45,17 @@ def _start(tmp_path, *, adapters=()):
     thread = threading.Thread(target=subject.serve_forever, daemon=True)
     thread.start()
     return subject, store
+
+
+def _read_frame(response) -> str:
+    """Read exactly one SSE frame, blocking until its terminating blank line."""
+    lines: list[bytes] = []
+    while True:
+        line = response.readline()
+        assert line, "the SSE stream ended before its next frame"
+        lines.append(line)
+        if line == b"\n":
+            return b"".join(lines).decode("utf-8")
 
 
 def _request(subject, method, path, body=None, *, headers=None):
@@ -139,6 +151,44 @@ def test_real_http_propose_confirm_decide_and_retries_are_durable(tmp_path):
         assert [row["record"]["outcome"] for row in read[1]["records"]
                 if row["record_type"] == "action_result"] == ["unknown"]
     finally:
+        subject.shutdown()
+        subject.server_close()
+
+
+def test_real_http_writes_a_plan_once_and_signals_it_by_identifier_only(tmp_path):
+    """The graph over a real socket: one write, one signal, one authoritative read.
+
+    The signal is the whole point of the shape. A browser learns that something
+    happened and re-reads bytes the contracts validated; the plan itself never
+    travels on the stream, where safety law 8 would have to police it.
+    """
+    subject, store = _start(tmp_path, adapters=(FakeAdapter(),))
+    # The stream is read while a loaded machine may still be delivering; the
+    # derivation module waits this long for the same reason.
+    connection = http.client.HTTPConnection(
+        "127.0.0.1", subject.server_address[1], timeout=20)
+    try:
+        connection.request("GET", "/events")
+        stream = connection.getresponse()
+        assert stream.status == 200
+        assert _read_frame(stream) == 'data: {"kind":"state"}\n\n'
+
+        prefix = f"/command/runs/{RUN_ID}"
+        written = _request(subject, "POST", prefix + "/graph", graph_body())
+        signal = _read_frame(stream)
+        again = _request(subject, "POST", prefix + "/graph", graph_body())
+        read = _request(subject, "GET", prefix)
+
+        assert written[0] == 201 and again[0] == 200
+        assert again[1] == written[1]
+        assert signal == 'data: {"kind":"run","run_id":"%s"}\n\n' % RUN_ID
+        assert set(json.loads(signal[len("data: "):])) == {"kind", "run_id"}
+        assert read[1]["graph"]["definition"] == written[1]
+        assert read[1]["graph"]["runtime"]["graph_id"] == "graph-001"
+        assert [row.kind for row in store.read(RUN_ID).records] == [
+            "graph_definition"]
+    finally:
+        connection.close()
         subject.shutdown()
         subject.server_close()
 

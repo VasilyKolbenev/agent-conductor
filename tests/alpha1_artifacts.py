@@ -53,7 +53,7 @@ from tests.test_command_http_api import (
     encode,
     post_headers,
 )
-from tests.test_server_command_http import _request
+from tests.test_server_command_http import _read_frame, _request
 from tests.test_store import good_lane, write_project
 
 
@@ -286,17 +286,6 @@ def _projection_document(resolution) -> dict:
 
 
 # -- the served run: the HTTP/SSE end-to-end and the identifier-only relation --
-
-
-def _read_frame(response) -> str:
-    """Read exactly one SSE frame, blocking until its terminating blank line."""
-    lines: list[bytes] = []
-    while True:
-        line = response.readline()
-        assert line, "the SSE stream ended before its next frame"
-        lines.append(line)
-        if line == b"\n":
-            return b"".join(lines).decode("utf-8")
 
 
 def _served_run(root_parent: Path) -> dict:
