@@ -1,4 +1,4 @@
-"""The pure six-route Cockpit facade binds frozen transport to durable facts."""
+"""The pure Cockpit route facade binds frozen transport to durable facts."""
 from __future__ import annotations
 
 import json
@@ -122,6 +122,7 @@ def test_exact_route_allowlist_and_wrong_method_or_path_are_closed(tmp_path):
         ("POST", "/command/runs/<run_id>/proposals"),
         ("POST", "/command/runs/<run_id>/actions"),
         ("POST", "/command/runs/<run_id>/decisions"),
+        ("POST", "/command/runs/<run_id>/graph"),
     )
     subject, _, _ = api(tmp_path)
     wrong = subject.handle("POST", "/command/session", (), b"")

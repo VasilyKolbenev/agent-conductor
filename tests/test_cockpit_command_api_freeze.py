@@ -71,6 +71,7 @@ REQUIRED_EXAMPLES = frozenset({
     "attempt_event_execution_observed", "stream_frames", "mutation_boundary",
     "graph_bound_propose_request", "graph_definition_record",
     "graph_bound_action_proposal", "graph_bound_action_request",
+    "graph_request", "graph_runtime_projection",
 })
 
 #: Canonical examples that are a full contract serialization, mapped to the
@@ -124,6 +125,7 @@ EXPECTED_ROUTES = (
     ("POST", "/command/runs/<run_id>/proposals", True, True),
     ("POST", "/command/runs/<run_id>/actions", True, True),
     ("POST", "/command/runs/<run_id>/decisions", True, True),
+    ("POST", "/command/runs/<run_id>/graph", True, True),
 )
 
 EXPECTED_ARGUMENT_SCHEMAS = {
@@ -300,7 +302,14 @@ def test_every_contract_example_round_trips_through_its_contract(name):
 
 def test_run_envelope_and_run_read_response_bind_to_the_run_contract():
     read = CANON["run_read_response"]
-    assert set(read) == {"run", "config", "records", "warnings"}
+    assert set(read) == {"run", "config", "records", "warnings", "graph"}
+    # This run holds no graph_definition record, so its graph half is three
+    # nulls -- an absent key would leave a reader guessing whether the server
+    # is old or the run simply has no plan.
+    assert read["graph"] == {
+        "definition": None, "definition_digest": None, "runtime": None}
+    assert not any(row["record_type"] == "graph_definition"
+                   for row in read["records"])
     envelope = RunEnvelope.from_dict(read["run"])
     assert envelope.as_dict() == read["run"]
     assert envelope.run_id == RUN_ID

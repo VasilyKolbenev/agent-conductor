@@ -14,6 +14,7 @@ from typing import Any
 from .adapters import AdapterContractError, UnsupportedCapability
 from .adapters.deep_commands import DEEP_ARGUMENT_TYPES
 from .contracts import ActionProposal, ContractError, DecisionReceipt
+from .graph_definition import GraphDefinition, GraphEdge, GraphNode
 from .http_transport import HttpRefusal
 from .run_store import CorruptRun, RecordConflict, StoreError
 from .runtime import AuthorizationError, Confirmation
@@ -72,6 +73,10 @@ _DECISION_FIELDS = frozenset({
     "receipt_id", "gate_id", "action", "actor", "reason", "scope_refs",
     "evidence_refs", "supersedes",
 })
+#: A plan is the caller's; the run it belongs to and the moment it was written
+#: are the server's. `run_id` and `created_at` are refused here rather than
+#: ignored, so a caller learns the server owns them.
+_GRAPH_FIELDS = frozenset({"graph_id", "nodes", "edges"})
 _ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
 _REFUSAL_BUILD = object()
 _PHASE_MESSAGES = MappingProxyType({
@@ -218,6 +223,20 @@ class DecisionInput:
             supersedes=self.supersedes)
 
 
+@dataclass(frozen=True)
+class GraphInput:
+    """One validated plan; its run and the moment it lands are injected later."""
+
+    graph_id: str
+    nodes: tuple[GraphNode, ...]
+    edges: tuple[GraphEdge, ...]
+
+    def build(self, *, run_id: str, created_at: str) -> GraphDefinition:
+        return GraphDefinition(
+            graph_id=self.graph_id, run_id=run_id, created_at=created_at,
+            nodes=self.nodes, edges=self.edges)
+
+
 def _closed(body: object, fields: frozenset[str]) -> dict[str, Any]:
     if not isinstance(body, Mapping) or any(not isinstance(key, str) for key in body):
         raise ApiRefusal.fixed("contract_invalid")
@@ -346,6 +365,26 @@ def parse_decision(body: object) -> DecisionInput:
         action=decision.action, actor=decision.actor, reason=decision.reason,
         scope_refs=decision.scope_refs, evidence_refs=decision.evidence_refs,
         supersedes=decision.supersedes)
+
+
+def parse_graph(body: object) -> GraphInput:
+    """Validate exactly the three caller-owned facts of a run's one plan.
+
+    The whole document is taken through the production contract here, with the
+    server's own run and time standing in, so a plan that would not be a valid
+    graph is refused before any store is opened. What this door does NOT judge
+    is ``arguments``: their shape is the capability's business and the propose
+    door judges them against that capability's closed schema. Two doors judging
+    one value is how they come to disagree.
+    """
+    values = _closed(body, _GRAPH_FIELDS)
+    probe = _contract(GraphDefinition.from_dict, {
+        "graph_id": values["graph_id"], "run_id": "api-run-validation",
+        "created_at": "2000-01-01T00:00:00Z",
+        "nodes": _json_array(values, "nodes"),
+        "edges": _json_array(values, "edges")})
+    return GraphInput(
+        graph_id=probe.graph_id, nodes=probe.nodes, edges=probe.edges)
 
 
 def refusal_from_exception(error: Exception) -> ApiRefusal:

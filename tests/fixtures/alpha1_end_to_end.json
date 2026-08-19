@@ -1,6 +1,6 @@
 {
   "run_id": "run-001",
-  "transport": "the six frozen command routes over a real loopback socket",
+  "transport": "the frozen command routes over a real loopback socket",
   "steps": [
     {
       "step": "propose",
@@ -149,6 +149,11 @@
             }
           ]
         },
+        "graph": {
+          "definition": null,
+          "definition_digest": null,
+          "runtime": null
+        },
         "records": [
           {
             "record": {
@@ -293,7 +298,7 @@
         },
         "warnings": []
       },
-      "note": "The whole durable truth after the effect: the request, both attempt_events, the verification evidence and the terminal action_result that references it."
+      "note": "The durable truth after the effect: the request, both attempt_events, the verification evidence and the terminal action_result. The computed graph half is three nulls: this run follows no plan."
     }
   ]
 }

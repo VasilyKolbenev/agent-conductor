@@ -7,7 +7,7 @@ runs through the coordinator path and reading back what actually happened:
   worker, so a second confirmed action is provably still in the memory-only
   queue while the first is parked inside its adapter's execute seam. That is what
   makes the per-state visibility document honest rather than imagined.
-* the **served run** is the real loopback server: a real socket, the frozen six
+* the **served run** is the real loopback server: a real socket, the frozen
   routes, a real SSE stream, and the server's own worker pool. It is the backend
   half of owner gate A, driven without a browser.
 
@@ -372,7 +372,7 @@ def _end_to_end_document(
     """One deterministic backend transcript: the backend half of owner gate A."""
     return {
         "run_id": RUN_ID,
-        "transport": "the six frozen command routes over a real loopback socket",
+        "transport": "the frozen command routes over a real loopback socket",
         "steps": [
             _step("propose", "POST", f"/command/runs/{RUN_ID}/proposals", proposed),
             _step(
@@ -392,9 +392,10 @@ def _end_to_end_document(
                       "refused before preparation and writes no durable byte.")),
             _step(
                 "authoritative_refresh", "GET", f"/command/runs/{RUN_ID}", refreshed,
-                note=("The whole durable truth after the effect: the request, "
-                      "both attempt_events, the verification evidence and the "
-                      "terminal action_result that references it.")),
+                note=("The durable truth after the effect: the request, both "
+                      "attempt_events, the verification evidence and the "
+                      "terminal action_result. The computed graph half is "
+                      "three nulls: this run follows no plan.")),
         ],
     }
 

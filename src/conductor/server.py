@@ -321,7 +321,7 @@ class Watcher(threading.Thread):
 
 
 class Handler(BaseHTTPRequestHandler):
-    """Legacy read routes plus the exact six frozen command routes."""
+    """Legacy read routes plus the exact seven frozen command routes."""
 
     server: ConductServer                  # narrowed for type checkers
 

@@ -22,10 +22,14 @@ from conductor.command.adapters.deep_commands import DEEP_ARGUMENT_TYPES
 from conductor.command.api_contracts import (
     ApiRefusal,
     parse_confirmation,
+    parse_graph,
     parse_proposal,
 )
-from conductor.command.contracts import ActionProposal, ActionRequest
+from conductor.command.contracts import ActionProposal, ActionRequest, RunEnvelope
 from conductor.command.graph_definition import GraphDefinition
+from conductor.command.graph_projection import graph_runtime
+from conductor.command.http_api import COMMAND_ROUTES, _match_route
+from conductor.command.run_store import RecoveredRun, StoredRecord
 
 from conductor.command import run_store as run_store_module
 
@@ -179,3 +183,85 @@ def test_a_propose_body_that_names_no_node_is_still_accepted():
     submitted = parse_proposal(
         CANON["propose_request"], adapter_capabilities=DEEP_ARGUMENT_TYPES)
     assert submitted.node_id is None
+
+
+# -- the graph route and the graph half of a read, as the SPEC freezes them ----
+
+
+def test_the_spec_route_table_and_the_production_allowlist_are_one_surface():
+    """Adding a route to production and calling it frozen is blessing itself.
+
+    The parent module holds the spec's table to the reviewed shape; this holds
+    it to the code, in both directions and in order, so a route can never exist
+    in one of the two places alone.
+    """
+    spelled = tuple((row["method"], row["path"]) for row in CANON["route_table"])
+    assert spelled == COMMAND_ROUTES
+
+
+@pytest.mark.parametrize("method,path", [
+    ("POST", "/command/runs/run-cockpit-001/graph"),
+    ("GET", "/command/runs/run-cockpit-001/graph"),
+])
+def test_the_graph_tail_is_a_route_the_matcher_knows_by_name(method, path):
+    """`COMMAND_ROUTES` is a list; `_RUN_ROUTE` is what actually admits a path.
+
+    A route added to one and not the other is a route the table advertises and
+    the server answers `route_not_found` for, so both are driven here: the POST
+    is matched, and the GET is refused for its METHOD rather than its path.
+    """
+    if method == "POST":
+        assert _match_route(method, path).name == "graph"
+    else:
+        with pytest.raises(ApiRefusal) as refused:
+            _match_route(method, path)
+        assert refused.value.code == "method_not_allowed"
+
+
+def test_the_canonical_plan_body_builds_the_canonical_graph_record():
+    """The stored record is DERIVED from the request beside it in the spec.
+
+    Two documents typed by hand would agree with each other and with nothing
+    else; this takes the browser body through the production door and the
+    server's own injection, and holds the result to the frozen record.
+    """
+    record = CANON["graph_definition_record"]["record"]
+    built = parse_graph(CANON["graph_request"]).build(
+        run_id=record["run_id"], created_at=record["created_at"])
+    assert built.as_dict() == record
+
+
+@pytest.mark.parametrize("owned", ["run_id", "created_at", "schema_version"])
+def test_the_plan_body_refuses_the_facts_the_server_injects(owned):
+    record = CANON["graph_definition_record"]["record"]
+    with pytest.raises(ApiRefusal):
+        parse_graph({**CANON["graph_request"], owned: record[owned]})
+
+
+def test_the_canonical_runtime_projection_is_what_production_computes():
+    """The frozen projection, recomputed from the frozen records beside it."""
+    graph = GraphDefinition.from_dict(CANON["graph_definition_record"]["record"])
+    proposal = ActionProposal.from_dict(CANON["graph_bound_action_proposal"])
+    request = ActionRequest.from_dict(CANON["graph_bound_action_request"])
+    recovered = RecoveredRun(
+        envelope=RunEnvelope(
+            run_id=graph.run_id, cycle_id="cockpit-orbit",
+            created_at="2026-08-13T12:00:00Z",
+            config_digest=proposal.config_digest, mode="confirm",
+            status="active"),
+        config={},
+        records=(StoredRecord("graph_definition", graph),
+                 StoredRecord("action_proposal", proposal),
+                 StoredRecord("action_request", request)),
+        warnings=())
+    assert graph_runtime(recovered, graph) == CANON["graph_runtime_projection"]
+
+
+def test_the_frozen_projection_says_confirmed_and_refuses_to_say_succeeded():
+    """The one reading of this example a UI must not be able to make."""
+    rows = {row["node_id"]: row
+            for row in CANON["graph_runtime_projection"]["nodes"]}
+    assert rows["apply"]["phase"] == "requested"
+    assert rows["apply"]["outcome"] is None
+    assert rows["human-gate"]["decision"] == "idle"
+    assert (rows["retry"]["pass"], rows["retry"]["bound_reached"]) == (1, False)

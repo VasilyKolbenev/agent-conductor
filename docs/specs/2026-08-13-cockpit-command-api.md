@@ -80,6 +80,10 @@ scope, not permission for C/API-1 to invent a generic file-write endpoint.
   {
     "method": "POST", "path": "/command/runs/<run_id>/decisions",
     "mutation": true, "csrf": true
+  },
+  {
+    "method": "POST", "path": "/command/runs/<run_id>/graph",
+    "mutation": true, "csrf": true
   }
 ]
 ```
@@ -591,6 +595,16 @@ The graph it is bound to, as the run's journal holds it:
           "profile": "implement",
           "work_item_id": "work-cockpit-001"
         }
+      },
+      {
+        "node_id": "retry",
+        "kind": "loop",
+        "title": "Reopen the work",
+        "resources": [],
+        "loop": {
+          "bound": 2,
+          "back_to": "plan"
+        }
       }
     ],
     "edges": [
@@ -601,6 +615,10 @@ The graph it is bound to, as the run's journal holds it:
       {
         "from_node": "human-gate",
         "to_node": "apply"
+      },
+      {
+        "from_node": "apply",
+        "to_node": "retry"
       }
     ]
   }
@@ -675,6 +693,78 @@ And the request a Confirm authorizes from it — same node, inherited:
 }
 ```
 
+### 4.4 `POST /command/runs/<run_id>/graph` — write the one graph a run follows
+
+Maps to `RunStore.append(GraphDefinition)`. A run follows at most one graph and
+never edits it: editing, versioning, templates and a run list are a later
+slice, so the only write this route performs is a run's first one.
+
+The browser supplies the stable `graph_id` and the plan — `nodes` and `edges` —
+and nothing else. The server injects `run_id` from the path, `created_at` from
+its clock, and `schema_version`. No caller controls a timestamp, a record
+wrapper, or the run this graph belongs to. The body is closed to exactly
+`graph_id`, `nodes`, and `edges`; any other field, `run_id` and `created_at`
+among them, is `contract_invalid` (422).
+
+<!-- CANONICAL:graph_request -->
+```json
+{
+  "graph_id": "graph-cockpit-001",
+  "nodes": [
+    { "node_id": "plan", "kind": "task", "title": "Plan the change",
+      "stage": "design", "resources": [] },
+    { "node_id": "human-gate", "kind": "gate", "title": "Human Gate - Confirm Do",
+      "gate_id": "gate-cockpit-do", "resources": [] },
+    { "node_id": "apply", "kind": "task", "title": "Do", "stage": "do",
+      "instance_id": "claude-dev", "capability": "dispatch",
+      "arguments": {
+        "work_item_id": "work-cockpit-001",
+        "instruction_ref": "instruction-cockpit-001",
+        "profile": "implement", "artifact_refs": ["artifact-cockpit-001"],
+        "output_limit_profile": "normal" },
+      "resources": [{ "kind": "model", "name": "sonnet" }] },
+    { "node_id": "retry", "kind": "loop", "title": "Reopen the work",
+      "loop": { "bound": 2, "back_to": "plan" }, "resources": [] }
+  ],
+  "edges": [
+    { "from_node": "plan", "to_node": "human-gate" },
+    { "from_node": "human-gate", "to_node": "apply" },
+    { "from_node": "apply", "to_node": "retry" }
+  ]
+}
+```
+
+Every bound node is held to this build and this run before the plan becomes
+durable: the `instance_id` MUST be one the run's frozen configuration declares,
+and the `capability` MUST be one the adapter bound to that instance supports. A
+plan naming work no adapter can carry out is refused — `service_refused` (409)
+or `capability_unsupported` (409) — rather than stored as a plan nothing can
+execute. A node that names no binding does no work and is held to neither.
+
+`arguments` are **not** judged here. Their shape is the capability's own
+business, judged by the propose door (4.1) against that capability's closed
+schema; two doors judging one value is how they come to disagree. This route
+proves what the graph contract proves and stops: that `arguments` is a JSON
+object of canonical data.
+
+Three outcomes, and no fourth:
+
+- **`201`** — the run followed no graph and now follows this one. The response
+  is the stored `GraphDefinition.as_dict()`.
+- **`200`** — the same `graph_id` restating the same plan. Nothing is appended,
+  and the response is the graph already stored, byte for byte, including the
+  `created_at` the first write settled. The stable `graph_id` is what makes an
+  exact retry findable, exactly as `receipt_id` does for a decision (5.1).
+- **`record_conflict` (409)** — everything else. The same `graph_id` carrying
+  different facts is a conflict, and so is a second `graph_id` while a graph
+  already stands: two graphs under two identities would leave every reader to
+  guess which plan the run follows, and the refusal names the graph standing.
+
+This route is a mutation like any other: it passes the Host allowlist,
+same-origin and anti-CSRF checks (sections 1 and 2) and the writable-route
+containment/ownership gate before any durable effect, and on a `201` it
+publishes the same identifier-only run frame (section 6.3).
+
 ## 5. Human-decision endpoints — FROZEN CONTRACT
 
 ### 5.1 `POST /command/runs/<run_id>/decisions` — record a DecisionReceipt
@@ -740,7 +830,9 @@ durable byte. Response `200` binds field by field to `RecoveredRun`: `run` is a
 `RunEnvelope.as_dict()`, `config` is the frozen configuration object, `records`
 is the append-ordered journal each wrapped exactly as the store wraps it
 (`{ "record_type": <kind>, "record": <contract as_dict> }`), and `warnings` is
-the replay warning list. A missing run is currently `store_error` (500), because
+the replay warning list. A fifth key, `graph`, is described in 6.1.1 and is the
+only part of this response that is not a durable record verbatim. A missing run
+is currently `store_error` (500), because
 the planning-base store has no typed not-found branch and the endpoint may not
 infer one from prose. The record kinds and their contracts are the closed v2 vocabulary:
 `action_request` (`ActionRequest`), `action_result` (`ActionResultReceipt`),
@@ -805,9 +897,14 @@ one run follows at most one graph, and a second under another id is refused.
       "request_digest": "sha256:4ff0ae5768792e2d8161e993399d2fc0720e1d2a42bde0380929f0688bc1c7a2",
       "recovery_ref": "recovery-cockpit-001", "outcome": "succeeded", "exit_code": 0 } }
   ],
-  "warnings": []
+  "warnings": [],
+  "graph": { "definition": null, "definition_digest": null, "runtime": null }
 }
 ```
+
+This run follows no graph, and says so with three nulls rather than an absent
+key: a reader that has to tell "no graph" from "old server" by the shape of a
+response is a reader guessing.
 
 The two attempt phases are separate append-ordered facts. They bind to the same
 durable request, frozen adapter, attempt, and opaque recovery reference:
@@ -860,6 +957,82 @@ frozen so the UI does not invent them:
   "verification": "unverified", "verified_by": null, "verified_at": null
 }
 ```
+
+#### 6.1.1 `graph` — the plan, its digest, and what the run did with it
+
+`graph` carries exactly three keys and is present on every run read:
+
+- `definition` — the `graph_definition` record's body verbatim, the same object
+  `records` already carries. It is repeated here so a reader has the plan and
+  the run's position side by side without rebuilding the join itself.
+- `definition_digest` — `GraphDefinition.digest()`, **computed over that
+  document and never stored beside it**. A digest of oneself that is written
+  down can come to disagree with oneself.
+- `runtime` — what this run was observed to do, **computed from the durable
+  records and held nowhere else**. It is not a record, it is never appended,
+  and no route writes it. A second mutable copy of a run's position would be a
+  copy that can disagree with the journal it was copied from.
+
+A run following no graph answers `null` for all three.
+
+The projection and the definition share no word but the join. Every name a
+`runtime` node carries is a name the definition REFUSES as a field
+(`graph_definition.RUNTIME_ONLY_FIELDS`), so a ceiling and a position can never
+be read as each other: `loop.bound` is the plan's, `pass` is the run's.
+
+- `phase` — how far a node's own records carry it, one of `idle`, `proposed`,
+  `requested`, `running`, `observed`, and never one step further. `observed`
+  means an execution boundary was reached; it is NOT success (safety law 9).
+- `outcome` — the node's `ActionResultReceipt` outcome and **nothing else**.
+  An attempt event carries an outcome of its own, and reading it here would let
+  a watched process exit stand in for the immutable result a product success
+  requires. Absent result, `null`.
+- `attempt_ids` — every attempt the node was asked to carry out, sorted. This
+  is the join to `records`: result receipts and attempt events name it.
+- `evidence_refs` and `observed_at` — identifiers and a timestamp from the
+  node's result receipts. Never a URI, a label, a digest, or an exit code:
+  those stay in `records`, where a contract validated them.
+- `decision` — gate nodes only. `contracts.gate_decision`'s own answer: `idle`,
+  `satisfied`, `failed`, `changes_requested`, or `waived`. A run holding more
+  than one standing decision for one gate is `unknown`: the journal supports
+  two answers, so it supports neither, and this projection does not choose.
+- `pass` and `bound_reached` — loop nodes only. `pass` counts the distinct
+  attempts recorded on the cycle the loop reopens — the nodes on a road from
+  its `back_to` to the loop itself — so work that ran before that step is never
+  counted as a repeat of it. `bound_reached` is `pass >= loop.bound`.
+
+An action that names no node is projected nowhere: a graph does not make every
+action part of it. A run whose journal does not replay has no projection at
+all — the read refuses `run_corrupt` (409) rather than answering with a partial
+one. The run's own phase is not restated here; it is `run.status`.
+
+For the graph, proposal and request of section 4.3:
+
+<!-- CANONICAL:graph_runtime_projection -->
+```json
+{
+  "run_id": "run-cockpit-graph-001",
+  "graph_id": "graph-cockpit-001",
+  "nodes": [
+    { "node_id": "plan", "phase": "idle", "attempt_ids": [],
+      "outcome": null, "observed_at": null, "evidence_refs": [] },
+    { "node_id": "human-gate", "phase": "idle", "attempt_ids": [],
+      "outcome": null, "observed_at": null, "evidence_refs": [],
+      "decision": "idle" },
+    { "node_id": "apply", "phase": "requested",
+      "attempt_ids": ["attempt-cockpit-001"],
+      "outcome": null, "observed_at": null, "evidence_refs": [] },
+    { "node_id": "retry", "phase": "idle", "attempt_ids": [],
+      "outcome": null, "observed_at": null, "evidence_refs": [],
+      "pass": 1, "bound_reached": false }
+  ]
+}
+```
+
+`apply` is `requested` and its `outcome` is `null`: a Human confirmed the work
+and nothing has reported on it. `human-gate` is `idle` because no receipt
+stands, never because a gate was assumed to pass. `retry` counts one pass
+against a bound of two — the one attempt recorded on the cycle it reopens.
 
 ### 6.2 `GET /command/runs/<run_id>/controls` — capability-derived controls
 
@@ -949,6 +1122,11 @@ control the reviewed manifest did not declare.
   identifiers only, never a record payload:
   `data: {"kind":"run","run_id":"run-cockpit-001"}\n\n`. On receiving it the UI
   re-reads authoritative bytes from `GET /command/runs/<run_id>` (section 6.1).
+  Every mutating route publishes this one frame, and only when it appended a
+  durable record: a request that changed nothing signals nothing, and a route
+  that appended something signals it in exactly the same words as every other.
+  The graph route (4.4) is no exception, and the graph a run follows reaches a
+  browser only through the authoritative read — never through the stream.
   Keeping records out of the SSE frame keeps the stream cheap and keeps any
   record content behind the same read path the contracts validate (and out of a
   place safety law 8 would have to police for secrets).
@@ -984,9 +1162,14 @@ fields are:
   the matching proposal and confirmation.
 - `POST …/decisions` → `DecisionReceipt`: `decided_at`, `config_digest`, and
   `schema_version`; the client supplies the stable `receipt_id`.
+- `POST …/graph` → `GraphDefinition`: `run_id`, `created_at`, and
+  `schema_version`; the client supplies the stable `graph_id` and the plan.
 - `GET …/runs/<id>` → `RecoveredRun`: nothing injected — a read-only replay whose
   records are wrapped exactly as the store wraps them,
-  `{ "record_type": <kind>, "record": <as_dict> }`.
+  `{ "record_type": <kind>, "record": <as_dict> }`. Its `graph` key adds no
+  record field either: `definition` is a record body verbatim, and
+  `definition_digest` and `runtime` are computed from records the response
+  already carries (6.1.1).
 
 Invariants this freeze pins, all already enforced by the contracts (so the
 endpoint inherits them, never re-encodes them):

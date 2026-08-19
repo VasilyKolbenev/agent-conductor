@@ -1,4 +1,4 @@
-"""The six frozen Cockpit command routes, independent of an HTTP server.
+"""The seven frozen Cockpit command routes, independent of an HTTP server.
 
 The facade accepts ordered raw header pairs and raw JSON bytes.  It emits only
 validated contract payloads or closed :class:`ApiRefusal` envelopes; adapters
@@ -28,14 +28,17 @@ from .adapters.provider import ProviderContract, provider_projection
 from .api_contracts import (
     ARGUMENT_SCHEMAS,
     ApiRefusal,
+    GraphInput,
     parse_confirmation,
     parse_decision,
+    parse_graph,
     parse_proposal,
     refusal_from_exception,
 )
 from .containment import run_route_violations
 from .contracts import ContractError, frozen_config_bindings
 from .coordinator import ExecutionCoordinator
+from .graph_projection import graph_payload
 from .http_transport import (
     CommandSession,
     validate_command_host,
@@ -58,11 +61,12 @@ COMMAND_ROUTES = (
     ("POST", "/command/runs/<run_id>/proposals"),
     ("POST", "/command/runs/<run_id>/actions"),
     ("POST", "/command/runs/<run_id>/decisions"),
+    ("POST", "/command/runs/<run_id>/graph"),
 )
 
 _RUN_ROUTE = re.compile(
     r"/command/runs/([A-Za-z0-9][A-Za-z0-9._-]{0,127})"
-    r"(?:/(controls|proposals|actions|decisions))?\Z")
+    r"(?:/(controls|proposals|actions|decisions|graph))?\Z")
 
 
 @dataclass(frozen=True)
@@ -182,7 +186,59 @@ class CommandApi:
             return self._propose(route.run_id, body)
         if route.name == "actions":
             return self._authorize(route.run_id, body)
+        if route.name == "graph":
+            return self._write_graph(route.run_id, body)
         return self._decide(route.run_id, body)
+
+    def _write_graph(self, run_id: str, body: Mapping[str, Any]) -> CommandResponse:
+        """Write the one graph a run follows; a run never edits the plan it has.
+
+        The stable ``graph_id`` is the caller's, which is what makes an exact
+        retry findable -- and it is found before the clock is read, so a repeat
+        answers with the ``created_at`` the first write settled instead of
+        minting a second identity's worth of facts under one id.
+        """
+        submitted = parse_graph(body)
+        self._hold_route(run_id)
+        self._bindings_are_servable(self._store.read(run_id).config, run_id, submitted)
+        with self._store.transaction():
+            self._hold_route(run_id)
+            recovered = self._store.read(run_id)
+            standing = next((
+                row.value for row in recovered.records
+                if row.kind == "graph_definition"
+                and row.value.graph_id == submitted.graph_id), None)
+            graph = submitted.build(
+                run_id=run_id,
+                created_at=self._clock() if standing is None else standing.created_at)
+            if standing is not None:
+                if standing != graph:
+                    raise RecordConflict("graph identity records different facts")
+                created, graph = False, standing
+            else:
+                # A graph under ANOTHER id is refused here, by the store's own
+                # one-graph-per-run relation, which names the plan standing.
+                created = self._store.append(graph)
+        if created:
+            self._publish_run(run_id)
+        return CommandResponse(201 if created else 200, graph.as_dict())
+
+    def _bindings_are_servable(
+            self, config: Mapping[str, Any], run_id: str,
+            submitted: GraphInput) -> None:
+        """A plan may only name work this run and this build can carry out.
+
+        The graph contract deliberately holds no provider: which adapter serves
+        an instance is the run's frozen configuration's fact. So the plan is
+        held to that configuration HERE, once, before it becomes durable --
+        rather than becoming a stored plan whose every proposal is refused.
+        """
+        for node in submitted.nodes:
+            if node.capability is None:
+                continue
+            bound = self._bound_adapter(config, run_id, node.instance_id)
+            if node.capability not in self._registry.controls(bound):
+                raise UnsupportedCapability("bound adapter lacks a node capability")
 
     def _propose(self, run_id: str, body: Mapping[str, Any]) -> CommandResponse:
         declared = {
@@ -342,6 +398,10 @@ def _recovered_payload(recovered) -> dict[str, object]:
         "config": config,
         "records": records,
         "warnings": list(recovered.warnings),
+        # The one part of this response that is not a durable record verbatim:
+        # the plan, the digest computed over it, and the position computed from
+        # the records above. Nothing here is stored, so nothing here can drift.
+        "graph": graph_payload(recovered),
     }
 
 

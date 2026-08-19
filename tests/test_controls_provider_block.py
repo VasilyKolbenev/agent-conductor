@@ -179,9 +179,18 @@ def controls(tmp_path, **changes):
 # -- the additive block, and the routes it did not add to --
 
 
-def test_the_six_routes_are_still_six_and_the_payload_gained_one_array(tmp_path):
+def test_the_provider_roster_rides_the_controls_route_and_adds_none_of_its_own(
+        tmp_path):
+    """Counting routes said this until a graph route made the count move.
+
+    What the block actually promised is that the roster is an ADDITIVE array on
+    a route that already existed -- so the claim is stated as the relation it
+    always was, and it survives the next honest route as it did not survive
+    this one.
+    """
     payload = controls(tmp_path)
-    assert len(COMMAND_ROUTES) == 6
+    assert ("GET", "/command/runs/<run_id>/controls") in COMMAND_ROUTES
+    assert not [path for _method, path in COMMAND_ROUTES if "provider" in path]
     assert set(payload) == {"instances", "providers"}
     assert payload["instances"] and payload["providers"]
 
