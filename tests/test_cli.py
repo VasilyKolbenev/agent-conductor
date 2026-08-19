@@ -434,7 +434,7 @@ def test_up_and_demo_reach_the_same_serve_function_with_the_users_port(
     # user typed rather than a default.
     calls = []
 
-    def fake_serve(root, port):
+    def fake_serve(root, port, providers=None):
         calls.append(port)
         return 23
 

@@ -243,11 +243,20 @@ def test_command_spec_is_code_owned_argv_with_fixed_cwd_and_no_shell_suffix():
 
 def test_all_deep_vocabularies_and_protocol_flags_are_exactly_pinned():
     assert set(DeepProtocol) == {
-        DeepProtocol.FAKE_CLAUDE_V1, DeepProtocol.FAKE_CODEX_V1}
+        DeepProtocol.FAKE_CLAUDE_V1, DeepProtocol.FAKE_CODEX_V1,
+        DeepProtocol.DSH_HEADLESS_V1, DeepProtocol.KIMI_UNPROVEN_V0}
     assert dict(DEEP_PROTOCOL_FLAGS) == {
         "fake-claude-jsonl-v1": "--fake-claude-jsonl-v1",
         "fake-codex-jsonl-v1": "--fake-codex-jsonl-v1",
     }
+    # The dsh and kimi tokens are reviewed vocabulary, not deep fake protocols:
+    # neither binds a deep argv flag, so the fake-protocol command builder can
+    # never render either of them.
+    non_deep = {DeepProtocol.DSH_HEADLESS_V1, DeepProtocol.KIMI_UNPROVEN_V0}
+    for protocol in non_deep:
+        assert protocol.value not in DEEP_PROTOCOL_FLAGS
+    assert set(DEEP_PROTOCOL_FLAGS) == {
+        protocol.value for protocol in DeepProtocol if protocol not in non_deep}
     assert OBSERVED_OUTCOMES == {
         "succeeded", "failed", "cancelled", "rejected", "unknown"}
     assert ADAPTER_FAILURE_CODES == {

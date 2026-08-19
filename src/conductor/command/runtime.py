@@ -30,9 +30,15 @@ verification_failed -- stay DISTINCT: none is inferred from the absence of
 another, and an attempt whose adapter crashed, returned no result, or reported a
 result for another action is `unknown`, never converted into success. A process
 that reports success is put to the adapter's verify seam only after its durable
-observation. Verified evidence must follow that observation and match the frozen
-adapter relation; unavailable verification leaves observed success explicitly
-unverified. Request-only recovery has no fresh effect authority and fails closed.
+observation. There is exactly ONE road to `succeeded`, and it has three legs:
+execution observed as succeeded, a bound adapter that answers `verified`, and a
+causal durable EvidenceRef the store recorded after that observation. Every
+other verification answer -- `mismatch`, `error`, a verifier that raised, and
+`unavailable` -- is `verification_failed` with EMPTY evidence. `unavailable` in
+particular is never success: an adapter that exposes no verifier has proved
+nothing, and the product says execution observed and unverified rather than
+letting an exit code stand in for proof.
+Request-only recovery has no fresh effect authority and fails closed.
 Lease-only recovery becomes terminal ``unknown`` without another execute;
 observed recovery never executes. Terminal replay calls no adapter seam.
 """
@@ -117,6 +123,10 @@ def _operation_lock(key: tuple[Any, ...]):
             lock = Lock()
             _OPERATION_LOCKS[key] = lock
         return lock
+
+
+def _no_notify(run_id: str) -> None:
+    """The default listener: a runtime nobody is watching announces nothing."""
 
 
 def _instant(name: str, value: object) -> datetime:
@@ -231,37 +241,70 @@ class ControlRuntime:
     configuration binding, never from a caller's word, so it drives whatever
     adapter a project configured. Ids and the clock arrive through injected
     deterministic providers; nothing here reads a hidden clock or invents an id.
+
+    Every attempt event and every terminal receipt this runtime appends is
+    announced to ``notify`` with the run id ALONE. The listener is told a run
+    changed, never what changed, so no adapter detail, output, or state ever
+    leaves through that seam.
     """
 
     def __init__(
             self, store: RunStore, registry: AdapterRegistry, *,
-            clock: Callable[[], str], ids: Callable[[str], str]) -> None:
+            clock: Callable[[], str], ids: Callable[[str], str],
+            notify: Callable[[str], None] = _no_notify) -> None:
         self._store = store
         self._registry = registry
         self._clock = clock
         self._ids = ids
+        # Called with the run id ALONE after each attempt fact lands, so a
+        # listener learns that a run changed and must re-read it -- never what
+        # changed, what an adapter reported, or what any output held.
+        self._notify = notify
         # Memory-only execution authority. A durable request recovered by a new
         # runtime is evidence of authorization, not proof its effect never ran.
         self._grants: set[tuple[str, str]] = set()
 
     # -- authorize (A/CONF-1): refuse before preparation, else record the confirmation --
 
-    def authorize(self, confirmation: Confirmation, *, budget: Budget) -> Authorization:
-        """Authorize one confirmed proposal, or refuse; record the cleared request."""
+    def authorize(
+            self, confirmation: Confirmation, *, budget: Budget,
+            admit: Callable[[], None] | None = None) -> Authorization:
+        """Authorize one confirmed proposal, or refuse; record the cleared request.
+
+        Args:
+            confirmation: The fresh Human confirmation restating the proposal.
+            budget: The server-owned action/time/age budget to hold it against.
+            admit: Optional admission hook, called exactly once on the ONE path
+                that is about to append a fresh request, immediately before the
+                append and after every other fact has cleared. It is the caller's
+                place to bind that request to somewhere that will carry it; if it
+                raises, nothing durable is written and the refusal is the answer.
+                It is never called for a retry that appends nothing, so a caller
+                gating on admission cannot gate an exact retry.
+
+        Returns:
+            The cleared `Authorization`, carrying the recorded request.
+
+        Raises:
+            AuthorizationError: Any restated fact is changed, stale, or missing.
+        """
         if not isinstance(confirmation, Confirmation):
             raise AuthorizationError("authorize requires a validated Confirmation")
         if not isinstance(budget, Budget):
             raise AuthorizationError("authorize requires a validated Budget")
+        if admit is not None and not callable(admit):
+            raise AuthorizationError("authorize requires a callable admission hook")
         self._hold_lock_order(AuthorizationError)
         logical = f"dispatch-{confirmation.proposal_id}"
         key = self._lock_key(
             "authorize", confirmation.run_id, confirmation.proposal_id, logical)
         with _operation_lock(key):
             with self._store.transaction():
-                return self._authorize_locked(confirmation, budget)
+                return self._authorize_locked(confirmation, budget, admit)
 
     def _authorize_locked(
-            self, confirmation: Confirmation, budget: Budget) -> Authorization:
+            self, confirmation: Confirmation, budget: Budget,
+            admit: Callable[[], None] | None = None) -> Authorization:
         """Hold one proposal transition from authoritative read through grant."""
         self._hold_route(confirmation.run_id, AuthorizationError)
         recovered = self._store.read(confirmation.run_id)
@@ -290,6 +333,11 @@ class ControlRuntime:
         self._hold_budget(proposal, recovered, budget)
         request = self._mint_request(confirmation, proposal)
         self._hold_route(confirmation.run_id, AuthorizationError)
+        if admit is not None:
+            # The last gate before the request becomes durable, and the only one
+            # a retry never reaches: an admission refused here leaves the journal
+            # exactly as it was.
+            admit()
         # The store appends the request as its own record, refuses a fresh id that
         # reuses the idempotency key (RecordConflict), and no-ops an identical retry.
         appended = self._store.append(request)
@@ -570,6 +618,7 @@ class ControlRuntime:
             recovery_ref=recovery_ref or self._ids("recovery"),
             outcome=outcome, exit_code=exit_code, schema_version=2)
         self._store.append(event)
+        self._notify(request.run_id)
         return AttemptEvent.from_dict(event.as_dict())
 
     def _resume_observed(
@@ -658,9 +707,15 @@ class ControlRuntime:
                 detail="the adapter returned no verification for this action",
                 exit_code=report.exit_code)
         if verification.state == "unavailable":
+            # No verifier is no proof, and no proof is not a success. This is the
+            # one place the whole product could be talked into believing an exit
+            # code, so the refusal lives HERE rather than inside whichever
+            # adapter happens to be honest today: any next harness may answer
+            # `unavailable`, and none of them may be believed for it.
             return self._finish(
-                request, AttemptState.SUCCEEDED, history,
-                detail="the process reported success; the adapter exposed no verifier",
+                request, AttemptState.VERIFICATION_FAILED, history,
+                detail="execution observed; the adapter exposed no verifier, so "
+                       "nothing about the work is verified",
                 exit_code=report.exit_code)
         if verification.state == "verified":
             evidence = self._causal_evidence(
@@ -732,6 +787,7 @@ class ControlRuntime:
             exit_code=exit_code,
         )
         self._store.append(receipt)
+        self._notify(request.run_id)
         return Attempt(
             request=request, state=state, receipt=receipt,
             history=(*history, state), verification_evidence=evidence)

@@ -660,11 +660,32 @@ frozen so the UI does not invent them:
 
 ### 6.2 `GET /command/runs/<run_id>/controls` — capability-derived controls
 
-The response is derived from the frozen instance-to-adapter binding, the
+The response carries two arrays that answer two different questions.
+
+`instances` is derived from the frozen instance-to-adapter binding, the
 registry's reviewed manifest value, and the argument schemas in section 4. It
 contains only controls all three sources permit. The arrays are sorted and an
 unsupported control is absent; there is no `enabled`, `disabled`, or tooltip
 placeholder that could become a decorative unsupported control.
+
+`providers` is the reviewed provider roster this build was given — every
+CATALOGUED provider, sorted by `provider_id`, whether or not an operator
+configured it. Each row carries exactly five names and nothing else:
+`provider_id`, `display_name`, `availability`, `implementation`, `controls`.
+
+`availability` and `implementation` are **separate closed vocabularies and MUST
+NOT be mixed**; they share no value, so neither can be read as the other:
+
+- `availability` — a fact about the operator's machine:
+  `available` | `executable_absent` | `version_mismatch` | `unconfigured`.
+  A provider no operator config named is `unconfigured`: nothing on the machine
+  was looked at for it, and it is a different answer from a missing pinned file.
+- `implementation` — a fact about this build's transport:
+  `real_experimental` | `fixture_only` | `unproven`. A provider that declares
+  none claims `unproven`.
+
+A consumer joins these rows with `/harnesses.json` **by `provider_id`**. A
+`display_name` is a label to render and MUST NOT be parsed for any fact.
 
 <!-- CANONICAL:controls_response -->
 ```json
@@ -677,6 +698,30 @@ placeholder that could become a decorative unsupported control.
     {
       "instance_id": "codex-review", "adapter_id": "codex",
       "controls": ["dispatch", "retry", "review", "stop"]
+    }
+  ],
+  "providers": [
+    {
+      "provider_id": "claude-code", "display_name": "Claude Code (fake protocol)",
+      "availability": "available", "implementation": "fixture_only",
+      "controls": ["dispatch", "evidence", "retry", "review", "stop", "switch"]
+    },
+    {
+      "provider_id": "codex", "display_name": "Codex (fake protocol)",
+      "availability": "unconfigured", "implementation": "fixture_only",
+      "controls": ["dispatch", "evidence", "retry", "review", "stop", "switch"]
+    },
+    {
+      "provider_id": "deepseek-harness",
+      "display_name": "DeepSeek Harness (dsh, headless)",
+      "availability": "executable_absent", "implementation": "real_experimental",
+      "controls": ["dispatch"]
+    },
+    {
+      "provider_id": "kimi-code",
+      "display_name": "Kimi Code (experimental, no proven transport)",
+      "availability": "version_mismatch", "implementation": "unproven",
+      "controls": []
     }
   ]
 }

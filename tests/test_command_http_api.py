@@ -160,7 +160,7 @@ def test_controls_are_frozen_binding_manifest_schema_intersection(tmp_path):
         "instance_id": "codex-review",
         "adapter_id": "codex",
         "controls": [],
-    }]}
+    }], "providers": []}
 
 
 def test_empty_registry_keeps_reads_and_decisions_but_refuses_proposals(tmp_path):

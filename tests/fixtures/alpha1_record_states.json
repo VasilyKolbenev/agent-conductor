@@ -1,0 +1,537 @@
+{
+  "run_id": "run-001",
+  "derived_from": "one gated run through CommandApi + ExecutionCoordinator",
+  "states": [
+    {
+      "state": "queued",
+      "durable": false,
+      "durable_record_types": [
+        "action_proposal",
+        "action_request"
+      ],
+      "durable_records": [
+        {
+          "record_type": "action_proposal",
+          "record": {
+            "arguments": {
+              "artifact_refs": [
+                "artifact-001"
+              ],
+              "instruction_ref": "instruction-001",
+              "output_limit_profile": "small",
+              "profile": "implement",
+              "work_item_id": "work-002"
+            },
+            "attempt_id": "attempt-002",
+            "capability": "dispatch",
+            "config_digest": "sha256:d37d5ce92fbbfc0e736a215d7dbab9e216837d56c48705b9d5fdefc032fbbbbb",
+            "instance_id": "claude-dev",
+            "preview_digest": "sha256:f9e37cb3c294ac49208242669709146726997c88c66aef9bdc7a6db4d3f1a419",
+            "proposal_id": "proposal-2",
+            "proposed_at": "2026-08-17T12:00:00Z",
+            "proposed_by": "claude-dev",
+            "rationale": "Implement the reviewed work item.",
+            "run_id": "run-001",
+            "schema_version": 2,
+            "scope": [
+              "src",
+              "tests"
+            ],
+            "timeout_seconds": 900
+          }
+        },
+        {
+          "record_type": "action_request",
+          "record": {
+            "action_id": "action-2",
+            "arguments": {
+              "artifact_refs": [
+                "artifact-001"
+              ],
+              "instruction_ref": "instruction-001",
+              "output_limit_profile": "small",
+              "profile": "implement",
+              "work_item_id": "work-002"
+            },
+            "attempt_id": "attempt-002",
+            "capability": "dispatch",
+            "idempotency_key": "dispatch-proposal-2",
+            "instance_id": "claude-dev",
+            "mode": "confirm",
+            "preview_digest": "sha256:f9e37cb3c294ac49208242669709146726997c88c66aef9bdc7a6db4d3f1a419",
+            "requested_at": "2026-08-17T12:00:00Z",
+            "requested_by": "release-owner",
+            "run_id": "run-001",
+            "schema_version": 2,
+            "scope": [
+              "src",
+              "tests"
+            ],
+            "timeout_seconds": 900
+          }
+        }
+      ],
+      "evidence": {
+        "actions_placed_on_the_one_worker": 2,
+        "adapter_execute_arrivals": [
+          "action-1"
+        ]
+      },
+      "note": "The queue is memory-only and holds no record of its own: the only durable trace of a queued action is its action_request, which does not say 'queued'. This action is provably queued because the coordinator placed two actions on its one worker and that worker is parked inside the other action's execute seam."
+    },
+    {
+      "state": "leased",
+      "durable": true,
+      "durable_record_types": [
+        "action_proposal",
+        "action_request",
+        "attempt_event"
+      ],
+      "durable_records": [
+        {
+          "record_type": "action_proposal",
+          "record": {
+            "arguments": {
+              "artifact_refs": [
+                "artifact-001"
+              ],
+              "instruction_ref": "instruction-001",
+              "output_limit_profile": "small",
+              "profile": "implement",
+              "work_item_id": "work-001"
+            },
+            "attempt_id": "attempt-001",
+            "capability": "dispatch",
+            "config_digest": "sha256:d37d5ce92fbbfc0e736a215d7dbab9e216837d56c48705b9d5fdefc032fbbbbb",
+            "instance_id": "claude-dev",
+            "preview_digest": "sha256:e85b464251fe23eb47bab1239221f196b03ff02bdb86cceac29a329c5692e23e",
+            "proposal_id": "proposal-1",
+            "proposed_at": "2026-08-17T12:00:00Z",
+            "proposed_by": "claude-dev",
+            "rationale": "Implement the reviewed work item.",
+            "run_id": "run-001",
+            "schema_version": 2,
+            "scope": [
+              "src",
+              "tests"
+            ],
+            "timeout_seconds": 900
+          }
+        },
+        {
+          "record_type": "action_request",
+          "record": {
+            "action_id": "action-1",
+            "arguments": {
+              "artifact_refs": [
+                "artifact-001"
+              ],
+              "instruction_ref": "instruction-001",
+              "output_limit_profile": "small",
+              "profile": "implement",
+              "work_item_id": "work-001"
+            },
+            "attempt_id": "attempt-001",
+            "capability": "dispatch",
+            "idempotency_key": "dispatch-proposal-1",
+            "instance_id": "claude-dev",
+            "mode": "confirm",
+            "preview_digest": "sha256:e85b464251fe23eb47bab1239221f196b03ff02bdb86cceac29a329c5692e23e",
+            "requested_at": "2026-08-17T12:00:00Z",
+            "requested_by": "release-owner",
+            "run_id": "run-001",
+            "schema_version": 2,
+            "scope": [
+              "src",
+              "tests"
+            ],
+            "timeout_seconds": 900
+          }
+        },
+        {
+          "record_type": "attempt_event",
+          "record": {
+            "action_id": "action-1",
+            "adapter_id": "claude-code",
+            "attempt_id": "attempt-001",
+            "event_id": "effect_lease-event-1",
+            "exit_code": null,
+            "instance_id": "claude-dev",
+            "outcome": null,
+            "phase": "effect_lease",
+            "recorded_at": "2026-08-17T12:00:00Z",
+            "recovery_ref": "recovery-1",
+            "request_digest": "sha256:6baff3e6aa465eed1f810c6f7dde63f92e64574867245476ec837736d8e7436f",
+            "run_id": "run-001",
+            "schema_version": 2
+          }
+        }
+      ],
+      "note": "The effect_lease attempt_event is appended before the first adapter effect seam, so a consumer that sees it must treat the effect as possibly performed."
+    },
+    {
+      "state": "execution_observed",
+      "durable": true,
+      "durable_record_types": [
+        "action_proposal",
+        "action_request",
+        "attempt_event",
+        "attempt_event"
+      ],
+      "durable_records": [
+        {
+          "record_type": "action_proposal",
+          "record": {
+            "arguments": {
+              "artifact_refs": [
+                "artifact-001"
+              ],
+              "instruction_ref": "instruction-001",
+              "output_limit_profile": "small",
+              "profile": "implement",
+              "work_item_id": "work-001"
+            },
+            "attempt_id": "attempt-001",
+            "capability": "dispatch",
+            "config_digest": "sha256:d37d5ce92fbbfc0e736a215d7dbab9e216837d56c48705b9d5fdefc032fbbbbb",
+            "instance_id": "claude-dev",
+            "preview_digest": "sha256:e85b464251fe23eb47bab1239221f196b03ff02bdb86cceac29a329c5692e23e",
+            "proposal_id": "proposal-1",
+            "proposed_at": "2026-08-17T12:00:00Z",
+            "proposed_by": "claude-dev",
+            "rationale": "Implement the reviewed work item.",
+            "run_id": "run-001",
+            "schema_version": 2,
+            "scope": [
+              "src",
+              "tests"
+            ],
+            "timeout_seconds": 900
+          }
+        },
+        {
+          "record_type": "action_request",
+          "record": {
+            "action_id": "action-1",
+            "arguments": {
+              "artifact_refs": [
+                "artifact-001"
+              ],
+              "instruction_ref": "instruction-001",
+              "output_limit_profile": "small",
+              "profile": "implement",
+              "work_item_id": "work-001"
+            },
+            "attempt_id": "attempt-001",
+            "capability": "dispatch",
+            "idempotency_key": "dispatch-proposal-1",
+            "instance_id": "claude-dev",
+            "mode": "confirm",
+            "preview_digest": "sha256:e85b464251fe23eb47bab1239221f196b03ff02bdb86cceac29a329c5692e23e",
+            "requested_at": "2026-08-17T12:00:00Z",
+            "requested_by": "release-owner",
+            "run_id": "run-001",
+            "schema_version": 2,
+            "scope": [
+              "src",
+              "tests"
+            ],
+            "timeout_seconds": 900
+          }
+        },
+        {
+          "record_type": "attempt_event",
+          "record": {
+            "action_id": "action-1",
+            "adapter_id": "claude-code",
+            "attempt_id": "attempt-001",
+            "event_id": "effect_lease-event-1",
+            "exit_code": null,
+            "instance_id": "claude-dev",
+            "outcome": null,
+            "phase": "effect_lease",
+            "recorded_at": "2026-08-17T12:00:00Z",
+            "recovery_ref": "recovery-1",
+            "request_digest": "sha256:6baff3e6aa465eed1f810c6f7dde63f92e64574867245476ec837736d8e7436f",
+            "run_id": "run-001",
+            "schema_version": 2
+          }
+        },
+        {
+          "record_type": "attempt_event",
+          "record": {
+            "action_id": "action-1",
+            "adapter_id": "claude-code",
+            "attempt_id": "attempt-001",
+            "event_id": "execution_observed-event-1",
+            "exit_code": 0,
+            "instance_id": "claude-dev",
+            "outcome": "succeeded",
+            "phase": "execution_observed",
+            "recorded_at": "2026-08-17T12:00:00Z",
+            "recovery_ref": "recovery-1",
+            "request_digest": "sha256:6baff3e6aa465eed1f810c6f7dde63f92e64574867245476ec837736d8e7436f",
+            "run_id": "run-001",
+            "schema_version": 2
+          }
+        }
+      ],
+      "note": "The execution_observed attempt_event records the outcome the adapter reported. It is durable and it is not yet the terminal word: no action_result exists."
+    },
+    {
+      "state": "verifying",
+      "durable": false,
+      "durable_record_types": [
+        "action_proposal",
+        "action_request",
+        "attempt_event",
+        "attempt_event"
+      ],
+      "durable_records": [
+        {
+          "record_type": "action_proposal",
+          "record": {
+            "arguments": {
+              "artifact_refs": [
+                "artifact-001"
+              ],
+              "instruction_ref": "instruction-001",
+              "output_limit_profile": "small",
+              "profile": "implement",
+              "work_item_id": "work-001"
+            },
+            "attempt_id": "attempt-001",
+            "capability": "dispatch",
+            "config_digest": "sha256:d37d5ce92fbbfc0e736a215d7dbab9e216837d56c48705b9d5fdefc032fbbbbb",
+            "instance_id": "claude-dev",
+            "preview_digest": "sha256:e85b464251fe23eb47bab1239221f196b03ff02bdb86cceac29a329c5692e23e",
+            "proposal_id": "proposal-1",
+            "proposed_at": "2026-08-17T12:00:00Z",
+            "proposed_by": "claude-dev",
+            "rationale": "Implement the reviewed work item.",
+            "run_id": "run-001",
+            "schema_version": 2,
+            "scope": [
+              "src",
+              "tests"
+            ],
+            "timeout_seconds": 900
+          }
+        },
+        {
+          "record_type": "action_request",
+          "record": {
+            "action_id": "action-1",
+            "arguments": {
+              "artifact_refs": [
+                "artifact-001"
+              ],
+              "instruction_ref": "instruction-001",
+              "output_limit_profile": "small",
+              "profile": "implement",
+              "work_item_id": "work-001"
+            },
+            "attempt_id": "attempt-001",
+            "capability": "dispatch",
+            "idempotency_key": "dispatch-proposal-1",
+            "instance_id": "claude-dev",
+            "mode": "confirm",
+            "preview_digest": "sha256:e85b464251fe23eb47bab1239221f196b03ff02bdb86cceac29a329c5692e23e",
+            "requested_at": "2026-08-17T12:00:00Z",
+            "requested_by": "release-owner",
+            "run_id": "run-001",
+            "schema_version": 2,
+            "scope": [
+              "src",
+              "tests"
+            ],
+            "timeout_seconds": 900
+          }
+        },
+        {
+          "record_type": "attempt_event",
+          "record": {
+            "action_id": "action-1",
+            "adapter_id": "claude-code",
+            "attempt_id": "attempt-001",
+            "event_id": "effect_lease-event-1",
+            "exit_code": null,
+            "instance_id": "claude-dev",
+            "outcome": null,
+            "phase": "effect_lease",
+            "recorded_at": "2026-08-17T12:00:00Z",
+            "recovery_ref": "recovery-1",
+            "request_digest": "sha256:6baff3e6aa465eed1f810c6f7dde63f92e64574867245476ec837736d8e7436f",
+            "run_id": "run-001",
+            "schema_version": 2
+          }
+        },
+        {
+          "record_type": "attempt_event",
+          "record": {
+            "action_id": "action-1",
+            "adapter_id": "claude-code",
+            "attempt_id": "attempt-001",
+            "event_id": "execution_observed-event-1",
+            "exit_code": 0,
+            "instance_id": "claude-dev",
+            "outcome": "succeeded",
+            "phase": "execution_observed",
+            "recorded_at": "2026-08-17T12:00:00Z",
+            "recovery_ref": "recovery-1",
+            "request_digest": "sha256:6baff3e6aa465eed1f810c6f7dde63f92e64574867245476ec837736d8e7436f",
+            "run_id": "run-001",
+            "schema_version": 2
+          }
+        }
+      ],
+      "note": "Verifying is transient and no record names it. A consumer can only bracket it: it begins after the execution_observed event and ends when the action_result receipt lands, and its durable visibility is identical to execution_observed."
+    },
+    {
+      "state": "terminal",
+      "durable": true,
+      "durable_record_types": [
+        "action_proposal",
+        "action_request",
+        "attempt_event",
+        "attempt_event",
+        "evidence",
+        "action_result"
+      ],
+      "durable_records": [
+        {
+          "record_type": "action_proposal",
+          "record": {
+            "arguments": {
+              "artifact_refs": [
+                "artifact-001"
+              ],
+              "instruction_ref": "instruction-001",
+              "output_limit_profile": "small",
+              "profile": "implement",
+              "work_item_id": "work-001"
+            },
+            "attempt_id": "attempt-001",
+            "capability": "dispatch",
+            "config_digest": "sha256:d37d5ce92fbbfc0e736a215d7dbab9e216837d56c48705b9d5fdefc032fbbbbb",
+            "instance_id": "claude-dev",
+            "preview_digest": "sha256:e85b464251fe23eb47bab1239221f196b03ff02bdb86cceac29a329c5692e23e",
+            "proposal_id": "proposal-1",
+            "proposed_at": "2026-08-17T12:00:00Z",
+            "proposed_by": "claude-dev",
+            "rationale": "Implement the reviewed work item.",
+            "run_id": "run-001",
+            "schema_version": 2,
+            "scope": [
+              "src",
+              "tests"
+            ],
+            "timeout_seconds": 900
+          }
+        },
+        {
+          "record_type": "action_request",
+          "record": {
+            "action_id": "action-1",
+            "arguments": {
+              "artifact_refs": [
+                "artifact-001"
+              ],
+              "instruction_ref": "instruction-001",
+              "output_limit_profile": "small",
+              "profile": "implement",
+              "work_item_id": "work-001"
+            },
+            "attempt_id": "attempt-001",
+            "capability": "dispatch",
+            "idempotency_key": "dispatch-proposal-1",
+            "instance_id": "claude-dev",
+            "mode": "confirm",
+            "preview_digest": "sha256:e85b464251fe23eb47bab1239221f196b03ff02bdb86cceac29a329c5692e23e",
+            "requested_at": "2026-08-17T12:00:00Z",
+            "requested_by": "release-owner",
+            "run_id": "run-001",
+            "schema_version": 2,
+            "scope": [
+              "src",
+              "tests"
+            ],
+            "timeout_seconds": 900
+          }
+        },
+        {
+          "record_type": "attempt_event",
+          "record": {
+            "action_id": "action-1",
+            "adapter_id": "claude-code",
+            "attempt_id": "attempt-001",
+            "event_id": "effect_lease-event-1",
+            "exit_code": null,
+            "instance_id": "claude-dev",
+            "outcome": null,
+            "phase": "effect_lease",
+            "recorded_at": "2026-08-17T12:00:00Z",
+            "recovery_ref": "recovery-1",
+            "request_digest": "sha256:6baff3e6aa465eed1f810c6f7dde63f92e64574867245476ec837736d8e7436f",
+            "run_id": "run-001",
+            "schema_version": 2
+          }
+        },
+        {
+          "record_type": "attempt_event",
+          "record": {
+            "action_id": "action-1",
+            "adapter_id": "claude-code",
+            "attempt_id": "attempt-001",
+            "event_id": "execution_observed-event-1",
+            "exit_code": 0,
+            "instance_id": "claude-dev",
+            "outcome": "succeeded",
+            "phase": "execution_observed",
+            "recorded_at": "2026-08-17T12:00:00Z",
+            "recovery_ref": "recovery-1",
+            "request_digest": "sha256:6baff3e6aa465eed1f810c6f7dde63f92e64574867245476ec837736d8e7436f",
+            "run_id": "run-001",
+            "schema_version": 2
+          }
+        },
+        {
+          "record_type": "evidence",
+          "record": {
+            "created_by": "claude-code",
+            "digest": null,
+            "evidence_id": "evidence-1",
+            "kind": "verification",
+            "label": "the fixture's own post-effect check",
+            "observed_at": "2026-08-17T12:00:00Z",
+            "run_id": "run-001",
+            "schema_version": 2,
+            "uri": "verification/action-1",
+            "verification": "verified",
+            "verified_at": "2026-08-17T12:00:00Z",
+            "verified_by": "claude-code"
+          }
+        },
+        {
+          "record_type": "action_result",
+          "record": {
+            "action_id": "action-1",
+            "attempt_id": "attempt-001",
+            "detail": "post-effect evidence was verified by the bound adapter",
+            "evidence_refs": [
+              "evidence-1"
+            ],
+            "exit_code": 0,
+            "instance_id": "claude-dev",
+            "observed_at": "2026-08-17T12:00:00Z",
+            "outcome": "succeeded",
+            "receipt_id": "result-1",
+            "run_id": "run-001",
+            "schema_version": 2
+          }
+        }
+      ],
+      "note": "The action_result receipt is the one terminal record. Verified evidence appears as an evidence record appended after the observation and referenced by the receipt."
+    }
+  ]
+}

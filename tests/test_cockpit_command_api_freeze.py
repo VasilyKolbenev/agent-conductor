@@ -463,6 +463,7 @@ def test_controls_are_only_schema_backed_values_and_have_no_disabled_state():
         assert set(row["controls"]) <= set(EXPECTED_ARGUMENT_SCHEMAS)
 
 
+
 def test_frozen_error_code_vocabulary_matches_the_spec():
     rows = CANON["error_codes"]
     actual = {row["code"]: (row["status"], row["source"]) for row in rows}

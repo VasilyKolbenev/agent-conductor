@@ -2,7 +2,18 @@
 
 The facade accepts ordered raw header pairs and raw JSON bytes.  It emits only
 validated contract payloads or closed :class:`ApiRefusal` envelopes; adapters
-are never called directly and this boundary never executes an action.
+are never called directly and no request thread here performs an effect.
+
+A Confirm records the durable action request and answers with it. When a
+server-owned :class:`ExecutionCoordinator` is attached, that recorded action is
+handed to its bounded queue and a worker thread performs the effect afterwards,
+so the response never waits on an adapter. With no coordinator attached this
+boundary executes nothing at all.
+
+The controls route answers with two arrays: the run's own instance bindings, and
+the reviewed provider roster this build was given. The roster is descriptors
+only -- the boundary resolves nothing, reads no path, and holds no adapter of its
+own -- and it is projected through the one reviewed provider projection.
 """
 from __future__ import annotations
 
@@ -13,6 +24,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from .adapters import AdapterContractError, AdapterRegistry, UnsupportedCapability
+from .adapters.provider import ProviderContract, provider_projection
 from .api_contracts import (
     ARGUMENT_SCHEMAS,
     ApiRefusal,
@@ -23,6 +35,7 @@ from .api_contracts import (
 )
 from .containment import run_route_violations
 from .contracts import ContractError, frozen_config_bindings
+from .coordinator import ExecutionCoordinator
 from .http_transport import (
     CommandSession,
     validate_command_host,
@@ -73,13 +86,17 @@ class CommandApi:
             self, store: RunStore, registry: AdapterRegistry, *,
             session: CommandSession, budget: Budget,
             clock: Callable[[], str], ids: Callable[[str], str],
-            publish_run: Callable[[str], None]) -> None:
+            publish_run: Callable[[str], None],
+            providers: Iterable[ProviderContract] = ()) -> None:
         if not isinstance(store, RunStore) or not isinstance(registry, AdapterRegistry):
             raise TypeError("CommandApi requires a RunStore and AdapterRegistry")
         if not isinstance(session, CommandSession) or type(budget) is not Budget:
             raise TypeError("CommandApi requires a CommandSession and Budget")
         if not all(callable(value) for value in (clock, ids, publish_run)):
             raise TypeError("CommandApi providers must be callable")
+        # Reviewed descriptors only, rebuilt by the projection before one field of
+        # them is read; the boundary never resolves or probes a provider itself.
+        self._providers = tuple(providers)
         self._store = store
         self._registry = registry
         self._session = session
@@ -90,12 +107,36 @@ class CommandApi:
         self._ids = ids
         self._publish_run = publish_run
         self._service = CommandService(store, registry, clock=clock, ids=ids)
-        self._runtime = ControlRuntime(store, registry, clock=clock, ids=ids)
+        self._runtime = ControlRuntime(
+            store, registry, clock=clock, ids=ids, notify=publish_run)
+        self._execution: ExecutionCoordinator | None = None
 
     @property
     def runtime(self) -> ControlRuntime:
         """Expose the same runtime whose fresh authorization grant execution needs."""
         return self._runtime
+
+    @property
+    def execution(self) -> ExecutionCoordinator | None:
+        """The bound coordinator, or None while this API executes nothing at all."""
+        return self._execution
+
+    def attach_execution(self, execution: ExecutionCoordinator) -> None:
+        """Bind the one server-owned coordinator that may spend this API's grants.
+
+        The coordinator must already hold THIS api's runtime: execution authority
+        is that runtime's memory-only grant, so a coordinator built over any other
+        runtime could never execute what this boundary authorized. Binding happens
+        once; this boundary never builds, starts, or stops a worker itself.
+        """
+        if not isinstance(execution, ExecutionCoordinator):
+            raise TypeError("attach_execution requires an ExecutionCoordinator")
+        if self._execution is not None:
+            raise ValueError("a command API binds exactly one execution coordinator")
+        if execution.runtime is not self._runtime:
+            raise ValueError(
+                "the coordinator must hold the runtime that authorizes on this API")
+        self._execution = execution
 
     def handle(
             self, method: str, target: str,
@@ -172,14 +213,34 @@ class CommandApi:
         return CommandResponse(201 if created else 200, proposal.as_dict())
 
     def _authorize(self, run_id: str, body: Mapping[str, Any]) -> CommandResponse:
+        """Record the confirmation and answer; the effect happens off this thread.
+
+        The admission slot is claimed INSIDE authorize, on the one path that is
+        about to append a fresh request and immediately before it does, so the two
+        are bound: a full execution queue refuses the Confirm with nothing durable
+        written, and a request that did become durable is already held by a live
+        reservation a worker will drain. A duplicate Confirm appends nothing and
+        therefore reaches no admission at all: it returns the same request through
+        a full queue, queues nothing, and causes no second effect.
+        """
         submitted = parse_confirmation(body)
         self._hold_route(run_id)
         confirmation = submitted.build(
             confirmation_id=self._ids("confirmation"), run_id=run_id,
             confirmed_at=self._clock())
-        authorization = self._runtime.authorize(confirmation, budget=self._budget)
-        if authorization.record_created:
-            self._publish_run(run_id)
+        claimed: list[Any] = []
+        try:
+            authorization = self._runtime.authorize(
+                confirmation, budget=self._budget,
+                admit=None if self._execution is None else (
+                    lambda: claimed.append(self._execution.claim())))
+            if authorization.record_created:
+                self._publish_run(run_id)
+                for slot in claimed:
+                    slot.place(authorization)
+        finally:
+            for slot in claimed:
+                slot.release()
         return CommandResponse(
             201 if authorization.record_created else 200,
             authorization.request.as_dict())
@@ -222,6 +283,14 @@ class CommandApi:
         return bound
 
     def _controls(self, config: Mapping[str, Any]) -> dict[str, object]:
+        """Answer the run's instance controls, plus the reviewed provider roster.
+
+        The two arrays answer two different questions and are kept apart. An
+        ``instances`` row is about THIS RUN's frozen binding; a ``providers`` row
+        is about the build and the machine, and carries only what
+        ``provider_projection`` admits. A consumer joins them by identity, never
+        by a displayed label.
+        """
         rows = []
         for instance_id, adapter_id in sorted(_bindings(config).items()):
             try:
@@ -233,7 +302,7 @@ class CommandApi:
                 "adapter_id": adapter_id,
                 "controls": sorted(set(declared) & set(ARGUMENT_SCHEMAS)),
             })
-        return {"instances": rows}
+        return {"instances": rows, "providers": provider_projection(self._providers)}
 
 
 def _match_route(method: str, path: str) -> _Route:

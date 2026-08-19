@@ -288,10 +288,13 @@ def a_deep_run(root, runner, *, evidence_source=None):
 
 
 @pytest.mark.parametrize("name,runner,expected", [
+    # An observed success with no evidence source behind it verifies nothing,
+    # so the terminal state is `verification_failed`; what this row exercises is
+    # the durable surface of the success PATH, not the token it lands on.
     ("success carries a secret runner token",
      lambda: FakeExecutable(process_outcome(
          FakeClaudeCodec.encode_result(result()), token=f"{SECRET}_TOKEN")),
-     AttemptState.SUCCEEDED),
+     AttemptState.VERIFICATION_FAILED),
     ("a non-zero exit carries raw vendor stdout",
      lambda: FakeExecutable(process_outcome(
          f"{SECRET}_STDOUT vendor prose\n".encode(), exit_code=9)),
@@ -371,7 +374,10 @@ def test_the_effect_fires_only_after_its_lease_is_already_durable(tmp_path):
 
     attempt = runtime.execute(authorization)
 
-    assert attempt.state is AttemptState.SUCCEEDED and len(runner.specs) == 1
+    # One spawn, and the lease preceded it. The adapter has no evidence source
+    # here, so the terminal state is `verification_failed` rather than success.
+    assert attempt.state is AttemptState.VERIFICATION_FAILED
+    assert len(runner.specs) == 1
     assert b'"effect_lease"' in runner.at_effect, "the effect ran before its lease"
     assert b'"execution_observed"' not in runner.at_effect
     assert b'"action_result"' not in runner.at_effect

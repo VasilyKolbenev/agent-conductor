@@ -30,7 +30,7 @@ import secrets
 import sys
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -38,13 +38,17 @@ from urllib.parse import urlsplit
 
 from conductor import harnesses, merge, report, store
 from conductor.command.adapters import AdapterRegistry
+from conductor.command.adapters.provider import ProviderConfig, ProviderConfigError
 from conductor.command.api_contracts import ApiRefusal
 from conductor.command.contracts import canonical_json
+from conductor.command.coordinator import ExecutionCoordinator
 from conductor.command.http_api import (
     PRODUCT_COMMAND_BUDGET,
     CommandApi,
 )
-from conductor.command.http_transport import CommandSession, HttpRefusal
+from conductor.command.http_transport import (
+    CommandSession, HttpRefusal, command_content_length)
+from conductor.command.providers import ProviderResolution, resolve_providers
 from conductor.command.run_store import RunStore
 from conductor.command.runtime import Budget
 
@@ -69,6 +73,10 @@ POLL_INTERVAL = 0.5   # seconds between conductor/ fingerprint polls
 TICK_INTERVAL = 60.0  # seconds between unconditional re-merges (staleness tick)
 SSE_WAIT = 1.0        # seconds an SSE loop waits before re-checking shutdown
 MAX_PENDING_RUNS = 256
+#: Worker threads the server-owned coordinator mints. More than one so two runs
+#: bound to two different provider instances really do execute at the same time;
+#: bounded, because the coordinator's own queue capacity is what caps admission.
+EXECUTION_WORKERS = 4
 _COMMAND_RUN_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
 
 
@@ -344,7 +352,39 @@ class Handler(BaseHTTPRequestHandler):
         if urlsplit(self.path).path.startswith("/command"):
             self._serve_command("POST", read_body=True)
         else:
+            self._drain_refused_body()
             self._send_404()
+
+    def _drain_refused_body(self) -> None:
+        """Consume a refused POST body before answering it with a 404.
+
+        A route this server does not own still owes an ANSWER, and answering
+        over a body still sitting unread leaves what the client reads to the
+        platform rather than to this code. Draining first removes that from
+        chance. It is deliberately not claimed to fix an observed reset: on the
+        machine this landed on, the 404 arrived either way at every size the
+        ceiling admits.
+
+        The framing is the SAME bounded door the command route trusts -- one
+        Content-Length, no Transfer-Encoding, under the fixed ceiling -- so
+        there is no second dialect here, and nothing parses, retains or serves a
+        byte of what it drains. A body that door cannot measure is not consumed
+        on the client's word at all, and neither is one the client never
+        finishes: both close the connection, which is the only honest end for a
+        request whose length this server does not know.
+        """
+        try:
+            length = command_content_length(self.headers.raw_items())
+        except HttpRefusal:
+            self.close_connection = True
+            return
+        try:
+            drained = self.rfile.read(length)
+        except OSError:
+            self.close_connection = True
+            return
+        if len(drained) != length:
+            self.close_connection = True
 
     def do_HEAD(self) -> None:             # required BaseHTTPRequestHandler name
         self._serve_wrong_method("HEAD", head=True)
@@ -505,8 +545,29 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.flush()
 
 
+def _resolved_providers(
+        registry: AdapterRegistry | None,
+        providers: Sequence[ProviderConfig], root: Path,
+        clock: Callable[[], str], ids: Callable[[str], str]) -> ProviderResolution:
+    """Take an explicit registry OR the operator provider config, never both.
+
+    An explicitly injected registry is a test/embedding seam and is used verbatim,
+    with no descriptors; supplying provider config beside it is refused rather
+    than silently ignored. The default resolves the provider config through the
+    factory, which is empty by default, so the production server never pretends a
+    real provider is available until real providers are configured and resolve to
+    available.
+    """
+    if registry is not None:
+        if providers:
+            raise ProviderConfigError(
+                "pass either an explicit adapter registry or provider config, not both")
+        return ProviderResolution(registry=registry, contracts=())
+    return resolve_providers(providers, root=root, clock=clock, ids=ids)
+
+
 class ConductServer(ThreadingHTTPServer):
-    """ThreadingHTTPServer wiring the broker, watcher and SSE registry."""
+    """ThreadingHTTPServer wiring broker, watcher, SSE registry and execution worker."""
 
     daemon_threads = True  # SSE handler threads must never block process exit
     # On Windows, SO_REUSEADDR lets a second bind HIJACK a live port instead
@@ -517,6 +578,7 @@ class ConductServer(ThreadingHTTPServer):
     def __init__(
             self, address: tuple[str, int], root: Path, cdir: Path, *,
             registry: AdapterRegistry | None = None,
+            providers: Sequence[ProviderConfig] = (),
             budget: Budget = PRODUCT_COMMAND_BUDGET,
             clock: Callable[[], str] = _command_clock,
             ids: Callable[[str], str] = _command_id,
@@ -527,28 +589,46 @@ class ConductServer(ThreadingHTTPServer):
         self.broker = Broker(root)
         self.clients = _Clients()
         self.watcher = Watcher(self.broker, cdir, self.clients)
+        self.command_execution: ExecutionCoordinator | None = None
         super().__init__(address, Handler)  # binds; EADDRINUSE raises here
         assigned_port = self.server_address[1]
         self.command_session = CommandSession.mint(assigned_port, token_factory)
         self.command_store = RunStore(root)
-        self.command_registry = registry or AdapterRegistry()
+        resolution = _resolved_providers(registry, providers, root, clock, ids)
+        self.command_registry = resolution.registry
+        self.command_providers = resolution.contracts
         self.command_api = CommandApi(
             self.command_store, self.command_registry,
             session=self.command_session, budget=budget, clock=clock, ids=ids,
-            publish_run=self.clients.publish_run)
+            publish_run=self.clients.publish_run, providers=self.command_providers)
+        # The effect belongs to server-owned workers, never to a request thread:
+        # the coordinator holds the API's own runtime, so it spends exactly the
+        # grants that boundary minted and can spend no others. Each start() mints
+        # one worker with its own queue and one token that retires only it.
+        self.command_execution = ExecutionCoordinator(self.command_api.runtime)
+        self.command_api.attach_execution(self.command_execution)
+        for _worker in range(EXECUTION_WORKERS):
+            self.command_execution.start()
         self.broker.refresh()               # initial state before serving
         self.watcher.start()
 
     def shutdown(self) -> None:
-        """Stop serve_forever and wake all SSE loops so they exit promptly."""
+        """Stop serve_forever, retire the owned worker, wake all SSE loops."""
         self.shutting_down = True
         self.clients.wake_all()
+        self._retire_execution()
         super().shutdown()
 
+    def _retire_execution(self) -> None:
+        """Retire only the worker this server's coordinator minted a token for."""
+        if self.command_execution is not None:
+            self.command_execution.shutdown()
+
     def server_close(self) -> None:
-        """Stop and join the watcher, wake SSE loops, close the socket."""
+        """Stop and join the watcher and worker, wake SSE loops, close the socket."""
         self.shutting_down = True
         self.clients.wake_all()
+        self._retire_execution()
         self.watcher.stop()
         if self.watcher.is_alive():        # never started on a failed bind
             self.watcher.join(timeout=POLL_INTERVAL * 2)
@@ -568,6 +648,7 @@ class ConductServer(ThreadingHTTPServer):
 def build(
         root: Path | str, port: int, *,
         registry: AdapterRegistry | None = None,
+        providers: Sequence[ProviderConfig] = (),
         budget: Budget = PRODUCT_COMMAND_BUDGET,
         clock: Callable[[], str] = _command_clock,
         ids: Callable[[str], str] = _command_id,
@@ -595,4 +676,5 @@ def build(
         raise store.StoreError(f"refusing to start: {loaded.map_error}")
     return ConductServer(
         ("127.0.0.1", port), Path(root), cdir, registry=registry,
-        budget=budget, clock=clock, ids=ids, token_factory=token_factory)
+        providers=providers, budget=budget, clock=clock, ids=ids,
+        token_factory=token_factory)

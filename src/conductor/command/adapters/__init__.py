@@ -15,6 +15,14 @@ from .base import (
     UnsupportedCapability,
 )
 from .deep_adapters import ClaudeCodeAdapter, CodexAdapter
+from .provider import (
+    ProviderCatalogEntry,
+    ProviderConfig,
+    ProviderConfigError,
+    ProviderContract,
+    ProviderRegistry,
+    provider_projection,
+)
 
 __all__ = [
     "Adapter",
@@ -27,4 +35,10 @@ __all__ = [
     "UnsupportedCapability",
     "ClaudeCodeAdapter",
     "CodexAdapter",
+    "ProviderCatalogEntry",
+    "ProviderConfig",
+    "ProviderConfigError",
+    "ProviderContract",
+    "ProviderRegistry",
+    "provider_projection",
 ]
