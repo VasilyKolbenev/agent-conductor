@@ -37,8 +37,11 @@ What the definition does NOT hold, and why:
   computed one cannot.
 - **arguments' inner shape.** ``arguments`` is the capability's own closed
   payload and is validated against that capability's registered schema by the
-  provider door. This layer proves it is canonical JSON data and nothing more,
-  because two doors judging one value is how they come to disagree.
+  provider door. This layer proves exactly two things about it and stops: that
+  it is a JSON OBJECT, by identity of type and before anything reads it, and
+  that its contents are canonical JSON data. What the keys mean is the
+  capability's business, because two doors judging one value is how they come
+  to disagree.
 """
 from __future__ import annotations
 
@@ -157,6 +160,32 @@ def _json_list(name: str, value: object) -> list[Any]:
     """
     if type(value) is not list:
         raise ContractError(f"{name} must be a JSON array") from None
+    return value
+
+
+#: Tells "the field was not there" apart from "the field was there and was
+#: null". Absent means the capability was given nothing; present-and-null is a
+#: caller saying something, and what it says is not a JSON object.
+_ABSENT = object()
+
+
+def _json_object(name: str, value: object) -> dict[str, Any]:
+    """A JSON object is exactly ``dict``, settled BEFORE anything reads it.
+
+    Everything else was being laundered rather than refused. A falsy value --
+    ``None``, ``[]``, ``""``, ``0``, ``False`` -- became an empty payload, so a
+    caller who sent the wrong shape was told nothing and the node claimed
+    arguments it never received. A list of pairs became a DIFFERENT object,
+    inventing a mapping nobody wrote. And a string or a number reached
+    ``dict()`` and left an untyped ``TypeError``/``ValueError`` carrying
+    whatever it carried.
+
+    A ``dict`` subclass is refused too: it answers ``items`` however it likes,
+    and this value is copied and digested.
+    """
+    if type(value) is not dict:
+        raise ContractError(
+            f"{name} must be a JSON object") from None
     return value
 
 
@@ -287,14 +316,15 @@ class GraphNode:
             raise ContractError(
                 f"node {self.node_id!r} must name an instance and a capability "
                 "together or neither")
+        arguments = _json_object(f"node {self.node_id} arguments", self.arguments)
         if self.instance_id is not None:
             object.__setattr__(self, "instance_id", _id("instance_id", self.instance_id))
             object.__setattr__(self, "capability", _id("capability", self.capability))
-        elif self.arguments:
+        elif arguments:
             raise ContractError(
                 f"node {self.node_id!r} carries arguments with no capability to read them")
         object.__setattr__(self, "arguments", _freeze_json(
-            _json_copy(f"node {self.node_id} arguments", dict(self.arguments))))
+            _json_copy(f"node {self.node_id} arguments", dict(arguments))))
 
     def _settled_resources(self) -> tuple[GraphResource, ...]:
         rows = _sequence(f"node {self.node_id} resources", self.resources)
@@ -354,7 +384,7 @@ class GraphNode:
         data = _raw(value)
         # The payload comes out FIRST, by its field name, so the walk that
         # follows has no exception to make and none to be fooled by.
-        arguments = data.pop(EXEMPT_FIELD, None)
+        arguments = data.pop(EXEMPT_FIELD, _ABSENT)
         _reserved("node", data)
         unknown = sorted(set(data) - (cls._FIELDS - {EXEMPT_FIELD}))
         if unknown:
@@ -366,7 +396,7 @@ class GraphNode:
             title=_take(data, "title"), stage=data.pop("stage", None),
             instance_id=data.pop("instance_id", None),
             capability=data.pop("capability", None),
-            arguments=arguments or {},
+            arguments={} if arguments is _ABSENT else arguments,
             resources=tuple(GraphResource.from_dict(row) for row in resources),
             gate_id=data.pop("gate_id", None),
             loop=None if loop is None else GraphLoop.from_dict(loop))

@@ -608,3 +608,66 @@ def test_the_corpus_names_the_nodes_the_graph_actually_carries():
 def test_a_loop_may_still_reopen_any_other_node_including_another_loop():
     graph = a_looping_graph("loop-other")
     assert sum(node.loop is not None for node in graph.nodes) == 2
+
+
+# -- arguments has one exact shape, and absence is not a value -----------------
+
+
+#: Every JSON shape that is NOT an object, plus the Python spellings that reach
+#: the same door. Codex drove these and watched them laundered into `{}`, turned
+#: into a different object, or leak an untyped exception.
+NOT_A_JSON_OBJECT = [
+    ("null", None), ("empty-array", []), ("empty-string", ""), ("zero", 0),
+    ("false", False), ("true", True), ("number", 17), ("float", 1.5),
+    ("string", "ab"), ("array-of-pairs", [["x", 1]]),
+    ("array-of-tuples", [("x", 1)]), ("nested-array", [[1, 2], [3, 4]]),
+    ("tuple", ("x", 1)), ("set", {"x"}),
+]
+
+
+@pytest.mark.parametrize("name,value", NOT_A_JSON_OBJECT,
+                         ids=[row[0] for row in NOT_A_JSON_OBJECT])
+def test_arguments_that_is_not_a_json_object_is_refused_at_both_doors(name, value):
+    """Neither laundered into `{}` nor turned into some other object.
+
+    `[["x", 1]] -> ACCEPT {"x": 1}` was the sharpest of these: a caller sent an
+    array and the node claimed a mapping nobody wrote.
+    """
+    with pytest.raises(ContractError, match="must be a JSON object") as through_json:
+        GraphNode.from_dict({"node_id": "do", "kind": "task", "title": "Do",
+                             "instance_id": INSTANCE, "capability": DISPATCH,
+                             "arguments": value})
+    assert through_json.value.__cause__ is None
+    with pytest.raises(ContractError, match="must be a JSON object"):
+        GraphNode(node_id="do", kind="task", title="Do", instance_id=INSTANCE,
+                  capability=DISPATCH, arguments=value)
+
+
+def test_an_absent_arguments_field_is_no_payload_and_a_null_one_is_a_wrong_shape():
+    """Absence and a present null are different sentences, answered differently."""
+    absent = GraphNode.from_dict({"node_id": "n", "kind": "task", "title": "T",
+                                  "instance_id": INSTANCE, "capability": "evidence"})
+    assert dict(absent.arguments) == {}
+    with pytest.raises(ContractError, match="must be a JSON object"):
+        GraphNode.from_dict({"node_id": "n", "kind": "task", "title": "T",
+                             "instance_id": INSTANCE, "capability": "evidence",
+                             "arguments": None})
+
+
+def test_a_hostile_dict_subclass_does_not_answer_for_the_payload():
+    """It is copied and digested, so it may not decide what its own items are."""
+    class _Hostile(dict):
+        def items(self):
+            raise RuntimeError("APIKEY_SECRET_DICT")
+
+    with pytest.raises(ContractError, match="must be a JSON object") as caught:
+        a_task("do", "Do", "do", capability=DISPATCH, arguments=_Hostile({"a": 1}))
+    assert "APIKEY_SECRET_DICT" not in str(caught.value)
+
+
+def test_a_real_json_object_is_still_the_capabilitys_own_business():
+    node = a_task("do", "Do", "do", capability=DISPATCH, arguments={
+        "work_item_id": "work-001", "nested": {"status": "vendor's own word"},
+        "list": [1, 2, 3], "flag": True, "nothing": None})
+    assert dict(node.arguments)["nested"]["status"] == "vendor's own word"
+    assert dict(node.arguments)["nothing"] is None

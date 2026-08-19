@@ -14,7 +14,7 @@ import json
 from playwright.sync_api import Page
 
 from browser_tests.test_graph_rendered import (  # noqa: F401 — fixtures register
-    _FIXTURES, _load, _registry_payload, graph_page, graph_url)
+    _FIXTURES, _REPO, _load, _registry_payload, graph_page, graph_url)
 
 
 def test_a_refused_payload_reports_refusal_and_loads_nothing(
@@ -367,3 +367,73 @@ def test_fractional_instants_order_by_time_not_by_string(
     ]
     result = graph_page.evaluate(_STORE_UNIT, [payload, {"type": "deselect"}])
     assert result["timeline"] == ["t-offset", "t-whole", "t-frac"]
+
+
+# -- where a loop may send work back to: the Cockpit's half of one corpus ------
+
+_LOOP_CORPUS = json.loads(
+    (_REPO / "tests" / "fixtures" / "graph_loop_parity_corpus.json")
+    .read_text(encoding="utf-8"))
+
+
+def _loop_node(node_id: str, kind: str, **changes) -> dict:
+    """One panel-shaped node, defaulted so only the loop target varies."""
+    row = {"node_id": node_id, "kind": kind, "title": node_id, "harness": None,
+           "health": "unknown", "phase": "idle", "capabilities": [],
+           "evidence": [], "resources": [], "gate": None, "loop": None}
+    row.update(changes)
+    return row
+
+
+def _loop_payload(back_to: str) -> dict:
+    """The corpus graph, panel-side: the same six nodes the backend reads it against."""
+    return {
+        "fixture_schema": 1,
+        "run": {"run_id": "run-loop", "mode": "confirm"},
+        "nodes": [
+            _loop_node("alpha", "task"),
+            _loop_node("beta", "task"),
+            _loop_node("gate", "gate",
+                       gate={"gate_id": "gate-1", "state": "pending"}),
+            _loop_node("apply", "task", capabilities=["dispatch"]),
+            _loop_node("loop-other", "loop",
+                       loop={"bound": 2, "pass": 1, "back_to": "alpha"}),
+            _loop_node("loop-node", "loop",
+                       loop={"bound": 3, "pass": 1, "back_to": back_to}),
+        ],
+        "edges": [{"from": "alpha", "to": "beta"}, {"from": "beta", "to": "gate"},
+                  {"from": "gate", "to": "apply"}],
+        "timeline": [],
+        "registry": [],
+    }
+
+
+def test_the_cockpit_answers_the_shared_loop_target_corpus(
+        graph_page: Page) -> None:
+    """One corpus, two validators — this is the Cockpit's half of it.
+
+    The backend's half lives in tests/test_command_graph_definition.py. Until
+    both sides read these rows, "shared" was a claim about a file rather than a
+    relation: the panel refusing a self-target independently proves nothing
+    about the targets it ACCEPTS, and a panel that quietly narrowed -- refusing
+    a gate, or another loop -- would strand a graph the backend had persisted.
+
+    Every row goes through the real seam, `conductGraph.load`, because the
+    self-target rule lives at the payload level and not inside projectLoop.
+    """
+    verdicts = graph_page.evaluate(
+        "payloads => payloads.map(payload => window.conductGraph.load(payload))",
+        [_loop_payload(row["back_to"]) for row in _LOOP_CORPUS])
+    assert verdicts == [row["verdict"] == "accept" for row in _LOOP_CORPUS]
+
+
+def test_the_corpus_the_cockpit_answers_holds_rows_of_both_verdicts(
+        graph_page: Page) -> None:
+    """A corpus of one verdict would pass against a validator that never says no."""
+    verdicts = {row["verdict"] for row in _LOOP_CORPUS}
+    assert verdicts == {"accept", "refuse"}
+    accepted = graph_page.evaluate(
+        "payload => window.conductGraph.load(payload)", _loop_payload("alpha"))
+    refused = graph_page.evaluate(
+        "payload => window.conductGraph.load(payload)", _loop_payload("loop-node"))
+    assert (accepted, refused) == (True, False)
