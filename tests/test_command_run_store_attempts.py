@@ -7,6 +7,7 @@ import pytest
 
 from conductor.command import run_store as run_store_module
 from conductor.command.attempts import AttemptEvent, action_request_digest
+from conductor.command.graph_definition import GraphDefinition
 from conductor.command.contracts import (
     ActionProposal,
     ActionRequest,
@@ -106,7 +107,13 @@ def raw_append(store, value, kind="attempt_event"):
         stream.write(payload.encode("utf-8"))
 
 
-def test_record_registry_has_exactly_seven_contract_identity_pairs():
+def test_the_record_registry_is_exactly_this_closed_set_of_contract_identity_pairs():
+    """The whole durable vocabulary, written out so a new kind cannot arrive quietly.
+
+    The name used to count the rows, which made adding an honest kind look like
+    breaking a rule; what the store actually promises is that this mapping is
+    CLOSED, not that it has a particular size.
+    """
     assert run_store_module._RECORDS == {
         "action_request": (ActionRequest, "action_id"),
         "action_result": (ActionResultReceipt, "receipt_id"),
@@ -115,6 +122,7 @@ def test_record_registry_has_exactly_seven_contract_identity_pairs():
         "action_proposal": (ActionProposal, "proposal_id"),
         "adapter_observation": (ObservationRecord, "observation_id"),
         "attempt_event": (AttemptEvent, "event_id"),
+        "graph_definition": (GraphDefinition, "graph_id"),
     }
 
 

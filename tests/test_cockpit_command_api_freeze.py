@@ -34,6 +34,7 @@ from conductor.command.adapters.deep_contracts import DeepContractError
 from conductor.command.api_contracts import ApiRefusal
 from conductor.command.attempts import AttemptEvent, action_request_digest
 from conductor.command.containment import RouteViolation, run_route_violations
+from conductor.command.graph_definition import GraphDefinition
 from conductor.command.contracts import (
     ActionProposal,
     ActionRequest,
@@ -86,6 +87,7 @@ EXPECTED_RECORDS = {
     "action_proposal": (ActionProposal, "proposal_id"),
     "adapter_observation": (ObservationRecord, "observation_id"),
     "attempt_event": (AttemptEvent, "event_id"),
+    "graph_definition": (GraphDefinition, "graph_id"),
 }
 
 #: The frozen refusal vocabulary, written out here so the spec cannot drift it
@@ -337,6 +339,7 @@ def test_attempt_event_mutations_are_born_red_at_the_frozen_read_boundary():
     assert set(EXPECTED_RECORDS) == {
         "action_request", "action_result", "evidence", "decision",
         "action_proposal", "adapter_observation", "attempt_event",
+        "graph_definition",
     }
 
 

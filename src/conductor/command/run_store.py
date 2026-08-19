@@ -33,6 +33,7 @@ from .attempt_replay import (
     validate_event_result,
 )
 from .attempts import AttemptEvent
+from .graph_definition import GraphDefinition
 from .contracts import (
     ActionProposal,
     ActionRequest,
@@ -98,7 +99,7 @@ class CorruptRun(StoreError):
 
 RecordValue = (
     ActionRequest | ActionResultReceipt | EvidenceRef | DecisionReceipt
-    | ActionProposal | ObservationRecord | AttemptEvent
+    | ActionProposal | ObservationRecord | AttemptEvent | GraphDefinition
 )
 
 
@@ -128,6 +129,7 @@ _RECORDS: dict[str, tuple[type[RecordValue], str]] = {
     "action_proposal": (ActionProposal, "proposal_id"),
     "adapter_observation": (ObservationRecord, "observation_id"),
     "attempt_event": (AttemptEvent, "event_id"),
+    "graph_definition": (GraphDefinition, "graph_id"),
 }
 
 # A named-key screen, not a proof that the snapshot is secret-free: a key is
@@ -281,6 +283,23 @@ def _json_object(path: Path, description: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise CorruptRun(f"{description} must be a JSON object")
     return value
+
+
+def _one_graph_per_run(recovered: "RecoveredRun", value: GraphDefinition) -> None:
+    """A run follows ONE graph, which identity alone would never have said.
+
+    Two graphs with different ids are two different identities, so the store
+    would take both and leave every reader to guess which plan the run is
+    actually following. Editing, versioning and templates are a later slice;
+    until they land, a second graph is a question this product cannot answer,
+    and the refusal NAMES the plan already standing so an operator knows which.
+    """
+    standing = next((row.value for row in recovered.records
+                     if row.kind == "graph_definition"), None)
+    if standing is not None and standing.graph_id != value.graph_id:
+        raise RecordConflict(
+            f"run {recovered.envelope.run_id!r} already follows graph "
+            f"{standing.graph_id!r}; one run carries one graph")
 
 
 def _record_parts(value: RecordValue) -> tuple[str, str, str]:
@@ -529,6 +548,8 @@ class RunStore:
     @staticmethod
     def _validate_new_relation(recovered: RecoveredRun, value: RecordValue) -> None:
         prior_values = tuple(row.value for row in recovered.records)
+        if isinstance(value, GraphDefinition):
+            _one_graph_per_run(recovered, value)
         if isinstance(value, ActionProposal):
             if value.config_digest != recovered.envelope.config_digest:
                 raise StoreError("proposal config_digest does not match the frozen run")
