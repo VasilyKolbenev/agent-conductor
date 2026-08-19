@@ -27,6 +27,7 @@ from .adapters import AdapterContractError, AdapterRegistry, UnsupportedCapabili
 from .adapters.provider import ProviderContract, provider_projection
 from .api_contracts import (
     ARGUMENT_SCHEMAS,
+    COMMAND_ARGUMENT_SCHEMA,
     ApiRefusal,
     GraphInput,
     parse_confirmation,
@@ -34,7 +35,6 @@ from .api_contracts import (
     parse_graph,
     parse_proposal,
     refusal_from_exception,
-    validate_graph_arguments,
 )
 from .containment import run_route_violations
 from .contracts import ContractError, frozen_config_bindings
@@ -210,10 +210,9 @@ class CommandApi:
         self._hold_route(run_id)
         initial = self._store.read(run_id)
         if _standing_graph(initial) is None:
-            # Judged out here, where a refusal can still be raised: a graph is
+            # Judged out here rather than under the lock: a graph is
             # append-only, so a plan that finds none standing now is the plan
             # this run may still be given.
-            validate_graph_arguments(submitted)
             self._bindings_are_servable(initial.config, run_id, submitted)
         with self._store.transaction():
             self._hold_route(run_id)
@@ -257,13 +256,37 @@ class CommandApi:
         an instance is the run's frozen configuration's fact. So the plan is
         held to that configuration HERE, once, before it becomes durable --
         rather than becoming a stored plan whose every proposal is refused.
+
+        The PAIR is what decides, not the capability alone. A capability name is
+        shared; the payload family behind it belongs to the adapter. Judging a
+        plan against the global schema table accepted graphs an adapter could
+        never execute: the route answered 201, the first proposal against that
+        node answered `service_refused`, and the immutable plan stood in the
+        journal with no way to edit or remove it. So the registry is asked what
+        it recorded for this adapter and this capability, that answer must be
+        the one family this API speaks, and the payload then goes through the
+        registry's own door -- the same one `CommandService.propose` calls.
         """
         for node in submitted.nodes:
             if node.capability is None:
                 continue
             bound = self._bound_adapter(config, run_id, node.instance_id)
-            if node.capability not in self._registry.controls(bound):
-                raise UnsupportedCapability("bound adapter lacks a node capability")
+            # No separate manifest check: the registry records a schema only for
+            # a capability the manifest declared, so a capability the adapter
+            # does not serve has no schema to name and is refused right here.
+            if self._registry.argument_schema(
+                    bound, node.capability) != COMMAND_ARGUMENT_SCHEMA:
+                raise UnsupportedCapability(
+                    "bound adapter does not serve this capability through the "
+                    "argument schema this API speaks")
+            try:
+                self._registry.validate_arguments(
+                    bound, node.capability, node.payload())
+            except AdapterContractError:
+                # The registry judged; naming the answer in the frozen HTTP
+                # vocabulary is this boundary's job, and a payload that does not
+                # satisfy its schema is exactly `contract_invalid`.
+                raise ApiRefusal.fixed("contract_invalid") from None
 
     def _propose(self, run_id: str, body: Mapping[str, Any]) -> CommandResponse:
         declared = {

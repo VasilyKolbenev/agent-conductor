@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from conductor.command.adapters import base as adapter_base
+from conductor.command.adapters.deep_adapters import DEEP_ARGUMENT_SCHEMA
 from conductor.command.adapters.base import (
     CAPABILITIES,
     Adapter,
@@ -118,6 +119,42 @@ class FakeAdapter:
             observed_at=NOW,
             detail="The fake adapter exposes no verifier.",
         )
+
+
+class DeepDispatchAdapter(FakeAdapter):
+    """A fake that DECLARES the argument family real deep adapters declare.
+
+    `FakeAdapter` declares no `argument_schemas` at all, which makes the
+    registry's per-pair validation a no-op for it. That is precisely how a door
+    consulting only the GLOBAL schema table looked correct under test while it
+    let a plan no adapter could execute become durable, so the doubles below
+    exist to make the pair say something.
+    """
+
+    argument_schemas = {"dispatch": DEEP_ARGUMENT_SCHEMA}
+
+    def __init__(self, adapter_id="claude-code"):
+        super().__init__(adapter_id=adapter_id, capabilities=("observe", "dispatch"))
+
+
+class DeepPlanAdapter(FakeAdapter):
+    """Deep-schema for both capabilities a PLAN can carry: dispatch and review."""
+
+    argument_schemas = {
+        "dispatch": DEEP_ARGUMENT_SCHEMA, "review": DEEP_ARGUMENT_SCHEMA}
+
+    def __init__(self, adapter_id="claude-code"):
+        super().__init__(
+            adapter_id=adapter_id, capabilities=("observe", "dispatch", "review"))
+
+
+class ProcessDispatchAdapter(FakeAdapter):
+    """Same capability NAME, another payload family behind it."""
+
+    argument_schemas = {"dispatch": "structured-process-v1"}
+
+    def __init__(self, adapter_id="claude-code"):
+        super().__init__(adapter_id=adapter_id, capabilities=("observe", "dispatch"))
 
 
 class RecordingAdapter:
@@ -334,8 +371,8 @@ def test_registry_public_surface_names_the_two_explicit_effect_wrappers():
         node.name for node in registry.body
         if isinstance(node, ast.FunctionDef) and not node.name.startswith("_"))
     assert public == [
-        "controls", "execute", "manifests", "observe", "prepare", "register",
-        "resolve", "validate_arguments", "verify"]
+        "argument_schema", "controls", "execute", "manifests", "observe",
+        "prepare", "register", "resolve", "validate_arguments", "verify"]
 
 
 def test_observe_calls_only_an_explicit_adapter_and_validates_its_claims():

@@ -6,7 +6,12 @@ from pathlib import Path
 
 import pytest
 
+from dataclasses import FrozenInstanceError
+
 from conductor.command import api_contracts
+from conductor.command.adapters import base as adapter_base
+from conductor.command.adapters.deep_adapters import DEEP_ARGUMENT_SCHEMA
+from conductor.command.run_store import RunStore
 from conductor.command.adapters import UnsupportedCapability
 from conductor.command.adapters.deep_commands import (
     DEEP_ARGUMENT_TYPES,
@@ -19,6 +24,7 @@ from conductor.command.adapters.deep_commands import (
 )
 from conductor.command.api_contracts import (
     ARGUMENT_SCHEMAS,
+    COMMAND_ARGUMENT_SCHEMA,
     ERROR_STATUS,
     ApiRefusal,
     parse_confirmation,
@@ -386,3 +392,45 @@ def test_capability_iterable_failure_is_not_retained_in_exception_graph():
             _canon("propose_request"),
             adapter_capabilities=broken_capabilities())
     _assert_refusal_graph_is_detached(caught.value, sentinel)
+
+
+# -- a refusal is a frozen value that still travels as an exception ------------
+
+
+def test_a_refusal_keeps_its_reviewed_fields_read_only():
+    refusal = ApiRefusal.fixed("route_unsafe")
+    for field in ("code", "message", "detail"):
+        with pytest.raises(FrozenInstanceError):
+            setattr(refusal, field, "moved")
+    assert (refusal.code, refusal.status) == ("route_unsafe", 409)
+
+
+def test_a_refusal_survives_the_store_transaction_it_is_raised_inside(tmp_path):
+    """Every mutating route re-checks containment INSIDE the transaction.
+
+    A frozen dataclass refuses every assignment, and `contextlib` assigns
+    `__traceback__` to an exception on its way out of a context manager -- so
+    that second refusal never arrived. What reached the boundary was an
+    untranslatable `TypeError`, and the one closed 409 this surface promises
+    was replaced by a crash.
+    """
+    store = RunStore(tmp_path)
+    with pytest.raises(ApiRefusal) as refused:
+        with store.transaction():
+            raise ApiRefusal.fixed("route_unsafe")
+    assert (refused.value.code, refused.value.status) == ("route_unsafe", 409)
+    assert refused.value.as_dict()["error"]["detail"] == {}
+
+
+def test_the_argument_family_this_api_speaks_is_one_the_registry_reviews():
+    """Two spellings of one word, pinned by relation rather than by copy.
+
+    The API names the family it can write plans in; the adapter package names
+    the family its deep adapters declare; the registry holds the closed set of
+    families it will register at all. A change to any one of the three has to
+    move the others deliberately.
+    """
+    assert COMMAND_ARGUMENT_SCHEMA == DEEP_ARGUMENT_SCHEMA
+    assert COMMAND_ARGUMENT_SCHEMA in adapter_base._ARGUMENT_SCHEMAS
+    assert "structured-process-v1" in adapter_base._ARGUMENT_SCHEMAS
+    assert COMMAND_ARGUMENT_SCHEMA != "structured-process-v1"

@@ -18,13 +18,14 @@ import re
 
 import pytest
 
+from conductor.command.adapters import AdapterRegistry
 from conductor.command.adapters.deep_commands import DEEP_ARGUMENT_TYPES
 from conductor.command.api_contracts import (
     ApiRefusal,
     parse_confirmation,
+    COMMAND_ARGUMENT_SCHEMA,
     parse_graph,
     parse_proposal,
-    validate_graph_arguments,
 )
 from conductor.command.contracts import ActionProposal, ActionRequest, RunEnvelope
 from conductor.command.graph_definition import GraphDefinition
@@ -35,6 +36,7 @@ from conductor.command.run_store import RecoveredRun, StoredRecord
 from conductor.command import run_store as run_store_module
 
 from tests.test_cockpit_command_api_freeze import _SPEC, CANON, CONFIRM_FIELDS
+from tests.test_command_adapters import DeepPlanAdapter
 
 #: The paragraph in the spec that IS the closed durable vocabulary. The kinds
 #: are read out of it and compared to the registry, so neither can move alone --
@@ -232,14 +234,22 @@ def test_the_canonical_plan_body_builds_the_canonical_graph_record():
     assert built.as_dict() == record
 
 
-def test_the_canonical_plan_body_is_one_the_argument_door_accepts():
+def test_the_canonical_plan_body_passes_the_registry_door_it_will_meet():
     """A frozen example the product would refuse is a frozen example of nothing.
 
-    The route judges every bound node with the capability's own closed schema
-    before the plan becomes durable, so the document this spec offers as THE
-    graph request has to pass that same door.
+    The route judges each bound node against the schema the registry recorded
+    for that node's own (adapter, capability) pair, so the document this spec
+    offers as THE graph request is driven through exactly that door, with an
+    adapter that declares the family this API speaks.
     """
-    validate_graph_arguments(parse_graph(CANON["graph_request"]))
+    registry = AdapterRegistry([DeepPlanAdapter()])
+    submitted = parse_graph(CANON["graph_request"])
+    bound = [node for node in submitted.nodes if node.capability is not None]
+    assert bound, "the canonical plan carries at least one node that does work"
+    for node in bound:
+        assert registry.argument_schema(
+            "claude-code", node.capability) == COMMAND_ARGUMENT_SCHEMA
+        registry.validate_arguments("claude-code", node.capability, node.payload())
 
 
 @pytest.mark.parametrize("owned", ["run_id", "created_at", "schema_version"])

@@ -10,7 +10,7 @@ from conductor import server
 from conductor.command.adapters import AdapterRegistry
 from conductor.command.run_store import RunStore, snapshot_digest
 
-from tests.test_command_adapters import FakeAdapter
+from tests.test_command_adapters import DeepDispatchAdapter, FakeAdapter
 from tests.test_command_graph_route import graph_body
 from tests.test_command_http_api import (
     NOW,
@@ -162,7 +162,10 @@ def test_real_http_writes_a_plan_once_and_signals_it_by_identifier_only(tmp_path
     happened and re-reads bytes the contracts validated; the plan itself never
     travels on the stream, where safety law 8 would have to police it.
     """
-    subject, store = _start(tmp_path, adapters=(FakeAdapter(),))
+    # The adapter DECLARES the argument family it serves: the graph route holds
+    # every bound node to the schema the registry recorded for that pair, and a
+    # schema-less double would be refused before a signal was ever published.
+    subject, store = _start(tmp_path, adapters=(DeepDispatchAdapter(),))
     # The stream is read while a loaded machine may still be delivering; the
     # derivation module waits this long for the same reason.
     connection = http.client.HTTPConnection(

@@ -734,17 +734,31 @@ among them, is `contract_invalid` (422).
 }
 ```
 
-Every bound node is held to this build, this run, and the capability's own
-closed schema before the plan becomes durable:
+Every bound node is held to this build, this run, and the schema the registry
+recorded for **that adapter and that capability** before the plan is durable:
 
-- the `capability` MUST be one section 4.1's registry of argument schemas
-  carries, and one the adapter bound to the node's instance supports;
-- the `instance_id` MUST be one the run's frozen configuration declares;
-- `arguments` MUST satisfy that capability's schema through the SAME
-  registry-owned contract the propose door uses (4.1) — one door, called from
-  two places, never two doors judging one value.
+- the `instance_id` MUST be one the run's frozen configuration declares, and
+  that configuration — never the caller — names the adapter bound to it;
+- the bound adapter MUST declare the `capability` in its reviewed manifest;
+- the argument schema the registry recorded for the pair
+  `(adapter_id, capability)` MUST be exactly `deep-arguments-v1`, the one
+  family this frozen API speaks (4.1). An adapter that declared
+  `structured-process-v1` for that capability, or declared no schema for it at
+  all, cannot carry out a plan written in these shapes, and is refused
+  `capability_unsupported` (409) before any append;
+- `arguments` MUST then satisfy that pair's schema through
+  `AdapterRegistry.validate_arguments`, the SAME registry-owned contract
+  `CommandService.propose` calls — one door, reached from two routes, never
+  two doors judging one value.
 
-A node that names no binding does no work and is held to none of the three.
+A node that names no binding does no work and is held to none of these.
+
+The pair matters, not the capability alone. A capability name is shared; the
+payload family behind it is the adapter's. Judging a plan against the global
+schema table accepted graphs an adapter could never execute — the route
+answered `201`, the first proposal against that node answered
+`service_refused`, and the immutable plan stood in the journal with no way to
+edit or remove it.
 
 That last rule is not tidiness. A graph is **immutable**: a plan that reaches
 the journal can never be edited or removed, so a payload admitted here is
@@ -786,6 +800,16 @@ This route is a mutation like any other: it passes the Host allowlist,
 same-origin and anti-CSRF checks (sections 1 and 2) and the writable-route
 containment/ownership gate before any durable effect, and on a `201` it
 publishes the same identifier-only run frame (section 6.3).
+
+The containment gate is checked twice — once before the store is opened and
+once again inside the transaction, because a route can be made unsafe between
+the two. **The second check MUST answer `route_unsafe` (409) like the first.**
+It did not: a refusal is a frozen value, and the generator-based transaction
+assigns `__traceback__` to an exception on its way out, which a frozen value
+refuses — so the second check produced an untranslatable crash instead of the
+one closed envelope this surface promises. A refusal now travels as an
+exception while its three reviewed fields stay read-only. This applies to every
+mutating route, all of which re-check containment under the same lock.
 
 ## 5. Human-decision endpoints — FROZEN CONTRACT
 

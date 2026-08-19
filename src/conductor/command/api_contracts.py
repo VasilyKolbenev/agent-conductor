@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass, fields
+from dataclasses import FrozenInstanceError, dataclass, fields
 from types import MappingProxyType
 from typing import Any
 
@@ -77,8 +77,21 @@ _DECISION_FIELDS = frozenset({
 #: are the server's. `run_id` and `created_at` are refused here rather than
 #: ignored, so a caller learns the server owns them.
 _GRAPH_FIELDS = frozenset({"graph_id", "nodes", "edges"})
+#: The ONE argument-schema family this frozen API speaks. A capability an
+#: adapter serves under another family -- or under none -- is a capability this
+#: surface cannot write a plan for, whatever the capability is called. Spelled
+#: here and in ``adapters.deep_adapters``; a test pins the two equal and pins
+#: this one inside the registry's reviewed set, so neither can move alone.
+COMMAND_ARGUMENT_SCHEMA = "deep-arguments-v1"
 _ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
 _REFUSAL_BUILD = object()
+#: The attributes the interpreter and its plumbing assign to an exception in
+#: flight. A frozen dataclass refuses every assignment, these included, which
+#: left a refusal unable to travel the one road Python carries it on.
+_EXCEPTION_SLOTS = frozenset({
+    "__traceback__", "__cause__", "__context__", "__suppress_context__",
+    "__notes__",
+})
 _PHASE_MESSAGES = MappingProxyType({
     "same_origin_denied": frozenset({
         "request Host is not allowed", "request origin is not allowed"}),
@@ -159,6 +172,32 @@ class ApiRefusal(Exception):
         detail = {"run_id": run_id, "instance_id": instance_id}
         message = f"frozen config declares no instance '{instance_id}'"
         return cls(_REFUSAL_BUILD, "service_refused", message, detail)
+
+
+def _refusal_setattr(self: ApiRefusal, name: str, value: object) -> None:
+    """Stay frozen as a value, and travel as an exception.
+
+    Every mutating route re-checks its containment INSIDE the store
+    transaction, because a route can be made unsafe between the first check and
+    the lock. That second refusal never arrived: `contextlib` assigns
+    `__traceback__` to an exception on its way out of a context manager, a
+    frozen dataclass refuses the assignment, and what reached the boundary was
+    an untranslatable `TypeError` instead of one closed `409 route_unsafe`.
+
+    Only the attributes the interpreter and its plumbing own are let through.
+    The three reviewed fields stay exactly as read-only as before, and say so
+    with the dataclass's own error.
+    """
+    if name in _EXCEPTION_SLOTS:
+        object.__setattr__(self, name, value)
+        return
+    raise FrozenInstanceError(f"cannot assign to field {name!r}")
+
+
+# `dataclass(frozen=True)` refuses to install its guard over a `__setattr__`
+# written in the class body, so the widened guard is installed right after the
+# decorator has run rather than instead of it.
+ApiRefusal.__setattr__ = _refusal_setattr
 
 
 @dataclass(frozen=True)
@@ -367,42 +406,16 @@ def parse_decision(body: object) -> DecisionInput:
         supersedes=decision.supersedes)
 
 
-def validate_graph_arguments(submitted: GraphInput) -> None:
-    """Judge every bound node's payload with the capability's own closed schema.
-
-    This is the SAME registry-owned contract the propose door calls, reached
-    from a second place rather than restated -- one door, two callers, so the
-    two can never come to disagree.
-
-    It is called only when a plan is about to become durable, and never on the
-    road that answers an exact retry: a graph already in the journal is
-    answered from the journal, not re-judged against whatever schemas this
-    process happens to hold.
-
-    Without it this route took any JSON object a caller sent. A graph is
-    immutable, so that payload was durable forever and reached every later
-    read -- credentials, absolute paths and environment names included -- and
-    the plan it described was one the propose door would refuse every time.
-    Every field of every schema here is a closed id or a closed vocabulary
-    word, so this call is that screen.
-    """
-    for node in submitted.nodes:
-        if node.capability is None:
-            continue
-        argument_type = DEEP_ARGUMENT_TYPES.get(node.capability)
-        if argument_type is None:
-            raise ApiRefusal.fixed("capability_unsupported")
-        _contract(argument_type.from_dict, node.payload())
-
-
 def parse_graph(body: object) -> GraphInput:
     """Validate exactly the three caller-owned facts of a run's one plan.
 
     The whole document is taken through the production contract here, with the
     server's own run and time standing in, so a plan that would not be a valid
-    graph is refused before any store is opened. The payload each bound node
-    carries is judged separately, by :func:`validate_graph_arguments`, because
-    only a plan that is about to be WRITTEN needs judging -- see there.
+    graph is refused before any store is opened. What this door does NOT judge
+    is the payload a bound node carries: that answer belongs to the schema the
+    registry recorded for the node's own ``(adapter_id, capability)`` pair, and
+    only a plan about to be WRITTEN is worth asking it for -- so the route asks
+    it, through the same registry door ``CommandService.propose`` calls.
     """
     values = _closed(body, _GRAPH_FIELDS)
     probe = _contract(GraphDefinition.from_dict, {

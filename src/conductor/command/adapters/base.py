@@ -373,6 +373,19 @@ class AdapterRegistry:
             detail=verification.detail,
             evidence_refs=verification.evidence_refs)
 
+    def argument_schema(self, adapter_id: str, capability: str) -> str | None:
+        """The reviewed schema id this adapter registered for one capability.
+
+        Read out of the value settled at registration, never off the adapter
+        object. ``None`` means the adapter declared no schema for that
+        capability -- which is not the same as declaring one this build cannot
+        serve, and a caller that must know WHICH payload family it may write
+        needs to tell the two apart before it writes anything durable.
+        """
+        safe = _contract(_id, "adapter_id", adapter_id)
+        self._registered_manifest(safe)
+        return self._argument_schemas[safe].get(capability)
+
     def validate_arguments(
             self, adapter_id: str, capability: str, arguments: Mapping[str, Any]) -> None:
         """Run one registry-owned pure schema; never call the mutable adapter."""
