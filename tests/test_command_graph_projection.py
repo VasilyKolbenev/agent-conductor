@@ -332,6 +332,10 @@ def test_every_runtime_word_is_one_the_definition_refuses_by_name(tmp_path):
     for -- so the two vocabularies meet only at the join.
     """
     payload = payload_of(a_walked_run(tmp_path, upto="result"))
+    # The run's own phase is `run.status`, which the read carries from the
+    # durable envelope. A second spelling of it here could disagree with the
+    # first, so the top level carries the join and the nodes and nothing else.
+    assert set(payload["runtime"]) == {"run_id", "graph_id", "nodes"}
     spoken = set(payload["runtime"]) | {
         key for row in payload["runtime"]["nodes"] for key in row}
     assert spoken - JOIN_NAMES <= RUNTIME_ONLY_FIELDS
