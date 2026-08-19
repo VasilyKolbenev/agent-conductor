@@ -2,8 +2,16 @@
 
 December Command's alpha runs one graph per run, and that graph is two contracts
 that never overlap. This module owns the first: the definition -- identities,
-shape, stages, bindings, resources and the one bounded feedback relation. Its
-sibling ``graph_projection`` owns the second: what a run was OBSERVED to do.
+shape, stages, bindings, resources and bounded feedback. Its sibling
+``graph_projection`` owns the second: what a run was OBSERVED to do.
+
+This is the BASE contract, and it is deliberately general: an arbitrary DAG of
+tasks, gates and loops, because the product exists to build different
+multi-harness graphs. Dalio is the default TEMPLATE, not the only topology a
+graph may have, and its extra rules -- five stages, one node each, a single
+feedback loop home to identify -- live in ``graph_dalio``. Folding them in here
+made every graph a Dalio graph, which is a product decision no contract should
+have been able to make on its own.
 
 The split is not tidiness. A definition that carried a pass counter, an attempt
 id or an outcome would be a durable record that changes while it is being
@@ -58,11 +66,10 @@ from .contracts import (
 #: part of the contract: a reader numbers the stages by index, so re-spelling
 #: this tuple re-numbers the product.
 DALIO_STAGES: tuple[str, ...] = ("goal", "identify", "diagnose", "design", "do")
+#: The stage vocabulary is closed and product-wide; WHICH stages a graph must
+#: carry, and how many nodes may claim one, is the Dalio template's business
+#: (``graph_dalio``), not this contract's.
 _STAGES = frozenset(DALIO_STAGES)
-#: The stage a bounded loop may send work back to, and the only one.
-FEEDBACK_STAGE = "identify"
-#: The stage that owns the single effect-capable node.
-EFFECT_STAGE = "do"
 #: The whole step vocabulary. A cycle has exactly one sanctioned form -- a
 #: ``loop`` node carrying a bound -- so no other kind may express repetition.
 NODE_KINDS = frozenset({"task", "gate", "loop"})
@@ -91,13 +98,58 @@ RUNTIME_ONLY_FIELDS = frozenset({
 })
 
 
+#: The ONE subtree the runtime-word walk does not enter. It is a capability's
+#: own payload, judged against that capability's registered schema at the
+#: provider door, and two doors judging one value is how they come to disagree.
+EXEMPT_SUBTREE = "arguments"
+
+
 def _reserved(name: str, document: Mapping[str, Any]) -> None:
-    """Refuse a runtime word used as a field name, at any depth."""
-    found = sorted(set(document) & RUNTIME_ONLY_FIELDS)
+    """Refuse a runtime word used as a field name at ANY depth.
+
+    Checking one level was a promise this could not keep: a tolerant ``extra``
+    holds arbitrary JSON, so a runtime word one dict down rode into the document
+    and into its digest. The walk below is what makes "immutable" true rather
+    than intended -- it descends every mapping and every list, and stops at
+    exactly one door, ``arguments``.
+    """
+    stack: list[Any] = [document]
+    found: set[str] = set()
+    while stack:
+        value = stack.pop()
+        if isinstance(value, Mapping):
+            found |= set(value) & RUNTIME_ONLY_FIELDS
+            stack.extend(item for key, item in value.items()
+                         if key != EXEMPT_SUBTREE)
+        elif isinstance(value, (list, tuple)):
+            stack.extend(value)
     if found:
         raise ContractError(
-            f"{name} carries runtime-only field(s) {found!r}; a graph definition "
-            "records intent, and what a run did belongs to its projection")
+            f"{name} carries runtime-only field(s) {sorted(found)!r}; a graph "
+            "definition records intent, and what a run did belongs to its projection")
+
+
+def _exact(name: str, value: object, expected: type) -> Any:
+    """Accept the base type itself, never a subclass that can act on its own.
+
+    A subclass satisfies ``isinstance`` and then answers ``as_dict`` with
+    whatever it likes -- which is how a runtime word reached a definition and
+    its digest. Identity of type is the only check that closes that, and it is
+    followed by a rebuild, because a value can also be edited after it was
+    validated.
+    """
+    if type(value) is not expected:
+        raise ContractError(
+            f"{name} must be exactly {expected.__name__}; a subclass may answer "
+            "for itself and is not accepted at this boundary")
+    return value
+
+
+def _json_list(name: str, value: object) -> list[Any]:
+    """A JSON array is a list. A tuple reaching here came from Python, not JSON."""
+    if not isinstance(value, list):
+        raise ContractError(f"{name} must be a JSON array")
+    return value
 
 
 def _positive(name: str, value: object, *, low: int, high: int) -> int:
@@ -197,10 +249,10 @@ class GraphNode:
         self._settle_kind_attachments()
 
     def _settle_stage(self) -> None:
+        """A stage is a task's optional membership, and gates and loops have none."""
         if self.kind == "task":
-            if self.stage is None:
-                raise ContractError(f"task node {self.node_id!r} must name a stage")
-            object.__setattr__(self, "stage", _enum("stage", self.stage, _STAGES))
+            if self.stage is not None:
+                object.__setattr__(self, "stage", _enum("stage", self.stage, _STAGES))
         elif self.stage is not None:
             raise ContractError(
                 f"{self.kind} node {self.node_id!r} must not name a stage: a stage is "
@@ -227,8 +279,10 @@ class GraphNode:
             raise ContractError(
                 f"node {self.node_id!r} declares {len(rows)} resources, more than "
                 f"the {MAX_RESOURCES} this contract carries")
-        if any(not isinstance(row, GraphResource) for row in rows):
-            raise ContractError(f"node {self.node_id!r} resources must be GraphResource")
+        rows = tuple(
+            GraphResource(kind=_exact(f"node {self.node_id} resource", row,
+                                      GraphResource).kind, name=row.name)
+            for row in rows)
         seen = {(row.kind, row.name) for row in rows}
         if len(seen) != len(rows):
             raise ContractError(f"node {self.node_id!r} repeats a resource")
@@ -242,8 +296,11 @@ class GraphNode:
         elif self.gate_id is not None:
             raise ContractError(f"{self.kind} node {self.node_id!r} must not name a gate_id")
         if self.kind == "loop":
-            if not isinstance(self.loop, GraphLoop):
+            if self.loop is None:
                 raise ContractError(f"loop node {self.node_id!r} must carry a GraphLoop")
+            loop = _exact(f"loop node {self.node_id} loop", self.loop, GraphLoop)
+            object.__setattr__(self, "loop", GraphLoop(
+                bound=loop.bound, back_to=loop.back_to))
         elif self.loop is not None:
             raise ContractError(f"{self.kind} node {self.node_id!r} must not carry a loop")
 
@@ -277,9 +334,7 @@ class GraphNode:
         if unknown:
             raise ContractError(f"node carries unsupported field(s) {unknown!r}")
         loop = data.pop("loop", None)
-        resources = data.pop("resources", ())
-        if isinstance(resources, (str, bytes)) or not isinstance(resources, (list, tuple)):
-            raise ContractError("node resources must be a list")
+        resources = _json_list("node resources", data.pop("resources", []))
         return cls(
             node_id=_take(data, "node_id"), kind=_take(data, "kind"),
             title=_take(data, "title"), stage=data.pop("stage", None),
@@ -317,6 +372,22 @@ class GraphEdge:
         if unknown:
             raise ContractError(f"edge carries unsupported field(s) {unknown!r}")
         return cls(from_node=_take(data, "from_node"), to_node=_take(data, "to_node"))
+
+
+def _rebuilt_node(row: object) -> "GraphNode":
+    """Take a node's declared facts through the base constructor once more.
+
+    Exact typing stops a subclass from answering for itself; rebuilding stops a
+    value that was edited AFTER it was validated, because every field goes back
+    through ``__post_init__``. Fields are read as attributes rather than through
+    ``as_dict``, so nothing polymorphic is consulted even in principle.
+    """
+    node = _exact("graph node", row, GraphNode)
+    return GraphNode(
+        node_id=node.node_id, kind=node.kind, title=node.title, stage=node.stage,
+        instance_id=node.instance_id, capability=node.capability,
+        arguments=_thaw_json(node.arguments), resources=node.resources,
+        gate_id=node.gate_id, loop=node.loop)
 
 
 def _acyclic(nodes: tuple[GraphNode, ...], edges: tuple[GraphEdge, ...]) -> None:
@@ -373,15 +444,14 @@ class GraphDefinition:
         object.__setattr__(self, "nodes", self._settled_nodes())
         object.__setattr__(self, "edges", self._settled_edges())
         _acyclic(self.nodes, self.edges)
-        self._settle_dalio()
-        self._settle_effect_road()
+        self._settle_loops()
+        self._settle_effect_roads()
 
     def _settled_nodes(self) -> tuple[GraphNode, ...]:
         rows = tuple(self.nodes)
         if not rows:
             raise ContractError("a graph definition must carry at least one node")
-        if any(not isinstance(row, GraphNode) for row in rows):
-            raise ContractError("graph nodes must be GraphNode")
+        rows = tuple(_rebuilt_node(row) for row in rows)
         if len({row.node_id for row in rows}) != len(rows):
             raise ContractError("graph nodes must not repeat a node_id")
         gates = [row.gate_id for row in rows if row.gate_id is not None]
@@ -390,9 +460,10 @@ class GraphDefinition:
         return rows
 
     def _settled_edges(self) -> tuple[GraphEdge, ...]:
-        rows = tuple(self.edges)
-        if any(not isinstance(row, GraphEdge) for row in rows):
-            raise ContractError("graph edges must be GraphEdge")
+        rows = tuple(
+            GraphEdge(from_node=_exact("graph edge", row, GraphEdge).from_node,
+                      to_node=row.to_node)
+            for row in self.edges)
         known = {row.node_id for row in self.nodes}
         for edge in rows:
             missing = {edge.from_node, edge.to_node} - known
@@ -403,62 +474,55 @@ class GraphDefinition:
             raise ContractError("graph edges must not repeat a from/to pair")
         return rows
 
-    def _settle_dalio(self) -> None:
-        """Five stages, one node each, and one bounded way back to identify."""
-        staged: dict[str, str] = {}
+    def _settle_loops(self) -> None:
+        """A loop may reopen any node this graph carries, and only one it does."""
         for node in self.nodes:
-            if node.stage is None:
+            if node.loop is None:
                 continue
-            if node.stage in staged:
+            if node.loop.back_to not in {row.node_id for row in self.nodes}:
                 raise ContractError(
-                    f"stage {node.stage!r} is claimed by both {staged[node.stage]!r} "
-                    f"and {node.node_id!r}; a graph carries one node per stage")
-            staged[node.stage] = node.node_id
-        missing = [stage for stage in DALIO_STAGES if stage not in staged]
-        if missing:
-            raise ContractError(f"graph is missing stage node(s) {missing!r}")
-        loops = [node for node in self.nodes if node.loop is not None]
-        if len(loops) > 1:
-            raise ContractError(
-                "a graph carries at most one loop; a second controlled feedback "
-                "relation is a second cycle by another name")
-        for node in loops:
-            assert node.loop is not None
-            if node.loop.back_to != staged[FEEDBACK_STAGE]:
-                raise ContractError(
-                    f"loop {node.node_id!r} sends work back to "
-                    f"{node.loop.back_to!r}; the one feedback relation this product "
-                    f"holds returns to the {FEEDBACK_STAGE!r} stage node "
-                    f"{staged[FEEDBACK_STAGE]!r}")
+                    f"loop {node.node_id!r} reopens {node.loop.back_to!r}, which this "
+                    "graph does not carry")
 
-    def _settle_effect_road(self) -> None:
-        """One node may act, and only a gate may let work reach it."""
-        effecting = [node.node_id for node in self.nodes if node.effecting]
-        do_node = self.stage_node(EFFECT_STAGE)
-        stray = [name for name in effecting if name != do_node.node_id]
-        if stray:
-            raise ContractError(
-                f"node(s) {stray!r} carry an effecting capability; only the "
-                f"{EFFECT_STAGE!r} stage node may change the world")
+    def _settle_effect_roads(self) -> None:
+        """Every node that can act is reached, and only ever through a gate.
+
+        This is a property of ACTING, not of a template: whichever nodes a graph
+        binds to an effecting capability, each of them stands behind a gate. A
+        graph may have none, one, or several.
+        """
         gates = {node.node_id for node in self.nodes if node.kind == "gate"}
-        approaches = [edge.from_node for edge in self.edges
-                      if edge.to_node == do_node.node_id]
-        ungated = sorted(set(approaches) - gates)
-        if ungated:
-            raise ContractError(
-                f"node(s) {ungated!r} reach {do_node.node_id!r} without a gate; the "
-                "effect-capable step is entered through a Human gate or not at all")
-        if not approaches:
-            raise ContractError(
-                f"{do_node.node_id!r} is reachable from nowhere; the effect-capable "
-                "step must stand behind its gate, not beside it")
+        for node in self.nodes:
+            if not node.effecting:
+                continue
+            approaches = [edge.from_node for edge in self.edges
+                          if edge.to_node == node.node_id]
+            if not approaches:
+                raise ContractError(
+                    f"{node.node_id!r} can act and no road reaches it; an "
+                    "effect-capable step stands behind its gate, not beside it")
+            ungated = sorted(set(approaches) - gates)
+            if ungated:
+                raise ContractError(
+                    f"node(s) {ungated!r} reach {node.node_id!r} without a gate; an "
+                    "effect-capable step is entered through a Human gate or not at all")
+
+    def stages(self) -> dict[str, tuple[str, ...]]:
+        """Which nodes claim each stage; a stage may be shared or absent."""
+        claimed: dict[str, list[str]] = {}
+        for node in self.nodes:
+            if node.stage is not None:
+                claimed.setdefault(node.stage, []).append(node.node_id)
+        return {stage: tuple(names) for stage, names in claimed.items()}
 
     def stage_node(self, stage: str) -> GraphNode:
-        """The one node that owns a stage; stages are unique by construction."""
-        for node in self.nodes:
-            if node.stage == stage:
-                return node
-        raise ContractError(f"graph carries no node for stage {stage!r}")
+        """The one node claiming a stage; refuses when none or several do."""
+        claiming = [node for node in self.nodes if node.stage == stage]
+        if len(claiming) != 1:
+            raise ContractError(
+                f"graph carries {len(claiming)} nodes for stage {stage!r}; ask "
+                "stages() when a graph may share or omit one")
+        return claiming[0]
 
     def digest(self) -> str:
         """The canonical digest of this definition, computed and never stored."""
@@ -479,11 +543,8 @@ class GraphDefinition:
         data = _raw(value)
         known = {name: data.pop(name) for name in list(data) if name in cls._FIELDS}
         _reserved("graph", data)
-        nodes = _take(known, "nodes")
-        edges = known.pop("edges", ())
-        for name, rows in (("nodes", nodes), ("edges", edges)):
-            if isinstance(rows, (str, bytes)) or not isinstance(rows, (list, tuple)):
-                raise ContractError(f"graph {name} must be a list")
+        nodes = _json_list("graph nodes", _take(known, "nodes"))
+        edges = _json_list("graph edges", known.pop("edges", []))
         return cls(
             graph_id=_take(known, "graph_id"), run_id=_take(known, "run_id"),
             created_at=_take(known, "created_at"),

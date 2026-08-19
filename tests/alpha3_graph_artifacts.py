@@ -21,6 +21,7 @@ import json
 from pathlib import Path
 
 from conductor.command.contracts import canonical_json
+from conductor.command.graph_dalio import validate_dalio_template
 from conductor.command.graph_definition import (
     GraphDefinition,
     GraphEdge,
@@ -95,9 +96,20 @@ def dalio_definition(**changes) -> GraphDefinition:
     return GraphDefinition(**body)
 
 
+def canonical_dalio() -> GraphDefinition:
+    """The canonical graph, proved to be the template it claims to be.
+
+    The base contract no longer demands five stages of every graph, so the
+    fixture's Dalio-ness is asserted HERE rather than assumed -- a canonical
+    artifact that quietly stopped being the default template would otherwise
+    ship unnoticed.
+    """
+    return validate_dalio_template(dalio_definition())
+
+
 def definition_document() -> dict:
     """What the UI lane receives: the definition, and the digest of exactly it."""
-    graph = dalio_definition()
+    graph = canonical_dalio()
     return {
         "_comment": (
             "ALPHA-3 canonical graph DEFINITION, derived by "

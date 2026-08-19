@@ -21,9 +21,7 @@ from conductor.command.adapters.process import DISPATCH_CAPABILITY
 from conductor.command.contracts import ContractError, canonical_json
 from conductor.command.graph_definition import (
     DALIO_STAGES,
-    EFFECT_STAGE,
     EFFECTING_CAPABILITIES,
-    FEEDBACK_STAGE,
     MAX_RESOURCES,
     RUNTIME_ONLY_FIELDS,
     GraphDefinition,
@@ -34,6 +32,7 @@ from conductor.command.graph_definition import (
 )
 from tests.alpha3_graph_artifacts import (
     ARTIFACTS,
+    DISPATCH,
     INSTANCE_ID,
     dalio_definition,
     dalio_edges,
@@ -69,9 +68,7 @@ def edges_clear_of(*node_ids):
 def test_the_canonical_dalio_graph_is_accepted_whole():
     graph = dalio()
     assert [node.stage for node in graph.nodes if node.stage] == list(DALIO_STAGES)
-    assert graph.stage_node(EFFECT_STAGE).node_id == "do"
-    assert graph.stage_node(FEEDBACK_STAGE).node_id == "identify"
-    assert sum(node.loop is not None for node in graph.nodes) == 1
+    assert graph.stages() == {stage: (stage,) for stage in DALIO_STAGES}
     assert [node.node_id for node in graph.nodes if node.effecting] == ["do"]
 
 
@@ -167,11 +164,6 @@ def test_arguments_must_be_canonical_json_data():
 # -- the effect road ----------------------------------------------------------
 
 
-def test_only_the_do_stage_node_may_carry_an_effecting_capability():
-    with pytest.raises(ContractError, match="only the 'do' stage node"):
-        dalio(nodes=without(dalio_nodes(), "goal") + (
-            a_task("goal", "Goal", "goal", capability=DISPATCH_CAPABILITY),))
-
 
 def test_the_contract_and_the_runtime_spell_the_effecting_capability_alike():
     """A contract module may not import an adapter, so a test holds them equal."""
@@ -184,7 +176,7 @@ def test_every_road_into_the_effect_node_passes_through_a_gate():
 
 
 def test_an_effect_node_no_road_reaches_is_refused_rather_than_stranded():
-    with pytest.raises(ContractError, match="reachable from nowhere"):
+    with pytest.raises(ContractError, match="no road reaches it"):
         dalio(edges=edges_clear_of("do"))
 
 
@@ -197,18 +189,6 @@ def test_the_edge_set_is_a_dag_and_says_so_when_it_is_not():
             GraphEdge(from_node="retry-loop", to_node="identify"),))
 
 
-def test_a_loop_returns_to_the_identify_stage_and_nowhere_else():
-    with pytest.raises(ContractError, match="feedback relation"):
-        dalio(nodes=without(dalio_nodes(), "retry-loop") + (
-            GraphNode(node_id="retry-loop", kind="loop", title="L",
-                      loop=GraphLoop(bound=3, back_to="diagnose")),))
-
-
-def test_a_graph_carries_at_most_one_loop():
-    with pytest.raises(ContractError, match="at most one loop"):
-        dalio(nodes=dalio_nodes() + (
-            GraphNode(node_id="loop-2", kind="loop", title="L2",
-                      loop=GraphLoop(bound=2, back_to="identify")),))
 
 
 @pytest.mark.parametrize("bound", [0, 100, -1, True, "3", 3.0])
@@ -235,17 +215,6 @@ def test_a_graph_may_not_repeat_an_edge():
 # -- the five stages ----------------------------------------------------------
 
 
-@pytest.mark.parametrize("stage", DALIO_STAGES)
-def test_every_dalio_stage_must_be_present(stage):
-    """The edges of the removed node go with it, so the STAGE rule is what fires."""
-    victim = dalio().stage_node(stage).node_id
-    with pytest.raises(ContractError, match="missing stage node"):
-        dalio(nodes=without(dalio_nodes(), victim), edges=edges_clear_of(victim))
-
-
-def test_two_nodes_may_not_claim_one_stage():
-    with pytest.raises(ContractError, match="one node per stage"):
-        dalio(nodes=dalio_nodes() + (a_task("goal-2", "Goal again", "goal"),))
 
 
 def test_a_gate_or_a_loop_carries_no_stage():
@@ -254,10 +223,6 @@ def test_a_gate_or_a_loop_carries_no_stage():
         with pytest.raises(ContractError, match="must not name a stage"):
             GraphNode(node_id="n", kind=kind, title="N", stage="goal", **extra)
 
-
-def test_a_task_must_name_the_stage_it_belongs_to():
-    with pytest.raises(ContractError, match="must name a stage"):
-        GraphNode(node_id="n", kind="task", title="N")
 
 
 # -- bindings and resources ---------------------------------------------------
@@ -345,3 +310,180 @@ def test_only_a_loop_node_carries_a_loop():
     with pytest.raises(ContractError, match="must not carry a loop"):
         GraphNode(node_id="t", kind="task", title="T", stage="goal",
                   loop=GraphLoop(bound=2, back_to="identify"))
+
+
+# -- the base contract is a graph contract, not the Dalio template -------------
+
+
+def a_custom_graph(**changes):
+    """An ordinary, correct graph that is not Dalio in any way.
+
+    Codex composed one and the contract refused it -- `CUSTOM_GRAPH_REFUSED
+    graph is missing stage node(s) [...]` -- because the default template had
+    been folded into the base type. The product exists to build different
+    multi-harness graphs, so this shape must be as valid as the default one.
+    """
+    nodes = (
+        GraphNode(node_id="collect", kind="task", title="Collect",
+                  instance_id=INSTANCE, capability="evidence"),
+        GraphNode(node_id="gate", kind="gate", title="Human Gate", gate_id="gate-1"),
+        GraphNode(node_id="apply", kind="task", title="Apply",
+                  instance_id=INSTANCE, capability=DISPATCH),
+    )
+    edges = (GraphEdge(from_node="collect", to_node="gate"),
+             GraphEdge(from_node="gate", to_node="apply"))
+    body = dict(graph_id="g-custom", run_id="run-001",
+                created_at="2026-08-19T09:00:00Z", nodes=nodes, edges=edges)
+    body.update(changes)
+    return GraphDefinition(**body)
+
+
+def test_a_graph_that_is_not_the_dalio_template_is_still_a_graph():
+    graph = a_custom_graph()
+    assert graph.stages() == {}, "no node claims a stage, and none has to"
+    assert [node.node_id for node in graph.nodes if node.effecting] == ["apply"]
+
+
+def test_a_task_may_belong_to_no_stage_at_all():
+    node = GraphNode(node_id="n", kind="task", title="N")
+    assert node.stage is None
+
+
+def test_several_nodes_may_share_one_stage():
+    graph = a_custom_graph(nodes=(
+        GraphNode(node_id="collect", kind="task", title="Collect", stage="identify"),
+        GraphNode(node_id="also", kind="task", title="Also", stage="identify"),
+        GraphNode(node_id="gate", kind="gate", title="G", gate_id="gate-1"),
+        GraphNode(node_id="apply", kind="task", title="Apply",
+                  instance_id=INSTANCE, capability=DISPATCH)))
+    assert graph.stages() == {"identify": ("collect", "also")}
+    with pytest.raises(ContractError, match="ask stages"):
+        graph.stage_node("identify")
+
+
+def test_a_graph_may_carry_several_bounded_loops():
+    graph = a_custom_graph(nodes=a_custom_graph().nodes + (
+        GraphNode(node_id="loop-a", kind="loop", title="A",
+                  loop=GraphLoop(bound=2, back_to="collect")),
+        GraphNode(node_id="loop-b", kind="loop", title="B",
+                  loop=GraphLoop(bound=5, back_to="apply"))))
+    assert sum(node.loop is not None for node in graph.nodes) == 2
+
+
+def test_a_loop_may_only_reopen_a_node_the_graph_carries():
+    with pytest.raises(ContractError, match="which this graph does not carry"):
+        a_custom_graph(nodes=a_custom_graph().nodes + (
+            GraphNode(node_id="loop-a", kind="loop", title="A",
+                      loop=GraphLoop(bound=2, back_to="ghost")),))
+
+
+def test_every_acting_node_is_gated_however_many_there_are():
+    """The rule is a property of acting, not of one named node."""
+    nodes = a_custom_graph().nodes + (
+        GraphNode(node_id="gate-2", kind="gate", title="G2", gate_id="gate-2"),
+        GraphNode(node_id="apply-2", kind="task", title="Apply again",
+                  instance_id=INSTANCE, capability=DISPATCH))
+    gated = a_custom_graph(nodes=nodes, edges=a_custom_graph().edges + (
+        GraphEdge(from_node="apply", to_node="gate-2"),
+        GraphEdge(from_node="gate-2", to_node="apply-2")))
+    assert [node.node_id for node in gated.nodes if node.effecting] == [
+        "apply", "apply-2"]
+    with pytest.raises(ContractError, match="without a gate"):
+        a_custom_graph(nodes=nodes, edges=a_custom_graph().edges + (
+            GraphEdge(from_node="apply", to_node="apply-2"),))
+
+
+# -- the split cannot be walked around ----------------------------------------
+
+
+@pytest.mark.parametrize("smuggled", [
+    {"note": {"pass": 2}},
+    {"note": {"deeper": {"status": "succeeded"}}},
+    {"note": [{"outcome": "succeeded"}]},
+    {"note": [[{"attempt_ids": ["a"]}]]},
+])
+def test_a_runtime_word_cannot_ride_in_nested_inside_tolerant_extra(smuggled):
+    """Codex read `NESTED_RUNTIME_ACCEPTED` and it had reached the digest.
+
+    Checking one level was a promise the walk had to keep.
+    """
+    with pytest.raises(ContractError, match="runtime-only field"):
+        dalio(extra=smuggled)
+
+
+def test_the_exempt_subtree_is_arguments_and_only_arguments():
+    node = a_task("do", "Do", "do", capability=DISPATCH,
+                  arguments={"deep": {"status": "vendor's own word"}})
+    assert node.arguments["deep"]["status"] == "vendor's own word"
+    with pytest.raises(ContractError, match="runtime-only field"):
+        GraphNode.from_dict({"node_id": "n", "kind": "task", "title": "T",
+                             "resources": [{"kind": "model", "name": "m",
+                                            "nested": {"phase": "idle"}}]})
+
+
+class _HostileNode(GraphNode):
+    def as_dict(self):
+        out = super().as_dict()
+        out["status"] = "succeeded"
+        return out
+
+
+def _hostile_of(base):
+    return _HostileNode(
+        node_id=base.node_id, kind=base.kind, title=base.title, stage=base.stage,
+        instance_id=base.instance_id, capability=base.capability,
+        arguments=dict(base.arguments), resources=base.resources,
+        gate_id=base.gate_id, loop=base.loop)
+
+
+def test_a_hostile_node_subclass_cannot_answer_for_itself():
+    """Codex read `SUBCLASS_RUNTIME_ACCEPTED succeeded`, and into the digest."""
+    hostile = tuple(_hostile_of(n) if n.node_id == "goal" else n
+                    for n in dalio_nodes())
+    with pytest.raises(ContractError, match="must be exactly GraphNode"):
+        dalio(nodes=hostile)
+
+
+def test_a_hostile_subclass_is_refused_at_every_typed_boundary():
+    class _Edge(GraphEdge):
+        pass
+
+    class _Resource(GraphResource):
+        pass
+
+    class _Loop(GraphLoop):
+        pass
+
+    with pytest.raises(ContractError, match="must be exactly GraphEdge"):
+        dalio(edges=(_Edge(from_node="goal", to_node="identify"),))
+    with pytest.raises(ContractError, match="must be exactly GraphResource"):
+        a_task("do", "Do", "do", resources=(_Resource(kind="model", name="m"),))
+    with pytest.raises(ContractError, match="must be exactly GraphLoop"):
+        GraphNode(node_id="l", kind="loop", title="L",
+                  loop=_Loop(bound=2, back_to="identify"))
+
+
+def test_a_node_edited_after_it_was_validated_is_rebuilt_and_refused():
+    """Exact typing stops a subclass; the rebuild stops a later edit."""
+    node = a_task("goal", "Goal", "goal")
+    object.__setattr__(node, "stage", "not-a-stage")
+    with pytest.raises(ContractError, match="stage"):
+        dalio(nodes=(node,) + without(dalio_nodes(), "goal"))
+
+
+@pytest.mark.parametrize("document,message", [
+    ({"graph_id": "g", "run_id": "r", "created_at": "2026-08-19T09:00:00Z",
+      "nodes": ()}, "graph nodes must be a JSON array"),
+    ({"graph_id": "g", "run_id": "r", "created_at": "2026-08-19T09:00:00Z",
+      "nodes": [], "edges": ()}, "graph edges must be a JSON array"),
+])
+def test_a_json_boundary_takes_arrays_and_not_python_tuples(document, message):
+    """Codex read `TUPLE_AT_JSON_BOUNDARY_ACCEPTED`. A tuple came from Python."""
+    with pytest.raises(ContractError, match=message):
+        GraphDefinition.from_dict(document)
+
+
+def test_node_resources_at_the_json_boundary_are_an_array_too():
+    with pytest.raises(ContractError, match="node resources must be a JSON array"):
+        GraphNode.from_dict({"node_id": "n", "kind": "task", "title": "T",
+                             "resources": ()})
