@@ -45,6 +45,7 @@ What the definition does NOT hold, and why:
 """
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
@@ -52,6 +53,7 @@ from typing import Any
 from .contracts import (
     ContractError,
     _content_digest,
+    canonical_json,
     _enum,
     _extra,
     _freeze_json,
@@ -323,8 +325,13 @@ class GraphNode:
         elif arguments:
             raise ContractError(
                 f"node {self.node_id!r} carries arguments with no capability to read them")
-        object.__setattr__(self, "arguments", _freeze_json(
-            _json_copy(f"node {self.node_id} arguments", dict(arguments))))
+        settled = _json_copy(f"node {self.node_id} arguments", dict(arguments))
+        object.__setattr__(self, "arguments", _freeze_json(settled))
+        # What this contract will hand any consumer, in ITS words rather than in
+        # the caller's object -- plus the exact object it stored, so a later
+        # replacement can be SEEN without being READ.
+        object.__setattr__(self, "_payload_text", canonical_json(settled))
+        object.__setattr__(self, "_payload_witness", self.arguments)
 
     def _settled_resources(self) -> tuple[GraphResource, ...]:
         rows = _sequence(f"node {self.node_id} resources", self.resources)
@@ -362,6 +369,29 @@ class GraphNode:
         """Whether this node's capability can change the world."""
         return self.capability in EFFECTING_CAPABILITIES
 
+    def payload(self) -> dict[str, Any]:
+        """The validated arguments, rebuilt from this contract's own record.
+
+        Validating at construction settles what the field WAS, not what it is:
+        ``object.__setattr__`` replaces a frozen field, and every consumer that
+        then read it -- ``as_dict`` here, ``_rebuilt_node`` next door -- called
+        ``items`` on whatever it found. A hostile mapping answered with its own
+        exception, and that exception, and whatever it carried, left as this
+        contract's answer. A wrong shape was worse: it was simply thawed, so a
+        node's payload stopped being an object and nobody said so.
+
+        The replacement is caught by IDENTITY, which reads nothing at all: the
+        field is either the exact object settled here or it is not. What comes
+        back is parsed from the canonical text this contract wrote for itself,
+        so a consumer never touches the caller's object twice.
+        """
+        if self.arguments is not self._payload_witness:
+            raise ContractError(
+                f"node {self.node_id!r} arguments were replaced after they were "
+                "validated; this contract answers only for what it settled"
+            ) from None
+        return json.loads(self._payload_text)
+
     def as_dict(self) -> dict[str, Any]:
         out: dict[str, Any] = {
             "node_id": self.node_id, "kind": self.kind, "title": self.title,
@@ -372,7 +402,7 @@ class GraphNode:
         if self.instance_id is not None:
             out["instance_id"] = self.instance_id
             out["capability"] = self.capability
-            out["arguments"] = _thaw_json(self.arguments)
+            out["arguments"] = self.payload()
         if self.gate_id is not None:
             out["gate_id"] = self.gate_id
         if self.loop is not None:
@@ -436,13 +466,15 @@ def _rebuilt_node(row: object) -> "GraphNode":
     Exact typing stops a subclass from answering for itself; rebuilding stops a
     value that was edited AFTER it was validated, because every field goes back
     through ``__post_init__``. Fields are read as attributes rather than through
-    ``as_dict``, so nothing polymorphic is consulted even in principle.
+    ``as_dict``, so nothing polymorphic is consulted -- except that reading the
+    payload attribute WAS the polymorphic act, which is why the payload comes
+    from ``payload()``, which sees a replacement by identity and reads it never.
     """
     node = _exact("graph node", row, GraphNode)
     return GraphNode(
         node_id=node.node_id, kind=node.kind, title=node.title, stage=node.stage,
         instance_id=node.instance_id, capability=node.capability,
-        arguments=_thaw_json(node.arguments), resources=node.resources,
+        arguments=node.payload(), resources=node.resources,
         gate_id=node.gate_id, loop=node.loop)
 
 

@@ -14,6 +14,7 @@ the edges too, so the stage rule is what speaks.
 from __future__ import annotations
 
 import json
+from types import MappingProxyType
 
 import pytest
 
@@ -671,3 +672,84 @@ def test_a_real_json_object_is_still_the_capabilitys_own_business():
         "list": [1, 2, 3], "flag": True, "nothing": None})
     assert dict(node.arguments)["nested"]["status"] == "vendor's own word"
     assert dict(node.arguments)["nothing"] is None
+
+
+# -- a consumer answers for what was settled, not for what it finds ------------
+
+
+class _EvilItems(dict):
+    def items(self):
+        raise RuntimeError("APIKEY_SECRET_ITEMS")
+
+
+class _EvilIter(dict):
+    def __iter__(self):
+        raise RuntimeError("APIKEY_SECRET_ITER")
+
+
+#: Every way the frozen field can be swapped after validation. The plain-dict
+#: row matters most: it carries the SAME content, so what catches it is identity
+#: and not a comparison -- which is the only check that reads nothing.
+REPLACEMENTS = [
+    ("a-hostile-items-mapping", lambda: _EvilItems({"x": 1})),
+    ("a-hostile-iter-mapping", lambda: _EvilIter({"x": 1})),
+    ("a-hostile-mapping-one-level-down",
+     lambda: MappingProxyType({"deep": _EvilItems({"x": 1})})),
+    ("an-equal-plain-dict", lambda: {"x": 1}),
+    ("a-list-where-an-object-was", lambda: ["not", "an", "object"]),
+    ("nothing-at-all", lambda: None),
+]
+
+
+def _replaced(make):
+    """One valid node whose settled payload has been swapped out from under it."""
+    node = a_task("do", "Do", "do", capability=DISPATCH, arguments={"x": 1})
+    object.__setattr__(node, "arguments", make())
+    return node
+
+
+def _through_graph(node):
+    return GraphDefinition(
+        graph_id="g", run_id="run-001", created_at="2026-08-19T09:00:00Z",
+        nodes=(GraphNode(node_id="gate", kind="gate", title="G",
+                         gate_id="gate-1"), node),
+        edges=())
+
+
+@pytest.mark.parametrize("name,make", REPLACEMENTS,
+                         ids=[row[0] for row in REPLACEMENTS])
+@pytest.mark.parametrize("consumer", ["as_dict", "graph"],
+                         ids=["as_dict", "included-in-a-graph"])
+def test_a_payload_replaced_after_validation_is_refused_by_every_consumer(
+        name, make, consumer):
+    """Codex drove both consumers and both answered with the caller's exception.
+
+    ``as_dict`` gave `RuntimeError: APIKEY_SECRET_AS_DICT` and building a graph
+    gave `RuntimeError: APIKEY_SECRET_ITEMS`, one level down as well -- while a
+    replaced WRONG shape was simply thawed and accepted, so a node's payload
+    stopped being an object and nobody said so.
+    """
+    node = _replaced(make)
+    call = node.as_dict if consumer == "as_dict" else lambda: _through_graph(node)
+    with pytest.raises(ContractError, match="replaced after they were validated") as e:
+        call()
+    assert "APIKEY_SECRET" not in str(e.value)
+    assert e.value.__cause__ is None and e.value.__context__ is None
+
+
+def test_an_untouched_payload_is_answered_from_the_contracts_own_record():
+    """The positive half: nothing about the honest road changed."""
+    node = a_task("do", "Do", "do", capability=DISPATCH,
+                  arguments={"work_item_id": "work-001", "deep": {"a": [1, 2]}})
+    assert node.payload() == {"work_item_id": "work-001", "deep": {"a": [1, 2]}}
+    assert node.as_dict()["arguments"] == node.payload()
+    assert node.payload() is not node.payload(), "each caller gets its own copy"
+
+
+def test_the_answer_survives_a_caller_editing_what_it_was_handed():
+    """`payload()` hands out a copy, so a consumer cannot edit the record."""
+    node = a_task("do", "Do", "do", capability=DISPATCH, arguments={"a": 1})
+    handed = node.payload()
+    handed["a"] = 99
+    handed["b"] = "new"
+    assert node.payload() == {"a": 1}
