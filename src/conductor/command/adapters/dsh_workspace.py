@@ -55,8 +55,11 @@ from __future__ import annotations
 import hashlib
 import os
 import stat
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
+from threading import Lock, RLock
+from weakref import WeakValueDictionary
 
 from ..containment import (
     RouteViolation,
@@ -146,6 +149,35 @@ def _remove_tree(root: Path) -> None:
         path.rmdir()
 
 
+class _RootGate:
+    """One weakly indexed, workspace-owned process-local dsh root gate."""
+
+    __slots__ = ("lock", "__weakref__")
+
+    def __init__(self) -> None:
+        self.lock = RLock()
+
+
+# Process-local only, and keyed by the RESOLVED root, so two workspaces reached
+# by different names for one tree take the same gate and a second tree takes its
+# own. The weak table releases a root nothing holds. This is the same shape the
+# run store's root gate and the runtime's operation lock already use; it is
+# deliberately NOT either of them -- a dispatch must not hold a store
+# transaction across a child process, and a dsh root must not stop a run or
+# another provider.
+_ROOT_GATES_GUARD = Lock()
+_ROOT_GATES: WeakValueDictionary[Path, _RootGate] = WeakValueDictionary()
+
+
+def _root_gate(root: Path) -> _RootGate:
+    with _ROOT_GATES_GUARD:
+        gate = _ROOT_GATES.get(root)
+        if gate is None:
+            gate = _RootGate()
+            _ROOT_GATES[root] = gate
+        return gate
+
+
 @dataclass(frozen=True)
 class DshWorkspace:
     """Every filesystem effect the harness is allowed, bound to one project root."""
@@ -160,6 +192,35 @@ class DshWorkspace:
     @classmethod
     def at(cls, root: str | os.PathLike[str]) -> "DshWorkspace":
         return cls(root=Path(root).resolve())
+
+    @contextmanager
+    def owned(self):
+        """Hold this ROOT for one whole dispatch: sweep, homes, task and cleanup.
+
+        The cycle below is not a set of independent doors, it is one owner's
+        turn over one tree. A sweep decides what to delete by reading the home
+        root; a preflight and a task each mint a home under it and must take it
+        back; and what a cleanup failed to remove is exactly what the next
+        sweep must refuse over. Interleave two dispatches on one root and each
+        of those readings is about the other's state: a sweep meets a home a
+        live dispatch is still using, and a dispatch's own record of a broken
+        cleanup is reset under it by a neighbour that has nothing to do with it.
+
+        So the gate is the whole dispatch, keyed by the resolved root. Two
+        adapters reached through different names for one tree serialize, because
+        the key is what the path resolved to and not what it was spelled. Two
+        different roots do not meet at all, and nothing outside dsh -- another
+        provider, another run, a store transaction -- waits on this.
+
+        The gate is bound to a NAME here, and that binding is load-bearing: the
+        table indexes gates weakly, so holding only the lock lets the gate itself
+        be collected, the next caller mint a second one for the same root, and
+        both run at once. A holder must keep the gate alive for as long as it
+        holds its turn.
+        """
+        gate = _root_gate(self.root)
+        with gate.lock:
+            yield
 
     # -- the one containment relation every road below goes through -------------
 

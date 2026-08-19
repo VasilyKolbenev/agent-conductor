@@ -26,6 +26,8 @@ independent witness.
 from __future__ import annotations
 
 import os
+import shutil
+import threading
 from pathlib import Path
 
 import pytest
@@ -513,3 +515,145 @@ def test_a_preflight_whose_own_home_survives_never_starts_the_task(
     # Nothing was guessed at either: the home it could not remove is left exactly
     # where it stood, for the next dispatch's sweep to meet rather than a marker.
     assert refused[0].exists(), "PREFLIGHT_HOME_DELETED_BY_GUESS=True"
+
+# -- one owner per resolved root: the whole dispatch, never the pieces ---------
+
+
+def _holds(workspace, entered, release):
+    """Take one root gate, announce it, and keep it until the test lets go."""
+    with workspace.owned():
+        entered.set()
+        release.wait(10)
+
+
+def _takes_the_gate(workspace, timeout=2.0):
+    """Whether this workspace can ENTER its root gate within a bounded wait."""
+    entered, done = threading.Event(), threading.Event()
+    thread = threading.Thread(
+        target=_holds, args=(workspace, entered, done), daemon=True)
+    thread.start()
+    took = entered.wait(timeout)
+    done.set()
+    thread.join(10)
+    return took
+
+
+def _cleanup_that_leaves_a_residue(paused, release):
+    """A `discard_home` that fails its FIRST call and holds that caller there.
+
+    The residue it leaves is one the sweep must REFUSE rather than delete -- a
+    name under the home root whose kind is not a directory -- because a home the
+    sweep can simply remove lets the next dispatch proceed honestly and proves
+    nothing about who owned the root.
+    """
+    discarded = DshWorkspace.discard_home
+    calls: list[Path] = []
+
+    def refuses_the_first(self, home):
+        calls.append(Path(home))
+        if len(calls) > 1:
+            return discarded(self, home)
+        shutil.rmtree(home)
+        Path(home).write_text("residue no sweep may delete", encoding="utf-8")
+        paused.set()
+        release.wait(10)
+        raise OSError("the preflight home could not be removed")
+
+    return refuses_the_first
+
+
+def _race_two_dispatches(adapter, paused, release):
+    """Hold A at its failing cleanup, start B, and report whether B got in.
+
+    The witness is B's own thread: if the root is owned for the whole dispatch,
+    B cannot finish while A is held, and `is_alive` says so without asking the
+    code under test anything.
+    """
+    outcomes: dict[str, object] = {}
+
+    def dispatch(name, request):
+        outcomes[name] = run_once(adapter, request)
+
+    first = threading.Thread(
+        target=dispatch, args=("A", a_request(action_id="act-1")), daemon=True)
+    first.start()
+    assert paused.wait(10), "the first dispatch never reached its failing cleanup"
+    second = threading.Thread(
+        target=dispatch,
+        args=("B", a_request(action_id="act-2", work_item_id="work-002")),
+        daemon=True)
+    second.start()
+    second.join(2)
+    entered_while_held = not second.is_alive()
+    release.set()
+    first.join(20)
+    second.join(20)
+    return outcomes, entered_while_held
+
+
+def test_a_second_dispatch_cannot_reset_the_retention_a_live_one_recorded(
+        tmp_path, monkeypatch):
+    """Codex's probe: one adapter, two workers, and one shared retention count.
+
+    Verbatim, at the prior SHA::
+
+        FIRST_OUTCOME succeeded
+        FIRST_RETAINED_REPORTED False
+        SECOND_OUTCOME failed
+        TASK_SPAWNS 1
+        HELD_HOME_EXISTS True
+
+    A's preflight failed to take back its home and counted it. B entered the
+    same adapter, zeroed that count for its own dispatch, met the residue at its
+    own sweep and refused -- and A, resuming, read a zero that belonged to B and
+    spawned its task over the home it had just failed to remove. The count was
+    only the visible half: sweep, preflight home, task home and cleanup are one
+    owner's turn over one tree, and interleaved they read each other's state.
+    """
+    adapter, root, log = a_harness(tmp_path)
+    paused, release = threading.Event(), threading.Event()
+    monkeypatch.setattr(
+        DshWorkspace, "discard_home", _cleanup_that_leaves_a_residue(paused, release))
+
+    outcomes, entered_while_held = _race_two_dispatches(adapter, paused, release)
+
+    assert entered_while_held is False, "B ran inside the root A was still holding"
+    # A keeps its own account: the retention it recorded is the one it reads.
+    assert outcomes["A"].outcome == "failed", f"FIRST_OUTCOME {outcomes['A'].outcome}"
+    assert "could not take back the home" in outcomes["A"].detail
+    assert "could not be discarded" in outcomes["A"].detail, "FIRST_RETAINED_REPORTED False"
+    # B meets the residue at its own sweep, once the root is free.
+    assert outcomes["B"].outcome == "failed"
+    assert "may not delete" in outcomes["B"].detail, outcomes["B"].detail
+    assert _fakedsh.task_spawns(log) == [], "TASK_SPAWNS must be 0"
+    assert (root / HOME_DIR).exists(), "HELD_HOME_EXISTS must stay True"
+
+
+@pytest.mark.parametrize("kind", PORTALS)
+def test_one_resolved_root_is_one_gate_and_a_second_root_is_never_held(tmp_path, kind):
+    """The gate's key is what a path RESOLVED to, never how it was spelled.
+
+    Two adapters can be configured at different names for one tree -- a junction
+    or a symbolic link is a perfectly ordinary way for an operator to reach a
+    project -- and they must take the same turn, because the tree they sweep and
+    mint under is the same tree. A different root shares nothing and waits for
+    nothing: serializing dsh must not serialize the product.
+    """
+    root, elsewhere, alias = tmp_path / "root", tmp_path / "elsewhere", tmp_path / "alias"
+    root.mkdir()
+    elsewhere.mkdir()
+    with skip_when_unavailable():
+        plant_route_portal(alias, root, kind=kind)
+    if DshWorkspace.at(alias).root != DshWorkspace.at(root).root:
+        pytest.skip(f"this platform did not resolve a {kind} to its target root")
+    held, release = threading.Event(), threading.Event()
+    holder = threading.Thread(
+        target=_holds, args=(DshWorkspace.at(root), held, release), daemon=True)
+    holder.start()
+    try:
+        assert held.wait(10), "the holding workspace never took its own gate"
+        assert _takes_the_gate(DshWorkspace.at(alias)) is False, "ALIAS_RAN_CONCURRENTLY"
+        assert _takes_the_gate(DshWorkspace.at(elsewhere)) is True, "SECOND_ROOT_BLOCKED"
+    finally:
+        release.set()
+        holder.join(10)

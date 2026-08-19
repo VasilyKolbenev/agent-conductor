@@ -350,18 +350,27 @@ class DshHarnessAdapter:
         adapter's own fixed sentence rather than as the door's: the door's
         message names the exact path it refused, which is operator state and has
         no business in a receipt, the journal or the API.
+
+        The dispatch runs while this adapter OWNS its workspace root. One
+        adapter serves every worker bound to it, so without that turn two
+        dispatches share one tree and one ``_retained`` count: a neighbour's
+        fresh dispatch resets the record of a cleanup this one could not do, and
+        this one then spawns its task over the home it was told about and no
+        longer remembers. Serializing the whole dispatch is what makes each of
+        the readings below about this dispatch's own state.
         """
         if not isinstance(prepared, PreparedAction):
             raise DshHarnessError("execute requires a validated PreparedAction")
         request = prepared.request
         args = self._dispatch_args(prepared.adapter_payload)
-        failed = False
-        try:
-            return self._dispatch(request, args)
-        except WorkspaceNotContained:  # noqa: BLE001 -- carry no path onward
-            failed = True
-        if failed:
-            return self._receipt(request, "failed", None, UNCONTAINED_DETAIL)
+        with self._workspace.owned():
+            failed = False
+            try:
+                return self._dispatch(request, args)
+            except WorkspaceNotContained:  # noqa: BLE001 -- carry no path onward
+                failed = True
+            if failed:
+                return self._receipt(request, "failed", None, UNCONTAINED_DETAIL)
         raise DshHarnessError("unreachable")
 
     def _dispatch(
