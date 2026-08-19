@@ -310,6 +310,48 @@ def test_a_run_that_follows_no_plan_still_answers_the_graph_key(tmp_path):
         "definition": None, "definition_digest": None, "runtime": None}
 
 
+def test_a_run_whose_journal_does_not_replay_is_given_no_projection_at_all(
+        tmp_path):
+    """A partial position read off a journal nobody could replay is a guess."""
+    subject, store, _ = api(tmp_path)
+    post_graph(subject, graph_body())
+    with (store.run_path(RUN_ID) / "records.jsonl").open("ab") as stream:
+        stream.write(b'{"record_type":"graph_definition","record":{}}\n')
+
+    refused = read_run(subject)
+
+    assert (refused.status, refused.payload["error"]["code"]) == (
+        ERROR_STATUS["run_corrupt"], "run_corrupt")
+    assert "graph" not in refused.payload
+
+
+@pytest.mark.parametrize("word", ["phase", "outcome", "pass", "attempt_id"])
+def test_no_plan_a_browser_posts_can_carry_a_word_that_belongs_to_running(
+        tmp_path, word):
+    """The durable/runtime split, at the door a browser actually pushes on.
+
+    These words are the projection's: computed, never stored. A plan that could
+    carry one would be an immutable document changing while it is executed, and
+    every reader would then have to ask which copy is true.
+
+    What refuses it HERE is the node contract's closed field set, which admits
+    no name of its own beyond the ten it declares -- the same refusal an
+    ordinary typo gets. The by-name walk that refuses these words at any depth
+    is a second door behind it, and its own witnesses are next door in
+    `test_command_graph_definition.py`, over documents this closed body cannot
+    reach.
+    """
+    subject, store, _ = api(tmp_path)
+    before = journal(store)
+    body = graph_body()
+    body["nodes"][0][word] = "whatever"
+
+    refused = post_graph(subject, body)
+
+    assert refused.payload["error"]["code"] == "contract_invalid"
+    assert journal(store) == before
+
+
 def test_the_definition_on_the_wire_is_the_record_the_journal_holds(tmp_path):
     """One document, answered twice by the same read -- never two spellings."""
     subject, _, _ = api(tmp_path)
