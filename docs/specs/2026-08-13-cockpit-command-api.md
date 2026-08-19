@@ -734,31 +734,53 @@ among them, is `contract_invalid` (422).
 }
 ```
 
-Every bound node is held to this build and this run before the plan becomes
-durable: the `instance_id` MUST be one the run's frozen configuration declares,
-and the `capability` MUST be one the adapter bound to that instance supports. A
-plan naming work no adapter can carry out is refused — `service_refused` (409)
-or `capability_unsupported` (409) — rather than stored as a plan nothing can
-execute. A node that names no binding does no work and is held to neither.
+Every bound node is held to this build, this run, and the capability's own
+closed schema before the plan becomes durable:
 
-`arguments` are **not** judged here. Their shape is the capability's own
-business, judged by the propose door (4.1) against that capability's closed
-schema; two doors judging one value is how they come to disagree. This route
-proves what the graph contract proves and stops: that `arguments` is a JSON
-object of canonical data.
+- the `capability` MUST be one section 4.1's registry of argument schemas
+  carries, and one the adapter bound to the node's instance supports;
+- the `instance_id` MUST be one the run's frozen configuration declares;
+- `arguments` MUST satisfy that capability's schema through the SAME
+  registry-owned contract the propose door uses (4.1) — one door, called from
+  two places, never two doors judging one value.
 
-Three outcomes, and no fourth:
+A node that names no binding does no work and is held to none of the three.
 
-- **`201`** — the run followed no graph and now follows this one. The response
-  is the stored `GraphDefinition.as_dict()`.
-- **`200`** — the same `graph_id` restating the same plan. Nothing is appended,
-  and the response is the graph already stored, byte for byte, including the
-  `created_at` the first write settled. The stable `graph_id` is what makes an
-  exact retry findable, exactly as `receipt_id` does for a decision (5.1).
-- **`record_conflict` (409)** — everything else. The same `graph_id` carrying
-  different facts is a conflict, and so is a second `graph_id` while a graph
-  already stands: two graphs under two identities would leave every reader to
-  guess which plan the run follows, and the refusal names the graph standing.
+That last rule is not tidiness. A graph is **immutable**: a plan that reaches
+the journal can never be edited or removed, so a payload admitted here is
+admitted forever. Without the schema this route accepted any JSON object, which
+put arbitrary caller text — a credential, an absolute path, an environment
+name — into a durable record and onto every subsequent read, and produced plans
+whose every proposal the propose door would then refuse. Every field of every
+argument schema is a closed id or a closed vocabulary word, so the schema call
+IS the screen: an unknown field, a path, a secret, or a value outside a
+vocabulary is refused `contract_invalid` (422) with **zero durable bytes**, and
+the refusal carries the fixed detached message with no submitted text in it.
+
+The **default Dalio template ships as a plan that passes these schemas** — a
+canonical graph the product could not execute would not be a default.
+
+Three outcomes, and no fourth. The order they are decided in is part of the
+contract: the standing graph is looked for FIRST, inside the transaction,
+before the clock, the registry, or the frozen configuration is consulted at
+all.
+
+- **`200`** — a graph already stands and this request restates it exactly. The
+  response is the stored `GraphDefinition.as_dict()`, byte for byte, including
+  the `created_at` the first write settled. Nothing is appended and nothing is
+  published. This answer MUST NOT depend on the registry, the adapters, or the
+  frozen configuration: the record is already durable, and a client whose reply
+  was lost is entitled to the same answer from a process that starts with a
+  different registry. The stable `graph_id` is what makes the retry findable,
+  exactly as `receipt_id` does for a decision (5.1).
+- **`record_conflict` (409)** — a graph already stands and this request does
+  not restate it: the same `graph_id` carrying different facts, or a second
+  `graph_id` entirely. Two graphs under two identities would leave every reader
+  to guess which plan the run follows, so the refusal names the graph standing.
+  This answer, too, consults no registry.
+- **`201`** — no graph stands. Only THIS path validates the plan against the
+  configuration, the registry and the argument schemas, reads the clock, and
+  appends.
 
 This route is a mutation like any other: it passes the Host allowlist,
 same-origin and anti-CSRF checks (sections 1 and 2) and the writable-route
@@ -980,18 +1002,31 @@ The projection and the definition share no word but the join. Every name a
 (`graph_definition.RUNTIME_ONLY_FIELDS`), so a ceiling and a position can never
 be read as each other: `loop.bound` is the plan's, `pass` is the run's.
 
-- `phase` — how far a node's own records carry it, one of `idle`, `proposed`,
-  `requested`, `running`, `observed`, and never one step further. `observed`
-  means an execution boundary was reached; it is NOT success (safety law 9).
-- `outcome` — the node's `ActionResultReceipt` outcome and **nothing else**.
-  An attempt event carries an outcome of its own, and reading it here would let
-  a watched process exit stand in for the immutable result a product success
-  requires. Absent result, `null`.
-- `attempt_ids` — every attempt the node was asked to carry out, sorted. This
-  is the join to `records`: result receipts and attempt events name it.
+`phase`, `outcome`, `observed_at` and `evidence_refs` describe the node's
+**current** action and no earlier one. The current action is the LAST document
+in append order that binds this node — a proposal or a request — so a node
+whose finished attempt is followed by a new proposal reads `proposed`, not
+`observed`. A projection that aggregated a node's whole history would show a
+green finished step while its next attempt was already being confirmed, which
+is the one reading a Cockpit must never offer.
+
+- `phase` — how far the current action's records carry it, one of `idle`,
+  `proposed`, `requested`, `running`, `observed`, and never one step further.
+  `observed` means an execution boundary was reached; it is NOT success
+  (safety law 9).
+- `outcome` — the current action's `ActionResultReceipt` outcome and **nothing
+  else**. An attempt event carries an outcome of its own, and reading it here
+  would let a watched process exit stand in for the immutable result a product
+  success requires. No result for the current action, `null` — including when
+  an earlier attempt on the same node succeeded.
+- `attempt_ids` — every attempt this node was ever asked to carry out, sorted.
+  This one IS the whole history, and it is the join to `records`: result
+  receipts and attempt events name it, so a reader who wants an earlier
+  attempt has the key to find it.
 - `evidence_refs` and `observed_at` — identifiers and a timestamp from the
-  node's result receipts. Never a URI, a label, a digest, or an exit code:
-  those stay in `records`, where a contract validated them.
+  current action's result receipts, never a previous attempt's. Never a URI, a
+  label, a digest, or an exit code: those stay in `records`, where a contract
+  validated them.
 - `decision` — gate nodes only. `contracts.gate_decision`'s own answer: `idle`,
   `satisfied`, `failed`, `changes_requested`, or `waived`. A run holding more
   than one standing decision for one gate is `unknown`: the journal supports

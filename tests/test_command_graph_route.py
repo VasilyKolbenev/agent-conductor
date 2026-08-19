@@ -21,6 +21,7 @@ import pytest
 from conductor.command.api_contracts import ERROR_STATUS
 from conductor.command.graph_definition import GraphDefinition
 
+from tests.alpha3_graph_artifacts import load
 from tests.test_command_adapters import FakeAdapter
 from tests.test_command_http_api import (
     NOW,
@@ -47,7 +48,12 @@ def graph_body(**changes):
              "gate_id": "gate-do", "resources": []},
             {"node_id": "apply", "kind": "task", "title": "Do", "stage": "do",
              "instance_id": "claude-dev", "capability": "dispatch",
-             "arguments": {"work_item_id": "work-001"}, "resources": []},
+             "arguments": {"work_item_id": "work-001",
+                           "instruction_ref": "instruction-001",
+                           "profile": "implement",
+                           "artifact_refs": ["artifact-001"],
+                           "output_limit_profile": "normal"},
+             "resources": []},
         ],
         "edges": [
             {"from_node": "plan", "to_node": "human-gate"},
@@ -134,6 +140,51 @@ def test_a_second_plan_under_a_second_id_is_refused_not_stored_beside_it(tmp_pat
         ERROR_STATUS["record_conflict"], "record_conflict")
     assert journal(store) == before
     assert events == [RUN_ID]
+
+
+def an_api_over(root, *, adapters):
+    """A second process over the same store, with a registry of its own."""
+    from conductor.command.adapters import AdapterRegistry
+    from conductor.command.http_api import CommandApi, PRODUCT_COMMAND_BUDGET
+    from conductor.command.http_transport import CommandSession
+    from conductor.command.run_store import RunStore
+    from tests.test_command_http_api import PORT, TOKEN, ids
+
+    return CommandApi(
+        RunStore(root), AdapterRegistry(adapters),
+        session=CommandSession(PORT, TOKEN), budget=PRODUCT_COMMAND_BUDGET,
+        clock=lambda: "2026-08-13T14:00:00Z", ids=ids(),
+        publish_run=lambda _run_id: None)
+
+
+@pytest.mark.parametrize("body_changes,status,code", [
+    ({}, 200, None),
+    ({"graph_id": "graph-002"}, 409, "record_conflict"),
+], ids=["exact-retry", "a-second-plan"])
+def test_a_standing_graph_is_answered_from_the_journal_not_from_the_registry(
+        tmp_path, body_changes, status, code):
+    """A durable record's answer may not depend on mutable process state.
+
+    Validating before looking made an exact retry a `service_refused`: a client
+    whose reply was lost, retrying against a process that starts with a
+    different registry, was refused a record it had already written. So the
+    standing graph is looked for FIRST, and neither answer below consults an
+    adapter, a capability schema or the frozen configuration at all.
+    """
+    subject, store, _ = api(tmp_path)
+    first = post_graph(subject, graph_body())
+    assert first.status == 201
+    before = journal(store)
+
+    restarted = an_api_over(tmp_path, adapters=[])
+    again = post_graph(restarted, graph_body(**body_changes))
+
+    assert again.status == status
+    if code is None:
+        assert again.payload == first.payload
+    else:
+        assert again.payload["error"]["code"] == code
+    assert journal(store) == before
 
 
 # -- the body is closed, and the server owns what the server owns --------------
@@ -238,24 +289,98 @@ def test_a_step_that_does_no_work_is_held_to_no_capability(tmp_path):
     assert post_graph(subject, unbound).status == 201
 
 
-def test_the_arguments_of_a_node_are_left_to_the_capabilitys_own_door(tmp_path):
-    """The graph contract proves `arguments` is a JSON object and stops there.
+# -- a plan is judged by the capability's own schema before it is durable ------
 
-    The propose door judges the payload against the capability's closed schema.
-    Judging it here too would be two doors over one value, which is how they
-    come to disagree -- and this plan carries a partial dispatch payload that
-    the propose door, not this one, is the place to refuse. Both halves are
-    driven, so the division of labour is a division and not a hole.
+
+SECRET = "APIKEY-SECRET-GRAPH"
+
+
+@pytest.mark.parametrize("payload", [
+    {"api_key": SECRET, "cwd": "C:/outside"},
+    {"work_item_id": "work-001"},
+    {"work_item_id": "work-001", "instruction_ref": "instruction-001",
+     "profile": "implement", "artifact_refs": ["artifact-001"],
+     "output_limit_profile": "normal", "env": SECRET},
+    {"work_item_id": "work-001", "instruction_ref": "C:/outside/instruction",
+     "profile": "implement", "artifact_refs": ["artifact-001"],
+     "output_limit_profile": "normal"},
+    {"work_item_id": "work-001", "instruction_ref": "instruction-001",
+     "profile": "sudo", "artifact_refs": ["artifact-001"],
+     "output_limit_profile": "normal"},
+], ids=["a-secret-and-a-path", "half-a-payload", "one-field-too-many",
+        "a-path-where-an-id-belongs", "a-word-outside-the-vocabulary"])
+def test_a_payload_the_capability_schema_refuses_never_becomes_durable(
+        tmp_path, payload):
+    """A graph is immutable, so a payload admitted here is admitted forever.
+
+    Without this door the route took any JSON object: a credential, an
+    absolute path or an environment name became a durable record and went out
+    on every later read, and the plan it described was one the propose door
+    would refuse every time. Every field of every schema is a closed id or a
+    closed vocabulary word, so calling the schema IS the screen.
     """
+    subject, store, events = api(tmp_path)
+    before = journal(store)
+    body = graph_body()
+    body["nodes"][2]["arguments"] = payload
+
+    refused = post_graph(subject, body)
+
+    assert (refused.status, refused.payload["error"]["code"]) == (
+        ERROR_STATUS["contract_invalid"], "contract_invalid")
+    assert refused.payload["error"]["detail"] == {}
+    assert journal(store) == before and events == []
+    assert SECRET not in journal(store).decode("utf-8")
+    assert SECRET not in json.dumps(read_run(subject).payload)
+
+
+def test_a_capability_no_argument_schema_carries_is_refused(tmp_path):
+    """The adapter declaring it is not enough; the API must be able to type it."""
+    subject, store, _ = api(
+        tmp_path, adapters=[FakeAdapter(capabilities=("observe", "dispatch"))])
+    before = journal(store)
+    body = graph_body()
+    body["nodes"][2].update(capability="observe", arguments={})
+
+    refused = post_graph(subject, body)
+
+    assert (refused.status, refused.payload["error"]["code"]) == (
+        ERROR_STATUS["capability_unsupported"], "capability_unsupported")
+    assert journal(store) == before
+
+
+def test_the_frozen_dalio_artifact_is_a_plan_this_route_accepts(tmp_path):
+    """A default the product could not write through its own route is no default.
+
+    Every capability node of the canonical template used to be refused by the
+    capability schemas while the artifact shipped to the UI lane anyway. What
+    is driven here is the FROZEN document on disk, not the builder that wrote
+    it -- the bytes a consumer actually receives are the bytes proven writable.
+    """
+    subject, _, _ = api(
+        tmp_path, adapters=[FakeAdapter(capabilities=("dispatch", "review"))])
+    frozen = load("alpha3_dalio_definition")["definition"]
+
+    written = post_graph(subject, {
+        "graph_id": frozen["graph_id"], "nodes": frozen["nodes"],
+        "edges": frozen["edges"]})
+
+    assert written.status == 201
+    assert [row["node_id"] for row in written.payload["nodes"]] == [
+        row["node_id"] for row in frozen["nodes"]]
+
+
+def test_a_node_that_carries_the_nodes_own_payload_still_proposes(tmp_path):
+    """One schema, two callers: what the plan may say, a proposal may repeat."""
     subject, _, _ = api(tmp_path)
     assert post_graph(subject, graph_body()).status == 201
 
     node = graph_body()["nodes"][2]
-    refused = post(subject, f"/command/runs/{RUN_ID}/proposals", {
+    proposed = post(subject, f"/command/runs/{RUN_ID}/proposals", {
         **proposal_body(), "arguments": node["arguments"],
         "node_id": node["node_id"]})
-    assert (refused.status, refused.payload["error"]["code"]) == (
-        ERROR_STATUS["contract_invalid"], "contract_invalid")
+    assert proposed.status == 201
+    assert proposed.payload["node_id"] == node["node_id"]
 
 
 # -- the same transport, containment and signal as every other mutation --------

@@ -43,14 +43,26 @@ INSTANCE_ID = "claude-dev"
 #: ``EFFECTING_CAPABILITIES`` and the runtime's ``DISPATCH_CAPABILITY`` are
 #: pinned equal by a test; this is the third reader of that one word.
 DISPATCH = "dispatch"
+#: The one work item this plan is about, named the same way by every step.
+WORK_ITEM = "work-001"
 
 
-def _task(node_id: str, title: str, stage: str, capability: str = "evidence",
-          **changes) -> GraphNode:
-    body = dict(node_id=node_id, kind="task", title=title, stage=stage,
-                instance_id=INSTANCE_ID, capability=capability)
-    body.update(changes)
-    return GraphNode(**body)
+def _review(node_id: str, title: str, stage: str, artifact: str,
+            profile: str) -> GraphNode:
+    """One thinking step: it reads what the step before it produced.
+
+    ``review`` and ``dispatch`` are the only two capabilities whose payload a
+    PLAN can carry, because every field of theirs is knowable before the run
+    starts. The other four name a runtime document -- a prior action, a running
+    attempt -- which a plan written in advance cannot have. That is why the
+    template's four non-acting steps review rather than gather evidence.
+    """
+    return GraphNode(
+        node_id=node_id, kind="task", title=title, stage=stage,
+        instance_id=INSTANCE_ID, capability="review",
+        arguments={"work_item_id": WORK_ITEM,
+                   "target_artifact_refs": [artifact],
+                   "review_profile": profile})
 
 
 def dalio_nodes() -> tuple[GraphNode, ...]:
@@ -62,16 +74,24 @@ def dalio_nodes() -> tuple[GraphNode, ...]:
     new attempt, none of which this document may describe.
     """
     return (
-        _task("goal", "Goal", "goal"),
-        _task("identify", "Identify Problems", "identify"),
-        _task("diagnose", "Diagnose Root Causes", "diagnose", capability="review"),
-        _task("design", "Design the Plan", "design"),
+        _review("goal", "Goal", "goal", "artifact-brief", "spec"),
+        _review("identify", "Identify Problems", "identify",
+                "artifact-goal", "quality"),
+        _review("diagnose", "Diagnose Root Causes", "diagnose",
+                "artifact-problems", "quality"),
+        _review("design", "Design the Plan", "design",
+                "artifact-causes", "spec"),
         GraphNode(node_id="confirm-gate", kind="gate",
                   title="Human Gate - Confirm Do", gate_id="gate-confirm-do"),
-        _task("do", "Do", "do", capability=DISPATCH,
-              arguments={"work_item_id": "work-001", "instruction_ref": "instr-001"},
-              resources=(GraphResource(kind="model", name="sonnet"),
-                         GraphResource(kind="sandbox", name="project-root"))),
+        GraphNode(node_id="do", kind="task", title="Do", stage="do",
+                  instance_id=INSTANCE_ID, capability=DISPATCH,
+                  arguments={"work_item_id": WORK_ITEM,
+                             "instruction_ref": "instruction-plan",
+                             "profile": "implement",
+                             "artifact_refs": ["artifact-plan"],
+                             "output_limit_profile": "normal"},
+                  resources=(GraphResource(kind="model", name="sonnet"),
+                             GraphResource(kind="sandbox", name="project-root"))),
         GraphNode(node_id="result-gate", kind="gate", title="Result Gate",
                   gate_id="gate-result"),
         GraphNode(node_id="retry-loop", kind="loop",
@@ -103,6 +123,15 @@ def canonical_dalio() -> GraphDefinition:
     fixture's Dalio-ness is asserted HERE rather than assumed -- a canonical
     artifact that quietly stopped being the default template would otherwise
     ship unnoticed.
+
+    That the payloads below are ones the API's own argument door accepts is
+    NOT asserted here. Every one of them used to be refused by the capability
+    schemas while this fixture shipped anyway, so the claim earns a witness
+    rather than a second call beside the first: the FROZEN document is driven
+    through the real route by ``test_command_graph_route.py``, under the name
+    ``test_the_frozen_dalio_artifact_is_a_plan_this_route_accepts``. Calling
+    the door here as well was tried and removed -- deleting it left every test
+    green, which is the definition of a guard that guards nothing.
     """
     return validate_dalio_template(dalio_definition())
 

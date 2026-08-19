@@ -102,21 +102,28 @@ def _definition(recovered: "RecoveredRun") -> GraphDefinition | None:
 def _node_runtime(
         values: tuple[Any, ...], definition: GraphDefinition,
         node: GraphNode) -> dict[str, Any]:
-    """One node's position, from the records that name it and no others."""
+    """One node's position: its CURRENT action, and its whole attempt history.
+
+    Aggregating a node's history was a lie a Cockpit would have shown as
+    green. A node whose first attempt finished `succeeded` and whose second is
+    already requested reported the old outcome, the old evidence and `observed`
+    -- a finished step, while the work was being done again. So everything that
+    describes a position comes from the current action alone; only
+    ``attempt_ids`` is the whole history, because it is the key a reader needs
+    to go find an earlier attempt in ``records``.
+    """
     named = {node.node_id}
-    actions = {value.action_id for value in values
-               if isinstance(value, ActionRequest) and value.node_id in named}
+    current = _current_action(values, named)
+    action_id = current.action_id if isinstance(current, ActionRequest) else None
     results = [value for value in values
                if isinstance(value, ActionResultReceipt)
-               and value.action_id in actions]
+               and value.action_id == action_id]
     events = [value for value in values
-              if isinstance(value, AttemptEvent) and value.action_id in actions]
-    # The journal is append-ordered, so the last result is the most recent one
-    # this node produced; earlier ones stay readable in `records`.
+              if isinstance(value, AttemptEvent) and value.action_id == action_id]
     standing = results[-1] if results else None
     row: dict[str, Any] = {
         "node_id": node.node_id,
-        "phase": _phase(values, named, actions, results, events),
+        "phase": _phase(current, results, events),
         "attempt_ids": sorted(_attempt_ids(values, named)),
         "outcome": None if standing is None else standing.outcome,
         "observed_at": None if standing is None else standing.observed_at,
@@ -132,21 +139,37 @@ def _node_runtime(
     return row
 
 
+def _current_action(
+        values: tuple[Any, ...],
+        named: set[str]) -> ActionProposal | ActionRequest | None:
+    """The LAST document in append order that binds one of these nodes.
+
+    A proposal appended after a finished request is a new attempt being asked
+    for, and it is what the node is doing now -- so it supersedes the finished
+    one for every field except the attempt history.
+    """
+    latest: ActionProposal | ActionRequest | None = None
+    for value in values:
+        if (isinstance(value, (ActionProposal, ActionRequest))
+                and value.node_id in named):
+            latest = value
+    return latest
+
+
 def _phase(
-        values: tuple[Any, ...], named: set[str], actions: set[str],
+        current: ActionProposal | ActionRequest | None,
         results: list[ActionResultReceipt],
         events: list[AttemptEvent]) -> str:
-    """Where this node's records carry it, and never one step further."""
+    """Where the current action's records carry it, and never one step further."""
+    if current is None:
+        return "idle"
+    if not isinstance(current, ActionRequest):
+        return "proposed"
     if results or any(row.phase == "execution_observed" for row in events):
         return "observed"
     if events:
         return "running"
-    if actions:
-        return "requested"
-    if any(isinstance(value, ActionProposal) and value.node_id in named
-           for value in values):
-        return "proposed"
-    return "idle"
+    return "requested"
 
 
 def _attempt_ids(values: tuple[Any, ...], named: set[str]) -> set[str]:

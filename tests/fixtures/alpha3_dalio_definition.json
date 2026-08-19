@@ -35,8 +35,14 @@
     "graph_id": "graph-dalio",
     "nodes": [
       {
-        "arguments": {},
-        "capability": "evidence",
+        "arguments": {
+          "review_profile": "spec",
+          "target_artifact_refs": [
+            "artifact-brief"
+          ],
+          "work_item_id": "work-001"
+        },
+        "capability": "review",
         "instance_id": "claude-dev",
         "kind": "task",
         "node_id": "goal",
@@ -45,8 +51,14 @@
         "title": "Goal"
       },
       {
-        "arguments": {},
-        "capability": "evidence",
+        "arguments": {
+          "review_profile": "quality",
+          "target_artifact_refs": [
+            "artifact-goal"
+          ],
+          "work_item_id": "work-001"
+        },
+        "capability": "review",
         "instance_id": "claude-dev",
         "kind": "task",
         "node_id": "identify",
@@ -55,7 +67,13 @@
         "title": "Identify Problems"
       },
       {
-        "arguments": {},
+        "arguments": {
+          "review_profile": "quality",
+          "target_artifact_refs": [
+            "artifact-problems"
+          ],
+          "work_item_id": "work-001"
+        },
         "capability": "review",
         "instance_id": "claude-dev",
         "kind": "task",
@@ -65,8 +83,14 @@
         "title": "Diagnose Root Causes"
       },
       {
-        "arguments": {},
-        "capability": "evidence",
+        "arguments": {
+          "review_profile": "spec",
+          "target_artifact_refs": [
+            "artifact-causes"
+          ],
+          "work_item_id": "work-001"
+        },
+        "capability": "review",
         "instance_id": "claude-dev",
         "kind": "task",
         "node_id": "design",
@@ -83,7 +107,12 @@
       },
       {
         "arguments": {
-          "instruction_ref": "instr-001",
+          "artifact_refs": [
+            "artifact-plan"
+          ],
+          "instruction_ref": "instruction-plan",
+          "output_limit_profile": "normal",
+          "profile": "implement",
           "work_item_id": "work-001"
         },
         "capability": "dispatch",
@@ -124,5 +153,5 @@
     "run_id": "run-001",
     "schema_version": 2
   },
-  "definition_digest": "sha256:27050d48c98711e9a3ab51be52ae657210c5bef16f938f8073e11dc79bcbaa21"
+  "definition_digest": "sha256:74c97ebb2525ae96faa20476437887666f07b21661b5ce425d2d779de9502796"
 }

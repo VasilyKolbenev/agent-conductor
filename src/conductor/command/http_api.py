@@ -34,10 +34,12 @@ from .api_contracts import (
     parse_graph,
     parse_proposal,
     refusal_from_exception,
+    validate_graph_arguments,
 )
 from .containment import run_route_violations
 from .contracts import ContractError, frozen_config_bindings
 from .coordinator import ExecutionCoordinator
+from .graph_definition import GraphDefinition
 from .graph_projection import graph_payload
 from .http_transport import (
     CommandSession,
@@ -193,35 +195,58 @@ class CommandApi:
     def _write_graph(self, run_id: str, body: Mapping[str, Any]) -> CommandResponse:
         """Write the one graph a run follows; a run never edits the plan it has.
 
-        The stable ``graph_id`` is the caller's, which is what makes an exact
-        retry findable -- and it is found before the clock is read, so a repeat
-        answers with the ``created_at`` the first write settled instead of
-        minting a second identity's worth of facts under one id.
+        The standing graph is looked for FIRST, before the clock, the registry
+        or the frozen configuration is consulted at all, because an exact retry
+        is answered from the journal and by nothing else. Validating first made
+        a durable, immutable record's answer depend on mutable process state: a
+        client whose reply was lost, retrying against a process that starts
+        with a different registry, was refused a record it had already written.
+
+        So only a plan that is about to become durable is judged, and a repeat
+        answers with the very record standing -- ``created_at`` included, so no
+        second identity's worth of facts is ever minted under one id.
         """
         submitted = parse_graph(body)
         self._hold_route(run_id)
-        self._bindings_are_servable(self._store.read(run_id).config, run_id, submitted)
+        initial = self._store.read(run_id)
+        if _standing_graph(initial) is None:
+            # Judged out here, where a refusal can still be raised: a graph is
+            # append-only, so a plan that finds none standing now is the plan
+            # this run may still be given.
+            validate_graph_arguments(submitted)
+            self._bindings_are_servable(initial.config, run_id, submitted)
         with self._store.transaction():
             self._hold_route(run_id)
-            recovered = self._store.read(run_id)
-            standing = next((
-                row.value for row in recovered.records
-                if row.kind == "graph_definition"
-                and row.value.graph_id == submitted.graph_id), None)
-            graph = submitted.build(
-                run_id=run_id,
-                created_at=self._clock() if standing is None else standing.created_at)
+            standing = _standing_graph(self._store.read(run_id))
             if standing is not None:
-                if standing != graph:
-                    raise RecordConflict("graph identity records different facts")
+                self._repeats_the_standing_graph(run_id, standing, submitted)
                 created, graph = False, standing
             else:
-                # A graph under ANOTHER id is refused here, by the store's own
-                # one-graph-per-run relation, which names the plan standing.
+                graph = submitted.build(run_id=run_id, created_at=self._clock())
                 created = self._store.append(graph)
         if created:
             self._publish_run(run_id)
         return CommandResponse(201 if created else 200, graph.as_dict())
+
+    @staticmethod
+    def _repeats_the_standing_graph(
+            run_id: str, standing: GraphDefinition,
+            submitted: GraphInput) -> None:
+        """A run carries one graph, so a second request either IS it or conflicts.
+
+        The candidate is rebuilt on the standing record's own ``created_at``:
+        the caller never supplied one, so comparing anything else would call
+        every honest retry a conflict.
+        """
+        candidate = submitted.build(
+            run_id=run_id, created_at=standing.created_at)
+        if standing.graph_id != candidate.graph_id:
+            raise RecordConflict(
+                f"run {run_id!r} already follows graph {standing.graph_id!r}; "
+                "one run carries one graph")
+        if standing != candidate:
+            raise RecordConflict(
+                f"graph {standing.graph_id!r} already records different facts")
 
     def _bindings_are_servable(
             self, config: Mapping[str, Any], run_id: str,
@@ -386,6 +411,12 @@ def _target_path(target: str) -> str:
     if parsed.scheme or parsed.netloc or parsed.query or parsed.fragment:
         raise ApiRefusal.fixed("route_not_found")
     return parsed.path
+
+
+def _standing_graph(recovered) -> GraphDefinition | None:
+    """The one graph this run already follows, if it follows any."""
+    return next((row.value for row in recovered.records
+                 if row.kind == "graph_definition"), None)
 
 
 def _recovered_payload(recovered) -> dict[str, object]:

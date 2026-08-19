@@ -235,6 +235,74 @@ def test_an_observed_boundary_is_not_a_product_outcome(tmp_path):
     assert finished["observed_at"] == "2026-08-19T09:30:00Z"
 
 
+# -- a finished attempt never speaks for the one happening now -----------------
+
+
+def a_finished_run(tmp_path):
+    """The Do node, taken all the way to a verified success."""
+    return a_walked_run(tmp_path, upto="result")
+
+
+def a_second_attempt(store, *, index=2, confirmed=True, **result_changes):
+    """Ask for the same node again, and take it as far as a test wants."""
+    proposal = a_proposal(index=index)
+    store.append(proposal)
+    if not confirmed:
+        return None
+    request = a_request(proposal, index=index)
+    store.append(request)
+    return request
+
+
+def test_a_new_proposal_takes_the_node_off_the_outcome_it_had(tmp_path):
+    """The exact reading a Cockpit must never offer.
+
+    A node whose first attempt finished `succeeded` and whose second is already
+    being asked for showed the old outcome, the old evidence and `observed` --
+    a green finished step, while the work was being done again.
+    """
+    store = a_finished_run(tmp_path)
+    assert node_of(payload_of(store), DO_NODE)["outcome"] == "succeeded"
+
+    a_second_attempt(store, confirmed=False)
+
+    row = node_of(payload_of(store), DO_NODE)
+    assert row["phase"] == "proposed"
+    assert row["outcome"] is None and row["observed_at"] is None
+    assert row["evidence_refs"] == []
+    assert row["attempt_ids"] == ["attempt-001", "attempt-002"]
+
+
+def test_a_new_request_reports_the_new_attempt_and_not_the_finished_one(tmp_path):
+    store = a_finished_run(tmp_path)
+    request = a_second_attempt(store)
+
+    row = node_of(payload_of(store), DO_NODE)
+    assert (row["phase"], row["outcome"]) == ("requested", None)
+    assert row["evidence_refs"] == []
+
+    store.append(an_event(request, "effect_lease", index=2))
+    running = node_of(payload_of(store), DO_NODE)
+    assert (running["phase"], running["outcome"]) == ("running", None)
+
+
+def test_a_success_followed_by_a_failure_reports_the_failure(tmp_path):
+    """The one direction a stale projection would get most dangerously wrong."""
+    store = a_finished_run(tmp_path)
+    request = a_second_attempt(store)
+    store.append(an_event(request, "effect_lease", index=2))
+    store.append(an_event(request, "execution_observed", index=2,
+                          outcome="failed", exit_code=3))
+    store.append(a_result(request, index=2, outcome="failed", exit_code=3,
+                          evidence_refs=(), observed_at="2026-08-19T10:00:00Z"))
+
+    row = node_of(payload_of(store), DO_NODE)
+
+    assert (row["phase"], row["outcome"]) == ("observed", "failed")
+    assert row["observed_at"] == "2026-08-19T10:00:00Z"
+    assert row["evidence_refs"] == [], "the first attempt's evidence is not this one's"
+
+
 def test_an_action_that_names_no_node_is_projected_nowhere(tmp_path):
     """A graph does not make every action part of it."""
     store = a_store(tmp_path)

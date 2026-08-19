@@ -367,15 +367,42 @@ def parse_decision(body: object) -> DecisionInput:
         supersedes=decision.supersedes)
 
 
+def validate_graph_arguments(submitted: GraphInput) -> None:
+    """Judge every bound node's payload with the capability's own closed schema.
+
+    This is the SAME registry-owned contract the propose door calls, reached
+    from a second place rather than restated -- one door, two callers, so the
+    two can never come to disagree.
+
+    It is called only when a plan is about to become durable, and never on the
+    road that answers an exact retry: a graph already in the journal is
+    answered from the journal, not re-judged against whatever schemas this
+    process happens to hold.
+
+    Without it this route took any JSON object a caller sent. A graph is
+    immutable, so that payload was durable forever and reached every later
+    read -- credentials, absolute paths and environment names included -- and
+    the plan it described was one the propose door would refuse every time.
+    Every field of every schema here is a closed id or a closed vocabulary
+    word, so this call is that screen.
+    """
+    for node in submitted.nodes:
+        if node.capability is None:
+            continue
+        argument_type = DEEP_ARGUMENT_TYPES.get(node.capability)
+        if argument_type is None:
+            raise ApiRefusal.fixed("capability_unsupported")
+        _contract(argument_type.from_dict, node.payload())
+
+
 def parse_graph(body: object) -> GraphInput:
     """Validate exactly the three caller-owned facts of a run's one plan.
 
     The whole document is taken through the production contract here, with the
     server's own run and time standing in, so a plan that would not be a valid
-    graph is refused before any store is opened. What this door does NOT judge
-    is ``arguments``: their shape is the capability's business and the propose
-    door judges them against that capability's closed schema. Two doors judging
-    one value is how they come to disagree.
+    graph is refused before any store is opened. The payload each bound node
+    carries is judged separately, by :func:`validate_graph_arguments`, because
+    only a plan that is about to be WRITTEN needs judging -- see there.
     """
     values = _closed(body, _GRAPH_FIELDS)
     probe = _contract(GraphDefinition.from_dict, {

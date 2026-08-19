@@ -24,6 +24,7 @@ from conductor.command.api_contracts import (
     parse_confirmation,
     parse_graph,
     parse_proposal,
+    validate_graph_arguments,
 )
 from conductor.command.contracts import ActionProposal, ActionRequest, RunEnvelope
 from conductor.command.graph_definition import GraphDefinition
@@ -229,6 +230,16 @@ def test_the_canonical_plan_body_builds_the_canonical_graph_record():
     built = parse_graph(CANON["graph_request"]).build(
         run_id=record["run_id"], created_at=record["created_at"])
     assert built.as_dict() == record
+
+
+def test_the_canonical_plan_body_is_one_the_argument_door_accepts():
+    """A frozen example the product would refuse is a frozen example of nothing.
+
+    The route judges every bound node with the capability's own closed schema
+    before the plan becomes durable, so the document this spec offers as THE
+    graph request has to pass that same door.
+    """
+    validate_graph_arguments(parse_graph(CANON["graph_request"]))
 
 
 @pytest.mark.parametrize("owned", ["run_id", "created_at", "schema_version"])
