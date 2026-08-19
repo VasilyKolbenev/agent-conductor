@@ -28,7 +28,9 @@ from tests.test_command_http_api import (
     api,
     encode,
     get_headers,
+    post,
     post_headers,
+    proposal_body,
 )
 
 GRAPH_PATH = f"/command/runs/{RUN_ID}/graph"
@@ -242,10 +244,18 @@ def test_the_arguments_of_a_node_are_left_to_the_capabilitys_own_door(tmp_path):
     The propose door judges the payload against the capability's closed schema.
     Judging it here too would be two doors over one value, which is how they
     come to disagree -- and this plan carries a partial dispatch payload that
-    the propose door, not this one, is the place to refuse.
+    the propose door, not this one, is the place to refuse. Both halves are
+    driven, so the division of labour is a division and not a hole.
     """
     subject, _, _ = api(tmp_path)
     assert post_graph(subject, graph_body()).status == 201
+
+    node = graph_body()["nodes"][2]
+    refused = post(subject, f"/command/runs/{RUN_ID}/proposals", {
+        **proposal_body(), "arguments": node["arguments"],
+        "node_id": node["node_id"]})
+    assert (refused.status, refused.payload["error"]["code"]) == (
+        ERROR_STATUS["contract_invalid"], "contract_invalid")
 
 
 # -- the same transport, containment and signal as every other mutation --------
