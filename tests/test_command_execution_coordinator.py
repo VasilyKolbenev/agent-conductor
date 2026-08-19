@@ -544,3 +544,75 @@ def test_an_api_binds_one_coordinator_and_only_over_its_own_runtime(tmp_path):
     assert api.execution is own
     with pytest.raises(ValueError, match="exactly one execution coordinator"):
         api.attach_execution(ExecutionCoordinator(api.runtime))
+
+
+class _RetirementAtLockRelease:
+    """Stand in for the coordinator lock and retire the fleet at ONE release.
+
+    The race being held is not a line number, it is an INSTANT: the moment
+    `claim` stops holding the coordinator lock. Wrapping the lock is how a test
+    names that instant without naming the statements around it. If the
+    reservation is already on a worker's inbox by then, every retirement queues
+    behind it and the accepted action still runs; if it is not, the sentinel
+    wins an empty queue, the worker leaves, and the reservation lands on an
+    inbox no thread will drain again.
+
+    The retirement runs on the claiming thread, so nothing here depends on
+    scheduling. It fires once: `armed` is cleared before the retirement, which
+    is what lets that retirement take the same lock without recursion.
+    """
+
+    def __init__(self, coordinator, retire):
+        self._lock = coordinator._lock
+        self._retire = retire
+        self._coordinator = coordinator
+        self.armed = False
+
+    def __enter__(self):
+        return self._lock.__enter__()
+
+    def __exit__(self, *exc_info):
+        released = self._lock.__exit__(*exc_info)
+        if self.armed:
+            self.armed = False
+            self._retire(self._coordinator)
+        return released
+
+
+@pytest.mark.parametrize("retire", [
+    lambda coordinator: coordinator.shutdown(timeout=0.0),
+    lambda coordinator: coordinator.stop_worker(
+        coordinator.owned_tokens()[0], timeout=0.0),
+], ids=["shutdown", "stop_worker"])
+def test_a_retirement_at_claims_lock_release_cannot_strand_an_accepted_action(
+        tmp_path, retire):
+    """A Confirm that was ANSWERED 201 is performed, whoever retires meanwhile.
+
+    Both retirements remove a worker from the roster under the coordinator lock
+    and place their sentinel only afterwards, so the whole question is whether
+    the reservation reached the inbox before the lock went. Here it must have:
+    the request is durable by the time anything could be retried, and an
+    accepted action that no worker will ever drain is one this product can
+    neither perform nor honestly report.
+
+    The retirement is real -- the same public `shutdown`/`stop_worker` a server
+    calls -- and it takes effect: what is asserted is not that retirement was
+    prevented, but that it queued behind the action already admitted.
+    """
+    api, store, coordinator, adapter, _ = an_api(tmp_path)
+    proposed = post(api, f"/command/runs/{RUN_ID}/proposals", proposal_body())
+    assert proposed.status == 201, proposed.payload
+    barrier = _RetirementAtLockRelease(coordinator, retire)
+    coordinator._lock = barrier
+    barrier.armed = True
+
+    confirmed = post(
+        api, f"/command/runs/{RUN_ID}/actions", confirm_body(proposed.payload))
+
+    assert barrier.armed is False, "claim never released the lock under test"
+    assert confirmed.status == 201, confirmed.payload
+    assert "action_request" in kinds(store)
+    assert coordinator.placements() == 1
+    assert coordinator.wait_idle(10) is True
+    assert adapter.executions == 1
+    assert [row.outcome for row in results(store)] == ["verification_failed"]

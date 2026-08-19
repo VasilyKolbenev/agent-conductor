@@ -267,6 +267,16 @@ class ExecutionCoordinator:
         it and every later retirement queues behind it. Assignment stays
         deterministic: fewest outstanding actions first, ties broken by token
         order.
+
+        Choosing the worker and reaching its inbox are ONE step under this lock,
+        and that is what makes the sentence above true. Both retirements take the
+        same lock to remove a worker from the roster and only afterwards place
+        their sentinel, so a reservation queued here is always already ahead of
+        it. Split the two -- select while holding the lock, enqueue after
+        releasing it -- and a retirement fits exactly between: the sentinel lands
+        first, the worker reads it and leaves, and the reservation joins an inbox
+        no thread will ever drain again. The request is durable by then, so
+        nothing would answer it and nothing would settle it.
         """
         with self._lock:
             if not self._accepting:
@@ -283,7 +293,7 @@ class ExecutionCoordinator:
             worker.load += 1
             self._outstanding += 1
             reservation = _Reservation()
-        worker.inbox.put(reservation)
+            worker.inbox.put(reservation)
         return _Slot(self, worker, reservation)
 
     def wait_idle(self, timeout: float = JOIN_TIMEOUT_SECONDS) -> bool:

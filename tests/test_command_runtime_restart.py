@@ -154,37 +154,41 @@ def test_observed_restart_is_verify_only_and_events_are_exactly_once(
         "effect_lease", "execution_observed"]
 
 
+#: The one receipt identity both roads below must be handed. It lives here
+#: rather than inside the test so the adapter that recognizes it can too.
+OBSERVED_RECEIPT_ID = "execution_observed-event-fixed"
+
+
+class ReceiptSensitive(VerifiedAdapter):
+    """Reaches a real success only when it is handed the canonical receipt.
+
+    The control is the terminal state: a verifier that recognizes the
+    observed-event receipt earns the whole triple, and one handed anything else
+    answers `failed`. Both roads had to be distinguishable outcomes for the
+    comparison in the test below to mean anything.
+    """
+
+    def __init__(self, store):
+        super().__init__(store, result_changes={
+            "receipt_id": "adapter-private-result",
+            "observed_at": "2026-08-11T11:59:00Z",
+            "detail": "APIKEY_ADAPTER_DETAIL",
+            "evidence_refs": ("adapter-private-evidence",),
+        })
+        self.verify_inputs = []
+
+    def verify(self, request, result):
+        self.verify_inputs.append(result)
+        if result.receipt_id != OBSERVED_RECEIPT_ID:
+            self.verify_calls += 1
+            return AdapterVerification(
+                adapter_id=self.manifest.adapter_id, action_id=request.action_id,
+                state="failed", observed_at=NOW, detail="receipt identity control")
+        return super().verify(request, result)
+
+
 def test_live_and_restart_verify_receive_the_same_observed_event_receipt(
         tmp_path, monkeypatch):
-    expected_receipt = "execution_observed-event-fixed"
-
-    class ReceiptSensitive(VerifiedAdapter):
-        """Reaches a real success only when it is handed the canonical receipt.
-
-        The control is the terminal state: a verifier that recognizes the
-        observed-event receipt earns the whole triple, and one handed anything
-        else answers `failed`. Both roads had to be distinguishable outcomes for
-        the comparison below to mean anything.
-        """
-
-        def __init__(self, store):
-            super().__init__(store, result_changes={
-                "receipt_id": "adapter-private-result",
-                "observed_at": "2026-08-11T11:59:00Z",
-                "detail": "APIKEY_ADAPTER_DETAIL",
-                "evidence_refs": ("adapter-private-evidence",),
-            })
-            self.verify_inputs = []
-
-        def verify(self, request, result):
-            self.verify_inputs.append(result)
-            if result.receipt_id != expected_receipt:
-                self.verify_calls += 1
-                return AdapterVerification(
-                    adapter_id=self.manifest.adapter_id, action_id=request.action_id,
-                    state="failed", observed_at=NOW, detail="receipt identity control")
-            return super().verify(request, result)
-
     live_store = a_store(tmp_path / "live")
     live_adapter = ReceiptSensitive(live_store)
     live_runtime, live_authorization = authorized(live_store, live_adapter)
@@ -207,7 +211,7 @@ def test_live_and_restart_verify_receive_the_same_observed_event_receipt(
     assert live_adapter.verify_inputs[0].as_dict() == (
         restart_adapter.verify_inputs[0].as_dict())
     canonical = live_adapter.verify_inputs[0]
-    assert canonical.receipt_id == expected_receipt
+    assert canonical.receipt_id == OBSERVED_RECEIPT_ID
     assert canonical.observed_at == NOW
     assert canonical.detail is None and canonical.evidence_refs == ()
     assert "APIKEY_ADAPTER_DETAIL" not in repr(canonical.as_dict())

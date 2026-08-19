@@ -213,5 +213,3 @@ def test_verifier_free_text_never_reaches_attempt_evidence_or_journal(tmp_path, 
     assert secret not in repr(attempt)
     assert secret.encode() not in store.run_path("run-001").joinpath(
         "records.jsonl").read_bytes()
-
-

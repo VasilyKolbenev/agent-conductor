@@ -145,6 +145,13 @@ RESIDUE_DETAIL = (
     "the dsh home root holds state this build did not mint and may not delete, "
     "so nothing was preflighted, claimed or spawned; a dispatch runs again once "
     "an operator has cleared it")
+#: What a dispatch reports when the PREFLIGHT's own home outlived the version
+#: spawn. The version answered, but the retention promise is already broken
+#: inside this dispatch, so the task never starts on top of it. The standing
+#: home itself is named by ``RETAINED_DETAIL``, which every receipt appends.
+PREFLIGHT_RESIDUE_DETAIL = (
+    "the version preflight could not take back the home it minted, so this "
+    "dispatch stopped before claiming or spawning the task")
 #: Appended to whatever a receipt already says when an attempt home outlived its
 #: spawn. It never replaces the observed outcome it accompanies: a cleanup that
 #: did not happen is a second fact about the attempt, not a different result.
@@ -359,7 +366,13 @@ class DshHarnessAdapter:
 
     def _dispatch(
             self, request: ActionRequest, args: DeepDispatchArgs) -> ActionResultReceipt:
-        """Claim-check, materialize, sweep, preflight, then spawn exactly once."""
+        """Claim-check, materialize, sweep, preflight, then spawn exactly once.
+
+        The sweep guards state this dispatch INHERITED; the check after the
+        preflight guards state this dispatch just made. Both are the same rule:
+        a task never runs over a home that outlived its spawn, whether somebody
+        else left it or the version probe did.
+        """
         self._retained = 0
         if self._workspace.is_claimed(request.action_id):
             # A marker already claims this action: an earlier attempt reached the
@@ -382,6 +395,14 @@ class DshHarnessAdapter:
         preflight = self._preflight(request)
         if preflight is not None:
             return preflight
+        if self._retained:
+            # The version answered, and then its own home would not go. Counting
+            # that in the receipt was never enough: the promise is broken NOW,
+            # inside this dispatch, and the task is the one thing that must not
+            # be built on top of it. Nothing is claimed and nothing is spawned,
+            # so the next dispatch meets the standing home at the sweep instead
+            # of a marker it cannot tell apart from a crash.
+            return self._receipt(request, "failed", None, PREFLIGHT_RESIDUE_DETAIL)
         work = self._workspace.work_dir(args.work_item_id)
         before = self._workspace.digest_work_tree()
         self._workspace.claim(request.action_id)

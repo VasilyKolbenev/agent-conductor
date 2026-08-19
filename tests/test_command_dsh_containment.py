@@ -469,3 +469,47 @@ def test_the_adapter_reports_a_refusal_and_never_claims_a_marker_it_could_not_wr
     assert not (outside / "act-1.marker").exists(), "OUTSIDE_CREATED=True"
     assert _fakedsh.task_spawns(log) == []
     assert adapter.manifest.adapter_id == PROVIDER_ID
+
+def test_a_preflight_whose_own_home_survives_never_starts_the_task(
+        tmp_path, monkeypatch):
+    """Codex's probe: the version answered, its home stayed, the task ran anyway.
+
+    Verbatim, at the prior SHA::
+
+        SPAWNS=2
+        task spawn 1
+        outcome succeeded
+
+    The version probe is an attempt like any other -- it mints a home and must
+    take it back -- and when it could not, `_retained` counted the broken promise
+    and `_preflight` still answered None. So the dispatch went on to claim the
+    action and spawn the real task on top of state it had just failed to remove,
+    and the failure survived as a sentence appended to a `succeeded` receipt.
+
+    The sweep cannot be what catches this: the residue is made by THIS dispatch,
+    after its own sweep has already run.
+    """
+    adapter, root, log = a_harness(tmp_path)
+    discarded = DshWorkspace.discard_home
+    refused: list[Path] = []
+
+    def refuses_the_first(self, home):
+        """Fail the preflight's cleanup once, then let every later one work."""
+        if not refused:
+            refused.append(home)
+            raise OSError("the preflight home could not be removed")
+        return discarded(self, home)
+
+    monkeypatch.setattr(DshWorkspace, "discard_home", refuses_the_first)
+
+    receipt = run_once(adapter, a_request(action_id="act-1"))
+
+    assert len(refused) == 1, "the preflight's own discard was never reached"
+    assert len(_fakedsh.spawns(log)) == 1, "SPAWNS must be the version probe alone"
+    assert _fakedsh.task_spawns(log) == [], "TASK_SPAWNED_OVER_RESIDUE=True"
+    assert not (root / MARKER_DIR / "act-1.marker").exists(), "CLAIMED_OVER_RESIDUE=True"
+    assert receipt.outcome == "failed" and receipt.exit_code is None
+    assert "could not take back the home" in receipt.detail, receipt.detail
+    # Nothing was guessed at either: the home it could not remove is left exactly
+    # where it stood, for the next dispatch's sweep to meet rather than a marker.
+    assert refused[0].exists(), "PREFLIGHT_HOME_DELETED_BY_GUESS=True"
