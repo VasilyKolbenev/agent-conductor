@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+from contextlib import contextmanager
 
 import pytest
 
@@ -27,6 +28,7 @@ from tests.test_command_adapters import (
     DeepDispatchAdapter,
     DeepPlanAdapter,
     FakeAdapter,
+    MixedSchemaAdapter,
     ProcessDispatchAdapter,
 )
 from tests.test_command_http_api import (
@@ -253,33 +255,29 @@ def test_an_acting_step_that_no_gate_guards_is_refused_by_the_contract(tmp_path)
     assert journal(store) == before
 
 
-class _UnsafeAfterTheFirstLook(RunStore):
+class _UnsafeUnderTheLock(RunStore):
     """A store whose route is aliased between the two containment checks.
 
     The window is real and narrow: a route checked before the store is opened
     can be made unsafe before the transaction re-checks it. That second check
-    exists to close the race -- and driving it needs a deterministic hand, so
-    the alias appears on the one read the route performs between the two.
+    exists to close the race -- and driving it needs a deterministic hand, not
+    a real one, so the alias appears the first time a transaction is opened,
+    which on every mutating route is after the outer check and before the
+    inner one.
     """
 
     alias = None
 
-    def read(self, run_id):
-        recovered = super().read(run_id)
+    @contextmanager
+    def transaction(self):
         if self.alias is not None and not self.alias.exists():
-            os.link(self.run_path(run_id) / "records.jsonl", self.alias)
-        return recovered
+            os.link(self.run_path(RUN_ID) / "records.jsonl", self.alias)
+        with super().transaction():
+            yield
 
 
-def test_a_route_made_unsafe_under_the_lock_still_answers_route_unsafe(tmp_path):
-    """The second containment check must refuse like the first, not crash.
-
-    It did not. A refusal is a frozen value and the generator transaction
-    assigns `__traceback__` on its way out, which a frozen value refuses -- so
-    this exact path produced an untranslatable TypeError instead of one closed
-    409, on every mutating route, all of which re-check containment under the
-    same lock.
-    """
+def an_api_that_turns_unsafe(tmp_path):
+    """A command API over a store that is aliased under its own lock."""
     from conductor.command.adapters import AdapterRegistry
     from conductor.command.http_api import CommandApi, PRODUCT_COMMAND_BUDGET
     from conductor.command.http_transport import CommandSession
@@ -287,7 +285,7 @@ def test_a_route_made_unsafe_under_the_lock_still_answers_route_unsafe(tmp_path)
     from tests.test_command_http_api import PORT, TOKEN, ids
     from tests.test_command_run_store import CONFIG, a_run
 
-    store = _UnsafeAfterTheFirstLook(tmp_path)
+    store = _UnsafeUnderTheLock(tmp_path)
     store.create_run(a_run(
         run_id=RUN_ID, mode="confirm", config_digest=snapshot_digest(CONFIG)),
         CONFIG)
@@ -296,19 +294,44 @@ def test_a_route_made_unsafe_under_the_lock_still_answers_route_unsafe(tmp_path)
         store, AdapterRegistry([DeepDispatchAdapter()]),
         session=CommandSession(PORT, TOKEN), budget=PRODUCT_COMMAND_BUDGET,
         clock=lambda: NOW, ids=ids(), publish_run=events.append)
+    return subject, store, events
+
+
+@pytest.mark.parametrize("route,body", [
+    ("graph", graph_body()),
+    ("proposals", None),
+    ("decisions", None),
+])
+def test_every_mutating_route_answers_route_unsafe_under_its_own_lock(
+        tmp_path, route, body):
+    """The second containment check must refuse like the first, not crash.
+
+    It did not. A refusal is a frozen value and the generator transaction
+    assigns `__traceback__` on its way out, which a frozen value refused -- so
+    this exact path produced an untranslatable TypeError instead of one closed
+    409. Every mutating route re-checks under the same lock, so every one of
+    them is driven here, and each is read for the exact JSON envelope.
+    """
+    from tests.test_command_http_api import decision_body
+
+    subject, store, events = an_api_that_turns_unsafe(tmp_path)
     try:
         os.link(store.run_path(RUN_ID) / "records.jsonl", tmp_path / "probe-link")
         (tmp_path / "probe-link").unlink()
     except OSError as error:
         pytest.skip(f"hard links unavailable: {error}")
+    sent = {"graph": body, "proposals": proposal_body(),
+            "decisions": decision_body()}[route]
     store.alias = tmp_path / "foreign-journal"
     before = journal(store)
 
-    refused = post_graph(subject, graph_body())
+    refused = post(subject, f"/command/runs/{RUN_ID}/{route}", sent)
 
-    assert (refused.status, refused.payload["error"]["code"]) == (
-        ERROR_STATUS["route_unsafe"], "route_unsafe")
-    assert refused.payload["error"]["detail"] == {}
+    assert refused.status == ERROR_STATUS["route_unsafe"]
+    assert refused.payload == {"error": {
+        "code": "route_unsafe",
+        "message": "run route is not structurally contained",
+        "detail": {}}}
     assert journal(store) == before and events == []
 
 
@@ -417,6 +440,7 @@ def test_a_payload_the_capability_schema_refuses_never_becomes_durable(
 @pytest.mark.parametrize("adapter,label", [
     (ProcessDispatchAdapter, "another payload family behind the same name"),
     (FakeAdapter, "no declared family at all"),
+    (MixedSchemaAdapter, "this capability swapped, another one left alone"),
 ])
 def test_a_plan_the_bound_adapter_could_never_execute_is_refused(
         tmp_path, adapter, label):
@@ -441,24 +465,50 @@ def test_a_plan_the_bound_adapter_could_never_execute_is_refused(
                 if row.kind == "graph_definition"], "no graph became durable"
 
 
-def test_the_plan_and_the_proposal_pass_the_same_registry_door(tmp_path):
-    """Codex's probe, kept: the two roads may not disagree about one pair.
+#: One payload each way: the node's own, and one no schema admits.
+A_GOOD_PAYLOAD = graph_body()["nodes"][2]["arguments"]
+A_BAD_PAYLOAD = {"api_key": "APIKEY-SECRET-GRAPH", "cwd": "C:/outside"}
 
-    A plan this route accepts must be one a proposal against the same node can
-    be minted from. When the graph door consulted the global table and the
-    proposal door consulted the registry, `201` then `409 service_refused` was
-    the exact sequence -- and only the graph half was permanent.
+
+@pytest.mark.parametrize("payload,accepted", [
+    (A_GOOD_PAYLOAD, True),
+    (A_BAD_PAYLOAD, False),
+], ids=["accepted-by-both", "refused-by-both"])
+def test_one_payload_gets_one_verdict_whichever_route_asks(
+        tmp_path, payload, accepted):
+    """Codex's probe, kept in both directions: two roads, one pair, one answer.
+
+    When the graph door consulted the global table and the proposal door
+    consulted the registry, `201` then `409 service_refused` was the exact
+    sequence -- and only the graph half was permanent. Now the same payload is
+    put to both, and they agree; a plan this route accepts is a plan a proposal
+    against the same node can be minted from, and one it refuses is refused
+    there too.
     """
-    subject, _, _ = graph_api(tmp_path)
-    assert post_graph(subject, graph_body()).status == 201
+    subject, store, _ = graph_api(tmp_path)
+    body = graph_body()
+    body["nodes"][2]["arguments"] = payload
+    node = body["nodes"][2]
 
-    node = graph_body()["nodes"][2]
+    written = post_graph(subject, body)
+    if not accepted:
+        # Nothing durable to propose against, so the proposal is put to the
+        # same door directly rather than through a plan that never landed.
+        assert written.status == ERROR_STATUS["contract_invalid"]
+        assert not [row for row in store.read(RUN_ID).records
+                    if row.kind == "graph_definition"]
+    else:
+        assert written.status == 201
+
     proposed = post(subject, f"/command/runs/{RUN_ID}/proposals", {
-        **proposal_body(), "arguments": node["arguments"],
-        "node_id": node["node_id"]})
+        **proposal_body(), "arguments": payload,
+        **({"node_id": node["node_id"]} if accepted else {})})
 
-    assert proposed.status == 201, proposed.payload
-    assert proposed.payload["node_id"] == node["node_id"]
+    assert (proposed.status == 201) is accepted, proposed.payload
+    if accepted:
+        assert proposed.payload["node_id"] == node["node_id"]
+    else:
+        assert proposed.payload["error"]["code"] == "contract_invalid"
 
 
 def test_a_capability_no_argument_schema_carries_is_refused(tmp_path):

@@ -397,12 +397,44 @@ def test_capability_iterable_failure_is_not_retained_in_exception_graph():
 # -- a refusal is a frozen value that still travels as an exception ------------
 
 
-def test_a_refusal_keeps_its_reviewed_fields_read_only():
+#: The attributes Python's own exception machinery assigns through setattr.
+#: `__notes__` joins the four the review named because `add_note` assigns it
+#: the same way, and a refusal that crashed on add_note would be the same
+#: defect one door along.
+SERVICE_ATTRIBUTES = frozenset({
+    "__traceback__", "__cause__", "__context__", "__suppress_context__",
+    "__notes__"})
+
+
+def test_only_the_interpreters_own_attributes_may_be_assigned():
+    """Frozen as a value, mobile as an exception -- and nothing in between.
+
+    The four the review named must pass, because the plumbing that carries an
+    exception assigns them. Everything else is refused: the three reviewed
+    fields, and any new name at all, so this cannot become a bag a caller
+    widens later.
+    """
+    assert {"__traceback__", "__cause__", "__context__",
+            "__suppress_context__"} <= SERVICE_ATTRIBUTES
+    assert SERVICE_ATTRIBUTES == api_contracts._EXCEPTION_SLOTS
+    assert all(name.startswith("__") and name.endswith("__")
+               for name in SERVICE_ATTRIBUTES)
+
+    # Each one takes the type the interpreter gives it, so this proves the
+    # assignment reaches the real slot rather than a look-alike.
+    permitted = {"__traceback__": None, "__cause__": None, "__context__": None,
+                 "__suppress_context__": True, "__notes__": ["a note"]}
+    assert set(permitted) == SERVICE_ATTRIBUTES
     refusal = ApiRefusal.fixed("route_unsafe")
-    for field in ("code", "message", "detail"):
+    for name, value in sorted(permitted.items()):
+        setattr(refusal, name, value)
+        assert getattr(refusal, name) == value
+    for name in ("code", "message", "detail", "status", "surprise", "__dict__"):
         with pytest.raises(FrozenInstanceError):
-            setattr(refusal, field, "moved")
+            setattr(refusal, name, "moved")
     assert (refusal.code, refusal.status) == ("route_unsafe", 409)
+    assert refusal.as_dict()["error"]["message"] == (
+        "run route is not structurally contained")
 
 
 def test_a_refusal_survives_the_store_transaction_it_is_raised_inside(tmp_path):

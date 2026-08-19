@@ -157,6 +157,23 @@ class ProcessDispatchAdapter(FakeAdapter):
         super().__init__(adapter_id=adapter_id, capabilities=("observe", "dispatch"))
 
 
+class MixedSchemaAdapter(FakeAdapter):
+    """One adapter, one family per capability -- the pair is what decides.
+
+    It serves `review` under the family this API speaks and `dispatch` under
+    another. An adapter-level answer would have to call it servable or not; only
+    a per-PAIR answer can say yes to one of its capabilities and no to the
+    other, which is exactly what a plan naming both needs.
+    """
+
+    argument_schemas = {
+        "dispatch": "structured-process-v1", "review": DEEP_ARGUMENT_SCHEMA}
+
+    def __init__(self, adapter_id="claude-code"):
+        super().__init__(
+            adapter_id=adapter_id, capabilities=("observe", "dispatch", "review"))
+
+
 class RecordingAdapter:
     """An adapter whose execute and verify -- and, via __getattr__, any other seam
     reached under any name -- append to a shared list, so a caller can prove the
@@ -730,3 +747,30 @@ def test_argument_validation_normalizes_unknown_adapter_and_capability():
         registry.validate_arguments("missing", "observe", {})
     with pytest.raises(UnsupportedCapability, match="dispatch"):
         registry.validate_arguments("claude-code", "dispatch", {})
+
+
+@pytest.mark.parametrize("adapter,expected", [
+    (DeepDispatchAdapter, {"dispatch": DEEP_ARGUMENT_SCHEMA}),
+    (DeepPlanAdapter, {"dispatch": DEEP_ARGUMENT_SCHEMA,
+                       "review": DEEP_ARGUMENT_SCHEMA}),
+    (ProcessDispatchAdapter, {"dispatch": "structured-process-v1"}),
+    (MixedSchemaAdapter, {"dispatch": "structured-process-v1",
+                          "review": DEEP_ARGUMENT_SCHEMA}),
+    (FakeAdapter, {}),
+])
+def test_the_registry_records_the_family_each_double_declares(adapter, expected):
+    """These doubles exist to make a PAIR say something; read back what it says.
+
+    `FakeAdapter` declares nothing, which makes the registry's per-pair
+    validation a no-op for it -- that is how a door consulting only the global
+    argument table passed every test while it let a plan no adapter could
+    execute become durable. The rest declare a family per capability, and what
+    the REGISTRY recorded is asserted here rather than read off the class.
+    """
+    registry = AdapterRegistry([adapter()])
+    recorded = {
+        capability: registry.argument_schema("claude-code", capability)
+        for capability in registry.controls("claude-code")}
+    assert {name: value for name, value in recorded.items()
+            if value is not None} == expected
+    assert registry.argument_schema("claude-code", "observe") is None
