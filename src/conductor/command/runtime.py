@@ -424,6 +424,10 @@ class ControlRuntime:
             timeout_seconds=proposal.timeout_seconds,
             preview_digest=proposal.preview_digest,
             mode=ControlMode.CONFIRM,
+            # Copied from the STORED proposal, never from a Confirm body: what a
+            # Human confirmed is the proposal they were shown, binding included,
+            # and a body that could name a node could name a different one.
+            node_id=proposal.node_id,
         )
 
     # -- execute (A/RT-1): prepare -> execute -> verify -> one durable result receipt --

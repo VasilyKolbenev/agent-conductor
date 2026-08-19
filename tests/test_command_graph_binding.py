@@ -1,0 +1,265 @@
+"""Which graph node an action carries out, and how that survives a Confirm.
+
+Nothing durable bound an action to a node before this: a request named an
+instance and a capability, and a graph named the same things, so attributing a
+run's progress to a step meant guessing -- ambiguously, because the base
+contract lets several nodes share one binding. The owner's call was to extend
+the two frozen contracts rather than add a ninth join record, so the binding is
+a field on the proposal and is INHERITED by the request.
+
+Two rules give it its weight. Absent is not null: a run without a graph proposes
+exactly as it always did, and a caller who mentions a node has to mean one. And
+a named node is CHECKED -- against this run's own durable graph, and against the
+three facts that decide what actually runs.
+"""
+from __future__ import annotations
+
+import pytest
+
+from conductor.command.contracts import ActionProposal, ActionRequest, ContractError
+from conductor.command.run_store import RunStore, StoreError, snapshot_digest
+from tests.alpha3_graph_artifacts import dalio_definition
+from tests.test_command_run_store import CONFIG, a_run
+
+RUN_ID = "run-001"
+NOW = "2026-08-19T09:00:00Z"
+#: The canonical graph's own Do node, which is the one node that dispatches.
+DO_NODE = "do"
+
+
+def a_store(tmp_path, *, with_graph=True):
+    store = RunStore(tmp_path)
+    store.create_run(
+        a_run(run_id=RUN_ID, mode="confirm",
+              config_digest=snapshot_digest(CONFIG)), CONFIG)
+    if with_graph:
+        store.append(dalio_definition(run_id=RUN_ID))
+    return store
+
+
+def the_do_node():
+    return dalio_definition(run_id=RUN_ID).stage_node("do")
+
+
+def a_proposal(**changes):
+    """A proposal whose facts are the Do node's, unless a test moves one."""
+    node = the_do_node()
+    body = dict(
+        proposal_id="proposal-1", run_id=RUN_ID, attempt_id="attempt-001",
+        instance_id=node.instance_id, capability=node.capability,
+        arguments=node.payload(), scope=("src", "tests"),
+        proposed_by="claude-dev", proposed_at=NOW, timeout_seconds=900,
+        rationale="Carry out the Do step.",
+        config_digest=snapshot_digest(CONFIG), node_id=DO_NODE)
+    body.update(changes)
+    return ActionProposal(**body)
+
+
+# -- absent is not null --------------------------------------------------------
+
+
+def test_a_proposal_that_names_no_node_is_unchanged_in_every_byte():
+    """Runs without a graph propose exactly as they did before graphs existed."""
+    unbound = a_proposal(node_id=None)
+    assert "node_id" not in unbound.as_dict()
+    assert ActionProposal.from_dict(unbound.as_dict()).node_id is None
+
+
+def test_naming_a_node_moves_the_preview_digest_and_absence_leaves_it_still():
+    bound, unbound = a_proposal(), a_proposal(node_id=None)
+    assert bound.preview_digest != unbound.preview_digest
+    assert a_proposal().preview_digest == bound.preview_digest
+
+
+@pytest.mark.parametrize("contract,document", [
+    (ActionProposal, "proposal"),
+    (ActionRequest, "request"),
+])
+def test_a_present_null_node_id_is_refused_rather_than_read_as_absent(
+        contract, document):
+    """Two spellings of "unbound" would make the binding optional to CHECK."""
+    if contract is ActionProposal:
+        body = a_proposal().as_dict()
+    else:
+        body = a_request().as_dict()
+    body["node_id"] = None
+    with pytest.raises(ContractError, match="null is not a spelling of absent"):
+        contract.from_dict(body)
+
+
+def a_request(**changes):
+    node = the_do_node()
+    body = dict(
+        action_id="action-1", run_id=RUN_ID, attempt_id="attempt-001",
+        instance_id=node.instance_id, capability=node.capability,
+        arguments=node.payload(), scope=("src", "tests"),
+        requested_by="release-owner", requested_at=NOW,
+        idempotency_key="dispatch-proposal-1", timeout_seconds=900,
+        preview_digest=a_proposal().preview_digest, mode="confirm",
+        node_id=DO_NODE)
+    body.update(changes)
+    return ActionRequest(**body)
+
+
+def test_the_request_digest_carries_the_binding_it_was_given():
+    from conductor.command.attempts import action_request_digest
+
+    bound, unbound = a_request(), a_request(node_id=None)
+    assert action_request_digest(bound) != action_request_digest(unbound)
+    assert "node_id" not in unbound.as_dict()
+
+
+# -- a named node is checked against this run's own graph ----------------------
+
+
+def test_a_proposal_may_only_name_a_node_when_the_run_follows_a_graph(tmp_path):
+    store = a_store(tmp_path, with_graph=False)
+    with pytest.raises(StoreError, match="follows no graph"):
+        store.append(a_proposal())
+
+
+def test_a_proposal_may_not_name_a_node_the_graph_does_not_carry(tmp_path):
+    store = a_store(tmp_path)
+    with pytest.raises(StoreError, match="does not carry"):
+        store.append(a_proposal(node_id="ghost"))
+
+
+def test_a_node_that_declares_no_capability_carries_out_nothing(tmp_path):
+    """A gate decides; it does not do work, so no proposal may claim it."""
+    store = a_store(tmp_path)
+    with pytest.raises(StoreError, match="declares no capability"):
+        store.append(a_proposal(node_id="confirm-gate"))
+
+
+@pytest.mark.parametrize("field,wrong", [
+    ("instance_id", "codex-review"),
+    ("capability", "evidence"),
+])
+def test_the_proposal_must_carry_the_nodes_own_instance_and_capability(
+        tmp_path, field, wrong):
+    store = a_store(tmp_path)
+    with pytest.raises(StoreError, match=f"proposal {field} does not match node"):
+        store.append(a_proposal(**{field: wrong}))
+
+
+def test_the_proposal_must_carry_the_nodes_own_arguments(tmp_path):
+    """The arguments decide what actually runs, so a binding that let them
+    differ would name a node while doing something else."""
+    store = a_store(tmp_path)
+    drifted = dict(the_do_node().payload())
+    drifted["work_item_id"] = "work-002"
+    with pytest.raises(StoreError, match="arguments do not match node"):
+        store.append(a_proposal(arguments=drifted))
+
+
+def test_a_matching_proposal_is_accepted_and_recovered_with_its_binding(tmp_path):
+    store = a_store(tmp_path)
+    assert store.append(a_proposal()) is True
+    rows = [row.value for row in store.read(RUN_ID).records
+            if row.kind == "action_proposal"]
+    assert [row.node_id for row in rows] == [DO_NODE]
+
+
+def test_an_unbound_proposal_is_left_alone_even_when_a_graph_stands(tmp_path):
+    """A graph does not make every action part of it."""
+    store = a_store(tmp_path)
+    assert store.append(a_proposal(node_id=None)) is True
+
+
+# -- the request inherits the binding, and a Confirm body cannot supply one ----
+
+
+def a_runtime(store):
+    from conductor.command.adapters import AdapterRegistry
+    from conductor.command.runtime import ControlRuntime
+
+    minted = iter(f"minted-{index}" for index in range(1, 50))
+    return ControlRuntime(
+        store, AdapterRegistry(), clock=lambda: NOW,
+        ids=lambda prefix: f"{prefix}-{next(minted)}")
+
+
+def a_budget():
+    from conductor.command.runtime import Budget
+
+    return Budget(max_actions=8, max_action_seconds=3600,
+                  max_confirmation_age_seconds=3600)
+
+
+def a_confirmation(proposal, **changes):
+    from conductor.command.runtime import Confirmation
+
+    values = dict(
+        confirmation_id="confirmation-001", run_id=proposal.run_id,
+        proposal_id=proposal.proposal_id, preview_digest=proposal.preview_digest,
+        capability=proposal.capability, scope=tuple(proposal.scope),
+        config_digest=proposal.config_digest, confirmed_by="release-owner",
+        confirmed_at=NOW)
+    values.update(changes)
+    return Confirmation(**values)
+
+
+def test_the_authorized_request_carries_the_stored_proposals_binding(tmp_path):
+    """What a Human confirmed is the proposal they were shown, binding included."""
+    store = a_store(tmp_path)
+    proposal = a_proposal()
+    store.append(proposal)
+
+    authorization = a_runtime(store).authorize(
+        a_confirmation(proposal), budget=a_budget())
+
+    assert authorization.request.node_id == DO_NODE
+    stored = [row.value for row in store.read(RUN_ID).records
+              if row.kind == "action_request"]
+    assert [row.node_id for row in stored] == [DO_NODE]
+
+
+def test_an_unbound_proposal_authorizes_an_unbound_request(tmp_path):
+    store = a_store(tmp_path)
+    proposal = a_proposal(node_id=None)
+    store.append(proposal)
+
+    authorization = a_runtime(store).authorize(
+        a_confirmation(proposal), budget=a_budget())
+
+    assert authorization.request.node_id is None
+    assert "node_id" not in authorization.request.as_dict()
+
+
+def test_a_confirm_body_may_not_name_a_node_at_all():
+    """The binding is the proposal's; a body that could name one could name
+    a DIFFERENT one, which is a Human confirming a step they never saw."""
+    from conductor.command.api_contracts import ApiRefusal, parse_confirmation
+
+    body = {
+        "proposal_id": "proposal-1", "preview_digest": "sha256:" + "0" * 64,
+        "capability": "dispatch", "scope": ["src"],
+        "config_digest": "sha256:" + "0" * 64, "confirmed_by": "release-owner",
+    }
+    assert parse_confirmation(dict(body)) is not None
+    with pytest.raises(ApiRefusal):
+        parse_confirmation({**body, "node_id": DO_NODE})
+
+
+def test_the_human_sees_the_binding_before_confirming_it(tmp_path):
+    """The proposal a Human is shown is the document that names the node."""
+    store = a_store(tmp_path)
+    proposal = a_proposal()
+    store.append(proposal)
+    shown = [row.value for row in store.read(RUN_ID).records
+             if row.kind == "action_proposal"][0]
+    assert shown.as_dict()["node_id"] == DO_NODE
+    assert shown.preview_digest == proposal.preview_digest
+
+
+def test_every_later_record_reaches_the_node_through_the_action(tmp_path):
+    """AttemptEvent, result and evidence carry action_id, and the action carries
+    the node -- so nothing downstream needs a second copy of the binding."""
+    from conductor.command.attempts import AttemptEvent
+    from conductor.command.contracts import ActionResultReceipt
+
+    fields = set(AttemptEvent.__dataclass_fields__) | set(
+        ActionResultReceipt.__dataclass_fields__)
+    assert "node_id" not in fields, "the binding is carried once, by the action"
+    assert "action_id" in AttemptEvent.__dataclass_fields__
+    assert "action_id" in ActionResultReceipt.__dataclass_fields__

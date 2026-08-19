@@ -209,6 +209,28 @@ def _unique_ids(name: str, value: object) -> tuple[str, ...]:
     return refs
 
 
+#: Tells "the field was not there" apart from "the field was there and was
+#: null". They are different sentences: absence says this action belongs to no
+#: graph node, while a present null is a caller naming a node and naming nothing.
+ABSENT = object()
+
+
+def _bound_id(name: str, value: object) -> str | None:
+    """An optional identifier: absent, or a real id. Never a present null.
+
+    A field that may be missing is not a field that may be empty. Allowing
+    ``null`` would give two spellings for "unbound", and every reader would then
+    have to treat them as one -- which is how a binding quietly becomes optional
+    to check as well as optional to carry.
+    """
+    if value is ABSENT:
+        return None
+    if value is None:
+        raise ContractError(
+            f"{name} must be omitted when there is none; null is not a spelling of absent")
+    return _id(name, value)
+
+
 def _raw(value: object) -> dict[str, Any]:
     if not isinstance(value, Mapping):
         raise ContractError(f"contract document must be a JSON object, got {value!r}")
@@ -306,6 +328,10 @@ class ActionRequest:
     timeout_seconds: int
     preview_digest: str
     mode: ControlMode | str
+    #: The graph node this action carries out. It is copied from the STORED
+    #: proposal at authorize time and never read from a Confirm body: what a
+    #: Human confirmed is the proposal they were shown, binding included.
+    node_id: str | None = None
     schema_version: int = 2
     extra: Mapping[str, Any] = field(default_factory=dict, repr=False)
 
@@ -313,6 +339,7 @@ class ActionRequest:
         "schema_version", "action_id", "run_id", "attempt_id", "instance_id",
         "capability", "arguments", "scope", "requested_by", "requested_at",
         "idempotency_key", "timeout_seconds", "preview_digest", "mode",
+        "node_id",
     })
 
     def __post_init__(self) -> None:
@@ -331,6 +358,8 @@ class ActionRequest:
         if mode not in {ControlMode.CONFIRM, ControlMode.POLICY}:
             raise ContractError("mode for an executable action must be confirm or policy")
         object.__setattr__(self, "mode", mode)
+        if self.node_id is not None:
+            object.__setattr__(self, "node_id", _id("node_id", self.node_id))
         object.__setattr__(self, "schema_version", _schema(self.schema_version))
         object.__setattr__(self, "extra", _extra(self.extra, self._FIELDS))
 
@@ -346,6 +375,11 @@ class ActionRequest:
             "timeout_seconds": self.timeout_seconds,
             "preview_digest": self.preview_digest, "mode": self.mode.value,
         })
+        # Written only when this action carries out a node, so the request
+        # digest -- which covers this whole document -- moves with the binding
+        # and stands still without one.
+        if self.node_id is not None:
+            out["node_id"] = self.node_id
         return out
 
     @classmethod
@@ -353,8 +387,10 @@ class ActionRequest:
         data = _raw(value)
         known = {name: data.pop(name) for name in list(data) if name in cls._FIELDS}
         required = {name: _take(known, name) for name in cls._FIELDS
-                    if name != "schema_version"}
-        return cls(**required, schema_version=known.pop("schema_version", 2), extra=data)
+                    if name not in ("schema_version", "node_id")}
+        return cls(**required,
+                   node_id=_bound_id("node_id", known.pop("node_id", ABSENT)),
+                   schema_version=known.pop("schema_version", 2), extra=data)
 
 
 @dataclass(frozen=True)
@@ -380,6 +416,11 @@ class ActionProposal:
     rationale: str
     config_digest: str
     preview_digest: str = ""
+    #: The graph node this action carries out, when the run follows a graph.
+    #: Absent for a run that has none, and for every action written before
+    #: graphs existed -- which is why it is optional rather than a second
+    #: spelling of "unknown".
+    node_id: str | None = None
     schema_version: int = 2
     extra: Mapping[str, Any] = field(default_factory=dict, repr=False)
 
@@ -387,6 +428,7 @@ class ActionProposal:
         "schema_version", "proposal_id", "run_id", "attempt_id", "instance_id",
         "capability", "arguments", "scope", "proposed_by", "proposed_at",
         "timeout_seconds", "rationale", "config_digest", "preview_digest",
+        "node_id",
     })
 
     def __post_init__(self) -> None:
@@ -402,6 +444,8 @@ class ActionProposal:
             raise ContractError("timeout_seconds must be an integer from 1 through 86400")
         object.__setattr__(self, "rationale", _text("rationale", self.rationale))
         object.__setattr__(self, "config_digest", _digest("config_digest", self.config_digest))
+        if self.node_id is not None:
+            object.__setattr__(self, "node_id", _id("node_id", self.node_id))
         object.__setattr__(self, "schema_version", _schema(self.schema_version))
         object.__setattr__(self, "extra", _extra(self.extra, self._FIELDS))
         computed = _content_digest(self._body())
@@ -425,6 +469,10 @@ class ActionProposal:
             "timeout_seconds": self.timeout_seconds, "rationale": self.rationale,
             "config_digest": self.config_digest,
         })
+        # Only a real binding is written, so a proposal that names no node
+        # digests exactly as it always did and no frozen example moves.
+        if self.node_id is not None:
+            out["node_id"] = self.node_id
         return out
 
     def as_dict(self) -> dict[str, Any]:
@@ -437,9 +485,10 @@ class ActionProposal:
         data = _raw(value)
         known = {name: data.pop(name) for name in list(data) if name in cls._FIELDS}
         required = {name: _take(known, name) for name in cls._FIELDS
-                    if name not in ("schema_version", "preview_digest")}
+                    if name not in ("schema_version", "preview_digest", "node_id")}
         return cls(
             **required, preview_digest=known.pop("preview_digest", ""),
+            node_id=_bound_id("node_id", known.pop("node_id", ABSENT)),
             schema_version=known.pop("schema_version", 2), extra=data)
 
 

@@ -44,6 +44,7 @@ from .contracts import (
     ObservationRecord,
     RunEnvelope,
     _freeze_json,
+    _thaw_json,
     _id,
     canonical_json,
 )
@@ -302,6 +303,44 @@ def _one_graph_per_run(recovered: "RecoveredRun", value: GraphDefinition) -> Non
             f"{standing.graph_id!r}; one run carries one graph")
 
 
+def _proposal_matches_its_node(
+        recovered: "RecoveredRun", value: ActionProposal) -> None:
+    """A proposal that names a node must be the work that node describes.
+
+    An unbound proposal is left alone: runs without a graph existed before
+    graphs did, and they still do. But a binding that nobody checks is worse
+    than none at all -- it reads as authority the plan never gave. So the node
+    must exist in THIS run's graph, it must be a node that does work, and the
+    three facts that decide what runs -- the instance, the capability and the
+    arguments -- must be the node's own.
+    """
+    if value.node_id is None:
+        return
+    graph = next((row.value for row in recovered.records
+                  if row.kind == "graph_definition"), None)
+    if graph is None:
+        raise StoreError(
+            f"proposal names node {value.node_id!r} but run "
+            f"{recovered.envelope.run_id!r} follows no graph")
+    node = next((row for row in graph.nodes if row.node_id == value.node_id), None)
+    if node is None:
+        raise StoreError(
+            f"proposal names node {value.node_id!r}, which graph "
+            f"{graph.graph_id!r} does not carry")
+    if node.capability is None:
+        raise StoreError(
+            f"node {node.node_id!r} declares no capability, so no proposal "
+            "carries it out")
+    for field_name, planned in (("instance_id", node.instance_id),
+                                ("capability", node.capability)):
+        if getattr(value, field_name) != planned:
+            raise StoreError(
+                f"proposal {field_name} does not match node {node.node_id!r}")
+    if _thaw_json(value.arguments) != node.payload():
+        raise StoreError(
+            f"proposal arguments do not match node {node.node_id!r}")
+
+
 def _record_parts(value: RecordValue) -> tuple[str, str, str]:
     for kind, (contract, identity_field) in _RECORDS.items():
         if isinstance(value, contract):
@@ -553,6 +592,7 @@ class RunStore:
         if isinstance(value, ActionProposal):
             if value.config_digest != recovered.envelope.config_digest:
                 raise StoreError("proposal config_digest does not match the frozen run")
+            _proposal_matches_its_node(recovered, value)
         if isinstance(value, ActionResultReceipt):
             action = action_request_for(prior_values, value.action_id)
             if action is None:

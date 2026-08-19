@@ -60,7 +60,10 @@ _PROPOSAL_REQUIRED = frozenset({
     "instance_id", "attempt_id", "capability", "arguments", "scope",
     "proposed_by", "rationale", "timeout_seconds",
 })
-_PROPOSAL_FIELDS = _PROPOSAL_REQUIRED | {"adapter_id"}
+#: A proposal may also name the graph node it carries out. Optional because a
+#: run without a graph proposes exactly as it always did -- and NOT nullable,
+#: because absent and null would be two spellings of the same thing.
+_PROPOSAL_FIELDS = _PROPOSAL_REQUIRED | {"adapter_id", "node_id"}
 _CONFIRM_FIELDS = frozenset({
     "proposal_id", "preview_digest", "capability", "scope", "config_digest",
     "confirmed_by",
@@ -166,6 +169,7 @@ class ProposalInput:
     rationale: str
     timeout_seconds: int
     adapter_id: str | None
+    node_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -292,11 +296,18 @@ def parse_proposal(
     adapter_id = values.get("adapter_id")
     if "adapter_id" in values and not _safe_id(adapter_id):
         raise ApiRefusal.fixed("contract_invalid") from None
+    # A caller either names a node or does not mention one. Present-and-null is
+    # refused here rather than read as absent, because the contract's own
+    # optional-id rule cannot tell the two apart once a value reaches it.
+    node_id = values.get("node_id")
+    if "node_id" in values and not _safe_id(node_id):
+        raise ApiRefusal.fixed("contract_invalid") from None
     return ProposalInput(
         instance_id=probe.instance_id, attempt_id=probe.attempt_id,
         capability=probe.capability, arguments=probe.arguments, scope=probe.scope,
         proposed_by=probe.proposed_by, rationale=probe.rationale,
-        timeout_seconds=probe.timeout_seconds, adapter_id=adapter_id)
+        timeout_seconds=probe.timeout_seconds, adapter_id=adapter_id,
+        node_id=node_id)
 
 
 def parse_confirmation(body: object) -> ConfirmInput:

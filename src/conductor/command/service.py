@@ -92,6 +92,7 @@ class CommandService:
             capability: str, arguments: Mapping[str, Any], scope: Iterable[str],
             proposed_by: str, rationale: str, timeout_seconds: int,
             adapter_id: str | None = None,
+            node_id: str | None = None,
             proposal_id: str | None = None,
             proposed_at: str | None = None) -> ActionProposal:
         """Persist one immutable proposal; refused in Observe, prepares nothing."""
@@ -127,6 +128,7 @@ class CommandService:
             timeout_seconds=timeout_seconds,
             rationale=rationale,
             config_digest=envelope.config_digest,
+            node_id=node_id,
         )
         self._store.append(proposal)
         return proposal

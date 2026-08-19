@@ -206,7 +206,7 @@ class CommandApi:
                 arguments=submitted.arguments, scope=submitted.scope,
                 proposed_by=submitted.proposed_by, rationale=submitted.rationale,
                 timeout_seconds=submitted.timeout_seconds,
-                adapter_id=submitted.adapter_id)
+                adapter_id=submitted.adapter_id, node_id=submitted.node_id)
             created = proposal.proposal_id not in prior_ids
         if created:
             self._publish_run(run_id)
