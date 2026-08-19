@@ -227,8 +227,10 @@ def test_default_empty_registry_keeps_reads_but_refuses_proposals(tmp_path):
         before = (store.run_path(RUN_ID) / "records.jsonl").read_bytes()
         refused = _request(subject, "POST", prefix + "/proposals", proposal_body())
         assert controls[1]["instances"][0]["controls"] == []
+        # The binding is resolved before the capability is asked about, so an
+        # adapter this process never registered is a service fact.
         assert (refused[0], refused[1]["error"]["code"]) == (
-            409, "capability_unsupported")
+            409, "service_refused")
         assert (store.run_path(RUN_ID) / "records.jsonl").read_bytes() == before
     finally:
         subject.shutdown()

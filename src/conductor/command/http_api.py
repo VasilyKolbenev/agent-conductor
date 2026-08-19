@@ -276,10 +276,7 @@ class CommandApi:
                 self._registry, bound, node.capability, node.payload())
 
     def _propose(self, run_id: str, body: Mapping[str, Any]) -> CommandResponse:
-        declared = {
-            capability for manifest in self._registry.manifests()
-            for capability in manifest.capabilities}
-        submitted = parse_proposal(body, adapter_capabilities=declared)
+        submitted = parse_proposal(body)
         self._hold_route(run_id)
         initial = self._store.read(run_id)
         bound = self._bound_adapter(initial.config, run_id, submitted.instance_id)

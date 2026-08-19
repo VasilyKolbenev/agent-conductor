@@ -30,7 +30,6 @@ import pytest
 
 from conductor.command import run_store as run_store_module
 from conductor.command.adapters.deep_commands import DEEP_ARGUMENT_TYPES
-from conductor.command.adapters.deep_contracts import DeepContractError
 from conductor.command.api_contracts import (
     ApiRefusal,
     parse_confirmation,
@@ -55,8 +54,6 @@ from conductor.command.contracts import (
 _ROOT = Path(__file__).resolve().parents[1]
 _SPEC = _ROOT / "docs" / "specs" / "2026-08-13-cockpit-command-api.md"
 _FIXTURES = Path(__file__).resolve().parent / "fixtures" / "cockpit_command_csrf_fixtures.json"
-_BOUNDARY_FIXTURES = (
-    Path(__file__).resolve().parent / "fixtures" / "cockpit_command_boundary_fixtures.json")
 _SERVER = _ROOT / "src" / "conductor" / "server.py"
 
 RUN_ID = "run-cockpit-001"
@@ -188,10 +185,6 @@ def _load_canonical() -> dict[str, object]:
 
 def _load_fixtures() -> dict:
     return json.loads(_FIXTURES.read_text(encoding="utf-8"))
-
-
-def _load_boundary_fixtures() -> dict:
-    return json.loads(_BOUNDARY_FIXTURES.read_text(encoding="utf-8"))
 
 
 CANON = _load_canonical()
@@ -726,74 +719,3 @@ def test_raw_transport_precedence_is_pairwise_and_phase_visible():
         "refuse", "malformed_request", "content_type")
     assert cases["raw_host_failure_precedes_invalid_utf8"] == (
         "refuse", "same_origin_denied", "host")
-
-
-def _boundary_cases():
-    return _load_boundary_fixtures()["proposal_cases"]
-
-
-def _proposal_disposition(case: dict) -> tuple[str, str | None]:
-    body = case["body"]
-    if not isinstance(body, dict) or not PROPOSE_REQUIRED <= set(body) <= PROPOSE_ALLOWED:
-        return "refuse", "contract_invalid"
-    capability = body["capability"]
-    argument_type = DEEP_ARGUMENT_TYPES.get(capability)
-    if argument_type is None or capability not in case["adapter_capabilities"]:
-        return "refuse", "capability_unsupported"
-    try:
-        arguments = argument_type.from_dict(body["arguments"]).as_dict()
-    except DeepContractError:
-        return "refuse", "contract_invalid"
-    try:
-        ActionProposal(
-            proposal_id="proposal-boundary", run_id=RUN_ID,
-            attempt_id=body["attempt_id"], instance_id=body["instance_id"],
-            capability=capability, arguments=arguments, scope=tuple(body["scope"]),
-            proposed_by=body["proposed_by"], proposed_at="2026-08-13T12:01:00Z",
-            timeout_seconds=body["timeout_seconds"], rationale=body["rationale"],
-            config_digest="sha256:" + "a" * 64)
-    except ContractError:
-        return "refuse", "contract_invalid"
-    return "accept", None
-
-
-@pytest.mark.parametrize("case", _boundary_cases(), ids=lambda row: row["name"])
-def test_boundary_fixture_relation_is_fail_closed(case):
-    actual_disposition, actual_code = _proposal_disposition(case)
-    assert actual_disposition == case["expected"]["disposition"]
-    assert actual_code == case["expected"]["error_code"]
-
-
-def _closed_request_cases():
-    return _load_boundary_fixtures()["closed_request_cases"]
-
-
-@pytest.mark.parametrize("case", _closed_request_cases(), ids=lambda row: row["name"])
-def test_confirm_and_decision_requests_refuse_every_extra_field(case):
-    fields = CONFIRM_FIELDS if case["endpoint"] == "confirm" else DECISION_FIELDS
-    base_name = "confirm_request" if case["endpoint"] == "confirm" else "decision_request"
-    submitted = {**CANON[base_name], case["field"]: case["value"]}
-    assert set(submitted) - fields == {case["field"]}
-    assert case["expected"] == {
-        "disposition": "refuse", "error_code": "contract_invalid"}
-
-
-def test_closed_request_fixture_matrix_is_exhaustive_and_pins_nested_extras():
-    by_endpoint = {
-        endpoint: {row["field"] for row in _closed_request_cases()
-                   if row["endpoint"] == endpoint}
-        for endpoint in ("confirm", "decision")
-    }
-    assert by_endpoint == {
-        "confirm": set(CONFIRM_FORBIDDEN), "decision": set(DECISION_FORBIDDEN)}
-    nested = [row for row in _closed_request_cases() if row["field"] == "future_hint"]
-    assert {row["endpoint"] for row in nested} == {"confirm", "decision"}
-    assert all(isinstance(row["value"].get("nested"), dict) for row in nested)
-
-
-@pytest.mark.parametrize(
-    "case", _load_boundary_fixtures()["control_cases"], ids=lambda row: row["name"])
-def test_unsupported_controls_are_absent_not_decorative(case):
-    controls = sorted(
-        set(case["manifest_capabilities"]) & set(EXPECTED_ARGUMENT_SCHEMAS))
-    assert controls == case["expected_controls"]

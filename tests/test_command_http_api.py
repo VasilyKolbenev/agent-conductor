@@ -197,8 +197,12 @@ def test_empty_registry_keeps_reads_and_decisions_but_refuses_proposals(tmp_path
     controls = subject.handle(
         "GET", f"/command/runs/{RUN_ID}/controls", get_headers())
     assert controls.payload["instances"][0]["controls"] == []
+    # The frozen config binds this instance to an adapter no registry holds,
+    # and the binding is resolved before any capability question -- exactly as
+    # the plan route resolves it -- so the answer is about the SERVICE, not
+    # about a capability nobody happens to declare.
     refused = post(subject, f"/command/runs/{RUN_ID}/proposals", proposal_body())
-    assert refused.payload["error"]["code"] == "capability_unsupported"
+    assert refused.payload["error"]["code"] == "service_refused"
     decision = post(subject, f"/command/runs/{RUN_ID}/decisions", decision_body())
     assert decision.status == 201 and events == [RUN_ID]
 

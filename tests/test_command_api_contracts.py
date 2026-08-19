@@ -65,7 +65,7 @@ def _canon(name):
     return json.loads(text.split(marker, 1)[1].split("\n```", 1)[0])
 
 
-def a_submitted_proposal(body, *, adapter_capabilities):
+def a_submitted_proposal(body):
     """The two value doors of a propose request, in their contracted order.
 
     The envelope is parsed first and answers for the request's own shape; the
@@ -79,7 +79,7 @@ def a_submitted_proposal(body, *, adapter_capabilities):
     `contract_invalid` where the plan road said `capability_unsupported` about
     the very same pair.
     """
-    submitted = parse_proposal(body, adapter_capabilities=adapter_capabilities)
+    submitted = parse_proposal(body)
     return submitted, canonical_arguments(submitted.capability, submitted.arguments)
 
 
@@ -87,8 +87,7 @@ def a_submitted_proposal(body, *, adapter_capabilities):
     "row", _BOUNDARY["proposal_cases"], ids=lambda row: row["name"])
 def test_frozen_proposal_fixtures_drive_the_real_closed_mapper(row):
     try:
-        parsed, arguments = a_submitted_proposal(
-            row["body"], adapter_capabilities=row["adapter_capabilities"])
+        parsed, arguments = a_submitted_proposal(row["body"])
     except ApiRefusal as refusal:
         actual = ("refuse", refusal.code)
     else:
@@ -162,15 +161,23 @@ def test_each_retired_shallow_argument_shape_is_contract_invalid(row):
         "arguments": row["arguments"],
     }
     with pytest.raises(ApiRefusal) as caught:
-        a_submitted_proposal(body, adapter_capabilities={row["capability"]})
+        a_submitted_proposal(body)
     assert (caught.value.code, caught.value.status) == ("contract_invalid", 422)
 
 
 @pytest.mark.parametrize("capability", _BOUNDARY["retired_capabilities"])
-def test_each_unproven_retired_capability_stays_unsupported_even_if_declared(capability):
+def test_a_retired_capability_is_unsupported_because_this_api_carries_no_schema(
+        capability):
+    """Not because nobody declares it -- because this surface has no shape for it.
+
+    Who declares a capability is a fact about a bound adapter, and no value
+    door can reach one. What this layer answers for is narrower and firmer: the
+    frozen registry of section 4.1 carries no schema for these names, so no
+    request can be written in them whoever offers to serve them.
+    """
     body = {**_canon("propose_request"), "capability": capability, "arguments": {}}
     with pytest.raises(ApiRefusal) as caught:
-        parse_proposal(body, adapter_capabilities={capability})
+        a_submitted_proposal(body)
     assert (caught.value.code, caught.value.status) == ("capability_unsupported", 409)
 
 
@@ -188,8 +195,7 @@ def test_deep_argument_arrays_must_arrive_as_json_lists(capability, array_field)
     arguments[array_field] = tuple(arguments[array_field])
     with pytest.raises(ApiRefusal) as caught:
         a_submitted_proposal(
-            {**row["body"], "arguments": arguments},
-            adapter_capabilities={capability})
+            {**row["body"], "arguments": arguments})
     assert (caught.value.code, caught.value.status) == ("contract_invalid", 422)
 
 
@@ -279,13 +285,13 @@ def test_nested_unknown_authority_is_refused_before_tolerant_contract_extra(pars
 def test_proposal_cannot_author_runtime_adapter_transport_or_result_fields(field):
     body = {**_BOUNDARY["proposal_cases"][0]["body"], field: "forbidden"}
     with pytest.raises(ApiRefusal) as caught:
-        parse_proposal(body, adapter_capabilities={"dispatch"})
+        parse_proposal(body)
     assert caught.value.code == "contract_invalid"
 
 
 @pytest.mark.parametrize("bad", ["src", None, {"path": "src"}])
 @pytest.mark.parametrize("parser,name,field", [
-    (lambda body: parse_proposal(body, adapter_capabilities={"dispatch"}),
+    (lambda body: parse_proposal(body),
      "propose_request", "scope"),
     (parse_confirmation, "confirm_request", "scope"),
     (parse_decision, "decision_request", "scope_refs"),
@@ -349,16 +355,24 @@ def test_structured_service_fact_requires_exact_keys_values_and_template():
 def test_malformed_capability_is_a_contract_error(capability):
     body = {**_canon("propose_request"), "capability": capability}
     with pytest.raises(ApiRefusal) as caught:
-        parse_proposal(body, adapter_capabilities={"dispatch", "observe"})
+        parse_proposal(body)
     assert caught.value.code == "contract_invalid"
     assert caught.value.status == 422
 
 
-@pytest.mark.parametrize("capability", ["observe", "future-capability", "stop"])
-def test_well_formed_but_unavailable_capability_is_unsupported(capability):
+@pytest.mark.parametrize("capability", ["observe", "future-capability"])
+def test_a_capability_this_api_carries_no_schema_for_is_unsupported(capability):
+    """`stop` used to sit in this list and no longer can.
+
+    It was here because no adapter in the case declared it -- a fact about a
+    binding, which this layer cannot see and must not guess at. `stop` IS a
+    capability the frozen registry carries, so the value doors admit it and the
+    PAIR decides whether the bound adapter serves it; that case is driven
+    against a real registry in `test_command_graph_route.py`.
+    """
     body = {**_canon("propose_request"), "capability": capability}
     with pytest.raises(ApiRefusal) as caught:
-        parse_proposal(body, adapter_capabilities={"dispatch"})
+        a_submitted_proposal(body)
     assert caught.value.code == "capability_unsupported"
     assert caught.value.status == 409
 
@@ -367,14 +381,14 @@ def test_well_formed_but_unavailable_capability_is_unsupported(capability):
 def test_adapter_id_may_be_omitted_but_never_present_with_an_invalid_value(adapter_id):
     body = {**_canon("propose_request"), "adapter_id": adapter_id}
     with pytest.raises(ApiRefusal) as caught:
-        parse_proposal(body, adapter_capabilities={"dispatch"})
+        parse_proposal(body)
     assert caught.value.code == "contract_invalid"
 
 
 def test_omitted_adapter_id_remains_the_only_empty_optional_form():
     body = _canon("propose_request")
     body.pop("adapter_id")
-    assert parse_proposal(body, adapter_capabilities={"dispatch"}).adapter_id is None
+    assert parse_proposal(body).adapter_id is None
 
 
 def _assert_refusal_graph_is_detached(refusal, sentinel):
@@ -385,7 +399,7 @@ def _assert_refusal_graph_is_detached(refusal, sentinel):
 
 
 @pytest.mark.parametrize("parser,name,field", [
-    (lambda body: parse_proposal(body, adapter_capabilities={"dispatch"}),
+    (lambda body: parse_proposal(body),
      "propose_request", "attempt_id"),
     (parse_confirmation, "confirm_request", "confirmed_by"),
     (parse_decision, "decision_request", "reason"),
@@ -396,20 +410,6 @@ def test_contract_sanitization_drops_submitted_values_from_exception_graph(
     body = {**_canon(name), field: {"value": sentinel}}
     with pytest.raises(ApiRefusal) as caught:
         parser(body)
-    _assert_refusal_graph_is_detached(caught.value, sentinel)
-
-
-def test_capability_iterable_failure_is_not_retained_in_exception_graph():
-    sentinel = "APIKEY_SECRET_CAPABILITY_ITERATOR"
-
-    def broken_capabilities():
-        raise RuntimeError(sentinel)
-        yield "dispatch"
-
-    with pytest.raises(ApiRefusal) as caught:
-        parse_proposal(
-            _canon("propose_request"),
-            adapter_capabilities=broken_capabilities())
     _assert_refusal_graph_is_detached(caught.value, sentinel)
 
 

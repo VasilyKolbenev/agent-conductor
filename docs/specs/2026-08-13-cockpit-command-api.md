@@ -356,8 +356,21 @@ capability absent here or from the bound adapter manifest is
 #### 4.0.1 The pair authority — one verdict for one `(adapter, capability)`
 
 A plan and a proposal describe the same work, so they MUST NOT disagree about
-whether that work can be carried out. **Both routes ask one shared authority,
-over the triple `(bound adapter, capability, arguments)`, in this order:**
+whether that work can be carried out.
+
+**The bound adapter is resolved FIRST, before any question about the
+capability.** The run's frozen configuration — never the caller, and never a
+union of whatever manifests this process happens to hold — names the adapter
+bound to an instance, so an instance that configuration does not declare is
+`service_refused` (409) on both routes, carrying the same `{run_id,
+instance_id}` detail, whatever capability the request also named. There is no
+pair to ask about until the binding exists, and an answer given before it does
+is an answer about the build rather than about this run: an empty registry, or
+a ghost instance carrying a retired capability, drew two different words that
+way.
+
+**Both routes then ask one shared authority, over the triple
+`(bound adapter, capability, arguments)`, in this order:**
 
 1. the registry above MUST carry an argument schema for the capability at all;
 2. the argument schema the adapter registry recorded for the pair

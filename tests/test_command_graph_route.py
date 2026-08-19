@@ -88,6 +88,11 @@ def graph_api(tmp_path, *, adapters=None, **changes):
         **changes)
 
 
+def _stranger():
+    """An adapter this run's frozen configuration binds to nothing at all."""
+    return DeepDispatchAdapter(adapter_id="stranger")
+
+
 def post_graph(subject, body, **header_changes):
     return subject.handle(
         "POST", GRAPH_PATH, post_headers(body, **header_changes), encode(body))
@@ -471,47 +476,72 @@ A_GOOD_PAYLOAD = graph_body()["nodes"][2]["arguments"]
 A_BAD_PAYLOAD = {"api_key": "APIKEY-SECRET-GRAPH", "cwd": "C:/outside"}
 #: A capability the frozen command API carries no argument schema for.
 A_RETIRED_PAYLOAD = {"body": "hello"}
+#: A capability the frozen API DOES carry, that these adapters do not serve.
+A_STOP_PAYLOAD = {"target_attempt_id": "attempt-001", "reason": "user"}
+#: The instance the run's frozen configuration actually declares.
+BOUND = "claude-dev"
 
 
-@pytest.mark.parametrize("adapter,capability,arguments,status,code", [
-    (DeepDispatchAdapter, "dispatch", A_GOOD_PAYLOAD, 201, None),
-    (DeepDispatchAdapter, "dispatch", A_BAD_PAYLOAD, 422, "contract_invalid"),
-    (FakeAdapter, "dispatch", A_GOOD_PAYLOAD, 409, "capability_unsupported"),
-    (ProcessDispatchAdapter, "dispatch", A_GOOD_PAYLOAD, 409,
-     "capability_unsupported"),
-    (RetiredCapabilityAdapter, "message", A_RETIRED_PAYLOAD, 409,
-     "capability_unsupported"),
-    # The product the diagonal missed: an unsupported pair is unsupported
-    # whatever its payload says, and answering the payload's question first
-    # gave `contract_invalid` on one road for a fact about the pair.
-    (FakeAdapter, "dispatch", A_BAD_PAYLOAD, 409, "capability_unsupported"),
-    (ProcessDispatchAdapter, "dispatch", A_BAD_PAYLOAD, 409,
-     "capability_unsupported"),
-], ids=["deep-valid", "deep-invalid", "schema-less", "structured-process",
-        "retired-capability", "schema-less-and-invalid",
-        "structured-process-and-invalid"])
+@pytest.mark.parametrize(
+    "adapters,instance,capability,arguments,status,code", [
+        ([DeepDispatchAdapter], BOUND, "dispatch", A_GOOD_PAYLOAD, 201, None),
+        ([DeepDispatchAdapter], BOUND, "dispatch", A_BAD_PAYLOAD, 422,
+         "contract_invalid"),
+        ([FakeAdapter], BOUND, "dispatch", A_GOOD_PAYLOAD, 409,
+         "capability_unsupported"),
+        ([ProcessDispatchAdapter], BOUND, "dispatch", A_GOOD_PAYLOAD, 409,
+         "capability_unsupported"),
+        ([RetiredCapabilityAdapter], BOUND, "message", A_RETIRED_PAYLOAD, 409,
+         "capability_unsupported"),
+        # The product a diagonal misses: an unsupported pair is unsupported
+        # whatever its payload says.
+        ([FakeAdapter], BOUND, "dispatch", A_BAD_PAYLOAD, 409,
+         "capability_unsupported"),
+        ([ProcessDispatchAdapter], BOUND, "dispatch", A_BAD_PAYLOAD, 409,
+         "capability_unsupported"),
+        # A capability the frozen API carries and this adapter does not serve.
+        ([DeepDispatchAdapter], BOUND, "stop", A_STOP_PAYLOAD, 409,
+         "capability_unsupported"),
+        # Composite cases: the BINDING is resolved first, so these answer about
+        # the service and not about a capability.
+        ([], BOUND, "dispatch", A_GOOD_PAYLOAD, 409, "service_refused"),
+        ([DeepDispatchAdapter], "ghost-instance", "message", A_RETIRED_PAYLOAD,
+         409, "service_refused"),
+        # A stranger in the registry binds nothing here and changes nothing.
+        ([_stranger], BOUND, "dispatch", A_GOOD_PAYLOAD, 409, "service_refused"),
+    ], ids=["deep-valid", "deep-invalid", "schema-less", "structured-process",
+            "retired-capability", "schema-less-and-invalid",
+            "structured-process-and-invalid", "capability-not-served",
+            "empty-registry", "ghost-instance-and-retired",
+            "unrelated-stranger-only"])
 def test_one_payload_gets_one_verdict_on_both_roads(
-        tmp_path, adapter, capability, arguments, status, code):
+        tmp_path, adapters, instance, capability, arguments, status, code):
     """A plan and a proposal describe the same work; they may not disagree.
 
-    They did, in both directions. A schema-less adapter refused the plan and
-    took the proposal -- so an action reached Confirm through an adapter that
-    never declared how it reads those arguments, while the plan describing that
-    very work was refused. And a capability this API carries no schema for
-    answered `contract_invalid` on one road and `capability_unsupported` on the
-    other, for one fact about one pair.
+    They did, in three ways. A schema-less adapter refused the plan and took
+    the proposal. A capability this API carries no schema for answered
+    `contract_invalid` on one road and `capability_unsupported` on the other.
+    And the composite cases below -- an empty registry, a ghost instance
+    carrying a retired capability -- diverged because the proposal road decided
+    the capability from a union of every registered manifest BEFORE it had read
+    the run's frozen configuration, while the plan road resolves the binding
+    first and asks about the pair afterwards.
 
-    Whichever road asks, the answer and the word are now the same, and every
-    refusal leaves the journal and the signal untouched.
+    Every refusal is compared whole: the same status, the same code, the same
+    message and the same detail. A word that matches while a detail does not is
+    still two answers to one question.
     """
-    subject, store, events = graph_api(tmp_path, adapters=[adapter()])
+    subject, store, events = graph_api(
+        tmp_path, adapters=[adapter() for adapter in adapters])
     body = graph_body()
-    body["nodes"][2].update(capability=capability, arguments=arguments)
+    body["nodes"][2].update(
+        instance_id=instance, capability=capability, arguments=arguments)
     accepted = status == 201
 
     written = post_graph(subject, body)
     proposed = post(subject, f"/command/runs/{RUN_ID}/proposals", {
-        **proposal_body(), "capability": capability, "arguments": arguments,
+        **proposal_body(), "instance_id": instance, "capability": capability,
+        "arguments": arguments,
         **({"node_id": body["nodes"][2]["node_id"]} if accepted else {})})
 
     assert (written.status, proposed.status) == (status, status)
@@ -521,7 +551,7 @@ def test_one_payload_gets_one_verdict_on_both_roads(
         assert events == [RUN_ID, RUN_ID]
     else:
         assert written.payload["error"]["code"] == code
-        assert proposed.payload["error"]["code"] == code
+        assert written.payload == proposed.payload, "one question, one envelope"
         assert [row.kind for row in store.read(RUN_ID).records] == []
         assert events == []
 

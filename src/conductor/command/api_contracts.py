@@ -306,22 +306,6 @@ def _contract(call, *args, **kwargs):
     return result
 
 
-def _capabilities(values: Iterable[str]) -> frozenset[str]:
-    if isinstance(values, (str, bytes)):
-        raise ApiRefusal.fixed("capability_unsupported") from None
-    invalid = False
-    try:
-        rows = frozenset(values)
-    except Exception:  # noqa: BLE001 -- adapter iterable prose is discarded
-        invalid = True
-        rows = frozenset()
-    if invalid:
-        raise ApiRefusal.fixed("capability_unsupported") from None
-    if any(not isinstance(row, str) for row in rows):
-        raise ApiRefusal.fixed("capability_unsupported") from None
-    return rows
-
-
 def _json_array(values: dict[str, Any], name: str) -> list[Any]:
     value = values[name]
     if not isinstance(value, list):
@@ -350,24 +334,25 @@ def canonical_arguments(
     return _contract(_contract(argument_type.from_dict, arguments).as_dict)
 
 
-def parse_proposal(
-        body: object, *, adapter_capabilities: Iterable[str]) -> ProposalInput:
-    """Validate the closed propose ENVELOPE, and not what its payload means.
+def parse_proposal(body: object) -> ProposalInput:
+    """Validate the closed propose ENVELOPE: its SHAPE, and nothing beyond.
 
-    Everything here is about the request's own shape: a closed field set, ids
-    and timestamps and a scope the contract accepts, a capability this API
-    carries a schema for and some registered adapter declares. `arguments` is
-    held to being a JSON object of canonical data and nothing more -- the pair
-    that will carry it out judges its meaning, through
-    :func:`canonical_arguments` once that pair has said yes.
+    A closed field set, safe ids, a scope the contract accepts, and
+    `arguments` held to being a JSON object of canonical data -- all a request
+    can be judged on before anyone knows which adapter would carry it out.
+
+    Whether the capability can be SERVED is deliberately not decided here. It
+    used to be, against the union of every registered manifest, before the
+    frozen configuration had even been read -- a fact about the build rather
+    than about this run's binding. The plan route resolves the binding first,
+    so the roads gave different words for one composite case. Every capability
+    verdict now belongs to the pair authority, which cannot be asked until the
+    bound adapter is known.
     """
     values = _proposal_body(body)
     capability = values["capability"]
-    capabilities = _capabilities(adapter_capabilities)
     if not _safe_id(capability):
         raise ApiRefusal.fixed("contract_invalid") from None
-    if capability not in DEEP_ARGUMENT_TYPES or capability not in capabilities:
-        raise ApiRefusal.fixed("capability_unsupported")
     scope = _json_array(values, "scope")
     probe = _contract(
         ActionProposal,

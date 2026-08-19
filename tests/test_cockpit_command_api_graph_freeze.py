@@ -141,7 +141,7 @@ def test_a_propose_body_node_id_that_is_not_a_name_is_refused(value):
     """Null among them: absent and null are different sentences."""
     body = {**CANON["graph_bound_propose_request"], "node_id": value}
     with pytest.raises(ApiRefusal):
-        parse_proposal(body, adapter_capabilities=DEEP_ARGUMENT_TYPES)
+        parse_proposal(body)
 
 
 def test_a_confirm_body_still_has_no_place_to_name_a_node():
@@ -174,17 +174,14 @@ def test_the_canonical_graph_bound_body_is_accepted_by_the_real_parser():
     Without it, a production door that stopped accepting `node_id` at all would
     leave every refusal test green.
     """
-    submitted = parse_proposal(
-        CANON["graph_bound_propose_request"],
-        adapter_capabilities=DEEP_ARGUMENT_TYPES)
+    submitted = parse_proposal(CANON["graph_bound_propose_request"])
     assert submitted.node_id == "apply"
     assert submitted.capability == "dispatch"
 
 
 def test_a_propose_body_that_names_no_node_is_still_accepted():
     """The legacy road stays open, which is why the field is optional."""
-    submitted = parse_proposal(
-        CANON["propose_request"], adapter_capabilities=DEEP_ARGUMENT_TYPES)
+    submitted = parse_proposal(CANON["propose_request"])
     assert submitted.node_id is None
 
 
@@ -243,7 +240,11 @@ def test_the_spec_says_both_roads_ask_one_pair_authority():
     """
     text = " ".join(_SPEC.read_text(encoding="utf-8").split())
     required = (
-        "Both routes ask one shared authority, over the triple "
+        "**The bound adapter is resolved FIRST, before any question about "
+        "the capability.**",
+        "an instance that configuration does not declare is `service_refused` "
+        "(409) on both routes, carrying the same `{run_id, instance_id}` detail",
+        "Both routes then ask one shared authority, over the triple "
         "`(bound adapter, capability, arguments)`, in this order",
         "MUST be exactly `deep-arguments-v1`, the one family this frozen API "
         "speaks",
