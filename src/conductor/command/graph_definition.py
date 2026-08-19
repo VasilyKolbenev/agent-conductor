@@ -98,20 +98,22 @@ RUNTIME_ONLY_FIELDS = frozenset({
 })
 
 
-#: The ONE subtree the runtime-word walk does not enter. It is a capability's
-#: own payload, judged against that capability's registered schema at the
-#: provider door, and two doors judging one value is how they come to disagree.
-EXEMPT_SUBTREE = "arguments"
+#: The one FIELD whose value is a capability's own payload. Its exemption is
+#: applied by the code that handles that field -- ``GraphNode.from_dict`` lifts
+#: the value out before the walk runs -- and never by the walk itself: a name
+#: is not a field, and a key merely SPELLED ``arguments`` in some tolerant
+#: metadata is nobody's payload and got scanned by nothing.
+EXEMPT_FIELD = "arguments"
 
 
 def _reserved(name: str, document: Mapping[str, Any]) -> None:
-    """Refuse a runtime word used as a field name at ANY depth.
+    """Refuse a runtime word used as a field name at ANY depth, with no exception.
 
-    Checking one level was a promise this could not keep: a tolerant ``extra``
-    holds arbitrary JSON, so a runtime word one dict down rode into the document
-    and into its digest. The walk below is what makes "immutable" true rather
-    than intended -- it descends every mapping and every list, and stops at
-    exactly one door, ``arguments``.
+    Checking one level was a promise this could not keep, and exempting a NAME
+    was the same mistake one layer down: a tolerant ``extra`` holds arbitrary
+    JSON, so ``{"arguments": {"status": ...}}`` was skipped by a walk that had
+    no idea whose payload it was looking at. This walk skips nothing. The one
+    real payload is lifted out by its own field before the walk ever sees it.
     """
     stack: list[Any] = [document]
     found: set[str] = set()
@@ -119,8 +121,7 @@ def _reserved(name: str, document: Mapping[str, Any]) -> None:
         value = stack.pop()
         if isinstance(value, Mapping):
             found |= set(value) & RUNTIME_ONLY_FIELDS
-            stack.extend(item for key, item in value.items()
-                         if key != EXEMPT_SUBTREE)
+            stack.extend(value.values())
         elif isinstance(value, (list, tuple)):
             stack.extend(value)
     if found:
@@ -146,10 +147,32 @@ def _exact(name: str, value: object, expected: type) -> Any:
 
 
 def _json_list(name: str, value: object) -> list[Any]:
-    """A JSON array is a list. A tuple reaching here came from Python, not JSON."""
-    if not isinstance(value, list):
-        raise ContractError(f"{name} must be a JSON array")
+    """A JSON array is exactly ``list``, refused BEFORE anything iterates it.
+
+    A tuple reaching here came from Python, not from JSON. A ``list`` subclass
+    reaching here is worse: it satisfies ``isinstance`` and then answers
+    ``__iter__`` with an exception of its own, whose message this contract would
+    have carried outward. Identity of type settles both, and it is checked
+    before the value is touched.
+    """
+    if type(value) is not list:
+        raise ContractError(f"{name} must be a JSON array") from None
     return value
+
+
+def _sequence(name: str, value: object) -> tuple[Any, ...]:
+    """Materialize a caller's sequence, or refuse in this contract's own words.
+
+    The Python-side constructors take any sequence, which means they take one
+    whose iteration raises. Whatever it raises is the caller's, not ours, so it
+    is replaced here rather than allowed to travel with whatever it carries.
+    """
+    if isinstance(value, (str, bytes, Mapping)):
+        raise ContractError(f"{name} must be a sequence of records") from None
+    try:
+        return tuple(value)
+    except Exception:  # noqa: BLE001 -- a hostile iterable carries its own words
+        raise ContractError(f"{name} could not be read as a sequence") from None
 
 
 def _positive(name: str, value: object, *, low: int, high: int) -> int:
@@ -274,7 +297,7 @@ class GraphNode:
             _json_copy(f"node {self.node_id} arguments", dict(self.arguments))))
 
     def _settled_resources(self) -> tuple[GraphResource, ...]:
-        rows = tuple(self.resources)
+        rows = _sequence(f"node {self.node_id} resources", self.resources)
         if len(rows) > MAX_RESOURCES:
             raise ContractError(
                 f"node {self.node_id!r} declares {len(rows)} resources, more than "
@@ -329,8 +352,11 @@ class GraphNode:
     @classmethod
     def from_dict(cls, value: object) -> "GraphNode":
         data = _raw(value)
+        # The payload comes out FIRST, by its field name, so the walk that
+        # follows has no exception to make and none to be fooled by.
+        arguments = data.pop(EXEMPT_FIELD, None)
         _reserved("node", data)
-        unknown = sorted(set(data) - cls._FIELDS)
+        unknown = sorted(set(data) - (cls._FIELDS - {EXEMPT_FIELD}))
         if unknown:
             raise ContractError(f"node carries unsupported field(s) {unknown!r}")
         loop = data.pop("loop", None)
@@ -340,7 +366,7 @@ class GraphNode:
             title=_take(data, "title"), stage=data.pop("stage", None),
             instance_id=data.pop("instance_id", None),
             capability=data.pop("capability", None),
-            arguments=data.pop("arguments", {}) or {},
+            arguments=arguments or {},
             resources=tuple(GraphResource.from_dict(row) for row in resources),
             gate_id=data.pop("gate_id", None),
             loop=None if loop is None else GraphLoop.from_dict(loop))
@@ -448,7 +474,7 @@ class GraphDefinition:
         self._settle_effect_roads()
 
     def _settled_nodes(self) -> tuple[GraphNode, ...]:
-        rows = tuple(self.nodes)
+        rows = _sequence("graph nodes", self.nodes)
         if not rows:
             raise ContractError("a graph definition must carry at least one node")
         rows = tuple(_rebuilt_node(row) for row in rows)
@@ -463,7 +489,7 @@ class GraphDefinition:
         rows = tuple(
             GraphEdge(from_node=_exact("graph edge", row, GraphEdge).from_node,
                       to_node=row.to_node)
-            for row in self.edges)
+            for row in _sequence("graph edges", self.edges))
         known = {row.node_id for row in self.nodes}
         for edge in rows:
             missing = {edge.from_node, edge.to_node} - known
@@ -483,6 +509,11 @@ class GraphDefinition:
                 raise ContractError(
                     f"loop {node.node_id!r} reopens {node.loop.back_to!r}, which this "
                     "graph does not carry")
+            if node.loop.back_to == node.node_id:
+                raise ContractError(
+                    f"loop {node.node_id!r} reopens itself; a loop sends work back to "
+                    "the step that redoes it, and the Cockpit reads a self-target as "
+                    "a corrupt graph")
 
     def _settle_effect_roads(self) -> None:
         """Every node that can act is reached, and only ever through a gate.

@@ -30,6 +30,12 @@ from conductor.command.graph_definition import (
     GraphNode,
     GraphResource,
 )
+from tests.graph_loop_corpus import (
+    CARRIED as LOOP_CARRIED,
+    IDS as LOOP_IDS,
+    LOOP_NODE,
+    PARAMS as LOOP_PARAMS,
+)
 from tests.alpha3_graph_artifacts import (
     ARTIFACTS,
     DISPATCH,
@@ -487,3 +493,118 @@ def test_node_resources_at_the_json_boundary_are_an_array_too():
     with pytest.raises(ContractError, match="node resources must be a JSON array"):
         GraphNode.from_dict({"node_id": "n", "kind": "task", "title": "T",
                              "resources": ()})
+
+
+# -- the exemption belongs to a field, not to a name ---------------------------
+
+
+def test_a_key_merely_named_arguments_is_nobodys_payload_and_is_scanned():
+    """Codex: `NESTED_FAKE_ARGUMENTS_ACCEPTED {'arguments': {'status': ...}}`.
+
+    The walk skipped any key spelled `arguments`, wherever it appeared, so a
+    runtime word rode into tolerant metadata and into the digest. The exemption
+    belongs to the ONE field whose value is a capability's payload, and the code
+    that owns that field lifts it out before the walk runs.
+    """
+    with pytest.raises(ContractError, match="runtime-only field"):
+        dalio(extra={"arguments": {"status": "succeeded"}})
+    with pytest.raises(ContractError, match="runtime-only field"):
+        dalio(extra={"note": {"arguments": {"phase": "idle"}}})
+
+
+def test_the_real_payload_is_still_the_capabilitys_own_business():
+    """The twin of the case above: the FIELD keeps its exemption."""
+    node = GraphNode.from_dict({
+        "node_id": "do", "kind": "task", "title": "Do", "stage": "do",
+        "instance_id": INSTANCE, "capability": DISPATCH,
+        "arguments": {"status": "the capability's own word", "deep": {"pass": 2}}})
+    assert node.arguments["deep"]["pass"] == 2
+
+
+# -- a hostile sequence says nothing of its own --------------------------------
+
+
+class _HostileList(list):
+    def __iter__(self):
+        raise RuntimeError("APIKEY_SECRET_LIST")
+
+
+def test_a_hostile_list_subclass_is_refused_before_anything_iterates_it():
+    """Codex: `HOSTILE_LIST_ESCAPE RuntimeError APIKEY_SECRET_LIST`.
+
+    `isinstance` let a `list` subclass through the JSON boundary, and its own
+    exception -- and whatever the exception carried -- travelled outward as this
+    contract's answer.
+    """
+    document = dalio().as_dict()
+    document["nodes"] = _HostileList(document["nodes"])
+    with pytest.raises(ContractError, match="graph nodes must be a JSON array") as caught:
+        GraphDefinition.from_dict(document)
+    assert "APIKEY_SECRET_LIST" not in str(caught.value)
+    assert caught.value.__cause__ is None and caught.value.__context__ is None
+
+
+def test_a_hostile_iterable_at_the_python_boundary_says_nothing_of_its_own():
+    """The constructors take any sequence, so one that raises is the same class."""
+    class _Hostile:
+        def __iter__(self):
+            raise RuntimeError("APIKEY_SECRET_ITER")
+
+    for changes in ({"nodes": _Hostile()}, {"edges": _Hostile()}):
+        with pytest.raises(ContractError, match="could not be read as a sequence") as e:
+            dalio(**changes)
+        assert "APIKEY_SECRET_ITER" not in str(e.value)
+    with pytest.raises(ContractError, match="could not be read as a sequence"):
+        a_task("do", "Do", "do", resources=_Hostile())
+
+
+# -- where a loop may send work back to: one corpus, both sides ----------------
+
+
+def a_looping_graph(back_to):
+    """The graph the shared corpus is read against."""
+    nodes = (
+        GraphNode(node_id="alpha", kind="task", title="Alpha"),
+        GraphNode(node_id="beta", kind="task", title="Beta"),
+        GraphNode(node_id="gate", kind="gate", title="Gate", gate_id="gate-1"),
+        GraphNode(node_id="apply", kind="task", title="Apply",
+                  instance_id=INSTANCE, capability=DISPATCH),
+        GraphNode(node_id="loop-other", kind="loop", title="Other loop",
+                  loop=GraphLoop(bound=2, back_to="alpha")),
+        GraphNode(node_id=LOOP_NODE, kind="loop", title="Loop under test",
+                  loop=GraphLoop(bound=3, back_to=back_to)),
+    )
+    return GraphDefinition(
+        graph_id="g-loop", run_id="run-001", created_at="2026-08-19T09:00:00Z",
+        nodes=nodes, edges=(GraphEdge(from_node="alpha", to_node="beta"),
+                            GraphEdge(from_node="beta", to_node="gate"),
+                            GraphEdge(from_node="gate", to_node="apply")))
+
+
+@pytest.mark.parametrize("back_to,accepted", LOOP_PARAMS, ids=LOOP_IDS)
+def test_the_backend_answers_the_shared_loop_corpus(back_to, accepted):
+    """The Cockpit reads the same rows; a disagreement is a graph nobody can use.
+
+    The self-target row is the one that found this: the backend accepted a loop
+    that reopens itself while `graph-store.js` had always called it corrupt, so
+    a Human could have composed a plan, watched it persist, and then been shown
+    a broken graph.
+    """
+    if accepted:
+        graph = a_looping_graph(back_to)
+        loop = [node for node in graph.nodes if node.node_id == LOOP_NODE][0]
+        assert loop.loop.back_to == back_to
+        return
+    with pytest.raises(ContractError):
+        a_looping_graph(back_to)
+
+
+def test_the_corpus_names_the_nodes_the_graph_actually_carries():
+    """A corpus whose accepted rows named absent nodes would prove nothing."""
+    carried = {node.node_id for node in a_looping_graph("alpha").nodes}
+    assert set(LOOP_CARRIED) | {LOOP_NODE} == carried
+
+
+def test_a_loop_may_still_reopen_any_other_node_including_another_loop():
+    graph = a_looping_graph("loop-other")
+    assert sum(node.loop is not None for node in graph.nodes) == 2

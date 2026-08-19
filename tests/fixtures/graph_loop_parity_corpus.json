@@ -1,0 +1,62 @@
+[
+  {
+    "name": "an-earlier-step",
+    "back_to": "alpha",
+    "verdict": "accept"
+  },
+  {
+    "name": "a-later-step",
+    "back_to": "beta",
+    "verdict": "accept"
+  },
+  {
+    "name": "the-gate",
+    "back_to": "gate",
+    "verdict": "accept"
+  },
+  {
+    "name": "the-acting-step",
+    "back_to": "apply",
+    "verdict": "accept"
+  },
+  {
+    "name": "another-loop",
+    "back_to": "loop-other",
+    "verdict": "accept"
+  },
+  {
+    "name": "the-loop-itself",
+    "back_to": "loop-node",
+    "verdict": "refuse"
+  },
+  {
+    "name": "a-node-the-graph-does-not-carry",
+    "back_to": "ghost",
+    "verdict": "refuse"
+  },
+  {
+    "name": "an-empty-target",
+    "back_to": "",
+    "verdict": "refuse"
+  },
+  {
+    "name": "a-target-with-a-space",
+    "back_to": "alpha beta",
+    "verdict": "refuse"
+  },
+  {
+    "name": "a-target-with-a-slash",
+    "back_to": "alpha/beta",
+    "verdict": "refuse"
+  },
+  {
+    "name": "a-target-with-a-nul",
+    "back_to": "alpha\u0000beta",
+    "verdict": "refuse"
+  },
+  {
+    "name": "a-target-that-starts-with-a-dot",
+    "back_to": ".alpha",
+    "verdict": "refuse"
+  }
+]
