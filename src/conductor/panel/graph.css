@@ -1,0 +1,159 @@
+/* ALPHA-2 Graph window — the December palette, restated for a standalone
+   entry. The token block below is a copy of index.html :root and its light
+   override, value for value; tests/test_graph_source.py holds the copies to
+   one another so a palette change cannot drift this file silently. */
+:root{
+  --ground:#07090D; --panel:#10141B; --sunk:#0B0E14; --line:#262D38;
+  --ink:#F3F6F8; --muted:#B9C2CC; --faint:#7F8A98;
+  --accent:#E44955; --pass:#3fa86a; --wait:#c9971f; --fail:#e0703a;
+  --mono:ui-monospace,"Cascadia Mono",Consolas,"SF Mono",monospace;
+  --sans:ui-sans-serif,-apple-system,"Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;
+}
+@media (prefers-color-scheme:light){:root{
+  --ground:#f3f5f7; --panel:#ffffff; --sunk:#e9edf1; --line:#d5dce4;
+  --ink:#11161d; --muted:#4e5965; --faint:#697684;
+  --accent:#c92f42; --pass:#247a4b; --wait:#8a6500; --fail:#b42318;
+}}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--sans);
+     font-size:14px;line-height:1.45;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1320px;margin:0 auto;padding:16px 16px 48px;display:flex;
+      flex-direction:column;gap:14px}
+h1,h2,h3{margin:0}
+h2{font-size:13px;letter-spacing:.02em}
+h3{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+button{font:inherit;cursor:pointer;background:none;border:none;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.empty{font-size:12.5px;color:var(--faint);margin:4px 2px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+      padding:12px 14px;display:flex;flex-direction:column;gap:8px;min-width:0}
+
+/* shell: name, run facts, one honestly-labelled notice (aria-live). */
+.shell{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;
+       border-bottom:1px solid var(--line);padding-bottom:9px}
+.wordmark{font-size:14px;font-weight:660;letter-spacing:-.015em}
+.shell .mono{font-size:11px;color:var(--muted)}
+.g-notice{font-size:12px;color:var(--muted);margin:0}
+
+/* layout: field left, rail right; one column under 1000px. */
+.grid{display:grid;gap:12px;grid-template-columns:1fr}
+@media(min-width:1000px){.grid{grid-template-columns:1fr 340px}}
+.col{display:flex;flex-direction:column;gap:12px;min-width:0}
+
+/* harness badge — identity channel only (monogram, name, swatch). */
+.hb{--hb:var(--hb-dark,var(--faint));display:inline-flex;align-items:baseline;
+    gap:5px;min-width:0}
+@media (prefers-color-scheme:light){.hb{--hb:var(--hb-light,var(--faint))}}
+.hb__m{font-family:var(--mono);font-size:9.5px;font-weight:700;
+       letter-spacing:.06em;color:var(--ink);border:1px solid var(--hb);
+       border-radius:4px;padding:0 3px;overflow-wrap:anywhere;
+       background:color-mix(in srgb,var(--hb) 14%,transparent)}
+.hb__n{font-family:var(--mono);font-size:10.5px;color:var(--muted);
+       overflow-wrap:anywhere}
+.hb__d{font-family:var(--mono);font-size:10px;color:var(--ink);
+       text-decoration:underline}
+.hb__d:hover{text-decoration-thickness:2px}
+
+/* status chips — three carriers, like the panel's pills: the glyph and the
+   contour take the semantic colour, the word runs on --ink. */
+.g-chip{font-family:var(--mono);font-size:10px;padding:1px 6px;border-radius:4px;
+        border:1px solid var(--line);color:var(--ink);white-space:nowrap}
+.g-chip .gl{font-style:normal}
+/* sentence-length chips wrap instead of widening the page. */
+.g-chip--long{white-space:normal;overflow-wrap:anywhere}
+.g-chip--pass{border-color:var(--pass)}
+.g-chip--pass .gl{color:var(--pass)}
+.g-chip--wait{border-color:var(--wait)}
+.g-chip--wait .gl{color:var(--wait)}
+.g-chip--fail{border-color:var(--fail)}
+.g-chip--fail .gl{color:var(--fail)}
+.g-chip--none{color:var(--muted)}
+.g-chip--none .gl{color:var(--faint)}
+
+/* the graph field: absolute cells over an SVG of edges; scrolls inside
+   itself so the page never scrolls horizontally. */
+.g-field-scroll{overflow-x:auto;overflow-y:hidden}
+.g-field{position:relative;min-height:40px}
+.g-field svg{display:block}
+.g-edge{fill:none;stroke:var(--faint);stroke-width:1.2}
+.g-node{position:absolute;left:var(--x);top:var(--y);width:210px;height:118px;
+        display:flex;flex-direction:column;align-items:flex-start;gap:4px;
+        background:var(--sunk);border:1px solid var(--line);border-radius:8px;
+        padding:8px 10px;text-align:left;overflow:hidden}
+.g-node[aria-pressed="true"]{border-color:var(--ink)}
+.g-node--gate{border-style:dashed}
+/* the loop step: a doubled contour says "this stage repeats", the ↻ ×N
+   marker beside the chips says how far it may. */
+.g-node--loop{border-style:double;border-width:3px}
+.g-loop-bound{font-size:10px}
+/* the numbered semantic stage: --muted like the after-line, because --faint
+   ships below the text floor on --sunk in the light theme. */
+.g-stage{font-size:10px;color:var(--muted)}
+.g-resources{list-style:none;margin:0;padding:0;display:flex;
+             flex-direction:column;gap:3px;font-size:11px;
+             overflow-wrap:anywhere}
+.g-node__head{display:flex;gap:6px;align-items:baseline;min-width:0}
+.g-node__title{font-size:12.5px;font-weight:640;overflow-wrap:anywhere}
+.g-node__chips{display:flex;gap:4px;flex-wrap:wrap}
+/* the "after …" line is each edge's textual carrier. At desktop widths the
+   SVG draws the edge for sighted readers and this line is clipped, not
+   removed — the aria-hidden SVG must never be the structure's only carrier.
+   --muted, not --faint: on --sunk in the light theme --faint measures 3.94:1
+   (the panel's recorded shortfall), and a structural carrier may not ship
+   below the text floor. */
+.g-node__from{font-size:10px;color:var(--muted)}
+@media(min-width:768px){
+  .g-node__from{position:absolute;width:1px;height:1px;overflow:hidden;
+                clip-path:inset(50%);white-space:nowrap}
+}
+@media (prefers-reduced-motion:no-preference){
+  .g-node{transition:border-color .15s ease-out}
+}
+/* under 768px the field is a single reading column: geometry leaves, the
+   "after …" text carries each edge visibly instead of a line. */
+@media(max-width:767px){
+  .g-field svg{display:none}
+  .g-field{display:flex;flex-direction:column;gap:10px}
+  .g-node{position:static;width:100%;height:auto}
+}
+
+/* rail cards */
+.g-palette{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;
+           gap:6px}
+.g-palette__row{display:flex;justify-content:space-between;align-items:center;
+                gap:8px;min-width:0}
+/* the docs anchor is a standalone control in the row, not a link in a line
+   of text, so the 44px floor applies to it as to any control. */
+.g-palette__row .hb__d{min-height:44px;display:inline-flex;align-items:center}
+.g-det__title{font-size:13.5px;font-weight:640;margin:0;
+              overflow-wrap:anywhere}
+.g-det__meta{font-size:10.5px;color:var(--faint);margin:0;
+             overflow-wrap:anywhere}
+.g-det__chips{display:flex;gap:4px;flex-wrap:wrap}
+.g-evidence-list{list-style:none;margin:0;padding:0;display:flex;
+                 flex-direction:column;gap:4px}
+.g-evidence{display:flex;justify-content:space-between;gap:8px;font-size:11px}
+.g-gate-list{list-style:none;margin:0;padding:0;display:flex;
+             flex-direction:column;gap:5px}
+.g-gate{display:flex;gap:8px;align-items:baseline;font-size:11px;flex-wrap:wrap}
+.g-note{font-size:10.5px;color:var(--faint)}
+.g-timeline{list-style:none;margin:0;padding:0;display:flex;
+            flex-direction:column;gap:4px}
+.g-timeline__row{display:flex;gap:8px;align-items:baseline;font-size:11px;
+                 flex-wrap:wrap}
+.g-timeline__at{color:var(--faint)}
+
+/* forms (composer, decision) — the command-field arrangement. Every control
+   holds the command window's 44px minimum target height. */
+.command-field{display:flex;flex-direction:column;gap:2px;font-size:11px;
+               color:var(--muted)}
+.command-field input,.command-field select{font:inherit;font-family:var(--mono);
+  font-size:12px;color:var(--ink);background:var(--sunk);
+  border:1px solid var(--line);border-radius:6px;padding:5px 7px;
+  min-height:44px}
+.g-compose,.g-decide{display:flex;flex-direction:column;gap:7px}
+.g-compose button[type="submit"],.g-decide button[type="submit"]{
+  align-self:flex-start;border:1px solid var(--line);border-radius:6px;
+  padding:5px 10px;background:var(--sunk);min-height:44px}
