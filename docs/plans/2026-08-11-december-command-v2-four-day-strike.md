@@ -400,6 +400,52 @@ a valid decision receipt.
   targeted gate passed 79 tests and the full gate passed 2044 with 4 platform skips. CMD-4 is
   Complete; runner/Confirm may now consume its frozen boundary.
 
+- **ALPHA-1 — Complete 2026-08-18 at `bd93217c7fb802732f1aa59e80290d1a630cde6b`.** The
+  backend vertical from the approved assembly base `6ebe12d`: a hardened provider registry
+  that admits every plugin through one reconstructing door, asynchronous execution after
+  Confirm on a bounded queue of per-worker inboxes, the multi-provider factory reachable from
+  the real product through `conduct up --providers`, the DeepSeek harness behind one contained
+  root, and five frozen seam artifacts the UI lane consumes. It was scoped backend-only on
+  2026-08-17: `src/conductor/panel/*` and the browser UI tests moved to a separate lane, which
+  ALPHA-1 may run as regression but never edit. Five review rounds, twenty commits, 54 files,
+  `+10370/-235`.
+  Three product laws land with it. `unavailable` verification is no longer success ANYWHERE:
+  the one road to `succeeded` needs execution observed, a bound verifier answering `verified`,
+  and a causal durable `EvidenceRef` recorded after that observation, so `conduct
+  integration-smoke` now prints `verification_failed` with `exit_code` 0 and THAT is its
+  passing result. Admission binds to the durable append inside the store transaction and its
+  reservation reaches a named worker's inbox under the coordinator lock, so an exact Confirm
+  retry answers `200` with the prior request and no retirement can strand an accepted action.
+  And a dsh dispatch owns its resolved workspace root for its whole cycle — sweep, preflight
+  home, task home, cleanup — so no neighbour resets the record of a cleanup it could not do.
+  Stated honestly and not closed by this slice: DeepSeek cannot reach `succeeded` in this
+  build, because no durable evidence-writer exists yet; Kimi Code is catalogued `unproven`
+  after a re-audit retracted two grounds the vendor's own pages refute, and driving it is a
+  slice of its own; dsh root ownership is process-local, not a cross-process filesystem lock,
+  which matches the single-process alpha contract and must be reopened by the first slice that
+  introduces a second process over one root; and registry hardening remains mandatory before
+  any external plugin input or execution endpoint.
+- **ALPHA-2 Graph UI — approved 2026-08-18 at `701a8e4cb608300a2115945e9d8e3babbbe5bf79`.**
+  The Graph window ships packaged beside the Cockpit and is served by NO production route
+  while `server.py` stays frozen: every graph file is named in the panel-asset refusal list
+  and in an explicit `UNSERVED` relation, so the moment a graph route lands its file must
+  leave that list or the allowlist guard reddens. The lane also lands the browser release
+  gate — one fresh process per module, no retry, no waiver, its own temporary root — which
+  replaced a plain `pytest browser_tests` run after a Chromium flake was seen four times in
+  roughly twenty runs.
+- **ALPHA integration — local `--no-ff` merges 2026-08-18 on `codex/v2-alpha-assembly`.** Both
+  approved points are kept as distinct ancestors of one tree rather than rebased onto each
+  other: `6ebe12d` -> `bd93217` -> `701a8e4`. The cross-lane diff proves the integration tip
+  touches exactly the union of the two approved sides, 70 files, with every non-overlapping
+  file byte-identical to its own lane; the single overlapping file,
+  `tests/test_server_panel_assets.py`, auto-merged in disjoint regions and keeps every
+  relation both lanes added, with the one name the UI lane renamed away not resurrected.
+  Gates on the integration tip: fast suite 3566 passed / 6 skipped; the module-isolated
+  browser gate green in both orders, seven modules and 241 tests each; the focused
+  provider/async/restart/RT2 contour with the v1 pin, 318 passed. Push and tag stay blocked;
+  the tag waits on the first end-to-end alpha scenario. The next product vertical is the
+  durable graph schema and its wire, which is what turns the local-draft Cockpit into one
+  working console over several harness providers.
 ## 12. Four-day recovery schedule — binding from 2026-08-13
 
 This section supersedes the sequencing in section 6 where the dates conflict. It does not relax
