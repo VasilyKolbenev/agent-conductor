@@ -13,6 +13,7 @@ from conductor.command.http_transport import CommandSession, MAX_COMMAND_BODY_BY
 from conductor.command.run_store import RunStore, snapshot_digest
 
 from tests.test_command_adapters import FakeAdapter
+from tests.test_command_schema_doubles import DeepDispatchAdapter
 from tests.test_command_run_store import CONFIG, a_run
 
 
@@ -203,7 +204,9 @@ def test_empty_registry_keeps_reads_and_decisions_but_refuses_proposals(tmp_path
 
 
 def test_propose_confirm_decide_and_exact_retries_have_honest_status(tmp_path):
-    adapter = FakeAdapter()
+    # A proposal is held to the schema the registry recorded for its own
+    # (adapter, capability) pair, so the double has to declare one.
+    adapter = DeepDispatchAdapter()
     subject, store, events = api(tmp_path, adapters=[adapter])
     proposed = post(subject, f"/command/runs/{RUN_ID}/proposals", proposal_body())
     confirmed = post(

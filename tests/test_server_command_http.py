@@ -10,7 +10,8 @@ from conductor import server
 from conductor.command.adapters import AdapterRegistry
 from conductor.command.run_store import RunStore, snapshot_digest
 
-from tests.test_command_adapters import DeepDispatchAdapter, FakeAdapter
+from tests.test_command_adapters import FakeAdapter
+from tests.test_command_schema_doubles import DeepDispatchAdapter
 from tests.test_command_graph_route import graph_body
 from tests.test_command_http_api import (
     NOW,
@@ -118,7 +119,9 @@ def test_session_uses_assigned_port_and_process_token(tmp_path):
 
 
 def test_real_http_propose_confirm_decide_and_retries_are_durable(tmp_path):
-    adapter = FakeAdapter()
+    # Declares the argument family it serves: a proposal meets the same pair
+    # authority a plan does, and a schema-less double is refused before append.
+    adapter = DeepDispatchAdapter()
     subject, store = _start(tmp_path, adapters=(adapter,))
     try:
         prefix = f"/command/runs/{RUN_ID}"

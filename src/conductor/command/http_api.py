@@ -271,22 +271,8 @@ class CommandApi:
             if node.capability is None:
                 continue
             bound = self._bound_adapter(config, run_id, node.instance_id)
-            # No separate manifest check: the registry records a schema only for
-            # a capability the manifest declared, so a capability the adapter
-            # does not serve has no schema to name and is refused right here.
-            if self._registry.argument_schema(
-                    bound, node.capability) != COMMAND_ARGUMENT_SCHEMA:
-                raise UnsupportedCapability(
-                    "bound adapter does not serve this capability through the "
-                    "argument schema this API speaks")
-            try:
-                self._registry.validate_arguments(
-                    bound, node.capability, node.payload())
-            except AdapterContractError:
-                # The registry judged; naming the answer in the frozen HTTP
-                # vocabulary is this boundary's job, and a payload that does not
-                # satisfy its schema is exactly `contract_invalid`.
-                raise ApiRefusal.fixed("contract_invalid") from None
+            _servable_pair(
+                self._registry, bound, node.capability, node.payload())
 
     def _propose(self, run_id: str, body: Mapping[str, Any]) -> CommandResponse:
         declared = {
@@ -296,8 +282,11 @@ class CommandApi:
         self._hold_route(run_id)
         initial = self._store.read(run_id)
         bound = self._bound_adapter(initial.config, run_id, submitted.instance_id)
-        if submitted.capability not in self._registry.controls(bound):
-            raise UnsupportedCapability("bound adapter lacks submitted capability")
+        # The same pair authority a plan meets. Without it a proposal reached
+        # Confirm through an adapter that never declared how it reads these
+        # arguments, while the plan describing that very work was refused.
+        _servable_pair(
+            self._registry, bound, submitted.capability, submitted.arguments)
         with self._store.transaction():
             self._hold_route(run_id)
             recovered = self._store.read(run_id)
@@ -434,6 +423,47 @@ def _target_path(target: str) -> str:
     if parsed.scheme or parsed.netloc or parsed.query or parsed.fragment:
         raise ApiRefusal.fixed("route_not_found")
     return parsed.path
+
+
+def _servable_pair(
+        registry: AdapterRegistry, bound: str, capability: str,
+        arguments: Mapping[str, Any]) -> None:
+    """One verdict for one (adapter, capability, arguments), whichever road asks.
+
+    A plan and a proposal describe the same work, so they may not disagree about
+    whether that work can be carried out. They did. The graph route asked the
+    registry what it recorded for the pair; the proposal route asked only
+    whether the manifest named the capability, and the registry's own
+    validation is a no-op for an adapter that declared no schema -- so a
+    proposal reached Confirm through an adapter that never said how it reads
+    those arguments. The other direction disagreed on the WORD: a capability
+    this API's registry does not carry answered `contract_invalid` on one road
+    and `capability_unsupported` on the other.
+
+    So both roads ask this, in this order, and the order is the taxonomy:
+
+    1. the frozen API must carry an argument schema for the capability at all;
+    2. the pair must serve it through the one family this API speaks;
+    3. the payload must satisfy that pair's schema.
+
+    The first two are `capability_unsupported`: this build cannot carry out
+    that work, whatever the request said. The third is `contract_invalid`: the
+    work is servable and these particular values are not.
+    """
+    if capability not in ARGUMENT_SCHEMAS:
+        raise UnsupportedCapability(
+            "the frozen command API carries no argument schema for this capability")
+    if registry.argument_schema(bound, capability) != COMMAND_ARGUMENT_SCHEMA:
+        raise UnsupportedCapability(
+            "bound adapter does not serve this capability through the "
+            "argument schema this API speaks")
+    try:
+        registry.validate_arguments(bound, capability, arguments)
+    except AdapterContractError:
+        # The registry judged; naming the answer in the frozen HTTP vocabulary
+        # is this boundary's job, and a payload that does not satisfy its
+        # schema is exactly `contract_invalid`.
+        raise ApiRefusal.fixed("contract_invalid") from None
 
 
 def _standing_graph(recovered) -> GraphDefinition | None:

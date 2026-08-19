@@ -353,12 +353,51 @@ capability absent here or from the bound adapter manifest is
 `capability_unsupported`; malformed arguments for a present capability are
 `contract_invalid`, never a generic arguments escape hatch.
 
+#### 4.0.1 The pair authority — one verdict for one `(adapter, capability)`
+
+A plan and a proposal describe the same work, so they MUST NOT disagree about
+whether that work can be carried out. **Both routes ask one shared authority,
+over the triple `(bound adapter, capability, arguments)`, in this order:**
+
+1. the registry above MUST carry an argument schema for the capability at all;
+2. the argument schema the adapter registry recorded for the pair
+   `(adapter_id, capability)` MUST be exactly `deep-arguments-v1`, the one
+   family this frozen API speaks;
+3. `arguments` MUST satisfy that pair's schema through
+   `AdapterRegistry.validate_arguments`.
+
+The order IS the taxonomy. Steps 1 and 2 are `capability_unsupported` (409):
+this build cannot carry out that work at all, whatever the request said, so an
+absent schema, a `structured-process-v1` schema, a schema swapped for one
+capability of an otherwise conforming adapter, and a capability retired from
+the registry above all answer with that one word. Step 3 is `contract_invalid`
+(422): the work is servable and these particular values are not.
+
+No refusal at any step writes a proposal or a graph, and none publishes a run
+signal.
+
+Asking only half of this was a defect on each route in turn. The plan route
+consulted the global registry above and not the pair, so an adapter serving
+`dispatch` under another family got an immutable plan it could never execute.
+The proposal route consulted only the adapter manifest, so a proposal reached
+Confirm through an adapter that had never declared how it reads those
+arguments — while the plan describing that very work was refused. And a
+capability the registry above does not carry answered `contract_invalid` on one
+road and `capability_unsupported` on the other, for one fact about one pair.
+
 ### 4.1 `POST /command/runs/<run_id>/proposals` — mint an ActionProposal
 
 Maps to `CommandService.propose`. Refused `service_refused` (409) when the run's
 control mode is Observe. The request carries the browser-supplied fields; the
 server injects `proposal_id` (minted), `proposed_at` (clock), `config_digest`
 (the run's frozen digest), and `schema_version`.
+
+Before anything durable is written, the triple
+`(bound adapter, capability, arguments)` MUST pass the pair authority of
+section 4.0.1 — the same authority, in the same order and with the same words,
+that a plan naming the same work passes at section 4.4. Checking only the
+adapter's manifest here let a proposal reach Confirm through an adapter that
+had never declared how it reads those arguments.
 
 Request:
 
@@ -734,28 +773,19 @@ among them, is `contract_invalid` (422).
 }
 ```
 
-Every bound node is held to this build, this run, and the schema the registry
-recorded for **that adapter and that capability** before the plan is durable:
+Every bound node is held to this build and this run before the plan is durable:
 
 - the `instance_id` MUST be one the run's frozen configuration declares, and
   that configuration — never the caller — names the adapter bound to it;
-- the bound adapter MUST declare the `capability` in its reviewed manifest;
-- the argument schema the registry recorded for the pair
-  `(adapter_id, capability)` MUST be exactly `deep-arguments-v1`, the one
-  family this frozen API speaks (4.1). An adapter that declared
-  `structured-process-v1` for that capability, or declared no schema for it at
-  all, cannot carry out a plan written in these shapes, and is refused
-  `capability_unsupported` (409) before any append;
-- `arguments` MUST then satisfy that pair's schema through
-  `AdapterRegistry.validate_arguments`, the SAME registry-owned contract
-  `CommandService.propose` calls — one door, reached from two routes, never
-  two doors judging one value.
+- the triple `(bound adapter, capability, arguments)` MUST pass the pair
+  authority of section 4.0.1, which is the same authority a proposal passes,
+  with the same order and the same words.
 
-A node that names no binding does no work and is held to none of these.
+A node that names no binding does no work and is held to neither.
 
 The pair matters, not the capability alone. A capability name is shared; the
 payload family behind it is the adapter's. Judging a plan against the global
-schema table accepted graphs an adapter could never execute — the route
+schema registry accepted graphs an adapter could never execute — the route
 answered `201`, the first proposal against that node answered
 `service_refused`, and the immutable plan stood in the journal with no way to
 edit or remove it.

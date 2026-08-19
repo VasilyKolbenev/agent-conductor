@@ -36,7 +36,7 @@ from conductor.command.run_store import RecoveredRun, StoredRecord
 from conductor.command import run_store as run_store_module
 
 from tests.test_cockpit_command_api_freeze import _SPEC, CANON, CONFIRM_FIELDS
-from tests.test_command_adapters import DeepPlanAdapter
+from tests.test_command_schema_doubles import DeepPlanAdapter
 
 #: The paragraph in the spec that IS the closed durable vocabulary. The kinds
 #: are read out of it and compared to the registry, so neither can move alone --
@@ -232,6 +232,30 @@ def test_the_canonical_plan_body_builds_the_canonical_graph_record():
     built = parse_graph(CANON["graph_request"]).build(
         run_id=record["run_id"], created_at=record["created_at"])
     assert built.as_dict() == record
+
+
+def test_the_spec_says_both_roads_ask_one_pair_authority():
+    """The wording change-detector for a law that spans two sections.
+
+    A plan and a proposal describe the same work; the document has to say they
+    ask one authority, in one order, with one word for each answer -- before
+    any test blesses that. It said neither, and each road grew half of it.
+    """
+    text = " ".join(_SPEC.read_text(encoding="utf-8").split())
+    required = (
+        "Both routes ask one shared authority, over the triple "
+        "`(bound adapter, capability, arguments)`, in this order",
+        "MUST be exactly `deep-arguments-v1`, the one family this frozen API "
+        "speaks",
+        "Steps 1 and 2 are `capability_unsupported` (409)",
+        "Step 3 is `contract_invalid` (422)",
+        "No refusal at any step writes a proposal or a graph, and none "
+        "publishes a run signal",
+        "the same authority a proposal passes, with the same order and the "
+        "same words",
+    )
+    for statement in required:
+        assert statement in text, statement
 
 
 def test_the_canonical_plan_body_passes_the_registry_door_it_will_meet():

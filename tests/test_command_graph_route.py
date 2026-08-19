@@ -24,12 +24,13 @@ from conductor.command.graph_definition import GraphDefinition
 from conductor.command.run_store import RunStore
 
 from tests.alpha3_graph_artifacts import load
-from tests.test_command_adapters import (
+from tests.test_command_adapters import FakeAdapter
+from tests.test_command_schema_doubles import (
     DeepDispatchAdapter,
     DeepPlanAdapter,
-    FakeAdapter,
     MixedSchemaAdapter,
     ProcessDispatchAdapter,
+    RetiredCapabilityAdapter,
 )
 from tests.test_command_http_api import (
     NOW,
@@ -465,50 +466,57 @@ def test_a_plan_the_bound_adapter_could_never_execute_is_refused(
                 if row.kind == "graph_definition"], "no graph became durable"
 
 
-#: One payload each way: the node's own, and one no schema admits.
+#: The node's own payload, and one no schema admits.
 A_GOOD_PAYLOAD = graph_body()["nodes"][2]["arguments"]
 A_BAD_PAYLOAD = {"api_key": "APIKEY-SECRET-GRAPH", "cwd": "C:/outside"}
+#: A capability the frozen command API carries no argument schema for.
+A_RETIRED_PAYLOAD = {"body": "hello"}
 
 
-@pytest.mark.parametrize("payload,accepted", [
-    (A_GOOD_PAYLOAD, True),
-    (A_BAD_PAYLOAD, False),
-], ids=["accepted-by-both", "refused-by-both"])
-def test_one_payload_gets_one_verdict_whichever_route_asks(
-        tmp_path, payload, accepted):
-    """Codex's probe, kept in both directions: two roads, one pair, one answer.
+@pytest.mark.parametrize("adapter,capability,arguments,status,code", [
+    (DeepDispatchAdapter, "dispatch", A_GOOD_PAYLOAD, 201, None),
+    (DeepDispatchAdapter, "dispatch", A_BAD_PAYLOAD, 422, "contract_invalid"),
+    (FakeAdapter, "dispatch", A_GOOD_PAYLOAD, 409, "capability_unsupported"),
+    (ProcessDispatchAdapter, "dispatch", A_GOOD_PAYLOAD, 409,
+     "capability_unsupported"),
+    (RetiredCapabilityAdapter, "message", A_RETIRED_PAYLOAD, 409,
+     "capability_unsupported"),
+], ids=["deep-valid", "deep-invalid", "schema-less", "structured-process",
+        "retired-capability"])
+def test_one_payload_gets_one_verdict_on_both_roads(
+        tmp_path, adapter, capability, arguments, status, code):
+    """A plan and a proposal describe the same work; they may not disagree.
 
-    When the graph door consulted the global table and the proposal door
-    consulted the registry, `201` then `409 service_refused` was the exact
-    sequence -- and only the graph half was permanent. Now the same payload is
-    put to both, and they agree; a plan this route accepts is a plan a proposal
-    against the same node can be minted from, and one it refuses is refused
-    there too.
+    They did, in both directions. A schema-less adapter refused the plan and
+    took the proposal -- so an action reached Confirm through an adapter that
+    never declared how it reads those arguments, while the plan describing that
+    very work was refused. And a capability this API carries no schema for
+    answered `contract_invalid` on one road and `capability_unsupported` on the
+    other, for one fact about one pair.
+
+    Whichever road asks, the answer and the word are now the same, and every
+    refusal leaves the journal and the signal untouched.
     """
-    subject, store, _ = graph_api(tmp_path)
+    subject, store, events = graph_api(tmp_path, adapters=[adapter()])
     body = graph_body()
-    body["nodes"][2]["arguments"] = payload
-    node = body["nodes"][2]
+    body["nodes"][2].update(capability=capability, arguments=arguments)
+    accepted = status == 201
 
     written = post_graph(subject, body)
-    if not accepted:
-        # Nothing durable to propose against, so the proposal is put to the
-        # same door directly rather than through a plan that never landed.
-        assert written.status == ERROR_STATUS["contract_invalid"]
-        assert not [row for row in store.read(RUN_ID).records
-                    if row.kind == "graph_definition"]
-    else:
-        assert written.status == 201
-
     proposed = post(subject, f"/command/runs/{RUN_ID}/proposals", {
-        **proposal_body(), "arguments": payload,
-        **({"node_id": node["node_id"]} if accepted else {})})
+        **proposal_body(), "capability": capability, "arguments": arguments,
+        **({"node_id": body["nodes"][2]["node_id"]} if accepted else {})})
 
-    assert (proposed.status == 201) is accepted, proposed.payload
-    if accepted:
-        assert proposed.payload["node_id"] == node["node_id"]
+    assert (written.status, proposed.status) == (status, status)
+    if code is None:
+        assert [row.kind for row in store.read(RUN_ID).records] == [
+            "graph_definition", "action_proposal"]
+        assert events == [RUN_ID, RUN_ID]
     else:
-        assert proposed.payload["error"]["code"] == "contract_invalid"
+        assert written.payload["error"]["code"] == code
+        assert proposed.payload["error"]["code"] == code
+        assert [row.kind for row in store.read(RUN_ID).records] == []
+        assert events == []
 
 
 def test_a_capability_no_argument_schema_carries_is_refused(tmp_path):
