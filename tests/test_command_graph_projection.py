@@ -340,25 +340,43 @@ def test_every_runtime_word_is_one_the_definition_refuses_by_name(tmp_path):
     assert "loop" not in spoken and "bound" not in spoken
 
 
-def test_the_projected_vocabularies_are_closed_and_reachable(tmp_path):
-    """Every word these tuples name is a word some journal can produce."""
-    store = a_walked_run(tmp_path, upto="result")
-    store.append(a_decision())
-    payload = payload_of(store)
-    phases = {row["phase"] for row in payload["runtime"]["nodes"]}
-    assert phases <= set(NODE_PHASES)
-    decisions = {row["decision"] for row in payload["runtime"]["nodes"]
-                 if "decision" in row}
-    assert decisions <= set(GATE_STATES)
+def test_every_phase_this_vocabulary_names_is_one_a_journal_can_produce(tmp_path):
+    """Closed AND reachable, in both directions.
+
+    A word no journal can produce is a word a consumer must handle and will
+    never see; a phase this projection produces that the tuple does not name is
+    a word no consumer knew to handle. So the set of phases observed across the
+    whole chain is compared to the vocabulary itself, not merely contained by
+    it.
+    """
+    seen = set()
+    for step in ("proposed", "requested", "running", "observed", "result"):
+        payload = payload_of(a_walked_run(tmp_path / step, upto=step))
+        seen |= {row["phase"] for row in payload["runtime"]["nodes"]}
+    assert seen == set(NODE_PHASES)
 
 
-@pytest.mark.parametrize("action", ["approve", "reject", "request_changes", "waive"])
-def test_every_decision_a_human_may_take_lands_inside_the_gate_vocabulary(
-        tmp_path, action):
-    """GATE_STATES is held to `gate_decision`, not copied from beside it."""
-    store = a_store(tmp_path)
-    store.append(a_decision(action=action, reason="Stated for the record."))
-    assert node_of(payload_of(store), "confirm-gate")["decision"] in GATE_STATES
+def test_every_gate_word_this_vocabulary_names_is_one_a_journal_can_produce(
+        tmp_path):
+    """GATE_STATES is held to `gate_decision`, not copied from beside it.
+
+    Each Human decision, an absent receipt and an ambiguous pair are driven
+    through the real store, and what comes back must be the whole tuple: a
+    state this file invented would have nothing to produce it, and a state
+    production produces would be missing from it.
+    """
+    seen = {node_of(payload_of(a_store(tmp_path / "idle")), "confirm-gate")[
+        "decision"]}
+    for index, action in enumerate(
+            ("approve", "reject", "request_changes", "waive"), start=1):
+        store = a_store(tmp_path / action)
+        store.append(a_decision(action=action, reason="Stated for the record."))
+        seen.add(node_of(payload_of(store), "confirm-gate")["decision"])
+    ambiguous = a_store(tmp_path / "ambiguous")
+    ambiguous.append(a_decision(index=1))
+    ambiguous.append(a_decision(index=2, action="reject", decided_at=NOW))
+    seen.add(node_of(payload_of(ambiguous), "confirm-gate")["decision"])
+    assert seen == set(GATE_STATES)
 
 
 def test_no_record_body_path_token_or_recovery_reference_reaches_the_wire(tmp_path):
