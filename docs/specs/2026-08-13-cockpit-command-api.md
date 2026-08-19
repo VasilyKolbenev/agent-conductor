@@ -375,15 +375,22 @@ Request:
 }
 ```
 
-The request has exactly these top-level fields. `adapter_id` is the sole
-optional field; every other field shown is required. A recursive argument key
+The request has exactly these top-level fields. `adapter_id` and `node_id` are
+the optional ones; every other field shown is required. A recursive argument key
 named `cmd`, `command`, `script`, `shell`, `argv`, `executable`, `cwd`, `path`,
 `env`, or `env_allow` is refused `contract_invalid`, as is any key outside the
 selected capability schema.
 
 `adapter_id` is optional; when present it MUST equal the config-bound adapter or
-the request is refused `service_refused` (409). Response `201` — an
-`ActionProposal.as_dict()`:
+the request is refused `service_refused` (409).
+
+`node_id` is optional and **not nullable**: a caller either omits the key or
+names a real node. `null` is refused `contract_invalid`, because two spellings
+of "unbound" would make the binding optional to CHECK as well as to carry. It is
+absent for every run that follows no graph, and for every action written before
+graphs existed — which is why the examples below that omit it are byte-identical
+to the ones this spec has always carried. Section 4.3 says what a present one
+must agree with. Response `201` — an `ActionProposal.as_dict()`:
 
 <!-- CANONICAL:action_proposal -->
 ```json
@@ -473,6 +480,196 @@ confirmed Human; and `mode` is exactly `confirm`. Policy is a separate Day-3
 authority seam and cannot be selected through this endpoint. Confirming records
 acceptance but does not execute here; execution is the runtime seam after it.
 
+### 4.3 Graph binding — which node an action carries out
+
+A run may follow one immutable graph (`graph_definition`, section 6). When it
+does, a proposal MAY name the node it carries out, and the server holds that
+name to the plan rather than taking it on trust:
+
+- the run must follow a graph, and the graph must carry that node;
+- the node must declare a capability — a gate decides and does no work, so no
+  proposal may claim one;
+- the proposal's `instance_id`, `capability` and `arguments` MUST be the node's
+  own. These three decide what actually runs, so a binding that let them differ
+  would name one step while doing another.
+
+`ActionRequest.node_id` is **inherited from the stored proposal and from nowhere
+else**. The Confirm body has no `node_id` field and never will: what a Human
+confirmed is the proposal they were shown, binding included, and a body that
+could name a node could name a different one. The store holds the same causality
+on every road into the journal, including a raw replay: a request that names a
+node must repeat a proposal this run holds — found through the frozen
+`dispatch-<proposal_id>` idempotency relation — must carry that proposal's
+binding exactly, in both directions, and is re-checked against the node itself.
+
+The binding is inside the digests that already exist rather than beside them: it
+is part of the proposal body, so it moves `preview_digest`; the request document
+carries it, so it moves the request digest every `AttemptEvent` pins; and the
+idempotency key names the proposal, which is the document that carries it.
+Nothing downstream repeats it — `AttemptEvent`, `ActionResultReceipt` and
+`EvidenceRef` reach the node through `action_id`.
+
+A graph-bound propose request:
+
+<!-- CANONICAL:graph_bound_propose_request -->
+```json
+{
+  "instance_id": "claude-dev",
+  "attempt_id": "attempt-cockpit-001",
+  "capability": "dispatch",
+  "arguments": {
+    "work_item_id": "work-cockpit-001",
+    "instruction_ref": "instruction-cockpit-001",
+    "profile": "implement",
+    "artifact_refs": [
+      "artifact-cockpit-001"
+    ],
+    "output_limit_profile": "normal"
+  },
+  "scope": [
+    "src",
+    "tests"
+  ],
+  "proposed_by": "claude-dev",
+  "rationale": "The lane finished its handoff and asks to dispatch implementation.",
+  "timeout_seconds": 900,
+  "adapter_id": "claude-code",
+  "node_id": "apply"
+}
+```
+
+The graph it is bound to, as the run's journal holds it:
+
+<!-- CANONICAL:graph_definition_record -->
+```json
+{
+  "record_type": "graph_definition",
+  "record": {
+    "schema_version": 2,
+    "graph_id": "graph-cockpit-001",
+    "run_id": "run-cockpit-graph-001",
+    "created_at": "2026-08-13T12:00:30Z",
+    "nodes": [
+      {
+        "node_id": "plan",
+        "kind": "task",
+        "title": "Plan the change",
+        "resources": [],
+        "stage": "design"
+      },
+      {
+        "node_id": "human-gate",
+        "kind": "gate",
+        "title": "Human Gate - Confirm Do",
+        "resources": [],
+        "gate_id": "gate-cockpit-do"
+      },
+      {
+        "node_id": "apply",
+        "kind": "task",
+        "title": "Do",
+        "resources": [
+          {
+            "kind": "model",
+            "name": "sonnet"
+          }
+        ],
+        "stage": "do",
+        "instance_id": "claude-dev",
+        "capability": "dispatch",
+        "arguments": {
+          "artifact_refs": [
+            "artifact-cockpit-001"
+          ],
+          "instruction_ref": "instruction-cockpit-001",
+          "output_limit_profile": "normal",
+          "profile": "implement",
+          "work_item_id": "work-cockpit-001"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from_node": "plan",
+        "to_node": "human-gate"
+      },
+      {
+        "from_node": "human-gate",
+        "to_node": "apply"
+      }
+    ]
+  }
+}
+```
+
+The proposal the server records, with the binding inside its `preview_digest`:
+
+<!-- CANONICAL:graph_bound_action_proposal -->
+```json
+{
+  "schema_version": 2,
+  "proposal_id": "proposal-cockpit-graph-001",
+  "run_id": "run-cockpit-graph-001",
+  "attempt_id": "attempt-cockpit-001",
+  "instance_id": "claude-dev",
+  "capability": "dispatch",
+  "arguments": {
+    "work_item_id": "work-cockpit-001",
+    "instruction_ref": "instruction-cockpit-001",
+    "profile": "implement",
+    "artifact_refs": [
+      "artifact-cockpit-001"
+    ],
+    "output_limit_profile": "normal"
+  },
+  "scope": [
+    "src",
+    "tests"
+  ],
+  "proposed_by": "claude-dev",
+  "proposed_at": "2026-08-13T12:01:00Z",
+  "timeout_seconds": 900,
+  "rationale": "The lane finished its handoff and asks to dispatch implementation.",
+  "config_digest": "sha256:d37d5ce92fbbfc0e736a215d7dbab9e216837d56c48705b9d5fdefc032fbbbbb",
+  "node_id": "apply",
+  "preview_digest": "sha256:4a01adccdf78f2bc9533172b0ff2aff8137130cf8319a43a3a5ca72d6f8f58b6"
+}
+```
+
+And the request a Confirm authorizes from it — same node, inherited:
+
+<!-- CANONICAL:graph_bound_action_request -->
+```json
+{
+  "schema_version": 2,
+  "action_id": "action-cockpit-graph-001",
+  "run_id": "run-cockpit-graph-001",
+  "attempt_id": "attempt-cockpit-001",
+  "instance_id": "claude-dev",
+  "capability": "dispatch",
+  "arguments": {
+    "work_item_id": "work-cockpit-001",
+    "instruction_ref": "instruction-cockpit-001",
+    "profile": "implement",
+    "artifact_refs": [
+      "artifact-cockpit-001"
+    ],
+    "output_limit_profile": "normal"
+  },
+  "scope": [
+    "src",
+    "tests"
+  ],
+  "requested_by": "release-owner",
+  "requested_at": "2026-08-13T12:02:00Z",
+  "idempotency_key": "dispatch-proposal-cockpit-graph-001",
+  "timeout_seconds": 900,
+  "preview_digest": "sha256:4a01adccdf78f2bc9533172b0ff2aff8137130cf8319a43a3a5ca72d6f8f58b6",
+  "mode": "confirm",
+  "node_id": "apply"
+}
+```
+
 ## 5. Human-decision endpoints — FROZEN CONTRACT
 
 ### 5.1 `POST /command/runs/<run_id>/decisions` — record a DecisionReceipt
@@ -544,7 +741,8 @@ infer one from prose. The record kinds and their contracts are the closed v2 voc
 `action_request` (`ActionRequest`), `action_result` (`ActionResultReceipt`),
 `evidence` (`EvidenceRef`), `decision` (`DecisionReceipt`),
 `action_proposal` (`ActionProposal`), `adapter_observation` (`ObservationRecord`),
-and `attempt_event` (`AttemptEvent`).
+`attempt_event` (`AttemptEvent`), and `graph_definition` (`GraphDefinition`) —
+one run follows at most one graph, and a second under another id is refused.
 
 <!-- CANONICAL:run_read_response -->
 ```json

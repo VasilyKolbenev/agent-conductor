@@ -33,7 +33,19 @@ from .attempt_replay import (
     validate_event_result,
 )
 from .attempts import AttemptEvent
+from .graph_causality import (
+    DISPATCH_KEY_PREFIX,  # noqa: F401 -- re-exported at its original home
+    _one_graph_per_run,
+    _proposal_matches_its_node,
+    _request_repeats_its_proposal,
+)
 from .graph_definition import GraphDefinition
+from .store_errors import (  # noqa: F401 -- re-exported under their old names
+    CorruptRun,
+    RecordConflict,
+    RunExists,
+    StoreError,
+)
 from .contracts import (
     ActionProposal,
     ActionRequest,
@@ -48,18 +60,6 @@ from .contracts import (
     _id,
     canonical_json,
 )
-
-
-class StoreError(RuntimeError):
-    """The run store cannot safely complete the requested operation."""
-
-
-class RunExists(StoreError):
-    """Exclusive run creation found an existing identity."""
-
-
-class RecordConflict(StoreError):
-    """An immutable identity or idempotency key was reused with new meaning."""
 
 
 class _RootGate:
@@ -92,10 +92,6 @@ def _transactional(method):
         with self.transaction():
             return method(self, *args, **kwargs)
     return wrapped
-
-
-class CorruptRun(StoreError):
-    """Durable bytes contradict the contracts or one another."""
 
 
 RecordValue = (
@@ -284,61 +280,6 @@ def _json_object(path: Path, description: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise CorruptRun(f"{description} must be a JSON object")
     return value
-
-
-def _one_graph_per_run(recovered: "RecoveredRun", value: GraphDefinition) -> None:
-    """A run follows ONE graph, which identity alone would never have said.
-
-    Two graphs with different ids are two different identities, so the store
-    would take both and leave every reader to guess which plan the run is
-    actually following. Editing, versioning and templates are a later slice;
-    until they land, a second graph is a question this product cannot answer,
-    and the refusal NAMES the plan already standing so an operator knows which.
-    """
-    standing = next((row.value for row in recovered.records
-                     if row.kind == "graph_definition"), None)
-    if standing is not None and standing.graph_id != value.graph_id:
-        raise RecordConflict(
-            f"run {recovered.envelope.run_id!r} already follows graph "
-            f"{standing.graph_id!r}; one run carries one graph")
-
-
-def _proposal_matches_its_node(
-        recovered: "RecoveredRun", value: ActionProposal) -> None:
-    """A proposal that names a node must be the work that node describes.
-
-    An unbound proposal is left alone: runs without a graph existed before
-    graphs did, and they still do. But a binding that nobody checks is worse
-    than none at all -- it reads as authority the plan never gave. So the node
-    must exist in THIS run's graph, it must be a node that does work, and the
-    three facts that decide what runs -- the instance, the capability and the
-    arguments -- must be the node's own.
-    """
-    if value.node_id is None:
-        return
-    graph = next((row.value for row in recovered.records
-                  if row.kind == "graph_definition"), None)
-    if graph is None:
-        raise StoreError(
-            f"proposal names node {value.node_id!r} but run "
-            f"{recovered.envelope.run_id!r} follows no graph")
-    node = next((row for row in graph.nodes if row.node_id == value.node_id), None)
-    if node is None:
-        raise StoreError(
-            f"proposal names node {value.node_id!r}, which graph "
-            f"{graph.graph_id!r} does not carry")
-    if node.capability is None:
-        raise StoreError(
-            f"node {node.node_id!r} declares no capability, so no proposal "
-            "carries it out")
-    for field_name, planned in (("instance_id", node.instance_id),
-                                ("capability", node.capability)):
-        if getattr(value, field_name) != planned:
-            raise StoreError(
-                f"proposal {field_name} does not match node {node.node_id!r}")
-    if _thaw_json(value.arguments) != node.payload():
-        raise StoreError(
-            f"proposal arguments do not match node {node.node_id!r}")
 
 
 def _record_parts(value: RecordValue) -> tuple[str, str, str]:
@@ -593,6 +534,8 @@ class RunStore:
             if value.config_digest != recovered.envelope.config_digest:
                 raise StoreError("proposal config_digest does not match the frozen run")
             _proposal_matches_its_node(recovered, value)
+        if isinstance(value, ActionRequest):
+            _request_repeats_its_proposal(recovered, value)
         if isinstance(value, ActionResultReceipt):
             action = action_request_for(prior_values, value.action_id)
             if action is None:

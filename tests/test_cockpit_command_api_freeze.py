@@ -31,7 +31,11 @@ import pytest
 from conductor.command import run_store as run_store_module
 from conductor.command.adapters.deep_commands import DEEP_ARGUMENT_TYPES
 from conductor.command.adapters.deep_contracts import DeepContractError
-from conductor.command.api_contracts import ApiRefusal
+from conductor.command.api_contracts import (
+    ApiRefusal,
+    parse_confirmation,
+    parse_proposal,
+)
 from conductor.command.attempts import AttemptEvent, action_request_digest
 from conductor.command.containment import RouteViolation, run_route_violations
 from conductor.command.graph_definition import GraphDefinition
@@ -65,11 +69,15 @@ REQUIRED_EXAMPLES = frozenset({
     "decision_request", "decision_receipt", "run_read_response", "controls_response",
     "action_result_receipt", "evidence_ref", "attempt_event_effect_lease",
     "attempt_event_execution_observed", "stream_frames", "mutation_boundary",
+    "graph_bound_propose_request", "graph_definition_record",
+    "graph_bound_action_proposal", "graph_bound_action_request",
 })
 
 #: Canonical examples that are a full contract serialization, mapped to the
 #: contract that must round-trip them.
 CONTRACT_EXAMPLES = {
+    "graph_bound_action_proposal": ActionProposal,
+    "graph_bound_action_request": ActionRequest,
     "action_proposal": ActionProposal,
     "action_request": ActionRequest,
     "decision_receipt": DecisionReceipt,
@@ -133,7 +141,9 @@ PROPOSE_REQUIRED = frozenset({
     "instance_id", "attempt_id", "capability", "arguments", "scope", "proposed_by",
     "rationale", "timeout_seconds",
 })
-PROPOSE_ALLOWED = PROPOSE_REQUIRED | {"adapter_id"}
+#: `node_id` joins `adapter_id` as an optional propose field. Optional and NOT
+#: nullable: a caller omits the key or names a real node.
+PROPOSE_ALLOWED = PROPOSE_REQUIRED | {"adapter_id", "node_id"}
 CONFIRM_FIELDS = frozenset({
     "proposal_id", "preview_digest", "capability", "scope", "config_digest",
     "confirmed_by",

@@ -14,10 +14,17 @@ three facts that decide what actually runs.
 """
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from conductor.command.contracts import ActionProposal, ActionRequest, ContractError
-from conductor.command.run_store import RunStore, StoreError, snapshot_digest
+from conductor.command.run_store import (
+    CorruptRun,
+    RunStore,
+    StoreError,
+    snapshot_digest,
+)
 from tests.alpha3_graph_artifacts import dalio_definition
 from tests.test_command_run_store import CONFIG, a_run
 
@@ -263,3 +270,109 @@ def test_every_later_record_reaches_the_node_through_the_action(tmp_path):
     assert "node_id" not in fields, "the binding is carried once, by the action"
     assert "action_id" in AttemptEvent.__dataclass_fields__
     assert "action_id" in ActionResultReceipt.__dataclass_fields__
+
+
+# -- the store holds the same causality the runtime does -----------------------
+
+
+def a_stored_request(proposal, **changes):
+    """A request minted from a proposal, unless a test moves one of its facts."""
+    body = dict(
+        action_id="action-1", run_id=RUN_ID, attempt_id=proposal.attempt_id,
+        instance_id=proposal.instance_id, capability=proposal.capability,
+        arguments=dict(proposal.arguments), scope=tuple(proposal.scope),
+        requested_by="release-owner", requested_at=NOW,
+        idempotency_key=f"dispatch-{proposal.proposal_id}",
+        timeout_seconds=proposal.timeout_seconds,
+        preview_digest=proposal.preview_digest, mode="confirm",
+        node_id=proposal.node_id)
+    body.update(changes)
+    return ActionRequest(**body)
+
+
+def a_run_with_proposal(tmp_path, **proposal_changes):
+    store = a_store(tmp_path)
+    proposal = a_proposal(**proposal_changes)
+    store.append(proposal)
+    return store, proposal
+
+
+@pytest.mark.parametrize("named", ["confirm-gate", "ghost", None],
+                         ids=["a-gate", "a-node-no-graph-carries", "nothing"])
+def test_a_request_may_not_rebind_what_the_proposal_settled(tmp_path, named):
+    """Codex appended all three and the journal took them.
+
+    A projection reading that journal would have tied the effect to a gate, to a
+    node no graph carries, or to nothing at all, while the proposal a Human
+    confirmed said `do`.
+    """
+    store, proposal = a_run_with_proposal(tmp_path)
+    with pytest.raises(StoreError, match="does not match proposal"):
+        store.append(a_stored_request(proposal, node_id=named))
+
+
+def test_the_honest_request_is_still_appended(tmp_path):
+    store, proposal = a_run_with_proposal(tmp_path)
+    assert store.append(a_stored_request(proposal)) is True
+
+
+def test_an_unbound_proposal_cannot_produce_a_bound_request(tmp_path):
+    """The other direction of the same rule."""
+    store, proposal = a_run_with_proposal(tmp_path, node_id=None)
+    with pytest.raises(StoreError, match="does not match proposal"):
+        store.append(a_stored_request(proposal, node_id=DO_NODE))
+
+
+def test_a_bound_request_that_repeats_no_proposal_is_refused(tmp_path):
+    store = a_store(tmp_path)
+    proposal = a_proposal()
+    with pytest.raises(StoreError, match="repeats no proposal"):
+        store.append(a_stored_request(proposal))
+
+
+def test_a_legacy_request_with_no_proposal_and_no_binding_is_still_valid(tmp_path):
+    """Actions written before proposals carried graphs are still legal."""
+    store = a_store(tmp_path, with_graph=False)
+    proposal = a_proposal(node_id=None)
+    assert store.append(a_stored_request(
+        proposal, node_id=None, idempotency_key="dispatch-nothing")) is True
+
+
+@pytest.mark.parametrize("field,wrong", [
+    ("attempt_id", "attempt-002"),
+    ("timeout_seconds", 60),
+    ("instance_id", "codex-review"),
+    ("scope", ("src",)),
+])
+def test_a_confirm_may_not_change_what_the_proposal_settled(tmp_path, field, wrong):
+    store, proposal = a_run_with_proposal(tmp_path)
+    with pytest.raises(StoreError, match="does not match proposal"):
+        store.append(a_stored_request(proposal, **{field: wrong}))
+
+
+def test_a_request_is_re_checked_against_the_node_it_still_names(tmp_path):
+    """Agreeing with the proposal is not the same as agreeing with the plan."""
+    store, proposal = a_run_with_proposal(tmp_path)
+    drifted = dict(proposal.arguments)
+    drifted["work_item_id"] = "work-002"
+    with pytest.raises(StoreError, match="request arguments do not match node"):
+        store.append(a_stored_request(proposal, arguments=drifted))
+
+
+def test_the_same_rule_fires_on_a_raw_journal_replay(tmp_path):
+    """A record can reach the journal without passing the store's append at all.
+
+    That is the whole reason this relation cannot live in the runtime: a replay
+    reads bytes, and bytes do not remember which road they came by.
+    """
+    store, proposal = a_run_with_proposal(tmp_path)
+    rebound = a_stored_request(proposal, node_id="confirm-gate")
+    wrapper = {"record": rebound.as_dict(), "record_type": "action_request"}
+    line = json.dumps(wrapper, ensure_ascii=False, sort_keys=True,
+                      separators=(",", ":")) + "\n"
+    journal = store.run_path(RUN_ID) / "records.jsonl"
+    with journal.open("ab") as stream:
+        stream.write(line.encode("utf-8"))
+
+    with pytest.raises(CorruptRun, match="breaks replay causality"):
+        store.read(RUN_ID)
