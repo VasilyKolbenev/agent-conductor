@@ -133,6 +133,31 @@ def test_exact_route_allowlist_and_wrong_method_or_path_are_closed(tmp_path):
         ERROR_STATUS["route_not_found"], "route_not_found")
 
 
+@pytest.mark.parametrize(
+    "path", [path for method, path in COMMAND_ROUTES if method == "POST"])
+def test_no_mutating_route_signals_anything_it_was_refused(tmp_path, path):
+    """The signal half of the transport rule, closed as a class.
+
+    Each route's own tests prove it publishes when it appended. This proves the
+    other direction for ALL of them at once, derived from the allowlist rather
+    than remembered: a route that announced a change before validating one
+    would tell every listening browser to re-read bytes that never moved, and a
+    route added later inherits the check without anyone remembering to add it.
+    """
+    subject, store, events = api(tmp_path)
+    journal = store.run_path(RUN_ID) / "records.jsonl"
+    before = journal.read_bytes()
+
+    # A real token and a real route, so the HANDLER runs and refuses -- a stale
+    # token would be turned away by the transport and would prove nothing about
+    # what the handler does with a body it cannot use.
+    refused = post(subject, path.replace("<run_id>", RUN_ID), {})
+
+    assert (refused.status, refused.payload["error"]["code"]) == (
+        ERROR_STATUS["contract_invalid"], "contract_invalid")
+    assert events == [] and journal.read_bytes() == before
+
+
 def test_session_and_run_read_use_host_gate_and_exact_store_wrappers(tmp_path):
     subject, store, _ = api(tmp_path)
     session = subject.handle("GET", "/command/session", get_headers())
