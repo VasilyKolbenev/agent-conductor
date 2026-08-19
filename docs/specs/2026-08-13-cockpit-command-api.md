@@ -497,10 +497,15 @@ name to the plan rather than taking it on trust:
 else**. The Confirm body has no `node_id` field and never will: what a Human
 confirmed is the proposal they were shown, binding included, and a body that
 could name a node could name a different one. The store holds the same causality
-on every road into the journal, including a raw replay: a request that names a
-node must repeat a proposal this run holds — found through the frozen
-`dispatch-<proposal_id>` idempotency relation — must carry that proposal's
-binding exactly, in both directions, and is re-checked against the node itself.
+on every road into the journal, including a raw replay. A request that names a
+proposal this run holds — found through the frozen `dispatch-<proposal_id>`
+idempotency relation — MUST restate that proposal's whole unchanged-proposal
+relation of section 4.2, `arguments` among them, and MUST carry its binding
+exactly, in both directions. That holds whether or not either document names a
+node: an action that runs different work under a confirmed proposal's name is
+the same lie in a run that follows no plan. A named node is then re-checked
+against the plan itself, and a request that names a node while repeating no
+proposal this run holds is refused.
 
 The binding is inside the digests that already exist rather than beside them: it
 is part of the proposal body, so it moves `preview_digest`; the request document

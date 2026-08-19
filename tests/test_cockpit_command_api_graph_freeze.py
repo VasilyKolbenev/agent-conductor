@@ -87,6 +87,26 @@ def test_the_request_inherits_the_proposals_binding_and_its_settled_facts():
                   "preview_digest"):
         assert getattr(request, field) == getattr(proposal, field), field
     assert tuple(request.scope) == tuple(proposal.scope)
+    assert dict(request.arguments) == dict(proposal.arguments)
+
+
+def test_the_spec_says_the_store_holds_the_whole_relation_bound_or_not():
+    """The wording change-detector for a rule the store now enforces.
+
+    `arguments` were the one settled fact the store did not compare, and an
+    unbound proposal never reached the node re-check that caught the rest -- so
+    a Confirm could change the work under a confirmed proposal's name. The
+    document has to carry that rule in words before any test blesses it.
+    """
+    text = " ".join(_SPEC.read_text(encoding="utf-8").split())
+    required = (
+        "MUST restate that proposal's whole unchanged-proposal relation of "
+        "section 4.2, `arguments` among them",
+        "whether or not either document names a node",
+        "a request that names a node while repeating no proposal this run "
+        "holds is refused",
+    )
+    assert all(statement in text for statement in required)
 
 
 def test_the_canonical_graph_record_is_the_wrapper_the_journal_holds():

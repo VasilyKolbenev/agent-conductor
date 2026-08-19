@@ -108,18 +108,22 @@ def _request_repeats_its_proposal(
         recovered: "RecoveredRun", value: ActionRequest) -> None:
     """A request is a confirmed proposal restated; the journal must show it.
 
-    The runtime copies the binding from the stored proposal on the honest road,
-    and that was taken for enough. It is not: a record appended directly, or a
-    journal replayed from disk, reaches the store without passing the runtime at
-    all -- and a request could then tie an effect to a gate, to a node no graph
-    carries, or to nothing, while the proposal a Human confirmed said otherwise.
-    A projection reading that journal would be reading a lie in good faith.
+    The runtime copies the proposal's facts on the honest road, and that was
+    taken for enough. It is not: a record appended directly, or a journal
+    replayed from disk, reaches the store without passing the runtime at all --
+    and a request could then run different work, or tie an effect to a gate, to
+    a node no graph carries, or to nothing, while the proposal a Human confirmed
+    said otherwise.
 
     So the store holds the same causality the runtime does. The proposal is
     found by the key that NAMES it, and then the facts a Confirm may not change
     are required to be the proposal's own -- the binding first among them, in
     both directions: a bound proposal cannot yield an unbound request, and an
     unbound one cannot yield a bound request.
+
+    The arguments are compared HERE rather than left to the node re-check below,
+    which only speaks when a node is named: an unbound proposal reached no check
+    at all, and the relation the spec freezes is between the two documents.
 
     A request that names no proposal and no node is left alone. Actions like
     that were written before proposals carried graphs, and they are still legal.
@@ -144,5 +148,8 @@ def _request_repeats_its_proposal(
     if tuple(value.scope) != tuple(proposal.scope):
         raise StoreError(
             f"request scope does not match proposal {proposal.proposal_id!r}")
+    if _thaw_json(value.arguments) != _thaw_json(proposal.arguments):
+        raise StoreError(
+            f"request arguments do not match proposal {proposal.proposal_id!r}")
     _matches_its_node(recovered, "request", value.node_id, value.instance_id,
                       value.capability, value.arguments)

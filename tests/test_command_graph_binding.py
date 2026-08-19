@@ -311,8 +311,10 @@ def test_a_request_may_not_rebind_what_the_proposal_settled(tmp_path, named):
         store.append(a_stored_request(proposal, node_id=named))
 
 
-def test_the_honest_request_is_still_appended(tmp_path):
-    store, proposal = a_run_with_proposal(tmp_path)
+@pytest.mark.parametrize("proposal_changes", [{}, {"node_id": None}],
+                         ids=["bound", "unbound"])
+def test_the_honest_request_is_still_appended(tmp_path, proposal_changes):
+    store, proposal = a_run_with_proposal(tmp_path, **proposal_changes)
     assert store.append(a_stored_request(proposal)) is True
 
 
@@ -338,35 +340,96 @@ def test_a_legacy_request_with_no_proposal_and_no_binding_is_still_valid(tmp_pat
         proposal, node_id=None, idempotency_key="dispatch-nothing")) is True
 
 
-@pytest.mark.parametrize("field,wrong", [
-    ("attempt_id", "attempt-002"),
-    ("timeout_seconds", 60),
-    ("instance_id", "codex-review"),
-    ("scope", ("src",)),
-])
-def test_a_confirm_may_not_change_what_the_proposal_settled(tmp_path, field, wrong):
-    store, proposal = a_run_with_proposal(tmp_path)
-    with pytest.raises(StoreError, match="does not match proposal"):
-        store.append(a_stored_request(proposal, **{field: wrong}))
+#: One way to move each fact both frozen documents carry. The KEYS are derived
+#: from the contracts below rather than remembered, because a list someone has
+#: to remember is exactly what left `arguments` unchecked while every other
+#: settled fact was held.
+A_MOVED_FACT = {
+    "attempt_id": "attempt-002",
+    "instance_id": "codex-review",
+    "capability": "evidence",
+    "arguments": {"work_item_id": "work-999"},
+    "scope": ("src",),
+    "timeout_seconds": 60,
+    "preview_digest": "sha256:" + "0" * 64,
+    "node_id": "confirm-gate",
+}
+
+#: Carried by both documents, settled by neither the Confirm nor the proposal.
+NOT_THE_PROPOSALS_TO_SETTLE = {
+    "run_id": "a request is only ever read out of its own run's journal, so it "
+              "never meets a proposal from another run to disagree with",
+    "schema_version": "the envelope this document was written in, not a fact "
+                      "about the work it asks for",
+}
 
 
-def test_a_request_is_re_checked_against_the_node_it_still_names(tmp_path):
-    """Agreeing with the proposal is not the same as agreeing with the plan."""
+def test_every_fact_both_documents_carry_is_named_by_one_of_these_two_rules():
+    """The door is the CONTRACTS, not a list this file happens to hold.
+
+    A field added to both documents later belongs to one of the two dicts above
+    -- either a Confirm may not move it, and the case below proves the store
+    refuses when it does, or this file has to say in words why the proposal does
+    not settle it. Until then it reds here.
+    """
+    shared = ActionRequest._FIELDS & ActionProposal._FIELDS
+    assert set(A_MOVED_FACT) | set(NOT_THE_PROPOSALS_TO_SETTLE) == shared
+
+
+@pytest.mark.parametrize("field", sorted(A_MOVED_FACT))
+def test_a_confirm_may_not_change_what_the_proposal_settled(tmp_path, field):
     store, proposal = a_run_with_proposal(tmp_path)
+    with pytest.raises(StoreError, match=r"do(?:es)? not match proposal"):
+        store.append(a_stored_request(proposal, **{field: A_MOVED_FACT[field]}))
+
+
+@pytest.mark.parametrize("bound", [True, False], ids=["bound", "unbound"])
+def test_a_confirm_may_not_change_the_arguments_the_proposal_settled(
+        tmp_path, bound):
+    """The arguments decide what actually runs, so they are the fact a Confirm
+    changing them would matter most.
+
+    A bound request was caught only in passing, by the later re-check against
+    the graph node, which is accurate about the plan and silent about the
+    Human. An unbound one was not caught at all: `_matches_its_node` returns on
+    the first line when no node is named, so a changed action became durable
+    while the proposal a Human confirmed said otherwise. Both now answer to the
+    document that was actually confirmed.
+    """
+    store, proposal = a_run_with_proposal(
+        tmp_path, **({} if bound else {"node_id": None}))
     drifted = dict(proposal.arguments)
-    drifted["work_item_id"] = "work-002"
-    with pytest.raises(StoreError, match="request arguments do not match node"):
+    drifted["work_item_id"] = "work-999"
+    journal = store.run_path(RUN_ID) / "records.jsonl"
+    before = journal.read_bytes()
+
+    with pytest.raises(StoreError, match="request arguments do not match proposal"):
         store.append(a_stored_request(proposal, arguments=drifted))
 
+    assert journal.read_bytes() == before
 
-def test_the_same_rule_fires_on_a_raw_journal_replay(tmp_path):
+
+def a_rebound_request(proposal):
+    return {"node_id": "confirm-gate"}
+
+
+def a_request_with_changed_arguments(proposal):
+    return {"arguments": {**dict(proposal.arguments), "work_item_id": "work-999"}}
+
+
+@pytest.mark.parametrize("proposal_changes,sabotage", [
+    ({}, a_rebound_request),
+    ({"node_id": None}, a_request_with_changed_arguments),
+], ids=["a-rebound-request", "an-unbound-request-that-changed-arguments"])
+def test_the_same_rule_fires_on_a_raw_journal_replay(
+        tmp_path, proposal_changes, sabotage):
     """A record can reach the journal without passing the store's append at all.
 
     That is the whole reason this relation cannot live in the runtime: a replay
     reads bytes, and bytes do not remember which road they came by.
     """
-    store, proposal = a_run_with_proposal(tmp_path)
-    rebound = a_stored_request(proposal, node_id="confirm-gate")
+    store, proposal = a_run_with_proposal(tmp_path, **proposal_changes)
+    rebound = a_stored_request(proposal, **sabotage(proposal))
     wrapper = {"record": rebound.as_dict(), "record_type": "action_request"}
     line = json.dumps(wrapper, ensure_ascii=False, sort_keys=True,
                       separators=(",", ":")) + "\n"
