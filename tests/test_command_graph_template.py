@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 from conductor.command.adapters import AdapterRegistry, UnsupportedCapability
-from conductor.command.contracts import ContractError
+from conductor.command.contracts import ContractError, frozen_config_bindings
 
 from tests import alpha4_role_artifacts
 from tests.test_command_adapters import FakeAdapter
@@ -356,6 +356,39 @@ def test_a_materialized_plan_invents_no_word_the_template_or_the_run_did_not():
         supplied |= set(owner._FIELDS)
     invented = sorted(_strings(definition.as_dict()) - supplied)
     assert not invented, invented
+
+
+def test_the_frozen_configuration_is_read_for_the_adapter_and_for_nothing_else():
+    """One fact is taken from a config here, and no other key may change a plan.
+
+    Deleting the `served` parameter is not by itself the end of the second
+    authority, and a sabotage run proved it: the same dialect comes back read
+    off the instance row -- `controls`, `serves`, whatever it is called --
+    permissive whenever the key is absent, so every test written against the
+    parameter stays green while the defect is fully intact.
+
+    So the claim is made about the ROW rather than about a parameter, and from
+    both sides. Enrich an instance row with anything at all and the plan is the
+    same plan; reduce the config to nothing but the binding
+    `frozen_config_bindings` returns and it is still the same plan. Whatever a
+    row carries beside `id` and `adapter`, this module did not read it.
+    """
+    template = dalio()
+    binding = every_role_to(template, "reader")
+    plain = materialize(template, binding, MIXED, graph_id="g", run_id="r",
+                        created_at=NOW)
+
+    enriched = {"instances": [
+        row if row["id"] != "reader" else dict(
+            row, controls=[], capabilities=[], serves=[], model="sonnet")
+        for row in MIXED["instances"]]}
+    assert materialize(template, binding, enriched, graph_id="g", run_id="r",
+                       created_at=NOW).digest() == plain.digest()
+
+    reduced = {"instances": [{"id": name, "adapter": adapter} for name, adapter
+                             in sorted(frozen_config_bindings(MIXED).items())]}
+    assert materialize(template, binding, reduced, graph_id="g", run_id="r",
+                       created_at=NOW).digest() == plain.digest()
 
 
 def test_a_capability_the_bound_adapter_cannot_do_still_materializes():
