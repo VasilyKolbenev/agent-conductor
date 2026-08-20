@@ -190,10 +190,11 @@ def test_each_boundary_arm_refuses_its_own_single_fault(
 
 
 _STORE_UNIT = """([payload, event]) =>
-Promise.all([import("./graph-adapter.js"), import("./graph-store.js")])
-.then(([adapter, store]) => {
+Promise.all([import("./graph-adapter.js"), import("./graph-payload.js"),
+             import("./graph-store.js")])
+.then(([adapter, boundary, store]) => {
   const adapted = adapter.adaptPayload(payload);
-  const facts = adapted === null ? null : store.projectPayload(adapted);
+  const facts = adapted === null ? null : boundary.projectPayload(adapted);
   if (!facts) return {loaded: false};
   const loaded = store.reduce(store.EMPTY, {type: "loaded", facts});
   const next = store.reduce(loaded, event);

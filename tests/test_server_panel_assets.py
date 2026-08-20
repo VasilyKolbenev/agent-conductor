@@ -25,6 +25,7 @@ ASSETS = {
     "/panel/graph.html": "text/html; charset=utf-8",
     "/panel/graph.css": "text/css; charset=utf-8",
     "/panel/graph.js": "text/javascript; charset=utf-8",
+    "/panel/graph-payload.js": "text/javascript; charset=utf-8",
     "/panel/graph-store.js": "text/javascript; charset=utf-8",
     "/panel/graph-view.js": "text/javascript; charset=utf-8",
     "/panel/graph-adapter.js": "text/javascript; charset=utf-8",
@@ -46,6 +47,8 @@ REFUSED = (
     "/panel/../graph.js", "/panel/%2e%2e/graph.js", "/panel/GRAPH.JS",
     "/panel/Graph.html", "/panel/graph.js/", "/panel/graph-store.js%00.txt",
     "/panel/graph-runtime.js", "/panel/graph-wire.js",
+    "/panel/graph-payload.json", "/panel/graph-payload.js?v=1",
+    "/panel/graph-payload.js.map", "/panel/GRAPH-PAYLOAD.JS",
 )
 #: Packaged panel resources served by NO route. The Graph window's files left
 #: this list when the route above became real; the partition check below is

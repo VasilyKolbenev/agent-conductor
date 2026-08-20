@@ -5,7 +5,7 @@
 // the chip contour, exactly the split index.html documents for the panel.
 import {element, field} from "./command-view.js";
 import {AVAILABILITY_STATES, DECISION_ACTIONS, GATE_CHANNEL,
-  OUTCOME_CHANNEL, PHASE_CHANNEL, STAGE_NAMES} from "./graph-store.js";
+  OUTCOME_CHANNEL, PHASE_CHANNEL, STAGE_NAMES} from "./graph-payload.js";
 
 // Geometry constants the layout renders and the browser suite measures.
 export const CELL = Object.freeze({width: 210, height: 118, gapX: 46, gapY: 18});
@@ -546,7 +546,7 @@ export function renderSave(mount, state, draft, onSave) {
     text: SAVE_NOTE[durable ? "durable" : "fixture"]}));
   // Said where the shut door is, not only in the status line above it: a
   // control a reader cannot press owes them the reason on its own card.
-  if (!state.streamReady) {
+  if (!state.writeReady) {
     mount.append(element("p", {className: "g-note g-save__shut", text:
       "The run-event stream is not carrying, so this window cannot know what "
       + "it would be writing on top of. Writing resumes when the stream is "

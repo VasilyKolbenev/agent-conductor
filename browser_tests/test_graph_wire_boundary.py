@@ -68,7 +68,7 @@ def _read(page: Page, run_id: str) -> dict:
 _VERDICT = """
   async payload => {
     const adapter = await import("./graph-adapter.js");
-    const store = await import("./graph-store.js");
+    const store = await import("./graph-payload.js");
     const answer = adapter.adaptRunGraph(payload, []);
     if (answer.state !== "loaded") return `refused-at-adapter:${answer.state}`;
     return store.projectPayload(answer.payload) === null
@@ -206,7 +206,7 @@ _ADAPT = """async payload => {
     return adapter.adaptRunGraph(payload, []).payload;
 }"""
 _PROJECT = """async payload => {
-    const store = await import("./graph-store.js");
+    const store = await import("./graph-payload.js");
     return store.projectPayload(payload) === null;
 }"""
 

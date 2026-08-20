@@ -75,6 +75,8 @@ PANEL_ASSETS = {
     "/panel/graph.html": ("text/html; charset=utf-8", "graph.html"),
     "/panel/graph.css": ("text/css; charset=utf-8", "graph.css"),
     "/panel/graph.js": ("text/javascript; charset=utf-8", "graph.js"),
+    "/panel/graph-payload.js": (
+        "text/javascript; charset=utf-8", "graph-payload.js"),
     "/panel/graph-store.js": (
         "text/javascript; charset=utf-8", "graph-store.js"),
     "/panel/graph-view.js": ("text/javascript; charset=utf-8", "graph-view.js"),

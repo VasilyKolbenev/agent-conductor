@@ -29,12 +29,13 @@ ROOT = Path(__file__).resolve().parents[1]
 PANEL = ROOT / "src" / "conductor" / "panel"
 HTML = PANEL / "graph.html"
 STORE = PANEL / "graph-store.js"
+PAYLOAD = PANEL / "graph-payload.js"
 VIEW = PANEL / "graph-view.js"
 BOOT = PANEL / "graph.js"
 ADAPTER = PANEL / "graph-adapter.js"
 DEFAULT = PANEL / "graph-default.js"
 STYLE = PANEL / "graph.css"
-SCRIPTS = (STORE, VIEW, BOOT, ADAPTER, DEFAULT)
+SCRIPTS = (PAYLOAD, STORE, VIEW, BOOT, ADAPTER, DEFAULT)
 SOURCE = "\n".join(path.read_text(encoding="utf-8") for path in SCRIPTS)
 IMPORTS = r'from "(\./[a-z-]+\.js)";'
 #: Line comments must NOT be matched with DOTALL — `.` would cross newlines
@@ -69,9 +70,9 @@ def test_the_comment_stripper_keeps_the_code_and_drops_the_prose():
     assert "window.conductGraph = Object.freeze({" in boot
     assert "// dispatch stays module-internal" not in boot
     assert len(boot.splitlines()) > 200, "the stripper removed running code"
-    store = _code(STORE)
-    assert "export function projectPayload(payload) {" in store
-    assert "//: Where this graph came from" not in store
+    payload = _code(PAYLOAD)
+    assert "export function projectPayload(payload) {" in payload
+    assert "//: Where this graph came from" not in payload
 
 
 def test_the_contract_module_resolves_inside_this_tree():
@@ -81,25 +82,34 @@ def test_the_contract_module_resolves_inside_this_tree():
 
 
 def test_graph_window_files_sit_in_the_panel_under_the_line_cap():
-    for path in (HTML, STORE, VIEW, BOOT, ADAPTER, DEFAULT, STYLE):
+    for path in (HTML, PAYLOAD, STORE, VIEW, BOOT, ADAPTER, DEFAULT, STYLE):
         assert path.is_file() and path.parent == PANEL
         assert len(path.read_text(encoding="utf-8").splitlines()) <= 800
 
 
-def test_the_graph_module_graph_is_acyclic_and_the_store_stays_pure():
-    assert re.findall(IMPORTS, STORE.read_text(encoding="utf-8")) == [
+def test_the_graph_module_graph_is_acyclic_and_the_boundary_stays_pure():
+    """The layering, spelled as import lists so a cycle cannot hide in one.
+
+    The boundary was split out of the reducer when that file reached its cap,
+    and the seam they always had is now a file edge: the payload module knows
+    the vocabularies and the projections, the store knows the STATE, and the
+    store depends on the boundary while the boundary knows nothing of it.
+    """
+    assert re.findall(IMPORTS, PAYLOAD.read_text(encoding="utf-8")) == [
         "./command-projection.js"]
+    assert sorted(re.findall(IMPORTS, STORE.read_text(encoding="utf-8"))) == [
+        "./command-projection.js", "./graph-payload.js"]
     assert sorted(re.findall(IMPORTS, VIEW.read_text(encoding="utf-8"))) == [
-        "./command-view.js", "./graph-store.js"]
+        "./command-view.js", "./graph-payload.js"]
     assert sorted(re.findall(IMPORTS, BOOT.read_text(encoding="utf-8"))) == [
         "./command-projection.js", "./graph-adapter.js", "./graph-default.js",
-        "./graph-store.js", "./graph-view.js"]
+        "./graph-payload.js", "./graph-store.js", "./graph-view.js"]
     # The adapter imports nothing: it is the outermost shell of the boundary
     # and may depend on no inner layer, so no mapping can smuggle a projection.
     # The default fixture imports nothing either: it is data with a name.
     assert re.findall(IMPORTS, ADAPTER.read_text(encoding="utf-8")) == []
     assert re.findall(IMPORTS, DEFAULT.read_text(encoding="utf-8")) == []
-    for pure in (STORE, ADAPTER, DEFAULT):
+    for pure in (PAYLOAD, STORE, ADAPTER, DEFAULT):
         source = _code(pure)
         assert "document" not in source
         assert "window." not in source
@@ -137,7 +147,7 @@ def test_the_adapter_is_the_only_module_that_knows_a_wire_spelling():
     has leaked out of the seam it was promised to stay inside — and the layer
     that learned it would then have to be revised whenever the wire moves.
     """
-    inside, outside = _code(ADAPTER), _code(STORE, VIEW, BOOT, DEFAULT)
+    inside, outside = _code(ADAPTER), _code(PAYLOAD, STORE, VIEW, BOOT, DEFAULT)
     for spelling in ("definition_digest", "from_node", "to_node",
                      "schema_version", "graph_id"):
         assert spelling in inside, spelling
@@ -175,7 +185,7 @@ def test_the_wire_door_opens_in_the_boot_file_and_nowhere_else():
     no facts are kept anywhere a contract did not validate them.
     """
     html = HTML.read_text(encoding="utf-8")
-    sealed = (_code(STORE, VIEW, ADAPTER, DEFAULT) + "\n" + html).lower()
+    sealed = (_code(PAYLOAD, STORE, VIEW, ADAPTER, DEFAULT) + "\n" + html).lower()
     for forbidden in ("fetch(", "eventsource", "xmlhttprequest", "websocket",
                       "webtransport", "rtcpeerconnection", "sendbeacon"):
         assert forbidden not in sealed, forbidden
@@ -253,8 +263,8 @@ def _js_list(source: str, name: str) -> set[str]:
     return set(_js_ordered(source, name))
 
 
-def test_the_store_vocabularies_are_copies_of_the_layers_that_own_them():
-    store = STORE.read_text(encoding="utf-8")
+def test_the_boundary_vocabularies_are_copies_of_the_layers_that_own_them():
+    store = PAYLOAD.read_text(encoding="utf-8")
     projection = (PANEL / "command-projection.js").read_text(encoding="utf-8")
     assert _js_list(store, "HEALTH_STATES") == contracts.HEALTH_STATES
     assert _js_list(store, "VERIFICATION_STATES") == contracts._VERIFICATION_STATES
@@ -319,7 +329,7 @@ def test_local_only_actions_say_so_where_they_land():
 
 def test_the_docs_field_is_https_gated_at_both_boundary_and_anchor():
     """The one registry field that becomes an href keeps the index.html gate."""
-    store = STORE.read_text(encoding="utf-8")
+    store = PAYLOAD.read_text(encoding="utf-8")
     assert 'row.docs.startsWith("https://")' in store
     view = VIEW.read_text(encoding="utf-8")
     assert 'row.docs.startsWith("https://")' in view
@@ -335,7 +345,7 @@ def test_every_refusal_arm_of_the_store_is_pinned_by_count():
     (one-fault payloads); this is the change-detection half, so an arm cannot
     vanish while the many-fault payload still refuses for another reason.
     """
-    store = STORE.read_text(encoding="utf-8")
+    store = PAYLOAD.read_text(encoding="utf-8")
     assert store.count("return null;") == 49
     assert store.count("return false;") == 27
     # The adapter is a boundary too, and its refusals come in two spellings

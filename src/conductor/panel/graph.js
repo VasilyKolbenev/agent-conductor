@@ -17,7 +17,8 @@ import {ERROR_LABELS, RUN_ID, refusalCode} from "./command-projection.js";
 import {GRAPH_ABSENT, GRAPH_LOADED, adaptPayload, adaptRunGraph,
   graphRequestBody} from "./graph-adapter.js";
 import {DALIO_DEFAULT} from "./graph-default.js";
-import {EMPTY, projectPayload, reduce} from "./graph-store.js";
+import {projectPayload} from "./graph-payload.js";
+import {EMPTY, reduce} from "./graph-store.js";
 import {renderComposer, renderDetail, renderGates, renderGraph, renderPalette,
   renderSave, renderSource, renderTimeline} from "./graph-view.js";
 
@@ -73,7 +74,7 @@ const STREAM_DOWN = "Connection lost. The last authoritative facts are still "
   let epoch = 0, csrfToken = "", sessionEpoch = 0;
   let refreshDirty = false, refreshInFlight = false;
   // Whether the run-event stream is carrying right now. Transport's own fact,
-  // held here; what the SCREEN may do about it is `state.streamReady`, which
+  // held here; what the SCREEN may do about it is `state.writeReady`, which
   // an authoritative read grants and a drop takes away.
   let streamOpen = false;
   // Which write is the current one. A drop retires the write in flight along
@@ -179,7 +180,7 @@ const STREAM_DOWN = "Connection lost. The last authoritative facts are still "
     // window promises in words that nothing may be written until the stream
     // is back, and a live button would make that sentence false.
     mounts.save.querySelector('[name="save"]').disabled =
-      state.savePhase === "submitting" || !state.streamReady;
+      state.savePhase === "submitting" || !state.writeReady;
     restoreFocus(target);
   }
   // The fixture seam, and the whole of it: the adapter names the accepted
@@ -277,7 +278,7 @@ const STREAM_DOWN = "Connection lost. The last authoritative facts are still "
         "Load a run and name a valid graph id before writing a plan."});
       return;
     }
-    if (!state.streamReady) {
+    if (!state.writeReady) {
       dispatch({type: "save", phase: "refused", notice: STREAM_DOWN});
       return;
     }
@@ -352,19 +353,31 @@ const STREAM_DOWN = "Connection lost. The last authoritative facts are still "
     pendingCarry = null;
     return held;
   }
+  // A read that could not be made says nothing about which run the screen
+  // belongs to, and confirms no write. A save outcome still waiting on a read
+  // is therefore DROPPED here rather than announced: the request was
+  // accepted, and this window did not manage to see what the run now holds.
+  function unconfirmed(runId) {
+    if (!pendingCarry || pendingCarry.runId !== runId) return {};
+    pendingCarry = null;
+    return {savePhase: "outcome-unknown", saveNotice: UNKNOWN};
+  }
   async function loadSelectedRun(runId) {
     const requestEpoch = epoch;
     try {
       const [read, registry] = await Promise.all([
         readJson(`/command/runs/${encodeURIComponent(runId)}`), readRegistry(),
       ]);
+      // The epoch guard is what makes `ready` mean the CHOSEN run: every run
+      // change bumps it, so an answer that still matches is an answer about
+      // the run now selected and about no other.
       if (requestEpoch !== epoch) return;
       dispatch(loadOutcome(read, registry,
         {...takeCarry(runId), ready: streamOpen}));
     } catch (error) {
       if (requestEpoch !== epoch) return;
       const code = error instanceof Error ? error.message : "store_error";
-      dispatch({type: "refused", ...takeCarry(runId), ready: streamOpen,
+      dispatch({type: "refused", ...unconfirmed(runId), ready: false,
         notice: ERROR_LABELS[code] || ERROR_LABELS.store_error});
     }
   }
@@ -373,9 +386,17 @@ const STREAM_DOWN = "Connection lost. The last authoritative facts are still "
   async function refreshSelectedRun(runId, carry = null) {
     if (!RUN_ID.test(runId)) return;
     if (runId !== selectedRun) {
-      // A save status names one run's answer. Carrying it onto another run's
-      // screen would attribute a write to a run that never received it.
+      // Choosing a run shuts the write door THIS INSTANT, before any request
+      // goes out. Until the new run's read lands, the drawing on screen is
+      // still the previous run's — and a write taken from it would build one
+      // run's plan and send it to another run's immutable route, which no
+      // later read could take back.
+      //
+      // A save status names one run's answer too, and carrying it onto
+      // another run's screen would attribute a write to a run that never
+      // received it.
       pendingCarry = null;
+      dispatch({type: "ready", ready: false});
       dispatch({type: "save", phase: "idle", notice: ""});
     }
     selectedRun = runId;
@@ -438,7 +459,7 @@ const STREAM_DOWN = "Connection lost. The last authoritative facts are still "
       refreshSelectedRun(selectedRun);
       return;
     }
-    dispatch({type: "stream", ready: true});
+    dispatch({type: "ready", ready: true});
   });
   // A dropped stream rotates the session, the read epoch and the write
   // generation together: an answer to a write issued before the drop can no
@@ -450,7 +471,7 @@ const STREAM_DOWN = "Connection lost. The last authoritative facts are still "
     sessionEpoch += 1;
     writeGeneration += 1;
     csrfToken = "";
-    dispatch({type: "stream", ready: false, notice: STREAM_DOWN});
+    dispatch({type: "ready", ready: false, notice: STREAM_DOWN});
   });
   render();
   // The window opens on the product's default graph — the five-step process

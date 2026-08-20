@@ -123,7 +123,8 @@ def test_the_graph_modules_boot_into_the_dalio_default_without_an_error(
         assert names == {
             "graph.html": 200, "graph.css": 200, "graph.js": 200,
             "graph-adapter.js": 200, "graph-default.js": 200,
-            "graph-store.js": 200, "graph-view.js": 200,
+            "graph-payload.js": 200, "graph-store.js": 200,
+            "graph-view.js": 200,
             "command-projection.js": 200, "command-view.js": 200,
         }
         assert problems == []
@@ -135,7 +136,7 @@ def test_the_store_utc_instant_grammar_answers_the_parity_corpus(
         graph_page: Page) -> None:
     """One corpus, three copies of the grammar — this one answers it too."""
     verdicts = graph_page.evaluate(
-        """cases => import("./graph-store.js").then(store =>
+        """cases => import("./graph-payload.js").then(store =>
              cases.map(row => store.instantIsValid(row.value)))""",
         _CORPUS)
     assert verdicts == [row["verdict"] == "accept" for row in _CORPUS]
