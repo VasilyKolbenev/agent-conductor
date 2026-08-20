@@ -63,6 +63,25 @@ def _bindings(node: ast.AST) -> tuple[int, list[ast.expr], ast.expr] | None:
     return None
 
 
+@lru_cache(maxsize=None)
+def _assignments(tree: ast.AST) -> tuple[tuple[int, list[ast.expr], ast.expr], ...]:
+    """Every assignment outside a class body, in source order, kept per tree.
+
+    The strings and the containers each read this, and a module's own bindings
+    are re-settled once per importer -- so without keeping the walk, resolving
+    one tree of fifty modules walked it tens of thousands of times.
+    """
+    rows = [row for row in map(_bindings, _outside_classes(tree)) if row]
+    return tuple(sorted(rows, key=lambda row: row[0]))
+
+
+@lru_cache(maxsize=None)
+def _import_froms(tree: ast.AST) -> tuple[ast.ImportFrom, ...]:
+    """Every `from ... import` a module writes, in the order it writes them."""
+    return tuple(node for node in ast.walk(tree)
+                 if isinstance(node, ast.ImportFrom))
+
+
 def _declared_strings(tree: ast.AST,
                       seed: Mapping[str, str] | None = None) -> dict[str, str]:
     """Every `NAME = "literal"` a module binds outside a class, by name.
@@ -79,8 +98,7 @@ def _declared_strings(tree: ast.AST,
     name the module declares ITSELF is written over the seed, never under it.
     """
     declared: dict[str, str] = dict(seed or {})
-    rows = [row for row in map(_bindings, _outside_classes(tree)) if row]
-    for _, targets, value in sorted(rows, key=lambda row: row[0]):
+    for _, targets, value in _assignments(tree):
         if isinstance(value, ast.Constant) and isinstance(value.value, str):
             text = value.value
         elif isinstance(value, ast.Name) and value.id in declared:
@@ -171,23 +189,51 @@ def _container_of(value: ast.expr,
     return tuple(held) or None
 
 
-def _declared_containers(tree: ast.AST,
-                         names: Mapping[str, str]) -> dict[str, tuple[str, ...]]:
-    """Every `NAME = (...)` of strings a module binds outside a class."""
-    found: dict[str, tuple[str, ...]] = {}
-    rows = [row for row in map(_bindings, _outside_classes(tree)) if row]
-    for _, targets, value in sorted(rows, key=lambda row: row[0]):
-        held = _container_of(value, names)
-        if held is None:
+class Container(NamedTuple):
+    """A container of strings, and the LOCAL name it was ultimately copied from.
+
+    `root` is what carries provenance across a plain assignment. `MENU =
+    SPECIAL` holds SPECIAL's strings and must keep SPECIAL's origin, or one
+    line would launder an allowance that an import alias cannot -- and the
+    scalar side of this resolver has followed `NAME = OTHER` from the start,
+    so a container that did not was the odd one out rather than a limit.
+    """
+
+    held: tuple[str, ...]
+    root: str
+
+
+def _declared_containers(tree: ast.AST, names: Mapping[str, str],
+                         seed: Mapping[str, Container] | None = None
+                         ) -> dict[str, Container]:
+    """Every container a module binds outside a class, by name.
+
+    Two ways to bind one, and both are followed: a literal written in place,
+    and a REBINDING of a container already in scope. The second walks chains
+    of any length and reaches into function bodies, because the rows are read
+    in source order over the same walk the strings use -- and because
+    `menu = SPECIAL` two lines into a function is the same branch as the
+    import it came from, with one more step in it.
+
+    `seed` is what this module imported, so the rebinding may cross the import.
+    """
+    found: dict[str, Container] = dict(seed or {})
+    for _, targets, value in _assignments(tree):
+        if (held := _container_of(value, names)) is not None:
+            carried = None
+        elif isinstance(value, ast.Name) and value.id in found:
+            carried = found[value.id]      # a rebinding, followed to its root
+        else:
             continue
         for target in targets:
             if isinstance(target, ast.Name):
-                found[target.id] = held
+                found[target.id] = (Container(held, target.id) if carried is None
+                                    else Container(carried.held, carried.root))
     return found
 
 
 @lru_cache(maxsize=None)
-def _own_containers(tree: ast.AST) -> Mapping[str, tuple[str, ...]]:
+def _own_containers(tree: ast.AST) -> Mapping[str, Container]:
     """`_declared_containers` against the module's own strings, kept per tree."""
     return MappingProxyType(_declared_containers(tree, _own_strings(tree)))
 
@@ -204,7 +250,7 @@ class Offer(NamedTuple):
 
     strings: Mapping[str, str]
     classes: Mapping[str, Mapping[str, str]]
-    containers: Mapping[str, tuple[str, ...]]
+    containers: Mapping[str, Container]
     origins: Mapping[str, tuple[str, str]]
 
 
@@ -225,14 +271,11 @@ def _exported_offer(module: str, trees: Mapping[str, ast.Module],
     if file_name is None or module in seen:
         return EMPTY_OFFER
     tree = trees[file_name]
-    strings = dict(_own_strings(tree))
-    classes = dict(_class_strings(tree))
-    containers = dict(_own_containers(tree))
-    origins = {name: (module, name)
-               for name in (*strings, *classes, *containers)}
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.ImportFrom):
-            continue
+    strings: dict[str, str] = {}
+    classes: dict[str, dict[str, str]] = {}
+    containers: dict[str, Container] = {}
+    origins: dict[str, tuple[str, str]] = {}
+    for node in _import_froms(tree):
         target = _absolute(node, file_name)
         source = _exported_offer(target, trees, seen | {module})
         for alias in node.names:
@@ -240,11 +283,11 @@ def _exported_offer(module: str, trees: Mapping[str, ast.Module],
             for held, offered in ((strings, source.strings),
                                   (classes, source.classes),
                                   (containers, source.containers)):
-                if alias.name in offered and local not in held:
+                if alias.name in offered:
                     held[local] = offered[alias.name]
-                    origins.setdefault(local, source.origins.get(
-                        alias.name, (target, alias.name)))
-    return Offer(strings, classes, containers, origins)
+                    origins[local] = source.origins.get(
+                        alias.name, (target, alias.name))
+    return _settled(module, tree, strings, classes, containers, origins)
 
 
 @lru_cache(maxsize=None)
@@ -277,6 +320,35 @@ def _dotted(node: ast.AST) -> str:
     return ".".join(reversed(parts))
 
 
+def _settled(module: str, tree: ast.AST, strings: dict[str, str],
+             classes: dict[str, dict[str, str]],
+             containers: dict[str, Container],
+             origins: dict[str, tuple[str, str]]) -> Offer:
+    """Lay a module's OWN bindings over what it imported, and settle provenance.
+
+    Own declarations win, so a module that re-spells a name it imported answers
+    for its own. What does NOT change is where a value came from: a container
+    rebound to a new name keeps the `(module, symbol)` of the declaration it was
+    copied from, however many names and imports ago that was.
+    """
+    own_strings = _declared_strings(tree, strings)
+    own_containers = _declared_containers(tree, own_strings, containers)
+    own_classes = _class_strings(tree)
+    for name in _own_strings(tree):
+        origins[name] = (module, name)
+    for name in own_classes:
+        origins[name] = (module, name)
+    for name, container in own_containers.items():
+        if name in containers and container.root == containers[name].root:
+            continue                       # imported unchanged; keep its origin
+        origins[name] = (origins[container.root] if container.root in origins
+                         else (module, container.root))
+    strings.update(own_strings)
+    containers.update(own_containers)
+    classes.update(own_classes)
+    return Offer(strings, classes, containers, origins)
+
+
 def _local_names(module: str, tree: ast.AST,
                  trees: Mapping[str, ast.Module]) -> tuple[Offer, dict[str, str]]:
     """What ONE file's names mean, and which modules its aliases point at.
@@ -288,7 +360,7 @@ def _local_names(module: str, tree: ast.AST,
     """
     strings: dict[str, str] = {}
     classes: dict[str, dict[str, str]] = {}
-    containers: dict[str, tuple[str, ...]] = {}
+    containers: dict[str, Container] = {}
     origins: dict[str, tuple[str, str]] = {}
     modules: dict[str, str] = {}
     for node in ast.walk(tree):
@@ -309,14 +381,7 @@ def _local_names(module: str, tree: ast.AST,
                             alias.name, (target, alias.name))
                 if _file_of(f"{target}.{alias.name}", trees) is not None:
                     modules[local] = f"{target}.{alias.name}"
-    own_strings = _declared_strings(tree, strings)
-    own_containers = _declared_containers(tree, own_strings)
-    for name in (*_declared_strings(tree), *own_containers, *_class_strings(tree)):
-        origins[name] = (module, name)
-    strings.update(own_strings)
-    containers.update(own_containers)
-    classes.update(_class_strings(tree))
-    return Offer(strings, classes, containers, origins), modules
+    return _settled(module, tree, strings, classes, containers, origins), modules
 
 
 def _referenced(node: ast.AST, local: Offer, modules: Mapping[str, str],
@@ -346,8 +411,9 @@ def _referenced(node: ast.AST, local: Offer, modules: Mapping[str, str],
                 origin = (local.origins.get(prefix, ("", ""))[0], key)
         else:
             continue
-        for value in (*( (reached.strings[key],) if key in reached.strings else ()),
-                      *reached.containers.get(key, ())):
+        carried = reached.containers.get(key)
+        for value in (*((reached.strings[key],) if key in reached.strings else ()),
+                      *(carried.held if carried is not None else ())):
             out.append((value, inner.lineno, origin))
     return out
 

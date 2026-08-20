@@ -294,6 +294,73 @@ def test_the_presentation_exception_names_one_symbol_and_not_one_module():
     assert not any(_excused(origin) for _, origin in _reached(special, identity))
 
 
+#: One rebinding per shape a container can be copied through, all of them one
+#: line long. The scalar side of the resolver has followed `NAME = OTHER` from
+#: the start; a container that did not was the odd one out, not a limit.
+_REBINDINGS = (
+    ("at module level", "{symbol}\nMENU = {symbol}\n", "MENU"),
+    ("inside a function", "{symbol}\n", "menu"),
+    ("through a chain of three", "{symbol}\nFIRST = {symbol}\nSECOND = FIRST\n",
+     "SECOND"),
+)
+
+
+def _rebound(symbol: str, shape: str, used: str, identity: str
+             ) -> list[tuple[str, tuple[str, str]]]:
+    """One synthetic module that copies a container and then branches on it."""
+    head = f"from conductor.harnesses import {shape.format(symbol=symbol)}"
+    body = ("def route(chosen):\n"
+            + (f"    {used} = {symbol}\n" if used.islower() else "")
+            + f"    return chosen in {used}\n")
+    trees = {PRESENTATION_MODULE: ast.parse(
+        f"RECOMMENDED = ({identity!r}, 'cursor')\nSPECIAL = ({identity!r},)\n")}
+    return [(value, origin) for value, _, origin in _compared_strings(
+        "conductor.command.neutral", ast.parse(head + body), trees=trees)
+        if value in _identities()]
+
+
+@pytest.mark.parametrize("name,shape,used", _REBINDINGS,
+                         ids=[row[0] for row in _REBINDINGS])
+def test_copying_a_container_to_another_name_carries_its_origin_unchanged(
+        name, shape, used):
+    """`MENU = SPECIAL` is the same branch, one line further away.
+
+    An import alias could not steal the allowance, and a plain assignment must
+    not either -- in EITHER direction. `RECOMMENDED` copied to any name stays
+    excused, because the rule is about the declaration and not about the name
+    a reader chose; `SPECIAL` copied to any name stays a stray, because one
+    line is not a laundering step.
+    """
+    identity = _an_identity()
+    kept = _rebound("RECOMMENDED", shape, used, identity)
+    assert kept == [(identity, (PRESENTATION_MODULE, "RECOMMENDED"))], name
+    assert all(_excused(origin) for _, origin in kept), name
+
+    stray = _rebound("SPECIAL", shape, used, identity)
+    assert stray == [(identity, (PRESENTATION_MODULE, "SPECIAL"))], name
+    assert not any(_excused(origin) for _, origin in stray), name
+
+
+def test_a_container_a_module_declared_itself_is_followed_when_it_is_copied():
+    """No import needs to be involved for a rebinding to hide a container.
+
+    The narrowest version of the same hole: declare the tuple in place, copy it
+    once, branch on the copy. Its origin is this module's own declaration, so
+    it is a stray -- and it is reported under the name it was DECLARED as, not
+    the one it was branched on.
+    """
+    identity = _an_identity()
+    source = (f"OWN = ({identity!r},)\n"
+              "MENU = OWN\n"
+              "def route(chosen):\n"
+              "    return chosen in MENU\n")
+    found = [(value, origin) for value, _, origin in _compared_strings(
+        "conductor.command.neutral", ast.parse(source), trees={})
+        if value in _identities()]
+    assert found == [(identity, ("conductor.command.neutral", "OWN"))]
+    assert not any(_excused(origin) for _, origin in found)
+
+
 def test_renaming_a_symbol_on_the_way_in_moves_no_allowance_either_way():
     """The pair is the ORIGINAL declaration, so an alias launders nothing.
 
@@ -360,8 +427,8 @@ def test_the_presentation_exception_is_reached_and_is_not_dead_code():
     on one, the exception excuses nothing and the test says to delete it.
     """
     identity = _an_identity()
-    held = _own_containers(_trees()[PRESENTATION_MODULE]).get("RECOMMENDED", ())
-    assert set(held) & set(_identities()), (
+    menu = _own_containers(_trees()[PRESENTATION_MODULE]).get("RECOMMENDED")
+    assert menu is not None and set(menu.held) & set(_identities()), (
         "the presentation menu holds no catalogued id, so this exception "
         "guards nothing -- remove it")
     reached = {(module, value)
