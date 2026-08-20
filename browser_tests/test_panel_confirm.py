@@ -24,8 +24,8 @@ from conductor import server
 from conductor.command.adapters import AdapterRegistry
 from conductor.command.run_store import RunStore, snapshot_digest
 
-from tests.test_command_adapters import FakeAdapter
 from tests.test_command_run_store import CONFIG, a_run
+from tests.test_command_schema_doubles import DeepDispatchAdapter
 from tests.test_store import good_lane, write_project
 
 
@@ -37,14 +37,22 @@ ACCEPTED = "Action request accepted and recorded. Nothing was executed."
 
 @pytest.fixture
 def cockpit_url(tmp_path) -> Iterator[str]:
-    """Serve one confirm-mode run with a bound adapter through the real server."""
+    """Serve one confirm-mode run with a bound adapter through the real server.
+
+    The adapter DECLARES the argument family this API speaks, and it has to.
+    The pair authority admits a proposal only when the bound adapter records
+    a schema for that capability, so the schema-less `FakeAdapter` this
+    fixture used to bind stopped being able to propose at all: the POST
+    answered `409 capability_unsupported` and the Cockpit said so, honestly,
+    while every test waiting for a created proposal timed out.
+    """
     root = write_project(tmp_path, lanes={"claude": good_lane()})
     store = RunStore(root)
     store.create_run(
         a_run(run_id=RUN_ID, mode="confirm",
               config_digest=snapshot_digest(CONFIG)), CONFIG)
     httpd = server.build(
-        root, 0, registry=AdapterRegistry([FakeAdapter()]),
+        root, 0, registry=AdapterRegistry([DeepDispatchAdapter()]),
         token_factory=lambda _size: TOKEN)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
