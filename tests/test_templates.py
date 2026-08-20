@@ -403,6 +403,19 @@ def test_explicit_none_arguments_reproduce_the_template_verbatim(name):
                          reviewer=None) == templates.get(name)
 
 
+@pytest.mark.parametrize("name", ALL_TEMPLATES)
+def test_asking_for_nothing_returns_the_shipped_document_untouched(name):
+    """The rewriter is not called at all, so it cannot change anything.
+
+    This used to be recovered inside `_substitute`, by comparing the filled-in
+    values against the three defaults -- two of which are harness ids, so the
+    recovery read exactly like deciding something by a vendor's name. `get`
+    knew the answer before it filled anything in: the caller either supplied
+    something or did not.
+    """
+    assert templates.get(name) == templates._TEMPLATES[name][0]
+
+
 @pytest.mark.parametrize("value", AWKWARD_NAMES)
 @pytest.mark.parametrize("name", ALL_TEMPLATES)
 def test_every_accepted_name_still_generates_a_clean_map(name, value):
