@@ -42,7 +42,16 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .contracts import ContractError, _id, _take, _text, frozen_config_bindings
+from .contracts import (
+    ContractError,
+    _freeze_json,
+    _id,
+    _json_copy,
+    _take,
+    _text,
+    canonical_json,
+    frozen_config_bindings,
+)
 from .graph_definition import (
     EFFECTING_CAPABILITIES,
     RUNTIME_ONLY_FIELDS,
@@ -128,6 +137,46 @@ class TemplateNode:
                 "both or neither")
         if self.capability is not None:
             object.__setattr__(self, "capability", _id("capability", self.capability))
+        self._settle_arguments()
+
+    def _settle_arguments(self) -> None:
+        """Take the caller's payload once, then answer only from our own copy.
+
+        ``graph_definition`` learned this on the node next door and the reason
+        carries over unchanged: validating at construction settles what the
+        field WAS. Until this ran, the contract kept the caller's own mapping
+        and handed that same object back out of ``as_dict`` -- so editing a
+        rendered template edited the TEMPLATE, at the same ``revision``, which
+        is the one thing a revision exists to make impossible.
+        """
+        arguments = _json_object(f"template node {self.node_id} arguments",
+                                 self.arguments)
+        if self.role_id is None and arguments:
+            raise TemplateError(
+                f"node {self.node_id!r} carries arguments with no role to read them")
+        settled = _json_copy(f"template node {self.node_id} arguments",
+                             dict(arguments))
+        object.__setattr__(self, EXEMPT_FIELD, _freeze_json(settled))
+        # What this contract hands any consumer, in ITS words rather than in the
+        # caller's object -- plus the exact object it stored, so a later
+        # replacement can be SEEN without being READ.
+        object.__setattr__(self, "_payload_text", canonical_json(settled))
+        object.__setattr__(self, "_payload_witness", self.arguments)
+
+    def payload(self) -> dict[str, Any]:
+        """The validated arguments, rebuilt from this contract's own record.
+
+        Caught by IDENTITY, which reads nothing at all: the field is either the
+        exact object settled above or it is not. A hostile mapping put there
+        afterwards would otherwise answer ``items`` with its own exception, and
+        that exception would leave carrying whatever it carried.
+        """
+        if self.arguments is not self._payload_witness:
+            raise TemplateError(
+                f"node {self.node_id!r} arguments were replaced after they were "
+                "validated; this contract answers only for what it settled"
+            ) from None
+        return json.loads(self._payload_text)
 
     def _document(self) -> dict[str, Any]:
         """This node as data, for the walks that judge it by field name."""
@@ -138,7 +187,7 @@ class TemplateNode:
         if self.role_id is not None:
             out["role_id"] = self.role_id
             out["capability"] = self.capability
-            out[EXEMPT_FIELD] = self.arguments
+            out[EXEMPT_FIELD] = self.payload()
         if self.gate_id is not None:
             out["gate_id"] = self.gate_id
         if self.loop is not None:
@@ -204,6 +253,14 @@ class GraphTemplate:
         object.__setattr__(self, "nodes", self._settled_nodes())
         object.__setattr__(self, "edges", tuple(
             _rebuilt_edge(row) for row in _sequence("template edges", self.edges)))
+        # The same snapshot-and-witness the nodes carry, one level up: the text
+        # is what this contract will hand any consumer, and the two tuples are
+        # the exact objects it settled, so a replacement is SEEN rather than
+        # read. A tuple cannot be edited, which is precisely why an attacker
+        # replaces the whole of it.
+        object.__setattr__(self, "_document_text", canonical_json(self._document()))
+        object.__setattr__(self, "_nodes_witness", self.nodes)
+        object.__setattr__(self, "_edges_witness", self.edges)
         # The topology rules are the base contract's, and they stay there: a
         # template proves itself by materializing against placeholders, so a
         # constructed template is one that materializes and there is no second
@@ -237,7 +294,24 @@ class GraphTemplate:
         One role may carry several steps -- that is the whole point of a role --
         so this is the DISTINCT set, and it is what a binding must cover.
         """
-        return self._roles_of(self.nodes)
+        return self._roles_of(self.steps())
+
+    def steps(self) -> tuple[TemplateNode, ...]:
+        """The nodes this contract settled, or a refusal that reads nothing.
+
+        Nodes and edges are tuples, so nothing can be edited INSIDE them --
+        which is exactly why a replacement swaps the whole tuple for something
+        else. Identity catches that without calling one method on whatever
+        arrived, so a hostile object's own exception never becomes this
+        contract's answer.
+        """
+        if (self.nodes is not self._nodes_witness
+                or self.edges is not self._edges_witness):
+            raise TemplateError(
+                f"template {self.template_id!r} had its nodes or edges replaced "
+                "after they were validated; this contract answers only for what "
+                "it settled") from None
+        return self.nodes
 
     def _probe(self) -> None:
         try:
@@ -248,7 +322,8 @@ class GraphTemplate:
                 f"template {self.template_id!r} does not describe a graph this "
                 f"product can build: {error}") from None
 
-    def as_dict(self) -> dict[str, Any]:
+    def _document(self) -> dict[str, Any]:
+        """This template as data, built once at construction and never again."""
         return {
             "schema_version": self.schema_version,
             "template_id": self.template_id,
@@ -257,6 +332,17 @@ class GraphTemplate:
             "nodes": [node.as_dict() for node in self.nodes],
             "edges": [edge.as_dict() for edge in self.edges],
         }
+
+    def as_dict(self) -> dict[str, Any]:
+        """A FRESH document, parsed from the canonical text settled at build.
+
+        Every caller gets its own copy, so editing a rendered template is
+        editing that caller's paper and nothing else. What it renders is this
+        contract's own record rather than a walk over fields that may have been
+        replaced since.
+        """
+        self.steps()
+        return json.loads(self._document_text)
 
     @classmethod
     def from_dict(cls, value: object) -> "GraphTemplate":
@@ -287,13 +373,15 @@ def _rebuilt_node(row: object) -> TemplateNode:
 
     The reason is `graph_definition`'s: `isinstance` lets a subclass answer
     `as_dict()` with a word this layer refuses, and a rebuild also re-validates
-    a value edited after construction.
+    a value edited after construction. The payload comes from `payload()` for
+    that contract's reason too -- reading the attribute WAS the polymorphic
+    act, and `payload()` sees a replacement by identity and reads it never.
     """
     if type(row) is not TemplateNode:
         raise TemplateError("template nodes must be TemplateNode values")
     return TemplateNode(
         node_id=row.node_id, kind=row.kind, title=row.title, stage=row.stage,
-        role_id=row.role_id, capability=row.capability, arguments=row.arguments,
+        role_id=row.role_id, capability=row.capability, arguments=row.payload(),
         resources=row.resources, gate_id=row.gate_id, loop=row.loop)
 
 
@@ -319,18 +407,37 @@ class RunBinding:
         rows = _json_object("run binding assignments", dict(self.assignments))
         settled = {
             _id("role_id", role): _id("instance_id", instance)
-            for role, instance in rows.items()
+            for role, instance in sorted(rows.items())
         }
-        object.__setattr__(self, "assignments", settled)
+        # Frozen, not merely rebuilt. A plain dict handed back is one a caller
+        # edits in place -- and `covers` reads the role KEYS, so swapping the
+        # instance a role runs on passed every check this contract makes.
+        object.__setattr__(self, "assignments", _freeze_json(settled))
+        object.__setattr__(self, "_assignments_text", canonical_json(settled))
+        object.__setattr__(self, "_assignments_witness", self.assignments)
+
+    def bound(self) -> dict[str, str]:
+        """The assignments this contract settled, rebuilt from its own record.
+
+        The same identity check the nodes carry, for the same reason: a mapping
+        put here afterwards answers `items` however it likes, and this contract
+        would have reported whatever it answered as the binding a run follows.
+        """
+        if self.assignments is not self._assignments_witness:
+            raise TemplateError(
+                "run binding assignments were replaced after they were "
+                "validated; this contract answers only for what it settled"
+            ) from None
+        return json.loads(self._assignments_text)
 
     @property
     def instances(self) -> tuple[str, ...]:
         """Every distinct instance this binding uses, sorted."""
-        return tuple(sorted(set(self.assignments.values())))
+        return tuple(sorted(set(self.bound().values())))
 
     def covers(self, template: GraphTemplate) -> None:
         """Refuse anything but an exact, total cover of the template's roles."""
-        wanted, given = set(template.roles), set(self.assignments)
+        wanted, given = set(template.roles), set(self.bound())
         missing, extra = sorted(wanted - given), sorted(given - wanted)
         if missing:
             raise TemplateError(
@@ -342,7 +449,7 @@ class RunBinding:
                 "a binding answers for this template and no other")
 
     def as_dict(self) -> dict[str, Any]:
-        return {"assignments": dict(sorted(self.assignments.items()))}
+        return {"assignments": self.bound()}
 
     @classmethod
     def from_dict(cls, value: object) -> "RunBinding":
@@ -362,10 +469,9 @@ def _build(template: GraphTemplate, assignments: Mapping[str, str], *,
             node_id=node.node_id, kind=node.kind, title=node.title,
             stage=node.stage,
             instance_id=None if node.role_id is None else assignments[node.role_id],
-            capability=node.capability,
-            arguments=node.arguments if node.role_id is not None else {},
+            capability=node.capability, arguments=node.payload(),
             resources=node.resources, gate_id=node.gate_id, loop=node.loop)
-        for node in template.nodes)
+        for node in template.steps())
     return GraphDefinition(graph_id=graph_id, run_id=run_id,
                            created_at=created_at, nodes=nodes,
                            edges=template.edges)
@@ -382,10 +488,11 @@ def _servable(template: GraphTemplate, binding: RunBinding,
     never be edited, and one whose steps no adapter can carry out would stand
     in it forever answering `service_refused` to every proposal.
     """
-    for node in template.nodes:
+    assignments = binding.bound()
+    for node in template.steps():
         if node.role_id is None:
             continue
-        instance = binding.assignments[node.role_id]
+        instance = assignments[node.role_id]
         adapter = bound.get(instance)
         if adapter is None:
             raise TemplateError(
@@ -441,7 +548,7 @@ def materialize(template: GraphTemplate, binding: RunBinding,
         raise TemplateError("materialize takes exactly a RunBinding")
     binding.covers(template)
     _servable(template, binding, frozen_config_bindings(config), served)
-    return _build(template, binding.assignments, graph_id=graph_id,
+    return _build(template, binding.bound(), graph_id=graph_id,
                   run_id=run_id, created_at=created_at)
 
 

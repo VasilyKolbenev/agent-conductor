@@ -341,6 +341,117 @@ def test_edges_and_nodes_are_taken_by_identity_of_type():
     assert GraphEdge(from_node="goal", to_node="identify") in template.edges
 
 
+# --- what this contract answers for, once somebody edits what it holds ---
+
+
+class _Hostile:
+    """Answers every read with a foreign exception carrying a secret.
+
+    Whatever this raises must never become the contract's answer: a refusal
+    that repeats it has read the replacement, which is the act the identity
+    check exists to avoid.
+    """
+
+    SECRET = "a-secret-no-refusal-may-repeat"
+
+    def __iter__(self):
+        raise RuntimeError(self.SECRET)
+
+    def items(self):
+        raise RuntimeError(self.SECRET)
+
+    def keys(self):
+        raise RuntimeError(self.SECRET)
+
+    def values(self):
+        raise RuntimeError(self.SECRET)
+
+
+def test_a_rendered_template_is_a_copy_and_editing_it_leaves_the_template_alone():
+    """A revision is the identity of a plan, so a render must not move one.
+
+    Handing back the contract's own mapping let a caller change what every
+    later run materializes from, at the SAME revision -- which is exactly the
+    edit a revision exists to make visible.
+    """
+    template = dalio()
+    before = template.as_dict()
+    rendered = template.as_dict()
+    rendered["nodes"][0]["arguments"]["review_profile"] = "hijacked"
+    rendered["nodes"][0]["title"] = "hijacked"
+    rendered["title"] = "hijacked"
+    assert template.as_dict() == before
+    assert template.nodes[0].payload()["review_profile"] == "spec"
+    # Two renders are two documents, so one caller's paper is never another's.
+    assert template.as_dict()["nodes"] is not template.as_dict()["nodes"]
+
+
+def test_the_callers_own_arguments_are_taken_once_and_never_read_again():
+    """A mapping the caller still holds is a mapping the caller can still edit."""
+    caller = {"work_item_id": "work-001", "target_artifact_refs": ["artifact-a"],
+              "review_profile": "spec"}
+    node = TemplateNode(node_id="n", kind="task", title="T", stage="goal",
+                        role_id="role-a", capability="review", arguments=caller)
+    caller["review_profile"] = "hijacked"
+    assert node.payload()["review_profile"] == "spec"
+    with pytest.raises(TypeError):
+        node.arguments["review_profile"] = "hijacked"
+
+
+def test_a_node_whose_arguments_were_replaced_answers_in_its_own_words():
+    node = dalio().nodes[0]
+    object.__setattr__(node, "arguments", _Hostile())
+    for read in (node.payload, node.as_dict):
+        with pytest.raises(TemplateError) as refusal:
+            read()
+        assert "replaced after they were validated" in str(refusal.value)
+        assert _Hostile.SECRET not in str(refusal.value)
+
+
+@pytest.mark.parametrize("field", ["nodes", "edges"])
+def test_a_template_whose_nodes_or_edges_were_replaced_answers_in_its_own_words(field):
+    """A tuple cannot be edited, which is precisely why it gets replaced whole."""
+    template = dalio()
+    object.__setattr__(template, field, _Hostile())
+    for read in (template.steps, template.as_dict, lambda: template.roles):
+        with pytest.raises(TemplateError) as refusal:
+            read()
+        assert _Hostile.SECRET not in str(refusal.value)
+
+
+def test_a_template_renders_the_fields_it_settled_and_not_a_later_one():
+    """The scalars are pinned by the same snapshot the nodes are."""
+    template = dalio()
+    object.__setattr__(template, "title", "a title nobody reviewed")
+    object.__setattr__(template, "revision", 99)
+    assert template.as_dict()["title"] == "Dalio five-step cycle"
+    assert template.as_dict()["revision"] == 1
+
+
+def test_a_binding_whose_assignments_were_replaced_answers_in_its_own_words():
+    template = dalio()
+    binding = every_role_to(template, "solo")
+    object.__setattr__(binding, "assignments", _Hostile())
+    reads = (binding.bound, binding.as_dict, lambda: binding.instances,
+             lambda: binding.covers(template))
+    for read in reads:
+        with pytest.raises(TemplateError) as refusal:
+            read()
+        assert _Hostile.SECRET not in str(refusal.value)
+    with pytest.raises(TemplateError):
+        built(template, binding, SOLO)
+
+
+def test_a_binding_holds_its_assignments_closed_against_an_edit_in_place():
+    """`covers` reads the role KEYS, so an edited VALUE passed every check."""
+    template = dalio()
+    binding = every_role_to(template, "solo")
+    binding.covers(template)
+    with pytest.raises(TypeError):
+        binding.assignments["role-thinker"] = "somebody-else"
+    assert binding.bound()["role-thinker"] == "solo"
+
+
 def test_the_shipped_template_reaches_the_wheel_a_user_installs(tmp_path):
     """A user receives the wheel, not this tree -- so assert on the artifact.
 
