@@ -426,13 +426,15 @@ a valid decision receipt.
   introduces a second process over one root; and registry hardening remains mandatory before
   any external plugin input or execution endpoint.
 - **ALPHA-2 Graph UI — approved 2026-08-18 at `701a8e4cb608300a2115945e9d8e3babbbe5bf79`.**
-  The Graph window ships packaged beside the Cockpit and is served by NO production route
-  while `server.py` stays frozen: every graph file is named in the panel-asset refusal list
-  and in an explicit `UNSERVED` relation, so the moment a graph route lands its file must
-  leave that list or the allowlist guard reddens. The lane also lands the browser release
-  gate — one fresh process per module, no retry, no waiver, its own temporary root — which
-  replaced a plain `pytest browser_tests` run after a Chromium flake was seen four times in
-  roughly twenty runs.
+  The Graph window shipped packaged beside the Cockpit and was served by NO production route
+  while `server.py` stayed frozen: every graph file was named in the panel-asset refusal list
+  and in an explicit `UNSERVED` relation, so the moment a graph route landed its file had to
+  leave that list or the allowlist guard reddened. **ALPHA-3 CP3 landed that route**, and the
+  files left the list exactly as promised; the relation that replaced it partitions the whole
+  packaged directory instead — allowlisted, named unserved, or the entry `GET /` serves. The
+  lane also lands the browser release gate — one fresh process per module, no retry, no
+  waiver, its own temporary root — which replaced a plain `pytest browser_tests` run after a
+  Chromium flake was seen four times in roughly twenty runs.
 - **ALPHA integration — local `--no-ff` merges 2026-08-18 on `codex/v2-alpha-assembly`.** Both
   approved points are kept as distinct ancestors of one tree rather than rebased onto each
   other: `6ebe12d` -> `bd93217` -> `701a8e4`. The cross-lane diff proves the integration tip
@@ -446,6 +448,53 @@ a valid decision receipt.
   the tag waits on the first end-to-end alpha scenario. The next product vertical is the
   durable graph schema and its wire, which is what turns the local-draft Cockpit into one
   working console over several harness providers.
+
+- **ALPHA-3 CP1 — Complete 2026-08-19 at `9661d99e1f2bce93a4e50f71bb04287992a892cf`.** The
+  graph DEFINITION contract: what a plan INTENDS, frozen apart from what a run did. The two
+  layers are kept apart by refusal rather than convention — `RUNTIME_ONLY_FIELDS` names every
+  word that belongs to a run, and the walk recurses through every mapping and list, stopping
+  at exactly one door: `arguments`, the capability's own closed payload. That exemption
+  belongs to a FIELD and never to a name; skipping any key spelled `arguments` let a runtime
+  word ride in through tolerant metadata belonging to no capability. Typed boundaries take
+  the base type by identity and REBUILD from its attributes, because `isinstance` let a
+  hostile subclass answer `as_dict()` with a runtime word — into the definition and into its
+  digest. Five review rounds. Three decisions stand and are deliberate: the definition names
+  no provider, `capability` is one bound capability rather than a list, and the digest is a
+  computed method rather than a stored field, because a written-down digest of oneself can
+  come to disagree with oneself.
+- **ALPHA-3 CP2 — Complete 2026-08-19 at `b5001380918bcc909dc883e25a26e0d8a38827b6`.** The
+  durable record, the HTTP write, the run-read's computed `graph` half, and the runtime
+  projection. Six review rounds, every one a real defect. The rule that survives is the pair
+  authority: ONE `(bound adapter, capability, arguments)` verdict, whichever road asks, and
+  the ORDER is the taxonomy — frozen `ARGUMENT_SCHEMAS` membership, then the pair's family,
+  then the payload's own schema; the first two answer `capability_unsupported` and the third
+  `contract_invalid`. The frozen binding resolves BEFORE any capability verdict, because
+  deciding from a union of registered manifests answers about the build and not about this
+  run. And the payload is neither judged nor CANONICALIZED until the pair has said yes.
+- **ALPHA-3 CP3 — Complete 2026-08-20 at `151171fac27fec758fd2914fafe1c433b6cdce91`.** The
+  Graph window on that wire: one authoritative read, one explicit Human write, and a
+  re-read that is the only thing allowed to confirm it. `server.py` grows exactly eight
+  literal `PANEL_ASSETS` names and nothing else. Five review rounds, all five on one organ —
+  what the window may CLAIM about a write — each narrower than the last, ending at the rule
+  the slice is really about: **whether the window is CURRENT and whether a write is CONFIRMED
+  are two different questions.** Any landed read of the chosen run answers the first,
+  whatever the run turns out to follow; only a read showing that same `graph_id` answers the
+  second. A run answering that it follows no graph, and a run answering with somebody else's
+  graph, are honest reads and confirm nothing. Choosing a run shuts the write door in the
+  same tick, before any request goes out, because until the new run's read lands the drawing
+  on screen is still the previous run's — and a plan built from it would have reached another
+  run's immutable route, which no later read takes back. Nine named mutations hold these,
+  all red. The plan and the run are drawn apart on screen for the same reason they are apart
+  in the contract: a node's position comes from a fixture word or from the runtime document,
+  never both and never neither, and `observed` draws as a boundary reached with the outcome,
+  if any record states one, as its own separate word.
+  Stated honestly and not closed by this slice: the Cockpit's own run-id `pattern` still does
+  not compile under the `v` flag, so that control advertises a constraint it does not have
+  (the Graph window's is fixed; `command.js` is a separate surface); a reconnect replaces a
+  local draft with what the run actually follows, so a plan drawn before a drop is lost; the
+  frozen 65 536-byte body ceiling is reported only after a large plan is refused, never
+  before it is sent; and saving the default plan needs a run whose bound adapter serves both
+  `review` and `dispatch` through this API's family.
 ## 12. Four-day recovery schedule — binding from 2026-08-13
 
 This section supersedes the sequencing in section 6 where the dates conflict. It does not relax
