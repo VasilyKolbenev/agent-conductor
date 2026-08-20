@@ -518,6 +518,26 @@ def test_a_binding_whose_assignments_were_replaced_answers_in_its_own_words():
         built(template, binding, SOLO)
 
 
+def test_a_binding_judges_what_it_was_handed_before_it_reads_one_key():
+    """The refusal is this contract's, not whatever the caller passed in.
+
+    A `dict(...)` around the value ran the caller's own `keys` before anything
+    had judged it, so a hostile mapping's exception left as the answer -- and a
+    `dict` SUBCLASS was quietly turned into a plain one instead of refused,
+    though it answers `items` however it likes and this value is copied and
+    digested downstream.
+    """
+    class _Sneaky(dict):
+        def items(self):
+            raise RuntimeError(_Hostile.SECRET)
+
+    for handed in (_Hostile(), _Sneaky({"role-thinker": "solo"})):
+        with pytest.raises(ContractError) as refusal:
+            RunBinding(assignments=handed)
+        assert "must be a JSON object" in str(refusal.value)
+        assert _Hostile.SECRET not in str(refusal.value)
+
+
 def test_a_binding_holds_its_assignments_closed_against_an_edit_in_place():
     """`covers` reads the role KEYS, so an edited VALUE passed every check."""
     template = dalio()

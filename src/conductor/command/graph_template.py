@@ -452,7 +452,12 @@ class RunBinding:
     assignments: Mapping[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        rows = _json_object("run binding assignments", dict(self.assignments))
+        # The raw value, and `_json_object` FIRST. Calling `dict(...)` on it
+        # first ran the caller's own `keys` before anything had judged it, so a
+        # hostile mapping's exception left as this contract's answer -- and a
+        # `dict` subclass was laundered into a plain one rather than refused,
+        # which is the same door `graph_definition` shuts for the same reason.
+        rows = _json_object("run binding assignments", self.assignments)
         settled = {
             _id("role_id", role): _id("instance_id", instance)
             for role, instance in sorted(rows.items())
