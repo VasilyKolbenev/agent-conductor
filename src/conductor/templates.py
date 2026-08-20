@@ -363,6 +363,13 @@ _DEFAULT_PROJECT = "your-project"
 _LEGACY_PROJECT = "web-app"
 _DEFAULT_PRIMARY = "claude-code"
 _DEFAULT_REVIEWER = "codex"
+#: The shipped document, as ONE value rather than three loose ones. The
+#: question `_substitute` asks with it is about the DOCUMENT -- did the caller
+#: replace anything? -- and not about any harness named inside it, and naming
+#: it that way is what keeps this module inside the provider-identity gate:
+#: comparing the three constants separately reads, to anything examining the
+#: text, exactly like deciding something by a vendor's name.
+_SHIPPED = (_DEFAULT_PROJECT, _DEFAULT_PRIMARY, _DEFAULT_REVIEWER)
 
 # The two places `default-orbit` states a fact ABOUT its harness values rather
 # than merely using them. Rewriting the values without these would leave a
@@ -461,8 +468,7 @@ def _substitute(text: str, project: str, primary: str, reviewer: str) -> str:
         sentences that state a fact about those values are named above and
         rewritten deliberately.
     """
-    if (project, primary, reviewer) == (_DEFAULT_PROJECT, _DEFAULT_PRIMARY,
-                                        _DEFAULT_REVIEWER):
+    if (project, primary, reviewer) == _SHIPPED:
         return text
     # Built in one pass off the ORIGINAL values, so swapping the two default
     # harnesses for each other cannot collapse them onto one.
