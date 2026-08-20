@@ -330,16 +330,21 @@ const STREAM_DOWN = "Connection lost. The last authoritative facts are still "
     }
     return registryRows;
   }
-  function loadOutcome(read, registry, carry) {
+  // The verdict alone, with no save outcome attached to it yet. It used to
+  // carry one in, which meant a document that ARRIVED whole and was then
+  // refused — two hundred bytes of valid HTTP saying something this window
+  // cannot read as one plan and one position — still announced that the plan
+  // was written. Which holder answers is a decision about the verdict, so it
+  // is made where the verdict is known and not one step earlier.
+  function loadOutcome(read, registry) {
     const answer = adaptRunGraph(read, registry);
     if (answer.state === GRAPH_LOADED) {
       const facts = projectPayload(answer.payload);
-      if (facts) return {type: "loaded", facts, ...carry};
-      return {type: "refused", notice: CORRUPT, ...carry};
+      return facts ? {type: "loaded", facts} : {type: "refused", notice: CORRUPT};
     }
     return answer.state === GRAPH_ABSENT
-      ? {type: "absent", notice: ABSENT, ...carry}
-      : {type: "refused", notice: CORRUPT, ...carry};
+      ? {type: "absent", notice: ABSENT}
+      : {type: "refused", notice: CORRUPT};
   }
   // A held save outcome is consumed only by the read that ANNOUNCES it.
   // Consuming it before the dispatch is how a plan came to be written with
@@ -357,10 +362,11 @@ const STREAM_DOWN = "Connection lost. The last authoritative facts are still "
     pendingCarry = null;
     return held;
   }
-  // A read that could not be made says nothing about which run the screen
-  // belongs to, and confirms no write. A save outcome still waiting on a read
-  // is therefore DROPPED here rather than announced: the request was
-  // accepted, and this window did not manage to see what the run now holds.
+  // A read that could not be made, or could not be READ, says nothing about
+  // which run the screen belongs to and confirms no write. Both are the same
+  // fact to a Human: the request was accepted, and this window did not manage
+  // to see what the run now holds. The held outcome is therefore dropped and
+  // replaced by exactly that, never announced as a confirmation.
   function unconfirmed() {
     if (!pendingCarry) return {};
     pendingCarry = null;
@@ -376,8 +382,13 @@ const STREAM_DOWN = "Connection lost. The last authoritative facts are still "
       // change bumps it, so an answer that still matches is an answer about
       // the run now selected and about no other.
       if (requestEpoch !== epoch) return;
-      dispatch(loadOutcome(read, registry,
-        {...takeCarry(), ready: streamOpen}));
+      const outcome = loadOutcome(read, registry);
+      // The VERDICT decides which holder answers, and readiness with it. A
+      // refusal is not an answer about what this run holds, so it confirms
+      // no write and opens no door — arriving over a 200 changes neither.
+      const stated = outcome.type !== "refused";
+      dispatch({...outcome, ...(stated ? takeCarry() : unconfirmed()),
+        ready: stated && streamOpen});
     } catch (error) {
       if (requestEpoch !== epoch) return;
       const code = error instanceof Error ? error.message : "store_error";

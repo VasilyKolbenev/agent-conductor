@@ -232,6 +232,52 @@ def test_choosing_a_run_shuts_the_door_before_its_facts_have_arrived(
         page.context.close()
 
 
+def test_a_read_that_arrives_whole_and_unreadable_confirms_nothing_either(
+        chromium: Browser, wire_url: str) -> None:
+    """The half of the law a transport failure does not reach.
+
+    Here the re-read after the write SUCCEEDS at every level a status code
+    can describe: HTTP 200, a complete run document, every other key intact.
+    One graph detail is corrupted -- the projection names a different graph
+    than the plan does -- so the window correctly refuses to read it as one
+    plan and one position.
+
+    It refused, and it still said the plan was written. A refusal is not an
+    answer about what a run holds, and 200 bytes of valid HTTP do not make it
+    one; the only honest word here is that the outcome is unknown.
+    """
+    page, recorder = _open(chromium, wire_url, double=True)
+
+    def corrupt(route: Route) -> None:
+        answer = route.fetch()
+        body = answer.json()
+        body["graph"]["runtime"]["graph_id"] = "graph-somebody-elses"
+        route.fulfill(status=200, content_type="application/json",
+                      body=json.dumps(body))
+
+    try:
+        _load_run(page, EMPTY_RUN)
+        page.get_by_role("button", name="Start from the default").click()
+        page.wait_for_function("() => document.querySelectorAll('.g-node').length === 8")
+        page.route(f"**/command/runs/{EMPTY_RUN}", corrupt)
+        _save(page, GRAPH_ID)
+        page.wait_for_function(
+            "() => document.getElementById('saveStatus').innerText"
+            ".includes('Outcome unknown')")
+        status = page.locator("#saveStatus").inner_text()
+        assert status == "Outcome unknown. Reload the authoritative run."
+        assert "The plan is written" not in status
+        assert "already stands" not in status
+        assert "could not be read as one plan" in page.locator("#notice").inner_text()
+        assert page.evaluate(
+            "() => document.querySelector('[name=\\'save\\']').disabled") is True
+        # The write itself did land: this is about what may be CLAIMED of it.
+        assert len(recorder.matching("POST", "/graph")) == 1
+    finally:
+        page.unroute(f"**/command/runs/{EMPTY_RUN}")
+        page.context.close()
+
+
 def test_a_read_that_fails_after_a_write_confirms_nothing_about_it(
         chromium: Browser, wire_url: str) -> None:
     """A 201 is an answer about a request, not about what the run now holds.
