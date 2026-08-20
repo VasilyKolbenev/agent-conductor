@@ -301,7 +301,7 @@ def test_docs_links_render_only_for_https_targets_and_leave_this_window(
     assert anchors.get_attribute("rel") == "noreferrer noopener"
 
 
-def test_gate_decision_form_updates_the_gate_and_stays_fixture_only(
+def test_gate_decision_form_updates_the_gate_and_stays_window_only(
         graph_page: Page) -> None:
     """A refused draft keeps what was typed; a valid one lands locally only."""
     _load(graph_page, "parallel_review")
@@ -337,7 +337,7 @@ def test_gate_decision_form_updates_the_gate_and_stays_fixture_only(
     recorded = graph_page.evaluate("window.conductGraph.state().decisions")
     assert recorded == {"gate-release": {
         "action": "request_changes", "actor": "reviewer-1",
-        "reason": "needs tests", "recorded": "fixture-only"}}
+        "reason": "needs tests", "recorded": "window-only"}}
     # A landed decision clears the draft for the next one.
     assert graph_page.locator('[name="actor"]').input_value() == ""
 
