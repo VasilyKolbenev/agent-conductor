@@ -79,9 +79,27 @@ MEASURED = {
     ".g-det__meta": [_rows_on(CARD, E("p", "g-det__meta"))],
     ".g-note": [_rows_on(CARD, E("p", "g-note"))],
     ".g-timeline__at": [_rows_on(CARD, E("span", "g-timeline__at"))],
-    ".command-field": [_rows_on(CARD, E("div", "command-field"))],
-    ".command-field input": [_rows_on(CARD, E("div", "command-field"), E("input"))],
+    ".command-field": [_rows_on(CARD, E("div", "command-field")),
+                       # the run form reuses the same field, in the shell
+                       _rows_on(SHELL, E("label", "command-field"))],
+    ".command-field input": [_rows_on(CARD, E("div", "command-field"), E("input")),
+                             _rows_on(SHELL, E("label", "command-field"),
+                                      E("input"))],
     ".command-field select": [_rows_on(CARD, E("div", "command-field"), E("select"))],
+    # provenance: which source the reader is looking at, measured on the
+    # shell's own surface because that is where the line stands.
+    ".g-src__id": [_rows_on(SHELL, E("div", "g-src"), E("span", "g-src__id"))],
+    ".g-src__digest": [_rows_on(SHELL, E("div", "g-src"),
+                                E("span", "g-src__digest"))],
+    # the run's chips on a node stand on --sunk, where --faint is below the
+    # text floor; both carriers here are --muted for that reason.
+    ".g-node__runlabel": [_rows_on(NODE, E("span", "g-node__run"),
+                                   E("i", "g-node__runlabel"))],
+    ".g-loop-pass": [_rows_on(NODE, E("span", "g-node__run"),
+                              E("span", "g-loop-pass")),
+                     _rows_on(CARD, E("span", "g-loop-pass"))],
+    ".g-arg__name": [_rows_on(CARD, E("li", "mono"), E("span", "g-arg__name"))],
+    ".g-arg__value": [_rows_on(CARD, E("li", "mono"), E("span", "g-arg__value"))],
     ":focus-visible": [
         (BODY + [E("button", states=FOCUSED)], "outline", NONTEXT_MIN, "--ground"),
         (CARD + [E("button", states=FOCUSED)], "outline", NONTEXT_MIN, "--panel"),
@@ -111,6 +129,13 @@ EXEMPT = {
     '.g-compose button[type="submit"]': "the submit border encloses the "
         "control; its word runs on the inherited --ink the input row measures",
     '.g-decide button[type="submit"]': "the same enclosure on the other form",
+    '.g-run button[type="submit"]': "the same enclosure on the run form; its "
+        "word runs on the inherited --ink the input row measures",
+    ".g-seed": "the same enclosure on the seed control",
+    '.g-save button[type="submit"]': "the same enclosure on the save form",
+    ".g-node__run": "a separator rule between the plan's chips and the run's, "
+                    "drawn in the neutral --line: it identifies no state and "
+                    "carries no word of its own",
 }
 
 _MARK_PROPS = ("color", "stroke", "fill", "outline", "border", "border-color",

@@ -5,7 +5,7 @@
 // the chip contour, exactly the split index.html documents for the panel.
 import {element, field} from "./command-view.js";
 import {AVAILABILITY_STATES, DECISION_ACTIONS, GATE_CHANNEL,
-  PHASE_CHANNEL, STAGE_NAMES} from "./graph-store.js";
+  OUTCOME_CHANNEL, PHASE_CHANNEL, STAGE_NAMES} from "./graph-store.js";
 
 // Geometry constants the layout renders and the browser suite measures.
 export const CELL = Object.freeze({width: 210, height: 118, gapX: 46, gapY: 18});
@@ -16,6 +16,10 @@ const GATE_GLYPHS = Object.freeze({
   failed: "✕ rejected",
   changes_requested: "■ changes requested",
   waived: "◇ waived",
+  // Two standing receipts for one gate: the journal supports two answers and
+  // therefore neither. Said as its own word, never softened into pending and
+  // never rounded up into approved.
+  unknown: "? two standing decisions",
 });
 const HEALTH_CHANNEL = Object.freeze({
   ready: "pass", busy: "wait", offline: "fail", degraded: "wait",
@@ -73,7 +77,7 @@ export function renderPalette(mount, state) {
   mount.replaceChildren(element("h2", {text: "Harness palette"}));
   if (!state.registry.length) {
     mount.append(element("p", {className: "empty",
-      text: "No registry rows in this fixture."}));
+      text: "No registry rows in this payload."}));
     return;
   }
   const list = element("ul", {className: "g-palette"});
@@ -109,6 +113,69 @@ function evidenceRow(item) {
   ]);
 }
 
+//: The gate word on screen and the ONE document it came from. A durable gate
+//: answers from the run's projection; a fixture gate answers from its own
+//: field. There is no third source and no default — a gate that neither
+//: document states draws no chip rather than a reassuring one.
+function gateWord(node) {
+  if (node.runtime !== null) return node.runtime.decision;
+  return node.gate === null ? null : node.gate.state;
+}
+
+//: The run's position, as chips, kept in one place so a definition chip and a
+//: runtime chip are never built by the same line. `observed` and the outcome
+//: are two chips on purpose: a boundary reached is not a result reported, and
+//: one chip carrying both is precisely the inference safety law 9 forbids.
+function runtimeChips(node) {
+  const facts = node.runtime;
+  const chips = [chip(PHASE_CHANNEL[facts.phase], facts.phase)];
+  chips.push(facts.outcome === null
+    ? chip("none", "no result recorded")
+    : chip(OUTCOME_CHANNEL[facts.outcome], facts.outcome));
+  if (facts.decision !== null) {
+    chips.push(chip(GATE_CHANNEL[facts.decision],
+      GATE_GLYPHS[facts.decision], true));
+  }
+  if (facts.pass !== null && node.loop !== null) {
+    chips.push(element("span", {className: "mono g-loop-pass",
+      text: `↻ pass ${facts.pass} of ×${node.loop.bound}`
+        + (facts.boundReached ? " · bound reached" : "")}));
+  }
+  return chips;
+}
+
+// The chip row, in reading order: what the plan says, then — behind its own
+// rule and label — what the run says. A word only ever appears where a
+// document states one, so a node whose position comes from the runtime
+// projection draws no health and no phase among the plan's chips.
+function nodeChips(node) {
+  const chips = element("span", {className: "g-node__chips"});
+  if (node.health !== null) chips.append(chip(HEALTH_CHANNEL[node.health],
+    node.health));
+  if (node.phase !== null) chips.append(chip(PHASE_CHANNEL[node.phase],
+    node.phase));
+  const gate = gateWord(node);
+  if (gate !== null && node.runtime === null) {
+    chips.append(chip(GATE_CHANNEL[gate], GATE_GLYPHS[gate], true));
+  }
+  // A loop wears its BOUND where the graph is read: the one sanctioned shape
+  // of a cycle is "at most ×N", said out loud. The bound is the plan's and
+  // sits here; which pass a run is on is the projection's and sits with the
+  // other runtime chips, so a ceiling is never read as a position.
+  if (node.loop) chips.append(element("span",
+    {className: "mono g-loop-bound", text: node.loop.pass !== null
+      ? `↻ pass ${node.loop.pass}/${node.loop.bound}`
+      : `↻ ×${node.loop.bound}`}));
+  if (node.runtime !== null) {
+    const run = element("span", {className: "g-node__run"});
+    run.append(element("i", {className: "mono g-node__runlabel", text: "run"}));
+    for (const part of runtimeChips(node)) run.append(part);
+    chips.append(run);
+  }
+  if (node.draft) chips.append(chip("none", "LOCAL DRAFT"));
+  return chips;
+}
+
 function nodeButton(state, node, onSelect) {
   const cell = state.layout.cells[node.node_id];
   const pressed = state.selection === node.node_id;
@@ -127,21 +194,7 @@ function nodeButton(state, node, onSelect) {
   if (node.stage) button.append(element("span", {className: "mono g-stage",
     text: `${STAGE_NAMES.indexOf(node.stage) + 1}/5 · ${node.stage}`}));
   button.append(element("span", {className: "g-node__title", text: node.title}));
-  const chips = element("span", {className: "g-node__chips"}, [
-    chip(HEALTH_CHANNEL[node.health], node.health),
-    chip(PHASE_CHANNEL[node.phase], node.phase),
-  ]);
-  if (node.gate) chips.append(
-    chip(GATE_CHANNEL[node.gate.state], GATE_GLYPHS[node.gate.state], true));
-  // A loop wears its bound where the graph is read: the one sanctioned
-  // shape of a cycle is "at most ×N", said out loud — and when the pass is
-  // known, said as "pass P/N" so nobody mistakes where the process stands.
-  if (node.loop) chips.append(element("span",
-    {className: "mono g-loop-bound", text: node.loop.pass !== null
-      ? `↻ pass ${node.loop.pass}/${node.loop.bound}`
-      : `↻ ×${node.loop.bound}`}));
-  if (node.draft) chips.append(chip("none", "LOCAL DRAFT"));
-  button.append(chips);
+  button.append(nodeChips(node));
   const parents = state.edges.filter((edge) => edge.to === node.node_id);
   button.append(element("span", {className: "g-node__from mono", text:
     parents.length ? `after ${parents.map((edge) => edge.from).join(", ")}`
@@ -205,7 +258,8 @@ function decisionForm(node, draft, onDecide) {
   const form = element("form", {className: "g-decide"}, [
     element("h3", {text: "Human gate decision"}),
     element("p", {className: "g-note", text:
-      "Recorded in this window's fixture only. Nothing is executed or sent."}),
+      "Recorded in this window only, beside whatever the run's own journal "
+      + "says. Nothing is executed or sent."}),
   ]);
   const action = draftSelect(draft, "action",
     Object.keys(DECISION_ACTIONS).map((name) =>
@@ -250,7 +304,7 @@ function appendDetailFacts(mount, node, nodes) {
   }
   if (node.draft) {
     const draftChip = chip("none",
-      "LOCAL DRAFT — this window's fixture only, submitted nowhere");
+      "LOCAL DRAFT — held in this window, written to no run");
     // The one sentence-length chip: it must wrap, not widen the page.
     draftChip.classList.add("g-chip--long");
     mount.append(draftChip);
@@ -266,6 +320,52 @@ function appendDetailFacts(mount, node, nodes) {
   }
 }
 
+// What the PLAN binds this step to, under its own heading. `instance`, not
+// a product name: the plan names where work runs and the configuration names
+// which adapter serves it, and this window never collapses the two.
+function appendPlanBinding(mount, node) {
+  if (node.binding === null) return;
+  mount.append(element("h3", {className: "g-det__plan", text: "Plan binding"}));
+  mount.append(element("p", {className: "mono g-det__meta",
+    text: `instance: ${node.binding.instanceId}`}));
+  mount.append(element("p", {className: "mono g-det__meta",
+    text: `capability: ${node.binding.capability}`}));
+  if (!node.binding.argumentRows.length) return;
+  mount.append(element("ul", {className: "g-arguments"},
+    node.binding.argumentRows.map((row) => element("li", {className: "mono"}, [
+      element("span", {className: "g-arg__name", text: row.name}),
+      element("span", {className: "g-arg__value", text: row.value}),
+    ]))));
+}
+
+// What the RUN did, under its own heading and never mixed into the plan's.
+// Every identifier here is a join key into the durable records and nothing
+// more: no verification, no label, no digest, no exit code — those live where
+// a contract validated them, and repeating them here without one would be
+// this window inventing a claim.
+function appendRunPosition(mount, node) {
+  if (node.runtime === null) return;
+  const facts = node.runtime;
+  mount.append(element("h3", {className: "g-det__run", text: "Run position"}));
+  mount.append(element("div", {className: "g-det__chips"}, runtimeChips(node)));
+  mount.append(element("p", {className: "g-note", text:
+    "Computed from the durable records on every read and stored nowhere. "
+    + "`observed` means an execution boundary was reached — it is not "
+    + "success."}));
+  mount.append(element("p", {className: "mono g-det__meta", text:
+    `observed at: ${facts.observedAt === null ? "—" : facts.observedAt}`}));
+  const attempts = facts.attempts.length ? facts.attempts.join(", ") : "none";
+  mount.append(element("p", {className: "mono g-det__meta",
+    text: `attempts: ${attempts}`}));
+  mount.append(element("p", {className: "mono g-det__meta", text:
+    `evidence refs: ${facts.evidenceRefs.length
+      ? facts.evidenceRefs.join(", ") : "none"}`}));
+  if (facts.evidenceRefs.length) {
+    mount.append(element("p", {className: "g-note", text:
+      "Identifiers only. Nothing here states that any of them verified."}));
+  }
+}
+
 export function renderDetail(mount, state, decisionDraft, onDecide) {
   mount.replaceChildren();
   const node = state.nodes.find((row) => row.node_id === state.selection);
@@ -276,23 +376,33 @@ export function renderDetail(mount, state, decisionDraft, onDecide) {
   }
   const head = element("div", {className: "g-det__head"});
   if (node.harness !== null) head.append(badge(state.registry, node.harness));
+  const chips = element("div", {className: "g-det__chips"});
+  // "health", not "availability": that word now names the harness-level
+  // state in the palette, and one word must not carry two claims. Both are
+  // the run's words, so both are absent when the run's own document is the
+  // source and they are drawn under Run position instead.
+  if (node.health !== null) {
+    chips.append(chip(HEALTH_CHANNEL[node.health], `health: ${node.health}`));
+  }
+  if (node.phase !== null) {
+    chips.append(chip(PHASE_CHANNEL[node.phase], `phase: ${node.phase}`));
+  }
   mount.append(element("p", {className: "g-det__title", text: node.title}), head,
     element("p", {className: "mono g-det__meta",
-      text: `${node.node_id} · ${node.kind}`}),
-    element("div", {className: "g-det__chips"}, [
-      // "health", not "availability": that word now names the harness-level
-      // state in the palette, and one word must not carry two claims.
-      chip(HEALTH_CHANNEL[node.health], `health: ${node.health}`),
-      chip(PHASE_CHANNEL[node.phase], `phase: ${node.phase}`),
-    ]));
+      text: `${node.node_id} · ${node.kind}`}), chips);
   appendDetailFacts(mount, node, state.nodes);
-  mount.append(element("h3", {text: "Evidence"}));
-  mount.append(node.evidence.length
-    ? element("ul", {className: "g-evidence-list"}, node.evidence.map(evidenceRow))
-    : element("p", {className: "empty", text: "No evidence recorded."}));
-  if (node.gate) {
-    mount.append(chip(GATE_CHANNEL[node.gate.state],
-      `${node.gate.gate_id}: ${GATE_GLYPHS[node.gate.state]}`, true));
+  appendPlanBinding(mount, node);
+  appendRunPosition(mount, node);
+  if (node.runtime === null) {
+    mount.append(element("h3", {text: "Evidence"}));
+    mount.append(node.evidence.length
+      ? element("ul", {className: "g-evidence-list"}, node.evidence.map(evidenceRow))
+      : element("p", {className: "empty", text: "No evidence recorded."}));
+  }
+  const gate = gateWord(node);
+  if (gate !== null) {
+    mount.append(chip(GATE_CHANNEL[gate],
+      `${node.gate.gate_id}: ${GATE_GLYPHS[gate]}`, true));
     mount.append(decisionForm(node, decisionDraft, onDecide));
   }
 }
@@ -306,15 +416,19 @@ export function renderGates(mount, state) {
   }
   const list = element("ul", {className: "g-gate-list"});
   for (const node of gates) {
+    const gate = gateWord(node);
     const item = element("li", {className: "g-gate",
-      "data-gate-state": node.gate.state}, [
+      "data-gate-state": gate}, [
       element("span", {className: "mono", text: node.gate.gate_id}),
-      chip(GATE_CHANNEL[node.gate.state], GATE_GLYPHS[node.gate.state], true),
+      chip(GATE_CHANNEL[gate], GATE_GLYPHS[gate], true),
     ]);
     // An own-key read: "constructor" is a valid gate id, and an inherited
     // member must never render as an attribution nobody recorded.
     const local = Object.hasOwn(state.decisions, node.gate.gate_id)
       ? state.decisions[node.gate.gate_id] : null;
+    // Beside the durable answer, never instead of it: on a run-stated gate
+    // the chip above stays the journal's word and this line says whose draft
+    // is sitting next to it, unsubmitted.
     if (local) item.append(element("span", {className: "g-note",
       text: `LOCAL DRAFT by ${local.actor} — not submitted`}));
     list.append(item);
@@ -325,7 +439,14 @@ export function renderGates(mount, state) {
 export function renderTimeline(mount, state) {
   mount.replaceChildren(element("h2", {text: "Execution timeline"}));
   if (!state.timeline.length) {
-    mount.append(element("p", {className: "empty", text: "No recorded events."}));
+    // A durable read carries positions, not instants: the run projection
+    // names the current action's time and no earlier one, so there is no
+    // timeline to show rather than an empty one to imply.
+    mount.append(element("p", {className: "empty",
+      text: state.provenance.source === "durable"
+        ? "The run read carries positions, not a history of events. "
+          + "Each node's own card names its current action's instant."
+        : "No recorded events."}));
     return;
   }
   const list = element("ol", {className: "g-timeline"});
@@ -360,11 +481,67 @@ export function renderComposer(mount, state, draft, onCompose) {
   ]);
   form.append(field("Step title", title), field("Harness", harness),
     field("Placement", placement), field("Anchor step", anchor),
-    element("button", {name: "add", text: "Add step to fixture", type: "submit"}));
+    element("button", {name: "add", text: "Add step to drawing", type: "submit"}));
   form.addEventListener("submit", (event) => {
     event.preventDefault();
     onCompose({title: draft.title, harness: draft.harness || null,
       anchorId: draft.anchor, placement: draft.placement});
   });
   mount.append(form);
+}
+
+//: The word a reader sees for each source, and the ONE place either is
+//: spelled for the screen. `LOCAL DRAFT` and `DURABLE` never share a token,
+//: so no drawing this window made can be dressed in the other's word.
+const SOURCE_LABEL = Object.freeze({
+  durable: "DURABLE — written to the run's journal",
+  fixture: "LOCAL DRAFT — held in this window, written to no run",
+});
+
+// The provenance line: where the drawing on screen came from, and — only for
+// a durable plan — the digest computed over it on this very read. A fixture
+// has no digest to show, because nothing has checked it and nothing could.
+export function renderSource(mount, state) {
+  mount.replaceChildren();
+  const durable = state.provenance.source === "durable";
+  mount.append(chip(durable ? "pass" : "none",
+    SOURCE_LABEL[state.provenance.source]));
+  if (!durable) return;
+  mount.append(element("span", {className: "mono g-src__id",
+    text: `graph: ${state.provenance.graphId}`}));
+  mount.append(element("span", {className: "mono g-src__digest",
+    text: state.provenance.digest}));
+  mount.append(element("span", {className: "g-note", text:
+    "The digest is computed over the plan on every read and stored beside "
+    + "it nowhere. The plan is immutable: it is written once, never edited."}));
+}
+
+const SAVE_NOTE = Object.freeze({
+  durable: "This run already follows a plan. A graph is written once and "
+    + "never edited, so a different plan is refused rather than applied.",
+  fixture: "Save writes the drawing above to the named run as its one "
+    + "immutable plan. Only this button writes it, and only what the plan "
+    + "declares is sent — no phase, outcome, pass or decision goes with it.",
+});
+
+// The save door, and the whole of it: one button, pressed by a Human, and no
+// other path into this handler. Nothing about the drawing, the stream or a
+// reconnect may reach it — a plan that reaches the journal can never be
+// edited, so it may only ever be written on purpose.
+export function renderSave(mount, state, draft, onSave) {
+  mount.replaceChildren(element("h2", {text: "Write the plan"}));
+  const durable = state.provenance.source === "durable";
+  const form = element("form", {className: "g-save"});
+  const graphId = draftInput(draft, "graphId", {autocomplete: "off",
+    maxlength: "128", name: "graphId",
+    pattern: "[A-Za-z0-9][A-Za-z0-9._\\-]{0,127}", required: "",
+    spellcheck: "false", type: "text"});
+  form.append(field("Graph id", graphId), element("button",
+    {name: "save", text: "Save plan to run", type: "submit"}));
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    onSave(draft.graphId.trim());
+  });
+  mount.append(form, element("p", {className: "g-note",
+    text: SAVE_NOTE[durable ? "durable" : "fixture"]}));
 }

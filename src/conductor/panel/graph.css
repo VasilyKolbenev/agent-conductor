@@ -157,3 +157,48 @@ button{font:inherit;cursor:pointer;background:none;border:none;color:inherit}
 .g-compose button[type="submit"],.g-decide button[type="submit"]{
   align-self:flex-start;border:1px solid var(--line);border-radius:6px;
   padding:5px 10px;background:var(--sunk);min-height:44px}
+
+/* the run form in the shell, and the two other buttons this window grew. They
+   reuse .command-field so the run input is the same measured control as every
+   other input here, rather than a second one to hold to the same floor. */
+.g-run{display:flex;align-items:flex-end;gap:8px;flex-wrap:wrap}
+.g-run .command-field input{width:16ch}
+.g-run button[type="submit"],.g-seed,.g-save button[type="submit"]{
+  border:1px solid var(--line);border-radius:6px;padding:5px 10px;
+  background:var(--sunk);min-height:44px}
+.g-seed,.g-save button[type="submit"]{align-self:flex-start}
+
+/* provenance — one line, and the only place either source word is drawn. It
+   takes the whole shell row so a 71-character digest never has to compete
+   with the wordmark, and wraps rather than pushing the page sideways at
+   360px. --muted, not --faint: this line is a structural carrier of which
+   source the reader is looking at, and a carrier may not ship below the
+   text floor on any of its surfaces. */
+.g-src{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;
+       flex-basis:100%;min-width:0}
+.g-src__id{font-size:10.5px;color:var(--muted)}
+.g-src__digest{font-size:10px;color:var(--muted);overflow-wrap:anywhere;
+               min-width:0}
+
+/* the run's own chips on a node, grouped behind a rule and a label so a
+   position is never read as one of the plan's words. */
+.g-node__run{display:inline-flex;align-items:baseline;gap:3px;flex-wrap:wrap;
+             border-left:1px solid var(--line);padding-left:5px}
+.g-node__runlabel{font-size:9px;letter-spacing:.08em;text-transform:uppercase;
+                  color:var(--muted);font-style:normal}
+.g-loop-pass{font-size:10px;color:var(--muted)}
+
+/* plan binding and run position, each under its own heading in the card */
+.g-det__plan,.g-det__run{margin-top:2px}
+.g-arguments{list-style:none;margin:0;padding:0;display:flex;
+             flex-direction:column;gap:3px}
+.g-arguments li{display:flex;gap:8px;justify-content:space-between;
+                font-size:10.5px;min-width:0}
+.g-arg__name{color:var(--faint);overflow-wrap:anywhere}
+.g-arg__value{color:var(--muted);overflow-wrap:anywhere;text-align:right}
+
+/* the save form. The submitting state is announced in #saveStatus, which is
+   the aria-live region a person actually hears; the button's own disabled
+   rendering is the platform's, so this window models no state of its own
+   for it and no guard here is left describing one. */
+.g-save{display:flex;flex-direction:column;gap:7px}

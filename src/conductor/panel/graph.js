@@ -1,15 +1,37 @@
 "use strict";
-// Bootstrap for the ALPHA-2 Graph window: one store, one render pass, one
-// fixture seam. There is deliberately no fetch anywhere in this file — the
-// wire contracts belong to the runtime side and have not been handed over, so
-// the only way facts enter this window is `conductGraph.load`, the same door
-// the coming HTTP source will use. The visual layer cannot tell which source
-// fed it; that is what keeps it stable when the real API arrives.
-import {adaptPayload} from "./graph-adapter.js";
+// Bootstrap and transport for the Graph window: one store, one render pass,
+// one payload seam, and one door to the wire.
+//
+// The wire arrived, and it arrived with a shape. Facts enter this window
+// through `conductGraph.load` — a fixture, as before — or through the
+// authoritative run read, which is the ONLY door durable facts come through.
+// A run-event on the stream carries a run id and nothing else: it never
+// carries a record, so it can never be a fact here. It buys exactly one
+// thing, a re-read, and everything on screen after it came from that read.
+//
+// Writing is one button pressed by a Human. Nothing else in this file can
+// reach the mutation door: not a load, not a signal, not a reconnect, not a
+// successful write. The plan a run follows is immutable — written once, never
+// edited — so it may only ever be written on purpose.
+import {ERROR_LABELS, RUN_ID, refusalCode} from "./command-projection.js";
+import {GRAPH_ABSENT, GRAPH_LOADED, adaptPayload, adaptRunGraph,
+  graphRequestBody} from "./graph-adapter.js";
 import {DALIO_DEFAULT} from "./graph-default.js";
 import {EMPTY, projectPayload, reduce} from "./graph-store.js";
 import {renderComposer, renderDetail, renderGates, renderGraph, renderPalette,
-  renderTimeline} from "./graph-view.js";
+  renderSave, renderSource, renderTimeline} from "./graph-view.js";
+
+const UNKNOWN = "Outcome unknown. Reload the authoritative run.";
+const CREATED = "The plan is written. This run follows it and can never edit "
+  + "it: a graph is immutable once it reaches the journal.";
+const RESTATED = "This exact plan already stands. Nothing was appended and "
+  + "nothing was published — this is the record the first write settled.";
+const ABSENT = "This run follows no graph yet. Nothing has been written to it.";
+const CORRUPT = "The run's graph could not be read as one plan and one "
+  + "position. Nothing about it is inferred from a document this window "
+  + "cannot read.";
+const DRAFT_REFUSED = "The drawing was refused before it was offered to the "
+  + "run: a plan may carry no observed fact, and this one does.";
 
 (() => {
   const field = document.getElementById("field");
@@ -25,6 +47,12 @@ import {renderComposer, renderDetail, renderGates, renderGraph, renderPalette,
     notice: document.getElementById("notice"),
     palette: document.getElementById("paletteCard"),
     runFacts: document.getElementById("runFacts"),
+    runForm: document.getElementById("runForm"),
+    runInput: document.getElementById("graphRunId"),
+    save: document.getElementById("saveCard"),
+    saveStatus: document.getElementById("saveStatus"),
+    seed: document.getElementById("seedDefault"),
+    source: document.getElementById("sourceLine"),
     timeline: document.getElementById("timelineCard"),
   };
   let state = EMPTY;
@@ -33,6 +61,18 @@ import {renderComposer, renderDetail, renderGates, renderGraph, renderPalette,
   // same promise with its draft object); a successful landing clears it.
   const composeDraft = {title: "", harness: "", placement: "after", anchor: ""};
   const decisionDraft = {action: "approve", actor: "", reason: ""};
+  const saveDraft = {graphId: ""};
+  // Which run this window is reading. Held outside the graph state because a
+  // run that answers with no graph, or with one this window cannot read,
+  // still has an id worth naming on screen.
+  let selectedRun = "";
+  let registryRows = null;
+  let epoch = 0, csrfToken = "", sessionEpoch = 0;
+  let refreshDirty = false, refreshInFlight = false;
+  // A save outcome waiting for the authoritative read that will make it true.
+  // It rides THROUGH the re-read rather than being announced before it: the
+  // answer belongs to the Human who asked, and the read is what confirms it.
+  let pendingCarry = null;
   // dispatch stays module-internal: the public seam is load/state only, so
   // no caller can commit facts that skipped the projectPayload boundary.
   function dispatch(event) {
@@ -53,8 +93,8 @@ import {renderComposer, renderDetail, renderGates, renderGraph, renderPalette,
       render();
     }
   }
-  // The composer mints the next free step id itself: ids are presentation-side
-  // here (a fixture is the only store), and a Human never has to invent one.
+  // The composer mints the next free step id itself: a Human never has to
+  // invent one, and a durable plan's own ids are never reused.
   function onCompose(facts) {
     let serial = state.nodes.length + 1;
     while (state.nodes.some((node) => node.node_id === `step-${serial}`)) {
@@ -80,31 +120,51 @@ import {renderComposer, renderDetail, renderGates, renderGraph, renderPalette,
     const name = active.getAttribute ? active.getAttribute("name") : "";
     if (name && mounts.detailBody.contains(active)) return {detail: name};
     if (name && mounts.composer.contains(active)) return {compose: name};
+    if (name && mounts.save.contains(active)) return {save: name};
     return null;
+  }
+  function focusMount(target) {
+    if (target.detail) return mounts.detailBody;
+    return target.save ? mounts.save : mounts.composer;
   }
   function restoreFocus(target) {
     if (!target) return;
     const successor = target.node
       ? field.querySelector(`[data-node-id="${target.node}"]`)
-      : (target.detail ? mounts.detailBody : mounts.composer)
-          .querySelector(`[name="${target.detail || target.compose}"]`);
+      : focusMount(target).querySelector(
+        `[name="${target.detail || target.compose || target.save}"]`);
     if (successor) successor.focus();
+  }
+  function runFactsText() {
+    if (!selectedRun) {
+      return state.phase === "loaded"
+        ? `run: ${state.run.runId} · mode: ${state.run.mode} · fixture` : "";
+    }
+    const mode = state.phase === "loaded" ? state.run.mode : "unknown";
+    return `run: ${selectedRun} · mode: ${mode} · `
+      + `${state.provenance.source === "durable" ? "durable" : "local draft"}`;
   }
   function render() {
     const target = focusTarget();
     document.body.dataset.phase = state.phase;
+    document.body.dataset.source = state.provenance.source;
     mounts.notice.textContent = state.notice;
     mounts.composeStatus.textContent = state.composeNotice;
     mounts.decideStatus.textContent = state.decisionNotice;
-    mounts.runFacts.textContent = state.phase === "loaded"
-      ? `run: ${state.run.runId} · mode: ${state.run.mode} · fixture` : "";
+    mounts.saveStatus.textContent = state.saveNotice;
+    mounts.runFacts.textContent = runFactsText();
     mounts.empty.hidden = state.phase === "loaded";
+    mounts.seed.hidden = state.phase === "loaded";
     renderGraph(field, mounts.edges, state, onSelect);
     renderPalette(mounts.palette, state);
+    renderSource(mounts.source, state);
     renderComposer(mounts.composer, state, composeDraft, onCompose);
+    renderSave(mounts.save, state, saveDraft, onSave);
     renderDetail(mounts.detailBody, state, decisionDraft, onDecide);
     renderGates(mounts.gates, state);
     renderTimeline(mounts.timeline, state);
+    mounts.save.querySelector('[name="save"]').disabled =
+      state.savePhase === "submitting";
     restoreFocus(target);
   }
   // The fixture seam, and the whole of it: the adapter names the accepted
@@ -120,9 +180,226 @@ import {renderComposer, renderDetail, renderGates, renderGraph, renderPalette,
     },
     state: () => state,
   });
+
+  async function loadSession() {
+    if (csrfToken) return {generation: sessionEpoch, token: csrfToken};
+    const generation = ++sessionEpoch;
+    const response = await fetch("/command/session", {cache: "no-store"});
+    let payload;
+    try {
+      payload = await response.json();
+    } catch (_error) {
+      throw new Error("store_error");
+    }
+    if (!response.ok) throw new Error(refusalCode(payload));
+    if (generation !== sessionEpoch
+        || !payload || Object.keys(payload).sort().join(",") !== "csrf_token,origin"
+        || typeof payload.csrf_token !== "string" || !payload.csrf_token
+        || payload.origin !== location.origin) throw new Error("same_origin_denied");
+    csrfToken = payload.csrf_token;
+    return {generation, token: csrfToken};
+  }
+  // The single mutation door, and its one target. A Human's click is the only
+  // thing that reaches it.
+  async function submitGraph(runId, body) {
+    let session;
+    try {
+      session = await loadSession();
+    } catch (error) {
+      return {code: error instanceof Error ? error.message : "store_error",
+        status: "refused"};
+    }
+    let response;
+    try {
+      response = await fetch(
+        `/command/runs/${encodeURIComponent(runId)}/graph`, {
+          body: JSON.stringify(body),
+          headers: {
+            "Content-Type": "application/json", "X-Conduct-CSRF": session.token,
+          },
+          method: "POST",
+        });
+    } catch (_error) {
+      return {status: "unknown"};
+    }
+    let payload;
+    try {
+      payload = await response.json();
+    } catch (_error) {
+      payload = null;
+    }
+    if (!response.ok) {
+      const code = refusalCode(payload);
+      if (["csrf_denied", "same_origin_denied"].includes(code)) {
+        sessionEpoch += 1;
+        csrfToken = "";
+      }
+      return {code, status: "refused"};
+    }
+    // A session rotated under an in-flight write makes its answer unusable:
+    // this window cannot say what landed, and saying nothing landed would be
+    // a claim about a durable record it did not observe.
+    return session.generation !== sessionEpoch
+      ? {status: "unknown"} : {created: response.status === 201, status: "accepted"};
+  }
+  function saveRefusal(result) {
+    if (result.status !== "refused") return {phase: "outcome-unknown", notice: UNKNOWN};
+    return {phase: "refused",
+      notice: ERROR_LABELS[result.code] || ERROR_LABELS.store_error};
+  }
+  // Reached only by the Human submitting the save form. No load, signal,
+  // reconnect or earlier write has a path here.
+  async function onSave(graphId) {
+    if (!RUN_ID.test(selectedRun) || !RUN_ID.test(graphId)) {
+      dispatch({type: "save", phase: "refused", notice:
+        "Load a run and name a valid graph id before writing a plan."});
+      return;
+    }
+    const body = graphRequestBody(graphId, state);
+    if (!body) {
+      dispatch({type: "save", phase: "refused", notice: DRAFT_REFUSED});
+      return;
+    }
+    dispatch({type: "save", phase: "submitting",
+      notice: "Writing one immutable plan…"});
+    const result = await submitGraph(selectedRun, body);
+    if (result.status !== "accepted") {
+      // Nothing on screen moves on a refusal: the drawing stays the Human's
+      // and no local value is promoted to durable by a request that failed.
+      dispatch({type: "save", ...saveRefusal(result)});
+      return;
+    }
+    // An accepted answer is still only an answer. What this run follows is
+    // whatever the authoritative read says it follows, so the local copy is
+    // dropped and re-read rather than trusted.
+    refreshSelectedRun(selectedRun,
+      {phase: "idle", notice: result.created ? CREATED : RESTATED});
+  }
+  async function readJson(target) {
+    const response = await fetch(target, {cache: "no-store"});
+    let payload;
+    try {
+      payload = await response.json();
+    } catch (_error) {
+      throw new Error("store_error");
+    }
+    if (!response.ok) throw new Error(refusalCode(payload));
+    return payload;
+  }
+  // Vendor rows are DATA, read once from the one registry the server serves.
+  // A registry this window cannot read leaves every badge neutral; it never
+  // leaves a step unnamed and never becomes a branch.
+  async function readRegistry() {
+    if (registryRows !== null) return registryRows;
+    try {
+      const payload = await readJson("/harnesses.json");
+      registryRows = Array.isArray(payload) ? payload : [];
+    } catch (_error) {
+      registryRows = [];
+    }
+    return registryRows;
+  }
+  function loadOutcome(read, registry, carry) {
+    const answer = adaptRunGraph(read, registry);
+    if (answer.state === GRAPH_LOADED) {
+      const facts = projectPayload(answer.payload);
+      if (facts) return {type: "loaded", facts, ...carry};
+      return {type: "refused", notice: CORRUPT, ...carry};
+    }
+    return answer.state === GRAPH_ABSENT
+      ? {type: "absent", notice: ABSENT, ...carry}
+      : {type: "refused", notice: CORRUPT, ...carry};
+  }
+  async function loadSelectedRun(runId, carry) {
+    const requestEpoch = epoch;
+    const held = {savePhase: carry.phase, saveNotice: carry.notice};
+    try {
+      const [read, registry] = await Promise.all([
+        readJson(`/command/runs/${encodeURIComponent(runId)}`), readRegistry(),
+      ]);
+      if (requestEpoch !== epoch) return;
+      dispatch(loadOutcome(read, registry, held));
+    } catch (error) {
+      if (requestEpoch !== epoch) return;
+      const code = error instanceof Error ? error.message : "store_error";
+      dispatch({type: "refused", ...held,
+        notice: ERROR_LABELS[code] || ERROR_LABELS.store_error});
+    }
+  }
+  // Serialized like the Cockpit's: a burst of signals collapses into one more
+  // read after the one in flight, so a stream cannot stack reads on a window.
+  async function refreshSelectedRun(runId, carry = null) {
+    if (!RUN_ID.test(runId)) return;
+    selectedRun = runId;
+    epoch += 1;
+    refreshDirty = true;
+    pendingCarry = carry || pendingCarry;
+    if (refreshInFlight) return;
+    refreshInFlight = true;
+    while (refreshDirty) {
+      refreshDirty = false;
+      const held = pendingCarry || {phase: "idle", notice: ""};
+      pendingCarry = null;
+      await loadSelectedRun(selectedRun, held);
+    }
+    refreshInFlight = false;
+  }
+  mounts.runForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const runId = mounts.runInput.value.trim();
+    if (!RUN_ID.test(runId)) {
+      dispatch({type: "refused", notice: "Use a valid run id."});
+      return;
+    }
+    refreshSelectedRun(runId);
+  });
+  // Starting from the product's default plan is a Human's act too, and it
+  // writes nothing: it puts the five-step process on screen as a LOCAL DRAFT
+  // that the save button may then be pressed on.
+  mounts.seed.addEventListener("click", () => {
+    window.conductGraph.load(DALIO_DEFAULT);
+  });
+
+  const stream = new EventSource("/events");
+  stream.onmessage = (event) => {
+    let frame;
+    try {
+      frame = JSON.parse(event.data);
+    } catch (_error) {
+      return;
+    }
+    if (!frame || typeof frame !== "object" || !selectedRun) return;
+    // A state frame also stands in for a run signal the server had to drop
+    // from a full mailbox, so it buys the selected run's re-read too.
+    if (frame.kind === "state") {
+      refreshSelectedRun(selectedRun);
+      return;
+    }
+    // Identifiers only, and only this run's. A frame naming another run, or
+    // naming nothing this window can read as a run id, moves nothing here —
+    // and no field of it ever becomes a fact on screen.
+    if (frame.kind !== "run" || typeof frame.run_id !== "string"
+        || !RUN_ID.test(frame.run_id) || frame.run_id !== selectedRun) return;
+    refreshSelectedRun(frame.run_id);
+  };
+  stream.addEventListener("open", () => {
+    if (selectedRun) refreshSelectedRun(selectedRun);
+  });
+  // A dropped stream rotates the session and the read epoch together: an
+  // answer to a write issued before the drop can no longer be counted, and
+  // the token that authorized it is gone.
+  stream.addEventListener("error", () => {
+    epoch += 1;
+    sessionEpoch += 1;
+    csrfToken = "";
+    if (!selectedRun) return;
+    dispatch({type: "save", phase: "idle", notice:
+      "Connection lost. The last authoritative facts are still on screen; "
+      + "nothing may be written until it is back."});
+  });
   render();
   // The window opens on the product's default graph — the five-step process
   // the December Command fixed — through the same public seam any other
-  // fixture uses. A later load simply replaces it.
+  // fixture uses. Loading a run replaces it with that run's own facts.
   window.conductGraph.load(DALIO_DEFAULT);
 })();

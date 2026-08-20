@@ -4,10 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>December — Graph</title>
-<!-- ALPHA-2 Cockpit/Graph window. Served by no production route yet: server.py
-     is frozen until the runtime side hands over its API fixtures, so this
-     entry is opened by the browser suite through its own static server. Every
-     asset path is relative for exactly that reason. -->
+<!-- The Cockpit/Graph window. Served by the production panel route under
+     /panel/, from the allowlist of literal names in server.py. Every asset
+     path stays relative: the page is one directory of packaged files, and a
+     relative href is what keeps the served copy and the packaged copy the
+     same document. -->
 <link rel="stylesheet" href="graph.css">
 <script src="graph.js" type="module"></script>
 </head>
@@ -15,8 +16,18 @@
 <div class="wrap">
   <header class="shell">
     <span class="wordmark">December — Graph</span>
+    <form class="g-run" id="runForm">
+      <label class="command-field" for="graphRunId"><span>Run id</span>
+        <input autocomplete="off" id="graphRunId" maxlength="128"
+          name="run_id" pattern="[A-Za-z0-9][A-Za-z0-9._-]{0,127}" required
+          spellcheck="false" type="text"></label>
+      <button type="submit">Load run</button>
+    </form>
     <span class="mono" id="runFacts"></span>
     <p class="g-notice" aria-live="polite" id="notice"></p>
+    <!-- Where the drawing on screen came from, said in its own line rather
+         than left to the reader to infer from the shape of the graph. -->
+    <div class="g-src" id="sourceLine"></div>
   </header>
   <div class="grid">
     <div class="col">
@@ -28,7 +39,12 @@
           </div>
         </div>
         <p class="empty" id="fieldEmpty">No run graph loaded.
-          This window renders fixture data only.</p>
+          Load a run above, or start from the product's default plan.</p>
+        <!-- Drawing the default is a Human's act and writes nothing: it puts
+             the five-step process on screen as a LOCAL DRAFT that the save
+             button may then be pressed on. -->
+        <button class="g-seed" id="seedDefault" type="button">Start from the
+          default five-step plan</button>
       </section>
       <section class="card" id="timelineCard" aria-label="Execution timeline">
       </section>
@@ -50,6 +66,13 @@
         <p aria-live="polite" class="g-note g-decide-status" id="decideStatus"></p>
       </section>
       <section class="card" id="gatesCard" aria-label="Human gates"></section>
+      <section class="card" aria-label="Write the plan">
+        <div id="saveCard"></div>
+        <!-- Persistent, for the reason #decideStatus is: the answer to a
+             write must be announced, and an aria-live region rebuilt in the
+             same pass as its text is not announced at all. -->
+        <p aria-live="polite" class="g-note g-save-status" id="saveStatus"></p>
+      </section>
     </div>
   </div>
 </div>

@@ -1,18 +1,29 @@
-"""Source-level contract for the ALPHA-2 Graph window (fixture-fed, wire-free).
+"""Source-level contract for the Graph window, now that it is on the wire.
 
-The Graph window is allowed to exist before any of its wire contracts do, and
-these checks are what make that safe: the whole surface is proven to open no
-network door, to parse no markup string, and to restate every closed vocabulary
-as an exact copy of the layer that owns it. When the frozen API fixtures arrive
-the wire will be added behind the one `load` seam — and the guards here will
-have to be revised deliberately, not drift silently.
+These guards were written while the window had no wire at all, and they said
+in as many words that the arrival of one would require revising them
+deliberately rather than letting them drift. It arrived, and they were: what
+used to be "this surface opens no network door" is now "the door is one file
+and these are the only two it opens", and what used to be "the adapter names
+no wire form" is now "it names exactly one, by a version the durable contract
+actually mints".
+
+What did not move is the shape of the argument. The whole surface is still
+proven to parse no markup string, to keep the store, the adapter and the
+default fixture free of both the DOM and the socket, to restate every closed
+vocabulary as an exact copy of the layer that owns it, and to hold the
+submitted plan against the durable contract's own list of words a plan may
+never carry. The behavioural halves live in the browser suite
+(``browser_tests/test_graph_wire.py`` for the wire, ``test_graph_boundary``
+for the payload arms); this file is the change-detection half.
 """
 from __future__ import annotations
 
 import re
+from dataclasses import fields
 from pathlib import Path
 
-from conductor.command import contracts
+from conductor.command import contracts, graph_definition, graph_projection
 
 ROOT = Path(__file__).resolve().parents[1]
 PANEL = ROOT / "src" / "conductor" / "panel"
@@ -26,6 +37,41 @@ STYLE = PANEL / "graph.css"
 SCRIPTS = (STORE, VIEW, BOOT, ADAPTER, DEFAULT)
 SOURCE = "\n".join(path.read_text(encoding="utf-8") for path in SCRIPTS)
 IMPORTS = r'from "(\./[a-z-]+\.js)";'
+#: Line comments must NOT be matched with DOTALL — `.` would cross newlines
+#: and swallow the file. Block comments must be, because they span lines.
+_LINE_COMMENT = re.compile(r"^[ \t]*//.*$", re.MULTILINE)
+_BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.DOTALL)
+
+
+def _code(*paths: Path) -> str:
+    """These files without their prose.
+
+    A guard that reads the whole file cannot tell a DOM call from a sentence
+    about one: it reds on an honest comment and stays green on a call spelled
+    a little differently. The relation these tests are after is about CODE,
+    so the comments come out first and the guard reads what runs. The stripper
+    is proven on this suite's own files below: it must leave the code that
+    runs and remove the sentences about it, or every check built on it is a
+    check of an empty string.
+    """
+    stripped = [_LINE_COMMENT.sub("", _BLOCK_COMMENT.sub("",
+                path.read_text(encoding="utf-8"))) for path in paths]
+    return "\n".join(stripped)
+
+
+def test_the_comment_stripper_keeps_the_code_and_drops_the_prose():
+    """Every guard below reads `_code`, so `_code` itself is proven first.
+
+    A stripper that ate the file would turn each of those guards green while
+    proving nothing — the exact failure a `.*` crossing a newline produces.
+    """
+    boot = _code(BOOT)
+    assert "window.conductGraph = Object.freeze({" in boot
+    assert "// dispatch stays module-internal" not in boot
+    assert len(boot.splitlines()) > 200, "the stripper removed running code"
+    store = _code(STORE)
+    assert "export function projectPayload(payload) {" in store
+    assert "//: Where this graph came from" not in store
 
 
 def test_the_contract_module_resolves_inside_this_tree():
@@ -46,15 +92,15 @@ def test_the_graph_module_graph_is_acyclic_and_the_store_stays_pure():
     assert sorted(re.findall(IMPORTS, VIEW.read_text(encoding="utf-8"))) == [
         "./command-view.js", "./graph-store.js"]
     assert sorted(re.findall(IMPORTS, BOOT.read_text(encoding="utf-8"))) == [
-        "./graph-adapter.js", "./graph-default.js", "./graph-store.js",
-        "./graph-view.js"]
+        "./command-projection.js", "./graph-adapter.js", "./graph-default.js",
+        "./graph-store.js", "./graph-view.js"]
     # The adapter imports nothing: it is the outermost shell of the boundary
     # and may depend on no inner layer, so no mapping can smuggle a projection.
     # The default fixture imports nothing either: it is data with a name.
     assert re.findall(IMPORTS, ADAPTER.read_text(encoding="utf-8")) == []
     assert re.findall(IMPORTS, DEFAULT.read_text(encoding="utf-8")) == []
     for pure in (STORE, ADAPTER, DEFAULT):
-        source = pure.read_text(encoding="utf-8")
+        source = _code(pure)
         assert "document" not in source
         assert "window." not in source
         assert "getElementById" not in source
@@ -66,31 +112,110 @@ def test_the_default_fixture_ships_an_empty_registry():
     assert "registry: [],\n" in DEFAULT.read_text(encoding="utf-8")
 
 
-def test_the_adapter_names_the_internal_schema_and_never_a_wire_form():
-    """The panel-internal shape is not the wire contract, and says so."""
+def test_the_adapter_names_the_internal_schema_and_the_one_wire_form_it_reads():
+    """The panel-internal shape is not the wire contract, and says so.
+
+    The wire has since landed, so the adapter now DOES name a wire form —
+    exactly one, announced by version. The pin that used to prove no mapping
+    existed is replaced by the pin that proves the mapping speaks a version
+    the durable contract actually mints, rather than a guess at one.
+    """
     source = ADAPTER.read_text(encoding="utf-8")
     assert "NOT the wire" in source
     assert "INTERNAL_SCHEMA = 1" in source
-    # No mapping exists yet: the adapter body reads no field but the schema
-    # pin, so it cannot have guessed at an unfrozen wire shape.
-    assert source.count("external.") == 1
+    schema = next(field for field in fields(graph_definition.GraphDefinition)
+                  if field.name == "schema_version")
+    assert f"WIRE_SCHEMA = {schema.default};" in source
+    assert "definition.schema_version !== WIRE_SCHEMA" in source
 
 
-def test_the_graph_window_opens_no_wire_and_parses_no_markup():
+def test_the_adapter_is_the_only_module_that_knows_a_wire_spelling():
+    """One boundary, and it is checkable by grep because it is one file.
+
+    Every name below belongs to a document the runtime side froze. If one
+    appears in the store, the view, the default or the boot file, the mapping
+    has leaked out of the seam it was promised to stay inside — and the layer
+    that learned it would then have to be revised whenever the wire moves.
+    """
+    inside, outside = _code(ADAPTER), _code(STORE, VIEW, BOOT, DEFAULT)
+    for spelling in ("definition_digest", "from_node", "to_node",
+                     "schema_version", "graph_id"):
+        assert spelling in inside, spelling
+        assert spelling not in outside, spelling
+
+
+def test_the_submitted_plan_is_screened_against_the_runtime_words_themselves():
+    """The plan this window offers a run is screened by the REAL list.
+
+    A plan that reaches the journal can never be edited, so the screen sits
+    in front of the door rather than in a test describing it. The copy here
+    is held to `graph_definition.RUNTIME_ONLY_FIELDS` value for value, and to
+    the same payload exemption production applies, so the screen cannot fall
+    behind the contract it is screening for.
+    """
+    source = ADAPTER.read_text(encoding="utf-8")
+    body = re.search(r"RUNTIME_ONLY_FIELDS = Object\.freeze\(\s*\[(.*?)\]\)",
+                     source, re.DOTALL)
+    assert body, "the adapter states no runtime-word list"
+    assert set(re.findall(r'"([a-z_]+)"', body.group(1))) == \
+        set(graph_definition.RUNTIME_ONLY_FIELDS)
+    assert f'EXEMPT_FIELD = "{graph_definition.EXEMPT_FIELD}"' in source
+    # And the screen is WIRED: the body is read back before it is returned,
+    # so a plan carrying a run's word is refused rather than described.
+    assert "return carriesRuntimeWord(body) ? null : body;" in source
+
+
+def test_the_wire_door_opens_in_the_boot_file_and_nowhere_else():
+    """Reading and writing are transport, and transport is one file.
+
+    The store, the adapter, the default fixture and the markup stay wire-free
+    and DOM-free: a payload's SHAPE is the adapter's business and a socket is
+    the boot file's. Everything else on this list is forbidden everywhere,
+    for the reason it always was — no markup string is ever parsed here, and
+    no facts are kept anywhere a contract did not validate them.
+    """
     html = HTML.read_text(encoding="utf-8")
-    lowered = (SOURCE + "\n" + html).lower()
+    sealed = (_code(STORE, VIEW, ADAPTER, DEFAULT) + "\n" + html).lower()
     for forbidden in ("fetch(", "eventsource", "xmlhttprequest", "websocket",
-                      "webtransport", "rtcpeerconnection", "sendbeacon",
+                      "webtransport", "rtcpeerconnection", "sendbeacon"):
+        assert forbidden not in sealed, forbidden
+    lowered = (_code(*SCRIPTS) + "\n" + html).lower()
+    for forbidden in ("xmlhttprequest", "websocket", "webtransport",
+                      "rtcpeerconnection", "sendbeacon",
                       "import(", "importscripts", "navigator.",
                       "innerhtml", "outerhtml", "insertadjacenthtml",
                       "localstorage", "sessionstorage", "document.cookie",
                       "settimeout", "setinterval", "console."):
         assert forbidden not in lowered, forbidden
+    # The two doors the boot file DOES open, named so that a third cannot
+    # arrive unremarked: one read/write door and one stream.
+    boot = _code(BOOT)
+    assert boot.count("fetch(") == 3
+    assert boot.count("new EventSource(") == 1
     assert "from '" not in SOURCE  # imports stay double-quoted and countable
     assert '<link rel="stylesheet" href="graph.css">' in html
     assert '<script src="graph.js" type="module"></script>' in html
     assert html.count("<script") == 1
-    assert "/panel/" not in html
+    # Every asset this entry names is RELATIVE. An absolute one would bind the
+    # packaged document to one mount point, and the served copy and the
+    # packaged copy would stop being the same file.
+    assert re.findall(r'(?:href|src)="([^"]*)"', html) == [
+        "graph.css", "graph.js"]
+
+
+def test_the_one_mutation_target_is_the_graph_route_and_it_is_a_literal():
+    """One route this window may POST to, visible at one call site.
+
+    The Cockpit's Confirm and propose doors are not weakened by this window
+    because this window has no path to them: `/proposals` and `/actions`
+    appear nowhere in it, and the only method it ever sends is the one below.
+    """
+    boot = BOOT.read_text(encoding="utf-8")
+    assert boot.count('method: "POST"') == 1
+    assert '`/command/runs/${encodeURIComponent(runId)}/graph`' in boot
+    for forbidden in ("/proposals", "/actions", "/decisions", '"PUT"',
+                      '"DELETE"', '"PATCH"'):
+        assert forbidden not in boot, forbidden
 
 
 def _tokens(css: str) -> list[dict[str, str]]:
@@ -133,8 +258,14 @@ def test_the_store_vocabularies_are_copies_of_the_layers_that_own_them():
     projection = (PANEL / "command-projection.js").read_text(encoding="utf-8")
     assert _js_list(store, "HEALTH_STATES") == contracts.HEALTH_STATES
     assert _js_list(store, "VERIFICATION_STATES") == contracts._VERIFICATION_STATES
+    # Two layers own this one vocabulary and both are copied whole: the run
+    # projection's position words (idle … running … observed) and the result
+    # outcomes a receipt may carry. `observed` is a position and `succeeded`
+    # is an outcome, and the window keeps both words so it never has to turn
+    # one into the other.
     assert _js_list(store, "NODE_PHASES") == (
-        {"idle", "proposed", "requested"} | contracts._RESULT_OUTCOMES)
+        set(graph_projection.NODE_PHASES) | contracts._RESULT_OUTCOMES)
+    assert "observed" in _js_list(store, "NODE_PHASES")
     decisions = dict(re.findall(r'(\w+): "(\w+)",\n', re.search(
         r"DECISION_ACTIONS = Object\.freeze\(\{(.*?)\}\)", store,
         re.DOTALL).group(1)))
@@ -150,7 +281,12 @@ def test_the_store_vocabularies_are_copies_of_the_layers_that_own_them():
     assert _js_list(store, "CAPABILITY_NAMES") == capability_keys
     kinds = re.search(r'\["kinds", "enum-list", \[(.*?)\]\]', projection).group(1)
     assert _js_list(store, "EVIDENCE_KINDS") == set(re.findall(r'"(\w+)"', kinds))
-    assert _js_list(store, "GATE_STATES") == {"pending"} | set(decisions.values())
+    # `pending` is this window's word for the projection's `idle`, and
+    # `unknown` is the projection's own refusal to choose between two
+    # standing receipts. Neither is a decision, and neither may be dropped:
+    # a gate the journal cannot answer for must still have a word to draw.
+    assert _js_list(store, "GATE_STATES") == (
+        {"pending", "unknown"} | set(decisions.values()))
     # Harness-level availability: the December Command's own three words, and
     # no fourth invented beside them.
     assert _js_list(store, "AVAILABILITY_STATES") == {
@@ -172,7 +308,7 @@ def test_local_only_actions_say_so_where_they_land():
     store = STORE.read_text(encoding="utf-8")
     assert store.count("Nothing was executed") == 2
     assert store.count("Composition refused") == 2
-    assert '"fixture-only"' in store
+    assert '"window-only"' in store
     # The load notice and the run-facts suffix carry the same honesty for
     # the boot path; the rendered halves live in the browser boot test.
     assert "Nothing here reaches a server" in store
@@ -200,8 +336,17 @@ def test_every_refusal_arm_of_the_store_is_pinned_by_count():
     vanish while the many-fault payload still refuses for another reason.
     """
     store = STORE.read_text(encoding="utf-8")
-    assert store.count("return null;") == 41
-    assert store.count("return false;") == 8
+    assert store.count("return null;") == 49
+    assert store.count("return false;") == 27
+    # The adapter is a boundary too, and its refusals come in two spellings
+    # because it decides in two places: `pairState` answers with a word about
+    # the pair, and the walk over the nodes answers with the refusal value.
+    adapter = ADAPTER.read_text(encoding="utf-8")
+    assert adapter.count("return refused();") == 8
+    assert adapter.count("return GRAPH_REFUSED;") == 6
+    # The level screens: each answers false for a key its level has no
+    # mapping for, so nothing is ever dropped on the way in.
+    assert adapter.count("return false;") == 7
     # The resource cap shares its return with the array check, so the arm is
     # pinned by its own spelling beside the behavioural over-limit case.
     assert "const RESOURCE_LIMIT = 16;" in store
