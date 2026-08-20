@@ -13,6 +13,8 @@ from pathlib import Path
 import pytest
 
 from conductor.command.contracts import ContractError
+
+from tests import alpha4_role_artifacts
 from conductor.command.graph_dalio import is_dalio_template
 from conductor.command.graph_definition import (
     RUNTIME_ONLY_FIELDS,
@@ -359,3 +361,42 @@ def test_the_shipped_template_reaches_the_wheel_a_user_installs(tmp_path):
                 for path in TEMPLATE_DIR.iterdir() if path.is_file()}
     assert shipped == packaged
     assert "conductor/command/templates/dalio-v1.json" in shipped
+
+
+def test_the_frozen_role_artifacts_are_what_production_derives_today():
+    """The UI lane's handoff, re-derived and compared on every run.
+
+    A fixture that is only ever read is a claim about a file. These are BUILT
+    by the production contracts each time this runs, so production drifting
+    away from the shape the Fable lane was handed reds here rather than in a
+    browser weeks later.
+    """
+    derived = alpha4_role_artifacts.derive_all()
+    assert sorted(derived) == sorted(alpha4_role_artifacts.ARTIFACTS)
+    for name in alpha4_role_artifacts.ARTIFACTS:
+        assert derived[name] == alpha4_role_artifacts.load(name), name
+
+
+def test_the_handed_over_runs_share_one_topology_and_no_record():
+    """What the artifacts are FOR: one cycle, two deployments, two records."""
+    runs = alpha4_role_artifacts.load("alpha4_materialized_runs")["runs"]
+    assert [run["name"] for run in runs] == ["two-instances", "one-instance"]
+    shapes = {tuple(node["node_id"] for node in run["definition"]["nodes"])
+              for run in runs}
+    assert len(shapes) == 1, "the same template produced two different shapes"
+    assert len({run["definition_digest"] for run in runs}) == 2
+    assert [run["instances"] for run in runs] == [
+        ["claude-dev", "codex-review"], ["solo-node"]]
+
+
+def test_the_handed_over_template_carries_roles_and_no_deployment():
+    """What Fable renders and submits: work and roles, and nothing about here."""
+    handed = alpha4_role_artifacts.load("alpha4_dalio_template")
+    assert handed["roles"] == list(dalio().roles)
+    document = json.dumps(handed["template"])
+    for word in sorted(DEPLOYMENT_ONLY_FIELDS):
+        assert f'"{word}"' not in document, word
+    # And the run-side artifact is where a deployment IS named, so the split
+    # is visible in the handoff itself rather than only in prose.
+    bindings = json.dumps(alpha4_role_artifacts.load("alpha4_run_bindings"))
+    assert '"adapter"' in bindings and '"assignments"' in bindings

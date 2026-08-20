@@ -1,0 +1,337 @@
+{
+  "runs": [
+    {
+      "assignments": {
+        "role-designer": "codex-review",
+        "role-diagnostician": "codex-review",
+        "role-implementer": "claude-dev",
+        "role-thinker": "codex-review"
+      },
+      "definition": {
+        "created_at": "2026-08-20T12:00:00Z",
+        "edges": [
+          {
+            "from_node": "goal",
+            "to_node": "identify"
+          },
+          {
+            "from_node": "identify",
+            "to_node": "diagnose"
+          },
+          {
+            "from_node": "diagnose",
+            "to_node": "design"
+          },
+          {
+            "from_node": "design",
+            "to_node": "confirm-gate"
+          },
+          {
+            "from_node": "confirm-gate",
+            "to_node": "do"
+          },
+          {
+            "from_node": "do",
+            "to_node": "result-gate"
+          },
+          {
+            "from_node": "result-gate",
+            "to_node": "retry-loop"
+          }
+        ],
+        "graph_id": "graph-dalio-spread",
+        "nodes": [
+          {
+            "arguments": {
+              "review_profile": "spec",
+              "target_artifact_refs": [
+                "artifact-brief"
+              ],
+              "work_item_id": "work-001"
+            },
+            "capability": "review",
+            "instance_id": "codex-review",
+            "kind": "task",
+            "node_id": "goal",
+            "resources": [],
+            "stage": "goal",
+            "title": "Goal"
+          },
+          {
+            "arguments": {
+              "review_profile": "quality",
+              "target_artifact_refs": [
+                "artifact-goal"
+              ],
+              "work_item_id": "work-001"
+            },
+            "capability": "review",
+            "instance_id": "codex-review",
+            "kind": "task",
+            "node_id": "identify",
+            "resources": [],
+            "stage": "identify",
+            "title": "Identify Problems"
+          },
+          {
+            "arguments": {
+              "review_profile": "quality",
+              "target_artifact_refs": [
+                "artifact-problems"
+              ],
+              "work_item_id": "work-001"
+            },
+            "capability": "review",
+            "instance_id": "codex-review",
+            "kind": "task",
+            "node_id": "diagnose",
+            "resources": [],
+            "stage": "diagnose",
+            "title": "Diagnose Root Causes"
+          },
+          {
+            "arguments": {
+              "review_profile": "spec",
+              "target_artifact_refs": [
+                "artifact-causes"
+              ],
+              "work_item_id": "work-001"
+            },
+            "capability": "review",
+            "instance_id": "codex-review",
+            "kind": "task",
+            "node_id": "design",
+            "resources": [],
+            "stage": "design",
+            "title": "Design the Plan"
+          },
+          {
+            "gate_id": "gate-confirm-do",
+            "kind": "gate",
+            "node_id": "confirm-gate",
+            "resources": [],
+            "title": "Human Gate - Confirm Do"
+          },
+          {
+            "arguments": {
+              "artifact_refs": [
+                "artifact-plan"
+              ],
+              "instruction_ref": "instruction-plan",
+              "output_limit_profile": "normal",
+              "profile": "implement",
+              "work_item_id": "work-001"
+            },
+            "capability": "dispatch",
+            "instance_id": "claude-dev",
+            "kind": "task",
+            "node_id": "do",
+            "resources": [
+              {
+                "kind": "model",
+                "name": "sonnet"
+              },
+              {
+                "kind": "sandbox",
+                "name": "project-root"
+              }
+            ],
+            "stage": "do",
+            "title": "Do"
+          },
+          {
+            "gate_id": "gate-result",
+            "kind": "gate",
+            "node_id": "result-gate",
+            "resources": [],
+            "title": "Result Gate"
+          },
+          {
+            "kind": "loop",
+            "loop": {
+              "back_to": "identify",
+              "bound": 3
+            },
+            "node_id": "retry-loop",
+            "resources": [],
+            "title": "Turn problems into progress"
+          }
+        ],
+        "run_id": "run-spread",
+        "schema_version": 2
+      },
+      "definition_digest": "sha256:12780371452870778c8cdfdc44f9fc0ee775fb07a120606bef05d79fb03d7dac",
+      "instances": [
+        "claude-dev",
+        "codex-review"
+      ],
+      "name": "two-instances"
+    },
+    {
+      "assignments": {
+        "role-designer": "solo-node",
+        "role-diagnostician": "solo-node",
+        "role-implementer": "solo-node",
+        "role-thinker": "solo-node"
+      },
+      "definition": {
+        "created_at": "2026-08-20T12:00:00Z",
+        "edges": [
+          {
+            "from_node": "goal",
+            "to_node": "identify"
+          },
+          {
+            "from_node": "identify",
+            "to_node": "diagnose"
+          },
+          {
+            "from_node": "diagnose",
+            "to_node": "design"
+          },
+          {
+            "from_node": "design",
+            "to_node": "confirm-gate"
+          },
+          {
+            "from_node": "confirm-gate",
+            "to_node": "do"
+          },
+          {
+            "from_node": "do",
+            "to_node": "result-gate"
+          },
+          {
+            "from_node": "result-gate",
+            "to_node": "retry-loop"
+          }
+        ],
+        "graph_id": "graph-dalio-solo",
+        "nodes": [
+          {
+            "arguments": {
+              "review_profile": "spec",
+              "target_artifact_refs": [
+                "artifact-brief"
+              ],
+              "work_item_id": "work-001"
+            },
+            "capability": "review",
+            "instance_id": "solo-node",
+            "kind": "task",
+            "node_id": "goal",
+            "resources": [],
+            "stage": "goal",
+            "title": "Goal"
+          },
+          {
+            "arguments": {
+              "review_profile": "quality",
+              "target_artifact_refs": [
+                "artifact-goal"
+              ],
+              "work_item_id": "work-001"
+            },
+            "capability": "review",
+            "instance_id": "solo-node",
+            "kind": "task",
+            "node_id": "identify",
+            "resources": [],
+            "stage": "identify",
+            "title": "Identify Problems"
+          },
+          {
+            "arguments": {
+              "review_profile": "quality",
+              "target_artifact_refs": [
+                "artifact-problems"
+              ],
+              "work_item_id": "work-001"
+            },
+            "capability": "review",
+            "instance_id": "solo-node",
+            "kind": "task",
+            "node_id": "diagnose",
+            "resources": [],
+            "stage": "diagnose",
+            "title": "Diagnose Root Causes"
+          },
+          {
+            "arguments": {
+              "review_profile": "spec",
+              "target_artifact_refs": [
+                "artifact-causes"
+              ],
+              "work_item_id": "work-001"
+            },
+            "capability": "review",
+            "instance_id": "solo-node",
+            "kind": "task",
+            "node_id": "design",
+            "resources": [],
+            "stage": "design",
+            "title": "Design the Plan"
+          },
+          {
+            "gate_id": "gate-confirm-do",
+            "kind": "gate",
+            "node_id": "confirm-gate",
+            "resources": [],
+            "title": "Human Gate - Confirm Do"
+          },
+          {
+            "arguments": {
+              "artifact_refs": [
+                "artifact-plan"
+              ],
+              "instruction_ref": "instruction-plan",
+              "output_limit_profile": "normal",
+              "profile": "implement",
+              "work_item_id": "work-001"
+            },
+            "capability": "dispatch",
+            "instance_id": "solo-node",
+            "kind": "task",
+            "node_id": "do",
+            "resources": [
+              {
+                "kind": "model",
+                "name": "sonnet"
+              },
+              {
+                "kind": "sandbox",
+                "name": "project-root"
+              }
+            ],
+            "stage": "do",
+            "title": "Do"
+          },
+          {
+            "gate_id": "gate-result",
+            "kind": "gate",
+            "node_id": "result-gate",
+            "resources": [],
+            "title": "Result Gate"
+          },
+          {
+            "kind": "loop",
+            "loop": {
+              "back_to": "identify",
+              "bound": 3
+            },
+            "node_id": "retry-loop",
+            "resources": [],
+            "title": "Turn problems into progress"
+          }
+        ],
+        "run_id": "run-solo",
+        "schema_version": 2
+      },
+      "definition_digest": "sha256:42b6e53c5833de238ce6bda4808dc04a53edb1383f663db8a70aeab0d128f284",
+      "instances": [
+        "solo-node"
+      ],
+      "name": "one-instance"
+    }
+  ]
+}

@@ -1,0 +1,161 @@
+{
+  "roles": [
+    "role-thinker",
+    "role-diagnostician",
+    "role-designer",
+    "role-implementer"
+  ],
+  "template": {
+    "edges": [
+      {
+        "from_node": "goal",
+        "to_node": "identify"
+      },
+      {
+        "from_node": "identify",
+        "to_node": "diagnose"
+      },
+      {
+        "from_node": "diagnose",
+        "to_node": "design"
+      },
+      {
+        "from_node": "design",
+        "to_node": "confirm-gate"
+      },
+      {
+        "from_node": "confirm-gate",
+        "to_node": "do"
+      },
+      {
+        "from_node": "do",
+        "to_node": "result-gate"
+      },
+      {
+        "from_node": "result-gate",
+        "to_node": "retry-loop"
+      }
+    ],
+    "nodes": [
+      {
+        "arguments": {
+          "review_profile": "spec",
+          "target_artifact_refs": [
+            "artifact-brief"
+          ],
+          "work_item_id": "work-001"
+        },
+        "capability": "review",
+        "kind": "task",
+        "node_id": "goal",
+        "resources": [],
+        "role_id": "role-thinker",
+        "stage": "goal",
+        "title": "Goal"
+      },
+      {
+        "arguments": {
+          "review_profile": "quality",
+          "target_artifact_refs": [
+            "artifact-goal"
+          ],
+          "work_item_id": "work-001"
+        },
+        "capability": "review",
+        "kind": "task",
+        "node_id": "identify",
+        "resources": [],
+        "role_id": "role-thinker",
+        "stage": "identify",
+        "title": "Identify Problems"
+      },
+      {
+        "arguments": {
+          "review_profile": "quality",
+          "target_artifact_refs": [
+            "artifact-problems"
+          ],
+          "work_item_id": "work-001"
+        },
+        "capability": "review",
+        "kind": "task",
+        "node_id": "diagnose",
+        "resources": [],
+        "role_id": "role-diagnostician",
+        "stage": "diagnose",
+        "title": "Diagnose Root Causes"
+      },
+      {
+        "arguments": {
+          "review_profile": "spec",
+          "target_artifact_refs": [
+            "artifact-causes"
+          ],
+          "work_item_id": "work-001"
+        },
+        "capability": "review",
+        "kind": "task",
+        "node_id": "design",
+        "resources": [],
+        "role_id": "role-designer",
+        "stage": "design",
+        "title": "Design the Plan"
+      },
+      {
+        "gate_id": "gate-confirm-do",
+        "kind": "gate",
+        "node_id": "confirm-gate",
+        "resources": [],
+        "title": "Human Gate - Confirm Do"
+      },
+      {
+        "arguments": {
+          "artifact_refs": [
+            "artifact-plan"
+          ],
+          "instruction_ref": "instruction-plan",
+          "output_limit_profile": "normal",
+          "profile": "implement",
+          "work_item_id": "work-001"
+        },
+        "capability": "dispatch",
+        "kind": "task",
+        "node_id": "do",
+        "resources": [
+          {
+            "kind": "model",
+            "name": "sonnet"
+          },
+          {
+            "kind": "sandbox",
+            "name": "project-root"
+          }
+        ],
+        "role_id": "role-implementer",
+        "stage": "do",
+        "title": "Do"
+      },
+      {
+        "gate_id": "gate-result",
+        "kind": "gate",
+        "node_id": "result-gate",
+        "resources": [],
+        "title": "Result Gate"
+      },
+      {
+        "kind": "loop",
+        "loop": {
+          "back_to": "identify",
+          "bound": 3
+        },
+        "node_id": "retry-loop",
+        "resources": [],
+        "title": "Turn problems into progress"
+      }
+    ],
+    "revision": 1,
+    "schema_version": 1,
+    "template_id": "template-dalio",
+    "title": "Dalio five-step cycle"
+  }
+}
