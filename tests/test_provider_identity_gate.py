@@ -341,6 +341,65 @@ def test_copying_a_container_to_another_name_carries_its_origin_unchanged(
     assert not any(_excused(origin) for _, origin in stray), name
 
 
+#: Each of these declares a container under a name the module ALSO imported.
+#: A rule that compared names would read every one of them as the import.
+_SHADOWINGS = (
+    ("branched on directly", "RECOMMENDED = ({id!r},)\n", "RECOMMENDED"),
+    ("copied on to another name", "RECOMMENDED = ({id!r},)\nMENU = RECOMMENDED\n",
+     "MENU"),
+    ("declared inside a function", "", "RECOMMENDED"),
+)
+
+
+@pytest.mark.parametrize("name,body,used", _SHADOWINGS,
+                         ids=[row[0] for row in _SHADOWINGS])
+def test_redeclaring_an_imported_name_takes_the_allowance_back(name, body, used):
+    """Two declarations spelled the same are still two declarations.
+
+    A module that imports `RECOMMENDED` and then writes its own
+    `RECOMMENDED = (...)` holds a LOCAL container -- and the local one is the
+    one every later line reads. Deciding which of the two it is by comparing
+    names reads the second as the first and hands an execution module the
+    presentation menu's allowance, which is the whole exception given away in
+    one line. Which branch BUILT the value is what tells them apart.
+    """
+    identity = _an_identity()
+    inner = (f"    RECOMMENDED = ({identity!r},)\n"
+             if name == "declared inside a function" else "")
+    source = ("from conductor.harnesses import RECOMMENDED\n"
+              + body.format(id=identity)
+              + "def route(chosen):\n" + inner
+              + f"    return chosen in {used}\n")
+    trees = {PRESENTATION_MODULE: ast.parse(
+        f"RECOMMENDED = ({identity!r}, 'cursor')\n")}
+    found = [(value, origin) for value, _, origin in _compared_strings(
+        "conductor.command.neutral", ast.parse(source), trees=trees)
+        if value in _identities()]
+    assert found == [(identity, ("conductor.command.neutral", "RECOMMENDED"))], name
+    assert not any(_excused(origin) for _, origin in found), name
+
+
+def test_an_import_nobody_redeclared_keeps_the_allowance_it_arrived_with():
+    """The other side of the same coin, so the fix cannot be 'excuse nothing'.
+
+    Taking the allowance back from a redeclaration is only correct if leaving
+    it alone is still possible -- otherwise the exception would have been
+    deleted rather than made exact, and `conduct init` would read as a stray.
+    """
+    identity = _an_identity()
+    trees = {PRESENTATION_MODULE: ast.parse(
+        f"RECOMMENDED = ({identity!r}, 'cursor')\n")}
+    for body, used in (("", "RECOMMENDED"), ("MENU = RECOMMENDED\n", "MENU")):
+        source = ("from conductor.harnesses import RECOMMENDED\n" + body
+                  + "def route(chosen):\n"
+                  + f"    return chosen in {used}\n")
+        found = [(value, origin) for value, _, origin in _compared_strings(
+            "conductor.command.neutral", ast.parse(source), trees=trees)
+            if value in _identities()]
+        assert found == [(identity, (PRESENTATION_MODULE, "RECOMMENDED"))], used
+        assert all(_excused(origin) for _, origin in found), used
+
+
 def test_a_container_a_module_declared_itself_is_followed_when_it_is_copied():
     """No import needs to be involved for a rebinding to hide a container.
 
@@ -427,7 +486,8 @@ def test_the_presentation_exception_is_reached_and_is_not_dead_code():
     on one, the exception excuses nothing and the test says to delete it.
     """
     identity = _an_identity()
-    menu = _own_containers(_trees()[PRESENTATION_MODULE]).get("RECOMMENDED")
+    menu = _own_containers(_trees()[PRESENTATION_MODULE],
+                           PRESENTATION_MODULE).get("RECOMMENDED")
     assert menu is not None and set(menu.held) & set(_identities()), (
         "the presentation menu holds no catalogued id, so this exception "
         "guards nothing -- remove it")

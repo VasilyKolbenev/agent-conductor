@@ -190,52 +190,63 @@ def _container_of(value: ast.expr,
 
 
 class Container(NamedTuple):
-    """A container of strings, and the LOCAL name it was ultimately copied from.
+    """A container of strings, and the `(module, symbol)` it was DECLARED under.
 
-    `root` is what carries provenance across a plain assignment. `MENU =
-    SPECIAL` holds SPECIAL's strings and must keep SPECIAL's origin, or one
-    line would launder an allowance that an import alias cannot -- and the
-    scalar side of this resolver has followed `NAME = OTHER` from the start,
-    so a container that did not was the odd one out rather than a limit.
+    The origin travels WITH the value rather than being reconstructed from a
+    name afterwards, and that is the whole of what makes shadowing safe. A name
+    is not evidence: a module that imports `RECOMMENDED` and then writes its
+    own `RECOMMENDED = (...)` has two different declarations spelled the same,
+    and any rule that compared names would read the second as the first and
+    hand a local container someone else's allowance.
+
+    So a declaration written HERE takes this module's own pair, a copy takes
+    whatever the value it copied is carrying, and an untouched import keeps the
+    pair it arrived with -- three cases told apart by which branch built the
+    value, never by what it is called.
     """
 
     held: tuple[str, ...]
-    root: str
+    origin: tuple[str, str]
 
 
-def _declared_containers(tree: ast.AST, names: Mapping[str, str],
+def _declared_containers(tree: ast.AST, names: Mapping[str, str], module: str,
                          seed: Mapping[str, Container] | None = None
                          ) -> dict[str, Container]:
     """Every container a module binds outside a class, by name.
 
     Two ways to bind one, and both are followed: a literal written in place,
-    and a REBINDING of a container already in scope. The second walks chains
-    of any length and reaches into function bodies, because the rows are read
-    in source order over the same walk the strings use -- and because
-    `menu = SPECIAL` two lines into a function is the same branch as the
-    import it came from, with one more step in it.
+    and a REBINDING of a container already in scope. The second walks chains of
+    any length and reaches into function bodies, because the rows are read in
+    source order over the same walk the strings use -- and because
+    `menu = SPECIAL` two lines into a function is the same branch as the import
+    it came from, with one more step in it.
 
-    `seed` is what this module imported, so the rebinding may cross the import.
+    `seed` is what this module imported, so a rebinding may cross the import --
+    and so may a SHADOWING, which is the case a name cannot describe. Writing
+    `RECOMMENDED = (...)` in a module that imported `RECOMMENDED` replaces the
+    imported value with a local one under the same spelling. Which branch built
+    the value is the only thing that tells those apart, so the origin is decided
+    here, where that is known, and carried on the value from then on.
     """
     found: dict[str, Container] = dict(seed or {})
     for _, targets, value in _assignments(tree):
         if (held := _container_of(value, names)) is not None:
-            carried = None
+            copied = None                  # declared HERE, whatever it is called
         elif isinstance(value, ast.Name) and value.id in found:
-            carried = found[value.id]      # a rebinding, followed to its root
+            copied = found[value.id]       # a copy, carrying what it copied
         else:
             continue
         for target in targets:
             if isinstance(target, ast.Name):
-                found[target.id] = (Container(held, target.id) if carried is None
-                                    else Container(carried.held, carried.root))
+                found[target.id] = (Container(held, (module, target.id))
+                                    if copied is None else copied)
     return found
 
 
 @lru_cache(maxsize=None)
-def _own_containers(tree: ast.AST) -> Mapping[str, Container]:
+def _own_containers(tree: ast.AST, module: str) -> Mapping[str, Container]:
     """`_declared_containers` against the module's own strings, kept per tree."""
-    return MappingProxyType(_declared_containers(tree, _own_strings(tree)))
+    return MappingProxyType(_declared_containers(tree, _own_strings(tree), module))
 
 
 class Offer(NamedTuple):
@@ -243,9 +254,10 @@ class Offer(NamedTuple):
 
     `origins` is what makes the presentation exception an exception about
     PROVENANCE rather than about which file happens to be reading. Each entry
-    is the ORIGINAL `(module, symbol)` a name was declared under, carried
-    unchanged through every alias and re-export -- so neither forwarding nor a
-    rename on the way in turns one symbol's allowance into another's.
+    is the `(module, symbol)` a name was declared under, carried unchanged
+    through every alias and re-export -- so neither forwarding nor a rename on
+    the way in turns one symbol's allowance into another's, and a module that
+    redeclares an imported name under that same name answers for its own.
     """
 
     strings: Mapping[str, str]
@@ -332,17 +344,17 @@ def _settled(module: str, tree: ast.AST, strings: dict[str, str],
     copied from, however many names and imports ago that was.
     """
     own_strings = _declared_strings(tree, strings)
-    own_containers = _declared_containers(tree, own_strings, containers)
+    own_containers = _declared_containers(tree, own_strings, module, containers)
     own_classes = _class_strings(tree)
     for name in _own_strings(tree):
         origins[name] = (module, name)
     for name in own_classes:
         origins[name] = (module, name)
+    # Containers answer for themselves. Each one already knows whether it was
+    # written here, copied from something, or imported untouched -- so nothing
+    # is inferred from its name, which is exactly what a shadowing defeats.
     for name, container in own_containers.items():
-        if name in containers and container.root == containers[name].root:
-            continue                       # imported unchanged; keep its origin
-        origins[name] = (origins[container.root] if container.root in origins
-                         else (module, container.root))
+        origins[name] = container.origin
     strings.update(own_strings)
     containers.update(own_containers)
     classes.update(own_classes)
