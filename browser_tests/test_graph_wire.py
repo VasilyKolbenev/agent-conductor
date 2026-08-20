@@ -346,6 +346,41 @@ def test_the_submitted_plan_carries_no_word_the_run_owns(
         page.context.close()
 
 
+def test_the_runtime_word_screen_fires_and_spares_the_payload_it_must_spare(
+        chromium: Browser, wire_url: str) -> None:
+    """The screen in front of the write door, opened directly.
+
+    It cannot fire on a body `graphRequestBody` builds today, because that
+    body is assembled from a whitelist — which is the whole reason it exists
+    and the whole reason it has to be proven here instead. A door nobody can
+    open is not a door that works.
+
+    The middle case is the one that would quietly break the product: every
+    field of a capability's payload belongs to that capability's schema, and
+    a walk that judged those keys too would refuse a plan the contract itself
+    accepts. Production lifts the payload out by name before walking; so does
+    this, and this is where that is checked.
+    """
+    page, _ = _open(chromium, wire_url)
+    try:
+        verdicts = page.evaluate(
+            """async cases => {
+                 const adapter = await import("./graph-adapter.js");
+                 return cases.map(body => adapter.carriesRuntimeWord(body));
+               }""",
+            [
+                {"graph_id": "g", "nodes": [{"node_id": "a", "kind": "task"}]},
+                {"nodes": [{"node_id": "a", "phase": "idle"}]},
+                {"nodes": [{"node_id": "a", "loop": {"bound": 2, "pass": 1}}]},
+                {"nodes": [{"node_id": "a", "resources": [{"status": "ok"}]}]},
+                {"nodes": [{"node_id": "a", "arguments": {
+                    "phase": "x", "outcome": "succeeded"}}]},
+            ])
+        assert verdicts == [False, True, True, True, False]
+    finally:
+        page.context.close()
+
+
 def test_an_exact_retry_answers_from_the_journal_without_a_second_record(
         chromium: Browser, wire_url: str) -> None:
     """The plan read back rebuilds the plan sent, so the retry is EXACT.

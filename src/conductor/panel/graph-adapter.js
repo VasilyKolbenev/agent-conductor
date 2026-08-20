@@ -269,7 +269,14 @@ function requestNode(node) {
 //: capability payload is lifted out FIRST, by its field name, exactly as
 //: `GraphNode.from_dict` does — so the walk has no exception to make and
 //: none to be fooled by.
-function carriesRuntimeWord(value) {
+//:
+//: Exported because it is checkable on its own and only on its own: the body
+//: below is BUILT from a whitelist, so today no body this file produces can
+//: carry such a word, and a test driving `graphRequestBody` could never make
+//: this fire. That is the point of it. It is the door for the change that
+//: copies a node instead of building one — and a door nobody can open is not
+//: a door that works, so the browser suite opens it directly.
+export function carriesRuntimeWord(value) {
   if (Array.isArray(value)) return value.some(carriesRuntimeWord);
   if (!isObject(value)) return false;
   const {[EXEMPT_FIELD]: _payload, ...rest} = value;
@@ -281,10 +288,14 @@ function carriesRuntimeWord(value) {
 
 //: The plan a Human asks a run to follow, built from the definition side of
 //: the drawing alone. Nothing observed reaches it: not a phase, not an
-//: outcome, not a pass, not a gate's answer. The last act before returning is
-//: to READ the body back and refuse it if a run's word is in it — the record
-//: this body becomes can never be edited, so the screen belongs before the
-//: door and not in a test that describes it.
+//: outcome, not a pass, not a gate's answer.
+//:
+//: Two screens, both after the build rather than instead of it. The keys of
+//: every node must be ones this request may carry, and the whole body is READ
+//: BACK against the durable contract's own refusal list. Neither can fire on
+//: what `requestNode` currently produces, which is exactly why they are here:
+//: the record this body becomes can never be edited, so the day someone
+//: spreads a node into it the answer must be a refusal and not a diff.
 export function graphRequestBody(graphId, state) {
   if (!isObject(state) || !Array.isArray(state.nodes) || !state.nodes.length) {
     return null;
