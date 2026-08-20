@@ -47,6 +47,21 @@ PRESENTATION = SOURCE / "harnesses.py"
 PRESENTATION_MODULE = "conductor.harnesses"
 
 
+def _excused(origin: str) -> bool:
+    """Whether a stray is excused -- and only PROVENANCE can excuse one.
+
+    Not the READER. `conductor.init` gets no blanket permission and would not
+    deserve one; what is excusable is the SYMBOL it reaches, the onboarding
+    menu `harnesses.RECOMMENDED`, which is not a provider-identity set at all.
+    A reader-based exception would be green on today's tree and wrong the day
+    that file grows a second, real comparison -- so the shape is pinned by a
+    test rather than left to be inferred from a passing gate.
+
+    A literal carries no symbol, so its origin is `""` and it is never excused.
+    """
+    return origin == PRESENTATION_MODULE
+
+
 def _identities() -> dict[str, str]:
     """Every catalogued provider id, and the module allowed to compare it."""
     return {
@@ -609,6 +624,12 @@ def test_the_presentation_exception_follows_the_symbol_and_not_the_reader():
     assert menus, ("the presentation module declares no container of catalogued "
                    "ids, so this exception guards nothing -- remove it")
 
+    # The shape, pinned rather than inferred: provenance excuses, the reader
+    # does not, and a literal -- which carries no symbol at all -- never does.
+    assert _excused(PRESENTATION_MODULE)
+    assert not _excused("conductor.init")
+    assert not _excused("")
+
     # It is REACHED, and reached with that origin, from some other module --
     # otherwise the exception is dead code dressed as a decision.
     reached = {(module, value)
@@ -651,7 +672,7 @@ def test_no_module_branches_on_a_provider_identity_but_that_providers_own():
             allowed = identities.get(value)
             if allowed is None or allowed == module:
                 continue
-            if origin == PRESENTATION_MODULE:
+            if _excused(origin):
                 continue
             strays.append(
                 f"{path.relative_to(ROOT)}:{line} branches on {value!r}, which "
