@@ -13,9 +13,11 @@ from pathlib import Path
 
 import pytest
 
+from conductor.command.adapters import AdapterRegistry, UnsupportedCapability
 from conductor.command.contracts import ContractError
 
 from tests import alpha4_role_artifacts
+from tests.test_command_adapters import FakeAdapter
 from conductor.command.graph_dalio import is_dalio_template
 from conductor.command.graph_definition import (
     RUNTIME_ONLY_FIELDS,
@@ -35,12 +37,6 @@ from conductor.command.graph_template import (
 )
 
 NOW = "2026-08-20T10:00:00Z"
-#: What this build's available providers offer, as the runtime would hand it in.
-SERVED = {
-    "claude-code": ("observe", "review", "dispatch"),
-    "codex": ("observe", "review", "dispatch"),
-    "reviewer-only": ("observe", "review"),
-}
 #: Two instances of the SAME harness, told apart by configuration alone: the
 #: adapter is one word, the instance is another, and a run binds roles to the
 #: second. Nothing in a template, a binding or the materializer reads the first.
@@ -75,7 +71,7 @@ def built(template: GraphTemplate, binding: RunBinding, config: dict,
           **changes: str) -> GraphDefinition:
     values = {"graph_id": "graph-run", "run_id": "run-001", "created_at": NOW}
     values.update(changes)
-    return materialize(template, binding, config, SERVED, **values)
+    return materialize(template, binding, config, **values)
 
 
 def test_the_default_cycle_ships_as_data_and_needs_no_code_to_read_it():
@@ -162,10 +158,6 @@ _REFUSED_BINDINGS = (
      {"role-thinker": "ghost", "role-diagnostician": "ghost",
       "role-designer": "ghost", "role-implementer": "ghost"}, SOLO,
      "frozen configuration does not declare"),
-    ("a capability the bound adapter does not serve",
-     {"role-thinker": "reader", "role-diagnostician": "reader",
-      "role-designer": "reader", "role-implementer": "reader"}, MIXED,
-     "does not serve it"),
 )
 
 
@@ -182,15 +174,6 @@ def test_materialization_refuses_before_a_definition_exists(
     with pytest.raises(TemplateError) as refusal:
         built(dalio(), RunBinding(assignments=assignments), config)
     assert says in str(refusal.value)
-
-
-def test_an_adapter_no_available_provider_backs_is_refused():
-    """`served` is the runtime's answer, and an absent one is not a yes."""
-    template = dalio()
-    with pytest.raises(TemplateError, match="no available provider"):
-        materialize(template, every_role_to(template, "solo"), SOLO,
-                    {"codex": ("review", "dispatch")},
-                    graph_id="graph-x", run_id="run-x", created_at=NOW)
 
 
 #: A deployment's word and a run's word, at each level a document has, each
@@ -280,8 +263,7 @@ def test_editing_a_template_makes_a_revision_and_leaves_past_runs_alone():
     assert corrected.revision == 2 and corrected != template
 
     again = materialize(corrected, every_role_to(corrected, "solo"), SOLO,
-                        SERVED, graph_id="graph-run", run_id="run-002",
-                        created_at=NOW)
+                        graph_id="graph-run", run_id="run-002", created_at=NOW)
     assert again.digest() != before
     # The run that already followed the first revision replays byte for byte:
     # its record was never touched by the edit.
@@ -293,19 +275,42 @@ def test_a_synthetic_eighth_provider_needs_no_orchestration_change():
     """The regression behind the whole slice: identity is data, not a branch.
 
     Nothing in this test edits production. A provider this build has never
-    heard of is named only in the two places a provider is ever named -- the
-    frozen configuration's binding and the runtime's `served` answer -- and the
-    template, the binding and the materializer carry it without knowing it.
+    heard of is named in the ONE place a template road ever names one -- the
+    frozen configuration's binding -- and the template, the binding and the
+    materializer carry it without knowing it.
     """
     template = dalio()
     config = {"instances": [{"id": "eighth-node", "adapter": "synthetic-eighth"}]}
-    served = dict(SERVED, **{"synthetic-eighth": ("observe", "review", "dispatch")})
     definition = materialize(
-        template, every_role_to(template, "eighth-node"), config, served,
+        template, every_role_to(template, "eighth-node"), config,
         graph_id="graph-eighth", run_id="run-eighth", created_at=NOW)
     assert is_dalio_template(definition)
     assert {node.instance_id for node in definition.nodes
             if node.instance_id} == {"eighth-node"}
+
+
+def test_a_capability_the_bound_adapter_cannot_do_still_materializes():
+    """The verdict MOVED out of this module; it did not change hands here.
+
+    `served` let a caller hand in `{adapter: capabilities}` and refuse on it,
+    so a dictionary decided a fact the adapter registry owns -- a capability
+    name nobody validated, no argument schema, no family, and a synthetic
+    provider that satisfied the whole check with no registry in the room.
+
+    Deleting the parameter is only half of that correction. What proves the
+    second authority is GONE is that this module now says yes to a plan it used
+    to refuse, and that the one door which may still say no is the registry the
+    pair authority already reads.
+    """
+    template = dalio()
+    definition = materialize(template, every_role_to(template, "reader"), MIXED,
+                             graph_id="graph-r", run_id="run-r", created_at=NOW)
+    assert is_dalio_template(definition)
+    doing = next(node for node in definition.nodes if node.capability == "dispatch")
+    registry = AdapterRegistry([FakeAdapter(adapter_id="reviewer-only",
+                                            capabilities=("observe", "review"))])
+    with pytest.raises(UnsupportedCapability):
+        registry.validate_arguments("reviewer-only", "dispatch", doing.payload())
 
 
 def test_a_binding_is_a_total_map_and_says_which_instances_it_uses():
@@ -325,10 +330,10 @@ def test_the_materializer_takes_the_exact_types_and_no_lookalike():
     with pytest.raises(TemplateError, match="exactly a GraphTemplate"):
         materialize(Sneaky(template_id="t", revision=1, title="T",
                            nodes=template.nodes, edges=template.edges),
-                    every_role_to(template, "solo"), SOLO, SERVED,
+                    every_role_to(template, "solo"), SOLO,
                     graph_id="g", run_id="r", created_at=NOW)
     with pytest.raises(TemplateError, match="exactly a RunBinding"):
-        materialize(template, {"role-thinker": "solo"}, SOLO, SERVED,
+        materialize(template, {"role-thinker": "solo"}, SOLO,
                     graph_id="g", run_id="r", created_at=NOW)
 
 

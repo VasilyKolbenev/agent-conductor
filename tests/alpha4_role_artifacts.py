@@ -56,14 +56,6 @@ SPREAD_CONFIG: dict[str, Any] = {"instances": [
 SOLO_CONFIG: dict[str, Any] = {"instances": [
     {"id": "solo-node", "adapter": "claude-code"},
 ]}
-#: What the runtime answers about its AVAILABLE providers. Handed to the
-#: materializer rather than discovered by it, because a contract module that
-#: asked an adapter would be the first branch on vendor identity.
-SERVED: dict[str, tuple[str, ...]] = {
-    "claude-code": ("observe", "review", "dispatch"),
-    "codex": ("observe", "review", "dispatch"),
-}
-
 _SPREAD = {"role-thinker": "codex-review", "role-diagnostician": "codex-review",
            "role-designer": "codex-review", "role-implementer": "claude-dev"}
 
@@ -87,7 +79,7 @@ def derive_all() -> dict[str, Any]:
     runs = []
     for row in rows:
         definition = materialize(
-            template, row["binding"], row["config"], SERVED,
+            template, row["binding"], row["config"],
             graph_id=row["graph_id"], run_id=row["run_id"],
             created_at=CREATED_AT)
         assert is_dalio_template(definition), row["name"]
@@ -106,7 +98,6 @@ def derive_all() -> dict[str, Any]:
             "roles": list(template.roles),
         },
         "alpha4_run_bindings": {
-            "served": {name: list(caps) for name, caps in sorted(SERVED.items())},
             "bindings": [
                 {"name": row["name"], "config": row["config"],
                  "binding": row["binding"].as_dict()} for row in rows],

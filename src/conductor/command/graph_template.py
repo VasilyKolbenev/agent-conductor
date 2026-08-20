@@ -29,15 +29,31 @@ Two things this module refuses, and each is the point of it:
   therefore one that materializes, and the rules it is held to are the ones
   ``GraphDefinition`` already owns.
 
-What it does NOT decide: whether an instance is available, and whether the
-adapter behind it serves the capability a role needs. Those are the runtime's
-facts, and a contract module may not ask an adapter for them -- so
-``materialize`` is TOLD, through ``served``, and refuses on what it is told.
+What it does NOT decide: whether the adapter behind an instance can actually
+DO the work a role needs. That question already has ONE authority in this
+product -- the bound adapter, the schema family it serves a capability
+through, and the registry-owned ``validate_arguments`` -- and a contract
+module may not ask a registry anything.
+
+It was briefly answered here anyway, from a ``served`` mapping of
+``{adapter_id: capabilities}`` the caller supplied. That made a dictionary a
+second authority over a fact the registry owns: a capability name nobody
+validated, no argument schema, no family, and a synthetic provider that
+satisfied the whole check with no registry in the room. A second authority
+that can disagree with the first is worse than none, so the verdict moved to
+the service and HTTP layer, which may ask.
+
+One claim is RETIRED rather than relocated, and it should be read as a
+decision rather than an oversight: ``served``'s "this build has no available
+provider for that adapter" was about AVAILABILITY, which ``AdapterRegistry``
+has no concept of -- an adapter can be registered while its provider is
+unavailable. Availability re-enters through ``provider_projection``, at the
+layer that can see it.
 """
 from __future__ import annotations
 
 import json
-from collections.abc import Collection, Iterable, Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -509,60 +525,42 @@ def _build(template: GraphTemplate, assignments: Mapping[str, str], *,
                            edges=template.edges)
 
 
-def _servable(template: GraphTemplate, binding: RunBinding,
-              bound: Mapping[str, str], served: Mapping[str, Collection[str]]) -> None:
-    """Hold every role to the adapter its instance is bound to, before anything.
+def _declared(binding: RunBinding, bound: Mapping[str, str]) -> None:
+    """Every assigned instance is one the run's FROZEN configuration declares.
 
-    Two facts, both the runtime's and neither this module's to discover: which
-    adapter a frozen configuration binds an instance to, and which capabilities
-    that adapter serves. They are handed in, and the refusal happens HERE --
-    before a definition exists -- because a plan that reaches the journal can
-    never be edited, and one whose steps no adapter can carry out would stand
-    in it forever answering `service_refused` to every proposal.
+    The one fact about a deployment this module may hold, and it holds it from
+    the configuration snapshot the run already replays -- not from a caller's
+    say-so. Which capabilities an adapter actually serves is a different kind
+    of fact, and it is no longer asked here at all: see `materialize`.
     """
-    assignments = binding.bound()
-    for node in template.steps():
-        if node.role_id is None:
-            continue
-        instance = assignments[node.role_id]
-        adapter = bound.get(instance)
-        if adapter is None:
+    for role, instance in sorted(binding.bound().items()):
+        if instance not in bound:
             raise TemplateError(
-                f"role {node.role_id!r} is assigned instance {instance!r}, which "
+                f"role {role!r} is assigned instance {instance!r}, which "
                 "the run's frozen configuration does not declare")
-        offered = served.get(adapter)
-        if offered is None:
-            raise TemplateError(
-                f"instance {instance!r} is bound to adapter {adapter!r}, which "
-                "this build has no available provider for")
-        if node.capability not in set(offered):
-            raise TemplateError(
-                f"role {node.role_id!r} needs {node.capability!r} and instance "
-                f"{instance!r} is bound to {adapter!r}, which does not serve it")
 
 
 def materialize(template: GraphTemplate, binding: RunBinding,
-                config: Mapping[str, Any],
-                served: Mapping[str, Collection[str]], *,
+                config: Mapping[str, Any], *,
                 graph_id: str, run_id: str, created_at: str) -> GraphDefinition:
     """Turn a reusable template and one run's binding into that run's own plan.
 
-    The order is the taxonomy, and every step of it happens before a single
-    field of a durable record is written:
+    Three steps, and all of them happen before a single field of a durable
+    record is written:
 
     1. the binding covers exactly the template's roles;
     2. every assigned instance is one the run's FROZEN configuration declares,
        which is the only authority on which adapter drives it;
-    3. the adapter behind each instance really serves the capability its role
-       needs, according to what this build's available providers offer;
-    4. only then is the definition built -- and it is built by the existing,
+    3. only then is the definition built -- and it is built by the existing,
        unchanged ``GraphDefinition``, which judges the topology as it always has.
+
+    Whether an adapter can DO the work is not decided here, and used to be;
+    the module docstring says why not, and where that verdict lives now.
 
     Args:
         template: The reusable plan, written in roles.
         binding: Who the roles are, for this run.
         config: The run's frozen configuration snapshot.
-        served: ``{adapter_id: capabilities}`` for every AVAILABLE provider.
         graph_id: The stable identity of the plan this run will follow.
         run_id: The run the plan belongs to.
         created_at: The server's clock, never a caller's.
@@ -571,7 +569,7 @@ def materialize(template: GraphTemplate, binding: RunBinding,
         The immutable ``GraphDefinition`` this run follows.
 
     Raises:
-        TemplateError: The binding, an instance, or a capability was refused.
+        TemplateError: The binding or an instance was refused.
         ContractError: The materialized graph is not one this product can build.
     """
     if type(template) is not GraphTemplate:
@@ -579,7 +577,7 @@ def materialize(template: GraphTemplate, binding: RunBinding,
     if type(binding) is not RunBinding:
         raise TemplateError("materialize takes exactly a RunBinding")
     binding.covers(template)
-    _servable(template, binding, frozen_config_bindings(config), served)
+    _declared(binding, frozen_config_bindings(config))
     return _build(template, binding.bound(), graph_id=graph_id,
                   run_id=run_id, created_at=created_at)
 

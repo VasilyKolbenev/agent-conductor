@@ -42,17 +42,5 @@
       },
       "name": "one-instance"
     }
-  ],
-  "served": {
-    "claude-code": [
-      "observe",
-      "review",
-      "dispatch"
-    ],
-    "codex": [
-      "observe",
-      "review",
-      "dispatch"
-    ]
-  }
+  ]
 }
