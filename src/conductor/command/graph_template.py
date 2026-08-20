@@ -333,14 +333,13 @@ class GraphTemplate:
         """
         return self._roles_of(self.steps())
 
-    def steps(self) -> tuple[TemplateNode, ...]:
-        """The nodes this contract settled, or a refusal that reads nothing.
+    def _unreplaced(self) -> None:
+        """Refuse if the tuples this contract settled were swapped whole.
 
-        Nodes and edges are tuples, so nothing can be edited INSIDE them --
-        which is exactly why a replacement swaps the whole tuple for something
-        else. Identity catches that without calling one method on whatever
-        arrived, so a hostile object's own exception never becomes this
-        contract's answer.
+        Nodes and edges are tuples, so nothing can be edited INSIDE the tuple
+        -- which is exactly why a replacement swaps the whole of it. Identity
+        catches that without calling one method on whatever arrived, so a
+        hostile object's own exception never becomes this contract's answer.
         """
         if (self.nodes is not self._nodes_witness
                 or self.edges is not self._edges_witness):
@@ -348,7 +347,32 @@ class GraphTemplate:
                 f"template {self.template_id!r} had its nodes or edges replaced "
                 "after they were validated; this contract answers only for what "
                 "it settled") from None
-        return self.nodes
+
+    def settled(self) -> tuple[tuple[TemplateNode, ...], tuple[GraphEdge, ...]]:
+        """Nodes and edges REBUILT from this contract's own canonical record.
+
+        Not the live values, and the difference was a plan that disagreed with
+        itself. The witness above catches a tuple swapped whole; it cannot
+        catch a value edited INSIDE an intact tuple, and every scalar on
+        ``TemplateNode``, ``GraphEdge``, ``GraphLoop`` and ``GraphResource`` is
+        such a field. So ``as_dict`` answered from the snapshot while
+        ``materialize`` walked the objects themselves, and one template at one
+        ``revision`` asserted two different plans -- the document said the step
+        was called `Goal` and the definition it produced said something else.
+
+        Rebuilding from the canonical text closes all of them at once, and it
+        needs no per-field guard that a fifth nested type would have to
+        remember to join. Every value goes back through its own ``from_dict``,
+        so what comes out is what this contract settled or it does not come out
+        at all.
+        """
+        document = self.as_dict()
+        return (tuple(TemplateNode.from_dict(row) for row in document["nodes"]),
+                tuple(GraphEdge.from_dict(row) for row in document["edges"]))
+
+    def steps(self) -> tuple[TemplateNode, ...]:
+        """The nodes this contract settled, rebuilt from its own record."""
+        return self.settled()[0]
 
     def _probe(self) -> None:
         try:
@@ -378,7 +402,7 @@ class GraphTemplate:
         contract's own record rather than a walk over fields that may have been
         replaced since.
         """
-        self.steps()
+        self._unreplaced()
         return json.loads(self._document_text)
 
     @classmethod
@@ -517,6 +541,7 @@ class RunBinding:
 def _build(template: GraphTemplate, assignments: Mapping[str, str], *,
            graph_id: str, run_id: str, created_at: str) -> GraphDefinition:
     """Substitute roles for instances and hand the result to the base contract."""
+    steps, edges = template.settled()
     nodes = tuple(
         GraphNode(
             node_id=node.node_id, kind=node.kind, title=node.title,
@@ -524,10 +549,9 @@ def _build(template: GraphTemplate, assignments: Mapping[str, str], *,
             instance_id=None if node.role_id is None else assignments[node.role_id],
             capability=node.capability, arguments=node.payload(),
             resources=node.resources, gate_id=node.gate_id, loop=node.loop)
-        for node in template.steps())
+        for node in steps)
     return GraphDefinition(graph_id=graph_id, run_id=run_id,
-                           created_at=created_at, nodes=nodes,
-                           edges=template.edges)
+                           created_at=created_at, nodes=nodes, edges=edges)
 
 
 def _declared(binding: RunBinding, bound: Mapping[str, str]) -> None:

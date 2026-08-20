@@ -528,6 +528,58 @@ def test_a_template_whose_nodes_or_edges_were_replaced_answers_in_its_own_words(
         assert _Hostile.SECRET not in str(refusal.value)
 
 
+def _plan_of(template: GraphTemplate) -> dict:
+    """The plan this template materializes, as data, so two can be compared."""
+    return materialize(template, every_role_to(template, "solo"), SOLO,
+                       graph_id="g", run_id="r", created_at=NOW).as_dict()
+
+
+#: One live edit per scalar of every nested value a template holds. The witness
+#: catches a tuple swapped WHOLE; none of these swaps a tuple.
+_LIVE_EDITS = (
+    ("a step's node_id", lambda t: t.nodes[0], "node_id", "hijacked"),
+    ("a step's kind", lambda t: t.nodes[0], "kind", "gate"),
+    ("a step's title", lambda t: t.nodes[0], "title", "MUTATED WITHOUT REVISION"),
+    ("a step's stage", lambda t: t.nodes[0], "stage", "do"),
+    ("a step's role_id", lambda t: t.nodes[0], "role_id", "role-nobody"),
+    ("a step's capability", lambda t: t.nodes[0], "capability", "dispatch"),
+    ("a gate's gate_id", lambda t: t.nodes[4], "gate_id", "gate-hijacked"),
+    ("an edge's from_node", lambda t: t.edges[0], "from_node", "diagnose"),
+    ("an edge's to_node", lambda t: t.edges[0], "to_node", "diagnose"),
+    ("a loop's bound", lambda t: t.nodes[7].loop, "bound", 99),
+    ("a loop's back_to", lambda t: t.nodes[7].loop, "back_to", "goal"),
+    ("a resource's kind", lambda t: t.nodes[5].resources[0], "kind", "model"),
+    ("a resource's name", lambda t: t.nodes[5].resources[0], "name", "sonnet"),
+)
+
+
+@pytest.mark.parametrize("name,reach,field,value", _LIVE_EDITS,
+                         ids=[row[0] for row in _LIVE_EDITS])
+def test_an_edit_inside_a_template_reaches_neither_the_document_nor_the_plan(
+        name, reach, field, value):
+    """One template at one revision must never assert two different plans.
+
+    `as_dict` answered from the snapshot while `materialize` walked the live
+    objects, so the rendered document said the first step was called `Goal` and
+    the definition that same template produced said something else -- both at
+    `revision` 1. Every scalar on a `TemplateNode`, a `GraphEdge`, a `GraphLoop`
+    and a `GraphResource` was reachable that way, which is why this is a matrix
+    rather than a case: the fix is one rebuild from the canonical record, and
+    what proves it is that no field is left out of it.
+    """
+    template = dalio()
+    document = template.as_dict()
+    plan = _plan_of(template)
+    target = reach(template)
+    object.__setattr__(target, field, value)
+    # Non-vacuity: the probe must really have edited the live value, or this
+    # would pass against a template nobody touched.
+    assert getattr(target, field) == value, "the probe edited nothing"
+    assert template.as_dict() == document
+    assert _plan_of(template) == plan
+    assert template.revision == 1
+
+
 def test_a_template_renders_the_fields_it_settled_and_not_a_later_one():
     """The scalars are pinned by the same snapshot the nodes are."""
     template = dalio()
