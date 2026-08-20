@@ -83,6 +83,8 @@ const STREAM_DOWN = "Connection lost. The last authoritative facts are still "
   // A save outcome waiting for the authoritative read that will make it true.
   // It rides THROUGH the re-read rather than being announced before it: the
   // answer belongs to the Human who asked, and the read is what confirms it.
+  // It names the graph the write asked for, because only a read of THAT
+  // plan confirms anything about it.
   let pendingCarry = null;
   // dispatch stays module-internal: the public seam is load/state only, so
   // no caller can commit facts that skipped the projectPayload boundary.
@@ -303,8 +305,8 @@ const STREAM_DOWN = "Connection lost. The last authoritative facts are still "
     // An accepted answer is still only an answer. What this run follows is
     // whatever the authoritative read says it follows, so the local copy is
     // dropped and re-read rather than trusted.
-    refreshSelectedRun(saveRun,
-      {phase: "idle", notice: result.created ? CREATED : RESTATED});
+    refreshSelectedRun(saveRun, {graphId,
+      phase: "idle", notice: result.created ? CREATED : RESTATED});
   }
   async function readJson(target) {
     const response = await fetch(target, {cache: "no-store"});
@@ -372,6 +374,23 @@ const STREAM_DOWN = "Connection lost. The last authoritative facts are still "
     pendingCarry = null;
     return {savePhase: "outcome-unknown", saveNotice: UNKNOWN};
   }
+  // A read confirms a write only when it shows THAT plan. "The read did not
+  // refuse" is a much weaker thing, and it was what this window checked: a
+  // run answering that it follows no graph at all, and a run answering with
+  // somebody else's graph, both landed cleanly and both were taken as proof
+  // that the plan just submitted was written. One screen then said "follows
+  // no graph yet" and "The plan is written" at the same time.
+  //
+  // So the holder carries the graph id the write ASKED FOR, and only a
+  // durable read of that same id confirms it. Every other landed answer is a
+  // successful read and no confirmation: the window saw what the run holds,
+  // and it is not what was written.
+  function confirmedBy(outcome) {
+    if (!pendingCarry) return {};
+    const written = outcome.type === "loaded"
+      && outcome.facts.provenance.graphId === pendingCarry.graphId;
+    return written ? takeCarry() : unconfirmed();
+  }
   async function loadSelectedRun(runId) {
     const requestEpoch = epoch;
     try {
@@ -383,12 +402,12 @@ const STREAM_DOWN = "Connection lost. The last authoritative facts are still "
       // the run now selected and about no other.
       if (requestEpoch !== epoch) return;
       const outcome = loadOutcome(read, registry);
-      // The VERDICT decides which holder answers, and readiness with it. A
-      // refusal is not an answer about what this run holds, so it confirms
-      // no write and opens no door — arriving over a 200 changes neither.
-      const stated = outcome.type !== "refused";
-      dispatch({...outcome, ...(stated ? takeCarry() : unconfirmed()),
-        ready: stated && streamOpen});
+      // Two different questions, answered separately. Whether this window is
+      // CURRENT: any landed read of the chosen run says yes, whatever the run
+      // turns out to follow, and only a refusal says no. Whether a write is
+      // CONFIRMED: only a read showing that same plan says yes.
+      dispatch({...outcome, ...confirmedBy(outcome),
+        ready: outcome.type !== "refused" && streamOpen});
     } catch (error) {
       if (requestEpoch !== epoch) return;
       const code = error instanceof Error ? error.message : "store_error";

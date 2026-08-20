@@ -232,6 +232,112 @@ def test_choosing_a_run_shuts_the_door_before_its_facts_have_arrived(
         page.context.close()
 
 
+def test_a_run_that_follows_no_graph_confirms_no_write_of_ours(
+        chromium: Browser, wire_url: str) -> None:
+    """A clean read is not a confirmation. It is only a read.
+
+    The write is accepted and the re-read answers, canonically and correctly,
+    that this run follows no graph at all. Both sentences were on screen at
+    once -- "This run follows no graph yet" and "The plan is written" -- which
+    is a window contradicting itself about the one fact it exists to report.
+    """
+    page, recorder = _open(chromium, wire_url, double=True)
+
+    def empty_graph(route: Route) -> None:
+        body = route.fetch().json()
+        body["graph"] = {"definition": None, "definition_digest": None,
+                         "runtime": None}
+        route.fulfill(status=200, content_type="application/json",
+                      body=json.dumps(body))
+
+    try:
+        _load_run(page, EMPTY_RUN)
+        page.get_by_role("button", name="Start from the default").click()
+        page.wait_for_function("() => document.querySelectorAll('.g-node').length === 8")
+        page.route(f"**/command/runs/{EMPTY_RUN}", empty_graph)
+        _save(page, GRAPH_ID)
+        page.wait_for_function(
+            "() => document.getElementById('saveStatus').innerText"
+            ".includes('Outcome unknown')")
+        assert page.locator("#saveStatus").inner_text() == \
+            "Outcome unknown. Reload the authoritative run."
+        # The read itself was fine and is reported as such: this window IS
+        # current, it simply did not see the plan it wrote.
+        assert "follows no graph yet" in page.locator("#notice").inner_text()
+        assert page.evaluate(
+            "() => document.querySelector('[name=\\'save\\']').disabled") is False
+        assert len(recorder.matching("POST", "/graph")) == 1
+    finally:
+        page.unroute(f"**/command/runs/{EMPTY_RUN}")
+        page.context.close()
+
+
+def test_a_read_showing_another_graph_confirms_no_write_of_ours(
+        chromium: Browser, wire_url: str) -> None:
+    """Somebody else's plan is not proof that ours was written.
+
+    The re-read projects perfectly -- one definition, one runtime, agreeing
+    with each other -- but the graph it describes is not the one submitted.
+    The screen must show what the run actually follows and say nothing about
+    a write it did not witness.
+    """
+    page, recorder = _open(chromium, wire_url, double=True)
+    other = "graph-somebody-elses"
+
+    def another_graph(route: Route) -> None:
+        body = route.fetch().json()
+        body["graph"]["definition"]["graph_id"] = other
+        body["graph"]["runtime"]["graph_id"] = other
+        route.fulfill(status=200, content_type="application/json",
+                      body=json.dumps(body))
+
+    try:
+        _load_run(page, EMPTY_RUN)
+        page.get_by_role("button", name="Start from the default").click()
+        page.wait_for_function("() => document.querySelectorAll('.g-node').length === 8")
+        page.route(f"**/command/runs/{EMPTY_RUN}", another_graph)
+        _save(page, GRAPH_ID)
+        page.wait_for_function(
+            "() => document.getElementById('saveStatus').innerText"
+            ".includes('Outcome unknown')")
+        assert page.locator("#saveStatus").inner_text() == \
+            "Outcome unknown. Reload the authoritative run."
+        source = page.locator("#sourceLine").inner_text()
+        assert other in source and GRAPH_ID not in source
+        assert "DURABLE" in source
+        assert len(recorder.matching("POST", "/graph")) == 1
+    finally:
+        page.unroute(f"**/command/runs/{EMPTY_RUN}")
+        page.context.close()
+
+
+def test_a_read_showing_the_written_plan_is_what_confirms_it(
+        chromium: Browser, wire_url: str) -> None:
+    """The positive control, so the comparison cannot pass by refusing all.
+
+    No routing here: the real server answers, the read shows the plan that
+    was written, and both words a write can honestly earn are earned -- one
+    for the record it created, one for the record a retry found standing.
+    """
+    page, _ = _open(chromium, wire_url, double=True)
+    try:
+        _load_run(page, EMPTY_RUN)
+        page.get_by_role("button", name="Start from the default").click()
+        page.wait_for_function("() => document.querySelectorAll('.g-node').length === 8")
+        _save(page, GRAPH_ID)
+        page.wait_for_function(
+            "() => document.getElementById('saveStatus').innerText"
+            ".includes('The plan is written')")
+        assert GRAPH_ID in page.locator("#sourceLine").inner_text()
+        _save(page, GRAPH_ID)
+        page.wait_for_function(
+            "() => document.getElementById('saveStatus').innerText"
+            ".includes('already stands')")
+        assert "Outcome unknown" not in page.locator("#saveStatus").inner_text()
+    finally:
+        page.context.close()
+
+
 def test_a_read_that_arrives_whole_and_unreadable_confirms_nothing_either(
         chromium: Browser, wire_url: str) -> None:
     """The half of the law a transport failure does not reach.
