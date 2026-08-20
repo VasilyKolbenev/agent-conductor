@@ -67,6 +67,23 @@ PANEL_ASSETS = {
         "text/javascript; charset=utf-8", "command-projection.js"),
     "/panel/command-view.js": (
         "text/javascript; charset=utf-8", "command-view.js"),
+    # The Graph window, entry included. Seven literal names, each spelling
+    # its own packaged file: the route is the key, never a fragment of the
+    # request target, so a sibling, a query, a traversal or a source-map URL
+    # is simply not in this mapping and falls to the 404 arm like any other
+    # unknown path.
+    "/panel/graph.html": ("text/html; charset=utf-8", "graph.html"),
+    "/panel/graph.css": ("text/css; charset=utf-8", "graph.css"),
+    "/panel/graph.js": ("text/javascript; charset=utf-8", "graph.js"),
+    "/panel/graph-payload.js": (
+        "text/javascript; charset=utf-8", "graph-payload.js"),
+    "/panel/graph-store.js": (
+        "text/javascript; charset=utf-8", "graph-store.js"),
+    "/panel/graph-view.js": ("text/javascript; charset=utf-8", "graph-view.js"),
+    "/panel/graph-adapter.js": (
+        "text/javascript; charset=utf-8", "graph-adapter.js"),
+    "/panel/graph-default.js": (
+        "text/javascript; charset=utf-8", "graph-default.js"),
 }
 
 POLL_INTERVAL = 0.5   # seconds between conductor/ fingerprint polls

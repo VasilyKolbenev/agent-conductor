@@ -52,7 +52,10 @@ _ONE_FAULT_CASES = [
     ("wrong-schema", lambda p: p.update(fixture_schema=2)),
     ("bad-run-id", lambda p: p["run"].update(run_id="bad id!")),
     ("health-out-of-vocab", lambda p: p["nodes"][0].update(health="excellent")),
-    ("phase-out-of-vocab", lambda p: p["nodes"][0].update(phase="running")),
+    # NOT "running": that word entered the vocabulary with the run
+    # projection, and a fault case whose value became legal would have gone
+    # on passing while proving nothing. This one belongs to no layer.
+    ("phase-out-of-vocab", lambda p: p["nodes"][0].update(phase="warming")),
     ("kind-out-of-vocab", lambda p: p["nodes"][0].update(kind="step")),
     ("title-over-limit", lambda p: p["nodes"][0].update(title="x" * 81)),
     ("title-blank", lambda p: p["nodes"][0].update(title="   ")),
@@ -187,10 +190,11 @@ def test_each_boundary_arm_refuses_its_own_single_fault(
 
 
 _STORE_UNIT = """([payload, event]) =>
-Promise.all([import("./graph-adapter.js"), import("./graph-store.js")])
-.then(([adapter, store]) => {
+Promise.all([import("./graph-adapter.js"), import("./graph-payload.js"),
+             import("./graph-store.js")])
+.then(([adapter, boundary, store]) => {
   const adapted = adapter.adaptPayload(payload);
-  const facts = adapted === null ? null : store.projectPayload(adapted);
+  const facts = adapted === null ? null : boundary.projectPayload(adapted);
   if (!facts) return {loaded: false};
   const loaded = store.reduce(store.EMPTY, {type: "loaded", facts});
   const next = store.reduce(loaded, event);
@@ -292,7 +296,7 @@ def test_a_hostile_refusal_leaks_nothing_and_leaves_no_partial_state(
                      notice: s.notice}; }""")
     assert state == {"phase": "refused", "nodes": 0, "selection": None,
                      "decisions": [],
-                     "notice": "The fixture payload was refused: it does not "
+                     "notice": "The graph payload was refused: it does not "
                                "name a valid graph."}
 
 

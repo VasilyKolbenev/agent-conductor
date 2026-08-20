@@ -1,34 +1,36 @@
-"""Rendered checks for the ALPHA-2 Graph window.
+"""Rendered checks for the Graph window's FIXTURE path.
 
-The Graph window has no production route yet — server.py is frozen until the
-runtime side hands over its API fixtures — so this module serves the packaged
-panel directory through its own static loopback server and feeds the window
-through the one seam it exposes: ``window.conductGraph.load``. Everything a
-test asserts here is what a person would see: rendered nodes, measured
-geometry, computed styles, and the exact honesty strings beside local-only
-actions.
+The window is opened at its production route, ``/panel/graph.html``, served
+by the real loopback server from the allowlist of literal names in
+``server.py`` — the static stand-in this module used while no route existed
+is gone, and with it the last place the served copy could differ from the
+packaged one. What this module still feeds the window is a fixture, through
+the one seam ``window.conductGraph.load``; the durable wire is driven in
+``browser_tests/test_graph_wire.py``. Everything a test asserts here is what
+a person would see: rendered nodes, measured geometry, computed styles, and
+the exact honesty strings beside local-only actions.
 """
 from __future__ import annotations
 
-import http.server
 import json
 import threading
 from collections.abc import Iterator
-from functools import partial
 from pathlib import Path
 
 import pytest
 from playwright.sync_api import Browser, Page
 
+from conductor import server
+
+from tests.test_store import good_lane, write_project
+
 _REPO = Path(__file__).resolve().parents[1]
-_PANEL = _REPO / "src" / "conductor" / "panel"
 _FIXTURES = json.loads(
     (_REPO / "tests" / "fixtures" / "graph_alpha_fixtures.json")
     .read_text(encoding="utf-8"))
 _CORPUS = json.loads(
     (_REPO / "tests" / "fixtures" / "utc_instant_parity_corpus.json")
     .read_text(encoding="utf-8"))
-_MIME = {".js": "text/javascript", ".css": "text/css", ".html": "text/html"}
 
 
 def _registry_payload() -> list[dict[str, str]]:
@@ -41,34 +43,22 @@ def _registry_payload() -> list[dict[str, str]]:
     return harnesses.as_payload()
 
 
-class _PanelHandler(http.server.SimpleHTTPRequestHandler):
-    """Static files with explicit MIME types (Windows registries lie about .js)."""
-
-    def guess_type(self, path: str) -> str:  # noqa: D102 — base contract
-        for suffix, mime in _MIME.items():
-            if str(path).endswith(suffix):
-                return f"{mime}; charset=utf-8"
-        return super().guess_type(path)
-
-    def log_message(self, *_args: object) -> None:
-        """Keep the pytest output to the assertions."""
-
-
 @pytest.fixture(scope="session")
-def graph_url() -> Iterator[str]:
-    """Serve the packaged panel directory over a loopback static server."""
-    handler = partial(_PanelHandler, directory=str(_PANEL))
-    httpd = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+def graph_url(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
+    """Serve the Graph window from the real production panel route."""
+    root = write_project(tmp_path_factory.mktemp("graph-panel"),
+                         lanes={"claude": good_lane()})
+    httpd = server.build(root, 0)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
     host, port = httpd.server_address[:2]
     try:
-        yield f"http://{host}:{port}/graph.html"
+        yield f"http://{host}:{port}/panel/graph.html"
     finally:
         httpd.shutdown()
         thread.join(timeout=5)
         httpd.server_close()
-        assert not thread.is_alive(), "graph static server did not stop"
+        assert not thread.is_alive(), "graph server did not stop"
 
 
 @pytest.fixture(params=("dark", "light"))
@@ -122,13 +112,19 @@ def test_the_graph_modules_boot_into_the_dalio_default_without_an_error(
         assert "Nothing here reaches a server" in page.locator(
             "#notice").inner_text()
         assert page.evaluate("window.conductGraph.state().registry") == []
-        assert "No registry rows in this fixture." in page.locator(
+        assert "No registry rows in this payload." in page.locator(
             "#paletteCard").inner_text()
-        names = {url.rsplit("/", 1)[1]: status for url, status in served}
+        # Exactly the module graph, each file answered by the production
+        # allowlist under its own literal name. The stream this window also
+        # opens is not asserted here: its response arrives when it arrives,
+        # and a count that waits on it would be a timing test.
+        names = {url.rsplit("/", 1)[1]: status for url, status in served
+                 if "/panel/" in url}
         assert names == {
             "graph.html": 200, "graph.css": 200, "graph.js": 200,
             "graph-adapter.js": 200, "graph-default.js": 200,
-            "graph-store.js": 200, "graph-view.js": 200,
+            "graph-payload.js": 200, "graph-store.js": 200,
+            "graph-view.js": 200,
             "command-projection.js": 200, "command-view.js": 200,
         }
         assert problems == []
@@ -140,7 +136,7 @@ def test_the_store_utc_instant_grammar_answers_the_parity_corpus(
         graph_page: Page) -> None:
     """One corpus, three copies of the grammar — this one answers it too."""
     verdicts = graph_page.evaluate(
-        """cases => import("./graph-store.js").then(store =>
+        """cases => import("./graph-payload.js").then(store =>
              cases.map(row => store.instantIsValid(row.value)))""",
         _CORPUS)
     assert verdicts == [row["verdict"] == "accept" for row in _CORPUS]
@@ -306,7 +302,7 @@ def test_docs_links_render_only_for_https_targets_and_leave_this_window(
     assert anchors.get_attribute("rel") == "noreferrer noopener"
 
 
-def test_gate_decision_form_updates_the_gate_and_stays_fixture_only(
+def test_gate_decision_form_updates_the_gate_and_stays_window_only(
         graph_page: Page) -> None:
     """A refused draft keeps what was typed; a valid one lands locally only."""
     _load(graph_page, "parallel_review")
@@ -342,7 +338,7 @@ def test_gate_decision_form_updates_the_gate_and_stays_fixture_only(
     recorded = graph_page.evaluate("window.conductGraph.state().decisions")
     assert recorded == {"gate-release": {
         "action": "request_changes", "actor": "reviewer-1",
-        "reason": "needs tests", "recorded": "fixture-only"}}
+        "reason": "needs tests", "recorded": "window-only"}}
     # A landed decision clears the draft for the next one.
     assert graph_page.locator('[name="actor"]').input_value() == ""
 
@@ -654,7 +650,10 @@ def test_a_composed_step_wears_the_local_draft_label_everywhere_it_lands(
     added = graph_page.locator('[data-node-id="step-5"]')
     assert "LOCAL DRAFT" in added.inner_text()
     added.click()
-    assert "LOCAL DRAFT — this window's fixture only, submitted nowhere" in \
+    # "written to no run", not "submitted nowhere": a save door exists now,
+    # and the label has to be true beside it — this step is held here and has
+    # not been written, which is a narrower and still honest claim.
+    assert "LOCAL DRAFT — held in this window, written to no run" in \
         graph_page.locator("#detailCard").inner_text()
     # Fixture-fed steps carry no such label: the claim is drafts-only.
     assert "LOCAL DRAFT" not in graph_page.locator(

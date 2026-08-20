@@ -22,28 +22,43 @@ ASSETS = {
     "/panel/command.js": "text/javascript; charset=utf-8",
     "/panel/command-projection.js": "text/javascript; charset=utf-8",
     "/panel/command-view.js": "text/javascript; charset=utf-8",
+    "/panel/graph.html": "text/html; charset=utf-8",
+    "/panel/graph.css": "text/css; charset=utf-8",
+    "/panel/graph.js": "text/javascript; charset=utf-8",
+    "/panel/graph-payload.js": "text/javascript; charset=utf-8",
+    "/panel/graph-store.js": "text/javascript; charset=utf-8",
+    "/panel/graph-view.js": "text/javascript; charset=utf-8",
+    "/panel/graph-adapter.js": "text/javascript; charset=utf-8",
+    "/panel/graph-default.js": "text/javascript; charset=utf-8",
 }
 #: Every shape the split must never turn into a route: a guessed sibling, a
-#: traversal, a query, a directory listing, a case fold, a trailing slash —
-#: and every ALPHA-2 Graph file, packaged but deliberately not served yet.
+#: traversal, a query, a directory listing, a case fold, a trailing slash, a
+#: source-map URL, a null-byte suffix. The Graph window's own files are now
+#: served, so each of those shapes is asserted against THEM too — a route that
+#: became real is exactly the moment its near-misses stop being hypothetical.
 REFUSED = (
     "/panel/command.json", "/panel/../server.py", "/panel/command.js?cache=1",
     "/panel/command-view.js?v=2", "/panel/%2e%2e/server.py", "/panel/",
     "/panel/index.html", "/panel/COMMAND-VIEW.JS", "/panel/command-view.js/",
     "/panel/command-view.js.map", "/panel/command-projection.js%00.txt",
-    "/panel/graph.html", "/panel/graph.css", "/panel/graph.js",
-    "/panel/graph-store.js", "/panel/graph-view.js", "/panel/graph-adapter.js",
-    "/panel/graph-default.js",
+    "/panel/graph.json", "/panel/graph.htm", "/panel/graph-store.json",
+    "/panel/graph.js?v=1", "/panel/graph.html?run=run-001",
+    "/panel/graph.js.map", "/panel/graph-view.js.map",
+    "/panel/../graph.js", "/panel/%2e%2e/graph.js", "/panel/GRAPH.JS",
+    "/panel/Graph.html", "/panel/graph.js/", "/panel/graph-store.js%00.txt",
+    "/panel/graph-runtime.js", "/panel/graph-wire.js",
+    "/panel/graph-payload.json", "/panel/graph-payload.js?v=1",
+    "/panel/graph-payload.js.map", "/panel/GRAPH-PAYLOAD.JS",
 )
-#: The ALPHA-2 Graph window ships in the package beside the Cockpit but is
-#: served by no route: server.py is frozen until the runtime side hands over
-#: its API fixtures, so the browser suite serves these files through its own
-#: static server (browser_tests/test_graph_rendered.py) and the production
-#: server refuses them above. The moment a graph route lands in PANEL_ASSETS,
-#: its file must leave this exact list — the allowlist check below reddens on
-#: a stale entry as it does on a missing one.
-UNSERVED = ("graph.css", "graph.js", "graph-adapter.js", "graph-default.js",
-            "graph-store.js", "graph-view.js")
+#: Packaged panel resources served by NO route. The Graph window's files left
+#: this list when the route above became real; the partition check below is
+#: what keeps the list honest either way — every packaged resource must be
+#: allowlisted, named here, or be the entry the panel route itself serves, so
+#: a new file cannot appear unserved and unnoticed.
+UNSERVED: tuple[str, ...] = ()
+#: index.html is neither: `GET /` serves it through `_serve_panel`, not
+#: through the asset allowlist, which is why it is refused under /panel/.
+PANEL_ROUTE_ENTRY = "index.html"
 
 
 def _status(url, *, data=None):
@@ -107,7 +122,7 @@ class _RefusedPost:
         self.answered.append(404)
 
 
-def test_server_returns_only_the_four_exact_package_resources(tmp_path):
+def test_server_returns_only_the_exact_package_resources_it_allowlists(tmp_path):
     root = write_project(tmp_path, lanes={"claude": good_lane()})
     server_, base = start(root)
     panel = importlib.resources.files("conductor") / "panel"
@@ -188,15 +203,24 @@ def test_the_allowlist_is_exact_literals_and_never_a_derived_path():
         assert name and not set(name) & set("/\\%?:*")
 
 
-def test_every_packaged_panel_script_and_style_is_allowlisted_or_named_unserved():
+def test_every_packaged_panel_resource_is_served_named_unserved_or_the_entry():
+    """The directory is PARTITIONED, so a new file cannot arrive unnoticed.
+
+    Three answers and no fourth: a resource is on the allowlist, is named
+    unserved on purpose, or is the entry `GET /` serves. A file that is none
+    of those reds this test the moment it is packaged — which is the only
+    reason an unserved list may be empty without the relation going slack.
+    """
     panel = importlib.resources.files("conductor") / "panel"
     names = {entry.name for entry in panel.iterdir()}
     assert set(UNSERVED) <= names, "stale UNSERVED entry names no packaged file"
-    assert not set(UNSERVED) & {name for _, name in server.PANEL_ASSETS.values()}
-    packaged = sorted(
+    served = {name for _, name in server.PANEL_ASSETS.values()}
+    assert not set(UNSERVED) & served
+    assert PANEL_ROUTE_ENTRY in names and PANEL_ROUTE_ENTRY not in served
+    packaged = {
         entry.name for entry in panel.iterdir()
-        if entry.name.endswith((".js", ".css")) and entry.name not in UNSERVED)
-    assert packaged == sorted(name for _, name in server.PANEL_ASSETS.values())
+        if entry.name.endswith((".js", ".css", ".html"))}
+    assert packaged == served | set(UNSERVED) | {PANEL_ROUTE_ENTRY}
 
 
 def test_the_built_wheel_carries_exactly_the_panel_resources_the_server_serves(

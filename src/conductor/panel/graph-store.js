@@ -1,399 +1,50 @@
 "use strict";
-// Provider-neutral facts for the ALPHA-2 Graph window: no DOM, no network, and
-// no vendor branch anywhere. Every difference between harness products arrives
-// as data — registry rows, capability lists, health states — so an unsupported
-// action is simply absent from the data and therefore absent from the screen.
+// The reducer the Graph window runs on: one frozen state value, one event at
+// a time, and no other way to move. Validation is not here — a payload is
+// admitted by graph-payload.js before any of this sees it — so what this file
+// decides is only ever what the SCREEN should now say.
 //
-// This module is the single reducer the Graph window runs on. It validates the
-// fixture payload at the boundary (refuse, never repair), computes the branch
-// layout once per load, and answers every render from one frozen state value.
-// The wire is deliberately not here: until the frozen API fixtures arrive from
-// the runtime side, the only source is the `conductGraph.load` seam graph.js
-// exposes, and this file cannot tell the difference — that seam is the point.
-import {isId, safeMode} from "./command-projection.js";
+// Two of its rules are worth stating where they live. A save outcome belongs
+// to the run it was asked about and to the read that announces it. And the
+// write door is opened by nothing in this module: readiness arrives as an
+// answer about one run, and is refused, never assumed.
+import {computeLayout, DECISION_ACTIONS, FIXTURE_SOURCE, TITLE_LIMIT}
+  from "./graph-payload.js";
+import {isId} from "./command-projection.js";
 
-// Closed vocabularies, copied case-for-case from the contract layer
-// (command/contracts.py, command-projection.js). None of these is invented
-// here; tests/test_graph_source.py holds each copy to its source.
-// A loop is a first-class step: the one way a cycle may appear on this field
-// is an explicit bounded loop node ("repeat what feeds me, at most ×bound"),
-// so the geometry stays a DAG while orchestration loops stay representable.
-// The execution semantics of a pass belong to the runtime side; this window
-// renders the declared bound and nothing more.
-export const NODE_KINDS = Object.freeze(["task", "gate", "loop"]);
-//: What a step may attach as configuration: the December Command's own six
-//: resource words. Closed rows of {kind, name} — a name obeys the id grammar,
-//: so no path, URI or free JSON can ride in as a resource.
-export const RESOURCE_KINDS = Object.freeze(
-  ["model", "tool", "skill", "session", "sandbox", "filesystem"]);
-//: The five semantic stages of the default process, in their one order —
-//: Dalio's five steps, fixed by the December Command as the product's
-//: default graph. A stage is NOT the runtime phase: phase says what the
-//: records prove happened; stage says which step of the process a task is.
-//: The wire spelling of this attribute is the runtime side's to freeze;
-//: until then it is a panel-internal fixture field like the rest.
-export const STAGE_NAMES = Object.freeze(
-  ["goal", "identify", "diagnose", "design", "do"]);
-export const HEALTH_STATES = Object.freeze(
-  ["ready", "busy", "offline", "degraded", "unknown"]);
-// Harness-level availability, distinct from a node's health: whether the
-// product itself is offered as stable, offered behind a flag, or not offered.
-// A fixture-interface vocabulary (the wording is the December Command's, not
-// this module's invention); a registry row that omits it claims nothing and
-// gets no chip.
-export const AVAILABILITY_STATES = Object.freeze(
-  ["available", "experimental", "unavailable"]);
-export const CAPABILITY_NAMES = Object.freeze(
-  ["dispatch", "review", "evidence", "stop", "retry", "switch"]);
-export const EVIDENCE_KINDS = Object.freeze(["result", "diff", "tests", "status"]);
-export const VERIFICATION_STATES = Object.freeze(
-  ["unverified", "verified", "unavailable", "mismatch", "error"]);
-// A node's phase is what the durable records could prove about it: no record
-// (idle), a proposal, an accepted request, or a result outcome — the outcome
-// vocabulary is contracts.py _RESULT_OUTCOMES verbatim.
-export const NODE_PHASES = Object.freeze(["idle", "proposed", "requested",
-  "succeeded", "failed", "cancelled", "rejected", "verification_failed",
-  "unknown"]);
-export const GATE_STATES = Object.freeze(
-  ["pending", "satisfied", "failed", "changes_requested", "waived"]);
-export const DECISION_ACTIONS = Object.freeze({
-  approve: "satisfied",
-  reject: "failed",
-  request_changes: "changes_requested",
-  waive: "waived",
-});
-// Status is a channel of its own (never the harness accent): which of the
-// three semantic colours — or none — a phase may light.
-export const PHASE_CHANNEL = Object.freeze({
-  idle: "none", proposed: "wait", requested: "wait", succeeded: "pass",
-  failed: "fail", cancelled: "none", rejected: "fail",
-  verification_failed: "fail", unknown: "none",
-});
-export const GATE_CHANNEL = Object.freeze({
-  pending: "wait", satisfied: "pass", failed: "fail",
-  changes_requested: "wait", waived: "none",
-});
-const TITLE_LIMIT = 80;
 // The boundary twin of the reason input's maxlength: the DOM cap is advice,
 // this one is the rule.
 const REASON_LIMIT = 200;
 
-// The frozen UTC-instant grammar (command-projection.js instantIsValid states
-// the same rule beside the production contract). Both copies answer the one
-// corpus tests/fixtures/utc_instant_parity_corpus.json; the browser suite runs
-// it against this function so the copies cannot drift apart silently.
-const UTC_INSTANT =
-  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(?:Z|\+00:00)$/;
-const MONTH_LENGTHS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-export function instantIsValid(value) {
-  if (typeof value !== "string") return false;
-  const m = UTC_INSTANT.exec(value);
-  if (!m) return false;
-  const year = Number(m[1]), month = Number(m[2]), day = Number(m[3]);
-  if (year < 1 || month < 1 || month > 12) return false;
-  const leap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
-  const maxDay = month === 2 && leap ? 29 : MONTH_LENGTHS[month - 1];
-  if (day < 1 || day > maxDay) return false;
-  const hour = Number(m[4]), minute = Number(m[5]), second = Number(m[6]);
-  return hour <= 23 && minute <= 59 && second <= 59;
-}
-
-// A closed shape: every level of the payload may carry exactly its own keys.
-// Object.keys sees "__proto__" and "constructor" arriving as JSON own
-// properties, so a prototype name is refused as any other unknown key is.
-function ownKeysOnly(row, allowed) {
-  return Object.keys(row).every((key) => allowed.includes(key));
-}
-
-// Registry rows are presentational: an ill-formed row is dropped and its
-// harness draws the neutral badge, exactly as index.html loadRegistry decides.
-// The graph structure below is not presentational, so there the same finding
-// refuses the whole payload instead.
-const HEX_RE = /^#[0-9a-f]{6}$/i;
-const REGISTRY_KEYS = ["id", "display_name", "monogram", "accent_dark",
-  "accent_light", "docs", "availability"];
-// Registered monograms are two graphemes by the registry's own rule; eight
-// code units leave unicode headroom without letting one unbroken mono token
-// widen the rail. Names and ids share the node-title cap.
-const MONOGRAM_LIMIT = 8;
-export function projectRegistry(rows) {
-  if (!Array.isArray(rows)) return [];
-  const seen = new Set();
-  const out = [];
-  for (const row of rows) {
-    if (!row || typeof row !== "object" || Array.isArray(row)) continue;
-    if (!ownKeysOnly(row, REGISTRY_KEYS)) continue;
-    const texts = [row.id, row.display_name, row.monogram];
-    if (!texts.every((value) => typeof value === "string" && value)) continue;
-    if (row.id.length > TITLE_LIMIT || row.display_name.length > TITLE_LIMIT
-        || row.monogram.length > MONOGRAM_LIMIT) continue;
-    // One row per id, first row wins — the same row every badge lookup
-    // (registry.find) already answers with, so palette and badges agree.
-    if (seen.has(row.id)) continue;
-    if (!HEX_RE.test(row.accent_dark) || !HEX_RE.test(row.accent_light)) continue;
-    if ("availability" in row
-        && !AVAILABILITY_STATES.includes(row.availability)) continue;
-    seen.add(row.id);
-    out.push(Object.freeze({
-      id: row.id, name: row.display_name, monogram: row.monogram,
-      dark: row.accent_dark, light: row.accent_light,
-      // The one field that becomes an href. Anything but https is dropped —
-      // the same gate index.html applies before drawing its docs link — so a
-      // javascript: or data: string arriving as registry data never renders.
-      docs: typeof row.docs === "string" && row.docs.startsWith("https://")
-        ? row.docs : "",
-      availability: row.availability || "",
-    }));
-  }
-  return out;
-}
-
-function projectEvidence(rows) {
-  if (!Array.isArray(rows)) return null;
-  const out = [];
-  for (const row of rows) {
-    if (!row || typeof row !== "object"
-        || !ownKeysOnly(row, ["evidence_id", "kind", "verification"])
-        || !isId(row.evidence_id)
-        || !EVIDENCE_KINDS.includes(row.kind)
-        || !VERIFICATION_STATES.includes(row.verification)) return null;
-    out.push(Object.freeze({evidence_id: row.evidence_id, kind: row.kind,
-      verification: row.verification}));
-  }
-  return Object.freeze(out);
-}
-
-function projectCapabilities(names) {
-  if (!Array.isArray(names)) return null;
-  if (!names.every((name) => CAPABILITY_NAMES.includes(name))) return null;
-  if (new Set(names).size !== names.length) return null;
-  return Object.freeze([...names].sort());
-}
-
-// Sixteen rows bound the DOM the way the monogram cap bounds the rail; a
-// fixture attaching more configuration than that is asking for a viewer,
-// not a card.
-const RESOURCE_LIMIT = 16;
-function projectResources(rows) {
-  if (rows === undefined) return Object.freeze([]);
-  if (!Array.isArray(rows) || rows.length > RESOURCE_LIMIT) return null;
-  const seen = new Set();
-  const out = [];
-  for (const row of rows) {
-    if (!row || typeof row !== "object"
-        || !ownKeysOnly(row, ["kind", "name"])
-        || !RESOURCE_KINDS.includes(row.kind) || !isId(row.name)) return null;
-    const key = `${row.kind} ${row.name}`;
-    if (seen.has(key)) return null;
-    seen.add(key);
-    out.push(Object.freeze({kind: row.kind, name: row.name}));
-  }
-  return Object.freeze(out);
-}
-
-// The facts a loop node declares: how many passes it is allowed, which pass
-// it is on, and which step a pass reopens. A pass REOPENS work — it never
-// executes anything and never counts as an effect; every effect still walks
-// through its own Human gate. Anything executional beyond these three facts
-// is the runtime's to define, so any further key is refused until the
-// runtime freezes one. back_to is display data validated against the graph
-// at the payload level; it adds no edge and closes no cycle.
-function projectLoop(row) {
-  if (row.kind !== "loop") {
-    if (row.loop === null || row.loop === undefined) return null;
-    return false;
-  }
-  if (!row.loop || typeof row.loop !== "object"
-      || !ownKeysOnly(row.loop, ["bound", "pass", "back_to"])
-      || !Number.isInteger(row.loop.bound)
-      || row.loop.bound < 1 || row.loop.bound > 99) return false;
-  const pass = "pass" in row.loop ? row.loop.pass : null;
-  if (pass !== null && (!Number.isInteger(pass)
-      || pass < 1 || pass > row.loop.bound)) return false;
-  const backTo = "back_to" in row.loop ? row.loop.back_to : null;
-  if (backTo !== null && !isId(backTo)) return false;
-  return Object.freeze({bound: row.loop.bound, pass, backTo});
-}
-
-// A stage is optional, task-only, and unique: two nodes claiming one stage
-// would let a later step absorb an earlier one — exactly the collapse the
-// five-step process forbids (Diagnose is not a part of Identify).
-function stageIsValid(row) {
-  if (!("stage" in row) || row.stage === null) return true;
-  return row.kind === "task" && STAGE_NAMES.includes(row.stage);
-}
-
-const NODE_KEYS = ["node_id", "kind", "title", "harness", "health", "phase",
-  "capabilities", "evidence", "gate", "loop", "resources", "stage"];
-function projectNode(row) {
-  if (!row || typeof row !== "object" || !isId(row.node_id)) return null;
-  if (!ownKeysOnly(row, NODE_KEYS)) return null;
-  if (!NODE_KINDS.includes(row.kind)) return null;
-  if (typeof row.title !== "string" || !row.title.trim()
-      || row.title.length > TITLE_LIMIT) return null;
-  if (row.harness !== null
-      && (typeof row.harness !== "string" || !row.harness)) return null;
-  if (!HEALTH_STATES.includes(row.health)) return null;
-  if (!NODE_PHASES.includes(row.phase)) return null;
-  const capabilities = projectCapabilities(row.capabilities);
-  const evidence = projectEvidence(row.evidence);
-  const resources = projectResources(row.resources);
-  const loop = projectLoop(row);
-  if (!capabilities || !evidence || !resources || loop === false) return null;
-  if (!stageIsValid(row)) return null;
-  const stage = "stage" in row && row.stage !== null ? row.stage : null;
-  let gate = null;
-  if (row.kind === "gate") {
-    if (!row.gate || typeof row.gate !== "object"
-        || !ownKeysOnly(row.gate, ["gate_id", "state"])
-        || !isId(row.gate.gate_id)
-        || !GATE_STATES.includes(row.gate.state)) return null;
-    gate = Object.freeze({gate_id: row.gate.gate_id, state: row.gate.state});
-  } else if (row.gate !== null && row.gate !== undefined) {
-    return null;
-  }
-  return Object.freeze({node_id: row.node_id, kind: row.kind,
-    title: row.title.trim(), harness: row.harness, health: row.health,
-    phase: row.phase, capabilities, evidence, gate, loop, resources, stage,
-    draft: false});
-}
-
-function projectEdges(rows, ids) {
-  if (!Array.isArray(rows)) return null;
-  const seen = new Set();
-  const out = [];
-  for (const row of rows) {
-    if (!row || typeof row !== "object"
-        || !ownKeysOnly(row, ["from", "to"])
-        || !isId(row.from) || !isId(row.to)) return null;
-    if (!ids.has(row.from) || !ids.has(row.to) || row.from === row.to) return null;
-    const key = `${row.from} ${row.to}`;
-    if (seen.has(key)) return null;
-    seen.add(key);
-    out.push(Object.freeze({from: row.from, to: row.to}));
-  }
-  return Object.freeze(out);
-}
-
-function projectTimeline(rows, ids) {
-  if (!Array.isArray(rows)) return null;
-  const seen = new Set();
-  const out = [];
-  for (const row of rows) {
-    if (!row || typeof row !== "object"
-        || !ownKeysOnly(row, ["event_id", "at", "node_id", "phase"])
-        || !isId(row.event_id) || seen.has(row.event_id)) return null;
-    if (!instantIsValid(row.at) || !ids.has(row.node_id)
-        || !NODE_PHASES.includes(row.phase)) return null;
-    seen.add(row.event_id);
-    out.push(Object.freeze({event_id: row.event_id, at: row.at,
-      node_id: row.node_id, phase: row.phase}));
-  }
-  // Raw string order is NOT time order: the grammar admits a variable-width
-  // fraction and two UTC spellings, and "…00Z" sorts after "…00.900Z". The
-  // key is the genuinely fixed-width 19-character prefix plus the fraction
-  // padded to nine digits, which collapses Z against +00:00 and makes plain
-  // code-unit comparison the time comparison. The index keeps ties stable.
-  const keyOf = (at) =>
-    `${at.slice(0, 19)}.${(UTC_INSTANT.exec(at)[7] || "").padEnd(9, "0")}`;
-  return Object.freeze(out.map((row, index) => [keyOf(row.at), index, row])
-    .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : a[1] - b[1]))
-    .map((entry) => entry[2]));
-}
-
-// Layered layout, computed once per load. Depth is the longest path from a
-// root, so a join sits one column after its slowest branch; the row is the
-// order nodes were declared in, which keeps the fixture author in charge of
-// vertical reading order. A cycle has no layer, so it refuses the payload.
-export function computeLayout(nodes, edges) {
-  const parents = new Map(nodes.map((node) => [node.node_id, []]));
-  for (const edge of edges) parents.get(edge.to).push(edge.from);
-  const depth = new Map();
-  const visiting = new Set();
-  function resolve(id) {
-    if (depth.has(id)) return depth.get(id);
-    if (visiting.has(id)) return null;
-    visiting.add(id);
-    let level = 0;
-    for (const parent of parents.get(id)) {
-      const above = resolve(parent);
-      if (above === null) return null;
-      level = Math.max(level, above + 1);
-    }
-    visiting.delete(id);
-    depth.set(id, level);
-    return level;
-  }
-  const cells = {};
-  const rowsUsed = [];
-  for (const node of nodes) {
-    const column = resolve(node.node_id);
-    if (column === null) return null;
-    rowsUsed[column] = (rowsUsed[column] || 0);
-    cells[node.node_id] = Object.freeze({column, row: rowsUsed[column]});
-    rowsUsed[column] += 1;
-  }
-  return Object.freeze({
-    columns: rowsUsed.length,
-    rows: Math.max(0, ...rowsUsed),
-    cells: Object.freeze(cells),
-  });
-}
-
-export function projectPayload(payload) {
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    return null;
-  }
-  // No fixture_schema here: the version pin is the adapter's fact alone,
-  // stripped before the payload reaches this module.
-  if (!ownKeysOnly(payload,
-    ["run", "registry", "nodes", "edges", "timeline"])) {
-    return null;
-  }
-  if (!payload.run || typeof payload.run !== "object"
-      || !ownKeysOnly(payload.run, ["run_id", "mode"])
-      || !isId(payload.run.run_id)) return null;
-  if (!Array.isArray(payload.nodes) || !payload.nodes.length) return null;
-  const nodes = payload.nodes.map(projectNode);
-  if (nodes.some((node) => node === null)) return null;
-  const ids = new Set(nodes.map((node) => node.node_id));
-  if (ids.size !== nodes.length) return null;
-  // A gate id is a decision key — the ledger and every state rewrite go
-  // through it — so two gates sharing one would let a single Human decision
-  // flip a gate nobody decided. The same ambiguity node ids are refused for.
-  const gateIds = nodes.flatMap((node) => (node.gate ? [node.gate.gate_id] : []));
-  if (new Set(gateIds).size !== gateIds.length) return null;
-  // One node per stage: a duplicate would let one step absorb another.
-  const stages = nodes.flatMap((node) => (node.stage ? [node.stage] : []));
-  if (new Set(stages).size !== stages.length) return null;
-  // A loop's return target is display data, but it must name a real other
-  // node — a ghost or self target would draw a promise the graph cannot keep.
-  for (const node of nodes) {
-    if (node.loop && node.loop.backTo !== null
-        && (!ids.has(node.loop.backTo)
-            || node.loop.backTo === node.node_id)) return null;
-  }
-  const edges = projectEdges(payload.edges, ids);
-  const timeline = projectTimeline(payload.timeline, ids);
-  if (!edges || !timeline) return null;
-  const layout = computeLayout(nodes, edges);
-  if (!layout) return null;
-  return Object.freeze({
-    run: Object.freeze({runId: payload.run.run_id, mode: safeMode(payload.run.mode)}),
-    registry: Object.freeze(projectRegistry(payload.registry)),
-    nodes: Object.freeze(nodes), edges, layout, timeline,
-  });
-}
-
 export const EMPTY = Object.freeze({
   phase: "empty",   // empty | loaded | refused
-  notice: "No run graph loaded. This window renders fixture data only.",
+  notice: "No run graph loaded. Load a run, or start from the product's "
+    + "default plan — nothing is written to a run until you write it.",
   run: Object.freeze({runId: "", mode: "unknown"}),
   registry: Object.freeze([]),
   nodes: Object.freeze([]),
   edges: Object.freeze([]),
   layout: Object.freeze({columns: 0, rows: 0, cells: Object.freeze({})}),
   timeline: Object.freeze([]),
+  // Where the nodes above came from. It starts as a fixture and stays one
+  // until a durable read replaces it: nothing this window does locally may
+  // promote its own drawing to `durable`.
+  provenance: FIXTURE_SOURCE,
+  // The save door's own status, apart from every other notice for the reason
+  // the composer's is: a refusal must land beside the control it answers.
+  // `saved` is never set here — only an authoritative re-read may say a plan
+  // is durable.
+  savePhase: "idle",   // idle | submitting | refused | outcome-unknown
+  saveNotice: "",
+  // Whether this window may WRITE. Not "is the socket up": a live socket says
+  // nothing about whether the facts on screen belong to the run now selected.
+  // Between choosing a run and its read landing, the drawing is still the
+  // PREVIOUS run's — and a write then would have built one run's plan and
+  // sent it to another run's immutable route. So readiness names one answer
+  // about one run, is taken away the moment another is chosen, and is given
+  // back only by a landed read of the chosen one. A refused or failed read
+  // grants nothing.
+  writeReady: false,
   selection: null,
   // The local decision ledger: gate_id → what the Human drafted here. Alpha
   // records it in this window and nowhere else; the notice says so. A null
@@ -409,6 +60,12 @@ export const EMPTY = Object.freeze({
 function withGateState(nodes, gateId, state) {
   return Object.freeze(nodes.map((node) => {
     if (!node.gate || node.gate.gate_id !== gateId) return node;
+    // A durable gate's state is the journal's answer, and a draft recorded
+    // in this window is not an entry in it. Rewriting the chip would dress
+    // a LOCAL DRAFT in the one word a reader trusts as recorded, so a
+    // runtime-stated gate keeps the run's answer and the draft is shown
+    // beside it, labelled, instead.
+    if (node.runtime !== null) return node;
     return Object.freeze({...node,
       gate: Object.freeze({...node.gate, state})});
   }));
@@ -434,9 +91,10 @@ function decide(state, event) {
     decisions: Object.freeze(Object.assign(Object.create(null),
       state.decisions,
       {[event.gateId]: Object.freeze({action: event.action, actor: event.actor,
-        reason, recorded: "fixture-only"})})),
-    decisionNotice: "Decision recorded as a LOCAL DRAFT in this window's "
-      + "fixture — nothing submitted. Nothing was executed.",
+        reason, recorded: "window-only"})})),
+    decisionNotice: "Decision recorded as a LOCAL DRAFT in this window — "
+      + "nothing submitted, and the run's own gate is untouched. "
+      + "Nothing was executed.",
   });
 }
 
@@ -456,12 +114,16 @@ function compose(state, event) {
     return Object.freeze({...state, composeNotice:
       "Composition refused: use a fresh id, a title and a registered harness."});
   }
-  // A composed step is a LOCAL DRAFT: it exists in this window's fixture,
-  // is submitted nowhere, and says so on its own card.
+  // A composed step is a LOCAL DRAFT: it exists in this window, is written to
+  // no run until a Human writes it, and says so on its own card. It states
+  // its own position and carries no runtime document — nothing has run it, so
+  // nothing may report on it, and that is what keeps it visibly apart from
+  // every durable node beside it.
   const node = Object.freeze({node_id: event.nodeId, kind: "task", title,
     harness, health: "unknown", phase: "idle",
     capabilities: Object.freeze([]), evidence: Object.freeze([]), gate: null,
-    loop: null, resources: Object.freeze([]), stage: null, draft: true});
+    loop: null, resources: Object.freeze([]), stage: null, binding: null,
+    runtime: null, draft: true});
   const nodes = Object.freeze([...state.nodes, node]);
   const added = event.placement === "after"
     ? [Object.freeze({from: anchor.node_id, to: event.nodeId})]
@@ -473,19 +135,89 @@ function compose(state, event) {
     return Object.freeze({...state, composeNotice: "Composition refused: cycle."});
   }
   return Object.freeze({...state, nodes, edges, layout, composeNotice:
-    `Step "${title}" added as a LOCAL DRAFT to this window's fixture. `
-    + "Nothing was executed."});
+    `Step "${title}" added as a LOCAL DRAFT — held in this window, submitted `
+    + "to no run. Nothing was executed."});
+}
+
+//: What the shell says about the facts on screen, chosen by where they came
+//: from. A durable read has reached a server and says so; a fixture has not
+//: and says that. One notice for both would let either be read as the other.
+const LOADED_NOTICE = Object.freeze({
+  durable: "Durable graph loaded from the authoritative run read. The plan is "
+    + "immutable; the run position beside it is computed, never stored.",
+  fixture: "Fixture graph loaded. Nothing here reaches a server.",
+});
+
+// A save outcome is carried THROUGH the authoritative answer that follows it,
+// and an answer carrying none leaves the one on screen alone. Resetting here
+// meant any later re-read — a run frame, a reconnect — erased the sentence
+// saying the plan was written. It is cleared where it becomes wrong instead:
+// when the selected run changes, and nowhere else.
+function carried(state, event) {
+  return Object.hasOwn(event, "savePhase")
+    ? {savePhase: event.savePhase, saveNotice: event.saveNotice}
+    : {savePhase: state.savePhase, saveNotice: state.saveNotice};
+}
+
+function spoken(event, fallback) {
+  return typeof event.notice === "string" && event.notice
+    ? event.notice : fallback;
+}
+
+// The three answers a source can give, each with its own phase. A run that
+// follows no graph is not a graph that could not be read, and neither is
+// ever drawn as the other: an empty run is a normal answer, a refusal is a
+// fault, and a load is facts.
+function sourceArm(state, event) {
+  // Readiness travels with the answer that grants it, and only a LANDED read
+  // of the chosen run grants any: a superseded read never reaches here, and a
+  // refused one is handled at its own arm below. A payload silent about it —
+  // a fixture through the public seam — leaves it alone, because drawing is
+  // no fact about which run the screen belongs to.
+  const ready = Object.hasOwn(event, "ready")
+    ? {writeReady: Boolean(event.ready)} : {writeReady: state.writeReady};
+  if (event.type === "loaded") {
+    return Object.freeze({...EMPTY, ...event.facts, phase: "loaded",
+      ...carried(state, event), ...ready,
+      notice: LOADED_NOTICE[event.facts.provenance.source]});
+  }
+  // A refusal grants nothing and confirms nothing. It cannot say the screen
+  // belongs to the chosen run, so the write door stays shut; and a save
+  // outcome still waiting on a read has not been confirmed by this one, so
+  // it is never announced here as though it had been.
+  if (event.type === "refused") {
+    return Object.freeze({...EMPTY, phase: "refused",
+      ...carried(state, event), writeReady: false,
+      notice: spoken(event,
+        "The graph payload was refused: it does not name a valid graph.")});
+  }
+  return Object.freeze({...EMPTY, phase: "empty",
+    ...carried(state, event), ...ready,
+    notice: spoken(event, EMPTY.notice)});
 }
 
 export function reduce(state, event) {
   if (!event || typeof event.type !== "string") return state;
-  if (event.type === "loaded") {
-    return Object.freeze({...EMPTY, ...event.facts, phase: "loaded",
-      notice: "Fixture graph loaded. Nothing here reaches a server."});
+  if (["loaded", "refused", "absent"].includes(event.type)) {
+    return sourceArm(state, event);
   }
-  if (event.type === "refused") {
-    return Object.freeze({...EMPTY, phase: "refused",
-      notice: "The fixture payload was refused: it does not name a valid graph."});
+  // The write door, shut or opened by an answer about ONE run. Shutting it
+  // also drops any save phase in flight: whatever that write is doing, this
+  // screen is no longer the one entitled to report it.
+  if (event.type === "ready") {
+    return Object.freeze({...state, writeReady: event.ready === true,
+      saveNotice: typeof event.notice === "string"
+        ? event.notice : state.saveNotice,
+      savePhase: event.ready === true ? state.savePhase : "idle"});
+  }
+  // The save door answers in every phase. A refusal that arrived after the
+  // graph fell back to empty still has a Human waiting for it, and dropping
+  // it here would leave a submitted plan with no reported outcome at all.
+  if (event.type === "save") {
+    return Object.freeze({...state,
+      savePhase: ["idle", "submitting", "refused", "outcome-unknown"]
+        .includes(event.phase) ? event.phase : "outcome-unknown",
+      saveNotice: typeof event.notice === "string" ? event.notice : ""});
   }
   if (state.phase !== "loaded") return state;
   if (event.type === "select") {
