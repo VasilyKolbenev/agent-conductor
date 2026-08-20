@@ -379,6 +379,27 @@ def test_redeclaring_an_imported_name_takes_the_allowance_back(name, body, used)
     assert not any(_excused(origin) for _, origin in found), name
 
 
+def test_an_aliased_scalar_reports_the_symbol_it_was_declared_as():
+    """Provenance is the declaration for a scalar too, not the local spelling.
+
+    A sabotage run found nothing standing behind this half. Containers carry
+    their own origin and are guarded by that; the scalar side still reads it
+    off the import, and binding the LOCAL name instead of the declared one
+    passed every test in this file. Nothing in `EXCUSED` is a scalar today, so
+    it hid no verdict -- but it is the same relation the last rounds were
+    about, and an unguarded relation is how each of them started.
+    """
+    identity = _an_identity()
+    trees = {"pkg.leaf": ast.parse(f"ID = {identity!r}\n")}
+    for header, used in (("from pkg.leaf import ID\n", "ID"),
+                         ("from pkg.leaf import ID as PINNED\n", "PINNED")):
+        source = header + f"def route(chosen):\n    return chosen == {used}\n"
+        found = [(value, origin) for value, _, origin in _compared_strings(
+            "conductor.command.neutral", ast.parse(source), trees=trees)
+            if value in _identities()]
+        assert found == [(identity, ("pkg.leaf", "ID"))], used
+
+
 def test_an_import_nobody_redeclared_keeps_the_allowance_it_arrived_with():
     """The other side of the same coin, so the fix cannot be 'excuse nothing'.
 
