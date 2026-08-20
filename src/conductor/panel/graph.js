@@ -32,6 +32,9 @@ const CORRUPT = "The run's graph could not be read as one plan and one "
   + "cannot read.";
 const DRAFT_REFUSED = "The drawing was refused before it was offered to the "
   + "run: a plan may carry no observed fact, and this one does.";
+const STREAM_DOWN = "Connection lost. The last authoritative facts are still "
+  + "on screen, and nothing may be written until the stream is back and this "
+  + "run has been read again.";
 
 (() => {
   const field = document.getElementById("field");
@@ -69,9 +72,17 @@ const DRAFT_REFUSED = "The drawing was refused before it was offered to the "
   let registryRows = null;
   let epoch = 0, csrfToken = "", sessionEpoch = 0;
   let refreshDirty = false, refreshInFlight = false;
+  // Whether the run-event stream is carrying right now. Transport's own fact,
+  // held here; what the SCREEN may do about it is `state.streamReady`, which
+  // an authoritative read grants and a drop takes away.
+  let streamOpen = false;
+  // Which write is the current one. A drop retires the write in flight along
+  // with the session that authorized it, so a late answer cannot land.
+  let writeGeneration = 0;
   // A save outcome waiting for the authoritative read that will make it true.
   // It rides THROUGH the re-read rather than being announced before it: the
   // answer belongs to the Human who asked, and the read is what confirms it.
+  // It names its run, because it is only true of that one.
   let pendingCarry = null;
   // dispatch stays module-internal: the public seam is load/state only, so
   // no caller can commit facts that skipped the projectPayload boundary.
@@ -163,8 +174,12 @@ const DRAFT_REFUSED = "The drawing was refused before it was offered to the "
     renderDetail(mounts.detailBody, state, decisionDraft, onDecide);
     renderGates(mounts.gates, state);
     renderTimeline(mounts.timeline, state);
+    // The write door is shut while a write is in flight AND while the stream
+    // is not known to be carrying. The second half is not decoration: the
+    // window promises in words that nothing may be written until the stream
+    // is back, and a live button would make that sentence false.
     mounts.save.querySelector('[name="save"]').disabled =
-      state.savePhase === "submitting";
+      state.savePhase === "submitting" || !state.streamReady;
     restoreFocus(target);
   }
   // The fixture seam, and the whole of it: the adapter names the accepted
@@ -249,10 +264,21 @@ const DRAFT_REFUSED = "The drawing was refused before it was offered to the "
   }
   // Reached only by the Human submitting the save form. No load, signal,
   // reconnect or earlier write has a path here.
+  //
+  // The run and the write's own generation are taken BEFORE the request and
+  // never read from the module again: `selectedRun` is a moving value, and a
+  // POST for one run finishing after the Human has moved to another would
+  // otherwise announce the first run's success on the second run's screen —
+  // and re-read the second run as though the first's write had touched it.
   async function onSave(graphId) {
-    if (!RUN_ID.test(selectedRun) || !RUN_ID.test(graphId)) {
+    const saveRun = selectedRun;
+    if (!RUN_ID.test(saveRun) || !RUN_ID.test(graphId)) {
       dispatch({type: "save", phase: "refused", notice:
         "Load a run and name a valid graph id before writing a plan."});
+      return;
+    }
+    if (!state.streamReady) {
+      dispatch({type: "save", phase: "refused", notice: STREAM_DOWN});
       return;
     }
     const body = graphRequestBody(graphId, state);
@@ -260,9 +286,14 @@ const DRAFT_REFUSED = "The drawing was refused before it was offered to the "
       dispatch({type: "save", phase: "refused", notice: DRAFT_REFUSED});
       return;
     }
+    const mine = ++writeGeneration;
     dispatch({type: "save", phase: "submitting",
       notice: "Writing one immutable plan…"});
-    const result = await submitGraph(selectedRun, body);
+    const result = await submitGraph(saveRun, body);
+    // A dropped stream and a newer write both retire this one. Its answer is
+    // about a screen that is no longer here, and it may not become a fact on
+    // the one that is: whatever landed, the authoritative read will say so.
+    if (mine !== writeGeneration || saveRun !== selectedRun) return;
     if (result.status !== "accepted") {
       // Nothing on screen moves on a refusal: the drawing stays the Human's
       // and no local value is promoted to durable by a request that failed.
@@ -272,8 +303,8 @@ const DRAFT_REFUSED = "The drawing was refused before it was offered to the "
     // An accepted answer is still only an answer. What this run follows is
     // whatever the authoritative read says it follows, so the local copy is
     // dropped and re-read rather than trusted.
-    refreshSelectedRun(selectedRun,
-      {phase: "idle", notice: result.created ? CREATED : RESTATED});
+    refreshSelectedRun(saveRun, {runId: saveRun, phase: "idle",
+      notice: result.created ? CREATED : RESTATED});
   }
   async function readJson(target) {
     const response = await fetch(target, {cache: "no-store"});
@@ -310,19 +341,30 @@ const DRAFT_REFUSED = "The drawing was refused before it was offered to the "
       ? {type: "absent", notice: ABSENT, ...carry}
       : {type: "refused", notice: CORRUPT, ...carry};
   }
-  async function loadSelectedRun(runId, carry) {
+  // A held save outcome is consumed only by the read that ANNOUNCES it, and
+  // only for the run it was asked about. Consuming it before the dispatch is
+  // how a plan came to be written with nothing on screen ever saying so: a
+  // run frame arriving mid-read superseded that read, the outcome had already
+  // been taken out of the holder, and the retry announced nothing.
+  function takeCarry(runId) {
+    if (!pendingCarry || pendingCarry.runId !== runId) return {};
+    const held = {savePhase: pendingCarry.phase, saveNotice: pendingCarry.notice};
+    pendingCarry = null;
+    return held;
+  }
+  async function loadSelectedRun(runId) {
     const requestEpoch = epoch;
-    const held = {savePhase: carry.phase, saveNotice: carry.notice};
     try {
       const [read, registry] = await Promise.all([
         readJson(`/command/runs/${encodeURIComponent(runId)}`), readRegistry(),
       ]);
       if (requestEpoch !== epoch) return;
-      dispatch(loadOutcome(read, registry, held));
+      dispatch(loadOutcome(read, registry,
+        {...takeCarry(runId), ready: streamOpen}));
     } catch (error) {
       if (requestEpoch !== epoch) return;
       const code = error instanceof Error ? error.message : "store_error";
-      dispatch({type: "refused", ...held,
+      dispatch({type: "refused", ...takeCarry(runId), ready: streamOpen,
         notice: ERROR_LABELS[code] || ERROR_LABELS.store_error});
     }
   }
@@ -330,17 +372,21 @@ const DRAFT_REFUSED = "The drawing was refused before it was offered to the "
   // read after the one in flight, so a stream cannot stack reads on a window.
   async function refreshSelectedRun(runId, carry = null) {
     if (!RUN_ID.test(runId)) return;
+    if (runId !== selectedRun) {
+      // A save status names one run's answer. Carrying it onto another run's
+      // screen would attribute a write to a run that never received it.
+      pendingCarry = null;
+      dispatch({type: "save", phase: "idle", notice: ""});
+    }
     selectedRun = runId;
     epoch += 1;
     refreshDirty = true;
-    pendingCarry = carry || pendingCarry;
+    if (carry) pendingCarry = carry;
     if (refreshInFlight) return;
     refreshInFlight = true;
     while (refreshDirty) {
       refreshDirty = false;
-      const held = pendingCarry || {phase: "idle", notice: ""};
-      pendingCarry = null;
-      await loadSelectedRun(selectedRun, held);
+      await loadSelectedRun(selectedRun);
     }
     refreshInFlight = false;
   }
@@ -382,20 +428,29 @@ const DRAFT_REFUSED = "The drawing was refused before it was offered to the "
         || !RUN_ID.test(frame.run_id) || frame.run_id !== selectedRun) return;
     refreshSelectedRun(frame.run_id);
   };
+  // A reconnect does not by itself make this window current again. The stream
+  // is open, but what it missed while it was down is unknown, so readiness is
+  // granted by the authoritative READ that follows — and until that read
+  // lands, the write door stays shut.
   stream.addEventListener("open", () => {
-    if (selectedRun) refreshSelectedRun(selectedRun);
+    streamOpen = true;
+    if (selectedRun) {
+      refreshSelectedRun(selectedRun);
+      return;
+    }
+    dispatch({type: "stream", ready: true});
   });
-  // A dropped stream rotates the session and the read epoch together: an
-  // answer to a write issued before the drop can no longer be counted, and
-  // the token that authorized it is gone.
+  // A dropped stream rotates the session, the read epoch and the write
+  // generation together: an answer to a write issued before the drop can no
+  // longer be counted, the token that authorized it is gone, and the door it
+  // came through is shut until the stream is back and re-read.
   stream.addEventListener("error", () => {
+    streamOpen = false;
     epoch += 1;
     sessionEpoch += 1;
+    writeGeneration += 1;
     csrfToken = "";
-    if (!selectedRun) return;
-    dispatch({type: "save", phase: "idle", notice:
-      "Connection lost. The last authoritative facts are still on screen; "
-      + "nothing may be written until it is back."});
+    dispatch({type: "stream", ready: false, notice: STREAM_DOWN});
   });
   render();
   // The window opens on the product's default graph — the five-step process

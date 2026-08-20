@@ -544,4 +544,12 @@ export function renderSave(mount, state, draft, onSave) {
   });
   mount.append(form, element("p", {className: "g-note",
     text: SAVE_NOTE[durable ? "durable" : "fixture"]}));
+  // Said where the shut door is, not only in the status line above it: a
+  // control a reader cannot press owes them the reason on its own card.
+  if (!state.streamReady) {
+    mount.append(element("p", {className: "g-note g-save__shut", text:
+      "The run-event stream is not carrying, so this window cannot know what "
+      + "it would be writing on top of. Writing resumes when the stream is "
+      + "back and this run has been read again."}));
+  }
 }

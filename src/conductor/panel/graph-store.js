@@ -7,15 +7,14 @@
 // This module is the single reducer the Graph window runs on. It validates the
 // payload at the boundary (refuse, never repair), computes the branch layout
 // once per load, and answers every render from one frozen state value. The
-// wire is deliberately not here: a payload reaches this file either from a
-// fixture or from a durable run read, and this file cannot tell which — the
-// mapping is graph-adapter.js's and the socket is graph.js's, so neither a
-// wire spelling nor a transport ever enters the reducer.
+// wire is deliberately not here: a payload arrives from a fixture or from a
+// durable run read and this file cannot tell which — the mapping belongs to
+// graph-adapter.js and the socket to graph.js.
 //
-// What it CAN tell is which document stated a given fact. That is not the
-// same question, and keeping it answerable is this module's own rule: a
-// node's position comes from a fixture word or from a runtime document, never
-// from both, and `projectNode` refuses rather than choosing.
+// What it CAN tell is which document stated a given fact, and keeping that
+// answerable is its own rule: a node's position comes from a fixture word or
+// from a runtime document, never both and never neither, and `projectNode`
+// refuses rather than choosing.
 import {isId, isIdList, safeMode} from "./command-projection.js";
 
 // Closed vocabularies, copied case-for-case from the contract layer
@@ -219,15 +218,13 @@ function projectResources(rows) {
 }
 
 // The facts a loop node declares: how many passes it is allowed, which pass
-// it is on, and which step a pass reopens. A pass REOPENS work — it never
-// executes anything and never counts as an effect; every effect still walks
-// through its own Human gate. The durable plan carries only two of the three
-// — `bound` and `back_to` are a CEILING and a target, both written before the
-// run starts — and the third, `pass`, is the run's position and arrives in
-// the runtime document instead. Any further key is refused, and so is `pass`
-// itself when a runtime document is stating this node. back_to is display
-// data validated against the graph at the payload level; it adds no edge and
-// closes no cycle.
+// it is on, and which step a pass reopens. A pass REOPENS work — it executes
+// nothing and counts as no effect; every effect still walks its own Human
+// gate. The durable plan carries only two of the three: `bound` and `back_to`
+// are a CEILING and a target, both written before the run starts. `pass` is
+// the run's position and arrives in the runtime document, so it is refused
+// here whenever that document states this node. back_to is display data
+// validated at the payload level; it adds no edge and closes no cycle.
 function projectLoop(row, stated) {
   if (row.kind !== "loop") {
     if (row.loop === null || row.loop === undefined) return null;
@@ -257,9 +254,8 @@ function projectLoop(row, stated) {
 //: arrives here it is already this window's own closed shape.
 const RUNTIME_KEYS = ["phase", "outcome", "attempt_ids", "observed_at",
   "evidence_refs", "decision", "pass", "bound_reached"];
-//: A bound on the join keys one node may carry. The identifiers are what a
-//: reader uses to go find an earlier attempt in the records; a list longer
-//: than this is asking for a viewer, not a card.
+//: A bound on the join keys one node may carry: they are what a reader uses
+//: to find an earlier attempt, and a longer list wants a viewer, not a card.
 const RUNTIME_ID_LIMIT = 64;
 function runtimeIds(value) {
   if (!Array.isArray(value) || value.length > RUNTIME_ID_LIMIT) return null;
@@ -364,13 +360,12 @@ function stageIsValid(row) {
   return row.kind === "task" && STAGE_NAMES.includes(row.stage);
 }
 
-// ONE source per fact, made structural. A node's position — its health and
-// its phase here, its gate state, its pass and its evidence at their own
-// arms — is stated either by a fixture word or by the runtime document,
-// never by both and never by neither. Splicing the two layers into one key
-// is exactly how a plan's ceiling came to be read as a run's position, so
-// the keys are kept disjoint by this relation rather than by the callers'
-// good manners.
+// ONE source per fact, made structural. A node's position — health and phase
+// here, gate state, pass and evidence at their own arms — is stated by a
+// fixture word or by the runtime document, never both and never neither.
+// Splicing the layers into one key is how a plan's ceiling came to be read as
+// a run's position, so this relation keeps them disjoint rather than the
+// callers' good manners.
 function positionIsSingleSourced(row, stated) {
   if (stated) {
     return HEALTH_STATES.includes(row.health) && NODE_PHASES.includes(row.phase);
@@ -533,12 +528,11 @@ function projectProvenance(value) {
   return Object.freeze({source: "durable", graphId, digest});
 }
 
-// Every identity in the graph is unique, and every reference names a real
-// other node. A node id, a gate id and a stage are each a KEY: two nodes
-// sharing one would let a single Human decision flip a gate nobody decided,
-// or let a later step absorb an earlier one. A loop's return target is
-// display data, but a ghost or self target draws a promise the graph cannot
-// keep.
+// Every identity is unique and every reference names a real other node. A
+// node id, a gate id and a stage are each a KEY: two nodes sharing one let a
+// single Human decision flip a gate nobody decided, or a later step absorb an
+// earlier one. A loop's return target is display data, but a ghost or self
+// target draws a promise the graph cannot keep.
 function identitiesAreDistinct(nodes, ids) {
   if (ids.size !== nodes.length) return false;
   const gateIds = nodes.flatMap((node) => (node.gate ? [node.gate.gate_id] : []));
@@ -550,12 +544,11 @@ function identitiesAreDistinct(nodes, ids) {
 }
 
 // Two documents describe one durable graph, so either every node carries the
-// run's position or none does — a partial join would leave some steps
-// silently at the plan's word while their neighbours showed the run's, one
-// screen with two meanings for the same chip. Provenance answers for the
-// same fact: a digest names a durable plan, so a payload carrying one and
-// stating no position, or stating positions and carrying no digest, is not
-// one graph read once.
+// run's position or none does — a partial join leaves some steps at the
+// plan's word while their neighbours show the run's, one screen with two
+// meanings for one chip. Provenance answers for the same fact: a digest names
+// a durable plan, so carrying one while stating no position, or the reverse,
+// is not one graph read once.
 function sourcesAgreeAcrossNodes(nodes, provenance) {
   const positioned = nodes.filter((node) => node.runtime !== null).length;
   if (positioned && positioned !== nodes.length) return false;
@@ -609,12 +602,16 @@ export const EMPTY = Object.freeze({
   // until a durable read replaces it: nothing this window does locally may
   // promote its own drawing to `durable`.
   provenance: FIXTURE_SOURCE,
-  // The save door's own status, kept apart from every other notice for the
-  // reason the composer's is: a refusal must land beside the control it
-  // answers. `saved` is never set by this module — only an authoritative
-  // re-read may say a plan is durable.
+  // The save door's own status, apart from every other notice for the reason
+  // the composer's is: a refusal must land beside the control it answers.
+  // `saved` is never set here — only an authoritative re-read may say a plan
+  // is durable.
   savePhase: "idle",   // idle | submitting | refused | outcome-unknown
   saveNotice: "",
+  // Whether the run-event stream is known to be carrying. It starts false and
+  // is granted only by a landed authoritative read: a window that cannot hear
+  // a run change cannot know what it would be writing on top of.
+  streamReady: false,
   selection: null,
   // The local decision ledger: gate_id → what the Human drafted here. Alpha
   // records it in this window and nowhere else; the notice says so. A null
@@ -719,12 +716,15 @@ const LOADED_NOTICE = Object.freeze({
   fixture: "Fixture graph loaded. Nothing here reaches a server.",
 });
 
-// A save outcome is carried THROUGH the authoritative answer that follows
-// it: it belongs to the Human who asked for it, and the read is what makes
-// it true, not what makes it stale.
-function carried(event) {
-  return {savePhase: event.savePhase || "idle",
-    saveNotice: event.saveNotice || ""};
+// A save outcome is carried THROUGH the authoritative answer that follows it,
+// and an answer carrying none leaves the one on screen alone. Resetting here
+// meant any later re-read — a run frame, a reconnect — erased the sentence
+// saying the plan was written. It is cleared where it becomes wrong instead:
+// when the selected run changes, and nowhere else.
+function carried(state, event) {
+  return Object.hasOwn(event, "savePhase")
+    ? {savePhase: event.savePhase, saveNotice: event.saveNotice}
+    : {savePhase: state.savePhase, saveNotice: state.saveNotice};
 }
 
 function spoken(event, fallback) {
@@ -736,25 +736,41 @@ function spoken(event, fallback) {
 // follows no graph is not a graph that could not be read, and neither is
 // ever drawn as the other: an empty run is a normal answer, a refusal is a
 // fault, and a load is facts.
-function sourceArm(event) {
+function sourceArm(state, event) {
+  // Readiness travels with the answer that grants it: a landed authoritative
+  // read proves the reconnect was worth trusting, and a superseded one never
+  // reaches here to grant anything. A payload silent about the stream leaves
+  // it alone — a fixture through the public seam is no fact about transport,
+  // and treating it as one shut the door on this window's own drawings.
+  const ready = Object.hasOwn(event, "ready")
+    ? {streamReady: Boolean(event.ready)} : {streamReady: state.streamReady};
   if (event.type === "loaded") {
     return Object.freeze({...EMPTY, ...event.facts, phase: "loaded",
-      ...carried(event),
+      ...carried(state, event), ...ready,
       notice: LOADED_NOTICE[event.facts.provenance.source]});
   }
   if (event.type === "refused") {
-    return Object.freeze({...EMPTY, phase: "refused", ...carried(event),
+    return Object.freeze({...EMPTY, phase: "refused",
+      ...carried(state, event), ...ready,
       notice: spoken(event,
         "The graph payload was refused: it does not name a valid graph.")});
   }
-  return Object.freeze({...EMPTY, phase: "empty", ...carried(event),
+  return Object.freeze({...EMPTY, phase: "empty",
+    ...carried(state, event), ...ready,
     notice: spoken(event, EMPTY.notice)});
 }
 
 export function reduce(state, event) {
   if (!event || typeof event.type !== "string") return state;
   if (["loaded", "refused", "absent"].includes(event.type)) {
-    return sourceArm(event);
+    return sourceArm(state, event);
+  }
+  // The stream's own state — the one thing that opens or shuts the door.
+  if (event.type === "stream") {
+    return Object.freeze({...state, streamReady: event.ready === true,
+      saveNotice: typeof event.notice === "string"
+        ? event.notice : state.saveNotice,
+      savePhase: event.ready === true ? state.savePhase : "idle"});
   }
   // The save door answers in every phase. A refusal that arrived after the
   // graph fell back to empty still has a Human waiting for it, and dropping

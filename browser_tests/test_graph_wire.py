@@ -18,7 +18,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from playwright.sync_api import Browser, Page
+from playwright.sync_api import Browser, Page, Route
 
 from conductor import server
 from conductor.command.adapters.base import AdapterRegistry
@@ -124,6 +124,12 @@ class _Recorder:
 #: script runs. It drives the REAL production handler with frames a real server
 #: would never emit -- malformed, foreign, unknown -- which is the only way to
 #: prove the handler is inert for them rather than merely never asked.
+#:
+#: It connects the way a real one does: `open` is announced after the
+#: constructor returns, because the page attaches its listener on the line
+#: after `new EventSource(...)`. A double that never opened would leave the
+#: window permanently believing its stream was down, and every test built on
+#: it would be testing the disconnected window by accident.
 _STREAM_DOUBLE = """
 window.__streamOpens = 0;
 class TestStream {
@@ -133,6 +139,7 @@ class TestStream {
     this.onmessage = null;
     window.__stream = this;
     window.__streamOpens += 1;
+    setTimeout(() => this.fire("open"), 0);
   }
   addEventListener(name, handler) {
     (this.listeners[name] = this.listeners[name] || []).push(handler);
@@ -515,12 +522,15 @@ def test_a_foreign_or_unreadable_frame_moves_nothing_on_screen(
         page.context.close()
 
 
-def test_a_dropped_stream_rotates_the_session_the_next_write_must_use(
+def test_a_dropped_stream_shuts_the_write_door_until_the_run_is_read_again(
         chromium: Browser, wire_url: str) -> None:
-    """A write may not ride a credential issued before the connection died.
+    """The window promises this in words, so the code has to keep it.
 
-    The count of session reads is the witness: the token is cached across
-    writes, so a second session read can only mean the first was thrown away.
+    An earlier version of this test asserted the opposite -- it counted a
+    SECOND session read after the drop and called that the point, which is a
+    test pinning a write the notice beside it said could not happen. What the
+    sentence claims is that nothing may be written until the stream is back,
+    and the witnesses for that are counts of zero: no session read, no POST.
     """
     page, recorder = _open(chromium, wire_url, double=True)
     try:
@@ -531,17 +541,136 @@ def test_a_dropped_stream_rotates_the_session_the_next_write_must_use(
         page.wait_for_function(
             "() => document.getElementById('saveStatus').innerText"
             ".includes('The plan is written')")
-        assert len(recorder.matching("GET", "/command/session")) == 1
+        sessions = len(recorder.matching("GET", "/command/session"))
+        writes = len(recorder.matching("POST", "/graph"))
+        assert sessions == 1 and writes == 1
+
         page.evaluate("() => window.__stream.fire('error')")
         page.wait_for_function(
-            "() => document.getElementById('saveStatus').innerText"
-            ".includes('Connection lost')")
+            "() => document.querySelector('[name=\\'save\\']').disabled")
+        assert "Connection lost" in page.locator("#saveStatus").inner_text()
+        assert "stream is not carrying" in page.locator("#saveCard").inner_text()
+        # Pressed anyway, through the DOM: a disabled control must be inert in
+        # fact, not merely styled as though it were.
+        page.locator('[name="graphId"]').fill(GRAPH_ID)
+        page.evaluate("() => document.querySelector('[name=\\'save\\']').click()")
+        page.evaluate("() => new Promise(done => requestAnimationFrame(done))")
+        assert len(recorder.matching("GET", "/command/session")) == sessions
+        assert len(recorder.matching("POST", "/graph")) == writes
+    finally:
+        page.context.close()
+
+
+def test_a_reconnect_reopens_the_write_door_only_after_the_run_is_read(
+        chromium: Browser, wire_url: str) -> None:
+    """An open socket is not a current screen.
+
+    What the stream missed while it was down is unknown, so the door stays
+    shut across the reconnect itself and opens on the authoritative read that
+    follows it -- the read is the thing that makes this window current again.
+    """
+    page, recorder = _open(chromium, wire_url, double=True)
+    try:
+        _load_run(page, EMPTY_RUN)
+        page.get_by_role("button", name="Start from the default").click()
+        page.wait_for_function("() => document.querySelectorAll('.g-node').length === 8")
+        page.evaluate("() => window.__stream.fire('error')")
+        page.wait_for_function(
+            "() => document.querySelector('[name=\\'save\\']').disabled")
+        before = recorder.reads(EMPTY_RUN)
+        page.evaluate("() => window.__stream.fire('open')")
+        page.wait_for_function(
+            "() => !document.querySelector('[name=\\'save\\']').disabled")
+        assert recorder.reads(EMPTY_RUN) == before + 1
+        # That read is authoritative, so it also REPLACES the drawing: this
+        # run follows no graph, and the draft made before the drop is not a
+        # fact about it. The Human draws again and then writes.
+        assert page.locator(".g-node").count() == 0
+        assert "follows no graph yet" in page.locator("#notice").inner_text()
+        page.get_by_role("button", name="Start from the default").click()
+        page.wait_for_function("() => document.querySelectorAll('.g-node').length === 8")
         _save(page, GRAPH_ID)
         page.wait_for_function(
             "() => document.getElementById('saveStatus').innerText"
-            ".includes('already stands')")
-        assert len(recorder.matching("GET", "/command/session")) == 2
+            ".includes('The plan is written')")
     finally:
+        page.context.close()
+
+
+def test_a_write_that_lands_after_the_human_moved_on_is_not_that_runs_answer(
+        chromium: Browser, wire_url: str) -> None:
+    """A POST for one run may not report itself on another run's screen.
+
+    The write is held open on the wire while the Human loads a different run,
+    and only then answered. Nothing about the first run may appear on the
+    second: not its success, and not an authoritative re-read of it.
+    """
+    page, recorder = _open(chromium, wire_url, double=True)
+    held: dict[str, Route] = {}
+    try:
+        _load_run(page, EMPTY_RUN)
+        page.get_by_role("button", name="Start from the default").click()
+        page.wait_for_function("() => document.querySelectorAll('.g-node').length === 8")
+        page.route("**/graph", lambda route: held.setdefault("route", route))
+        _save(page, GRAPH_ID)
+        page.wait_for_function("() => document.getElementById('saveStatus')"
+                               ".innerText.includes('Writing one immutable')")
+        _load_run(page, DURABLE_RUN)
+        before = recorder.reads(EMPTY_RUN)
+        held["route"].fulfill(status=201, content_type="application/json",
+                              body=json.dumps({"graph_id": GRAPH_ID}))
+        page.evaluate("() => new Promise(done => setTimeout(done, 250))")
+        status = page.locator("#saveStatus").inner_text()
+        assert "The plan is written" not in status
+        assert recorder.reads(EMPTY_RUN) == before
+        # And the screen still belongs to the run the Human is looking at.
+        assert DIGEST in page.locator("#sourceLine").inner_text()
+    finally:
+        page.unroute("**/graph")
+        page.context.close()
+
+
+def test_a_run_frame_arriving_mid_refetch_does_not_swallow_the_write_outcome(
+        chromium: Browser, wire_url: str) -> None:
+    """The plan was written; the sentence saying so must survive the race.
+
+    The authoritative re-read that follows a write is held open, a run frame
+    lands while it is in flight, and that read is therefore superseded. The
+    outcome must still be announced by the read that replaces it -- otherwise
+    a graph reaches the journal and the window never says a word about it.
+    """
+    page, recorder = _open(chromium, wire_url, double=True)
+    reads: dict[str, Route] = {}
+
+    def hold_first(route: Route) -> None:
+        if "first" in reads:
+            route.continue_()
+            return
+        reads["first"] = route
+
+    try:
+        _load_run(page, EMPTY_RUN)
+        page.get_by_role("button", name="Start from the default").click()
+        page.wait_for_function("() => document.querySelectorAll('.g-node').length === 8")
+        page.route(f"**/command/runs/{EMPTY_RUN}", hold_first)
+        _save(page, GRAPH_ID)
+        page.wait_for_function(
+            "() => document.getElementById('saveStatus').innerText"
+            ".includes('Writing one immutable')")
+        # The save's own re-read is now held open. A run frame supersedes it.
+        while "first" not in reads:
+            page.evaluate("() => new Promise(done => setTimeout(done, 20))")
+        page.evaluate(
+            "id => window.__stream.emit(JSON.stringify({kind: 'run', run_id: id}))",
+            EMPTY_RUN)
+        reads["first"].continue_()
+        page.wait_for_function(
+            "() => document.getElementById('saveStatus').innerText"
+            ".includes('The plan is written')")
+        assert "DURABLE" in page.locator("#sourceLine").inner_text()
+        assert len(recorder.matching("POST", "/graph")) == 1
+    finally:
+        page.unroute(f"**/command/runs/{EMPTY_RUN}")
         page.context.close()
 
 
