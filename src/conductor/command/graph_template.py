@@ -60,6 +60,7 @@ from .graph_definition import (
     GraphLoop,
     GraphNode,
     GraphResource,
+    _ABSENT,
     _exact,
     _json_list,
     _json_object,
@@ -95,6 +96,17 @@ _PROBE_AT = "1970-01-01T00:00:00Z"
 _PROBE_GRAPH = "graph-template-probe"
 
 MAX_ROLES = 64
+#: The one schema this contract speaks, and it is held EXACTLY rather than as a
+#: floor. `graph_definition` tolerates a forward version because it is an OPEN
+#: document: it carries fields it does not know through in `extra`, so a later
+#: revision of itself is something it can honestly hold. This document is CLOSED
+#: at every level -- every `from_dict` refuses a key its contract does not name
+#: -- so it cannot read a later revision at all. Accepting one meant taking a v2
+#: document that happened to use only v1 fields, and answering a v2 document
+#: that used a new field with "unsupported field", which tells its author the
+#: field is wrong when what is actually wrong is that this build does not speak
+#: their schema.
+SCHEMA_VERSION = 1
 
 
 class TemplateError(ContractError):
@@ -205,8 +217,18 @@ class TemplateNode:
 
     @classmethod
     def from_dict(cls, value: object) -> "TemplateNode":
-        data = _json_object("template node", value)
-        arguments = data.pop(EXEMPT_FIELD, None)
+        # Refused exactly, then COPIED. `_json_object` hands back the caller's
+        # own dict and every field below is taken with `pop`, so reading a
+        # document emptied it: a caller could not read the same file twice, and
+        # the second read failed claiming a required field was missing when the
+        # first read is what removed it. `_raw` next door copies for this reason.
+        data = dict(_json_object("template node", value))
+        # The sentinel, not `None`, and `graph_definition` uses the same one for
+        # the same reason: a key that is ABSENT is a step with no payload, and a
+        # key present with an explicit `null` is a document that says something
+        # else and says it wrongly. Defaulting to `None` spelled both as "empty"
+        # and told the author of the second nothing at all.
+        arguments = data.pop(EXEMPT_FIELD, _ABSENT)
         unknown = sorted(set(data) - (cls._FIELDS - {EXEMPT_FIELD}))
         if unknown:
             raise TemplateError(f"template node carries unsupported field(s) {unknown!r}")
@@ -217,7 +239,7 @@ class TemplateNode:
             title=_take(data, "title"), stage=data.pop("stage", None),
             role_id=data.pop("role_id", None),
             capability=data.pop("capability", None),
-            arguments={} if arguments is None else arguments,
+            arguments={} if arguments is _ABSENT else arguments,
             resources=tuple(GraphResource.from_dict(row) for row in resources),
             gate_id=data.pop("gate_id", None),
             loop=None if loop is None else GraphLoop.from_dict(loop))
@@ -238,7 +260,7 @@ class GraphTemplate:
     title: str
     nodes: tuple[TemplateNode, ...]
     edges: tuple[GraphEdge, ...] = ()
-    schema_version: int = 1
+    schema_version: int = SCHEMA_VERSION
 
     _FIELDS = frozenset({
         "schema_version", "template_id", "revision", "title", "nodes", "edges",
@@ -248,8 +270,7 @@ class GraphTemplate:
         object.__setattr__(self, "template_id", _id("template_id", self.template_id))
         object.__setattr__(self, "title", _text("title", self.title))
         object.__setattr__(self, "revision", _revision(self.revision))
-        object.__setattr__(self, "schema_version", _exact(
-            "template schema_version", self.schema_version, int))
+        object.__setattr__(self, "schema_version", _schema_spoken(self.schema_version))
         object.__setattr__(self, "nodes", self._settled_nodes())
         object.__setattr__(self, "edges", tuple(
             _rebuilt_edge(row) for row in _sequence("template edges", self.edges)))
@@ -346,7 +367,7 @@ class GraphTemplate:
 
     @classmethod
     def from_dict(cls, value: object) -> "GraphTemplate":
-        data = _json_object("template", value)
+        data = dict(_json_object("template", value))
         unknown = sorted(set(data) - cls._FIELDS)
         if unknown:
             raise TemplateError(f"template carries unsupported field(s) {unknown!r}")
@@ -358,7 +379,18 @@ class GraphTemplate:
                         for row in _json_list("template nodes", _take(data, "nodes"))),
             edges=tuple(GraphEdge.from_dict(row)
                         for row in _json_list("template edges", data.pop("edges", []))),
-            schema_version=data.pop("schema_version", 1))
+            schema_version=data.pop("schema_version", SCHEMA_VERSION))
+
+
+def _schema_spoken(value: object) -> int:
+    """Exactly the one schema this closed document can honestly read."""
+    number = _exact("template schema_version", value, int)
+    if number != SCHEMA_VERSION:
+        raise TemplateError(
+            f"this build speaks template schema_version {SCHEMA_VERSION} and "
+            f"this document claims {number}; a closed contract cannot read a "
+            "revision of itself it has never seen")
+    return number
 
 
 def _revision(value: object) -> int:
@@ -453,7 +485,7 @@ class RunBinding:
 
     @classmethod
     def from_dict(cls, value: object) -> "RunBinding":
-        data = _json_object("run binding", value)
+        data = dict(_json_object("run binding", value))
         unknown = sorted(set(data) - {"assignments"})
         if unknown:
             raise TemplateError(f"run binding carries unsupported field(s) {unknown!r}")
@@ -569,8 +601,13 @@ def load_template(name: str) -> GraphTemplate:
     path = TEMPLATE_DIR / f"{name}.json"
     try:
         document = json.loads(path.read_text(encoding="utf-8"))
-    except OSError as error:
-        raise TemplateError(f"no shipped template named {name!r}") from error
+    except OSError:
+        # `from None`, and the OSError is not bound at all. Its `str` carries
+        # the FULL path it failed on -- `TEMPLATE_DIR` joined with whatever the
+        # caller asked for -- so chaining it printed this server's directory
+        # layout under any traceback or error-reporting boundary. The name the
+        # caller already knows is the whole of what this refusal owes them.
+        raise TemplateError(f"no shipped template named {name!r}") from None
     except json.JSONDecodeError as error:
         raise TemplateError(f"shipped template {name!r} is not JSON: {error}") from None
     return GraphTemplate.from_dict(document)

@@ -7,6 +7,7 @@ written beside the test would only prove that two pieces of this file agree.
 from __future__ import annotations
 
 import json
+import traceback
 import zipfile
 from pathlib import Path
 
@@ -23,6 +24,7 @@ from conductor.command.graph_definition import (
 )
 from conductor.command.graph_template import (
     DEPLOYMENT_ONLY_FIELDS,
+    SCHEMA_VERSION,
     TEMPLATE_DIR,
     GraphTemplate,
     RunBinding,
@@ -450,6 +452,68 @@ def test_a_binding_holds_its_assignments_closed_against_an_edit_in_place():
     with pytest.raises(TypeError):
         binding.assignments["role-thinker"] = "somebody-else"
     assert binding.bound()["role-thinker"] == "solo"
+
+
+# --- what a closed document accepts, and what it says when it will not ---
+
+
+@pytest.mark.parametrize("document", [
+    {"node_id": "g", "kind": "gate", "title": "G", "gate_id": "gate-x"},
+    {"node_id": "a", "kind": "task", "title": "A", "stage": "goal",
+     "role_id": "role-a", "capability": "review"},
+], ids=["a gate that carries no payload", "an acting step with none yet"])
+def test_an_absent_payload_is_a_step_with_none_and_an_explicit_null_is_refused(document):
+    """Absent and null are two different documents and get two answers.
+
+    A key that is not there is a step with nothing to hand its capability. A
+    key that IS there saying `null` is a document making a statement, and it is
+    making it wrongly -- reading both as "empty" told that author nothing.
+    """
+    assert TemplateNode.from_dict(document).payload() == {}
+    with pytest.raises(ContractError, match="must be a JSON object"):
+        TemplateNode.from_dict({**document, "arguments": None})
+
+
+def test_a_document_survives_being_read_and_can_be_read_again():
+    """Every field below is taken with `pop`, so the popping must be our own.
+
+    Reading a template emptied the caller's document, and the SECOND read then
+    failed claiming a required field was missing -- when the first read is what
+    removed it.
+    """
+    document = dalio().as_dict()
+    first = GraphTemplate.from_dict(document)
+    second = GraphTemplate.from_dict(document)
+    assert first.as_dict() == second.as_dict() == document
+
+
+def test_this_build_speaks_one_template_schema_and_says_so_to_any_other():
+    template = dalio()
+    assert template.as_dict()["schema_version"] == SCHEMA_VERSION
+    document = template.as_dict()
+    for claimed in (SCHEMA_VERSION + 1, SCHEMA_VERSION - 1, 99):
+        with pytest.raises(TemplateError, match="schema_version"):
+            GraphTemplate.from_dict({**document, "schema_version": claimed})
+    # An absent version is this schema, which is what every shipped file is.
+    without = {name: value for name, value in document.items()
+               if name != "schema_version"}
+    assert GraphTemplate.from_dict(without).schema_version == SCHEMA_VERSION
+
+
+def test_a_missing_template_is_refused_without_naming_the_servers_disk():
+    """The refusal owes the caller the name they asked for, and nothing else.
+
+    `OSError` carries the FULL path it failed on, so chaining it printed this
+    server's directory layout under any traceback or reporting boundary.
+    """
+    with pytest.raises(TemplateError) as refusal:
+        load_template("no-such-template")
+    assert refusal.value.__cause__ is None
+    assert refusal.value.__suppress_context__ is True
+    printed = "".join(traceback.format_exception(
+        type(refusal.value), refusal.value, refusal.value.__traceback__))
+    assert str(TEMPLATE_DIR) not in printed
+    assert "no-such-template" in str(refusal.value)
 
 
 def test_the_shipped_template_reaches_the_wheel_a_user_installs(tmp_path):
