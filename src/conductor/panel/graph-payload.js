@@ -583,4 +583,3 @@ export function projectPayload(payload) {
     nodes: Object.freeze(nodes), edges, layout, timeline, provenance,
   });
 }
-

@@ -331,4 +331,3 @@ def test_a_run_frame_arriving_mid_refetch_does_not_swallow_the_write_outcome(
     finally:
         page.unroute(f"**/command/runs/{EMPTY_RUN}")
         page.context.close()
-

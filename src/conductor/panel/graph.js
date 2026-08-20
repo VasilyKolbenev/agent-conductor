@@ -83,7 +83,6 @@ const STREAM_DOWN = "Connection lost. The last authoritative facts are still "
   // A save outcome waiting for the authoritative read that will make it true.
   // It rides THROUGH the re-read rather than being announced before it: the
   // answer belongs to the Human who asked, and the read is what confirms it.
-  // It names its run, because it is only true of that one.
   let pendingCarry = null;
   // dispatch stays module-internal: the public seam is load/state only, so
   // no caller can commit facts that skipped the projectPayload boundary.
@@ -304,8 +303,8 @@ const STREAM_DOWN = "Connection lost. The last authoritative facts are still "
     // An accepted answer is still only an answer. What this run follows is
     // whatever the authoritative read says it follows, so the local copy is
     // dropped and re-read rather than trusted.
-    refreshSelectedRun(saveRun, {runId: saveRun, phase: "idle",
-      notice: result.created ? CREATED : RESTATED});
+    refreshSelectedRun(saveRun,
+      {phase: "idle", notice: result.created ? CREATED : RESTATED});
   }
   async function readJson(target) {
     const response = await fetch(target, {cache: "no-store"});
@@ -342,13 +341,18 @@ const STREAM_DOWN = "Connection lost. The last authoritative facts are still "
       ? {type: "absent", notice: ABSENT, ...carry}
       : {type: "refused", notice: CORRUPT, ...carry};
   }
-  // A held save outcome is consumed only by the read that ANNOUNCES it, and
-  // only for the run it was asked about. Consuming it before the dispatch is
-  // how a plan came to be written with nothing on screen ever saying so: a
-  // run frame arriving mid-read superseded that read, the outcome had already
-  // been taken out of the holder, and the retry announced nothing.
-  function takeCarry(runId) {
-    if (!pendingCarry || pendingCarry.runId !== runId) return {};
+  // A held save outcome is consumed only by the read that ANNOUNCES it.
+  // Consuming it before the dispatch is how a plan came to be written with
+  // nothing on screen ever saying so: a run frame arriving mid-read
+  // superseded that read, the outcome had already been taken out of the
+  // holder, and the retry announced nothing.
+  //
+  // It needs no run of its own to compare against. There is one door between
+  // this holder and another run's screen — `refreshSelectedRun` empties it
+  // the instant a different run is chosen — and a second check here would be
+  // a branch no caller can reach, which is a guard nobody can prove.
+  function takeCarry() {
+    if (!pendingCarry) return {};
     const held = {savePhase: pendingCarry.phase, saveNotice: pendingCarry.notice};
     pendingCarry = null;
     return held;
@@ -357,8 +361,8 @@ const STREAM_DOWN = "Connection lost. The last authoritative facts are still "
   // belongs to, and confirms no write. A save outcome still waiting on a read
   // is therefore DROPPED here rather than announced: the request was
   // accepted, and this window did not manage to see what the run now holds.
-  function unconfirmed(runId) {
-    if (!pendingCarry || pendingCarry.runId !== runId) return {};
+  function unconfirmed() {
+    if (!pendingCarry) return {};
     pendingCarry = null;
     return {savePhase: "outcome-unknown", saveNotice: UNKNOWN};
   }
@@ -373,11 +377,11 @@ const STREAM_DOWN = "Connection lost. The last authoritative facts are still "
       // the run now selected and about no other.
       if (requestEpoch !== epoch) return;
       dispatch(loadOutcome(read, registry,
-        {...takeCarry(runId), ready: streamOpen}));
+        {...takeCarry(), ready: streamOpen}));
     } catch (error) {
       if (requestEpoch !== epoch) return;
       const code = error instanceof Error ? error.message : "store_error";
-      dispatch({type: "refused", ...unconfirmed(runId), ready: false,
+      dispatch({type: "refused", ...unconfirmed(), ready: false,
         notice: ERROR_LABELS[code] || ERROR_LABELS.store_error});
     }
   }
