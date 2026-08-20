@@ -17,9 +17,14 @@
   <header class="shell">
     <span class="wordmark">December — Graph</span>
     <form class="g-run" id="runForm">
+      <!-- The dash is escaped, as it is everywhere else this grammar is
+           written down: an HTML `pattern` compiles under the `v` flag, where
+           an unescaped `-` at the end of a class is a syntax error. A pattern
+           that does not compile is IGNORED rather than enforced, which leaves
+           the attribute standing as an affordance that constrains nothing. -->
       <label class="command-field" for="graphRunId"><span>Run id</span>
         <input autocomplete="off" id="graphRunId" maxlength="128"
-          name="run_id" pattern="[A-Za-z0-9][A-Za-z0-9._-]{0,127}" required
+          name="run_id" pattern="[A-Za-z0-9][A-Za-z0-9._\-]{0,127}" required
           spellcheck="false" type="text"></label>
       <button type="submit">Load run</button>
     </form>
