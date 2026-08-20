@@ -177,6 +177,21 @@ def _save(page: Page, graph_id: str) -> None:
     page.get_by_role("button", name="Save plan to run").click()
 
 
+def _hold_first(reads: dict):
+    """Hold the FIRST matching request open; let every later one through.
+
+    Both races this module covers live in the moment between a request going
+    out and its answer coming back, and that moment cannot be reached by
+    waiting -- it has to be held.
+    """
+    def handler(route: Route) -> None:
+        if "held" in reads:
+            route.continue_()
+            return
+        reads["held"] = route
+    return handler
+
+
 def _card_for(page: Page, node_id: str) -> str:
     page.locator(f'[data-node-id="{node_id}"]').click()
     page.locator(".g-det__title").wait_for(state="visible")
@@ -570,6 +585,7 @@ def test_a_reconnect_reopens_the_write_door_only_after_the_run_is_read(
     follows it -- the read is the thing that makes this window current again.
     """
     page, recorder = _open(chromium, wire_url, double=True)
+    reads: dict[str, Route] = {}
     try:
         _load_run(page, EMPTY_RUN)
         page.get_by_role("button", name="Start from the default").click()
@@ -578,22 +594,29 @@ def test_a_reconnect_reopens_the_write_door_only_after_the_run_is_read(
         page.wait_for_function(
             "() => document.querySelector('[name=\\'save\\']').disabled")
         before = recorder.reads(EMPTY_RUN)
+        # The read is held open, so the window sits in the one moment this
+        # test is about: socket back, answer not yet. An end-state assertion
+        # could not tell "after the read" from "on the reconnect, with a read
+        # happening to follow" -- a mutation granting readiness on `open`
+        # passed a test written that way.
+        page.route(f"**/command/runs/{EMPTY_RUN}", _hold_first(reads))
         page.evaluate("() => window.__stream.fire('open')")
+        while "held" not in reads:
+            page.evaluate("() => new Promise(done => setTimeout(done, 20))")
+        assert page.evaluate(
+            "() => document.querySelector('[name=\\'save\\']').disabled") is True
+        reads["held"].continue_()
         page.wait_for_function(
             "() => !document.querySelector('[name=\\'save\\']').disabled")
         assert recorder.reads(EMPTY_RUN) == before + 1
         # That read is authoritative, so it also REPLACES the drawing: this
-        # run follows no graph, and the draft made before the drop is not a
-        # fact about it. The Human draws again and then writes.
+        # run follows no graph, and a draft made before the drop is not a fact
+        # about it. What a Human does next is draw again, and the writing half
+        # is proven by the tests that write.
         assert page.locator(".g-node").count() == 0
         assert "follows no graph yet" in page.locator("#notice").inner_text()
-        page.get_by_role("button", name="Start from the default").click()
-        page.wait_for_function("() => document.querySelectorAll('.g-node').length === 8")
-        _save(page, GRAPH_ID)
-        page.wait_for_function(
-            "() => document.getElementById('saveStatus').innerText"
-            ".includes('The plan is written')")
     finally:
+        page.unroute(f"**/command/runs/{EMPTY_RUN}")
         page.context.close()
 
 
@@ -641,29 +664,22 @@ def test_a_run_frame_arriving_mid_refetch_does_not_swallow_the_write_outcome(
     """
     page, recorder = _open(chromium, wire_url, double=True)
     reads: dict[str, Route] = {}
-
-    def hold_first(route: Route) -> None:
-        if "first" in reads:
-            route.continue_()
-            return
-        reads["first"] = route
-
     try:
         _load_run(page, EMPTY_RUN)
         page.get_by_role("button", name="Start from the default").click()
         page.wait_for_function("() => document.querySelectorAll('.g-node').length === 8")
-        page.route(f"**/command/runs/{EMPTY_RUN}", hold_first)
+        page.route(f"**/command/runs/{EMPTY_RUN}", _hold_first(reads))
         _save(page, GRAPH_ID)
         page.wait_for_function(
             "() => document.getElementById('saveStatus').innerText"
             ".includes('Writing one immutable')")
         # The save's own re-read is now held open. A run frame supersedes it.
-        while "first" not in reads:
+        while "held" not in reads:
             page.evaluate("() => new Promise(done => setTimeout(done, 20))")
         page.evaluate(
             "id => window.__stream.emit(JSON.stringify({kind: 'run', run_id: id}))",
             EMPTY_RUN)
-        reads["first"].continue_()
+        reads["held"].continue_()
         page.wait_for_function(
             "() => document.getElementById('saveStatus').innerText"
             ".includes('The plan is written')")
