@@ -23,6 +23,9 @@ from conductor.command.graph_definition import (
     RUNTIME_ONLY_FIELDS,
     GraphDefinition,
     GraphEdge,
+    GraphLoop,
+    GraphNode,
+    GraphResource,
 )
 from conductor.command.graph_template import (
     DEPLOYMENT_ONLY_FIELDS,
@@ -54,6 +57,16 @@ SOLO = {"instances": [{"id": "solo", "adapter": "claude-code"}]}
 
 def dalio() -> GraphTemplate:
     return load_template("dalio-v1")
+
+
+def _strings(value: object) -> set[str]:
+    """Every string anywhere in a JSON document, keys and values alike."""
+    if isinstance(value, dict):
+        return set(value) | {word for item in value.values()
+                             for word in _strings(item)}
+    if isinstance(value, list):
+        return {word for item in value for word in _strings(item)}
+    return {value} if isinstance(value, str) else set()
 
 
 def spread(template: GraphTemplate) -> RunBinding:
@@ -287,6 +300,62 @@ def test_a_synthetic_eighth_provider_needs_no_orchestration_change():
     assert is_dalio_template(definition)
     assert {node.instance_id for node in definition.nodes
             if node.instance_id} == {"eighth-node"}
+
+
+def test_the_shipped_cycle_pins_no_model_on_the_instance_that_runs_it():
+    """A resource row names a thing BY NAME, so a model here is a demand.
+
+    A definition materialized onto a Qwen, a GLM or a Grok instance would
+    still stand in the journal asking for Sonnet -- a durable record demanding
+    something of a product that has never heard of it. Which model runs is the
+    business of the configuration behind the assigned instance, not of a cycle
+    meant to run in more than one place.
+    """
+    template = dalio()
+    config = {"instances": [{"id": "eighth-node", "adapter": "synthetic-eighth"}]}
+    definition = materialize(
+        template, every_role_to(template, "eighth-node"), config,
+        graph_id="graph-eighth", run_id="run-eighth", created_at=NOW)
+    declared = {(row.kind, row.name) for node in definition.nodes
+                for row in node.resources}
+    # Two-sided on purpose. "No model" must not be satisfiable by carrying no
+    # resources at all, which is what the same fix applied in `_build` instead
+    # of in the data would do -- and every derived fixture would settle around
+    # it without a word.
+    assert ("sandbox", "project-root") in declared, sorted(declared)
+    assert not [row for row in declared if row[0] == "model"], sorted(declared)
+
+    # And the predicate can still fail, shown rather than asserted: the same
+    # walk over a tainted copy of the same document finds the row.
+    tainted = template.as_dict()
+    step = next(row for row in tainted["nodes"] if row["node_id"] == "do")
+    step["resources"].append({"kind": "model", "name": "sonnet"})
+    seen = materialize(
+        GraphTemplate.from_dict(tainted), every_role_to(template, "eighth-node"),
+        config, graph_id="graph-eighth", run_id="run-eighth", created_at=NOW)
+    assert "model" in {row.kind for node in seen.nodes for row in node.resources}
+
+
+def test_a_materialized_plan_invents_no_word_the_template_or_the_run_did_not():
+    """Every string in the record traces to the template, the binding or the run.
+
+    Derived rather than a blocklist of vendor words: a hand-typed list of
+    products to forbid rots the day an eighth one exists, and says nothing
+    about the ninth. This asks the opposite question -- where did each word
+    COME from -- so a literal smuggled in from anywhere else is a finding
+    whatever it happens to spell.
+    """
+    template = dalio()
+    config = {"instances": [{"id": "eighth-node", "adapter": "synthetic-eighth"}]}
+    binding = every_role_to(template, "eighth-node")
+    definition = materialize(template, binding, config, graph_id="graph-eighth",
+                             run_id="run-eighth", created_at=NOW)
+    supplied = _strings(template.as_dict()) | set(binding.bound().values())
+    supplied |= {"graph-eighth", "run-eighth", NOW}
+    for owner in (GraphDefinition, GraphNode, GraphResource, GraphEdge, GraphLoop):
+        supplied |= set(owner._FIELDS)
+    invented = sorted(_strings(definition.as_dict()) - supplied)
+    assert not invented, invented
 
 
 def test_a_capability_the_bound_adapter_cannot_do_still_materializes():

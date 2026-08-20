@@ -93,10 +93,6 @@
       },
       "resources": [
         {
-          "kind": "model",
-          "name": "sonnet"
-        },
-        {
           "kind": "sandbox",
           "name": "project-root"
         }

@@ -128,10 +128,6 @@
             "node_id": "do",
             "resources": [
               {
-                "kind": "model",
-                "name": "sonnet"
-              },
-              {
                 "kind": "sandbox",
                 "name": "project-root"
               }
@@ -160,7 +156,7 @@
         "run_id": "run-spread",
         "schema_version": 2
       },
-      "definition_digest": "sha256:12780371452870778c8cdfdc44f9fc0ee775fb07a120606bef05d79fb03d7dac",
+      "definition_digest": "sha256:9374d1e46e18464261abbf3fd2a7ffcb3c0bd51a418eb83468ce6161ee58bedb",
       "instances": [
         "claude-dev",
         "codex-review"
@@ -295,10 +291,6 @@
             "node_id": "do",
             "resources": [
               {
-                "kind": "model",
-                "name": "sonnet"
-              },
-              {
                 "kind": "sandbox",
                 "name": "project-root"
               }
@@ -327,7 +319,7 @@
         "run_id": "run-solo",
         "schema_version": 2
       },
-      "definition_digest": "sha256:42b6e53c5833de238ce6bda4808dc04a53edb1383f663db8a70aeab0d128f284",
+      "definition_digest": "sha256:4b795adc9bb66d6387dc50b3972106790d8cea008b2c95a7a2eb194e24d33137",
       "instances": [
         "solo-node"
       ],
