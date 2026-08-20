@@ -202,7 +202,14 @@ ApiRefusal.__setattr__ = _refusal_setattr
 
 @dataclass(frozen=True)
 class ProposalInput:
-    """Validated browser facts ready for CommandService.propose on a later slice."""
+    """One propose ENVELOPE: a validated shape around a payload not yet admitted.
+
+    `arguments` has met no capability schema here. The pair authority admits it
+    and `canonical_arguments` rebuilds it, in that order, and both happen on
+    the route rather than in this type -- so a reader who takes this as
+    "ready for CommandService.propose" would be taking a shape check for a
+    capability verdict. Nothing else in production consumes it.
+    """
 
     instance_id: str
     attempt_id: str
