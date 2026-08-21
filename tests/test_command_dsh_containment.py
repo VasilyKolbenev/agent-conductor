@@ -125,6 +125,38 @@ def test_a_portal_at_the_home_route_creates_no_attempt_home_outside_the_root(
 
 
 @pytest.mark.parametrize("kind", PORTALS)
+def test_a_portal_that_replaces_the_resolved_root_creates_nothing_through_it(
+        tmp_path, kind):
+    """The ROOT is a route component too, and this is the case that proves it.
+
+    The door's own docstring says the root is judged "because a portal standing
+    AT a container adopts external state exactly as one standing inside it
+    does" -- and until this test that sentence was unguarded: dropping the root
+    from the walked route left every sibling above still passing, because each
+    of them plants its portal one level DOWN.
+
+    The case is narrow and it is real. A workspace resolves its root once, at
+    construction, so an operator reaching a project through a link is answered
+    about the real tree; that is the alias the gate test relies on and it must
+    keep working. What must still refuse is the resolved root becoming a portal
+    AFTER that: the door then holds a concrete path whose kind changed under it,
+    and every name it would create beneath that path lands outside the project.
+    """
+    workspace, root = _rooted(tmp_path)
+    outside = _outside(tmp_path)
+    root.rmdir()
+    with skip_when_unavailable():
+        plant_route_portal(root, outside, kind=kind)
+    before = _tree(outside)
+
+    refusal = _refusal(workspace.mint_home, "attempt")
+
+    assert not (outside / HOME_DIR).exists(), "OUTSIDE_CREATED=True"
+    assert _tree(outside) == before
+    assert refusal is not None, "a portal at the resolved root must refuse the mint"
+
+
+@pytest.mark.parametrize("kind", PORTALS)
 def test_a_portal_at_the_marker_route_claims_nothing_outside_the_root(tmp_path, kind):
     workspace, root = _rooted(tmp_path)
     outside = _outside(tmp_path)

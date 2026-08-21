@@ -129,19 +129,49 @@ def test_a_provider_name_that_is_not_one_local_component_is_refused(tmp_path, na
 # --- two providers under one root are strangers ------------------------------
 
 
-def test_one_providers_sweep_never_removes_another_providers_attempt_home(tmp_path):
-    """The isolation the distinct names buy, read on the disk after the sweep."""
+def test_one_providers_sweep_removes_its_own_homes_and_no_neighbours(tmp_path):
+    """The isolation distinct names buy, held from BOTH sides in one test.
+
+    One side alone is not a guard. A sweep bounded to some other provider's
+    home root -- or to nothing at all -- leaves the neighbour's tree untouched
+    just as faithfully as a correct one does, so "the neighbour survived" passes
+    on a sweep that does nothing whatsoever. What makes the bound checkable is
+    the pair: this provider's own crashed home is gone, and the neighbour's is
+    not, after the same call.
+    """
     root = _root(tmp_path)
     one = HarnessWorkspace.at(root, home_dir=ONE_HOME, marker_dir=ONE_MARKER)
     two = HarnessWorkspace.at(root, home_dir=TWO_HOME, marker_dir=TWO_MARKER)
-    ours = two.mint_home("attempt-1")
-    (ours / "state.json").write_text("{}", encoding="utf-8")
+    crashed = one.mint_home("attempt-1")
+    (crashed / "state.json").write_text("{}", encoding="utf-8")
+    theirs = two.mint_home("attempt-1")
+    (theirs / "state.json").write_text("{}", encoding="utf-8")
 
     refused = one.sweep_homes()
 
     assert refused == (), "a neighbour's home is not even seen, let alone refused"
-    assert (ours / "state.json").read_text(encoding="utf-8") == "{}", (
+    assert not crashed.exists(), "OWN_CRASHED_HOME_SURVIVED=True"
+    assert (theirs / "state.json").read_text(encoding="utf-8") == "{}", (
         "NEIGHBOUR_HOME_SWEPT=True")
+
+
+def test_the_marker_name_is_the_route_the_door_actually_walks(tmp_path):
+    """``marker_path`` cannot name one route while ``claim`` writes another.
+
+    The unvalidated name and the walked route were computed separately, so the
+    two could disagree and nothing would say which was wrong. They are one
+    expression now, and this holds it the only way that means anything: the file
+    ``claim`` really created is found AT the name ``marker_path`` reports.
+    """
+    root = _root(tmp_path)
+    workspace = HarnessWorkspace.at(root, home_dir=ONE_HOME, marker_dir=ONE_MARKER)
+
+    workspace.claim("act-1")
+
+    named = workspace.marker_path("act-1")
+    assert named.is_file(), f"NOTHING_AT_THE_NAMED_MARKER={named}"
+    assert named.read_text(encoding="utf-8") == "act-1"
+    assert named.parent.name == ONE_MARKER, "the marker stands in the marker root"
 
 
 def _holds(workspace, entered, release):

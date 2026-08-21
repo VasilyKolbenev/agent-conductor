@@ -394,18 +394,36 @@ class HarnessWorkspace:
 
     # -- the crash-proof marker -----------------------------------------------
 
+    def _marker_parts(self, action_id: str) -> tuple[str, str]:
+        """The ONE spelling of a marker's route, so no two readers can disagree.
+
+        This existed three times before, and one of the three was a path built
+        straight from the fields with no containment walk behind it. Two
+        spellings of one route is the same defect as judging one value and
+        writing another: whichever is wrong, nothing tells you which. The route
+        is computed here and every reader below is handed it.
+        """
+        return (self.marker_dir, f"{action_id}.marker")
+
     def marker_path(self, action_id: str) -> Path:
-        """The marker's NAME. Nothing is established about it until it is read."""
-        return self.root / self.marker_dir / f"{action_id}.marker"
+        """The marker's NAME, and it is a NAME: nothing is established until read.
+
+        Deliberately still the unvalidated form, because that is what a name is.
+        What changed is that it can no longer say a different name than the one
+        ``claim`` writes and ``is_claimed`` reads -- all three take the same
+        parts -- so a caller that trusts this path is trusting the route the door
+        will actually walk.
+        """
+        return self.root.joinpath(*self._marker_parts(action_id))
 
     def is_claimed(self, action_id: str) -> bool:
         """True once a marker exists, which outlives the process that wrote it."""
-        _path, found = self._file_route(self.marker_dir, f"{action_id}.marker")
+        _path, found = self._file_route(*self._marker_parts(action_id))
         return found is not None
 
     def claim(self, action_id: str) -> None:
         """Claim the action BEFORE its task spawns, so a crash cannot un-claim it."""
-        marker, _found = self._file_route(self.marker_dir, f"{action_id}.marker")
+        marker, _found = self._file_route(*self._marker_parts(action_id))
         marker.parent.mkdir(parents=True, exist_ok=True)
         marker.write_text(action_id, encoding="utf-8", newline="\n")
 
