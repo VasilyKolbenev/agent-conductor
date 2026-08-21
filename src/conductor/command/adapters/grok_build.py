@@ -27,28 +27,48 @@ citation is re-checkable only if the words it said are written down.
 - **The FORM of that print** is source-backed, and it is the reason this module
   overrides the shared exact-string compare. Reading only the version CRATE is
   what made the first version of this adapter unable to dispatch at all, so the
-  whole line is traced here, from the entry point outward:
+  whole line is traced here from the ENTRY POINT this adapter actually drives --
+  the top-level ``--version`` flag -- outward:
 
-  * ``crates/codegen/xai-grok-pager-bin/src/main.rs`` builds it as
-    ``format!("grok {}\\n", display_version_with_commit(full_version(),
-    channel_label))`` -- so **the program name is part of the printed line**;
-  * the same ``main`` calls ``set_full_version(env!("VERSION_WITH_COMMIT"))``
-    unconditionally, so a release binary ALWAYS carries a commit;
-  * ``crates/codegen/xai-grok-pager-bin/build.rs`` sets that variable from
-    ``git rev-parse --short HEAD`` as ``"{version} ({commit})"``, falling back
-    to the literal ``unknown`` when git is unavailable -- so ``(unknown)`` is a
-    published form, and the abbreviation length is the builder's ``core.abbrev``
-    rather than anything this module may assume;
+  * ``crates/codegen/xai-grok-pager-bin/src/main.rs`` answers that flag in
+    ``dispatch_version_if_requested``, which calls ``write_version``, whose
+    ``version_text`` builds the line as ``format!("grok {}\\n",
+    display_version_with_commit(full_version(), channel_label))`` -- so **the
+    program name is part of the printed line**, and it is not optional. The
+    ``version`` subcommand's non-JSON arm calls the same ``write_version``;
+  * ``set_full_version(env!("VERSION_WITH_COMMIT"))`` is the FIRST statement of
+    that ``main``, ahead of ``PagerArgs::parse_cli()`` and therefore ahead of
+    the dispatch above -- so **a commit is already set before anything prints**.
+    Not usually: on every road through the binary;
+  * ``crates/codegen/xai-grok-pager-bin/build.rs`` sets that variable as
+    ``"{version} ({commit})"`` -- the parentheses live in the format string, so
+    they stand on EVERY path -- from ``git rev-parse --short HEAD``, trimmed,
+    falling back to the literal ``unknown`` when git is unavailable. So the
+    commit is lowercase hex or that one word, while its LENGTH is the builder's
+    ``core.abbrev`` rather than anything this module may assume;
   * ``crates/codegen/xai-grok-version/src/lib.rs`` appends the channel with
     ``format!("{}{}", version_with_commit, channel_label)``, and
     ``crates/codegen/xai-grok-update/src/version.rs``'s ``channel_label()``
     returns exactly ``" [alpha]"``, ``" [stable]"`` or ``""`` -- bracketed, with
-    a leading space.
+    a leading space. The channel, alone of the three, really is optional.
 
   So the real first line is ``grok 1.0.5 (abc1234) [stable]``, and the parser
   below reads that. An earlier version of this module modelled the crate alone,
   refused every string a real install prints, and would have made this provider
   advertise itself available while failing every preflight forever.
+
+  **The one fallback that is not a published form.** ``full_version()`` reads
+  ``FULL_VERSION.get().copied().unwrap_or(VERSION)``, so the CRATE can yield a
+  bare semver carrying no commit, and ``display_version_with_commit`` can be
+  called directly without the wrapper. The correction of the defect above read
+  those two facts as licence to make the ``grok `` prefix and the commit
+  optional, and that was the more expensive error of the two: neither is
+  reachable from the binary, because ``set_full_version`` runs before argument
+  parsing and ``--version`` has exactly one handler. What it bought instead was
+  that any executable printing the five bytes ``1.0.5`` cleared the one
+  preflight standing between an operator's pin and a real prompt. **A form the
+  crate can build is not a form the program prints**, and only the second is
+  this preflight's subject.
 - **The reviewed version is 1.0.5**, the latest stable release of 2026-08-15
   (x.ai/build/changelog).
 - **The home** relocates with ``GROK_HOME``: "Override config directory
@@ -171,26 +191,34 @@ VERSION_TIMEOUT_SECONDS = 30
 #: The two subtrees THIS provider owns beneath the project root.
 HOME_DIR = ".grok-home"
 MARKER_DIR = ".grok-marker"
-#: The ONE closed form this module will read a version out of. It is the form the
-#: CLI really prints, which is NOT the one the version crate builds -- see the
-#: module docstring: the entry point wraps that string as ``"grok {}\n"``, and a
-#: release binary always carries a commit because ``set_full_version`` is called
-#: unconditionally. So the program name is part of the line.
+#: The ONE closed form this module will read a version out of, closed on three
+#: sides. It is the form the CLI really prints, which is NOT the one the version
+#: crate builds -- see the module docstring, which traces every part of it to the
+#: statement that writes it.
 #:
-#: The commit is any parenthesised run of non-space, non-paren characters rather
-#: than a hex hash of a chosen length. Two published forms demanded that: the
-#: build script falls back to the literal ``unknown`` when git is unavailable,
-#: and ``git rev-parse --short`` honours ``core.abbrev``, so the length is the
-#: builder's setting and never a fact this module may assume.
+#: ``grok `` and the parenthesised commit are REQUIRED, because every road
+#: through the binary produces both: the entry point wraps the line as
+#: ``"grok {}\n"``, and ``set_full_version`` is ``main``'s first statement, so
+#: it has run before the flag is even parsed. Only the channel is optional,
+#: because only ``channel_label()`` genuinely returns ``""``.
 #:
-#: Still anchored at both ends. What the anchors buy is unchanged: an unanchored
-#: pattern finds ``1.0.5`` inside a warning line or inside a commit hash and
-#: calls that the version. What they must not do is refuse the real thing, which
-#: is exactly what they did while the ``grok `` prefix was missing from here.
+#: The commit is lowercase hex OR the literal ``unknown``, which is the whole set
+#: the build script can emit: ``git rev-parse --short HEAD`` writes hex, and the
+#: fallback writes that one word. The LENGTH is deliberately left unbounded --
+#: ``core.abbrev`` chooses it, so a bound would be this module assuming a
+#: builder's setting -- but the ALPHABET is the vendor's, and it is held.
+#:
+#: Still anchored at both ends, and now closed at the front as well. What the
+#: anchors buy is unchanged: an unanchored pattern finds ``1.0.5`` inside a
+#: warning line or inside a commit hash and calls that the version. The two
+#: errors this pattern has already made are opposite, and both are refusals to
+#: read the source: too narrow refused every real install, while an optional
+#: prefix and an optional commit admitted a bare ``1.0.5`` from any executable
+#: whatsoever -- and only the second one still looked green.
 _VERSION_FORM = re.compile(
-    r"\A(?:grok )?"
+    r"\Agrok "
     r"(?P<semver>\d+\.\d+\.\d+)"
-    r"(?: \((?P<commit>[^()\s]+)\))?"
+    r" \((?P<commit>[0-9a-f]+|unknown)\)"
     r"(?: \[(?P<channel>stable|alpha)\])?\Z")
 
 __all__ = [
@@ -262,11 +290,13 @@ class GrokBuildAdapter(HeadlessCliTransport):
         """PARSE the published form, and compare only its semver.
 
         The shared default compares the whole first line, which would refuse
-        every real Grok Build that prints its commit or its channel. So this
-        reads the closed form the vendor's own version module builds and takes
-        the semver out of it -- and the short commit and the channel label are
-        never allowed to become a version, which is the point of a closed
-        pattern anchored at both ends rather than a search.
+        every real Grok Build, because a real one always prints its commit and
+        usually its channel. So this reads the closed form the vendor's ENTRY
+        POINT prints -- not the one its version module builds, which is a
+        different string with a different set of optional parts -- and takes the
+        semver out of it. The short commit and the channel label are never
+        allowed to become a version, which is the point of a closed pattern
+        anchored at both ends rather than a search.
 
         Still a BOOLEAN. Nothing derived from the child's bytes leaves this
         method, because a hostile build could put a secret where a version

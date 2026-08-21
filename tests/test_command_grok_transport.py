@@ -264,39 +264,44 @@ def test_an_entrypoint_pinned_against_a_single_binary_costs_availability(
 # --- the version is PARSED, and only its semver counts ------------------------
 
 
-#: Every shape the vendor's own composition can produce, built as an explicit
-#: cross-product so a form cannot be dropped by editing prose. The vendor builds
-#: the line by wrapping the version crate's string with the program name and a
-#: newline, and each of the three parts is independently optional in the sources:
-#: the program name because `display_version_with_commit` is also called
-#: directly, the commit because `full_version()` may carry none, and the channel
-#: because `channel_label()` returns "" on a build with no channel.
-_PREFIXES = ("", "grok ")
-_COMMITS = ("", " (abc1234)")
+#: Every shape the vendor's own composition can produce -- and only those -- built
+#: as an explicit cross-product so a form cannot be dropped by editing prose.
+#:
+#: Two of the three parts do NOT vary, and the sources are what say so: the entry
+#: point wraps the crate's string as `format!("grok {}\n", ...)`, so the program
+#: name is on every line; and `set_full_version(env!("VERSION_WITH_COMMIT"))` is
+#: `main`'s FIRST statement, ahead of argument parsing and therefore ahead of the
+#: `--version` dispatch, so the commit is always already set. Only the channel
+#: varies, because only `channel_label()` really returns "".
+#:
+#: So the cross-product runs over the commit CONTENTS and the channel. The
+#: contents are not this suite's invention either: `build.rs` writes `git
+#: rev-parse --short HEAD` or falls back to the literal `unknown`, and
+#: `core.abbrev` picks the length -- so a 4-hex, a 7-hex, a 40-hex and that one
+#: word are all published, and no length among them is this parser's to assume.
+_COMMITS = ("abc1234", "unknown", "def0", "0123456789abcdef" * 2 + "01234567")
 _CHANNELS = ("", " [stable]", " [alpha]")
 ACCEPTED_FORMS = tuple(
-    f"{prefix}1.0.5{commit}{channel}"
-    for prefix in _PREFIXES for commit in _COMMITS for channel in _CHANNELS)
-#: Commit CONTENTS the sources publish beyond a 7-hex hash: `build.rs` falls back
-#: to the literal `unknown`, and `git rev-parse --short` honours `core.abbrev`, so
-#: neither the alphabet nor the length is this module's to assume.
-ACCEPTED_COMMITS = (
-    "grok 1.0.5 (unknown)",
-    "grok 1.0.5 (def0)",
-    "grok 1.0.5 (0123456789abcdef0123456789abcdef01234567) [stable]",
-)
+    f"grok 1.0.5 ({commit}){channel}"
+    for commit in _COMMITS for channel in _CHANNELS)
 
 
 def test_the_accepted_set_is_the_whole_cross_product_and_nothing_was_dropped():
-    """A count, so editing the lists above cannot silently narrow coverage."""
-    assert len(ACCEPTED_FORMS) == len(_PREFIXES) * len(_COMMITS) * len(_CHANNELS)
+    """A count, so editing the lists above cannot silently narrow coverage.
+
+    Two members are named as well, and deliberately the two a reader would not
+    think to write: a commit with no channel at all, and the word the build
+    script falls back to when it cannot reach git.
+    """
+    assert len(ACCEPTED_FORMS) == len(_COMMITS) * len(_CHANNELS)
     assert len(ACCEPTED_FORMS) == 12
-    assert "grok 1.0.5" in ACCEPTED_FORMS, "the bare prefixed form must be covered"
-    assert "1.0.5" in ACCEPTED_FORMS, "the bare crate-level form must be covered"
-    assert len(set(ACCEPTED_FORMS) | set(ACCEPTED_COMMITS)) == 15
+    assert "grok 1.0.5 (abc1234)" in ACCEPTED_FORMS, "a commit with no channel"
+    assert "grok 1.0.5 (unknown)" in ACCEPTED_FORMS, "the git-less fallback"
+    assert all(form.startswith("grok 1.0.5 (") for form in ACCEPTED_FORMS), (
+        "the program name and the commit are not optional in any published form")
 
 
-@pytest.mark.parametrize("printed", ACCEPTED_FORMS + ACCEPTED_COMMITS)
+@pytest.mark.parametrize("printed", ACCEPTED_FORMS)
 def test_every_published_form_of_the_version_print_is_accepted(tmp_path, printed):
     """Every shape a real install can print, driven end to end through a child.
 
@@ -305,6 +310,9 @@ def test_every_published_form_of_the_version_print_is_accepted(tmp_path, printed
     point that adds the `grok ` prefix, so it refused every string a real Grok
     Build prints -- while the row still reported itself available. The provider
     could not have dispatched once.
+
+    Its guard against over-correction is `REFUSED_FORMS`, and the two must be
+    read together: this test alone is passed by a parser that accepts anything.
     """
     adapter, _root, log = a_harness(tmp_path, FAKEGROK_VERSION=printed)
 
@@ -314,37 +322,69 @@ def test_every_published_form_of_the_version_print_is_accepted(tmp_path, printed
     assert len(_fakegrok.prompt_spawns(log)) == 1
 
 
+#: Forms the version CRATE can build and the PROGRAM never prints. They are
+#: named together rather than scattered through the matrix because what they
+#: share is not a shape: each is what you get by reading `full_version()`'s
+#: `unwrap_or(VERSION)` fallback, or a direct call to
+#: `display_version_with_commit`, as if it were a published form. Neither is
+#: reachable through the binary, and a probe on `dcfd7af` found this preflight
+#: ADMITTING all four -- which is the whole reason they are written down here.
+CRATE_ONLY_FORMS = (
+    "1.0.5",
+    "grok 1.0.5",
+    "1.0.5 [alpha]",
+    "1.0.5 (abc1234)",
+    "1.0.5 (abc1234) [stable]",
+    "grok 1.0.5 [stable]",
+)
+#: Commit CONTENTS no road through `build.rs` can emit. `git rev-parse --short`
+#: writes lowercase hex, and the one fallback writes one lowercase word, so
+#: anything else between those parentheses was printed by something that is not
+#: a Grok Build. `..` and a bare semver are here because a parenthesised run of
+#: any non-space characters -- which is what this parser used to accept -- reads
+#: a path fragment and a version number as a commit just as happily as a hash.
+UNPUBLISHED_COMMITS = (
+    "zzzzzzz", "ABC1234", "Unknown", "unknown2", "../../etc", "1.0.5", "abc 1234",
+    "",
+)
 #: The refusal matrix, grouped by WHAT is wrong, so a failure names its category
-#: rather than one string among many.
+#: rather than one string among many. Every row outside `crate-only` is dressed
+#: in the published form and wrong in exactly ONE part -- otherwise a row could
+#: keep passing for a reason its category does not name.
 REFUSED_FORMS = (
-    # a different version
-    ("version", "1.0.4"),
+    # a form only the crate can build
+    *(("crate-only", form) for form in CRATE_ONLY_FORMS),
+    # a different version, dressed correctly in every other part
     ("version", "grok 1.0.4 (abc1234) [stable]"),
-    ("version", "1.0.50"),
-    ("version", "grok 1.0.50"),
-    ("version", "1.0.5.1"),
-    ("version", "grok 1.0.5-rc.1"),
-    ("version", "grok 1.0.5+meta"),
-    ("version", "01.0.5"),
+    ("version", "grok 1.0.50 (abc1234)"),
+    ("version", "grok 1.0.5.1 (abc1234)"),
+    ("version", "grok 1.0.5-rc.1 (abc1234)"),
+    ("version", "grok 1.0.5+meta (abc1234)"),
+    ("version", "grok 01.0.5 (abc1234)"),
+    ("version", "grok 1.0 (abc1234)"),
     # a prefix that is not the program name
-    ("prefix", "krog 1.0.5"),
-    ("prefix", "grok  1.0.5"),
-    ("prefix", "GROK 1.0.5"),
-    ("prefix", "the grok 1.0.5 release"),
-    ("prefix", "v1.0.5"),
-    # a commit that is not a parenthesised token
-    ("commit", "grok 1.0.5 (abc 1234)"),
-    ("commit", "grok 1.0.5 ()"),
-    ("commit", "grok 1.0.5 abc1234"),
-    ("commit", "grok 1.0.5 (abc1234"),
-    ("commit", "grok 1.0.5 ((abc1234))"),
+    ("prefix", "krog 1.0.5 (abc1234)"),
+    ("prefix", "grok  1.0.5 (abc1234)"),
+    ("prefix", "GROK 1.0.5 (abc1234)"),
+    ("prefix", "Grok 1.0.5 (abc1234)"),
+    ("prefix", "grok-build 1.0.5 (abc1234)"),
+    ("prefix", "the grok 1.0.5 (abc1234)"),
+    ("prefix", "grok v1.0.5 (abc1234)"),
+    # a commit whose CONTENTS the build script cannot emit
+    *(("commit", f"grok 1.0.5 ({commit})") for commit in UNPUBLISHED_COMMITS),
+    # a commit that is not a parenthesised token at all
+    ("commit-shape", "grok 1.0.5 abc1234"),
+    ("commit-shape", "grok 1.0.5 (abc1234"),
+    ("commit-shape", "grok 1.0.5 ((abc1234))"),
+    ("commit-shape", "grok 1.0.5(abc1234)"),
     # a channel the sources do not publish
     ("channel", "grok 1.0.5 (abc1234) [beta]"),
-    ("channel", "grok 1.0.5 [STABLE]"),
-    ("channel", "grok 1.0.5 stable"),
-    ("channel", "grok 1.0.5 [stable] [alpha]"),
+    ("channel", "grok 1.0.5 (abc1234) [STABLE]"),
+    ("channel", "grok 1.0.5 (abc1234) stable"),
+    ("channel", "grok 1.0.5 (abc1234) [stable] [alpha]"),
+    ("channel", "grok 1.0.5 (abc1234)[stable]"),
     # anything extra on the line
-    ("extra", "1.0.5 extra"),
+    ("extra", "grok 1.0.5 (abc1234) extra"),
     ("extra", "grok 1.0.5 (abc1234) [stable] warning"),
     ("extra", "(1.0.5)"),
     ("extra", "abc1234"),
@@ -377,16 +417,19 @@ def test_no_other_shape_is_read_as_the_reviewed_version(tmp_path, category, prin
 #: non-UTF-8 belong here: `_version_token` reads the first non-empty line and
 #: decodes with `errors="replace"`, and both readings must refuse rather than
 #: find a version somewhere in the noise.
+#: Each carries a VALID commit wherever the noise is not the subject, so a row
+#: still refuses for the reason its category names rather than for want of a
+#: part that the tightened pattern now requires anyway.
 REFUSED_BYTES = (
-    ("multiline", b"warning: stale\n1.0.5\n"),
-    ("multiline", b"grok 1.0.4\ngrok 1.0.5\n"),
-    ("non-utf8", b"\xff\xfe1.0.5"),
+    ("multiline", b"warning: stale\ngrok 1.0.5 (abc1234)\n"),
+    ("multiline", b"grok 1.0.4 (abc1234)\ngrok 1.0.5 (abc1234)\n"),
+    ("non-utf8", b"\xff\xfegrok 1.0.5 (abc1234)"),
     ("non-utf8", b"grok \xc3(1.0.5)"),
     ("non-utf8", b"\xef\xbb\xbfgrok 1.0.5 (abc1234)"),
     ("non-utf8", "grok 1.0.5 (abc1234)".encode("utf-16-le")),
-    ("control", b"grok 1.0.5\x00"),
-    ("control", b"\x1b[32mgrok 1.0.5\x1b[0m"),
-    ("digits", "grok \u0661.\u0660.\u0665".encode("utf-8")),
+    ("control", b"grok 1.0.5 (abc1234)\x00"),
+    ("control", b"\x1b[32mgrok 1.0.5 (abc1234)\x1b[0m"),
+    ("digits", "grok \u0661.\u0660.\u0665 (abc1234)".encode("utf-8")),
 )
 
 
@@ -423,8 +466,8 @@ def test_the_one_byte_sequence_that_is_the_reviewed_version_is_accepted():
 #: never fished past, which the refusal matrix holds -- and that trailing chatter
 #: from a reviewed build does not stop a dispatch it should not stop.
 TOLERATED_TRAILING = (
-    b"grok 1.0.5\nsecond line\n",
-    b"\n\ngrok 1.0.5 (abc1234)\nmore\n",
+    b"grok 1.0.5 (abc1234)\nsecond line\n",
+    b"\n\ngrok 1.0.5 (unknown)\nmore\n",
     b"grok 1.0.5 (abc1234) [stable]\nwarning: cache is stale\n",
 )
 
@@ -456,6 +499,51 @@ def test_a_banner_before_the_version_is_never_fished_past(unused=None):
 
     assert GrokBuildAdapter._version_matches(
         unbound, b"warning: cache is stale\ngrok 1.0.5 (abc1234)\n") is False
+
+
+def test_an_executable_that_prints_only_a_semver_never_clears_the_preflight():
+    """The MAJOR this matrix was rebuilt for, held as one named claim.
+
+    A pattern that made the program name and the commit optional accepted the
+    five bytes `1.0.5` -- which is what an arbitrary executable prints when it
+    is asked for a version and happens to have one, and which the vendor's entry
+    point cannot produce at all. Its row still advertised itself available, so
+    this single preflight was the only thing standing between a mistyped or
+    substituted pin and a real prompt carrying the operator's instructions, and
+    it was not standing.
+
+    Its own positive control is here rather than in another test, because the
+    cheap way to pass this one is to refuse everything -- which is the OTHER
+    defect this parser has already shipped once.
+    """
+    unbound = GrokBuildAdapter.__new__(GrokBuildAdapter)
+
+    for printed in CRATE_ONLY_FORMS:
+        assert GrokBuildAdapter._version_matches(
+            unbound, printed.encode("utf-8")) is False, f"ADMITTED={printed!r}"
+    assert GrokBuildAdapter._version_matches(
+        unbound, b"grok 1.0.5 (abc1234)\n") is True, "the real form must survive"
+
+
+def test_a_commit_the_build_script_could_not_have_written_is_not_a_version():
+    """The commit is a published alphabet, not any token in parentheses.
+
+    `git rev-parse --short HEAD` writes lowercase hex and the fallback writes
+    `unknown`; nothing else can appear there. Held separately from the matrix
+    above so the ALPHABET has a claim of its own, and paired with the two
+    contents that bound it: the shortest abbreviation git will hand out, and the
+    word it hands out instead when there is no git to ask.
+    """
+    unbound = GrokBuildAdapter.__new__(GrokBuildAdapter)
+
+    for commit in UNPUBLISHED_COMMITS:
+        printed = f"grok 1.0.5 ({commit})".encode("utf-8")
+        assert GrokBuildAdapter._version_matches(unbound, printed) is False, (
+            f"ADMITTED_COMMIT={commit!r}")
+    for commit in ("def0", "unknown"):
+        printed = f"grok 1.0.5 ({commit})".encode("utf-8")
+        assert GrokBuildAdapter._version_matches(unbound, printed) is True, (
+            f"REFUSED_A_PUBLISHED_COMMIT={commit!r}")
 
 
 def test_a_version_print_the_build_cannot_answer_spawns_zero_prompts(tmp_path):

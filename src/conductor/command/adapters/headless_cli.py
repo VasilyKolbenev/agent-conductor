@@ -523,8 +523,11 @@ class HeadlessCliTransport:
         The default is an exact compare of the whole first non-empty line, which
         is right for a tool that prints the number and nothing else. A vendor that
         prints a richer form overrides this and PARSES it -- see
-        ``grok_build.py``, where the published form carries an optional short
-        commit and an optional channel, and neither may ever be read as a version.
+        ``grok_build.py``, where the published form carries the program name and a
+        short commit ALWAYS and a channel label often, and none of the three may
+        ever be read as a version. Which parts of such a form are optional is a
+        fact about the vendor's entry point, so an override that guesses at it
+        either refuses every real install or admits an executable that is none.
         """
         return _version_token(output) == self.profile.reviewed_version
 
