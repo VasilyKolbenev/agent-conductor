@@ -45,7 +45,7 @@ from .contracts import ContractError, frozen_config_bindings
 from .coordinator import ExecutionCoordinator
 from .graph_definition import GraphDefinition, GraphNode
 from .graph_projection import graph_payload
-from .graph_template import TemplateError, materialize
+from .graph_template import GraphTemplate, TemplateError, materialize
 from .http_transport import (
     CommandSession,
     validate_command_host,
@@ -260,71 +260,70 @@ class CommandApi:
         asked = parse_graph_from_template(body)
         self._hold_route(run_id)
         initial = self._store.read(run_id)
-        candidate = None
+        checked = None
         if _standing_graph(initial) is None:
             # Judged out here rather than under the lock, exactly as the graph
             # route does: a graph is append-only, so a plan that finds none
             # standing now is the plan this run may still be given.
             self._instances_are_declared(initial.config, run_id, asked)
-            candidate = self._materialized(initial.config, run_id, asked)
-            self._bindings_are_reachable(initial.config, run_id, candidate.nodes)
-            self._bindings_are_servable(initial.config, run_id, candidate.nodes)
+            checked = self._revision(run_id, asked)
+            probe = _plan(checked, initial.config, run_id, asked, _PROBE_AT)
+            self._bindings_are_reachable(initial.config, run_id, probe.nodes)
+            self._bindings_are_servable(initial.config, run_id, probe.nodes)
         with self._store.transaction():
             self._hold_route(run_id)
             standing = _standing_graph(self._store.read(run_id))
             if standing is not None:
-                self._repeats_the_standing_plan(run_id, standing, asked)
+                self._repeats_the_standing_plan(run_id, standing, asked, checked)
                 created, graph = False, standing
             else:
-                graph = self._materialized(
-                    initial.config, run_id, asked, created_at=self._clock())
+                graph = _plan(_gated(checked), initial.config, run_id, asked,
+                              self._clock())
                 created = self._store.append(graph)
         if created:
             self._publish_run(run_id)
         return CommandResponse(201 if created else 200, graph.as_dict())
 
-    def _materialized(
-            self, config: Mapping[str, Any], run_id: str, asked: TemplateRef,
-            *, created_at: str = _PROBE_AT) -> GraphDefinition:
-        """Read the revision and build the plan, by the production door alone.
+    def _revision(self, run_id: str, asked: TemplateRef) -> GraphTemplate:
+        """Read one stored revision, ONCE, into the snapshot everything uses.
 
-        Nothing here assembles a definition field by field. `materialize` is the
-        one constructor, so the plan a run follows is the plan the contract
-        produces from that revision and that binding, or there is no plan.
-
-        `created_at` defaults to a fixed instant because two of the three
-        callers do not want a timestamp at all -- one is judging servability
-        before the transaction and one is rebuilding a candidate to compare
-        against a record that already has one. Only the `201` path passes the
-        clock, and it passes it from INSIDE the transaction.
+        Reading it twice was the defect this shape exists to prevent. The gates
+        ran on one read and the transaction appended a second, so a revision
+        replaced between them put a plan into an immutable journal that nothing
+        had judged -- an unservable one, on a route whose contract promises
+        zero durable bytes for exactly that fact. There is now one read, and
+        what is appended is what was judged.
         """
         try:
-            template = self._templates.load(asked.template_id, asked.revision)
+            return self._templates.load(asked.template_id, asked.revision)
         except TemplateError:
             raise ApiRefusal.service_missing_revision(
                 run_id, asked.template_id, asked.revision) from None
-        return materialize(
-            template, asked.binding, config, graph_id=asked.graph_id,
-            run_id=run_id, created_at=created_at)
 
     def _repeats_the_standing_plan(
-            self, run_id: str, standing: GraphDefinition,
-            asked: TemplateRef) -> None:
+            self, run_id: str, standing: GraphDefinition, asked: TemplateRef,
+            checked: GraphTemplate | None) -> None:
         """A run carries one graph, so a second request either IS it or conflicts.
 
         The candidate is re-materialized on the standing record's own
         `created_at`: the caller never supplied one, so comparing anything else
-        would call every honest retry a conflict. This rebuild reads the stored
-        revision, which is immutable -- so a retry answers the same way for as
-        long as the record stands.
+        would call every honest retry a conflict.
+
+        The snapshot already gated is reused when there is one. When there is
+        not -- the ordinary retry, which found a graph standing and gated
+        nothing -- the revision is read here, and that read is safe in the one
+        direction that matters: a revision that somehow differs makes the
+        candidate differ, which is a `409`. It can turn an honest retry into a
+        conflict; it can never turn a different plan into a `200`, and it
+        writes nothing either way.
         """
         if standing.graph_id != asked.graph_id:
             raise RecordConflict(
                 f"run {run_id!r} already follows graph {standing.graph_id!r}; "
                 "one run carries one graph")
-        candidate = self._materialized(
-            self._store.read(run_id).config, run_id, asked,
-            created_at=standing.created_at)
+        template = self._revision(run_id, asked) if checked is None else checked
+        candidate = _plan(template, self._store.read(run_id).config, run_id,
+                          asked, standing.created_at)
         if standing != candidate:
             raise RecordConflict(
                 f"graph {standing.graph_id!r} already records different facts")
@@ -620,6 +619,34 @@ def _target_path(target: str) -> str:
     if parsed.scheme or parsed.netloc or parsed.query or parsed.fragment:
         raise ApiRefusal.fixed("route_not_found")
     return parsed.path
+
+
+def _plan(template: GraphTemplate, config: Mapping[str, Any], run_id: str,
+          asked: TemplateRef, created_at: str) -> GraphDefinition:
+    """Build one plan from one snapshot, by the production door alone.
+
+    Nothing assembles a definition field by field. `materialize` is the one
+    constructor, and the template it is given is a value already in hand --
+    never a name this function goes and resolves, which is what kept the judged
+    revision and the appended one from being the same one.
+    """
+    return materialize(template, asked.binding, config, graph_id=asked.graph_id,
+                       run_id=run_id, created_at=created_at)
+
+
+def _gated(checked: GraphTemplate | None) -> GraphTemplate:
+    """The revision the gates ran on, or a refusal rather than a second read.
+
+    `None` here would mean the transaction found no standing graph while the
+    read before it found one -- impossible for an append-only record. If it
+    ever became possible, the answer must not be to fetch the revision again:
+    that is the whole defect this shape makes unrepresentable. What was judged
+    is what is appended, and when what was judged is missing there is nothing
+    to append.
+    """
+    if checked is None:
+        raise ApiRefusal.fixed("store_error")
+    return checked
 
 
 def _servable_pair(

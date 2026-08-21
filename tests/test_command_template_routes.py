@@ -22,7 +22,7 @@ import pytest
 from conductor.command.adapters.provider import ProviderContract
 from conductor.command.api_contracts import ERROR_STATUS
 from conductor.command.graph_definition import GraphDefinition
-from conductor.command.graph_template import load_template
+from conductor.command.graph_template import GraphTemplate, load_template
 from conductor.command.http_api import CommandApi, PRODUCT_COMMAND_BUDGET
 from conductor.command.http_transport import CommandSession
 from conductor.command.run_store import RunStore, snapshot_digest
@@ -443,3 +443,51 @@ def test_a_portal_on_the_template_route_is_a_route_refusal_and_not_a_fault(
         assert secret not in rendered
     assert not list(elsewhere.iterdir()), "it wrote through the portal anyway"
     assert events == []
+
+
+def test_a_revision_replaced_after_it_was_judged_never_reaches_the_journal(tmp_path):
+    """What is appended is what was JUDGED, or nothing is appended.
+
+    The gates ran on one read of the revision and the transaction appended a
+    second, so a revision replaced between them put a plan nothing had judged
+    into an immutable journal -- an unservable one, on a route whose contract
+    promises zero durable bytes for exactly that fact.
+
+    The seam names no gate on purpose. The file is replaced the moment it is
+    READ, so ANY second read at all picks up the tampered bytes, whatever order
+    the route judges things in. Two answers are admissible -- a refusal, or the
+    snapshot already judged -- and a third is the defect.
+    """
+    subject, store, events = api(tmp_path)
+    assert status_of(subject, TEMPLATES_PATH, template_body()) == 201
+
+    tampered = template_body()
+    for node in tampered["nodes"]:
+        if node.get("capability") == "dispatch":
+            node["capability"] = "ghost-capability"
+    # Still a template this CONTRACT accepts: what no adapter serves is that
+    # capability, which is the gates' business and not the document's.
+    assert GraphTemplate.from_dict(tampered)
+
+    path = TemplateStore(tmp_path).revision_path("template-dalio", 1)
+    honest = subject._templates.load
+
+    def swap(template_id, revision):
+        loaded = honest(template_id, revision)
+        path.unlink()
+        path.write_text(json.dumps(tampered), encoding="utf-8", newline="\n")
+        return loaded
+
+    subject._templates.load = swap
+    answer = send(subject, FROM_TEMPLATE_PATH, from_template_body())
+    durable = [row.value for row in store.read(RUN_ID).records
+               if row.kind == "graph_definition"]
+
+    if answer.status == 201:
+        assert len(durable) == 1
+        assert {node.capability for node in durable[0].nodes
+                if node.capability} == {"review", "dispatch"}
+        assert events == [RUN_ID]
+    else:
+        assert answer.status >= 400, answer.payload
+        assert durable == [] and events == []
