@@ -123,6 +123,8 @@ EXPECTED_ROUTES = (
     ("POST", "/command/runs/<run_id>/actions", True, True),
     ("POST", "/command/runs/<run_id>/decisions", True, True),
     ("POST", "/command/runs/<run_id>/graph", True, True),
+    ("POST", "/command/templates", True, True),
+    ("POST", "/command/runs/<run_id>/graph/from-template", True, True),
 )
 
 EXPECTED_ARGUMENT_SCHEMAS = {

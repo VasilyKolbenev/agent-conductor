@@ -28,6 +28,7 @@ import os
 import stat
 from pathlib import Path
 from types import MappingProxyType
+from typing import NamedTuple
 
 from .containment import (
     RouteViolation,
@@ -90,6 +91,19 @@ def _leaf_violation(path: Path) -> RouteViolation | None:
     return None
 
 
+class Published(NamedTuple):
+    """Where a revision stands, and whether THIS call is what put it there.
+
+    The caller cannot work `created` out for itself. Reading the directory
+    first and comparing is a race that two identical publishes both win, and
+    both would then claim to have created the same file. The exclusive create
+    is the one thing that knows, so it is the one thing that says.
+    """
+
+    path: Path
+    created: bool
+
+
 class RouteNotOwned(StoreError):
     """The route to a revision reaches state this store cannot account for."""
 
@@ -150,7 +164,7 @@ class TemplateStore:
         if violation is not None:
             raise RouteNotOwned(_ROUTE_REFUSAL[violation.code])
 
-    def save(self, template: GraphTemplate) -> Path:
+    def save(self, template: GraphTemplate) -> Published:
         """Publish one revision, or agree that it is already published.
 
         Exclusive, because a revision is an identity: `os.link` refuses a name
@@ -170,13 +184,13 @@ class TemplateStore:
             _exclusive_bytes(path, _canonical_bytes(document))
         except FileExistsError:
             self._agrees(path, template, document)
-            return path
+            return Published(path, created=False)
         except OSError as error:
             raise StoreError(
                 f"cannot publish template {template.template_id!r} "
                 f"revision {template.revision}: {error.strerror}") from None
         _fsync_dir(path.parent)
-        return path
+        return Published(path, created=True)
 
     def _agrees(self, path: Path, template: GraphTemplate,
                 document: dict) -> None:

@@ -84,6 +84,14 @@ scope, not permission for C/API-1 to invent a generic file-write endpoint.
   {
     "method": "POST", "path": "/command/runs/<run_id>/graph",
     "mutation": true, "csrf": true
+  },
+  {
+    "method": "POST", "path": "/command/templates",
+    "mutation": true, "csrf": true
+  },
+  {
+    "method": "POST", "path": "/command/runs/<run_id>/graph/from-template",
+    "mutation": true, "csrf": true
   }
 ]
 ```
@@ -860,6 +868,175 @@ refuses — so the second check produced an untranslatable crash instead of the
 one closed envelope this surface promises. A refusal now travels as an
 exception while its three reviewed fields stay read-only. This applies to every
 mutating route, all of which re-check containment under the same lock.
+
+### 4.5 `POST /command/templates` — publish one immutable template revision
+
+Maps to `TemplateStore.save(GraphTemplate)`. §4.4 said editing, versioning and
+templates were a later slice; this is that slice, and it takes only the part
+that can be frozen honestly. There is **no update, no delete and no list in
+alpha**: a revision is an identity, and a surface that could rewrite one would
+contradict the promise every other part of this contract is built on.
+
+The body is the canonical `GraphTemplate` document and nothing else — closed to
+exactly `schema_version`, `template_id`, `revision`, `title`, `nodes` and
+`edges`. Any other field is `contract_invalid` (422), `run_id` and `created_at`
+among them: a template belongs to no run and carries no timestamp. It is read
+through the same `GraphTemplate.from_dict` an operator's own file goes through,
+so what a client publishes is held to the contract rather than trusted for
+having arrived over the wire.
+
+A template names ROLES and no deployment. `graph_template.DEPLOYMENT_ONLY_FIELDS`
+is the vocabulary that would pin a plan to one machine, and the document is
+closed at every level, so a `provider_id`, an `instance_id` or an `adapter`
+arriving anywhere inside it is refused as the unknown key it is.
+
+<!-- CANONICAL:template_request -->
+```json
+{
+  "schema_version": 1,
+  "template_id": "template-dalio",
+  "revision": 1,
+  "title": "Dalio five-step cycle",
+  "nodes": [
+    { "node_id": "goal", "kind": "task", "title": "Goal", "stage": "goal",
+      "role_id": "role-thinker", "capability": "review",
+      "arguments": { "work_item_id": "work-001",
+                     "target_artifact_refs": ["artifact-brief"],
+                     "review_profile": "spec" },
+      "resources": [] },
+    { "node_id": "confirm-gate", "kind": "gate",
+      "title": "Human Gate - Confirm Do", "gate_id": "gate-confirm-do",
+      "resources": [] }
+  ],
+  "edges": [ { "from_node": "goal", "to_node": "confirm-gate" } ]
+}
+```
+
+Three outcomes, and no fourth.
+
+- **`201`** — this revision did not exist and now does. The response is the
+  stored document, byte for byte.
+- **`200`** — this revision exists and this request restates it EXACTLY. Nothing
+  is written. A client whose reply was lost is entitled to the same answer, so
+  this outcome depends on the stored bytes and on nothing else — no registry, no
+  configuration, no clock.
+- **`record_conflict` (409)** — this revision exists and says something else. An
+  edit is a new revision; two plans may not wear one identity.
+
+No run is published, because no run is involved: this route emits **no SSE frame
+at all**, on any of the three outcomes.
+
+The store writes through the containment/ownership gate like every other durable
+write, judged with `lstat` and following nothing, over every directory it writes
+through and the leaf it writes at. A portal or a second hard link answers
+`route_unsafe` (409) and the refusal names the KIND and never the path — the
+location is this server's directory layout, which is not the caller's to learn.
+
+### 4.6 `POST /command/runs/<run_id>/graph/from-template` — materialize one plan
+
+Maps to `graph_template.materialize` followed by `RunStore.append(GraphDefinition)`.
+The run still follows exactly one graph and still never edits it; this route
+differs from §4.4 only in how the plan is DESCRIBED. §4.4's body stays closed
+and byte-compatible: a plan given as nodes and a plan given as a template are
+two closed documents, not one document with two shapes.
+
+The body is closed to exactly `graph_id`, `template_id`, `revision` and
+`assignments`. The client supplies the stable `graph_id` — that is what makes a
+retry findable, exactly as in §4.4 — plus the immutable revision to materialize
+and the `RunBinding` mapping each role to a configured `instance_id`. The server
+injects `run_id` from the path, `created_at` from its clock, and
+`schema_version`. Any other field, `created_at` and `nodes` among them, is
+`contract_invalid` (422).
+
+<!-- CANONICAL:graph_from_template_request -->
+```json
+{
+  "graph_id": "graph-cockpit-002",
+  "template_id": "template-dalio",
+  "revision": 1,
+  "assignments": {
+    "role-thinker": "codex-review",
+    "role-diagnostician": "codex-review",
+    "role-designer": "codex-review",
+    "role-implementer": "claude-dev"
+  }
+}
+```
+
+Materialization is performed by the production constructor and by nothing else.
+The endpoint does not assemble a `GraphDefinition` field by field, and there is
+no second path that builds one: the plan a run follows through this route is the
+plan `materialize` produces from the stored revision and the supplied binding,
+or there is no plan.
+
+**This route decides nothing by a provider's identity.** It compares no vendor
+id, reads no harness name, and branches on no product. Which adapter drives an
+instance is the run's FROZEN configuration's fact; whether that adapter can be
+reached is a STATE, `availability`, carried in its own closed vocabulary beside
+the identity and never derived from it. A binding to an unreachable provider and
+a binding to a provider this build never heard of are refused by the same rule,
+in the same words, and neither refusal knows which product it was.
+
+Every binding pair is judged before one durable byte, in this order:
+
+1. the binding covers exactly the template's roles, and every assigned instance
+   is one the run's frozen configuration declares;
+2. the adapter that configuration binds the instance to is **available**, read
+   from the reviewed provider descriptors this API was given and projected
+   through `provider_projection` — the one authority on that question, never a
+   name and never a second table;
+3. the pair — adapter and capability — serves that capability through the one
+   argument-schema family this API speaks, and the materialized payload
+   satisfies that pair's schema, through the registry's own door, the same one
+   `CommandService.propose` calls.
+
+Step 2 is this route's rule and **not** §4.4's. That route was frozen without
+an availability check and stays byte-compatible: adding a refusal to a surface a
+client already depends on is a change of behaviour however good the reason. The
+two roads write the same record by different rights, and this one may ask
+because it is new and this contract says so.
+
+Steps 2 and 3 are `service_refused` and `capability_unsupported` respectively,
+and step 1's missing instance is `service_refused`; a payload that is servable
+and invalid is `contract_invalid`. **No refusal at any step writes a record or
+publishes a signal.** These two routes introduce no error code: every outcome is
+already in the frozen vocabulary of section 3.3.
+
+Three outcomes, and no fourth. The order they are decided in is part of the
+contract, and it is §4.4's order for §4.4's reason: the standing graph is looked
+for FIRST, inside the transaction, before the clock, the registry, the provider
+descriptors or the frozen configuration is consulted at all.
+
+- **`200`** — a graph already stands and this request restates it exactly. The
+  response is the stored `GraphDefinition.as_dict()`, including the `created_at`
+  the first write settled, and the candidate it is compared against is
+  re-materialized on THAT `created_at` — the caller never supplied one, so
+  comparing anything else would call every honest retry a conflict. This answer
+  MUST NOT depend on the registry, the provider descriptors or the frozen
+  configuration: a client whose reply was lost is entitled to the same answer
+  from a process that starts with a different registry, or with none.
+- **`record_conflict` (409)** — a graph already stands and this request does not
+  restate it. Also this code when the same `graph_id` would carry different
+  facts, or a second `graph_id` entirely.
+- **`201`** — no graph stands. Only THIS path reads the stored revision, judges
+  availability and the pairs, reads the clock, and appends.
+
+A revision this store does not hold is `service_refused` (409): it is a fact
+about what this build has, like a frozen configuration that declares no
+instance, and the refusal names the template and the revision and no path.
+
+`created_at` is minted INSIDE the transaction, from the server's clock, on the
+`201` path only. A retry answers with the durable timestamp rather than a second
+one: a record's identity may not depend on when somebody asked about it twice.
+
+One new append publishes exactly one identifier-only run frame (section 6.3). A
+`200` retry and every refusal publish **zero** frames — a signal is a claim that
+something changed, and on those paths nothing did.
+
+This route is a mutation like any other: Host allowlist, same-origin, anti-CSRF
+and the writable-route containment/ownership gate before any durable effect,
+with the gate re-checked inside the transaction and answering `route_unsafe`
+(409) both times.
 
 ## 5. Human-decision endpoints — FROZEN CONTRACT
 

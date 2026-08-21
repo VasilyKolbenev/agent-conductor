@@ -34,8 +34,8 @@ def test_a_revision_is_published_once_and_reads_back_through_the_contract(tmp_pa
     """What comes back is what `from_dict` accepts, not what we happened to write."""
     store = TemplateStore(tmp_path)
     template = dalio()
-    path = store.save(template)
-    assert path.is_file()
+    published = store.save(template)
+    assert published.created and published.path.is_file()
     assert store.load(template.template_id, template.revision) == template
     assert store.revisions(template.template_id) == (template.revision,)
 
@@ -50,8 +50,10 @@ def test_writing_the_same_revision_again_is_a_retry_and_not_a_conflict(tmp_path)
     store = TemplateStore(tmp_path)
     template = dalio()
     first = store.save(template)
-    assert store.save(template) == first
-    assert store.save(GraphTemplate.from_dict(template.as_dict())) == first
+    assert first.created
+    for again in (store.save(template),
+                  store.save(GraphTemplate.from_dict(template.as_dict()))):
+        assert again.path == first.path and not again.created
     assert store.revisions(template.template_id) == (1,)
 
 
@@ -133,7 +135,7 @@ def test_a_stored_document_the_contract_would_refuse_is_refused_on_the_way_out(t
     """
     store = TemplateStore(tmp_path)
     template = dalio()
-    path = store.save(template)
+    path = store.save(template).path
     stale = template.as_dict()
     stale["schema_version"] = 99
     path.write_text(json.dumps(stale), encoding="utf-8", newline="\n")
@@ -233,7 +235,7 @@ def test_a_portal_that_appears_after_a_write_is_refused_on_the_way_out(tmp_path)
     """
     store = TemplateStore(tmp_path)
     template = dalio()
-    path = store.save(template)
+    path = store.save(template).path
     assert store.load(template.template_id, 1) == template
     other = tmp_path / "other.json"
     other.write_text(path.read_text(encoding="utf-8"), encoding="utf-8", newline="\n")
@@ -255,7 +257,7 @@ def test_a_revision_that_carries_a_second_name_is_refused(tmp_path):
     """
     store = TemplateStore(tmp_path)
     template = dalio()
-    path = store.save(template)
+    path = store.save(template).path
     twin = tmp_path / "twin.json"
     try:
         os.link(path, twin)
