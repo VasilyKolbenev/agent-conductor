@@ -136,7 +136,10 @@ class _RecordingRunner(ProcessRunner):
         self.specs.append(spec)
         return ProcessOutcome(
             status="completed", exit_code=0,
-            output=REVIEWED_GROK_VERSION.encode("utf-8") + b"\n",
+            # The line a REAL release binary prints, not the bare semver it never
+            # prints -- so every test driven through this runner exercises the
+            # form the parser was corrected to accept.
+            output=_fakegrok.DEFAULT_VERSION.encode("utf-8") + b"\n",
             output_truncated=False, output_limit=spec.output_limit, pid=0,
             token="recorded")
 
@@ -261,27 +264,41 @@ def test_an_entrypoint_pinned_against_a_single_binary_costs_availability(
 # --- the version is PARSED, and only its semver counts ------------------------
 
 
-@pytest.mark.parametrize("printed", (
-    # What a REAL release binary prints. The entry point wraps the version
-    # crate's string with the program name, and `set_full_version` runs
-    # unconditionally, so the prefix and a commit are both always there.
-    "grok 1.0.5 (abc1234) [stable]",
-    "grok 1.0.5 (abc1234) [alpha]",
-    "grok 1.0.5 (abc1234)",
-    # `git rev-parse --short` was unavailable at build time: build.rs falls back
-    # to the literal `unknown`, which is a published form and not a hash.
+#: Every shape the vendor's own composition can produce, built as an explicit
+#: cross-product so a form cannot be dropped by editing prose. The vendor builds
+#: the line by wrapping the version crate's string with the program name and a
+#: newline, and each of the three parts is independently optional in the sources:
+#: the program name because `display_version_with_commit` is also called
+#: directly, the commit because `full_version()` may carry none, and the channel
+#: because `channel_label()` returns "" on a build with no channel.
+_PREFIXES = ("", "grok ")
+_COMMITS = ("", " (abc1234)")
+_CHANNELS = ("", " [stable]", " [alpha]")
+ACCEPTED_FORMS = tuple(
+    f"{prefix}1.0.5{commit}{channel}"
+    for prefix in _PREFIXES for commit in _COMMITS for channel in _CHANNELS)
+#: Commit CONTENTS the sources publish beyond a 7-hex hash: `build.rs` falls back
+#: to the literal `unknown`, and `git rev-parse --short` honours `core.abbrev`, so
+#: neither the alphabet nor the length is this module's to assume.
+ACCEPTED_COMMITS = (
     "grok 1.0.5 (unknown)",
-    # `core.abbrev` decides the length, so it is not this module's to assume.
     "grok 1.0.5 (def0)",
     "grok 1.0.5 (0123456789abcdef0123456789abcdef01234567) [stable]",
-    # The bare crate-level forms, accepted because only the semver decides.
-    "1.0.5",
-    "1.0.5 (abc1234)",
-    "1.0.5 [stable]",
-    "1.0.5 (abc1234) [stable]",
-))
+)
+
+
+def test_the_accepted_set_is_the_whole_cross_product_and_nothing_was_dropped():
+    """A count, so editing the lists above cannot silently narrow coverage."""
+    assert len(ACCEPTED_FORMS) == len(_PREFIXES) * len(_COMMITS) * len(_CHANNELS)
+    assert len(ACCEPTED_FORMS) == 12
+    assert "grok 1.0.5" in ACCEPTED_FORMS, "the bare prefixed form must be covered"
+    assert "1.0.5" in ACCEPTED_FORMS, "the bare crate-level form must be covered"
+    assert len(set(ACCEPTED_FORMS) | set(ACCEPTED_COMMITS)) == 15
+
+
+@pytest.mark.parametrize("printed", ACCEPTED_FORMS + ACCEPTED_COMMITS)
 def test_every_published_form_of_the_version_print_is_accepted(tmp_path, printed):
-    """Every shape a real install can print, and the bare crate-level ones.
+    """Every shape a real install can print, driven end to end through a child.
 
     This list is the correction of a defect that would have shipped: the first
     version of this adapter modelled the version CRATE and never read the entry
@@ -297,40 +314,148 @@ def test_every_published_form_of_the_version_print_is_accepted(tmp_path, printed
     assert len(_fakegrok.prompt_spawns(log)) == 1
 
 
-@pytest.mark.parametrize("printed", (
-    "1.0.4",
-    "grok 1.0.4 (abc1234) [stable]",
-    "1.0.50",
-    "grok 1.0.50",
-    "1.0.5-rc.1",
-    "grok 1.0.5-rc.1",
-    "1.0.5 (abc1234) [beta]",
-    "1.0.5 extra",
-    "grok  1.0.5",
-    "krog 1.0.5",
-    "(1.0.5)",
-    "abc1234",
-    "",
-    # The anchors earn their keep here: a banner ahead of the version, and a
-    # version quoted inside other prose, must not be read as a version.
-    "warning: cache is stale",
-    "the grok 1.0.5 release",
-))
-def test_no_other_shape_is_read_as_the_reviewed_version(tmp_path, printed):
-    """A commit, a channel, a banner, or a near-miss semver buys no prompt.
+#: The refusal matrix, grouped by WHAT is wrong, so a failure names its category
+#: rather than one string among many.
+REFUSED_FORMS = (
+    # a different version
+    ("version", "1.0.4"),
+    ("version", "grok 1.0.4 (abc1234) [stable]"),
+    ("version", "1.0.50"),
+    ("version", "grok 1.0.50"),
+    ("version", "1.0.5.1"),
+    ("version", "grok 1.0.5-rc.1"),
+    ("version", "grok 1.0.5+meta"),
+    ("version", "01.0.5"),
+    # a prefix that is not the program name
+    ("prefix", "krog 1.0.5"),
+    ("prefix", "grok  1.0.5"),
+    ("prefix", "GROK 1.0.5"),
+    ("prefix", "the grok 1.0.5 release"),
+    ("prefix", "v1.0.5"),
+    # a commit that is not a parenthesised token
+    ("commit", "grok 1.0.5 (abc 1234)"),
+    ("commit", "grok 1.0.5 ()"),
+    ("commit", "grok 1.0.5 abc1234"),
+    ("commit", "grok 1.0.5 (abc1234"),
+    ("commit", "grok 1.0.5 ((abc1234))"),
+    # a channel the sources do not publish
+    ("channel", "grok 1.0.5 (abc1234) [beta]"),
+    ("channel", "grok 1.0.5 [STABLE]"),
+    ("channel", "grok 1.0.5 stable"),
+    ("channel", "grok 1.0.5 [stable] [alpha]"),
+    # anything extra on the line
+    ("extra", "1.0.5 extra"),
+    ("extra", "grok 1.0.5 (abc1234) [stable] warning"),
+    ("extra", "(1.0.5)"),
+    ("extra", "abc1234"),
+    ("extra", ""),
+    ("extra", "warning: cache is stale"),
+)
 
-    The parser is anchored at both ends for exactly this: an unanchored search
-    would find ``1.0.5`` inside a banner or inside a commit hash and call it the
-    version. Zero prompt spawns is the assertion that matters -- a refusal that
-    still spawned would be no refusal.
+
+@pytest.mark.parametrize(
+    "category,printed", REFUSED_FORMS,
+    ids=[f"{category}-{index}" for index, (category, _) in enumerate(REFUSED_FORMS)])
+def test_no_other_shape_is_read_as_the_reviewed_version(tmp_path, category, printed):
+    """Zero prompt spawns is the assertion that matters.
+
+    A refusal that still spawned would be no refusal, so every case is checked
+    against the child's own spawn log rather than against the receipt alone.
     """
     adapter, _root, log = a_harness(tmp_path, FAKEGROK_VERSION=printed)
 
     receipt = run_once(adapter, a_request())
 
-    assert receipt.outcome == "failed", f"ACCEPTED={printed!r}"
+    assert receipt.outcome == "failed", f"ACCEPTED[{category}]={printed!r}"
     assert REVIEWED_GROK_VERSION in receipt.detail
-    assert _fakegrok.prompt_spawns(log) == [], f"PROMPT_SPAWNED_ON={printed!r}"
+    assert _fakegrok.prompt_spawns(log) == [], (
+        f"PROMPT_SPAWNED_ON[{category}]={printed!r}")
+
+
+#: Shapes that cannot travel through an environment variable, so they are put to
+#: the parser as the RAW BYTES the transport really hands it. Multiline and
+#: non-UTF-8 belong here: `_version_token` reads the first non-empty line and
+#: decodes with `errors="replace"`, and both readings must refuse rather than
+#: find a version somewhere in the noise.
+REFUSED_BYTES = (
+    ("multiline", b"warning: stale\n1.0.5\n"),
+    ("multiline", b"grok 1.0.4\ngrok 1.0.5\n"),
+    ("non-utf8", b"\xff\xfe1.0.5"),
+    ("non-utf8", b"grok \xc3(1.0.5)"),
+    ("non-utf8", b"\xef\xbb\xbfgrok 1.0.5 (abc1234)"),
+    ("non-utf8", "grok 1.0.5 (abc1234)".encode("utf-16-le")),
+    ("control", b"grok 1.0.5\x00"),
+    ("control", b"\x1b[32mgrok 1.0.5\x1b[0m"),
+    ("digits", "grok \u0661.\u0660.\u0665".encode("utf-8")),
+)
+
+
+@pytest.mark.parametrize(
+    "category,raw", REFUSED_BYTES,
+    ids=[f"{category}-{index}" for index, (category, _) in enumerate(REFUSED_BYTES)])
+def test_no_byte_sequence_outside_the_published_form_is_a_version(
+        tmp_path, category, raw):
+    """Put to the parser directly, because these cannot pass through an env var.
+
+    A multiline print must not have its version fished out of a later line, and
+    a non-UTF-8 print must refuse rather than be repaired into something that
+    parses. The answer is a BOOLEAN either way, so nothing derived from these
+    bytes can reach a caller.
+    """
+    adapter, _runner, _exe = _recorded(tmp_path)
+
+    assert adapter._version_matches(raw) is False, (
+        f"ACCEPTED_BYTES[{category}]={raw!r}")
+
+
+def test_the_one_byte_sequence_that_is_the_reviewed_version_is_accepted():
+    """The positive control, so the test above cannot pass by refusing everything."""
+    exe_free = GrokBuildAdapter.__new__(GrokBuildAdapter)
+
+    assert GrokBuildAdapter._version_matches(
+        exe_free, b"grok 1.0.5 (abc1234) [stable]\n") is True
+
+
+#: A correct first line FOLLOWED by other output. Accepted, and named here rather
+#: than left to be discovered: `_version_token` reads the first non-empty line,
+#: which is a shared contract all three transports rest on and which this slice
+#: did not invent. What matters is the direction -- a banner BEFORE the version is
+#: never fished past, which the refusal matrix holds -- and that trailing chatter
+#: from a reviewed build does not stop a dispatch it should not stop.
+TOLERATED_TRAILING = (
+    b"grok 1.0.5\nsecond line\n",
+    b"\n\ngrok 1.0.5 (abc1234)\nmore\n",
+    b"grok 1.0.5 (abc1234) [stable]\nwarning: cache is stale\n",
+)
+
+
+@pytest.mark.parametrize("raw", TOLERATED_TRAILING)
+def test_output_after_a_correct_first_line_does_not_refuse_the_build(raw):
+    """The boundary of the shared first-line reading, stated out loud.
+
+    A build that prints the reviewed version and then a warning is still the
+    reviewed build. Refusing it would be a false refusal of the kind that made
+    this provider undispatchable in the first place, so the tolerance is
+    deliberate -- and it is bounded on the side that matters by
+    `test_no_byte_sequence_outside_the_published_form_is_a_version`, where a
+    banner ahead of the version refuses.
+    """
+    unbound = GrokBuildAdapter.__new__(GrokBuildAdapter)
+
+    assert GrokBuildAdapter._version_matches(unbound, raw) is True
+
+
+def test_a_banner_before_the_version_is_never_fished_past(unused=None):
+    """The other side of the same boundary, held as its own claim.
+
+    This is the asymmetry: output AFTER a correct first line is tolerated, and
+    output BEFORE it is fatal -- because the first non-empty line is the only
+    line read, so a warning printed first IS the token.
+    """
+    unbound = GrokBuildAdapter.__new__(GrokBuildAdapter)
+
+    assert GrokBuildAdapter._version_matches(
+        unbound, b"warning: cache is stale\ngrok 1.0.5 (abc1234)\n") is False
 
 
 def test_a_version_print_the_build_cannot_answer_spawns_zero_prompts(tmp_path):
