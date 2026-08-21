@@ -121,7 +121,11 @@ def test_a_real_install_prints_a_form_this_adapter_can_parse(tmp_path):
         # A refusal is correct for a DIFFERENT version and wrong for a shape the
         # parser cannot read. Tell the operator which, since only one is a bug
         # here: if the semver really is the reviewed one, the parser is too narrow.
-        assert not observed.startswith(REVIEWED_GROK_VERSION), (
+        # CONTAINMENT, not a prefix. A prefix test could never fire on the very
+        # defect it was written for: a real install prints `grok 1.0.5 ...`, so
+        # `startswith("1.0.5")` was False and the one tripwire for a too-narrow
+        # parser stayed silent on the parser's actual failure shape.
+        assert REVIEWED_GROK_VERSION not in observed, (
             f"the install prints the reviewed semver in a shape this parser "
             f"refuses: {observed!r} -- widen the parser in review")
 

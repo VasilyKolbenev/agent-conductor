@@ -1,0 +1,186 @@
+"""What a provider DECLARES: its pin shape, its profile, and their proofs.
+
+Split out of ``headless_cli`` when the third transport landed and the module
+crossed the 800-line cap. The seam is not arbitrary: every provider added to the
+roster contributes profile FIELDS and no transport code, so the declarative half
+grows with the roster while the behavioural half does not. Keeping them together
+meant every new vendor pushed the machine closer to a cap it had no part in.
+
+Nothing here acts. There is no subprocess, no filesystem, no identity comparison
+and no product name -- one pin shape, one profile record, and the validation both
+owe. The transport that reads them is in ``headless_cli``.
+"""
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+from pathlib import PurePosixPath, PureWindowsPath
+
+from .base import AdapterContractError
+
+#: The one control any of these adapters carries. stop, retry and switch stay
+#: ABSENT rather than present and empty, because none is implemented and the
+#: provider door refuses a control an adapter cannot back.
+DISPATCH_CAPABILITY = "dispatch"
+#: The preflight is a version print, not work: it gets its own small budget.
+VERSION_TIMEOUT_SECONDS = 30
+#: Capture ceiling for either spawn; the pump drains past it and drops the rest.
+OUTPUT_LIMIT = 16 * 1024
+#: The shape an environment variable NAME may take, so a profile's
+#: code-owned environment is proved before any child could read it.
+_ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
+
+
+class HeadlessCliError(AdapterContractError):
+    """The transport cannot honour the request without breaking one of its rules."""
+
+
+def is_absolute(path: str) -> bool:
+    """Absolute under EITHER platform's rules, so a pin cannot be read two ways."""
+    return PurePosixPath(path).is_absolute() or PureWindowsPath(path).is_absolute()
+
+
+def reviewed_pin_path(
+        value: object, name: str, error: type[HeadlessCliError]) -> str:
+    """One operator pin, re-proved absolute and NUL-free before it reaches argv.
+
+    The provider's OWN error class is carried in rather than assumed. A shared
+    helper that raised the base type would quietly widen every provider's
+    refusal to a type its callers do not name, which is a change of behaviour
+    dressed as a refactor.
+    """
+    if type(value) is not str or not value or "\x00" in value:
+        raise error(f"{name} must be a NUL-free non-empty path")
+    if not is_absolute(value):
+        raise error(f"{name} must be an absolute operator pin")
+    return value
+
+
+def reviewed_env_allow(
+        value: object, error: type[HeadlessCliError]) -> tuple[str, ...]:
+    """The allowlist carries environment NAMES; a value here would be a leak."""
+    names = tuple(value)  # type: ignore[arg-type]
+    if any(type(row) is not str for row in names):
+        raise error("env_allow must contain environment NAMES only")
+    return names
+
+
+@dataclass(frozen=True)
+class ExecutablePin:
+    """One operator pin, re-proved absolute before it reaches an argv.
+
+    A SHAPE, not an identity: every product that installs as a single native
+    binary pins exactly this and nothing more, so the class is neutral and the
+    provider that uses it is named by its catalog row rather than by its pin.
+    The interpreter-backed shape is a different class, because it has a second
+    half this build must never guess at.
+
+    It carries no provider id on purpose. A pin that named its provider would be
+    a second place the identity is written down, and the factory already reaches
+    the adapter through the catalog key.
+    """
+
+    executable: str
+    #: The refusal type of the provider being pinned, so a bad pin refuses as
+    #: that provider's own error rather than as the shared base's. REQUIRED, and
+    #: proved to be one: it defaulted to the base class, which meant a pin built
+    #: without thinking about it refused as a type no provider's callers name,
+    #: and nothing checked that a caller passed a class at all.
+    error: type[HeadlessCliError]
+    env_allow: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not (isinstance(self.error, type)
+                and issubclass(self.error, HeadlessCliError)):
+            raise HeadlessCliError(
+                "a pin's refusal type must be a headless transport error class")
+        reviewed_pin_path(self.executable, "executable", self.error)
+        object.__setattr__(
+            self, "env_allow", reviewed_env_allow(self.env_allow, self.error))
+
+
+@dataclass(frozen=True)
+class HarnessProfile:
+    """Every vendor fact one headless CLI transport differs by, and nothing else.
+
+    Each field is a published fact about a product, and the module that builds
+    one is expected to cite where it was read. ``exit_codes_published`` is the
+    field that most changes what a receipt may CLAIM: a vendor that documents no
+    exit-code contract for its one-shot mode has not told this build what a zero
+    means, so the receipt says exactly that rather than quietly reading it the
+    way a documented tool's zero is read.
+    """
+
+    #: The product, as a receipt names it: "dsh", "Kimi Code".
+    tool_noun: str
+    #: The unit of work, as a receipt names it: "dsh task", "Kimi Code prompt".
+    task_noun: str
+    display_name: str
+    vendor: str
+    docs_url: str
+    #: The EXACT published version the build was reviewed against. A preflight
+    #: reading anything else refuses; "close enough" is not a safe reading of a
+    #: version string for tools that ship breaking changes between minors.
+    reviewed_version: str
+    #: The two subtrees this provider owns beneath the project root.
+    home_dir: str
+    marker_dir: str
+    #: The environment NAMES this provider owns. Only names live in durable
+    #: config; the home's VALUE is minted per attempt and never written down.
+    home_env: str
+    #: Every OTHER environment variable this build sets for a spawn, as (name,
+    #: value) pairs the vendor documents. A set rather than one pair, and a
+    #: literal VALUE rather than a notion of "disabled", because the vendors do
+    #: not agree on polarity: dsh and Kimi Code read a DISABLE flag where ``1``
+    #: means off, and Grok Build reads four ENABLED flags where ``0`` means off.
+    #: Carrying the published pair keeps the base ignorant of which is which.
+    forced_env: tuple[tuple[str, str], ...]
+    #: The code-owned version argv. No caller ever contributes a flag.
+    version_argv: tuple[str, ...]
+    #: The id KIND a minted attempt home is named by, so a home standing under
+    #: the home root says which provider left it.
+    home_id_kind: str
+    #: Whether the vendor publishes exit-code meanings for its one-shot mode.
+    exit_codes_published: bool
+    capability: str = DISPATCH_CAPABILITY
+    output_limit: int = OUTPUT_LIMIT
+    version_timeout_seconds: int = VERSION_TIMEOUT_SECONDS
+
+    def __post_init__(self) -> None:
+        """Prove the environment this profile forces, at construction.
+
+        A profile is code, written once per provider, so every fault here is a
+        programming fault -- and every one of them used to surface at the FIRST
+        SPAWN instead, as a raw ``ValueError`` out of ``dict()`` that sailed past
+        the transport's own error type and reached a caller under a sentence
+        blaming the operator's pinned build. A code-owned mistake must not be
+        reported as an operator's.
+
+        The home collision is the one that matters most: a pair named for
+        ``home_env`` would relocate the child's home away from the one this
+        dispatch minted and discards, which is the whole retention promise.
+        """
+        seen: set[str] = set()
+        for row in self.forced_env:
+            if type(row) is not tuple or len(row) != 2:
+                raise HeadlessCliError(
+                    "each forced environment row is a (name, value) pair")
+            name, value = row
+            if type(name) is not str or _ENV_NAME.fullmatch(name) is None:
+                raise HeadlessCliError(
+                    f"{name!r} is not an environment variable name")
+            if type(value) is not str or "\x00" in value:
+                raise HeadlessCliError(
+                    f"the value forced for {name} must be NUL-free text")
+            if name in seen:
+                raise HeadlessCliError(
+                    f"{name} is forced twice, so one of the two values is lost")
+            seen.add(name)
+        if self.home_env in seen:
+            raise HeadlessCliError(
+                f"{self.home_env} carries the home this dispatch minted and "
+                "discards; forcing it would relocate the child's home and "
+                "retain the state this build promises not to keep")
+        if _ENV_NAME.fullmatch(self.home_env) is None:
+            raise HeadlessCliError(
+                f"{self.home_env!r} is not an environment variable name")

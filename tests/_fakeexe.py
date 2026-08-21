@@ -43,7 +43,20 @@ def _shebang_interpreter(stub: bytes) -> bytes | None:
     marker = stub.rfind(b"#!")
     if marker < 0:
         return None
-    interpreter = stub[marker + 2:].strip().strip(b'"')
+    shebang = stub[marker + 2:].strip()
+    if not shebang:
+        return None
+    # Two shapes, and reading only one of them has now been wrong twice. A path
+    # containing a space is QUOTED, so it must be read to its closing quote and
+    # not split on whitespace; an unquoted path may be FOLLOWED by interpreter
+    # flags (`#!C:\\...\\python.exe -X utf8`), so the whole remainder must not be
+    # required to end in `.exe`. Take the quoted run when there is one, the first
+    # token otherwise.
+    if shebang.startswith(b'"'):
+        closing = shebang.find(b'"', 1)
+        interpreter = shebang[1:closing] if closing > 0 else b""
+    else:
+        interpreter = shebang.split()[0]
     return interpreter if interpreter.lower().endswith(b".exe") else None
 
 

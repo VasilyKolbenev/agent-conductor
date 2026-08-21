@@ -25,12 +25,30 @@ citation is re-checkable only if the words it said are written down.
   (github.com/xai-org/grok-build#installing-the-released-binary;
   docs.x.ai/build/cli/reference).
 - **The FORM of that print** is source-backed, and it is the reason this module
-  overrides the shared exact-string compare. ``VERSION`` is
-  ``option_env!("GROK_VERSION")`` falling back to ``env!("CARGO_PKG_VERSION")``,
-  and the printed string is built as ``format!("{}{}", VERSION, channel_label)``
-  or ``format!("{}{}", version_with_commit, channel_label)`` -- so the short
-  commit and the channel label are BOTH optional and all four shapes are
-  reachable (``crates/codegen/xai-grok-version/src/lib.rs`` at PINNED_COMMIT).
+  overrides the shared exact-string compare. Reading only the version CRATE is
+  what made the first version of this adapter unable to dispatch at all, so the
+  whole line is traced here, from the entry point outward:
+
+  * ``crates/codegen/xai-grok-pager-bin/src/main.rs`` builds it as
+    ``format!("grok {}\\n", display_version_with_commit(full_version(),
+    channel_label))`` -- so **the program name is part of the printed line**;
+  * the same ``main`` calls ``set_full_version(env!("VERSION_WITH_COMMIT"))``
+    unconditionally, so a release binary ALWAYS carries a commit;
+  * ``crates/codegen/xai-grok-pager-bin/build.rs`` sets that variable from
+    ``git rev-parse --short HEAD`` as ``"{version} ({commit})"``, falling back
+    to the literal ``unknown`` when git is unavailable -- so ``(unknown)`` is a
+    published form, and the abbreviation length is the builder's ``core.abbrev``
+    rather than anything this module may assume;
+  * ``crates/codegen/xai-grok-version/src/lib.rs`` appends the channel with
+    ``format!("{}{}", version_with_commit, channel_label)``, and
+    ``crates/codegen/xai-grok-update/src/version.rs``'s ``channel_label()``
+    returns exactly ``" [alpha]"``, ``" [stable]"`` or ``""`` -- bracketed, with
+    a leading space.
+
+  So the real first line is ``grok 1.0.5 (abc1234) [stable]``, and the parser
+  below reads that. An earlier version of this module modelled the crate alone,
+  refused every string a real install prints, and would have made this provider
+  advertise itself available while failing every preflight forever.
 - **The reviewed version is 1.0.5**, the latest stable release of 2026-08-15
   (x.ai/build/changelog).
 - **The home** relocates with ``GROK_HOME``: "Override config directory
@@ -64,11 +82,22 @@ therefore the demonstrated disable form and the one sent, and this paragraph is
 here so a reader knows it is a demonstrated form rather than a stated rule. The
 opt-in real smoke against a real install is what would show a switch not taking.
 
-**The channel label's exact spelling is not source-quoted**, only that a label
-may follow. The parser below accepts the bracketed ``[stable]``/``[alpha]`` form
-and refuses anything else, which is the safe direction of a narrow guess: an
-unexpected label refuses the preflight instead of running a prompt, and the real
-smoke settles it.
+**The channel is parsed and then discarded.** ``channel_label()`` is quoted
+above, so its spelling is a citation rather than the guess an earlier draft of
+this docstring called it. What remains a RULING rather than a fact is that only
+the semver decides: ``1.0.5 [alpha]`` is accepted as the reviewed version,
+because the owner's rule for this provider is that the commit and the channel
+never become the version. If an alpha build should instead be refused as a
+different build line, that is a change of admission policy and belongs in review,
+not in a quiet edit here.
+
+**The pinned commit is one patch AHEAD of the reviewed version.**
+``crates/codegen/xai-grok-pager-bin/Cargo.toml`` reads ``version = "1.0.6"`` at
+PINNED_COMMIT, while the reviewed release is 1.0.5. Every fact above is a fact
+about the printed FORM, which that tree pins exactly; none of them is the version
+number itself, which comes from the published changelog. Said out loud because a
+module whose method is "pin the exact bytes" owes a reader the version those
+bytes came from.
 
 Everything after the pin is the shared headless transport in ``headless_cli``:
 one fresh ``GROK_HOME`` per attempt discarded when the spawn returns, an exact
@@ -142,14 +171,26 @@ VERSION_TIMEOUT_SECONDS = 30
 #: The two subtrees THIS provider owns beneath the project root.
 HOME_DIR = ".grok-home"
 MARKER_DIR = ".grok-marker"
-#: The ONE closed form this module will read a version out of, built from the
-#: vendor's own version module: a semver, then an OPTIONAL parenthesised short
-#: commit, then an OPTIONAL bracketed channel, and nothing else on the line.
-#: Anchored at both ends on purpose -- an unanchored pattern would find `1.0.5`
-#: inside a banner, or inside a commit hash, and call that the version.
+#: The ONE closed form this module will read a version out of. It is the form the
+#: CLI really prints, which is NOT the one the version crate builds -- see the
+#: module docstring: the entry point wraps that string as ``"grok {}\n"``, and a
+#: release binary always carries a commit because ``set_full_version`` is called
+#: unconditionally. So the program name is part of the line.
+#:
+#: The commit is any parenthesised run of non-space, non-paren characters rather
+#: than a hex hash of a chosen length. Two published forms demanded that: the
+#: build script falls back to the literal ``unknown`` when git is unavailable,
+#: and ``git rev-parse --short`` honours ``core.abbrev``, so the length is the
+#: builder's setting and never a fact this module may assume.
+#:
+#: Still anchored at both ends. What the anchors buy is unchanged: an unanchored
+#: pattern finds ``1.0.5`` inside a warning line or inside a commit hash and
+#: calls that the version. What they must not do is refuse the real thing, which
+#: is exactly what they did while the ``grok `` prefix was missing from here.
 _VERSION_FORM = re.compile(
-    r"\A(?P<semver>\d+\.\d+\.\d+)"
-    r"(?: \((?P<commit>[0-9a-fA-F]{7,40})\))?"
+    r"\A(?:grok )?"
+    r"(?P<semver>\d+\.\d+\.\d+)"
+    r"(?: \((?P<commit>[^()\s]+)\))?"
     r"(?: \[(?P<channel>stable|alpha)\])?\Z")
 
 __all__ = [

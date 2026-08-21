@@ -78,7 +78,14 @@ class _Ids:
 def _executable(tmp_path: Path) -> Path:
     exe = _fakekimi.build_executable(tmp_path / "bin")
     if exe is None:
-        pytest.skip("this platform builds no shell-free single-file executable")
+        # Name the CAUSE. "This platform" blamed the platform for what is almost
+        # always an environment fact -- no console-script launcher to copy -- and
+        # a skip that misattributes its reason is how a builder fault hides.
+        # tests/test_fake_executable_builder.py holds the builder directly, so
+        # the fault has somewhere to be reported that cannot skip.
+        pytest.skip(
+            "no console-script launcher stub is available to copy in this "
+            "environment, so no shell-free single-file executable can be built")
     return exe
 
 

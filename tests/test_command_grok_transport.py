@@ -10,9 +10,10 @@ onward.
 What is held here is what is specific to Grok Build, and two of those are new to
 this roster:
 
-- its version print carries an OPTIONAL short commit and an OPTIONAL channel, so
-  this adapter PARSES the published form instead of comparing the whole line, and
-  neither the commit nor the channel may ever be read as a version;
+- its version print is a whole LINE that begins with the program name and
+  carries a commit and often a channel, so this adapter PARSES the published form
+  instead of comparing the whole line -- and neither the program name, the commit
+  nor the channel may ever be read as a version;
 - FOUR documented switches must be off, not one, so every spawn is checked
   against all four rather than against the one that happened to be spelled.
 
@@ -68,7 +69,14 @@ class _Ids:
 def _executable(tmp_path: Path) -> Path:
     exe = _fakegrok.build_executable(tmp_path / "bin")
     if exe is None:
-        pytest.skip("this platform builds no shell-free single-file executable")
+        # Name the CAUSE. "This platform" blamed the platform for what is almost
+        # always an environment fact -- no console-script launcher to copy -- and
+        # a skip that misattributes its reason is how a builder fault hides.
+        # tests/test_fake_executable_builder.py holds the builder directly, so
+        # the fault has somewhere to be reported that cannot skip.
+        pytest.skip(
+            "no console-script launcher stub is available to copy in this "
+            "environment, so no shell-free single-file executable can be built")
     return exe
 
 
@@ -254,18 +262,32 @@ def test_an_entrypoint_pinned_against_a_single_binary_costs_availability(
 
 
 @pytest.mark.parametrize("printed", (
+    # What a REAL release binary prints. The entry point wraps the version
+    # crate's string with the program name, and `set_full_version` runs
+    # unconditionally, so the prefix and a commit are both always there.
+    "grok 1.0.5 (abc1234) [stable]",
+    "grok 1.0.5 (abc1234) [alpha]",
+    "grok 1.0.5 (abc1234)",
+    # `git rev-parse --short` was unavailable at build time: build.rs falls back
+    # to the literal `unknown`, which is a published form and not a hash.
+    "grok 1.0.5 (unknown)",
+    # `core.abbrev` decides the length, so it is not this module's to assume.
+    "grok 1.0.5 (def0)",
+    "grok 1.0.5 (0123456789abcdef0123456789abcdef01234567) [stable]",
+    # The bare crate-level forms, accepted because only the semver decides.
     "1.0.5",
     "1.0.5 (abc1234)",
     "1.0.5 [stable]",
     "1.0.5 (abc1234) [stable]",
-    "1.0.5 (0123456789abcdef0123456789abcdef01234567) [alpha]",
 ))
 def test_every_published_form_of_the_version_print_is_accepted(tmp_path, printed):
-    """All four shapes the vendor's own version module can build.
+    """Every shape a real install can print, and the bare crate-level ones.
 
-    The shared default compares the whole first line, which would refuse a real
-    Grok Build the moment it printed its commit. This provider parses, so each of
-    these must reach a prompt.
+    This list is the correction of a defect that would have shipped: the first
+    version of this adapter modelled the version CRATE and never read the entry
+    point that adds the `grok ` prefix, so it refused every string a real Grok
+    Build prints -- while the row still reported itself available. The provider
+    could not have dispatched once.
     """
     adapter, _root, log = a_harness(tmp_path, FAKEGROK_VERSION=printed)
 
@@ -277,15 +299,22 @@ def test_every_published_form_of_the_version_print_is_accepted(tmp_path, printed
 
 @pytest.mark.parametrize("printed", (
     "1.0.4",
-    "1.0.4 (abc1234)",
+    "grok 1.0.4 (abc1234) [stable]",
     "1.0.50",
+    "grok 1.0.50",
     "1.0.5-rc.1",
-    "grok 1.0.5",
+    "grok 1.0.5-rc.1",
     "1.0.5 (abc1234) [beta]",
     "1.0.5 extra",
+    "grok  1.0.5",
+    "krog 1.0.5",
     "(1.0.5)",
     "abc1234",
     "",
+    # The anchors earn their keep here: a banner ahead of the version, and a
+    # version quoted inside other prose, must not be read as a version.
+    "warning: cache is stale",
+    "the grok 1.0.5 release",
 ))
 def test_no_other_shape_is_read_as_the_reviewed_version(tmp_path, printed):
     """A commit, a channel, a banner, or a near-miss semver buys no prompt.
@@ -360,9 +389,15 @@ def test_all_four_documented_switches_are_turned_off_on_every_spawn(tmp_path):
 
     run_once(adapter, a_request())
 
-    expected = dict(GROK_FORCED_ENV)
-    assert set(expected) == set(_fakegrok.SWITCH_NAMES), (
+    # The VALUE is spelled here as a literal. Comparing against
+    # `dict(GROK_FORCED_ENV)` made both sides of this assertion the same
+    # constant, so flipping the published disable value -- turning telemetry,
+    # trace upload, Mixpanel and feedback all ON -- left the entire suite green.
+    # The NAMES still come from the adapter, cross-checked against the fake, so
+    # a fifth switch appearing cannot pass unnoticed either.
+    assert set(dict(GROK_FORCED_ENV)) == set(_fakegrok.SWITCH_NAMES), (
         "the adapter and the fake disagree about which switches exist")
+    expected = {name: "0" for name in _fakegrok.SWITCH_NAMES}
     for row in _fakegrok.spawns(log):
         assert row["switches"] == expected, f"SWITCH_NOT_OFF={row['switches']}"
 
