@@ -149,6 +149,33 @@ def reviewed_env_allow(
 
 
 @dataclass(frozen=True)
+class ExecutablePin:
+    """One operator pin, re-proved absolute before it reaches an argv.
+
+    A SHAPE, not an identity: every product that installs as a single native
+    binary pins exactly this and nothing more, so the class is neutral and the
+    provider that uses it is named by its catalog row rather than by its pin.
+    The interpreter-backed shape is a different class, because it has a second
+    half this build must never guess at.
+
+    It carries no provider id on purpose. A pin that named its provider would be
+    a second place the identity is written down, and the factory already reaches
+    the adapter through the catalog key.
+    """
+
+    executable: str
+    env_allow: tuple[str, ...] = ()
+    #: The refusal type of the provider being pinned, so a bad pin refuses as
+    #: that provider's own error rather than as the shared base's.
+    error: type[HeadlessCliError] = HeadlessCliError
+
+    def __post_init__(self) -> None:
+        reviewed_pin_path(self.executable, "executable", self.error)
+        object.__setattr__(
+            self, "env_allow", reviewed_env_allow(self.env_allow, self.error))
+
+
+@dataclass(frozen=True)
 class HarnessProfile:
     """Every vendor fact one headless CLI transport differs by, and nothing else.
 

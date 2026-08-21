@@ -1349,6 +1349,14 @@ NOT be mixed**; they share no value, so neither can be read as the other:
 A consumer joins these rows with `/harnesses.json` **by `provider_id`**. A
 `display_name` is a label to render and MUST NOT be parsed for any fact.
 
+The example below exercises every value of both vocabularies, which is why its
+last row is **illustrative and names no shipped product**: the alpha execution
+roster carries no `unproven` row, because a catalogued row means this build can
+describe *and* constructively serve that provider. `unproven` remains in the
+vocabulary as the claim a row makes when it declares no implementation at all,
+so a consumer MUST still be able to render it. Every other row in the example is
+a provider this build really catalogues.
+
 <!-- CANONICAL:controls_response -->
 ```json
 {
@@ -1381,8 +1389,14 @@ A consumer joins these rows with `/harnesses.json` **by `provider_id`**. A
     },
     {
       "provider_id": "kimi-code",
-      "display_name": "Kimi Code (experimental, no proven transport)",
-      "availability": "version_mismatch", "implementation": "unproven",
+      "display_name": "Kimi Code (headless, experimental)",
+      "availability": "version_mismatch", "implementation": "real_experimental",
+      "controls": ["dispatch"]
+    },
+    {
+      "provider_id": "some-future-provider",
+      "display_name": "A Provider With No Proven Transport",
+      "availability": "unconfigured", "implementation": "unproven",
       "controls": []
     }
   ]

@@ -42,7 +42,8 @@ from .adapters.kimi_code import (
     KIMI_PROTOCOL,
     KIMI_PROVIDER_ID,
     KIMI_SCHEMA_PAIRS,
-    KimiCodeContractAdapter,
+    KimiCodeAdapter,
+    kimi_pin,
 )
 from .adapters.process import ProcessRunner
 from .adapters.provider import (
@@ -67,6 +68,11 @@ _DEEP_LIFECYCLE = ("observe", "prepare", "execute", "verify")
 #: absolute path, the entrypoint it runs, and both files must really be present
 #: before the provider is available. Nothing is derived, searched, or guessed.
 _ENTRYPOINT_PROTOCOLS = frozenset({DSH_PROTOCOL})
+#: Protocols whose executable is the WHOLE pin: one native binary, no second
+#: half. Keyed by PROTOCOL rather than by provider id on purpose -- a protocol is
+#: not an identity, so this stays a fact about pin SHAPE and the identity gate
+#: has nothing to permit here. Two products sharing a shape share this row.
+_SINGLE_EXECUTABLE_PROTOCOLS = frozenset({KIMI_PROTOCOL})
 #: The dsh harness carries one control and says so; stop, retry and switch are
 #: absent from the manifest, so the door cannot admit them.
 _DSH_CAPABILITIES = ("observe", "dispatch")
@@ -98,8 +104,8 @@ PROVIDER_CATALOG = MappingProxyType({
         provider_id=KIMI_PROVIDER_ID, display_name=KIMI_DISPLAY_NAME,
         vendor="Moonshot AI", protocol=KIMI_PROTOCOL,
         capabilities=KIMI_CAPABILITIES, schema_pairs=KIMI_SCHEMA_PAIRS,
-        lifecycle=KIMI_LIFECYCLE, adapter_class=KimiCodeContractAdapter,
-        implementation="unproven"),
+        lifecycle=KIMI_LIFECYCLE, adapter_class=KimiCodeAdapter,
+        implementation="real_experimental"),
 })
 
 
@@ -200,6 +206,19 @@ def _build_adapter(
             env_allow=config.env_allow)
         return entry.adapter_class(
             pin, runner, root=root, clock=clock, ids=ids,
+            adapter_id=entry.provider_id)
+    if entry.protocol in _SINGLE_EXECUTABLE_PROTOCOLS:
+        # An entrypoint pinned against a single-binary protocol is a config this
+        # build cannot honour: the pin says the operator believes a second half
+        # is run, and nothing here would run it. Refusing beats silently
+        # dropping half of what an operator wrote down.
+        if config.entrypoint:
+            raise ProviderConfigError(
+                "this provider runs one executable and no entrypoint; an "
+                "entrypoint pinned against it would never be run")
+        return entry.adapter_class(
+            kimi_pin(config.executable, config.env_allow),
+            runner, root=root, clock=clock, ids=ids,
             adapter_id=entry.provider_id)
     deep_config = DeepAdapterConfig(
         executable=config.executable, protocol=config.protocol,
