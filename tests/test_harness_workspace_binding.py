@@ -18,11 +18,22 @@ shut, and each is a fact about consequences rather than about a message:
 - two providers sharing one home name take each other's attempt directories for
   their own, which is a leak in both directions and a delete in one.
 
-The gate is the fourth relation and it runs the other way: providers that own
-DIFFERENT names have no state to contend over, so serializing them would be a
-cost with nothing bought. The door promises in its own comments that one
-harness's root never stops another provider; the test at the bottom is what
-makes that promise checkable rather than decorative.
+The gate is the fourth relation and it does NOT run the other way. Distinct home
+and marker names buy exactly one thing: privacy of the CLEANUP namespaces, so
+each provider's sweep and discard reach only under its own root and never take a
+neighbour's attempt directories or markers. They do not buy the absence of a
+lock. Two providers under one root still take ONE turn, because they share the
+run-owned two above and because the evidence snapshot spans the whole work tree,
+so a neighbour's ordinary work would otherwise land in another provider's diff
+and read there as a change outside the authorized subtree.
+
+This paragraph said the opposite until the review that produced this correction.
+It claimed providers with different names "have no state to contend over", and
+it was quoting the door's own comment rather than the door's own code -- which
+serialized them, correctly, all along. Narrowing the key to match the prose
+opened the race. The sentence is the thing that was wrong, and it is fixed here;
+see `test_two_providers_on_one_root_take_one_turn_over_the_tree_they_share` and
+its consequence test for what the code actually holds.
 
 Nothing here is about dsh, kimi, or any other product. The names below are
 written in this file precisely because the door must hold for pairs no provider
@@ -126,7 +137,8 @@ def test_a_provider_name_that_is_not_one_local_component_is_refused(tmp_path, na
     assert refusal is not None, f"home_dir={name!r} must refuse"
 
 
-# --- two providers under one root are strangers ------------------------------
+# --- two providers under one root keep separate cleanup namespaces, and still
+# --- take one turn over the tree they share ----------------------------------
 
 
 def test_one_providers_sweep_removes_its_own_homes_and_no_neighbours(tmp_path):
