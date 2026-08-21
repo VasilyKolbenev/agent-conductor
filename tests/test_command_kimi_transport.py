@@ -37,9 +37,11 @@ from conductor.command.adapters.kimi_code import (
     KIMI_PROVIDER_ID,
     MARKER_DIR,
     REVIEWED_KIMI_VERSION,
+    KimiCodeAdapter,
     KimiCodeError,
     kimi_pin,
 )
+from conductor.command.adapters.process import ProcessOutcome, ProcessRunner
 from conductor.command.adapters.provider import (
     ProviderConfig,
     ProviderConfigError,
@@ -114,15 +116,69 @@ def run_once(adapter, request: ActionRequest):
 # --- the pin is one path, and the argv is the vendor's documented shape --------
 
 
-def test_one_pinned_binary_and_code_owned_flags_are_the_whole_command(tmp_path):
-    """``--output-format text --prompt <task>``, prompt LAST, nothing in front.
+class _RecordingRunner(ProcessRunner):
+    """A runner that keeps every CommandSpec it was handed and starts no child.
 
-    The child reports the argv it was handed after the pin, so what is read here
-    is what the operating system really passed: the two documented flags this
-    module owns and exactly one prompt token built from validated identifiers.
+    The WHOLE argv is only observable here. A child cannot see its own parent's
+    command line, and for this fake it cannot even infer it: `kimi.exe` is a
+    launcher stub with an appended zip, and Python will run such a file as a zip
+    application, so `python kimi.exe --version` hands the child exactly the
+    `sys.argv` that `kimi.exe --version` does. A self-report can therefore never
+    witness "nothing in front of the pin" -- the spec can.
+    """
+
+    def __init__(self, root) -> None:
+        super().__init__(root)
+        self.specs: list[object] = []
+
+    def run(self, spec):  # type: ignore[override]
+        self.specs.append(spec)
+        return ProcessOutcome(
+            status="completed", exit_code=0,
+            output=REVIEWED_KIMI_VERSION.encode("utf-8") + b"\n",
+            output_truncated=False, output_limit=spec.output_limit, pid=0,
+            token="recorded")
+
+
+def test_the_whole_argv_is_the_pinned_binary_and_this_builds_own_flags(tmp_path):
+    """``<pin> --output-format text --prompt <task>``, and NOTHING in front of it.
+
+    Read off the spec the adapter built, because that is the only place the whole
+    command exists. The end-to-end test below proves a real child really runs;
+    this one proves what it is asked to run, argv[0] included.
+    """
+    exe = _executable(tmp_path)
+    root = tmp_path / "root"
+    root.mkdir()
+    (root / INSTRUCTION_DIR).mkdir()
+    (root / INSTRUCTION_DIR / "instr-001.md").write_text(
+        INSTRUCTION_BODY, encoding="utf-8", newline="\n")
+    runner = _RecordingRunner(root)
+    adapter = KimiCodeAdapter(
+        kimi_pin(str(exe)), runner, root=root, clock=lambda: NOW, ids=_Ids())
+
+    receipt = run_once(adapter, a_request())
+
+    assert receipt.outcome == "succeeded"
+    argvs = [tuple(spec.argv) for spec in runner.specs]  # type: ignore[attr-defined]
+    assert argvs[0] == (str(exe), "--version"), f"PREFLIGHT_ARGV={argvs[0]}"
+    prompt = argvs[1]
+    assert prompt[:4] == (
+        str(exe), "--output-format", "text", "--prompt"), f"PROMPT_ARGV={prompt}"
+    assert len(prompt) == 5, f"UNEXPECTED_ARGV={prompt}"
+    for argv in argvs:
+        assert argv[0] == str(exe), f"SOMETHING_STANDS_IN_FRONT_OF_THE_PIN={argv}"
+
+
+def test_one_pinned_binary_and_code_owned_flags_really_run_a_child(tmp_path):
+    """The same command, driven all the way through a real process.
+
+    What this adds to the spec test above is that the flags are ones the pinned
+    file really accepts: a real child ran, exited, and reported the argv it saw.
+    It cannot see in front of the pin -- see `_RecordingRunner` for why -- so it
+    does not claim to.
     """
     adapter, _root, log = a_harness(tmp_path)
-    pinned = Path(_fakekimi.build_executable(tmp_path / "bin"))
 
     receipt = run_once(adapter, a_request())
 
@@ -132,13 +188,7 @@ def test_one_pinned_binary_and_code_owned_flags_are_the_whole_command(tmp_path):
     argv = prompts[0]["argv"]
     assert argv[:3] == ["--output-format", "text", "--prompt"]
     assert len(argv) == 4, f"UNEXPECTED_ARGV={argv}"
-    # The child reports what the OS started, so this can see IN FRONT of the pin.
-    # Without it the claim in this test's name was unfalsifiable: an interpreter
-    # or a shell ahead of the binary would have left argv[1:] looking perfect.
     for row in _fakekimi.spawns(log):
-        started = Path(row["argv0"])
-        assert started.name == pinned.name, f"NOT_THE_PINNED_BINARY={row['argv0']}"
-        assert started.suffix == pinned.suffix
         rendered = " ".join(row["argv"]).lower()
         for banned in ("npx", "npm", ".cmd", "-c ", "&&", "|"):
             assert banned not in rendered, f"SHELL_SHAPED_ARGV={row['argv']}"
