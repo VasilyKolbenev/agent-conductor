@@ -30,23 +30,28 @@ from .api_contracts import (
     COMMAND_ARGUMENT_SCHEMA,
     ApiRefusal,
     GraphInput,
+    TemplateRef,
     canonical_arguments,
     parse_confirmation,
     parse_decision,
     parse_graph,
+    parse_graph_from_template,
     parse_proposal,
+    parse_template,
     refusal_from_exception,
 )
 from .containment import run_route_violations
 from .contracts import ContractError, frozen_config_bindings
 from .coordinator import ExecutionCoordinator
-from .graph_definition import GraphDefinition
+from .graph_definition import GraphDefinition, GraphNode
 from .graph_projection import graph_payload
+from .graph_template import GraphTemplate, TemplateError, materialize
 from .http_transport import (
     CommandSession,
     validate_command_host,
 )
 from .run_store import CorruptRun, RecordConflict, RunStore
+from .template_store import TemplateStore
 from .runtime import Budget, ControlRuntime
 from .service import CommandService
 
@@ -65,11 +70,31 @@ COMMAND_ROUTES = (
     ("POST", "/command/runs/<run_id>/actions"),
     ("POST", "/command/runs/<run_id>/decisions"),
     ("POST", "/command/runs/<run_id>/graph"),
+    ("POST", "/command/templates"),
+    ("POST", "/command/runs/<run_id>/graph/from-template"),
 )
 
 _RUN_ROUTE = re.compile(
     r"/command/runs/([A-Za-z0-9][A-Za-z0-9._-]{0,127})"
-    r"(?:/(controls|proposals|actions|decisions|graph))?\Z")
+    # The longer tail is spelled FIRST: alternation is leftmost-first, and a
+    # `graph` that matched before `graph/from-template` would send every
+    # materialization to the route that speaks a different document.
+    r"(?:/(controls|proposals|actions|decisions|graph/from-template|graph))?\Z")
+#: The one availability state in which this build can reach a provider at
+#: all. A word from `AVAILABILITY_STATES`, compared as a STATE: what makes a
+#: binding admissible is what this build resolved about the transport, never
+#: which product is behind it.
+_REACHABLE = "available"
+#: The instant a materialization that is NOT about to be written is built on.
+#: Two of the three callers want no timestamp -- one is judging servability
+#: before the transaction, one is rebuilding a candidate to compare against a
+#: record that already carries one -- and a plan built to be thrown away must
+#: not read a clock, or a comparison would depend on when it was made.
+_PROBE_AT = "1970-01-01T00:00:00Z"
+#: The one command route that belongs to no run. A template outlives the run
+#: that first materialized it, so a run id in its path would be a lie about
+#: what it is.
+_TEMPLATES_PATH = "/command/templates"
 
 
 @dataclass(frozen=True)
@@ -94,9 +119,12 @@ class CommandApi:
             session: CommandSession, budget: Budget,
             clock: Callable[[], str], ids: Callable[[str], str],
             publish_run: Callable[[str], None],
-            providers: Iterable[ProviderContract] = ()) -> None:
+            providers: Iterable[ProviderContract] = (),
+            templates: TemplateStore | None = None) -> None:
         if not isinstance(store, RunStore) or not isinstance(registry, AdapterRegistry):
             raise TypeError("CommandApi requires a RunStore and AdapterRegistry")
+        if templates is not None and not isinstance(templates, TemplateStore):
+            raise TypeError("CommandApi templates must be a TemplateStore")
         if not isinstance(session, CommandSession) or type(budget) is not Budget:
             raise TypeError("CommandApi requires a CommandSession and Budget")
         if not all(callable(value) for value in (clock, ids, publish_run)):
@@ -105,6 +133,10 @@ class CommandApi:
         # them is read; the boundary never resolves or probes a provider itself.
         self._providers = tuple(providers)
         self._store = store
+        # Rooted at the same project as the run store, because one project owns
+        # one set of reusable plans; a caller may hand in its own for a test.
+        self._templates = (
+            TemplateStore(store.project_root) if templates is None else templates)
         self._registry = registry
         self._session = session
         self._budget = Budget(
@@ -184,7 +216,11 @@ class CommandApi:
         return CommandResponse(200, self._controls(recovered.config))
 
     def _post(self, route: _Route, body: Mapping[str, Any]) -> CommandResponse:
+        if route.name == "templates":
+            return self._publish_template(body)
         assert route.run_id is not None
+        if route.name == "graph_from_template":
+            return self._materialize_graph(route.run_id, body)
         if route.name == "proposals":
             return self._propose(route.run_id, body)
         if route.name == "actions":
@@ -192,6 +228,159 @@ class CommandApi:
         if route.name == "graph":
             return self._write_graph(route.run_id, body)
         return self._decide(route.run_id, body)
+
+    def _publish_template(self, body: Mapping[str, Any]) -> CommandResponse:
+        """Publish one immutable revision, or agree it is already published.
+
+        No run is involved, so no run is read, held or published: this route
+        touches the template store and nothing else, and emits no frame on any
+        outcome. A signal is a claim that some run changed, and none did.
+
+        The store decides between the two success answers, because the store is
+        what knows: identical bytes are the request already satisfied, and
+        different bytes under one revision are two plans wearing one identity.
+        """
+        template = parse_template(body)
+        published = self._templates.save(template)
+        return CommandResponse(
+            201 if published.created else 200, template.as_dict())
+
+    def _materialize_graph(
+            self, run_id: str, body: Mapping[str, Any]) -> CommandResponse:
+        """Build this run's one plan from a stored revision and a binding.
+
+        The order is §4.4's order, for §4.4's reason: the standing graph is
+        looked for FIRST, before the clock, the store of templates, the
+        registry, the provider descriptors or the frozen configuration is
+        consulted at all. A client whose reply was lost is entitled to the same
+        answer from a process that starts with a different registry -- or with
+        none -- because the record is already durable and nothing about it
+        depends on what this build can reach today.
+        """
+        asked = parse_graph_from_template(body)
+        self._hold_route(run_id)
+        initial = self._store.read(run_id)
+        checked = None
+        if _standing_graph(initial) is None:
+            # Judged out here rather than under the lock, exactly as the graph
+            # route does: a graph is append-only, so a plan that finds none
+            # standing now is the plan this run may still be given.
+            self._instances_are_declared(initial.config, run_id, asked)
+            checked = self._revision(run_id, asked)
+            probe = _plan(checked, initial.config, run_id, asked, _PROBE_AT)
+            self._bindings_are_reachable(initial.config, run_id, probe.nodes)
+            self._bindings_are_servable(initial.config, run_id, probe.nodes)
+        with self._store.transaction():
+            self._hold_route(run_id)
+            standing = _standing_graph(self._store.read(run_id))
+            if standing is not None:
+                self._repeats_the_standing_plan(run_id, standing, asked, checked)
+                created, graph = False, standing
+            else:
+                graph = _plan(_gated(checked), initial.config, run_id, asked,
+                              self._clock())
+                created = self._store.append(graph)
+        if created:
+            self._publish_run(run_id)
+        return CommandResponse(201 if created else 200, graph.as_dict())
+
+    def _revision(self, run_id: str, asked: TemplateRef) -> GraphTemplate:
+        """Read one stored revision, ONCE, into the snapshot everything uses.
+
+        Reading it twice was the defect this shape exists to prevent. The gates
+        ran on one read and the transaction appended a second, so a revision
+        replaced between them put a plan into an immutable journal that nothing
+        had judged -- an unservable one, on a route whose contract promises
+        zero durable bytes for exactly that fact. There is now one read, and
+        what is appended is what was judged.
+        """
+        try:
+            return self._templates.load(asked.template_id, asked.revision)
+        except TemplateError:
+            raise ApiRefusal.service_missing_revision(
+                run_id, asked.template_id, asked.revision) from None
+
+    def _repeats_the_standing_plan(
+            self, run_id: str, standing: GraphDefinition, asked: TemplateRef,
+            checked: GraphTemplate | None) -> None:
+        """A run carries one graph, so a second request either IS it or conflicts.
+
+        The candidate is re-materialized on the standing record's own
+        `created_at`: the caller never supplied one, so comparing anything else
+        would call every honest retry a conflict.
+
+        The snapshot already gated is reused when there is one. When there is
+        not -- the ordinary retry, which found a graph standing and gated
+        nothing -- the revision is read here, and that read is safe in the one
+        direction that matters: a revision that somehow differs makes the
+        candidate differ, which is a `409`. It can turn an honest retry into a
+        conflict; it can never turn a different plan into a `200`, and it
+        writes nothing either way.
+        """
+        if standing.graph_id != asked.graph_id:
+            raise RecordConflict(
+                f"run {run_id!r} already follows graph {standing.graph_id!r}; "
+                "one run carries one graph")
+        template = self._revision(run_id, asked) if checked is None else checked
+        candidate = _plan(template, self._store.read(run_id).config, run_id,
+                          asked, standing.created_at)
+        if standing != candidate:
+            raise RecordConflict(
+                f"graph {standing.graph_id!r} already records different facts")
+
+    def _instances_are_declared(
+            self, config: Mapping[str, Any], run_id: str,
+            asked: TemplateRef) -> None:
+        """Every instance a role is bound to is one this run's config declares.
+
+        `materialize` refuses this too, and would refuse it a moment later --
+        but it refuses it as a CONTRACT fault, which is the wrong word. That an
+        instance is absent from a frozen configuration is a fact about this
+        RUN, not about the shape of the request, and §4.4 already answers it
+        `service_refused` through this same door. Asking here keeps one word for
+        one fact across both roads.
+        """
+        for instance in asked.binding.instances:
+            self._bound_adapter(config, run_id, instance)
+
+    def _bindings_are_reachable(
+            self, config: Mapping[str, Any], run_id: str,
+            nodes: Iterable[GraphNode]) -> None:
+        """Every acting node's instance is bound to a provider this build can reach.
+
+        This is the template road's rule and NOT §4.4's. That route was frozen
+        without it and stays byte-compatible: adding a refusal to a surface a
+        client already depends on is a change of behaviour however good the
+        reason, and the two roads write the same record by different rights.
+        The materialize road may ask, because it is new and its contract says so.
+
+        Asked BEFORE the pair door, because the two answer different questions
+        and the coarser one is the more useful refusal: an unreachable provider
+        cannot serve any capability, so reporting which schema it fails to speak
+        would name a consequence instead of the cause.
+        """
+        reachable = self._reachable()
+        for node in nodes:
+            if node.capability is None:
+                continue
+            bound = self._bound_adapter(config, run_id, node.instance_id)
+            if bound not in reachable:
+                raise ApiRefusal.service_unreachable_adapter(
+                    run_id, node.instance_id)
+
+    def _reachable(self) -> frozenset[str]:
+        """Which adapters this build can actually reach, by STATE not by name.
+
+        `provider_projection` is the one authority on that question and this is
+        the only place it is asked. What comes back is a state word from a
+        closed vocabulary -- never a product, never a display name, never a
+        guess from an id -- so a provider this build has never heard of and a
+        provider that is merely unreachable are refused by the same rule and in
+        the same words, and neither refusal knows which one it was.
+        """
+        return frozenset(
+            row["provider_id"] for row in provider_projection(self._providers)
+            if row["availability"] == _REACHABLE)
 
     def _write_graph(self, run_id: str, body: Mapping[str, Any]) -> CommandResponse:
         """Write the one graph a run follows; a run never edits the plan it has.
@@ -214,7 +403,8 @@ class CommandApi:
             # Judged out here rather than under the lock: a graph is
             # append-only, so a plan that finds none standing now is the plan
             # this run may still be given.
-            self._bindings_are_servable(initial.config, run_id, submitted)
+            self._bindings_are_servable(
+                initial.config, run_id, submitted.nodes)
         with self._store.transaction():
             self._hold_route(run_id)
             standing = _standing_graph(self._store.read(run_id))
@@ -250,7 +440,7 @@ class CommandApi:
 
     def _bindings_are_servable(
             self, config: Mapping[str, Any], run_id: str,
-            submitted: GraphInput) -> None:
+            nodes: Iterable[GraphNode]) -> None:
         """A plan may only name work this run and this build can carry out.
 
         The graph contract deliberately holds no provider: which adapter serves
@@ -268,7 +458,7 @@ class CommandApi:
         the one family this API speaks, and the payload then goes through the
         registry's own door -- the same one `CommandService.propose` calls.
         """
-        for node in submitted.nodes:
+        for node in nodes:
             if node.capability is None:
                 continue
             bound = self._bound_adapter(config, run_id, node.instance_id)
@@ -401,17 +591,22 @@ class CommandApi:
 
 def _match_route(method: str, path: str) -> _Route:
     if method not in {"GET", "POST"}:
-        known = path == "/command/session" or _RUN_ROUTE.fullmatch(path) is not None
+        known = (path in {"/command/session", _TEMPLATES_PATH}
+                 or _RUN_ROUTE.fullmatch(path) is not None)
         raise ApiRefusal.fixed("method_not_allowed" if known else "route_not_found")
     if path == "/command/session":
         if method != "GET":
             raise ApiRefusal.fixed("method_not_allowed")
         return _Route("session")
+    if path == _TEMPLATES_PATH:
+        if method != "POST":
+            raise ApiRefusal.fixed("method_not_allowed")
+        return _Route("templates")
     matched = _RUN_ROUTE.fullmatch(path)
     if matched is None:
         raise ApiRefusal.fixed("route_not_found")
     run_id, tail = matched.groups()
-    name = tail or "run"
+    name = (tail or "run").replace("/", "_").replace("-", "_")
     expected = "GET" if name in {"run", "controls"} else "POST"
     if method != expected:
         raise ApiRefusal.fixed("method_not_allowed")
@@ -424,6 +619,34 @@ def _target_path(target: str) -> str:
     if parsed.scheme or parsed.netloc or parsed.query or parsed.fragment:
         raise ApiRefusal.fixed("route_not_found")
     return parsed.path
+
+
+def _plan(template: GraphTemplate, config: Mapping[str, Any], run_id: str,
+          asked: TemplateRef, created_at: str) -> GraphDefinition:
+    """Build one plan from one snapshot, by the production door alone.
+
+    Nothing assembles a definition field by field. `materialize` is the one
+    constructor, and the template it is given is a value already in hand --
+    never a name this function goes and resolves, which is what kept the judged
+    revision and the appended one from being the same one.
+    """
+    return materialize(template, asked.binding, config, graph_id=asked.graph_id,
+                       run_id=run_id, created_at=created_at)
+
+
+def _gated(checked: GraphTemplate | None) -> GraphTemplate:
+    """The revision the gates ran on, or a refusal rather than a second read.
+
+    `None` here would mean the transaction found no standing graph while the
+    read before it found one -- impossible for an append-only record. If it
+    ever became possible, the answer must not be to fetch the revision again:
+    that is the whole defect this shape makes unrepresentable. What was judged
+    is what is appended, and when what was judged is missing there is nothing
+    to append.
+    """
+    if checked is None:
+        raise ApiRefusal.fixed("store_error")
+    return checked
 
 
 def _servable_pair(

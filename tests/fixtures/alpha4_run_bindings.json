@@ -1,0 +1,46 @@
+{
+  "bindings": [
+    {
+      "binding": {
+        "assignments": {
+          "role-designer": "codex-review",
+          "role-diagnostician": "codex-review",
+          "role-implementer": "claude-dev",
+          "role-thinker": "codex-review"
+        }
+      },
+      "config": {
+        "instances": [
+          {
+            "adapter": "claude-code",
+            "id": "claude-dev"
+          },
+          {
+            "adapter": "codex",
+            "id": "codex-review"
+          }
+        ]
+      },
+      "name": "two-instances"
+    },
+    {
+      "binding": {
+        "assignments": {
+          "role-designer": "solo-node",
+          "role-diagnostician": "solo-node",
+          "role-implementer": "solo-node",
+          "role-thinker": "solo-node"
+        }
+      },
+      "config": {
+        "instances": [
+          {
+            "adapter": "claude-code",
+            "id": "solo-node"
+          }
+        ]
+      },
+      "name": "one-instance"
+    }
+  ]
+}

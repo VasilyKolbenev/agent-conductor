@@ -13,10 +13,12 @@ from typing import Any
 
 from .adapters import AdapterContractError, UnsupportedCapability
 from .adapters.deep_commands import DEEP_ARGUMENT_TYPES
-from .contracts import ActionProposal, ContractError, DecisionReceipt
+from .contracts import ActionProposal, ContractError, DecisionReceipt, _id
 from .graph_definition import GraphDefinition, GraphEdge, GraphNode
+from .graph_template import GraphTemplate, RunBinding
 from .http_transport import HttpRefusal
 from .run_store import CorruptRun, RecordConflict, StoreError
+from .template_store import RouteNotOwned
 from .runtime import AuthorizationError, Confirmation
 from .service import ServiceError
 
@@ -77,6 +79,16 @@ _DECISION_FIELDS = frozenset({
 #: are the server's. `run_id` and `created_at` are refused here rather than
 #: ignored, so a caller learns the server owns them.
 _GRAPH_FIELDS = frozenset({"graph_id", "nodes", "edges"})
+#: A template belongs to no run and carries no timestamp, so neither word
+#: appears here -- and the set IS the contract's own, read off it rather
+#: than spelled a second time, because a field added to `GraphTemplate` that
+#: this surface silently refused would be a contract the two disagree about.
+_TEMPLATE_FIELDS = frozenset(GraphTemplate._FIELDS)
+#: What a run supplies to materialize one: the plan's stable identity, the
+#: immutable revision to build from, and who the roles are. Nothing else --
+#: `nodes` here would be a second way to say what the revision already says.
+_FROM_TEMPLATE_FIELDS = frozenset({
+    "graph_id", "template_id", "revision", "assignments"})
 #: The ONE argument-schema family this frozen API speaks. A capability an
 #: adapter serves under another family -- or under none -- is a capability this
 #: surface cannot write a plan for, whatever the capability is called. Spelled
@@ -107,6 +119,43 @@ def _safe_id(value: object) -> bool:
     return isinstance(value, str) and _ID_RE.fullmatch(value) is not None
 
 
+def _safe_detail(value: object) -> bool:
+    """One detail value: a safe id, or a counting number spelled as itself."""
+    if type(value) is int and not isinstance(value, bool):
+        return value >= 1
+    return _safe_id(value)
+
+
+#: Every refusal that may carry a detail, as `(code, fields, sentence)`. A
+#: closed table rather than a condition, because the closure is the point: a
+#: detail is rendered into a browser, so what may appear there is reviewed one
+#: fact at a time. The sentence is built from the SAME fields the detail
+#: carries, so a message and its structured half cannot drift apart -- and a
+#: refusal assembled anywhere else, with any other wording, is refused at
+#: construction rather than shipped.
+_REVIEWED_FACTS = (
+    ("service_refused", ("run_id", "instance_id"),
+     lambda facts: f"frozen config declares no instance '{facts['instance_id']}'"),
+    ("service_refused", ("run_id", "instance_id"),
+     lambda facts: (f"instance '{facts['instance_id']}' is bound to a provider "
+                    "this build cannot reach")),
+    ("service_refused", ("run_id", "template_id", "revision"),
+     lambda facts: (f"no stored template '{facts['template_id']}' at revision "
+                    f"{facts['revision']}")),
+)
+
+
+def _reviewed_fact(code: str, message: str, detail: dict) -> bool:
+    """Whether this refusal is one of the reviewed facts, whole."""
+    for reviewed, fields, sentence in _REVIEWED_FACTS:
+        if code != reviewed or set(detail) != set(fields):
+            continue
+        if all(_safe_detail(detail[key]) for key in fields) \
+                and message == sentence(detail):
+            return True
+    return False
+
+
 @dataclass(frozen=True, init=False)
 class ApiRefusal(Exception):
     """One closed browser-safe refusal; no exception prose is carried through."""
@@ -124,11 +173,7 @@ class ApiRefusal(Exception):
             raise ValueError("unknown API refusal code")
         copied = dict(detail)
         if copied:
-            expected = {"run_id", "instance_id"}
-            if (code != "service_refused" or set(copied) != expected
-                    or any(not _safe_id(copied[key]) for key in expected)
-                    or message != (
-                        f"frozen config declares no instance '{copied['instance_id']}'")):
+            if not _reviewed_fact(code, message, copied):
                 raise ValueError("API refusal detail must match a reviewed fact")
         else:
             messages = _PHASE_MESSAGES.get(code, frozenset()) | {
@@ -171,6 +216,31 @@ class ApiRefusal(Exception):
             raise ValueError("service refusal identifiers must be safe IDs") from None
         detail = {"run_id": run_id, "instance_id": instance_id}
         message = f"frozen config declares no instance '{instance_id}'"
+        return cls(_REFUSAL_BUILD, "service_refused", message, detail)
+
+    @classmethod
+    def service_missing_revision(
+            cls, run_id: str, template_id: str, revision: int) -> "ApiRefusal":
+        """Name a revision this build does not hold, and no path to look at."""
+        detail = {"run_id": run_id, "template_id": template_id,
+                  "revision": revision}
+        message = f"no stored template '{template_id}' at revision {revision}"
+        return cls(_REFUSAL_BUILD, "service_refused", message, detail)
+
+    @classmethod
+    def service_unreachable_adapter(
+            cls, run_id: str, instance_id: str) -> "ApiRefusal":
+        """Name the INSTANCE, because the product behind it is not the fact.
+
+        Whether a provider can be reached is a state this build resolved, and
+        the refusal says only that the instance a role was bound to is not
+        reachable. Naming the adapter would put a vendor in a message the
+        Cockpit renders, and a caller who supplied the binding already knows
+        which instance they chose.
+        """
+        detail = {"run_id": run_id, "instance_id": instance_id}
+        message = (f"instance '{instance_id}' is bound to a provider this build "
+                   "cannot reach")
         return cls(_REFUSAL_BUILD, "service_refused", message, detail)
 
 
@@ -431,6 +501,57 @@ def parse_decision(body: object) -> DecisionInput:
         supersedes=decision.supersedes)
 
 
+@dataclass(frozen=True)
+class TemplateRef:
+    """One run's request to follow a stored revision, with who the roles are.
+
+    The binding is a validated ``RunBinding`` by the time this exists, so a
+    caller cannot reach the store or the materializer with a mapping the
+    contract would refuse. What is NOT settled here is whether the revision
+    exists, whether those instances are configured, or whether their adapters
+    can do the work: those are facts about a run and a build, and only a plan
+    about to be WRITTEN is worth asking them for.
+    """
+
+    graph_id: str
+    template_id: str
+    revision: int
+    binding: RunBinding
+
+
+def parse_template(body: object) -> GraphTemplate:
+    """Take a published revision through the contract's own door and no other.
+
+    The same ``from_dict`` an operator's file goes through, so what arrives over
+    the wire is held to the contract rather than trusted for having arrived.
+    The document is closed at every level, which is what refuses a
+    ``provider_id`` or an ``instance_id`` smuggled into a node: this surface
+    needs no by-name screen for deployment words, because a template that
+    carried one would not be a template.
+    """
+    return _contract(GraphTemplate.from_dict, _closed(body, _TEMPLATE_FIELDS))
+
+
+def parse_graph_from_template(body: object) -> TemplateRef:
+    """Validate the four caller-owned facts of a materialization request.
+
+    ``graph_id`` is the caller's, exactly as in ``parse_graph``, and for the
+    same reason: it is what makes a retry findable. ``revision`` is taken as an
+    exact ``int`` -- a string that looks like one is a different document -- and
+    the assignments go through ``RunBinding`` here so that a role or an instance
+    the contract would refuse never reaches a store.
+    """
+    values = _closed(body, _FROM_TEMPLATE_FIELDS)
+    revision = values["revision"]
+    if type(revision) is not int or isinstance(revision, bool) or revision < 1:
+        raise ApiRefusal.fixed("contract_invalid")
+    binding = _contract(RunBinding.from_dict, {"assignments": values["assignments"]})
+    return TemplateRef(
+        graph_id=_contract(_id, "graph_id", values["graph_id"]),
+        template_id=_contract(_id, "template_id", values["template_id"]),
+        revision=revision, binding=binding)
+
+
 def parse_graph(body: object) -> GraphInput:
     """Validate exactly the three caller-owned facts of a run's one plan.
 
@@ -460,6 +581,11 @@ def refusal_from_exception(error: Exception) -> ApiRefusal:
         return ApiRefusal.fixed("run_corrupt")
     if isinstance(error, RecordConflict):
         return ApiRefusal.fixed("record_conflict")
+    if isinstance(error, RouteNotOwned):
+        # A route that reaches somewhere this store does not own is the same
+        # fact `run_route_violations` reports for a run, and it gets the same
+        # word. `store_error` would call a caller's answer a server fault.
+        return ApiRefusal.fixed("route_unsafe")
     if isinstance(error, StoreError):
         return ApiRefusal.fixed("store_error")
     if isinstance(error, UnsupportedCapability):

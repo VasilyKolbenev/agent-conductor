@@ -461,9 +461,6 @@ def _substitute(text: str, project: str, primary: str, reviewer: str) -> str:
         sentences that state a fact about those values are named above and
         rewritten deliberately.
     """
-    if (project, primary, reviewer) == (_DEFAULT_PROJECT, _DEFAULT_PRIMARY,
-                                        _DEFAULT_REVIEWER):
-        return text
     # Built in one pass off the ORIGINAL values, so swapping the two default
     # harnesses for each other cannot collapse them onto one.
     swap = {f'project = "{_DEFAULT_PROJECT}"': f'project = "{project}"',
@@ -513,6 +510,15 @@ def get(name: str, *, project: str | None = None, primary: str | None = None,
         known = ", ".join(_TEMPLATES)
         raise UnknownTemplate(f"unknown template {name!r} (available: {known})")
     _check_in_sync(name, entry[0])
+    if project is None and primary is None and reviewer is None:
+        # Nothing was asked for, so nothing is rewritten -- the promise made
+        # four paragraphs up, kept by not calling the rewriter at all. This
+        # fact was thrown away here (defaults filled in) and then rebuilt
+        # inside `_substitute` by comparing the filled-in values against the
+        # three constants -- two of which are harness ids, so the recovery
+        # read, to anything examining this text, exactly like deciding
+        # something by a vendor's name.
+        return entry[0]
     return _substitute(
         entry[0],
         _DEFAULT_PROJECT if project is None else check_name("project name", project),
