@@ -409,3 +409,37 @@ def test_two_different_materializations_leave_one_graph_and_one_conflict(tmp_pat
     assert sorted(results) == [201, ERROR_STATUS["record_conflict"]]
     assert len(_standing(store)) == 1
     assert events == [RUN_ID]
+
+
+def test_a_portal_on_the_template_route_is_a_route_refusal_and_not_a_fault(
+        tmp_path):
+    """A name whose content lies elsewhere is the caller's answer, not a crash.
+
+    `route_unsafe` is what this product already says when a writable route
+    reaches state it cannot account for, and a store that answered
+    `store_error` would call a structural refusal a server fault -- a 500 for
+    something the server understood perfectly well.
+
+    Found by a sabotage run: the translation existed and nothing exercised it,
+    because the mutation that was supposed to guard it named a test about the
+    refusal TABLE rather than about this road.
+    """
+    project = tmp_path / "project"
+    (project / "conductor").mkdir(parents=True)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    try:
+        (project / "conductor" / "templates").symlink_to(
+            elsewhere, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("this machine does not permit creating a symbolic link")
+
+    subject, _store, events = api(project)
+    refused = send(subject, TEMPLATES_PATH, template_body())
+    assert refused.status == ERROR_STATUS["route_unsafe"]
+    assert code_of(refused) == "route_unsafe"
+    rendered = json.dumps(refused.payload)
+    for secret in (str(tmp_path), str(elsewhere), "templates"):
+        assert secret not in rendered
+    assert not list(elsewhere.iterdir()), "it wrote through the portal anyway"
+    assert events == []
