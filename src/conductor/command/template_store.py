@@ -25,12 +25,73 @@ from __future__ import annotations
 
 import json
 import os
+import stat
 from pathlib import Path
+from types import MappingProxyType
 
+from .containment import (
+    RouteViolation,
+    RouteViolationCode,
+    first_directory_violation,
+    portal_violation,
+    _optional_lstat,
+)
 from .contracts import ContractError, _id, canonical_json
 from .graph_template import GraphTemplate, TemplateError
 from .run_store import _canonical_bytes, _exclusive_bytes, _fsync_dir
 from .store_errors import RecordConflict, StoreError
+
+#: One fixed sentence per structural reason a route is not this store's to use,
+#: and not one of them names a path. `containment` reports typed FACTS exactly
+#: so a caller need not parse a rendering -- and its own renderer puts the path
+#: in the message, which is this server's directory layout handed to whoever
+#: asked for a template. The kind is what a caller can act on; the location is
+#: what the operator already knows and an attacker does not.
+_ROUTE_REFUSAL = MappingProxyType({
+    RouteViolationCode.SYMLINK:
+        "a component of the template store is a symbolic link",
+    RouteViolationCode.JUNCTION:
+        "a component of the template store is a directory junction",
+    RouteViolationCode.REPARSE_POINT:
+        "a component of the template store is a reparse point",
+    RouteViolationCode.HARD_LINK:
+        "a stored revision carries more than one name",
+    RouteViolationCode.IRREGULAR_FILE:
+        "a stored revision is not a regular file",
+    RouteViolationCode.NOT_DIRECTORY:
+        "a component of the template store is not a directory",
+    RouteViolationCode.UNREADABLE:
+        "a component of the template store cannot be read",
+    RouteViolationCode.MISSING:
+        "a component of the template store cannot be read",
+})
+
+
+def _leaf_violation(path: Path) -> RouteViolation | None:
+    """Judge one revision file as regular, local, and singly named.
+
+    Absent is admissible: this store may own its creation. Present and anything
+    other than a lone regular file is not, and each reason is its own typed
+    fact rather than one flat "bad path".
+    """
+    found, failure = _optional_lstat(path)
+    if failure is not None:
+        return failure
+    if found is None:
+        return None
+    portal = portal_violation(path, found)
+    if portal is not None:
+        return portal
+    if not stat.S_ISREG(found.st_mode):
+        return RouteViolation(RouteViolationCode.IRREGULAR_FILE, path)
+    if found.st_nlink != 1:
+        return RouteViolation(
+            RouteViolationCode.HARD_LINK, path, link_count=found.st_nlink)
+    return None
+
+
+class RouteNotOwned(StoreError):
+    """The route to a revision reaches state this store cannot account for."""
 
 
 class RevisionConflict(RecordConflict):
@@ -65,6 +126,30 @@ class TemplateStore:
             raise StoreError("a template revision starts at 1 and only goes up")
         return self.templates_root / safe / f"{revision}.json"
 
+    def _owned(self, path: Path) -> None:
+        """Refuse a route that reaches bytes this store cannot account for.
+
+        Every directory this store writes THROUGH is walked, and the leaf it
+        writes AT is judged separately, because the two fail differently. A
+        portal anywhere on the route means the name is here and the content is
+        somewhere else, so a write lands outside the tree the operator pointed
+        at. A second hard link on the leaf means the same bytes already stand
+        under another name, so publishing at ours changes only one view of
+        state nobody accounted for -- which is the failure `os.link` alone
+        cannot see, since it arbitrates the NAME and says nothing about how
+        many names the bytes behind it already have.
+
+        The check runs on the way IN and on the way OUT. A route that grew a
+        portal after a revision was written would otherwise be read back
+        happily, and a reader trusting bytes from somewhere else is the same
+        defect as a writer sending bytes there.
+        """
+        violation = first_directory_violation((
+            self.project_root / "conductor", self.templates_root, path.parent,
+        )) or _leaf_violation(path)
+        if violation is not None:
+            raise RouteNotOwned(_ROUTE_REFUSAL[violation.code])
+
     def save(self, template: GraphTemplate) -> Path:
         """Publish one revision, or agree that it is already published.
 
@@ -78,7 +163,9 @@ class TemplateStore:
             raise StoreError("save takes exactly a GraphTemplate")
         document = template.as_dict()
         path = self.revision_path(template.template_id, template.revision)
+        self._owned(path)
         path.parent.mkdir(parents=True, exist_ok=True)
+        self._owned(path)
         try:
             _exclusive_bytes(path, _canonical_bytes(document))
         except FileExistsError:
@@ -108,9 +195,10 @@ class TemplateStore:
         written by us -- and a revision written by an older build that this one
         no longer speaks is refused rather than half-read.
         """
+        path = self.revision_path(template_id, revision)
+        self._owned(path)
         return GraphTemplate.from_dict(
-            self._document(self.revision_path(template_id, revision),
-                           template_id, revision))
+            self._document(path, template_id, revision))
 
     @staticmethod
     def _document(path: Path, template_id: str, revision: int) -> dict:

@@ -7,6 +7,7 @@ beside the test would only prove that two pieces of this file agree.
 from __future__ import annotations
 
 import json
+import os
 import traceback
 
 import pytest
@@ -16,8 +17,13 @@ from conductor.command.graph_template import (
     TemplateError,
     load_template,
 )
+from conductor.command.containment import RouteViolationCode
 from conductor.command.store_errors import RecordConflict, StoreError
-from conductor.command.template_store import RevisionConflict, TemplateStore
+from conductor.command.template_store import (
+    RevisionConflict,
+    RouteNotOwned,
+    TemplateStore,
+)
 
 
 def dalio() -> GraphTemplate:
@@ -176,3 +182,130 @@ def test_the_store_takes_a_template_and_no_lookalike(tmp_path):
                           nodes=template.nodes, edges=template.edges))
     with pytest.raises(StoreError):
         store.save(template.as_dict())
+
+
+# --- the route this store writes through, and what it refuses to reach ---
+
+
+def _portal(link: Path, target: Path, *, directory: bool) -> bool:
+    """Make one symlink, or report that this machine will not let us.
+
+    Windows needs a privilege for these, so the test says why it skipped rather
+    than passing quietly on a platform where the relation was never exercised.
+    """
+    try:
+        link.symlink_to(target, target_is_directory=directory)
+    except (OSError, NotImplementedError):
+        return False
+    return True
+
+
+def test_a_portal_on_the_route_is_refused_without_naming_the_path(tmp_path):
+    """A name here whose content is elsewhere sends this store's bytes there.
+
+    The refusal names the KIND, because that is what a caller can act on. It
+    does not name the path: `containment` reports typed facts precisely so a
+    caller need not parse a rendering, and its own renderer carries the path --
+    which is this server's directory layout handed to whoever asked.
+    """
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    project = tmp_path / "project"
+    (project / "conductor").mkdir(parents=True)
+    if not _portal(project / "conductor" / "templates", elsewhere, directory=True):
+        pytest.skip("this machine does not permit creating a symbolic link")
+    store = TemplateStore(project)
+    template = dalio()
+    with pytest.raises(RouteNotOwned) as refusal:
+        store.save(template)
+    assert "symbolic link" in str(refusal.value)
+    for secret in (str(tmp_path), str(elsewhere), str(store.templates_root)):
+        assert secret not in str(refusal.value)
+    assert not list(elsewhere.iterdir()), "it wrote through the portal anyway"
+
+
+def test_a_portal_that_appears_after_a_write_is_refused_on_the_way_out(tmp_path):
+    """A reader trusting bytes from elsewhere is the same defect as a writer.
+
+    The route is judged on the way IN and on the way OUT, so a revision written
+    honestly and later replaced by a name pointing somewhere else is refused
+    rather than read back as though nothing had happened.
+    """
+    store = TemplateStore(tmp_path)
+    template = dalio()
+    path = store.save(template)
+    assert store.load(template.template_id, 1) == template
+    other = tmp_path / "other.json"
+    other.write_text(path.read_text(encoding="utf-8"), encoding="utf-8", newline="\n")
+    path.unlink()
+    if not _portal(path, other, directory=False):
+        pytest.skip("this machine does not permit creating a symbolic link")
+    with pytest.raises(RouteNotOwned) as refusal:
+        store.load(template.template_id, 1)
+    assert "symbolic link" in str(refusal.value)
+    assert str(tmp_path) not in str(refusal.value)
+
+
+def test_a_revision_that_carries_a_second_name_is_refused(tmp_path):
+    """`os.link` arbitrates the NAME and says nothing about the bytes behind it.
+
+    A second hard link makes the same bytes reachable somewhere this store
+    cannot account for, so publishing at our name changes only one view of
+    state nobody owns -- and the exclusive create cannot see that at all.
+    """
+    store = TemplateStore(tmp_path)
+    template = dalio()
+    path = store.save(template)
+    twin = tmp_path / "twin.json"
+    try:
+        os.link(path, twin)
+    except (OSError, NotImplementedError):
+        pytest.skip("this machine does not permit creating a hard link")
+    with pytest.raises(RouteNotOwned) as refusal:
+        store.load(template.template_id, 1)
+    assert "more than one name" in str(refusal.value)
+    assert str(tmp_path) not in str(refusal.value)
+    with pytest.raises(RouteNotOwned):
+        store.save(template)
+
+
+def test_a_revision_that_is_not_a_regular_file_is_refused(tmp_path):
+    """What stands at the name matters, not only whether something does."""
+    store = TemplateStore(tmp_path)
+    template = dalio()
+    path = store.revision_path(template.template_id, 1)
+    path.parent.mkdir(parents=True)
+    path.mkdir()
+    with pytest.raises(RouteNotOwned) as refusal:
+        store.load(template.template_id, 1)
+    assert "not a regular file" in str(refusal.value)
+    assert str(tmp_path) not in str(refusal.value)
+
+
+def test_a_route_component_that_is_a_file_is_refused_as_a_route(tmp_path):
+    """A store cannot write through something that is not a directory."""
+    project = tmp_path / "project"
+    (project / "conductor").mkdir(parents=True)
+    (project / "conductor" / "templates").write_text("x", encoding="utf-8",
+                                                     newline="\n")
+    store = TemplateStore(project)
+    with pytest.raises(RouteNotOwned) as refusal:
+        store.save(dalio())
+    assert "not a directory" in str(refusal.value)
+    assert str(tmp_path) not in str(refusal.value)
+
+
+def test_every_structural_reason_has_a_sentence_that_names_no_path():
+    """The refusal table is closed, and closed against the typed vocabulary.
+
+    Derived rather than listed: every reason this store can actually raise must
+    have a sentence, so a `containment` code reaching it without one would be a
+    `KeyError` at the worst possible moment instead of a refusal.
+    """
+    from conductor.command.template_store import _ROUTE_REFUSAL
+
+    assert _ROUTE_REFUSAL, "the refusal table is empty"
+    for code, sentence in _ROUTE_REFUSAL.items():
+        assert isinstance(code, RouteViolationCode)
+        assert sentence and not any(mark in sentence for mark in ("/", "\\", ":")), (
+            code, sentence)
