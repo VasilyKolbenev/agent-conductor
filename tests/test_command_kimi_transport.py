@@ -33,13 +33,20 @@ import pytest
 from conductor.command.adapters.kimi_code import (
     HOME_DIR,
     INSTRUCTION_DIR,
+    KIMI_HOME_ENV,
     KIMI_PROTOCOL,
     KIMI_PROVIDER_ID,
+    KIMI_TELEMETRY_ENV,
     MARKER_DIR,
     REVIEWED_KIMI_VERSION,
     KimiCodeAdapter,
     KimiCodeError,
     kimi_pin,
+)
+from conductor.command.adapters.dsh_harness import DshHarnessError
+from conductor.command.adapters.headless_cli import (
+    ExecutablePin,
+    HeadlessCliError,
 )
 from conductor.command.adapters.process import ProcessOutcome, ProcessRunner
 from conductor.command.adapters.provider import (
@@ -212,24 +219,76 @@ def test_a_relative_pin_is_refused_before_any_child_can_exist():
             kimi_pin(bad)
 
 
-def test_an_entrypoint_pinned_against_a_single_binary_is_refused(tmp_path):
-    """Half of what the operator wrote down would otherwise be silently dropped.
+def test_a_pin_built_for_another_provider_is_not_this_adapters_pin(tmp_path):
+    """The pin SHAPE is shared, so the class alone binds nothing.
 
-    Kimi Code runs no interpreter, so an entrypoint pinned beside it is a config
-    this build cannot honour: the operator believes a second file is run, and
-    nothing here would run it. Refusing says so; ignoring it would leave them
-    believing a path that never executes.
+    ``ExecutablePin`` is neutral by design -- every single-binary product pins
+    exactly one absolute path -- which means ``type(pin) is ExecutablePin`` says
+    only "somebody's pin". Deleting that check left the whole suite green, so
+    what the adapter really needs to know is whose refusal type the pin carries:
+    a pin built for another provider refuses as that provider, and a caller
+    catching this one's error would never see it.
     """
     exe = _executable(tmp_path)
     root = tmp_path / "root"
     root.mkdir()
+    foreign = ExecutablePin(
+        executable=str(exe), error=DshHarnessError, env_allow=())
+
+    with pytest.raises(KimiCodeError, match="pin of its own"):
+        KimiCodeAdapter(
+            foreign, _RecordingRunner(root), root=root, clock=lambda: NOW,
+            ids=_Ids())
+
+
+@pytest.mark.parametrize("bad", (None, "KimiCodeError", RuntimeError, object()))
+def test_a_pin_whose_refusal_type_is_not_one_is_refused(tmp_path, bad):
+    """The field is required AND proved, because it decides how a pin refuses.
+
+    It used to default to the shared base class and was never checked, so a pin
+    could carry a string, an unrelated exception, or nothing at all and still be
+    constructed -- and then refuse as a type no provider's callers name.
+    """
+    exe = _executable(tmp_path)
+
+    with pytest.raises(HeadlessCliError, match="refusal type"):
+        ExecutablePin(executable=str(exe), error=bad)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("entrypoint_exists", (True, False))
+def test_an_entrypoint_pinned_against_a_single_binary_costs_availability(
+        tmp_path, entrypoint_exists):
+    """Half of what the operator wrote down would otherwise be silently dropped.
+
+    Kimi Code runs no interpreter, so an entrypoint pinned beside it is a config
+    this build cannot honour: the operator believes a second file is run, and
+    nothing here would run it.
+
+    The answer is UNAVAILABILITY, not an exception. Raising from the adapter
+    factory took the whole roster down -- `conduct up` does not catch
+    ProviderConfigError, so one typo ended the server with a traceback and no
+    descriptor for ANY provider -- and it fired only when the pinned entrypoint
+    really existed, which is the case that needed it least. Both cases are held
+    here for exactly that reason: the shape of the config decides, not the disk.
+    """
+    exe = _executable(tmp_path)
+    root = tmp_path / "root"
+    root.mkdir()
+    entrypoint = str(exe) if entrypoint_exists else str(tmp_path / "absent.js")
     config = ProviderConfig(
         provider_id=KIMI_PROVIDER_ID, executable=str(exe),
-        protocol=KIMI_PROTOCOL, entrypoint=str(exe))
+        protocol=KIMI_PROTOCOL, entrypoint=entrypoint)
 
-    with pytest.raises(ProviderConfigError, match="never be run"):
-        resolve_providers(
-            [config], root=root, clock=lambda: NOW, ids=_Ids(), environ={})
+    resolution = resolve_providers(
+        [config], root=root, clock=lambda: NOW, ids=_Ids(), environ={})
+
+    described = next(
+        row for row in resolution.contracts if row.provider_id == KIMI_PROVIDER_ID)
+    assert described.available is False
+    assert resolution.spawn_capable(KIMI_PROVIDER_ID) is False
+    # Every catalogued provider is still described: one bad config costs its own
+    # provider its availability and costs the roster nothing.
+    assert len(resolution.contracts) >= 4, "THE_WHOLE_ROSTER_WAS_LOST"
 
 
 # --- the version preflight is exact, and a mismatch spawns no prompt ----------
@@ -343,13 +402,16 @@ def test_a_credential_the_operator_did_not_allow_never_reaches_the_child(
 
     run_once(adapter, a_request())
 
+    # A BOUND, not a membership. The dsh suite already held this relation with
+    # set equality; asserting one hand-picked absence was a weaker copy of a
+    # working guard, and a runner that copied the whole parent environment would
+    # have satisfied it.
     names = set(_fakekimi.spawns(log)[0]["env_names"])
-    # The two this build owns, and the one the operator really allowed.
-    assert "KIMI_CODE_HOME" in names and "KIMI_DISABLE_TELEMETRY" in names
-    assert _fakekimi.SPAWN_LOG in names
-    assert "KIMI_API_KEY" not in names, (
-        "AN_UNALLOWED_CREDENTIAL_REACHED_THE_CHILD -- it was set in the parent "
-        "and absent from env_allow, so the runner copied what it was not given")
+    assert names == {
+        KIMI_HOME_ENV, KIMI_TELEMETRY_ENV, _fakekimi.SPAWN_LOG}, (
+        "THE_CHILD_ENVIRONMENT_IS_NOT_THE_ONE_THIS_BUILD_GAVE_IT: "
+        f"{sorted(names)}")
+    assert "KIMI_API_KEY" not in names
 
 
 # --- what an exit code is allowed to mean ------------------------------------
@@ -475,6 +537,11 @@ def test_a_prompt_that_changed_nothing_is_an_error_and_not_a_success(tmp_path):
     assert verification.state == "error"
     assert verification.state != "unavailable", (
         "an adapter that HAS a verifier must never borrow the absent-verifier token")
+    # The STATE is shared by three different branches, so it cannot tell this
+    # one apart. The sentence can: swapping the no-change branch for the
+    # durable-evidence one would tell an operator files changed when none did.
+    assert "changed nothing" in verification.detail, (
+        f"THE_WRONG_ERROR_BRANCH_ANSWERED detail={verification.detail}")
 
 
 # --- a crashed prompt is never run twice, and no secret escapes ---------------

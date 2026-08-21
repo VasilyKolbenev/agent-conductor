@@ -43,9 +43,9 @@ from .adapters.kimi_code import (
     KIMI_PROVIDER_ID,
     KIMI_SCHEMA_PAIRS,
     KimiCodeAdapter,
-    kimi_pin,
 )
 from .adapters.process import ProcessRunner
+from .adapters.headless_cli import ExecutablePin
 from .adapters.provider import (
     SCHEMALESS_CAPABILITIES,
     ProviderCatalogEntry,
@@ -175,6 +175,21 @@ def _resolve_availability(config: ProviderConfig, entry: ProviderCatalogEntry) -
         # An interpreter with nothing to run is not a usable provider, and
         # inventing the missing half is exactly what this factory refuses to do.
         return "executable_absent"
+    if entry.protocol in _SINGLE_EXECUTABLE_PROTOCOLS and config.entrypoint:
+        # The mirror image: this provider runs ONE binary, so an entrypoint
+        # pinned beside it is a config this build cannot honour -- the operator
+        # believes a second file is run and nothing here would run it.
+        #
+        # It is answered HERE, as unavailability, and not by raising from the
+        # adapter factory. Raising took down the whole roster: `conduct up` does
+        # not catch ProviderConfigError, so one operator typo ended the server
+        # with a traceback and no descriptor for ANY provider. It also fired only
+        # when the pinned entrypoint really existed -- an absent one was reported
+        # as `executable_absent` first -- so it was loudest in the case that
+        # needed it least. Read as a fact about the CONFIG's shape, it needs no
+        # disk at all and it costs one provider its availability, which is what
+        # every other unhonourable pin costs.
+        return "version_mismatch"
     if not _executable_present(config.executable):
         return "executable_absent"
     if config.entrypoint and not _executable_present(config.entrypoint):
@@ -208,16 +223,16 @@ def _build_adapter(
             pin, runner, root=root, clock=clock, ids=ids,
             adapter_id=entry.provider_id)
     if entry.protocol in _SINGLE_EXECUTABLE_PROTOCOLS:
-        # An entrypoint pinned against a single-binary protocol is a config this
-        # build cannot honour: the pin says the operator believes a second half
-        # is run, and nothing here would run it. Refusing beats silently
-        # dropping half of what an operator wrote down.
-        if config.entrypoint:
-            raise ProviderConfigError(
-                "this provider runs one executable and no entrypoint; an "
-                "entrypoint pinned against it would never be run")
+        # No adapter is ever built for a config carrying an entrypoint here:
+        # `_resolve_availability` refuses it, and only an AVAILABLE provider
+        # reaches this function. The refusal type comes from the adapter class
+        # that will hold the pin, so a second single-binary provider refuses as
+        # ITSELF -- hardcoding one provider's factory here gave every future one
+        # Kimi Code's error.
         return entry.adapter_class(
-            kimi_pin(config.executable, config.env_allow),
+            ExecutablePin(
+                executable=config.executable, env_allow=config.env_allow,
+                error=entry.adapter_class.error),
             runner, root=root, clock=clock, ids=ids,
             adapter_id=entry.provider_id)
     deep_config = DeepAdapterConfig(

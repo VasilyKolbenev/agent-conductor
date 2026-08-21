@@ -164,12 +164,19 @@ class ExecutablePin:
     """
 
     executable: str
-    env_allow: tuple[str, ...] = ()
     #: The refusal type of the provider being pinned, so a bad pin refuses as
-    #: that provider's own error rather than as the shared base's.
-    error: type[HeadlessCliError] = HeadlessCliError
+    #: that provider's own error rather than as the shared base's. REQUIRED, and
+    #: proved to be one: it defaulted to the base class, which meant a pin built
+    #: without thinking about it refused as a type no provider's callers name,
+    #: and nothing checked that a caller passed a class at all.
+    error: type[HeadlessCliError]
+    env_allow: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
+        if not (isinstance(self.error, type)
+                and issubclass(self.error, HeadlessCliError)):
+            raise HeadlessCliError(
+                "a pin's refusal type must be a headless transport error class")
         reviewed_pin_path(self.executable, "executable", self.error)
         object.__setattr__(
             self, "env_allow", reviewed_env_allow(self.env_allow, self.error))

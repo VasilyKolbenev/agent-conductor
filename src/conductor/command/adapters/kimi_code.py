@@ -161,7 +161,7 @@ def kimi_pin(executable: str, env_allow: tuple[str, ...] = ()) -> ExecutablePin:
     inventing one is the discovery this factory exists to refuse.
     """
     return ExecutablePin(
-        executable=executable, env_allow=env_allow, error=KimiCodeError)
+        executable=executable, error=KimiCodeError, env_allow=env_allow)
 
 
 class KimiCodeAdapter(HeadlessCliTransport):
@@ -175,9 +175,13 @@ class KimiCodeAdapter(HeadlessCliTransport):
             root: str | Path,
             clock: Callable[[], str], ids: Callable[[str], str],
             adapter_id: str = KIMI_PROVIDER_ID) -> None:
-        if type(pin) is not ExecutablePin:
+        if type(pin) is not ExecutablePin or pin.error is not KimiCodeError:
+            # The class alone binds nothing now that every single-binary provider
+            # shares it, so the pin's own refusal type is checked too: a pin
+            # built for another provider would refuse as that provider, and a
+            # caller catching this one's error would never see it.
             raise KimiCodeError(
-                "this adapter requires an exact single-executable pin")
+                "this adapter requires a single-executable pin of its own")
         self._pin = pin
         super().__init__(
             runner, root=root, clock=clock, ids=ids, adapter_id=adapter_id)

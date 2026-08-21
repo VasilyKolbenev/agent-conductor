@@ -113,9 +113,29 @@ def _launcher_stub() -> bytes | None:
             continue
         data = candidate.read_bytes()
         start = data.find(b"PK\x03\x04")
-        if start > 0 and data[:start].rstrip().endswith(b".exe"):
-            return data[:start]
+        if start <= 0:
+            continue
+        stub = data[:start]
+        if _shebang_interpreter(stub) is not None:
+            return stub
     return None
+
+
+def _shebang_interpreter(stub: bytes) -> bytes | None:
+    """The interpreter a launcher stub carries, or None if it carries none.
+
+    Read from the LAST ``#!`` rather than by matching the tail's suffix. The
+    suffix test looked equivalent and was not: a launcher whose interpreter path
+    contains a space carries it QUOTED -- ``#!"C:\\Program Files\\...\\python.exe"``
+    -- so `endswith(".exe")` rejected a perfectly working stub, `build_executable`
+    answered None, and 22 of this fake's tests skipped behind a message blaming
+    the platform for something the platform had done correctly.
+    """
+    marker = stub.rfind(b"#!")
+    if marker < 0:
+        return None
+    interpreter = stub[marker + 2:].strip().strip(b'"')
+    return interpreter if interpreter.lower().endswith(b".exe") else None
 
 
 def _body(repo_root: Path) -> str:

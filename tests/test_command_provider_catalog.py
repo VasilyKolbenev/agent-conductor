@@ -219,19 +219,51 @@ def test_no_two_providers_own_the_same_home_or_marker_name():
     other's dispatches over residue neither one left. The catalog is where that
     is visible, so it is checked here, across every provider that owns a pair.
     """
-    homes: dict[str, str] = {}
-    markers: dict[str, str] = {}
+    owned: dict[str, str] = {}
     for provider_id, entry in PROVIDER_CATALOG.items():
         profile = getattr(entry.adapter_class, "profile", None)
         if profile is None:
             continue  # a fixture adapter owns no subtree beneath the project root
-        for owned, field in ((homes, "home_dir"), (markers, "marker_dir")):
+        for field in ("home_dir", "marker_dir"):
             name = getattr(profile, field)
+            # ONE namespace, because the cross-kind collision is the destructive
+            # one and two dicts could not see it. If A's home is B's marker,
+            # B.claim writes a marker file into A's home root, A's sweep finds a
+            # non-directory there, and A reports "state this build did not mint
+            # and may not delete" on EVERY dispatch, forever, about a file no
+            # operator placed and A must not clear.
             clash = owned.get(name)
             assert clash is None, (
-                f"{provider_id} and {clash} both own {field}={name!r}")
-            owned[name] = provider_id
-    assert homes, "no provider owns a home root, so this proved nothing"
+                f"{provider_id}'s {field} is {name!r}, already owned by {clash}")
+            owned[name] = f"{provider_id}.{field}"
+    assert owned, "no provider owns a subtree, so this proved nothing"
+
+
+def test_one_providers_home_may_not_be_another_providers_marker():
+    """The cross-kind collision, given a subject the real catalog does not supply.
+
+    The loop above walks products that happen not to collide, so on its own it
+    would pass just as well while checking home names against home names and
+    marker names against marker names -- which is what it did, and which cannot
+    see the destructive case. The pair below is synthetic precisely so the rule
+    keeps a subject: if A's home is B's marker, ``B.claim`` writes a marker file
+    into A's home root, A's sweep finds a non-directory there, and A reports
+    "state this build did not mint and may not delete" on every dispatch,
+    forever, about a file no operator placed and A must not clear.
+    """
+    collided = [("A", "home_dir", ".shared"), ("B", "marker_dir", ".shared")]
+    owned: dict[str, str] = {}
+    caught = None
+    for provider_id, field, name in collided:
+        clash = owned.get(name)
+        if clash is not None:
+            caught = f"{provider_id}'s {field} is {name!r}, already owned by {clash}"
+            break
+        owned[name] = f"{provider_id}.{field}"
+
+    assert caught is not None, (
+        "ONE_NAMESPACE_IS_NOT_ENFORCED -- a home and a marker sharing a name "
+        "passed the very relation the loop above is supposed to hold")
 
 
 # --- every catalogued id is a graph node the panel can draw ------------------
