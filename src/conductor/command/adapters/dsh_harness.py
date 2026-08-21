@@ -93,12 +93,10 @@ from .base import (
 )
 from .deep_commands import DeepDispatchArgs
 from .deep_contracts import DeepProtocol
-from .dsh_workspace import (
-    HOME_DIR,
+from .harness_workspace import (
     INSTRUCTION_DIR,
-    MARKER_DIR,
     WORK_DIR,
-    DshWorkspace,
+    HarnessWorkspace,
     WorkspaceNotContained,
 )
 from .process import CommandSpec, ProcessOutcome, ProcessRunner, ProcessRunnerError
@@ -114,6 +112,13 @@ DSH_PROTOCOL = DeepProtocol.DSH_HEADLESS_V1.value
 #: the home's VALUE is minted per attempt and never written to any config.
 DSH_HOME_ENV = "DSH_HOME"
 DSH_TELEMETRY_DISABLED_ENV = "DSH_TELEMETRY_DISABLED"
+#: The two subtrees THIS provider owns beneath the project root. They are named
+#: here, in the provider's own module, rather than in the shared workspace door:
+#: the door serializes and bounds every delete on the home name it is handed, so
+#: a second harness naming the same home would take this one's attempts for its
+#: own. One provider, one home name, declared where the provider is.
+HOME_DIR = ".dsh-home"
+MARKER_DIR = ".dsh-marker"
 #: Any non-empty value disables vendor telemetry; "1" is the one this build sends.
 TELEMETRY_DISABLED = "1"
 #: The code-owned launcher flags. No caller ever contributes a flag.
@@ -125,8 +130,9 @@ DSH_OUTPUT_LIMIT = 16 * 1024
 VERSION_TIMEOUT_SECONDS = 30
 #: The one control this adapter carries. stop, retry and switch stay ABSENT.
 DSH_CAPABILITY = "dispatch"
-#: Re-exported from the workspace door so a reader of this module can see the
-#: subtrees it owns without following an import.
+#: ``WORK_DIR`` and ``INSTRUCTION_DIR`` are re-exported from the workspace door,
+#: and ``HOME_DIR`` and ``MARKER_DIR`` are this module's own, so a reader of this
+#: module sees all four subtrees a dispatch touches without following an import.
 __all__ = [
     "DSH_PROTOCOL", "HOME_DIR", "INSTRUCTION_DIR", "MARKER_DIR",
     "REVIEWED_DSH_VERSION", "WORK_DIR",
@@ -285,7 +291,8 @@ class DshHarnessAdapter:
             docs_url="https://github.com/deepseek-ai/deepseek-harness")
         self._pin = pin
         self._runner = runner
-        self._workspace = DshWorkspace.at(root)
+        self._workspace = HarnessWorkspace.at(
+            root, home_dir=HOME_DIR, marker_dir=MARKER_DIR)
         self._root = self._workspace.root
         self._clock = clock
         self._ids = ids

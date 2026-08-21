@@ -34,7 +34,7 @@ from pathlib import Path
 import pytest
 
 from conductor.command.adapters import AdapterRegistry
-from conductor.command.adapters.dsh_workspace import WORK_DIR
+from conductor.command.adapters.harness_workspace import WORK_DIR
 from conductor.command.contracts import ActionProposal, RunEnvelope
 from conductor.command.run_store import RunStore, snapshot_digest
 from conductor.command.runtime import (
@@ -196,7 +196,7 @@ def _task_token(log) -> str:
 
 def _instruction(root: Path) -> Path:
     """The one contained name a materialized instruction may be read from."""
-    from conductor.command.adapters.dsh_workspace import INSTRUCTION_DIR
+    from conductor.command.adapters.harness_workspace import INSTRUCTION_DIR
 
     return root / INSTRUCTION_DIR / "instr-001.md"
 

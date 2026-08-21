@@ -42,7 +42,7 @@ SDK_EXECUTION_DOOR = frozenset({"process.py", "_procgroup.py"})
 # DURABILITY door, not an execution door: test_command_package_doors.py applies
 # the subprocess/network/exec ban to it with no exemption at all, and its
 # behaviour is proven in tests/test_command_dsh_harness.py.
-SDK_WORKSPACE_DOOR = frozenset({"dsh_workspace.py"})
+SDK_WORKSPACE_DOOR = frozenset({"harness_workspace.py"})
 # Names that would let a value module reach an executable, the filesystem, or the
 # import system on its own.
 BANNED_SDK_CALLS = frozenset({
