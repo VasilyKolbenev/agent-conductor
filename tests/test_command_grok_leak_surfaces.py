@@ -26,6 +26,7 @@ from pathlib import Path
 from conductor.command.adapters import AdapterRegistry
 from conductor.command.adapters.grok_build import (
     GROK_FORCED_ENV,
+    REVIEWED_GROK_VERSION,
     GROK_HOME_ENV,
     HOME_DIR,
 )
@@ -35,7 +36,7 @@ from conductor.command.run_store import RunStore, snapshot_digest
 from conductor.command.runtime import Budget, Confirmation, ControlRuntime
 
 from tests import _fakegrok
-from tests.test_command_grok_transport import NOW, a_harness
+from tests.test_command_grok_transport import NOW, a_harness, a_request
 
 SECRET = "sk-live-planted-grok-secret-value"
 RUN_ID = "run-grok-leak"
@@ -112,14 +113,29 @@ def _driven(tmp_path: Path, **knobs: str):
     return attempt, store, api, root, log
 
 
+def _journal_records(store) -> list[tuple[str, dict]]:
+    """Every durable record as (kind, fields).
+
+    A `StoredRecord` carries `kind` and `value`, and the VALUE is the typed
+    record -- so reading `record.as_dict()` finds nothing and falls back to a
+    repr, which searches the same bytes far more weakly. Reading the value is
+    what makes the search structured.
+    """
+    rows: list[tuple[str, dict]] = []
+    for record in store.read(RUN_ID).records:
+        value = record.value
+        fields = value.as_dict() if hasattr(value, "as_dict") else {}
+        rows.append((record.kind, dict(fields)))
+    return rows
+
+
 def _journal_strings(store) -> set[str]:
     """Every string value in every durable record of the run."""
     found: set[str] = set()
-    for record in store.read(RUN_ID).records:
-        as_dict = record.as_dict() if hasattr(record, "as_dict") else None
-        found |= _strings(as_dict if as_dict is not None else repr(record))
-        found.add(json.dumps(as_dict, sort_keys=True, default=str)
-                  if as_dict is not None else repr(record))
+    for kind, fields in _journal_records(store):
+        found.add(kind)
+        found |= _strings(fields)
+        found.add(json.dumps(fields, sort_keys=True, default=str))
     return found
 
 
@@ -191,6 +207,43 @@ def test_a_secret_planted_where_a_version_belongs_reaches_none_of_them(tmp_path)
         leaked = sorted(value for value in strings if SECRET in value)
         assert leaked == [], f"SECRET_REACHED_{surface.upper()}={leaked}"
     assert SECRET not in repr(attempt.receipt)
+
+
+def test_the_journal_carries_the_runtimes_own_words_and_not_the_adapters(tmp_path):
+    """WHY the two surfaces above are safe, stated instead of assumed.
+
+    A mutation that echoed the observed version token into the transport's
+    refusal left those assertions green, and the reason was not that the
+    transport held. The durable `action_result` record IS a receipt and it DOES
+    carry a `detail`, so the channel exists -- but the RUNTIME substitutes its
+    own sentence for the adapter's on this road, so adapter prose never travels
+    it. Protection by substitution, not by absence.
+
+    That is a real second line of defence and it is not the transport's. The
+    transport's own claim is falsifiable where the transport owns the object:
+    `test_a_secret_planted_where_a_version_belongs_never_reaches_a_receipt` in
+    the transport suite reads the receipt the adapter itself returned, and reds
+    under exactly that mutation. This test holds the substitution, so a runtime
+    that ever began forwarding adapter detail would be caught HERE and the
+    reader would know which of the two protections had changed.
+    """
+    adapter, _root, _log = a_harness(tmp_path / "direct", FAKEGROK_VERSION=SECRET)
+    direct = adapter.execute(adapter.prepare(a_request()))
+    _attempt, store, _api, _r, _l = _driven(tmp_path / "run", FAKEGROK_VERSION=SECRET)
+
+    results = [fields for kind, fields in _journal_records(store)
+               if kind == "action_result"]
+    assert len(results) == 1, f"EXPECTED_ONE_RESULT_RECORD={len(results)}"
+    journalled = results[0].get("detail")
+    assert journalled, "the durable result record carries no detail at all"
+    assert REVIEWED_GROK_VERSION in direct.detail, (
+        "the adapter's own refusal stopped naming the reviewed version, so this "
+        "test no longer compares two different sentences")
+    assert journalled != direct.detail, (
+        "THE_RUNTIME_NOW_FORWARDS_ADAPTER_DETAIL -- the journal and API "
+        "assertions above rest on substitution, so re-derive them")
+    assert REVIEWED_GROK_VERSION not in journalled, (
+        f"adapter prose reached the journal: {journalled!r}")
 
 
 def test_the_real_runtime_path_still_sends_the_exact_argv_and_environment(tmp_path):
