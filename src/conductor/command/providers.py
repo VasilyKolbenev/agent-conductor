@@ -35,6 +35,15 @@ from .adapters.deep_adapters import (
 )
 from .adapters.deep_contracts import DeepAdapterConfig
 from .adapters.dsh_harness import DSH_PROTOCOL, DshHarnessAdapter, DshPin
+from .adapters.grok_build import (
+    GROK_CAPABILITIES,
+    GROK_DISPLAY_NAME,
+    GROK_LIFECYCLE,
+    GROK_PROTOCOL,
+    GROK_PROVIDER_ID,
+    GROK_SCHEMA_PAIRS,
+    GrokBuildAdapter,
+)
 from .adapters.kimi_code import (
     KIMI_CAPABILITIES,
     KIMI_DISPLAY_NAME,
@@ -72,7 +81,7 @@ _ENTRYPOINT_PROTOCOLS = frozenset({DSH_PROTOCOL})
 #: half. Keyed by PROTOCOL rather than by provider id on purpose -- a protocol is
 #: not an identity, so this stays a fact about pin SHAPE and the identity gate
 #: has nothing to permit here. Two products sharing a shape share this row.
-_SINGLE_EXECUTABLE_PROTOCOLS = frozenset({KIMI_PROTOCOL})
+_SINGLE_EXECUTABLE_PROTOCOLS = frozenset({KIMI_PROTOCOL, GROK_PROTOCOL})
 #: The dsh harness carries one control and says so; stop, retry and switch are
 #: absent from the manifest, so the door cannot admit them.
 _DSH_CAPABILITIES = ("observe", "dispatch")
@@ -105,6 +114,12 @@ PROVIDER_CATALOG = MappingProxyType({
         vendor="Moonshot AI", protocol=KIMI_PROTOCOL,
         capabilities=KIMI_CAPABILITIES, schema_pairs=KIMI_SCHEMA_PAIRS,
         lifecycle=KIMI_LIFECYCLE, adapter_class=KimiCodeAdapter,
+        implementation="real_experimental"),
+    GROK_PROVIDER_ID: ProviderCatalogEntry(
+        provider_id=GROK_PROVIDER_ID, display_name=GROK_DISPLAY_NAME,
+        vendor="xAI", protocol=GROK_PROTOCOL,
+        capabilities=GROK_CAPABILITIES, schema_pairs=GROK_SCHEMA_PAIRS,
+        lifecycle=GROK_LIFECYCLE, adapter_class=GrokBuildAdapter,
         implementation="real_experimental"),
 })
 

@@ -65,7 +65,8 @@ PROVIDER_SEAM = "providers.py"
 #: Words a provider id shares with every other provider id. Dropping them leaves
 #: the family tokens -- and the test below pins what that leaves, so a filter
 #: that quietly swallowed a real family would fail rather than pass silently.
-GENERIC_ID_WORDS = frozenset({"code", "harness", "preview", "cli", "agent"})
+GENERIC_ID_WORDS = frozenset({
+    "code", "harness", "preview", "cli", "agent", "build"})
 #: Two modules each pin ONE frozen demo configuration whose instance names a
 #: product. The exemption covers that mention and nothing else: both are still
 #: held to the no-branching half, proved separately below.
@@ -148,7 +149,7 @@ def _hits(text: str, tokens: frozenset[str]) -> list[str]:
 
 def test_the_identities_this_gate_looks_for_are_derived_from_the_catalog():
     """A guard over an empty set proves nothing, so the set is pinned here."""
-    assert _family_tokens() == {"claude", "codex", "deepseek", "kimi"}
+    assert _family_tokens() == {"claude", "codex", "deepseek", "grok", "kimi"}
     identities = _identity_tokens()
     for provider_id, entry in PROVIDER_CATALOG.items():
         assert provider_id in identities and entry.protocol in identities

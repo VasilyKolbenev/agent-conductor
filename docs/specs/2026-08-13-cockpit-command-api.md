@@ -1388,6 +1388,12 @@ a provider this build really catalogues.
       "controls": ["dispatch"]
     },
     {
+      "provider_id": "grok-build",
+      "display_name": "Grok Build (headless, experimental)",
+      "availability": "unconfigured", "implementation": "real_experimental",
+      "controls": ["dispatch"]
+    },
+    {
       "provider_id": "kimi-code",
       "display_name": "Kimi Code (headless, experimental)",
       "availability": "version_mismatch", "implementation": "real_experimental",

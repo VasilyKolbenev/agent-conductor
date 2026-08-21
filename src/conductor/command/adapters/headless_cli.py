@@ -211,9 +211,13 @@ class HarnessProfile:
     #: The environment NAMES this provider owns. Only names live in durable
     #: config; the home's VALUE is minted per attempt and never written down.
     home_env: str
-    telemetry_env: str
-    #: The value that turns the vendor's telemetry off, as the vendor documents.
-    telemetry_disabled: str
+    #: Every OTHER environment variable this build sets for a spawn, as (name,
+    #: value) pairs the vendor documents. A set rather than one pair, and a
+    #: literal VALUE rather than a notion of "disabled", because the vendors do
+    #: not agree on polarity: dsh and Kimi Code read a DISABLE flag where ``1``
+    #: means off, and Grok Build reads four ENABLED flags where ``0`` means off.
+    #: Carrying the published pair keeps the base ignorant of which is which.
+    forced_env: tuple[tuple[str, str], ...]
     #: The code-owned version argv. No caller ever contributes a flag.
     version_argv: tuple[str, ...]
     #: The id KIND a minted attempt home is named by, so a home standing under
@@ -536,7 +540,7 @@ class HeadlessCliTransport:
                 request, "failed", None,
                 f"the pinned {profile.tool_noun} build did not answer a "
                 "version preflight, so no task was spawned")
-        if _version_token(outcome.output) != profile.reviewed_version:
+        if not self._version_matches(outcome.output):
             # The observed token is NOT reported: it is raw child output, and a
             # hostile build could put a secret where a version belongs.
             return self._receipt(
@@ -600,9 +604,7 @@ class HeadlessCliTransport:
             spec = CommandSpec(
                 argv=(*self._argv_prefix(), *argv), cwd=cwd,
                 env_allow=self._env_allow(),
-                env={
-                    profile.home_env: str(home),
-                    profile.telemetry_env: profile.telemetry_disabled},
+                env={profile.home_env: str(home), **dict(profile.forced_env)},
                 output_limit=profile.output_limit, timeout_seconds=timeout)
             return self._runner.run(spec)
         except ProcessRunnerError:  # noqa: BLE001 -- carry no child detail onward
@@ -616,6 +618,21 @@ class HeadlessCliTransport:
     def _env_allow(self) -> tuple[str, ...]:
         """The operator's environment allowlist, from this provider's own pin."""
         raise NotImplementedError
+
+    def _version_matches(self, output: bytes) -> bool:
+        """Whether the pinned build's version print IS the reviewed version.
+
+        A BOOLEAN, and deliberately: the observed bytes are raw child output, so
+        nothing derived from them may be returned to a caller or reach a receipt.
+        A hostile build could put a secret where a version belongs.
+
+        The default is an exact compare of the whole first non-empty line, which
+        is right for a tool that prints the number and nothing else. A vendor that
+        prints a richer form overrides this and PARSES it -- see
+        ``grok_build.py``, where the published form carries an optional short
+        commit and an optional channel, and neither may ever be read as a version.
+        """
+        return _version_token(output) == self.profile.reviewed_version
 
     def _observed(
             self, request: ActionRequest,

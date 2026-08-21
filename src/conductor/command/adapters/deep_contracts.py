@@ -34,6 +34,9 @@ class DeepProtocol(str, Enum):
     #: build no longer implements must be refused, not quietly served by a
     #: transport they never asked for. See adapters/kimi_code.py.
     KIMI_HEADLESS_V1 = "kimi-code-headless-v1"
+    #: Grok Build's published one-shot mode: `--single` with no TUI.
+    #: See adapters/grok_build.py.
+    GROK_HEADLESS_V1 = "grok-build-headless-v1"
 
 
 _ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
