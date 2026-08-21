@@ -171,6 +171,12 @@ def _record(argv: list[str]) -> None:
         return
     row = {
         "argv": argv,
+        # What the OS actually started, so a test can see IN FRONT of the pin.
+        # Recording only argv[1:] made "one pinned binary is the whole command"
+        # unfalsifiable: an interpreter, a shell, or any prefix at all would have
+        # been invisible to it.
+        "argv0": sys.argv[0],
+        "executable": sys.executable,
         "cwd": os.getcwd(),
         "kimi_home": os.environ.get("KIMI_CODE_HOME"),
         "telemetry_disabled": os.environ.get("KIMI_DISABLE_TELEMETRY"),

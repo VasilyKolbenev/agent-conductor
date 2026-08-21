@@ -142,6 +142,7 @@ KIMI_PROFILE = HarnessProfile(
     home_dir=HOME_DIR, marker_dir=MARKER_DIR,
     home_env=KIMI_HOME_ENV, telemetry_env=KIMI_TELEMETRY_ENV,
     telemetry_disabled=TELEMETRY_DISABLED, version_argv=VERSION_ARGV,
+    home_id_kind="kimi-home",
     exit_codes_published=False, capability=DISPATCH_CAPABILITY,
     output_limit=KIMI_OUTPUT_LIMIT,
     version_timeout_seconds=VERSION_TIMEOUT_SECONDS)

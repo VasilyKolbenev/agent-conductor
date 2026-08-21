@@ -32,6 +32,7 @@ neither can skip its way to green.
 from __future__ import annotations
 
 import ast
+from importlib import import_module
 from pathlib import Path
 
 import pytest
@@ -92,6 +93,41 @@ def test_every_real_smoke_module_really_drives_a_transport():
             "nothing about it")
 
 
+def test_every_name_a_real_smoke_imports_still_resolves():
+    """The other half of "a module nobody runs hides a break".
+
+    The extraction moved `_version_token` out of `dsh_harness` and the dsh smoke
+    kept importing it from there -- inside a test body, after the skip, so it
+    never raised until an install was pinned:
+
+        ImportError: cannot import name '_version_token' from
+        'conductor.command.adapters.dsh_harness'
+
+    A retention guard alone would not have caught that. What catches it is
+    resolving every name these modules import, including the function-level
+    imports that a plain collection error never reaches. This walks the AST, so
+    an import written inside a test body is checked exactly like one at the top.
+    """
+    broken: list[str] = []
+    for path in _smoke_modules():
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ImportFrom) or node.module is None:
+                continue
+            if node.level:  # a relative import inside tests/ is not ours to walk
+                continue
+            try:
+                module = import_module(node.module)
+            except ImportError:
+                broken.append(f"{path.name}: no module {node.module}")
+                continue
+            for alias in node.names:
+                if alias.name != "*" and not hasattr(module, alias.name):
+                    broken.append(
+                        f"{path.name}: {node.module} has no {alias.name}")
+    assert broken == [], f"a real smoke imports names that no longer exist: {broken}"
+
+
 class _SpawnlessRunner(ProcessRunner):
     """A runner that starts no child, so the witness below needs no install.
 
@@ -150,6 +186,12 @@ def test_the_bypass_really_does_leave_a_home_standing(tmp_path):
         ("--version",), adapter._mint_home(), "work", timeout=30)
 
     assert outcome.status == "completed"
-    assert _standing(root) == ["harness-home-1"], (
+    standing = _standing(root)
+    assert len(standing) == 1, (
         "the bypass no longer leaks a home, so the guard above now bans a "
-        "symbol that is safe -- re-derive what the retention path is")
+        f"symbol that is safe -- re-derive what the retention path is: {standing}")
+    # The literal is deliberate. The extraction briefly named every provider's
+    # attempt home `harness-home`, silently renaming dsh's on-disk directories,
+    # and an operator reading the home root learns nothing from a shared kind.
+    # Spelling `dsh` here means a slide back to a neutral kind reds this test.
+    assert standing[0].startswith("dsh-home"), f"HOME_NOT_NAMED_FOR_ITS_PROVIDER={standing}"

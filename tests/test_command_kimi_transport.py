@@ -122,6 +122,7 @@ def test_one_pinned_binary_and_code_owned_flags_are_the_whole_command(tmp_path):
     module owns and exactly one prompt token built from validated identifiers.
     """
     adapter, _root, log = a_harness(tmp_path)
+    pinned = Path(_fakekimi.build_executable(tmp_path / "bin"))
 
     receipt = run_once(adapter, a_request())
 
@@ -131,7 +132,13 @@ def test_one_pinned_binary_and_code_owned_flags_are_the_whole_command(tmp_path):
     argv = prompts[0]["argv"]
     assert argv[:3] == ["--output-format", "text", "--prompt"]
     assert len(argv) == 4, f"UNEXPECTED_ARGV={argv}"
+    # The child reports what the OS started, so this can see IN FRONT of the pin.
+    # Without it the claim in this test's name was unfalsifiable: an interpreter
+    # or a shell ahead of the binary would have left argv[1:] looking perfect.
     for row in _fakekimi.spawns(log):
+        started = Path(row["argv0"])
+        assert started.name == pinned.name, f"NOT_THE_PINNED_BINARY={row['argv0']}"
+        assert started.suffix == pinned.suffix
         rendered = " ".join(row["argv"]).lower()
         for banned in ("npx", "npm", ".cmd", "-c ", "&&", "|"):
             assert banned not in rendered, f"SHELL_SHAPED_ARGV={row['argv']}"
@@ -270,17 +277,29 @@ def test_no_attempt_home_survives_a_completed_dispatch(tmp_path):
     assert standing == [], f"HOME_SURVIVED_THE_DISPATCH={standing}"
 
 
-def test_only_the_names_the_operator_allowed_reach_the_child(tmp_path):
-    """The allowlist is names; a value this build invented would be a leak."""
+def test_a_credential_the_operator_did_not_allow_never_reaches_the_child(
+        tmp_path, monkeypatch):
+    """A name absent from the allowlist stays absent, even when the parent HAS it.
+
+    The earlier version of this test proved nothing twice over: it allowed every
+    name it then read back, and the credential it denied was never set anywhere,
+    so a runner that copied the whole parent environment would have passed. The
+    denial is real now -- ``KIMI_API_KEY`` is set in this process and left OUT of
+    the operator's allowlist, and the vendor's own docs name it as a credential
+    variable, so this is the exact shape of the leak that would matter.
+    """
+    monkeypatch.setenv("KIMI_API_KEY", "sk-live-never-allowed")
     adapter, _root, log = a_harness(tmp_path)
 
     run_once(adapter, a_request())
 
     names = set(_fakekimi.spawns(log)[0]["env_names"])
+    # The two this build owns, and the one the operator really allowed.
     assert "KIMI_CODE_HOME" in names and "KIMI_DISABLE_TELEMETRY" in names
     assert _fakekimi.SPAWN_LOG in names
-    # Nothing this build never named and the operator never allowed.
-    assert "KIMI_API_KEY" not in names, "AN_UNALLOWED_CREDENTIAL_NAME_REACHED_THE_CHILD"
+    assert "KIMI_API_KEY" not in names, (
+        "AN_UNALLOWED_CREDENTIAL_REACHED_THE_CHILD -- it was set in the parent "
+        "and absent from env_allow, so the runner copied what it was not given")
 
 
 # --- what an exit code is allowed to mean ------------------------------------

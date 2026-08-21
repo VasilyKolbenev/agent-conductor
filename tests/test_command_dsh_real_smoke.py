@@ -81,7 +81,7 @@ def test_a_real_install_answers_the_version_preflight_and_the_adapter_obeys_it(t
     assert outcome.status == "completed", (
         "the pinned dsh build did not exit on its own within the preflight budget")
     assert outcome.exit_code == 0, "the pinned dsh build failed to report a version"
-    from conductor.command.adapters.dsh_harness import _version_token
+    from conductor.command.adapters.headless_cli import _version_token
 
     observed = _version_token(outcome.output)
     assert observed, "the pinned dsh build printed no version token at all"

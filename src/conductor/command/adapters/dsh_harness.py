@@ -108,6 +108,7 @@ DSH_PROFILE = HarnessProfile(
     home_dir=HOME_DIR, marker_dir=MARKER_DIR,
     home_env=DSH_HOME_ENV, telemetry_env=DSH_TELEMETRY_DISABLED_ENV,
     telemetry_disabled=TELEMETRY_DISABLED, version_argv=VERSION_ARGV,
+    home_id_kind="dsh-home",
     exit_codes_published=True, capability=DSH_CAPABILITY,
     output_limit=DSH_OUTPUT_LIMIT,
     version_timeout_seconds=VERSION_TIMEOUT_SECONDS)

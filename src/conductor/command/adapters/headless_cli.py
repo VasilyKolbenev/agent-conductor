@@ -209,6 +209,9 @@ class HarnessProfile:
     telemetry_disabled: str
     #: The code-owned version argv. No caller ever contributes a flag.
     version_argv: tuple[str, ...]
+    #: The id KIND a minted attempt home is named by, so a home standing under
+    #: the home root says which provider left it.
+    home_id_kind: str
     #: Whether the vendor publishes exit-code meanings for its one-shot mode.
     exit_codes_published: bool
     capability: str = DISPATCH_CAPABILITY
@@ -744,5 +747,13 @@ class HeadlessCliTransport:
     # -- the owned subtrees -----------------------------------------------------
 
     def _mint_home(self) -> Path:
-        """A FRESH home per spawn, named by a freshly minted causal id."""
-        return self._workspace.mint_home(self._ids("harness-home"))
+        """A FRESH home per spawn, named by a freshly minted causal id.
+
+        The id KIND comes from the provider. The extraction briefly made it the
+        neutral ``harness-home`` for everyone, which silently renamed dsh's
+        on-disk attempt directories -- a change of an observable, in a commit
+        whose whole claim was that no observable changed. It is also worth more
+        than tidiness: an operator reading the home root sees which provider left
+        an attempt behind, and one shared kind would have told them nothing.
+        """
+        return self._workspace.mint_home(self._ids(self.profile.home_id_kind))
