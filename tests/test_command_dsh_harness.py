@@ -255,12 +255,16 @@ def test_no_caller_value_can_be_read_by_the_launcher_as_one_of_its_own_flags(tmp
     with pytest.raises(DshHarnessError, match="closed deep dispatch schema"):
         adapter.prepare(a_request(work_item_id="--patch"))
     assert _fakedsh.spawns(log) == []
-    # And the argv boundary refuses it again, whatever reached it.
-    from conductor.command.adapters.dsh_harness import _flagless
+    # And the argv boundary refuses it again, whatever reached it. The check
+    # lives in the shared headless transport now; what matters here is that dsh
+    # still refuses through it, with dsh's OWN error type and dsh's own launcher
+    # named -- a shared helper that widened either would be a change of
+    # behaviour wearing a refactor's clothes.
+    from conductor.command.adapters.headless_cli import flagless
 
     for hostile in ("--patch", "-V", "--profile"):
         with pytest.raises(DshHarnessError, match="own flags"):
-            _flagless(hostile, "task text")
+            flagless(hostile, "task text", "dsh launcher", DshHarnessError)
 
 
 def test_the_prepared_payload_carries_no_argv_no_cwd_and_no_pinned_path(tmp_path):
