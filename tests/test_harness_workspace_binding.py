@@ -193,25 +193,79 @@ def _takes_the_gate(workspace, timeout=2.0):
     return took
 
 
-def test_two_providers_on_one_root_never_wait_for_each_other(tmp_path):
-    """The gate key is the root AND the names, so neighbours do not queue.
+def test_two_providers_on_one_root_take_one_turn_over_the_tree_they_share(tmp_path):
+    """Neighbours DO queue, and this test used to claim the opposite.
 
-    Held together with its own opposite: the SAME provider on the same root must
-    still serialize, or this test would pass just as well on a door that had no
-    gate at all.
+    It was written to match a comment above the gate promising that one harness's
+    root never stops another provider. The comment was aspirational; the code was
+    right; and changing the code to match the comment opened a race. The
+    reproduction, before the revert:
+
+        wrote_while_one_owned_root=True
+        foreign_change=['b/foreign.txt']
+
+    Distinct home and marker names are what make CLEANUP safe -- each provider
+    deletes only under its own root. They do not make a turn unnecessary,
+    because `work` and `instructions` belong to the RUN and every provider reads
+    and writes the same two.
+
+    Held with its own opposite, or a door with no gate at all would pass: a
+    second root must NOT wait.
     """
     root = _root(tmp_path)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
     holder = HarnessWorkspace.at(root, home_dir=ONE_HOME, marker_dir=ONE_MARKER)
     neighbour = HarnessWorkspace.at(root, home_dir=TWO_HOME, marker_dir=TWO_MARKER)
-    twin = HarnessWorkspace.at(root, home_dir=ONE_HOME, marker_dir=ONE_MARKER)
+    unrelated = HarnessWorkspace.at(
+        elsewhere, home_dir=ONE_HOME, marker_dir=ONE_MARKER)
     held, release = threading.Event(), threading.Event()
     thread = threading.Thread(
         target=_holds, args=(holder, held, release), daemon=True)
     thread.start()
     try:
         assert held.wait(10), "the holding workspace never took its own gate"
-        assert _takes_the_gate(neighbour) is True, "NEIGHBOUR_BLOCKED=True"
-        assert _takes_the_gate(twin) is False, "TWIN_RAN_CONCURRENTLY=True"
+        assert _takes_the_gate(neighbour) is False, "NEIGHBOUR_RAN_CONCURRENTLY=True"
+        assert _takes_the_gate(unrelated) is True, "SECOND_ROOT_BLOCKED=True"
     finally:
         release.set()
         thread.join(10)
+
+
+def test_a_neighbour_cannot_change_the_shared_work_tree_during_another_turn(
+        tmp_path):
+    """The consequence the turn exists for, read off the disk rather than the lock.
+
+    A test that only proved the neighbour waits would still pass on a gate that
+    serialized the wrong thing. What must be true is that nothing a neighbour
+    writes can appear in the diff the holder computes across its own turn --
+    because that diff is the evidence a verification judges, and a foreign path
+    in it reads as a change outside the authorized subtree.
+    """
+    root = _root(tmp_path)
+    holder = HarnessWorkspace.at(root, home_dir=ONE_HOME, marker_dir=ONE_MARKER)
+    neighbour = HarnessWorkspace.at(root, home_dir=TWO_HOME, marker_dir=TWO_MARKER)
+    (holder.work_dir("a") / "mine.txt").write_text("a", encoding="utf-8")
+    started, done = threading.Event(), threading.Event()
+
+    def writes_its_own_work_item() -> None:
+        started.set()
+        with neighbour.owned():
+            (neighbour.work_dir("b") / "foreign.txt").write_text(
+                "b", encoding="utf-8")
+        done.set()
+
+    with holder.owned():
+        before = holder.digest_work_tree()
+        thread = threading.Thread(target=writes_its_own_work_item, daemon=True)
+        thread.start()
+        assert started.wait(10), "the neighbour thread never started"
+        landed = done.wait(2)
+        after = holder.digest_work_tree()
+
+    thread.join(10)
+    changed = sorted(
+        name for name in set(before) | set(after)
+        if before.get(name) != after.get(name))
+    assert landed is False, "WROTE_WHILE_ONE_OWNED_ROOT=True"
+    assert changed == [], f"FOREIGN_CHANGE={changed}"

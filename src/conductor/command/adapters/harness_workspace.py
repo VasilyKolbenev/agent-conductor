@@ -177,26 +177,37 @@ class _RootGate:
         self.lock = RLock()
 
 
-# Process-local only, and keyed by the RESOLVED root TOGETHER WITH the two names
-# the workspace owns under it, so two workspaces reached by different names for
-# one tree take the same gate and a second tree takes its own. The weak table
-# releases a key nothing holds. This is the same shape the run store's root gate
-# and the runtime's operation lock already use; it is deliberately NOT either of
-# them -- a dispatch must not hold a store transaction across a child process,
-# and one harness's root must not stop a run or ANOTHER PROVIDER.
+# Process-local only, and keyed by the RESOLVED root, so two workspaces reached
+# by different names for one tree take the same gate and a second tree takes its
+# own. The weak table releases a root nothing holds. This is the same shape the
+# run store's root gate and the runtime's operation lock already use; it is
+# deliberately NOT either of them -- a dispatch must not hold a store
+# transaction across a child process.
 #
-# That last promise is why the key is the whole triple rather than the root
-# alone. Two providers driving one project root own DIFFERENT home and marker
-# names, so nothing either one sweeps, mints, claims or discards is ever a name
-# the other can reach: they have no state to serialize over. Keyed by the root
-# alone they would queue behind each other anyway, and this comment would be
-# describing something the code did not do.
+# The key was briefly the root TOGETHER WITH the two names a provider owns,
+# reasoning that two providers own different homes and markers and so have no
+# state to contend over. That reasoning was WRONG and the change was a race:
+# they also share `work` and `instructions`, and the evidence snapshot spans the
+# WHOLE work tree. A neighbour writing its own work item during another
+# provider's dispatch lands in that provider's before/after diff, where it reads
+# as a change outside the authorized subtree -- a mismatch pinned on a child
+# that did nothing wrong. Reproduced, before the revert, as:
+#     wrote_while_one_owned_root=True
+#     foreign_change=['b/foreign.txt']
+#
+# The prose above this gate had claimed for a long time that one harness's root
+# must not stop "another provider". That claim was aspirational and the CODE was
+# right; the correction was to fix the sentence, not the key. A comment is not a
+# specification, and a guarantee is not safe to invert because a comment nearby
+# describes a nicer world.
+#
+# Serializing providers on one root is the cost, and it is the honest one: they
+# are writing into one tree and reading evidence from all of it.
 _ROOT_GATES_GUARD = Lock()
-_ROOT_GATES: WeakValueDictionary[tuple[Path, str, str], _RootGate] = (
-    WeakValueDictionary())
+_ROOT_GATES: WeakValueDictionary[Path, _RootGate] = WeakValueDictionary()
 
 
-def _root_gate(key: tuple[Path, str, str]) -> _RootGate:
+def _root_gate(key: Path) -> _RootGate:
     with _ROOT_GATES_GUARD:
         gate = _ROOT_GATES.get(key)
         if gate is None:
@@ -249,9 +260,16 @@ class HarnessWorkspace:
         return cls(
             root=Path(root).resolve(), home_dir=home_dir, marker_dir=marker_dir)
 
-    def _gate_key(self) -> tuple[Path, str, str]:
-        """What this workspace serializes over: its root AND the names it owns."""
-        return (self.root, self.home_dir, self.marker_dir)
+    def _gate_key(self) -> Path:
+        """What this workspace serializes over: the ROOT, and nothing narrower.
+
+        Not the provider's own names. Two providers under one root share `work`
+        and `instructions`, and the evidence snapshot spans the whole work tree,
+        so a narrower key lets a neighbour's ordinary dispatch appear in another
+        provider's evidence as a change outside its authorized subtree. The
+        comment above ``_root_gate`` records the reproduction.
+        """
+        return self.root
 
     @contextmanager
     def owned(self):
@@ -266,14 +284,21 @@ class HarnessWorkspace:
         live dispatch is still using, and a dispatch's own record of a broken
         cleanup is reset under it by a neighbour that has nothing to do with it.
 
-        So the gate is the whole dispatch, keyed by the resolved root and the
-        two names this workspace owns under it. Two adapters reached through
-        different names for one tree serialize, because the key is what the path
-        resolved to and not what it was spelled. Two different roots do not meet
-        at all; neither do two providers sharing a root, since each owns its own
-        home and marker and so has no state to contend over. Nothing outside
-        this workspace -- another provider, another run, a store transaction --
-        waits on this.
+        So the gate is the whole dispatch, keyed by the resolved root. Two
+        adapters reached through different names for one tree serialize, because
+        the key is what the path resolved to and not what it was spelled. Two
+        different roots do not meet at all. Two PROVIDERS sharing one root DO
+        meet, and must: they write into one `work` tree and read evidence from
+        all of it, so a turn that let them overlap would put one provider's
+        ordinary work into the other's evidence.
+
+        Holding the gate is necessary and it is not sufficient on its own. The
+        gate spans one dispatch, and a verification that re-read the tree AFTER
+        the dispatch released it would read a tree a neighbour may have changed
+        in between -- the runtime's own lock is keyed per ACTION, so two
+        providers really do run at once. That is why the transport takes BOTH
+        evidence snapshots inside this turn and verification judges the pair it
+        was handed. What is judged is what was read here.
 
         The gate is bound to a NAME here, and that binding is load-bearing: the
         table indexes gates weakly, so holding only the lock lets the gate itself

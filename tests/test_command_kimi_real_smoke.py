@@ -94,8 +94,11 @@ def test_a_real_install_answers_the_version_preflight_and_the_adapter_obeys_it(
         "Report the name of the current directory and change nothing.",
         encoding="utf-8", newline="\n")
     adapter._workspace.work_root()  # the contained route the child will stand in
-    outcome = adapter._spawn(
-        ("--version",), adapter._mint_home(), "work", timeout=60)
+    # Through the PRODUCTION retention path, never around it. `_spawn` with a
+    # hand-minted home skips `_attempt`'s `finally: discard`, so a smoke written
+    # that way leaves the very state it claims this build never keeps -- which is
+    # what it did, deterministically, until this line changed.
+    outcome = adapter._attempt(("--version",), "work", timeout=60)
     assert outcome.status == "completed", (
         "the pinned Kimi Code build did not exit within the preflight budget")
     assert outcome.exit_code == 0, "the pinned build failed to report a version"
@@ -132,8 +135,11 @@ def test_no_kimi_state_is_left_anywhere_a_real_install_would_have_put_it(tmp_pat
     adapter, root = _real_harness(tmp_path)
     adapter._workspace.work_root()
 
-    outcome = adapter._spawn(
-        ("--version",), adapter._mint_home(), "work", timeout=60)
+    # Through the PRODUCTION retention path, never around it. `_spawn` with a
+    # hand-minted home skips `_attempt`'s `finally: discard`, so a smoke written
+    # that way leaves the very state it claims this build never keeps -- which is
+    # what it did, deterministically, until this line changed.
+    outcome = adapter._attempt(("--version",), "work", timeout=60)
 
     assert outcome.status == "completed"
     homes = root / ".kimi-home"

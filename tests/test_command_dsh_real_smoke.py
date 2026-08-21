@@ -73,8 +73,11 @@ def test_a_real_install_answers_the_version_preflight_and_the_adapter_obeys_it(t
     """The real binary speaks; the adapter's spawn decision must match what it said."""
     adapter, _root = _real_harness(tmp_path)
     adapter._workspace.work_root()  # the contained route the child will stand in
-    outcome = adapter._spawn(
-        ("--version",), adapter._mint_home(), "work", timeout=60)
+    # Through the PRODUCTION retention path, never around it. `_spawn` with a
+    # hand-minted home skips `_attempt`'s `finally: discard`, so a smoke written
+    # that way leaves the very state it claims this build never keeps -- which is
+    # what it did, deterministically, until this line changed.
+    outcome = adapter._attempt(("--version",), "work", timeout=60)
     assert outcome.status == "completed", (
         "the pinned dsh build did not exit on its own within the preflight budget")
     assert outcome.exit_code == 0, "the pinned dsh build failed to report a version"

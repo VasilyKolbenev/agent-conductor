@@ -262,10 +262,23 @@ def _version_token(output: bytes) -> str:
 
 @dataclass(frozen=True)
 class _Attempt:
-    """What one execute minted, kept so verify can read evidence, not output."""
+    """The evidence PAIR one execute read, so verify judges values, not the tree.
+
+    Both snapshots are taken inside the workspace turn, around the spawn. That is
+    the whole reason ``after`` is carried here instead of being re-read later: the
+    turn is the only window in which the shared work tree is this dispatch's
+    alone, and a verification that re-read the tree afterwards would be judging a
+    tree a neighbouring provider may have changed in the meantime. What is judged
+    must be what was read.
+
+    ``after`` is None when the tree could not be read on a contained route at
+    all. That is told apart from an empty reading, because "nothing changed" and
+    "the route refused" are different answers.
+    """
 
     work_dir: Path
     before: Mapping[str, str]
+    after: Mapping[str, str] | None
 
 
 class HeadlessCliTransport:
@@ -476,8 +489,30 @@ class HeadlessCliTransport:
         outcome = self._attempt(
             self._task_argv(self._task_text(args, instruction)),
             f"{WORK_DIR}/{args.work_item_id}", timeout=request.timeout_seconds)
-        self._attempts[request.action_id] = _Attempt(work_dir=work, before=before)
+        self._attempts[request.action_id] = _Attempt(
+            work_dir=work, before=before, after=self._evidence())
         return self._observed(request, outcome)
+
+    def _evidence(self) -> Mapping[str, str] | None:
+        """One reading of the authorized work tree, or None if it refused.
+
+        Called while the dispatch still HOLDS its workspace turn, and that
+        placement is the whole point. The turn is the only window in which this
+        dispatch owns the shared work tree: the runtime serializes on
+        ``(run_id, action_id)``, so a neighbouring provider's entire dispatch can
+        land between ``execute`` returning and ``verify`` being called. A
+        verification that re-read the tree then charged this child with a change
+        outside its own subtree that another provider had made.
+
+        A refusal here must not rewrite what the spawn did: the dispatch already
+        happened and its observed outcome is a fact. So the refusal is carried
+        as an absent reading and reported by ``verify``, which is the seam whose
+        job is to say what evidence there is.
+        """
+        try:
+            return self._workspace.digest_work_tree()
+        except WorkspaceNotContained:  # noqa: BLE001 -- carry no path onward
+            return None
 
     def _preflight(self, request: ActionRequest) -> ActionResultReceipt | None:
         """Prove the pinned build's EXACT version, or refuse before any task runs."""
@@ -639,7 +674,12 @@ class HeadlessCliTransport:
     def verify(
             self, request: ActionRequest, result: ActionResultReceipt,
     ) -> AdapterVerification:
-        """Read independent workspace evidence, and claim nothing it cannot back.
+        """Judge the evidence pair the dispatch read, and claim nothing beyond it.
+
+        This seam does NOT read the filesystem. Both snapshots were taken inside
+        the dispatch's workspace turn, and re-reading the tree here would judge a
+        tree a neighbouring provider may have changed since -- which is exactly
+        the defect that made this a correction. What is judged is what was read.
 
         ``unavailable`` is never returned from here: that token says an adapter
         exposes NO verifier, and this one HAS one. Both answers land on
@@ -656,18 +696,12 @@ class HeadlessCliTransport:
                 "this adapter holds no pre-task snapshot for the action, so there "
                 "is no independent evidence to read; absence of proof is not "
                 "absence of a verifier and is never an observed success")
-        failed = False
-        try:
-            after = self._workspace.digest_work_tree()
-        except WorkspaceNotContained:  # noqa: BLE001 -- carry no path onward
-            failed = True
-            after = {}
-        if failed:
+        if attempt.after is None:
             return self._verification(
                 request, "error", (),
                 "the authorized work tree does not stand on a contained route, so "
                 "no independent evidence could be read from it")
-        return self._read_change(request, attempt, after)
+        return self._read_change(request, attempt, attempt.after)
 
     def _read_change(
             self, request: ActionRequest, attempt: "_Attempt",

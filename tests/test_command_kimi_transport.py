@@ -364,6 +364,37 @@ def test_a_change_outside_the_authorized_subtree_is_a_mismatch(tmp_path):
     assert verification.evidence_refs == ()
 
 
+def test_verification_judges_the_evidence_read_under_the_turn_not_the_live_tree(
+        tmp_path):
+    """A neighbour's later work cannot be charged to this action's child.
+
+    The runtime serializes on `(run_id, action_id)`, so another provider's whole
+    dispatch can land between this `execute` returning and `verify` being called.
+    While the evidence was re-read at verify time, that neighbour's ordinary work
+    appeared in this action's diff and came back as `mismatch` -- a change
+    "outside the authorized work subtree" that this child never made.
+
+    Both snapshots are taken inside the dispatch's turn now, so what is judged is
+    what was read. The foreign directory below stands in for the neighbour, and
+    it is written AFTER execute returns, which is exactly when the turn is over.
+    """
+    adapter, root, _log = a_harness(
+        tmp_path, FAKEKIMI_WRITE_FILE="guard.py:# a real change\n")
+    request = a_request()
+    receipt = run_once(adapter, request)
+
+    foreign = root / "work" / "neighbour-work-item"
+    foreign.mkdir(parents=True)
+    (foreign / "theirs.txt").write_text("another provider's work", encoding="utf-8")
+    verification = adapter.verify(request, receipt)
+
+    assert receipt.outcome == "succeeded"
+    assert verification.state != "mismatch", (
+        f"A_NEIGHBOURS_WORK_WAS_CHARGED_TO_THIS_CHILD detail={verification.detail}")
+    assert verification.state == "error"
+    assert "no durable evidence record" in verification.detail
+
+
 def test_a_prompt_that_changed_nothing_is_an_error_and_not_a_success(tmp_path):
     adapter, _root, _log = a_harness(tmp_path)
     request = a_request()
