@@ -9,9 +9,15 @@ that leaves this process.
 Five surfaces, and each is read in the form it really travels in:
 
 - the journal, as the bytes actually appended to ``records.jsonl``;
-- the HTTP response, as the body a server really writes -- ``canonical_json``
-  encoded to UTF-8, which is the same call ``server.py`` makes;
-- the SSE frame, as the exact bytes ``_run_frame`` emits;
+- the HTTP response, as the bytes a REAL loopback server wrote to a REAL socket
+  and a client read back off it. An earlier version of this file called the
+  encoder itself and searched what it returned, which tests the encoder the test
+  chose rather than the path the product serves -- a header, a second body, or a
+  route that answered from somewhere else would all have been invisible to it;
+- the SSE frames, as the bytes a client actually received on ``/events``,
+  including one the server's OWN publisher pushed while that client listened;
+- the response HEADERS, because a body is not the only thing a response carries
+  and a search that decoded the payload first would never look at one;
 - the fake's spawn log, because a test artefact that stored either string would
   be a leak this suite created rather than found;
 - the receipt and its refusal text.
@@ -25,24 +31,28 @@ and it is therefore really in the child's environment during these runs. A
 surface holding it would be retaining a secret this build was merely asked to
 forward.
 
-The SSE frame gets one extra assertion of its own: it must carry the run id and
-NOTHING else. A frame is a push, so anything it names is delivered to every
-attached listener without anyone asking for it.
+The SSE frames get one extra assertion of their own: every frame's vocabulary is
+closed and every value is an identifier. A frame is a push, so anything it names
+is delivered to every attached listener without anyone asking for it, and no
+route-level test would notice a field growing there because no route serves it.
 """
 from __future__ import annotations
 
 import json
+import threading
+import urllib.request
+from contextlib import contextmanager
 from pathlib import Path
 
+from conductor import server
 from conductor.command.adapters import AdapterRegistry
-from conductor.command.contracts import ActionProposal, RunEnvelope, canonical_json
-from conductor.command.http_api import CommandApi, CommandSession
-from conductor.command.run_store import RunStore, snapshot_digest
+from conductor.command.contracts import ActionProposal, RunEnvelope
+from conductor.command.run_store import snapshot_digest
 from conductor.command.runtime import Budget, Confirmation, ControlRuntime
-from conductor.server import _run_frame
 
 from tests import _fakeclaude
 from tests.test_command_claude_transport import NOW, a_harness
+from tests.test_store import good_lane, write_project
 
 #: The operator's prose, in the closed probe form the child can recognise.
 PROBE = _fakeclaude.PROBE_PREFIX + "beef1234" * 8
@@ -52,7 +62,6 @@ PROBE = _fakeclaude.PROBE_PREFIX + "beef1234" * 8
 API_KEY = "sk-ant-api03-SYNTHETIC-NEVER-REAL-0000000000"
 RUN_ID = "run-claude-leak"
 INSTANCE = "claude-dev"
-PORT, TOKEN = 8901, "token-claude-leak"
 CONFIG = {
     "cycle": {"id": "claude-orbit", "phases": ["dispatch"]},
     "instances": [{"id": INSTANCE, "adapter": "claude-code"}],
@@ -73,33 +82,16 @@ def _ids():
     return mint
 
 
-def _driven(tmp_path: Path):
-    """One Claude dispatch through the real runtime, plus the API over its store."""
-    adapter, root, log = a_harness(
-        tmp_path / "harness",
-        instruction=f"Add the missing guard and prove it. {PROBE}",
-        **{_fakeclaude.LEAK_CHECK: "1", "ANTHROPIC_API_KEY": API_KEY,
-           # A real coding run leaves a change behind, and this suite needs one:
-           # a dispatch that touched nothing is `verification_failed` under this
-           # build's law, and would search a journal with no verification record
-           # in it. The written text carries neither hunted string.
-           _fakeclaude.WRITE_FILE: "guard.py:the guard the task asked for"})
-    store = RunStore(tmp_path / "store")
-    store.create_run(
-        RunEnvelope(
-            run_id=RUN_ID, cycle_id="claude-orbit", created_at=NOW,
-            config_digest=snapshot_digest(CONFIG), mode="confirm"),
-        CONFIG)
+def _dispatched(store, srv):
+    """Propose, confirm and execute one dispatch through the real runtime."""
     proposal = ActionProposal(
-        proposal_id="proposal-claude", run_id=RUN_ID, attempt_id="attempt-claude",
-        instance_id=INSTANCE, capability="dispatch", arguments=ARGUMENTS,
-        scope=("work",), proposed_by="lane", proposed_at=NOW,
-        timeout_seconds=60,
+        proposal_id="proposal-claude", run_id=RUN_ID,
+        attempt_id="attempt-claude", instance_id=INSTANCE,
+        capability="dispatch", arguments=ARGUMENTS, scope=("work",),
+        proposed_by="lane", proposed_at=NOW, timeout_seconds=60,
         rationale="drive Claude Code through the real Confirm runtime",
         config_digest=snapshot_digest(CONFIG))
     store.append(proposal)
-    registry = AdapterRegistry([adapter])
-    runtime = ControlRuntime(store, registry, clock=lambda: NOW, ids=_ids())
     confirmation = Confirmation(
         confirmation_id="confirmation-claude", run_id=RUN_ID,
         proposal_id=proposal.proposal_id,
@@ -108,11 +100,44 @@ def _driven(tmp_path: Path):
         confirmed_by="release-owner", confirmed_at=NOW)
     budget = Budget(max_actions=8, max_action_seconds=3600,
                     max_confirmation_age_seconds=3600)
-    attempt = runtime.execute(runtime.authorize(confirmation, budget=budget))
-    api = CommandApi(
-        store, registry, session=CommandSession(PORT, TOKEN), budget=budget,
-        clock=lambda: NOW, ids=_ids(), publish_run=lambda _run: None)
-    return attempt, store, api, log, root
+    runtime = ControlRuntime(
+        store, srv.command_registry, clock=lambda: NOW, ids=_ids())
+    return runtime.execute(runtime.authorize(confirmation, budget=budget))
+
+
+@contextmanager
+def _served(tmp_path: Path):
+    """One Claude dispatch, and a REAL loopback server over the same project.
+
+    The provider resolves against the SERVED root, so the instruction the child
+    reads and the journal the routes project are the same tree -- not two trees
+    that happen to agree.
+    """
+    root = write_project(tmp_path, lanes={"claude": good_lane()})
+    adapter, _root, log = a_harness(
+        tmp_path / "harness", root=root,
+        instruction=f"Add the missing guard and prove it. {PROBE}",
+        **{_fakeclaude.LEAK_CHECK: "1", "ANTHROPIC_API_KEY": API_KEY,
+           # A real coding run leaves a change behind, and this suite needs one:
+           # a dispatch that touched nothing is `verification_failed` under this
+           # build's law. The written text carries neither hunted string.
+           _fakeclaude.WRITE_FILE: "guard.py:the guard the task asked for"})
+    srv = server.build(
+        root, port=0, registry=AdapterRegistry([adapter]), clock=lambda: NOW)
+    thread = threading.Thread(target=srv.serve_forever, daemon=True)
+    thread.start()
+    base = f"http://127.0.0.1:{srv.server_address[1]}"
+    try:
+        store = srv.command_store
+        store.create_run(
+            RunEnvelope(
+                run_id=RUN_ID, cycle_id="claude-orbit", created_at=NOW,
+                config_digest=snapshot_digest(CONFIG), mode="confirm"),
+            CONFIG)
+        yield _dispatched(store, srv), store, srv, base, log, root
+    finally:
+        srv.shutdown()
+        srv.server_close()
 
 
 #: The GET routes that really exist and really carry this run outward. Named
@@ -129,38 +154,79 @@ def _journal_bytes(store) -> bytes:
     return raw
 
 
-def _response_bodies(api) -> dict[str, bytes]:
-    """Each route's body as the SERVER encodes it, not as a caller decodes it.
+def _off_the_socket(base: str) -> dict[str, bytes]:
+    """Each route's response as a client really read it off the wire.
 
-    `canonical_json(...).encode("utf-8")` is the exact call in `server.py`, so
-    what is searched here is the byte string that would reach the socket.
+    Status AND body, because a body is not the only thing a response carries and
+    a search that decoded the payload first would never see a header at all.
     """
-    headers = (
-        ("authorization", f"Bearer {TOKEN}"), ("host", f"127.0.0.1:{PORT}"))
     bodies: dict[str, bytes] = {}
     for suffix in READ_ROUTES:
         route = f"/command/runs/{RUN_ID}{suffix}"
-        response = api.handle("GET", route, headers, b"")
-        assert response.status == 200, f"THE_API_SURFACE_IS_NOT_REAL={route}"
-        bodies[route] = canonical_json(dict(response.payload)).encode("utf-8")
+        call = urllib.request.Request(
+            base + route, headers={"Host": base.removeprefix("http://")})
+        with urllib.request.urlopen(call, timeout=10) as answer:
+            assert answer.status == 200, f"THE_API_SURFACE_IS_NOT_REAL={route}"
+            head = "\n".join(f"{k}: {v}" for k, v in answer.headers.items())
+            bodies[f"api{route}"] = answer.read()
+            bodies[f"headers{route}"] = head.encode("utf-8")
     return bodies
 
 
-def _surfaces(tmp_path: Path) -> tuple[dict[str, bytes], object, Path]:
+#: Stop on FRAMES, not on a line count: a stream with nothing more to say leaves
+#: the next `readline` blocking until its socket timeout, and a fixed number of
+#: lines is a guess about a framing this test does not own. The line bound is a
+#: backstop so a stream that speaks only blank lines still cannot hang the suite.
+_FRAMES_WANTED = 2
+_LINE_BOUND = 12
+
+
+def _frames_off_the_stream(srv, base: str) -> bytes:
+    """What a listener really receives on /events, pushed by the real publisher.
+
+    The dispatch above runs through the runtime rather than through an HTTP
+    write route, so nothing has published a run signal yet. This asks the
+    SERVER'S OWN publisher for one -- the same call the API makes -- so the frame
+    that arrives is the product's, travelling the product's socket, rather than
+    a byte string this test built to look like one.
+    """
+    stream = urllib.request.urlopen(base + "/events", timeout=10)
+    try:
+        # The greeting arrives on connect; the run signal has to be asked for,
+        # because this dispatch went through the runtime rather than an HTTP
+        # write route. Both are then read off the same socket.
+        seen = stream.readline()
+        srv.clients.publish_run(RUN_ID)
+        frames = 1
+        for _ in range(_LINE_BOUND):
+            if frames >= _FRAMES_WANTED:
+                break
+            line = stream.readline()
+            if not line:
+                break
+            seen += line
+            if line.startswith(b"data: "):
+                frames += 1
+        return seen
+    finally:
+        stream.close()
+
+
+def _surfaces(tmp_path: Path):
     """Every raw surface one real dispatch produced, keyed by name."""
-    attempt, store, api, log, root = _driven(tmp_path)
-    receipt = attempt.receipt
-    surfaces = {
-        "journal": _journal_bytes(store),
-        "sse-frame": _run_frame(RUN_ID),
-        "spawn-log": Path(log).read_bytes(),
-        "receipt": json.dumps(
-            receipt.as_dict() if hasattr(receipt, "as_dict") else {},
-            sort_keys=True, default=str).encode("utf-8") + repr(receipt).encode(),
-    }
-    for route, body in _response_bodies(api).items():
-        surfaces[f"api{route}"] = body
-    return surfaces, attempt, root
+    with _served(tmp_path) as (attempt, store, srv, base, log, root):
+        receipt = attempt.receipt
+        surfaces = {
+            "journal": _journal_bytes(store),
+            "sse-frames": _frames_off_the_stream(srv, base),
+            "spawn-log": Path(log).read_bytes(),
+            "receipt": json.dumps(
+                receipt.as_dict() if hasattr(receipt, "as_dict") else {},
+                sort_keys=True, default=str).encode("utf-8")
+            + repr(receipt).encode(),
+        }
+        surfaces.update(_off_the_socket(base))
+        return surfaces, attempt, root
 
 
 def test_the_dispatch_this_suite_searches_really_ran_and_really_delivered(tmp_path):
@@ -245,11 +311,24 @@ def test_the_pushed_frame_carries_identifiers_and_nothing_else(tmp_path):
     """
     surfaces, _attempt, _root = _surfaces(tmp_path)
 
-    frame = surfaces["sse-frame"]
+    payloads = [
+        json.loads(line[len(b"data: "):].decode("utf-8"))
+        for line in surfaces["sse-frames"].splitlines()
+        if line.startswith(b"data: ")]
 
-    assert frame.startswith(b"data: ") and frame.endswith(b"\n\n")
-    assert json.loads(frame[len(b"data: "):].decode("utf-8")) == {
-        "kind": "run", "run_id": RUN_ID}
+    assert payloads, "the stream delivered no frame at all"
+    assert {"kind": "run", "run_id": RUN_ID} in payloads, (
+        f"the run signal never reached a listener: {payloads}")
+    # EVERY frame, not only the run one, and the vocabulary is closed: each
+    # value is an identifier -- no detail, no path, no prose. A frame that grew
+    # a field would be delivered to every attached client without anyone asking
+    # for it, and no route-level test would notice, because no route serves it.
+    for payload in payloads:
+        assert set(payload) <= {"kind", "run_id"}, payload
+        assert all(
+            isinstance(value, str) and value
+            and "\n" not in value and len(value) < 64
+            for value in payload.values()), payload
 
 
 def test_the_spawn_log_stores_measurements_and_booleans_and_no_contents(tmp_path):

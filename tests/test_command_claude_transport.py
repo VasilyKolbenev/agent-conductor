@@ -88,7 +88,8 @@ def _executable(tmp_path: Path) -> Path:
     return exe
 
 
-def a_harness(tmp_path: Path, *, instruction: str = INSTRUCTION_BODY, **knobs: str):
+def a_harness(tmp_path: Path, *, instruction: str = INSTRUCTION_BODY,
+              root: Path | None = None, **knobs: str):
     """A registered, available Claude provider over the fake, its root and its log.
 
     The spawn log lives beside the root and never inside it: it is a test
@@ -96,8 +97,10 @@ def a_harness(tmp_path: Path, *, instruction: str = INSTRUCTION_BODY, **knobs: s
     whose whole promise is that this build sweeps it.
     """
     exe = _executable(tmp_path)
-    root = tmp_path / "root"
-    root.mkdir(exist_ok=True)
+    # A caller may hand in a root it already owns -- a served project, say -- so
+    # the provider resolves against the SAME tree the rest of the run uses.
+    root = (tmp_path / "root") if root is None else Path(root)
+    root.mkdir(parents=True, exist_ok=True)
     instructions = root / INSTRUCTION_DIR
     instructions.mkdir(exist_ok=True)
     (instructions / "instr-001.md").write_text(

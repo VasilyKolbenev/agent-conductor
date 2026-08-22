@@ -45,6 +45,7 @@ that cannot skip.
 from __future__ import annotations
 
 import os
+import re
 import uuid
 from pathlib import Path
 
@@ -65,6 +66,11 @@ from tests.test_command_claude_transport import NOW, _Ids, a_request
 EXECUTABLE_ENV = "CONDUCT_CLAUDE_EXECUTABLE"
 PROMPT_ENV = "CONDUCT_CLAUDE_REAL_PROMPT"
 KEY_NAME_ENV = "CONDUCT_CLAUDE_KEY_NAME"
+
+#: The described form, SPELLED here rather than imported from the adapter: a
+#: check that read the shipped pattern would move with it, and the whole point of
+#: this file is to be the one place that does not.
+_DESCRIBED_FORM = re.compile(r"\A\d+\.\d+\.\d+ \(Claude Code\)\Z")
 
 
 def _pin() -> str:
@@ -103,6 +109,52 @@ def _seed_instruction(root: Path, text: str) -> None:
         text, encoding="utf-8", newline="\n")
 
 
+def _assert_form_is_readable(observed: str) -> None:
+    """The FORM question, asked separately from the version question.
+
+    They fail differently and mean different things: a different version is an
+    operator running another build, which the adapter is right to refuse; an
+    unreadable form is this parser being wrong about the vendor, which no
+    refusal can fix.
+
+    Asking only the version hides the form whenever both differ. An install
+    printing `2.1.240` bare is an unknown FORM *and* a different VERSION, and a
+    check that only looked for the reviewed semver in the output would pass in
+    silence -- which is exactly the case this parser is most likely to be wrong
+    in, because nothing it was built from is a statement that writes the string.
+    """
+    assert _DESCRIBED_FORM.match(observed) is not None, (
+        f"the install prints a form this parser cannot read at all: "
+        f"{observed!r} -- expected `<semver> (Claude Code)`. This is a finding "
+        f"about the PARSER, not about the build, and it is widened in review")
+
+
+def _assert_token_came_back(root: Path, work_item_id: str, marker: str) -> None:
+    """The far-side witness: a file under the authorized subtree carries it.
+
+    The token exists in exactly one place this run could have learned it from --
+    what was piped. It is in no argv token (the prompt argument is a constant
+    sentence), in no environment value, and in no path. So a file carrying it
+    proves the child READ its input, which is the one thing no parent can
+    observe and the one thing this whole channel rests on.
+
+    The FILENAME is deliberately not pinned. A model may reasonably choose its
+    own, and a smoke that failed on the name would be testing compliance with a
+    phrasing rather than testing the channel.
+    """
+    work = root / "work" / work_item_id
+    carriers = [
+        path for path in work.rglob("*")
+        if path.is_file() and marker in path.read_text(
+            encoding="utf-8", errors="replace")]
+    assert carriers, (
+        "the run produced no file carrying the piped token. Either the child "
+        "never read its stdin -- which is what this assertion exists to catch, "
+        "and which no parent-side check can see below the pipe buffer -- or it "
+        "answered without writing. Files under the subtree: "
+        f"{sorted(p.name for p in work.rglob('*') if p.is_file())}")
+
+
 def test_a_real_install_prints_a_form_this_adapter_can_parse(tmp_path):
     """The parser meets a real binary, which is the only place it can be settled.
 
@@ -123,6 +175,8 @@ def test_a_real_install_prints_a_form_this_adapter_can_parse(tmp_path):
 
     observed = _version_token(outcome.output)
     assert observed, "the pinned Claude Code printed no version token at all"
+
+    _assert_form_is_readable(observed)
     parsed = adapter._version_matches(outcome.output)
 
     request = a_request()
@@ -138,14 +192,13 @@ def test_a_real_install_prints_a_form_this_adapter_can_parse(tmp_path):
         assert REVIEWED_CLAUDE_VERSION in receipt.detail
         assert observed not in receipt.detail, (
             "the observed version is raw child output and must never be echoed")
-        # A refusal is correct for a DIFFERENT version and wrong for a shape the
-        # parser cannot read. CONTAINMENT rather than a prefix: this vendor puts
-        # the semver FIRST, so `startswith` would answer True for a print this
-        # parser refuses for its suffix, and the one tripwire for a too-narrow
-        # parser would stay silent on the exact defect it exists to catch.
+        # The form already matched above, so reaching here means one thing only:
+        # a build that is not the reviewed one, refused correctly. Stated as an
+        # assertion rather than left implicit, because a parser that refused a
+        # matching form at a matching version would land here silently.
         assert REVIEWED_CLAUDE_VERSION not in observed, (
-            f"the install prints the reviewed semver in a shape this parser "
-            f"refuses: {observed!r} -- widen the parser in review")
+            f"the form matched and the version did too, yet the parser refused: "
+            f"{observed!r} -- this is a parser defect, not an unreviewed build")
 
 
 def test_no_claude_state_is_left_anywhere_a_real_install_would_have_put_it(tmp_path):
@@ -192,10 +245,15 @@ def test_a_real_prompt_answers_with_something_only_the_piped_task_carried(tmp_pa
     else, and it is the one piece of evidence this build can obtain that the
     child really read what it was piped rather than merely being handed it.
 
-    A run that comes back without the marker is NOT failed here. It is reported
-    as unproven, with the reason, because a real model may answer in its own
-    words and this smoke must not turn a wording difference into a red build.
-    What would be a defect is the run refusing outright, and that IS asserted.
+    The token comes back as a FILE rather than as speech, and that is what makes
+    the witness an assertion instead of advice. This build discards bounded child
+    output by design -- no byte of it reaches a receipt -- so a spoken answer is
+    unreadable from here, and an earlier version of this test could only print
+    what an operator should go and check. It passed against a child that never
+    read its stdin at all.
+
+    A written file is INDEPENDENT WORKSPACE EVIDENCE, which is what this build's
+    own verifier reads, and it costs the same single spawn.
     """
     key_name = _prompt_gate()
 
@@ -203,8 +261,9 @@ def test_a_real_prompt_answers_with_something_only_the_piped_task_carried(tmp_pa
     adapter, root = _real_harness(tmp_path, names=(key_name,))
     _seed_instruction(
         root,
-        f"Reply with exactly this token and nothing else: {marker}\n"
-        "Do not create, modify or delete any file.")
+        f"Create a file in the current directory containing exactly this "
+        f"token and nothing else: {marker}\n"
+        "Change nothing else, and do not modify any existing file.")
 
     request = a_request()
     receipt = adapter.execute(adapter.prepare(request))
@@ -221,14 +280,5 @@ def test_a_real_prompt_answers_with_something_only_the_piped_task_carried(tmp_pa
     if verification.state == "verified":
         assert verification.evidence_refs, "verified requires real evidence"
 
-    # The far-side witness. Reported rather than asserted, for the reason in the
-    # docstring -- but reported LOUDLY, because a smoke that fell silent here
-    # would leave the only question this file exists to answer unanswered.
-    print(
-        f"\nSTDIN FAR-SIDE WITNESS: outcome={receipt.outcome} "
-        f"marker_minted={marker}\n"
-        "  A real answer carrying that token is proof the child read what was\n"
-        "  piped; the token appears in no argv, no environment value and no\n"
-        "  path. This build cannot read the answer -- bounded child output\n"
-        "  reaches no receipt by design -- so confirm it from the install's own\n"
-        "  session output, or run this under an operator who can.")
+    # THE far-side witness, and it is an ASSERTION rather than advice.
+    _assert_token_came_back(root, request.arguments["work_item_id"], marker)
