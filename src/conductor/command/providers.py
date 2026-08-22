@@ -35,6 +35,15 @@ from .adapters.deep_adapters import (
 )
 from .adapters.deep_contracts import DeepAdapterConfig
 from .adapters.dsh_harness import DSH_PROTOCOL, DshHarnessAdapter, DshPin
+from .adapters.grok_build import (
+    GROK_CAPABILITIES,
+    GROK_DISPLAY_NAME,
+    GROK_LIFECYCLE,
+    GROK_PROTOCOL,
+    GROK_PROVIDER_ID,
+    GROK_SCHEMA_PAIRS,
+    GrokBuildAdapter,
+)
 from .adapters.kimi_code import (
     KIMI_CAPABILITIES,
     KIMI_DISPLAY_NAME,
@@ -42,9 +51,10 @@ from .adapters.kimi_code import (
     KIMI_PROTOCOL,
     KIMI_PROVIDER_ID,
     KIMI_SCHEMA_PAIRS,
-    KimiCodeContractAdapter,
+    KimiCodeAdapter,
 )
 from .adapters.process import ProcessRunner
+from .adapters.headless_cli import ExecutablePin
 from .adapters.provider import (
     SCHEMALESS_CAPABILITIES,
     ProviderCatalogEntry,
@@ -67,6 +77,11 @@ _DEEP_LIFECYCLE = ("observe", "prepare", "execute", "verify")
 #: absolute path, the entrypoint it runs, and both files must really be present
 #: before the provider is available. Nothing is derived, searched, or guessed.
 _ENTRYPOINT_PROTOCOLS = frozenset({DSH_PROTOCOL})
+#: Protocols whose executable is the WHOLE pin: one native binary, no second
+#: half. Keyed by PROTOCOL rather than by provider id on purpose -- a protocol is
+#: not an identity, so this stays a fact about pin SHAPE and the identity gate
+#: has nothing to permit here. Two products sharing a shape share this row.
+_SINGLE_EXECUTABLE_PROTOCOLS = frozenset({KIMI_PROTOCOL, GROK_PROTOCOL})
 #: The dsh harness carries one control and says so; stop, retry and switch are
 #: absent from the manifest, so the door cannot admit them.
 _DSH_CAPABILITIES = ("observe", "dispatch")
@@ -98,8 +113,14 @@ PROVIDER_CATALOG = MappingProxyType({
         provider_id=KIMI_PROVIDER_ID, display_name=KIMI_DISPLAY_NAME,
         vendor="Moonshot AI", protocol=KIMI_PROTOCOL,
         capabilities=KIMI_CAPABILITIES, schema_pairs=KIMI_SCHEMA_PAIRS,
-        lifecycle=KIMI_LIFECYCLE, adapter_class=KimiCodeContractAdapter,
-        implementation="unproven"),
+        lifecycle=KIMI_LIFECYCLE, adapter_class=KimiCodeAdapter,
+        implementation="real_experimental"),
+    GROK_PROVIDER_ID: ProviderCatalogEntry(
+        provider_id=GROK_PROVIDER_ID, display_name=GROK_DISPLAY_NAME,
+        vendor="xAI", protocol=GROK_PROTOCOL,
+        capabilities=GROK_CAPABILITIES, schema_pairs=GROK_SCHEMA_PAIRS,
+        lifecycle=GROK_LIFECYCLE, adapter_class=GrokBuildAdapter,
+        implementation="real_experimental"),
 })
 
 
@@ -169,6 +190,21 @@ def _resolve_availability(config: ProviderConfig, entry: ProviderCatalogEntry) -
         # An interpreter with nothing to run is not a usable provider, and
         # inventing the missing half is exactly what this factory refuses to do.
         return "executable_absent"
+    if entry.protocol in _SINGLE_EXECUTABLE_PROTOCOLS and config.entrypoint:
+        # The mirror image: this provider runs ONE binary, so an entrypoint
+        # pinned beside it is a config this build cannot honour -- the operator
+        # believes a second file is run and nothing here would run it.
+        #
+        # It is answered HERE, as unavailability, and not by raising from the
+        # adapter factory. Raising took down the whole roster: `conduct up` does
+        # not catch ProviderConfigError, so one operator typo ended the server
+        # with a traceback and no descriptor for ANY provider. It also fired only
+        # when the pinned entrypoint really existed -- an absent one was reported
+        # as `executable_absent` first -- so it was loudest in the case that
+        # needed it least. Read as a fact about the CONFIG's shape, it needs no
+        # disk at all and it costs one provider its availability, which is what
+        # every other unhonourable pin costs.
+        return "version_mismatch"
     if not _executable_present(config.executable):
         return "executable_absent"
     if config.entrypoint and not _executable_present(config.entrypoint):
@@ -200,6 +236,19 @@ def _build_adapter(
             env_allow=config.env_allow)
         return entry.adapter_class(
             pin, runner, root=root, clock=clock, ids=ids,
+            adapter_id=entry.provider_id)
+    if entry.protocol in _SINGLE_EXECUTABLE_PROTOCOLS:
+        # No adapter is ever built for a config carrying an entrypoint here:
+        # `_resolve_availability` refuses it, and only an AVAILABLE provider
+        # reaches this function. The refusal type comes from the adapter class
+        # that will hold the pin, so a second single-binary provider refuses as
+        # ITSELF -- hardcoding one provider's factory here gave every future one
+        # Kimi Code's error.
+        return entry.adapter_class(
+            ExecutablePin(
+                executable=config.executable, env_allow=config.env_allow,
+                error=entry.adapter_class.error),
+            runner, root=root, clock=clock, ids=ids,
             adapter_id=entry.provider_id)
     deep_config = DeepAdapterConfig(
         executable=config.executable, protocol=config.protocol,

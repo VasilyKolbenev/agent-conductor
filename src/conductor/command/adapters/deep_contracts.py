@@ -28,10 +28,15 @@ class DeepProtocol(str, Enum):
     FAKE_CLAUDE_V1 = "fake-claude-jsonl-v1"
     FAKE_CODEX_V1 = "fake-codex-jsonl-v1"
     DSH_HEADLESS_V1 = "dsh-headless-v1"
-    #: Catalogued so Kimi Code can be SEEN, and unproven on purpose: no
-    #: adapter in this build implements it, so it binds no argv flag and
-    #: resolves no spawnable provider. See adapters/kimi_code.py.
-    KIMI_UNPROVEN_V0 = "kimi-code-unproven-v0"
+    #: Kimi Code's published one-shot mode: `--prompt` with no TUI. The token
+    #: changed when the transport became real, and the old `-unproven-v0` name
+    #: is GONE rather than kept beside it -- an operator pinning a protocol this
+    #: build no longer implements must be refused, not quietly served by a
+    #: transport they never asked for. See adapters/kimi_code.py.
+    KIMI_HEADLESS_V1 = "kimi-code-headless-v1"
+    #: Grok Build's published one-shot mode: `--single` with no TUI.
+    #: See adapters/grok_build.py.
+    GROK_HEADLESS_V1 = "grok-build-headless-v1"
 
 
 _ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")

@@ -1,13 +1,23 @@
-"""The dsh harness's durability and evidence door, confined to one module.
+"""The durability and evidence door every headless harness passes, in one module.
 
-The harness adapter needs a handful of filesystem facts and nothing else: a
-FRESH profile home per spawn, a marker that survives a crash so a task is never
-run twice, the instruction TEXT the task is actually asked to do, and content
+A harness adapter needs a handful of filesystem facts and nothing else: a FRESH
+profile home per spawn, a marker that survives a crash so a task is never run
+twice, the instruction TEXT the task is actually asked to do, and content
 digests of the authorized work tree so verification can read what actually
 changed instead of believing what the task said. They live here, apart from the
 adapter's value logic, for the same reason the owned-process runner lives apart
 from the adapters that use it: a door should be one small module a reviewer can
 read whole.
+
+The door is PROVIDER-NEUTRAL and holds no provider identity at all: it compares
+no id, imports no adapter, and branches on nothing about who is calling. What
+differs between harnesses is two NAMES -- the home a vendor's tool keeps its
+profile in and the marker namespace an attempt is claimed in -- and both are
+handed in by the calling adapter, so each provider's names live in that
+provider's own module. That is why the containment guarantees below are stated
+about "this workspace's home root" rather than about one spelled directory: the
+bound is exactly one fixed root per workspace, and which root that is is decided
+where the provider is, not here.
 
 This is a durability door, NOT an execution door. It imports no subprocess, no
 socket and no import machinery, and the package-wide door guard checks that here
@@ -22,9 +32,9 @@ classifying a symbolic link, an NTFS junction and any other reparse point by its
 own tag, and refusing a store-owned file that is not regular or that carries a
 second hard link. The root itself is a component of that route, because a portal
 standing AT a container adopts external state exactly as one standing inside it
-does. Without that walk a portal planted at `.dsh-home`, `.dsh-marker`,
-`instructions` or `work` made this door create durable state outside the project
-root it is bound to -- which is what it did before this walk existed.
+does. Without that walk a portal planted at this workspace's home, its marker
+namespace, `instructions` or `work` made this door create durable state outside
+the project root it is bound to -- which is what it did before this walk existed.
 
 The evidence walk is the same relation read rather than written. It never
 follows a name: a portal is recorded by its typed kind, a file whose bytes also
@@ -34,9 +44,10 @@ outside it.
 
 Cleanup is the same relation again, and it is the one place where getting it
 wrong is worse than the leak it fixes. Every delete is bounded to ONE fixed
-root -- `<project>/.dsh-home` -- and to a container this workspace itself
-minted. A portal met inside such a container is removed by its OWN entry, so
-whatever it named keeps every byte. The home ROOT is the same case once a child
+root -- `<project>/<home_dir>`, the single home name this workspace was built
+with -- and to a container this workspace itself minted. A portal met inside
+such a container is removed by its OWN entry, so whatever it named keeps every
+byte. The home ROOT is the same case once a child
 replaces the directory this process minted: the entry is one this workspace
 created and still remembers, so it too goes by its own entry and never through
 it. A portal standing at a home name this workspace never minted is refused and
@@ -69,11 +80,19 @@ from ..containment import (
     render_route_violation,
 )
 
-#: Subtrees this door owns beneath the project root.
+#: The subtrees this door owns beneath the project root that belong to the RUN
+#: rather than to any one harness. The work tree is the authorized subtree a
+#: task may change and verification reads; the instruction directory is where
+#: the task's own text is read from. Both are facts about the run, so every
+#: provider driving that run reads and writes the SAME two, and neither is a
+#: name a provider may choose.
 WORK_DIR = "work"
-HOME_DIR = ".dsh-home"
-MARKER_DIR = ".dsh-marker"
 INSTRUCTION_DIR = "instructions"
+#: The two names a PROVIDER brings instead: see ``HarnessWorkspace``. They are
+#: not defaulted anywhere, because a default would let two harnesses share one
+#: home root by saying nothing, and the whole retention promise below is that a
+#: home belongs to exactly one attempt of exactly one provider.
+_RESERVED_DIRS = frozenset({WORK_DIR, INSTRUCTION_DIR})
 #: The one name shape an instruction is read from, and the bound on its size: a
 #: task is a task, not a payload, and an unbounded read is an unbounded prompt.
 INSTRUCTION_SUFFIX = ".md"
@@ -150,7 +169,7 @@ def _remove_tree(root: Path) -> None:
 
 
 class _RootGate:
-    """One weakly indexed, workspace-owned process-local dsh root gate."""
+    """One weakly indexed, workspace-owned process-local harness root gate."""
 
     __slots__ = ("lock", "__weakref__")
 
@@ -163,35 +182,94 @@ class _RootGate:
 # own. The weak table releases a root nothing holds. This is the same shape the
 # run store's root gate and the runtime's operation lock already use; it is
 # deliberately NOT either of them -- a dispatch must not hold a store
-# transaction across a child process, and a dsh root must not stop a run or
-# another provider.
+# transaction across a child process.
+#
+# The key was briefly the root TOGETHER WITH the two names a provider owns,
+# reasoning that two providers own different homes and markers and so have no
+# state to contend over. That reasoning was WRONG and the change was a race:
+# they also share `work` and `instructions`, and the evidence snapshot spans the
+# WHOLE work tree. A neighbour writing its own work item during another
+# provider's dispatch lands in that provider's before/after diff, where it reads
+# as a change outside the authorized subtree -- a mismatch pinned on a child
+# that did nothing wrong. Reproduced, before the revert, as:
+#     wrote_while_one_owned_root=True
+#     foreign_change=['b/foreign.txt']
+#
+# The prose above this gate had claimed for a long time that one harness's root
+# must not stop "another provider". That claim was aspirational and the CODE was
+# right; the correction was to fix the sentence, not the key. A comment is not a
+# specification, and a guarantee is not safe to invert because a comment nearby
+# describes a nicer world.
+#
+# Serializing providers on one root is the cost, and it is the honest one: they
+# are writing into one tree and reading evidence from all of it.
 _ROOT_GATES_GUARD = Lock()
 _ROOT_GATES: WeakValueDictionary[Path, _RootGate] = WeakValueDictionary()
 
 
-def _root_gate(root: Path) -> _RootGate:
+def _root_gate(key: Path) -> _RootGate:
     with _ROOT_GATES_GUARD:
-        gate = _ROOT_GATES.get(root)
+        gate = _ROOT_GATES.get(key)
         if gate is None:
             gate = _RootGate()
-            _ROOT_GATES[root] = gate
+            _ROOT_GATES[key] = gate
         return gate
 
 
 @dataclass(frozen=True)
-class DshWorkspace:
-    """Every filesystem effect the harness is allowed, bound to one project root."""
+class HarnessWorkspace:
+    """Every filesystem effect a harness is allowed, bound to one project root.
+
+    Bound to two NAMES as well, and they are required rather than defaulted.
+    ``home_dir`` is the single root every cleanup below is bounded to, and
+    ``marker_dir`` is the namespace an attempt is claimed in; a provider hands
+    both in, so no harness inherits another's. Both are proved to be single
+    route components here, at construction, rather than at each use -- a
+    workspace that exists at all has already been proved to own two local names.
+    """
 
     root: Path
+    home_dir: str
+    marker_dir: str
     #: The home names THIS workspace minted and has not yet discarded. It is the
     #: only ground on which cleanup may remove a name whose kind is a portal:
     #: this process created that entry, so removing the entry alone destroys
     #: nothing it did not make. A name absent from here is somebody else's.
     minted: set[str] = field(default_factory=set, compare=False, repr=False)
 
+    def __post_init__(self) -> None:
+        home = _component(self.home_dir)
+        marker = _component(self.marker_dir)
+        if home == marker:
+            raise WorkspaceNotContained(
+                "a harness's home and marker names must differ, or discarding a "
+                "home would delete the markers that prove what already ran")
+        for name in (home, marker):
+            if name in _RESERVED_DIRS:
+                # The work tree and the instruction directory belong to the RUN.
+                # A home pointed at either one turns `discard_home` -- a bounded,
+                # deliberate, recursive delete -- into the destruction of the
+                # task's own evidence or of the text it was asked to do.
+                raise WorkspaceNotContained(
+                    f"{name!r} is a run-owned subtree and cannot be a harness's "
+                    "home or marker name")
+
     @classmethod
-    def at(cls, root: str | os.PathLike[str]) -> "DshWorkspace":
-        return cls(root=Path(root).resolve())
+    def at(cls, root: str | os.PathLike[str], *, home_dir: str,
+           marker_dir: str) -> "HarnessWorkspace":
+        return cls(
+            root=Path(root).resolve(), home_dir=home_dir, marker_dir=marker_dir)
+
+    def _gate_key(self) -> Path:
+        """What this workspace serializes over: the ROOT, and nothing narrower.
+
+        Not the provider's own names. Two providers under one root share `work`
+        and `instructions`, and the evidence snapshot spans the whole work tree,
+        so a narrower key lets a neighbour's ordinary dispatch appear in another
+        provider's evidence as a change outside its authorized subtree. The
+        comment above ``_root_gate`` records the reproduction.
+        """
+        return self.root
 
     @contextmanager
     def owned(self):
@@ -209,8 +287,18 @@ class DshWorkspace:
         So the gate is the whole dispatch, keyed by the resolved root. Two
         adapters reached through different names for one tree serialize, because
         the key is what the path resolved to and not what it was spelled. Two
-        different roots do not meet at all, and nothing outside dsh -- another
-        provider, another run, a store transaction -- waits on this.
+        different roots do not meet at all. Two PROVIDERS sharing one root DO
+        meet, and must: they write into one `work` tree and read evidence from
+        all of it, so a turn that let them overlap would put one provider's
+        ordinary work into the other's evidence.
+
+        Holding the gate is necessary and it is not sufficient on its own. The
+        gate spans one dispatch, and a verification that re-read the tree AFTER
+        the dispatch released it would read a tree a neighbour may have changed
+        in between -- the runtime's own lock is keyed per ACTION, so two
+        providers really do run at once. That is why the transport takes BOTH
+        evidence snapshots inside this turn and verification judges the pair it
+        was handed. What is judged is what was read here.
 
         The gate is bound to a NAME here, and that binding is load-bearing: the
         table indexes gates weakly, so holding only the lock lets the gate itself
@@ -218,7 +306,7 @@ class DshWorkspace:
         both run at once. A holder must keep the gate alive for as long as it
         holds its turn.
         """
-        gate = _root_gate(self.root)
+        gate = _root_gate(self._gate_key())
         with gate.lock:
             yield
 
@@ -256,11 +344,11 @@ class DshWorkspace:
 
     def homes_root(self) -> Path:
         """The ONE root every home cleanup below is bounded to."""
-        return self.root / HOME_DIR
+        return self.root / self.home_dir
 
     def mint_home(self, name: str) -> Path:
         """A fresh home. ``exist_ok=False`` makes reuse a hard error, not a merge."""
-        home = self._directory_route(HOME_DIR, name)
+        home = self._directory_route(self.home_dir, name)
         home.mkdir(parents=True, exist_ok=False)
         self.minted.add(home.name)
         return home
@@ -268,7 +356,7 @@ class DshWorkspace:
     def discard_home(self, home: str | os.PathLike[str]) -> None:
         """Delete ONE attempt home, bounded to the fixed homes root, or refuse.
 
-        The owner is this workspace and the root is ``<project>/.dsh-home``:
+        The owner is this workspace and the root is ``<project>/<home_dir>``:
         a path that does not stand directly beneath it is refused without a
         single entry being read, so this cleanup cannot reach outside its own
         root even when it is handed a path that does.
@@ -284,7 +372,7 @@ class DshWorkspace:
         if path.parent != self.homes_root():
             raise WorkspaceNotContained(
                 f"{str(path)!r} is not a home beneath this workspace's fixed root")
-        target = self._directory_route(HOME_DIR) / _component(path.name)
+        target = self._directory_route(self.home_dir) / _component(path.name)
         found = _leaf(target)
         if found is None:
             self.minted.discard(target.name)
@@ -310,7 +398,7 @@ class DshWorkspace:
         minted here, so it is named and left exactly as found; the names returned
         are the whole account of what this sweep declined to touch.
         """
-        homes = self._directory_route(HOME_DIR)
+        homes = self._directory_route(self.home_dir)
         found = _leaf(homes)
         if found is None:
             return ()
@@ -331,18 +419,36 @@ class DshWorkspace:
 
     # -- the crash-proof marker -----------------------------------------------
 
+    def _marker_parts(self, action_id: str) -> tuple[str, str]:
+        """The ONE spelling of a marker's route, so no two readers can disagree.
+
+        This existed three times before, and one of the three was a path built
+        straight from the fields with no containment walk behind it. Two
+        spellings of one route is the same defect as judging one value and
+        writing another: whichever is wrong, nothing tells you which. The route
+        is computed here and every reader below is handed it.
+        """
+        return (self.marker_dir, f"{action_id}.marker")
+
     def marker_path(self, action_id: str) -> Path:
-        """The marker's NAME. Nothing is established about it until it is read."""
-        return self.root / MARKER_DIR / f"{action_id}.marker"
+        """The marker's NAME, and it is a NAME: nothing is established until read.
+
+        Deliberately still the unvalidated form, because that is what a name is.
+        What changed is that it can no longer say a different name than the one
+        ``claim`` writes and ``is_claimed`` reads -- all three take the same
+        parts -- so a caller that trusts this path is trusting the route the door
+        will actually walk.
+        """
+        return self.root.joinpath(*self._marker_parts(action_id))
 
     def is_claimed(self, action_id: str) -> bool:
         """True once a marker exists, which outlives the process that wrote it."""
-        _path, found = self._file_route(MARKER_DIR, f"{action_id}.marker")
+        _path, found = self._file_route(*self._marker_parts(action_id))
         return found is not None
 
     def claim(self, action_id: str) -> None:
         """Claim the action BEFORE its task spawns, so a crash cannot un-claim it."""
-        marker, _found = self._file_route(MARKER_DIR, f"{action_id}.marker")
+        marker, _found = self._file_route(*self._marker_parts(action_id))
         marker.parent.mkdir(parents=True, exist_ok=True)
         marker.write_text(action_id, encoding="utf-8", newline="\n")
 

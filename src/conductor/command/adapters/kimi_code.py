@@ -1,132 +1,205 @@
-"""Kimi Code: catalogued so it can be seen, and given no control to spend.
+"""Kimi Code, driven headlessly: one pinned binary, one prompt, one attempt.
 
-Re-audited 2026-08-18 against Moonshot AI's own published pages, and the audit
-OVERTURNED two of the three grounds this module used to carry. They are named
-here rather than quietly deleted, because a reader who met the old reasoning is
-owed the correction:
+The vendor contract this adapter is written against was read from Moonshot AI's
+own published pages on 2026-08-21 and is recorded here so a later reader can
+re-check it rather than trust this prose:
 
-- **A credential CAN come from the shell.** The environment reference says
-  credential variables such as ``KIMI_API_KEY``, ``ANTHROPIC_API_KEY`` and
-  ``OPENAI_API_KEY`` are "not read automatically from shell environment
-  variables" -- and then names the exception: the ``KIMI_MODEL_*`` family "is an
-  explicit channel that does read credentials from the shell", with
-  ``KIMI_MODEL_API_KEY`` required once ``KIMI_MODEL_NAME`` is set. This module
-  had generalised the first sentence over the second and concluded that
-  dispatching would force this build to write an operator's key to disk. It
-  would not: that channel is the exact shape this build's provider door already
-  uses -- environment NAMES pinned in config, values read at spawn and never
-  written down (moonshotai.github.io/kimi-code/en/configuration/env-vars.html).
-- **Telemetry HAS an environment switch.** ``KIMI_DISABLE_TELEMETRY`` set to
-  ``1`` turns off anonymous telemetry reporting (same page). This module had
-  claimed the only route was authoring a ``config.toml`` whose schema it had not
-  read, and called a fresh isolated home telemetry-ON for that reason.
-
-What the audit left standing:
-
-- the one-shot transport is documented: ``-p``/``--prompt <prompt>`` runs a
-  single prompt non-interactively and streams to stdout, ``--output-format``
-  takes ``text`` or ``stream-json`` and only alongside ``--prompt``, and
-  ``-V``/``--version`` prints the version and exits;
-- exit-code meanings are published for ``kimi login`` and ``kimi doctor`` only
-  (``0`` on success, ``1`` on failure); the reference states none for a
-  ``--prompt`` run (moonshotai.github.io/kimi-code/en/reference/kimi-command.html);
-- configuration and session state live in ``~/.kimi-code`` and relocate with
-  ``KIMI_CODE_HOME``;
+- the one-shot transport is ``--prompt <prompt>``, which "Run[s] a single prompt
+  non-interactively and stream[s] the Assistant output to stdout. This mode does
+  not open the TUI"; ``--output-format`` takes ``text`` or ``stream-json`` and
+  "Can only be used with ``--prompt``; defaults to ``text``"; ``-V``/
+  ``--version`` "Print[s] the version number and exit[s]"
+  (moonshotai.github.io/kimi-code/en/reference/kimi-command.html);
+- ``KIMI_CODE_HOME`` "Overrides the data root directory; the default is
+  ``~/.kimi-code``. Once set, the config file, sessions, logs, OAuth credentials,
+  and all other data land under the new path", and ``KIMI_DISABLE_TELEMETRY``
+  is "Set to ``1`` to turn off anonymous telemetry reporting"
+  (moonshotai.github.io/kimi-code/en/configuration/env-vars.html);
+- credential variables such as ``KIMI_API_KEY`` are "not read automatically from
+  shell environment variables", and the ONE exception is the ``KIMI_MODEL_*``
+  family, "an explicit channel that does read credentials from the shell", where
+  ``KIMI_MODEL_NAME`` is the enable switch and ``KIMI_MODEL_API_KEY`` is
+  required alongside it (same page). That is exactly the shape this build's
+  provider door already uses: names pinned in operator config, values read at
+  spawn and never written down by this build;
+- the latest published release is ``0.38.0`` (2026-08-20)
+  (moonshotai.github.io/kimi-code/en/release-notes/changelog.html);
 - the binary installs by script and needs no Node.js, so it pins no interpreter
-  entrypoint, and the npm name third-party write-ups repeat, ``@kimi-code/cli``,
-  answers 404 on the registry.
+  entrypoint -- unlike dsh, the operator pins ONE absolute path.
 
-So the honest state was never "the vendor makes this impossible". It is that
-THIS BUILD has neither implemented nor proven that transport -- which is what
-the catalogue entry's ``unproven`` implementation says, and what every refusal
-below reports. Everything named in this module is a fact about this build's
-proof; nothing is a claim about the product.
+Two things the audit did NOT find, and both bound what this adapter may claim
+rather than being papered over:
 
-Driving it is a slice of its own, behind the doors DeepSeek already passes: an
-operator-pinned absolute executable with no PATH discovery, an isolated
-per-attempt ``KIMI_CODE_HOME``, ``KIMI_DISABLE_TELEMETRY=1``, an exact version
-preflight, code-owned headless argv, bounded and drained output that reaches no
-journal, API, SSE or evidence, and a deterministic fake executable with any real
-smoke kept opt-in. The undocumented ``--prompt`` exit codes no longer block that
-work -- they bound what it may CLAIM: under this build's law an exit code buys
-``execution_observed`` and never success, so a Kimi dispatch could reach exactly
-as far as DeepSeek reaches today, and no further.
+**No exit-code contract is published for ``--prompt``.** Exit codes are
+documented for ``kimi login``, ``kimi doctor`` and the legacy ``kimi server``,
+and for nothing else. So this provider's profile declares
+``exit_codes_published=False`` and every receipt says so: a zero is read as the
+process having ended and as nothing else. Under this build's law that is where a
+zero stops anyway -- an exit code buys ``execution_observed`` and never
+success -- so the weaker reading costs no capability, and stating it is the
+difference between an honest observation and a borrowed one.
 
-Until that lands Kimi Code is catalogued so the Cockpit can SEE it, named
-experimental where a reader will see that too, resolved unavailable whatever the
-operator pinned, and given NO control at all -- the registration door already
-refuses an undeclared control. The class below exists only to satisfy that
-door's lifecycle proof, and every one of its seams refuses, its constructor
-first, so no instance of it can exist to spawn anything.
+**The exact format of the version print is not published**, only that a version
+number is printed. The comparison below is EXACT against ``0.38.0``, so a build
+that prints its version with a prefix refuses the preflight instead of running a
+task. That is the safe direction of a wrong guess -- a false refusal, never a
+false spawn -- and the opt-in real smoke is what settles the format against a
+real install. When it does, what changes is this constant, in review.
+
+The pin is exact and this build discovers nothing: no ``PATH`` search, no home
+scan, no installer, no "latest", and never ``shell=True``. Everything after the
+pin is the shared headless transport in ``headless_cli`` -- a fresh
+``KIMI_CODE_HOME`` per attempt that is discarded when the spawn returns, an
+exact version preflight before any prompt is spawned, code-owned argv down to
+the last token, bounded and drained output that reaches no receipt, journal,
+API, SSE frame, evidence or exception message, a marker that stops a crashed
+prompt from being run twice, and verification that reads only independent
+workspace evidence and never answers ``verified`` while this build writes no
+durable evidence record.
+
+The home matters more here than the vendor's own default suggests. Because
+``KIMI_CODE_HOME`` relocates "the config file, sessions, logs, OAuth credentials,
+and all other data", a fresh one per attempt means this build never reads, keeps,
+or hands onward a session or a credential the tool wrote -- and it also means the
+tool starts each attempt with no operator session at all. A dispatch therefore
+depends on the ``KIMI_MODEL_*`` channel the operator allowed by NAME, which is
+the only credential road the vendor documents as reading the shell.
 """
-
 from __future__ import annotations
 
-from .base import AdapterContractError
+from collections.abc import Callable
+from pathlib import Path
+
 from .deep_contracts import DeepProtocol
+from .harness_workspace import INSTRUCTION_DIR, WORK_DIR
+from .headless_cli import (
+    DISPATCH_CAPABILITY,
+    ExecutablePin,
+    HarnessProfile,
+    HeadlessCliError,
+    HeadlessCliTransport,
+)
+from .process import ProcessRunner
 
 #: The graph node this provider binds to. ``conductor.harnesses`` registers the
 #: id ``kimi-code``, so a role that names it draws a real badge rather than the
 #: neutral fallback an unregistered string gets.
 KIMI_PROVIDER_ID = "kimi-code"
-#: The protocol token this build catalogues. It names an UNPROVEN transport on
-#: purpose: no adapter here implements it, and the factory refuses to resolve a
-#: provider available when it declares nothing to dispatch.
-KIMI_PROTOCOL = DeepProtocol.KIMI_UNPROVEN_V0.value
-#: Experimental is said in the one field the Cockpit projection actually carries,
-#: and it says whose proof is missing: this build drives it, or nothing does.
-KIMI_DISPLAY_NAME = "Kimi Code (experimental, not driven by this build)"
-#: Observation only. Not one control is declared, because not one is proven.
-KIMI_CAPABILITIES = ("observe",)
-#: No control, so no argument schema binds -- and the door proves that emptiness
-#: against this module's own ``argument_schemas`` rather than trusting it.
-KIMI_SCHEMA_PAIRS: tuple[tuple[str, str], ...] = ()
+#: The exact published version this build was reviewed against, read from the
+#: vendor's changelog on 2026-08-21. A preflight that reads anything else
+#: refuses: the product ships several releases a week, and "close enough" is not
+#: a safe reading of a version string for a tool whose flags may move with them.
+REVIEWED_KIMI_VERSION = "0.38.0"
+#: The protocol token an operator pins to select this adapter.
+KIMI_PROTOCOL = DeepProtocol.KIMI_HEADLESS_V1.value
+#: Experimental is said in the one field the Cockpit projection actually carries.
+KIMI_DISPLAY_NAME = "Kimi Code (headless, experimental)"
+#: Observation, and the one control this adapter really implements. stop, retry
+#: and switch stay ABSENT, because none of them is implemented and the
+#: registration door refuses a control an adapter cannot back.
+KIMI_CAPABILITIES = ("observe", DISPATCH_CAPABILITY)
+#: The one control binds the one reviewed deep argument schema.
+KIMI_SCHEMA_PAIRS = ((DISPATCH_CAPABILITY, "deep-arguments-v1"),)
 #: The four seams the registration door requires of every provider.
 KIMI_LIFECYCLE = ("execute", "observe", "prepare", "verify")
-#: The one sentence every refusal carries. It reports the state of THIS build's
-#: proof, never a claim about the vendor's product.
-KIMI_REFUSAL = (
-    "this build has proven no non-interactive transport it may drive Kimi Code "
-    "through, so it declares no control and dispatches nothing")
+#: The environment NAMES this adapter owns. Only names live in durable config;
+#: the home's VALUE is minted per attempt and never written to any config.
+KIMI_HOME_ENV = "KIMI_CODE_HOME"
+KIMI_TELEMETRY_ENV = "KIMI_DISABLE_TELEMETRY"
+#: The vendor documents ``1`` as the value that turns telemetry off.
+TELEMETRY_DISABLED = "1"
+#: The code-owned flags. No caller ever contributes one, and the prompt stands
+#: LAST: ``--output-format`` is documented as usable only alongside ``--prompt``,
+#: and putting the pair first leaves no token after the prompt that a parser
+#: could take for a flag of its own.
+OUTPUT_FORMAT_ARGV = ("--output-format", "text")
+PROMPT_FLAG = "--prompt"
+VERSION_ARGV = ("--version",)
+#: Capture ceiling for either spawn; the pump drains past it and drops the rest.
+KIMI_OUTPUT_LIMIT = 16 * 1024
+#: The preflight is a version print, not work: it gets its own small budget.
+VERSION_TIMEOUT_SECONDS = 30
+#: The two subtrees THIS provider owns beneath the project root, named here in
+#: the provider's own module: the workspace door bounds every delete on the home
+#: name it is handed, so a second harness naming this one would take this
+#: provider's attempts for its own.
+HOME_DIR = ".kimi-home"
+MARKER_DIR = ".kimi-marker"
 
 __all__ = [
-    "KIMI_CAPABILITIES", "KIMI_DISPLAY_NAME", "KIMI_LIFECYCLE", "KIMI_PROTOCOL",
-    "KIMI_PROVIDER_ID", "KIMI_REFUSAL", "KIMI_SCHEMA_PAIRS",
-    "KimiCodeContractAdapter", "KimiTransportUnproven",
+    "HOME_DIR", "INSTRUCTION_DIR", "KIMI_CAPABILITIES", "KIMI_DISPLAY_NAME",
+    "KIMI_LIFECYCLE", "KIMI_PROTOCOL", "KIMI_PROVIDER_ID", "KIMI_SCHEMA_PAIRS",
+    "MARKER_DIR", "REVIEWED_KIMI_VERSION", "WORK_DIR",
+    "KimiCodeAdapter", "KimiCodeError", "kimi_pin",
 ]
 
+#: Every vendor fact above, gathered where the shared transport reads them.
+KIMI_PROFILE = HarnessProfile(
+    tool_noun="Kimi Code", task_noun="Kimi Code prompt",
+    display_name=KIMI_DISPLAY_NAME, vendor="Moonshot AI",
+    docs_url="https://moonshotai.github.io/kimi-code/",
+    reviewed_version=REVIEWED_KIMI_VERSION,
+    home_dir=HOME_DIR, marker_dir=MARKER_DIR,
+    home_env=KIMI_HOME_ENV,
+    forced_env=((KIMI_TELEMETRY_ENV, TELEMETRY_DISABLED),),
+    version_argv=VERSION_ARGV,
+    home_id_kind="kimi-home",
+    exit_codes_published=False, capability=DISPATCH_CAPABILITY,
+    output_limit=KIMI_OUTPUT_LIMIT,
+    version_timeout_seconds=VERSION_TIMEOUT_SECONDS)
 
-class KimiTransportUnproven(AdapterContractError):
-    """Kimi Code is catalogued and described, but this build drives nothing."""
+
+class KimiCodeError(HeadlessCliError):
+    """Kimi Code cannot be driven without breaking one of this adapter's rules."""
 
 
-class KimiCodeContractAdapter:
-    """A declared absence: no instance can be built, and every seam refuses.
+def kimi_pin(executable: str, env_allow: tuple[str, ...] = ()) -> ExecutablePin:
+    """Kimi Code's pin: ONE absolute path, and Kimi Code's own refusal type.
 
-    The registration door proves a provider's declared controls against this
-    class's own ``argument_schemas`` and its declared lifecycle against callables
-    it really carries. Both proofs are satisfied HONESTLY here: the schema
-    mapping is empty because no control is declared, and the four seams exist and
-    refuse. The constructor refuses first, so the refusal does not depend on any
-    caller reaching a seam -- and it is a second, independent door beside the
-    factory's, which never builds an adapter for an unavailable provider at all.
+    One, not two: Kimi Code installs as a native binary and runs no interpreter,
+    so there is no second half for this build to guess at. A provider whose pin
+    shape is wrong is a provider that would need a path invented for it, and
+    inventing one is the discovery this factory exists to refuse.
     """
+    return ExecutablePin(
+        executable=executable, error=KimiCodeError, env_allow=env_allow)
 
-    #: Empty, and the door compares it as a WHOLE against the declared relation:
-    #: a control smuggled into the catalog entry would fail against this mapping.
-    argument_schemas: dict[str, str] = {}
 
-    def __init__(self, *args: object, **kwargs: object) -> None:
-        raise KimiTransportUnproven(KIMI_REFUSAL)
+class KimiCodeAdapter(HeadlessCliTransport):
+    """Run one Kimi Code prompt per authorized action, and prove nothing more."""
 
-    def observe(self, instance_id: str, run_id: str) -> object:
-        raise KimiTransportUnproven(KIMI_REFUSAL)
+    profile = KIMI_PROFILE
+    error = KimiCodeError
 
-    def prepare(self, request: object) -> object:
-        raise KimiTransportUnproven(KIMI_REFUSAL)
+    def __init__(
+            self, pin: ExecutablePin, runner: ProcessRunner, *,
+            root: str | Path,
+            clock: Callable[[], str], ids: Callable[[str], str],
+            adapter_id: str = KIMI_PROVIDER_ID) -> None:
+        if type(pin) is not ExecutablePin or pin.error is not KimiCodeError:
+            # The class alone binds nothing now that every single-binary provider
+            # shares it, so the pin's own refusal type is checked too: a pin
+            # built for another provider would refuse as that provider, and a
+            # caller catching this one's error would never see it.
+            raise KimiCodeError(
+                "this adapter requires a single-executable pin of its own")
+        self._pin = pin
+        super().__init__(
+            runner, root=root, clock=clock, ids=ids, adapter_id=adapter_id)
 
-    def execute(self, prepared: object) -> object:
-        raise KimiTransportUnproven(KIMI_REFUSAL)
+    def _argv_prefix(self) -> tuple[str, ...]:
+        """One native binary, and nothing in front of it."""
+        return (self._pin.executable,)
 
-    def verify(self, request: object, result: object) -> object:
-        raise KimiTransportUnproven(KIMI_REFUSAL)
+    def _task_argv(self, task_text: str) -> tuple[str, ...]:
+        """``--output-format text --prompt <task>``: the prompt is an option VALUE.
+
+        A parser that expects a value after ``--prompt`` is a smaller injection
+        surface than one that takes the first free token, but it is not zero --
+        a parser could still read a leading dash as the next flag -- so the
+        shared transport proves the token flagless before it gets here.
+        """
+        return (*OUTPUT_FORMAT_ARGV, PROMPT_FLAG, task_text)
+
+    def _env_allow(self) -> tuple[str, ...]:
+        return self._pin.env_allow

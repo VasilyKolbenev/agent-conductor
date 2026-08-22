@@ -4,7 +4,7 @@ Codex drove one probe at the prior SHA and it is the whole reason this module
 exists:
 
     root/.dsh-home -> outside
-    DshWorkspace.mint_home("attempt")
+    HarnessWorkspace.mint_home("attempt")
     OUTSIDE_CREATED=True
 
 A portal planted at a name the workspace owns made the workspace create durable
@@ -32,12 +32,11 @@ from pathlib import Path
 
 import pytest
 
-import conductor.command.adapters.dsh_workspace as dsh_workspace
-from conductor.command.adapters.dsh_workspace import (
-    HOME_DIR,
-    MARKER_DIR,
+import conductor.command.adapters.harness_workspace as harness_workspace
+from conductor.command.adapters.dsh_harness import HOME_DIR, MARKER_DIR
+from conductor.command.adapters.harness_workspace import (
     WORK_DIR,
-    DshWorkspace,
+    HarnessWorkspace,
 )
 
 from tests import _fakedsh
@@ -90,10 +89,20 @@ def _outside(tmp_path: Path) -> Path:
     return outside
 
 
-def _rooted(tmp_path: Path) -> tuple[DshWorkspace, Path]:
+def _at(root: Path) -> HarnessWorkspace:
+    """One spelling of the dsh workspace, so a gate test reads as a gate test.
+
+    The door takes the home and marker names from the PROVIDER now, and dsh's
+    are read from the dsh module rather than restated here: a rename there must
+    move this whole file, not quietly leave it testing a second workspace.
+    """
+    return HarnessWorkspace.at(root, home_dir=HOME_DIR, marker_dir=MARKER_DIR)
+
+
+def _rooted(tmp_path: Path) -> tuple[HarnessWorkspace, Path]:
     root = tmp_path / "root"
     root.mkdir()
-    return DshWorkspace.at(root), root
+    return _at(root), root
 
 
 # --- the probe Codex ran, and its two siblings -------------------------------
@@ -113,6 +122,38 @@ def test_a_portal_at_the_home_route_creates_no_attempt_home_outside_the_root(
     assert not (outside / "attempt").exists(), "OUTSIDE_CREATED=True"
     assert _tree(outside) == before
     assert refusal is not None, "a portal on the home route must refuse the mint"
+
+
+@pytest.mark.parametrize("kind", PORTALS)
+def test_a_portal_that_replaces_the_resolved_root_creates_nothing_through_it(
+        tmp_path, kind):
+    """The ROOT is a route component too, and this is the case that proves it.
+
+    The door's own docstring says the root is judged "because a portal standing
+    AT a container adopts external state exactly as one standing inside it
+    does" -- and until this test that sentence was unguarded: dropping the root
+    from the walked route left every sibling above still passing, because each
+    of them plants its portal one level DOWN.
+
+    The case is narrow and it is real. A workspace resolves its root once, at
+    construction, so an operator reaching a project through a link is answered
+    about the real tree; that is the alias the gate test relies on and it must
+    keep working. What must still refuse is the resolved root becoming a portal
+    AFTER that: the door then holds a concrete path whose kind changed under it,
+    and every name it would create beneath that path lands outside the project.
+    """
+    workspace, root = _rooted(tmp_path)
+    outside = _outside(tmp_path)
+    root.rmdir()
+    with skip_when_unavailable():
+        plant_route_portal(root, outside, kind=kind)
+    before = _tree(outside)
+
+    refusal = _refusal(workspace.mint_home, "attempt")
+
+    assert not (outside / HOME_DIR).exists(), "OUTSIDE_CREATED=True"
+    assert _tree(outside) == before
+    assert refusal is not None, "a portal at the resolved root must refuse the mint"
 
 
 @pytest.mark.parametrize("kind", PORTALS)
@@ -420,7 +461,7 @@ def test_a_discard_that_cannot_happen_is_stated_and_never_rewrites_the_spawn(
     def refuses(path, found):
         raise OSError("the entry could not be removed")
 
-    monkeypatch.setattr(dsh_workspace, "_remove_portal", refuses)
+    monkeypatch.setattr(harness_workspace, "_remove_portal", refuses)
     first = run_once(adapter, a_request(action_id="act-1"))
     monkeypatch.undo()
     if _portal_kind(root) == "none":
@@ -492,7 +533,7 @@ def test_a_preflight_whose_own_home_survives_never_starts_the_task(
     after its own sweep has already run.
     """
     adapter, root, log = a_harness(tmp_path)
-    discarded = DshWorkspace.discard_home
+    discarded = HarnessWorkspace.discard_home
     refused: list[Path] = []
 
     def refuses_the_first(self, home):
@@ -502,7 +543,7 @@ def test_a_preflight_whose_own_home_survives_never_starts_the_task(
             raise OSError("the preflight home could not be removed")
         return discarded(self, home)
 
-    monkeypatch.setattr(DshWorkspace, "discard_home", refuses_the_first)
+    monkeypatch.setattr(HarnessWorkspace, "discard_home", refuses_the_first)
 
     receipt = run_once(adapter, a_request(action_id="act-1"))
 
@@ -546,7 +587,7 @@ def _cleanup_that_leaves_a_residue(paused, release):
     sweep can simply remove lets the next dispatch proceed honestly and proves
     nothing about who owned the root.
     """
-    discarded = DshWorkspace.discard_home
+    discarded = HarnessWorkspace.discard_home
     calls: list[Path] = []
 
     def refuses_the_first(self, home):
@@ -613,7 +654,7 @@ def test_a_second_dispatch_cannot_reset_the_retention_a_live_one_recorded(
     adapter, root, log = a_harness(tmp_path)
     paused, release = threading.Event(), threading.Event()
     monkeypatch.setattr(
-        DshWorkspace, "discard_home", _cleanup_that_leaves_a_residue(paused, release))
+        HarnessWorkspace, "discard_home", _cleanup_that_leaves_a_residue(paused, release))
 
     outcomes, entered_while_held = _race_two_dispatches(adapter, paused, release)
 
@@ -644,16 +685,16 @@ def test_one_resolved_root_is_one_gate_and_a_second_root_is_never_held(tmp_path,
     elsewhere.mkdir()
     with skip_when_unavailable():
         plant_route_portal(alias, root, kind=kind)
-    if DshWorkspace.at(alias).root != DshWorkspace.at(root).root:
+    if _at(alias).root != _at(root).root:
         pytest.skip(f"this platform did not resolve a {kind} to its target root")
     held, release = threading.Event(), threading.Event()
     holder = threading.Thread(
-        target=_holds, args=(DshWorkspace.at(root), held, release), daemon=True)
+        target=_holds, args=(_at(root), held, release), daemon=True)
     holder.start()
     try:
         assert held.wait(10), "the holding workspace never took its own gate"
-        assert _takes_the_gate(DshWorkspace.at(alias)) is False, "ALIAS_RAN_CONCURRENTLY"
-        assert _takes_the_gate(DshWorkspace.at(elsewhere)) is True, "SECOND_ROOT_BLOCKED"
+        assert _takes_the_gate(_at(alias)) is False, "ALIAS_RAN_CONCURRENTLY"
+        assert _takes_the_gate(_at(elsewhere)) is True, "SECOND_ROOT_BLOCKED"
     finally:
         release.set()
         holder.join(10)

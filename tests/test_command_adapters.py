@@ -42,16 +42,21 @@ SDK_EXECUTION_DOOR = frozenset({"process.py", "_procgroup.py"})
 # DURABILITY door, not an execution door: test_command_package_doors.py applies
 # the subprocess/network/exec ban to it with no exemption at all, and its
 # behaviour is proven in tests/test_command_dsh_harness.py.
-SDK_WORKSPACE_DOOR = frozenset({"dsh_workspace.py"})
+SDK_WORKSPACE_DOOR = frozenset({"harness_workspace.py"})
 # Names that would let a value module reach an executable, the filesystem, or the
 # import system on its own.
 BANNED_SDK_CALLS = frozenset({
     "which", "exists", "is_file", "run", "Popen", "system", "import_module"})
-# The deep adapters hold NO execution door: they import no subprocess module and
-# spawn nothing. They call `.run()` on the runner configuration handed them, so
-# they are exempted from that ONE name and stay held to the import allowlist and
-# to every other banned name -- a far narrower exemption than the runner's.
-SDK_INJECTED_RUNNER_CALLERS = frozenset({"deep_adapters.py", "dsh_harness.py"})
+# The deep adapters and the shared headless transport hold NO execution door:
+# they import no subprocess module and spawn nothing. They call `.run()` on the
+# runner configuration handed them, so they are exempted from that ONE name and
+# stay held to the import allowlist and to every other banned name -- a far
+# narrower exemption than the runner's. `dsh_harness.py` is deliberately NOT
+# here any more: a provider module carries vendor facts and an argv shape, and
+# the day one of them calls `.run()` itself is the day it grew a second spawn
+# road beside the shared one.
+SDK_INJECTED_RUNNER_CALLERS = frozenset({
+    "deep_adapters.py", "headless_cli.py"})
 
 
 def an_action(**changes):
