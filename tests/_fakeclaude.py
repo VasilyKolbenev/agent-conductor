@@ -37,7 +37,7 @@ That split is deliberate and it is the whole design of this file:
 
 **The leak question is asked INSIDE the child**, which is the only place that
 can answer it about the environment without writing the environment down. The
-probe token arrives ONLY in the piped task, in a closed form -- 
+probe token arrives ONLY in the piped task, in a closed form --
 `CLAUDE_LEAK_PROBE_` followed by 64 hex digits -- and the child extracts it from
 the stdin it has already read. It then scans its own argv, its own cwd and EVERY
 value in its own environment, with no exclusions at all, and logs four BOOLEANS.
