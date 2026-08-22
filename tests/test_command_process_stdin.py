@@ -38,6 +38,7 @@ from conductor.command.adapters.process import (
     OwnershipError,
     ProcessOutcome,
     ProcessRunner,
+    _Owned,
     _map_outcome,
 )
 
@@ -242,6 +243,60 @@ def test_a_child_that_exits_without_reading_is_not_a_run_that_succeeded(
     mapped, detail = _map_outcome(outcome)
     assert mapped == "failed", "an undelivered instruction became a success"
     assert "never delivered whole" in detail
+
+
+def test_a_delivered_payload_is_reported_as_delivered_and_the_run_can_succeed(
+        root, runners):
+    """The positive control the refusals above cannot supply, and it is load-bearing.
+
+    Every other claim here is about `incomplete`. A seam that answered
+    `incomplete` unconditionally would satisfy all of them, pass the whole
+    suite, and quietly make it impossible for any provider taking its task on
+    stdin to ever succeed -- a failure that looks exactly like the vendor's
+    fault. So the successful state is asserted on the object AND carried through
+    the receipt vocabulary, which is the only reader that acts on it.
+    """
+    outcome = runners(root).run(_spec(root, INSTRUCTION))
+
+    assert outcome.status == "completed"
+    assert outcome.stdin_state == STDIN_DELIVERED
+    assert _map_outcome(outcome)[0] == "succeeded"
+
+
+def test_a_close_that_fails_leaves_the_delivery_unclaimed(root):
+    """The EOF is part of the claim, so a close that did not happen unmakes it.
+
+    Unreachable through a real child: a pipe whose write and flush both
+    succeeded does not then refuse to close, and no knob on the far side can
+    make it. So the feed is driven directly against a stream that fails exactly
+    where the branch is -- which is the only way this relation is falsifiable at
+    all, and saying that out loud is better than leaving the branch unguarded
+    because it is inconvenient to reach.
+    """
+    class _RefusesToClose:
+        def __init__(self):
+            self.written = bytearray()
+
+        def write(self, view):
+            self.written += bytes(view)
+            return len(view)
+
+        def flush(self):
+            return None
+
+        def close(self):
+            raise OSError("the descriptor was already gone")
+
+    stream = _RefusesToClose()
+    owned = _Owned.__new__(_Owned)
+    owned.proc = type("_P", (), {"stdin": stream})()
+    owned.stdin_state = STDIN_INCOMPLETE
+
+    _Owned._feed(owned, INSTRUCTION)
+
+    assert bytes(stream.written) == INSTRUCTION, "the write itself must have run"
+    assert owned.stdin_state == STDIN_INCOMPLETE, (
+        "a payload whose stream never closed was reported as delivered")
 
 
 def test_the_delivery_state_is_one_of_three_words_and_a_fourth_is_refused():
