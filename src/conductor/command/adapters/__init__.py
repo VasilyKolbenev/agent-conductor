@@ -14,7 +14,8 @@ from .base import (
     PreparedAction,
     UnsupportedCapability,
 )
-from .deep_adapters import ClaudeCodeAdapter, CodexAdapter
+from .claude_code import ClaudeCodeAdapter
+from .codex_cli import CodexAdapter
 from .provider import (
     ProviderCatalogEntry,
     ProviderConfig,

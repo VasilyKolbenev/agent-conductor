@@ -27,12 +27,9 @@ from pathlib import Path
 from types import MappingProxyType
 
 from .adapters import AdapterContractError, AdapterRegistry
-from .adapters.deep_adapters import (
-    DEEP_CAPABILITIES,
-    DEEP_CONTROLS,
-    ClaudeCodeAdapter,
-    CodexAdapter,
-)
+from .adapters.claude_code import ClaudeCodeAdapter
+from .adapters.codex_cli import CodexAdapter
+from .adapters.deep_adapters import DEEP_CAPABILITIES, DEEP_CONTROLS
 from .adapters.deep_contracts import DeepAdapterConfig
 from .adapters.dsh_harness import DSH_PROTOCOL, DshHarnessAdapter, DshPin
 from .adapters.grok_build import (

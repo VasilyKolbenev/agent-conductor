@@ -543,6 +543,63 @@ def test_the_catalog_is_the_only_place_a_provider_is_declared():
         assert path.is_file(), f"{provider_id} names a module that is not a file"
 
 
+def _shared_modules(identities: dict[str, str]) -> dict[str, list[str]]:
+    """Which modules, if any, are named by more than one provider id."""
+    owners: dict[str, list[str]] = {}
+    for provider_id, module in sorted(identities.items()):
+        owners.setdefault(module, []).append(provider_id)
+    return {module: ids for module, ids in owners.items() if len(ids) > 1}
+
+
+def test_no_module_holds_comparison_rights_over_two_providers():
+    """One provider id, one module of its own. The permission must be INJECTIVE.
+
+    The gate below asks whether a comparison stands in the module that
+    provider's adapter lives in, and it reads that permission out of
+    `adapter_class.__module__`. So two providers served from ONE module grant
+    that module rights over BOTH ids -- and a branch on one, written inside the
+    other's transport, walks straight through a gate whose whole purpose is to
+    refuse it. The gate cannot notice: the comparison really is in an allowed
+    module, it is just allowed for the wrong provider.
+
+    Not hypothetical. `claude-code` and `codex` were both served from
+    `deep_adapters` for as long as both were fixtures, and the arrangement was
+    invisible for exactly as long as neither module did anything with an id.
+    The cost arrives with the first real transport, which is why this is
+    checked on the MAP, before that, rather than on comparisons afterwards.
+    """
+    identities = _identities()
+    assert len(identities) >= 2, "one provider cannot demonstrate injectivity"
+
+    shared = _shared_modules(identities)
+
+    assert not shared, (
+        "one module holds identity-comparison rights over several providers:\n"
+        + "\n".join(f"  {module} serves {ids}" for module, ids in sorted(shared.items()))
+        + "\n(each provider needs its own module, or the gate below is wider "
+          "than it reads)")
+
+
+def test_the_injectivity_check_sees_a_module_that_serves_two_providers():
+    """The detector's own control, so the claim above cannot pass by blindness.
+
+    A check that answered "no shared modules" whatever it was handed would be
+    green on the very arrangement it exists to forbid. So it is put to a
+    synthetic map built from real catalogued ids: one where two of them name
+    one module, and one where each names its own.
+    """
+    two = sorted(_identities())[:2]
+    assert len(two) == 2
+
+    collapsed = dict.fromkeys(two, "conductor.command.adapters.shared")
+    separate = {provider_id: f"conductor.command.adapters.{provider_id}"
+                for provider_id in two}
+
+    assert _shared_modules(collapsed) == {
+        "conductor.command.adapters.shared": two}
+    assert _shared_modules(separate) == {}
+
+
 def test_no_module_branches_on_a_provider_identity_but_that_providers_own():
     """The gate. One comparison out of place fails it, and names where."""
     identities = _identities()

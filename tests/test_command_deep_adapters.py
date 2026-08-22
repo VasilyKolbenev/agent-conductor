@@ -22,7 +22,6 @@ from conductor.command.adapters import (
     CodexAdapter,
     PreparedAction,
     UnsupportedCapability,
-    deep_adapters,
 )
 from conductor.command.adapters.base import CAPABILITIES
 from conductor.command.adapters.deep_adapters import DEEP_CAPABILITIES, DEEP_CONTROLS
@@ -493,8 +492,17 @@ def test_only_the_two_reviewed_fake_flags_exist_and_no_real_cli_is_claimed(tmp_p
         assert "fixture" in manifest.vendor.casefold()
         # No docs link, because there is no real integration to point at.
         assert manifest.docs_url == ""
-    source = Path(deep_adapters.__file__).read_text(encoding="utf-8")
-    assert "PENDING" in source, "the unimplemented real-CLI transport must stay stated"
+        # The PENDING statement is read from the module that DECLARES this
+        # adapter, found through the class rather than spelled. The two used to
+        # share one module and one such statement; after the split each owns
+        # its own, and reading a fixed module here would have let one of them
+        # lose its statement while the other's kept this green. It is the
+        # sentence that tells an operator this row runs no real CLI, so it is
+        # owed per provider.
+        declaring = Path(sys.modules[adapter_type.__module__].__file__)
+        assert "PENDING" in declaring.read_text(encoding="utf-8"), (
+            f"{adapter_type.__name__} stopped stating that its real CLI "
+            f"transport is unimplemented ({declaring.name})")
 
 
 def test_no_shipped_module_constructs_a_fake_deep_adapter(tmp_path):
