@@ -25,13 +25,20 @@ two is decided by the profile's ``task_channel``, a closed choice of ``argv`` or
   channel;
 - on the ``argv`` channel, ``_task_argv(task_text)`` -- where the vendor's flags
   put the prompt;
-- on the ``stdin`` channel, ``_stdin_argv()`` and ``_task_stdin(task_text)``.
+- on the ``stdin`` channel, ``_stdin_argv(home)`` and ``_task_stdin(task_text)``.
   The argv builder there takes NO task argument, which is the whole guarantee
   that no byte of an operator's instruction can reach a command line any process
   lister on the machine can read. An earlier version tried to CHECK that instead,
   by calling one builder twice with probe texts and comparing; a review probe
   defeated it in one line. Two observations are not independence, and an absent
   parameter is.
+
+  The ONE thing it IS handed is the attempt home minted for the spawn it is
+  building, because a vendor may be asked to write an artefact into its own
+  profile home and nobody but the transport knows where that home is;
+- ``_read_attempt_home(home)``, where a provider that asked for such an artefact
+  reads it, after the spawn and before the home is discarded. The base names no
+  artefact and reads nothing.
 
 This module is PROVIDER-NEUTRAL and names no product. It compares no provider
 id, so the identity gate has nothing to permit here; each concrete adapter is a
@@ -58,14 +65,18 @@ from ..contracts import ActionRequest, ActionResultReceipt
 from .harness_profile import (
     DISPATCH_CAPABILITY,
     OUTPUT_LIMIT,
+    PREFLIGHT_RESIDUE_DETAIL,
     TASK_CHANNEL_STDIN,
     VERSION_TIMEOUT_SECONDS,
     ExecutablePin,
     HarnessProfile,
     HeadlessCliError,
     is_absolute,
+    residue_detail,
+    retained_detail,
     reviewed_env_allow,
     reviewed_pin_path,
+    uncontained_detail,
 )
 from .base import (
     AdapterContractError,
@@ -88,51 +99,6 @@ from .process import (
     ProcessRunner,
     ProcessRunnerError,
 )
-
-
-#: Every sentence below names the product, so each is built from the profile's
-#: nouns rather than written twice. The WORDING is the approved wording: a
-#: refactor may move a promise, and may not reword one.
-
-
-def uncontained_detail(tool: str) -> str:
-    """A refused route, carrying no path and no child detail.
-
-    The route is operator state, and naming it here would put it in a receipt,
-    the journal and the API at once.
-    """
-    return (f"a name on the {tool} workspace's own writable route is not locally "
-            "contained, so nothing was minted, claimed or spawned")
-
-
-def residue_detail(tool: str) -> str:
-    """The home root holds state this build did not mint and may not delete.
-
-    It carries no name and no count: the residue is operator state, and the
-    operator reads it from the disk, not from a receipt.
-    """
-    return (f"the {tool} home root holds state this build did not mint and may "
-            "not delete, so nothing was preflighted, claimed or spawned; a "
-            "dispatch runs again once an operator has cleared it")
-
-
-#: The PREFLIGHT's own home outlived the version spawn. The version answered,
-#: but the retention promise is already broken inside this dispatch, so the task
-#: never starts on top of it. Product-neutral as written, so it stays a constant.
-PREFLIGHT_RESIDUE_DETAIL = (
-    "the version preflight could not take back the home it minted, so this "
-    "dispatch stopped before claiming or spawning the task")
-
-
-def retained_detail(tool: str) -> str:
-    """Appended to whatever a receipt already says when a home outlived its spawn.
-
-    It never replaces the observed outcome it accompanies: a cleanup that did
-    not happen is a second fact about the attempt, not a different result.
-    """
-    return (" an attempt home could not be discarded and was left standing, so "
-            "the next dispatch is blocked until an operator has cleared the "
-            f"{tool} home root")
 
 
 def flagless(
@@ -162,6 +128,15 @@ def _changed(before: Mapping[str, str], after: Mapping[str, str]) -> tuple[str, 
     return tuple(sorted(
         name for name in set(before) | set(after)
         if before.get(name) != after.get(name)))
+
+
+#: What ``_attempt`` is handed to build the child's OWN tokens with. A provider
+#: on the ``argv`` channel knows every token before anything is minted and hands
+#: a ready tuple, exactly as it always did; one on the ``stdin`` channel may not,
+#: because a vendor asked to write into the profile home this build mints needs
+#: that path on its command line and the home does not exist yet. So that channel
+#: hands a BUILDER, called once, with the minted home and nothing else.
+ArgvSource = tuple[str, ...] | Callable[[Path], tuple[str, ...]]
 
 
 def _version_token(output: bytes) -> str:
@@ -275,7 +250,7 @@ class HeadlessCliTransport:
         """Where this vendor's flags put the one prompt, all tokens code-owned."""
         raise NotImplementedError
 
-    def _stdin_argv(self) -> tuple[str, ...]:
+    def _stdin_argv(self, home: Path) -> tuple[str, ...]:
         """The code-owned flags of a provider whose task travels by STDIN.
 
         It takes NO task argument, and that is the entire guarantee. Not a
@@ -289,6 +264,17 @@ class HeadlessCliTransport:
         line -- return a constant for both probes, embed the real instruction
         for anything else -- and the guard reported the argv safe while the
         operator's task rode it. Two observations were never independence.
+
+        ``home`` is the attempt home minted for the spawn being built, and it is
+        the only argument this seam will ever take. A provider whose vendor
+        writes an artefact into its own profile home has to name that path on
+        the command line, and the path does not exist until ``_attempt`` mints
+        it. It is not a road back to the task and cannot become one:
+        ``_task_command`` returns this method UNCALLED, so no caller can curry a
+        task into it, and ``_spawn`` -- its one call site -- passes the value
+        ``_mint_home`` returned, which is a project subtree named by a freshly
+        minted id and has never been near an instruction. A provider that needs
+        nothing from the home ignores it, as Claude Code does.
         """
         raise NotImplementedError
 
@@ -300,6 +286,28 @@ class HeadlessCliTransport:
         DEVNULL spawn it had before either seam existed.
         """
         raise NotImplementedError
+
+    def _read_attempt_home(self, home: Path) -> None:
+        """Read whatever this provider asked its vendor to write into the home.
+
+        Called after the spawn returned and before the home is discarded, and
+        that placement is the whole reason the seam exists rather than being
+        something a provider could do for itself. The home is deleted the
+        instant ``_attempt`` returns -- that is the retention promise -- so a
+        provider that put an output path inside it has exactly this window.
+
+        The base names no artefact, knows of none, and reads nothing; a provider
+        that asked for none never notices this. Nothing is returned, because a
+        return value would have to travel back through code that must not learn
+        what it is: an implementation keeps its own reading, in its own closed
+        vocabulary, in its own module.
+
+        An implementation must not RAISE. This runs on the road out of a spawn
+        that already happened, so an exception here would replace what the child
+        did with a reading error -- the same reason ``_discard`` counts its
+        failures instead of raising them. What could not be established is
+        reported by the provider as its own answer, not as an exception.
+        """
 
     # -- observation: no probe, no spawn, no claim ------------------------------
 
@@ -450,8 +458,8 @@ class HeadlessCliTransport:
             work_dir=work, before=before, after=self._evidence())
         return self._observed(request, outcome)
 
-    def _task_command(self, task_text: str) -> tuple[tuple[str, ...], bytes | None]:
-        """The argv and the payload for this provider's channel, and only those.
+    def _task_command(self, task_text: str) -> tuple[ArgvSource, bytes | None]:
+        """The argv SOURCE and the payload for this provider's channel, and only those.
 
         The channel is CLOSED and the profile already refused a third value, so
         these are the only two roads. Each builds its argv with exactly the
@@ -459,9 +467,16 @@ class HeadlessCliTransport:
         never handed the task, which is what makes "no byte of an instruction
         reaches the command line" a fact about the signature rather than a
         property someone has to keep remembering.
+
+        On that road the builder is handed over UNCALLED, and that is load
+        bearing rather than a convenience: this method is the one place holding
+        both the task and the builder, so calling it here -- even to pass
+        nothing -- would be the one frame where a task could be curried in. It
+        is called instead by ``_spawn``, which holds the minted home and has
+        never seen ``task_text`` at all.
         """
         if self.profile.task_channel == TASK_CHANNEL_STDIN:
-            return self._stdin_argv(), self._task_stdin(task_text)
+            return self._stdin_argv, self._task_stdin(task_text)
         return self._task_argv(task_text), None
 
     def _evidence(self) -> Mapping[str, str] | None:
@@ -508,7 +523,7 @@ class HeadlessCliTransport:
         return None
 
     def _attempt(
-            self, argv: tuple[str, ...], cwd: str, *,
+            self, argv: ArgvSource, cwd: str, *,
             timeout: int | float,
             stdin_bytes: bytes | None = None) -> ProcessOutcome:
         """One spawn inside one FRESH home, and the home goes when the spawn does.
@@ -521,11 +536,16 @@ class HeadlessCliTransport:
         whose kind it cannot establish -- is left standing rather than guessed
         at, and the next dispatch's sweep refuses over it rather than deleting
         through it.
+
+        The ONE reading of that home a provider gets stands between the spawn
+        and the discard, because after the discard there is nothing to read.
         """
         home = self._mint_home()
         try:
-            return self._spawn(
+            outcome = self._spawn(
                 argv, home, cwd, timeout=timeout, stdin_bytes=stdin_bytes)
+            self._read_attempt_home(home)
+            return outcome
         finally:
             self._discard(home)
 
@@ -544,8 +564,18 @@ class HeadlessCliTransport:
         except (WorkspaceNotContained, OSError):  # noqa: BLE001 -- no path onward
             self._retained += 1
 
+    @staticmethod
+    def _tokens(argv: ArgvSource, home: Path) -> tuple[str, ...]:
+        """The child's own tokens: a ready argv, or the one its builder makes.
+
+        The ONE place a stdin-channel builder is ever called, and it is called
+        with the minted home and nothing else. There is no ``task_text`` in this
+        frame to pass even by mistake.
+        """
+        return argv if type(argv) is tuple else argv(home)
+
     def _spawn(
-            self, argv: tuple[str, ...], home: Path, cwd: str, *,
+            self, argv: ArgvSource, home: Path, cwd: str, *,
             timeout: int | float,
             stdin_bytes: bytes | None = None) -> ProcessOutcome:
         """The ONE place a child is started; argv, env and bounds are code-owned.
@@ -562,7 +592,7 @@ class HeadlessCliTransport:
             # valid argv must refuse with the SAME fixed sentence as a spawn that
             # cannot start, so no runner message and no path leaks through here.
             spec = CommandSpec(
-                argv=(*self._argv_prefix(), *argv), cwd=cwd,
+                argv=(*self._argv_prefix(), *self._tokens(argv, home)), cwd=cwd,
                 env_allow=self._env_allow(),
                 # The minted home is written LAST so it cannot be
                 # displaced. A `forced_env` pair naming `home_env`

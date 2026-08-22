@@ -7,8 +7,16 @@ grows with the roster while the behavioural half does not. Keeping them together
 meant every new vendor pushed the machine closer to a cap it had no part in.
 
 Nothing here acts. There is no subprocess, no filesystem, no identity comparison
-and no product name -- one pin shape, one profile record, and the validation both
-owe. The transport that reads them is in ``headless_cli``.
+and no product name -- one pin shape, one profile record, the validation both
+owe, and the fixed sentences a receipt is built from a profile's nouns with. The
+transport that reads them is in ``headless_cli``.
+
+The sentences arrived the same way this module did: ``headless_cli`` crossed the
+800-line cap again when the stdin channel grew an attempt-home seam, and the cap
+forced a seam rather than a trim. They belong on this side of it. Each is a
+function of a profile's ``tool_noun`` and nothing else -- no state, no path, no
+child output, no decision -- so they are as declarative as the record they read
+from, and the machine next door is what ACTS on them.
 """
 from __future__ import annotations
 
@@ -33,6 +41,52 @@ _ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
 
 class HeadlessCliError(AdapterContractError):
     """The transport cannot honour the request without breaking one of its rules."""
+
+
+#: Every sentence below names the product, so each is built from the profile's
+#: nouns rather than written twice. The WORDING is the approved wording: a
+#: refactor may move a promise, and may not reword one -- and moving four of them
+#: across a module boundary is exactly the case that rule was written for.
+
+
+def uncontained_detail(tool: str) -> str:
+    """A refused route, carrying no path and no child detail.
+
+    The route is operator state, and naming it here would put it in a receipt,
+    the journal and the API at once.
+    """
+    return (f"a name on the {tool} workspace's own writable route is not locally "
+            "contained, so nothing was minted, claimed or spawned")
+
+
+def residue_detail(tool: str) -> str:
+    """The home root holds state this build did not mint and may not delete.
+
+    It carries no name and no count: the residue is operator state, and the
+    operator reads it from the disk, not from a receipt.
+    """
+    return (f"the {tool} home root holds state this build did not mint and may "
+            "not delete, so nothing was preflighted, claimed or spawned; a "
+            "dispatch runs again once an operator has cleared it")
+
+
+#: The PREFLIGHT's own home outlived the version spawn. The version answered,
+#: but the retention promise is already broken inside this dispatch, so the task
+#: never starts on top of it. Product-neutral as written, so it stays a constant.
+PREFLIGHT_RESIDUE_DETAIL = (
+    "the version preflight could not take back the home it minted, so this "
+    "dispatch stopped before claiming or spawning the task")
+
+
+def retained_detail(tool: str) -> str:
+    """Appended to whatever a receipt already says when a home outlived its spawn.
+
+    It never replaces the observed outcome it accompanies: a cleanup that did
+    not happen is a second fact about the attempt, not a different result.
+    """
+    return (" an attempt home could not be discarded and was left standing, so "
+            "the next dispatch is blocked until an operator has cleared the "
+            f"{tool} home root")
 
 
 def is_absolute(path: str) -> bool:
