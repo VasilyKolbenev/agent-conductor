@@ -99,6 +99,14 @@ class ExecutablePin:
             self, "env_allow", reviewed_env_allow(self.env_allow, self.error))
 
 
+#: The two channels a one-shot task may travel by, and there is no third.
+#: `argv` puts the prompt in the child's command line, where any process lister
+#: on the machine can read it; `stdin` pipes it, where none can.
+TASK_CHANNEL_ARGV = "argv"
+TASK_CHANNEL_STDIN = "stdin"
+TASK_CHANNELS = (TASK_CHANNEL_ARGV, TASK_CHANNEL_STDIN)
+
+
 @dataclass(frozen=True)
 class HarnessProfile:
     """Every vendor fact one headless CLI transport differs by, and nothing else.
@@ -145,6 +153,20 @@ class HarnessProfile:
     capability: str = DISPATCH_CAPABILITY
     output_limit: int = OUTPUT_LIMIT
     version_timeout_seconds: int = VERSION_TIMEOUT_SECONDS
+    #: WHERE this vendor's one-shot mode takes the task. A closed choice of two,
+    #: and it is structural rather than advisory: the transport calls a
+    #: DIFFERENT argv builder for each, and the one it calls for `stdin` takes
+    #: no task argument at all.
+    #:
+    #: That is the whole point. An earlier attempt asked an argv builder twice
+    #: with two probe texts and compared the answers, which proves only that
+    #: those two calls agreed -- a builder can return a constant for both probes
+    #: and embed a third instruction, and one did, in a review probe. Two
+    #: observations are not independence. A parameter that does not exist is.
+    #:
+    #: `argv` is the default, so every provider that shipped before this field
+    #: is unchanged and unaware of it.
+    task_channel: str = TASK_CHANNEL_ARGV
 
     def __post_init__(self) -> None:
         """Prove the environment this profile forces, at construction.
@@ -184,3 +206,7 @@ class HarnessProfile:
         if _ENV_NAME.fullmatch(self.home_env) is None:
             raise HeadlessCliError(
                 f"{self.home_env!r} is not an environment variable name")
+        if self.task_channel not in TASK_CHANNELS:
+            raise HeadlessCliError(
+                f"a task travels by one of {TASK_CHANNELS}, not "
+                f"{self.task_channel!r}")

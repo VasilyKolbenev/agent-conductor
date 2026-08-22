@@ -1,40 +1,354 @@
-"""Claude Code's own module: one provider id, declared in one place.
+"""Claude Code, driven headlessly: one pinned binary, one prompt, one attempt.
 
-PENDING: the real Claude Code transport is NOT implemented here. This adapter
-speaks only the deterministic fake JSON-line protocol review approved. It
-discovers no executable, reads no home directory, and invents no vendor CLI
-flag, stdin protocol, session recovery or evidence semantics for the real tool.
+Every vendor fact below was read from Anthropic's own published sources. Two
+kinds of source appear, and each fact says which it rests on, because they are
+not worth the same:
 
-Everything this class DOES is the shared fake-protocol lifecycle in
-``deep_adapters``, which knows no provider by name. What lives here is the
-identity: the catalogued id, what a Cockpit displays for it, whose product it
-is, which protocol token selects it, and which codec reads its frames.
+    REPO   github.com/anthropics/claude-code       @ 16440d0f6ee8c47f34169687044b89eafa8b0f8d
+    ACTION github.com/anthropics/claude-code-action @ dcb57747bfceeaa1fa72638cae52295d1d853d4a
+    DOCS   code.claude.com/docs/en/<page>          -- a page that can change under this citation
 
-**Why this is a module of its own, while it is still a fixture.** The AST
-identity gate grants comparison rights over a provider id to exactly one
-module -- the one its ``adapter_class`` is defined in. While ``claude-code``
-and ``codex`` shared ``deep_adapters``, that one module held rights over BOTH,
-so a branch on one written inside the other's transport would have walked
-through a gate whose whole purpose is to refuse it. The gate could not have
-noticed: such a comparison really does stand in an allowed module, just an
-allowed one for the wrong provider. Splitting after a transport is real would
-mean the loophole was open across the slice that needed it least to be.
-``tests/test_provider_identity_gate.py`` holds the map injective from now on.
+A REPO citation is a permalink: the exact bytes are recoverable at that commit.
+A DOCS citation is not, so wherever one is load-bearing its WORDING is quoted
+here rather than merely referenced -- a page that can change under a citation is
+re-checkable only if what it said is written down.
+
+**The reviewed version is 2.1.239**, the head entry of ``REPO:CHANGELOG.md``.
+
+- **The version command** is ``claude --version``, named in five places in REPO:
+  ``.github/ISSUE_TEMPLATE/bug_report.yml`` lines 13 and 123,
+  ``.github/ISSUE_TEMPLATE/model_behavior.yml`` line 187,
+  ``.claude/commands/triage-issue.md`` line 34,
+  ``plugins/security-guidance/README.md`` line 113, and
+  ``scripts/issue-lifecycle.ts`` line 20.
+- **The one-shot transport** is ``-p``/``--print`` -- one flag, proved so by
+  ``REPO:CHANGELOG.md:1100``, which rejects ``--bg`` "combined with
+  ``--print``/``-p``". DOCS (cli-reference) gives ``claude -p "query"``.
+- **``--output-format``** takes "``text``, ``json``, or ``stream-json``"
+  (DOCS cli-reference); ``text`` is the default and is what this build pins, so
+  nothing has to parse a structure this build never agreed a schema for.
+- **``--input-format``** takes "``text``, ``stream-json``" -- only two, and NOT
+  ``json`` (DOCS cli-reference). ``text`` is pinned.
+- **``--no-session-persistence``**: "Disable session persistence so sessions are
+  not saved to disk and cannot be resumed. Print mode only." (DOCS
+  cli-reference). This build never resumes anything, and a session written to
+  disk would be exactly the retention the workspace door exists to prevent.
+- **``--permission-mode acceptEdits``**. DOCS (cli-reference) lists ``default``,
+  ``acceptEdits``, ``plan``, ``auto``, ``dontAsk``, ``bypassPermissions`` and
+  ``manual``, and says that for ``-p`` the starting mode "is ``default`` when
+  nothing is configured". So the mode is PINNED rather than inherited: a mode
+  taken from settings could stop a real coding run on a prompt no one can
+  answer. ``acceptEdits`` is the reviewed choice -- DOCS (headless) says under it
+  "Claude writes files without prompting, and Claude Code auto-approves common
+  filesystem commands", while "other shell commands and network requests still
+  need an ``--allowedTools`` entry or a ``permissions.allow`` rule".
+  ``bypassPermissions`` is NOT used and is not a knob this module exposes.
+- **``--bare`` is mandatory, and it is a containment fact rather than a speed
+  one.** DOCS (headless): "Without ``--bare``, a ``-p`` session runs the hooks
+  in a project's ``.claude/settings.json`` and connects the servers in its
+  ``.mcp.json``, even in a folder you've never trusted. A ``-p`` session shows no
+  workspace trust dialog and no per-server approval prompt." This build spawns
+  the child INSIDE the work tree the workspace door handed the run, so without
+  ``--bare`` a settings file that arrived in that tree would execute. The same
+  page states the consequence this build then accepts: in bare mode Claude Code
+  "never reads OAuth credentials or the system keychain", so an operator must
+  allow ``ANTHROPIC_API_KEY`` through for the provider to be usable at all.
+- **The home** relocates with ``CLAUDE_CONFIG_DIR``, and this is the strongest
+  fact in the module because it is DEMONSTRATED with a value three times in REPO
+  rather than merely described: ``.devcontainer/devcontainer.json:50`` sets it to
+  ``/home/node/.claude``, and ``examples/gateway/aws/Dockerfile:60`` and
+  ``examples/gateway/gcp/Dockerfile:30`` both set it to ``/tmp/.claude``.
+  ``REPO:CHANGELOG.md:5544`` states the rule -- "Respect CLAUDE_CONFIG_DIR
+  everywhere" -- and lines 858, 2190 and 2686 name subsystems that honour it.
+- **Two switches are forced off**, and both must hold across BOTH spawns:
+  ``DISABLE_AUTOUPDATER`` (``REPO:CHANGELOG.md`` lines 2908 and 4843) and
+  ``CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`` (lines 2463, 2740, 2817, 4964).
+  The updater one is a VERSION invariant, not a privacy one: an update between
+  the version preflight and the task would mean this build proved one binary and
+  ran another.
+- **Credentials** come from the shell as ``ANTHROPIC_API_KEY``; ``REPO`` names it
+  eighteen times and ``CHANGELOG.md:1540`` shows ``claude -p`` failing without
+  one. Env NAMES are pinned in operator config and values are read at spawn,
+  never written down here.
+- Claude Code installs as a native binary, so the operator pins ONE absolute
+  path and this module puts nothing in front of it.
+
+Four things the sources settle LESS well than the above, each bounding what may
+be claimed:
+
+**The version print's FORM is vendor-described and locally unobserved.** Two
+REPO issue templates carry ``placeholder: "e.g., 1.0.123 (Claude Code)"`` --
+``bug_report.yml:124`` and ``model_behavior.yml:188`` -- each directly beneath
+"Run ``claude --version`` and paste the output". So the semver comes FIRST and
+the product name follows in parentheses, which is the opposite order from Grok
+Build, where the program name leads. But a placeholder DESCRIBES the output; it
+is not the statement that writes it. Claude Code is not open source, so there is
+no entry point to trace as there was for Grok, and no installed binary was
+available to observe. The parser below therefore reads exactly the described
+form and nothing wider, and the opt-in real smoke is the tripwire: it refuses an
+install whose print this parser cannot read, and says to widen the parser in
+review rather than widening it here.
+
+**Where the prompt goes is settled only in part.** DOCS (headless) states "
+Non-interactive mode reads stdin, so you can pipe data in", and every piped
+example on that page ALSO carries a positional prompt --
+``cat build-error.txt | claude -p 'concisely explain the root cause of this
+build error'``. So stdin is a demonstrated DATA channel beside a positional
+prompt, and ``-p`` with no positional prompt is a form no page shows. This build
+therefore uses only the demonstrated shape: a CONSTANT, code-owned sentence
+stands in the positional prompt, and the whole task -- the run's frame and the
+operator's materialized instruction -- is piped. Not one byte of an instruction
+reaches argv, where any process lister on the machine could read it, and that is
+guaranteed BY CONSTRUCTION rather than by a check: this profile declares
+``task_channel="stdin"``, so the shared transport calls ``_stdin_argv()``, which
+is handed no task and therefore cannot put one anywhere.
+
+An earlier draft did try to check it, by calling the argv builder twice with two
+probe texts and comparing the answers. A review probe defeated that in one line
+-- return a constant for both probes and embed the real instruction for anything
+else -- and the guard reported the argv safe while the operator's task rode it.
+Two observations are not independence; an absent parameter is.
+
+**Exit codes ARE published for this mode.** DOCS (headless): "Claude Code exits
+with code 0 on success and a non-zero code when the run fails, so your scripts
+can branch on the exit status." The next sentence -- "When a failure happens
+inside the run, such as missing authentication, Claude Code prints the failure
+as the result on stdout" -- says where a failure is REPORTED and does not
+withdraw the code's meaning, so ``exit_codes_published=True``. Under this
+build's law that still buys only an observation of the process: verification
+reads independent workspace evidence, and a zero never becomes one.
+
+**A payload that this side delivered is not a payload the child read.** The
+runner reports ``stdin_state``, and ``delivered`` means written, flushed and
+ended on the parent's side -- no parent can see the far end of a pipe. The
+shared transport refuses to call an undelivered run a success, which closes the
+near side; the far side is closed only by the opt-in real smoke, which asks for
+a marker that exists ONLY in what was piped.
+
+Everything after the pin is the shared headless transport in ``headless_cli``:
+one fresh ``CLAUDE_CONFIG_DIR`` per attempt discarded when the spawn returns, an
+exact version preflight before any prompt, code-owned argv down to the last
+token, bounded and drained output that reaches no receipt, journal, API, SSE
+frame, evidence or exception message, a marker that stops a crashed prompt from
+running twice, and verification that reads only independent workspace evidence.
+
+This module also still holds ``ClaudeCodeAdapter``, the fake-protocol fixture
+the shared ``_DeepAdapter`` lifecycle suites drive. It is NOT catalogued any
+more -- the catalog serves the transport below -- and it stays here because the
+identity gate grants this module's rights to ``claude-code``, so a class
+carrying that id belongs in this file or in none.
 """
 from __future__ import annotations
+
+import re
+from collections.abc import Callable
+from pathlib import Path
 
 from .deep_adapters import _DeepAdapter
 from .deep_codecs import FakeClaudeCodec
 from .deep_contracts import DeepProtocol
+from .harness_workspace import INSTRUCTION_DIR, WORK_DIR
+from .headless_cli import (
+    DISPATCH_CAPABILITY,
+    TASK_CHANNEL_STDIN,
+    ExecutablePin,
+    HarnessProfile,
+    HeadlessCliError,
+    HeadlessCliTransport,
+    _version_token,
+)
+from .process import ProcessRunner
 
 #: The graph node this provider binds to; ``conductor.harnesses`` registers it.
 CLAUDE_PROVIDER_ID = "claude-code"
+#: The exact published version this build was reviewed against: the head entry
+#: of the pinned CHANGELOG. A preflight reading anything else refuses.
+REVIEWED_CLAUDE_VERSION = "2.1.239"
+#: The protocol token an operator pins to select this adapter.
+CLAUDE_PROTOCOL = DeepProtocol.CLAUDE_HEADLESS_V1.value
+#: Experimental is said in the one field the Cockpit projection carries.
+CLAUDE_DISPLAY_NAME = "Claude Code (headless, experimental)"
+#: Observation, and the one control this adapter really implements. `review` is
+#: deliberately ABSENT: the reviewed deep review body carries artifact
+#: REFERENCES, and this build has no resolver that turns one into the artifact's
+#: content, so a claimed `review` would hand Claude a list of identifiers and
+#: call the answer a review. The durable artifact handoff comes first.
+CLAUDE_CAPABILITIES = ("observe", DISPATCH_CAPABILITY)
+CLAUDE_SCHEMA_PAIRS = ((DISPATCH_CAPABILITY, "deep-arguments-v1"),)
+#: The four seams the registration door requires of every provider.
+CLAUDE_LIFECYCLE = ("execute", "observe", "prepare", "verify")
+#: The environment NAME whose VALUE is minted fresh per attempt.
+CLAUDE_HOME_ENV = "CLAUDE_CONFIG_DIR"
+#: The two switches, and the value that sets each. Both are DISABLE flags, so
+#: `1` turns the behaviour off -- the opposite polarity from Grok Build's four
+#: ENABLED flags, which is why the profile carries a literal value per pair
+#: instead of one shared notion of "off".
+CLAUDE_AUTOUPDATER_ENV = "DISABLE_AUTOUPDATER"
+CLAUDE_NONESSENTIAL_ENV = "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"
+SWITCHED_OFF = "1"
+CLAUDE_FORCED_ENV = (
+    (CLAUDE_AUTOUPDATER_ENV, SWITCHED_OFF),
+    (CLAUDE_NONESSENTIAL_ENV, SWITCHED_OFF),
+)
+#: The code-owned flags, in the order they are sent.
+#:
+#: ``--bare`` stands FIRST because it is the containment flag: it is what stops
+#: a `.claude/settings.json` inside the run's own work tree from executing.
+BARE_ARGV = ("--bare",)
+PRINT_FLAG = "-p"
+#: The CONSTANT positional prompt. It is the entire prompt argument this build
+#: ever passes, identical on every dispatch for every operator and every run, so
+#: it carries no run identifier, no work item, no instruction and no name. What
+#: to do arrives on stdin; this sentence only tells the child to go and read it.
+CONSTANT_PROMPT = "Execute the complete task supplied on standard input."
+INPUT_FORMAT_ARGV = ("--input-format", "text")
+OUTPUT_FORMAT_ARGV = ("--output-format", "text")
+NO_SESSION_ARGV = ("--no-session-persistence",)
+PERMISSION_MODE_ARGV = ("--permission-mode", "acceptEdits")
+VERSION_ARGV = ("--version",)
+#: Capture ceiling for either spawn; the pump drains past it and drops the rest.
+CLAUDE_OUTPUT_LIMIT = 16 * 1024
+#: The preflight is a version print, not work: it gets its own small budget.
+VERSION_TIMEOUT_SECONDS = 30
+#: The two subtrees THIS provider owns beneath the project root.
+HOME_DIR = ".claude-home"
+MARKER_DIR = ".claude-marker"
+#: The ONE closed form this module will read a version out of: the semver, then
+#: the product name in parentheses. Anchored at BOTH ends, and closed at the
+#: front as well as the back.
+#:
+#: The anchors buy the usual thing -- an unanchored pattern finds ``2.1.239``
+#: inside a warning line and calls that the version. The closed suffix buys
+#: something this roster has already paid for twice on another provider: a form
+#: that accepted a bare semver would accept any executable at all that prints a
+#: number, and this preflight is the one check standing between an operator's
+#: pin and a real prompt.
+#:
+#: The evidence level is written down beside the pattern on purpose:
+#: VENDOR-DESCRIBED, LOCALLY UNOBSERVED. See the module docstring -- two issue
+#: templates state this form, no source was readable and no binary was
+#: available. Widening it is a review decision, not a quiet edit, and the opt-in
+#: real smoke is what would show it needs widening.
+_VERSION_FORM = re.compile(
+    r"\A(?P<semver>\d+\.\d+\.\d+) \(Claude Code\)\Z")
 
-__all__ = ["CLAUDE_PROVIDER_ID", "ClaudeCodeAdapter"]
+__all__ = [
+    "BARE_ARGV", "CLAUDE_CAPABILITIES", "CLAUDE_DISPLAY_NAME",
+    "CLAUDE_FORCED_ENV", "CLAUDE_HOME_ENV", "CLAUDE_LIFECYCLE",
+    "CLAUDE_PROTOCOL", "CLAUDE_PROVIDER_ID", "CLAUDE_SCHEMA_PAIRS",
+    "CONSTANT_PROMPT", "HOME_DIR", "INSTRUCTION_DIR", "MARKER_DIR",
+    "REVIEWED_CLAUDE_VERSION", "WORK_DIR",
+    "ClaudeCodeAdapter", "ClaudeCodeError", "ClaudeCodeTransport", "claude_pin",
+]
+
+#: Every vendor fact above, gathered where the shared transport reads them.
+CLAUDE_PROFILE = HarnessProfile(
+    tool_noun="Claude Code", task_noun="Claude Code prompt",
+    display_name=CLAUDE_DISPLAY_NAME, vendor="Anthropic",
+    docs_url="https://code.claude.com/docs/en/headless",
+    reviewed_version=REVIEWED_CLAUDE_VERSION,
+    home_dir=HOME_DIR, marker_dir=MARKER_DIR,
+    home_env=CLAUDE_HOME_ENV, forced_env=CLAUDE_FORCED_ENV,
+    version_argv=VERSION_ARGV, exit_codes_published=True,
+    capability=DISPATCH_CAPABILITY, output_limit=CLAUDE_OUTPUT_LIMIT,
+    version_timeout_seconds=VERSION_TIMEOUT_SECONDS,
+    home_id_kind="claude-home",
+    task_channel=TASK_CHANNEL_STDIN)
+
+
+class ClaudeCodeError(HeadlessCliError):
+    """Claude Code cannot be driven without breaking one of this adapter's rules."""
+
+
+def claude_pin(executable: str, env_allow: tuple[str, ...] = ()) -> ExecutablePin:
+    """Claude Code's pin: ONE absolute path, and Claude Code's own refusal type.
+
+    One, not two: Claude Code installs as a native binary and runs no
+    interpreter, so there is no second half for this build to guess at.
+    """
+    return ExecutablePin(
+        executable=executable, error=ClaudeCodeError, env_allow=env_allow)
+
+
+class ClaudeCodeTransport(HeadlessCliTransport):
+    """Run one Claude Code prompt per authorized action, and prove nothing more."""
+
+    profile = CLAUDE_PROFILE
+    error = ClaudeCodeError
+
+    def __init__(
+            self, pin: ExecutablePin, runner: ProcessRunner, *,
+            root: str | Path, clock: Callable[[], str],
+            ids: Callable[[str], str],
+            adapter_id: str = CLAUDE_PROVIDER_ID) -> None:
+        if type(pin) is not ExecutablePin or pin.error is not ClaudeCodeError:
+            raise ClaudeCodeError(
+                "this adapter requires a single-executable pin of its own")
+        self._pin = pin
+        super().__init__(
+            runner, root=root, clock=clock, ids=ids, adapter_id=adapter_id)
+
+    def _argv_prefix(self) -> tuple[str, ...]:
+        """One native binary, and nothing in front of it."""
+        return (self._pin.executable,)
+
+    def _stdin_argv(self) -> tuple[str, ...]:
+        """The code-owned flags and the CONSTANT prompt. It receives no task.
+
+        That is the guarantee, and it is structural: this method cannot put an
+        instruction in the command line because it is never handed one. Nothing
+        here has to be trusted, checked afterwards, or remembered by the next
+        person to edit it -- the parameter does not exist.
+
+        The task itself goes to stdin, where a process lister cannot read it.
+        See ``_task_stdin``.
+        """
+        return (
+            *BARE_ARGV, PRINT_FLAG, CONSTANT_PROMPT,
+            *INPUT_FORMAT_ARGV, *OUTPUT_FORMAT_ARGV,
+            *NO_SESSION_ARGV, *PERMISSION_MODE_ARGV)
+
+    def _task_stdin(self, task_text: str) -> bytes:
+        """The whole task, piped -- the run's frame and the user's instruction.
+
+        UTF-8, and no trailing newline is added: the bytes handed over are the
+        bytes the task text is, so what the child reads is what this build
+        composed and nothing it appended. The runner bounds this at the same
+        64 KiB the workspace door bounds an instruction body at, and refuses a
+        NUL, before any child exists.
+        """
+        return task_text.encode("utf-8")
+
+    def _env_allow(self) -> tuple[str, ...]:
+        return self._pin.env_allow
+
+    def _version_matches(self, output: bytes) -> bool:
+        """PARSE the described form, and compare only its semver.
+
+        The shared default compares the whole first line, which would refuse
+        every install that prints its product name -- and every published
+        description of this print says it does. So this reads the closed form
+        and takes the semver out of it, and the product name is never allowed to
+        become a version.
+
+        Still a BOOLEAN. Nothing derived from the child's bytes leaves this
+        method, because a hostile build could put a secret where a version
+        belongs and every road out of here reaches a receipt.
+        """
+        found = _VERSION_FORM.match(_version_token(output))
+        if found is None:
+            return False
+        return found.group("semver") == self.profile.reviewed_version
 
 
 class ClaudeCodeAdapter(_DeepAdapter):
-    """Configured adapter for the reviewed fake Claude JSON-line protocol."""
+    """The fake-protocol fixture; the catalog serves ``ClaudeCodeTransport``.
+
+    Kept because the shared ``_DeepAdapter`` lifecycle suites drive two concrete
+    subclasses and this is one of them, and kept HERE because it carries the
+    ``claude-code`` id and the identity gate grants that id's rights to this
+    module alone.
+    """
 
     ADAPTER_ID = CLAUDE_PROVIDER_ID
     DISPLAY_NAME = "Claude Code (fake protocol)"
@@ -43,12 +357,6 @@ class ClaudeCodeAdapter(_DeepAdapter):
     CODEC = FakeClaudeCodec
 
 
-#: This module's own statement of which concrete type is reviewed for this id,
-#: and the whole of what ``_DeepAdapter._reviewed`` consults. It is read from a
-#: class's OWN ``__dict__``, never inherited, so a subclass of the class below
-#: does not quietly become a second reviewed type for ``claude-code``.
-#:
-#: It stands out here rather than in the shared base because a base that listed
-#: its concrete classes would be a provider-neutral module naming two providers
-#: -- and would have to import them, which is the cycle the split removes.
+#: This module's own statement of which concrete type is reviewed for the fake
+#: protocol above, read from the class's OWN ``__dict__`` and never inherited.
 ClaudeCodeAdapter.REVIEWED_TYPE = ClaudeCodeAdapter
