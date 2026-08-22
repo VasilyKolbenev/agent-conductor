@@ -560,3 +560,47 @@ def test_the_frozen_dalio_template_binds_a_control_this_transport_cannot_serve()
     assert missing == {"review"}, (
         "the frozen template's controls and this transport's now agree; "
         "the Day 3 artifact-handoff blocker may be closed")
+
+
+#: A form the vendor really could print, at a version this build never reviewed.
+#: It is the ONE case that separates "read the form and refused the version"
+#: from "could not read the form at all", because both come back False.
+VALID_BUT_UNREVIEWED = "9.9.9 (Claude Code)"
+
+
+def test_a_valid_form_at_an_unreviewed_version_is_read_and_then_refused(tmp_path):
+    """The parse and the comparison are two answers, and both are checked here.
+
+    `_version_matches` is a boolean, and a boolean cannot say WHICH question it
+    answered. `False` means either "a different build" -- correct, refuse -- or
+    "this parser read nothing at all", which is a defect no refusal repairs. A
+    production parser replaced with one matching NOTHING behaves identically to a
+    correct one on every input except this: a valid form whose version differs.
+
+    So this asserts the parser READ the form, that it then declined the version,
+    and that no prompt was spawned. Its opposite number is the opt-in smoke,
+    which asks the same of whatever a real install prints.
+    """
+    adapter, _root, log = a_harness(
+        tmp_path, **{_fakeclaude.VERSION: VALID_BUT_UNREVIEWED})
+
+    receipt = run_once(adapter, a_request())
+
+    printed = (VALID_BUT_UNREVIEWED + "\n").encode("utf-8")
+    assert adapter._parsed_version(printed) == "9.9.9", (
+        "the parser could not read a form the vendor describes")
+    assert adapter._version_matches(printed) is False
+    assert receipt.outcome == "failed"
+    assert REVIEWED_CLAUDE_VERSION in receipt.detail
+    assert _fakeclaude.prompt_spawns(log) == []
+
+
+def test_the_parser_reads_the_reviewed_form_into_the_reviewed_semver():
+    """The positive control: reading and agreeing are still two separate steps."""
+    unbound = ClaudeCodeTransport.__new__(ClaudeCodeTransport)
+
+    assert ClaudeCodeTransport._parsed_version(
+        unbound, b"2.1.239 (Claude Code)\n") == "2.1.239"
+    assert ClaudeCodeTransport._parsed_version(unbound, b"2.1.239\n") is None
+    assert ClaudeCodeTransport._parsed_version(
+        unbound, b"claude 2.1.239 (Claude Code)\n") is None

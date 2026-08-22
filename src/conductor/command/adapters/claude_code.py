@@ -322,23 +322,43 @@ class ClaudeCodeTransport(HeadlessCliTransport):
     def _env_allow(self) -> tuple[str, ...]:
         return self._pin.env_allow
 
+    def _parsed_version(self, output: bytes) -> str | None:
+        r"""The semver this parser reads out of a version print, or ``None``.
+
+        Separate from the yes/no answer, and that separation is the point. A
+        BOOLEAN cannot say WHICH question it answered: ``False`` means either
+        "a different build" or "this parser could not read the form at all",
+        and those are opposite findings. The first is an operator running
+        another version, which the adapter is right to refuse. The second is
+        this parser being wrong about a vendor whose print nothing here could
+        observe -- and no refusal repairs that.
+
+        The opt-in smoke reads THIS, so a real install's print is compared
+        against what the production pattern made of it rather than against a
+        yes/no that a dead parser and an unreviewed build produce alike. A
+        parser accepting nothing at all used to pass that smoke.
+
+        **What may be done with the answer.** It is a substring of child output,
+        so it stays inside this class and inside tests: no production path puts
+        it in a receipt, a journal record, an API response or an exception
+        message. What makes that bearable rather than merely promised is the
+        pattern -- the group is ``\d+\.\d+\.\d+`` and can carry digits and dots
+        and nothing else, so unlike a whole line it cannot hold a secret a
+        hostile build planted where a version belongs.
+        """
+        found = _VERSION_FORM.match(_version_token(output))
+        return None if found is None else found.group("semver")
+
     def _version_matches(self, output: bytes) -> bool:
-        """PARSE the described form, and compare only its semver.
+        """Whether the pinned build's print IS the reviewed version.
 
         The shared default compares the whole first line, which would refuse
         every install that prints its product name -- and every published
-        description of this print says it does. So this reads the closed form
-        and takes the semver out of it, and the product name is never allowed to
-        become a version.
-
-        Still a BOOLEAN. Nothing derived from the child's bytes leaves this
-        method, because a hostile build could put a secret where a version
-        belongs and every road out of here reaches a receipt.
+        description of this print says it does. So the reading is delegated to
+        ``_parsed_version`` and this method only compares, which keeps the
+        BOOLEAN the transport needs while leaving the parse itself observable.
         """
-        found = _VERSION_FORM.match(_version_token(output))
-        if found is None:
-            return False
-        return found.group("semver") == self.profile.reviewed_version
+        return self._parsed_version(output) == self.profile.reviewed_version
 
 
 class ClaudeCodeAdapter(_DeepAdapter):

@@ -70,7 +70,7 @@ KEY_NAME_ENV = "CONDUCT_CLAUDE_KEY_NAME"
 #: The described form, SPELLED here rather than imported from the adapter: a
 #: check that read the shipped pattern would move with it, and the whole point of
 #: this file is to be the one place that does not.
-_DESCRIBED_FORM = re.compile(r"\A\d+\.\d+\.\d+ \(Claude Code\)\Z")
+_DESCRIBED_FORM = re.compile(r"\A(?P<semver>\d+\.\d+\.\d+) \(Claude Code\)\Z")
 
 
 def _pin() -> str:
@@ -107,6 +107,32 @@ def _seed_instruction(root: Path, text: str) -> None:
     instructions.mkdir(exist_ok=True)
     (instructions / "instr-001.md").write_text(
         text, encoding="utf-8", newline="\n")
+
+
+def _assert_the_production_parser_read_it(
+        adapter, output: bytes, observed: str) -> None:
+    """The production parser read the SAME semver this file read independently.
+
+    This is the question a boolean cannot answer. `_version_matches` returning
+    False means either "a different build" or "this parser read nothing at all",
+    and an earlier version of this smoke could not tell them apart: it checked
+    the form with the pattern below, then accepted any False as an unreviewed
+    build. A production parser replaced with one that matches NOTHING passed it,
+    against a valid form at a non-reviewed version.
+
+    So the two parses are compared to each other. The expected semver comes from
+    this file's own literal pattern, which is the whole reason that pattern is
+    spelled here instead of imported from the adapter it exists to check.
+    """
+    described = _DESCRIBED_FORM.match(observed)
+    assert described is not None
+    expected = described.group("semver")
+    produced = adapter._parsed_version(output)
+    assert produced == expected, (
+        f"the production parser did not read the form this install printed: it "
+        f"made {produced!r} of {observed!r}, where an independent reading of the "
+        f"same described form gives {expected!r}. A parser that reads nothing is "
+        f"indistinguishable from a correct refusal unless this is checked")
 
 
 def _assert_form_is_readable(observed: str) -> None:
@@ -177,6 +203,7 @@ def test_a_real_install_prints_a_form_this_adapter_can_parse(tmp_path):
     assert observed, "the pinned Claude Code printed no version token at all"
 
     _assert_form_is_readable(observed)
+    _assert_the_production_parser_read_it(adapter, outcome.output, observed)
     parsed = adapter._version_matches(outcome.output)
 
     request = a_request()
