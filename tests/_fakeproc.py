@@ -44,6 +44,11 @@ DUMP_CWD = "FAKEPROC_DUMP_CWD"
 #: every leak assertion in this suite pass by accident, because the payload
 #: would then be legitimately present in the child's own output.
 DUMP_STDIN = "FAKEPROC_DUMP_STDIN"
+#: Exit at once, through `os._exit`, reading nothing and running no cleanup.
+#: This is the DEAF child: the one whose exit code is honest about a task it was
+#: never given. `os._exit` rather than `sys.exit` on purpose -- no flushing, no
+#: atexit, nothing that could accidentally drain the pipe on the way out.
+DEAF_EXIT = "FAKEPROC_DEAF_EXIT"
 EXIT = "FAKEPROC_EXIT"
 
 
@@ -127,6 +132,8 @@ def _heartbeat(path: str) -> None:
 
 def main() -> int:
     env = os.environ
+    if env.get(DEAF_EXIT):
+        os._exit(int(env[DEAF_EXIT]))
     if env.get(PID_FILE):
         _write_atomic(env[PID_FILE], f"{os.getpid()} {os.getppid()}")
     if env.get(SPAWN_HB_FILE):

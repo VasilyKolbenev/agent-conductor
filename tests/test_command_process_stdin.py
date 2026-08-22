@@ -25,16 +25,24 @@ import json
 
 import pytest
 
+from conductor.command.adapters import process as process_module
 from conductor.command.adapters.harness_workspace import INSTRUCTION_LIMIT
 from conductor.command.adapters.process import (
+    STDIN_DELIVERED,
+    STDIN_INCOMPLETE,
     STDIN_LIMIT,
+    STDIN_NOT_PROVIDED,
+    STDIN_STATES,
     CommandSpec,
     CommandSpecError,
     OwnershipError,
+    ProcessOutcome,
     ProcessRunner,
+    _map_outcome,
 )
 
 from tests._fakeproc import (
+    DEAF_EXIT,
     DUMP_ARGV,
     DUMP_CWD,
     DUMP_ENV,
@@ -203,6 +211,120 @@ def test_a_stopped_child_releases_its_writer_and_leaks_no_token(root, runners):
 
     assert outcome.status == "stopped"
     assert outcome.exit_code is None
+    assert runner.active_tokens() == ()
+
+
+# --- the delivery fact, and what may be built on it --------------------------
+
+
+def test_a_child_that_exits_without_reading_is_not_a_run_that_succeeded(
+        root, runners):
+    """The defect this field was added for, held as its own claim.
+
+    A child that calls `os._exit(0)` having read nothing exits zero, exits
+    cleanly, and exits fast. Every process fact about it is good. It was also
+    never told what to do -- so a build that read those facts as success would
+    be reporting on a task it never posed, over and over, with no signal
+    anywhere that anything was wrong.
+
+    The runner still reports the process honestly: `completed`, exit zero. What
+    changes is that it now also reports what it could not deliver, and the
+    receipt vocabulary refuses to call that a success.
+    """
+    payload = INSTRUCTION * 400
+
+    outcome = runners(root).run(_spec(
+        root, payload, env={DEAF_EXIT: "0"}))
+
+    assert outcome.status == "completed"
+    assert outcome.exit_code == 0
+    assert outcome.stdin_state == STDIN_INCOMPLETE
+    mapped, detail = _map_outcome(outcome)
+    assert mapped == "failed", "an undelivered instruction became a success"
+    assert "never delivered whole" in detail
+
+
+def test_the_delivery_state_is_one_of_three_words_and_a_fourth_is_refused():
+    """A closed vocabulary, refused at construction like every other closed one.
+
+    Without this an outcome could carry `"ok"`, or `"delivered "`, and every
+    comparison against the real word would quietly answer `False` -- which for
+    this field means quietly answering "not incomplete", which means success.
+    """
+    assert set(STDIN_STATES) == {"not_provided", "delivered", "incomplete"}
+
+    for rejected in ("ok", "DELIVERED", "delivered ", "", None):
+        with pytest.raises(CommandSpecError):
+            ProcessOutcome(
+                status="completed", exit_code=0, output=b"", output_truncated=False,
+                output_limit=64, pid=1, token="t", stdin_state=rejected)
+
+
+@pytest.mark.parametrize("state", [STDIN_NOT_PROVIDED, STDIN_DELIVERED])
+def test_a_zero_exit_is_still_a_success_when_the_input_was_not_the_problem(state):
+    """The positive control. The guard must not have made every zero a failure.
+
+    `not_provided` is the three shipped providers, which pass nothing at all;
+    `delivered` is a payload that arrived whole. Both must still succeed, or the
+    fix for the defect above would have broken the roster instead.
+    """
+    outcome = ProcessOutcome(
+        status="completed", exit_code=0, output=b"done", output_truncated=False,
+        output_limit=64, pid=1, token="t", stdin_state=state)
+
+    mapped, _detail = _map_outcome(outcome)
+
+    assert mapped == "succeeded"
+
+
+def test_an_undelivered_input_does_not_overwrite_a_timeout_or_a_cancellation():
+    """It must never become a success; it must also not eat a truer word.
+
+    A run that timed out did time out, and a stopped run was cancelled. Both
+    already say the work did not succeed, so relabelling them would trade one
+    true fact for another and lose the operator's own action from the record.
+    """
+    def built(status):
+        return ProcessOutcome(
+            status=status, exit_code=None, output=b"", output_truncated=False,
+            output_limit=64, pid=1, token="t", stdin_state=STDIN_INCOMPLETE)
+
+    assert _map_outcome(built("timed_out"))[0] == "failed"
+    assert _map_outcome(built("stopped"))[0] == "cancelled"
+
+
+def test_a_spawn_that_fails_before_ownership_closes_the_input_it_opened(
+        root, runners, monkeypatch):
+    """The parent's write handle must not outlive a spawn that never published.
+
+    Between `Popen(stdin=PIPE)` and the ownership publish there is no `_Owned`
+    to close anything and no token anyone could stop, so a failure in that
+    window used to leave the parent holding a pipe to a child it had just
+    killed -- open until the garbage collector happened to notice.
+
+    The failure is injected at the ownership step rather than simulated, and the
+    handle is read afterwards from the process object itself.
+    """
+    captured = {}
+    real_popen = process_module.subprocess.Popen
+
+    def remember(*args, **kwargs):
+        proc = real_popen(*args, **kwargs)
+        captured["proc"] = proc
+        return proc
+
+    monkeypatch.setattr(process_module.subprocess, "Popen", remember)
+    monkeypatch.setattr(
+        process_module.secrets, "token_hex",
+        lambda _n: (_ for _ in ()).throw(RuntimeError("no token today")))
+
+    runner = runners(root)
+    with pytest.raises(RuntimeError, match="no token today"):
+        runner.run(_spec(root, INSTRUCTION))
+
+    proc = captured["proc"]
+    assert proc.stdin is not None
+    assert proc.stdin.closed, "the failed spawn left the child's input open"
     assert runner.active_tokens() == ()
 
 

@@ -74,6 +74,31 @@ DEFAULT_OUTPUT_LIMIT = 64 * 1024
 #: child's stdin IS an instruction body. A second, larger ceiling here would be
 #: a way to deliver an instruction the first one refused.
 STDIN_LIMIT = 64 * 1024
+#: What became of the input a caller offered the child. A CLOSED vocabulary,
+#: because the question it answers is not "did an error occur" but "was the
+#: child ever asked the question at all", and there is no third honest answer.
+#:
+#: `delivered` costs the most to say and is therefore said last: the whole
+#: payload written, flushed, and the stream CLOSED, so the child saw end of
+#: input. Anything else is `incomplete` -- a broken pipe, a short write, a
+#: failure to close -- and `incomplete` is not a degraded success. A child that
+#: never read its instruction did not do the task badly; it was never told what
+#: the task was, and its exit code answers a different question.
+#:
+#: **What `delivered` does NOT claim, said out loud.** It is a fact about THIS
+#: side of the pipe. A payload small enough to fit the operating system's pipe
+#: buffer is written, flushed and closed successfully even if the child then
+#: exits without reading a byte of it, and no parent can tell the difference --
+#: the read happens on the far side and leaves no trace here. So `delivered`
+#: means "handed over in full and ended", never "consumed". The only witness for
+#: consumption is the child's own output, which is why a provider taking its
+#: task this way owes a smoke that returns a marker present ONLY in what was
+#: piped. `incomplete` remains exact in the other direction: it is never wrong
+#: about a failure, only silent about a success it cannot see.
+STDIN_NOT_PROVIDED = "not_provided"
+STDIN_DELIVERED = "delivered"
+STDIN_INCOMPLETE = "incomplete"
+STDIN_STATES = (STDIN_NOT_PROVIDED, STDIN_DELIVERED, STDIN_INCOMPLETE)
 #: One read from the child's merged pipe; the pump loops over these.
 _READ_CHUNK = 64 * 1024
 #: A POSIX environment variable name; the same shape run_store screens against.
@@ -231,6 +256,20 @@ class ProcessOutcome:
     output_limit: int
     pid: int
     token: str
+    #: Whether the child was ever handed what it was supposed to act on. Its own
+    #: fact, beside ``status`` and ``exit_code`` rather than folded into either,
+    #: because it answers a question they cannot: a child that exits zero having
+    #: read nothing has answered honestly about a task it was never given.
+    #:
+    #: The default is ``not_provided``, which is what an outcome built by a
+    #: caller that offered no input truthfully says.
+    stdin_state: str = STDIN_NOT_PROVIDED
+
+    def __post_init__(self) -> None:
+        if self.stdin_state not in STDIN_STATES:
+            raise CommandSpecError(
+                f"stdin_state must be one of {STDIN_STATES}, got "
+                f"{self.stdin_state!r}")
 
 
 class _Owned:
@@ -253,8 +292,14 @@ class _Owned:
         # deadlock argument: a child that answers while it is still being fed
         # would otherwise fill its stdout pipe and block, while this side blocks
         # writing, and neither would ever move again.
+        # Fail-closed: the state starts at `incomplete` the moment a payload
+        # exists and is raised to `delivered` only by a feed that finished every
+        # step. A thread that never ran, or died before its last line, therefore
+        # reports the truth rather than the default.
         self._feeder: threading.Thread | None = None
+        self.stdin_state = STDIN_NOT_PROVIDED
         if stdin_bytes is not None:
+            self.stdin_state = STDIN_INCOMPLETE
             self._feeder = threading.Thread(
                 target=self._feed, args=(stdin_bytes,), daemon=True)
             self._feeder.start()
@@ -279,6 +324,7 @@ class _Owned:
         stream = self.proc.stdin
         if stream is None:
             return
+        written_whole = False
         try:
             view = memoryview(payload)
             while view:
@@ -286,14 +332,20 @@ class _Owned:
                 if not written:
                     break
                 view = view[written:]
-            stream.flush()
+            if not view:
+                stream.flush()
+                written_whole = True
         except (OSError, ValueError):
             pass
-        finally:
-            try:
-                stream.close()
-            except (OSError, ValueError):
-                pass
+        try:
+            stream.close()
+        except (OSError, ValueError):
+            return
+        # The close is the EOF, so it is part of the claim rather than cleanup
+        # after it: a payload fully written to a stream that was never closed
+        # leaves the child waiting for input that will never end.
+        if written_whole:
+            self.stdin_state = STDIN_DELIVERED
 
     def _drain(self) -> None:
         stream = self.proc.stdout
@@ -332,7 +384,7 @@ class _Owned:
         return ProcessOutcome(
             status=status, exit_code=code if status == "completed" else None,
             output=output, output_truncated=truncated, output_limit=self.limit,
-            pid=self.pid, token=self.token)
+            pid=self.pid, token=self.token, stdin_state=self.stdin_state)
 
 
 class ProcessRunner:
@@ -461,6 +513,16 @@ class ProcessRunner:
                 group.close()
             if proc.stdout is not None:
                 proc.stdout.close()
+            # And the input, which `Popen(stdin=PIPE)` opened on this side. A
+            # spawn that fails between `Popen` and the ownership publish has no
+            # `_Owned` to close it later and no token anyone could stop, so the
+            # parent's write handle would live until the garbage collector
+            # happened to notice -- holding a pipe to a child already killed.
+            if proc.stdin is not None:
+                try:
+                    proc.stdin.close()
+                except (OSError, ValueError):
+                    pass
 
     def _release(self, owned: _Owned) -> None:
         with self._lock:
@@ -525,9 +587,22 @@ def _detail(outcome: ProcessOutcome, summary: str) -> str:
 
 
 def _map_outcome(outcome: ProcessOutcome) -> tuple[str, str]:
-    """Project a process outcome onto the receipt vocabulary; timeout is not success."""
+    """Project a process outcome onto the receipt vocabulary; timeout is not success.
+
+    Undelivered input is checked inside the ``completed`` arm rather than ahead
+    of everything, so a timeout stays a timeout and a stop stays a cancellation:
+    those two already say the run did not succeed, and overwriting them would
+    trade one true fact for another. What may never happen is a ZERO becoming a
+    success while the child never received what it was meant to act on.
+    """
     if outcome.status == "completed":
         if outcome.exit_code == 0:
+            if outcome.stdin_state == STDIN_INCOMPLETE:
+                return "failed", _detail(
+                    outcome,
+                    "the process exited zero, but the input it was to act on "
+                    "was never delivered whole, so the zero answers a question "
+                    "this build never finished asking")
             return "succeeded", _detail(outcome, "the process exited zero")
         return "failed", _detail(outcome, f"the process exited {outcome.exit_code}")
     if outcome.status == "timed_out":

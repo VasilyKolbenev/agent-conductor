@@ -69,7 +69,13 @@ from .harness_workspace import (
     HarnessWorkspace,
     WorkspaceNotContained,
 )
-from .process import CommandSpec, ProcessOutcome, ProcessRunner, ProcessRunnerError
+from .process import (
+    STDIN_INCOMPLETE,
+    CommandSpec,
+    ProcessOutcome,
+    ProcessRunner,
+    ProcessRunnerError,
+)
 
 
 #: Every sentence below names the product, so each is built from the profile's
@@ -544,6 +550,17 @@ class HeadlessCliTransport:
             return self._receipt(
                 request, "cancelled", None,
                 f"the {noun} was stopped by the runner")
+        if outcome.stdin_state == STDIN_INCOMPLETE:
+            # The mirror image of the capture bound below, and the earlier of the
+            # two failures: there the answer was not read whole, here the QUESTION
+            # was not delivered whole. A provider that takes its task on stdin and
+            # exits zero without having received it has reported honestly about
+            # something else, and no exit code can repair that. Checked before the
+            # capture bound because a task never posed makes the answer moot.
+            return self._receipt(
+                request, "failed", None,
+                f"the {noun} was never handed its whole instruction, so nothing "
+                "it did can be read as an attempt at the one that was asked")
         if outcome.output_truncated:
             # The headless transport answers on stdout. A stream that overran the
             # capture bound was not read to its end, so whatever the exit code
