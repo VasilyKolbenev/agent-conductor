@@ -36,8 +36,15 @@ from .adapters.claude_code import (
     CLAUDE_SCHEMA_PAIRS,
     ClaudeCodeTransport,
 )
-from .adapters.codex_cli import CodexAdapter
-from .adapters.deep_adapters import DEEP_CAPABILITIES, DEEP_CONTROLS
+from .adapters.codex_cli import (
+    CODEX_CAPABILITIES,
+    CODEX_DISPLAY_NAME,
+    CODEX_LIFECYCLE,
+    CODEX_PROTOCOL,
+    CODEX_PROVIDER_ID,
+    CODEX_SCHEMA_PAIRS,
+    CodexCliTransport,
+)
 from .adapters.deep_contracts import DeepAdapterConfig
 from .adapters.dsh_harness import DSH_PROTOCOL, DshHarnessAdapter, DshPin
 from .adapters.grok_build import (
@@ -71,12 +78,15 @@ from .adapters.provider import (
     reconstruct_entry,
 )
 
-#: Each deep control capability binds the one reviewed deep argument schema.
-_DEEP_SCHEMA_PAIRS = tuple(sorted(
-    (capability, "deep-arguments-v1") for capability in DEEP_CAPABILITIES))
-#: The seams the fake-protocol adapters really implement. Recovery is absent on
-#: purpose: no adapter in this build carries a ``recover`` seam, and the door
-#: refuses a lifecycle claim its adapter class cannot back.
+#: The seams the dsh harness really implements. Recovery is absent on purpose:
+#: no adapter in this build carries a ``recover`` seam, and the door refuses a
+#: lifecycle claim its adapter class cannot back.
+#:
+#: The deep control set and its schema pairs stood beside this until the Codex
+#: transport landed. They described the fake-protocol row, and with every
+#: catalogued provider now real there is no such row to describe -- the fakes
+#: remain in their own modules as the ``_DeepAdapter`` lifecycle fixtures, and
+#: the catalog no longer serves one.
 _DEEP_LIFECYCLE = ("observe", "prepare", "execute", "verify")
 #: Protocols whose executable is an INTERPRETER: the operator must pin a second
 #: absolute path, the entrypoint it runs, and both files must really be present
@@ -87,7 +97,7 @@ _ENTRYPOINT_PROTOCOLS = frozenset({DSH_PROTOCOL})
 #: not an identity, so this stays a fact about pin SHAPE and the identity gate
 #: has nothing to permit here. Two products sharing a shape share this row.
 _SINGLE_EXECUTABLE_PROTOCOLS = frozenset(
-    {KIMI_PROTOCOL, GROK_PROTOCOL, CLAUDE_PROTOCOL})
+    {KIMI_PROTOCOL, GROK_PROTOCOL, CLAUDE_PROTOCOL, CODEX_PROTOCOL})
 #: The dsh harness carries one control and says so; stop, retry and switch are
 #: absent from the manifest, so the door cannot admit them.
 _DSH_CAPABILITIES = ("observe", "dispatch")
@@ -103,12 +113,12 @@ PROVIDER_CATALOG = MappingProxyType({
         capabilities=CLAUDE_CAPABILITIES, schema_pairs=CLAUDE_SCHEMA_PAIRS,
         lifecycle=CLAUDE_LIFECYCLE, adapter_class=ClaudeCodeTransport,
         implementation="real_experimental"),
-    "codex": ProviderCatalogEntry(
-        provider_id="codex", display_name="Codex (fake protocol)",
-        vendor="OpenAI-compatible test fixture", protocol="fake-codex-jsonl-v1",
-        capabilities=DEEP_CONTROLS, schema_pairs=_DEEP_SCHEMA_PAIRS,
-        lifecycle=_DEEP_LIFECYCLE, adapter_class=CodexAdapter,
-        implementation="fixture_only"),
+    CODEX_PROVIDER_ID: ProviderCatalogEntry(
+        provider_id=CODEX_PROVIDER_ID, display_name=CODEX_DISPLAY_NAME,
+        vendor="OpenAI", protocol=CODEX_PROTOCOL,
+        capabilities=CODEX_CAPABILITIES, schema_pairs=CODEX_SCHEMA_PAIRS,
+        lifecycle=CODEX_LIFECYCLE, adapter_class=CodexCliTransport,
+        implementation="real_experimental"),
     "deepseek-harness": ProviderCatalogEntry(
         provider_id="deepseek-harness", display_name="DeepSeek Harness (dsh, headless)",
         vendor="DeepSeek", protocol=DSH_PROTOCOL,

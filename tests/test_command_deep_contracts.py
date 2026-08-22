@@ -245,19 +245,21 @@ def test_all_deep_vocabularies_and_protocol_flags_are_exactly_pinned():
     assert set(DeepProtocol) == {
         DeepProtocol.FAKE_CLAUDE_V1, DeepProtocol.FAKE_CODEX_V1,
         DeepProtocol.DSH_HEADLESS_V1, DeepProtocol.KIMI_HEADLESS_V1,
-        DeepProtocol.GROK_HEADLESS_V1, DeepProtocol.CLAUDE_HEADLESS_V1}
+        DeepProtocol.GROK_HEADLESS_V1, DeepProtocol.CLAUDE_HEADLESS_V1,
+        DeepProtocol.CODEX_HEADLESS_V1}
     assert dict(DEEP_PROTOCOL_FLAGS) == {
         "fake-claude-jsonl-v1": "--fake-claude-jsonl-v1",
         "fake-codex-jsonl-v1": "--fake-codex-jsonl-v1",
     }
-    # The dsh, kimi, grok and real-claude tokens are reviewed vocabulary, not
-    # deep fake protocols: none binds a deep argv flag, so the fake-protocol
-    # command builder can never render any of them. `claude-code-headless-v1`
-    # joined this set when Claude Code became a real transport, and
-    # `fake-claude-jsonl-v1` did NOT retire beside it -- the fake protocol is
-    # still the family `codex` speaks, and the two select different adapters.
+    # The five real tokens are reviewed vocabulary, not deep fake protocols:
+    # none binds a deep argv flag, so the fake-protocol command builder can
+    # never render any of them. `codex-headless-v1` joined this set when Codex
+    # CLI became a real transport, and NEITHER fake token retired beside it --
+    # both fake protocols are still the families the `_DeepAdapter` lifecycle
+    # suites drive, and neither is catalogued any more.
     non_deep = {DeepProtocol.DSH_HEADLESS_V1, DeepProtocol.KIMI_HEADLESS_V1,
-        DeepProtocol.GROK_HEADLESS_V1, DeepProtocol.CLAUDE_HEADLESS_V1}
+        DeepProtocol.GROK_HEADLESS_V1, DeepProtocol.CLAUDE_HEADLESS_V1,
+        DeepProtocol.CODEX_HEADLESS_V1}
     for protocol in non_deep:
         assert protocol.value not in DEEP_PROTOCOL_FLAGS
     assert set(DEEP_PROTOCOL_FLAGS) == {

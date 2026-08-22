@@ -21,6 +21,7 @@ from conductor.command.adapters import AdapterContractError, AdapterRegistry
 from conductor.command.adapters.provider import ProviderConfig, provider_projection
 from conductor.command.contracts import canonical_json
 from conductor.command.adapters.claude_code import CLAUDE_PROTOCOL
+from conductor.command.adapters.codex_cli import CODEX_PROTOCOL
 from conductor.command.adapters.process import ProcessRunner
 from conductor.command.providers import PROVIDER_CATALOG, resolve_providers
 from tests.test_store import good_lane, write_project
@@ -146,16 +147,16 @@ def test_the_default_resolution_spawns_nothing_and_calls_every_provider_unconfig
 
 
 def test_two_configured_providers_both_register_through_the_factory(tmp_path):
-    """One real transport and one fixture, which is what the roster now holds.
+    """Two REAL transports, which is what the roster now holds -- all of it.
 
-    It used to be "both fake adapters", and the rename is the point: the day
-    `claude-code` became a real transport, a test whose name promised two
-    fixtures would have kept passing while describing a roster that no longer
-    exists.
+    It used to be "both fake adapters", then "one real transport and one
+    fixture", and the rewording each time is the point: a test whose name or
+    docstring promised a roster that no longer exists would keep passing while
+    describing nothing. `codex` was the last fixture row, and it is gone.
     """
     resolution = resolve_providers(
         [_config("claude-code", _present(tmp_path, "claude.exe"), CLAUDE_PROTOCOL),
-         _config("codex", _present(tmp_path, "codex.exe"), "fake-codex-jsonl-v1")],
+         _config("codex", _present(tmp_path, "codex.exe"), CODEX_PROTOCOL)],
         root=tmp_path, clock=lambda: NOW, ids=_ids())
     assert [row.adapter_id for row in resolution.registry.manifests()] == ["claude-code", "codex"]
     rows = provider_projection(resolution.contracts)
@@ -181,13 +182,21 @@ def test_an_unavailable_provider_reaches_no_runner_and_spawns_nothing(tmp_path, 
 
 def test_an_available_provider_builds_one_runner_and_still_spawns_nothing(
         tmp_path, monkeypatch):
+    """ONE runner for TWO available providers, and it starts nothing.
+
+    Both configs must really resolve available or the count of one proves
+    nothing: this passed for a while with the second provider version-mismatched,
+    where one runner for one provider is all it could ever have been.
+    """
     counts = _counted_runner(monkeypatch)
     resolution = resolve_providers(
         [_config("claude-code", _present(tmp_path, "claude.exe"), CLAUDE_PROTOCOL),
-         _config("codex", _present(tmp_path, "codex.exe"), "fake-codex-jsonl-v1")],
+         _config("codex", _present(tmp_path, "codex.exe"), CODEX_PROTOCOL)],
         root=tmp_path, clock=lambda: NOW, ids=_ids())
+    assert _resolved_availability(resolution)["codex"] == "available"
     assert counts == {"constructed": 1, "spawned": 0}
     assert resolution.spawn_capable("claude-code") is True
+    assert resolution.spawn_capable("codex") is True
 
 
 def test_the_factory_admits_nothing_the_registration_door_would_refuse(tmp_path):
@@ -206,7 +215,7 @@ def test_a_catalog_key_that_disagrees_with_its_entry_is_refused(tmp_path):
     forged = {"claude-code": PROVIDER_CATALOG["codex"]}
     with pytest.raises(Exception, match="does not match its catalog key"):
         resolve_providers(
-            [_config("claude-code", _present(tmp_path, "claude.exe"), "fake-codex-jsonl-v1")],
+            [_config("claude-code", _present(tmp_path, "claude.exe"), CODEX_PROTOCOL)],
             root=tmp_path, clock=lambda: NOW, ids=_ids(), catalog=forged)
 
 
