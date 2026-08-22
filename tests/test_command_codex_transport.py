@@ -253,6 +253,31 @@ def test_no_byte_of_the_operators_instruction_reaches_argv_or_the_environment(
         "in_stdin": True, "in_argv": False, "in_cwd": False, "in_env": False}
 
 
+def test_the_leak_witness_really_looks_where_it_says_it_looks(tmp_path):
+    """The positive control for the scan itself: planted, the probe is FOUND.
+
+    Every leak assertion in this file and in the surfaces suite reads booleans a
+    CHILD computed, so a witness that answered False without looking would make
+    all of them pass while a real leak went by -- and nothing else would notice,
+    because a clean answer is what a correct run gives too.
+
+    Two of the three channels can be planted, and both are: the probe is put in
+    an environment VALUE and in the work item id that names the child's working
+    directory. The third cannot be planted at all, and that is the whole point of
+    the channel -- there is no road from an instruction to this argv.
+    """
+    probe = _fakecodex.PROBE_PREFIX + "cafe0123" * 8
+    adapter, _root, log = a_harness(
+        tmp_path, instruction=f"{INSTRUCTION_BODY} {probe}",
+        **{_fakecodex.LEAK_CHECK: "1", "CODEX_PROBE_ECHO": probe})
+
+    receipt = run_once(adapter, a_request(work_item_id=probe))
+
+    assert receipt.outcome == "succeeded", receipt.detail
+    assert _task_row(log)["marker"] == {
+        "in_stdin": True, "in_argv": False, "in_cwd": True, "in_env": True}
+
+
 def test_a_task_the_leak_witness_cannot_scan_fails_instead_of_passing(tmp_path):
     """The control for the control: an armed scan with nothing to look for is RED.
 
@@ -408,23 +433,39 @@ def test_a_second_dispatch_reports_its_own_file_and_never_the_previous_one(
         tmp_path):
     """The answer is re-established per attempt, so no receipt quotes a stale one.
 
-    A reading kept on the adapter is a reading that can go stale, and the one
-    place that would show is a second dispatch whose own file says something
-    different from the first's.
+    A reading kept on the adapter is a reading that can go stale, and the place
+    that shows is the SAME adapter reading a second home. The first dispatch
+    really wrote a file; the second reading is of a home that has none, and it
+    must say so rather than repeating what it last saw.
     """
-    adapter, root, _log = a_harness(tmp_path)
+    adapter, _root, _log = a_harness(tmp_path)
 
     first = run_once(adapter, a_request(action_id="act-1"))
     assert adapter._answer == ANSWER_WRITTEN, first.detail
 
-    # The same adapter, now against a CLI that reports nothing.
-    adapter, _root, _log = a_harness(
-        tmp_path / "second", root=root, **{_fakecodex.NO_LAST_MESSAGE: "1"})
-    second = run_once(adapter, a_request(action_id="act-2"))
+    empty_home = adapter._workspace.mint_home("codex-home-probe")
+    try:
+        adapter._read_attempt_home(empty_home)
+    finally:
+        adapter._workspace.discard_home(empty_home)
 
-    assert adapter._answer == ANSWER_ABSENT, second.detail
-    assert "wrote no final message file at all" in second.detail
-    assert "wrote a final message into the file" not in second.detail
+    assert adapter._answer == ANSWER_ABSENT, "A_STALE_ANSWER_SURVIVED_AN_ATTEMPT"
+
+
+def test_a_reading_the_door_refuses_is_unreadable_and_never_absent(tmp_path):
+    """A refusal and an absence are opposite findings and share no word.
+
+    The door refuses a home that is not beneath this workspace's own fixed root,
+    and its message carries the path -- so the refusal is caught and turned into
+    this module's word for "I could not establish this". Reading it as `absent`
+    would be reporting that the CLI wrote nothing, on a question that was never
+    answered at all.
+    """
+    adapter, _root, _log = a_harness(tmp_path)
+
+    adapter._read_attempt_home(tmp_path / "not-a-home-of-this-workspace")
+
+    assert adapter._answer == ANSWER_UNREADABLE
 
 
 # --- the environment every spawn is given -------------------------------------
