@@ -179,11 +179,18 @@ def test_the_whole_argv_is_the_pinned_binary_and_this_builds_own_flags(tmp_path)
     run_once(adapter, a_request())
 
     argv = _prompt_row(log)["argv"]
+    # Every token is SPELLED. Reading `CONSTANT_PROMPT` from the module here
+    # would put the same value on both sides of the comparison, so any edit to
+    # the sentence would move both and this would keep passing -- which is what
+    # it did until a mutation said so.
     assert argv == [
-        "--bare", "-p", CONSTANT_PROMPT,
+        "--bare", "-p", "Execute the complete task supplied on standard input.",
         "--input-format", "text", "--output-format", "text",
         "--no-session-persistence", "--permission-mode", "acceptEdits"], argv
     assert argv[0] == "--bare", "the containment flag must stand first"
+    # And the spelled sentence really is the one the module ships, so the two
+    # cannot drift apart silently in the other direction either.
+    assert CONSTANT_PROMPT == argv[2]
 
 
 def test_no_byte_of_the_operators_instruction_reaches_argv_or_the_environment(
@@ -300,10 +307,19 @@ def test_both_documented_switches_are_set_on_the_preflight_and_on_the_task(
 
     rows = _fakeclaude.spawns(log)
     assert len(rows) == 2, f"EXPECTED_PREFLIGHT_AND_TASK={len(rows)}"
-    expected = {name: value for name, value in CLAUDE_FORCED_ENV}
-    assert set(expected) == set(_fakeclaude.SWITCH_NAMES)
+    # The VALUES are spelled, not read from the module. Both are DISABLE flags,
+    # so `1` is what turns the behaviour off -- the opposite polarity from Grok
+    # Build's four ENABLED flags, and exactly the kind of fact a test that
+    # imported its own expectation would stop holding.
+    expected = {
+        "DISABLE_AUTOUPDATER": "1",
+        "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"}
     for row in rows:
         assert row["switches"] == expected, row["argv"]
+    # The NAMES come from the code and are cross-checked against the spelling,
+    # so a rename is a failure here rather than a silent narrowing.
+    assert dict(CLAUDE_FORCED_ENV) == expected
+    assert set(_fakeclaude.SWITCH_NAMES) == set(expected)
 
 
 def test_every_spawn_gets_a_fresh_home_under_this_providers_own_root(tmp_path):
@@ -316,6 +332,10 @@ def test_every_spawn_gets_a_fresh_home_under_this_providers_own_root(tmp_path):
     assert len(homes) == 2 and len(set(homes)) == 2, homes
     for home in homes:
         assert Path(home).parent == (root / HOME_DIR).resolve(), home
+        # The NAME carries this provider's own id kind, so a home left standing
+        # under the shared root says whose it was. A neutral kind would make an
+        # abandoned home unattributable, and the sweep's refusal unexplainable.
+        assert Path(home).name.startswith("claude-home"), home
     # And nothing of either home is still standing.
     standing = sorted(p.name for p in (root / HOME_DIR).iterdir()) \
         if (root / HOME_DIR).is_dir() else []
@@ -340,7 +360,11 @@ def test_the_environment_name_that_relocates_the_home_is_the_documented_one():
 #: `claude --version` and paste the output". There is no cross-product here and
 #: that is itself the finding: unlike Grok Build, nothing in this form is
 #: optional, because nothing in the sources says any part of it varies.
-ACCEPTED_FORM = f"{REVIEWED_CLAUDE_VERSION} (Claude Code)"
+#: SPELLED, both halves. Built from `REVIEWED_CLAUDE_VERSION` it would move
+#: whenever the constant moved, and the one thing this suite most needs to catch
+#: -- a reviewed version changed without a review -- would change the expectation
+#: with it. The constant is cross-checked against the spelling instead.
+ACCEPTED_FORM = "2.1.239 (Claude Code)"
 
 #: Grouped by WHAT is wrong, so a failure names its category. Every row is one
 #: edit away from the accepted form, so each fails for the reason it is filed
@@ -382,6 +406,8 @@ def test_the_one_described_form_of_the_version_print_is_accepted(tmp_path):
 
     assert receipt.outcome == "succeeded", receipt.detail
     assert len(_fakeclaude.prompt_spawns(log)) == 1
+    assert ACCEPTED_FORM == f"{REVIEWED_CLAUDE_VERSION} (Claude Code)", (
+        "the reviewed version moved without this suite's spelling moving with it")
 
 
 @pytest.mark.parametrize(
