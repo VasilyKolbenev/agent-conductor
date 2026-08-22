@@ -142,8 +142,13 @@ is structural:
   `stdout`", and SOURCE's `handle_last_message` writes an EMPTY file and warns on
   stderr when there was no agent message at all -- so absent, empty and written
   are three different facts about the CLI's own reporting and none of them is a
-  fact about the work. The far side of the pipe is closed by the opt-in real
-  smoke, which asks for a token that exists only in what was piped.
+  fact about the work. The empty case is OBSERVED as well as source-derived: the
+  reviewed binary, driven through this transport's own production argv with no
+  credential forwarded, exited 1 and left a zero-byte file at the path this build
+  minted. That is the ordinary shape of a failed run, and a build that read
+  "the file is there" as "the task was done" would have called it a success. The
+  far side of the pipe is closed instead by the opt-in real smoke, which asks for
+  a token that exists only in what was piped and finds it in this file.
 
 **No exit-code contract is published for this mode**, so the profile declares
 `exit_codes_published=False` and every receipt says a zero is the process having
