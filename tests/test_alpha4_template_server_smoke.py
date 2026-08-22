@@ -35,9 +35,19 @@ RUN_ID = "run-loopback-001"
 NOW = "2026-08-21T09:00:00Z"
 #: One instance, bound to the provider the config below pins. The adapter name
 #: is the CONFIGURATION's word: no test here decides anything by it.
+#:
+#: It is `codex` rather than `claude-code`, and the reason belongs to the
+#: TEMPLATE rather than to this file: the frozen `dalio-v1` binds `dispatch`
+#: AND `review`, and the real Claude Code transport carries only `dispatch` --
+#: an honest review needs the artifact's CONTENT, and this build has no
+#: resolver that turns an artifact reference into one. `codex` is still the
+#: fixture and still declares the whole reviewed control set, so it can serve
+#: the frozen template whole. That consequence is not smoothed over here: it is
+#: held as its own claim in `tests/test_command_claude_transport.py`, so it is a
+#: named fact rather than a 409 someone meets by surprise.
 CONFIG = {
     "cycle": {"id": "default-orbit", "phases": ["goal", "detect", "design"]},
-    "instances": [{"id": "solo-node", "adapter": "claude-code"}],
+    "instances": [{"id": "solo-node", "adapter": "codex"}],
 }
 
 
@@ -55,11 +65,11 @@ def pinned(tmp_path):
     searches a PATH -- so a file that exists is the whole difference between a
     provider this build can reach and one it cannot.
     """
-    executable = tmp_path / "claude-executable"
+    executable = tmp_path / "codex-executable"
     executable.write_text("", encoding="utf-8", newline="\n")
     return [ProviderConfig(
-        provider_id="claude-code", executable=str(executable.resolve()),
-        protocol="fake-claude-jsonl-v1")]
+        provider_id="codex", executable=str(executable.resolve()),
+        protocol="fake-codex-jsonl-v1")]
 
 
 def request(base, method, path, *, token=None, body=None, host=None):

@@ -15,6 +15,7 @@ child was terminated by watching its heartbeat freeze.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import subprocess
@@ -38,6 +39,16 @@ EMIT_STDERR = "FAKEPROC_EMIT_STDERR"
 DUMP_ARGV = "FAKEPROC_DUMP_ARGV"
 DUMP_ENV = "FAKEPROC_DUMP_ENV"
 DUMP_CWD = "FAKEPROC_DUMP_CWD"
+#: Read stdin to EOF and report what arrived, as a length and a hex digest
+#: rather than the bytes themselves -- a fake that echoed the payload would make
+#: every leak assertion in this suite pass by accident, because the payload
+#: would then be legitimately present in the child's own output.
+DUMP_STDIN = "FAKEPROC_DUMP_STDIN"
+#: Exit at once, through `os._exit`, reading nothing and running no cleanup.
+#: This is the DEAF child: the one whose exit code is honest about a task it was
+#: never given. `os._exit` rather than `sys.exit` on purpose -- no flushing, no
+#: atexit, nothing that could accidentally drain the pipe on the way out.
+DEAF_EXIT = "FAKEPROC_DEAF_EXIT"
 EXIT = "FAKEPROC_EXIT"
 
 
@@ -121,6 +132,8 @@ def _heartbeat(path: str) -> None:
 
 def main() -> int:
     env = os.environ
+    if env.get(DEAF_EXIT):
+        os._exit(int(env[DEAF_EXIT]))
     if env.get(PID_FILE):
         _write_atomic(env[PID_FILE], f"{os.getpid()} {os.getppid()}")
     if env.get(SPAWN_HB_FILE):
@@ -131,6 +144,14 @@ def main() -> int:
         _emit("ENV " + json.dumps(dict(env)))
     if env.get(DUMP_CWD):
         _emit("CWD " + os.getcwd())
+    if env.get(DUMP_STDIN):
+        # A blocking read to EOF: if the parent never closes the stream, this
+        # child hangs, which is exactly the failure the writer lifecycle exists
+        # to prevent and exactly what a timeout would then report.
+        payload = sys.stdin.buffer.read()
+        _emit("STDIN " + json.dumps({
+            "bytes": len(payload),
+            "sha256": hashlib.sha256(payload).hexdigest()}))
     if env.get(EMIT_STDOUT):
         _emit(env[EMIT_STDOUT])
     if env.get(EMIT_STDERR):

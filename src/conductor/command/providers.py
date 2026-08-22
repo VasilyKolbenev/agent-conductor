@@ -27,12 +27,17 @@ from pathlib import Path
 from types import MappingProxyType
 
 from .adapters import AdapterContractError, AdapterRegistry
-from .adapters.deep_adapters import (
-    DEEP_CAPABILITIES,
-    DEEP_CONTROLS,
-    ClaudeCodeAdapter,
-    CodexAdapter,
+from .adapters.claude_code import (
+    CLAUDE_CAPABILITIES,
+    CLAUDE_DISPLAY_NAME,
+    CLAUDE_LIFECYCLE,
+    CLAUDE_PROTOCOL,
+    CLAUDE_PROVIDER_ID,
+    CLAUDE_SCHEMA_PAIRS,
+    ClaudeCodeTransport,
 )
+from .adapters.codex_cli import CodexAdapter
+from .adapters.deep_adapters import DEEP_CAPABILITIES, DEEP_CONTROLS
 from .adapters.deep_contracts import DeepAdapterConfig
 from .adapters.dsh_harness import DSH_PROTOCOL, DshHarnessAdapter, DshPin
 from .adapters.grok_build import (
@@ -81,7 +86,8 @@ _ENTRYPOINT_PROTOCOLS = frozenset({DSH_PROTOCOL})
 #: half. Keyed by PROTOCOL rather than by provider id on purpose -- a protocol is
 #: not an identity, so this stays a fact about pin SHAPE and the identity gate
 #: has nothing to permit here. Two products sharing a shape share this row.
-_SINGLE_EXECUTABLE_PROTOCOLS = frozenset({KIMI_PROTOCOL, GROK_PROTOCOL})
+_SINGLE_EXECUTABLE_PROTOCOLS = frozenset(
+    {KIMI_PROTOCOL, GROK_PROTOCOL, CLAUDE_PROTOCOL})
 #: The dsh harness carries one control and says so; stop, retry and switch are
 #: absent from the manifest, so the door cannot admit them.
 _DSH_CAPABILITIES = ("observe", "dispatch")
@@ -91,12 +97,12 @@ _DSH_SCHEMA_PAIRS = (("dispatch", "deep-arguments-v1"),)
 #: A ProviderConfig naming a provider absent from this catalog is refused; it is
 #: never silently discovered or invented.
 PROVIDER_CATALOG = MappingProxyType({
-    "claude-code": ProviderCatalogEntry(
-        provider_id="claude-code", display_name="Claude Code (fake protocol)",
-        vendor="Anthropic-compatible test fixture", protocol="fake-claude-jsonl-v1",
-        capabilities=DEEP_CONTROLS, schema_pairs=_DEEP_SCHEMA_PAIRS,
-        lifecycle=_DEEP_LIFECYCLE, adapter_class=ClaudeCodeAdapter,
-        implementation="fixture_only"),
+    CLAUDE_PROVIDER_ID: ProviderCatalogEntry(
+        provider_id=CLAUDE_PROVIDER_ID, display_name=CLAUDE_DISPLAY_NAME,
+        vendor="Anthropic", protocol=CLAUDE_PROTOCOL,
+        capabilities=CLAUDE_CAPABILITIES, schema_pairs=CLAUDE_SCHEMA_PAIRS,
+        lifecycle=CLAUDE_LIFECYCLE, adapter_class=ClaudeCodeTransport,
+        implementation="real_experimental"),
     "codex": ProviderCatalogEntry(
         provider_id="codex", display_name="Codex (fake protocol)",
         vendor="OpenAI-compatible test fixture", protocol="fake-codex-jsonl-v1",

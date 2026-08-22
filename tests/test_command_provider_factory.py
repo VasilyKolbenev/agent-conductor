@@ -20,6 +20,8 @@ from conductor.command import providers as provider_factory
 from conductor.command.adapters import AdapterContractError, AdapterRegistry
 from conductor.command.adapters.provider import ProviderConfig, provider_projection
 from conductor.command.contracts import canonical_json
+from conductor.command.adapters.claude_code import CLAUDE_PROTOCOL
+from conductor.command.adapters.process import ProcessRunner
 from conductor.command.providers import PROVIDER_CATALOG, resolve_providers
 from tests.test_store import good_lane, write_project
 
@@ -51,8 +53,18 @@ def _counted_runner(monkeypatch) -> dict[str, int]:
     """Replace the owned runner with a counter, so spawns are counted, not assumed."""
     counts = {"constructed": 0, "spawned": 0}
 
-    class CountingRunner:
+    class CountingRunner(ProcessRunner):
+        """A real runner that counts, rather than a stand-in that resembles one.
+
+        It SUBCLASSES `ProcessRunner` deliberately. A headless transport refuses
+        anything else at construction -- "spawns only through an owned runner" --
+        and that refusal is a relation this suite must not route around by
+        handing the factory a duck-typed double. Counting is added; nothing is
+        replaced but `run`, which asserts rather than spawning.
+        """
+
         def __init__(self, root, environ=None) -> None:
+            super().__init__(root, environ=environ)
             counts["constructed"] += 1
 
         def run(self, spec):
@@ -71,7 +83,7 @@ def _resolved_availability(resolution) -> dict:
 def test_an_available_provider_registers_its_adapter_and_is_spawn_capable(tmp_path):
     executable = _present(tmp_path, "claude.exe")
     resolution = resolve_providers(
-        [_config("claude-code", executable, "fake-claude-jsonl-v1")],
+        [_config("claude-code", executable, CLAUDE_PROTOCOL)],
         root=tmp_path, clock=lambda: NOW, ids=_ids())
     resolved = _resolved_availability(resolution)
     assert set(resolved) == set(PROVIDER_CATALOG)
@@ -86,7 +98,7 @@ def test_an_available_provider_registers_its_adapter_and_is_spawn_capable(tmp_pa
 def test_a_provider_with_an_absent_executable_resolves_unavailable_and_never_registers(tmp_path):
     missing = str(tmp_path / "not-installed.exe")  # deliberately never created
     resolution = resolve_providers(
-        [_config("claude-code", missing, "fake-claude-jsonl-v1")],
+        [_config("claude-code", missing, CLAUDE_PROTOCOL)],
         root=tmp_path, clock=lambda: NOW, ids=_ids())
     assert resolution.contracts[0].availability == "executable_absent"
     assert resolution.contracts[0].available is False
@@ -110,8 +122,8 @@ def test_two_configs_for_one_provider_are_refused(tmp_path):
     missing = str(tmp_path / "nope.exe")
     with pytest.raises(Exception, match="more than once"):
         resolve_providers(
-            [_config("claude-code", missing, "fake-claude-jsonl-v1"),
-             _config("claude-code", missing, "fake-claude-jsonl-v1")],
+            [_config("claude-code", missing, CLAUDE_PROTOCOL),
+             _config("claude-code", missing, CLAUDE_PROTOCOL)],
             root=tmp_path, clock=lambda: NOW, ids=_ids())
 
 
@@ -133,9 +145,16 @@ def test_the_default_resolution_spawns_nothing_and_calls_every_provider_unconfig
         resolution.spawn_capable(provider_id) for provider_id in PROVIDER_CATALOG)
 
 
-def test_both_fake_adapters_register_through_the_factory(tmp_path):
+def test_two_configured_providers_both_register_through_the_factory(tmp_path):
+    """One real transport and one fixture, which is what the roster now holds.
+
+    It used to be "both fake adapters", and the rename is the point: the day
+    `claude-code` became a real transport, a test whose name promised two
+    fixtures would have kept passing while describing a roster that no longer
+    exists.
+    """
     resolution = resolve_providers(
-        [_config("claude-code", _present(tmp_path, "claude.exe"), "fake-claude-jsonl-v1"),
+        [_config("claude-code", _present(tmp_path, "claude.exe"), CLAUDE_PROTOCOL),
          _config("codex", _present(tmp_path, "codex.exe"), "fake-codex-jsonl-v1")],
         root=tmp_path, clock=lambda: NOW, ids=_ids())
     assert [row.adapter_id for row in resolution.registry.manifests()] == ["claude-code", "codex"]
@@ -150,7 +169,7 @@ def test_both_fake_adapters_register_through_the_factory(tmp_path):
 def test_an_unavailable_provider_reaches_no_runner_and_spawns_nothing(tmp_path, monkeypatch):
     counts = _counted_runner(monkeypatch)
     resolution = resolve_providers(
-        [_config("claude-code", str(tmp_path / "missing.exe"), "fake-claude-jsonl-v1"),
+        [_config("claude-code", str(tmp_path / "missing.exe"), CLAUDE_PROTOCOL),
          _config("codex", str(tmp_path / "also-missing.exe"), "fake-claude-jsonl-v1")],
         root=tmp_path, clock=lambda: NOW, ids=_ids())
     resolved = _resolved_availability(resolution)
@@ -164,7 +183,7 @@ def test_an_available_provider_builds_one_runner_and_still_spawns_nothing(
         tmp_path, monkeypatch):
     counts = _counted_runner(monkeypatch)
     resolution = resolve_providers(
-        [_config("claude-code", _present(tmp_path, "claude.exe"), "fake-claude-jsonl-v1"),
+        [_config("claude-code", _present(tmp_path, "claude.exe"), CLAUDE_PROTOCOL),
          _config("codex", _present(tmp_path, "codex.exe"), "fake-codex-jsonl-v1")],
         root=tmp_path, clock=lambda: NOW, ids=_ids())
     assert counts == {"constructed": 1, "spawned": 0}
@@ -178,7 +197,7 @@ def test_the_factory_admits_nothing_the_registration_door_would_refuse(tmp_path)
         lifecycle=("observe", "prepare", "execute", "verify", "recover"))
     with pytest.raises(Exception, match="lifecycle seams"):
         resolve_providers(
-            [_config("claude-code", _present(tmp_path, "claude.exe"), "fake-claude-jsonl-v1")],
+            [_config("claude-code", _present(tmp_path, "claude.exe"), CLAUDE_PROTOCOL)],
             root=tmp_path, clock=lambda: NOW, ids=_ids(),
             catalog={"claude-code": unbacked})
 
@@ -194,7 +213,7 @@ def test_a_catalog_key_that_disagrees_with_its_entry_is_refused(tmp_path):
 def test_no_pinned_path_or_secret_name_reaches_a_provider_descriptor(tmp_path):
     executable = _present(tmp_path, "claude.exe")
     resolution = resolve_providers(
-        [_config("claude-code", executable, "fake-claude-jsonl-v1")],
+        [_config("claude-code", executable, CLAUDE_PROTOCOL)],
         root=tmp_path, clock=lambda: NOW, ids=_ids())
     blob = (canonical_json([row.as_dict() for row in resolution.contracts])
             + canonical_json(provider_projection(resolution.contracts)))
@@ -207,7 +226,7 @@ def test_build_resolves_provider_config_into_the_command_registry(tmp_path):
     root = write_project(tmp_path, lanes={"claude": good_lane()})
     executable = _present(Path(root), "claude.exe")
     subject = server.build(
-        root, 0, providers=[_config("claude-code", executable, "fake-claude-jsonl-v1")],
+        root, 0, providers=[_config("claude-code", executable, CLAUDE_PROTOCOL)],
         clock=lambda: NOW, ids=_ids())
     try:
         adapter = subject.command_registry.resolve("claude-code")
@@ -237,5 +256,5 @@ def test_build_refuses_an_explicit_registry_beside_provider_config(tmp_path):
     with pytest.raises(Exception, match="not both"):
         server.build(
             root, 0, registry=AdapterRegistry(),
-            providers=[_config("claude-code", executable, "fake-claude-jsonl-v1")],
+            providers=[_config("claude-code", executable, CLAUDE_PROTOCOL)],
             clock=lambda: NOW, ids=_ids())

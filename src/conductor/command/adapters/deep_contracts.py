@@ -37,6 +37,11 @@ class DeepProtocol(str, Enum):
     #: Grok Build's published one-shot mode: `--single` with no TUI.
     #: See adapters/grok_build.py.
     GROK_HEADLESS_V1 = "grok-build-headless-v1"
+    #: Claude Code's published print mode: `--bare -p` with no TUI, the task
+    #: piped rather than placed on argv. The fake token above is NOT retired
+    #: beside it: `codex` still speaks that family of fake protocols, and this
+    #: one selects the real transport. See adapters/claude_code.py.
+    CLAUDE_HEADLESS_V1 = "claude-code-headless-v1"
 
 
 _ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")

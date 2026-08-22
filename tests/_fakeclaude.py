@@ -1,0 +1,307 @@
+"""A deterministic stand-in for a pinned Claude Code binary, and a REAL executable.
+
+Claude Code installs as a native binary, so its adapter pins ONE absolute path
+and puts nothing in front of it. The executable is built by ``tests/_fakeexe.py``,
+which produces a file the operating system really runs with no shell involved.
+
+Every branch this child takes is chosen by a ``FAKECLAUDE_*`` environment knob
+rather than by timing, an install, or a network, and importing this module never
+runs the child body.
+
+**What is different from every other fake in this roster, and why.** Claude Code
+is the first provider whose task arrives on STDIN, so this child is the only
+witness that can say whether it arrived at all. It therefore reads stdin to EOF
+and records a MEASUREMENT of what it read -- a length and a digest -- into the
+SPAWN LOG. It records the contents nowhere, and writes nothing of them to stdout.
+
+The spawn log belongs under a test's own `tmp_path`, never under a project or
+run root: it is an artefact this build does not sweep.
+
+That split is deliberate and it is the whole design of this file:
+
+- STDOUT is the transport's input, and a byte written there can reach a receipt,
+  a journal record, an API response or an SSE frame. So this child never echoes
+  the instruction to stdout. A fake that did would make every leak assertion in
+  the Claude suites pass by accident, because the operator's prose would then be
+  legitimately present in the child's own output and no test could tell a leak
+  from an echo;
+- the LOG carries a MEASUREMENT of what arrived and never a copy of it: a byte
+  count and a sha256, from which a test computes the same digest and compares.
+  That proves the exact bytes no less than storing them would, and it does not
+  create a second copy of the operator's instruction in a file on disk. An
+  earlier draft of this fake wrote `dict(os.environ)` and the decoded stdin
+  text; with `ANTHROPIC_API_KEY` legitimately in a pin's `env_allow`, that log
+  would have stored a real key on any machine that had one, and the test
+  artefact would itself have become the leak channel every suite here exists to
+  close.
+
+**The leak question is asked INSIDE the child**, which is the only place that
+can answer it about the environment without writing the environment down. The
+probe token arrives ONLY in the piped task, in a closed form --
+`CLAUDE_LEAK_PROBE_` followed by 64 hex digits -- and the child extracts it from
+the stdin it has already read. It then scans its own argv, its own cwd and EVERY
+value in its own environment, with no exclusions at all, and logs four BOOLEANS.
+It never logs the token.
+
+The no-exclusions part is the whole point, and an earlier draft got it wrong: it
+took the marker from a `FAKECLAUDE_MARKER` variable and then had to skip that
+variable when scanning the environment. "The marker is not in the environment"
+was then true only by a carve-out for the test's own plumbing -- exactly the
+shape of guard this suite exists to refuse. A token that never travels by
+environment needs no exemption, so the scan has none.
+
+The scan is OPT-IN, through `FAKECLAUDE_LEAK_CHECK=1`. Without it this child is
+an ordinary transport double: it reads the task, measures it, records
+`marker: null`, and runs. That matters because requiring a probe token from
+every task would push a test-only syntax into every lifecycle scenario and into
+the operator instruction each one composes -- which is not a shape a real Claude
+Code would ever be handed, so the double would stop resembling the thing it
+stands in for.
+
+WITH the knob, a stdin that was read and carries no probe token, or more than
+one, makes the CHILD FAIL with `PROBE_MISSING_EXIT`. That is the half that
+cannot be optional: a leak scan that quietly skipped itself would turn every
+future test that forgot its probe into a passing leak test that checked nothing.
+The knob carries the string `"1"` and never the token, so the environment scan
+still needs no exemption for it.
+
+The read is BLOCKING and to EOF, so a parent that wrote the payload and never
+closed the stream leaves this child waiting -- which is the failure the writer
+lifecycle exists to prevent and which a test then sees as a timeout rather than
+as a passing run.
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import re
+import sys
+import time
+from pathlib import Path
+
+from tests import _fakeexe
+
+#: Where each spawn appends its one JSON line.
+SPAWN_LOG = "FAKECLAUDE_SPAWN_LOG"
+#: The whole line `--version` prints. The default is the form two Anthropic issue
+#: templates describe -- semver first, product name in parentheses -- so a test
+#: asking for anything else is asking about a shape the vendor did not describe.
+VERSION = "FAKECLAUDE_VERSION"
+#: Non-empty makes `--version` itself fail, so the preflight refusal is testable.
+VERSION_FAILS = "FAKECLAUDE_VERSION_FAILS"
+#: Exit code for a prompt spawn; `--version` always exits 0 unless it is failed.
+EXIT = "FAKECLAUDE_EXIT"
+#: Emit this on stdout during a prompt spawn, to stand for a model's answer.
+EMIT_STDOUT = "FAKECLAUDE_EMIT_STDOUT"
+#: Emit this on stderr, which the runner merges into the same bounded capture.
+EMIT_STDERR = "FAKECLAUDE_EMIT_STDERR"
+#: Write this many bytes to stdout, to overrun the transport's capture bound.
+BOMB_BYTES = "FAKECLAUDE_BOMB_BYTES"
+#: Sleep this long during a prompt spawn, so a timeout is testable.
+SLEEP = "FAKECLAUDE_SLEEP"
+#: `relative/path:text` written inside the child's cwd, so a test can prove the
+#: workspace evidence a real coding run would leave behind.
+WRITE_FILE = "FAKECLAUDE_WRITE_FILE"
+#: Do NOT read stdin at all -- the deaf child, for the delivery relation.
+DEAF = "FAKECLAUDE_DEAF"
+#: Turn the leak scan ON. A BOOLEAN, and the distinction matters: this knob
+#: carries `"1"` and never the probe token, so the environment scan it enables
+#: needs no exemption for the variable that enabled it. Off by default, so an
+#: ordinary lifecycle test is not forced to write test-only syntax into the
+#: operator instruction it composes.
+LEAK_CHECK = "FAKECLAUDE_LEAK_CHECK"
+#: The closed form of the leak probe token. It arrives ONLY inside the piped
+#: task, never through the environment, so the scan needs no exemption for the
+#: channel that delivered it. 64 hex digits make an accidental collision with an
+#: operator's own prose impossible.
+PROBE_PREFIX = "CLAUDE_LEAK_PROBE_"
+PROBE_FORM = re.compile(PROBE_PREFIX + r"[0-9a-f]{64}")
+#: What this child exits with when a task it READ carries no single probe token.
+#: Loud on purpose: a run whose leak scan could not be performed must not be
+#: mistaken for a run whose leak scan passed.
+PROBE_MISSING_EXIT = 97
+
+#: The environment names this child reads back, so a test asserting the
+#: adapter's environment does not spell them twice.
+CLAUDE_HOME_NAME = "CLAUDE_CONFIG_DIR"
+SWITCH_NAMES = ("DISABLE_AUTOUPDATER", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC")
+
+#: The line `--version` prints by default: the reviewed semver dressed exactly as
+#: the vendor's own issue templates describe. The semver is read from the adapter
+#: rather than restated, because a fake carrying its own copy would keep passing
+#: after the reviewed constant moved; the DRESSING is spelled here, because that
+#: is this fake's own subject.
+try:  # pragma: no cover -- the child runs with the package importable
+    from conductor.command.adapters.claude_code import REVIEWED_CLAUDE_VERSION
+
+    DEFAULT_VERSION = f"{REVIEWED_CLAUDE_VERSION} (Claude Code)"
+except ImportError:  # pragma: no cover -- never on a configured tree
+    DEFAULT_VERSION = ""
+
+
+def build_executable(directory: str | os.PathLike[str]) -> Path | None:
+    """A REAL single-file executable standing in for the pinned claude binary."""
+    return _fakeexe.build(directory, "claude", "_fakeclaude")
+
+
+def spawns(log_path: str | os.PathLike[str]) -> list[dict]:
+    """Every spawn recorded so far, oldest first; missing log means none."""
+    try:
+        text = Path(log_path).read_text(encoding="utf-8")
+    except OSError:
+        return []
+    return [json.loads(line) for line in text.splitlines() if line.strip()]
+
+
+def prompt_spawns(log_path: str | os.PathLike[str]) -> list[dict]:
+    """Only the spawns that really ran a prompt, never the version preflights."""
+    return [row for row in spawns(log_path) if row["argv"][:1] != ["--version"]]
+
+
+# --- the child body ----------------------------------------------------------
+
+
+def _read_task() -> tuple[dict, str]:
+    """Read stdin to EOF and MEASURE what arrived, without copying it anywhere.
+
+    A length and a digest, never the text. A test that knows what it sent can
+    compute the same digest, which proves the exact bytes as strictly as storing
+    them would -- and storing them would put the operator's instruction in a
+    second file that nothing sweeps.
+
+    The decoded text is returned separately, to the caller in this process only,
+    so the marker scan below can run without any of it reaching the log.
+    """
+    if os.environ.get(DEAF):
+        return {"read": False}, ""
+    payload = sys.stdin.buffer.read()
+    return {
+        "read": True,
+        "bytes": len(payload),
+        "sha256": hashlib.sha256(payload).hexdigest(),
+    }, payload.decode("utf-8", errors="replace")
+
+
+def _probe_report(argv: list[str], task_text: str) -> dict | None:
+    """Where the probe token reached, as booleans and nothing else.
+
+    The token is taken from the task this child just read, so the only channel
+    it is known to have travelled by is the one under test. Every other channel
+    is then scanned WITHOUT exception -- argv, cwd, and every environment value
+    including the ones this fake's own knobs occupy.
+
+    ``None`` means no task was read at all, which is the version preflight and
+    the deaf child. It never means "a task was read and the scan was skipped":
+    that case raises out of the caller instead.
+    """
+    found = set(PROBE_FORM.findall(task_text))
+    if len(found) != 1:
+        raise _ProbeMissing(len(found))
+    probe = found.pop()
+    return {
+        "in_stdin": True,
+        "in_argv": any(probe in token for token in argv),
+        "in_cwd": probe in os.getcwd(),
+        "in_env": any(probe in value for value in os.environ.values()),
+    }
+
+
+class _ProbeMissing(Exception):
+    """A task was read and carried no single probe token, so no scan is possible."""
+
+    def __init__(self, count: int) -> None:
+        super().__init__(f"expected exactly one probe token, found {count}")
+        self.count = count
+
+
+def _record(argv: list[str], task: dict | None, marker: dict | None) -> None:
+    """One JSON line per spawn, carrying measurements and never contents.
+
+    What is deliberately ABSENT: every environment VALUE, and the text of the
+    task. A pin may legitimately allow `ANTHROPIC_API_KEY` through, so a log
+    holding values would hold a real credential on any machine that has one --
+    and this file is a test artefact, written where nothing sweeps it. The two
+    documented switches are recorded by name because their values are constants
+    this build chose, not secrets it was handed.
+    """
+    log = os.environ.get(SPAWN_LOG)
+    if not log:
+        return
+    row = {
+        "argv": argv,
+        "cwd": os.getcwd(),
+        "claude_home": os.environ.get(CLAUDE_HOME_NAME),
+        "switches": {name: os.environ.get(name) for name in SWITCH_NAMES},
+        "env_names": sorted(os.environ),
+        "stdin": task,
+        "marker": marker,
+    }
+    with open(log, "a", encoding="utf-8", newline="\n") as handle:
+        handle.write(json.dumps(row, sort_keys=True) + "\n")
+
+
+def _write_pair(base: Path, spec: str) -> None:
+    relative, _, text = spec.partition(":")
+    target = base / relative
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(text, encoding="utf-8", newline="\n")
+
+
+def _run_prompt() -> int:
+    env = os.environ
+    if env.get(WRITE_FILE):
+        _write_pair(Path.cwd(), env[WRITE_FILE])
+    if env.get(EMIT_STDOUT):
+        sys.stdout.buffer.write(env[EMIT_STDOUT].encode("utf-8") + b"\n")
+        sys.stdout.buffer.flush()
+    if env.get(EMIT_STDERR):
+        sys.stderr.buffer.write(env[EMIT_STDERR].encode("utf-8") + b"\n")
+        sys.stderr.buffer.flush()
+    if env.get(BOMB_BYTES):
+        sys.stdout.buffer.write(b"B" * int(env[BOMB_BYTES]))
+        sys.stdout.buffer.flush()
+    if env.get(SLEEP):
+        time.sleep(float(env[SLEEP]))
+    return int(env.get(EXIT, "0"))
+
+
+def main() -> int:
+    argv = sys.argv[1:]
+    if argv[:1] == ["--version"]:
+        # The preflight is spawned with no payload at all, so there is nothing
+        # to read and reading would block on a stream nobody will close.
+        # No task is piped to a preflight, so there is nothing to scan and
+        # `marker: null` is the honest record of that.
+        _record(argv, None, None)
+        if os.environ.get(VERSION_FAILS):
+            return 3
+        sys.stdout.buffer.write(
+            os.environ.get(VERSION, DEFAULT_VERSION).encode("utf-8") + b"\n")
+        sys.stdout.buffer.flush()
+        return 0
+    # The task is read BEFORE anything is emitted: a child that answered first
+    # and read afterwards would pass a test that only counts bytes back.
+    task, task_text = _read_task()
+    if not task["read"]:
+        _record(argv, task, None)
+        return _run_prompt()
+    if not os.environ.get(LEAK_CHECK):
+        # An ordinary run: the task was read and measured, and no leak scan was
+        # asked for. `marker: null` records that honestly rather than implying
+        # a scan that passed.
+        _record(argv, task, None)
+        return _run_prompt()
+    try:
+        report = _probe_report(argv, task_text)
+    except _ProbeMissing as missing:
+        _record(argv, task, None)
+        sys.stderr.buffer.write(f"FAKECLAUDE: {missing}\n".encode("utf-8"))
+        sys.stderr.buffer.flush()
+        return PROBE_MISSING_EXIT
+    _record(argv, task, report)
+    return _run_prompt()
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -22,9 +22,9 @@ from conductor.command.adapters import (
     CodexAdapter,
     PreparedAction,
     UnsupportedCapability,
-    deep_adapters,
 )
 from conductor.command.adapters.base import CAPABILITIES
+from conductor.command.providers import PROVIDER_CATALOG
 from conductor.command.adapters.deep_adapters import DEEP_CAPABILITIES, DEEP_CONTROLS
 from conductor.command.adapters.deep_codecs import FakeClaudeCodec, FakeCodexCodec
 from conductor.command.adapters.deep_commands import (
@@ -493,8 +493,20 @@ def test_only_the_two_reviewed_fake_flags_exist_and_no_real_cli_is_claimed(tmp_p
         assert "fixture" in manifest.vendor.casefold()
         # No docs link, because there is no real integration to point at.
         assert manifest.docs_url == ""
-    source = Path(deep_adapters.__file__).read_text(encoding="utf-8")
-    assert "PENDING" in source, "the unimplemented real-CLI transport must stay stated"
+        # The PENDING statement is owed by whichever provider is still a
+        # FIXTURE, and that is read from the catalog rather than from a list
+        # here. `claude-code` became a real transport and stopped owing it in
+        # the same commit; `codex` still owes it. A fixed list would have had to
+        # be edited by the same hand that made the row real, which is the edit
+        # most likely to be forgotten -- and the sentence it drops is the one
+        # telling an operator that the row runs no real CLI.
+        entry = PROVIDER_CATALOG.get(adapter_type.ADAPTER_ID)
+        still_a_fixture = entry is not None and entry.implementation == "fixture_only"
+        declaring = Path(sys.modules[adapter_type.__module__].__file__)
+        if still_a_fixture:
+            assert "PENDING" in declaring.read_text(encoding="utf-8"), (
+                f"{adapter_type.__name__} stopped stating that its real CLI "
+                f"transport is unimplemented ({declaring.name})")
 
 
 def test_no_shipped_module_constructs_a_fake_deep_adapter(tmp_path):

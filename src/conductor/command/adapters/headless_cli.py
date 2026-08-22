@@ -17,10 +17,21 @@ independent workspace evidence rather than from what the child said. Copied per
 provider, a fix to any of those is a fix that has to be made five times and will
 eventually be made four.
 
-So it lives here once, and a provider is a PROFILE plus two small methods:
+So it lives here once, and a provider is a PROFILE plus two small methods. WHICH
+two is decided by the profile's ``task_channel``, a closed choice of ``argv`` or
+``stdin``, and that is structural rather than advisory:
 
-- ``_argv_prefix`` -- what the operator's pin contributes to argv;
-- ``_task_argv`` -- where the vendor's flags put the prompt.
+- ``_argv_prefix`` -- what the operator's pin contributes to argv, on either
+  channel;
+- on the ``argv`` channel, ``_task_argv(task_text)`` -- where the vendor's flags
+  put the prompt;
+- on the ``stdin`` channel, ``_stdin_argv()`` and ``_task_stdin(task_text)``.
+  The argv builder there takes NO task argument, which is the whole guarantee
+  that no byte of an operator's instruction can reach a command line any process
+  lister on the machine can read. An earlier version tried to CHECK that instead,
+  by calling one builder twice with probe texts and comparing; a review probe
+  defeated it in one line. Two observations are not independence, and an absent
+  parameter is.
 
 This module is PROVIDER-NEUTRAL and names no product. It compares no provider
 id, so the identity gate has nothing to permit here; each concrete adapter is a
@@ -47,6 +58,7 @@ from ..contracts import ActionRequest, ActionResultReceipt
 from .harness_profile import (
     DISPATCH_CAPABILITY,
     OUTPUT_LIMIT,
+    TASK_CHANNEL_STDIN,
     VERSION_TIMEOUT_SECONDS,
     ExecutablePin,
     HarnessProfile,
@@ -69,7 +81,13 @@ from .harness_workspace import (
     HarnessWorkspace,
     WorkspaceNotContained,
 )
-from .process import CommandSpec, ProcessOutcome, ProcessRunner, ProcessRunnerError
+from .process import (
+    STDIN_INCOMPLETE,
+    CommandSpec,
+    ProcessOutcome,
+    ProcessRunner,
+    ProcessRunnerError,
+)
 
 
 #: Every sentence below names the product, so each is built from the profile's
@@ -218,6 +236,17 @@ class HeadlessCliTransport:
             raise self.error(
                 "a headless transport spawns only through an owned runner")
         profile = self.profile
+        if profile.task_channel == TASK_CHANNEL_STDIN:
+            # A profile can DECLARE the stdin channel; only the class can honour
+            # it. Refusing here rather than at the first dispatch is the same
+            # rule the profile itself follows: a code-owned mistake is caught
+            # before an operator's run is standing on it.
+            kind = type(self)
+            for seam in ("_stdin_argv", "_task_stdin"):
+                if getattr(kind, seam) is getattr(HeadlessCliTransport, seam):
+                    raise self.error(
+                        f"this provider's task travels by stdin, so it owes its "
+                        f"own {seam}")
         self.manifest = AdapterManifest(
             adapter_id=adapter_id, display_name=profile.display_name,
             vendor=profile.vendor, version=profile.reviewed_version,
@@ -244,6 +273,32 @@ class HeadlessCliTransport:
 
     def _task_argv(self, task_text: str) -> tuple[str, ...]:
         """Where this vendor's flags put the one prompt, all tokens code-owned."""
+        raise NotImplementedError
+
+    def _stdin_argv(self) -> tuple[str, ...]:
+        """The code-owned flags of a provider whose task travels by STDIN.
+
+        It takes NO task argument, and that is the entire guarantee. Not a
+        promise the author kept, not a check the transport runs afterwards: an
+        argv builder on this channel cannot put an instruction in the command
+        line because it is never handed one, and a build that tried would fail
+        to call this at all.
+
+        What replaced: a version of this seam asked ``_task_argv`` twice with
+        probe texts and compared the answers. A review probe defeated it in one
+        line -- return a constant for both probes, embed the real instruction
+        for anything else -- and the guard reported the argv safe while the
+        operator's task rode it. Two observations were never independence.
+        """
+        raise NotImplementedError
+
+    def _task_stdin(self, task_text: str) -> bytes:
+        """The bytes a STDIN-channel provider hands the child, and its whole task.
+
+        Only ever called for ``task_channel == "stdin"``. A provider on the argv
+        channel never reaches here and never opens a pipe: its spawn is the
+        DEVNULL spawn it had before either seam existed.
+        """
         raise NotImplementedError
 
     # -- observation: no probe, no spawn, no claim ------------------------------
@@ -387,12 +442,27 @@ class HeadlessCliTransport:
         work = self._workspace.work_dir(args.work_item_id)
         before = self._workspace.digest_work_tree()
         self._workspace.claim(request.action_id)
+        argv, payload = self._task_command(self._task_text(args, instruction))
         outcome = self._attempt(
-            self._task_argv(self._task_text(args, instruction)),
-            f"{WORK_DIR}/{args.work_item_id}", timeout=request.timeout_seconds)
+            argv, f"{WORK_DIR}/{args.work_item_id}",
+            timeout=request.timeout_seconds, stdin_bytes=payload)
         self._attempts[request.action_id] = _Attempt(
             work_dir=work, before=before, after=self._evidence())
         return self._observed(request, outcome)
+
+    def _task_command(self, task_text: str) -> tuple[tuple[str, ...], bytes | None]:
+        """The argv and the payload for this provider's channel, and only those.
+
+        The channel is CLOSED and the profile already refused a third value, so
+        these are the only two roads. Each builds its argv with exactly the
+        arguments its own promise allows: on the stdin road the argv builder is
+        never handed the task, which is what makes "no byte of an instruction
+        reaches the command line" a fact about the signature rather than a
+        property someone has to keep remembering.
+        """
+        if self.profile.task_channel == TASK_CHANNEL_STDIN:
+            return self._stdin_argv(), self._task_stdin(task_text)
+        return self._task_argv(task_text), None
 
     def _evidence(self) -> Mapping[str, str] | None:
         """One reading of the authorized work tree, or None if it refused.
@@ -439,7 +509,8 @@ class HeadlessCliTransport:
 
     def _attempt(
             self, argv: tuple[str, ...], cwd: str, *,
-            timeout: int | float) -> ProcessOutcome:
+            timeout: int | float,
+            stdin_bytes: bytes | None = None) -> ProcessOutcome:
         """One spawn inside one FRESH home, and the home goes when the spawn does.
 
         This is the whole of the retention promise: a real harness may write
@@ -453,7 +524,8 @@ class HeadlessCliTransport:
         """
         home = self._mint_home()
         try:
-            return self._spawn(argv, home, cwd, timeout=timeout)
+            return self._spawn(
+                argv, home, cwd, timeout=timeout, stdin_bytes=stdin_bytes)
         finally:
             self._discard(home)
 
@@ -474,7 +546,8 @@ class HeadlessCliTransport:
 
     def _spawn(
             self, argv: tuple[str, ...], home: Path, cwd: str, *,
-            timeout: int | float) -> ProcessOutcome:
+            timeout: int | float,
+            stdin_bytes: bytes | None = None) -> ProcessOutcome:
         """The ONE place a child is started; argv, env and bounds are code-owned.
 
         ``cwd`` is a route RELATIVE to the project root, so the runner's own
@@ -499,7 +572,8 @@ class HeadlessCliTransport:
                 # ordering means the promise holds even if it did not.
                 env={**dict(profile.forced_env),
                      profile.home_env: str(home)},
-                output_limit=profile.output_limit, timeout_seconds=timeout)
+                output_limit=profile.output_limit, timeout_seconds=timeout,
+                stdin_bytes=stdin_bytes)
             return self._runner.run(spec)
         except ProcessRunnerError:  # noqa: BLE001 -- carry no child detail onward
             failed = True
@@ -544,6 +618,17 @@ class HeadlessCliTransport:
             return self._receipt(
                 request, "cancelled", None,
                 f"the {noun} was stopped by the runner")
+        if outcome.stdin_state == STDIN_INCOMPLETE:
+            # The mirror image of the capture bound below, and the earlier of the
+            # two failures: there the answer was not read whole, here the QUESTION
+            # was not delivered whole. A provider that takes its task on stdin and
+            # exits zero without having received it has reported honestly about
+            # something else, and no exit code can repair that. Checked before the
+            # capture bound because a task never posed makes the answer moot.
+            return self._receipt(
+                request, "failed", None,
+                f"the {noun} was never handed its whole instruction, so nothing "
+                "it did can be read as an attempt at the one that was asked")
         if outcome.output_truncated:
             # The headless transport answers on stdout. A stream that overran the
             # capture bound was not read to its end, so whatever the exit code

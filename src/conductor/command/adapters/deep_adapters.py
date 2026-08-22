@@ -1,10 +1,18 @@
-"""Thin, explicitly configured adapters for the two reviewed fake protocols.
+"""The shared lifecycle behind the reviewed fake JSON-line protocols.
 
-PENDING: the real Claude Code and the real Codex CLI transport is NOT
-implemented here and these adapters do not support either tool.  They speak
-only the two deterministic fake JSON-line protocols review approved.  They
-discover no executable, read no home directory, and invent no vendor CLI flag,
-stdin protocol, session recovery, or evidence semantics for the real tools.
+This module names no provider, and that is a rule rather than a tidiness. The
+AST identity gate grants comparison rights over a provider id to exactly ONE
+module -- the one that provider's ``adapter_class`` is defined in -- so two
+concrete adapters sharing a module would hand that module rights over both
+ids. Each therefore lives in a module of its own: ``claude_code.py``,
+``codex_cli.py``. Each of those carries its own PENDING statement about the
+real tool it does not implement, and its own statement of which concrete type
+is reviewed for its id.
+
+What a concrete adapter supplies is fixed identity: an id, a display name, a
+vendor, a protocol token and a codec.  What is DONE with a request is all
+here, and it discovers no executable, reads no home directory, and invents no
+vendor CLI flag, stdin protocol, session recovery, or evidence semantics.
 
 The capability body a request carries is validated and bound to the prepared
 action, but it is deliberately NOT delivered to the child process: the
@@ -33,7 +41,7 @@ from .base import (
     PreparedAction,
     UnsupportedCapability,
 )
-from .deep_codecs import FakeClaudeCodec, FakeCodexCodec
+from .deep_codecs import _FakeCodec
 from .deep_commands import DEEP_ARGUMENT_TYPES, DeepCommandSpec
 from .deep_contracts import DeepAdapterConfig, DeepProtocol, NormalizedResult
 from .deep_evidence import AdapterEvidence
@@ -53,7 +61,7 @@ class _DeepAdapter:
     DISPLAY_NAME: ClassVar[str]
     VENDOR: ClassVar[str]
     PROTOCOL: ClassVar[DeepProtocol]
-    CODEC: ClassVar[type[FakeClaudeCodec] | type[FakeCodexCodec]]
+    CODEC: ClassVar[type[_FakeCodec]]
     argument_schemas = {
         capability: DEEP_ARGUMENT_SCHEMA for capability in DEEP_CAPABILITIES}
 
@@ -87,11 +95,20 @@ class _DeepAdapter:
 
         A property is a data descriptor, so neither a plain assignment nor
         ``object.__setattr__`` can shadow it with an instance attribute, and a
-        rewritten ``__class__`` fails the membership test rather than silently
-        borrowing another vendor's id, protocol, or decoder.
+        rewritten ``__class__`` fails this test rather than silently borrowing
+        another vendor's id, protocol, or decoder.
+
+        The reviewed types are not listed HERE, and that is the point: this
+        module is the shared lifecycle and knows no provider by name, so each
+        concrete module states that its own class is the reviewed one for its
+        own id (``ClaudeCodeAdapter.REVIEWED_TYPE = ClaudeCodeAdapter``). The
+        statement is read from the class's OWN ``__dict__``, never inherited,
+        so ``_DeepAdapter`` itself, an ad-hoc subclass of it, and a subclass of
+        a reviewed class all fail exactly as they did when a tuple of the two
+        concrete classes stood here.
         """
         kind = type(self)
-        if kind not in (ClaudeCodeAdapter, CodexAdapter):
+        if kind.__dict__.get("REVIEWED_TYPE") is not kind:
             raise AdapterContractError("deep adapter requires one reviewed concrete type")
         return kind
 
@@ -264,26 +281,6 @@ class _DeepAdapter:
         return AdapterVerification(
             adapter_id=self._reviewed.ADAPTER_ID, action_id=request.action_id,
             state=state, observed_at=self._safe_clock(), detail="", evidence_refs=())
-
-
-class ClaudeCodeAdapter(_DeepAdapter):
-    """Configured adapter for the reviewed fake Claude JSON-line protocol."""
-
-    ADAPTER_ID = "claude-code"
-    DISPLAY_NAME = "Claude Code (fake protocol)"
-    VENDOR = "Anthropic-compatible test fixture"
-    PROTOCOL = DeepProtocol.FAKE_CLAUDE_V1
-    CODEC = FakeClaudeCodec
-
-
-class CodexAdapter(_DeepAdapter):
-    """Configured adapter for the reviewed fake Codex JSON-line protocol."""
-
-    ADAPTER_ID = "codex"
-    DISPLAY_NAME = "Codex (fake protocol)"
-    VENDOR = "OpenAI-compatible test fixture"
-    PROTOCOL = DeepProtocol.FAKE_CODEX_V1
-    CODEC = FakeCodexCodec
 
 
 def _canonical_config(config: DeepAdapterConfig) -> DeepAdapterConfig:

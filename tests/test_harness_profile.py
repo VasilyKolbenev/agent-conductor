@@ -23,12 +23,19 @@ therefore documented rather than pinned, and what IS pinned is the refusal.
 """
 from __future__ import annotations
 
+import inspect
+
 import pytest
 
 from conductor.command.adapters.harness_profile import (
+    TASK_CHANNEL_ARGV,
+    TASK_CHANNEL_STDIN,
+    TASK_CHANNELS,
     HarnessProfile,
     HeadlessCliError,
 )
+from conductor.command.adapters.headless_cli import HeadlessCliTransport
+from conductor.command.adapters.process import ProcessRunner
 from conductor.command.providers import PROVIDER_CATALOG
 
 #: Fields every profile below shares; only what a case is about varies.
@@ -118,3 +125,74 @@ def test_every_catalogued_provider_carries_a_profile_this_module_would_accept():
             f"{provider_id} forces its own home variable")
         checked += 1
     assert checked >= 3, f"only {checked} profiles were checked, so this proved little"
+
+
+# --- where a task travels, and why that is a TYPE rather than a check --------
+
+
+def test_a_profile_that_names_no_channel_takes_the_argv_one_it_always_had():
+    """The three providers that shipped before this field must not notice it."""
+    assert a_profile().task_channel == TASK_CHANNEL_ARGV
+    for provider_id in ("deepseek-harness", "kimi-code", "grok-build"):
+        entry = PROVIDER_CATALOG[provider_id]
+        assert entry.adapter_class.profile.task_channel == TASK_CHANNEL_ARGV, (
+            f"{provider_id} changed channel")
+
+
+def test_a_task_travels_by_one_of_two_channels_and_a_third_word_is_refused():
+    """A closed vocabulary, refused at construction like every other one here.
+
+    Left open, a typo would fall through the transport's `== "stdin"` test and
+    be served as the argv channel -- which for a provider that meant stdin puts
+    the operator's whole instruction on the command line, silently.
+    """
+    assert TASK_CHANNELS == (TASK_CHANNEL_ARGV, TASK_CHANNEL_STDIN)
+
+    for rejected in ("STDIN", "pipe", "argv ", "", None):
+        with pytest.raises(HeadlessCliError, match="a task travels by one of"):
+            a_profile(task_channel=rejected)
+
+
+def test_a_provider_on_the_stdin_channel_cannot_be_handed_the_task_in_its_argv():
+    """The structural claim, derived from the catalog rather than from a name.
+
+    This is what replaced a check that did not work. The earlier seam called the
+    argv builder twice with two probe texts and compared the answers; a review
+    probe defeated it in one line by returning a constant for both probes and
+    embedding the real instruction for anything else. The guard reported the
+    argv safe while the operator's task rode it, because two observations are
+    not independence.
+
+    What IS independence is an absent parameter. So the assertion is about the
+    SIGNATURE: on the stdin channel the argv builder takes nothing but `self`,
+    and the cheating shape is not something a provider can express.
+    """
+    on_stdin = [
+        entry for entry in PROVIDER_CATALOG.values()
+        if getattr(entry.adapter_class, "profile", None) is not None
+        and entry.adapter_class.profile.task_channel == TASK_CHANNEL_STDIN]
+    assert on_stdin, "no provider takes its task on stdin, so this proves nothing"
+
+    for entry in on_stdin:
+        builder = inspect.signature(entry.adapter_class._stdin_argv)
+        assert [name for name in builder.parameters if name != "self"] == [], (
+            f"{entry.provider_id}'s argv builder can see a task")
+
+
+def test_a_profile_may_declare_the_stdin_channel_only_where_a_class_honours_it():
+    """A declaration the class cannot keep is refused before any run stands on it.
+
+    A profile can say `stdin`; only the concrete adapter can implement it. Left
+    to the first dispatch, the mismatch would surface as `NotImplementedError`
+    in the middle of an operator's authorized action.
+    """
+    class _Half(HeadlessCliTransport):
+        profile = a_profile(task_channel=TASK_CHANNEL_STDIN)
+        error = HeadlessCliError
+
+        def _stdin_argv(self):
+            return ("--probe",)
+
+    with pytest.raises(HeadlessCliError, match="owes its own _task_stdin"):
+        _Half(ProcessRunner("."), root=".", clock=lambda: "", ids=lambda _p: "",
+              adapter_id="probe")
