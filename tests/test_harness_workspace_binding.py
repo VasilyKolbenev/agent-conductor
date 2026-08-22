@@ -41,11 +41,13 @@ in the tree has claimed yet.
 """
 from __future__ import annotations
 
+import stat
 import threading
 from pathlib import Path
 
 import pytest
 
+import conductor.command.adapters.harness_workspace as harness_workspace
 from conductor.command.adapters.harness_workspace import (
     HOME_LEAF_ABSENT,
     HOME_LEAF_EMPTY,
@@ -403,3 +405,42 @@ def test_a_leaf_that_is_not_one_local_component_is_refused(tmp_path, name):
     workspace, home = _a_home(tmp_path)
 
     assert _refusal(workspace.home_leaf_kind, home, name) is not None, name
+
+
+class _ReparseStat:
+    """A stat result Windows really produces and no fixture here can create.
+
+    A reparse point whose tag Python does NOT turn into a symbolic link keeps
+    ``S_IFREG`` in ``st_mode``: an app-execution alias, a deduplication stub, a
+    cloud-files placeholder. `stat.S_ISREG` calls every one of them a regular
+    file, so the typed portal classifier is the only thing standing between such
+    a name and being read as a plain file this build's own child wrote.
+
+    Injected rather than planted, and that is stated rather than hidden: no
+    primitive in this repository creates one on demand. Leaving the relation
+    unheld was a GREEN mutation -- removing the portal check from
+    `home_leaf_kind` changed no answer any fixture in this file could produce,
+    because `lstat` already classifies a symlink and a junction as non-regular.
+    """
+
+    st_mode = stat.S_IFREG | 0o644
+    st_nlink = 1
+    st_size = 12
+    #: A real tag, and any non-zero one would do: the classifier asks whether
+    #: there is a tag at all, not which.
+    st_reparse_tag = 0x8000001B
+
+
+def test_a_reparse_tag_that_is_no_link_is_still_not_a_file_this_build_wrote(
+        tmp_path, monkeypatch):
+    """The half of "a portal is not read" that `S_ISREG` cannot hold.
+
+    The planted cases above are the ones `lstat` already refuses to call
+    regular. This is the other kind, and it is the one that would be read as an
+    answer: a name whose bytes are somewhere else entirely, wearing `S_IFREG`.
+    """
+    workspace, home = _a_home(tmp_path)
+    (home / "answer.txt").write_text("real bytes", encoding="utf-8")
+    monkeypatch.setattr(harness_workspace, "_leaf", lambda path: _ReparseStat())
+
+    assert workspace.home_leaf_kind(home, "answer.txt") == HOME_LEAF_OTHER
