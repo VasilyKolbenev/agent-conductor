@@ -277,8 +277,12 @@ def test_an_entrypoint_pinned_against_a_single_binary_costs_availability(
 #: So the cross-product runs over the commit CONTENTS and the channel. The
 #: contents are not this suite's invention either: `build.rs` writes `git
 #: rev-parse --short HEAD` or falls back to the literal `unknown`, and
-#: `core.abbrev` picks the length -- so a 4-hex, a 7-hex, a 40-hex and that one
-#: word are all published, and no length among them is this parser's to assume.
+#: `core.abbrev` picks the length between two bounds git enforces ITSELF -- it
+#: refuses a setting below 4 outright ("abbrev length out of range", so the
+#: build script's fallback writes `unknown` instead), and clamps one above the
+#: object name, which is 40 digits in the SHA-1 tree this module is pinned
+#: against. So both ENDS of the published range are here as well as a middle,
+#: and `UNPUBLISHED_COMMITS` stands just outside each end.
 _COMMITS = ("abc1234", "unknown", "def0", "0123456789abcdef" * 2 + "01234567")
 _CHANNELS = ("", " [stable]", " [alpha]")
 ACCEPTED_FORMS = tuple(
@@ -338,14 +342,22 @@ CRATE_ONLY_FORMS = (
     "grok 1.0.5 [stable]",
 )
 #: Commit CONTENTS no road through `build.rs` can emit. `git rev-parse --short`
-#: writes lowercase hex, and the one fallback writes one lowercase word, so
-#: anything else between those parentheses was printed by something that is not
-#: a Grok Build. `..` and a bare semver are here because a parenthesised run of
-#: any non-space characters -- which is what this parser used to accept -- reads
-#: a path fragment and a version number as a commit just as happily as a hash.
+#: writes lowercase hex of 4 to 40 digits, and the one fallback writes one
+#: lowercase word, so anything else between those parentheses was printed by
+#: something that is not a Grok Build.
+#:
+#: Two kinds are here. The wrong ALPHABET: `..` and a bare semver, because a
+#: parenthesised run of any non-space characters -- which this parser accepted
+#: once -- reads a path fragment and a version number as a commit just as
+#: happily as a hash. And the wrong LENGTH, just outside each end of the range:
+#: 1 and 3 below it, where git refuses the setting and the fallback takes over,
+#: and 41 and 200 above the object name git clamps to. A run of hex with no
+#: length at all is what this parser accepted next, so both ends are witnessed
+#: rather than argued.
 UNPUBLISHED_COMMITS = (
     "zzzzzzz", "ABC1234", "Unknown", "unknown2", "../../etc", "1.0.5", "abc 1234",
     "",
+    "a", "aaa", "a" * 41, "a" * 200,
 )
 #: The refusal matrix, grouped by WHAT is wrong, so a failure names its category
 #: rather than one string among many. Every row outside `crate-only` is dressed
@@ -526,24 +538,31 @@ def test_an_executable_that_prints_only_a_semver_never_clears_the_preflight():
 
 
 def test_a_commit_the_build_script_could_not_have_written_is_not_a_version():
-    """The commit is a published alphabet, not any token in parentheses.
+    """The commit is a published alphabet AND a published length range.
 
-    `git rev-parse --short HEAD` writes lowercase hex and the fallback writes
-    `unknown`; nothing else can appear there. Held separately from the matrix
-    above so the ALPHABET has a claim of its own, and paired with the two
-    contents that bound it: the shortest abbreviation git will hand out, and the
-    word it hands out instead when there is no git to ask.
+    `git rev-parse --short HEAD` writes lowercase hex of 4 to 40 digits -- git
+    refuses a `core.abbrev` below 4 and clamps one above the object name, which
+    is 40 in this SHA-1 tree -- and the fallback writes `unknown`. Nothing else
+    can appear between those parentheses.
+
+    Held separately from the matrix above so the CONTENTS have a claim of their
+    own, and its positive control is `_COMMITS` itself rather than a list
+    written out again here: that is the published set, it carries both ends of
+    the range and the fallback word, and a tightening that narrowed it would
+    have to narrow the accepted cross-product too, which is loud.
     """
     unbound = GrokBuildAdapter.__new__(GrokBuildAdapter)
 
     for commit in UNPUBLISHED_COMMITS:
         printed = f"grok 1.0.5 ({commit})".encode("utf-8")
         assert GrokBuildAdapter._version_matches(unbound, printed) is False, (
-            f"ADMITTED_COMMIT={commit!r}")
-    for commit in ("def0", "unknown"):
+            f"ADMITTED_COMMIT={commit!r} (len {len(commit)})")
+    for commit in _COMMITS:
         printed = f"grok 1.0.5 ({commit})".encode("utf-8")
         assert GrokBuildAdapter._version_matches(unbound, printed) is True, (
-            f"REFUSED_A_PUBLISHED_COMMIT={commit!r}")
+            f"REFUSED_A_PUBLISHED_COMMIT={commit!r} (len {len(commit)})")
+    assert {len(commit) for commit in _COMMITS} >= {4, 40}, (
+        "the positive controls stopped covering both ends of the range")
 
 
 def test_a_version_print_the_build_cannot_answer_spawns_zero_prompts(tmp_path):

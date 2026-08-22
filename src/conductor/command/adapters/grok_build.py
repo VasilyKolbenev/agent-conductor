@@ -44,8 +44,9 @@ citation is re-checkable only if the words it said are written down.
     ``"{version} ({commit})"`` -- the parentheses live in the format string, so
     they stand on EVERY path -- from ``git rev-parse --short HEAD``, trimmed,
     falling back to the literal ``unknown`` when git is unavailable. So the
-    commit is lowercase hex or that one word, while its LENGTH is the builder's
-    ``core.abbrev`` rather than anything this module may assume;
+    commit is lowercase hex or that one word, and its LENGTH runs 4 to 40:
+    ``core.abbrev`` chooses it, but git refuses a setting below 4 outright and
+    clamps one above the object name, which is 40 digits in this SHA-1 tree;
   * ``crates/codegen/xai-grok-version/src/lib.rs`` appends the channel with
     ``format!("{}{}", version_with_commit, channel_label)``, and
     ``crates/codegen/xai-grok-update/src/version.rs``'s ``channel_label()``
@@ -202,11 +203,27 @@ MARKER_DIR = ".grok-marker"
 #: it has run before the flag is even parsed. Only the channel is optional,
 #: because only ``channel_label()`` genuinely returns ``""``.
 #:
-#: The commit is lowercase hex OR the literal ``unknown``, which is the whole set
-#: the build script can emit: ``git rev-parse --short HEAD`` writes hex, and the
-#: fallback writes that one word. The LENGTH is deliberately left unbounded --
-#: ``core.abbrev`` chooses it, so a bound would be this module assuming a
-#: builder's setting -- but the ALPHABET is the vendor's, and it is held.
+#: The commit is lowercase hex of 4 to 40 digits, OR the literal ``unknown``.
+#: That is the whole set the build script can emit: ``git rev-parse --short
+#: HEAD`` writes the hex, and its one fallback writes that one word.
+#:
+#: Both bounds are MEASURED, not assumed, and an earlier draft left the length
+#: open precisely because it looked unmeasurable -- ``core.abbrev`` chooses it,
+#: so a bound seemed to be this module assuming a builder's setting. It is not,
+#: because git refuses the settings outside the range rather than honouring them
+#: (checked against git 2.52.0):
+#:
+#: * below 4, ``git rev-parse`` FAILS -- "abbrev length out of range" -- and the
+#:   build script's fallback turns that whole branch into ``unknown``. So a
+#:   one-, two- or three-digit commit is not rare, it is unreachable;
+#: * above the object name's length it is clamped to the object name, and the
+#:   pinned tree is SHA-1: PINNED_COMMIT is itself 40 hex digits. So 40 is the
+#:   ceiling for THIS repository, and the day xAI moves it to SHA-256 that
+#:   ceiling becomes 64 -- the one fact that would reopen this bound.
+#:
+#: An unbounded run of hex is not a weaker version of this rule; it is a
+#: different rule, and it admitted a one-character and a 200-character commit
+#: from a binary that is not Grok Build.
 #:
 #: Still anchored at both ends, and now closed at the front as well. What the
 #: anchors buy is unchanged: an unanchored pattern finds ``1.0.5`` inside a
@@ -218,7 +235,7 @@ MARKER_DIR = ".grok-marker"
 _VERSION_FORM = re.compile(
     r"\Agrok "
     r"(?P<semver>\d+\.\d+\.\d+)"
-    r" \((?P<commit>[0-9a-f]+|unknown)\)"
+    r" \((?P<commit>[0-9a-f]{4,40}|unknown)\)"
     r"(?: \[(?P<channel>stable|alpha)\])?\Z")
 
 __all__ = [
