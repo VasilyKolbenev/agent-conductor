@@ -15,6 +15,7 @@ child was terminated by watching its heartbeat freeze.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import subprocess
@@ -38,6 +39,11 @@ EMIT_STDERR = "FAKEPROC_EMIT_STDERR"
 DUMP_ARGV = "FAKEPROC_DUMP_ARGV"
 DUMP_ENV = "FAKEPROC_DUMP_ENV"
 DUMP_CWD = "FAKEPROC_DUMP_CWD"
+#: Read stdin to EOF and report what arrived, as a length and a hex digest
+#: rather than the bytes themselves -- a fake that echoed the payload would make
+#: every leak assertion in this suite pass by accident, because the payload
+#: would then be legitimately present in the child's own output.
+DUMP_STDIN = "FAKEPROC_DUMP_STDIN"
 EXIT = "FAKEPROC_EXIT"
 
 
@@ -131,6 +137,14 @@ def main() -> int:
         _emit("ENV " + json.dumps(dict(env)))
     if env.get(DUMP_CWD):
         _emit("CWD " + os.getcwd())
+    if env.get(DUMP_STDIN):
+        # A blocking read to EOF: if the parent never closes the stream, this
+        # child hangs, which is exactly the failure the writer lifecycle exists
+        # to prevent and exactly what a timeout would then report.
+        payload = sys.stdin.buffer.read()
+        _emit("STDIN " + json.dumps({
+            "bytes": len(payload),
+            "sha256": hashlib.sha256(payload).hexdigest()}))
     if env.get(EMIT_STDOUT):
         _emit(env[EMIT_STDOUT])
     if env.get(EMIT_STDERR):
