@@ -94,18 +94,38 @@ Grok defect exactly, avoided only by running the thing.
 - **Credentials** come from the shell as `OPENAI_API_KEY` (SOURCE names it 174
   times; the reviewed binary carries the string). Env NAMES are pinned in
   operator config and values are read at spawn, never written down here.
-- **The CLI looks for a `.codex/` directory in its working root's ancestry**, and
-  reads a `config.toml` it finds there (SOURCE, `discover_project_layers` in
-  `codex-rs/config/src/loader/mod.rs`). That matters because this build spawns
-  the child INSIDE the work tree the workspace door handed the run -- a tree the
-  model itself may write into -- so it is the same hazard `--bare` closes for
-  Claude Code. The vendor gates it: each discovered layer is admitted only on a
-  TRUST decision, and the trust store lives in `$CODEX_HOME/config.toml`. This
-  build mints that home fresh per spawn and discards it, so the store is empty
-  and no directory is ever trusted. The containment is therefore a consequence of
-  the retention promise rather than a second switch -- and `--ignore-user-config`
-  would not have covered it in any case, since that flag names only
-  `$CODEX_HOME/config.toml`, which a fresh home does not have either.
+- **The CLI looks for a `.codex/` directory in its working root's ancestry** and
+  reads a `config.toml` it finds there. That matters more here than anywhere
+  else in this module, because this build spawns the child INSIDE the work tree
+  the workspace door handed the run -- a tree a previous action's model may have
+  written into -- so it is the same hazard `--bare` closes for Claude Code, and
+  the workspace sweep does not touch it: `.codex/` is not under the home root.
+
+  The gate is a TRUST decision whose store is `$CODEX_HOME/config.toml`, and
+  this build mints that home fresh per spawn, so the store is empty and no
+  directory is ever trusted. **That is OBSERVED of the reviewed binary and not
+  taken from SOURCE**, and the distinction is the whole reason this paragraph is
+  this long: the pinned tree is a LATER build, `--ignore-user-config` already
+  proved that its statements do not carry to 0.112.0, and a containment claim
+  read out of it would have been the same mistake twice. Run against
+  `codex.exe 0.112.0` on this transport's own production argv, with a poisoned
+  `.codex/config.toml` in the child's working directory:
+
+      fresh, empty CODEX_HOME  ->  exit 1 after ~24s, `-o` file written EMPTY --
+                                   byte for byte the outcome of a tree with no
+                                   `.codex/` in it at all. The layer did nothing.
+      CODEX_HOME seeded with
+      `[projects."<dir>"] trust_level = "trusted"`
+                               ->  exit 1 in 0.1s, `Error: Model provider
+                                   PROBE_NO_SUCH_PROVIDER not found`, and NO `-o`
+                                   file: the CLI died at config load.
+
+  Both sides matter. The second is what makes the first mean anything -- a poison
+  that could never fire would leave the first observation empty of content -- and
+  `tests/test_command_codex_real_smoke.py` keeps both standing as the tripwire
+  for the day an install stops behaving this way. `--ignore-user-config` would
+  not have covered this in any case: it names only `$CODEX_HOME/config.toml`,
+  which a freshly minted home does not have either.
 - **No environment is FORCED at all**, and this provider is the first with an
   empty `forced_env`. It is not an omission: this vendor publishes its switches
   as CONFIG rather than as environment, so they travel where every other

@@ -39,7 +39,18 @@ the prompt smoke asks a real Codex CLI for something it could only know from wha
 was piped: a marker that appears in the instruction and NOWHERE in argv, the
 environment or the working directory.
 
-**And it collects that answer from the file this build told the CLI to write.**
+**The PROJECT LAYER.** The CLI reads a `.codex/config.toml` it finds in its
+working root's ancestry, and this build spawns the child inside the run's own
+work subtree -- which an earlier action's model may have written into, and which
+the workspace sweep does not touch because `.codex/` stands outside the home
+root. Whether an untrusted layer can reach the child is a fact about the
+INSTALL, and the pinned source may not answer it: that tree declares three flags
+this binary rejects. So it is asked here, of the binary, twice -- once on the
+production road with a poisoned layer and once with the same layer TRUSTED --
+and neither half means anything without the other.
+
+**And it collects the model's answer from the file this build told the CLI to
+write.**
 `-o` names a path inside the attempt home, so the answer is there and nowhere
 else -- this build discards bounded child output by design, and the home itself
 goes when the spawn returns. The file is therefore read from inside the
@@ -56,6 +67,7 @@ from __future__ import annotations
 
 import os
 import re
+import subprocess
 import uuid
 from pathlib import Path
 
@@ -244,6 +256,108 @@ def _collecting_final_messages(adapter) -> list[str]:
 
     adapter._read_attempt_home = watched
     return answers
+
+
+# --- the project layer a previous action could leave in the work tree ---------
+
+#: A `.codex/config.toml` that is VALID TOML and names a provider that does not
+#: exist. Admitted, it kills the CLI at config load with a message naming it;
+#: ignored, it is inert. Valid TOML on purpose: a malformed file would also fire,
+#: and then a reader could not tell "the layer was read" from "the file was
+#: unparseable", which are different findings.
+POISON = 'model_provider = "PROBE_NO_SUCH_PROVIDER"\n'
+#: What the trust store looks like. Spelled here rather than derived, because
+#: this is the vendor's shape and this file is where a change to it must show.
+TRUST = '[projects."{key}"]\ntrust_level = "trusted"\n'
+
+
+def _plant_project_layer(work: Path) -> Path:
+    """Leave a `.codex/config.toml` where a previous action's model could."""
+    layer = work / ".codex"
+    layer.mkdir(parents=True, exist_ok=True)
+    (layer / "config.toml").write_text(POISON, encoding="utf-8", newline="\n")
+    return layer
+
+
+def test_a_project_layer_in_the_work_tree_changes_nothing_on_the_production_road(
+        tmp_path):
+    """The containment claim, asked of the REVIEWED binary rather than of source.
+
+    This build spawns the child inside the run's own work subtree, and a
+    `.codex/` left there by an earlier action is not swept: it stands outside
+    the home root, so nothing this build discards reaches it. Whether it can
+    reach the CHILD is therefore a vendor question, and the pinned source is not
+    allowed to answer it -- that tree declares three flags this binary rejects,
+    which is exactly how much its statements are worth here.
+
+    So the question is put to the install, twice, through the production road,
+    and the answer is read through the one thing that road observes: the KIND of
+    the file `-o` named. A clean tree and a poisoned tree must give the SAME
+    word. The other half -- that the poison can fire at all -- is the control
+    below, and neither claim means anything without it.
+
+    No model call: no credential is forwarded, so both runs end at auth.
+    """
+    adapter, root = _real_harness(tmp_path)
+    _seed_instruction(root, "Report the current directory and change nothing.")
+    request = a_request()
+
+    clean = adapter.execute(adapter.prepare(request))
+    baseline = adapter._answer
+
+    _plant_project_layer(root / "work" / request.arguments["work_item_id"])
+    poisoned = adapter.execute(adapter.prepare(
+        a_request(action_id="act-project-layer")))
+
+    assert baseline is not None, clean.detail
+    assert adapter._answer == baseline, (
+        f"a `.codex/` in the work tree changed what the CLI did: the same "
+        f"dispatch reported {baseline!r} without it and {adapter._answer!r} "
+        f"with it. Either this install admits an untrusted project layer, or "
+        f"something else about the run moved; {poisoned.detail}")
+
+
+def test_the_poisoned_layer_really_fires_when_the_directory_is_trusted(tmp_path):
+    """The control for the control: planted and TRUSTED, the layer takes effect.
+
+    Without it the claim above is empty -- a `.codex/config.toml` that could
+    never change anything would satisfy it on any install, including one that
+    reads every project layer it finds.
+
+    This one cannot go through the production road, and that is the point rather
+    than a shortcut: the road mints a fresh `CODEX_HOME` per spawn and discards
+    it, so a trust store is precisely the thing it can never produce. What is
+    asked here is a question about the VENDOR -- given a trusted directory, does
+    the layer take effect -- so it is asked of the same binary, with the same
+    argv this transport builds, in a home that stands OUTSIDE the project root.
+    The project's own home root is asserted untouched afterwards.
+    """
+    adapter, root = _real_harness(tmp_path)
+    work = root / "work" / "work-001"
+    work.mkdir(parents=True, exist_ok=True)
+    _plant_project_layer(work)
+    home = tmp_path / "trusted-home-outside-the-project"
+    home.mkdir()
+    (home / "config.toml").write_text(
+        TRUST.format(key=str(work).replace("\\", "\\\\")),
+        encoding="utf-8", newline="\n")
+
+    done = subprocess.run(
+        [adapter._pin.executable, *adapter._stdin_argv(home)], cwd=str(work),
+        env={"CODEX_HOME": str(home)},
+        input=b"Reply with the word ok and nothing else.",
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=180)
+    said = done.stdout.decode("utf-8", errors="replace")
+
+    assert done.returncode != 0, "a trusted poisoned layer must not be shrugged off"
+    assert "PROBE_NO_SUCH_PROVIDER" in said, (
+        f"the trusted project layer did not take effect, so the claim next door "
+        f"rests on a poison that fires nowhere: {said[:400]!r}")
+    assert not (home / LAST_MESSAGE_NAME).exists(), (
+        "the CLI reached its output file, so it did not die at config load")
+    homes = root / HOME_DIR
+    standing = sorted(path.name for path in homes.iterdir()) if homes.is_dir() else []
+    assert standing == [], f"THE_CONTROL_LEFT_STATE_STANDING={standing}"
 
 
 def _prompt_gate() -> str:
