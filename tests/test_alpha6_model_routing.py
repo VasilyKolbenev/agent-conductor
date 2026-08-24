@@ -240,9 +240,19 @@ def test_the_pinned_model_reaches_the_claude_cli_as_its_own_flag(tmp_path):
 def test_the_version_preflight_is_never_asked_to_load_a_model(tmp_path):
     """A preflight prints a version; a model there would be a model loaded.
 
-    The preflight hands a READY argv rather than a builder, so this is
-    structural -- but it is the kind of structure a refactor breaks silently, so
-    it is asserted against the spawn that really happened.
+    A CHANGE DETECTOR, and it is worth saying so rather than letting it look
+    like a guard something can break. The preflight is protected twice over and
+    neither protection is reachable by a small edit: it hands `_attempt` a READY
+    tuple, which `_tokens` returns untouched, and it hands no model at all --
+    `_preflight` has none in scope to hand.
+
+    That was learned from a mutation. Widening the ready-tuple road was named to
+    this test and reported GREEN, because the second protection still held and
+    every production spawn stayed identical. The relation a mutation CAN see is
+    "a ready argv is given no model", and it is asked of `_tokens` directly in
+    `tests/test_harness_profile.py`. What this test holds is the spawn that
+    really happened, so a refactor that gave `_preflight` a model to pass reds
+    here rather than in review.
     """
     _attempt, _store, log = _dispatch(tmp_path)
 
