@@ -185,6 +185,87 @@ def test_a_hanging_module_is_killed_recorded_and_the_report_survives(
     assert report["records"][-1]["exit_code"] == "timed-out"
 
 
+#: A module that reports, into the artifacts, where the gate told the engine
+#: of its own process to log. Chromium picks that file itself when nobody
+#: names it, and on Windows picks a path beside the executable — shared by
+#: every run on the machine, and outside what --artifacts promises to hold.
+_REPORTS_ITS_LOG = (
+    "import os\n"
+    "from pathlib import Path\n\n"
+    "def test_reports_where_chromium_must_log():\n"
+    "    named = os.environ['CHROME_LOG_FILE']\n"
+    "    artifacts = Path(os.environ['CONDUCT_GATE_ARTIFACTS'])\n"
+    "    stem = Path(__file__).stem\n"
+    "    (artifacts / (stem + '.named.txt')).write_text(named, 'utf-8')\n")
+
+
+def test_every_module_is_told_to_keep_chromiums_own_log_in_the_artifacts(
+        tmp_path: Path) -> None:
+    """Two modules, two named files, both inside the run's artifacts."""
+    code, report = _run_gate(tmp_path, modules={
+        "test_a.py": _REPORTS_ITS_LOG, "test_b.py": _REPORTS_ITS_LOG})
+    assert code == 0 and report["result"] == "green"
+    artifacts = tmp_path / "artifacts"
+    named = [Path((artifacts / f"{stem}.named.txt").read_text("utf-8"))
+             for stem in ("test_a", "test_b")]
+    for path in named:
+        # Absolute, because a working directory must not decide this.
+        assert path.is_absolute(), path
+        assert artifacts in path.parents, path
+    # And per module: one shared file cannot say which module was speaking.
+    assert named[0] != named[1], named
+
+
+def test_naming_that_log_leaves_the_rest_of_the_childs_world_alone(
+        tmp_path: Path) -> None:
+    """The containment EXTENDS the machine's environment, never replaces it:
+    a child handed a stripped world would fail for reasons of its own."""
+    environment = gate._child_environment(tmp_path, ROOT, Path("test_x.py"))
+    assert environment["PATH"] == os.environ["PATH"]
+    named = Path(environment["CHROME_LOG_FILE"])
+    assert tmp_path in named.parents and named.name.startswith("test_x")
+
+
+class _RecordingChromium:
+    """Enough Playwright to see what the gate hands its own launch."""
+
+    def __init__(self) -> None:
+        self.launched: dict[str, object] = {}
+
+    def launch(self, **kwargs: object) -> "_RecordingChromium":
+        self.launched = kwargs
+        return self
+
+    version = "test-chromium"
+
+    def close(self) -> None:
+        return None
+
+    def __enter__(self) -> "_RecordingChromium":
+        return self
+
+    def __exit__(self, *exception: object) -> bool:
+        return False
+
+    @property
+    def chromium(self) -> "_RecordingChromium":
+        return self
+
+
+def test_the_gates_own_version_probe_launches_under_the_same_containment(
+        tmp_path: Path, monkeypatch) -> None:
+    """The probe runs in the GATE's process, where no child environment
+    reaches — the one launch a per-module fix would silently leave loose."""
+    recorder = _RecordingChromium()
+    monkeypatch.setattr("playwright.sync_api.sync_playwright", lambda: recorder)
+    versions = gate.probe_versions(tmp_path)
+    assert versions["chromium"] == "test-chromium"
+    named = Path(recorder.launched["env"]["CHROME_LOG_FILE"])
+    assert named.is_absolute() and tmp_path in named.parents
+    # The machine's own environment travels with it, not just the one key.
+    assert recorder.launched["env"]["PATH"] == os.environ["PATH"]
+
+
 def _fake_page_module() -> str:
     return (
         "import pytest\n"
