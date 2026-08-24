@@ -200,6 +200,11 @@ def test_a_dispatch_holds_no_artifact_content_after_its_action(tmp_path):
     assert adapter._dispatch_inputs[attempt_relation(request)] == (
         "artifact-secret-1",)
     assert SECRET not in _held(adapter), "THE_ADAPTER_STILL_HOLDS_THE_MATERIAL"
+    # The BASE writes its own snapshot cache on this road and only on this road,
+    # so the key claim above -- which drives a review -- cannot see it. A
+    # mutation proved that blindness: rekeying the base by action id alone left
+    # it green. Both roads are asserted now, each where it is really written.
+    assert list(adapter._attempts) == [attempt_relation(request)]
 
 
 def test_a_review_holds_the_ids_of_what_it_read_and_not_the_documents(tmp_path):
