@@ -153,6 +153,16 @@ class ArtifactAwareTransport(HeadlessCliTransport):
             self, request: ActionRequest,
             args: DeepReviewArgs) -> ActionResultReceipt:
         self._retained = 0
+        if args.result_artifact_ref is None:
+            # The contract admits a review with no result reference so the
+            # frozen revision-1 artefacts stay readable. RUNNING one is a
+            # different question: its output would have nowhere durable to go,
+            # so nothing it produced could be verified and the model call would
+            # be spent on an answer this build must then discard.
+            return self._receipt(
+                request, "failed", None,
+                "this review names no result artifact, so nothing it produced "
+                "could be published; no task was spawned")
         if self._workspace.is_claimed(request.action_id):
             return self._receipt(
                 request, "unknown", None,

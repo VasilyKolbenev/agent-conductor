@@ -40,6 +40,20 @@ RETRY_REASONS = frozenset({
 class _StrictArguments:
     _FIELDS: ClassVar[frozenset[str]]
     _ARRAY_FIELDS: ClassVar[frozenset[str]] = frozenset()
+    #: Fields a payload MAY omit. Everything else in `_FIELDS` is required, so
+    #: the default of nothing keeps every existing argument type exactly as
+    #: strict as it was.
+    #:
+    #: It exists because a frozen artefact and a new field cannot both be right
+    #: otherwise. `result_artifact_ref` is what makes a review's output
+    #: publishable, and revision 1 of the Dalio template -- along with the
+    #: ALPHA-3 definition and the cockpit boundary fixtures frozen beside it --
+    #: was written before it existed. Rewriting those bytes to fit a new field
+    #: would destroy the historical witnesses; requiring the field would make
+    #: them unreadable. So the CONTRACT reads both shapes and the TRANSPORT
+    #: refuses to run a review that names no output, which is where the
+    #: consequence actually lives.
+    _OPTIONAL_FIELDS: ClassVar[frozenset[str]] = frozenset()
 
     def as_dict(self) -> dict[str, Any]:
         if type(self) not in DEEP_ARGUMENT_TYPES.values():
@@ -64,7 +78,8 @@ class _StrictArguments:
     def from_dict(cls, value: object):
         if cls not in DEEP_ARGUMENT_TYPES.values():
             raise DeepContractError("argument reconstruction requires an exact base type")
-        data = _exact(value, cls._FIELDS, cls.__name__)
+        data = _exact(
+            value, cls._FIELDS, cls.__name__, optional=cls._OPTIONAL_FIELDS)
         if any(type(data[name]) is not list for name in cls._ARRAY_FIELDS):
             raise DeepContractError("argument array fields must be JSON arrays")
         return cls(**data)
@@ -100,11 +115,23 @@ class DeepDispatchArgs(_StrictArguments):
 class DeepReviewArgs(_StrictArguments):
     work_item_id: str
     target_artifact_refs: tuple[str, ...] | list[str]
-    result_artifact_ref: str
+    #: Where this review's own output is published. Omittable in a PAYLOAD and
+    #: REQUIRED to run: revision 1 of the Dalio template was written before the
+    #: field existed, and it is a frozen historical witness. A review that names
+    #: no result artifact is refused by the transport, with a receipt saying so,
+    #: rather than by a parser that would make the frozen bytes unreadable.
+    #:
+    #: It carries NO dataclass default, and keeps its place in the order. A
+    #: default would have to move it last, and every construction of this type
+    #: passes four positional strings -- so the move would have slid a profile
+    #: into a reference and back, silently, at eight call sites. `from_dict`
+    #: always passes the key, `None` when the payload omitted it.
+    result_artifact_ref: str | None
     review_profile: str
     _FIELDS = frozenset({
         "work_item_id", "target_artifact_refs", "result_artifact_ref",
         "review_profile"})
+    _OPTIONAL_FIELDS = frozenset({"result_artifact_ref"})
     _ARRAY_FIELDS = frozenset({"target_artifact_refs"})
 
     def __post_init__(self) -> None:
@@ -112,8 +139,9 @@ class DeepReviewArgs(_StrictArguments):
             "work_item_id", self.work_item_id))
         object.__setattr__(self, "target_artifact_refs", _ids(
             "target_artifact_refs", self.target_artifact_refs))
-        object.__setattr__(self, "result_artifact_ref", _closed_id(
-            "result_artifact_ref", self.result_artifact_ref))
+        if self.result_artifact_ref is not None:
+            object.__setattr__(self, "result_artifact_ref", _closed_id(
+                "result_artifact_ref", self.result_artifact_ref))
         object.__setattr__(self, "review_profile", _enum(
             "review_profile", self.review_profile,
             REVIEW_PROFILES))

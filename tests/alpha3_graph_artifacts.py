@@ -47,8 +47,8 @@ DISPATCH = "dispatch"
 WORK_ITEM = "work-001"
 
 
-def _review(node_id: str, title: str, stage: str, source: str,
-            result: str, profile: str) -> GraphNode:
+def _review(node_id: str, title: str, stage: str, artifact: str,
+            profile: str) -> GraphNode:
     """One thinking step: it reads what the step before it produced.
 
     ``review`` and ``dispatch`` are the only two capabilities whose payload a
@@ -61,8 +61,7 @@ def _review(node_id: str, title: str, stage: str, source: str,
         node_id=node_id, kind="task", title=title, stage=stage,
         instance_id=INSTANCE_ID, capability="review",
         arguments={"work_item_id": WORK_ITEM,
-                   "target_artifact_refs": [source],
-                   "result_artifact_ref": result,
+                   "target_artifact_refs": [artifact],
                    "review_profile": profile})
 
 
@@ -75,13 +74,13 @@ def dalio_nodes() -> tuple[GraphNode, ...]:
     new attempt, none of which this document may describe.
     """
     return (
-        _review("goal", "Goal", "goal", "artifact-brief", "artifact-goal", "spec"),
+        _review("goal", "Goal", "goal", "artifact-brief", "spec"),
         _review("identify", "Identify Problems", "identify",
-                "artifact-goal", "artifact-problems", "quality"),
+                "artifact-goal", "quality"),
         _review("diagnose", "Diagnose Root Causes", "diagnose",
-                "artifact-problems", "artifact-causes", "quality"),
+                "artifact-problems", "quality"),
         _review("design", "Design the Plan", "design",
-                "artifact-causes", "artifact-plan", "spec"),
+                "artifact-causes", "spec"),
         GraphNode(node_id="confirm-gate", kind="gate",
                   title="Human Gate - Confirm Do", gate_id="gate-confirm-do"),
         GraphNode(node_id="do", kind="task", title="Do", stage="do",

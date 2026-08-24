@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "template_id": "template-dalio",
-  "revision": 1,
+  "revision": 2,
   "title": "Dalio five-step cycle",
   "nodes": [
     {
@@ -16,6 +16,7 @@
         "target_artifact_refs": [
           "artifact-brief"
         ],
+        "result_artifact_ref": "artifact-goal",
         "review_profile": "spec"
       },
       "resources": []
@@ -32,6 +33,7 @@
         "target_artifact_refs": [
           "artifact-goal"
         ],
+        "result_artifact_ref": "artifact-problems",
         "review_profile": "quality"
       },
       "resources": []
@@ -48,6 +50,7 @@
         "target_artifact_refs": [
           "artifact-problems"
         ],
+        "result_artifact_ref": "artifact-causes",
         "review_profile": "quality"
       },
       "resources": []
@@ -64,6 +67,7 @@
         "target_artifact_refs": [
           "artifact-causes"
         ],
+        "result_artifact_ref": "artifact-plan",
         "review_profile": "spec"
       },
       "resources": []

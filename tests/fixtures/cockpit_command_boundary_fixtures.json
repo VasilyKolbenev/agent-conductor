@@ -41,7 +41,6 @@
           "target_artifact_refs": [
             "artifact-cockpit-001"
           ],
-          "result_artifact_ref": "artifact-cockpit-review-001",
           "review_profile": "quality"
         },
         "scope": [

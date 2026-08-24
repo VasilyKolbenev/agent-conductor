@@ -70,13 +70,23 @@ RECOVERY_OUTCOMES = MappingProxyType({
 })
 
 
-def _exact(value: object, fields: frozenset[str], name: str) -> dict[str, Any]:
+def _exact(value: object, fields: frozenset[str], name: str, *,
+           optional: frozenset[str] = frozenset()) -> dict[str, Any]:
+    """The closed field set, with a named few a payload may leave out.
+
+    `optional` defaults to nothing, so every caller that does not pass it is as
+    strict as it always was: an EXTRA field is refused whatever happens, and a
+    missing REQUIRED one still is. What it buys is the one shape a frozen
+    artefact and a new field both need -- see `_StrictArguments._OPTIONAL_FIELDS`
+    -- and an omitted optional arrives as `None` rather than as an absence a
+    caller has to remember to handle.
+    """
     if type(value) is not dict or any(type(key) is not str for key in value):
         raise DeepContractError(f"{name} must be an object with string keys")
-    if set(value) != fields:
+    if not set(value) <= fields or not (fields - optional) <= set(value):
         raise DeepContractError(
             f"{name} fields must be exact; missing or extra fields are refused")
-    return dict(value)
+    return {name: value.get(name) for name in fields}
 
 
 def _enum(name: str, value: object, allowed: frozenset[str]) -> str:

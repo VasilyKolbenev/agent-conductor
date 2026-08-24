@@ -43,7 +43,6 @@
         "nodes": [
           {
             "arguments": {
-              "result_artifact_ref": "artifact-goal",
               "review_profile": "spec",
               "target_artifact_refs": [
                 "artifact-brief"
@@ -60,7 +59,6 @@
           },
           {
             "arguments": {
-              "result_artifact_ref": "artifact-problems",
               "review_profile": "quality",
               "target_artifact_refs": [
                 "artifact-goal"
@@ -77,7 +75,6 @@
           },
           {
             "arguments": {
-              "result_artifact_ref": "artifact-causes",
               "review_profile": "quality",
               "target_artifact_refs": [
                 "artifact-problems"
@@ -94,7 +91,6 @@
           },
           {
             "arguments": {
-              "result_artifact_ref": "artifact-plan",
               "review_profile": "spec",
               "target_artifact_refs": [
                 "artifact-causes"
@@ -160,7 +156,7 @@
         "run_id": "run-spread",
         "schema_version": 2
       },
-      "definition_digest": "sha256:0a31d4c37e7c13fedc442b2eedef77f8948608fb5b52fee665a5266ae15034fe",
+      "definition_digest": "sha256:9374d1e46e18464261abbf3fd2a7ffcb3c0bd51a418eb83468ce6161ee58bedb",
       "instances": [
         "claude-dev",
         "codex-review"
@@ -210,7 +206,6 @@
         "nodes": [
           {
             "arguments": {
-              "result_artifact_ref": "artifact-goal",
               "review_profile": "spec",
               "target_artifact_refs": [
                 "artifact-brief"
@@ -227,7 +222,6 @@
           },
           {
             "arguments": {
-              "result_artifact_ref": "artifact-problems",
               "review_profile": "quality",
               "target_artifact_refs": [
                 "artifact-goal"
@@ -244,7 +238,6 @@
           },
           {
             "arguments": {
-              "result_artifact_ref": "artifact-causes",
               "review_profile": "quality",
               "target_artifact_refs": [
                 "artifact-problems"
@@ -261,7 +254,6 @@
           },
           {
             "arguments": {
-              "result_artifact_ref": "artifact-plan",
               "review_profile": "spec",
               "target_artifact_refs": [
                 "artifact-causes"
@@ -327,7 +319,7 @@
         "run_id": "run-solo",
         "schema_version": 2
       },
-      "definition_digest": "sha256:961d6b7723bcb957bd4fb5e7d10352cc6ff9fe66b5eaed3d786328e9e888e077",
+      "definition_digest": "sha256:4b795adc9bb66d6387dc50b3972106790d8cea008b2c95a7a2eb194e24d33137",
       "instances": [
         "solo-node"
       ],
