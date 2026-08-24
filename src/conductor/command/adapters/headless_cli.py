@@ -671,22 +671,39 @@ class HeadlessCliTransport:
         ``verification_failed``, so borrowing it would buy nothing and would
         still misreport which of the two happened. Absence of proof is ``error``.
         """
-        if not isinstance(request, ActionRequest) or not isinstance(
-                result, ActionResultReceipt):
-            raise self.error("verify needs a validated request and result")
-        attempt = self._attempts.get(attempt_relation(request))
-        if attempt is None:
-            return self._verification(
-                request, "error", (),
-                "this adapter holds no pre-task snapshot for the action, so there "
-                "is no independent evidence to read; absence of proof is not "
-                "absence of a verifier and is never an observed success")
-        if attempt.after is None:
-            return self._verification(
-                request, "error", (),
-                "the authorized work tree does not stand on a contained route, so "
-                "no independent evidence could be read from it")
-        return self._read_change(request, attempt, attempt.after)
+        relation = attempt_relation(request)
+        try:
+            if not isinstance(request, ActionRequest) or not isinstance(
+                    result, ActionResultReceipt):
+                raise self.error("verify needs a validated request and result")
+            attempt = self._attempts.get(relation)
+            if attempt is None:
+                return self._verification(
+                    request, "error", (),
+                    "this adapter holds no pre-task snapshot for the action, so "
+                    "there is no independent evidence to read; absence of proof "
+                    "is not absence of a verifier and is never an observed success")
+            if attempt.after is None:
+                return self._verification(
+                    request, "error", (),
+                    "the authorized work tree does not stand on a contained route, "
+                    "so no independent evidence could be read from it")
+            return self._read_change(request, attempt, attempt.after)
+        finally:
+            # EVERY road out, the raise included. An attempt this adapter has
+            # finished judging is one it may no longer hold: a snapshot pair is
+            # small, but it is per action and an adapter instance lives as long
+            # as the server does, so "small" is a rate rather than a bound.
+            #
+            # It belongs HERE rather than only in the artifact-aware subclass,
+            # where it was. Every catalogued provider happens to subclass that
+            # one today, so nothing leaks in the shipped roster -- and that is
+            # precisely the reason to put it here: the guarantee would otherwise
+            # be a property of who inherits from whom, which the next provider
+            # is free to change, and this base is documented as usable on its
+            # own. A promise that holds by inheritance is a promise that holds
+            # until someone declines the inheritance.
+            self._attempts.pop(relation, None)
 
     def _read_change(
             self, request: ActionRequest, attempt: "_Attempt",

@@ -26,7 +26,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from conductor.command.adapters.headless_values import attempt_relation
+from conductor.command.adapters.harness_profile import HeadlessCliError
+from conductor.command.adapters.headless_cli import HeadlessCliTransport
+from conductor.command.adapters.headless_values import (
+    AttemptEvidence,
+    attempt_relation,
+)
+from conductor.command.adapters.process import ProcessOutcome, ProcessRunner
 from conductor.command.artifacts import ArtifactDocument
 from conductor.command.contracts import (
     ActionRequest,
@@ -38,6 +44,7 @@ from conductor.command.run_store import RunStore, snapshot_digest
 from tests import _fakeclaude
 from tests.test_command_claude_review import CONFIG, INPUT_REF, OUTPUT_REF
 from tests.test_command_claude_transport import NOW, a_harness
+from tests.test_harness_profile import a_profile
 
 #: The one action id both runs carry, which is what a per-run mint really gives.
 ACTION = "action-1"
@@ -260,3 +267,77 @@ def test_a_result_that_does_not_belong_raises_and_still_forgets(tmp_path):
     assert failed, "a foreign result must not be verified"
     assert adapter._review_attempts == {} and adapter._attempts == {}
     assert SECRET not in _held(adapter)
+
+
+# --- the base owes the guarantee, not whoever inherits from it ---------------
+
+
+class _StartsNothing(ProcessRunner):
+    """A runner that starts no child; the claim is about memory, not a spawn."""
+
+    def run(self, spec):
+        return ProcessOutcome(
+            status="completed", exit_code=0, output=b"", output_truncated=False,
+            output_limit=spec.output_limit, pid=0, token="probe-token")
+
+
+class _BareTransport(HeadlessCliTransport):
+    """A provider that uses the shared base DIRECTLY, as its contract allows.
+
+    Every catalogued provider subclasses the artifact-aware transport today, so
+    nothing in the shipped roster leaks. That is exactly why the discard has to
+    live in the base: a guarantee that holds because of who inherits from whom
+    holds only until someone declines the inheritance, and this base documents
+    itself as usable on its own.
+    """
+
+    profile = a_profile()
+    error = HeadlessCliError
+
+    def _argv_prefix(self):
+        return ("probe",)
+
+    def _env_allow(self):
+        return ()
+
+
+def _bare(tmp_path: Path) -> _BareTransport:
+    transport = _BareTransport(
+        _StartsNothing(tmp_path), root=tmp_path, clock=lambda: NOW,
+        ids=lambda purpose: f"{purpose}-1", adapter_id="probe")
+    transport._workspace.work_root()
+    return transport
+
+
+def _stand_an_attempt(transport, request) -> None:
+    """Put one snapshot pair in the base's cache, the way a dispatch does."""
+    work = transport._workspace.work_dir("work-001")
+    transport._attempts[attempt_relation(request)] = AttemptEvidence(
+        work_dir=work, before={}, after={"work-001/out.py": "digest"})
+
+
+def test_the_base_forgets_its_snapshot_on_the_ordinary_road(tmp_path):
+    """A judged attempt is one this adapter may no longer hold."""
+    transport = _bare(tmp_path)
+    request = a_request("run-a", capability="dispatch")
+    _stand_an_attempt(transport, request)
+
+    transport.verify(request, a_receipt(request))
+
+    assert transport._attempts == {}, "THE_BASE_KEPT_A_JUDGED_SNAPSHOT"
+
+
+def test_the_base_forgets_its_snapshot_even_when_verify_raises(tmp_path):
+    """The road that raises is a road out, and it used to keep everything."""
+    transport = _bare(tmp_path)
+    request = a_request("run-a", capability="dispatch")
+    _stand_an_attempt(transport, request)
+
+    failed = False
+    try:
+        transport.verify(request, "not a receipt at all")
+    except Exception:  # noqa: BLE001 -- the type is the transport's own refusal
+        failed = True
+
+    assert failed, "an unvalidated result must be refused"
+    assert transport._attempts == {}, "THE_BASE_KEPT_A_SNAPSHOT_WHILE_RAISING"
