@@ -26,6 +26,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from conductor.command.adapters.deep_commands import DeepReviewArgs
+from conductor.command.adapters.deep_contracts import (
+    OMITTED,
+    DeepContractError,
+)
 from conductor.command.adapters.harness_profile import HeadlessCliError
 from conductor.command.adapters.headless_cli import HeadlessCliTransport
 from conductor.command.adapters.headless_values import (
@@ -379,3 +384,50 @@ def test_a_review_that_names_no_result_artifact_is_refused_and_spawns_nothing(
     assert "names no result artifact" in receipt.detail
     assert _fakeclaude.prompt_spawns(log) == [], "A_MODEL_CALL_WAS_SPENT"
     assert adapter._review_attempts == {}
+
+
+#: The three states the field can be in, and they are three, not two.
+_BASE_REVIEW_PAYLOAD = {
+    "work_item_id": "work-001",
+    "target_artifact_refs": ["artifact-input"],
+    "review_profile": "quality",
+}
+
+
+def test_an_omitted_result_ref_is_admitted_and_stays_omitted():
+    """Absence is what a revision-1 payload means, and it round-trips as absence."""
+    parsed = DeepReviewArgs.from_dict(dict(_BASE_REVIEW_PAYLOAD))
+
+    assert parsed.result_artifact_ref is OMITTED
+    assert "result_artifact_ref" not in parsed.as_dict()
+    # And the round trip is a fixed point, which is what a frozen fixture needs.
+    assert DeepReviewArgs.from_dict(parsed.as_dict()).as_dict() == parsed.as_dict()
+
+
+def test_an_explicit_null_result_ref_is_refused_and_is_not_an_omission():
+    """`null` is a value the sender chose; absence is a sender who said nothing.
+
+    Collapsing them is how an optional field becomes a nullable one by accident,
+    and a nullable one is a field every reader downstream has to keep testing
+    for. Only absence carries the revision-1 meaning, so only absence is
+    admitted -- an explicit `null` reaches the field's own validator and is
+    refused there, like any other wrong value.
+    """
+    failed = False
+    try:
+        DeepReviewArgs.from_dict(
+            dict(_BASE_REVIEW_PAYLOAD, result_artifact_ref=None))
+    except DeepContractError:
+        failed = True
+
+    assert failed, "AN_EXPLICIT_NULL_WAS_READ_AS_AN_OMISSION"
+
+
+def test_a_named_result_ref_survives_the_round_trip_unchanged():
+    """The ordinary state, so the two refusals above are about what they name."""
+    payload = dict(_BASE_REVIEW_PAYLOAD, result_artifact_ref="artifact-out")
+
+    parsed = DeepReviewArgs.from_dict(dict(payload))
+
+    assert parsed.result_artifact_ref == "artifact-out"
+    assert parsed.as_dict() == payload

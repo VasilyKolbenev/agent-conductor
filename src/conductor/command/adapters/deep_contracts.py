@@ -70,6 +70,30 @@ RECOVERY_OUTCOMES = MappingProxyType({
 })
 
 
+class _Omitted:
+    """The absence of an optional field, which is NOT one of its values.
+
+    A field a payload left out and a field a payload set to `null` are different
+    statements, and collapsing them is how an optional field becomes a nullable
+    one by accident. `null` is a value the sender chose; absence is a sender who
+    said nothing. Only the second is what a frozen revision-1 artefact means, so
+    only the second is admitted -- an explicit `null` reaches the field's own
+    validator and is refused there, as any other wrong value would be.
+    """
+
+    __slots__ = ()
+
+    def __repr__(self) -> str:  # pragma: no cover -- diagnostics only
+        return "OMITTED"
+
+    def __bool__(self) -> bool:
+        return False
+
+
+#: The one instance, so `is OMITTED` is the test everywhere.
+OMITTED = _Omitted()
+
+
 def _exact(value: object, fields: frozenset[str], name: str, *,
            optional: frozenset[str] = frozenset()) -> dict[str, Any]:
     """The closed field set, with a named few a payload may leave out.
@@ -77,16 +101,19 @@ def _exact(value: object, fields: frozenset[str], name: str, *,
     `optional` defaults to nothing, so every caller that does not pass it is as
     strict as it always was: an EXTRA field is refused whatever happens, and a
     missing REQUIRED one still is. What it buys is the one shape a frozen
-    artefact and a new field both need -- see `_StrictArguments._OPTIONAL_FIELDS`
-    -- and an omitted optional arrives as `None` rather than as an absence a
-    caller has to remember to handle.
+    artefact and a new field both need -- see `_StrictArguments._OPTIONAL_FIELDS`.
+
+    An omitted optional arrives as `OMITTED`, never as `None`. A payload that
+    really carries `null` therefore hands `None` to the field's own validator
+    and is refused, which is the whole difference between optional and nullable.
     """
     if type(value) is not dict or any(type(key) is not str for key in value):
         raise DeepContractError(f"{name} must be an object with string keys")
     if not set(value) <= fields or not (fields - optional) <= set(value):
         raise DeepContractError(
             f"{name} fields must be exact; missing or extra fields are refused")
-    return {name: value.get(name) for name in fields}
+    return {
+        name: value[name] if name in value else OMITTED for name in fields}
 
 
 def _enum(name: str, value: object, allowed: frozenset[str]) -> str:

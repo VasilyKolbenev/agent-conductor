@@ -11,6 +11,7 @@ from ..contracts import ActionRequest, ActionResultReceipt, _content_digest
 from ..run_store import RunStore
 from .base import AdapterManifest, AdapterVerification, PreparedAction
 from .deep_commands import DeepDispatchArgs, DeepReviewArgs
+from .deep_contracts import OMITTED
 from .harness_profile import PREFLIGHT_RESIDUE_DETAIL, TASK_CHANNEL_STDIN
 from .harness_workspace import INSTRUCTION_LIMIT, WORK_DIR, WorkspaceNotContained
 from .headless_cli import HeadlessCliTransport, residue_detail
@@ -153,7 +154,7 @@ class ArtifactAwareTransport(HeadlessCliTransport):
             self, request: ActionRequest,
             args: DeepReviewArgs) -> ActionResultReceipt:
         self._retained = 0
-        if args.result_artifact_ref is None:
+        if args.result_artifact_ref is OMITTED:
             # The contract admits a review with no result reference so the
             # frozen revision-1 artefacts stay readable. RUNNING one is a
             # different question: its output would have nowhere durable to go,

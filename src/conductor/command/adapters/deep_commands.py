@@ -7,6 +7,7 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from .deep_contracts import (
+    OMITTED,
     DeepAdapterConfig,
     DeepContractError,
     DeepProtocol,
@@ -15,6 +16,7 @@ from .deep_contracts import (
     _env_names,
     _exact,
     _ids,
+    _Omitted,
 )
 
 if TYPE_CHECKING:
@@ -71,7 +73,7 @@ class _StrictArguments:
         return {
             name: list(value) if type(value) is tuple else value
             for name in canonical._FIELDS
-            if (value := getattr(canonical, name)) is not None
+            if (value := getattr(canonical, name)) is not OMITTED
         }
 
     @classmethod
@@ -125,8 +127,12 @@ class DeepReviewArgs(_StrictArguments):
     #: default would have to move it last, and every construction of this type
     #: passes four positional strings -- so the move would have slid a profile
     #: into a reference and back, silently, at eight call sites. `from_dict`
-    #: always passes the key, `None` when the payload omitted it.
-    result_artifact_ref: str | None
+    #: always passes the key, `OMITTED` when the payload left it out.
+    #:
+    #: `OMITTED` and `None` are NOT the same answer. A payload that carries an
+    #: explicit `null` chose a value, and that value is refused here like any
+    #: other wrong one; only a payload that says nothing is admitted.
+    result_artifact_ref: "str | _Omitted"
     review_profile: str
     _FIELDS = frozenset({
         "work_item_id", "target_artifact_refs", "result_artifact_ref",
@@ -139,7 +145,7 @@ class DeepReviewArgs(_StrictArguments):
             "work_item_id", self.work_item_id))
         object.__setattr__(self, "target_artifact_refs", _ids(
             "target_artifact_refs", self.target_artifact_refs))
-        if self.result_artifact_ref is not None:
+        if self.result_artifact_ref is not OMITTED:
             object.__setattr__(self, "result_artifact_ref", _closed_id(
                 "result_artifact_ref", self.result_artifact_ref))
         object.__setattr__(self, "review_profile", _enum(
