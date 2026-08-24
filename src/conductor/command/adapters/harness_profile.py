@@ -24,6 +24,7 @@ import re
 from dataclasses import dataclass
 from pathlib import PurePosixPath, PureWindowsPath
 
+from ..contracts import ContractError, _id
 from .base import AdapterContractError
 
 #: The one control any of these adapters carries. stop, retry and switch stay
@@ -263,6 +264,19 @@ class HarnessProfile:
     #: the routing and running whatever the vendor's own configuration decides
     #: -- a run that silently used another model than the one an operator
     #: configured is worse than a run that did not happen.
+    #:
+    #: **What the shared record proves about it is the TOKEN, never the FORM.**
+    #: A first version of the constructor demanded a leading `-`, reasoning that
+    #: a token without one is a positional to every launcher. That is Unix
+    #: syntax written into a provider-neutral record: `/model` is an ordinary
+    #: Windows option, and a vendor may take its model as a separate leading
+    #: token altogether. The guard would have forced an edit to THIS module
+    #: before a valid future provider could declare itself, which is exactly the
+    #: hardcoding this seam exists to avoid. So the constructor holds it to what
+    #: it can know of any vendor -- an exact string, empty or one NUL-free token
+    #: with no whitespace -- and the spelling and the position are the provider
+    #: module's own declaration, proved by that provider's exact argv test
+    #: against a real spawn.
     model_flag: str = ""
     #: The names this vendor publishes as MOVING: aliases that resolve to
     #: whatever it ships this week rather than to one build.
@@ -279,6 +293,18 @@ class HarnessProfile:
     #: checked against the model that really did the work. Empty is the honest
     #: default: a vendor this build has read no such statement from publishes no
     #: moving names as far as this build knows, and refuses nothing.
+    #:
+    #: A TUPLE, and the constructor holds it to that rather than to "iterable".
+    #: A bare string is iterable, so the membership test that refuses a moving
+    #: alias would silently become a SUBSTRING search -- `"opus"` would refuse a
+    #: model called `"op"` and admit `claude-opus-5`, wrong in both directions
+    #: at once and invisible to every alias case in the suite.
+    #:
+    #: Each name goes through `_id`, the CONFIGURATION's own door for a pinned
+    #: model, and that is load-bearing rather than tidy: an alias declared under
+    #: any other grammar could never equal a pinned one, so the comparison that
+    #: refuses it could never match -- a policy that reads as if it were doing
+    #: something.
     unstable_models: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
@@ -323,3 +349,51 @@ class HarnessProfile:
             raise HeadlessCliError(
                 f"a task travels by one of {TASK_CHANNELS}, not "
                 f"{self.task_channel!r}")
+        self._hold_model_routing()
+
+    def _hold_model_routing(self) -> None:
+        """Prove the two model-routing declarations, at construction like the rest.
+
+        They arrived without this and the omission had teeth. A ``model_flag``
+        carrying a NUL is a code-owned mistake that surfaces at the FIRST SPAWN,
+        under a sentence about the operator's pinned build -- which is exactly
+        the reporting failure this whole method exists to prevent. And a
+        ``unstable_models`` given a bare STRING is still iterable, so the
+        membership test that refuses a moving alias silently becomes a SUBSTRING
+        search: ``"opus"`` would then refuse a model called ``"op"`` and admit
+        ``claude-opus-5`` -- wrong in both directions at once, and silent in
+        both.
+
+        What each field may and may not be held to is written where the field
+        is declared. The short of it: this proves the TOKEN and never the FORM,
+        and the element grammar is the configuration's own rather than a second
+        one invented here.
+        """
+        if type(self.model_flag) is not str:
+            raise HeadlessCliError("model_flag must be a string, or empty")
+        if self.model_flag and (
+                "\x00" in self.model_flag
+                or self.model_flag.split() != [self.model_flag]):
+            raise HeadlessCliError(
+                "model_flag must be one NUL-free token with no whitespace")
+        if type(self.unstable_models) is not tuple:
+            raise HeadlessCliError(
+                "unstable_models must be a tuple of model names; a string is "
+                "iterable and would turn the alias check into a substring search")
+        named: set[str] = set()
+        for name in self.unstable_models:
+            try:
+                _id("declared unstable model", name)
+            except ContractError as error:
+                raise HeadlessCliError(str(error)) from None
+            if name in named:
+                raise HeadlessCliError(
+                    f"{name} is declared unstable twice")
+            named.add(name)
+        if self.unstable_models and not self.model_flag:
+            # A vendor this build cannot name a model to cannot be sent one, so
+            # nothing it declared unstable could ever be routed to it. The
+            # declaration would read as a policy that is doing something.
+            raise HeadlessCliError(
+                "unstable_models declares moving names for a provider this "
+                "build has no model flag for, so none of them can be routed")
