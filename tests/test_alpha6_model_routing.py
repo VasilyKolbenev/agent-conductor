@@ -28,6 +28,7 @@ model an operator did not configure is worse than a run that did not happen.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -478,3 +479,67 @@ def test_the_controls_route_reports_the_model_an_instance_pins(tmp_path):
     # absent key is a server too old to answer, which is a different fact.
     assert rows["codex-review"]["model"] is None
     assert "model" in rows["codex-review"]
+
+
+# -- an alias is a moving target, and a journal cannot be read against one -----
+
+
+@pytest.mark.parametrize("alias", ["sonnet", "opus", "haiku", "fable"])
+def test_a_claude_alias_is_refused_before_anything_is_spawned(tmp_path, alias):
+    """The four names DOCS defines as "an alias for the latest model".
+
+    An alias resolves to whatever the vendor ships that week. A configuration
+    that pinned one would mean a different model next release while the journal
+    recorded the same word, and every receipt built from that run would be
+    unreadable against the model that actually did the work.
+
+    The refusal is the PROVIDER's policy and not the runtime's: Claude Code
+    declares which of its own names move, the shared routing compares against
+    that declaration, and nothing generic here knows a model id. It is not a
+    catalogue of models either -- only the names this vendor publishes as
+    moving, which is the smallest fact that settles the question.
+
+    Before the spawn, because the point is that no model call is spent.
+    """
+    config = {
+        "cycle": CONFIG["cycle"],
+        "instances": [
+            {"id": INSTANCE_ID, "adapter": "claude-code", "model": alias}],
+    }
+
+    attempt, _store, log = _dispatch(tmp_path, config=config)
+
+    assert attempt.state is not AttemptState.SUCCEEDED
+    assert _fakeclaude.spawns(log) == [], "A_MODEL_CALL_WAS_SPENT"
+
+
+def test_a_full_model_name_is_admitted_by_the_same_policy(tmp_path):
+    """The control. A policy that refused everything would pass the matrix above.
+
+    `claude-opus-5` is a full name, so it is not one of the moving ones and it
+    runs -- and it reaches the command line, which is what says the refusal
+    above is about the ALIAS and not about routing having stopped working.
+    """
+    attempt, _store, log = _dispatch(tmp_path)
+
+    assert attempt.state is AttemptState.SUCCEEDED, attempt.receipt.detail
+    argv = _fakeclaude.prompt_spawns(log)[0]["argv"]
+    assert argv[argv.index(MODEL_FLAG) + 1] == PINNED_MODEL
+
+
+def test_the_alias_policy_is_the_providers_own_and_names_no_model_here(tmp_path):
+    """Provider-neutrality, asserted rather than described.
+
+    The routing seam holds no list of names. What it compares against is the
+    tuple the PROFILE declares, so a vendor that publishes no moving names
+    refuses nothing and the next product to route -- GLM -- declares its own.
+    """
+    from conductor.command.adapters.claude_code import CLAUDE_PROFILE
+    from conductor.command.adapters.kimi_code import KIMI_PROFILE
+    from conductor.command.adapters import headless_routing
+
+    assert CLAUDE_PROFILE.unstable_models == ("sonnet", "opus", "haiku", "fable")
+    assert KIMI_PROFILE.unstable_models == ()
+    source = Path(headless_routing.__file__).read_text(encoding="utf-8")
+    for name in CLAUDE_PROFILE.unstable_models:
+        assert name not in source, name

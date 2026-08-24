@@ -238,6 +238,15 @@ NO_SESSION_ARGV = ("--no-session-persistence",)
 #: ever sends through it; see the module docstring for why an alias is not
 #: a thing a durable record can be read against.
 MODEL_FLAG = "--model"
+#: The four names DOCS (cli-reference) defines as "an alias for the latest
+#: model", quoted in the module docstring above. Each resolves to whatever this
+#: vendor ships at the moment it is read, so none of them names one build.
+#:
+#: Declared HERE because it is a fact about ANTHROPIC's naming, and the routing
+#: seam that refuses them holds no model name of its own. It is not a catalogue
+#: of Claude models -- this build keeps none and could not keep one current --
+#: only the vendor's own statement about which of its names move.
+CLAUDE_UNSTABLE_MODELS = ("sonnet", "opus", "haiku", "fable")
 PERMISSION_MODE_ARGV = ("--permission-mode", "acceptEdits")
 REVIEW_PERMISSION_MODE_ARGV = ("--permission-mode", "plan")
 VERSION_ARGV = ("--version",)
@@ -272,7 +281,7 @@ __all__ = [
     "CLAUDE_FORCED_ENV", "CLAUDE_HOME_ENV", "CLAUDE_LIFECYCLE",
     "CLAUDE_PROTOCOL", "CLAUDE_PROVIDER_ID", "CLAUDE_SCHEMA_PAIRS",
     "CONSTANT_PROMPT", "HOME_DIR", "INSTRUCTION_DIR", "MARKER_DIR",
-    "MODEL_FLAG",
+    "CLAUDE_UNSTABLE_MODELS", "MODEL_FLAG",
     "REVIEWED_CLAUDE_VERSION", "REVIEW_PERMISSION_MODE_ARGV",
     "REVIEW_PROMPT", "WORK_DIR",
     "ClaudeCodeAdapter", "ClaudeCodeError", "ClaudeCodeTransport", "claude_pin",
@@ -291,7 +300,7 @@ CLAUDE_PROFILE = HarnessProfile(
     version_timeout_seconds=VERSION_TIMEOUT_SECONDS,
     home_id_kind="claude-home",
     task_channel=TASK_CHANNEL_STDIN,
-    model_flag=MODEL_FLAG)
+    model_flag=MODEL_FLAG, unstable_models=CLAUDE_UNSTABLE_MODELS)
 
 
 class ClaudeCodeError(HeadlessCliError):

@@ -106,6 +106,20 @@ def unroutable_model_detail(tool: str) -> str:
             "nothing was minted, claimed or spawned")
 
 
+def moving_model_detail(tool: str) -> str:
+    """A configuration pinned one of this vendor's own MOVING names.
+
+    It names the PRODUCT and never the alias, for the same reason every sentence
+    here does: the alias is operator configuration and this reaches a receipt,
+    the journal and the API at once. The operator reads which name they wrote
+    from their own file; what this owes them is why it was refused.
+    """
+    return (f"this run's configuration pins one of {tool}'s moving model "
+            "aliases rather than a full model name, so a durable record of it "
+            "would mean a different model each time it is read; nothing was "
+            "minted, claimed or spawned")
+
+
 def is_absolute(path: str) -> bool:
     """Absolute under EITHER platform's rules, so a pin cannot be read two ways."""
     return PurePosixPath(path).is_absolute() or PureWindowsPath(path).is_absolute()
@@ -250,6 +264,22 @@ class HarnessProfile:
     #: -- a run that silently used another model than the one an operator
     #: configured is worse than a run that did not happen.
     model_flag: str = ""
+    #: The names this vendor publishes as MOVING: aliases that resolve to
+    #: whatever it ships this week rather than to one build.
+    #:
+    #: Not a catalogue of models, and deliberately not: this build cannot know
+    #: which model ids a vendor has, and a list it tried to keep would be wrong
+    #: the day after it was written. What it CAN know is the much smaller fact
+    #: each vendor states about its own naming -- which of its names are not a
+    #: single model -- and that is the fact that settles the question.
+    #:
+    #: A configuration pinning one of these is refused before anything is
+    #: minted, claimed or spawned. A durable record naming a moving alias means
+    #: a different model each time it is read, so nothing afterwards can be
+    #: checked against the model that really did the work. Empty is the honest
+    #: default: a vendor this build has read no such statement from publishes no
+    #: moving names as far as this build knows, and refuses nothing.
+    unstable_models: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         """Prove the environment this profile forces, at construction.

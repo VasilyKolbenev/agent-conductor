@@ -16,6 +16,7 @@ name is asserted in test_graph_wire.py, against a real server.
 """
 from __future__ import annotations
 
+import pytest
 from playwright.sync_api import Page
 
 from browser_tests.test_graph_rendered import (  # noqa: F401 — fixtures register
@@ -107,3 +108,81 @@ def test_an_instance_that_pins_no_model_says_so_instead_of_showing_nothing(
     assert "instance: codex-review" in card
     assert "none pinned" in card
     assert "claude-opus-5" not in card
+
+
+_FORGED = {"instance_id": "claude-dev", "adapter_id": "attacker-first",
+           "model": "forged-model"}
+_HONEST = {"instance_id": "claude-dev", "adapter_id": "claude-code",
+           "model": "claude-opus-5"}
+#: A second instance the default really binds, and one nothing disputes. It is
+#: in every payload below so the refusal can be seen to reach ONE instance and
+#: not the projection: a rule that emptied the whole document on any conflict
+#: would satisfy the conflict cases and take an honest deployment down with it.
+_BYSTANDER = {"instance_id": "codex-review", "adapter_id": "codex",
+              "model": None}
+#: Both orders, because "first row wins" is invisible in one of them. A rule
+#: that kept the first would look correct whenever the honest row happened to
+#: arrive first, which is exactly the arrangement nobody controls.
+_CONFLICTS = (("forged-first", [_FORGED, _HONEST, _BYSTANDER]),
+              ("honest-first", [_HONEST, _FORGED, _BYSTANDER]))
+
+
+def _load_deployment(page: Page, rows: list[dict]) -> object:
+    """Feed the shipped default with a deployment of this shape, one seam only.
+
+    The default's own nodes, so the payload differs from the one this window
+    boots with in exactly the rows under test.
+    """
+    return page.evaluate(
+        """rows => import("./graph-default.js").then(module => {
+             const payload = JSON.parse(JSON.stringify(module.DALIO_DEFAULT));
+             payload.deployment = rows;
+             return window.conductGraph.load(payload);
+           })""", rows)
+
+
+@pytest.mark.parametrize("label,rows", _CONFLICTS,
+                         ids=[row[0] for row in _CONFLICTS])
+def test_two_deployment_rows_for_one_instance_leave_neither_on_the_screen(
+        graph_page: Page, label, rows) -> None:
+    """Two answers to one question, and this window may not pick one.
+
+    A server that answered twice for one instance has said something a reader
+    cannot resolve, and the earlier rule -- keep the first, drop the rest --
+    resolved it by ARRIVAL ORDER. That is not a fact about the deployment: it
+    hands whichever row came first the authority to name a product and a model,
+    so a Human is shown a provider that may be neither.
+
+    Neither row survives. The instance falls back to the state this window
+    already has for "the configuration was not read", which stays honest and
+    leaves the graph readable -- refusing the whole projection would take a
+    plan off the screen over a fact the plan does not depend on.
+    """
+    assert _load_deployment(graph_page, rows) is True
+
+    shown = graph_page.evaluate("window.conductGraph.state().deployment")
+    # The disputed instance is gone; the one nothing disputed is untouched.
+    assert [row["instanceId"] for row in shown] == ["codex-review"], shown
+    graph_page.locator('[data-node-id="do"]').click()
+    card = detail_text(graph_page)
+    assert "has not read this run's configuration" in card
+    assert "attacker-first" not in card and "forged-model" not in card
+    assert "claude-opus-5" not in card
+    graph_page.locator('[data-node-id="identify"]').click()
+    assert "none pinned" in detail_text(graph_page)
+
+
+def test_a_single_row_for_that_instance_is_still_shown(graph_page: Page) -> None:
+    """The control: the refusal above is about the CONFLICT, not the instance.
+
+    Without this, a projection that dropped every row would satisfy both cases
+    above and look like a working guard.
+    """
+    assert _load_deployment(graph_page, [_HONEST]) is True
+
+    shown = graph_page.evaluate("window.conductGraph.state().deployment")
+    assert [row["instanceId"] for row in shown] == ["claude-dev"]
+    graph_page.locator('[data-node-id="do"]').click()
+    card = detail_text(graph_page)
+    assert "model: claude-opus-5" in card
+    assert "has not read this run's configuration" not in card

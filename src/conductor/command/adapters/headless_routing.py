@@ -9,9 +9,14 @@ the roster -- GLM is the next product to declare a flag -- while the transport
 next door does not.
 
 Nothing here knows a model id, a vendor, or a default. A profile declares the
-FLAG its vendor names a model with; the run's frozen configuration pins the
-VALUE; this joins them, and the concrete provider decides only WHERE the pair
-stands in its own argv, because that is a fact about a vendor's command line.
+FLAG its vendor names a model with and the NAMES that vendor publishes as
+moving; the run's frozen configuration pins the VALUE; this joins them, and the
+concrete provider decides only WHERE the pair stands in its own argv, because
+that is a fact about a vendor's command line.
+
+Both of this module's refusals are the PROFILE's policy read out loud, never
+this module's own: a vendor with no reviewed flag, and a name that vendor says
+is an alias for whatever it ships this week.
 
 What a mixin needs from the class it is mixed into is stated rather than
 assumed: ``profile``, ``_receipt`` and ``_retained``, all of them
@@ -22,7 +27,7 @@ funnel -- the one place an undiscarded home cannot escape unsaid.
 from __future__ import annotations
 
 from ..contracts import ActionRequest, ActionResultReceipt
-from .harness_profile import unroutable_model_detail
+from .harness_profile import moving_model_detail, unroutable_model_detail
 
 
 class ModelRouting:
@@ -45,15 +50,31 @@ class ModelRouting:
         operator configured is worse than a run that did not happen, because
         nothing afterwards can tell which model it was.
 
-        Nothing is minted, claimed or spawned, which is why it is checked here
-        and not after the workspace turn is taken.
+        The second reason is the vendor's own naming. A model an operator pins
+        must name ONE build; a name the vendor publishes as an alias for
+        "the latest model" names a different one every release, so a journal
+        recording it means something different each time it is read and no
+        receipt built from that run can be checked against the model that did
+        the work. Which names move is the PROFILE's declaration, never this
+        method's: nothing here knows a model id, and a build that carried its
+        own list would be maintaining a catalogue of somebody else's products.
+
+        Nothing is minted, claimed or spawned for either refusal, which is why
+        both are checked here and not after the workspace turn is taken.
         """
-        if model is None or self.profile.model_flag:
+        if model is None:
             return None
-        self._retained = 0
-        return self._receipt(
-            request, "failed", None,
-            unroutable_model_detail(self.profile.tool_noun))
+        if not self.profile.model_flag:
+            self._retained = 0
+            return self._receipt(
+                request, "failed", None,
+                unroutable_model_detail(self.profile.tool_noun))
+        if model in self.profile.unstable_models:
+            self._retained = 0
+            return self._receipt(
+                request, "failed", None,
+                moving_model_detail(self.profile.tool_noun))
+        return None
 
     def _model_argv(self, model: str | None) -> tuple[str, ...]:
         """The vendor's own way of naming a routed model, or nothing at all.

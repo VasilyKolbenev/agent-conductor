@@ -88,7 +88,15 @@ def wire_url(tmp_path) -> Iterator[str]:
     root = write_project(tmp_path, lanes={"claude": good_lane()})
     _seed(root)
     httpd = server.build(
-        root, 0, registry=AdapterRegistry([DeepPlanAdapter()]),
+        # One adapter per adapter the CONFIGURATION binds, which is what an
+        # install IS. This registry used to hold one, while the frozen config
+        # declared two instances on two products -- so `codex-review` was an
+        # instance that deployment could never serve, and any plan naming it was
+        # answered `service_refused`. The narrower registry was invisible while
+        # every fixture step bound the other instance.
+        root, 0, registry=AdapterRegistry([
+            DeepPlanAdapter(name) for name in
+            sorted({row["adapter"] for row in CONFIG["instances"]})]),
         token_factory=lambda _size: TOKEN)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()

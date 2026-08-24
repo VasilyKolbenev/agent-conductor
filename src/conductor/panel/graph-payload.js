@@ -182,25 +182,40 @@ export function projectDeployment(rows) {
   // old to answer the question, and this window must be able to tell the two
   // apart — so the key is required and its value may be null.
   if (!Array.isArray(rows)) return [];
-  const seen = new Set();
   const out = [];
+  const conflicted = new Set();
   for (const row of rows) {
     if (!row || typeof row !== "object" || Array.isArray(row)) continue;
     if (!ownKeysOnly(row, DEPLOYMENT_KEYS)) continue;
     if (!DEPLOYMENT_KEYS.every((key) => key in row)) continue;
     if (!isId(row.instance_id) || !isId(row.adapter_id)) continue;
     if (row.model !== null && !isId(row.model)) continue;
-    // One row per instance, first wins, exactly as the registry does — a
-    // second row for one instance is two answers to one question and a
-    // reader has no way to say which deployment is the run's.
-    if (seen.has(row.instance_id)) continue;
-    seen.add(row.instance_id);
+    // A second row for one instance is two answers to one question, and NEITHER
+    // survives. "First wins" — the registry's rule, copied here at first — is
+    // not a fact about the deployment: it hands whichever row arrived first the
+    // authority to name a product and a model, and arrival order is the one
+    // thing nobody controls. A Human would be shown a provider that may be
+    // neither, with nothing on the screen saying so.
+    //
+    // Identical rows are dropped too. What is wrong is that the server ANSWERED
+    // TWICE about one instance; two rows that happen to agree today are not
+    // evidence about the pair that does not, and an exception for them would be
+    // a comparison a reader has to trust instead of a rule they can state.
+    //
+    // Dropping the instance rather than refusing the whole projection is the
+    // narrower answer: the graph stays readable, and the affected step falls
+    // back to the state this window already has for a configuration it could
+    // not read. A plan does not depend on this fact and must not vanish over it.
+    if (out.some((kept) => kept.instanceId === row.instance_id)) {
+      conflicted.add(row.instance_id);
+      continue;
+    }
     out.push(Object.freeze({
       instanceId: row.instance_id, adapterId: row.adapter_id,
       model: row.model,
     }));
   }
-  return out;
+  return out.filter((row) => !conflicted.has(row.instanceId));
 }
 
 function projectEvidence(rows) {
