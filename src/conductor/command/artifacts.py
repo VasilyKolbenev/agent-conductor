@@ -266,14 +266,16 @@ def validate_review_result(
     evidence_ids = {
         prior.evidence_id for prior in prior_values
         if _verified_action(prior) == result.action_id}
-    if not evidence_ids:
-        raise ContractError(
-            f"action {result.action_id!r} produced an artifact and succeeded "
-            "with no verification evidence")
     if not evidence_ids & set(result.evidence_refs):
+        # ONE relation, not two. A first branch refusing "no evidence at all"
+        # stood here and was dead: whenever the run carries none, the
+        # intersection below is empty and this raises anyway. A mutation on it
+        # was GREEN twice, and the second time it was the guard that was wrong
+        # rather than the case -- an unreachable check is not a weaker check,
+        # it is a claim nothing can hold.
         raise ContractError(
-            f"succeeded action {result.action_id!r} does not name the "
-            "verification evidence recorded for it")
+            f"succeeded action {result.action_id!r} produced an artifact and "
+            "does not name the verification evidence recorded for it")
 
 
 def _verified_action(value: object) -> str | None:
