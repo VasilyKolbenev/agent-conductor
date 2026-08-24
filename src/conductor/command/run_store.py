@@ -33,7 +33,12 @@ from .attempt_replay import (
     validate_event_result,
 )
 from .attempts import AttemptEvent
-from .artifacts import ArtifactDocument, validate_artifact_source
+from .artifacts import (
+    ArtifactDocument,
+    validate_artifact_source,
+    validate_review_evidence,
+    validate_review_result,
+)
 from .graph_causality import (
     DISPATCH_KEY_PREFIX,  # noqa: F401 -- re-exported at its original home
     _one_graph_per_run,
@@ -319,6 +324,35 @@ def _causal_order(
     return ordered
 
 
+def _hold_review_chain(prior_values: tuple[object, ...], value: object) -> None:
+    """The review chain's three links, each judged where it is appended.
+
+    They are ONE circuit and are extracted together rather than left inline: an
+    artifact answers the request that asked for it, the verification digests
+    THAT artifact, and the succeeded result names that verification. A reader
+    checking whether the chain is whole should find it in one place, and
+    `_validate_new_relation` had grown past the length at which it can be read
+    as the dispatcher it is.
+
+    Each rule is asked only of the record type it judges, and each raises the
+    store's own error, so replay reports them as broken causality rather than as
+    a contract fault in a value that is, in itself, well formed.
+    """
+    if isinstance(value, ArtifactDocument):
+        _as_store_error(validate_artifact_source, value, prior_values)
+    if isinstance(value, EvidenceRef):
+        _as_store_error(validate_review_evidence, value, prior_values)
+    if isinstance(value, ActionResultReceipt):
+        _as_store_error(validate_review_result, value, prior_values)
+
+
+def _as_store_error(rule, value: object, prior_values: tuple[object, ...]) -> None:
+    try:
+        rule(value, prior_values)
+    except ContractError as e:
+        raise StoreError(str(e)) from e
+
+
 class RunStore:
     """Single-writer store rooted at one project's `conductor/runs` directory.
 
@@ -558,11 +592,7 @@ class RunStore:
                 validate_attempt_event(recovered.config, prior_values, value)
             except AttemptRelationError as e:
                 raise StoreError(str(e)) from e
-        if isinstance(value, ArtifactDocument):
-            try:
-                validate_artifact_source(value, prior_values)
-            except ContractError as e:
-                raise StoreError(str(e)) from e
+        _hold_review_chain(prior_values, value)
         if isinstance(value, DecisionReceipt):
             if value.config_digest != recovered.envelope.config_digest:
                 raise StoreError("decision config_digest does not match the frozen run")

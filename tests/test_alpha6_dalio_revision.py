@@ -1,22 +1,33 @@
 """Revision 2 of the Dalio cycle is DERIVED from revision 1, and both are pinned.
 
 Revision 1 is a historical witness: runs materialized from it, the ALPHA-3
-definition fixture carries its shape, and a replay must reproduce it byte for
-byte. Revision 2 is the same cycle with one field added -- each thinking step now
+definition fixture carries its shape, and a replay must reproduce it exactly.
+Revision 2 is the same cycle with one field added -- each thinking step now
 names where its own output is published, which is what makes the artifact chain
 real instead of implied.
 
 Two things have to hold at once, and neither is worth much alone:
 
-- **revision 1 never moves.** Its bytes are the thing past runs replay against;
+- **revision 1 never moves.** Its canonical document is the thing past runs
+  replay against;
 - **revision 2 is revision 1 plus exactly one field per review step.** Written by
   hand it would drift -- a reworded title, a reordered key, a resource row
   dropped -- and the drift would be invisible, because nothing else compares the
   two. So the derivation is performed HERE, from the shipped revision 1, and the
   shipped revision 2 must equal what it produces.
 
-The digests are SPELLED. Derived from the files they would move with the files,
-and a revision changing without a review is exactly what they exist to catch.
+**What is compared is the CANONICAL DOCUMENT, not the file's raw bytes**, and
+the distinction is the contract's rather than a convenience. Every reader of a
+template goes through `GraphTemplate.from_dict`, and every durable comparison
+downstream -- the store's own refusal to rewrite a revision, the digest a run
+records -- is over `canonical_json`. Key order and whitespace in the file are
+therefore not part of what a revision IS, and a guard that pinned them would be
+pinning something no consumer can observe. What it does catch is any change to
+the document a consumer reads.
+
+The digests are SPELLED, and they are digests of that canonical form. Derived
+from the files they would move with the files, and a revision changing without a
+review is exactly what they exist to catch.
 """
 from __future__ import annotations
 
@@ -37,7 +48,8 @@ RESULTS = {
     "design": "artifact-plan",
 }
 
-#: The bytes of each revision, pinned. A change to either is a review decision.
+#: Each revision's CANONICAL document, digested and pinned. A change to either
+#: is a review decision; a reordered key in the file is not a change at all.
 REVISION_ONE_DIGEST = "79776b1ecbbfb71c3e5d84d32292f3e2522c31ae67c7a62a1f39455194d13f50"
 REVISION_TWO_DIGEST = "25b4772a53df720149989d7a2be57bc16d0e00d58922724495ae32bb789c6cab"
 
@@ -73,7 +85,7 @@ def derive_revision_two() -> dict:
 
 
 def test_revision_two_is_exactly_revision_one_plus_one_field_per_review(tmp_path):
-    """The shipped file equals what the derivation produces, byte for byte.
+    """The shipped revision 2 IS the derivation, as a canonical document.
 
     This is the guard that stops revision 2 becoming a second, independently
     edited cycle. If the two ever have to differ by more than the added field,
@@ -85,11 +97,13 @@ def test_revision_two_is_exactly_revision_one_plus_one_field_per_review(tmp_path
     assert canonical_json(shipped) == canonical_json(derive_revision_two())
 
 
-def test_both_revisions_carry_the_bytes_they_were_reviewed_with():
-    """Spelled digests, so a revision cannot change without changing this file."""
+def test_both_revisions_carry_the_canonical_document_they_were_reviewed_with():
+    """Spelled digests over the CANONICAL document, so a revision cannot change
+    without changing this file. Reordered keys or reflowed whitespace in the
+    file are not changes to what any consumer reads, and are not pinned."""
     assert _digest(_document("dalio-v1")) == REVISION_ONE_DIGEST, (
         "REVISION 1 MOVED -- it is a historical witness and past runs replay "
-        "against these bytes")
+        "against this canonical document")
     assert _digest(_document("dalio-v2")) == REVISION_TWO_DIGEST
 
 

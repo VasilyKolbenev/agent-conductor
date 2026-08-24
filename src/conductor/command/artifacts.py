@@ -162,3 +162,130 @@ def validate_artifact_source(
     if same_source:
         raise ContractError(
             f"source action {document.source_action_id!r} already produced an artifact")
+    _artifact_answers_its_request(document, source, prior_values)
+
+
+#: The one capability whose action publishes a durable artifact of its own. A
+#: dispatch changes the work tree and its evidence is a digest of that change;
+#: only a review turns material into a new document.
+REVIEW_CAPABILITY = "review"
+
+
+def _artifact_answers_its_request(
+        document: ArtifactDocument, source: Any,
+        prior_values: tuple[object, ...]) -> None:
+    """The artifact is the one THIS request asked for, from the inputs it named.
+
+    Existence was all that was held before: the source action was known, it was
+    observed, and every input id was some artifact this run knows. None of that
+    says the document is the one the action asked for. A journal could name a
+    review's output under another reference, or claim it consumed artifacts the
+    request never asked for, or claim it read an older revision of a reference
+    that had since moved -- and every one of those replayed as sound.
+
+    Three relations close it, and each is read from the REQUEST rather than from
+    the document, because the request is what the operator authorized:
+
+    - the action is a review. Nothing else produces an artifact;
+    - the reference is the one the request named as its result;
+    - the inputs are exactly the documents the request's own references resolve
+      to, IN THE ORDER the request named them. Resolution is `latest_artifacts`
+      -- the same function the transport resolves with -- against the records
+      standing BEFORE this artifact, so "latest" means what it meant then.
+    """
+    if source.capability != REVIEW_CAPABILITY:
+        raise ContractError(
+            f"source action {document.source_action_id!r} is a "
+            f"{source.capability!r} action and publishes no artifact")
+    arguments = source.arguments
+    if arguments.get("result_artifact_ref") != document.artifact_ref:
+        raise ContractError(
+            f"artifact {document.artifact_ref!r} is not the result reference "
+            f"action {document.source_action_id!r} asked for")
+    prior_artifacts = [
+        prior for prior in prior_values if isinstance(prior, ArtifactDocument)]
+    try:
+        resolved = latest_artifacts(
+            prior_artifacts, arguments.get("target_artifact_refs", ()))
+    except ContractError as error:
+        raise ContractError(
+            f"action {document.source_action_id!r} names inputs this run cannot "
+            f"resolve: {error}") from None
+    expected = tuple(row.artifact_id for row in resolved)
+    if document.input_artifact_ids != expected:
+        raise ContractError(
+            f"artifact input ids do not match what action "
+            f"{document.source_action_id!r} asked for")
+
+
+def validate_review_evidence(
+        evidence: Any, prior_values: tuple[object, ...]) -> None:
+    """Verification evidence for a review carries THAT review's own digest.
+
+    The writer already refused a mismatch, and the writer is not the subject: a
+    journal is bytes on a disk, and replay is where a build decides whether to
+    believe them. Without this, a raw journal could carry a real artifact, a
+    verification pointing at a different digest, and a succeeded result -- and
+    the run replayed as verified work nobody could reproduce.
+
+    Evidence for an action that produced no artifact is left alone. A dispatch's
+    verification digests the CHANGE it made, which is a different fact with no
+    document behind it.
+    """
+    action_id = _verified_action(evidence)
+    if action_id is None:
+        return
+    produced = next(
+        (prior for prior in prior_values
+         if isinstance(prior, ArtifactDocument)
+         and prior.source_action_id == action_id), None)
+    if produced is None:
+        return
+    if evidence.digest != produced.digest():
+        raise ContractError(
+            f"verification evidence for action {action_id!r} does not digest "
+            f"the artifact that action produced")
+
+
+def validate_review_result(
+        result: Any, prior_values: tuple[object, ...]) -> None:
+    """A succeeded review names the verification evidence standing for it.
+
+    The last link of the chain. An artifact and its evidence can both be honest
+    and the RESULT still claim success without pointing at either, which is a
+    receipt whose own journal cannot show what it rests on.
+    """
+    if result.outcome != "succeeded":
+        return
+    produced = next(
+        (prior for prior in prior_values
+         if isinstance(prior, ArtifactDocument)
+         and prior.source_action_id == result.action_id), None)
+    if produced is None:
+        return
+    evidence_ids = {
+        prior.evidence_id for prior in prior_values
+        if _verified_action(prior) == result.action_id}
+    if not evidence_ids:
+        raise ContractError(
+            f"action {result.action_id!r} produced an artifact and succeeded "
+            "with no verification evidence")
+    if not evidence_ids & set(result.evidence_refs):
+        raise ContractError(
+            f"succeeded action {result.action_id!r} does not name the "
+            "verification evidence recorded for it")
+
+
+def _verified_action(value: object) -> str | None:
+    """The action one verification evidence row stands for, or None.
+
+    Read from the URI, which is where the writer puts it, and guarded by the
+    kind so an evidence row of another kind that happens to share the shape is
+    not mistaken for one.
+    """
+    kind = getattr(value, "kind", None)
+    uri = getattr(value, "uri", None)
+    if kind != "verification" or not isinstance(uri, str):
+        return None
+    prefix = "verification/"
+    return uri[len(prefix):] if uri.startswith(prefix) else None
