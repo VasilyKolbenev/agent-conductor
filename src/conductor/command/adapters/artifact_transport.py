@@ -14,7 +14,12 @@ from .deep_commands import DeepDispatchArgs, DeepReviewArgs
 from .harness_profile import PREFLIGHT_RESIDUE_DETAIL, TASK_CHANNEL_STDIN
 from .harness_workspace import INSTRUCTION_LIMIT, WORK_DIR, WorkspaceNotContained
 from .headless_cli import HeadlessCliTransport, residue_detail
-from .headless_values import AttemptEvidence, changed_paths, flagless
+from .headless_values import (
+    AttemptEvidence,
+    attempt_relation,
+    changed_paths,
+    flagless,
+)
 
 
 REVIEW_CAPABILITY = "review"
@@ -26,7 +31,20 @@ class _HandoffUnavailable(RuntimeError):
 
 @dataclass(frozen=True)
 class _ReviewAttempt:
-    inputs: tuple[ArtifactDocument, ...]
+    """What one review leaves for its verification, and nothing more.
+
+    The inputs are IDS, not documents. Verification needs only their identity --
+    it records which artifacts a review consumed -- so holding the documents
+    would keep an operator's whole durable material resident between `execute`
+    and `verify` for no purpose at all. The capability is removed rather than
+    left unused: a field that cannot hold content cannot leak it.
+
+    The OUTPUT stays, because it is the product: the review's own text becomes
+    the durable artifact. It is the one thing here that must survive the spawn,
+    and it is discarded on every road out of `verify`.
+    """
+
+    input_artifact_ids: tuple[str, ...]
     result_artifact_ref: str
     output: bytes
     output_contains_env_value: bool
@@ -64,8 +82,12 @@ class ArtifactAwareTransport(HeadlessCliTransport):
             docs_url=self.manifest.docs_url)
         self._handoff = ArtifactHandoff(
             RunStore(root), clock=clock, ids=ids)
-        self._dispatch_inputs: dict[str, tuple[ArtifactDocument, ...]] = {}
-        self._review_attempts: dict[str, _ReviewAttempt] = {}
+        #: Both are filed under the FULL attempt relation. An action id alone
+        #: is not an identity -- see `attempt_relation` -- and one adapter
+        #: instance serves every worker bound to its root, so a shared key hands
+        #: one run whatever another run left. Both hold IDS, never documents.
+        self._dispatch_inputs: dict[tuple[str, str, str, str], tuple[str, ...]] = {}
+        self._review_attempts: dict[tuple[str, str, str, str], _ReviewAttempt] = {}
 
     def prepare(self, request: ActionRequest) -> PreparedAction:
         if request.capability != REVIEW_CAPABILITY:
@@ -86,10 +108,12 @@ class ArtifactAwareTransport(HeadlessCliTransport):
                     prepared.request, "failed", None,
                     "a durable dispatch input was unavailable, so no task was spawned")
             except Exception:
-                self._dispatch_inputs.pop(prepared.request.action_id, None)
+                self._forget(prepared.request)
                 raise
             if result.outcome != "succeeded":
-                self._dispatch_inputs.pop(prepared.request.action_id, None)
+                # Nothing downstream can use what this action left, because
+                # `verify` refuses an outcome that is not a success.
+                self._forget(prepared.request)
             return result
         if not self.review_enabled:
             return super().execute(prepared)
@@ -109,7 +133,8 @@ class ArtifactAwareTransport(HeadlessCliTransport):
             inputs = self._handoff.resolve(request.run_id, args.artifact_refs)
         except Exception as error:
             raise _HandoffUnavailable from error
-        self._dispatch_inputs[request.action_id] = inputs
+        self._dispatch_inputs[attempt_relation(request)] = tuple(
+            document.artifact_id for document in inputs)
         task = super()._dispatch_task(request, args, instruction)
         return task + self._render_inputs(inputs)
 
@@ -167,15 +192,17 @@ class ArtifactAwareTransport(HeadlessCliTransport):
             separate_stderr=True)
         evidence = AttemptEvidence(
             work_dir=work, before=before, after=self._evidence())
-        self._attempts[request.action_id] = evidence
-        self._review_attempts[request.action_id] = _ReviewAttempt(
-            inputs=inputs, result_artifact_ref=args.result_artifact_ref,
+        relation = attempt_relation(request)
+        self._attempts[relation] = evidence
+        self._review_attempts[relation] = _ReviewAttempt(
+            input_artifact_ids=tuple(row.artifact_id for row in inputs),
+            result_artifact_ref=args.result_artifact_ref,
             output=outcome.output,
             output_contains_env_value=outcome.output_contains_env_value,
             evidence=evidence)
         result = self._observed(request, outcome)
         if result.outcome != "succeeded":
-            self._review_attempts.pop(request.action_id, None)
+            self._forget(request)
         return result
 
     def _review_argv(self, home: Path) -> tuple[str, ...]:
@@ -207,20 +234,48 @@ class ArtifactAwareTransport(HeadlessCliTransport):
     def verify(
             self, request: ActionRequest,
             result: ActionResultReceipt) -> AdapterVerification:
-        self._hold_result(request, result)
-        if result.outcome != "succeeded" or result.exit_code not in (None, 0):
-            return self._verification(
-                request, "error", (),
-                "only a successfully observed action can publish verification")
-        if request.capability == REVIEW_CAPABILITY and self.review_enabled:
-            return self._verify_review(request, result)
-        return self._verify_dispatch(request, result)
+        """Judge one attempt, and forget it on every road out of this method.
+
+        The discard is a `finally` because the roads out are many and three of
+        them used to leak: the early refusal of a non-succeeded outcome, and the
+        two places a dispatch hands back to the base verifier without reaching
+        the pop below them. Each left an action's material resident after the
+        action was over.
+
+        `_hold_result` stands INSIDE the try for the same reason. A result that
+        does not belong to its request is a programming fault and must raise --
+        and raising is not a licence to keep what the attempt left behind.
+        """
+        relation = attempt_relation(request)
+        try:
+            self._hold_result(request, result)
+            if result.outcome != "succeeded" or result.exit_code not in (None, 0):
+                return self._verification(
+                    request, "error", (),
+                    "only a successfully observed action can publish verification")
+            if request.capability == REVIEW_CAPABILITY and self.review_enabled:
+                return self._verify_review(request, result)
+            return self._verify_dispatch(request, result)
+        finally:
+            self._forget(request)
+
+    def _forget(self, request: ActionRequest) -> None:
+        """Drop everything ONE attempt left in memory, by its full relation.
+
+        One place, so a new road out cannot forget to be added to it, and by the
+        relation rather than the action id, so forgetting one run's attempt
+        never reaches into another's.
+        """
+        relation = attempt_relation(request)
+        self._dispatch_inputs.pop(relation, None)
+        self._review_attempts.pop(relation, None)
+        self._attempts.pop(relation, None)
 
     def _verify_review(
             self, request: ActionRequest,
             result: ActionResultReceipt) -> AdapterVerification:
         args = self._review_args(request.arguments)
-        attempt = self._review_attempts.pop(request.action_id, None)
+        attempt = self._review_attempts.get(attempt_relation(request))
         if attempt is not None and self._changed(attempt.evidence):
             return self._verification(
                 request, "mismatch", (),
@@ -233,7 +288,8 @@ class ArtifactAwareTransport(HeadlessCliTransport):
             content = None if attempt is None else attempt.output.decode("utf-8")
             evidence = self._handoff.record_review(
                 request, args.result_artifact_ref,
-                inputs=None if attempt is None else attempt.inputs,
+                input_artifact_ids=(
+                    None if attempt is None else attempt.input_artifact_ids),
                 content=content, adapter_id=self.manifest.adapter_id)
         except Exception:
             evidence = None
@@ -246,7 +302,7 @@ class ArtifactAwareTransport(HeadlessCliTransport):
     def _verify_dispatch(
             self, request: ActionRequest,
             result: ActionResultReceipt) -> AdapterVerification:
-        attempt = self._attempts.get(request.action_id)
+        attempt = self._attempts.get(attempt_relation(request))
         digest = None
         if attempt is not None:
             changed = self._changed(attempt)
@@ -261,7 +317,6 @@ class ArtifactAwareTransport(HeadlessCliTransport):
                 request, adapter_id=self.manifest.adapter_id, digest=digest)
         except Exception:
             evidence = None
-        self._dispatch_inputs.pop(request.action_id, None)
         if evidence is None:
             return super().verify(request, result)
         return self._verified(request, evidence.evidence_id)
@@ -272,13 +327,7 @@ class ArtifactAwareTransport(HeadlessCliTransport):
         if not isinstance(request, ActionRequest) or not isinstance(
                 result, ActionResultReceipt):
             raise self.error("verify needs a validated request and result")
-        relation = (
-            result.action_id, result.run_id, result.attempt_id,
-            result.instance_id)
-        expected = (
-            request.action_id, request.run_id, request.attempt_id,
-            request.instance_id)
-        if relation != expected:
+        if attempt_relation(result) != attempt_relation(request):
             raise self.error("verification result does not belong to the request")
 
     @staticmethod
@@ -290,10 +339,10 @@ class ArtifactAwareTransport(HeadlessCliTransport):
             self, request: ActionRequest, attempt: AttemptEvidence,
             changed: tuple[str, ...]) -> str:
         assert attempt.after is not None
-        inputs = self._dispatch_inputs.get(request.action_id, ())
+        inputs = self._dispatch_inputs.get(attempt_relation(request), ())
         return _content_digest({
             "action_id": request.action_id,
-            "input_artifact_ids": [row.artifact_id for row in inputs],
+            "input_artifact_ids": list(inputs),
             "changes": [{
                 "path": name, "before": attempt.before.get(name),
                 "after": attempt.after.get(name)} for name in changed],

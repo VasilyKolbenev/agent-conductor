@@ -30,6 +30,32 @@ def flagless(
     return token
 
 
+#: The four ids that make one attempt of one action of one run its own, and the
+#: ONE key anything an adapter holds between `execute` and `verify` may be filed
+#: under.
+#:
+#: An `action_id` alone is not an identity. Nothing makes it unique across runs
+#: -- the contract validates a charset, the store is per-run, and a runtime mints
+#: `action-1` for the first action of every run it serves -- while ONE adapter
+#: instance serves every worker bound to its root. So a cache keyed on it alone
+#: has one entry where two runs need two, and whichever run wrote last owns it.
+#:
+#: Reproduced before it was fixed: two runs, one adapter, `action-1` in both, and
+#: the cache carried a single key. The same defect refuses the second run's
+#: action outright, because the crash marker is filed under the same name -- see
+#: the note in `harness_workspace`.
+#:
+#: It is spelled ONCE, here, because it existed twice: `verify` compared the
+#: four ids of a request against a result while the caches compared one. Two
+#: spellings of one identity is the same defect as judging one value and writing
+#: another -- whichever is wrong, nothing tells you which.
+def attempt_relation(request: object) -> tuple[str, str, str, str]:
+    """The identity of one attempt, from a validated request or receipt."""
+    return (
+        getattr(request, "run_id"), getattr(request, "action_id"),
+        getattr(request, "attempt_id"), getattr(request, "instance_id"))
+
+
 def changed_paths(
         before: Mapping[str, str], after: Mapping[str, str]) -> tuple[str, ...]:
     """Every path whose content appeared, vanished, or moved between snapshots."""

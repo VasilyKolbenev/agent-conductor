@@ -36,13 +36,20 @@ class ArtifactHandoff:
 
     def record_review(
             self, request: ActionRequest, artifact_ref: str, *,
-            inputs: Iterable[ArtifactDocument] | None,
+            input_artifact_ids: Iterable[str] | None,
             content: str | None, adapter_id: str) -> EvidenceRef | None:
-        """Publish one review output and its evidence, or recover either half."""
+        """Publish one review output and its evidence, or recover either half.
+
+        The inputs arrive as IDS. This seam only ever recorded their identity,
+        so taking documents gave a caller a reason to hold an operator's whole
+        durable material in memory between `execute` and `verify` -- and one
+        did. Narrowing the parameter removes the reason rather than asking the
+        caller to remember.
+        """
         with self._store.transaction():
             recovered = self._store.read(request.run_id)
             artifact = self._review_artifact(
-                recovered, request, artifact_ref, inputs, content)
+                recovered, request, artifact_ref, input_artifact_ids, content)
             if artifact is None:
                 return None
             evidence = self._standing_evidence(recovered, request.action_id)
@@ -70,7 +77,7 @@ class ArtifactHandoff:
 
     def _review_artifact(
             self, recovered: RecoveredRun, request: ActionRequest,
-            artifact_ref: str, inputs: Iterable[ArtifactDocument] | None,
+            artifact_ref: str, input_artifact_ids: Iterable[str] | None,
             content: str | None) -> ArtifactDocument | None:
         standing = [
             row.value for row in recovered.records
@@ -84,18 +91,18 @@ class ArtifactHandoff:
                 raise RecordConflict("review action records another artifact reference")
             if content is not None and artifact.content != content:
                 raise RecordConflict("review action records different content")
-            if inputs is not None and artifact.input_artifact_ids != tuple(
-                    row.artifact_id for row in inputs):
+            if input_artifact_ids is not None and (
+                    artifact.input_artifact_ids != tuple(input_artifact_ids)):
                 raise RecordConflict("review action records different input artifacts")
             return artifact
-        if content is None or inputs is None:
+        if content is None or input_artifact_ids is None:
             return None
         artifact = ArtifactDocument(
             artifact_id=self._ids("artifact"), artifact_ref=artifact_ref,
             run_id=request.run_id, created_at=self._clock(),
             media_type="text/markdown", content=content,
             source_action_id=request.action_id,
-            input_artifact_ids=tuple(row.artifact_id for row in inputs))
+            input_artifact_ids=tuple(input_artifact_ids))
         self._store.append(artifact)
         return artifact
 

@@ -97,6 +97,7 @@ from .headless_values import (
     _Attempt,
     _changed,
     _version_token,
+    attempt_relation,
     flagless,
 )
 from .process import (
@@ -166,7 +167,10 @@ class HeadlessCliTransport:
         self._root = self._workspace.root
         self._clock = clock
         self._ids = ids
-        self._attempts: dict[str, _Attempt] = {}
+        #: Filed under the FULL attempt relation, never under an action id
+        #: alone: one adapter serves every worker bound to its root, and an
+        #: action id repeats across runs. See `attempt_relation`.
+        self._attempts: dict[tuple[str, str, str, str], _Attempt] = {}
         #: How many homes this dispatch could not discard. A COUNT, never a
         #: name: the number is what a receipt may say, the name is operator
         #: state. It is re-derived per dispatch, because the standing residue
@@ -393,7 +397,7 @@ class HeadlessCliTransport:
         outcome = self._attempt(
             argv, f"{WORK_DIR}/{args.work_item_id}",
             timeout=request.timeout_seconds, stdin_bytes=payload)
-        self._attempts[request.action_id] = _Attempt(
+        self._attempts[attempt_relation(request)] = _Attempt(
             work_dir=work, before=before, after=self._evidence())
         return self._observed(request, outcome)
 
@@ -670,7 +674,7 @@ class HeadlessCliTransport:
         if not isinstance(request, ActionRequest) or not isinstance(
                 result, ActionResultReceipt):
             raise self.error("verify needs a validated request and result")
-        attempt = self._attempts.get(request.action_id)
+        attempt = self._attempts.get(attempt_relation(request))
         if attempt is None:
             return self._verification(
                 request, "error", (),

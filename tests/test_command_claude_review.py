@@ -294,10 +294,10 @@ def test_artifact_handoff_exact_retry_never_duplicates_recovered_evidence(tmp_pa
     handoff = ArtifactHandoff(store, clock=lambda: NOW, ids=_Ids())
 
     first = handoff.record_review(
-        request, OUTPUT_REF, inputs=None, content=None,
+        request, OUTPUT_REF, input_artifact_ids=None, content=None,
         adapter_id="claude-code")
     second = handoff.record_review(
-        request, OUTPUT_REF, inputs=None, content=None,
+        request, OUTPUT_REF, input_artifact_ids=None, content=None,
         adapter_id="claude-code")
 
     assert first == second
