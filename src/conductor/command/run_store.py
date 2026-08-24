@@ -337,6 +337,12 @@ def _hold_review_chain(prior_values: tuple[object, ...], value: object) -> None:
     Each rule is asked only of the record type it judges, and each raises the
     store's own error, so replay reports them as broken causality rather than as
     a contract fault in a value that is, in itself, well formed.
+
+    WHICH chain a record belongs to is the rules' own question, and they answer
+    it from the authorizing request's capability rather than from whether an
+    artifact happens to be there. Keyed on the artifact, the last two switched
+    themselves off for exactly the journals that had none -- see
+    `artifacts._review_source`.
     """
     if isinstance(value, ArtifactDocument):
         _as_store_error(validate_artifact_source, value, prior_values)

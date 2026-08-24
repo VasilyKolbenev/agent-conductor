@@ -218,30 +218,98 @@ def _artifact_answers_its_request(
             f"{document.source_action_id!r} asked for")
 
 
+def _review_source(
+        action_id: str, prior_values: tuple[object, ...]) -> Any | None:
+    """The review request a record belongs to, or None when no review chain does.
+
+    WHICH chain a record belongs to is read from the authorizing request's own
+    capability, and never from whether an artifact happens to stand for it. That
+    difference is the whole of the two rules below. Keyed on the artifact, they
+    switched THEMSELVES off in exactly the journals that needed them -- one that
+    had not published a document yet, and one whose document had been deleted --
+    because in both the artifact they looked for was not there to be found, and
+    absence was read as "this is a dispatch, leave it alone".
+
+    Two readings answer None, and both are reachable:
+
+    - the action is a `dispatch`. Its verification digests the CHANGE it made, a
+      fact with no document behind it, so a rule demanding an artifact of it
+      would refuse every honest dispatch in the product;
+    - no request for that action stands yet. Replay refuses a RESULT naming an
+      unknown action before these rules are reached, but an evidence row may
+      name one, and a chain whose authorizing request is absent is not a chain
+      this function can judge. What such a row still cannot do is be NAMED by a
+      result: `attempt_replay` admits only evidence appended after that action's
+      own observed attempt event.
+    """
+    source = action_request_for(prior_values, action_id)
+    if source is None or source.capability != REVIEW_CAPABILITY:
+        return None
+    return source
+
+
+def _produced_by(
+        action_id: str,
+        prior_values: tuple[object, ...]) -> list[ArtifactDocument]:
+    """Every artifact already standing for one action, in append order."""
+    return [
+        prior for prior in prior_values
+        if isinstance(prior, ArtifactDocument)
+        and prior.source_action_id == action_id]
+
+
+def _verification_ids(
+        action_id: str, prior_values: tuple[object, ...]) -> tuple[str, ...]:
+    """Every verification evidence id already standing for one action."""
+    return tuple(
+        prior.evidence_id for prior in prior_values
+        if _verified_action(prior) == action_id)
+
+
 def validate_review_evidence(
         evidence: Any, prior_values: tuple[object, ...]) -> None:
-    """Verification evidence for a review carries THAT review's own digest.
+    """A review's verification FOLLOWS one artifact of its own, and digests it.
 
-    The writer already refused a mismatch, and the writer is not the subject: a
-    journal is bytes on a disk, and replay is where a build decides whether to
-    believe them. Without this, a raw journal could carry a real artifact, a
-    verification pointing at a different digest, and a succeeded result -- and
-    the run replayed as verified work nobody could reproduce.
+    The writer already refuses each of these, and the writer is not the subject:
+    a journal is bytes on a disk, and replay is where a build decides whether to
+    believe them.
 
-    Evidence for an action that produced no artifact is left alone. A dispatch's
-    verification digests the CHANGE it made, which is a different fact with no
-    document behind it.
+    Three relations, and only the last of them stood here before:
+
+    - the review has published exactly one artifact, and it is ALREADY standing.
+      A verification of a document nobody has published is a claim about
+      nothing, and it used to replay as sound because the missing document was
+      read as this being a dispatch;
+    - no verification for this action stands yet. Two verified rows for one
+      review are two answers to one question, and nothing in the journal says
+      which one a result rests on;
+    - the digest is THAT artifact's. Without it a raw journal could carry a real
+      artifact, a verification pointing at a different digest, and a succeeded
+      result -- and the run replayed as verified work nobody could reproduce.
+
+    The plural side of the first relation is also held by
+    `validate_artifact_source`, which refuses a second artifact for one action.
+    It is written as one predicate rather than as a guard of its own precisely
+    so it cannot become an unreachable branch: what this rule needs to say is
+    "exactly one", and the reachable failure is zero.
+
+    A dispatch's verification is left alone; `_review_source` has the two
+    readings that answer so.
     """
     action_id = _verified_action(evidence)
     if action_id is None:
         return
-    produced = next(
-        (prior for prior in prior_values
-         if isinstance(prior, ArtifactDocument)
-         and prior.source_action_id == action_id), None)
-    if produced is None:
+    if _review_source(action_id, prior_values) is None:
         return
-    if evidence.digest != produced.digest():
+    produced = _produced_by(action_id, prior_values)
+    if len(produced) != 1:
+        raise ContractError(
+            f"verification evidence for review action {action_id!r} stands on "
+            f"{len(produced)} artifacts of that action rather than on one")
+    if _verification_ids(action_id, prior_values):
+        raise ContractError(
+            f"review action {action_id!r} already carries verification evidence")
+    if evidence.digest != produced[0].digest():
         raise ContractError(
             f"verification evidence for action {action_id!r} does not digest "
             f"the artifact that action produced")
@@ -249,33 +317,49 @@ def validate_review_evidence(
 
 def validate_review_result(
         result: Any, prior_values: tuple[object, ...]) -> None:
-    """A succeeded review names the verification evidence standing for it.
+    """A succeeded review names the ONE verification evidence recorded for it.
 
-    The last link of the chain. An artifact and its evidence can both be honest
-    and the RESULT still claim success without pointing at either, which is a
-    receipt whose own journal cannot show what it rests on.
+    The last link, and it used to be the weakest. It was asked only when an
+    artifact was found, so a succeeded review whose document was never written
+    -- or was deleted out of the journal along with its verification -- was read
+    as a dispatch and admitted with nothing behind it at all. Where it did run,
+    it asked only that the result's references INTERSECT the verifications this
+    run holds, which is weaker than the single chain production writes.
+
+    Three relations, every one of them reached through the capability:
+
+    - the review published exactly one artifact;
+    - exactly one verification stands for it. `validate_review_evidence` refuses
+      a second, so this is a second reader of that invariant on the plural side;
+      the reachable failure is ZERO, a journal whose verification row is gone;
+    - the result names exactly that evidence and nothing else. Given the two
+      above, `attempt_replay` refuses every OTHER id a result could name, so the
+      two spellings agree on any whole journal today -- this one says what
+      production writes without borrowing that, and is held directly where a
+      raw journal cannot reach it.
+
+    A crash prefix is not a broken chain. An artifact with no verification yet,
+    and an artifact and its verification with no terminal result yet, both
+    replay: only a result that CLAIMS success is asked to account for itself.
     """
     if result.outcome != "succeeded":
         return
-    produced = next(
-        (prior for prior in prior_values
-         if isinstance(prior, ArtifactDocument)
-         and prior.source_action_id == result.action_id), None)
-    if produced is None:
+    if _review_source(result.action_id, prior_values) is None:
         return
-    evidence_ids = {
-        prior.evidence_id for prior in prior_values
-        if _verified_action(prior) == result.action_id}
-    if not evidence_ids & set(result.evidence_refs):
-        # ONE relation, not two. A first branch refusing "no evidence at all"
-        # stood here and was dead: whenever the run carries none, the
-        # intersection below is empty and this raises anyway. A mutation on it
-        # was GREEN twice, and the second time it was the guard that was wrong
-        # rather than the case -- an unreachable check is not a weaker check,
-        # it is a claim nothing can hold.
+    produced = _produced_by(result.action_id, prior_values)
+    if len(produced) != 1:
         raise ContractError(
-            f"succeeded action {result.action_id!r} produced an artifact and "
-            "does not name the verification evidence recorded for it")
+            f"succeeded review {result.action_id!r} stands on {len(produced)} "
+            "artifacts of its own rather than on one")
+    evidence_ids = _verification_ids(result.action_id, prior_values)
+    if len(evidence_ids) != 1:
+        raise ContractError(
+            f"succeeded review {result.action_id!r} carries "
+            f"{len(evidence_ids)} verification evidence rows rather than one")
+    if tuple(result.evidence_refs) != evidence_ids:
+        raise ContractError(
+            f"succeeded review {result.action_id!r} does not name exactly the "
+            "verification evidence recorded for it")
 
 
 def _verified_action(value: object) -> str | None:
