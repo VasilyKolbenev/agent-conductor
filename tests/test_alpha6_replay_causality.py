@@ -154,6 +154,22 @@ def test_the_honest_journal_replays_and_is_the_control_for_every_case(tmp_path):
     assert produced["input_artifact_ids"] == ["artifact-seed-1", "artifact-seed-2"]
 
 
+def _reseal(rows: list[dict]) -> None:
+    """Re-digest the later links, so a case is wrong in exactly ONE way.
+
+    Editing the artifact changes its digest, which breaks the verification link
+    as well -- and then the case is caught by whichever rule runs first, not by
+    the one it is named for. Five mutations were GREEN because of this: the
+    relation each named could be removed entirely and the case still failed, on
+    the neighbour.
+
+    So every artifact edit reseals the evidence that digests it. What remains
+    broken is the one relation the case is about.
+    """
+    produced = ArtifactDocument.from_dict(_produced(rows))
+    _of_type(rows, "evidence")[0]["digest"] = produced.digest()
+
+
 def _capability_is_not_review(rows: list[dict]) -> None:
     request = _of_type(rows, "action_request")[0]
     request["capability"] = "dispatch"
@@ -161,23 +177,27 @@ def _capability_is_not_review(rows: list[dict]) -> None:
 
 def _result_ref_is_another_name(rows: list[dict]) -> None:
     _produced(rows)["artifact_ref"] = "artifact-somewhere-else"
+    _reseal(rows)
 
 
 def _inputs_are_reordered(rows: list[dict]) -> None:
     produced = _produced(rows)
     produced["input_artifact_ids"] = list(
         reversed(produced["input_artifact_ids"]))
+    _reseal(rows)
 
 
 def _inputs_name_another_known_artifact(rows: list[dict]) -> None:
     produced = _produced(rows)
     # A real artifact of this run, and one the request never asked for.
     produced["input_artifact_ids"] = ["artifact-seed-1", "artifact-seed-3"]
+    _reseal(rows)
 
 
 def _inputs_drop_one(rows: list[dict]) -> None:
     produced = _produced(rows)
     produced["input_artifact_ids"] = produced["input_artifact_ids"][:1]
+    _reseal(rows)
 
 
 def _evidence_digests_something_else(rows: list[dict]) -> None:
