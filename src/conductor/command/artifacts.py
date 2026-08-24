@@ -218,9 +218,17 @@ def _artifact_answers_its_request(
             f"{document.source_action_id!r} asked for")
 
 
-def _is_review_chain(action_id: str, prior_values: tuple[object, ...]) -> bool:
-    """Whether a record belongs to a review's chain, from the REQUEST that
-    authorized it.
+#: What each rule calls itself when it refuses a record naming no action. The
+#: nouns are the rules' own, because a message saying "verification evidence"
+#: under a result would send a reader to the wrong record.
+EVIDENCE_NOUN = "verification evidence"
+RESULT_NOUN = "succeeded review result"
+
+
+def _review_source(
+        action_id: str, prior_values: tuple[object, ...],
+        what: str) -> Any | None:
+    """The review request a record belongs to, or None for a KNOWN other one.
 
     WHICH chain a record belongs to is read from the authorizing request's own
     capability, and never from whether an artifact happens to stand for it. That
@@ -230,22 +238,29 @@ def _is_review_chain(action_id: str, prior_values: tuple[object, ...]) -> bool:
     because in both the artifact they looked for was not there to be found, and
     absence was read as "this is a dispatch, leave it alone".
 
-    A verdict rather than the request itself, because the two ways of answering
-    "no" are different facts and a caller that received one value for both could
-    not be made to fail on one of them alone:
+    Three answers, and the third used to be silently the second:
 
-    - the action is a `dispatch`. Its verification digests the CHANGE it made, a
-      fact with no document behind it, so a rule demanding an artifact of it
-      would refuse every honest dispatch in the product;
-    - no request for that action stands yet. Replay refuses a RESULT naming an
-      unknown action before these rules are reached, but an evidence row may
-      name one, and a chain whose authorizing request is absent is not a chain
-      this function can judge. What such a row still cannot do is be NAMED by a
-      result: `attempt_replay` admits only evidence appended after that action's
-      own observed attempt event.
+    - a REVIEW request: the rules below judge the record;
+    - a KNOWN request that is not a review. Its verification digests the CHANGE
+      it made, a fact with no document behind it, so a rule demanding an
+      artifact of it would refuse every honest dispatch in the product;
+    - NO request at all, which is a broken relation and raises. It was left
+      unjudged, on the reasoning that nothing here could judge a chain whose
+      authorizing request is absent and that such a row could never be named by
+      a result anyway. Both halves were wrong. A verification row is a claim
+      that some action was verified, and an action nothing requested was never
+      AUTHORIZED -- so the row is a claim about work no Human confirmed,
+      standing in an immutable journal that replays as sound.
+
+      And the shape is not one an honest run can leave. A crash truncates a
+      journal's TAIL; it does not remove a record from the middle. The request
+      is appended before the attempt that produces the evidence, so every prefix
+      holding the evidence holds the request too.
     """
     source = action_request_for(prior_values, action_id)
-    return source is not None and source.capability == REVIEW_CAPABILITY
+    if source is None:
+        raise ContractError(f"{what} names unknown action {action_id!r}")
+    return source if source.capability == REVIEW_CAPABILITY else None
 
 
 def _produced_by(
@@ -293,13 +308,13 @@ def validate_review_evidence(
     so it cannot become an unreachable branch: what this rule needs to say is
     "exactly one", and the reachable failure is zero.
 
-    A dispatch's verification is left alone; `_is_review_chain` has the two
-    readings that answer so.
+    A KNOWN action that is not a review is left alone, and one nothing ever
+    requested is refused outright; `_review_source` has all three readings.
     """
     action_id = _verified_action(evidence)
     if action_id is None:
         return
-    if not _is_review_chain(action_id, prior_values):
+    if _review_source(action_id, prior_values, EVIDENCE_NOUN) is None:
         return
     produced = _produced_by(action_id, prior_values)
     if len(produced) != 1:
@@ -344,7 +359,7 @@ def validate_review_result(
     """
     if result.outcome != "succeeded":
         return
-    if not _is_review_chain(result.action_id, prior_values):
+    if _review_source(result.action_id, prior_values, RESULT_NOUN) is None:
         return
     produced = _produced_by(result.action_id, prior_values)
     if len(produced) != 1:

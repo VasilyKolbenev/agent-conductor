@@ -27,6 +27,45 @@ export const DALIO_DEFAULT = Object.freeze({
   fixture_schema: 1,
   run: {run_id: "run-dalio-default", mode: "confirm"},
   registry: [],
+  // Which product drives each instance this plan names, and which model that
+  // instance PINS. Both are the frozen configuration's words, and neither is
+  // in the plan above — a template names roles, a run's binding names
+  // instances, and only a deployment names a product and a model.
+  //
+  // This is the fact the default used to have nowhere to put, and it went
+  // wrong three ways for want of it:
+  //
+  // - the Do step drew `kimi-code` while its binding said `claude-dev`;
+  // - every OTHER step said `claude-dev` too, so one instance was drawn as
+  //   four different products at once. That was the same defect, and it was
+  //   the larger half: it is why the first one was easy to miss;
+  // - the Do step carried a `model: sonnet` resource row. A resource row is a
+  //   durable demand a plan makes of every machine that runs it, and the
+  //   shipped cycle deliberately makes no such demand about a model.
+  //
+  // Every step now names an instance this deployment really declares, each
+  // instance appears once here with the product that serves it, and the model
+  // appears where a real read puts it. A `claude-dev` binding shows Claude Code
+  // and Opus 5 because that is what this deployment says, not because anything
+  // renders a vendor.
+  //
+  // TWO instances, and the number came DOWN from a first attempt at four. That
+  // attempt named `deepseek-lane` and `kimi-lane`, which no ordinary
+  // configuration declares — and the wire suite caught it at once: a Human who
+  // presses "Start from the default" and saves gets `service_refused`, because
+  // the route holds a plan to the run's frozen configuration. A default nobody
+  // can save is worse than a default that shows fewer products, and the old
+  // four-product picture was only reachable while every step claimed one
+  // instance it did not run on. So the fixture names the two instances the
+  // product's own canonical configuration declares.
+  //
+  // One pins a model and one does not, which is deliberate: `null` is the
+  // state a reader is most likely to be shown something false about.
+  deployment: [
+    {instance_id: "claude-dev", adapter_id: "claude-code",
+      model: "claude-opus-5"},
+    {instance_id: "codex-review", adapter_id: "codex", model: null},
+  ],
   nodes: [
     {node_id: "goal", kind: "task", title: "Goal",
       harness: "claude-code", health: "ready", phase: "succeeded",
@@ -43,16 +82,16 @@ export const DALIO_DEFAULT = Object.freeze({
       capabilities: ["evidence", "review"], stage: "identify",
       evidence: [{evidence_id: "ev-identify-list", kind: "result",
         verification: "verified"}],
-      binding: {instance_id: "claude-dev", capability: "review",
+      binding: {instance_id: "codex-review", capability: "review",
         arguments: {work_item_id: "work-001", review_profile: "quality",
           target_artifact_refs: ["artifact-goal"],
           result_artifact_ref: "artifact-problems"}},
       gate: null},
     {node_id: "diagnose", kind: "task", title: "Diagnose Root Causes",
-      harness: "deepseek-harness", health: "busy", phase: "requested",
+      harness: "codex", health: "busy", phase: "requested",
       capabilities: ["evidence", "review"], stage: "diagnose",
       evidence: [],
-      binding: {instance_id: "claude-dev", capability: "review",
+      binding: {instance_id: "codex-review", capability: "review",
         arguments: {work_item_id: "work-001", review_profile: "quality",
           target_artifact_refs: ["artifact-problems"],
           result_artifact_ref: "artifact-causes"}},
@@ -72,11 +111,15 @@ export const DALIO_DEFAULT = Object.freeze({
       evidence: [],
       gate: {gate_id: "gate-confirm-do", state: "pending"}},
     {node_id: "do", kind: "task", title: "Do",
-      harness: "kimi-code", health: "ready", phase: "idle",
+      harness: "claude-code", health: "ready", phase: "idle",
       capabilities: ["dispatch", "evidence", "stop"], stage: "do",
       evidence: [],
-      resources: [{kind: "model", name: "sonnet"},
-        {kind: "sandbox", name: "project-root"}],
+      // The sandbox row and NOTHING else. A resource row is a durable demand
+      // the plan makes of whatever machine runs it, so `sandbox: project-root`
+      // belongs here — it names what the work may touch — and a model does
+      // not. Which model runs is the deployment's business, and this fixture
+      // now shows it where a real read shows it: in `deployment` below.
+      resources: [{kind: "sandbox", name: "project-root"}],
       binding: {instance_id: "claude-dev", capability: "dispatch",
         arguments: {work_item_id: "work-001",
           instruction_ref: "instruction-plan", profile: "implement",

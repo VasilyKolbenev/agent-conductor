@@ -343,7 +343,10 @@ def test_the_poisoned_layer_really_fires_when_the_directory_is_trusted(tmp_path)
         encoding="utf-8", newline="\n")
 
     done = subprocess.run(
-        [adapter._pin.executable, *adapter._stdin_argv(home)], cwd=str(work),
+        # No model is routed: this claim is about a poisoned project layer,
+        # and a `--model` token would be a second reason for the run to end.
+        [adapter._pin.executable, *adapter._stdin_argv(home, None)],
+        cwd=str(work),
         env={"CODEX_HOME": str(home)},
         input=b"Reply with the word ok and nothing else.",
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=180)

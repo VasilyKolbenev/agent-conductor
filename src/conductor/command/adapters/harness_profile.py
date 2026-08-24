@@ -89,6 +89,23 @@ def retained_detail(tool: str) -> str:
             f"{tool} home root")
 
 
+def unroutable_model_detail(tool: str) -> str:
+    """A configuration routed a model to a provider that cannot be told one.
+
+    It carries the PRODUCT and never the model id: the id is operator
+    configuration and this sentence reaches a receipt, the journal and the API
+    at once. The operator reads which model they pinned from their own file.
+
+    A refusal rather than a silent drop, and the difference is the whole reason
+    this sentence exists: a dispatch that ran under whatever the vendor's own
+    configuration chose, while an operator's file named something else, is a run
+    nobody can account for afterwards.
+    """
+    return (f"this run's configuration pins a model for the instance and "
+            f"{tool} has no reviewed flag this build can name one with, so "
+            "nothing was minted, claimed or spawned")
+
+
 def is_absolute(path: str) -> bool:
     """Absolute under EITHER platform's rules, so a pin cannot be read two ways."""
     return PurePosixPath(path).is_absolute() or PureWindowsPath(path).is_absolute()
@@ -221,6 +238,18 @@ class HarnessProfile:
     #: `argv` is the default, so every provider that shipped before this field
     #: is unchanged and unaware of it.
     task_channel: str = TASK_CHANNEL_ARGV
+    #: The flag this vendor names a model with, or EMPTY when this build has
+    #: established none for it.
+    #:
+    #: Empty is a statement and not a gap. A model an operator pins reaches a
+    #: child only through a flag somebody read in that vendor's own published
+    #: material, and inventing one would be the defect this roster has already
+    #: paid for twice on version prints. So a provider with no flag here refuses
+    #: an action whose configuration routes a model to it, rather than dropping
+    #: the routing and running whatever the vendor's own configuration decides
+    #: -- a run that silently used another model than the one an operator
+    #: configured is worse than a run that did not happen.
+    model_flag: str = ""
 
     def __post_init__(self) -> None:
         """Prove the environment this profile forces, at construction.

@@ -581,14 +581,29 @@ def test_the_default_never_claims_completion_without_a_verified_result(
 
 def test_the_default_spreads_the_steps_across_different_products(
         graph_page: Page) -> None:
-    """Provider-neutrality shown, not claimed: four products hold the five
-    stages as data, with no vendor branch to render any of them."""
+    """Provider-neutrality shown, not claimed: more than one product holds the
+    five stages as data, with no vendor branch to render any of them.
+
+    `do` is Claude Code and not Kimi Code, and that is a correction rather than
+    a preference. Its binding names `claude-dev`, and a step cannot be drawn as
+    one product while it says it runs on an instance another product serves.
+
+    The number this asserts came DOWN, from four products to two, and the
+    reason is worth stating where it can be read. The four-product picture was
+    only reachable while every step claimed the same instance -- so it showed
+    one instance as four products, which is not provider-neutrality but a
+    drawing nothing could be. Correcting it means the fixture may only name
+    instances a real configuration declares, and the canonical one declares
+    two. Two products holding one cycle is the claim this default can actually
+    make, and `test_every_step_is_drawn_as_the_product_its_own_instance_is_
+    served_by` is what keeps it honest.
+    """
     nodes = graph_page.evaluate(
         "window.conductGraph.state().nodes.map(n =>"
         " ({stage: n.stage, harness: n.harness}))")
     staffed = {row["stage"]: row["harness"] for row in nodes if row["stage"]}
-    assert len(set(staffed.values())) >= 4
-    assert staffed["do"] == "kimi-code"
+    assert len(set(staffed.values())) >= 2
+    assert staffed["do"] == "claude-code"
 
 
 def test_a_bounded_loop_renders_its_bound_and_the_field_stays_a_dag(

@@ -22,6 +22,11 @@ export const EMPTY = Object.freeze({
     + "default plan — nothing is written to a run until you write it.",
   run: Object.freeze({runId: "", mode: "unknown"}),
   registry: Object.freeze([]),
+  // Which product drives each instance this run's plan names, and which
+  // model that instance pins. Empty until a read supplies it; a drawing
+  // with no deployment rows says nothing about a deployment rather than
+  // saying there is none.
+  deployment: Object.freeze([]),
   nodes: Object.freeze([]),
   edges: Object.freeze([]),
   layout: Object.freeze({columns: 0, rows: 0, cells: Object.freeze({})}),

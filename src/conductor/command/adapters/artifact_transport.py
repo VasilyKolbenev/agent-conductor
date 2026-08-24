@@ -119,9 +119,12 @@ class ArtifactAwareTransport(HeadlessCliTransport):
         if not self.review_enabled:
             return super().execute(prepared)
         args = self._review_args(prepared.adapter_payload)
+        unroutable = self._unroutable(prepared.request, prepared.model)
+        if unroutable is not None:
+            return unroutable
         with self._workspace.owned():
             try:
-                return self._review(prepared.request, args)
+                return self._review(prepared.request, args, prepared.model)
             except WorkspaceNotContained:
                 return self._receipt(
                     prepared.request, "failed", None,
@@ -151,8 +154,8 @@ class ArtifactAwareTransport(HeadlessCliTransport):
                 "review arguments do not match the closed deep review schema") from None
 
     def _review(
-            self, request: ActionRequest,
-            args: DeepReviewArgs) -> ActionResultReceipt:
+            self, request: ActionRequest, args: DeepReviewArgs,
+            model: str | None = None) -> ActionResultReceipt:
         self._retained = 0
         if args.result_artifact_ref is OMITTED:
             # The contract admits a review with no result reference so the
@@ -189,18 +192,19 @@ class ArtifactAwareTransport(HeadlessCliTransport):
             return self._receipt(
                 request, "failed", None,
                 "the materialized review exceeds the bounded task channel")
-        return self._run_review(request, args, inputs, payload)
+        return self._run_review(request, args, inputs, payload, model)
 
     def _run_review(
             self, request: ActionRequest, args: DeepReviewArgs,
-            inputs: tuple[ArtifactDocument, ...], payload: bytes) -> ActionResultReceipt:
+            inputs: tuple[ArtifactDocument, ...], payload: bytes,
+            model: str | None = None) -> ActionResultReceipt:
         work = self._workspace.work_dir(args.work_item_id)
         before = self._workspace.digest_work_tree()
         self._workspace.claim(request.run_id, request.action_id)
         outcome = self._attempt(
             self._review_argv, f"{WORK_DIR}/{args.work_item_id}",
             timeout=request.timeout_seconds, stdin_bytes=payload,
-            separate_stderr=True)
+            separate_stderr=True, model=model)
         evidence = AttemptEvidence(
             work_dir=work, before=before, after=self._evidence())
         relation = attempt_relation(request)
@@ -216,8 +220,14 @@ class ArtifactAwareTransport(HeadlessCliTransport):
             self._forget(request)
         return result
 
-    def _review_argv(self, home: Path) -> tuple[str, ...]:
-        """Provider-owned read-only flags; the task remains absent by signature."""
+    def _review_argv(self, home: Path, model: str | None) -> tuple[str, ...]:
+        """Provider-owned read-only flags; the task remains absent by signature.
+
+        The same two arguments the dispatch builder takes, for the same reasons:
+        the minted home, because a vendor may be told to write into it, and the
+        routed model, because it is a value that must not become state on a
+        transport one adapter instance shares with every worker.
+        """
         raise NotImplementedError
 
     @staticmethod

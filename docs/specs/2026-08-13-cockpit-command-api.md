@@ -1437,13 +1437,27 @@ NOT be mixed**; they share no value, so neither can be read as the other:
 A consumer joins these rows with `/harnesses.json` **by `provider_id`**. A
 `display_name` is a label to render and MUST NOT be parsed for any fact.
 
+An `instances` row carries a third deployment fact: **`model`**, the model id
+this run's frozen configuration pins for that instance, or `null` when it pins
+none. It sits beside `adapter_id` because it is the same KIND of fact — what the
+configuration says about a deployment — and it appears in no graph document,
+where a plan names roles and never a machine.
+
+`null` is not a default and MUST NOT be rendered as one. It says this build
+chose no model for that instance, so what runs is whatever the provider's own
+configuration decides; a consumer that printed a model name there would be
+inventing the one fact the field exists to report. A consumer MUST NOT parse the
+id for a vendor, a family or a size — it is an identifier to display and to join
+on, exactly like `adapter_id`.
+
 The example below exercises every value of both vocabularies, which is why its
 last row is **illustrative and names no shipped product**: the alpha execution
 roster carries no `unproven` row, because a catalogued row means this build can
 describe *and* constructively serve that provider. `unproven` remains in the
 vocabulary as the claim a row makes when it declares no implementation at all,
 so a consumer MUST still be able to render it. Every other row in the example is
-a provider this build really catalogues.
+a provider this build really catalogues. Its two instance rows exercise both
+states of `model` for the same reason.
 
 <!-- CANONICAL:controls_response -->
 ```json
@@ -1451,10 +1465,12 @@ a provider this build really catalogues.
   "instances": [
     {
       "instance_id": "claude-dev", "adapter_id": "claude-code",
+      "model": "claude-opus-5",
       "controls": ["dispatch", "retry", "review", "stop"]
     },
     {
       "instance_id": "codex-review", "adapter_id": "codex",
+      "model": null,
       "controls": ["dispatch", "retry", "review", "stop"]
     }
   ],

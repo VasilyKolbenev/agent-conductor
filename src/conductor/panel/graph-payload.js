@@ -170,6 +170,39 @@ export function projectRegistry(rows) {
   return out;
 }
 
+//: One deployment row: which product drives an instance, and which model that
+//: instance PINS. Both are the run's frozen configuration's words and neither
+//: appears in a graph document, where a plan names roles and never a machine.
+const DEPLOYMENT_KEYS = ["instance_id", "adapter_id", "model"];
+
+export function projectDeployment(rows) {
+  // `model` is nullable and the null is load-bearing: it says the
+  // configuration pinned none, so what runs is whatever the provider's own
+  // configuration decides. A row that OMITTED the key would be a server too
+  // old to answer the question, and this window must be able to tell the two
+  // apart — so the key is required and its value may be null.
+  if (!Array.isArray(rows)) return [];
+  const seen = new Set();
+  const out = [];
+  for (const row of rows) {
+    if (!row || typeof row !== "object" || Array.isArray(row)) continue;
+    if (!ownKeysOnly(row, DEPLOYMENT_KEYS)) continue;
+    if (!DEPLOYMENT_KEYS.every((key) => key in row)) continue;
+    if (!isId(row.instance_id) || !isId(row.adapter_id)) continue;
+    if (row.model !== null && !isId(row.model)) continue;
+    // One row per instance, first wins, exactly as the registry does — a
+    // second row for one instance is two answers to one question and a
+    // reader has no way to say which deployment is the run's.
+    if (seen.has(row.instance_id)) continue;
+    seen.add(row.instance_id);
+    out.push(Object.freeze({
+      instanceId: row.instance_id, adapterId: row.adapter_id,
+      model: row.model,
+    }));
+  }
+  return out;
+}
+
 function projectEvidence(rows) {
   if (!Array.isArray(rows)) return null;
   const out = [];
@@ -558,7 +591,8 @@ export function projectPayload(payload) {
   // No fixture_schema here: the version pin is the adapter's fact alone,
   // stripped before the payload reaches this module.
   if (!ownKeysOnly(payload,
-    ["run", "registry", "nodes", "edges", "timeline", "provenance"])) {
+    ["run", "registry", "nodes", "edges", "timeline", "provenance",
+      "deployment"])) {
     return null;
   }
   const provenance = projectProvenance(payload.provenance);
@@ -580,6 +614,7 @@ export function projectPayload(payload) {
   return Object.freeze({
     run: Object.freeze({runId: payload.run.run_id, mode: safeMode(payload.run.mode)}),
     registry: Object.freeze(projectRegistry(payload.registry)),
+    deployment: Object.freeze(projectDeployment(payload.deployment)),
     nodes: Object.freeze(nodes), edges, layout, timeline, provenance,
   });
 }

@@ -329,6 +329,12 @@ LAST_MESSAGE_NAME = "last-message.txt"
 #: The documented sentinel that forces the prompt to be read from stdin. It
 #: stands LAST, where the vendor's own usage puts a prompt.
 STDIN_PROMPT = "-"
+#: The flag this vendor names a model with, OBSERVED on the reviewed
+#: binary: `codex exec --help` declares `-m, --model <MODEL>` -- "Model the
+#: agent should use". The LONG spelling is sent for the same reason `exec`
+#: is spelled out rather than aliased to `e`: a reader of an argv should not
+#: have to know a vendor's short forms to see what was asked for.
+MODEL_FLAG = "--model"
 VERSION_ARGV = ("--version",)
 #: Capture ceiling for either spawn; the pump drains past it and drops the rest.
 CODEX_OUTPUT_LIMIT = 16 * 1024
@@ -412,7 +418,7 @@ __all__ = [
     "ANSWER_WRITTEN", "CODEX_CAPABILITIES", "CODEX_DISPLAY_NAME",
     "CODEX_FORCED_ENV", "CODEX_HOME_ENV", "CODEX_LIFECYCLE", "CODEX_PROTOCOL",
     "CODEX_PROVIDER_ID", "CODEX_SCHEMA_PAIRS", "HOME_DIR", "INSTRUCTION_DIR",
-    "LAST_MESSAGE_NAME", "MARKER_DIR", "REVIEWED_CODEX_VERSION",
+    "LAST_MESSAGE_NAME", "MARKER_DIR", "MODEL_FLAG", "REVIEWED_CODEX_VERSION",
     "REVIEW_SANDBOX_ARGV", "STDIN_PROMPT", "WORK_DIR",
     "CodexAdapter", "CodexCliError", "CodexCliTransport", "codex_pin",
 ]
@@ -429,7 +435,8 @@ CODEX_PROFILE = HarnessProfile(
     capability=DISPATCH_CAPABILITY, output_limit=CODEX_OUTPUT_LIMIT,
     version_timeout_seconds=VERSION_TIMEOUT_SECONDS,
     home_id_kind="codex-home",
-    task_channel=TASK_CHANNEL_STDIN)
+    task_channel=TASK_CHANNEL_STDIN,
+    model_flag=MODEL_FLAG)
 
 
 class CodexCliError(HeadlessCliError):
@@ -491,7 +498,7 @@ class CodexCliTransport(ArtifactAwareTransport):
         """
         return home / LAST_MESSAGE_NAME
 
-    def _stdin_argv(self, home: Path) -> tuple[str, ...]:
+    def _stdin_argv(self, home: Path, model: str | None) -> tuple[str, ...]:
         """The code-owned flags. It receives no task, and `-` says where one is.
 
         That is the guarantee, and it is structural: this method cannot put an
@@ -507,11 +514,12 @@ class CodexCliTransport(ArtifactAwareTransport):
         """
         return (
             *EXEC_ARGV, *SKIP_GIT_REPO_CHECK_ARGV, *EPHEMERAL_ARGV,
-            *COLOR_ARGV, *SANDBOX_ARGV, *TELEMETRY_ARGV,
+            *COLOR_ARGV, *SANDBOX_ARGV, *self._model_argv(model),
+            *TELEMETRY_ARGV,
             *LAST_MESSAGE_ARGV, str(self._last_message_path(home)),
             STDIN_PROMPT)
 
-    def _review_argv(self, home: Path) -> tuple[str, ...]:
+    def _review_argv(self, home: Path, model: str | None) -> tuple[str, ...]:
         """The read-only review argv; its durable material still arrives on stdin.
 
         The same `codex exec` road, one token apart: `--sandbox read-only` in
@@ -542,7 +550,8 @@ class CodexCliTransport(ArtifactAwareTransport):
         """
         return (
             *EXEC_ARGV, *SKIP_GIT_REPO_CHECK_ARGV, *EPHEMERAL_ARGV,
-            *COLOR_ARGV, *REVIEW_SANDBOX_ARGV, *TELEMETRY_ARGV,
+            *COLOR_ARGV, *REVIEW_SANDBOX_ARGV, *self._model_argv(model),
+            *TELEMETRY_ARGV,
             *LAST_MESSAGE_ARGV, str(self._last_message_path(home)),
             STDIN_PROMPT)
 

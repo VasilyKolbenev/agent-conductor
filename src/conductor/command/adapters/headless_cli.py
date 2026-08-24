@@ -25,20 +25,26 @@ two is decided by the profile's ``task_channel``, a closed choice of ``argv`` or
   channel;
 - on the ``argv`` channel, ``_task_argv(task_text)`` -- where the vendor's flags
   put the prompt;
-- on the ``stdin`` channel, ``_stdin_argv(home)`` and ``_task_stdin(task_text)``.
-  The argv builder there takes NO task argument, which is the whole guarantee
-  that no byte of an operator's instruction can reach a command line any process
-  lister on the machine can read. An earlier version tried to CHECK that instead,
-  by calling one builder twice with probe texts and comparing; a review probe
-  defeated it in one line. Two observations are not independence, and an absent
-  parameter is.
+- on the ``stdin`` channel, ``_stdin_argv(home, model)`` and
+  ``_task_stdin(task_text)``. The argv builder there takes NO task argument,
+  which is the whole guarantee that no byte of an operator's instruction can
+  reach a command line any process lister on the machine can read. An earlier
+  version tried to CHECK that instead, by calling one builder twice with probe
+  texts and comparing; a review probe defeated it in one line. Two observations
+  are not independence, and an absent parameter is.
 
-  The ONE thing it IS handed is the attempt home minted for the spawn it is
-  building, because a vendor may be asked to write an artefact into its own
-  profile home and nobody but the transport knows where that home is;
+  The two things it IS handed are the attempt home minted for the spawn it is
+  building -- a vendor may be asked to write an artefact into its own profile
+  home, and nobody but the transport knows where that home is -- and the model
+  the run's frozen configuration pinned for the instance, which is a deployment
+  fact this module never learns the value of;
 - ``_read_attempt_home(home)``, where a provider that asked for such an artefact
   reads it, after the spawn and before the home is discarded. The base names no
   artefact and reads nothing.
+
+MODEL ROUTING lives next door in ``headless_routing``, mixed in below. This
+module carries the routed value from ``PreparedAction`` to the argv builder and
+learns nothing about it on the way.
 
 This module is PROVIDER-NEUTRAL and names no product. It compares no provider
 id, so the identity gate has nothing to permit here; each concrete adapter is a
@@ -92,6 +98,7 @@ from .harness_workspace import (
     HarnessWorkspace,
     WorkspaceNotContained,
 )
+from .headless_routing import ModelRouting
 from .headless_values import (
     ArgvSource,
     _Attempt,
@@ -109,7 +116,7 @@ from .process import (
 )
 
 
-class HeadlessCliTransport:
+class HeadlessCliTransport(ModelRouting):
     """Run one headless task per authorized action, and prove nothing more.
 
     A concrete provider subclasses this in its OWN module, sets ``profile``, and
@@ -187,7 +194,7 @@ class HeadlessCliTransport:
         """Where this vendor's flags put the one prompt, all tokens code-owned."""
         raise NotImplementedError
 
-    def _stdin_argv(self, home: Path) -> tuple[str, ...]:
+    def _stdin_argv(self, home: Path, model: str | None) -> tuple[str, ...]:
         """The code-owned flags of a provider whose task travels by STDIN.
 
         It takes NO task argument, and that is the entire guarantee. Not a
@@ -202,16 +209,24 @@ class HeadlessCliTransport:
         for anything else -- and the guard reported the argv safe while the
         operator's task rode it. Two observations were never independence.
 
-        ``home`` is the attempt home minted for the spawn being built, and it is
-        the only argument this seam will ever take. A provider whose vendor
-        writes an artefact into its own profile home has to name that path on
-        the command line, and the path does not exist until ``_attempt`` mints
-        it. It is not a road back to the task and cannot become one:
-        ``_task_command`` returns this method UNCALLED, so no caller can curry a
-        task into it, and ``_spawn`` -- its one call site -- passes the value
-        ``_mint_home`` returned, which is a project subtree named by a freshly
-        minted id and has never been near an instruction. A provider that needs
-        nothing from the home ignores it, as Claude Code does.
+        ``home`` is the attempt home minted for the spawn being built. A
+        provider whose vendor writes an artefact into its own profile home has
+        to name that path on the command line, and the path does not exist until
+        ``_attempt`` mints it. It is not a road back to the task and cannot
+        become one: ``_task_command`` returns this method UNCALLED, so no caller
+        can curry a task into it, and ``_spawn`` -- its one call site -- passes
+        the value ``_mint_home`` returned, which is a project subtree named by a
+        freshly minted id and has never been near an instruction. A provider
+        that needs nothing from the home ignores it, as Claude Code does.
+
+        ``model`` is the id the run's frozen configuration pinned for the
+        instance this action names, or None. It is a PARAMETER for the same
+        reason the task is absent: one adapter instance serves every worker
+        bound to its root, so a field remembering the attempt in flight is a
+        field the next attempt can read, and a value that arrives through the
+        call cannot outlive it. A provider turns it into tokens with
+        ``_model_argv`` and decides WHERE they stand, because that is a fact
+        about its vendor's command line and not about this transport.
         """
         raise NotImplementedError
 
@@ -338,10 +353,13 @@ class HeadlessCliTransport:
             raise self.error("execute requires a validated PreparedAction")
         request = prepared.request
         args = self._dispatch_args(prepared.adapter_payload)
+        unroutable = self._unroutable(request, prepared.model)
+        if unroutable is not None:
+            return unroutable
         with self._workspace.owned():
             failed = False
             try:
-                return self._dispatch(request, args)
+                return self._dispatch(request, args, prepared.model)
             except WorkspaceNotContained:  # noqa: BLE001 -- carry no path onward
                 failed = True
             if failed:
@@ -351,8 +369,8 @@ class HeadlessCliTransport:
         raise self.error("unreachable")
 
     def _dispatch(
-            self, request: ActionRequest,
-            args: DeepDispatchArgs) -> ActionResultReceipt:
+            self, request: ActionRequest, args: DeepDispatchArgs,
+            model: str | None = None) -> ActionResultReceipt:
         """Claim-check, materialize, sweep, preflight, then spawn exactly once.
         The sweep guards state this dispatch INHERITED; the check after the
         preflight guards state this dispatch just made. Both are the same rule:
@@ -396,7 +414,7 @@ class HeadlessCliTransport:
         argv, payload = self._task_command(task_text)
         outcome = self._attempt(
             argv, f"{WORK_DIR}/{args.work_item_id}",
-            timeout=request.timeout_seconds, stdin_bytes=payload)
+            timeout=request.timeout_seconds, stdin_bytes=payload, model=model)
         self._attempts[attempt_relation(request)] = _Attempt(
             work_dir=work, before=before, after=self._evidence())
         return self._observed(request, outcome)
@@ -469,7 +487,8 @@ class HeadlessCliTransport:
             self, argv: ArgvSource, cwd: str, *,
             timeout: int | float,
             stdin_bytes: bytes | None = None,
-            separate_stderr: bool = False) -> ProcessOutcome:
+            separate_stderr: bool = False,
+            model: str | None = None) -> ProcessOutcome:
         """One spawn inside one FRESH home, and the home goes when the spawn does.
 
         This is the whole of the retention promise: a real harness may write
@@ -488,7 +507,7 @@ class HeadlessCliTransport:
         try:
             outcome = self._spawn(
                 argv, home, cwd, timeout=timeout, stdin_bytes=stdin_bytes,
-                separate_stderr=separate_stderr)
+                separate_stderr=separate_stderr, model=model)
             self._read_attempt_home(home)
             return outcome
         finally:
@@ -510,20 +529,27 @@ class HeadlessCliTransport:
             self._retained += 1
 
     @staticmethod
-    def _tokens(argv: ArgvSource, home: Path) -> tuple[str, ...]:
+    def _tokens(
+            argv: ArgvSource, home: Path, model: str | None) -> tuple[str, ...]:
         """The child's own tokens: a ready argv, or the one its builder makes.
 
         The ONE place a stdin-channel builder is ever called, and it is called
-        with the minted home and nothing else. There is no ``task_text`` in this
-        frame to pass even by mistake.
+        with the minted home, the routed model, and nothing else. There is no
+        ``task_text`` in this frame to pass even by mistake.
+
+        A READY tuple never sees the model, and that is the honest shape rather
+        than an omission: the version preflight hands one, and a preflight that
+        carried `--model` would be asking a build to load a model in order to
+        print its own version.
         """
-        return argv if type(argv) is tuple else argv(home)
+        return argv if type(argv) is tuple else argv(home, model)
 
     def _spawn(
             self, argv: ArgvSource, home: Path, cwd: str, *,
             timeout: int | float,
             stdin_bytes: bytes | None = None,
-            separate_stderr: bool = False) -> ProcessOutcome:
+            separate_stderr: bool = False,
+            model: str | None = None) -> ProcessOutcome:
         """The ONE place a child is started; argv, env and bounds are code-owned.
 
         ``cwd`` is a route RELATIVE to the project root, so the runner's own
@@ -538,7 +564,8 @@ class HeadlessCliTransport:
             # valid argv must refuse with the SAME fixed sentence as a spawn that
             # cannot start, so no runner message and no path leaks through here.
             spec = CommandSpec(
-                argv=(*self._argv_prefix(), *self._tokens(argv, home)), cwd=cwd,
+                argv=(*self._argv_prefix(),
+                      *self._tokens(argv, home, model)), cwd=cwd,
                 env_allow=self._env_allow(),
                 # The minted home is written LAST so it cannot be
                 # displaced. A `forced_env` pair naming `home_env`

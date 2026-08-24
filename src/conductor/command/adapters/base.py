@@ -162,11 +162,25 @@ class PreparedAction:
     adapter_id: str
     request: ActionRequest
     adapter_payload: Mapping[str, Any] = field(default_factory=dict)
+    #: The model this run's FROZEN CONFIGURATION pins for the instance the
+    #: request names, or None when it pins none. It is a deployment fact, so it
+    #: travels beside the request rather than inside it: an immutable action
+    #: record that carried a model would be a durable demand for one, and a
+    #: replay of that record on a machine configured differently would either
+    #: lie or refuse.
+    #:
+    #: It is filled in by the REGISTRY from the value the runtime resolved, and
+    #: whatever an adapter returns here is discarded -- see `AdapterRegistry`.
+    #: An adapter that could name its own model would be choosing what an
+    #: operator configured.
+    model: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "adapter_id", _contract(_id, "adapter_id", self.adapter_id))
         if not isinstance(self.request, ActionRequest):
             raise AdapterContractError("request must be a validated ActionRequest")
+        if self.model is not None:
+            object.__setattr__(self, "model", _contract(_id, "model", self.model))
         unsafe = _unrestricted_command_field(self.adapter_payload)
         if unsafe is not None:
             raise AdapterContractError(
@@ -316,9 +330,21 @@ class AdapterRegistry:
                 f"observation reports undeclared capabilities {sorted(undeclared)}")
         return normalized
 
-    def prepare(self, adapter_id: str, request: ActionRequest) -> PreparedAction:
+    def prepare(
+            self, adapter_id: str, request: ActionRequest, *,
+            model: str | None = None) -> PreparedAction:
+        """Prepare one action, and attach the model the CALLER resolved.
+
+        The model is a keyword and it is the registry's to write, not the
+        adapter's. The adapter is handed a request that says nothing about a
+        model and its answer's own `model` field is discarded below, so a
+        provider cannot name the model it will be run with -- which is the one
+        thing an operator's configuration is for. What reaches `execute` is what
+        the runtime read out of the run's frozen configuration and nothing else.
+        """
         if not isinstance(request, ActionRequest):
             raise AdapterContractError("request must be a validated ActionRequest")
+        routed = None if model is None else _contract(_id, "model", model)
         adapter = self._require(adapter_id, request.capability)
         # Compare against a VALUE taken before the adapter sees the request, so an
         # adapter that rewrites the caller's object in place cannot satisfy the check
@@ -335,7 +361,8 @@ class AdapterRegistry:
         return PreparedAction(
             adapter_id=prepared.adapter_id,
             request=ActionRequest.from_dict(request.as_dict()),
-            adapter_payload=prepared.adapter_payload)
+            adapter_payload=prepared.adapter_payload,
+            model=routed)
 
     def execute(
             self, adapter_id: str, prepared: PreparedAction) -> ActionResultReceipt:
@@ -349,7 +376,8 @@ class AdapterRegistry:
         handed = PreparedAction(
             adapter_id=prepared.adapter_id,
             request=ActionRequest.from_dict(prepared.request.as_dict()),
-            adapter_payload=prepared.adapter_payload)
+            adapter_payload=prepared.adapter_payload,
+            model=prepared.model)
         reported = adapter.execute(handed)
         if not isinstance(reported, ActionResultReceipt):
             raise AdapterContractError("execute must return ActionResultReceipt")

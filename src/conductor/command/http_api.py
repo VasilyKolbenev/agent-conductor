@@ -43,7 +43,11 @@ from .api_contracts import (
 )
 from .containment import run_route_violations
 from .artifacts import ArtifactDocument
-from .contracts import ContractError, frozen_config_bindings
+from .contracts import (
+    ContractError,
+    frozen_config_bindings,
+    frozen_config_models,
+)
 from .coordinator import ExecutionCoordinator
 from .graph_definition import GraphDefinition, GraphNode
 from .graph_projection import graph_payload
@@ -608,7 +612,16 @@ class CommandApi:
         is about the build and the machine, and carries only what
         ``provider_projection`` admits. A consumer joins them by identity, never
         by a displayed label.
+
+        ``model`` is on the instance row for the same reason ``adapter_id`` is:
+        both are what this run's frozen configuration says about a DEPLOYMENT,
+        and neither appears in a graph document, where a plan names roles. It is
+        ``null`` when the instance pins none, and null is not a default -- it
+        says this build chose no model and whatever the provider's own
+        configuration decides is what will run. A reader that showed a name
+        there would be inventing the one fact this row exists to report.
         """
+        models = frozen_config_models(config)
         rows = []
         for instance_id, adapter_id in sorted(_bindings(config).items()):
             try:
@@ -618,6 +631,7 @@ class CommandApi:
             rows.append({
                 "instance_id": instance_id,
                 "adapter_id": adapter_id,
+                "model": models.get(instance_id),
                 "controls": sorted(set(declared) & set(ARGUMENT_SCHEMAS)),
             })
         return {"instances": rows, "providers": provider_projection(self._providers)}

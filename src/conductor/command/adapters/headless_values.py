@@ -105,8 +105,15 @@ class _Attempt:
 #: a ready tuple, exactly as it always did; one on the ``stdin`` channel may not,
 #: because a vendor asked to write into the profile home this build mints needs
 #: that path on its command line and the home does not exist yet. So that channel
-#: hands a BUILDER, called once, with the minted home and nothing else.
-ArgvSource = tuple[str, ...] | Callable[[Path], tuple[str, ...]]
+#: hands a BUILDER, called once, with the minted home and the ROUTED MODEL.
+#:
+#: Two arguments and neither is the task. The model is a parameter rather than
+#: state on the transport for the same reason the task is absent: one adapter
+#: instance serves every worker bound to its root, and a field holding "the
+#: model of the attempt in flight" is a field the next attempt can read. A value
+#: that arrives through the call cannot outlive it, and there is nothing to
+#: remember to clear.
+ArgvSource = tuple[str, ...] | Callable[[Path, str | None], tuple[str, ...]]
 
 
 # Publicly descriptive aliases; the private names remain byte-compatible for

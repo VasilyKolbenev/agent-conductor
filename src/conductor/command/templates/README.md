@@ -14,12 +14,27 @@ run's own immutable `GraphDefinition` from the pair.
 name*, so a model named in a template is a durable demand. A definition
 materialized onto a Qwen, a GLM or a Grok instance would still stand in the
 journal asking for Sonnet — a record demanding something of a product that has
-never heard of it. Which model runs is the business of the configuration
-behind the assigned instance: this build has no provider-config field spelled
-`model`, but it does pass operator-pinned environment NAMES through to a spawn
-(`ProviderConfig.env_allow`), which is the channel `adapters/kimi_code.py`
-documents for exactly this. A `sandbox` row is different and stays — it names
-what the work may touch, which is a fact about the work.
+never heard of it. A `sandbox` row is different and stays — it names what the
+work may touch, which is a fact about the work.
+
+Which model runs is the business of the configuration behind the assigned
+instance, and that configuration now says so in a field of its own. **A run's
+frozen configuration may pin `model` on an instance**, beside the `adapter`
+that drives it; `contracts.frozen_config_models` reads it, the runtime hands it
+to the bound adapter, and a transport whose profile declares its vendor's flag
+puts the two on the command line. An instance that pins none routes none, and
+what runs then is whatever the provider's own configuration decides.
+
+This paragraph used to end differently, and the difference is worth keeping:
+it said this build had no provider-config field spelled `model` and pointed at
+operator-pinned environment NAMES (`ProviderConfig.env_allow`) as the nearest
+channel. That is no longer true, and the sentence went with the fact rather
+than being left standing. The env-name channel remains what it always was —
+a way to let a secret through — and is not how a model is chosen.
+
+None of this reaches a template. The instance is named by a run's binding, the
+model by that run's configuration, and the reusable cycle above still names
+only a role.
 
 **Correcting the default cycle is editing one of these files.** Nothing in
 Python or JavaScript has to move: `load_template` reads the file through the

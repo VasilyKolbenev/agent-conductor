@@ -58,7 +58,12 @@ from conductor.command.contracts import (
     RunEnvelope,
     canonical_json,
 )
-from conductor.command.run_store import CorruptRun, RunStore, snapshot_digest
+from conductor.command.run_store import (
+    CorruptRun,
+    RunStore,
+    StoreError,
+    snapshot_digest,
+)
 from conductor.command.runtime import (
     AttemptState,
     Budget,
@@ -425,20 +430,49 @@ def test_a_dispatch_verification_is_left_alone_by_the_artifact_rules(tmp_path):
     validate_review_evidence(stray, (request,))  # a dispatch: nothing to judge
 
 
-def test_a_verification_for_an_action_this_run_does_not_know_is_not_judged(
+def test_a_verification_naming_an_action_this_run_never_requested_is_refused(
         tmp_path):
-    """The second reading, stated rather than left as a silence.
+    """A crash truncates a TAIL. It never removes a request from the middle.
 
-    An evidence row may name an action no request stands for; replay admits it,
-    because nothing here can judge a chain whose authorizing request is absent.
-    What such a row cannot do is be NAMED by a result -- `attempt_replay` admits
-    only evidence appended after that action's own observed attempt event -- and
-    that is why leaving it unjudged here costs nothing.
+    This is a correction, and the claim it replaces was the defect written down
+    as a test. That one said an evidence row naming an unknown action is left
+    unjudged -- that nothing here could judge a chain whose authorizing request
+    is absent -- and reasoned that such a row costs nothing because no result
+    may name it. Both halves were wrong.
+
+    It costs the thing replay exists to protect. A verification row is a claim
+    that some action was verified; an action nothing ever requested was never
+    authorized, so the row is a claim about work no Human confirmed, standing in
+    an immutable journal. And the shape is not one an honest run can leave: a
+    crash cuts a journal short, so a prefix that holds the evidence holds the
+    request too -- the request comes first, always.
+
+    Both doors are asserted, because the writer refusing is not the same as the
+    journal being unreadable, and it was the second that let this through: a
+    row a writer never wrote still replayed as sound.
+
+    The exemption that remains is a KNOWN action that is not a review; that is
+    the test above, and it is the only reading of "leave this alone" that
+    survives.
     """
     store, _root = _honest_run(tmp_path)
-    stray = _honest_evidence(store, uri="verification/action-nobody-requested")
+    stray = _honest_evidence(
+        store, evidence_id="evidence-stray",
+        uri="verification/action-nobody-requested")
 
-    validate_review_evidence(stray, ())
+    # The rule itself, asked directly.
+    with pytest.raises(ContractError, match="unknown action"):
+        validate_review_evidence(stray, ())
+
+    # The writer's door.
+    with pytest.raises(StoreError):
+        store.append(stray)
+
+    # And the journal's own, for the row a writer never wrote.
+    _rewrite(store, lambda rows: rows.append(
+        {"record_type": "evidence", "record": stray.as_dict()}))
+    with pytest.raises(CorruptRun):
+        store.read(RUN_ID)
 
 
 def test_a_succeeded_review_may_not_rest_on_a_verification_with_no_artifact(

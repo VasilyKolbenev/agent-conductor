@@ -43,6 +43,28 @@ re-checkable only if what it said is written down.
   filesystem commands", while "other shell commands and network requests still
   need an ``--allowedTools`` entry or a ``permissions.allow`` rule".
   ``bypassPermissions`` is NOT used and is not a knob this module exposes.
+- **``--model`` carries the operator's pinned model, and a FULL NAME rather
+  than an alias.** DOCS (cli-reference) states it verbatim: "Sets the model for
+  the current session with an alias for the latest model (``sonnet``, ``opus``,
+  ``haiku``, or ``fable``) or a model's full name. Overrides the ``model``
+  setting and ``ANTHROPIC_MODEL``", with the example ``claude --model
+  claude-sonnet-5``. Three things follow, and each is why this is the seam:
+
+  the sentence names two accepted forms and this build sends only the second. An
+  alias is defined as "the latest model", which is a MOVING target -- a
+  configuration that said ``opus`` would mean one model this month and another
+  the next, while the journal recorded the same word both times. A full name is
+  the fact a receipt can be read against;
+
+  it OVERRIDES the settings file and ``ANTHROPIC_MODEL``, so what an operator
+  pinned in this build's own configuration cannot be displaced by a settings
+  file that arrived in the work tree or by an environment an operator allowed
+  through. That is the same reason ``--bare`` stands first;
+
+  the flag is documented for the CLI and the page says nothing about combining
+  it with ``-p``. That limit is written down rather than smoothed over: the
+  form is DOCS-described and locally unobserved, exactly like the version print
+  above, and the opt-in real smoke is where an install would show otherwise.
 - **``--permission-mode plan``** is the separate review boundary. DOCS
   (permission-modes) calls plan mode a read-only mode for analysis and says it
   can read files and run read-only exploration commands but cannot modify files.
@@ -212,6 +234,10 @@ REVIEW_PROMPT = "Produce the complete review artifact supplied on standard input
 INPUT_FORMAT_ARGV = ("--input-format", "text")
 OUTPUT_FORMAT_ARGV = ("--output-format", "text")
 NO_SESSION_ARGV = ("--no-session-persistence",)
+#: The flag this vendor names a model with. A FULL NAME is what this build
+#: ever sends through it; see the module docstring for why an alias is not
+#: a thing a durable record can be read against.
+MODEL_FLAG = "--model"
 PERMISSION_MODE_ARGV = ("--permission-mode", "acceptEdits")
 REVIEW_PERMISSION_MODE_ARGV = ("--permission-mode", "plan")
 VERSION_ARGV = ("--version",)
@@ -246,6 +272,7 @@ __all__ = [
     "CLAUDE_FORCED_ENV", "CLAUDE_HOME_ENV", "CLAUDE_LIFECYCLE",
     "CLAUDE_PROTOCOL", "CLAUDE_PROVIDER_ID", "CLAUDE_SCHEMA_PAIRS",
     "CONSTANT_PROMPT", "HOME_DIR", "INSTRUCTION_DIR", "MARKER_DIR",
+    "MODEL_FLAG",
     "REVIEWED_CLAUDE_VERSION", "REVIEW_PERMISSION_MODE_ARGV",
     "REVIEW_PROMPT", "WORK_DIR",
     "ClaudeCodeAdapter", "ClaudeCodeError", "ClaudeCodeTransport", "claude_pin",
@@ -263,7 +290,8 @@ CLAUDE_PROFILE = HarnessProfile(
     capability=DISPATCH_CAPABILITY, output_limit=CLAUDE_OUTPUT_LIMIT,
     version_timeout_seconds=VERSION_TIMEOUT_SECONDS,
     home_id_kind="claude-home",
-    task_channel=TASK_CHANNEL_STDIN)
+    task_channel=TASK_CHANNEL_STDIN,
+    model_flag=MODEL_FLAG)
 
 
 class ClaudeCodeError(HeadlessCliError):
@@ -303,7 +331,7 @@ class ClaudeCodeTransport(ArtifactAwareTransport):
         """One native binary, and nothing in front of it."""
         return (self._pin.executable,)
 
-    def _stdin_argv(self, home: Path) -> tuple[str, ...]:
+    def _stdin_argv(self, home: Path, model: str | None) -> tuple[str, ...]:
         """The code-owned flags and the CONSTANT prompt. It receives no task.
 
         That is the guarantee, and it is structural: this method cannot put an
@@ -314,9 +342,20 @@ class ClaudeCodeTransport(ArtifactAwareTransport):
         ``home`` is the attempt home the transport minted for this spawn, and
         Claude Code asks nothing of it: it is offered on this seam because
         another provider's vendor writes an artefact into its own profile home
-        and needs the path on its command line. Every token below is therefore
-        the same on every dispatch for every operator, which is what the suite
-        asserts by spelling the whole list.
+        and needs the path on its command line.
+
+        ``model`` is the one token here an operator's configuration decides, and
+        it is the reason this list is no longer identical on every dispatch. It
+        was, and the suite asserted it by spelling the whole list; that claim is
+        now split in two, because "every token is code-owned" and "every token
+        is the same for every operator" stopped being the same sentence when a
+        deployment gained the right to pin a model. What has NOT changed is the
+        first half: the VALUE comes from the run's frozen configuration and the
+        FLAG from this module, and no byte of a task can reach either.
+
+        It stands before the permission mode so that the mode -- the flag that
+        decides what the child may do -- is the last word in the list, where a
+        reader looks for it.
 
         The task itself goes to stdin, where a process lister cannot read it.
         See ``_task_stdin``.
@@ -324,7 +363,8 @@ class ClaudeCodeTransport(ArtifactAwareTransport):
         return (
             *BARE_ARGV, PRINT_FLAG, CONSTANT_PROMPT,
             *INPUT_FORMAT_ARGV, *OUTPUT_FORMAT_ARGV,
-            *NO_SESSION_ARGV, *PERMISSION_MODE_ARGV)
+            *NO_SESSION_ARGV, *self._model_argv(model),
+            *PERMISSION_MODE_ARGV)
 
     def _task_stdin(self, task_text: str) -> bytes:
         """The whole task, piped -- the run's frame and the user's instruction.
@@ -337,12 +377,20 @@ class ClaudeCodeTransport(ArtifactAwareTransport):
         """
         return task_text.encode("utf-8")
 
-    def _review_argv(self, home: Path) -> tuple[str, ...]:
-        """The read-only review argv; its durable inputs still arrive on stdin."""
+    def _review_argv(self, home: Path, model: str | None) -> tuple[str, ...]:
+        """The read-only review argv; its durable inputs still arrive on stdin.
+
+        The routed model reaches a review exactly as it reaches a dispatch, and
+        in the same position. A reviewer an operator pinned a model for is a
+        reviewer that model reviews with -- routing that stopped at the dispatch
+        road would mean the two halves of one cycle ran on different models
+        while one configuration described both.
+        """
         return (
             *BARE_ARGV, PRINT_FLAG, REVIEW_PROMPT,
             *INPUT_FORMAT_ARGV, *OUTPUT_FORMAT_ARGV,
-            *NO_SESSION_ARGV, *REVIEW_PERMISSION_MODE_ARGV)
+            *NO_SESSION_ARGV, *self._model_argv(model),
+            *REVIEW_PERMISSION_MODE_ARGV)
 
     def _env_allow(self) -> tuple[str, ...]:
         return self._pin.env_allow

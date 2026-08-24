@@ -48,6 +48,7 @@ from conductor.command.contracts import (
     EvidenceRef,
     ObservationRecord,
     RunEnvelope,
+    _id,
     canonical_json,
     gate_decision,
 )
@@ -481,9 +482,32 @@ def test_controls_are_only_schema_backed_values_and_have_no_disabled_state():
     rows = CANON["controls_response"]["instances"]
     assert rows == sorted(rows, key=lambda row: row["instance_id"])
     for row in rows:
-        assert set(row) == {"instance_id", "adapter_id", "controls"}
+        assert set(row) == {"instance_id", "adapter_id", "model", "controls"}
         assert row["controls"] == sorted(row["controls"])
         assert set(row["controls"]) <= set(EXPECTED_ARGUMENT_SCHEMAS)
+
+
+def test_an_instance_row_says_which_model_is_pinned_or_says_none_was():
+    """The deployment fact the Cockpit joins a product name to, and its absence.
+
+    Both states are exercised by the canonical example on purpose. `null` is the
+    harder one to render honestly -- it means this build chose no model and the
+    provider's own configuration decides -- so a consumer that has never seen a
+    null here is a consumer that will print something false the first time one
+    arrives.
+
+    The id is held to the contract's own identifier grammar rather than to a
+    vendor's naming, because this build catalogues no models and a shape read
+    off one product's ids would refuse the next product's.
+    """
+    rows = CANON["controls_response"]["instances"]
+    pinned = [row["model"] for row in rows]
+
+    assert None in pinned, "the example must show an instance that pins no model"
+    named = [model for model in pinned if model is not None]
+    assert named, "the example must show an instance that pins one"
+    for model in named:
+        assert _id("model", model) == model
 
 
 
