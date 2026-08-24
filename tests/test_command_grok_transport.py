@@ -422,7 +422,7 @@ def test_a_marker_from_an_earlier_attempt_stops_a_second_prompt(tmp_path):
     assert second.outcome == "unknown"
     assert "never repeated" in second.detail
     assert len(_fakegrok.prompt_spawns(log)) == 1, "THE_PROMPT_RAN_TWICE=True"
-    assert (root / MARKER_DIR / "act-1.marker").is_file()
+    assert (root / MARKER_DIR / "run-1" / "act-1.marker").is_file()
 
 
 def test_a_secret_the_child_prints_reaches_no_receipt_and_no_verification(tmp_path):

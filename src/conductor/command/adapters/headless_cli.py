@@ -360,7 +360,7 @@ class HeadlessCliTransport:
         else left it or the version probe did.
         """
         self._retained = 0
-        if self._workspace.is_claimed(request.action_id):
+        if self._workspace.is_claimed(request.run_id, request.action_id):
             # A marker already claims this action: an earlier attempt reached the
             # spawn. Whether it finished is genuinely unknown, and guessing would
             # be worse than saying so -- but running the task twice is not an
@@ -392,7 +392,7 @@ class HeadlessCliTransport:
         task_text = self._dispatch_task(request, args, instruction)
         work = self._workspace.work_dir(args.work_item_id)
         before = self._workspace.digest_work_tree()
-        self._workspace.claim(request.action_id)
+        self._workspace.claim(request.run_id, request.action_id)
         argv, payload = self._task_command(task_text)
         outcome = self._attempt(
             argv, f"{WORK_DIR}/{args.work_item_id}",

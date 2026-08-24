@@ -439,7 +439,7 @@ def test_a_non_zero_exit_is_a_failure_and_carries_no_child_text(tmp_path):
 
 
 def _markers(root: Path) -> list[Path]:
-    return sorted((root / MARKER_DIR).glob("*.marker"))
+    return sorted((root / MARKER_DIR).rglob("*.marker"))
 
 
 def test_a_crash_after_the_marker_never_repeats_the_dsh_task(tmp_path):

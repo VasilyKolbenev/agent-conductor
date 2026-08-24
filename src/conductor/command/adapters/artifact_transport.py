@@ -163,7 +163,7 @@ class ArtifactAwareTransport(HeadlessCliTransport):
                 request, "failed", None,
                 "this review names no result artifact, so nothing it produced "
                 "could be published; no task was spawned")
-        if self._workspace.is_claimed(request.action_id):
+        if self._workspace.is_claimed(request.run_id, request.action_id):
             return self._receipt(
                 request, "unknown", None,
                 "a marker from an earlier attempt already claims this review")
@@ -195,7 +195,7 @@ class ArtifactAwareTransport(HeadlessCliTransport):
             inputs: tuple[ArtifactDocument, ...], payload: bytes) -> ActionResultReceipt:
         work = self._workspace.work_dir(args.work_item_id)
         before = self._workspace.digest_work_tree()
-        self._workspace.claim(request.action_id)
+        self._workspace.claim(request.run_id, request.action_id)
         outcome = self._attempt(
             self._review_argv, f"{WORK_DIR}/{args.work_item_id}",
             timeout=request.timeout_seconds, stdin_bytes=payload,
