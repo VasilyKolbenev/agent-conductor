@@ -218,9 +218,9 @@ def _artifact_answers_its_request(
             f"{document.source_action_id!r} asked for")
 
 
-def _review_source(
-        action_id: str, prior_values: tuple[object, ...]) -> Any | None:
-    """The review request a record belongs to, or None when no review chain does.
+def _is_review_chain(action_id: str, prior_values: tuple[object, ...]) -> bool:
+    """Whether a record belongs to a review's chain, from the REQUEST that
+    authorized it.
 
     WHICH chain a record belongs to is read from the authorizing request's own
     capability, and never from whether an artifact happens to stand for it. That
@@ -230,7 +230,9 @@ def _review_source(
     because in both the artifact they looked for was not there to be found, and
     absence was read as "this is a dispatch, leave it alone".
 
-    Two readings answer None, and both are reachable:
+    A verdict rather than the request itself, because the two ways of answering
+    "no" are different facts and a caller that received one value for both could
+    not be made to fail on one of them alone:
 
     - the action is a `dispatch`. Its verification digests the CHANGE it made, a
       fact with no document behind it, so a rule demanding an artifact of it
@@ -243,9 +245,7 @@ def _review_source(
       own observed attempt event.
     """
     source = action_request_for(prior_values, action_id)
-    if source is None or source.capability != REVIEW_CAPABILITY:
-        return None
-    return source
+    return source is not None and source.capability == REVIEW_CAPABILITY
 
 
 def _produced_by(
@@ -293,13 +293,13 @@ def validate_review_evidence(
     so it cannot become an unreachable branch: what this rule needs to say is
     "exactly one", and the reachable failure is zero.
 
-    A dispatch's verification is left alone; `_review_source` has the two
+    A dispatch's verification is left alone; `_is_review_chain` has the two
     readings that answer so.
     """
     action_id = _verified_action(evidence)
     if action_id is None:
         return
-    if _review_source(action_id, prior_values) is None:
+    if not _is_review_chain(action_id, prior_values):
         return
     produced = _produced_by(action_id, prior_values)
     if len(produced) != 1:
@@ -344,7 +344,7 @@ def validate_review_result(
     """
     if result.outcome != "succeeded":
         return
-    if _review_source(result.action_id, prior_values) is None:
+    if not _is_review_chain(result.action_id, prior_values):
         return
     produced = _produced_by(result.action_id, prior_values)
     if len(produced) != 1:

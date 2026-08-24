@@ -342,7 +342,7 @@ def _hold_review_chain(prior_values: tuple[object, ...], value: object) -> None:
     it from the authorizing request's capability rather than from whether an
     artifact happens to be there. Keyed on the artifact, the last two switched
     themselves off for exactly the journals that had none -- see
-    `artifacts._review_source`.
+    `artifacts._is_review_chain`.
     """
     if isinstance(value, ArtifactDocument):
         _as_store_error(validate_artifact_source, value, prior_values)
