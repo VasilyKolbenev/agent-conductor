@@ -210,6 +210,18 @@ def _result_names_no_evidence(rows: list[dict]) -> None:
     result["evidence_refs"] = []
 
 
+def _the_verification_is_deleted(rows: list[dict]) -> None:
+    """No evidence row at all, and a result that does not claim one.
+
+    This is the only shape that reaches the FIRST half of the result rule --
+    "produced an artifact and succeeded with no verification evidence". Clearing
+    the reference alone leaves the evidence standing and lands on the second
+    half instead, which is what made a mutation on the first half GREEN.
+    """
+    rows[:] = [row for row in rows if row["record_type"] != "evidence"]
+    _of_type(rows, "action_result")[0]["evidence_refs"] = []
+
+
 def _result_names_another_evidence(rows: list[dict]) -> None:
     result = _of_type(rows, "action_result")[0]
     result["evidence_refs"] = ["evidence-elsewhere"]
@@ -228,6 +240,7 @@ SUBSTITUTIONS = (
     ("input-count", _inputs_drop_one),
     ("evidence-digest", _evidence_digests_something_else),
     ("result-names-nothing", _result_names_no_evidence),
+    ("verification-deleted", _the_verification_is_deleted),
     # Lands on the attempt-event chain: a result may not name evidence that
     # never followed an observed attempt. The half that IS the artifact chain's
     # own is `result-names-nothing` above.
