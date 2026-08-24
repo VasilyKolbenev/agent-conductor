@@ -38,10 +38,14 @@ class DeepProtocol(str, Enum):
     #: See adapters/grok_build.py.
     GROK_HEADLESS_V1 = "grok-build-headless-v1"
     #: Claude Code's published print mode: `--bare -p` with no TUI, the task
-    #: piped rather than placed on argv. The fake token above is NOT retired
-    #: beside it: `codex` still speaks that family of fake protocols, and this
-    #: one selects the real transport. See adapters/claude_code.py.
+    #: piped rather than placed on argv. See adapters/claude_code.py.
     CLAUDE_HEADLESS_V1 = "claude-code-headless-v1"
+    #: Codex CLI's published one-shot mode: `codex exec` with no TUI, the task
+    #: piped and `-` saying so. The two fake tokens above are not retired beside
+    #: these: both fake protocols are still the deterministic families the
+    #: `_DeepAdapter` lifecycle suites drive, and neither is catalogued any more.
+    #: See adapters/codex_cli.py.
+    CODEX_HEADLESS_V1 = "codex-headless-v1"
 
 
 _ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")

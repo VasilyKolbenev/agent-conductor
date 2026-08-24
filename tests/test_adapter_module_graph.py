@@ -28,6 +28,7 @@ from pathlib import Path
 import pytest
 
 from conductor.command import adapters as adapter_package
+from conductor.command.providers import PROVIDER_CATALOG
 
 PACKAGE = Path(adapter_package.__file__).resolve().parent
 PACKAGE_NAME = "conductor.command.adapters"
@@ -40,15 +41,16 @@ PUBLIC_SEAMS = {
     "conductor.command.adapters.headless_cli": (
         "DISPATCH_CAPABILITY", "ExecutablePin", "HarnessProfile",
         "HeadlessCliError", "HeadlessCliTransport", "OUTPUT_LIMIT",
-        "VERSION_TIMEOUT_SECONDS", "is_absolute", "reviewed_env_allow",
-        "reviewed_pin_path", "_version_token"),
+        "TASK_CHANNEL_STDIN", "VERSION_TIMEOUT_SECONDS", "is_absolute",
+        "reviewed_env_allow", "reviewed_pin_path", "_version_token"),
     "conductor.command.adapters.harness_profile": (
         "DISPATCH_CAPABILITY", "ExecutablePin", "HarnessProfile",
         "HeadlessCliError", "is_absolute", "reviewed_env_allow",
         "reviewed_pin_path"),
     "conductor.command.adapters.harness_workspace": (
         "HarnessWorkspace", "WorkspaceNotContained", "WORK_DIR",
-        "INSTRUCTION_DIR"),
+        "INSTRUCTION_DIR", "HOME_LEAF_ABSENT", "HOME_LEAF_EMPTY",
+        "HOME_LEAF_FILE", "HOME_LEAF_OTHER"),
 }
 
 
@@ -176,6 +178,22 @@ def test_the_seams_a_provider_module_imports_are_still_reachable(module, names):
     assert missing == [], f"{module} no longer offers {missing}"
 
 
+def _transport_stems() -> tuple[str, ...]:
+    """Every module a CATALOGUED transport lives in, derived from the catalog.
+
+    Spelled out, this list went stale twice: `claude_code` was never added when
+    Claude Code became real, and `codex_cli` would have been the third. Derived,
+    a provider carries itself into the rule the day it is catalogued -- and one
+    REMOVED from the catalog takes itself back out, which is the same shape the
+    identity gate already uses for the same reason.
+    """
+    stems = sorted({
+        entry.adapter_class.__module__.rsplit(".", 1)[-1]
+        for entry in PROVIDER_CATALOG.values()})
+    assert len(stems) >= 5, f"only {len(stems)} transport modules were derived"
+    return tuple(stems)
+
+
 def test_each_transport_module_reaches_the_base_through_one_import_site():
     """One site per provider, so a split cannot scatter a provider's dependencies.
 
@@ -184,7 +202,7 @@ def test_each_transport_module_reaches_the_base_through_one_import_site():
     several places would make that one module harder to read whole -- which is
     the property the gate rests on.
     """
-    for stem in ("dsh_harness", "kimi_code", "grok_build"):
+    for stem in _transport_stems():
         tree = ast.parse((PACKAGE / f"{stem}.py").read_text(encoding="utf-8"))
         sites = [
             node.module for node in ast.walk(tree)

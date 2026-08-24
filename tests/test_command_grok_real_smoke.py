@@ -32,6 +32,7 @@ skip.
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 import pytest
@@ -47,6 +48,14 @@ from conductor.command.adapters.provider import ProviderConfig
 from conductor.command.providers import resolve_providers
 
 from tests.test_command_grok_transport import NOW, _Ids, a_request
+
+#: The published form, SPELLED here rather than imported from the adapter: a
+#: check that read the shipped pattern would move with it, and the whole point
+#: of this file is to be the one place that does not. Only the semver is
+#: captured; the commit and the channel are the vendor's and not this check's.
+_DESCRIBED_FORM = re.compile(
+    r"\Agrok (?P<semver>\d+\.\d+\.\d+) \((?:[0-9a-f]{4,40}|unknown)\)"
+    r"(?: \[(?:stable|alpha)\])?\Z")
 
 EXECUTABLE_ENV = "CONDUCT_GROK_EXECUTABLE"
 PROMPT_ENV = "CONDUCT_GROK_REAL_PROMPT"
@@ -89,6 +98,39 @@ def _seed_instruction(root: Path, text: str) -> None:
         text, encoding="utf-8", newline="\n")
 
 
+def _assert_the_production_parser_read_it(
+        adapter, output: bytes, observed: str) -> None:
+    """The production parser read the SAME semver this file reads independently.
+
+    The question a boolean cannot answer. `_version_matches` returning False
+    means either "a different build" or "this parser read nothing at all", and
+    those are opposite findings with opposite owners: the first is an operator's
+    install, the second is this module being wrong about the vendor.
+
+    Reproduced before this existed: replacing the module's pattern with one that
+    matches NOTHING, against a valid published form at an unreviewed version,
+    passed this smoke -- a parser that reads nothing refuses everything, which
+    looks exactly like working correctly.
+
+    So the two parses are compared to each other. The expected semver comes from
+    this file's own literal pattern, which is why that pattern is SPELLED here
+    instead of imported from the adapter it exists to check.
+    """
+    described = _DESCRIBED_FORM.match(observed)
+    if described is None:
+        # An unreadable form is a finding about the PARSER, and it is reported
+        # by the assertion further down which knows whether the semver matched.
+        # Saying it twice, differently, would give an operator two verdicts.
+        return
+    expected = described.group("semver")
+    produced = adapter._parsed_version(output)
+    assert produced == expected, (
+        f"the production parser did not read the form this install printed: it "
+        f"made {produced!r} of {observed!r}, where an independent reading of the "
+        f"same published form gives {expected!r}. A parser that reads nothing is "
+        f"indistinguishable from a correct refusal unless this is checked")
+
+
 def test_a_real_install_prints_a_form_this_adapter_can_parse(tmp_path):
     """The parser meets a real binary, which is the only place it can be settled."""
     adapter, root = _real_harness(tmp_path)
@@ -103,6 +145,7 @@ def test_a_real_install_prints_a_form_this_adapter_can_parse(tmp_path):
 
     observed = _version_token(outcome.output)
     assert observed, "the pinned Grok Build printed no version token at all"
+    _assert_the_production_parser_read_it(adapter, outcome.output, observed)
     parsed = adapter._version_matches(outcome.output)
 
     request = a_request()

@@ -303,23 +303,42 @@ class GrokBuildAdapter(HeadlessCliTransport):
     def _env_allow(self) -> tuple[str, ...]:
         return self._pin.env_allow
 
+    def _parsed_version(self, output: bytes) -> str | None:
+        r"""The semver this parser reads out of a version print, or ``None``.
+
+        Separate from the yes/no answer, and the separation is what makes the
+        opt-in smoke able to tell two opposite findings apart. A BOOLEAN cannot:
+        ``False`` means either "a different build", which the adapter is right
+        to refuse, or "this parser could not read the published form at all",
+        which no refusal repairs -- and a parser accepting NOTHING refuses
+        everything, which looks exactly like working correctly.
+
+        That is not hypothetical here. Replacing this module's pattern with one
+        that matches nothing, against a valid published form at an unreviewed
+        version, passed the smoke and every refusal test in the suite.
+
+        **What may be done with the answer.** It is a substring of child output,
+        so it stays inside this class and inside tests: no production path puts
+        it in a receipt, a journal record, an API response or an exception
+        message. What makes that bearable rather than merely promised is the
+        pattern -- the group is ``\d+\.\d+\.\d+`` and can carry digits and dots
+        and nothing else, so unlike a whole line it cannot hold a secret a
+        hostile build planted where a version belongs. The commit and the
+        channel are read and DISCARDED here, and never returned.
+        """
+        found = _VERSION_FORM.match(_version_token(output))
+        return None if found is None else found.group("semver")
+
     def _version_matches(self, output: bytes) -> bool:
-        """PARSE the published form, and compare only its semver.
+        """Whether the pinned build's print IS the reviewed version.
 
         The shared default compares the whole first line, which would refuse
         every real Grok Build, because a real one always prints its commit and
-        usually its channel. So this reads the closed form the vendor's ENTRY
-        POINT prints -- not the one its version module builds, which is a
-        different string with a different set of optional parts -- and takes the
-        semver out of it. The short commit and the channel label are never
-        allowed to become a version, which is the point of a closed pattern
-        anchored at both ends rather than a search.
-
-        Still a BOOLEAN. Nothing derived from the child's bytes leaves this
-        method, because a hostile build could put a secret where a version
-        belongs and every road out of here reaches a receipt.
+        usually its channel. So the reading is delegated to ``_parsed_version``
+        -- which reads the closed form the vendor's ENTRY POINT prints, not the
+        one its version module builds -- and this method only compares. The
+        short commit and the channel label are never allowed to become a
+        version, which is the point of a closed pattern anchored at both ends
+        rather than a search.
         """
-        found = _VERSION_FORM.match(_version_token(output))
-        if found is None:
-            return False
-        return found.group("semver") == self.profile.reviewed_version
+        return self._parsed_version(output) == self.profile.reviewed_version

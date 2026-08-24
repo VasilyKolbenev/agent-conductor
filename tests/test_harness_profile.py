@@ -15,6 +15,13 @@ would relocate the child's home away from the minted one, so the tool would writ
 its config, sessions and credentials somewhere nothing sweeps. That is refused
 here, at construction.
 
+What a profile DECLARES also decides which seams its class owes, so the two
+structural claims about those seams are held here rather than in a provider's
+own suite: the stdin channel's argv builder cannot see a task, and the one
+reading a provider gets of its attempt home happens while that home still
+stands. Both are about the base, so neither belongs to whichever provider
+happens to exercise it today.
+
 The transport also writes the minted home LAST, after unpacking ``forced_env``,
 so the promise would hold even if this validation were bypassed. No test can
 catch an inversion of that ordering, and deliberately so: construction refuses
@@ -24,6 +31,7 @@ therefore documented rather than pinned, and what IS pinned is the refusal.
 from __future__ import annotations
 
 import inspect
+from pathlib import Path
 
 import pytest
 
@@ -34,8 +42,9 @@ from conductor.command.adapters.harness_profile import (
     HarnessProfile,
     HeadlessCliError,
 )
+from conductor.command.adapters.harness_workspace import WORK_DIR
 from conductor.command.adapters.headless_cli import HeadlessCliTransport
-from conductor.command.adapters.process import ProcessRunner
+from conductor.command.adapters.process import ProcessOutcome, ProcessRunner
 from conductor.command.providers import PROVIDER_CATALOG
 
 #: Fields every profile below shares; only what a case is about varies.
@@ -164,8 +173,17 @@ def test_a_provider_on_the_stdin_channel_cannot_be_handed_the_task_in_its_argv()
     not independence.
 
     What IS independence is an absent parameter. So the assertion is about the
-    SIGNATURE: on the stdin channel the argv builder takes nothing but `self`,
-    and the cheating shape is not something a provider can express.
+    SIGNATURE: on the stdin channel the argv builder is handed the attempt HOME
+    and nothing else, and the cheating shape is not something a provider can
+    express.
+
+    The one parameter is SPELLED rather than counted, and that is the whole
+    difference between this claim and a weaker one. `home` is a project subtree
+    the transport minted from an id mint moments earlier; a builder declaring a
+    second parameter, or one parameter under another name, is a seam somebody
+    widened -- and widening it is the only way an instruction could arrive here.
+    Where that value comes FROM is the other half, and it is held by
+    `test_the_stdin_builder_is_handed_over_uncalled_and_called_with_the_home`.
     """
     on_stdin = [
         entry for entry in PROVIDER_CATALOG.values()
@@ -175,8 +193,133 @@ def test_a_provider_on_the_stdin_channel_cannot_be_handed_the_task_in_its_argv()
 
     for entry in on_stdin:
         builder = inspect.signature(entry.adapter_class._stdin_argv)
-        assert [name for name in builder.parameters if name != "self"] == [], (
-            f"{entry.provider_id}'s argv builder can see a task")
+        assert [name for name in builder.parameters if name != "self"] == ["home"], (
+            f"{entry.provider_id}'s argv builder can see more than its attempt home")
+
+
+def test_the_stdin_builder_is_handed_over_uncalled_and_called_with_the_home():
+    """The parameter is proved harmless by WHERE its one value comes from.
+
+    A signature says the task is not a parameter. It does not say what the
+    parameter that IS there holds, and a seam handed the task under the name
+    `home` would satisfy the signature test above while defeating everything it
+    stands for. Two frames settle that, and both are read here:
+
+    - `_task_command` is the only frame holding the task AND the builder, and it
+      hands the builder over UNCALLED. Nothing in it can curry an argument, and
+      the object it returns is the plain function every subclass declared;
+    - `_tokens` is the only frame that calls one, and the only value it has to
+      call with is the home `_attempt` minted. There is no `task_text` in that
+      frame to pass even by accident.
+
+    Driven against the real base rather than described, so a future edit that
+    started calling the builder in the frame that holds the task reds here.
+    """
+    class _Piped(HeadlessCliTransport):
+        profile = a_profile(task_channel=TASK_CHANNEL_STDIN)
+        error = HeadlessCliError
+        seen: list[object] = []
+
+        def _stdin_argv(self, home):
+            type(self).seen.append(home)
+            return ("--flag", str(home))
+
+        def _task_stdin(self, task_text):
+            return task_text.encode("utf-8")
+
+    piped = _Piped(
+        ProcessRunner("."), root=".", clock=lambda: "", ids=lambda p: p,
+        adapter_id="probe")
+    source, payload = piped._task_command("PROBE-INSTRUCTION-TEXT")
+
+    assert _Piped.seen == [], "the frame holding the task called the builder"
+    assert getattr(source, "__func__", None) is _Piped._stdin_argv
+    assert payload == b"PROBE-INSTRUCTION-TEXT"
+
+    minted = Path("probe-home-1")
+    assert HeadlessCliTransport._tokens(source, minted) == (
+        "--flag", str(minted))
+    assert _Piped.seen == [minted]
+    # And the ready-argv road is untouched by any of this: a provider on the
+    # argv channel still hands tokens straight through.
+    assert HeadlessCliTransport._tokens(("--ready",), minted) == ("--ready",)
+
+
+class _Recording(ProcessRunner):
+    """A runner that starts nothing and answers every spec the same way.
+
+    A real child is not what this claim is about: what is under test is WHERE
+    the base calls a provider's reading of its own attempt home, and a spawn
+    that really ran would only add ways for the test to fail for other reasons.
+    """
+
+    def run(self, spec):
+        return ProcessOutcome(
+            status="completed", exit_code=0, output=b"", output_truncated=False,
+            output_limit=spec.output_limit, pid=0, token="probe-token")
+
+
+def test_the_home_reading_a_provider_gets_happens_before_the_home_is_discarded(
+        tmp_path):
+    """The window is the point of the seam, so the window is what is asserted.
+
+    A provider that asks its vendor to write an artefact into the profile home
+    this build mints has exactly one moment to read it: the home is deleted the
+    instant `_attempt` returns, and that deletion is the retention promise
+    rather than tidiness. So a reading placed after it would find nothing, every
+    time, and would look like a vendor that wrote nothing.
+
+    Read from inside the seam, by an independent witness -- the filesystem --
+    rather than by trusting the order the source is written in.
+    """
+    class _Reader(HeadlessCliTransport):
+        profile = a_profile()
+        error = HeadlessCliError
+        readings: list[tuple[bool, bool]] = []
+
+        def _argv_prefix(self):
+            return ("probe",)
+
+        def _env_allow(self):
+            return ()
+
+        def _read_attempt_home(self, home):
+            # BOTH facts, from the disk: the home this spawn was given still
+            # stands, and a file the child could have written inside it is
+            # still readable. A reading after the discard sees neither.
+            type(self).readings.append(
+                (home.is_dir(), (home / "written-by-the-child").is_file()))
+
+    reader = _Reader(
+        _Recording(tmp_path), root=tmp_path, clock=lambda: "",
+        ids=lambda purpose: f"{purpose}-1", adapter_id="probe")
+    reader._workspace.work_root()
+    spawn = reader._spawn
+
+    def writing(argv, home, cwd, **kwargs):   # stand in for the vendor writing
+        outcome = spawn(argv, home, cwd, **kwargs)
+        (home / "written-by-the-child").write_text("x", encoding="utf-8")
+        return outcome
+
+    reader._spawn = writing
+    reader._attempt(("--version",), WORK_DIR, timeout=30)
+
+    assert _Reader.readings == [(True, True)], (
+        "the provider's reading of its attempt home did not happen while the "
+        "home stood, so nothing a vendor wrote there could ever be read")
+    standing = sorted(p.name for p in reader._workspace.homes_root().iterdir())
+    assert standing == [], f"A_HOME_OUTLIVED_ITS_SPAWN={standing}"
+
+
+def test_the_base_reads_nothing_out_of_an_attempt_home_by_itself():
+    """The default is empty, and a provider that asked for nothing sees nothing.
+
+    Said as its own claim because the seam is a road INTO a directory this
+    build promises to discard unread. The base names no artefact and must never
+    grow a guess at one.
+    """
+    assert HeadlessCliTransport._read_attempt_home(
+        object(), Path("nowhere-at-all")) is None
 
 
 def test_a_profile_may_declare_the_stdin_channel_only_where_a_class_honours_it():
@@ -190,8 +333,8 @@ def test_a_profile_may_declare_the_stdin_channel_only_where_a_class_honours_it()
         profile = a_profile(task_channel=TASK_CHANNEL_STDIN)
         error = HeadlessCliError
 
-        def _stdin_argv(self):
-            return ("--probe",)
+        def _stdin_argv(self, home):
+            return ("--probe", str(home))
 
     with pytest.raises(HeadlessCliError, match="owes its own _task_stdin"):
         _Half(ProcessRunner("."), root=".", clock=lambda: "", ids=lambda _p: "",

@@ -2,9 +2,11 @@
 
 A harness adapter needs a handful of filesystem facts and nothing else: a FRESH
 profile home per spawn, a marker that survives a crash so a task is never run
-twice, the instruction TEXT the task is actually asked to do, and content
-digests of the authorized work tree so verification can read what actually
-changed instead of believing what the task said. They live here, apart from the
+twice, the instruction TEXT the task is actually asked to do, content digests of
+the authorized work tree so verification can read what actually changed instead
+of believing what the task said, and -- for a vendor that is TOLD to write an
+artefact into the home it was given -- what became of that one name. They live
+here, apart from the
 adapter's value logic, for the same reason the owned-process runner lives apart
 from the adapters that use it: a door should be one small module a reviewer can
 read whole.
@@ -99,6 +101,26 @@ INSTRUCTION_SUFFIX = ".md"
 INSTRUCTION_LIMIT = 64 * 1024
 #: Windows marks a reparse DIRECTORY here; removing its own entry needs rmdir.
 _DIRECTORY_ATTRIBUTE = getattr(stat, "FILE_ATTRIBUTE_DIRECTORY", 0x10)
+#: What ONE name inside an attempt home turned out to be. A CLOSED vocabulary,
+#: and the door's own rather than any provider's: it answers what STANDS there,
+#: never what it means. A provider that asked its vendor to write an artefact at
+#: that name reads its own conclusion off these four words.
+#:
+#: `empty` is told apart from `file` because for at least one vendor those are
+#: two different reports rather than a degree of the same one -- Codex CLI writes
+#: its last-message file EMPTY when a run produced no final agent message -- and
+#: a door that collapsed them would force every caller to reopen the question by
+#: reading the file, which is the one thing this door exists to avoid.
+#:
+#: `other` covers a portal, a directory, a device, and a file whose bytes also
+#: answer to another name. None of them is read, followed, or guessed at: the
+#: contents of an attempt home are written by a child this build does not trust.
+HOME_LEAF_ABSENT = "absent"
+HOME_LEAF_EMPTY = "empty"
+HOME_LEAF_FILE = "file"
+HOME_LEAF_OTHER = "other"
+HOME_LEAF_KINDS = (
+    HOME_LEAF_ABSENT, HOME_LEAF_EMPTY, HOME_LEAF_FILE, HOME_LEAF_OTHER)
 
 
 class WorkspaceNotContained(RuntimeError):
@@ -390,6 +412,46 @@ class HarnessWorkspace:
             raise _refuse(RouteViolation(RouteViolationCode.NOT_DIRECTORY, target))
         _remove_portal(target, found)
         self.minted.discard(target.name)
+
+    def home_leaf_kind(self, home: str | os.PathLike[str], name: str) -> str:
+        """What stands at ONE name inside ONE attempt home, as a closed word.
+
+        A vendor may be TOLD to write an artefact into the home it was handed --
+        Codex CLI's ``--output-last-message`` is the first -- and the caller then
+        has one question about it: what became of the name it named. That
+        question is a filesystem fact, so it is answered here rather than in a
+        provider's value module, where it would be a second place this package
+        touches a disk.
+
+        NOTHING IS READ. The answer comes from ``lstat`` and the same typed
+        containment relation every other road here uses: the whole route is
+        proved local first, the leaf is classified without being followed, and a
+        portal, a directory or a second hard link is reported as ``other``
+        rather than opened. So a caller can learn that an artefact arrived
+        without a byte of it entering this process -- which is the difference
+        between an observation this build may repeat in a receipt and model text
+        it promised not to keep.
+
+        Bounded to a home beneath this workspace's own fixed root, like every
+        other home road, and refusing rather than guessing when the route or the
+        name cannot be established. A caller that must not raise catches that
+        refusal and reports its own word for "I could not establish this"; the
+        refusal carries a path, so it is a value to catch and never to forward.
+        """
+        path = Path(home)
+        if path.parent != self.homes_root():
+            raise WorkspaceNotContained(
+                f"{str(path)!r} is not a home beneath this workspace's fixed root")
+        target = self._directory_route(
+            self.home_dir, path.name) / _component(name)
+        found = _leaf(target)
+        if found is None:
+            return HOME_LEAF_ABSENT
+        if portal_violation(target, found) is not None:
+            return HOME_LEAF_OTHER
+        if not stat.S_ISREG(found.st_mode) or found.st_nlink != 1:
+            return HOME_LEAF_OTHER
+        return HOME_LEAF_EMPTY if found.st_size == 0 else HOME_LEAF_FILE
 
     def sweep_homes(self) -> tuple[str, ...]:
         """Discard every home a crashed attempt left, naming what it refused.

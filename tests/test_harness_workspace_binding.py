@@ -41,17 +41,26 @@ in the tree has claimed yet.
 """
 from __future__ import annotations
 
+import stat
 import threading
 from pathlib import Path
 
 import pytest
 
+import conductor.command.adapters.harness_workspace as harness_workspace
 from conductor.command.adapters.harness_workspace import (
+    HOME_LEAF_ABSENT,
+    HOME_LEAF_EMPTY,
+    HOME_LEAF_FILE,
+    HOME_LEAF_KINDS,
+    HOME_LEAF_OTHER,
     INSTRUCTION_DIR,
     WORK_DIR,
     HarnessWorkspace,
     WorkspaceNotContained,
 )
+
+from tests import sabotage_fixtures
 
 #: Two providers that exist nowhere but here, so the relations below are held
 #: against the DOOR rather than against whatever the catalog happens to carry.
@@ -281,3 +290,157 @@ def test_a_neighbour_cannot_change_the_shared_work_tree_during_another_turn(
         if before.get(name) != after.get(name))
     assert landed is False, "WROTE_WHILE_ONE_OWNED_ROOT=True"
     assert changed == [], f"FOREIGN_CHANGE={changed}"
+
+
+# --- what stands at ONE name inside ONE attempt home -------------------------
+
+
+def _a_home(tmp_path: Path):
+    """One workspace and one minted home, so every case below starts alike."""
+    workspace = HarnessWorkspace.at(
+        _root(tmp_path), home_dir=ONE_HOME, marker_dir=ONE_MARKER)
+    return workspace, workspace.mint_home("one-home-1")
+
+
+def test_a_name_that_was_never_written_is_absent_rather_than_empty(tmp_path):
+    """Three of the four kinds are three different facts, not degrees of one.
+
+    A vendor told to write into the home it was given may finish without ever
+    reaching the point of writing, may write nothing, or may write something,
+    and a caller that could not tell those apart would have to open the file to
+    find out -- which is the one thing this door exists to avoid.
+    """
+    workspace, home = _a_home(tmp_path)
+
+    assert workspace.home_leaf_kind(home, "answer.txt") == HOME_LEAF_ABSENT
+    (home / "answer.txt").write_text("", encoding="utf-8")
+    assert workspace.home_leaf_kind(home, "answer.txt") == HOME_LEAF_EMPTY
+    (home / "answer.txt").write_text("something", encoding="utf-8")
+    assert workspace.home_leaf_kind(home, "answer.txt") == HOME_LEAF_FILE
+
+
+def test_a_directory_standing_where_a_file_was_expected_is_neither(tmp_path):
+    """`other` is a real answer and never a stand-in for absent or written."""
+    workspace, home = _a_home(tmp_path)
+    (home / "answer.txt").mkdir()
+
+    assert workspace.home_leaf_kind(home, "answer.txt") == HOME_LEAF_OTHER
+
+
+@pytest.mark.parametrize("kind", ("junction", "symlink"))
+def test_a_portal_is_reported_by_its_kind_and_its_target_is_never_read(
+        tmp_path, kind):
+    """The bytes outside decide NOTHING, and that is the whole claim.
+
+    A child owns the inside of its own attempt home, so it can point the name
+    this build asked it to write at a file it does not own. Following that name
+    would let it report someone else's file as the answer it produced -- and,
+    worse, would let the size of a stranger's file decide what a receipt says.
+    """
+    workspace, home = _a_home(tmp_path)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "answer.txt").write_text("not this build's", encoding="utf-8")
+    target = outside / "answer.txt" if kind == "symlink" else outside
+    with sabotage_fixtures.skip_when_unavailable():
+        sabotage_fixtures.plant_route_portal(
+            home / "answer.txt", target, kind=kind, directory=False)
+
+    assert workspace.home_leaf_kind(home, "answer.txt") == HOME_LEAF_OTHER
+    assert (outside / "answer.txt").read_text(encoding="utf-8") == \
+        "not this build's", "the door touched what the portal named"
+
+
+def test_a_second_name_on_the_same_bytes_is_not_a_file_this_build_wrote(tmp_path):
+    """An aliased file is refused as an answer for the same reason a portal is.
+
+    Its bytes answer to a name outside this home as well, so calling it written
+    would credit this spawn with something it may not have produced.
+    """
+    workspace, home = _a_home(tmp_path)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "answer.txt").write_text("elsewhere", encoding="utf-8")
+    with sabotage_fixtures.skip_when_unavailable():
+        sabotage_fixtures.plant_outward_hard_link(
+            outside / "answer.txt", home / "answer.txt")
+
+    assert workspace.home_leaf_kind(home, "answer.txt") == HOME_LEAF_OTHER
+
+
+def test_every_answer_comes_out_of_the_closed_set_and_never_out_of_the_file(
+        tmp_path):
+    """Whatever stands there, what comes back is one of four words.
+
+    Said as its own claim because it is the property that lets a caller repeat
+    the answer in a receipt: a word from a set fixed in this module cannot
+    carry a byte a child chose.
+    """
+    workspace, home = _a_home(tmp_path)
+    (home / "answer.txt").write_text(
+        "SECRET-THAT-MUST-NOT-TRAVEL", encoding="utf-8")
+
+    kind = workspace.home_leaf_kind(home, "answer.txt")
+
+    assert kind in HOME_LEAF_KINDS
+    assert "SECRET" not in kind
+
+
+def test_a_home_outside_the_fixed_root_is_refused_before_any_name_is_read(
+        tmp_path):
+    """The same bound every other home road carries, and for the same reason."""
+    workspace, _home = _a_home(tmp_path)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (elsewhere / "answer.txt").write_text("outside", encoding="utf-8")
+
+    refusal = _refusal(workspace.home_leaf_kind, elsewhere, "answer.txt")
+
+    assert refusal is not None, "A_HOME_OUTSIDE_THE_ROOT_WAS_READ=True"
+
+
+@pytest.mark.parametrize("name", ("..", "a/b", "", "a\b", "."))
+def test_a_leaf_that_is_not_one_local_component_is_refused(tmp_path, name):
+    """A route where a name belongs is a route out of the home."""
+    workspace, home = _a_home(tmp_path)
+
+    assert _refusal(workspace.home_leaf_kind, home, name) is not None, name
+
+
+class _ReparseStat:
+    """A stat result Windows really produces and no fixture here can create.
+
+    A reparse point whose tag Python does NOT turn into a symbolic link keeps
+    ``S_IFREG`` in ``st_mode``: an app-execution alias, a deduplication stub, a
+    cloud-files placeholder. `stat.S_ISREG` calls every one of them a regular
+    file, so the typed portal classifier is the only thing standing between such
+    a name and being read as a plain file this build's own child wrote.
+
+    Injected rather than planted, and that is stated rather than hidden: no
+    primitive in this repository creates one on demand. Leaving the relation
+    unheld was a GREEN mutation -- removing the portal check from
+    `home_leaf_kind` changed no answer any fixture in this file could produce,
+    because `lstat` already classifies a symlink and a junction as non-regular.
+    """
+
+    st_mode = stat.S_IFREG | 0o644
+    st_nlink = 1
+    st_size = 12
+    #: A real tag, and any non-zero one would do: the classifier asks whether
+    #: there is a tag at all, not which.
+    st_reparse_tag = 0x8000001B
+
+
+def test_a_reparse_tag_that_is_no_link_is_still_not_a_file_this_build_wrote(
+        tmp_path, monkeypatch):
+    """The half of "a portal is not read" that `S_ISREG` cannot hold.
+
+    The planted cases above are the ones `lstat` already refuses to call
+    regular. This is the other kind, and it is the one that would be read as an
+    answer: a name whose bytes are somewhere else entirely, wearing `S_IFREG`.
+    """
+    workspace, home = _a_home(tmp_path)
+    (home / "answer.txt").write_text("real bytes", encoding="utf-8")
+    monkeypatch.setattr(harness_workspace, "_leaf", lambda path: _ReparseStat())
+
+    assert workspace.home_leaf_kind(home, "answer.txt") == HOME_LEAF_OTHER

@@ -100,8 +100,9 @@ stands in the positional prompt, and the whole task -- the run's frame and the
 operator's materialized instruction -- is piped. Not one byte of an instruction
 reaches argv, where any process lister on the machine could read it, and that is
 guaranteed BY CONSTRUCTION rather than by a check: this profile declares
-``task_channel="stdin"``, so the shared transport calls ``_stdin_argv()``, which
-is handed no task and therefore cannot put one anywhere.
+``task_channel="stdin"``, so the shared transport calls ``_stdin_argv``, which is
+handed no task and therefore cannot put one anywhere. What it IS handed is the
+attempt home, which this provider ignores; see that method.
 
 An earlier draft did try to check it, by calling the argv builder twice with two
 probe texts and comparing the answers. A review probe defeated that in one line
@@ -292,13 +293,20 @@ class ClaudeCodeTransport(HeadlessCliTransport):
         """One native binary, and nothing in front of it."""
         return (self._pin.executable,)
 
-    def _stdin_argv(self) -> tuple[str, ...]:
+    def _stdin_argv(self, home: Path) -> tuple[str, ...]:
         """The code-owned flags and the CONSTANT prompt. It receives no task.
 
         That is the guarantee, and it is structural: this method cannot put an
         instruction in the command line because it is never handed one. Nothing
         here has to be trusted, checked afterwards, or remembered by the next
-        person to edit it -- the parameter does not exist.
+        person to edit it -- the task parameter does not exist.
+
+        ``home`` is the attempt home the transport minted for this spawn, and
+        Claude Code asks nothing of it: it is offered on this seam because
+        another provider's vendor writes an artefact into its own profile home
+        and needs the path on its command line. Every token below is therefore
+        the same on every dispatch for every operator, which is what the suite
+        asserts by spelling the whole list.
 
         The task itself goes to stdin, where a process lister cannot read it.
         See ``_task_stdin``.
