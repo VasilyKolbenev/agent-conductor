@@ -341,3 +341,41 @@ def test_the_base_forgets_its_snapshot_even_when_verify_raises(tmp_path):
 
     assert failed, "an unvalidated result must be refused"
     assert transport._attempts == {}, "THE_BASE_KEPT_A_SNAPSHOT_WHILE_RAISING"
+
+
+# --- omittable in a payload, required to run ---------------------------------
+
+
+def test_a_review_that_names_no_result_artifact_is_refused_and_spawns_nothing(
+        tmp_path):
+    """The other half of making the field optional, and the half that costs.
+
+    The CONTRACT admits a review with no `result_artifact_ref` so revision 1 of
+    the Dalio template and the frozen fixtures beside it stay readable. RUNNING
+    one is a different question: its output would have nowhere durable to go, so
+    nothing it produced could be verified and a model call would be spent on an
+    answer this build must then discard.
+
+    The refusal is asserted where it has to be -- before the spawn -- because a
+    receipt that said `failed` after paying for the answer would be a different
+    and worse thing.
+    """
+    adapter, store, _root, log = a_reviewer(tmp_path)
+    seed(store, "run-a", "artifact-a-seed", "# A\n\nreview this.")
+    request = ActionRequest(
+        action_id=ACTION, run_id="run-a", attempt_id=ATTEMPT,
+        instance_id=INSTANCE, capability="review",
+        arguments={
+            "work_item_id": "work-001",
+            "target_artifact_refs": [INPUT_REF],
+            "review_profile": "quality"},
+        scope=("work",), requested_by="tester", requested_at=NOW,
+        idempotency_key="idem-no-result", timeout_seconds=60,
+        preview_digest="sha256:" + "a" * 64, mode="confirm")
+
+    receipt = adapter.execute(adapter.prepare(request))
+
+    assert receipt.outcome == "failed", receipt.detail
+    assert "names no result artifact" in receipt.detail
+    assert _fakeclaude.prompt_spawns(log) == [], "A_MODEL_CALL_WAS_SPENT"
+    assert adapter._review_attempts == {}
