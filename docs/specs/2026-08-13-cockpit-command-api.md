@@ -92,6 +92,10 @@ scope, not permission for C/API-1 to invent a generic file-write endpoint.
   {
     "method": "POST", "path": "/command/runs/<run_id>/graph/from-template",
     "mutation": true, "csrf": true
+  },
+  {
+    "method": "POST", "path": "/command/runs/<run_id>/artifacts",
+    "mutation": true, "csrf": true
   }
 ]
 ```
@@ -1038,6 +1042,51 @@ and the writable-route containment/ownership gate before any durable effect,
 with the gate re-checked inside the transaction and answering `route_unsafe`
 (409) both times.
 
+### 4.7 `POST /command/runs/<run_id>/artifacts` — publish immutable handoff text
+
+Maps to `RunStore.append(ArtifactDocument)`. This is the one durable content
+door the `review` capability was waiting for: a `target_artifact_refs` value is
+an identifier, not the thing to review, and no adapter may turn an identifier
+into content by guessing a path or reading a caller-controlled URI.
+
+The request is closed to exactly `artifact_id`, `artifact_ref`, `media_type` and
+`content`. The server injects `run_id` from the path and `created_at` from its
+clock. `source_action_id` is server-owned and absent on this operator-publish
+road; a later runtime-produced artifact carries the action that produced it.
+The two admitted media types are `text/plain` and `text/markdown`. Content is
+non-empty UTF-8 text, carries no NUL, and is bounded to 49,152 encoded bytes.
+The command transport independently bounds the complete encoded JSON request to
+65,536 bytes; both limits must pass, because JSON escaping can make its wire
+spelling longer than the decoded text it carries.
+
+<!-- CANONICAL:artifact_request -->
+```json
+{
+  "artifact_id": "artifact-document-001",
+  "artifact_ref": "artifact-brief",
+  "media_type": "text/markdown",
+  "content": "# Goal\nBuild the smallest releasable alpha without weakening its gates."
+}
+```
+
+A logical `artifact_ref` may have several immutable documents over a bounded
+loop. Consumers resolve the latest one in append order and receive its exact
+content plus its computed digest; they never receive a filesystem path. The
+record's `artifact_id` is its immutable identity. Thus a retry of the same id
+and facts returns `200`, while the same id with different content is
+`record_conflict` (409). A new document returns `201` and exactly one
+identifier-only run frame; a retry and every refusal emit none.
+
+The digest is computed from the canonical `ArtifactDocument` and is not stored
+beside it. A stored digest could disagree with the content it purported to
+name. The existing run read returns the document as an append-ordered
+`record_type: "artifact"` row; SSE carries only `kind` and `run_id` as before.
+
+An artifact is deliberately durable and visible through the authenticated
+loopback run read. This route is not a redaction service: text submitted here is
+an explicit request to retain and hand it to later roles. Raw harness stdout,
+stderr, environment values and arbitrary files never enter through it.
+
 ## 5. Human-decision endpoints — FROZEN CONTRACT
 
 ### 5.1 `POST /command/runs/<run_id>/decisions` — record a DecisionReceipt
@@ -1111,8 +1160,9 @@ infer one from prose. The record kinds and their contracts are the closed v2 voc
 `action_request` (`ActionRequest`), `action_result` (`ActionResultReceipt`),
 `evidence` (`EvidenceRef`), `decision` (`DecisionReceipt`),
 `action_proposal` (`ActionProposal`), `adapter_observation` (`ObservationRecord`),
-`attempt_event` (`AttemptEvent`), and `graph_definition` (`GraphDefinition`) —
-one run follows at most one graph, and a second under another id is refused.
+`attempt_event` (`AttemptEvent`), `graph_definition` (`GraphDefinition`), and
+`artifact` (`ArtifactDocument`). One run follows at most one graph, and a second
+under another id is refused.
 
 <!-- CANONICAL:run_read_response -->
 ```json

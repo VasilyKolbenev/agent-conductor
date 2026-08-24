@@ -33,6 +33,7 @@ from .attempt_replay import (
     validate_event_result,
 )
 from .attempts import AttemptEvent
+from .artifacts import ArtifactDocument, validate_artifact_source
 from .graph_causality import (
     DISPATCH_KEY_PREFIX,  # noqa: F401 -- re-exported at its original home
     _one_graph_per_run,
@@ -97,6 +98,7 @@ def _transactional(method):
 RecordValue = (
     ActionRequest | ActionResultReceipt | EvidenceRef | DecisionReceipt
     | ActionProposal | ObservationRecord | AttemptEvent | GraphDefinition
+    | ArtifactDocument
 )
 
 
@@ -127,6 +129,7 @@ _RECORDS: dict[str, tuple[type[RecordValue], str]] = {
     "adapter_observation": (ObservationRecord, "observation_id"),
     "attempt_event": (AttemptEvent, "event_id"),
     "graph_definition": (GraphDefinition, "graph_id"),
+    "artifact": (ArtifactDocument, "artifact_id"),
 }
 
 # A named-key screen, not a proof that the snapshot is secret-free: a key is
@@ -554,6 +557,11 @@ class RunStore:
             try:
                 validate_attempt_event(recovered.config, prior_values, value)
             except AttemptRelationError as e:
+                raise StoreError(str(e)) from e
+        if isinstance(value, ArtifactDocument):
+            try:
+                validate_artifact_source(value, prior_values)
+            except ContractError as e:
                 raise StoreError(str(e)) from e
         if isinstance(value, DecisionReceipt):
             if value.config_digest != recovered.envelope.config_digest:

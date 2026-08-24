@@ -126,6 +126,7 @@ def test_exact_route_allowlist_and_wrong_method_or_path_are_closed(tmp_path):
         ("POST", "/command/runs/<run_id>/graph"),
         ("POST", "/command/templates"),
         ("POST", "/command/runs/<run_id>/graph/from-template"),
+        ("POST", "/command/runs/<run_id>/artifacts"),
     )
     subject, _, _ = api(tmp_path)
     wrong = subject.handle("POST", "/command/session", (), b"")

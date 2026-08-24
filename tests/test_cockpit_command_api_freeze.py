@@ -36,6 +36,7 @@ from conductor.command.api_contracts import (
     parse_proposal,
 )
 from conductor.command.attempts import AttemptEvent, action_request_digest
+from conductor.command.artifacts import ArtifactDocument
 from conductor.command.containment import RouteViolation, run_route_violations
 from conductor.command.graph_definition import GraphDefinition
 from conductor.command.contracts import (
@@ -69,6 +70,7 @@ REQUIRED_EXAMPLES = frozenset({
     "graph_bound_propose_request", "graph_definition_record",
     "graph_bound_action_proposal", "graph_bound_action_request",
     "graph_request", "graph_runtime_projection",
+    "artifact_request",
 })
 
 #: Canonical examples that are a full contract serialization, mapped to the
@@ -94,6 +96,7 @@ EXPECTED_RECORDS = {
     "adapter_observation": (ObservationRecord, "observation_id"),
     "attempt_event": (AttemptEvent, "event_id"),
     "graph_definition": (GraphDefinition, "graph_id"),
+    "artifact": (ArtifactDocument, "artifact_id"),
 }
 
 #: The frozen refusal vocabulary, written out here so the spec cannot drift it
@@ -125,6 +128,7 @@ EXPECTED_ROUTES = (
     ("POST", "/command/runs/<run_id>/graph", True, True),
     ("POST", "/command/templates", True, True),
     ("POST", "/command/runs/<run_id>/graph/from-template", True, True),
+    ("POST", "/command/runs/<run_id>/artifacts", True, True),
 )
 
 EXPECTED_ARGUMENT_SCHEMAS = {
@@ -353,7 +357,7 @@ def test_attempt_event_mutations_are_born_red_at_the_frozen_read_boundary():
     assert set(EXPECTED_RECORDS) == {
         "action_request", "action_result", "evidence", "decision",
         "action_proposal", "adapter_observation", "attempt_event",
-        "graph_definition",
+        "graph_definition", "artifact",
     }
 
 
