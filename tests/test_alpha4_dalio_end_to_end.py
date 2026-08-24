@@ -6,6 +6,12 @@ whose frozen configurations bind DIFFERENT instances each materialize it, and
 the step that acts is then proposed against through the ordinary proposal
 route -- with the payload the plan itself carries.
 
+The revision is the DEFAULT one, `dalio-v2`, and it is named once at
+`DEFAULT_TEMPLATE`. Revision 1 is the historical witness: runs materialized from
+it, the ALPHA-3 fixture carries its shape, and a replay must reproduce it -- but
+its review steps name nowhere to publish, so it is not what a new run is given.
+This file is route materialization, so it materializes the default.
+
 Nothing here builds a `GraphDefinition`. Nothing here names a provider. What
 proves the role abstraction is not that the two records look similar but that
 they are the SAME work, told apart only by who does it: one topology, one set
@@ -34,11 +40,7 @@ from tests.test_command_http_api import (
 )
 from tests.test_command_run_store import a_run
 from tests.test_command_schema_doubles import DeepPlanAdapter
-from tests.test_command_template_routes import (
-    TEMPLATES_PATH,
-    contracts,
-    template_body,
-)
+from tests.test_command_template_routes import TEMPLATES_PATH, contracts
 
 #: Two deployments of one cycle. The first spreads four roles over two
 #: instances; the second gives all four to one, which is what a small install
@@ -91,10 +93,24 @@ def _values(document) -> set:
     return {document} if isinstance(document, str) else set()
 
 
-def materialize_on(subject, run_id, graph_id, assignments):
+#: The shipped revision a run materializes from. This file drives the DEFAULT
+#: cycle, so the revision is read off the template rather than written as a
+#: literal beside it -- a number typed twice is a number that can disagree with
+#: the file it names.
+DEFAULT_TEMPLATE = "dalio-v2"
+
+
+def default_body(**changes):
+    document = load_template(DEFAULT_TEMPLATE).as_dict()
+    document.update(changes)
+    return document
+
+
+def materialize_on(subject, run_id, graph_id, assignments, template=None):
+    template = load_template(DEFAULT_TEMPLATE) if template is None else template
     return post(subject, f"/command/runs/{run_id}/graph/from-template", {
-        "graph_id": graph_id, "template_id": "template-dalio", "revision": 1,
-        "assignments": assignments})
+        "graph_id": graph_id, "template_id": template.template_id,
+        "revision": template.revision, "assignments": assignments})
 
 
 def two_deployments(tmp_path):
@@ -103,13 +119,13 @@ def two_deployments(tmp_path):
     Everything goes through the routes a browser would call: nothing here
     builds a `GraphDefinition`, and nothing here names a provider.
     """
-    template = load_template("dalio-v1")
+    template = load_template(DEFAULT_TEMPLATE)
     spread_api, spread_store, spread_events = deployment(
         tmp_path / "spread", "run-spread", SPREAD)
     solo_api, solo_store, solo_events = deployment(
         tmp_path / "solo", "run-solo", SOLO)
     for subject in (spread_api, solo_api):
-        assert post(subject, TEMPLATES_PATH, template_body()).status == 201
+        assert post(subject, TEMPLATES_PATH, default_body()).status == 201
 
     spread = materialize_on(spread_api, "run-spread", "graph-spread", {
         "role-thinker": "codex-review", "role-diagnostician": "codex-review",
@@ -178,8 +194,8 @@ def test_the_step_that_acts_is_one_this_product_can_be_asked_to_do(tmp_path):
     is bound to the node it came from.
     """
     subject, _store, _events = deployment(tmp_path, "run-act", SOLO)
-    assert post(subject, TEMPLATES_PATH, template_body()).status == 201
-    template = load_template("dalio-v1")
+    assert post(subject, TEMPLATES_PATH, default_body()).status == 201
+    template = load_template(DEFAULT_TEMPLATE)
     created = materialize_on(subject, "run-act", "graph-act",
                              {role: "solo-node" for role in template.roles})
     assert created.status == 201
@@ -218,15 +234,15 @@ def test_a_second_run_reuses_the_revision_the_first_one_already_published(tmp_pa
         clock=lambda: NOW, ids=ids(), publish_run=events.append,
         providers=contracts(), templates=TemplateStore(tmp_path))
 
-    assert post(subject, TEMPLATES_PATH, template_body()).status == 201
-    template = load_template("dalio-v1")
+    assert post(subject, TEMPLATES_PATH, default_body()).status == 201
+    template = load_template(DEFAULT_TEMPLATE)
     assignments = {role: "solo-node" for role in template.roles}
     first = materialize_on(subject, "run-first", "graph-a", assignments)
     second = materialize_on(subject, "run-second", "graph-b", assignments)
     assert first.status == second.status == 201
 
     # One published revision, two runs, two records that differ only in whose.
-    assert TemplateStore(tmp_path).revisions("template-dalio") == (1,)
+    assert TemplateStore(tmp_path).revisions("template-dalio") == (2,)
     assert first.payload["run_id"] == "run-first"
     assert second.payload["run_id"] == "run-second"
     assert first.payload["nodes"] == second.payload["nodes"]

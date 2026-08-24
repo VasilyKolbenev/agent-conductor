@@ -72,6 +72,14 @@ Grok defect exactly, avoided only by running the thing.
   runner, and verification reads only what changed under the action's own
   authorized subtree. Said out loud because a reader who saw `workspace-write`
   and assumed containment would be assuming it from the wrong side.
+
+  **The review road pins `--sandbox read-only` instead, and buys no claim by
+  doing so.** The same sentence above applies unchanged -- a policy the OS does
+  not enforce is a request, not a boundary -- so what makes a review read-only
+  here is that the transport digests the authorized work tree before the spawn
+  and again after it and refuses verification if one byte moved. See
+  `REVIEW_SANDBOX_ARGV`, and `CodexCliTransport._review_argv` for why
+  `codex exec review` is a different seam that this provider does not call.
 - **`--skip-git-repo-check` is REQUIRED, not a convenience.** SOURCE
   (`codex-rs/exec/src/lib.rs:799`) refuses outright when it is absent and the
   working root is not a git repository -- "Not inside a trusted directory and
@@ -233,7 +241,7 @@ from .headless_cli import (
     HeadlessCliError,
     _version_token,
 )
-from .artifact_transport import ArtifactAwareTransport
+from .artifact_transport import ArtifactAwareTransport, REVIEW_CAPABILITY
 from .process import ProcessRunner
 
 #: The graph node this provider binds to; ``conductor.harnesses`` registers it.
@@ -247,14 +255,19 @@ REVIEWED_CODEX_VERSION = "0.112.0"
 CODEX_PROTOCOL = DeepProtocol.CODEX_HEADLESS_V1.value
 #: Experimental is said in the one field the Cockpit projection carries.
 CODEX_DISPLAY_NAME = "Codex CLI (headless, experimental)"
-#: Observation, and the one control this adapter really implements. `review` is
-#: deliberately ABSENT for the same reason it is absent from Claude Code: the
-#: reviewed deep review body carries artifact REFERENCES and this build has no
-#: resolver that turns one into the artifact's content. `codex exec review`
-#: exists and reviews a GIT DIFF, which is a different thing than the control
-#: this product means, so claiming it here would be claiming the wrong seam.
-CODEX_CAPABILITIES = ("observe", DISPATCH_CAPABILITY)
-CODEX_SCHEMA_PAIRS = ((DISPATCH_CAPABILITY, "deep-arguments-v1"),)
+#: Observation and both real controls. `review` was ABSENT while this build had
+#: no resolver that turned an artifact REFERENCE into the artifact's content;
+#: `artifact_handoff` is that resolver, so the reason has been spent rather than
+#: waived. What has NOT changed is which seam is claimed: `codex exec review`
+#: exists and reviews a GIT DIFF, and this provider does not call it. The
+#: control below is the product's own -- durable material in, one durable
+#: document out -- and it travels the same `codex exec` road a dispatch does
+#: under a separately pinned read-only policy.
+CODEX_CAPABILITIES = ("observe", DISPATCH_CAPABILITY, REVIEW_CAPABILITY)
+CODEX_SCHEMA_PAIRS = (
+    (DISPATCH_CAPABILITY, "deep-arguments-v1"),
+    (REVIEW_CAPABILITY, "deep-arguments-v1"),
+)
 #: The four seams the registration door requires of every provider.
 CODEX_LIFECYCLE = ("execute", "observe", "prepare", "verify")
 #: The environment NAME whose VALUE is minted fresh per attempt.
@@ -275,6 +288,27 @@ SKIP_GIT_REPO_CHECK_ARGV = ("--skip-git-repo-check",)
 EPHEMERAL_ARGV = ("--ephemeral",)
 COLOR_ARGV = ("--color", "never")
 SANDBOX_ARGV = ("--sandbox", "workspace-write")
+#: The review road's own sandbox policy, and the ONE token that differs between
+#: the two argvs this module builds.
+#:
+#: OBSERVED against the reviewed binary: `codex exec --help` declares
+#: `-s, --sandbox <SANDBOX_MODE>` -- "Select the sandbox policy to use when
+#: executing model-generated shell commands" -- with
+#: `[possible values: read-only, workspace-write, danger-full-access]`. DOCS
+#: agrees on the default: "By default, `codex exec` runs in a read-only
+#: sandbox".
+#:
+#: **It is a policy and not enforcement here, exactly as `workspace-write` is
+#: not containment.** `WindowsSandboxLevel` defaults to `Disabled` (SOURCE), so
+#: on this platform nothing in the OS holds a read-only run to its word, and the
+#: flag's own text scopes it to model-generated SHELL commands rather than to
+#: everything the agent might do. So this build never reads a review as
+#: read-only because it asked for read-only: the transport digests the
+#: authorized work tree before the spawn and again after it, and a review that
+#: changed one byte of it is refused at verification whatever policy was sent.
+#: The flag is still pinned, because asking for the weakest policy the vendor
+#: offers is the honest request to make -- it just buys no claim.
+REVIEW_SANDBOX_ARGV = ("--sandbox", "read-only")
 #: The five published config keys that turn telemetry off, each sent as its own
 #: `-c key=value` pair. The VALUE half is parsed by the CLI as TOML, which is why
 #: `"none"` carries its quotes: it is a TOML string, and it is the kebab-case
@@ -378,8 +412,8 @@ __all__ = [
     "ANSWER_WRITTEN", "CODEX_CAPABILITIES", "CODEX_DISPLAY_NAME",
     "CODEX_FORCED_ENV", "CODEX_HOME_ENV", "CODEX_LIFECYCLE", "CODEX_PROTOCOL",
     "CODEX_PROVIDER_ID", "CODEX_SCHEMA_PAIRS", "HOME_DIR", "INSTRUCTION_DIR",
-    "LAST_MESSAGE_NAME", "MARKER_DIR", "REVIEWED_CODEX_VERSION", "STDIN_PROMPT",
-    "WORK_DIR",
+    "LAST_MESSAGE_NAME", "MARKER_DIR", "REVIEWED_CODEX_VERSION",
+    "REVIEW_SANDBOX_ARGV", "STDIN_PROMPT", "WORK_DIR",
     "CodexAdapter", "CodexCliError", "CodexCliTransport", "codex_pin",
 ]
 
@@ -421,6 +455,7 @@ class CodexCliTransport(ArtifactAwareTransport):
 
     profile = CODEX_PROFILE
     error = CodexCliError
+    review_enabled = True
 
     def __init__(
             self, pin: ExecutablePin, runner: ProcessRunner, *,
@@ -473,6 +508,41 @@ class CodexCliTransport(ArtifactAwareTransport):
         return (
             *EXEC_ARGV, *SKIP_GIT_REPO_CHECK_ARGV, *EPHEMERAL_ARGV,
             *COLOR_ARGV, *SANDBOX_ARGV, *TELEMETRY_ARGV,
+            *LAST_MESSAGE_ARGV, str(self._last_message_path(home)),
+            STDIN_PROMPT)
+
+    def _review_argv(self, home: Path) -> tuple[str, ...]:
+        """The read-only review argv; its durable material still arrives on stdin.
+
+        The same `codex exec` road, one token apart: `--sandbox read-only` in
+        place of `workspace-write`. Everything else is the dispatch's own list,
+        deliberately -- a second, independently written argv would be a second
+        place to forget `--skip-git-repo-check` or a telemetry key, and the two
+        roads have exactly one difference to state.
+
+        **`codex exec review` is NOT what this calls, and the distinction is the
+        product's rather than a preference.** That subcommand is real (OBSERVED,
+        `codex exec --help`: "Run a code review against the current repository")
+        and it reviews a GIT DIFF of a repository. This control reviews DURABLE
+        ARTIFACTS -- documents an earlier role published, resolved by identifier
+        and piped in whole -- and the child it drives is spawned in a work
+        subtree that is deliberately not a repository at all. Sending the
+        subcommand would be answering a different question under the same word.
+
+        `-o` is minted here as it is for a dispatch, so the road out reads the
+        same second observation and a receipt says the same true things about
+        the CLI's own reporting. The review's OUTPUT is not read from that file:
+        it is the child's stdout, which the shared transport already captures
+        under a bound. This module still never opens the file.
+
+        `home` is the attempt home this spawn minted, and it is the only reason
+        this seam takes an argument. No task reaches it: on the stdin channel
+        the argv builder is never handed one, which is what makes "no byte of an
+        instruction reaches a command line" a fact about the signature.
+        """
+        return (
+            *EXEC_ARGV, *SKIP_GIT_REPO_CHECK_ARGV, *EPHEMERAL_ARGV,
+            *COLOR_ARGV, *REVIEW_SANDBOX_ARGV, *TELEMETRY_ARGV,
             *LAST_MESSAGE_ARGV, str(self._last_message_path(home)),
             STDIN_PROMPT)
 

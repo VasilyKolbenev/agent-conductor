@@ -12,21 +12,30 @@ The provider is real too. `server.build` resolves an operator's provider config
 through the factory, so the availability this route consults is the one this
 build resolved from a pinned executable on disk, not a descriptor a test made up.
 
-**Two templates are published here, and which one each test uses is a product
-fact rather than a testing convenience.** The frozen `dalio-v1` binds `review`,
-and since Codex CLI became a real transport no catalogued provider serves it --
-the roster is five real transports and every one carries `dispatch` alone,
-because an honest `review` needs an artifact's CONTENT and this build has no
-resolver that turns a reference into one. So `dalio-v1` can be materialized
-against nothing, and that is asserted as its own claim at the end of this file:
-the route answers `capability_unsupported`, which is the Day 3 blocker showing up
-exactly where it should.
+**The default cycle is what goes over the wire here, and that is a product fact
+rather than a testing convenience.** `dalio-v2` binds `review` AND `dispatch`,
+Codex CLI now carries both, and this file materializes the shipped revision
+against the provider the factory resolved from a pinned executable -- not
+against a `DeepPlanAdapter`, not against a double that serves every capability
+by construction. If the default cycle cannot be published and materialized on
+the real road a browser takes, this file is where that is discovered.
 
-The route mechanics still have to be proved, so the tests that need a plan
-publish their own gate-then-dispatch template through the same route a browser
-would. It is the smallest document this product will build -- an effect-capable
-step must stand BEHIND a gate, never beside one -- and every provider in the
-roster can serve it.
+This is a REPLACEMENT for what stood here. While no catalogued provider served
+`review`, the claim at the end of this file was that the frozen template could
+be materialized against nothing and the route answered `capability_unsupported`.
+That was true and is now false: the reason it named -- no resolver from an
+artifact reference to its content -- was spent when `artifact_handoff` landed,
+and the claim went with it rather than being left standing.
+
+Revision 1 still publishes and still materializes; the route's question is
+whether the bound adapters serve the plan's capabilities, and they do. What
+makes revision 1 a replay witness rather than the default is a RUNTIME fact --
+its review steps name no result artifact, so the transport refuses one before
+any spawn -- and that is asserted where it happens, not here.
+
+One smaller template is still published by the tests that are about route
+mechanics rather than about the default cycle: a gate-then-dispatch pair, the
+smallest document this product will build.
 """
 from __future__ import annotations
 
@@ -49,6 +58,14 @@ from tests.test_store import good_lane, write_project
 
 RUN_ID = "run-loopback-001"
 NOW = "2026-08-21T09:00:00Z"
+#: The shipped revision a run materializes from. Named once here so the two
+#: tests that drive the default cycle over the socket cannot come to disagree
+#: about which revision "the default" is.
+DEFAULT_TEMPLATE = "dalio-v2"
+#: The historical revision. It publishes and materializes exactly as the default
+#: does -- the route asks whether the bound adapters serve the plan, and they
+#: do. What keeps it a witness is a runtime refusal, asserted where it happens.
+FROZEN_TEMPLATE = "dalio-v1"
 #: One instance, bound to the provider the config below pins. The adapter name
 #: is the CONFIGURATION's word: no test here decides anything by it.
 CONFIG = {
@@ -115,6 +132,18 @@ def a_servable_template(base, token):
     return template
 
 
+def a_default_template(base, token, name=DEFAULT_TEMPLATE):
+    """Publish the SHIPPED cycle through the route, and return it.
+
+    Read with `load_template`, so what travels the wire is the file this build
+    ships rather than a document assembled here to suit the roster.
+    """
+    template = load_template(name)
+    assert request(base, "POST", "/command/templates",
+                   token=token, body=template.as_dict())[0] == 201
+    return template
+
+
 def request(base, method, path, *, token=None, body=None, host=None):
     host = host or base.removeprefix("http://")
     headers = {"Host": host}
@@ -167,9 +196,13 @@ def materialize(base, token, template, graph_id):
 
 
 def test_a_browser_can_publish_a_revision_over_a_socket(tmp_path):
-    """201 the first time and 200 for the same bytes, on the wire."""
+    """201 the first time and 200 for the same bytes, on the wire.
+
+    The DEFAULT revision, because publishing is the first half of the road this
+    file exists to prove and the shipped cycle is what really travels it.
+    """
     with a_run_on_a_socket(tmp_path) as (_srv, base, token):
-        document = load_template("dalio-v1").as_dict()
+        document = load_template(DEFAULT_TEMPLATE).as_dict()
         assert request(base, "POST", "/command/templates",
                        token=token, body=document) == (201, document)
         assert request(base, "POST", "/command/templates",
@@ -179,15 +212,14 @@ def test_a_browser_can_publish_a_revision_over_a_socket(tmp_path):
 def test_a_browser_can_give_a_run_its_plan_and_read_it_back(tmp_path):
     """The write, the authoritative read, and the retry that writes nothing.
 
-    The provider is real: `server.build` resolved it from a pinned executable
-    through the factory, so the availability this route consulted is the one
-    this build established rather than a descriptor a test made up. The template
-    is the dispatch-only one this file publishes, because the frozen one binds a
-    control no catalogued provider serves -- see the module docstring, and the
-    claim that holds that refusal at the end of this file.
+    The DEFAULT cycle, and a real provider: `server.build` resolved it from a
+    pinned executable through the factory, so the availability this route
+    consulted is the one this build established rather than a descriptor a test
+    made up, and the plan that lands is the shipped `dalio-v2` rather than a
+    document written to fit whatever the roster happens to serve.
     """
     with a_run_on_a_socket(tmp_path) as (_srv, base, token):
-        template = a_servable_template(base, token)
+        template = a_default_template(base, token)
 
         status, plan = materialize(base, token, template, "graph-loopback-001")
         assert status == 201, plan
@@ -241,38 +273,72 @@ def test_the_template_route_belongs_to_no_run_and_answers_only_to_post(tmp_path)
         assert refused.value.code == 405
 
 
-def test_the_frozen_template_cannot_be_materialized_by_any_catalogued_provider(
+def test_the_default_cycle_is_materialized_by_a_real_catalogued_provider(
         tmp_path):
-    """The Day 3 blocker, over a real socket, said by the route that meets it.
+    """The Day 3 blocker, cleared, said by the route that used to meet it.
 
-    `dalio-v1` is FROZEN and binds `dispatch` AND `review`. Every provider this
-    build catalogues is now a real transport carrying `dispatch` alone, so a
-    Dalio plan can be materialized against none of them: the route answers 409
-    `capability_unsupported` before a single durable byte is written.
+    This is the replacement for the claim that stood here: `dalio-v1` binds
+    `review`, no catalogued provider served it, and the route answered 409
+    `capability_unsupported` before a durable byte was written. Both halves have
+    moved. `dalio-v2` is the default and it binds the same two controls; Codex
+    CLI carries both; and the plan lands.
 
-    Neither side of that is a defect to be smoothed. The template is a product
-    decision already made, and the missing control is a fact about durable
-    artifact handoff not existing yet. What would be a defect is either one
-    quietly changing to make the other fit -- so this is driven end to end, on
-    the factory road a real operator takes, and the day a real `review` lands
-    this is the test that says what to reopen.
+    Every step is the real one. The provider resolved through the factory from a
+    pinned executable on this disk, the template is the file this build ships,
+    the route is a loopback socket, and the definition is read back out of the
+    run's own journal -- so nothing here is a double that would serve any
+    capability asked of it.
     """
     with a_run_on_a_socket(tmp_path) as (srv, base, token):
-        template = load_template("dalio-v1")
-        assert request(base, "POST", "/command/templates",
-                       token=token, body=template.as_dict())[0] == 201
+        template = a_default_template(base, token)
+        assert template.revision == 2
+        assert {node.capability for node in template.steps()
+                if node.capability is not None} == {"review", "dispatch"}
 
-        with pytest.raises(urllib.error.HTTPError) as refused:
-            materialize(base, token, template, "graph-loopback-003")
+        status, plan = materialize(
+            base, token, template, "graph-loopback-003")
 
-        assert refused.value.code == 409
-        assert json.loads(refused.value.read())["error"]["code"] == \
-            "capability_unsupported"
-        # And nothing durable was written for the refusal.
+        assert status == 201, plan
+        # The plan is durable, and it is the one the route answered with.
         _status, recovered = request(base, "GET", f"/command/runs/{RUN_ID}")
-        assert [row for row in recovered["records"]
-                if row["record_type"] == "graph_definition"] == []
-        # The provider really did resolve through the factory, so this refusal
-        # is about the roster and not about an empty registry.
+        assert [row["record"] for row in recovered["records"]
+                if row["record_type"] == "graph_definition"] == [plan]
+        # Every step named a real instance, and the review steps carry the
+        # result reference revision 2 exists to add.
+        published = [node["arguments"]["result_artifact_ref"]
+                     for node in plan["nodes"]
+                     if node.get("capability") == "review"]
+        assert published == [
+            "artifact-goal", "artifact-problems", "artifact-causes",
+            "artifact-plan"]
+        # The provider really did resolve through the factory, so this is about
+        # the roster and not about a registry that admits everything.
         assert [row.provider_id for row in srv.command_providers
                 if row.available] == ["codex"]
+
+
+def test_the_frozen_revision_still_materializes_and_is_a_witness_elsewhere(
+        tmp_path):
+    """Revision 1 is not refused by this route, and never was for its own sake.
+
+    The route asks one question: do the adapters this run's frozen configuration
+    binds serve the capabilities the plan names, with the payload family this
+    API speaks. Revision 1 names the same two controls as revision 2, so the
+    answer is yes and the plan lands.
+
+    What makes revision 1 a replay witness instead of the default is a RUNTIME
+    fact and not a route one: its review steps name no `result_artifact_ref`, so
+    a review materialized from it has nowhere to publish and the transport
+    refuses it before any spawn. That refusal is asserted where it happens --
+    `test_command_attempt_ownership` and `test_command_codex_review` -- and
+    asserting it here would be this file claiming a boundary it does not own.
+    """
+    with a_run_on_a_socket(tmp_path) as (_srv, base, token):
+        frozen = a_default_template(base, token, FROZEN_TEMPLATE)
+        assert frozen.revision == 1
+        assert all("result_artifact_ref" not in node.arguments
+                   for node in frozen.steps() if node.capability == "review")
+
+        status, plan = materialize(base, token, frozen, "graph-loopback-004")
+
+        assert status == 201, plan

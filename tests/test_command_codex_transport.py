@@ -50,6 +50,7 @@ from conductor.command.adapters.codex_cli import (
     ANSWER_WRITTEN,
     CODEX_FORCED_ENV,
     CODEX_HOME_ENV,
+    CODEX_PROFILE,
     CODEX_PROTOCOL,
     CODEX_PROVIDER_ID,
     HOME_DIR,
@@ -60,8 +61,12 @@ from conductor.command.adapters.codex_cli import (
     CodexCliTransport,
     codex_pin,
 )
+from conductor.command.adapters.artifact_transport import ArtifactAwareTransport
 from conductor.command.adapters.grok_build import GrokBuildError
-from conductor.command.adapters.headless_cli import ExecutablePin
+from conductor.command.adapters.headless_cli import (
+    TASK_CHANNEL_STDIN,
+    ExecutablePin,
+)
 from conductor.command.adapters.process import (
     STDIN_DELIVERED,
     STDIN_INCOMPLETE,
@@ -581,29 +586,44 @@ def test_this_provider_owns_its_own_home_and_marker_names():
 # --- what this transport does NOT claim, and what that costs -----------------
 
 
-def test_the_real_transport_carries_dispatch_and_does_not_claim_review():
-    """`review` is ABSENT, and absence is the honest answer rather than a gap.
+def test_the_real_transport_carries_both_controls_and_owes_a_read_only_argv():
+    """`review` is DECLARED now, and what the declaration costs is spelled here.
 
-    `codex exec review` exists, and it reviews a GIT DIFF. The control this
-    product means carries artifact REFERENCES, and this build has no resolver
-    that turns one into the artifact's content -- so a declared `review` would
-    be claiming a different seam under the same word.
+    It was absent while this build had no resolver that turned an artifact
+    reference into content. That reason is spent -- `artifact_handoff` is the
+    resolver -- so the honest answer changed with the fact rather than with the
+    schedule. What did NOT change is which seam is claimed: `codex exec review`
+    reviews a GIT DIFF and this provider never sends it; see
+    `test_command_codex_review`, which spells the whole argv.
+
+    Declaring `review` is a promise the shared transport holds this class to at
+    construction: a review-capable provider must take its task on stdin and must
+    own a read-only argv of its own. Both are asserted, so a future edit that
+    dropped `_review_argv` back to the base would fail here and not only where a
+    review runs.
     """
     entry = PROVIDER_CATALOG[CODEX_PROVIDER_ID]
 
     assert entry.implementation == "real_experimental"
-    assert entry.capabilities == ("observe", "dispatch")
-    assert "review" not in entry.capabilities
-    assert entry.schema_pairs == (("dispatch", "deep-arguments-v1"),)
+    assert entry.capabilities == ("observe", "dispatch", "review")
+    assert entry.schema_pairs == (
+        ("dispatch", "deep-arguments-v1"), ("review", "deep-arguments-v1"))
+    assert CodexCliTransport.review_enabled is True
+    assert CODEX_PROFILE.task_channel == TASK_CHANNEL_STDIN
+    assert CodexCliTransport._review_argv is not \
+        ArtifactAwareTransport._review_argv
 
 
 def test_no_catalogued_provider_is_a_fixture_any_more(tmp_path):
-    """The roster is real, all five of it, and that has a cost stated elsewhere.
+    """The roster is real, all five of it, and two of the five can review.
 
-    Codex was the last `fixture_only` row. Nothing in the catalog now speaks a
-    fake protocol, so a test that wants one builds its own catalog -- and the
-    frozen `dalio-v1` template, which binds `review`, can be materialized
-    against no catalogued provider at all until a real `review` lands.
+    Codex was the last `fixture_only` row. Nothing in the catalog speaks a fake
+    protocol any more, so a test that wants one builds its own catalog.
+
+    The reviewers are named as a LIST rather than counted, because which
+    products carry the control is a roster fact a reader should be able to check
+    against the catalog by eye -- and because the day a third one lands, this is
+    the line that says so.
     """
     implementations = {
         entry.implementation for entry in PROVIDER_CATALOG.values()}
@@ -612,4 +632,4 @@ def test_no_catalogued_provider_is_a_fixture_any_more(tmp_path):
     reviewers = [
         provider_id for provider_id, entry in PROVIDER_CATALOG.items()
         if "review" in entry.capabilities]
-    assert reviewers == ["claude-code"]
+    assert reviewers == ["claude-code", "codex"]
