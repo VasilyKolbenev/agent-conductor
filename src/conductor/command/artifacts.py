@@ -44,11 +44,13 @@ class ArtifactDocument:
     media_type: str
     content: str
     source_action_id: str | None = None
+    input_artifact_ids: tuple[str, ...] | list[str] = ()
     schema_version: int = 2
 
     _FIELDS = frozenset({
         "schema_version", "artifact_id", "artifact_ref", "run_id",
         "created_at", "media_type", "content", "source_action_id",
+        "input_artifact_ids",
     })
 
     def __post_init__(self) -> None:
@@ -65,6 +67,11 @@ class ArtifactDocument:
         if self.source_action_id is not None:
             object.__setattr__(self, "source_action_id", _id(
                 "source_action_id", self.source_action_id))
+        object.__setattr__(self, "input_artifact_ids", _unique_ids(
+            "input_artifact_ids", self.input_artifact_ids))
+        if self.source_action_id is None and self.input_artifact_ids:
+            raise ContractError(
+                "input_artifact_ids require a runtime source_action_id")
         object.__setattr__(self, "schema_version", _schema(self.schema_version))
 
     def as_dict(self) -> dict[str, Any]:
@@ -79,6 +86,8 @@ class ArtifactDocument:
         }
         if self.source_action_id is not None:
             out["source_action_id"] = self.source_action_id
+        if self.input_artifact_ids:
+            out["input_artifact_ids"] = list(self.input_artifact_ids)
         return out
 
     def digest(self) -> str:
@@ -100,6 +109,7 @@ class ArtifactDocument:
             content=_take(data, "content"),
             source_action_id=_bound_id(
                 "source_action_id", data.pop("source_action_id", ABSENT)),
+            input_artifact_ids=data.pop("input_artifact_ids", ()),
             schema_version=data.pop("schema_version", 2),
         )
 
@@ -138,3 +148,17 @@ def validate_artifact_source(
     if not observed:
         raise ContractError(
             f"artifact source action {document.source_action_id!r} is not observed")
+    known_artifacts = {
+        prior.artifact_id for prior in prior_values
+        if isinstance(prior, ArtifactDocument)}
+    missing = sorted(set(document.input_artifact_ids) - known_artifacts)
+    if missing:
+        raise ContractError(
+            f"artifact names unknown input artifact(s) {missing!r}")
+    same_source = [
+        prior for prior in prior_values
+        if isinstance(prior, ArtifactDocument)
+        and prior.source_action_id == document.source_action_id]
+    if same_source:
+        raise ContractError(
+            f"source action {document.source_action_id!r} already produced an artifact")

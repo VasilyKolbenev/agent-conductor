@@ -65,7 +65,8 @@ ARGUMENTS = {
     "dispatch": DeepDispatchArgs(
         "work-001", "instruction-001", "implement", [], "small").as_dict(),
     "review": DeepReviewArgs(
-        "work-001", ["artifact-001"], "security").as_dict(),
+        "work-001", ["artifact-001"], "artifact-review-001",
+        "security").as_dict(),
     "evidence": DeepEvidenceArgs("action-001", ["result", "tests"]).as_dict(),
     "stop": DeepStopArgs("attempt-001", "user").as_dict(),
     "retry": DeepRetryArgs("action-001", "failed").as_dict(),

@@ -92,7 +92,7 @@ def a_request(*, action_id="act-1", capability="dispatch", timeout=30,
               work_item_id="work-001", arguments=None) -> ActionRequest:
     body = arguments if arguments is not None else {
         "work_item_id": work_item_id, "instruction_ref": "instr-001",
-        "profile": "implement", "artifact_refs": ["art-001"],
+        "profile": "implement", "artifact_refs": [],
         "output_limit_profile": "normal"}
     return ActionRequest(
         action_id=action_id, run_id="run-1", attempt_id="att-1",
@@ -285,7 +285,7 @@ def test_a_body_that_is_not_the_closed_dispatch_schema_never_reaches_a_spawn(tmp
             {"argv": ["node", "-e", "1"], "cwd": "work"},
             {"work_item_id": "work-001"},
             {"work_item_id": "work-001", "instruction_ref": "instr-001",
-             "profile": "implement", "artifact_refs": ["art-001"],
+             "profile": "implement", "artifact_refs": [],
              "output_limit_profile": "normal", "extra": "smuggled"}):
         with pytest.raises(DshHarnessError, match="closed deep dispatch schema"):
             adapter.prepare(a_request(arguments=hostile))

@@ -348,7 +348,8 @@ the service. Every listed key is required and no other key is accepted:
 {
   "dispatch": ["work_item_id", "instruction_ref", "profile", "artifact_refs",
     "output_limit_profile"],
-  "review": ["work_item_id", "target_artifact_refs", "review_profile"],
+  "review": ["work_item_id", "target_artifact_refs", "result_artifact_ref",
+    "review_profile"],
   "evidence": ["target_action_id", "kinds"],
   "stop": ["target_attempt_id", "reason"],
   "retry": ["prior_action_id", "reason"],
@@ -906,6 +907,7 @@ arriving anywhere inside it is refused as the unknown key it is.
       "role_id": "role-thinker", "capability": "review",
       "arguments": { "work_item_id": "work-001",
                      "target_artifact_refs": ["artifact-brief"],
+                     "result_artifact_ref": "artifact-goal",
                      "review_profile": "spec" },
       "resources": [] },
     { "node_id": "confirm-gate", "kind": "gate",
@@ -1048,11 +1050,19 @@ Maps to `RunStore.append(ArtifactDocument)`. This is the one durable content
 door the `review` capability was waiting for: a `target_artifact_refs` value is
 an identifier, not the thing to review, and no adapter may turn an identifier
 into content by guessing a path or reading a caller-controlled URI.
+`result_artifact_ref` names where that review publishes its own immutable
+answer. It is explicit in the graph rather than derived from a stage, node or
+provider name, so a user-edited cycle keeps its handoffs without a naming
+convention hidden in runtime code.
 
 The request is closed to exactly `artifact_id`, `artifact_ref`, `media_type` and
 `content`. The server injects `run_id` from the path and `created_at` from its
 clock. `source_action_id` is server-owned and absent on this operator-publish
 road; a later runtime-produced artifact carries the action that produced it.
+That produced document also carries `input_artifact_ids`: the exact immutable
+documents the action read, in requested order. Neither server-owned field is
+accepted from this route. Thus an output says which bytes led to it even after
+a newer document is appended under the same logical reference.
 The two admitted media types are `text/plain` and `text/markdown`. Content is
 non-empty UTF-8 text, carries no NUL, and is bounded to 49,152 encoded bytes.
 The command transport independently bounds the complete encoded JSON request to
@@ -1086,6 +1096,34 @@ An artifact is deliberately durable and visible through the authenticated
 loopback run read. This route is not a redaction service: text submitted here is
 an explicit request to retain and hand it to later roles. Raw harness stdout,
 stderr, environment values and arbitrary files never enter through it.
+
+The runtime-produced review road is narrower than the operator route and does
+not make raw process output a general record source. The bound adapter must
+declare `review`, resolve every requested immutable document before the task
+spawn, and use a task channel that keeps those bytes out of argv. The reviewed
+Claude road pins its vendor's read-only `plan` permission mode and independently
+requires the authorized work tree to remain unchanged. Only a completed,
+exit-zero, fully delivered, non-truncated stdout text answer is decoded as UTF-8
+and admitted as the output `ArtifactDocument`. Stderr is separately drained and
+bounded but is never artifact content; partial output, invalid text, empty text,
+NUL, a changed tree, a missing input, and every failed process produce no output
+artifact and no verification evidence.
+
+Every non-empty value admitted through the operator-pinned `env_allow` names is
+treated as sensitive on this value-producing road. If stdout repeats any such
+value, the output is refused before an artifact or evidence row exists. The
+runner retains only the boolean that a match occurred: the matched environment
+value is never copied into an outcome, refusal, journal record, API response or
+SSE frame.
+
+On that road the runtime appends the output artifact only after the durable
+`execution_observed` event, then appends one verified `EvidenceRef` whose digest
+equals the computed artifact digest. Only that causal pair may let the terminal
+`ActionResultReceipt` say `succeeded`. Dispatch follows the same law for an
+actual contained tree change: its evidence digest covers the action identity,
+the exact input artifact identities and the before/after hashes of every changed
+path. Exit zero with no change still proves nothing and remains
+`verification_failed`.
 
 ## 5. Human-decision endpoints — FROZEN CONTRACT
 

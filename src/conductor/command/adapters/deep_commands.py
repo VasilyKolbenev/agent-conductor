@@ -100,8 +100,11 @@ class DeepDispatchArgs(_StrictArguments):
 class DeepReviewArgs(_StrictArguments):
     work_item_id: str
     target_artifact_refs: tuple[str, ...] | list[str]
+    result_artifact_ref: str
     review_profile: str
-    _FIELDS = frozenset({"work_item_id", "target_artifact_refs", "review_profile"})
+    _FIELDS = frozenset({
+        "work_item_id", "target_artifact_refs", "result_artifact_ref",
+        "review_profile"})
     _ARRAY_FIELDS = frozenset({"target_artifact_refs"})
 
     def __post_init__(self) -> None:
@@ -109,6 +112,8 @@ class DeepReviewArgs(_StrictArguments):
             "work_item_id", self.work_item_id))
         object.__setattr__(self, "target_artifact_refs", _ids(
             "target_artifact_refs", self.target_artifact_refs))
+        object.__setattr__(self, "result_artifact_ref", _closed_id(
+            "result_artifact_ref", self.result_artifact_ref))
         object.__setattr__(self, "review_profile", _enum(
             "review_profile", self.review_profile,
             REVIEW_PROFILES))

@@ -199,6 +199,9 @@ class CommandSpec:
     env: Mapping[str, str] = field(default_factory=dict)
     output_limit: int = DEFAULT_OUTPUT_LIMIT
     timeout_seconds: float | None = None
+    #: Keep stderr out of ``output`` when one caller must admit stdout bytes as
+    #: a typed value. False preserves the historical merged stream exactly.
+    separate_stderr: bool = False
     #: What the child reads on stdin, or ``None`` for no input at all.
     #:
     #: ``repr=False`` is not cosmetic. This field is the ONE place in a spec that
@@ -227,6 +230,8 @@ class CommandSpec:
                 isinstance(timeout, bool) or not isinstance(timeout, (int, float))
                 or timeout <= 0):
             raise CommandSpecError("timeout_seconds must be a positive number or None")
+        if type(self.separate_stderr) is not bool:
+            raise CommandSpecError("separate_stderr must be a boolean")
         object.__setattr__(self, "stdin_bytes", _stdin(self.stdin_bytes))
 
 
@@ -251,7 +256,7 @@ class ProcessOutcome:
 
     status: str
     exit_code: int | None
-    output: bytes
+    output: bytes = field(repr=False)
     output_truncated: bool
     output_limit: int
     pid: int
@@ -264,6 +269,12 @@ class ProcessOutcome:
     #: The default is ``not_provided``, which is what an outcome built by a
     #: caller that offered no input truthfully says.
     stdin_state: str = STDIN_NOT_PROVIDED
+    #: Present only when CommandSpec asked for separated stderr. Raw diagnostic
+    #: bytes are bounded and observed but never part of the stdout value.
+    error_output: bytes = field(default=b"", repr=False)
+    error_truncated: bool = False
+    #: A boolean only: no environment value is copied into the outcome.
+    output_contains_env_value: bool = False
 
     def __post_init__(self) -> None:
         if self.stdin_state not in STDIN_STATES:
@@ -277,17 +288,31 @@ class _Owned:
 
     def __init__(self, proc: "subprocess.Popen[bytes]", token: str, limit: int,
                  group: _procgroup.ProcessGroup,
-                 stdin_bytes: bytes | None = None) -> None:
+                 stdin_bytes: bytes | None = None,
+                 separate_stderr: bool = False,
+                 sensitive_values: tuple[bytes, ...] = ()) -> None:
         self.proc = proc
         self.token = token
         self.pid = proc.pid
         self.limit = limit
         self.group = group
+        self._sensitive_values = sensitive_values
         self._buf = bytearray()
         self._truncated = False
+        self._error_buf = bytearray()
+        self._error_truncated = False
         self._lock = threading.Lock()
-        self._pump = threading.Thread(target=self._drain, daemon=True)
+        self._pump = threading.Thread(
+            target=self._drain,
+            args=(self.proc.stdout, self._buf, "_truncated"), daemon=True)
         self._pump.start()
+        self._error_pump: threading.Thread | None = None
+        if separate_stderr:
+            self._error_pump = threading.Thread(
+                target=self._drain,
+                args=(self.proc.stderr, self._error_buf, "_error_truncated"),
+                daemon=True)
+            self._error_pump.start()
         # The feed starts AFTER the pump, and that order is the whole of the
         # deadlock argument: a child that answers while it is still being fed
         # would otherwise fill its stdout pipe and block, while this side blocks
@@ -347,8 +372,9 @@ class _Owned:
         if written_whole:
             self.stdin_state = STDIN_DELIVERED
 
-    def _drain(self) -> None:
-        stream = self.proc.stdout
+    def _drain(
+            self, stream, buffer: bytearray,
+            truncated_name: str) -> None:
         if stream is None:
             return
         fd = stream.fileno()
@@ -360,13 +386,13 @@ class _Owned:
             if not chunk:
                 break
             with self._lock:
-                room = self.limit - len(self._buf)
+                room = self.limit - len(buffer)
                 if room > 0:
-                    self._buf += chunk[:room]
+                    buffer += chunk[:room]
                     if len(chunk) > room:
-                        self._truncated = True
+                        setattr(self, truncated_name, True)
                 else:
-                    self._truncated = True
+                    setattr(self, truncated_name, True)
 
     def finish(self, status: str) -> ProcessOutcome:
         # The feeder is joined FIRST, and only ever after the caller has waited
@@ -378,13 +404,20 @@ class _Owned:
         if self._feeder is not None:
             self._feeder.join()
         self._pump.join()
+        if self._error_pump is not None:
+            self._error_pump.join()
         with self._lock:
             output, truncated = bytes(self._buf), self._truncated
+            error_output = bytes(self._error_buf)
+            error_truncated = self._error_truncated
+        contains_env = any(value in output for value in self._sensitive_values)
         code = self.proc.returncode
         return ProcessOutcome(
             status=status, exit_code=code if status == "completed" else None,
             output=output, output_truncated=truncated, output_limit=self.limit,
-            pid=self.pid, token=self.token, stdin_state=self.stdin_state)
+            pid=self.pid, token=self.token, stdin_state=self.stdin_state,
+            error_output=error_output, error_truncated=error_truncated,
+            output_contains_env_value=contains_env)
 
 
 class ProcessRunner:
@@ -466,6 +499,9 @@ class ProcessRunner:
     def _spawn(self, spec: CommandSpec) -> _Owned:
         cwd = self._resolve_cwd(spec.cwd)  # refuses before any child exists
         env = self._child_env(spec)
+        sensitive_values = tuple(
+            env[name].encode("utf-8") for name in spec.env_allow
+            if name in env and env[name])
         # No payload means DEVNULL, byte for byte the spawn every provider got
         # before this field existed. A payload means a pipe, and nothing else
         # about the spawn changes.
@@ -474,7 +510,9 @@ class ProcessRunner:
             list(spec.argv), cwd=str(cwd), env=env, shell=False, bufsize=0,
             stdin=subprocess.DEVNULL if payload is None else subprocess.PIPE,
             stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT, **_procgroup.popen_kwargs())
+            stderr=(subprocess.PIPE if spec.separate_stderr
+                    else subprocess.STDOUT),
+            **_procgroup.popen_kwargs())
         try:
             group = _procgroup.make_group(proc)
         except BaseException:
@@ -482,7 +520,9 @@ class ProcessRunner:
             raise
         try:
             token = secrets.token_hex(16)
-            owned = _Owned(proc, token, spec.output_limit, group, payload)
+            owned = _Owned(
+                proc, token, spec.output_limit, group, payload,
+                spec.separate_stderr, sensitive_values)
         except BaseException:
             self._cleanup_failed_spawn(proc, group)
             raise
@@ -513,6 +553,8 @@ class ProcessRunner:
                 group.close()
             if proc.stdout is not None:
                 proc.stdout.close()
+            if proc.stderr is not None:
+                proc.stderr.close()
             # And the input, which `Popen(stdin=PIPE)` opened on this side. A
             # spawn that fails between `Popen` and the ownership publish has no
             # `_Owned` to close it later and no token anyone could stop, so the

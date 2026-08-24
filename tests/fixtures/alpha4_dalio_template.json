@@ -39,6 +39,7 @@
     "nodes": [
       {
         "arguments": {
+          "result_artifact_ref": "artifact-goal",
           "review_profile": "spec",
           "target_artifact_refs": [
             "artifact-brief"
@@ -55,6 +56,7 @@
       },
       {
         "arguments": {
+          "result_artifact_ref": "artifact-problems",
           "review_profile": "quality",
           "target_artifact_refs": [
             "artifact-goal"
@@ -71,6 +73,7 @@
       },
       {
         "arguments": {
+          "result_artifact_ref": "artifact-causes",
           "review_profile": "quality",
           "target_artifact_refs": [
             "artifact-problems"
@@ -87,6 +90,7 @@
       },
       {
         "arguments": {
+          "result_artifact_ref": "artifact-plan",
           "review_profile": "spec",
           "target_artifact_refs": [
             "artifact-causes"

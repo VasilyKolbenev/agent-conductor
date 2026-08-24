@@ -119,7 +119,7 @@ def a_request(*, action_id="act-1", capability="dispatch", timeout=60,
               work_item_id="work-001", arguments=None) -> ActionRequest:
     body = arguments if arguments is not None else {
         "work_item_id": work_item_id, "instruction_ref": "instr-001",
-        "profile": "implement", "artifact_refs": ["art-001"],
+        "profile": "implement", "artifact_refs": [],
         "output_limit_profile": "normal"}
     return ActionRequest(
         action_id=action_id, run_id="run-1", attempt_id="att-1",
@@ -513,40 +513,23 @@ def test_a_delivered_instruction_is_reported_delivered_by_the_runner(tmp_path):
     assert STDIN_INCOMPLETE not in states
 
 
-# --- what this transport does NOT claim, and what that costs -----------------
+# --- durable review is now a real, separately bounded control ----------------
 
 
-def test_the_real_transport_carries_dispatch_and_does_not_claim_review():
-    """`review` is ABSENT, and absence is the honest answer rather than a gap.
-
-    The reviewed deep review body carries artifact REFERENCES. This build has no
-    resolver that turns one into the artifact's content, so a declared `review`
-    would hand Claude Code a list of identifiers and call whatever came back a
-    review. An empty control is better than a false one: the door cannot admit
-    what a manifest does not declare.
-    """
+def test_the_real_transport_carries_dispatch_and_durable_review():
+    """The catalog says exactly the two controls the production class serves."""
     entry = PROVIDER_CATALOG[CLAUDE_PROVIDER_ID]
 
     assert entry.implementation == "real_experimental"
-    assert entry.capabilities == ("observe", "dispatch")
-    assert "review" not in entry.capabilities
-    assert entry.schema_pairs == (("dispatch", "deep-arguments-v1"),)
+    assert entry.capabilities == ("observe", "dispatch", "review")
+    assert entry.schema_pairs == (
+        ("dispatch", "deep-arguments-v1"),
+        ("review", "deep-arguments-v1"),
+    )
 
 
-def test_the_frozen_dalio_template_binds_a_control_this_transport_cannot_serve():
-    """The cost of that absence, named here rather than met as a 409 elsewhere.
-
-    `dalio-v1` is FROZEN and binds both `dispatch` and `review`. The real Claude
-    Code transport carries only `dispatch`, so a Dalio graph whose roles are
-    assigned to a Claude-backed instance cannot be materialized: the route
-    answers `capability_unsupported`.
-
-    Neither side of that is a defect to be smoothed. The template is a product
-    decision already made, and the missing control is a fact about durable
-    artifact handoff not existing yet. What would be a defect is either one
-    quietly changing to make the other fit -- so both are asserted, and the day
-    a resolver lands this test is the one that says what to reopen.
-    """
+def test_the_frozen_dalio_template_controls_are_served_by_claude():
+    """The Day 3 artifact handoff closes the old materialization blocker."""
     template = load_template("dalio-v1")
     # Only TASK nodes carry a capability; a gate and a loop decide flow and
     # drive no provider. Reading every node would have raised on the first gate
@@ -557,9 +540,7 @@ def test_the_frozen_dalio_template_binds_a_control_this_transport_cannot_serve()
     assert bound == {"dispatch", "review"}, bound
     assert len(bound) < len(nodes), "every node drives a provider, which is new"
     missing = bound - set(PROVIDER_CATALOG[CLAUDE_PROVIDER_ID].capabilities)
-    assert missing == {"review"}, (
-        "the frozen template's controls and this transport's now agree; "
-        "the Day 3 artifact-handoff blocker may be closed")
+    assert missing == set(), missing
 
 
 #: A form the vendor really could print, at a version this build never reviewed.

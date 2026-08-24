@@ -217,7 +217,8 @@ def test_evidence_is_structured_and_carries_no_raw_label_or_output_field():
 
 @pytest.mark.parametrize("value", [
     DeepDispatchArgs("work-001", "instruction-001", "implement", (), "small"),
-    DeepReviewArgs("work-001", ("artifact-001",), "security"),
+    DeepReviewArgs(
+        "work-001", ("artifact-001",), "artifact-review-001", "security"),
     DeepEvidenceArgs("action-001", ("result", "tests")),
     DeepStopArgs("attempt-001", "switch"),
     DeepRetryArgs("action-001", "verification_failed"),
@@ -302,7 +303,9 @@ def test_public_deep_schema_authority_names_each_exact_argument_base_type():
         "dispatch": {
             "work_item_id", "instruction_ref", "profile", "artifact_refs",
             "output_limit_profile"},
-        "review": {"work_item_id", "target_artifact_refs", "review_profile"},
+        "review": {
+            "work_item_id", "target_artifact_refs", "result_artifact_ref",
+            "review_profile"},
         "evidence": {"target_action_id", "kinds"},
         "stop": {"target_attempt_id", "reason"},
         "retry": {"prior_action_id", "reason"},
@@ -316,7 +319,8 @@ def test_public_deep_schema_authority_names_each_exact_argument_base_type():
     (DeepAdapterConfig("C:/fake/tool.exe", "fake-claude-jsonl-v1"), "env_allow"),
     (DeepDispatchArgs("work", "instruction", "review", (), "normal"),
      "artifact_refs"),
-    (DeepReviewArgs("work", ("artifact",), "quality"), "target_artifact_refs"),
+    (DeepReviewArgs("work", ("artifact",), "artifact-result", "quality"),
+     "target_artifact_refs"),
     (DeepEvidenceArgs("action", ("result",)), "kinds"),
 ])
 def test_from_dict_requires_json_arrays_while_constructors_accept_immutable_tuples(
@@ -331,7 +335,8 @@ def test_from_dict_requires_json_arrays_while_constructors_accept_immutable_tupl
     (DeepAdapterConfig("C:/fake/tool.exe", "fake-claude-jsonl-v1"), "env_allow"),
     (DeepDispatchArgs("work", "instruction", "review", (), "normal"),
      "artifact_refs"),
-    (DeepReviewArgs("work", ("artifact",), "quality"), "target_artifact_refs"),
+    (DeepReviewArgs("work", ("artifact",), "artifact-result", "quality"),
+     "target_artifact_refs"),
     (DeepEvidenceArgs("action", ("result",)), "kinds"),
 ])
 def test_from_dict_rejects_hostile_json_array_subclasses_before_iteration(
@@ -361,7 +366,8 @@ def test_argument_from_dict_reconstructs_only_the_exact_public_base_type(base):
 
     sample = {
         DeepDispatchArgs: DeepDispatchArgs("work", "instruction", "review", [], "small"),
-        DeepReviewArgs: DeepReviewArgs("work", ["artifact"], "quality"),
+        DeepReviewArgs: DeepReviewArgs(
+            "work", ["artifact"], "artifact-result", "quality"),
         DeepEvidenceArgs: DeepEvidenceArgs("action", ["result"]),
         DeepStopArgs: DeepStopArgs("attempt", "user"),
         DeepRetryArgs: DeepRetryArgs("action", "failed"),
@@ -560,7 +566,7 @@ def test_public_collections_require_exact_list_or_tuple_before_iteration():
             "work", "instruction", "review", rows, "normal"), ["artifact"],
          "artifact_refs must be a list of ids"),
         (lambda rows: DeepReviewArgs(
-            "work", rows, "quality"), ["artifact"],
+            "work", rows, "artifact-result", "quality"), ["artifact"],
          "target_artifact_refs must be a list of ids"),
         (lambda rows: DeepEvidenceArgs("action", rows), ["result"],
          "kinds must be a list"),
@@ -615,7 +621,7 @@ def test_consumers_revalidate_mutated_collections_before_iteration_or_equality()
             "artifact_refs", rows), ["artifact"],
          "deep arguments must remain canonical"),
         (lambda rows: argument_call(
-            DeepReviewArgs("work", ["artifact"], "quality"),
+            DeepReviewArgs("work", ["artifact"], "artifact-result", "quality"),
             "target_artifact_refs", rows), ["artifact"],
          "deep arguments must remain canonical"),
         (lambda rows: argument_call(
@@ -644,7 +650,7 @@ def test_consumers_reconstruct_mutated_exact_base_collections():
     values = (
         (DeepDispatchArgs("work", "instruction", "review", [], "normal"),
          "artifact_refs", ["artifact"]),
-        (DeepReviewArgs("work", ["artifact"], "quality"),
+        (DeepReviewArgs("work", ["artifact"], "artifact-result", "quality"),
          "target_artifact_refs", ["artifact"]),
         (DeepEvidenceArgs("action", ["result"]), "kinds", ["result"]),
     )

@@ -231,9 +231,9 @@ from .headless_cli import (
     ExecutablePin,
     HarnessProfile,
     HeadlessCliError,
-    HeadlessCliTransport,
     _version_token,
 )
+from .artifact_transport import ArtifactAwareTransport
 from .process import ProcessRunner
 
 #: The graph node this provider binds to; ``conductor.harnesses`` registers it.
@@ -416,7 +416,7 @@ def codex_pin(executable: str, env_allow: tuple[str, ...] = ()) -> ExecutablePin
         executable=executable, error=CodexCliError, env_allow=env_allow)
 
 
-class CodexCliTransport(HeadlessCliTransport):
+class CodexCliTransport(ArtifactAwareTransport):
     """Run one Codex CLI task per authorized action, and prove nothing more."""
 
     profile = CODEX_PROFILE

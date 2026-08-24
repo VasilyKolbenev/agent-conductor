@@ -51,9 +51,10 @@ than an observation that a process ended -- and where a vendor publishes no exit
 code contract at all, the profile says so and every receipt says so with it.
 Exit zero buys ``execution_observed`` and never success; verification is a
 separate seam that reads only files that actually changed under the action's own
-authorized subtree, and it never answers ``verified`` while this build writes no
-durable evidence record. The day an evidence writer lands, what changes a
-terminal state is the EVIDENCE; it is never the exit code.
+authorized subtree. This base still mints no evidence and cannot answer
+``verified``. ``ArtifactAwareTransport`` is the explicit outer seam that may
+append a durable EvidenceRef; what changes a terminal state is that EVIDENCE,
+never the exit code.
 """
 from __future__ import annotations
 
@@ -306,6 +307,12 @@ class HeadlessCliTransport:
             f"{args.instruction_ref} reads:\n{instruction}",
             "task text", f"{self.profile.tool_noun} launcher", self.error)
 
+    def _dispatch_task(
+            self, request: ActionRequest, args: DeepDispatchArgs,
+            instruction: str) -> str:
+        """Materialize one dispatch task; subclasses may add durable inputs."""
+        return self._task_text(args, instruction)
+
     # -- execution: preflight, mark, spawn once ---------------------------------
 
     def execute(self, prepared: PreparedAction) -> ActionResultReceipt:
@@ -343,7 +350,6 @@ class HeadlessCliTransport:
             self, request: ActionRequest,
             args: DeepDispatchArgs) -> ActionResultReceipt:
         """Claim-check, materialize, sweep, preflight, then spawn exactly once.
-
         The sweep guards state this dispatch INHERITED; the check after the
         preflight guards state this dispatch just made. Both are the same rule:
         a task never runs over a home that outlived its spawn, whether somebody
@@ -379,10 +385,11 @@ class HeadlessCliTransport:
             # be built on top of it. Nothing is claimed and nothing is spawned.
             return self._receipt(
                 request, "failed", None, PREFLIGHT_RESIDUE_DETAIL)
+        task_text = self._dispatch_task(request, args, instruction)
         work = self._workspace.work_dir(args.work_item_id)
         before = self._workspace.digest_work_tree()
         self._workspace.claim(request.action_id)
-        argv, payload = self._task_command(self._task_text(args, instruction))
+        argv, payload = self._task_command(task_text)
         outcome = self._attempt(
             argv, f"{WORK_DIR}/{args.work_item_id}",
             timeout=request.timeout_seconds, stdin_bytes=payload)
@@ -457,7 +464,8 @@ class HeadlessCliTransport:
     def _attempt(
             self, argv: ArgvSource, cwd: str, *,
             timeout: int | float,
-            stdin_bytes: bytes | None = None) -> ProcessOutcome:
+            stdin_bytes: bytes | None = None,
+            separate_stderr: bool = False) -> ProcessOutcome:
         """One spawn inside one FRESH home, and the home goes when the spawn does.
 
         This is the whole of the retention promise: a real harness may write
@@ -475,7 +483,8 @@ class HeadlessCliTransport:
         home = self._mint_home()
         try:
             outcome = self._spawn(
-                argv, home, cwd, timeout=timeout, stdin_bytes=stdin_bytes)
+                argv, home, cwd, timeout=timeout, stdin_bytes=stdin_bytes,
+                separate_stderr=separate_stderr)
             self._read_attempt_home(home)
             return outcome
         finally:
@@ -509,7 +518,8 @@ class HeadlessCliTransport:
     def _spawn(
             self, argv: ArgvSource, home: Path, cwd: str, *,
             timeout: int | float,
-            stdin_bytes: bytes | None = None) -> ProcessOutcome:
+            stdin_bytes: bytes | None = None,
+            separate_stderr: bool = False) -> ProcessOutcome:
         """The ONE place a child is started; argv, env and bounds are code-owned.
 
         ``cwd`` is a route RELATIVE to the project root, so the runner's own
@@ -535,7 +545,7 @@ class HeadlessCliTransport:
                 env={**dict(profile.forced_env),
                      profile.home_env: str(home)},
                 output_limit=profile.output_limit, timeout_seconds=timeout,
-                stdin_bytes=stdin_bytes)
+                stdin_bytes=stdin_bytes, separate_stderr=separate_stderr)
             return self._runner.run(spec)
         except ProcessRunnerError:  # noqa: BLE001 -- carry no child detail onward
             failed = True

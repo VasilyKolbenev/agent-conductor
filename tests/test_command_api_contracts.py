@@ -50,7 +50,8 @@ EXPECTED_DEEP_ARGUMENTS = {
         "work_item_id", "instruction_ref", "profile", "artifact_refs",
         "output_limit_profile")),
     "review": (DeepReviewArgs, (
-        "work_item_id", "target_artifact_refs", "review_profile")),
+        "work_item_id", "target_artifact_refs", "result_artifact_ref",
+        "review_profile")),
     "evidence": (DeepEvidenceArgs, ("target_action_id", "kinds")),
     "stop": (DeepStopArgs, ("target_attempt_id", "reason")),
     "retry": (DeepRetryArgs, ("prior_action_id", "reason")),

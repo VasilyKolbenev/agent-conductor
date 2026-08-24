@@ -135,7 +135,9 @@ EXPECTED_ARGUMENT_SCHEMAS = {
     "dispatch": (
         "work_item_id", "instruction_ref", "profile", "artifact_refs",
         "output_limit_profile"),
-    "review": ("work_item_id", "target_artifact_refs", "review_profile"),
+    "review": (
+        "work_item_id", "target_artifact_refs", "result_artifact_ref",
+        "review_profile"),
     "evidence": ("target_action_id", "kinds"),
     "stop": ("target_attempt_id", "reason"),
     "retry": ("prior_action_id", "reason"),

@@ -7,6 +7,7 @@ import pytest
 
 from conductor.command import run_store as run_store_module
 from conductor.command.attempts import AttemptEvent, action_request_digest
+from conductor.command.artifacts import ArtifactDocument
 from conductor.command.graph_definition import GraphDefinition
 from conductor.command.contracts import (
     ActionProposal,
@@ -122,6 +123,7 @@ def test_the_record_registry_is_exactly_this_closed_set_of_contract_identity_pai
         "action_proposal": (ActionProposal, "proposal_id"),
         "adapter_observation": (ObservationRecord, "observation_id"),
         "attempt_event": (AttemptEvent, "event_id"),
+        "artifact": (ArtifactDocument, "artifact_id"),
         "graph_definition": (GraphDefinition, "graph_id"),
     }
 

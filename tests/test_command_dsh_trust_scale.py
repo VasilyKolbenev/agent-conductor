@@ -13,13 +13,10 @@ the runtime reserves for "this adapter exposes no verifier at all" -- and the
 runtime let observed process success stand as the terminal word.
 
 The scale this module holds is the honest one. Exit zero is an observation of a
-process, recorded durably as the ``execution_observed`` attempt event, and it
-buys nothing beyond that. This build writes no durable evidence record, so no dsh
-attempt may reach ``succeeded`` at all: with no causal ``EvidenceRef`` in the run,
-the honest terminal state is ``verification_failed``, on BOTH rows. The day a
-durable evidence-writer lands, the row that changes is the one with real
-evidence behind it -- and it changes because of the evidence, never because of
-the exit code.
+process and buys nothing beyond that. A task that changed nothing still ends in
+``verification_failed``. A contained change now earns one durable EvidenceRef,
+recorded after the observation, so only that row reaches ``succeeded``. It wins
+because of evidence, never because of the exit code.
 
 The second half of the same honesty is the prompt. A dispatch whose task text
 names only an instruction IDENTIFIER would send the real dsh a vague sentence
@@ -62,7 +59,7 @@ CONFIG = {
 }
 ARGUMENTS = {
     "work_item_id": "work-001", "instruction_ref": "instr-001",
-    "profile": "implement", "artifact_refs": ["art-001"],
+    "profile": "implement", "artifact_refs": [],
     "output_limit_profile": "normal"}
 
 
@@ -80,7 +77,7 @@ def _driven(tmp_path: Path, **knobs: str):
     """Authorize and execute ONE dsh dispatch through the real ControlRuntime."""
     tmp_path.mkdir(parents=True, exist_ok=True)
     adapter, root, log = a_harness(tmp_path, **knobs)
-    store = RunStore(tmp_path / "store")
+    store = RunStore(root)
     store.create_run(
         RunEnvelope(
             run_id=RUN_ID, cycle_id="dsh-orbit", created_at=NOW,
@@ -133,33 +130,32 @@ def test_a_dsh_attempt_that_changed_nothing_never_reaches_succeeded(tmp_path):
     assert len(_fakedsh.task_spawns(log)) == 1
 
 
-def test_a_dsh_attempt_with_a_real_change_also_never_reaches_succeeded(tmp_path):
+def test_a_dsh_attempt_with_a_real_change_earns_durable_evidence(tmp_path):
     attempt, store, root, _log = _driven(
         tmp_path, FAKEDSH_WRITE_FILE="added.txt:written by the task")
 
     assert (root / WORK_DIR / "work-001" / "added.txt").exists()
-    assert _row(attempt) != ("succeeded", ())
-    assert attempt.state is AttemptState.VERIFICATION_FAILED
-    assert attempt.verification_evidence == ()
-    assert "evidence" not in _kinds(store)
+    assert attempt.state is AttemptState.SUCCEEDED
+    assert len(attempt.verification_evidence) == 1
+    assert len(attempt.receipt.evidence_refs) == 1
+    assert _kinds(store).count("evidence") == 1
 
 
-def test_the_recorded_trust_table_holds_no_row_that_exit_zero_alone_can_win(tmp_path):
-    """The table Codex printed, re-read as the relation it must now satisfy."""
+def test_the_recorded_trust_table_distinguishes_observation_from_evidence(tmp_path):
+    """Only the row carrying an actual contained change may become success."""
     no_change, _s, _r, _l = _driven(tmp_path / "a")
     with_change, _s2, _r2, _l2 = _driven(
         tmp_path / "b", FAKEDSH_WRITE_FILE="added.txt:real work")
 
     table = {"NO_CHANGE": _row(no_change), "WITH_CHANGE": _row(with_change)}
 
-    assert table == {
-        "NO_CHANGE": ("verification_failed", ()),
-        "WITH_CHANGE": ("verification_failed", ()),
-    }, f"OBSERVED_TABLE={table}"
+    assert table["NO_CHANGE"] == ("verification_failed", ())
+    assert table["WITH_CHANGE"][0] == "succeeded"
+    assert len(table["WITH_CHANGE"][1]) == 1, table
 
 
-def test_a_dsh_verification_never_claims_evidence_this_build_cannot_write(tmp_path):
-    """A minted identifier is not evidence; the seam must not mint one at all."""
+def test_a_direct_adapter_without_the_runs_store_cannot_mint_evidence(tmp_path):
+    """Evidence is a durable run fact, not an identifier from an isolated seam."""
     adapter, _root, _log = a_harness(
         tmp_path, FAKEDSH_WRITE_FILE="added.txt:written by the task")
     request = a_request()

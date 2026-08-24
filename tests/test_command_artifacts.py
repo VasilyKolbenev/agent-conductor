@@ -56,6 +56,8 @@ def test_artifact_contract_is_closed_canonical_and_digest_is_computed():
         ArtifactDocument.from_dict({**payload, "path": "secret.txt"})
     with pytest.raises(ContractError, match="null is not a spelling"):
         ArtifactDocument.from_dict({**payload, "source_action_id": None})
+    with pytest.raises(ContractError, match="require a runtime source"):
+        artifact(input_artifact_ids=("artifact-input",))
 
 
 @pytest.mark.parametrize("media_type", ["application/json", "TEXT/PLAIN", None])
@@ -118,7 +120,9 @@ def test_artifact_route_is_immutable_idempotent_and_visible_in_run_read(tmp_path
 
 
 @pytest.mark.parametrize(
-    "extra", ["run_id", "created_at", "source_action_id", "digest", "path", "uri"])
+    "extra", [
+        "run_id", "created_at", "source_action_id", "input_artifact_ids",
+        "digest", "path", "uri"])
 def test_artifact_route_refuses_every_non_caller_field_without_an_effect(
         tmp_path, extra):
     subject, store, events = api(tmp_path)

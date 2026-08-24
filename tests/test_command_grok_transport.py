@@ -103,7 +103,7 @@ def a_request(*, action_id="act-1", capability="dispatch", timeout=60,
               work_item_id="work-001", arguments=None) -> ActionRequest:
     body = arguments if arguments is not None else {
         "work_item_id": work_item_id, "instruction_ref": "instr-001",
-        "profile": "implement", "artifact_refs": ["art-001"],
+        "profile": "implement", "artifact_refs": [],
         "output_limit_profile": "normal"}
     return ActionRequest(
         action_id=action_id, run_id="run-1", attempt_id="att-1",

@@ -36,13 +36,12 @@ ALLOWED_SDK_RELATIVE_IMPORTS = frozenset({(2, "contracts"), (2, "dispatch")})
 # tests/test_command_process_*.py, and tests/test_command_package_doors.py proves
 # the door is confined to exactly these two modules.
 SDK_EXECUTION_DOOR = frozenset({"process.py", "_procgroup.py"})
-# The dsh harness needs three filesystem facts -- a fresh profile home, a crash-
-# proof marker, and content digests of the authorized work tree -- and they are
-# confined to one small module so a reviewer can read the whole door. It is a
-# DURABILITY door, not an execution door: test_command_package_doors.py applies
-# the subprocess/network/exec ban to it with no exemption at all, and its
-# behaviour is proven in tests/test_command_dsh_harness.py.
-SDK_WORKSPACE_DOOR = frozenset({"harness_workspace.py"})
+# Two durability doors are explicit. ``harness_workspace`` owns attempt homes,
+# markers and work-tree digests. ``artifact_transport`` joins those snapshots to
+# the run's immutable artifact/evidence store. Neither owns execution: the
+# subprocess/network/exec ban still applies to both without exemption.
+SDK_WORKSPACE_DOOR = frozenset({
+    "artifact_transport.py", "harness_workspace.py"})
 # Names that would let a value module reach an executable, the filesystem, or the
 # import system on its own.
 BANNED_SDK_CALLS = frozenset({
@@ -268,14 +267,11 @@ def test_registry_keeps_the_manifest_that_was_reviewed_at_registration():
 def test_every_value_module_of_the_sdk_package_imports_only_the_allowed_value_modules():
     """A door is a door in any value file of the package, and behind any import name.
 
-    Two doors are exempted by name and no others: the owned-process runner
-    (SDK_EXECUTION_DOOR), which must import subprocess, and the dsh harness's
-    durability door (SDK_WORKSPACE_DOOR), which must touch the filesystem to mint
-    a home, claim a marker and digest the work tree. Every other module is held to
-    the value-only import allowlist and the exec/spawn call ban. Each exempted
-    name must be a file that really exists, so a rename cannot quietly turn an
-    exemption into a hole that covers nothing -- or into one that covers a module
-    the reviewer never saw.
+    Two door SETS are exempted by name and no others: the owned-process runner
+    (SDK_EXECUTION_DOOR), and the two reviewed durability seams in
+    SDK_WORKSPACE_DOOR. Every other module is held to the value-only import
+    allowlist and the exec/spawn call ban. Each exempted name must be a file that
+    really exists, so a rename cannot quietly turn an exemption into a hole.
     """
     package = Path(adapter_base.__file__).resolve().parent
     sources = sorted(package.rglob("*.py"))

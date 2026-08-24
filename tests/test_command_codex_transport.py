@@ -130,7 +130,7 @@ def a_request(*, action_id="act-1", capability="dispatch", timeout=60,
               work_item_id="work-001", arguments=None) -> ActionRequest:
     body = arguments if arguments is not None else {
         "work_item_id": work_item_id, "instruction_ref": "instr-001",
-        "profile": "implement", "artifact_refs": ["art-001"],
+        "profile": "implement", "artifact_refs": [],
         "output_limit_profile": "normal"}
     return ActionRequest(
         action_id=action_id, run_id="run-1", attempt_id="att-1",
@@ -609,5 +609,7 @@ def test_no_catalogued_provider_is_a_fixture_any_more(tmp_path):
         entry.implementation for entry in PROVIDER_CATALOG.values()}
 
     assert implementations == {"real_experimental"}, implementations
-    assert all(
-        "review" not in entry.capabilities for entry in PROVIDER_CATALOG.values())
+    reviewers = [
+        provider_id for provider_id, entry in PROVIDER_CATALOG.items()
+        if "review" in entry.capabilities]
+    assert reviewers == ["claude-code"]
