@@ -41,6 +41,15 @@ from tests.test_store import good_lane, write_project
 DURABLE_RUN = "run-001"
 EMPTY_RUN = "run-empty"
 OTHER_RUN = "run-other"
+#: A SECOND run that also follows a durable plan, added for one relation that
+#: could not otherwise be proved: the rule holding a composed step across a
+#: reconnect must not carry it across a RUN CHANGE. With only one durable run,
+#: every run change lands on a run that follows no graph, where the drawing is
+#: replaced for an entirely different reason and the bound is never exercised --
+#: a mutation removing it stayed green. `OTHER_RUN` was not reused: it already
+#: means "a run this window is not on", and giving it a plan would change what
+#: the tests naming it are saying.
+SECOND_RUN = "run-002"
 TOKEN = "browser-only-process-token"
 FROZEN = load("alpha3_dalio_definition")
 DIGEST = FROZEN["definition_digest"]
@@ -67,11 +76,15 @@ def _seed(root: Path) -> None:
     show the word.
     """
     store = RunStore(root)
-    for run_id in (DURABLE_RUN, EMPTY_RUN, OTHER_RUN):
+    for run_id in (DURABLE_RUN, EMPTY_RUN, OTHER_RUN, SECOND_RUN):
         store.create_run(
             a_run(run_id=run_id, mode="confirm",
                   config_digest=snapshot_digest(CONFIG)), CONFIG)
     store.append(dalio_definition(run_id=DURABLE_RUN))
+    # The second durable plan. Its digest differs from DIGEST by construction --
+    # the digest covers `run_id` -- and nothing asserts on it: what it is for is
+    # being a run change that lands on a plan rather than on emptiness.
+    store.append(dalio_definition(run_id=SECOND_RUN))
     store.append(a_proposal(node_id="goal", index=1))
     doing = a_proposal(node_id="do", index=2)
     store.append(doing)
