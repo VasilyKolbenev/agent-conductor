@@ -18,6 +18,22 @@ that was WRONG once and must never be wrong in two places: the check used to
 match the tail against ``.exe``, and a launcher whose interpreter path contains a
 space carries it QUOTED, so it rejected a working stub and made a whole test
 module skip behind a message blaming the platform.
+
+**And it was wrong a second time, in the DIRECTORY rather than the bytes.** The
+search looked only in ``Path(sys.executable).parent``. In a virtualenv that is
+``Scripts`` and the search works, which is why every local run was green. On a
+plain Windows install -- the layout ``actions/setup-python`` produces, and the
+one CI uses -- ``sys.executable`` sits in the install ROOT and the console
+scripts sit in ``Scripts`` one level down, so nothing was ever found. Measured on
+this machine at Python 3.11.8: zero candidates in the searched directory, all
+three in the one ``sysconfig`` names. The cost was **277 tests across four
+provider transport suites skipping while CI stayed green**, which is the worst
+shape a gate can take -- it reports on work it did not do.
+
+So the directories are asked of ``sysconfig``, which is the interpreter's own
+answer to where it installs console scripts, and the old directory is kept
+beside it rather than replaced: dropping it would be an over-correction on a
+layout nobody has measured. Both are searched, in that order, deduplicated.
 """
 from __future__ import annotations
 
@@ -25,6 +41,7 @@ import io
 import os
 import stat
 import sys
+import sysconfig
 import zipfile
 from pathlib import Path
 
@@ -60,11 +77,46 @@ def _shebang_interpreter(stub: bytes) -> bytes | None:
     return interpreter if interpreter.lower().endswith(b".exe") else None
 
 
-def launcher_stub() -> bytes | None:
-    """The console-script launcher this environment ships, or None."""
-    scripts = Path(sys.executable).resolve().parent
+def script_directories() -> tuple[Path, ...]:
+    """Every directory this interpreter could keep its console scripts in.
+
+    ``sysconfig`` FIRST, because it is the interpreter's own answer and it is
+    right on both layouts: in a virtualenv it names that venv's ``Scripts``, and
+    on a plain install it names ``<prefix>/Scripts`` rather than the install root
+    where ``sys.executable`` lives. Asking only the second is the defect this
+    function exists to close.
+
+    The old directory is kept rather than replaced. It is the same path as the
+    first one inside a venv, so it costs nothing there; and on some layout nobody
+    here has measured it may be the only right answer. Removing it would be an
+    over-correction, and a test holds that it stays.
+
+    Deduplicated by RESOLVED path, so a venv does not read the same directory
+    twice, and ordered, so the interpreter's own answer is preferred.
+    """
+    found: dict[Path, None] = {}
+    for raw in (sysconfig.get_path("scripts"), Path(sys.executable).parent):
+        try:
+            resolved = Path(raw).resolve()
+        except OSError:  # pragma: no cover -- a path the OS will not resolve
+            continue
+        found.setdefault(resolved, None)
+    return tuple(found)
+
+
+def _stub_in(directory: Path) -> bytes | None:
+    """The launcher stub in ONE directory, or None if it holds none.
+
+    A candidate must be BOTH halves of a console script: a native launcher body
+    carrying an interpreter in a trailing ``#!``, and an appended zip. Neither
+    check may be dropped for the other's sake. Without the zip offset an
+    ordinary ``.exe`` would be copied whole and the appended archive would never
+    be found; without the shebang read, any file with a zip inside it -- a wheel,
+    an egg, a plain archive somebody renamed -- would be accepted as a launcher
+    and produce an executable that runs nothing.
+    """
     for name in _CANDIDATES:
-        candidate = scripts / name
+        candidate = directory / name
         if not candidate.is_file():
             continue
         data = candidate.read_bytes()
@@ -73,6 +125,15 @@ def launcher_stub() -> bytes | None:
             continue
         stub = data[:start]
         if _shebang_interpreter(stub) is not None:
+            return stub
+    return None
+
+
+def launcher_stub() -> bytes | None:
+    """The console-script launcher this environment ships, or None."""
+    for directory in script_directories():
+        stub = _stub_in(directory)
+        if stub is not None:
             return stub
     return None
 
