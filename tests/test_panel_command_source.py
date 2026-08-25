@@ -86,7 +86,16 @@ def test_command_projection_is_closed_and_drops_sensitive_durable_fields():
 def test_proposal_composer_has_only_reviewed_closed_fields():
     source = SOURCE
     assert 'name: "run_id"' in source
-    assert 'pattern: "[A-Za-z0-9][A-Za-z0-9._-]{0,127}"' in source
+    # The ESCAPED hyphen, and this expectation was updated deliberately rather
+    # than widened: it used to pin the unescaped form, which is what kept the
+    # defect in place. A browser compiles `pattern` with the RegExp `v` flag
+    # first, where a bare trailing `-` in a class is a syntax error, and a
+    # pattern that fails to compile is IGNORED rather than enforced. This is a
+    # change detector on the spelling; the FACT -- that the shipped attribute
+    # really refuses a bad id in a real engine -- is held in
+    # `browser_tests/test_panel_confirm.py`, because no Python regex library
+    # has `v` semantics to answer it with.
+    assert r'pattern: "[A-Za-z0-9][A-Za-z0-9._\\-]{0,127}"' in source
     for forbidden in ("argv", "cwd", "environment", "executable", "generic json"):
         assert forbidden not in source.lower()
     exact_fields = {

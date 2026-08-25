@@ -22,13 +22,22 @@ import {
     timeout: "900"};
   let epoch = 0, csrfToken = "", sessionEpoch = 0;
   let refreshDirty = false, refreshExplicit = false, refreshInFlight = false;
+  // The escaped hyphen is load-bearing, and this field was the one place the
+  // rule had not reached: a browser compiles `pattern` with the RegExp `v` flag
+  // first, where a bare trailing `-` in a class is a syntax error — and a
+  // pattern that fails to compile is IGNORED, not enforced. Measured against
+  // chromium 151.0.7922.34: with the unescaped form this input reported
+  // `patternMismatch=false` and `checkValidity()=true` for `!!! not a run id !!!`,
+  // so the field looked validated and accepted anything. `command-view.js` and
+  // `graph-view.js` already carried the escape; only this one did not, which is
+  // why the two surfaces disagreed.
   const input = element("input", {
     "aria-describedby": "commandCockpitStatus",
     autocomplete: "off",
     id: "commandRunId",
     maxlength: "128",
     name: "run_id",
-    pattern: "[A-Za-z0-9][A-Za-z0-9._-]{0,127}",
+    pattern: "[A-Za-z0-9][A-Za-z0-9._\\-]{0,127}",
     required: "",
     spellcheck: "false",
     type: "text",
