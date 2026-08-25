@@ -1,15 +1,26 @@
 name: CI
 
+# Three platforms, and the reason is not breadth for its own sake. This product
+# spawns and owns child processes, and the primitives it owns them WITH are the
+# operating system's own: a Job Object on Windows, a process/session group on
+# POSIX. A green Ubuntu job says nothing about either of the other two, and
+# "POSIX" is not one platform — macOS is not proved by Linux.
+#
+# Nothing here may be read as a release gate until these jobs have really run on
+# GitHub's runners. A workflow file is a statement of intent; the results are the
+# evidence.
+
 on:
   push:
   pull_request:
 
 jobs:
   test:
+    name: tests ${{ matrix.os }} py${{ matrix.python }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
         python: ["3.11", "3.12"]
     runs-on: ${{ matrix.os }}
     defaults:
@@ -24,6 +35,18 @@ jobs:
 
       - name: Install
         run: python -m pip install -e ".[dev]"
+
+      # The interpreter and the console-script directory are printed because a
+      # Windows runner keeps them APART: `setup-python` installs no virtualenv,
+      # so `sys.executable` sits in the install root and the scripts sit in
+      # `Scripts` one level down. `tests/_fakeexe.py` searched only the first
+      # and found no launcher, so 277 tests across four provider transport
+      # suites skipped here while this job stayed green. Printed so a reader of
+      # a future log can see which layout produced the numbers below it.
+      - name: Interpreter layout
+        run: |
+          python -c "import sys, sysconfig; print('executable:', sys.executable)"
+          python -c "import sysconfig; print('scripts:', sysconfig.get_path('scripts'))"
 
       - name: Tests
         run: python -m pytest -q
@@ -49,7 +72,15 @@ jobs:
           conduct validate --dir "$demo_dir"
 
   browser:
-    runs-on: ubuntu-latest
+    name: browser gate ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
 
@@ -57,11 +88,33 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install browser-test dependencies
+      - name: Install
         run: python -m pip install -e ".[browser]"
 
       - name: Install Chromium
         run: python -m playwright install --with-deps chromium
 
-      - name: Rendered panel tests
-        run: python -m pytest -q browser_tests
+      # RUNNER_TEMP, never the worktree. The gate hands each module its own
+      # basetemp inside this directory and names Chromium's own log file there
+      # too; a browser writing beside the checkout would leave engine logs and
+      # profiles inside the tree under test, where the next step would read them
+      # as part of the product.
+      - name: Browser gate
+        run: python browser_tests/gate.py --artifacts "$RUNNER_TEMP/browser-gate"
+
+      # The same modules in the opposite order. The recurring Chromium flake was
+      # order-sensitive, and a gate that only ever ran one order could not say
+      # whether a module passed on its own merits or on its neighbour's state.
+      - name: Browser gate, reversed
+        run: >
+          python browser_tests/gate.py --reverse
+          --artifacts "$RUNNER_TEMP/browser-gate-reverse"
+
+      - name: Keep the gate's records
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-gate-${{ matrix.os }}
+          path: ${{ runner.temp }}/browser-gate*
+          if-no-files-found: warn
+          retention-days: 14
