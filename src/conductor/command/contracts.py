@@ -569,23 +569,101 @@ def frozen_config_bindings(config: Mapping[str, Any]) -> dict[str, str]:
         ContractError: The snapshot, its ``instances`` list, or one entry is
             malformed, or an instance id is declared more than once.
     """
+    bindings: dict[str, str] = {}
+    for instance_id, entry in _configured_instances(config):
+        if instance_id in bindings:
+            raise ContractError(
+                f"frozen config declares instance {instance_id!r} more than once")
+        bindings[instance_id] = _id("configured adapter id", entry.get("adapter"))
+    return bindings
+
+
+#: A model is a DEPLOYMENT fact and it lives exactly where the adapter binding
+#: lives: on the instance, in the run's frozen configuration. Not in a template
+#: -- a reusable cycle that named a model would be a durable demand made of
+#: every machine that ever ran it, and `templates/README.md` says why. Not in
+#: the generic runtime either: nothing in this package knows a model id, and the
+#: transports that put one on a command line learn it from here.
+#:
+#: **Optional is not nullable.** An omitted key is a configuration that said
+#: nothing; an explicit ``"model": null`` is a configuration that chose a value,
+#: and the value it chose is not a model id. So absence is read through a
+#: SENTINEL and a null reaches the id validator and is refused -- exactly as
+#: ``result_artifact_ref`` already does it, and for the same reason: collapsing
+#: the two means a file that names a model wrongly runs on whatever the provider
+#: decides and reports nothing about having done so.
+#:
+#: The wire goes the other way and that is not a contradiction. The controls
+#: route projects an instance that pinned none as an explicit ``"model": null``,
+#: because a consumer must tell "pinned none" from "this server cannot say". One
+#: is a configuration a person wrote; the other is a projection this build
+#: computed.
+#:
+#: **Where the runtime reads this matters as much as what it says.** The
+#: execution road reads it ONCE, from the recovered run it already replayed --
+#: the same snapshot that said which adapter drives the instance. A second read
+#: later would be a read of a source that may have moved between the judgement
+#: and the spawn, which is the defect class this package has already paid for on
+#: a durable document. The runtime holds no model id, no default and no opinion
+#: of its own; it carries what this function answered and nothing else.
+def frozen_config_models(config: Mapping[str, Any]) -> dict[str, str]:
+    """Read the model each configured instance PINS, where one is pinned at all.
+
+    The key is OPTIONAL and absence is not a default. An instance that pins no
+    model is absent from the answer, and what runs then is whatever the
+    provider's own configuration decides -- which is a different thing from this
+    build having chosen it, and is reported as such. The rulings behind that,
+    and behind refusing an explicit null, stand above this function.
+
+    Args:
+        config: The frozen configuration snapshot, as replayed from a run.
+
+    Returns:
+        A fresh ``{instance_id: model}`` mapping of every instance that pins one.
+
+    Raises:
+        ContractError: The snapshot, its ``instances`` list, or one entry is
+            malformed, or an instance id is declared more than once.
+    """
+    models: dict[str, str] = {}
+    seen: set[str] = set()
+    for instance_id, entry in _configured_instances(config):
+        if instance_id in seen:
+            raise ContractError(
+                f"frozen config declares instance {instance_id!r} more than once")
+        seen.add(instance_id)
+        pinned = entry.get("model", ABSENT)
+        if pinned is not ABSENT:
+            models[instance_id] = _id("configured model id", pinned)
+    return models
+
+
+def _configured_instances(
+        config: Mapping[str, Any]) -> list[tuple[str, Mapping[str, Any]]]:
+    """One walk of the frozen configuration's instance list, for both readers.
+
+    Two readers ask this snapshot two questions -- which adapter drives an
+    instance, and which model it pins -- and a second copy of the walk is a
+    second answer to "which instances are there". They would drift on exactly
+    the malformed snapshots that matter: one reader refusing an entry the other
+    silently skipped is a configuration that binds an adapter and routes no
+    model, or the reverse.
+
+    It returns the id ALREADY validated, and the entry unread beyond that, so
+    each caller still owns the fields that are its own business.
+    """
     if not isinstance(config, Mapping):
         raise ContractError("frozen config must be a JSON object")
     declared = config.get("instances", ())
     if not isinstance(declared, (list, tuple)):
         raise ContractError(
             "frozen config 'instances' must be a list of instance objects")
-    bindings: dict[str, str] = {}
+    rows: list[tuple[str, Mapping[str, Any]]] = []
     for entry in declared:
         if not isinstance(entry, Mapping):
             raise ContractError("each configured instance must be a JSON object")
-        instance_id = _id("configured instance id", entry.get("id"))
-        adapter_id = _id("configured adapter id", entry.get("adapter"))
-        if instance_id in bindings:
-            raise ContractError(
-                f"frozen config declares instance {instance_id!r} more than once")
-        bindings[instance_id] = adapter_id
-    return bindings
+        rows.append((_id("configured instance id", entry.get("id")), entry))
+    return rows
 
 
 def gate_decision(receipts: Iterable[DecisionReceipt], run_id: str, gate_id: str) -> str:

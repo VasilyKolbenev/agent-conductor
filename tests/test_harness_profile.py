@@ -173,17 +173,23 @@ def test_a_provider_on_the_stdin_channel_cannot_be_handed_the_task_in_its_argv()
     not independence.
 
     What IS independence is an absent parameter. So the assertion is about the
-    SIGNATURE: on the stdin channel the argv builder is handed the attempt HOME
-    and nothing else, and the cheating shape is not something a provider can
-    express.
+    SIGNATURE: on the stdin channel the argv builder is handed exactly the two
+    values it is allowed to see, and the cheating shape is not something a
+    provider can express.
 
-    The one parameter is SPELLED rather than counted, and that is the whole
-    difference between this claim and a weaker one. `home` is a project subtree
-    the transport minted from an id mint moments earlier; a builder declaring a
-    second parameter, or one parameter under another name, is a seam somebody
+    Both parameters are SPELLED, in order, rather than counted, and that is the
+    whole difference between this claim and a weaker one. `home` is a project
+    subtree the transport minted from an id mint moments earlier. `model` is the
+    id the run's frozen configuration pinned for this action's instance, and it
+    was added deliberately when deployments gained the right to route one -- a
+    parameter added, and therefore a claim rewritten, rather than a guard left
+    saying something that had stopped being true.
+
+    A third parameter, or either of these under another name, is a seam somebody
     widened -- and widening it is the only way an instruction could arrive here.
-    Where that value comes FROM is the other half, and it is held by
-    `test_the_stdin_builder_is_handed_over_uncalled_and_called_with_the_home`.
+    Where each value comes FROM is the other half, and it is held by the two
+    tests below: one for the frame that hands the builder over uncalled, one for
+    the frame that calls it.
     """
     on_stdin = [
         entry for entry in PROVIDER_CATALOG.values()
@@ -192,57 +198,94 @@ def test_a_provider_on_the_stdin_channel_cannot_be_handed_the_task_in_its_argv()
     assert on_stdin, "no provider takes its task on stdin, so this proves nothing"
 
     for entry in on_stdin:
-        builder = inspect.signature(entry.adapter_class._stdin_argv)
-        assert [name for name in builder.parameters if name != "self"] == ["home"], (
-            f"{entry.provider_id}'s argv builder can see more than its attempt home")
+        for seam in ("_stdin_argv", "_review_argv"):
+            builder = getattr(entry.adapter_class, seam, None)
+            if builder is None:
+                continue
+            names = inspect.signature(builder).parameters
+            assert [name for name in names if name != "self"] == [
+                "home", "model"], (
+                f"{entry.provider_id}'s {seam} can see more than its attempt "
+                "home and the routed model")
 
 
-def test_the_stdin_builder_is_handed_over_uncalled_and_called_with_the_home():
+class _Piped(HeadlessCliTransport):
+    """A stdin-channel provider whose builder records what it was handed."""
+
+    # A model flag of its own, because what the second test is about is that
+    # the ROUTED value reaches the builder -- a profile declaring none would
+    # render every model as nothing and the case would pass for the wrong
+    # reason.
+    profile = a_profile(
+        task_channel=TASK_CHANNEL_STDIN, model_flag="--probe-model-flag")
+    error = HeadlessCliError
+    seen: list[object] = []
+
+    def _stdin_argv(self, home, model):
+        type(self).seen.append((home, model))
+        return ("--flag", str(home), *self._model_argv(model))
+
+    def _task_stdin(self, task_text):
+        return task_text.encode("utf-8")
+
+
+def _a_piped_transport() -> _Piped:
+    _Piped.seen = []
+    return _Piped(
+        ProcessRunner("."), root=".", clock=lambda: "", ids=lambda p: p,
+        adapter_id="probe")
+
+
+def test_the_stdin_builder_is_handed_over_uncalled_by_the_frame_holding_the_task():
     """The parameter is proved harmless by WHERE its one value comes from.
 
     A signature says the task is not a parameter. It does not say what the
-    parameter that IS there holds, and a seam handed the task under the name
+    parameters that ARE there hold, and a seam handed the task under the name
     `home` would satisfy the signature test above while defeating everything it
-    stands for. Two frames settle that, and both are read here:
-
-    - `_task_command` is the only frame holding the task AND the builder, and it
-      hands the builder over UNCALLED. Nothing in it can curry an argument, and
-      the object it returns is the plain function every subclass declared;
-    - `_tokens` is the only frame that calls one, and the only value it has to
-      call with is the home `_attempt` minted. There is no `task_text` in that
-      frame to pass even by accident.
+    stands for. Two frames settle that, and this is the first: `_task_command`
+    is the only frame holding the task AND the builder, and it hands the builder
+    over UNCALLED. Nothing in it can curry an argument, and the object it
+    returns is the plain function the subclass declared.
 
     Driven against the real base rather than described, so a future edit that
     started calling the builder in the frame that holds the task reds here.
     """
-    class _Piped(HeadlessCliTransport):
-        profile = a_profile(task_channel=TASK_CHANNEL_STDIN)
-        error = HeadlessCliError
-        seen: list[object] = []
+    piped = _a_piped_transport()
 
-        def _stdin_argv(self, home):
-            type(self).seen.append(home)
-            return ("--flag", str(home))
-
-        def _task_stdin(self, task_text):
-            return task_text.encode("utf-8")
-
-    piped = _Piped(
-        ProcessRunner("."), root=".", clock=lambda: "", ids=lambda p: p,
-        adapter_id="probe")
     source, payload = piped._task_command("PROBE-INSTRUCTION-TEXT")
 
     assert _Piped.seen == [], "the frame holding the task called the builder"
     assert getattr(source, "__func__", None) is _Piped._stdin_argv
     assert payload == b"PROBE-INSTRUCTION-TEXT"
 
+
+def test_the_stdin_builder_is_called_only_with_the_minted_home_and_the_model():
+    """The second frame: `_tokens`, the only place a builder is ever called.
+
+    The two values it has to call with are the home `_attempt` minted and the
+    model the run's frozen configuration pinned. There is no `task_text` in that
+    frame to pass even by accident, and what the builder SEES is asserted rather
+    than assumed -- a transport that quietly dropped the routed value would
+    otherwise leave every argv test above still green.
+
+    The ready-argv road is the control, and it carries a fact of its own: a
+    provider on the argv channel hands tokens straight through and is handed no
+    model. The version preflight travels that road, and a preflight carrying a
+    model would be a build asked to load one in order to print its version.
+    """
+    piped = _a_piped_transport()
+    source, _payload = piped._task_command("PROBE-INSTRUCTION-TEXT")
     minted = Path("probe-home-1")
-    assert HeadlessCliTransport._tokens(source, minted) == (
+
+    assert HeadlessCliTransport._tokens(source, minted, None) == (
         "--flag", str(minted))
-    assert _Piped.seen == [minted]
-    # And the ready-argv road is untouched by any of this: a provider on the
-    # argv channel still hands tokens straight through.
-    assert HeadlessCliTransport._tokens(("--ready",), minted) == ("--ready",)
+    assert _Piped.seen == [(minted, None)]
+    assert HeadlessCliTransport._tokens(source, minted, "probe-model") == (
+        "--flag", str(minted), "--probe-model-flag", "probe-model")
+    assert _Piped.seen[-1] == (minted, "probe-model")
+    assert HeadlessCliTransport._tokens(("--ready",), minted, None) == ("--ready",)
+    assert HeadlessCliTransport._tokens(("--ready",), minted, "probe-model") == (
+        "--ready",)
 
 
 class _Recording(ProcessRunner):
@@ -339,3 +382,112 @@ def test_a_profile_may_declare_the_stdin_channel_only_where_a_class_honours_it()
     with pytest.raises(HeadlessCliError, match="owes its own _task_stdin"):
         _Half(ProcessRunner("."), root=".", clock=lambda: "", ids=lambda _p: "",
               adapter_id="probe")
+
+
+# --- the two model-routing declarations, proved at construction --------------
+
+
+@pytest.mark.parametrize("flag", ["--model", "-m", "/model", "model:", "M"])
+def test_a_profile_that_declares_model_routing_properly_is_accepted(flag):
+    """The happy path, and the FORMS this record refuses to have an opinion on.
+
+    A first version of the guard below demanded a leading `-`, reasoning that a
+    token without one is a positional to every launcher. That is Unix syntax
+    written into a provider-neutral record: `/model` is an ordinary Windows
+    option, and a vendor may take its model as a separate leading token
+    entirely. Keeping it would have forced an edit to this shared module before
+    a valid future provider could declare itself.
+
+    So every form here is accepted, and which one a vendor really uses is that
+    provider's own declaration -- proved where it can be proved, against a real
+    spawn's argv, by the provider's own suite.
+    """
+    profile = a_profile(model_flag=flag, unstable_models=("sonnet", "opus"))
+
+    assert profile.model_flag == flag
+    assert profile.unstable_models == ("sonnet", "opus")
+
+
+def test_declaring_no_model_routing_at_all_stays_the_default():
+    """The three providers that route nothing must not notice this field."""
+    assert a_profile().model_flag == ""
+    assert a_profile().unstable_models == ()
+    for provider_id in ("deepseek-harness", "kimi-code", "grok-build"):
+        profile = PROVIDER_CATALOG[provider_id].adapter_class.profile
+        assert (profile.model_flag, profile.unstable_models) == ("", ())
+
+
+@pytest.mark.parametrize("flag", ["--model\x00oops", "--model x", " ", "\t"])
+def test_a_model_flag_that_is_not_one_nul_free_token_is_refused(flag):
+    """The NUL is the one that used to reach a real argv.
+
+    It is a code-owned mistake, so it must be caught here -- at the FIRST SPAWN
+    it would have surfaced under a sentence blaming the operator's pinned build,
+    which is the reporting failure this whole constructor exists to prevent.
+    """
+    with pytest.raises(HeadlessCliError, match="one NUL-free token"):
+        a_profile(model_flag=flag)
+
+
+@pytest.mark.parametrize("declared", ["opus", b"opus", ["opus"], {"opus"}])
+def test_unstable_models_given_anything_but_a_tuple_is_refused(declared):
+    """A bare STRING is the dangerous one, and it is why this is a TYPE check.
+
+    `"opus"` is iterable, so `model in profile.unstable_models` stops being a
+    membership test and becomes a substring search. That refuses a model called
+    `"op"` and ADMITS `claude-opus-5` -- wrong in both directions at once, and
+    silent in both, because every alias case in the suite would still pass.
+
+    A list is refused too. A profile is a frozen value read on every spawn, and
+    a mutable one is a declaration something else can edit afterwards.
+    """
+    with pytest.raises(HeadlessCliError, match="must be a tuple"):
+        a_profile(model_flag="--model", unstable_models=declared)
+
+
+@pytest.mark.parametrize("name", ["", "-opus", "has space", "nul\x00", 7, None])
+def test_a_declared_unstable_name_that_is_not_a_model_id_is_refused(name):
+    """The element grammar is the CONFIGURATION's, and that is load-bearing.
+
+    A pinned model goes through `_id`. An alias declared under any other
+    grammar could never equal one, so the membership test that refuses it could
+    never match -- a policy that reads as if it were doing something.
+    """
+    with pytest.raises(HeadlessCliError, match="declared unstable model"):
+        a_profile(model_flag="--model", unstable_models=(name,))
+
+
+def test_a_name_declared_unstable_twice_is_refused():
+    """Two declarations of one name are one declaration and a typo."""
+    with pytest.raises(HeadlessCliError, match="declared unstable twice"):
+        a_profile(model_flag="--model", unstable_models=("opus", "opus"))
+
+
+def test_declaring_moving_names_without_a_flag_to_send_one_is_refused():
+    """A policy that cannot fire is a policy that reads as if it could.
+
+    A provider this build has no model flag for is refused a routed model
+    outright, so nothing it declared unstable could ever reach the comparison.
+    The declaration would sit in the profile looking like a live rule.
+    """
+    with pytest.raises(HeadlessCliError, match="no model flag"):
+        a_profile(unstable_models=("opus",))
+
+
+def test_every_catalogued_profile_survives_these_rules_too():
+    """The rules are worth nothing if no shipped provider is held to them.
+
+    Rebuilt from its own fields, so a provider that declared a list or a bare
+    string would fail at collection rather than at somebody's spawn.
+    """
+    routed = 0
+    for provider_id, entry in PROVIDER_CATALOG.items():
+        profile = getattr(entry.adapter_class, "profile", None)
+        if profile is None:
+            continue
+        assert type(profile.unstable_models) is tuple, provider_id
+        assert HarnessProfile(**{
+            field: getattr(profile, field)
+            for field in profile.__dataclass_fields__}) == profile
+        routed += bool(profile.model_flag)
+    assert routed >= 2, f"only {routed} providers route a model at all"

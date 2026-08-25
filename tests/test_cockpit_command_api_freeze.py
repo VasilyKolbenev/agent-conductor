@@ -36,6 +36,7 @@ from conductor.command.api_contracts import (
     parse_proposal,
 )
 from conductor.command.attempts import AttemptEvent, action_request_digest
+from conductor.command.artifacts import ArtifactDocument
 from conductor.command.containment import RouteViolation, run_route_violations
 from conductor.command.graph_definition import GraphDefinition
 from conductor.command.contracts import (
@@ -47,6 +48,7 @@ from conductor.command.contracts import (
     EvidenceRef,
     ObservationRecord,
     RunEnvelope,
+    _id,
     canonical_json,
     gate_decision,
 )
@@ -69,6 +71,7 @@ REQUIRED_EXAMPLES = frozenset({
     "graph_bound_propose_request", "graph_definition_record",
     "graph_bound_action_proposal", "graph_bound_action_request",
     "graph_request", "graph_runtime_projection",
+    "artifact_request",
 })
 
 #: Canonical examples that are a full contract serialization, mapped to the
@@ -94,6 +97,7 @@ EXPECTED_RECORDS = {
     "adapter_observation": (ObservationRecord, "observation_id"),
     "attempt_event": (AttemptEvent, "event_id"),
     "graph_definition": (GraphDefinition, "graph_id"),
+    "artifact": (ArtifactDocument, "artifact_id"),
 }
 
 #: The frozen refusal vocabulary, written out here so the spec cannot drift it
@@ -125,13 +129,16 @@ EXPECTED_ROUTES = (
     ("POST", "/command/runs/<run_id>/graph", True, True),
     ("POST", "/command/templates", True, True),
     ("POST", "/command/runs/<run_id>/graph/from-template", True, True),
+    ("POST", "/command/runs/<run_id>/artifacts", True, True),
 )
 
 EXPECTED_ARGUMENT_SCHEMAS = {
     "dispatch": (
         "work_item_id", "instruction_ref", "profile", "artifact_refs",
         "output_limit_profile"),
-    "review": ("work_item_id", "target_artifact_refs", "review_profile"),
+    "review": (
+        "work_item_id", "target_artifact_refs", "result_artifact_ref",
+        "review_profile"),
     "evidence": ("target_action_id", "kinds"),
     "stop": ("target_attempt_id", "reason"),
     "retry": ("prior_action_id", "reason"),
@@ -353,7 +360,7 @@ def test_attempt_event_mutations_are_born_red_at_the_frozen_read_boundary():
     assert set(EXPECTED_RECORDS) == {
         "action_request", "action_result", "evidence", "decision",
         "action_proposal", "adapter_observation", "attempt_event",
-        "graph_definition",
+        "graph_definition", "artifact",
     }
 
 
@@ -475,9 +482,32 @@ def test_controls_are_only_schema_backed_values_and_have_no_disabled_state():
     rows = CANON["controls_response"]["instances"]
     assert rows == sorted(rows, key=lambda row: row["instance_id"])
     for row in rows:
-        assert set(row) == {"instance_id", "adapter_id", "controls"}
+        assert set(row) == {"instance_id", "adapter_id", "model", "controls"}
         assert row["controls"] == sorted(row["controls"])
         assert set(row["controls"]) <= set(EXPECTED_ARGUMENT_SCHEMAS)
+
+
+def test_an_instance_row_says_which_model_is_pinned_or_says_none_was():
+    """The deployment fact the Cockpit joins a product name to, and its absence.
+
+    Both states are exercised by the canonical example on purpose. `null` is the
+    harder one to render honestly -- it means this build chose no model and the
+    provider's own configuration decides -- so a consumer that has never seen a
+    null here is a consumer that will print something false the first time one
+    arrives.
+
+    The id is held to the contract's own identifier grammar rather than to a
+    vendor's naming, because this build catalogues no models and a shape read
+    off one product's ids would refuse the next product's.
+    """
+    rows = CANON["controls_response"]["instances"]
+    pinned = [row["model"] for row in rows]
+
+    assert None in pinned, "the example must show an instance that pins no model"
+    named = [model for model in pinned if model is not None]
+    assert named, "the example must show an instance that pins one"
+    for model in named:
+        assert _id("model", model) == model
 
 
 

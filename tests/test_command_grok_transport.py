@@ -103,7 +103,7 @@ def a_request(*, action_id="act-1", capability="dispatch", timeout=60,
               work_item_id="work-001", arguments=None) -> ActionRequest:
     body = arguments if arguments is not None else {
         "work_item_id": work_item_id, "instruction_ref": "instr-001",
-        "profile": "implement", "artifact_refs": ["art-001"],
+        "profile": "implement", "artifact_refs": [],
         "output_limit_profile": "normal"}
     return ActionRequest(
         action_id=action_id, run_id="run-1", attempt_id="att-1",
@@ -422,7 +422,7 @@ def test_a_marker_from_an_earlier_attempt_stops_a_second_prompt(tmp_path):
     assert second.outcome == "unknown"
     assert "never repeated" in second.detail
     assert len(_fakegrok.prompt_spawns(log)) == 1, "THE_PROMPT_RAN_TWICE=True"
-    assert (root / MARKER_DIR / "act-1.marker").is_file()
+    assert (root / MARKER_DIR / "run-1" / "act-1.marker").is_file()
 
 
 def test_a_secret_the_child_prints_reaches_no_receipt_and_no_verification(tmp_path):

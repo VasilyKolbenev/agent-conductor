@@ -94,6 +94,9 @@ VERSION_FAILS = "FAKECLAUDE_VERSION_FAILS"
 EXIT = "FAKECLAUDE_EXIT"
 #: Emit this on stdout during a prompt spawn, to stand for a model's answer.
 EMIT_STDOUT = "FAKECLAUDE_EMIT_STDOUT"
+EMIT_HEX = "FAKECLAUDE_EMIT_HEX"
+EMIT_REVIEW = "FAKECLAUDE_EMIT_REVIEW"
+REVIEW_OUTPUT = "# Review\n\nThe contract is ready after its causal tests."
 #: Emit this on stderr, which the runner merges into the same bounded capture.
 EMIT_STDERR = "FAKECLAUDE_EMIT_STDERR"
 #: Write this many bytes to stdout, to overrun the transport's capture bound.
@@ -254,6 +257,12 @@ def _run_prompt() -> int:
         _write_pair(Path.cwd(), env[WRITE_FILE])
     if env.get(EMIT_STDOUT):
         sys.stdout.buffer.write(env[EMIT_STDOUT].encode("utf-8") + b"\n")
+        sys.stdout.buffer.flush()
+    if env.get(EMIT_REVIEW):
+        sys.stdout.buffer.write(REVIEW_OUTPUT.encode("utf-8") + b"\n")
+        sys.stdout.buffer.flush()
+    if env.get(EMIT_HEX):
+        sys.stdout.buffer.write(bytes.fromhex(env[EMIT_HEX]))
         sys.stdout.buffer.flush()
     if env.get(EMIT_STDERR):
         sys.stderr.buffer.write(env[EMIT_STDERR].encode("utf-8") + b"\n")

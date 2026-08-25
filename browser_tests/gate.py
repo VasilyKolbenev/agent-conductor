@@ -76,14 +76,40 @@ def discover_modules(modules_dir: Path, reverse: bool) -> list[Path]:
     return list(reversed(modules)) if reverse else modules
 
 
+def chromium_log(artifacts: Path, name: str) -> Path:
+    """Where Chromium must write its OWN log for one launch of this gate.
+
+    Chromium logs without being asked to: an engine that hits a socket, a
+    GPU or a profile error writes it to a file it picks itself, and on
+    Windows that default sits beside the executable — a location shared by
+    every gate run this machine has ever made and by every checkout on it.
+    So the engine's account of a stalled context, which is exactly the
+    evidence a red gate needs, ends up outside the run's artifacts, mixed
+    with strangers, and outside what ``--artifacts`` promises to hold.
+
+    The gate therefore NAMES the file instead of letting Chromium choose:
+    an absolute path, inside the artifacts, one per launch. Absolute
+    because neither a working directory nor an install location may decide
+    where a gate's evidence lands; per launch because a shared file cannot
+    say which module was speaking.
+    """
+    directory = artifacts / "chromium"
+    directory.mkdir(parents=True, exist_ok=True)
+    return directory / f"{name}.chromium.log"
+
+
 def probe_versions(artifacts: Path) -> dict[str, str]:
     """Record the exact engine the gate ran on, once per gate."""
     from importlib.metadata import version
 
     from playwright.sync_api import sync_playwright
 
+    # This launch happens in the GATE's own process, so no child environment
+    # reaches it: it must be contained here or not at all.
+    probe_environment = {**os.environ, "CHROME_LOG_FILE":
+                         str(chromium_log(artifacts, "version-probe"))}
     with sync_playwright() as api:
-        browser = api.chromium.launch(headless=True)
+        browser = api.chromium.launch(headless=True, env=probe_environment)
         try:
             versions = {"playwright": version("playwright"),
                         "chromium": browser.version,
@@ -95,11 +121,14 @@ def probe_versions(artifacts: Path) -> dict[str, str]:
     return versions
 
 
-def _child_environment(artifacts: Path, repo: Path) -> dict[str, str]:
+def _child_environment(artifacts: Path, repo: Path,
+                       module: Path) -> dict[str, str]:
     """The child's world: evidence armed, ambient pytest channels stripped."""
     environment = dict(os.environ)
     environment["CONDUCT_GATE_ARTIFACTS"] = str(artifacts)
     environment["PYTHONPATH"] = str(repo / "src")
+    # The engine this child launches keeps its own log; the gate says where.
+    environment["CHROME_LOG_FILE"] = str(chromium_log(artifacts, module.stem))
     # Playwright's browser channel: launch lines and Chromium's own stderr
     # land in the subprocess stderr, so a renderer crash leaves its words.
     environment["DEBUG"] = "pw:browser*"
@@ -140,7 +169,7 @@ def run_module(module: Path, artifacts: Path, repo: Path,
              "-rEf", "-p", "no:cacheprovider", "-o", "addopts=",
              "--basetemp", str(basetemp)],
             capture_output=True, text=True, encoding="utf-8", errors="replace",
-            cwd=str(repo), env=_child_environment(artifacts, repo),
+            cwd=str(repo), env=_child_environment(artifacts, repo, module),
             timeout=timeout, check=False)
         exit_code: object = completed.returncode
         stdout, stderr = completed.stdout, completed.stderr

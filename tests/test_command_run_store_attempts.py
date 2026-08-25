@@ -7,6 +7,7 @@ import pytest
 
 from conductor.command import run_store as run_store_module
 from conductor.command.attempts import AttemptEvent, action_request_digest
+from conductor.command.artifacts import ArtifactDocument
 from conductor.command.graph_definition import GraphDefinition
 from conductor.command.contracts import (
     ActionProposal,
@@ -122,6 +123,7 @@ def test_the_record_registry_is_exactly_this_closed_set_of_contract_identity_pai
         "action_proposal": (ActionProposal, "proposal_id"),
         "adapter_observation": (ObservationRecord, "observation_id"),
         "attempt_event": (AttemptEvent, "event_id"),
+        "artifact": (ArtifactDocument, "artifact_id"),
         "graph_definition": (GraphDefinition, "graph_id"),
     }
 
@@ -340,11 +342,26 @@ def test_causal_bound_evidence_is_accepted_if_and_only_if_final_succeeded(
 ])
 def test_result_evidence_is_bound_to_run_action_adapter_and_verified_state(
         tmp_path, changes):
+    """What a RESULT may rest on, one substituted field at a time.
+
+    Some of these rows the WRITER now refuses on their own account, before any
+    result is asked about: one belonging to another run, and one naming an
+    action this run never requested -- a verification row is a claim that some
+    action was verified, and an action nothing requested was never authorized.
+
+    Those are planted raw, exactly as the foreign-run row always was. That is
+    not a way around the writer; it is the state a tamperer leaves, and it is
+    the state this test is about. The refusal that follows may therefore come
+    from either door, which is why both are caught below.
+    """
     store = a_store(tmp_path)
     store.append(an_event())
     store.append(an_event("execution_observed"))
     evidence = verified_evidence(**changes)
-    if evidence.run_id == "run-001":
+    own_run = evidence.run_id == "run-001"
+    own_action = evidence.uri in ("verification/action-001",) or (
+        evidence.kind != "verification")
+    if own_run and own_action:
         store.append(evidence)
     else:
         raw_append(store, evidence, "evidence")

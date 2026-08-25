@@ -481,7 +481,7 @@ class HarnessWorkspace:
 
     # -- the crash-proof marker -----------------------------------------------
 
-    def _marker_parts(self, action_id: str) -> tuple[str, str]:
+    def _marker_parts(self, run_id: str, action_id: str) -> tuple[str, str, str]:
         """The ONE spelling of a marker's route, so no two readers can disagree.
 
         This existed three times before, and one of the three was a path built
@@ -489,10 +489,33 @@ class HarnessWorkspace:
         spellings of one route is the same defect as judging one value and
         writing another: whichever is wrong, nothing tells you which. The route
         is computed here and every reader below is handed it.
+
+        A marker's identity is ``(run_id, action_id)`` and not the action alone.
+        An action id is unique WITHIN a run and nothing makes it unique across
+        runs -- a runtime mints ``action-1`` for the first action of every run it
+        serves -- so a flat namespace made the second run to use an id a replay
+        of the first. Observed: two runs, one adapter, and run B came back
+        `unknown` about work it had never done.
+
+        The run is a DIRECTORY rather than part of the file name, so a run's
+        markers can be read, counted and reasoned about as a set, and so a run id
+        that happens to contain a dot cannot collide with the ``.marker`` suffix.
+        """
+        return (self.marker_dir, run_id, f"{action_id}.marker")
+
+    def _legacy_marker_parts(self, action_id: str) -> tuple[str, str]:
+        """Where a marker written before the run joined the identity still lies.
+
+        Read, never written. A flat marker names an action whose run this door
+        cannot recover, so it cannot be attributed and it cannot be dismissed --
+        and of the two, dismissing is the one that repeats an action that may
+        already have run. It is therefore read as a claim by whichever run asks,
+        which is conservative in exactly the direction that costs nothing but a
+        refusal an operator can clear.
         """
         return (self.marker_dir, f"{action_id}.marker")
 
-    def marker_path(self, action_id: str) -> Path:
+    def marker_path(self, run_id: str, action_id: str) -> Path:
         """The marker's NAME, and it is a NAME: nothing is established until read.
 
         Deliberately still the unvalidated form, because that is what a name is.
@@ -501,16 +524,28 @@ class HarnessWorkspace:
         parts -- so a caller that trusts this path is trusting the route the door
         will actually walk.
         """
-        return self.root.joinpath(*self._marker_parts(action_id))
+        return self.root.joinpath(*self._marker_parts(run_id, action_id))
 
-    def is_claimed(self, action_id: str) -> bool:
-        """True once a marker exists, which outlives the process that wrote it."""
-        _path, found = self._file_route(*self._marker_parts(action_id))
-        return found is not None
+    def is_claimed(self, run_id: str, action_id: str) -> bool:
+        """True once a marker exists, which outlives the process that wrote it.
 
-    def claim(self, action_id: str) -> None:
-        """Claim the action BEFORE its task spawns, so a crash cannot un-claim it."""
-        marker, _found = self._file_route(*self._marker_parts(action_id))
+        Two names are read, and the second one is the migration: this run's own
+        marker, and a flat one left by a build that filed markers under the
+        action alone. Either is a claim.
+        """
+        _path, found = self._file_route(*self._marker_parts(run_id, action_id))
+        if found is not None:
+            return True
+        _legacy, stale = self._file_route(*self._legacy_marker_parts(action_id))
+        return stale is not None
+
+    def claim(self, run_id: str, action_id: str) -> None:
+        """Claim the action BEFORE its task spawns, so a crash cannot un-claim it.
+
+        Written under the run, always. Nothing writes the flat name any more, so
+        the legacy namespace can only shrink.
+        """
+        marker, _found = self._file_route(*self._marker_parts(run_id, action_id))
         marker.parent.mkdir(parents=True, exist_ok=True)
         marker.write_text(action_id, encoding="utf-8", newline="\n")
 

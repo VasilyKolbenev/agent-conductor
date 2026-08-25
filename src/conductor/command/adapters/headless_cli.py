@@ -25,20 +25,26 @@ two is decided by the profile's ``task_channel``, a closed choice of ``argv`` or
   channel;
 - on the ``argv`` channel, ``_task_argv(task_text)`` -- where the vendor's flags
   put the prompt;
-- on the ``stdin`` channel, ``_stdin_argv(home)`` and ``_task_stdin(task_text)``.
-  The argv builder there takes NO task argument, which is the whole guarantee
-  that no byte of an operator's instruction can reach a command line any process
-  lister on the machine can read. An earlier version tried to CHECK that instead,
-  by calling one builder twice with probe texts and comparing; a review probe
-  defeated it in one line. Two observations are not independence, and an absent
-  parameter is.
+- on the ``stdin`` channel, ``_stdin_argv(home, model)`` and
+  ``_task_stdin(task_text)``. The argv builder there takes NO task argument,
+  which is the whole guarantee that no byte of an operator's instruction can
+  reach a command line any process lister on the machine can read. An earlier
+  version tried to CHECK that instead, by calling one builder twice with probe
+  texts and comparing; a review probe defeated it in one line. Two observations
+  are not independence, and an absent parameter is.
 
-  The ONE thing it IS handed is the attempt home minted for the spawn it is
-  building, because a vendor may be asked to write an artefact into its own
-  profile home and nobody but the transport knows where that home is;
+  The two things it IS handed are the attempt home minted for the spawn it is
+  building -- a vendor may be asked to write an artefact into its own profile
+  home, and nobody but the transport knows where that home is -- and the model
+  the run's frozen configuration pinned for the instance, which is a deployment
+  fact this module never learns the value of;
 - ``_read_attempt_home(home)``, where a provider that asked for such an artefact
   reads it, after the spawn and before the home is discarded. The base names no
   artefact and reads nothing.
+
+MODEL ROUTING lives next door in ``headless_routing``, mixed in below. This
+module carries the routed value from ``PreparedAction`` to the argv builder and
+learns nothing about it on the way.
 
 This module is PROVIDER-NEUTRAL and names no product. It compares no provider
 id, so the identity gate has nothing to permit here; each concrete adapter is a
@@ -51,14 +57,14 @@ than an observation that a process ended -- and where a vendor publishes no exit
 code contract at all, the profile says so and every receipt says so with it.
 Exit zero buys ``execution_observed`` and never success; verification is a
 separate seam that reads only files that actually changed under the action's own
-authorized subtree, and it never answers ``verified`` while this build writes no
-durable evidence record. The day an evidence writer lands, what changes a
-terminal state is the EVIDENCE; it is never the exit code.
+authorized subtree. This base still mints no evidence and cannot answer
+``verified``. ``ArtifactAwareTransport`` is the explicit outer seam that may
+append a durable EvidenceRef; what changes a terminal state is that EVIDENCE,
+never the exit code.
 """
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
 from pathlib import Path
 
 from ..contracts import ActionRequest, ActionResultReceipt
@@ -92,6 +98,15 @@ from .harness_workspace import (
     HarnessWorkspace,
     WorkspaceNotContained,
 )
+from .headless_routing import ModelRouting
+from .headless_values import (
+    ArgvSource,
+    _Attempt,
+    _changed,
+    _version_token,
+    attempt_relation,
+    flagless,
+)
 from .process import (
     STDIN_INCOMPLETE,
     CommandSpec,
@@ -101,81 +116,7 @@ from .process import (
 )
 
 
-def flagless(
-        token: str, what: str, launcher_noun: str,
-        error: type[HeadlessCliError]) -> str:
-    """Prove one argv token cannot be read by a launcher as its own flag.
-
-    A launcher parses the flags it owns and treats an unrecognized token as the
-    start of what it passes through. A token that begins with ``-`` is therefore
-    the whole injection surface: a flag in a task position would be consumed by
-    the launcher rather than passed through as text. Contract identifiers cannot
-    begin with ``-`` by their own grammar; this proves it at the argv boundary
-    anyway, because that is where the consequence lives.
-    """
-    if type(token) is not str or not token.strip():
-        raise error(f"{what} must be a non-empty task token")
-    if "\x00" in token:
-        raise error(f"{what} must not contain NUL")
-    if token.startswith("-"):
-        raise error(
-            f"{what} would be read by the {launcher_noun} as one of its own flags")
-    return token
-
-
-def _changed(before: Mapping[str, str], after: Mapping[str, str]) -> tuple[str, ...]:
-    """Every path whose content appeared, vanished, or moved between snapshots."""
-    return tuple(sorted(
-        name for name in set(before) | set(after)
-        if before.get(name) != after.get(name)))
-
-
-#: What ``_attempt`` is handed to build the child's OWN tokens with. A provider
-#: on the ``argv`` channel knows every token before anything is minted and hands
-#: a ready tuple, exactly as it always did; one on the ``stdin`` channel may not,
-#: because a vendor asked to write into the profile home this build mints needs
-#: that path on its command line and the home does not exist yet. So that channel
-#: hands a BUILDER, called once, with the minted home and nothing else.
-ArgvSource = tuple[str, ...] | Callable[[Path], tuple[str, ...]]
-
-
-def _version_token(output: bytes) -> str:
-    """The first non-empty line of a version print, as an exact token.
-
-    The bytes are the child's raw output, so nothing derived from them is ever
-    returned to a caller: this token is only ever COMPARED against the reviewed
-    constant, and the comparison's answer is a boolean.
-    """
-    text = output.decode("utf-8", errors="replace")
-    for line in text.splitlines():
-        stripped = line.strip()
-        if stripped:
-            return stripped
-    return ""
-
-
-@dataclass(frozen=True)
-class _Attempt:
-    """The evidence PAIR one execute read, so verify judges values, not the tree.
-
-    Both snapshots are taken inside the workspace turn, around the spawn. That is
-    the whole reason ``after`` is carried here instead of being re-read later: the
-    turn is the only window in which the shared work tree is this dispatch's
-    alone, and a verification that re-read the tree afterwards would be judging a
-    tree a neighbouring provider may have changed in the meantime. What is judged
-    must be what was read.
-
-    ``after`` is None when the tree could not be read on a contained route at
-    all. That is told apart from an empty reading, because "nothing changed" and
-    "the route refused" are different answers.
-    """
-
-    work_dir: Path
-    before: Mapping[str, str]
-    after: Mapping[str, str] | None
-
-
-class HeadlessCliTransport:
+class HeadlessCliTransport(ModelRouting):
     """Run one headless task per authorized action, and prove nothing more.
 
     A concrete provider subclasses this in its OWN module, sets ``profile``, and
@@ -233,7 +174,10 @@ class HeadlessCliTransport:
         self._root = self._workspace.root
         self._clock = clock
         self._ids = ids
-        self._attempts: dict[str, _Attempt] = {}
+        #: Filed under the FULL attempt relation, never under an action id
+        #: alone: one adapter serves every worker bound to its root, and an
+        #: action id repeats across runs. See `attempt_relation`.
+        self._attempts: dict[tuple[str, str, str, str], _Attempt] = {}
         #: How many homes this dispatch could not discard. A COUNT, never a
         #: name: the number is what a receipt may say, the name is operator
         #: state. It is re-derived per dispatch, because the standing residue
@@ -250,7 +194,7 @@ class HeadlessCliTransport:
         """Where this vendor's flags put the one prompt, all tokens code-owned."""
         raise NotImplementedError
 
-    def _stdin_argv(self, home: Path) -> tuple[str, ...]:
+    def _stdin_argv(self, home: Path, model: str | None) -> tuple[str, ...]:
         """The code-owned flags of a provider whose task travels by STDIN.
 
         It takes NO task argument, and that is the entire guarantee. Not a
@@ -265,16 +209,24 @@ class HeadlessCliTransport:
         for anything else -- and the guard reported the argv safe while the
         operator's task rode it. Two observations were never independence.
 
-        ``home`` is the attempt home minted for the spawn being built, and it is
-        the only argument this seam will ever take. A provider whose vendor
-        writes an artefact into its own profile home has to name that path on
-        the command line, and the path does not exist until ``_attempt`` mints
-        it. It is not a road back to the task and cannot become one:
-        ``_task_command`` returns this method UNCALLED, so no caller can curry a
-        task into it, and ``_spawn`` -- its one call site -- passes the value
-        ``_mint_home`` returned, which is a project subtree named by a freshly
-        minted id and has never been near an instruction. A provider that needs
-        nothing from the home ignores it, as Claude Code does.
+        ``home`` is the attempt home minted for the spawn being built. A
+        provider whose vendor writes an artefact into its own profile home has
+        to name that path on the command line, and the path does not exist until
+        ``_attempt`` mints it. It is not a road back to the task and cannot
+        become one: ``_task_command`` returns this method UNCALLED, so no caller
+        can curry a task into it, and ``_spawn`` -- its one call site -- passes
+        the value ``_mint_home`` returned, which is a project subtree named by a
+        freshly minted id and has never been near an instruction. A provider
+        that needs nothing from the home ignores it, as Claude Code does.
+
+        ``model`` is the id the run's frozen configuration pinned for the
+        instance this action names, or None. It is a PARAMETER for the same
+        reason the task is absent: one adapter instance serves every worker
+        bound to its root, so a field remembering the attempt in flight is a
+        field the next attempt can read, and a value that arrives through the
+        call cannot outlive it. A provider turns it into tokens with
+        ``_model_argv`` and decides WHERE they stand, because that is a fact
+        about its vendor's command line and not about this transport.
         """
         raise NotImplementedError
 
@@ -374,6 +326,12 @@ class HeadlessCliTransport:
             f"{args.instruction_ref} reads:\n{instruction}",
             "task text", f"{self.profile.tool_noun} launcher", self.error)
 
+    def _dispatch_task(
+            self, request: ActionRequest, args: DeepDispatchArgs,
+            instruction: str) -> str:
+        """Materialize one dispatch task; subclasses may add durable inputs."""
+        return self._task_text(args, instruction)
+
     # -- execution: preflight, mark, spawn once ---------------------------------
 
     def execute(self, prepared: PreparedAction) -> ActionResultReceipt:
@@ -395,10 +353,13 @@ class HeadlessCliTransport:
             raise self.error("execute requires a validated PreparedAction")
         request = prepared.request
         args = self._dispatch_args(prepared.adapter_payload)
+        unroutable = self._unroutable(request, prepared.model)
+        if unroutable is not None:
+            return unroutable
         with self._workspace.owned():
             failed = False
             try:
-                return self._dispatch(request, args)
+                return self._dispatch(request, args, prepared.model)
             except WorkspaceNotContained:  # noqa: BLE001 -- carry no path onward
                 failed = True
             if failed:
@@ -408,17 +369,16 @@ class HeadlessCliTransport:
         raise self.error("unreachable")
 
     def _dispatch(
-            self, request: ActionRequest,
-            args: DeepDispatchArgs) -> ActionResultReceipt:
+            self, request: ActionRequest, args: DeepDispatchArgs,
+            model: str | None = None) -> ActionResultReceipt:
         """Claim-check, materialize, sweep, preflight, then spawn exactly once.
-
         The sweep guards state this dispatch INHERITED; the check after the
         preflight guards state this dispatch just made. Both are the same rule:
         a task never runs over a home that outlived its spawn, whether somebody
         else left it or the version probe did.
         """
         self._retained = 0
-        if self._workspace.is_claimed(request.action_id):
+        if self._workspace.is_claimed(request.run_id, request.action_id):
             # A marker already claims this action: an earlier attempt reached the
             # spawn. Whether it finished is genuinely unknown, and guessing would
             # be worse than saying so -- but running the task twice is not an
@@ -447,14 +407,15 @@ class HeadlessCliTransport:
             # be built on top of it. Nothing is claimed and nothing is spawned.
             return self._receipt(
                 request, "failed", None, PREFLIGHT_RESIDUE_DETAIL)
+        task_text = self._dispatch_task(request, args, instruction)
         work = self._workspace.work_dir(args.work_item_id)
         before = self._workspace.digest_work_tree()
-        self._workspace.claim(request.action_id)
-        argv, payload = self._task_command(self._task_text(args, instruction))
+        self._workspace.claim(request.run_id, request.action_id)
+        argv, payload = self._task_command(task_text)
         outcome = self._attempt(
             argv, f"{WORK_DIR}/{args.work_item_id}",
-            timeout=request.timeout_seconds, stdin_bytes=payload)
-        self._attempts[request.action_id] = _Attempt(
+            timeout=request.timeout_seconds, stdin_bytes=payload, model=model)
+        self._attempts[attempt_relation(request)] = _Attempt(
             work_dir=work, before=before, after=self._evidence())
         return self._observed(request, outcome)
 
@@ -525,7 +486,9 @@ class HeadlessCliTransport:
     def _attempt(
             self, argv: ArgvSource, cwd: str, *,
             timeout: int | float,
-            stdin_bytes: bytes | None = None) -> ProcessOutcome:
+            stdin_bytes: bytes | None = None,
+            separate_stderr: bool = False,
+            model: str | None = None) -> ProcessOutcome:
         """One spawn inside one FRESH home, and the home goes when the spawn does.
 
         This is the whole of the retention promise: a real harness may write
@@ -543,7 +506,8 @@ class HeadlessCliTransport:
         home = self._mint_home()
         try:
             outcome = self._spawn(
-                argv, home, cwd, timeout=timeout, stdin_bytes=stdin_bytes)
+                argv, home, cwd, timeout=timeout, stdin_bytes=stdin_bytes,
+                separate_stderr=separate_stderr, model=model)
             self._read_attempt_home(home)
             return outcome
         finally:
@@ -565,19 +529,27 @@ class HeadlessCliTransport:
             self._retained += 1
 
     @staticmethod
-    def _tokens(argv: ArgvSource, home: Path) -> tuple[str, ...]:
+    def _tokens(
+            argv: ArgvSource, home: Path, model: str | None) -> tuple[str, ...]:
         """The child's own tokens: a ready argv, or the one its builder makes.
 
         The ONE place a stdin-channel builder is ever called, and it is called
-        with the minted home and nothing else. There is no ``task_text`` in this
-        frame to pass even by mistake.
+        with the minted home, the routed model, and nothing else. There is no
+        ``task_text`` in this frame to pass even by mistake.
+
+        A READY tuple never sees the model, and that is the honest shape rather
+        than an omission: the version preflight hands one, and a preflight that
+        carried `--model` would be asking a build to load a model in order to
+        print its own version.
         """
-        return argv if type(argv) is tuple else argv(home)
+        return argv if type(argv) is tuple else argv(home, model)
 
     def _spawn(
             self, argv: ArgvSource, home: Path, cwd: str, *,
             timeout: int | float,
-            stdin_bytes: bytes | None = None) -> ProcessOutcome:
+            stdin_bytes: bytes | None = None,
+            separate_stderr: bool = False,
+            model: str | None = None) -> ProcessOutcome:
         """The ONE place a child is started; argv, env and bounds are code-owned.
 
         ``cwd`` is a route RELATIVE to the project root, so the runner's own
@@ -592,7 +564,8 @@ class HeadlessCliTransport:
             # valid argv must refuse with the SAME fixed sentence as a spawn that
             # cannot start, so no runner message and no path leaks through here.
             spec = CommandSpec(
-                argv=(*self._argv_prefix(), *self._tokens(argv, home)), cwd=cwd,
+                argv=(*self._argv_prefix(),
+                      *self._tokens(argv, home, model)), cwd=cwd,
                 env_allow=self._env_allow(),
                 # The minted home is written LAST so it cannot be
                 # displaced. A `forced_env` pair naming `home_env`
@@ -603,7 +576,7 @@ class HeadlessCliTransport:
                 env={**dict(profile.forced_env),
                      profile.home_env: str(home)},
                 output_limit=profile.output_limit, timeout_seconds=timeout,
-                stdin_bytes=stdin_bytes)
+                stdin_bytes=stdin_bytes, separate_stderr=separate_stderr)
             return self._runner.run(spec)
         except ProcessRunnerError:  # noqa: BLE001 -- carry no child detail onward
             failed = True
@@ -725,22 +698,39 @@ class HeadlessCliTransport:
         ``verification_failed``, so borrowing it would buy nothing and would
         still misreport which of the two happened. Absence of proof is ``error``.
         """
-        if not isinstance(request, ActionRequest) or not isinstance(
-                result, ActionResultReceipt):
-            raise self.error("verify needs a validated request and result")
-        attempt = self._attempts.get(request.action_id)
-        if attempt is None:
-            return self._verification(
-                request, "error", (),
-                "this adapter holds no pre-task snapshot for the action, so there "
-                "is no independent evidence to read; absence of proof is not "
-                "absence of a verifier and is never an observed success")
-        if attempt.after is None:
-            return self._verification(
-                request, "error", (),
-                "the authorized work tree does not stand on a contained route, so "
-                "no independent evidence could be read from it")
-        return self._read_change(request, attempt, attempt.after)
+        relation = attempt_relation(request)
+        try:
+            if not isinstance(request, ActionRequest) or not isinstance(
+                    result, ActionResultReceipt):
+                raise self.error("verify needs a validated request and result")
+            attempt = self._attempts.get(relation)
+            if attempt is None:
+                return self._verification(
+                    request, "error", (),
+                    "this adapter holds no pre-task snapshot for the action, so "
+                    "there is no independent evidence to read; absence of proof "
+                    "is not absence of a verifier and is never an observed success")
+            if attempt.after is None:
+                return self._verification(
+                    request, "error", (),
+                    "the authorized work tree does not stand on a contained route, "
+                    "so no independent evidence could be read from it")
+            return self._read_change(request, attempt, attempt.after)
+        finally:
+            # EVERY road out, the raise included. An attempt this adapter has
+            # finished judging is one it may no longer hold: a snapshot pair is
+            # small, but it is per action and an adapter instance lives as long
+            # as the server does, so "small" is a rate rather than a bound.
+            #
+            # It belongs HERE rather than only in the artifact-aware subclass,
+            # where it was. Every catalogued provider happens to subclass that
+            # one today, so nothing leaks in the shipped roster -- and that is
+            # precisely the reason to put it here: the guarantee would otherwise
+            # be a property of who inherits from whom, which the next provider
+            # is free to change, and this base is documented as usable on its
+            # own. A promise that holds by inheritance is a promise that holds
+            # until someone declines the inheritance.
+            self._attempts.pop(relation, None)
 
     def _read_change(
             self, request: ActionRequest, attempt: "_Attempt",

@@ -151,8 +151,9 @@ is cut visibly; no new capability enters on Day 4.
 - Run command-injection, CSRF, path-escape, duplicate-idempotency, stale-confirmation, PID-ownership,
   receipt-tamper, restart, disconnect, and verification-failure sabotage.
 - Run the complete browser wow path with two harness adapters and a parallel Orbit.
-- Run Windows/Linux tests, mutation harness, browser suite, clean wheel, and release smoke on one
-  frozen revision.
+- Run Windows/Linux/macOS tests, mutation harness, browser suite, clean wheel, and release smoke
+  on one frozen revision. The three operating systems are release targets, not an inference from
+  a shared POSIX branch: each must return its own result for that exact revision.
 - Record the under-ten-minute demo, finish English quickstart and threat model.
 - Prepare rename patch; apply it only if all external clearance checks are affirmative.
 - Tag the technical preview only after every blocker gate is green.
@@ -182,7 +183,8 @@ Safety and truth are not cut. Breadth is cut in this order:
 5. Public rename waits for clearance while December Command brand copy remains.
 
 Never cut receipts, verification, confirmation freshness, process ownership, restart recovery,
-Human Gate truth, or the two-adapter wow path.
+Human Gate truth, the two-adapter wow path, or truthful support evidence for every operating
+system named by the release.
 
 ## 9. Release acceptance
 
@@ -192,6 +194,15 @@ Human Gate truth, or the two-adapter wow path.
 - History explains failed, cancelled, retried, switched, superseded, and verified attempts.
 - Policy sabotage cannot escape its capability, project root, concurrency, time, or action budget.
 - Browser controls match capabilities and remain usable without reading Protocol documentation.
+- The same frozen wheel passes the core, process-lifecycle, filesystem-containment, browser, and
+  clean-install gates on Windows, Linux, and macOS. Platform-specific skips name an unavailable
+  primitive and have a corresponding witness on an operating system that provides it; a skipped
+  platform is never reported as supported by inference.
+- On each supported operating system the default Dalio scenario can resolve and run three real
+  harness routes at once. A vendor CLI that does not support that system remains visibly
+  unavailable; the product never substitutes a fixture, another provider, or a hard-coded path.
+- The browser claim names the engine it proves. Chromium is required on all three systems;
+  Safari/WebKit is not claimed unless its own gate is green on the frozen revision.
 - No v1 fixture or command changes output unless an additive v2 field is explicitly requested.
 - Frozen-HEAD CLI, browser, mutation, package, threat, and clean-tree gates are all green.
 
@@ -808,14 +819,21 @@ Deadline: 2026-08-16. No feature development is scheduled on this day.
 
 1. Freeze one release-candidate SHA before the first gate. Every result names that exact SHA and
    proves its import path; any blocker fix creates a new SHA and restarts the affected gates.
-2. Run the full suite on Windows and Linux, the mutation harness, browser suite, deterministic
-   fake-adapter e2e, available opt-in real-adapter smokes, package build/install, release smoke,
-   threat/sabotage suite, Protocol-v1 byte pin, and committed-clean check.
-3. Run two independent release reviews in parallel: one against the product/safety contract and
+2. Run the full suite on Windows, Linux, and macOS, the mutation harness, browser suite,
+   deterministic fake-adapter e2e, available opt-in real-adapter smokes, package build/install,
+   release smoke, threat/sabotage suite, Protocol-v1 byte pin, and committed-clean check. The CI
+   matrix is `windows-latest`, `ubuntu-latest`, and `macos-latest` on Python 3.11 and 3.12; the
+   rendered Chromium path runs on all three. Real-harness smokes may use dedicated hosts, but every
+   claimed platform must record executable version, availability, and the exact frozen SHA.
+3. Exercise the OS-owned boundaries on their native systems: Windows Job Objects plus
+   junction/reparse handling; POSIX session-group termination plus symlink handling on both Linux
+   and macOS; hard links, LF/CRLF durability, completed/timeout/stopped cleanup, loopback HTTP/SSE,
+   and a clean-wheel start on all three. A common code path is not evidence for an unrun system.
+4. Run two independent release reviews in parallel: one against the product/safety contract and
    one against code quality, packaging, and evidence. Both review the same SHA.
-4. Execute and time the manual wow path from the clean wheel. Archive exact commands, receipts,
+5. Execute and time the manual wow path from the clean wheel. Archive exact commands, receipts,
    screenshots/logs, limitations, and the under-ten-minute result.
-5. Tag the technical preview only after every required gate is green. A missed required gate is a
+6. Tag the technical preview only after every required gate is green. A missed required gate is a
    delayed release, never an inferred pass or a quality waiver.
 
 Day 4 deliberately holds roughly one third of the recovery window for integration defects and

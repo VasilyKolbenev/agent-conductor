@@ -48,7 +48,7 @@ CONFIG = {
 }
 ARGUMENTS = {
     "work_item_id": "work-001", "instruction_ref": "instr-001",
-    "profile": "implement", "artifact_refs": ["art-001"],
+    "profile": "implement", "artifact_refs": [],
     "output_limit_profile": "normal"}
 
 
@@ -78,7 +78,7 @@ def _strings(document) -> set[str]:
 def _driven(tmp_path: Path, **knobs: str):
     """One Grok dispatch through the real runtime, plus the API over the same store."""
     adapter, root, log = a_harness(tmp_path / "harness", **knobs)
-    store = RunStore(tmp_path / "store")
+    store = RunStore(root)
     store.create_run(
         RunEnvelope(
             run_id=RUN_ID, cycle_id="grok-orbit", created_at=NOW,

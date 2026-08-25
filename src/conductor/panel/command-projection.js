@@ -13,6 +13,7 @@ export const CAPABILITY_FIELDS = Object.freeze({
   ]),
   review: Object.freeze([
     ["work_item_id", "id"], ["target_artifact_refs", "ids-required"],
+    ["result_artifact_ref", "id"],
     ["review_profile", "enum", ["quality", "security", "spec"]],
   ]),
   evidence: Object.freeze([["target_action_id", "id"],

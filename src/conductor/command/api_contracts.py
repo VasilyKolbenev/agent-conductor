@@ -13,6 +13,7 @@ from typing import Any
 
 from .adapters import AdapterContractError, UnsupportedCapability
 from .adapters.deep_commands import DEEP_ARGUMENT_TYPES
+from .artifacts import ArtifactDocument
 from .contracts import ActionProposal, ContractError, DecisionReceipt, _id
 from .graph_definition import GraphDefinition, GraphEdge, GraphNode
 from .graph_template import GraphTemplate, RunBinding
@@ -89,6 +90,8 @@ _TEMPLATE_FIELDS = frozenset(GraphTemplate._FIELDS)
 #: `nodes` here would be a second way to say what the revision already says.
 _FROM_TEMPLATE_FIELDS = frozenset({
     "graph_id", "template_id", "revision", "assignments"})
+_ARTIFACT_FIELDS = frozenset({
+    "artifact_id", "artifact_ref", "media_type", "content"})
 #: The ONE argument-schema family this frozen API speaks. A capability an
 #: adapter serves under another family -- or under none -- is a capability this
 #: surface cannot write a plan for, whatever the capability is called. Spelled
@@ -353,6 +356,22 @@ class GraphInput:
             nodes=self.nodes, edges=self.edges)
 
 
+@dataclass(frozen=True)
+class ArtifactInput:
+    """One admitted handoff document before the server binds run and time."""
+
+    artifact_id: str
+    artifact_ref: str
+    media_type: str
+    content: str
+
+    def build(self, *, run_id: str, created_at: str) -> ArtifactDocument:
+        return ArtifactDocument(
+            artifact_id=self.artifact_id, artifact_ref=self.artifact_ref,
+            run_id=run_id, created_at=created_at, media_type=self.media_type,
+            content=self.content)
+
+
 def _closed(body: object, fields: frozenset[str]) -> dict[str, Any]:
     if not isinstance(body, Mapping) or any(not isinstance(key, str) for key in body):
         raise ApiRefusal.fixed("contract_invalid")
@@ -571,6 +590,19 @@ def parse_graph(body: object) -> GraphInput:
         "edges": _json_array(values, "edges")})
     return GraphInput(
         graph_id=probe.graph_id, nodes=probe.nodes, edges=probe.edges)
+
+
+def parse_artifact(body: object) -> ArtifactInput:
+    """Validate exactly the four caller-owned facts of one durable handoff."""
+    values = _closed(body, _ARTIFACT_FIELDS)
+    probe = _contract(ArtifactDocument.from_dict, {
+        **values,
+        "run_id": "api-run-validation",
+        "created_at": "2000-01-01T00:00:00Z",
+    })
+    return ArtifactInput(
+        artifact_id=probe.artifact_id, artifact_ref=probe.artifact_ref,
+        media_type=probe.media_type, content=probe.content)
 
 
 def refusal_from_exception(error: Exception) -> ApiRefusal:

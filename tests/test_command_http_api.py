@@ -126,6 +126,7 @@ def test_exact_route_allowlist_and_wrong_method_or_path_are_closed(tmp_path):
         ("POST", "/command/runs/<run_id>/graph"),
         ("POST", "/command/templates"),
         ("POST", "/command/runs/<run_id>/graph/from-template"),
+        ("POST", "/command/runs/<run_id>/artifacts"),
     )
     subject, _, _ = api(tmp_path)
     wrong = subject.handle("POST", "/command/session", (), b"")
@@ -181,13 +182,19 @@ def test_controls_are_frozen_binding_manifest_schema_intersection(tmp_path):
     subject, _, _ = api(tmp_path)
     response = subject.handle(
         "GET", f"/command/runs/{RUN_ID}/controls", get_headers())
+    # `model: null` on both rows because this run's configuration pins none. It
+    # is spelled rather than omitted: a consumer must be able to tell "no model
+    # was chosen" from "this server is too old to say", and an absent key says
+    # the second.
     assert response.payload == {"instances": [{
         "instance_id": "claude-dev",
         "adapter_id": "claude-code",
+        "model": None,
         "controls": ["dispatch"],
     }, {
         "instance_id": "codex-review",
         "adapter_id": "codex",
+        "model": None,
         "controls": [],
     }], "providers": []}
 

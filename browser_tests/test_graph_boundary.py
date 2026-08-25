@@ -441,3 +441,32 @@ def test_the_corpus_the_cockpit_answers_holds_rows_of_both_verdicts(
     refused = graph_page.evaluate(
         "payload => window.conductGraph.load(payload)", _loop_payload("loop-node"))
     assert (accepted, refused) == (True, False)
+
+
+def test_a_controls_row_with_no_model_key_is_dropped_rather_than_guessed(
+        graph_page: Page) -> None:
+    """An older server answers no `model` at all, and that is not a `null`.
+
+    Three answers, and this window must keep them apart: a model was pinned, a
+    model was NOT pinned, and this server cannot say. The first two arrive as a
+    value and as `null`; the third arrives as an absent key, and reading it as
+    `undefined` and carrying on would turn "unknown" into "pins none" on the
+    screen -- the one reading a Cockpit owes and an inference would destroy.
+
+    Driven at the adapter's own export, because a fixture reaches this mapping
+    through no other door: `adaptDeployment` maps the WIRE's controls document,
+    and the fixture seam takes the panel-internal shape it produces.
+    """
+    rows = graph_page.evaluate(
+        """controls => import("./graph-adapter.js").then(adapter =>
+             adapter.adaptDeployment(controls))""",
+        {"instances": [
+            {"instance_id": "pinned", "adapter_id": "claude-code",
+             "model": "claude-opus-5"},
+            {"instance_id": "unpinned", "adapter_id": "codex", "model": None},
+            {"instance_id": "unanswered", "adapter_id": "codex"},
+        ]})
+
+    assert [row["instance_id"] for row in rows] == ["pinned", "unpinned"]
+    assert rows[0]["model"] == "claude-opus-5"
+    assert rows[1]["model"] is None

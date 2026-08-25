@@ -127,6 +127,35 @@ def test_child_stderr_is_merged_into_the_captured_output(root, runners):
     assert b"on-err\n" in outcome.output
 
 
+def test_a_caller_may_bound_stderr_without_admitting_it_as_stdout(root, runners):
+    runner = runners(root)
+    outcome = runner.run(CommandSpec(
+        argv=fake_argv(), cwd="work",
+        env={EMIT_STDOUT: "on-out", EMIT_STDERR: "on-err"},
+        timeout_seconds=10, separate_stderr=True))
+
+    assert outcome.output == b"on-out\n"
+    assert outcome.error_output == b"on-err\n"
+    assert outcome.output_truncated is False
+    assert outcome.error_truncated is False
+
+    with pytest.raises(CommandSpecError, match="separate_stderr"):
+        CommandSpec(argv=fake_argv(), cwd="work", separate_stderr=1)
+
+
+def test_output_only_reports_whether_it_repeated_an_allowed_env_value(
+        root, runners):
+    secret = "synthetic-secret-that-is-never-real"
+    runner = runners(root, environ={"SECRET": secret})
+    outcome = runner.run(CommandSpec(
+        argv=fake_argv(), cwd="work", env_allow=("SECRET",),
+        env={EMIT_STDOUT: secret}, timeout_seconds=10,
+        separate_stderr=True))
+
+    assert outcome.output_contains_env_value is True
+    assert secret not in repr(outcome)
+
+
 # --- sanitized environment: an allowlist, never wholesale inheritance ---
 
 

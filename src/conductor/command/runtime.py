@@ -69,6 +69,7 @@ from .contracts import (
     _thaw_json,
     _timestamp,
     frozen_config_bindings,
+    frozen_config_models,
 )
 from .run_store import RecoveredRun, RunStore
 
@@ -499,8 +500,9 @@ class ControlRuntime:
         _, bound = self._bound_adapter(recovered, canonical.instance_id)
         self._hold_route(canonical.run_id, ExecutionError)
         try:
+            model = frozen_config_models(recovered.config).get(canonical.instance_id)
             prepared = self._registry.prepare(
-                bound, ActionRequest.from_dict(canonical.as_dict()))
+                bound, ActionRequest.from_dict(canonical.as_dict()), model=model)
         except Exception:  # noqa: BLE001 -- refusal becomes a durable unknown
             return self._finish(
                 canonical, AttemptState.UNKNOWN, (AttemptState.ACCEPTED,),

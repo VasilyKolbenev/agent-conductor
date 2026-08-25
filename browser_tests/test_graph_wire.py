@@ -88,7 +88,15 @@ def wire_url(tmp_path) -> Iterator[str]:
     root = write_project(tmp_path, lanes={"claude": good_lane()})
     _seed(root)
     httpd = server.build(
-        root, 0, registry=AdapterRegistry([DeepPlanAdapter()]),
+        # One adapter per adapter the CONFIGURATION binds, which is what an
+        # install IS. This registry used to hold one, while the frozen config
+        # declared two instances on two products -- so `codex-review` was an
+        # instance that deployment could never serve, and any plan naming it was
+        # answered `service_refused`. The narrower registry was invisible while
+        # every fixture step bound the other instance.
+        root, 0, registry=AdapterRegistry([
+            DeepPlanAdapter(name) for name in
+            sorted({row["adapter"] for row in CONFIG["instances"]})]),
         token_factory=lambda _size: TOKEN)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
@@ -300,6 +308,16 @@ def test_a_durable_read_draws_the_plan_and_the_run_in_separate_places(
         assert "Claude Code" in palette and "DeepSeek Harness" in palette
         badge = page.locator('[data-node-id="do"] .hb__n').inner_text()
         assert badge == "claude-dev"
+        # The DEPLOYMENT section is the other half of that same rule, and the
+        # one place a product NAME appears on a step. The plan named the
+        # instance; the run's frozen configuration says which adapter serves it,
+        # and that id DOES have a registry row -- so a reader sees "Claude Code"
+        # here and `claude-dev` on the badge, which is exactly the distinction
+        # this window exists to keep. The static default cannot show this: it
+        # carries no registry copy, on purpose.
+        assert "DEPLOYMENT" in card
+        deployment = page.locator("#detailCard .hb__n").last.inner_text()
+        assert deployment == "Claude Code"
     finally:
         page.context.close()
 

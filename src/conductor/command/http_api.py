@@ -32,6 +32,7 @@ from .api_contracts import (
     GraphInput,
     TemplateRef,
     canonical_arguments,
+    parse_artifact,
     parse_confirmation,
     parse_decision,
     parse_graph,
@@ -41,7 +42,12 @@ from .api_contracts import (
     refusal_from_exception,
 )
 from .containment import run_route_violations
-from .contracts import ContractError, frozen_config_bindings
+from .artifacts import ArtifactDocument
+from .contracts import (
+    ContractError,
+    frozen_config_bindings,
+    frozen_config_models,
+)
 from .coordinator import ExecutionCoordinator
 from .graph_definition import GraphDefinition, GraphNode
 from .graph_projection import graph_payload
@@ -72,6 +78,7 @@ COMMAND_ROUTES = (
     ("POST", "/command/runs/<run_id>/graph"),
     ("POST", "/command/templates"),
     ("POST", "/command/runs/<run_id>/graph/from-template"),
+    ("POST", "/command/runs/<run_id>/artifacts"),
 )
 
 _RUN_ROUTE = re.compile(
@@ -79,7 +86,7 @@ _RUN_ROUTE = re.compile(
     # The longer tail is spelled FIRST: alternation is leftmost-first, and a
     # `graph` that matched before `graph/from-template` would send every
     # materialization to the route that speaks a different document.
-    r"(?:/(controls|proposals|actions|decisions|graph/from-template|graph))?\Z")
+    r"(?:/(controls|proposals|actions|decisions|graph/from-template|artifacts|graph))?\Z")
 #: The one availability state in which this build can reach a provider at
 #: all. A word from `AVAILABILITY_STATES`, compared as a STATE: what makes a
 #: binding admissible is what this build resolved about the transport, never
@@ -227,7 +234,38 @@ class CommandApi:
             return self._authorize(route.run_id, body)
         if route.name == "graph":
             return self._write_graph(route.run_id, body)
+        if route.name == "artifacts":
+            return self._write_artifact(route.run_id, body)
         return self._decide(route.run_id, body)
+
+    def _write_artifact(
+            self, run_id: str, body: Mapping[str, Any]) -> CommandResponse:
+        """Append one immutable handoff, or return its exact durable retry."""
+        submitted = parse_artifact(body)
+        self._hold_route(run_id)
+        with self._store.transaction():
+            self._hold_route(run_id)
+            recovered = self._store.read(run_id)
+            standing = next((
+                row.value for row in recovered.records
+                if row.kind == "artifact"
+                and row.value.artifact_id == submitted.artifact_id), None)
+            if standing is not None:
+                assert isinstance(standing, ArtifactDocument)
+                candidate = submitted.build(
+                    run_id=run_id, created_at=standing.created_at)
+                if candidate != standing:
+                    raise RecordConflict(
+                        f"artifact identity {standing.artifact_id!r} "
+                        "already records different facts")
+                created, artifact = False, standing
+            else:
+                artifact = submitted.build(
+                    run_id=run_id, created_at=self._clock())
+                created = self._store.append(artifact)
+        if created:
+            self._publish_run(run_id)
+        return CommandResponse(201 if created else 200, artifact.as_dict())
 
     def _publish_template(self, body: Mapping[str, Any]) -> CommandResponse:
         """Publish one immutable revision, or agree it is already published.
@@ -574,7 +612,16 @@ class CommandApi:
         is about the build and the machine, and carries only what
         ``provider_projection`` admits. A consumer joins them by identity, never
         by a displayed label.
+
+        ``model`` is on the instance row for the same reason ``adapter_id`` is:
+        both are what this run's frozen configuration says about a DEPLOYMENT,
+        and neither appears in a graph document, where a plan names roles. It is
+        ``null`` when the instance pins none, and null is not a default -- it
+        says this build chose no model and whatever the provider's own
+        configuration decides is what will run. A reader that showed a name
+        there would be inventing the one fact this row exists to report.
         """
+        models = frozen_config_models(config)
         rows = []
         for instance_id, adapter_id in sorted(_bindings(config).items()):
             try:
@@ -584,6 +631,7 @@ class CommandApi:
             rows.append({
                 "instance_id": instance_id,
                 "adapter_id": adapter_id,
+                "model": models.get(instance_id),
                 "controls": sorted(set(declared) & set(ARGUMENT_SCHEMAS)),
             })
         return {"instances": rows, "providers": provider_projection(self._providers)}

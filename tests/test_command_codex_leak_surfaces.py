@@ -74,7 +74,7 @@ CONFIG = {
 }
 ARGUMENTS = {
     "work_item_id": "work-001", "instruction_ref": "instr-001",
-    "profile": "implement", "artifact_refs": ["art-001"],
+    "profile": "implement", "artifact_refs": [],
     "output_limit_profile": "normal"}
 
 
@@ -243,13 +243,8 @@ def test_the_dispatch_this_suite_searches_really_ran_and_really_delivered(tmp_pa
     """
     surfaces, attempt, root = _surfaces(tmp_path)
 
-    # `verification_failed` is the CEILING for every real provider in this
-    # build, not a failure of this dispatch: the transport's verifier reads a
-    # real change under the authorized subtree and then refuses to call it a
-    # verified success, because no durable evidence record is written for it
-    # yet. Asserting `succeeded` here would be asserting a state no headless
-    # provider can reach, and the day one can, this line is where that shows.
-    assert attempt.receipt.outcome == "verification_failed", attempt.receipt.detail
+    assert attempt.receipt.outcome == "succeeded", attempt.receipt.detail
+    assert len(attempt.receipt.evidence_refs) == 1
     written = root / "work" / "work-001" / "guard.py"
     assert written.is_file(), "the child changed nothing, so this run did no work"
     log_rows = json.loads(

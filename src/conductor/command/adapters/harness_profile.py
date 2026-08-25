@@ -24,6 +24,7 @@ import re
 from dataclasses import dataclass
 from pathlib import PurePosixPath, PureWindowsPath
 
+from ..contracts import ContractError, _id
 from .base import AdapterContractError
 
 #: The one control any of these adapters carries. stop, retry and switch stay
@@ -87,6 +88,37 @@ def retained_detail(tool: str) -> str:
     return (" an attempt home could not be discarded and was left standing, so "
             "the next dispatch is blocked until an operator has cleared the "
             f"{tool} home root")
+
+
+def unroutable_model_detail(tool: str) -> str:
+    """A configuration routed a model to a provider that cannot be told one.
+
+    It carries the PRODUCT and never the model id: the id is operator
+    configuration and this sentence reaches a receipt, the journal and the API
+    at once. The operator reads which model they pinned from their own file.
+
+    A refusal rather than a silent drop, and the difference is the whole reason
+    this sentence exists: a dispatch that ran under whatever the vendor's own
+    configuration chose, while an operator's file named something else, is a run
+    nobody can account for afterwards.
+    """
+    return (f"this run's configuration pins a model for the instance and "
+            f"{tool} has no reviewed flag this build can name one with, so "
+            "nothing was minted, claimed or spawned")
+
+
+def moving_model_detail(tool: str) -> str:
+    """A configuration pinned one of this vendor's own MOVING names.
+
+    It names the PRODUCT and never the alias, for the same reason every sentence
+    here does: the alias is operator configuration and this reaches a receipt,
+    the journal and the API at once. The operator reads which name they wrote
+    from their own file; what this owes them is why it was refused.
+    """
+    return (f"this run's configuration pins one of {tool}'s moving model "
+            "aliases rather than a full model name, so a durable record of it "
+            "would mean a different model each time it is read; nothing was "
+            "minted, claimed or spawned")
 
 
 def is_absolute(path: str) -> bool:
@@ -221,6 +253,59 @@ class HarnessProfile:
     #: `argv` is the default, so every provider that shipped before this field
     #: is unchanged and unaware of it.
     task_channel: str = TASK_CHANNEL_ARGV
+    #: The flag this vendor names a model with, or EMPTY when this build has
+    #: established none for it.
+    #:
+    #: Empty is a statement and not a gap. A model an operator pins reaches a
+    #: child only through a flag somebody read in that vendor's own published
+    #: material, and inventing one would be the defect this roster has already
+    #: paid for twice on version prints. So a provider with no flag here refuses
+    #: an action whose configuration routes a model to it, rather than dropping
+    #: the routing and running whatever the vendor's own configuration decides
+    #: -- a run that silently used another model than the one an operator
+    #: configured is worse than a run that did not happen.
+    #:
+    #: **What the shared record proves about it is the TOKEN, never the FORM.**
+    #: A first version of the constructor demanded a leading `-`, reasoning that
+    #: a token without one is a positional to every launcher. That is Unix
+    #: syntax written into a provider-neutral record: `/model` is an ordinary
+    #: Windows option, and a vendor may take its model as a separate leading
+    #: token altogether. The guard would have forced an edit to THIS module
+    #: before a valid future provider could declare itself, which is exactly the
+    #: hardcoding this seam exists to avoid. So the constructor holds it to what
+    #: it can know of any vendor -- an exact string, empty or one NUL-free token
+    #: with no whitespace -- and the spelling and the position are the provider
+    #: module's own declaration, proved by that provider's exact argv test
+    #: against a real spawn.
+    model_flag: str = ""
+    #: The names this vendor publishes as MOVING: aliases that resolve to
+    #: whatever it ships this week rather than to one build.
+    #:
+    #: Not a catalogue of models, and deliberately not: this build cannot know
+    #: which model ids a vendor has, and a list it tried to keep would be wrong
+    #: the day after it was written. What it CAN know is the much smaller fact
+    #: each vendor states about its own naming -- which of its names are not a
+    #: single model -- and that is the fact that settles the question.
+    #:
+    #: A configuration pinning one of these is refused before anything is
+    #: minted, claimed or spawned. A durable record naming a moving alias means
+    #: a different model each time it is read, so nothing afterwards can be
+    #: checked against the model that really did the work. Empty is the honest
+    #: default: a vendor this build has read no such statement from publishes no
+    #: moving names as far as this build knows, and refuses nothing.
+    #:
+    #: A TUPLE, and the constructor holds it to that rather than to "iterable".
+    #: A bare string is iterable, so the membership test that refuses a moving
+    #: alias would silently become a SUBSTRING search -- `"opus"` would refuse a
+    #: model called `"op"` and admit `claude-opus-5`, wrong in both directions
+    #: at once and invisible to every alias case in the suite.
+    #:
+    #: Each name goes through `_id`, the CONFIGURATION's own door for a pinned
+    #: model, and that is load-bearing rather than tidy: an alias declared under
+    #: any other grammar could never equal a pinned one, so the comparison that
+    #: refuses it could never match -- a policy that reads as if it were doing
+    #: something.
+    unstable_models: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         """Prove the environment this profile forces, at construction.
@@ -264,3 +349,51 @@ class HarnessProfile:
             raise HeadlessCliError(
                 f"a task travels by one of {TASK_CHANNELS}, not "
                 f"{self.task_channel!r}")
+        self._hold_model_routing()
+
+    def _hold_model_routing(self) -> None:
+        """Prove the two model-routing declarations, at construction like the rest.
+
+        They arrived without this and the omission had teeth. A ``model_flag``
+        carrying a NUL is a code-owned mistake that surfaces at the FIRST SPAWN,
+        under a sentence about the operator's pinned build -- which is exactly
+        the reporting failure this whole method exists to prevent. And a
+        ``unstable_models`` given a bare STRING is still iterable, so the
+        membership test that refuses a moving alias silently becomes a SUBSTRING
+        search: ``"opus"`` would then refuse a model called ``"op"`` and admit
+        ``claude-opus-5`` -- wrong in both directions at once, and silent in
+        both.
+
+        What each field may and may not be held to is written where the field
+        is declared. The short of it: this proves the TOKEN and never the FORM,
+        and the element grammar is the configuration's own rather than a second
+        one invented here.
+        """
+        if type(self.model_flag) is not str:
+            raise HeadlessCliError("model_flag must be a string, or empty")
+        if self.model_flag and (
+                "\x00" in self.model_flag
+                or self.model_flag.split() != [self.model_flag]):
+            raise HeadlessCliError(
+                "model_flag must be one NUL-free token with no whitespace")
+        if type(self.unstable_models) is not tuple:
+            raise HeadlessCliError(
+                "unstable_models must be a tuple of model names; a string is "
+                "iterable and would turn the alias check into a substring search")
+        named: set[str] = set()
+        for name in self.unstable_models:
+            try:
+                _id("declared unstable model", name)
+            except ContractError as error:
+                raise HeadlessCliError(str(error)) from None
+            if name in named:
+                raise HeadlessCliError(
+                    f"{name} is declared unstable twice")
+            named.add(name)
+        if self.unstable_models and not self.model_flag:
+            # A vendor this build cannot name a model to cannot be sent one, so
+            # nothing it declared unstable could ever be routed to it. The
+            # declaration would read as a policy that is doing something.
+            raise HeadlessCliError(
+                "unstable_models declares moving names for a provider this "
+                "build has no model flag for, so none of them can be routed")

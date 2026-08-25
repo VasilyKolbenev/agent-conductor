@@ -92,6 +92,10 @@ scope, not permission for C/API-1 to invent a generic file-write endpoint.
   {
     "method": "POST", "path": "/command/runs/<run_id>/graph/from-template",
     "mutation": true, "csrf": true
+  },
+  {
+    "method": "POST", "path": "/command/runs/<run_id>/artifacts",
+    "mutation": true, "csrf": true
   }
 ]
 ```
@@ -344,7 +348,8 @@ the service. Every listed key is required and no other key is accepted:
 {
   "dispatch": ["work_item_id", "instruction_ref", "profile", "artifact_refs",
     "output_limit_profile"],
-  "review": ["work_item_id", "target_artifact_refs", "review_profile"],
+  "review": ["work_item_id", "target_artifact_refs", "result_artifact_ref",
+    "review_profile"],
   "evidence": ["target_action_id", "kinds"],
   "stop": ["target_attempt_id", "reason"],
   "retry": ["prior_action_id", "reason"],
@@ -902,6 +907,7 @@ arriving anywhere inside it is refused as the unknown key it is.
       "role_id": "role-thinker", "capability": "review",
       "arguments": { "work_item_id": "work-001",
                      "target_artifact_refs": ["artifact-brief"],
+                     "result_artifact_ref": "artifact-goal",
                      "review_profile": "spec" },
       "resources": [] },
     { "node_id": "confirm-gate", "kind": "gate",
@@ -1038,6 +1044,87 @@ and the writable-route containment/ownership gate before any durable effect,
 with the gate re-checked inside the transaction and answering `route_unsafe`
 (409) both times.
 
+### 4.7 `POST /command/runs/<run_id>/artifacts` — publish immutable handoff text
+
+Maps to `RunStore.append(ArtifactDocument)`. This is the one durable content
+door the `review` capability was waiting for: a `target_artifact_refs` value is
+an identifier, not the thing to review, and no adapter may turn an identifier
+into content by guessing a path or reading a caller-controlled URI.
+`result_artifact_ref` names where that review publishes its own immutable
+answer. It is explicit in the graph rather than derived from a stage, node or
+provider name, so a user-edited cycle keeps its handoffs without a naming
+convention hidden in runtime code.
+
+The request is closed to exactly `artifact_id`, `artifact_ref`, `media_type` and
+`content`. The server injects `run_id` from the path and `created_at` from its
+clock. `source_action_id` is server-owned and absent on this operator-publish
+road; a later runtime-produced artifact carries the action that produced it.
+That produced document also carries `input_artifact_ids`: the exact immutable
+documents the action read, in requested order. Neither server-owned field is
+accepted from this route. Thus an output says which bytes led to it even after
+a newer document is appended under the same logical reference.
+The two admitted media types are `text/plain` and `text/markdown`. Content is
+non-empty UTF-8 text, carries no NUL, and is bounded to 49,152 encoded bytes.
+The command transport independently bounds the complete encoded JSON request to
+65,536 bytes; both limits must pass, because JSON escaping can make its wire
+spelling longer than the decoded text it carries.
+
+<!-- CANONICAL:artifact_request -->
+```json
+{
+  "artifact_id": "artifact-document-001",
+  "artifact_ref": "artifact-brief",
+  "media_type": "text/markdown",
+  "content": "# Goal\nBuild the smallest releasable alpha without weakening its gates."
+}
+```
+
+A logical `artifact_ref` may have several immutable documents over a bounded
+loop. Consumers resolve the latest one in append order and receive its exact
+content plus its computed digest; they never receive a filesystem path. The
+record's `artifact_id` is its immutable identity. Thus a retry of the same id
+and facts returns `200`, while the same id with different content is
+`record_conflict` (409). A new document returns `201` and exactly one
+identifier-only run frame; a retry and every refusal emit none.
+
+The digest is computed from the canonical `ArtifactDocument` and is not stored
+beside it. A stored digest could disagree with the content it purported to
+name. The existing run read returns the document as an append-ordered
+`record_type: "artifact"` row; SSE carries only `kind` and `run_id` as before.
+
+An artifact is deliberately durable and visible through the authenticated
+loopback run read. This route is not a redaction service: text submitted here is
+an explicit request to retain and hand it to later roles. Raw harness stdout,
+stderr, environment values and arbitrary files never enter through it.
+
+The runtime-produced review road is narrower than the operator route and does
+not make raw process output a general record source. The bound adapter must
+declare `review`, resolve every requested immutable document before the task
+spawn, and use a task channel that keeps those bytes out of argv. The reviewed
+Claude road pins its vendor's read-only `plan` permission mode and independently
+requires the authorized work tree to remain unchanged. Only a completed,
+exit-zero, fully delivered, non-truncated stdout text answer is decoded as UTF-8
+and admitted as the output `ArtifactDocument`. Stderr is separately drained and
+bounded but is never artifact content; partial output, invalid text, empty text,
+NUL, a changed tree, a missing input, and every failed process produce no output
+artifact and no verification evidence.
+
+Every non-empty value admitted through the operator-pinned `env_allow` names is
+treated as sensitive on this value-producing road. If stdout repeats any such
+value, the output is refused before an artifact or evidence row exists. The
+runner retains only the boolean that a match occurred: the matched environment
+value is never copied into an outcome, refusal, journal record, API response or
+SSE frame.
+
+On that road the runtime appends the output artifact only after the durable
+`execution_observed` event, then appends one verified `EvidenceRef` whose digest
+equals the computed artifact digest. Only that causal pair may let the terminal
+`ActionResultReceipt` say `succeeded`. Dispatch follows the same law for an
+actual contained tree change: its evidence digest covers the action identity,
+the exact input artifact identities and the before/after hashes of every changed
+path. Exit zero with no change still proves nothing and remains
+`verification_failed`.
+
 ## 5. Human-decision endpoints — FROZEN CONTRACT
 
 ### 5.1 `POST /command/runs/<run_id>/decisions` — record a DecisionReceipt
@@ -1111,8 +1198,9 @@ infer one from prose. The record kinds and their contracts are the closed v2 voc
 `action_request` (`ActionRequest`), `action_result` (`ActionResultReceipt`),
 `evidence` (`EvidenceRef`), `decision` (`DecisionReceipt`),
 `action_proposal` (`ActionProposal`), `adapter_observation` (`ObservationRecord`),
-`attempt_event` (`AttemptEvent`), and `graph_definition` (`GraphDefinition`) —
-one run follows at most one graph, and a second under another id is refused.
+`attempt_event` (`AttemptEvent`), `graph_definition` (`GraphDefinition`), and
+`artifact` (`ArtifactDocument`). One run follows at most one graph, and a second
+under another id is refused.
 
 <!-- CANONICAL:run_read_response -->
 ```json
@@ -1349,13 +1437,27 @@ NOT be mixed**; they share no value, so neither can be read as the other:
 A consumer joins these rows with `/harnesses.json` **by `provider_id`**. A
 `display_name` is a label to render and MUST NOT be parsed for any fact.
 
+An `instances` row carries a third deployment fact: **`model`**, the model id
+this run's frozen configuration pins for that instance, or `null` when it pins
+none. It sits beside `adapter_id` because it is the same KIND of fact — what the
+configuration says about a deployment — and it appears in no graph document,
+where a plan names roles and never a machine.
+
+`null` is not a default and MUST NOT be rendered as one. It says this build
+chose no model for that instance, so what runs is whatever the provider's own
+configuration decides; a consumer that printed a model name there would be
+inventing the one fact the field exists to report. A consumer MUST NOT parse the
+id for a vendor, a family or a size — it is an identifier to display and to join
+on, exactly like `adapter_id`.
+
 The example below exercises every value of both vocabularies, which is why its
 last row is **illustrative and names no shipped product**: the alpha execution
 roster carries no `unproven` row, because a catalogued row means this build can
 describe *and* constructively serve that provider. `unproven` remains in the
 vocabulary as the claim a row makes when it declares no implementation at all,
 so a consumer MUST still be able to render it. Every other row in the example is
-a provider this build really catalogues.
+a provider this build really catalogues. Its two instance rows exercise both
+states of `model` for the same reason.
 
 <!-- CANONICAL:controls_response -->
 ```json
@@ -1363,10 +1465,12 @@ a provider this build really catalogues.
   "instances": [
     {
       "instance_id": "claude-dev", "adapter_id": "claude-code",
+      "model": "claude-opus-5",
       "controls": ["dispatch", "retry", "review", "stop"]
     },
     {
       "instance_id": "codex-review", "adapter_id": "codex",
+      "model": null,
       "controls": ["dispatch", "retry", "review", "stop"]
     }
   ],

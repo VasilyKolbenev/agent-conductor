@@ -198,7 +198,32 @@ function pairState(read, graph) {
   return GRAPH_LOADED;
 }
 
-export function adaptRunGraph(read, registry) {
+//: The wire's own controls document, mapped into the panel-internal
+//: deployment row. It is a SEPARATE read from the run's: a plan says which
+//: instance does the work, and only the run's frozen configuration says which
+//: product drives that instance and which model it pins. Splicing them is this
+//: file's job, exactly as splicing the definition and the runtime is.
+//:
+//: A `model` of null is carried through as null. This adapter never fills it
+//: in, because filling it in is the one thing that would turn "the
+//: configuration chose no model" into a claim that it chose one.
+export function adaptDeployment(controls) {
+  if (!isObject(controls) || !Array.isArray(controls.instances)) return [];
+  const rows = [];
+  for (const row of controls.instances) {
+    if (!isObject(row)) continue;
+    if (!("instance_id" in row) || !("adapter_id" in row)) continue;
+    // An older server answers no `model` key at all. That is a different fact
+    // from a null and this window may not flatten it: the row is dropped, and
+    // the screen says nothing about a deployment it could not read.
+    if (!("model" in row)) continue;
+    rows.push({instance_id: row.instance_id, adapter_id: row.adapter_id,
+      model: row.model});
+  }
+  return rows;
+}
+
+export function adaptRunGraph(read, registry, controls) {
   if (!isObject(read) || !isObject(read.run)) return refused();
   const graph = read.graph;
   if (!isObject(graph) || !keysWithin(
@@ -231,6 +256,7 @@ export function adaptRunGraph(read, registry) {
   return Object.freeze({state: GRAPH_LOADED, payload: {
     run: {run_id: read.run.run_id, mode: read.run.mode},
     registry: Array.isArray(registry) ? registry : [],
+    deployment: adaptDeployment(controls),
     nodes,
     edges: definition.edges.map((edge) => isObject(edge)
       ? {from: edge.from_node, to: edge.to_node} : edge),

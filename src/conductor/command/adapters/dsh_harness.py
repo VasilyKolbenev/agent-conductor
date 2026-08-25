@@ -50,12 +50,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .deep_contracts import DeepProtocol
+from .artifact_transport import ArtifactAwareTransport
 from .harness_workspace import INSTRUCTION_DIR, WORK_DIR
 from .headless_cli import (
     DISPATCH_CAPABILITY,
     HarnessProfile,
     HeadlessCliError,
-    HeadlessCliTransport,
     reviewed_env_allow,
     reviewed_pin_path,
 )
@@ -135,7 +135,7 @@ class DshPin:
             reviewed_env_allow(self.env_allow, DshHarnessError))
 
 
-class DshHarnessAdapter(HeadlessCliTransport):
+class DshHarnessAdapter(ArtifactAwareTransport):
     """Run one dsh headless task per authorized action, and prove nothing more.
 
     The manifest holds exactly two entries: ``observe``, which reports honest

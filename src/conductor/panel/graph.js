@@ -332,14 +332,33 @@ const STREAM_DOWN = "Connection lost. The last authoritative facts are still "
     }
     return registryRows;
   }
+  // Which product drives each instance, and which model it pins. A SECOND
+  // read, because it is a second document: the run read carries the plan and
+  // its position, and only the frozen configuration says anything about a
+  // deployment.
+  //
+  // It is read per run and never cached, unlike the registry: the registry
+  // describes this BUILD and cannot change under a window, while a
+  // configuration belongs to one run and the next run selected has its own. A
+  // read that refuses leaves the deployment unstated -- which is what this
+  // window says when it does not know, and is never a claim that a run pins no
+  // model.
+  async function readControls(runId) {
+    try {
+      return await readJson(
+        `/command/runs/${encodeURIComponent(runId)}/controls`);
+    } catch (_error) {
+      return null;
+    }
+  }
   // The verdict alone, with no save outcome attached to it yet. It used to
   // carry one in, which meant a document that ARRIVED whole and was then
   // refused — two hundred bytes of valid HTTP saying something this window
   // cannot read as one plan and one position — still announced that the plan
   // was written. Which holder answers is a decision about the verdict, so it
   // is made where the verdict is known and not one step earlier.
-  function loadOutcome(read, registry) {
-    const answer = adaptRunGraph(read, registry);
+  function loadOutcome(read, registry, controls) {
+    const answer = adaptRunGraph(read, registry, controls);
     if (answer.state === GRAPH_LOADED) {
       const facts = projectPayload(answer.payload);
       return facts ? {type: "loaded", facts} : {type: "refused", notice: CORRUPT};
@@ -394,14 +413,15 @@ const STREAM_DOWN = "Connection lost. The last authoritative facts are still "
   async function loadSelectedRun(runId) {
     const requestEpoch = epoch;
     try {
-      const [read, registry] = await Promise.all([
+      const [read, registry, controls] = await Promise.all([
         readJson(`/command/runs/${encodeURIComponent(runId)}`), readRegistry(),
+        readControls(runId),
       ]);
       // The epoch guard is what makes `ready` mean the CHOSEN run: every run
       // change bumps it, so an answer that still matches is an answer about
       // the run now selected and about no other.
       if (requestEpoch !== epoch) return;
-      const outcome = loadOutcome(read, registry);
+      const outcome = loadOutcome(read, registry, controls);
       // Two different questions, answered separately. Whether this window is
       // CURRENT: any landed read of the chosen run says yes, whatever the run
       // turns out to follow, and only a refusal says no. Whether a write is

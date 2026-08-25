@@ -498,7 +498,7 @@ def test_a_rendered_template_is_a_copy_and_editing_it_leaves_the_template_alone(
 def test_the_callers_own_arguments_are_taken_once_and_never_read_again():
     """A mapping the caller still holds is a mapping the caller can still edit."""
     caller = {"work_item_id": "work-001", "target_artifact_refs": ["artifact-a"],
-              "review_profile": "spec"}
+              "result_artifact_ref": "artifact-b", "review_profile": "spec"}
     node = TemplateNode(node_id="n", kind="task", title="T", stage="goal",
                         role_id="role-a", capability="review", arguments=caller)
     caller["review_profile"] = "hijacked"

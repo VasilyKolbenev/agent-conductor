@@ -71,13 +71,13 @@ from collections.abc import Callable
 from pathlib import Path
 
 from .deep_contracts import DeepProtocol
+from .artifact_transport import ArtifactAwareTransport
 from .harness_workspace import INSTRUCTION_DIR, WORK_DIR
 from .headless_cli import (
     DISPATCH_CAPABILITY,
     ExecutablePin,
     HarnessProfile,
     HeadlessCliError,
-    HeadlessCliTransport,
 )
 from .process import ProcessRunner
 
@@ -165,7 +165,7 @@ def kimi_pin(executable: str, env_allow: tuple[str, ...] = ()) -> ExecutablePin:
         executable=executable, error=KimiCodeError, env_allow=env_allow)
 
 
-class KimiCodeAdapter(HeadlessCliTransport):
+class KimiCodeAdapter(ArtifactAwareTransport):
     """Run one Kimi Code prompt per authorized action, and prove nothing more."""
 
     profile = KIMI_PROFILE

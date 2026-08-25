@@ -320,6 +320,40 @@ function appendDetailFacts(mount, node, nodes) {
   }
 }
 
+//: What the CONFIGURATION says about the instance a step is bound to, under
+//: the plan binding and never mixed into it. The plan says where work runs;
+//: this says what runs it. Three states, and they are three:
+//:
+//: - a row with a model: this deployment pinned one, and it is named;
+//: - a row with `model: null`: the configuration pinned none, so what runs is
+//:   whatever the provider's own configuration decides. Said out loud, because
+//:   a blank line there would read as the first state;
+//: - no row at all: this window could not read the configuration. It says so
+//:   rather than drawing either of the above.
+function appendDeployment(mount, state, node) {
+  if (node.binding === null) return;
+  const row = state.deployment.find(
+    (entry) => entry.instanceId === node.binding.instanceId);
+  mount.append(element("h3", {className: "g-det__plan", text: "Deployment"}));
+  if (!row) {
+    mount.append(element("p", {className: "g-note", text:
+      "This window has not read this run's configuration, so it can say "
+      + "nothing about which product or model serves this instance."}));
+    return;
+  }
+  // The product, drawn by the same badge every other harness draws with, from
+  // the same registry rows. No name is invented here: an unregistered adapter
+  // id draws neutrally as itself, which is a true statement about how much is
+  // known about it.
+  const line = element("p", {className: "g-det__meta"});
+  line.append(badge(state.registry, row.adapterId));
+  mount.append(line);
+  mount.append(element("p", {className: "mono g-det__meta", text:
+    row.model === null
+      ? "model: none pinned — the provider's own configuration decides"
+      : `model: ${row.model}`}));
+}
+
 // What the PLAN binds this step to, under its own heading. `instance`, not
 // a product name: the plan names where work runs and the configuration names
 // which adapter serves it, and this window never collapses the two.
@@ -392,6 +426,7 @@ export function renderDetail(mount, state, decisionDraft, onDecide) {
       text: `${node.node_id} · ${node.kind}`}), chips);
   appendDetailFacts(mount, node, state.nodes);
   appendPlanBinding(mount, node);
+  appendDeployment(mount, state, node);
   appendRunPosition(mount, node);
   if (node.runtime === null) {
     mount.append(element("h3", {text: "Evidence"}));

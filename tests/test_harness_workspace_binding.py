@@ -106,14 +106,14 @@ def test_a_home_discard_leaves_the_markers_that_prove_what_already_ran(tmp_path)
     """
     root = _root(tmp_path)
     workspace = HarnessWorkspace.at(root, home_dir=ONE_HOME, marker_dir=ONE_MARKER)
-    workspace.claim("act-1")
+    workspace.claim("run-1", "act-1")
     home = workspace.mint_home("attempt-1")
     (home / "profile.json").write_text("{}", encoding="utf-8")
 
     workspace.discard_home(home)
 
     assert not home.exists(), "the attempt home is gone"
-    assert workspace.is_claimed("act-1") is True, "CLAIM_LOST_WITH_THE_HOME=True"
+    assert workspace.is_claimed("run-1", "act-1") is True, "CLAIM_LOST_WITH_THE_HOME=True"
 
 
 @pytest.mark.parametrize("reserved", (WORK_DIR, INSTRUCTION_DIR))
@@ -187,12 +187,14 @@ def test_the_marker_name_is_the_route_the_door_actually_walks(tmp_path):
     root = _root(tmp_path)
     workspace = HarnessWorkspace.at(root, home_dir=ONE_HOME, marker_dir=ONE_MARKER)
 
-    workspace.claim("act-1")
+    workspace.claim("run-1", "act-1")
 
-    named = workspace.marker_path("act-1")
+    named = workspace.marker_path("run-1", "act-1")
     assert named.is_file(), f"NOTHING_AT_THE_NAMED_MARKER={named}"
     assert named.read_text(encoding="utf-8") == "act-1"
-    assert named.parent.name == ONE_MARKER, "the marker stands in the marker root"
+    assert named.parent.name == "run-1", "the marker stands under its own run"
+    assert named.parent.parent.name == ONE_MARKER, (
+        "and that run stands in the marker root")
 
 
 def _holds(workspace, entered, release):
@@ -444,3 +446,86 @@ def test_a_reparse_tag_that_is_no_link_is_still_not_a_file_this_build_wrote(
     monkeypatch.setattr(harness_workspace, "_leaf", lambda path: _ReparseStat())
 
     assert workspace.home_leaf_kind(home, "answer.txt") == HOME_LEAF_OTHER
+
+
+# --- a marker's identity is the RUN and the action, never the action alone ---
+
+
+def test_one_action_id_in_two_runs_is_two_claims_and_neither_blocks_the_other(
+        tmp_path):
+    """The defect this key was changed for, driven on the door itself.
+
+    An action id is unique WITHIN a run and nothing makes it unique across runs:
+    a runtime mints `action-1` for the first action of every run it serves. Filed
+    flat, the second run to use an id was refused as a replay of the first --
+    observed as a run coming back `unknown` about work it had never done.
+    """
+    workspace = HarnessWorkspace.at(
+        _root(tmp_path), home_dir=ONE_HOME, marker_dir=ONE_MARKER)
+
+    workspace.claim("run-a", "action-1")
+
+    assert workspace.is_claimed("run-a", "action-1") is True
+    assert workspace.is_claimed("run-b", "action-1") is False, (
+        "RUN_B_WAS_REFUSED_AS_A_REPLAY_OF_RUN_A"
+    )
+    # And claiming it in B leaves A's claim exactly where it was.
+    workspace.claim("run-b", "action-1")
+    assert workspace.is_claimed("run-a", "action-1") is True
+    assert workspace.is_claimed("run-b", "action-1") is True
+
+
+def test_the_same_run_and_action_after_a_crash_is_still_claimed(tmp_path):
+    """The half the marker exists for, which the new key may not cost.
+
+    A marker outlives the process that wrote it, so a dispatch that crashed
+    between claiming and finishing must not run again. Separating runs is only
+    safe if it does not also separate a run from its own earlier attempt.
+    """
+    root = _root(tmp_path)
+    workspace = HarnessWorkspace.at(
+        root, home_dir=ONE_HOME, marker_dir=ONE_MARKER)
+    workspace.claim("run-a", "action-1")
+
+    # A different workspace object over the same tree is what a restarted
+    # process really holds: nothing in memory survived, only the disk.
+    restarted = HarnessWorkspace.at(
+        root, home_dir=ONE_HOME, marker_dir=ONE_MARKER)
+
+    assert restarted.is_claimed("run-a", "action-1") is True, (
+        "A_CRASHED_ACTION_WOULD_RUN_TWICE"
+    )
+
+
+def test_a_marker_left_by_the_flat_namespace_is_read_as_a_claim(tmp_path):
+    """The migration, and it is deliberately conservative.
+
+    A flat `<action_id>.marker` names an action whose run this door cannot
+    recover. It cannot be attributed and it cannot be dismissed -- and of the
+    two, dismissing is the one that repeats an action that may already have run.
+    So it is read as a claim by whichever run asks, which costs a refusal an
+    operator can clear and never costs a repeated action.
+    """
+    root = _root(tmp_path)
+    workspace = HarnessWorkspace.at(
+        root, home_dir=ONE_HOME, marker_dir=ONE_MARKER)
+    legacy = root / ONE_MARKER
+    legacy.mkdir(parents=True, exist_ok=True)
+    (legacy / "action-1.marker").write_text("action-1", encoding="utf-8")
+
+    assert workspace.is_claimed("run-a", "action-1") is True
+    assert workspace.is_claimed("run-b", "action-1") is True
+    # An action the flat namespace never named is unaffected by it.
+    assert workspace.is_claimed("run-a", "action-2") is False
+
+
+def test_nothing_writes_the_flat_marker_name_any_more(tmp_path):
+    """The legacy namespace can only shrink, so the read above has an end."""
+    root = _root(tmp_path)
+    workspace = HarnessWorkspace.at(
+        root, home_dir=ONE_HOME, marker_dir=ONE_MARKER)
+
+    workspace.claim("run-a", "action-1")
+
+    assert not (root / ONE_MARKER / "action-1.marker").exists()
+    assert (root / ONE_MARKER / "run-a" / "action-1.marker").is_file()

@@ -25,6 +25,8 @@ from pathlib import Path
 
 from conductor.command import contracts, graph_definition, graph_projection
 
+from tests.test_command_run_store import CONFIG
+
 ROOT = Path(__file__).resolve().parents[1]
 PANEL = ROOT / "src" / "conductor" / "panel"
 HTML = PANEL / "graph.html"
@@ -361,7 +363,39 @@ def test_every_refusal_arm_of_the_store_is_pinned_by_count():
     # pinned by its own spelling beside the behavioural over-limit case.
     assert "const RESOURCE_LIMIT = 16;" in store
     assert "rows.length > RESOURCE_LIMIT" in store
-    # The registry's arms refuse by dropping a row, so they are pinned by
-    # their own spelling: deleting one reds this line, not only the rendered
-    # drop-row test in the browser suite.
-    assert store.count("continue;") == 7
+    # Two projections refuse by DROPPING a row rather than by refusing the
+    # payload -- the registry's, and the deployment's -- so their arms are
+    # pinned by their own spelling: deleting one reds this line, not only the
+    # rendered drop-row test in the browser suite. Seven arms belong to the
+    # registry and six to the deployment, and a row this window drops is a row
+    # whose harness draws neutrally or whose instance shows no deployment,
+    # which is a true statement about how much was readable.
+    assert store.count("continue;") == 13
+
+
+def test_the_shipped_default_binds_only_instances_a_run_can_declare():
+    """A default a Human cannot save is a default that does not work.
+
+    "Start from the default" builds a local draft and the Save button sends it
+    to the immutable graph route, which holds every node's `instance_id`
+    against the run's FROZEN CONFIGURATION. An instance no configuration
+    declares is answered `service_refused` and nothing is written -- so the
+    fixture's instance ids are a product constraint, not decoration.
+
+    This was learned rather than reasoned: a correction that gave each step its
+    own instance named two the canonical configuration does not declare, and
+    four wire tests went red on the save. They are the end-to-end proof and
+    they run in the browser gate; this is the two-second one, so the next
+    person to edit the fixture finds out before a gate does.
+
+    The deployment rows are held to the same list from the other side, so a
+    fixture cannot describe a deployment for an instance no step names.
+    """
+    declared = {row["id"] for row in CONFIG["instances"]}
+    document = DEFAULT.read_text(encoding="utf-8")
+    bound = set(re.findall(r'binding: \{instance_id: "([^"]+)"', document))
+    described = set(re.findall(r'\{instance_id: "([^"]+)", adapter_id:', document))
+
+    assert bound, "the default binds no instance at all, so this proves nothing"
+    assert bound <= declared, sorted(bound - declared)
+    assert described == bound, sorted(described ^ bound)

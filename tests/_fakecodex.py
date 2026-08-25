@@ -98,6 +98,14 @@ VERSION_FAILS = "FAKECODEX_VERSION_FAILS"
 EXIT = "FAKECODEX_EXIT"
 #: Emit this on stdout during a task spawn, to stand for a model's answer.
 EMIT_STDOUT = "FAKECODEX_EMIT_STDOUT"
+#: Emit the fixed review answer below on stdout. A knob of its own rather than a
+#: value passed through `EMIT_STDOUT`, because the leak suites drive that one
+#: with a credential and a review test must be able to ask for an ordinary
+#: answer without borrowing the channel a leak probe is using.
+EMIT_REVIEW = "FAKECODEX_EMIT_REVIEW"
+#: What a review spawn answers with. Fixed, so a test asserts the exact bytes
+#: that became the durable artifact rather than a shape.
+REVIEW_OUTPUT = "# Review\n\nThe durable material holds; publish it."
 #: Emit this on stderr, which the runner merges into the same bounded capture.
 EMIT_STDERR = "FAKECODEX_EMIT_STDERR"
 #: Write this many bytes to stdout, to overrun the transport's capture bound.
@@ -307,6 +315,9 @@ def _run_task() -> int:
         _write_pair(Path.cwd(), env[WRITE_FILE])
     if env.get(EMIT_STDOUT):
         sys.stdout.buffer.write(env[EMIT_STDOUT].encode("utf-8") + b"\n")
+        sys.stdout.buffer.flush()
+    if env.get(EMIT_REVIEW):
+        sys.stdout.buffer.write(REVIEW_OUTPUT.encode("utf-8") + b"\n")
         sys.stdout.buffer.flush()
     if env.get(EMIT_STDERR):
         sys.stderr.buffer.write(env[EMIT_STDERR].encode("utf-8") + b"\n")

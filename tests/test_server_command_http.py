@@ -199,6 +199,43 @@ def test_real_http_writes_a_plan_once_and_signals_it_by_identifier_only(tmp_path
         subject.server_close()
 
 
+def test_real_http_publishes_an_artifact_and_only_its_run_identifier(tmp_path):
+    subject, store = _start(tmp_path)
+    connection = http.client.HTTPConnection(
+        "127.0.0.1", subject.server_address[1], timeout=20)
+    document = {
+        "artifact_id": "artifact-document-001",
+        "artifact_ref": "artifact-brief",
+        "media_type": "text/markdown",
+        "content": "# Brief\nReview the durable handoff, not a path.",
+    }
+    try:
+        connection.request("GET", "/events")
+        stream = connection.getresponse()
+        assert stream.status == 200
+        assert _read_frame(stream) == 'data: {"kind":"state"}\n\n'
+
+        prefix = f"/command/runs/{RUN_ID}"
+        created = _request(subject, "POST", prefix + "/artifacts", document)
+        signal = _read_frame(stream)
+        retried = _request(subject, "POST", prefix + "/artifacts", document)
+        read = _request(subject, "GET", prefix)
+        no_collection = _request(subject, "GET", prefix + "/artifacts")
+
+        assert created[0] == 201 and retried[0] == 200
+        assert retried[1] == created[1]
+        assert signal == 'data: {"kind":"run","run_id":"%s"}\n\n' % RUN_ID
+        assert set(json.loads(signal[len("data: "):])) == {"kind", "run_id"}
+        assert read[1]["records"] == [{
+            "record_type": "artifact", "record": created[1]}]
+        assert [row.kind for row in store.read(RUN_ID).records] == ["artifact"]
+        assert no_collection[0] == 405
+    finally:
+        connection.close()
+        subject.shutdown()
+        subject.server_close()
+
+
 def test_wrong_command_methods_and_unknown_routes_are_closed_json(tmp_path):
     subject, _store = _start(tmp_path)
     try:

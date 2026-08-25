@@ -33,6 +33,12 @@ from .attempt_replay import (
     validate_event_result,
 )
 from .attempts import AttemptEvent
+from .artifacts import (
+    ArtifactDocument,
+    validate_artifact_source,
+    validate_review_evidence,
+    validate_review_result,
+)
 from .graph_causality import (
     DISPATCH_KEY_PREFIX,  # noqa: F401 -- re-exported at its original home
     _one_graph_per_run,
@@ -97,6 +103,7 @@ def _transactional(method):
 RecordValue = (
     ActionRequest | ActionResultReceipt | EvidenceRef | DecisionReceipt
     | ActionProposal | ObservationRecord | AttemptEvent | GraphDefinition
+    | ArtifactDocument
 )
 
 
@@ -127,6 +134,7 @@ _RECORDS: dict[str, tuple[type[RecordValue], str]] = {
     "adapter_observation": (ObservationRecord, "observation_id"),
     "attempt_event": (AttemptEvent, "event_id"),
     "graph_definition": (GraphDefinition, "graph_id"),
+    "artifact": (ArtifactDocument, "artifact_id"),
 }
 
 # A named-key screen, not a proof that the snapshot is secret-free: a key is
@@ -314,6 +322,41 @@ def _causal_order(
         placed.add(row.receipt_id)
         ordered.append(row)
     return ordered
+
+
+def _hold_review_chain(prior_values: tuple[object, ...], value: object) -> None:
+    """The review chain's three links, each judged where it is appended.
+
+    They are ONE circuit and are extracted together rather than left inline: an
+    artifact answers the request that asked for it, the verification digests
+    THAT artifact, and the succeeded result names that verification. A reader
+    checking whether the chain is whole should find it in one place, and
+    `_validate_new_relation` had grown past the length at which it can be read
+    as the dispatcher it is.
+
+    Each rule is asked only of the record type it judges, and each raises the
+    store's own error, so replay reports them as broken causality rather than as
+    a contract fault in a value that is, in itself, well formed.
+
+    WHICH chain a record belongs to is the rules' own question, and they answer
+    it from the authorizing request's capability rather than from whether an
+    artifact happens to be there. Keyed on the artifact, the last two switched
+    themselves off for exactly the journals that had none -- see
+    `artifacts._is_review_chain`.
+    """
+    if isinstance(value, ArtifactDocument):
+        _as_store_error(validate_artifact_source, value, prior_values)
+    if isinstance(value, EvidenceRef):
+        _as_store_error(validate_review_evidence, value, prior_values)
+    if isinstance(value, ActionResultReceipt):
+        _as_store_error(validate_review_result, value, prior_values)
+
+
+def _as_store_error(rule, value: object, prior_values: tuple[object, ...]) -> None:
+    try:
+        rule(value, prior_values)
+    except ContractError as e:
+        raise StoreError(str(e)) from e
 
 
 class RunStore:
@@ -555,6 +598,7 @@ class RunStore:
                 validate_attempt_event(recovered.config, prior_values, value)
             except AttemptRelationError as e:
                 raise StoreError(str(e)) from e
+        _hold_review_chain(prior_values, value)
         if isinstance(value, DecisionReceipt):
             if value.config_digest != recovered.envelope.config_digest:
                 raise StoreError("decision config_digest does not match the frozen run")
