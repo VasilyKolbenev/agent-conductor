@@ -154,8 +154,16 @@ const STREAM_DOWN = "Connection lost. The last authoritative facts are still "
         ? `run: ${state.run.runId} · mode: ${state.run.mode} · fixture` : "";
     }
     const mode = state.phase === "loaded" ? state.run.mode : "unknown";
+    // Two facts, not one. The drawing's SOURCE is what a read gave it; whether
+    // it also carries work this window composed and has not written is a
+    // different question, and answering only the first would offer a Human
+    // their own unwritten step back to them as the run's own. A durable plan
+    // with a composed step standing in it is neither purely one nor the other,
+    // and says both.
+    const source = state.provenance.source === "durable" ? "durable" : "local draft";
+    const composed = state.nodes.some((node) => node.draft);
     return `run: ${selectedRun} · mode: ${mode} · `
-      + `${state.provenance.source === "durable" ? "durable" : "local draft"}`;
+      + `${composed && source === "durable" ? "durable + local draft" : source}`;
   }
   function render() {
     const target = focusTarget();

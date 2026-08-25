@@ -192,6 +192,110 @@ def test_a_reconnect_reopens_the_write_door_only_after_the_run_is_read(
         page.context.close()
 
 
+def _compose_a_local_step(page, title: str = "Shadow review") -> str:
+    """Compose one step onto whatever the run's plan already holds.
+
+    The anchor is taken from the form's own first option rather than named
+    here: which ids a run's durable plan carries is that fixture's business,
+    and a test that hardcoded one would fail for a reason that is not its own.
+    Answers with the composed node's id, read back from the drawing.
+    """
+    form = page.locator("#composerCard .g-compose")
+    anchor = form.locator('[name="anchor"]')
+    first = anchor.evaluate("node => node.options[0].value")
+    form.locator('[name="title"]').fill(title)
+    anchor.select_option(first)
+    before = page.locator(".g-node").count()
+    form.locator('button[type="submit"]').click()
+    page.wait_for_function(
+        "n => document.querySelectorAll('.g-node').length === n + 1",
+        arg=before)
+    return page.locator(".g-node").last.get_attribute("data-node-id")
+
+
+def test_a_composed_local_step_survives_a_drop_and_the_read_that_follows(
+        chromium: Browser, wire_url: str) -> None:
+    """Born red. A reconnect's authoritative read used to erase a local draft.
+
+    The read replaced the whole drawing, so a step a Human had composed and not
+    written was gone the moment the socket came back -- silently, with nothing
+    saying so and nothing to recover it from.
+
+    **Scoped to COMPOSED steps and nothing wider.** Only `compose` marks a node
+    `draft`; every projected node, fixture or durable, carries `draft: false`.
+    A drawing seeded from the product's default is therefore still replaced,
+    which is what `test_a_reconnect_reopens_the_write_door_...` above holds and
+    what its comment argues for. That ruling is not reopened here.
+
+    Four assertions, because any one alone passes on a build that got the
+    others wrong.
+    """
+    page, recorder = _open(chromium, wire_url, double=True)
+    try:
+        _load_run(page, DURABLE_RUN)
+        composed = _compose_a_local_step(page)
+        assert "LOCAL DRAFT" in page.locator(
+            f'[data-node-id="{composed}"]').inner_text()
+        writes = len(recorder.matching("POST", "/graph"))
+
+        page.evaluate("() => window.__stream.fire('error')")
+        page.wait_for_function(
+            "() => document.querySelector('[name=\\'save\\']').disabled")
+        page.evaluate("() => window.__stream.fire('open')")
+        page.wait_for_function(
+            "() => !document.querySelector('[name=\\'save\\']').disabled")
+
+        # 1. The unwritten step is still on the drawing, still labelled.
+        assert page.locator(f'[data-node-id="{composed}"]').count() == 1, (
+            "the authoritative read erased a step the Human had not written")
+        assert "LOCAL DRAFT" in page.locator(
+            f'[data-node-id="{composed}"]').inner_text()
+        # 2. And it is not called plain durable: saying only that would offer
+        #    the Human's own unwritten step back to them as the run's.
+        assert "local draft" in page.locator("#runFacts").inner_text()
+        # 3. A reconnect writes nothing. Preserving a draft may not become
+        #    submitting one behind the Human's back.
+        assert len(recorder.matching("POST", "/graph")) == writes
+        # 4. Neither kind was rewritten as the other. Exactly the composed step
+        #    wears the label; the run's own nodes arrived from the read and did
+        #    not acquire one by standing beside it.
+        assert page.locator('.g-node:has-text("LOCAL DRAFT")').count() == 1
+    finally:
+        page.context.close()
+
+
+def test_choosing_another_run_never_carries_a_composed_step_onto_it(
+        chromium: Browser, wire_url: str) -> None:
+    """A draft is held for ONE run, and moves to no other.
+
+    The holding rule above exists so a transport event cannot take a Human's
+    unwritten work. Choosing a different run is not a transport event -- it is
+    the Human saying they are looking at something else, and carrying a step
+    composed against one run onto another run's screen would offer it as that
+    run's. Worse, the save door beside it writes to whichever run is selected.
+
+    So the rule is bounded by the run id the facts carry, and this is the
+    control that says the bound is real rather than incidental.
+    """
+    page, _recorder = _open(chromium, wire_url, double=True)
+    try:
+        _load_run(page, DURABLE_RUN)
+        composed = _compose_a_local_step(page)
+        assert page.locator(f'[data-node-id="{composed}"]').count() == 1
+
+        _load_run(page, EMPTY_RUN)
+
+        assert page.locator(f'[data-node-id="{composed}"]').count() == 0, (
+            "a step composed against one run was carried onto another")
+        # Asked of the DRAWING and not of the run line. A run that follows no
+        # graph says "local draft" there for its own reason -- its drawing came
+        # from no durable read -- so that phrase cannot tell a carried step
+        # from an empty run, and asserting on it would pass for the wrong one.
+        assert page.locator('.g-node:has-text("LOCAL DRAFT")').count() == 0
+    finally:
+        page.context.close()
+
+
 def test_choosing_a_run_shuts_the_door_before_its_facts_have_arrived(
         chromium: Browser, wire_url: str) -> None:
     """The mirror of the delayed-POST case, and the worse of the two.

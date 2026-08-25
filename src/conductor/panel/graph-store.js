@@ -169,6 +169,54 @@ function spoken(event, fallback) {
     ? event.notice : fallback;
 }
 
+const DRAFT_HELD = "Durable graph loaded from the authoritative run read, and "
+  + "the steps composed in this window are still held beside it as a LOCAL "
+  + "DRAFT. The plan the run follows is immutable; nothing composed here has "
+  + "been written to it.";
+const DRAFT_DISPLACED = "Durable graph loaded from the authoritative run read. "
+  + "The steps composed in this window could not be placed on the plan it "
+  + "carries, so they are no longer drawn — and nothing was written to the run.";
+
+// An authoritative read REPLACES the drawing, and for everything this window
+// merely DREW that is right: a fixture is not a fact about a run, and the
+// reconnect that proves it has its own test. It is wrong for what a Human
+// COMPOSED and has not written. Unwritten work is not a fact about the run
+// either, and losing it to a transport event -- a dropped socket, a reconnect,
+// a state greeting -- is not a decision anybody made.
+//
+// So exactly the composed nodes are carried across, by the one mark that tells
+// them apart: `compose` sets `draft: true`, and every projected node, fixture
+// or durable, carries `draft: false`. Nothing else is kept, which is why the
+// ruling for a seeded drawing stands untouched.
+//
+// Three things it will NOT do. It never crosses a run change, because carrying
+// one run's unwritten step onto another run's screen would offer it as that
+// run's. It never keeps an id the durable plan now carries -- once the run
+// follows a plan naming that step, the run is the authority on it. And it
+// never draws an edge with an end the merged drawing does not hold, which
+// would be a line from nothing.
+function heldDraft(state, facts) {
+  const drafts = state.nodes.filter((node) => node.draft);
+  if (!drafts.length || state.run.runId !== facts.run.runId) {
+    return {facts: null, notice: ""};
+  }
+  const arrived = new Set(facts.nodes.map((node) => node.node_id));
+  const kept = drafts.filter((node) => !arrived.has(node.node_id));
+  if (!kept.length) return {facts: null, notice: ""};
+  const keptIds = new Set(kept.map((node) => node.node_id));
+  const nodes = Object.freeze([...facts.nodes, ...kept]);
+  const known = new Set(nodes.map((node) => node.node_id));
+  const local = state.edges.filter((edge) =>
+    (keptIds.has(edge.from) || keptIds.has(edge.to))
+    && known.has(edge.from) && known.has(edge.to));
+  const edges = Object.freeze([...facts.edges, ...local]);
+  const layout = computeLayout(nodes, edges);
+  // A composed step whose anchor the run's plan does not have cannot be drawn
+  // on it. That is said out loud rather than drawn wrongly or dropped quietly.
+  if (!layout) return {facts: null, notice: DRAFT_DISPLACED};
+  return {facts: {nodes, edges, layout}, notice: DRAFT_HELD};
+}
+
 // The three answers a source can give, each with its own phase. A run that
 // follows no graph is not a graph that could not be read, and neither is
 // ever drawn as the other: an empty run is a normal answer, a refusal is a
@@ -182,9 +230,10 @@ function sourceArm(state, event) {
   const ready = Object.hasOwn(event, "ready")
     ? {writeReady: Boolean(event.ready)} : {writeReady: state.writeReady};
   if (event.type === "loaded") {
-    return Object.freeze({...EMPTY, ...event.facts, phase: "loaded",
-      ...carried(state, event), ...ready,
-      notice: LOADED_NOTICE[event.facts.provenance.source]});
+    const held = heldDraft(state, event.facts);
+    return Object.freeze({...EMPTY, ...event.facts, ...held.facts,
+      phase: "loaded", ...carried(state, event), ...ready,
+      notice: held.notice || LOADED_NOTICE[event.facts.provenance.source]});
   }
   // A refusal grants nothing and confirms nothing. It cannot say the screen
   // belongs to the chosen run, so the write door stays shut; and a save
