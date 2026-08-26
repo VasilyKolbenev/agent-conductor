@@ -19,17 +19,23 @@ what the workflow says, and they say so.
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
 
-WORKFLOW = Path(__file__).resolve().parent.parent / ".github" / "workflows" / "ci.yml"
+ROOT = Path(__file__).resolve().parent.parent
+WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 #: Every platform this product claims to run on. Named here rather than counted
 #: from the file, so a platform silently dropped from the workflow reds this
 #: instead of quietly reducing what the test asks for.
 PLATFORMS = ("ubuntu-latest", "windows-latest", "macos-latest")
 #: The interpreters the core matrix must cover.
 PYTHONS = ("3.11", "3.12")
+#: A module under `testpaths` that really imports the browser package, at the
+#: start of a line. Anchored on purpose: a test that merely NAMES the import --
+#: this one does -- is not a bridge into it.
+_TOP_LEVEL_BRIDGE = re.compile(r"^from browser_tests\b", re.MULTILINE)
 
 
 @pytest.fixture(scope="module")
@@ -106,6 +112,50 @@ def test_no_gate_writes_its_artifacts_into_the_worktree(workflow: str) -> None:
             continue
         assert "RUNNER_TEMP" in line or "runner.temp" in line, (
             f"a gate names an artifacts directory outside the runner temp: {line}")
+
+
+def test_the_core_job_installs_what_the_fast_suite_needs_to_COLLECT(
+        workflow: str) -> None:
+    """Born red on remote run #8: six core jobs died before any test ran.
+
+    `testpaths` is `tests/`, and a module there imports `browser_tests.conftest`,
+    which imports `playwright.sync_api` at module level. So the fast suite cannot
+    be COLLECTED without a package only the `browser` extra provides -- and the
+    core job installed `.[dev]`, which is pytest alone. All six jobs failed with
+    `ModuleNotFoundError` on three platforms at once, and not one of them said
+    anything about the product.
+
+    **Derived, not spelled.** Each link is read from the file that carries it:
+    the bridge from `tests/` into `browser_tests`, the module-level import in
+    that conftest, and which extra `pyproject.toml` puts playwright in. Move the
+    import or rename the extra and this reds, instead of leaving a pinned
+    spelling that agrees with nothing.
+    """
+    # Anchored to the start of a line, so a real top-level import counts and a
+    # mention of one does not -- this very file names the string while importing
+    # nothing, and a substring search reported itself as a bridge.
+    bridged = sorted(path.name for path in (ROOT / "tests").glob("test_*.py")
+                     if _TOP_LEVEL_BRIDGE.search(path.read_text(encoding="utf-8")))
+    assert bridged, (
+        "nothing under testpaths reaches browser_tests any more; this guard "
+        "holds a link that no longer exists and should be re-derived")
+    conftest = (ROOT / "browser_tests" / "conftest.py").read_text(encoding="utf-8")
+    assert "from playwright" in conftest, (
+        f"{bridged} import browser_tests.conftest, which no longer imports "
+        "playwright -- the reason for the extra below has moved")
+
+    project = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    extra = next((line.split("=")[0].strip()
+                  for line in project.splitlines() if "playwright" in line), "")
+    assert extra, "no optional-dependency group provides playwright"
+
+    job = _job(workflow, "test")
+    install = [line for line in job.splitlines() if "pip install -e" in line]
+    assert install, "the core job installs nothing"
+    assert all(extra in line for line in install), (
+        f"the fast suite cannot be collected without the {extra!r} extra "
+        f"({bridged} reach playwright through browser_tests.conftest), and the "
+        f"core job installs {install}")
 
 
 def test_both_jobs_prove_the_checkout_is_clean_before_they_report_green(
