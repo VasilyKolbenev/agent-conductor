@@ -41,6 +41,7 @@ in the tree has claimed yet.
 """
 from __future__ import annotations
 
+import re
 import stat
 import threading
 from pathlib import Path
@@ -58,6 +59,7 @@ from conductor.command.adapters.harness_workspace import (
     WORK_DIR,
     HarnessWorkspace,
     WorkspaceNotContained,
+    _component,
 )
 
 from tests import sabotage_fixtures
@@ -135,7 +137,7 @@ def test_a_run_owned_subtree_is_refused_as_a_providers_own_name(
 
 
 @pytest.mark.parametrize(
-    "name", ("..", ".", "", "a/b", "a\\b", "C:evil", "a\x00b"))
+    "name", ("..", ".", "", "a/b", "a\\b", "C:evil", "a\x00b", "a\x08b"))
 def test_a_provider_name_that_is_not_one_local_component_is_refused(tmp_path, name):
     """A name is a CHILD of the root, never a route out of it."""
     root = _root(tmp_path)
@@ -144,6 +146,85 @@ def test_a_provider_name_that_is_not_one_local_component_is_refused(tmp_path, na
         HarnessWorkspace.at, root, home_dir=name, marker_dir=ONE_MARKER)
 
     assert refusal is not None, f"home_dir={name!r} must refuse"
+
+
+@pytest.mark.parametrize("separator", ("/", "\\"))
+def test_both_route_separators_are_refused_on_every_system(tmp_path, separator):
+    """`a\\b` is one name here and a two-part ROUTE on Windows.
+
+    The door used to read `os.sep` and `os.altsep`, which are values of the
+    CURRENT platform, so POSIX accepted a backslash. An operator's
+    `providers.json` travels between machines and so does a run: a name may not
+    mean a child on one system and a route on another.
+
+    Held for BOTH marks in one test, because a rule that refused only the local
+    separator would pass on each platform separately while disagreeing across
+    the pair -- which is exactly the state this replaced.
+    """
+    root = _root(tmp_path)
+
+    refusal = _refusal(HarnessWorkspace.at, root,
+                       home_dir=f"a{separator}b", marker_dir=ONE_MARKER)
+
+    assert refusal is not None, f"{separator!r} must never be part of a name"
+
+
+@pytest.mark.parametrize("code", range(0x00, 0x20))
+def test_every_c0_control_character_is_refused(tmp_path, code):
+    """The whole C0 range, not NUL alone.
+
+    Only NUL was checked, so a name carrying a backspace, an escape or a newline
+    reached a filesystem, a receipt and a log -- where a control character is not
+    something a reader can see, compare or type back. Windows refused several of
+    them at the filesystem, which hid the hole there and left it open on POSIX.
+
+    Every code point is a case rather than a sample: the defect was one
+    character being checked and thirty-one not, and a sampled range is how that
+    stays true of some other character next time.
+    """
+    root = _root(tmp_path)
+
+    refusal = _refusal(HarnessWorkspace.at, root,
+                       home_dir=f"a{chr(code)}b", marker_dir=ONE_MARKER)
+
+    assert refusal is not None, f"U+{code:04X} must never be part of a name"
+
+
+def test_the_component_rule_is_decided_without_consulting_the_platform():
+    """The rule is the same rule everywhere, and the SOURCE of it is the claim.
+
+    A first version of this test moved the platform -- monkeypatching `os.sep`
+    and `os.altsep` to characters no system uses -- and it was worthless: the
+    marks are a module-level constant, so a platform value read into them is
+    read ONCE at import, long before any test can move anything. The mutation
+    restoring `os.sep` passed that test, which is how it was found.
+
+    So what is asserted is where the decision COMES FROM: the set is built from
+    literals and mentions no `os` attribute at all. That holds on every
+    platform, which a behavioural check cannot -- on Windows `os.sep` really is
+    a backslash, so the wrong implementation looks right there no matter what it
+    is asked.
+
+    The behaviour is held beside it, by the two tests above and the ordinary
+    names below.
+    """
+    source = Path(harness_workspace.__file__).read_text(encoding="utf-8")
+    assignment = re.search(r"^_COMPONENT_MARKS = .*$", source, re.MULTILINE)
+    assert assignment, "the component marks are no longer one named constant"
+
+    assert "os." not in assignment.group(0), (
+        "the component marks are read from THIS platform again, so the same "
+        f"name means a child here and a route elsewhere: {assignment.group(0)}")
+    assert {"/", "\\", ":"} <= harness_workspace._COMPONENT_MARKS
+
+
+def test_an_ordinary_name_still_passes_the_component_door():
+    """The positive control. Without it every refusal above is satisfied by a
+    door that refuses everything, and the whole provider roster would refuse to
+    construct."""
+    for name in (".claude-home", ".codex-marker", "work", "instructions",
+                 "a-b_c.1", "Ünïcödé"):
+        assert _component(name) == name
 
 
 # --- two providers under one root keep separate cleanup namespaces, and still
@@ -401,7 +482,14 @@ def test_a_home_outside_the_fixed_root_is_refused_before_any_name_is_read(
     assert refusal is not None, "A_HOME_OUTSIDE_THE_ROOT_WAS_READ=True"
 
 
-@pytest.mark.parametrize("name", ("..", "a/b", "", "a\b", "."))
+# `"a\b"` used to sit in this list and is NOT what it looks like: Python reads
+# it as a BACKSPACE, not as a backslash. So the case that appeared to hold the
+# separator was holding a control character, and it passed on Windows only
+# because the filesystem refuses that byte in a name -- on POSIX the name is
+# legal and nothing refused it. Both are spelled explicitly now, and both are
+# refused at the door rather than by whichever platform happens to be strict.
+@pytest.mark.parametrize(
+    "name", ("..", "a/b", "", "a\\b", "a\x08b", "."))
 def test_a_leaf_that_is_not_one_local_component_is_refused(tmp_path, name):
     """A route where a name belongs is a route out of the home."""
     workspace, home = _a_home(tmp_path)
