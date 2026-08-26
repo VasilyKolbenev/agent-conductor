@@ -38,54 +38,46 @@ PYTHONS = ("3.11", "3.12")
 #: because asking whether a name appears in the text is a different question:
 #: `".[dev]" # browser` contains "browser" and installs no browser extra.
 _INSTALL_EXTRAS = re.compile(r"\.\[([^\]]*)\]")
-#: A step's command written on the `run:` line itself.
-_RUN_INLINE = re.compile(r"^\s*run:\s*(?P<command>[^|>#].*)$")
-#: A step opening a `run: |` block; its body is the indented lines beneath.
-_RUN_BLOCK = re.compile(r"^(?P<indent>\s*)run:\s*[|>][-+]?\s*$")
+#: A step's command written on the `run:` line ITSELF. The excluded first
+#: characters are the two block-scalar indicators and a comment marker.
+_RUN_INLINE = re.compile(r"^\s*run:\s*(?P<command>[^|>#\s].*)$")
+#: A step that opens a block scalar instead. Detected so its presence can be
+#: REPORTED, never read.
+_RUN_SCALAR = re.compile(r"^\s*run:\s*[|>]")
 #: A command that really invokes pip's installer, at the HEAD of the line. An
 #: `echo "python -m pip install ..."` is an active command and installs
 #: nothing, so containing the words is not enough.
 _PIP_INSTALL = re.compile(r"^(?:python\s+-m\s+)?pip\s+install\b")
 
 
-def _active_run_commands(job: str) -> list[str]:
-    """Every command this job really EXECUTES, and nothing that merely reads
-    like one.
+def _inline_run_commands(job: str) -> list[str]:
+    """Every command written ON a `run:` line, and deliberately nothing else.
 
-    A commented-out line is not a command. The first version of this guard
-    collected any line containing `pip install -e`, so this pair answered yes
-    while installing pytest alone:
+    A commented-out line is not a command, which is why an earlier version of
+    this guard was wrong: it collected any line containing `pip install -e`, so
+    this pair answered yes while installing pytest alone:
 
         # run: python -m pip install -e ".[dev,browser]"
         run: python -m pip install -e ".[dev]"
 
-    Both inline `run:` commands and the bodies of `run: |` blocks count, because
-    both really run; the block body is found by indentation, which is what YAML
-    uses to delimit it.
+    **Block scalars are not read at all, and that is the point.** `|` keeps
+    newlines while `>` FOLDS them into ONE command, so a reader that walked a
+    body line by line accepted this as an install:
+
+        run: >
+          echo
+          python -m pip install -e ".[dev,browser]"
+
+    which really runs `echo python -m pip install ...` and installs nothing.
+    Folding correctly also means getting chomping indicators, blank lines and
+    the fact that `#` inside a block scalar is CONTENT right -- three more ways
+    for a guard to be wrong about the thing it exists to be right about. So
+    this reads the one form the install really uses, and the caller FAILS
+    CLOSED when it is not there: moving the install into a block scalar must
+    force this test to be re-derived, not quietly satisfied.
     """
-    commands: list[str] = []
-    body_indent: int | None = None
-    for raw in job.splitlines():
-        stripped = raw.strip()
-        if not stripped:
-            continue
-        indent = len(raw) - len(raw.rstrip("\n").lstrip())
-        if body_indent is not None:
-            if indent > body_indent:
-                if not stripped.startswith("#"):
-                    commands.append(stripped)
-                continue
-            body_indent = None
-        if stripped.startswith("#"):
-            continue
-        block = _RUN_BLOCK.match(raw)
-        if block:
-            body_indent = len(block.group("indent"))
-            continue
-        inline = _RUN_INLINE.match(raw)
-        if inline:
-            commands.append(inline.group("command").strip())
-    return commands
+    return [found.group("command").strip()
+            for found in map(_RUN_INLINE.match, job.splitlines()) if found]
 #: The name at the head of a requirement string, before any version marker.
 _REQUIREMENT_NAME = re.compile(r"^\s*([A-Za-z0-9._-]+)")
 
@@ -253,9 +245,16 @@ def test_the_core_job_installs_what_the_fast_suite_needs_to_COLLECT(
     extra = _extra_providing("playwright")
     assert extra, "no optional-dependency group provides playwright"
 
-    commands = _active_run_commands(_job(workflow, "test"))
-    installs = [command for command in commands if _PIP_INSTALL.match(command)]
-    assert installs, "the core job runs no pip install at all"
+    job = _job(workflow, "test")
+    installs = [command for command in _inline_run_commands(job)
+                if _PIP_INSTALL.match(command)]
+    scalars = sum(1 for line in job.splitlines() if _RUN_SCALAR.match(line))
+    assert installs, (
+        "the core job runs no INLINE pip install. This guard reads only the "
+        f"`run: <command>` form and the job holds {scalars} block scalar(s); a "
+        "folded `run: >` body is ONE command, so reading one line by line "
+        "accepts an `echo` as an install. If the install moved into a block, "
+        "re-derive this test rather than widening it")
     assert any(extra in _installed_extras(command) for command in installs), (
         f"the fast suite cannot be COLLECTED without the {extra!r} extra "
         f"({bridged} reach playwright through browser_tests.conftest), and no "
