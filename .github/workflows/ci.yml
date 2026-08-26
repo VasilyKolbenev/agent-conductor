@@ -33,8 +33,18 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
 
+      # The `browser` extra is installed in the CORE job, and it is not a stray
+      # dependency: `testpaths` is `tests/`, and `tests/test_browser_gate.py`
+      # imports `browser_tests.conftest`, which imports `playwright.sync_api` at
+      # module level. Without the package the fast suite cannot be COLLECTED --
+      # remote run #8 lost all six core jobs to `ModuleNotFoundError` before a
+      # single product test ran, on three platforms at once.
+      #
+      # The PACKAGE only. No `playwright install` here: nothing in the fast
+      # suite launches an engine -- the gate's own tests drive a recording fake
+      # -- so downloading Chromium into six jobs would buy nothing.
       - name: Install
-        run: python -m pip install -e ".[dev]"
+        run: python -m pip install -e ".[dev,browser]"
 
       # The interpreter and the console-script directory are printed because a
       # Windows runner keeps them APART: `setup-python` installs no virtualenv,

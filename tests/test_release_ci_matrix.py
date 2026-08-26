@@ -19,17 +19,129 @@ what the workflow says, and they say so.
 """
 from __future__ import annotations
 
+import ast
+import re
+import tomllib
 from pathlib import Path
 
 import pytest
 
-WORKFLOW = Path(__file__).resolve().parent.parent / ".github" / "workflows" / "ci.yml"
+ROOT = Path(__file__).resolve().parent.parent
+WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 #: Every platform this product claims to run on. Named here rather than counted
 #: from the file, so a platform silently dropped from the workflow reds this
 #: instead of quietly reducing what the test asks for.
 PLATFORMS = ("ubuntu-latest", "windows-latest", "macos-latest")
 #: The interpreters the core matrix must cover.
 PYTHONS = ("3.11", "3.12")
+#: The ONE install form this guard understands, matched WHOLE.
+#:
+#: Whole, because a head match reads the extras off a command that never puts
+#: the package in this job's environment. All four of these were accepted while
+#: only the first installs anything here:
+#:
+#:     python -m pip install -e ".[dev,browser]"
+#:     python -m pip install -e ".[dev,browser]" --dry-run
+#:     python -m pip install -e ".[dev,browser]" --target /tmp/elsewhere
+#:     python -m pip install -e ".[dev,browser]" --prefix /opt/nowhere
+#:
+#: So no tail is allowed at all. That is deliberately stricter than pip: a flag
+#: this guard has not reasoned about must make it FAIL rather than guess, in
+#: the same way a block scalar does. Widening it is a decision, not an edit.
+_EDITABLE_INSTALL = re.compile(
+    r'\s*python\s+-m\s+pip\s+install\s+-e\s+"\.\[(?P<extras>[^\]"]*)\]"\s*')
+#: A step's command written on the `run:` line ITSELF. The excluded first
+#: characters are the two block-scalar indicators and a comment marker.
+_RUN_INLINE = re.compile(r"^\s*run:\s*(?P<command>[^|>#\s].*)$")
+#: A step that opens a block scalar instead. Detected so its presence can be
+#: REPORTED, never read.
+_RUN_SCALAR = re.compile(r"^\s*run:\s*[|>]")
+
+
+def _inline_run_commands(job: str) -> list[str]:
+    """Every command written ON a `run:` line, and deliberately nothing else.
+
+    A commented-out line is not a command, which is why an earlier version of
+    this guard was wrong: it collected any line containing `pip install -e`, so
+    this pair answered yes while installing pytest alone:
+
+        # run: python -m pip install -e ".[dev,browser]"
+        run: python -m pip install -e ".[dev]"
+
+    **Block scalars are not read at all, and that is the point.** `|` keeps
+    newlines while `>` FOLDS them into ONE command, so a reader that walked a
+    body line by line accepted this as an install:
+
+        run: >
+          echo
+          python -m pip install -e ".[dev,browser]"
+
+    which really runs `echo python -m pip install ...` and installs nothing.
+    Folding correctly also means getting chomping indicators, blank lines and
+    the fact that `#` inside a block scalar is CONTENT right -- three more ways
+    for a guard to be wrong about the thing it exists to be right about. So
+    this reads the one form the install really uses, and the caller FAILS
+    CLOSED when it is not there: moving the install into a block scalar must
+    force this test to be re-derived, not quietly satisfied.
+    """
+    return [found.group("command").strip()
+            for found in map(_RUN_INLINE.match, job.splitlines()) if found]
+#: The name at the head of a requirement string, before any version marker.
+_REQUIREMENT_NAME = re.compile(r"^\s*([A-Za-z0-9._-]+)")
+
+
+def _imports_module(source: str, dotted: str) -> bool:
+    """Is `dotted` imported at the TOP LEVEL of this source, as syntax?
+
+    Read with `ast` rather than matched, and the difference is the whole reason
+    this helper exists. `tests/test_browser_gate.py` imports two names from the
+    same package -- `conftest`, which pulls playwright in, and `gate`, which
+    does not -- so a pattern matching the PACKAGE kept answering yes after the
+    load-bearing import was deleted. A guard that survives the removal of the
+    thing it exists to notice proves nothing.
+    """
+    package, _, leaf = dotted.rpartition(".")
+    for node in ast.parse(source).body:
+        if isinstance(node, ast.Import):
+            if any(alias.name == dotted for alias in node.names):
+                return True
+        elif isinstance(node, ast.ImportFrom):
+            if node.module == dotted:
+                return True
+            if node.module == package and any(
+                    alias.name == leaf for alias in node.names):
+                return True
+    return False
+
+
+def _installed_extras(command: str) -> set[str]:
+    """The extras this command really puts in the job's environment.
+
+    The command has to BE the reviewed install, WHOLE. Containing the words is
+    not enough -- an `echo "python -m pip install ..."` installs nothing -- and
+    neither is starting with them, because `--dry-run`, `--target` and
+    `--prefix` all leave this environment without the package.
+    """
+    found = _EDITABLE_INSTALL.fullmatch(command)
+    return ({name.strip() for name in found.group("extras").split(",")}
+            if found else set())
+
+
+def _extra_providing(package: str) -> str:
+    """Which optional-dependency group carries `package`, read from the file.
+
+    `tomllib` rather than a text search: a requirement is a structured thing,
+    and "the string appears somewhere in pyproject.toml" would be satisfied by a
+    comment, a URL, or the package's own name in an unrelated table.
+    """
+    data = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    groups = data.get("project", {}).get("optional-dependencies", {})
+    for name, requirements in groups.items():
+        for requirement in requirements:
+            head = _REQUIREMENT_NAME.match(requirement)
+            if head and head.group(1).lower() == package:
+                return name
+    return ""
 
 
 @pytest.fixture(scope="module")
@@ -106,6 +218,57 @@ def test_no_gate_writes_its_artifacts_into_the_worktree(workflow: str) -> None:
             continue
         assert "RUNNER_TEMP" in line or "runner.temp" in line, (
             f"a gate names an artifacts directory outside the runner temp: {line}")
+
+
+def test_the_core_job_installs_what_the_fast_suite_needs_to_COLLECT(
+        workflow: str) -> None:
+    """Born red on remote run #8: six core jobs died before any test ran.
+
+    `testpaths` is `tests/`, and a module there imports `browser_tests.conftest`,
+    which imports `playwright.sync_api` at module level. So the fast suite cannot
+    be COLLECTED without a package only the `browser` extra provides -- and the
+    core job installed `.[dev]`, which is pytest alone. All six jobs failed with
+    `ModuleNotFoundError` on three platforms at once, and not one of them said
+    anything about the product.
+
+    **Derived, not spelled.** Each link is read from the file that carries it:
+    the bridge from `tests/` into `browser_tests`, the module-level import in
+    that conftest, and which extra `pyproject.toml` puts playwright in. Move the
+    import or rename the extra and this reds, instead of leaving a pinned
+    spelling that agrees with nothing.
+    """
+    bridged = sorted(
+        path.name for path in (ROOT / "tests").glob("test_*.py")
+        if _imports_module(path.read_text(encoding="utf-8"),
+                           "browser_tests.conftest"))
+    assert bridged, (
+        "nothing under testpaths imports browser_tests.conftest any more, so "
+        "the reason the core job needs a browser extra has moved; re-derive "
+        "this guard rather than widening it")
+    conftest = (ROOT / "browser_tests" / "conftest.py").read_text(encoding="utf-8")
+    assert _imports_module(conftest, "playwright.sync_api"), (
+        f"{bridged} import browser_tests.conftest, which no longer imports "
+        "playwright at module level -- the reason for the extra has moved")
+
+    extra = _extra_providing("playwright")
+    assert extra, "no optional-dependency group provides playwright"
+
+    job = _job(workflow, "test")
+    installs = [command for command in _inline_run_commands(job)
+                if _EDITABLE_INSTALL.fullmatch(command)]
+    scalars = sum(1 for line in job.splitlines() if _RUN_SCALAR.match(line))
+    assert installs, (
+        'the core job runs no inline `python -m pip install -e ".[...]"`. This '
+        "guard understands that exact command and nothing else: it will not "
+        f"read the {scalars} block scalar(s) it can see -- a folded `run: >` "
+        "body is ONE command, so reading it line by line accepts an `echo` as "
+        "an install -- and it refuses any tail, because --dry-run, --target "
+        "and --prefix all leave this environment without the package. "
+        "Re-derive this test rather than widening it")
+    assert any(extra in _installed_extras(command) for command in installs), (
+        f"the fast suite cannot be COLLECTED without the {extra!r} extra "
+        f"({bridged} reach playwright through browser_tests.conftest), and no "
+        f"command the job actually RUNS asks for it: {installs}")
 
 
 def test_both_jobs_prove_the_checkout_is_clean_before_they_report_green(
