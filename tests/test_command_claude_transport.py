@@ -277,18 +277,18 @@ def test_an_instruction_small_enough_to_buffer_defeats_the_delivery_guard(tmp_pa
     for an ordinary instruction, which is far smaller than the buffer, a child
     that ignores its input entirely still produces `succeeded`.
 
-    The direction matters and is why this one survived a matrix that broke its
-    neighbour. "Small enough to fit" is safe on every system, because the
-    smallest pipe any of them offers is 4 KiB and this provider's whole composed
-    task is 162 bytes. "Large enough not to fit" was not safe on any of them,
-    because the largest is 64 KiB and this build refuses to send more.
-
     That is not a defect this test tolerates; it is the honest edge of what a
     parent can know, and it is written down here so nobody reads
     `stdin_state == "delivered"` as "the child acted on it". The far side is
     closed by one thing only: a witness that returns something present ONLY in
     what was piped, which is what the opt-in real smoke requires of a real
     install and what the leak suite's probe token does here.
+
+    The direction matters and is why this one survived a matrix that broke its
+    neighbour. "Small enough to fit" is safe on every system, because the
+    smallest pipe any of them offers is 4 KiB and this provider's whole composed
+    task is 162 bytes. "Large enough not to fit" was not safe on any of them,
+    because the largest is 64 KiB and this build refuses to send more.
 
     If this test ever goes RED because the receipt came back `failed`, the guard
     has become stronger than it was, and that is a correction to celebrate and

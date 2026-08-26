@@ -1,13 +1,20 @@
 """The runner's stdin channel: a bounded payload, an EOF, and no way back out.
 
 This is its own module for the reason the containment and ownership circuits
-are: it is one closed question with several exits, and every one of them has to
-be driven through a REAL child. The child is `tests/_fakeproc.py`, which reports
-what it read as a LENGTH and a DIGEST rather than as bytes -- a fake that echoed
-the payload would make every leak assertion below pass by accident, because the
-payload would then be legitimately present in the child's own output.
+are: it is one closed question with several exits. Most of them are driven
+through a REAL child -- `tests/_fakeproc.py`, which reports what it read as a
+LENGTH and a DIGEST rather than as bytes, because a fake that echoed the payload
+would make every leak assertion below pass by accident: the payload would then
+be legitimately present in the child's own output.
 
-Three claims, and the third is the one that pays for the field:
+The three STEPS a delivery is made of are driven against a stream double
+instead, and that is not a shortcut around the child. Reaching them through one
+means asking the OPERATING SYSTEM to break a write, which it does at a size that
+differs on every system and at no size at all on Linux, where a pipe holds the
+whole 64 KiB this build is ever allowed to send. `tests/_stdinseam.py` records
+what that cost and why the fault is made where the branch is.
+
+Four claims, and the last two are what pay for the field:
 
 - the child reads exactly the bytes it was handed, and then sees EOF. Without
   the EOF a print-mode child waits for more input until its own timeout, which
@@ -16,7 +23,10 @@ Three claims, and the third is the one that pays for the field:
   stopped -- and none of them leaves a thread holding the child's input open;
 - `None` is not a new spawn shape. It is the DEVNULL spawn every provider had
   before this field existed, and the providers that pass nothing must not be
-  able to tell that the field was added.
+  able to tell that the field was added;
+- a delivery is a write, a flush and a close that ALL finished, and each of the
+  three unmakes it on its own. It is a fact about THIS side of the pipe, and
+  never a claim about what the child did with the other one.
 """
 from __future__ import annotations
 
@@ -121,14 +131,19 @@ def test_the_child_reads_exactly_the_payload_and_then_reaches_end_of_input(
         "sha256": hashlib.sha256(INSTRUCTION).hexdigest()}
 
 
-def test_a_payload_at_the_ceiling_arrives_whole_rather_than_in_one_write(
-        root, runners):
-    """The loop, not the single `write`, is what makes a large payload arrive.
+def test_a_payload_at_the_ceiling_arrives_whole(root, runners):
+    """The largest instruction this build may send reaches a real child intact.
 
-    The child is spawned unbuffered, so a raw stream may accept fewer bytes than
-    it was offered. A writer that called `write` once and trusted it would
-    deliver a truncated instruction and nothing anywhere would say so -- the
-    child would simply have been asked to do something else.
+    A ceiling is where a payload is most likely to be truncated, so this is the
+    end-to-end fact: a real pipe, a real child, and a digest computed on the far
+    side that matches the whole payload.
+
+    It used to be named for the LOOP, and that was a claim about the operating
+    system rather than about this build. The child is spawned unbuffered, so a
+    raw stream MAY take fewer bytes than it was offered -- and whether it does is
+    the kernel's to decide. A Linux pipe holds 64 KiB and takes this payload in
+    a single write, so on that system the loop this name promised never ran. The
+    loop has its own test, against a stream that is short by construction.
     """
     payload = (INSTRUCTION * (STDIN_LIMIT // len(INSTRUCTION) + 1))[:STDIN_LIMIT]
 
@@ -175,7 +190,13 @@ def test_passing_nothing_leaves_the_devnull_spawn_every_provider_already_had(
 
 def test_a_child_that_exits_without_reading_does_not_hang_the_writer(
         root, runners):
-    """The early exit. The pipe breaks under the writer, and that is not an error.
+    """The early exit, whichever way the operating system chooses to end the write.
+
+    A payload larger than the pipe buffer breaks under the writer; one the pipe
+    swallows whole is simply written to a stream nobody will ever read. Which of
+    the two happens here is the kernel's to decide -- 11400 bytes breaks on
+    Windows and does not on Linux, where a pipe holds 64 KiB -- and the writer
+    owes the same thing either way.
 
     A run whose child refused its input still has an account of itself -- its
     exit code and its output -- and that account is the run's, not the writer's.
@@ -189,11 +210,18 @@ def test_a_child_that_exits_without_reading_does_not_hang_the_writer(
 
 
 def test_a_child_that_never_reads_and_never_exits_still_times_out(root, runners):
-    """The timeout exit, with a payload still queued behind it.
+    """The timeout exit, with a payload the child will never read.
 
     `finish` joins the writer, so a writer that could block forever would turn
     every timeout into a hang -- the runner would stop being able to report the
     one status it exists to report.
+
+    Whether the writer is still BLOCKED at that join is the kernel's to decide
+    and not this test's to promise: it is on Windows and it is not on Linux,
+    where the pipe holds the whole payload. No payload this build may send could
+    arrange the blocked case on every system -- 64 KiB is both the largest pipe
+    and this build's own ceiling -- so a test that required it would be a test
+    about Windows. What is required on all of them is the claim in the name.
     """
     outcome = runners(root).run(_spec(
         root, INSTRUCTION * 200, env={SLEEP: "30"}, timeout_seconds=2))
