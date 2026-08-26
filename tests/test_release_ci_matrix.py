@@ -108,6 +108,32 @@ def test_no_gate_writes_its_artifacts_into_the_worktree(workflow: str) -> None:
             f"a gate names an artifacts directory outside the runner temp: {line}")
 
 
+def test_both_jobs_prove_the_checkout_is_clean_before_they_report_green(
+        workflow: str) -> None:
+    """A job that leaves a file behind and still reports green says nothing.
+
+    Both positions are held, not one. The core job builds a wheel and installs
+    it; the browser job runs an engine that writes profiles, caches and its own
+    log wherever it is pointed -- and "pointed at the runner temp" is exactly
+    the claim this check exists to prove rather than assert. On a matrix this
+    wide the failure mode is quiet: one platform out of three leaves something
+    in the checkout, and nothing anywhere says so.
+
+    The check must FAIL CLOSED, so the `exit 1` is part of what is held: a step
+    that printed the dirt and returned zero would read like a gate and be a
+    report.
+    """
+    for name in ("test", "browser"):
+        job = _job(workflow, name)
+        assert "git status --porcelain" in job, (
+            f"the {name} job never checks whether it left the checkout dirty")
+        assert "--untracked-files=all" in job, (
+            f"the {name} job's clean check would miss a file it never added "
+            "to the index")
+        assert "exit 1" in job, (
+            f"the {name} job reports dirt without failing on it")
+
+
 def test_the_wheel_smoke_rides_the_whole_core_matrix(workflow: str) -> None:
     """A clean-wheel install and start, proved on every platform rather than one.
 

@@ -458,6 +458,11 @@ const STREAM_DOWN = "Connection lost. The last authoritative facts are still "
       // another run's screen would attribute a write to a run that never
       // received it.
       pendingCarry = null;
+      // A plan held for THIS run is let go here, at the Human's own action,
+      // before the next run's read goes out. A drawing built against one run is
+      // not a draft of another's, and the save door beside it writes to
+      // whichever run is selected.
+      dispatch({type: "discard"});
       dispatch({type: "ready", ready: false});
       dispatch({type: "save", phase: "idle", notice: ""});
     }

@@ -182,12 +182,18 @@ def test_a_reconnect_reopens_the_write_door_only_after_the_run_is_read(
         page.wait_for_function(
             "() => !document.querySelector('[name=\\'save\\']').disabled")
         assert recorder.reads(EMPTY_RUN) == before + 1
-        # That read is authoritative, so it also REPLACES the drawing: this
-        # run follows no graph, and a draft made before the drop is not a fact
-        # about it. What a Human does next is draw again, and the writing half
-        # is proven by the tests that write.
-        assert page.locator(".g-node").count() == 0
-        assert "follows no graph yet" in page.locator("#notice").inner_text()
+        # This used to assert the read REPLACES the drawing -- zero nodes -- on
+        # the reasoning that "a draft made before the drop is not a fact about
+        # the run". True, and the conclusion was wrong; overturned on purpose.
+        # A run's plan is IMMUTABLE, so the only run one can be written to is a
+        # run that follows none: this exact screen is the whole writable road,
+        # and replacing it meant a dropped socket threw away the work a Human
+        # was in the middle of. The drawing is not claimed as the run's -- the
+        # run still says it follows no graph, and the window says who holds it.
+        assert page.locator(".g-node").count() == 8
+        notice = page.locator("#notice").inner_text()
+        assert "follows no graph yet" in notice, notice
+        assert "held in this window" in notice, notice
     finally:
         page.unroute(f"**/command/runs/{EMPTY_RUN}")
         page.context.close()
@@ -261,6 +267,133 @@ def test_a_composed_local_step_survives_a_drop_and_the_read_that_follows(
         #    wears the label; the run's own nodes arrived from the read and did
         #    not acquire one by standing beside it.
         assert page.locator('.g-node:has-text("LOCAL DRAFT")').count() == 1
+    finally:
+        page.context.close()
+
+
+def test_the_whole_local_plan_survives_a_drop_on_a_run_that_follows_none(
+        chromium: Browser, wire_url: str) -> None:
+    """Born red, and this is the path a plan is actually WRITTEN on.
+
+    A run's graph is immutable, so the only run a Human can ever write one to is
+    a run that follows none. That makes `empty -> start from the default ->
+    compose -> save` the whole writable road, and every step of it stands on a
+    drawing this window holds and the run does not.
+
+    The first fix here missed it. It held composed nodes on top of a DURABLE
+    read, which is the one case where nothing can be saved anyway, and left the
+    `absent` arm resetting to EMPTY -- so the eight fixture steps and the ninth
+    composed one all vanished on the reconnect that follows any dropped socket.
+    Zero nodes where there had been nine.
+
+    So the whole local plan of the CURRENT run is held, not merely the nodes
+    marked draft: a run that follows no graph contributes no durable fact, and
+    there is nothing for the drawing to be hiding.
+    """
+    page, recorder = _open(chromium, wire_url, double=True)
+    try:
+        _load_run(page, EMPTY_RUN)
+        page.get_by_role("button", name="Start from the default").click()
+        page.wait_for_function(
+            "() => document.querySelectorAll('.g-node').length === 8")
+        composed = _compose_a_local_step(page)
+        assert page.locator(".g-node").count() == 9
+        writes = len(recorder.matching("POST", "/graph"))
+
+        page.evaluate("() => window.__stream.fire('error')")
+        page.wait_for_function(
+            "() => document.querySelector('[name=\\'save\\']').disabled")
+        page.evaluate("() => window.__stream.fire('open')")
+        page.wait_for_function(
+            "() => !document.querySelector('[name=\\'save\\']').disabled")
+
+        assert page.locator(".g-node").count() == 9, (
+            "the reconnect erased the plan the Human was about to write")
+        assert page.locator(f'[data-node-id="{composed}"]').count() == 1
+        assert page.locator('.g-node:has-text("LOCAL DRAFT")').count() == 1
+        # Held, never sent. Preserving a plan may not become writing one.
+        assert len(recorder.matching("POST", "/graph")) == writes
+    finally:
+        page.context.close()
+
+
+def test_a_run_that_does_follow_a_plan_still_shows_it_over_a_local_drawing(
+        chromium: Browser, wire_url: str) -> None:
+    """The over-correction control: durable facts must not stop showing.
+
+    Holding a local drawing is only honest while the run contributes nothing.
+    The moment a read says the run DOES follow a plan, that plan is what the
+    window owes the Human -- otherwise the rule above would quietly turn this
+    window into one that shows a durable run whatever it drew last, which is
+    the larger defect of the two.
+    """
+    page, _recorder = _open(chromium, wire_url, double=True)
+    try:
+        _load_run(page, EMPTY_RUN)
+        page.get_by_role("button", name="Start from the default").click()
+        page.wait_for_function(
+            "() => document.querySelectorAll('.g-node').length === 8")
+        composed = _compose_a_local_step(page)
+        assert page.locator(".g-node").count() == 9
+
+        _load_run(page, DURABLE_RUN)
+
+        assert "DURABLE" in page.locator("#sourceLine").inner_text(), (
+            "a run that follows a plan did not show it")
+        assert page.locator(f'[data-node-id="{composed}"]').count() == 0
+        assert page.locator('.g-node:has-text("LOCAL DRAFT")').count() == 0
+    finally:
+        page.context.close()
+
+
+def test_a_written_plan_is_never_held_into_another_runs_emptiness(
+        chromium: Browser, wire_url: str) -> None:
+    """The mixing guard in its worst direction.
+
+    Holding a drawing is only ever honest for a plan this window HOLDS. A
+    durable plan belongs to the run that answered with it, and carrying it into
+    a different run's "follows no graph" would show one run's WRITTEN plan as
+    another run's unwritten one -- a lie in both directions at once, and the one
+    a Human would act on by pressing save.
+    """
+    page, _recorder = _open(chromium, wire_url, double=True)
+    try:
+        _load_run(page, DURABLE_RUN)
+        assert page.locator(".g-node").count() > 0
+
+        _load_run(page, EMPTY_RUN)
+
+        assert page.locator(".g-node").count() == 0, (
+            "a run's written plan was held into another run's emptiness")
+        notice = page.locator("#notice").inner_text()
+        assert "follows no graph yet" in notice, notice
+        assert "held in this window" not in notice, notice
+    finally:
+        page.context.close()
+
+
+def test_a_local_plan_is_let_go_when_another_graphless_run_is_chosen(
+        chromium: Browser, wire_url: str) -> None:
+    """Two runs that both follow nothing -- where a silent carry would hide.
+
+    Every other run change lands on a plan, which replaces the drawing for its
+    own reason. Between two graph-less runs there is nothing to replace it, so
+    only the discard at the Human's own action stops one run's unwritten work
+    from becoming another's.
+    """
+    page, _recorder = _open(chromium, wire_url, double=True)
+    try:
+        _load_run(page, EMPTY_RUN)
+        page.get_by_role("button", name="Start from the default").click()
+        page.wait_for_function(
+            "() => document.querySelectorAll('.g-node').length === 8")
+        composed = _compose_a_local_step(page)
+
+        _load_run(page, OTHER_RUN)
+
+        assert page.locator(".g-node").count() == 0, (
+            "a plan drawn against one graph-less run was carried to another")
+        assert page.locator(f'[data-node-id="{composed}"]').count() == 0
     finally:
         page.context.close()
 

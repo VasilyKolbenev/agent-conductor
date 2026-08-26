@@ -1,11 +1,19 @@
 """The builder two provider suites depend on, held by tests that cannot skip.
 
-``tests/_fakeexe.py`` decides whether 68 tests across the Kimi Code and Grok
-Build suites RUN or skip. When it answers None those suites skip, quietly, and a
-skip is green -- so a fault in the stub reader silently removes both providers'
-transport coverage and nothing says so. That has already happened once: the
-reader required the whole post-``#!`` remainder to end in ``.exe``, which
-discards a launcher whose interpreter path is quoted because it contains a space.
+``tests/_fakeexe.py`` decides whether **277 tests across FOUR provider transport
+suites** -- Claude Code, Kimi Code, Codex CLI and Grok Build -- RUN or skip. When
+it answers None those suites skip, quietly, and a skip is green, so a fault in it
+silently removes four providers' transport coverage and nothing says so.
+
+That has now happened twice, and the counts above are measured rather than
+estimated: this docstring said "68 tests across two suites" while the roster had
+grown to four. The first fault was in the BYTES -- the reader required the whole
+post-``#!`` remainder to end in ``.exe``, discarding a launcher whose interpreter
+path is quoted because it contains a space. The second was in the DIRECTORY, and
+it cost the larger number: on a plain Windows install the console scripts sit one
+level below ``sys.executable``, and the search looked only beside the
+interpreter. Measured on Windows Python 3.11.8 -- before: 4230 passed, 300
+skipped, 277 of them here; after: 4508 passed, 22 skipped, none of them here.
 
 So the reader is held here directly, against synthetic bytes, with no launcher,
 no platform primitive and no install involved. Nothing in this module can skip.

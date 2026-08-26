@@ -217,6 +217,37 @@ function heldDraft(state, facts) {
   return {facts: {nodes, edges, layout}, notice: DRAFT_HELD};
 }
 
+const LOCAL_HELD = "This run follows no graph yet, and the plan on screen is "
+  + "held in this window rather than by the run. Nothing here has been written; "
+  + "the save door is what writes it.";
+
+// A run that follows NO graph contributes no durable fact, so a drawing this
+// window holds is hiding nothing -- and it is the only copy of work a Human has
+// not written yet. Resetting to EMPTY here erased the entire writable road,
+// `empty -> start from the default -> compose -> save`, on every reconnect,
+// because a dropped socket always ends in a re-read. Measured before the fix:
+// nine steps on screen, zero after the socket came back.
+//
+// Held WHOLE rather than by the draft mark. An earlier fix kept only the nodes
+// `compose` had added, which protected the one road nothing can be saved on --
+// a durable run's plan is immutable -- and left the road that matters broken. A
+// plan missing eight of its nine steps is not a plan.
+//
+// It never crosses a run change: choosing another run discards it at that door,
+// where the Human's own action is, rather than by a comparison here.
+function localPlan(state) {
+  // A DURABLE drawing is never held across an answer. It belongs to the run
+  // that answered with it, and carrying it into a different run's "follows no
+  // graph" would show one run's written plan as another run's unwritten one --
+  // the mixing this whole seam exists to refuse, in its worst direction.
+  if (state.phase !== "loaded" || !state.nodes.length
+      || state.provenance.source === "durable") return {};
+  return {phase: "loaded", nodes: state.nodes, edges: state.edges,
+          layout: state.layout, provenance: state.provenance,
+          registry: state.registry, deployment: state.deployment,
+          run: state.run, selection: state.selection};
+}
+
 // The three answers a source can give, each with its own phase. A run that
 // follows no graph is not a graph that could not be read, and neither is
 // ever drawn as the other: an empty run is a normal answer, a refusal is a
@@ -245,13 +276,28 @@ function sourceArm(state, event) {
       notice: spoken(event,
         "The graph payload was refused: it does not name a valid graph.")});
   }
-  return Object.freeze({...EMPTY, phase: "empty",
+  const local = localPlan(state);
+  return Object.freeze({...EMPTY, phase: "empty", ...local,
     ...carried(state, event), ...ready,
-    notice: spoken(event, EMPTY.notice)});
+    notice: local.nodes ? LOCAL_HELD : spoken(event, EMPTY.notice)});
 }
 
 export function reduce(state, event) {
   if (!event || typeof event.type !== "string") return state;
+  // The one door a held local plan is let go through, and it is the Human's own
+  // action rather than a transport event: choosing another run. A plan drawn
+  // against one run is not a draft of another's, and the save door beside it
+  // writes to whichever run is selected -- so it is dropped HERE, before the
+  // new run's read goes out, and never carried across on the strength of a
+  // comparison made later.
+  if (event.type === "discard") {
+    // Only what this window HOLDS is let go. A DURABLE drawing already on
+    // screen is the previous run's own answer, and it stays until the new
+    // run's read lands -- a separate promise, kept deliberately, with the
+    // write door shut in the meantime so nothing can be built from it. Blanking
+    // it here would break that and tell the Human nothing in exchange.
+    return state.provenance.source === "durable" ? state : EMPTY;
+  }
   if (["loaded", "refused", "absent"].includes(event.type)) {
     return sourceArm(state, event);
   }

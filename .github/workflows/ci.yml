@@ -71,6 +71,23 @@ jobs:
           demo_dir=$(python -c "import tempfile; from conductor import demo; print(demo.materialize(tempfile.mkdtemp()))")
           conduct validate --dir "$demo_dir"
 
+      # Fail-closed, and LAST, because everything above it can write. A job that
+      # leaves a file in the checkout and still reports green is a gate saying
+      # nothing about what it did: the next reader cannot tell a build artefact
+      # from a test that wrote where it should not, and on one platform out of
+      # three it would go unnoticed entirely. Ignored paths are excluded by
+      # `git status` itself, so `dist/`, `build/` and the egg-info the editable
+      # install writes do not count as dirt.
+      - name: The checkout is clean
+        run: |
+          dirty="$(git status --porcelain --untracked-files=all)"
+          if [ -n "$dirty" ]; then
+            echo "this job left the checkout dirty:"
+            echo "$dirty"
+            git diff --stat
+            exit 1
+          fi
+
   browser:
     name: browser gate ${{ matrix.os }}
     strategy:
@@ -109,6 +126,19 @@ jobs:
         run: >
           python browser_tests/gate.py --reverse
           --artifacts "$RUNNER_TEMP/browser-gate-reverse"
+
+      # The same fail-closed check, and the browser job needs it MORE: a browser
+      # writes profiles, caches and its own engine log wherever it is pointed,
+      # and "pointed at the runner temp" is a claim this step is what proves.
+      - name: The checkout is clean
+        run: |
+          dirty="$(git status --porcelain --untracked-files=all)"
+          if [ -n "$dirty" ]; then
+            echo "the browser gate left the checkout dirty:"
+            echo "$dirty"
+            git diff --stat
+            exit 1
+          fi
 
       - name: Keep the gate's records
         if: always()
