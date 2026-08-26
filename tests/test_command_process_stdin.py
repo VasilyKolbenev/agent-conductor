@@ -42,8 +42,8 @@ from conductor.command.adapters.process import (
     _map_outcome,
 )
 
+from tests import _stdinseam
 from tests._fakeproc import (
-    DEAF_EXIT,
     DUMP_ARGV,
     DUMP_CWD,
     DUMP_ENV,
@@ -216,29 +216,157 @@ def test_a_stopped_child_releases_its_writer_and_leaks_no_token(root, runners):
 
 
 # --- the delivery fact, and what may be built on it --------------------------
+#
+# `delivered` is raised by ONE function, and only when all three of its steps
+# finished, so the three ways it can fail are stated one at a time against a
+# stream that fails exactly where the branch is. They used to be reached by
+# handing a deaf child more bytes than a pipe can hold; `tests/_stdinseam.py`
+# records what that measured, and why no payload this build may send can outrun
+# a Linux pipe.
 
 
-def test_a_child_that_exits_without_reading_is_not_a_run_that_succeeded(
-        root, runners):
-    """The defect this field was added for, held as its own claim.
+#: A prefix small enough to leave no doubt that what stopped a write was the
+#: double and never a buffer: every pipe on every system this build runs on
+#: takes at least four kilobytes.
+A_PREFIX = 16
 
-    A child that calls `os._exit(0)` having read nothing exits zero, exits
-    cleanly, and exits fast. Every process fact about it is good. It was also
-    never told what to do -- so a build that read those facts as success would
-    be reporting on a task it never posed, over and over, with no signal
-    anywhere that anything was wrong.
 
-    The runner still reports the process honestly: `completed`, exit zero. What
-    changes is that it now also reports what it could not deliver, and the
-    receipt vocabulary refuses to call that a success.
+def _fed(payload: bytes, stream) -> str:
+    """Drive the real feed against one stream and return the state it left.
+
+    `_Owned` is built without `__init__`, so nothing here starts a child: the
+    subject is the feed, which reads exactly two attributes of what it is given.
     """
-    payload = INSTRUCTION * 400
+    owned = _Owned.__new__(_Owned)
+    owned.proc = type("_P", (), {"stdin": stream})()
+    owned.stdin_state = STDIN_INCOMPLETE
 
-    outcome = runners(root).run(_spec(
-        root, payload, env={DEAF_EXIT: "0"}))
+    _Owned._feed(owned, payload)
+
+    return owned.stdin_state
+
+
+def test_a_write_a_flush_and_a_close_that_all_finish_are_the_whole_delivery():
+    """The positive control at the seam, and it also says what `delivered` means.
+
+    This stream is attached to NO child -- there is nothing on the far side of
+    it that could read anything -- and the state is `delivered` all the same.
+    That is the documented claim rather than a shortcoming of the double:
+    `delivered` is a fact about what THIS side did with its end of the pipe, and
+    the only witness for what a child did with the other end is the child's own
+    output.
+
+    Without this control a feed that answered `incomplete` unconditionally would
+    satisfy all three refusals below, pass the whole module, and quietly make it
+    impossible for any provider taking its task on stdin to ever succeed.
+    """
+    stream = _stdinseam.ChildInput()
+
+    state = _fed(INSTRUCTION, stream)
+
+    assert state == STDIN_DELIVERED
+    assert bytes(stream.written) == INSTRUCTION
+    assert (stream.flushes, stream.closes) == (1, 1)
+
+
+def test_a_payload_that_needed_several_writes_still_arrives_whole():
+    """The LOOP, not the single `write`, is what makes a payload arrive.
+
+    A raw stream may accept fewer bytes than it was offered, and one `write` is
+    not a promise that all of them left. A feed that trusted the offer would
+    hand a child a TRUNCATED instruction and call it delivered, and nothing
+    anywhere would say so -- the child would simply have been asked to do
+    something else.
+
+    Stated against a stream that is SHORT BY CONSTRUCTION rather than against a
+    real pipe. Whether a pipe takes a payload in one write or in twenty is a
+    property of the operating system, so a test that needed it to be twenty
+    would prove the loop on one system and nothing at all on another.
+    """
+    stream = _stdinseam.ChildInput(per_write=7)
+
+    state = _fed(INSTRUCTION, stream)
+
+    assert state == STDIN_DELIVERED
+    assert bytes(stream.written) == INSTRUCTION
+    assert stream.writes > 1, "one write took the whole payload, so nothing looped"
+
+
+def test_a_write_that_stops_short_leaves_the_delivery_unclaimed():
+    """The first step, and the flush must not even be reached.
+
+    A flush and a close are the END of a payload, so a stream that never
+    received all of one has nothing to end. A feed that flushed anyway would be
+    marking a boundary for bytes that are still missing.
+    """
+    stream = _stdinseam.ChildInput(ceiling=A_PREFIX)
+
+    state = _fed(INSTRUCTION, stream)
+
+    assert state == STDIN_INCOMPLETE
+    assert bytes(stream.written) == INSTRUCTION[:A_PREFIX]
+    assert stream.flushes == 0, "a payload still missing bytes was flushed"
+    assert stream.closes == 1, "a short write must still end the child's input"
+
+
+def test_a_flush_that_fails_leaves_the_delivery_unclaimed():
+    """The second step. Written is not the same as gone.
+
+    Bytes handed to a stream that then refuses to flush have not reached the
+    child, so a feed that raised the state before ordering the flush would be
+    reporting a delivery it was in the middle of failing to make.
+    """
+    stream = _stdinseam.ChildInput(flush_fails=True)
+
+    state = _fed(INSTRUCTION, stream)
+
+    assert state == STDIN_INCOMPLETE
+    assert bytes(stream.written) == INSTRUCTION, "the write itself must have run"
+    assert stream.closes == 1, "a failed flush must still end the child's input"
+
+
+def test_a_close_that_fails_leaves_the_delivery_unclaimed():
+    """The third step. The EOF is part of the claim, so a close that did not unmakes it.
+
+    A print-mode child reading its task from stdin waits for the stream to END
+    before it begins, so a payload written whole to a stream that was never
+    closed leaves the child waiting for input that will never finish.
+    """
+    stream = _stdinseam.ChildInput(close_fails=True)
+
+    state = _fed(INSTRUCTION, stream)
+
+    assert state == STDIN_INCOMPLETE
+    assert bytes(stream.written) == INSTRUCTION, "the write itself must have run"
+    assert stream.flushes == 1, "the flush must have run before the close refused"
+
+
+def test_a_child_handed_part_of_its_instruction_is_not_a_run_that_succeeded(
+        root, runners, monkeypatch):
+    """The defect this field was added for, driven through a REAL child.
+
+    Every process fact about this run is good -- completed, exit zero, fast --
+    and the run still did not happen. The child was handed sixteen bytes of a
+    fifty-seven byte instruction and did what those sixteen bytes said. It was
+    not asked to do the work badly; it was asked to do something else, and its
+    exit code answers that other question honestly.
+
+    What arrived is read from the CHILD, which is the only side that can answer
+    it. The near side reports what it could not deliver, and the receipt
+    vocabulary refuses to read a zero over the top of that.
+    """
+    streams = _stdinseam.every_child_input(
+        monkeypatch,
+        lambda real: _stdinseam.ChildInput(carrier=real, ceiling=A_PREFIX))
+
+    outcome = runners(root).run(_spec(root, INSTRUCTION))
 
     assert outcome.status == "completed"
     assert outcome.exit_code == 0
+    assert _reported(outcome) == {
+        "bytes": A_PREFIX,
+        "sha256": hashlib.sha256(INSTRUCTION[:A_PREFIX]).hexdigest()}
+    assert [bytes(stream.written) for stream in streams] == [INSTRUCTION[:A_PREFIX]]
     assert outcome.stdin_state == STDIN_INCOMPLETE
     mapped, detail = _map_outcome(outcome)
     assert mapped == "failed", "an undelivered instruction became a success"
@@ -261,42 +389,6 @@ def test_a_delivered_payload_is_reported_as_delivered_and_the_run_can_succeed(
     assert outcome.status == "completed"
     assert outcome.stdin_state == STDIN_DELIVERED
     assert _map_outcome(outcome)[0] == "succeeded"
-
-
-def test_a_close_that_fails_leaves_the_delivery_unclaimed(root):
-    """The EOF is part of the claim, so a close that did not happen unmakes it.
-
-    Unreachable through a real child: a pipe whose write and flush both
-    succeeded does not then refuse to close, and no knob on the far side can
-    make it. So the feed is driven directly against a stream that fails exactly
-    where the branch is -- which is the only way this relation is falsifiable at
-    all, and saying that out loud is better than leaving the branch unguarded
-    because it is inconvenient to reach.
-    """
-    class _RefusesToClose:
-        def __init__(self):
-            self.written = bytearray()
-
-        def write(self, view):
-            self.written += bytes(view)
-            return len(view)
-
-        def flush(self):
-            return None
-
-        def close(self):
-            raise OSError("the descriptor was already gone")
-
-    stream = _RefusesToClose()
-    owned = _Owned.__new__(_Owned)
-    owned.proc = type("_P", (), {"stdin": stream})()
-    owned.stdin_state = STDIN_INCOMPLETE
-
-    _Owned._feed(owned, INSTRUCTION)
-
-    assert bytes(stream.written) == INSTRUCTION, "the write itself must have run"
-    assert owned.stdin_state == STDIN_INCOMPLETE, (
-        "a payload whose stream never closed was reported as delivered")
 
 
 def test_the_delivery_state_is_one_of_three_words_and_a_fourth_is_refused():
