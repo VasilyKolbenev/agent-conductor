@@ -34,10 +34,58 @@ WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 PLATFORMS = ("ubuntu-latest", "windows-latest", "macos-latest")
 #: The interpreters the core matrix must cover.
 PYTHONS = ("3.11", "3.12")
-#: The extras a `pip install -e ".[a,b]"` line really asks for. PARSED, because
-#: asking whether a name appears in the line is not the same question: `".[dev]"
-#: # browser` contains "browser" and installs no browser extra at all.
-_INSTALL_EXTRAS = re.compile(r"pip install\b[^\n]*?\.\[([^\]]*)\]")
+#: The extras a `pip install -e ".[a,b]"` command really asks for. PARSED,
+#: because asking whether a name appears in the text is a different question:
+#: `".[dev]" # browser` contains "browser" and installs no browser extra.
+_INSTALL_EXTRAS = re.compile(r"\.\[([^\]]*)\]")
+#: A step's command written on the `run:` line itself.
+_RUN_INLINE = re.compile(r"^\s*run:\s*(?P<command>[^|>#].*)$")
+#: A step opening a `run: |` block; its body is the indented lines beneath.
+_RUN_BLOCK = re.compile(r"^(?P<indent>\s*)run:\s*[|>][-+]?\s*$")
+#: A command that really invokes pip's installer, at the HEAD of the line. An
+#: `echo "python -m pip install ..."` is an active command and installs
+#: nothing, so containing the words is not enough.
+_PIP_INSTALL = re.compile(r"^(?:python\s+-m\s+)?pip\s+install\b")
+
+
+def _active_run_commands(job: str) -> list[str]:
+    """Every command this job really EXECUTES, and nothing that merely reads
+    like one.
+
+    A commented-out line is not a command. The first version of this guard
+    collected any line containing `pip install -e`, so this pair answered yes
+    while installing pytest alone:
+
+        # run: python -m pip install -e ".[dev,browser]"
+        run: python -m pip install -e ".[dev]"
+
+    Both inline `run:` commands and the bodies of `run: |` blocks count, because
+    both really run; the block body is found by indentation, which is what YAML
+    uses to delimit it.
+    """
+    commands: list[str] = []
+    body_indent: int | None = None
+    for raw in job.splitlines():
+        stripped = raw.strip()
+        if not stripped:
+            continue
+        indent = len(raw) - len(raw.rstrip("\n").lstrip())
+        if body_indent is not None:
+            if indent > body_indent:
+                if not stripped.startswith("#"):
+                    commands.append(stripped)
+                continue
+            body_indent = None
+        if stripped.startswith("#"):
+            continue
+        block = _RUN_BLOCK.match(raw)
+        if block:
+            body_indent = len(block.group("indent"))
+            continue
+        inline = _RUN_INLINE.match(raw)
+        if inline:
+            commands.append(inline.group("command").strip())
+    return commands
 #: The name at the head of a requirement string, before any version marker.
 _REQUIREMENT_NAME = re.compile(r"^\s*([A-Za-z0-9._-]+)")
 
@@ -66,9 +114,16 @@ def _imports_module(source: str, dotted: str) -> bool:
     return False
 
 
-def _installed_extras(line: str) -> set[str]:
-    """Exactly the extras one install command names, or an empty set."""
-    found = _INSTALL_EXTRAS.search(line)
+def _installed_extras(command: str) -> set[str]:
+    """Exactly the extras one PIP INSTALL command names, or an empty set.
+
+    The command has to BE an install, not contain the words: an
+    `echo "python -m pip install -e \\".[dev,browser]\\""` is an active line
+    that installs nothing, and it answered this question yes.
+    """
+    if not _PIP_INSTALL.match(command):
+        return set()
+    found = _INSTALL_EXTRAS.search(command)
     return {name.strip() for name in found.group(1).split(",")} if found else set()
 
 
@@ -198,13 +253,13 @@ def test_the_core_job_installs_what_the_fast_suite_needs_to_COLLECT(
     extra = _extra_providing("playwright")
     assert extra, "no optional-dependency group provides playwright"
 
-    job = _job(workflow, "test")
-    installs = [line for line in job.splitlines() if "pip install -e" in line]
-    assert installs, "the core job installs nothing"
-    assert any(extra in _installed_extras(line) for line in installs), (
+    commands = _active_run_commands(_job(workflow, "test"))
+    installs = [command for command in commands if _PIP_INSTALL.match(command)]
+    assert installs, "the core job runs no pip install at all"
+    assert any(extra in _installed_extras(command) for command in installs), (
         f"the fast suite cannot be COLLECTED without the {extra!r} extra "
         f"({bridged} reach playwright through browser_tests.conftest), and no "
-        f"install command asks for it: {installs}")
+        f"command the job actually RUNS asks for it: {installs}")
 
 
 def test_both_jobs_prove_the_checkout_is_clean_before_they_report_green(
