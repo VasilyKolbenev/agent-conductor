@@ -40,6 +40,7 @@ from conductor.command.contracts import ActionRequest
 from conductor.command.providers import PROVIDER_CATALOG, resolve_providers
 
 from tests import _fakedsh
+from tests._fakeenv import ENV_PROBE, NO_PROBE
 
 NOW = "2026-08-17T12:00:00Z"
 DIGEST = "sha256:" + "a" * 64
@@ -71,7 +72,7 @@ def _config(node: str, entrypoint: str, names: tuple[str, ...]) -> ProviderConfi
 INSTRUCTION_BODY = "Add the missing guard and prove it with one failing test."
 
 
-def a_harness(tmp_path: Path, **knobs: str):
+def a_harness(tmp_path: Path, ambient=None, **knobs: str):
     """A registered, available harness over the fake, plus its root and spawn log."""
     root = tmp_path / "root"
     root.mkdir(exist_ok=True)
@@ -82,9 +83,20 @@ def a_harness(tmp_path: Path, **knobs: str):
     log = tmp_path / "spawns.log"
     node, entrypoint = _fakedsh.fake_pins()
     environ = {_fakedsh.SPAWN_LOG: str(log), **knobs}
+    # `ambient` is a monkeypatch fixture. When it is given, the knobs are planted
+    # in the REAL process environment and the runner is left to read that, so the
+    # allowlist is exercised against an environment that can actually carry a
+    # leak. Passing a synthetic dict -- what every other caller does, and what
+    # every caller used to do -- means `ProcessRunner._environ` holds only the
+    # knobs, so no parent value could reach a child however the filter behaved:
+    # a mutation copying the ambient environment stayed GREEN under it.
+    if ambient is not None:
+        for _name, _value in environ.items():
+            ambient.setenv(_name, _value)
     resolution = resolve_providers(
         [_config(node, entrypoint, tuple(sorted(environ)))], root=root,
-        clock=lambda: NOW, ids=_Ids(), environ=environ)
+        clock=lambda: NOW, ids=_Ids(),
+        environ=None if ambient is not None else environ)
     return resolution.registry.resolve(PROVIDER_ID), root, log
 
 
@@ -200,12 +212,35 @@ def test_the_child_never_inherits_the_operator_home_and_telemetry_stays_disabled
         assert row["telemetry_disabled"] == "1"
 
 
-def test_the_child_environment_holds_only_the_allowlist_and_the_two_minted_names(
-        tmp_path):
-    adapter, _root, log = a_harness(tmp_path)
+def test_nothing_of_the_parents_environment_reaches_the_dsh_child(
+        tmp_path, monkeypatch):
+    """The question an exact name set was trying to ask, asked answerably.
+
+    That set could not be a statement about this build: on POSIX the Python
+    runtime adds `LC_CTYPE` on the far side of the interpreter, and macOS adds
+    `__CF_USER_TEXT_ENCODING` -- neither passed by `ProcessRunner`, both present
+    in the child, and the equality failed on Linux and macOS for a reason that
+    is not containment. Nor may they be added to the production environment or
+    written into the allowlist to make the old assertion true again.
+
+    So the parent plants ONE token, in a NAME and in a VALUE, and the child
+    answers whether it arrived. Both channels, because a copied environment
+    leaks through either and a scan of one would miss the other. The child
+    records two booleans and never a value: a pin may legitimately allow a real
+    credential through, and this log is a test artefact nothing sweeps.
+    """
+    monkeypatch.setenv(ENV_PROBE, "a parent value that may not travel")
+    monkeypatch.setenv("DSH_API_KEY", ENV_PROBE)
+    adapter, _root, log = a_harness(tmp_path, ambient=monkeypatch)
+
     run_once(adapter, a_request())
-    names = set(_fakedsh.spawns(log)[0]["env_names"])
-    assert names == {_fakedsh.SPAWN_LOG, "DSH_HOME", "DSH_TELEMETRY_DISABLED"}
+
+    row = _fakedsh.spawns(log)[0]
+    assert row["probe"] == NO_PROBE, "the parent's environment reached the child"
+    # The positive control, separately: without it a runner that handed the
+    # child NOTHING would satisfy the refusal above and break every spawn.
+    names = set(row["env_names"])
+    assert {_fakedsh.SPAWN_LOG, "DSH_HOME", "DSH_TELEMETRY_DISABLED"} <= names
 
 
 # --- owner gate F, clause 1: an exact version preflight ---

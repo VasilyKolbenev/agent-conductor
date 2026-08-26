@@ -19,6 +19,17 @@ import sys
 import time
 from pathlib import Path
 
+# This fake IS the pinned entrypoint: the adapter spawns
+# `[sys.executable, tests/_fakedsh.py]`, so Python puts `tests/` on `sys.path`
+# and not the repository root -- `tests._fakeenv` would not import in the child.
+# The other three fakes are built by `_fakeexe`, whose body inserts the root for
+# them. Guarded on `__package__` so an ordinary import from the parent process,
+# where the root is already there, changes nothing.
+if __package__ in (None, ""):  # pragma: no cover -- only in the spawned child
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from tests._fakeenv import probe_report  # noqa: E402
+
 FAKE_DSH = str(Path(__file__).resolve())
 
 #: Where each spawn appends its one JSON line.
@@ -85,6 +96,9 @@ def _record(argv: list[str]) -> None:
         "dsh_home": os.environ.get("DSH_HOME"),
         "telemetry_disabled": os.environ.get("DSH_TELEMETRY_DISABLED"),
         "env_names": sorted(os.environ),
+        # Two booleans about the parent's probe, and never a value. See
+        # `tests/_fakeenv.py` for why an exact name set was not the question.
+        "probe": probe_report(),
     }
     with open(log, "a", encoding="utf-8", newline="\n") as handle:
         handle.write(json.dumps(row, sort_keys=True) + "\n")

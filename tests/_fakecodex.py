@@ -85,6 +85,7 @@ import time
 from pathlib import Path
 
 from tests import _fakeexe
+from tests._fakeenv import probe_report
 
 #: Where each spawn appends its one JSON line.
 SPAWN_LOG = "FAKECODEX_SPAWN_LOG"
@@ -294,6 +295,9 @@ def _record(argv: list[str], task: dict | None, marker: dict | None,
         # child holds. A boolean, never a second copy of the path.
         "codex_home_is_dir": bool(home) and Path(home).is_dir(),
         "env_names": sorted(os.environ),
+        # Two booleans about the parent's probe, and never a value. See
+        # `tests/_fakeenv.py` for why an exact name set was not the question.
+        "probe": probe_report(),
         "stdin": task,
         "marker": marker,
         "last_message": last_message,

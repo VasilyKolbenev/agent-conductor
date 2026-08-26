@@ -31,6 +31,7 @@ import time
 from pathlib import Path
 
 from tests import _fakeexe
+from tests._fakeenv import probe_report
 
 #: Where each spawn appends its one JSON line.
 SPAWN_LOG = "FAKEKIMI_SPAWN_LOG"
@@ -126,6 +127,9 @@ def _record(argv: list[str]) -> None:
         "kimi_home": os.environ.get("KIMI_CODE_HOME"),
         "telemetry_disabled": os.environ.get("KIMI_DISABLE_TELEMETRY"),
         "env_names": sorted(os.environ),
+        # Two booleans about the parent's probe, and never a value. See
+        # `tests/_fakeenv.py` for why an exact name set was not the question.
+        "probe": probe_report(),
     }
     with open(log, "a", encoding="utf-8", newline="\n") as handle:
         handle.write(json.dumps(row, sort_keys=True) + "\n")

@@ -78,6 +78,7 @@ from conductor.command.contracts import ActionRequest
 from conductor.command.providers import PROVIDER_CATALOG, resolve_providers
 
 from tests import _fakecodex
+from tests._fakeenv import ENV_PROBE, NO_PROBE
 
 NOW = "2026-08-22T12:00:00Z"
 DIGEST = "sha256:" + "a" * 64
@@ -105,6 +106,7 @@ def _executable(tmp_path: Path) -> Path:
 
 
 def a_harness(tmp_path: Path, *, instruction: str = INSTRUCTION_BODY,
+              ambient=None,
               root: Path | None = None, **knobs: str):
     """A registered, available Codex provider over the fake, its root and its log.
 
@@ -126,8 +128,19 @@ def a_harness(tmp_path: Path, *, instruction: str = INSTRUCTION_BODY,
     config = ProviderConfig(
         provider_id=CODEX_PROVIDER_ID, executable=str(exe),
         protocol=CODEX_PROTOCOL, env_allow=tuple(sorted(environ)))
+    # `ambient` is a monkeypatch fixture. When it is given, the knobs are planted
+    # in the REAL process environment and the runner is left to read that, so the
+    # allowlist is exercised against an environment that can actually carry a
+    # leak. Passing a synthetic dict -- what every other caller does, and what
+    # every caller used to do -- means `ProcessRunner._environ` holds only the
+    # knobs, so no parent value could reach a child however the filter behaved:
+    # a mutation copying the ambient environment stayed GREEN under it.
+    if ambient is not None:
+        for _name, _value in environ.items():
+            ambient.setenv(_name, _value)
     resolution = resolve_providers(
-        [config], root=root, clock=lambda: NOW, ids=_Ids(), environ=environ)
+        [config], root=root, clock=lambda: NOW, ids=_Ids(),
+        environ=None if ambient is not None else environ)
     return resolution.registry.resolve(CODEX_PROVIDER_ID), root, log
 
 
@@ -477,7 +490,7 @@ def test_a_reading_the_door_refuses_is_unreadable_and_never_absent(tmp_path):
 
 
 def test_this_provider_forces_no_environment_and_the_child_sees_only_the_pin(
-        tmp_path):
+        tmp_path, monkeypatch):
     """An EMPTY `forced_env`, and the child's environment proves it is empty.
 
     This vendor publishes its switches as config keys rather than as environment
@@ -485,7 +498,9 @@ def test_this_provider_forces_no_environment_and_the_child_sees_only_the_pin(
     force. Asserted from the CHILD's own environment names, because an empty
     tuple in the profile says only what this build sent, not what arrived.
     """
-    adapter, _root, log = a_harness(tmp_path)
+    monkeypatch.setenv("OPENAI_API_KEY", ENV_PROBE)
+    monkeypatch.setenv(ENV_PROBE, "a parent value that may not travel")
+    adapter, _root, log = a_harness(tmp_path, ambient=monkeypatch)
 
     run_once(adapter, a_request())
 
@@ -494,10 +509,15 @@ def test_this_provider_forces_no_environment_and_the_child_sees_only_the_pin(
     rows = _fakecodex.spawns(log)
     assert len(rows) == 2, f"EXPECTED_PREFLIGHT_AND_TASK={len(rows)}"
     for row in rows:
+        # Both halves, and neither of them "nothing surplus": the Python runtime
+        # adds `LC_CTYPE` on POSIX and macOS adds `__CF_USER_TEXT_ENCODING`, on
+        # the far side of the interpreter and never through `ProcessRunner`, so
+        # a surplus check measured the interpreter's own startup rather than
+        # this build. The half that IS about this build is that nothing of the
+        # PARENT's arrived, asked of every name and every value.
+        assert row["probe"] == NO_PROBE, (
+            "THE_PARENTS_ENVIRONMENT_REACHED_THE_CHILD")
         names = set(row["env_names"])
-        # Both halves: nothing surplus, and the two that must be there really
-        # are. An empty environment would satisfy the first on its own.
-        assert names - allowed == set(), f"THE_CHILD_WAS_GIVEN={sorted(names)}"
         assert allowed <= names, f"THE_CHILD_WAS_MISSING={sorted(allowed - names)}"
 
 
