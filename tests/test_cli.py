@@ -369,26 +369,36 @@ raise SystemExit(main(["up", "--dir", {root!r}, "--port", "0"]))
 '''
 
 
+# The one test here that needs a real child process. `capsys` cannot see this
+# defect: it does not buffer, and _FakeServer returns instead of blocking. In
+# the real thing stdout is block-buffered the moment it is redirected — the very
+# case the contract exists for — and the next statement blocks in
+# serve_forever(), so without flush=True the URL sits in the buffer until the
+# server stops and never arrives at all if the server is killed.
+# `conduct up | xargs open` would hang on an empty pipe.
+#
+# NO SOCKET IS OPENED. `server.build` is replaced by a fake carrying a fixed
+# `server_address`, so there is no free-port race and no bind to be slow about.
+# `--port 0` is still passed, so the CLI's own argument path is the production
+# one, but the OS never picks anything and the port in the URL is the fake's
+# 8765 — which is why the assertion reads the SHAPE of the URL and not a number.
+#
+# What the captured stderr settles, and what it does not. A child that failed
+# LOUDLY can be told from one that wrote nothing, and without that a broken
+# environment reads as this exact defect. That direction only: an EMPTY stderr
+# does not establish an unflushed write, because a child that never reached the
+# print is silent too. That is exactly what both macOS jobs looked like in
+# remote run #10, and there the cause was a real server failing to stand up on
+# a loaded runner — which is why one no longer stands up in this child.
 def test_up_flushes_the_url_while_it_is_still_serving(tmp_path):
-    # The one test here that needs a real child process. `capsys` cannot see
-    # this defect: it does not buffer, and _FakeServer returns instead of
-    # blocking. In the real thing stdout is block-buffered the moment it is
-    # redirected — the very case the contract exists for — and the next
-    # statement blocks in serve_forever(), so without flush=True the URL sits
-    # in the buffer until the server stops and never arrives at all if the
-    # server is killed. `conduct up | xargs open` would hang on an empty pipe.
-    #
-    # --port 0 lets the OS pick, so there is no free-port race. The read runs
-    # on a thread with a timeout: unflushed, readline() blocks forever, and a
-    # blocked reader must fail this test rather than hang the suite.
+    # The read runs on a thread with a timeout: unflushed, readline() blocks
+    # forever, and a blocked reader must fail this test rather than hang it.
     root = write_project(tmp_path, lanes={"claude": good_lane()})
     child = tmp_path / "flush_child.py"
     child.write_text(_FLUSH_CHILD.format(root=str(root)), encoding="utf-8",
                      newline="\n")
     env = {k: v for k, v in os.environ.items() if k != "PYTHONUNBUFFERED"}
-    # stderr is captured, not discarded: an import error and an unflushed
-    # build both present as silence, and only stderr tells them apart. Without
-    # it a broken environment reads as this exact defect.
+    # Captured, not discarded; see the note above for which way it cuts.
     proc = subprocess.Popen(
         [sys.executable, str(child)],
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
