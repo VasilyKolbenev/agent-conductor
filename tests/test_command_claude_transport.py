@@ -61,7 +61,7 @@ from conductor.command.contracts import ActionRequest
 from conductor.command.graph_template import load_template
 from conductor.command.providers import PROVIDER_CATALOG, resolve_providers
 
-from tests import _fakeclaude
+from tests import _fakeclaude, _stdinseam
 
 NOW = "2026-08-22T12:00:00Z"
 DIGEST = "sha256:" + "a" * 64
@@ -233,27 +233,33 @@ def test_a_task_the_leak_witness_cannot_scan_fails_instead_of_passing(tmp_path):
     assert _prompt_row(log)["marker"] is None
 
 
-#: Comfortably past the operating system's pipe buffer, which is where this
-#: guard begins to see anything at all. Measured on this platform: a deaf child
-#: reports `delivered` up to 4 KiB and `incomplete` from 8 KiB. Well under the
-#: 64 KiB ceiling either limit imposes, so the size is about the buffer and not
-#: about a bound this build chose.
-BEYOND_THE_PIPE_BUFFER = "Refactor the guard. " * 1600
+#: A prefix small enough that what stopped the write is unmistakably the double
+#: and never a buffer: every pipe on every system this build runs on takes at
+#: least four kilobytes, and this provider's whole composed task is 162.
+A_PREFIX = 16
 
 
-def test_an_instruction_too_large_to_buffer_is_never_a_success_if_unread(tmp_path):
+def test_an_instruction_the_child_was_never_handed_whole_is_not_a_success(
+        tmp_path, monkeypatch):
     """A deaf child exits zero honestly, about a task it was never given.
 
     This is the relation the runner's `stdin_state` exists for, seen from the
     provider that actually uses the channel. Every process fact about this run
     is good -- completed, exit zero -- and the run still did not happen.
 
-    The instruction is deliberately larger than the pipe buffer, because that is
-    the only region in which the near side can tell. The other region has its
-    own test below, and it is not a happier one.
+    The delivery is broken HERE, at the step that fails, rather than by asking
+    the operating system to break it. The older shape handed a deaf child more
+    bytes than a pipe can hold: Windows breaks at a few kilobytes, and a Linux
+    pipe takes 64 KiB whole -- which is the very ceiling this build bounds an
+    instruction body at -- so on Linux the write, the flush and the close all
+    succeeded, the runner said `delivered`, and the receipt said `succeeded`.
+    Nothing was wrong with the guard; the test was measuring a kernel constant
+    that no payload this build may send can outrun. See `tests/_stdinseam.py`.
     """
-    adapter, _root, log = a_harness(
-        tmp_path, instruction=BEYOND_THE_PIPE_BUFFER, **{_fakeclaude.DEAF: "1"})
+    adapter, _root, log = a_harness(tmp_path, **{_fakeclaude.DEAF: "1"})
+    _stdinseam.every_child_input(
+        monkeypatch,
+        lambda real: _stdinseam.ChildInput(carrier=real, ceiling=A_PREFIX))
 
     receipt = run_once(adapter, a_request())
 
@@ -270,6 +276,12 @@ def test_an_instruction_small_enough_to_buffer_defeats_the_delivery_guard(tmp_pa
     happens on the far side of the kernel and leaves no trace on this one. So
     for an ordinary instruction, which is far smaller than the buffer, a child
     that ignores its input entirely still produces `succeeded`.
+
+    The direction matters and is why this one survived a matrix that broke its
+    neighbour. "Small enough to fit" is safe on every system, because the
+    smallest pipe any of them offers is 4 KiB and this provider's whole composed
+    task is 162 bytes. "Large enough not to fit" was not safe on any of them,
+    because the largest is 64 KiB and this build refuses to send more.
 
     That is not a defect this test tolerates; it is the honest edge of what a
     parent can know, and it is written down here so nobody reads

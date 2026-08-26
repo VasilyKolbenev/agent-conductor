@@ -77,7 +77,7 @@ from conductor.command.adapters.provider import ProviderConfig
 from conductor.command.contracts import ActionRequest
 from conductor.command.providers import PROVIDER_CATALOG, resolve_providers
 
-from tests import _fakecodex
+from tests import _fakecodex, _stdinseam
 from tests._fakeenv import ENV_PROBE, NO_PROBE
 
 NOW = "2026-08-22T12:00:00Z"
@@ -311,21 +311,30 @@ def test_a_task_the_leak_witness_cannot_scan_fails_instead_of_passing(tmp_path):
     assert _task_row(log)["marker"] is None
 
 
-#: Comfortably past the operating system's pipe buffer, which is where the
-#: delivery guard begins to see anything at all. Measured on this platform: a
-#: deaf child reports `delivered` up to 4 KiB and `incomplete` from 8 KiB.
-BEYOND_THE_PIPE_BUFFER = "Refactor the guard. " * 1600
+#: A prefix small enough that what stopped the write is unmistakably the double
+#: and never a buffer: every pipe on every system this build runs on takes at
+#: least four kilobytes.
+A_PREFIX = 16
 
 
-def test_an_instruction_too_large_to_buffer_is_never_a_success_if_unread(tmp_path):
+def test_an_instruction_the_child_was_never_handed_whole_is_not_a_success(
+        tmp_path, monkeypatch):
     """A deaf child exits zero honestly, about a task it was never given.
 
     Every process fact about this run is good -- completed, exit zero -- and the
-    run still did not happen. The instruction is deliberately larger than the
-    pipe buffer, because that is the only region in which the near side can tell.
+    run still did not happen.
+
+    The delivery is broken HERE, at the step that fails, rather than by asking
+    the operating system to break it. The older shape handed a deaf child more
+    bytes than a pipe can hold, which is a region that does not exist on Linux:
+    a pipe there takes 64 KiB whole, and 64 KiB is the ceiling this build bounds
+    an instruction body at, so the write, the flush and the close all succeeded
+    and the guard was right to say `delivered`. See `tests/_stdinseam.py`.
     """
-    adapter, _root, log = a_harness(
-        tmp_path, instruction=BEYOND_THE_PIPE_BUFFER, **{_fakecodex.DEAF: "1"})
+    adapter, _root, log = a_harness(tmp_path, **{_fakecodex.DEAF: "1"})
+    _stdinseam.every_child_input(
+        monkeypatch,
+        lambda real: _stdinseam.ChildInput(carrier=real, ceiling=A_PREFIX))
 
     receipt = run_once(adapter, a_request())
 
