@@ -9,6 +9,7 @@ own seeded-run helpers and its own reader for the refusal, which is why it lives
 in a module of its own rather than among the CLI's general tests.
 """
 import json
+import os
 import re
 import shutil
 
@@ -772,8 +773,17 @@ def test_preview_names_a_link_the_store_does_not_own_whatever_it_points_at(
     err = _refuses_and_leaves_the_run_directory_untouched(tmp_path, capsys)
     assert repr(str(_named_run_path(tmp_path) / "stray-link")) in err
     # The unlinking is this test's own act: that one name gone, the run opens.
-    if link.is_dir():
-        link.rmdir()  # Windows refuses `unlink` on a link that points at a directory
+    #
+    # Which call removes a link is a fact about the LINK's own kind, not about
+    # what it points at. `link.is_dir()` follows the link and answers True for a
+    # POSIX symlink to a directory -- which `rmdir` then refuses, because the
+    # name is a symlink and not a directory. Windows directory links and
+    # junctions really are removed with `rmdir`; POSIX symlinks always with
+    # `unlink`, whatever they point at. Asked of the platform rather than of the
+    # target, and the production containment is untouched: this is the test's
+    # own cleanup and nothing follows the link either way.
+    if os.name == "nt" and link.is_dir():
+        link.rmdir()
     else:
         link.unlink()
     assert main(["preview", "--dir", str(tmp_path)]) == 0
