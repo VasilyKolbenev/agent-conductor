@@ -499,14 +499,21 @@ def test_a_reading_the_door_refuses_is_unreadable_and_never_absent(tmp_path):
 # --- the environment every spawn is given -------------------------------------
 
 
-def test_this_provider_forces_no_environment_and_the_child_sees_only_the_pin(
+def test_this_provider_forces_no_environment_and_nothing_of_the_parents_arrives(
         tmp_path, monkeypatch):
-    """An EMPTY `forced_env`, and the child's environment proves it is empty.
+    """An EMPTY `forced_env`, and a child that got nothing of the parent's.
 
     This vendor publishes its switches as config keys rather than as environment
     variables, so they ride in argv through `-c` and there is nothing left to
-    force. Asserted from the CHILD's own environment names, because an empty
-    tuple in the profile says only what this build sent, not what arrived.
+    force. That is asked of the CHILD rather than of the profile, because an
+    empty tuple says only what this build sent, not what arrived.
+
+    What is NOT claimed, and what the name used to claim: that the child sees
+    only the pin. It does not, and no build can make it -- the Python runtime
+    adds `LC_CTYPE` on POSIX and macOS adds `__CF_USER_TEXT_ENCODING`, both on
+    the far side of the interpreter. An equality here measured interpreter
+    startup, and it is what took this test red on Linux and macOS in remote run
+    #10. The two provable halves are below, and they are asserted separately.
     """
     monkeypatch.setenv("OPENAI_API_KEY", ENV_PROBE)
     monkeypatch.setenv(ENV_PROBE, "a parent value that may not travel")
