@@ -19,7 +19,9 @@ what the workflow says, and they say so.
 """
 from __future__ import annotations
 
+import ast
 import re
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -32,10 +34,59 @@ WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 PLATFORMS = ("ubuntu-latest", "windows-latest", "macos-latest")
 #: The interpreters the core matrix must cover.
 PYTHONS = ("3.11", "3.12")
-#: A module under `testpaths` that really imports the browser package, at the
-#: start of a line. Anchored on purpose: a test that merely NAMES the import --
-#: this one does -- is not a bridge into it.
-_TOP_LEVEL_BRIDGE = re.compile(r"^from browser_tests\b", re.MULTILINE)
+#: The extras a `pip install -e ".[a,b]"` line really asks for. PARSED, because
+#: asking whether a name appears in the line is not the same question: `".[dev]"
+#: # browser` contains "browser" and installs no browser extra at all.
+_INSTALL_EXTRAS = re.compile(r"pip install\b[^\n]*?\.\[([^\]]*)\]")
+#: The name at the head of a requirement string, before any version marker.
+_REQUIREMENT_NAME = re.compile(r"^\s*([A-Za-z0-9._-]+)")
+
+
+def _imports_module(source: str, dotted: str) -> bool:
+    """Is `dotted` imported at the TOP LEVEL of this source, as syntax?
+
+    Read with `ast` rather than matched, and the difference is the whole reason
+    this helper exists. `tests/test_browser_gate.py` imports two names from the
+    same package -- `conftest`, which pulls playwright in, and `gate`, which
+    does not -- so a pattern matching the PACKAGE kept answering yes after the
+    load-bearing import was deleted. A guard that survives the removal of the
+    thing it exists to notice proves nothing.
+    """
+    package, _, leaf = dotted.rpartition(".")
+    for node in ast.parse(source).body:
+        if isinstance(node, ast.Import):
+            if any(alias.name == dotted for alias in node.names):
+                return True
+        elif isinstance(node, ast.ImportFrom):
+            if node.module == dotted:
+                return True
+            if node.module == package and any(
+                    alias.name == leaf for alias in node.names):
+                return True
+    return False
+
+
+def _installed_extras(line: str) -> set[str]:
+    """Exactly the extras one install command names, or an empty set."""
+    found = _INSTALL_EXTRAS.search(line)
+    return {name.strip() for name in found.group(1).split(",")} if found else set()
+
+
+def _extra_providing(package: str) -> str:
+    """Which optional-dependency group carries `package`, read from the file.
+
+    `tomllib` rather than a text search: a requirement is a structured thing,
+    and "the string appears somewhere in pyproject.toml" would be satisfied by a
+    comment, a URL, or the package's own name in an unrelated table.
+    """
+    data = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    groups = data.get("project", {}).get("optional-dependencies", {})
+    for name, requirements in groups.items():
+        for requirement in requirements:
+            head = _REQUIREMENT_NAME.match(requirement)
+            if head and head.group(1).lower() == package:
+                return name
+    return ""
 
 
 @pytest.fixture(scope="module")
@@ -131,31 +182,29 @@ def test_the_core_job_installs_what_the_fast_suite_needs_to_COLLECT(
     import or rename the extra and this reds, instead of leaving a pinned
     spelling that agrees with nothing.
     """
-    # Anchored to the start of a line, so a real top-level import counts and a
-    # mention of one does not -- this very file names the string while importing
-    # nothing, and a substring search reported itself as a bridge.
-    bridged = sorted(path.name for path in (ROOT / "tests").glob("test_*.py")
-                     if _TOP_LEVEL_BRIDGE.search(path.read_text(encoding="utf-8")))
+    bridged = sorted(
+        path.name for path in (ROOT / "tests").glob("test_*.py")
+        if _imports_module(path.read_text(encoding="utf-8"),
+                           "browser_tests.conftest"))
     assert bridged, (
-        "nothing under testpaths reaches browser_tests any more; this guard "
-        "holds a link that no longer exists and should be re-derived")
+        "nothing under testpaths imports browser_tests.conftest any more, so "
+        "the reason the core job needs a browser extra has moved; re-derive "
+        "this guard rather than widening it")
     conftest = (ROOT / "browser_tests" / "conftest.py").read_text(encoding="utf-8")
-    assert "from playwright" in conftest, (
+    assert _imports_module(conftest, "playwright.sync_api"), (
         f"{bridged} import browser_tests.conftest, which no longer imports "
-        "playwright -- the reason for the extra below has moved")
+        "playwright at module level -- the reason for the extra has moved")
 
-    project = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    extra = next((line.split("=")[0].strip()
-                  for line in project.splitlines() if "playwright" in line), "")
+    extra = _extra_providing("playwright")
     assert extra, "no optional-dependency group provides playwright"
 
     job = _job(workflow, "test")
-    install = [line for line in job.splitlines() if "pip install -e" in line]
-    assert install, "the core job installs nothing"
-    assert all(extra in line for line in install), (
-        f"the fast suite cannot be collected without the {extra!r} extra "
-        f"({bridged} reach playwright through browser_tests.conftest), and the "
-        f"core job installs {install}")
+    installs = [line for line in job.splitlines() if "pip install -e" in line]
+    assert installs, "the core job installs nothing"
+    assert any(extra in _installed_extras(line) for line in installs), (
+        f"the fast suite cannot be COLLECTED without the {extra!r} extra "
+        f"({bridged} reach playwright through browser_tests.conftest), and no "
+        f"install command asks for it: {installs}")
 
 
 def test_both_jobs_prove_the_checkout_is_clean_before_they_report_green(
