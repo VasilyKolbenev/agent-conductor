@@ -253,9 +253,11 @@ def test_a_stopped_child_releases_its_writer_and_leaks_no_token(root, runners):
 # a Linux pipe.
 
 
-#: A prefix small enough to leave no doubt that what stopped a write was the
-#: double and never a buffer: every pipe on every system this build runs on
-#: takes at least four kilobytes.
+#: A prefix small enough that what stopped a write can only be the double.
+#: POSIX GUARANTEES a pipe of at least 512 bytes, and the three systems this
+#: build is tested on offer far more than that -- 4 KiB on Windows, 16 KiB on
+#: macOS, 64 KiB on Linux. The guarantee is what this rests on; the defaults are
+#: only how much room it has over it.
 A_PREFIX = 16
 
 

@@ -233,9 +233,10 @@ def test_a_task_the_leak_witness_cannot_scan_fails_instead_of_passing(tmp_path):
     assert _prompt_row(log)["marker"] is None
 
 
-#: A prefix small enough that what stopped the write is unmistakably the double
-#: and never a buffer: every pipe on every system this build runs on takes at
-#: least four kilobytes, and this provider's whole composed task is 162.
+#: A prefix small enough that what stopped the write can only be the double.
+#: POSIX GUARANTEES a pipe of at least 512 bytes, so no system can refuse this
+#: many; the observed defaults -- 4 KiB on Windows, 16 KiB on macOS, 64 KiB on
+#: Linux -- are only how much room that leaves over.
 A_PREFIX = 16
 
 
