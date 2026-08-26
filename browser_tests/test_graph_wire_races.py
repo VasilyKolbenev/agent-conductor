@@ -25,6 +25,7 @@ from browser_tests.test_graph_wire import (  # noqa: F401
     EMPTY_RUN,
     GRAPH_ID,
     OTHER_RUN,
+    SECOND_RUN,
     _hold_first,
     _load_run,
     _open,
@@ -181,14 +182,72 @@ def test_a_reconnect_reopens_the_write_door_only_after_the_run_is_read(
         page.wait_for_function(
             "() => !document.querySelector('[name=\\'save\\']').disabled")
         assert recorder.reads(EMPTY_RUN) == before + 1
-        # That read is authoritative, so it also REPLACES the drawing: this
-        # run follows no graph, and a draft made before the drop is not a fact
-        # about it. What a Human does next is draw again, and the writing half
-        # is proven by the tests that write.
-        assert page.locator(".g-node").count() == 0
-        assert "follows no graph yet" in page.locator("#notice").inner_text()
+        # This used to assert the read REPLACES the drawing -- zero nodes -- on
+        # the reasoning that "a draft made before the drop is not a fact about
+        # the run". True, and the conclusion was wrong; overturned on purpose.
+        # A run's plan is IMMUTABLE, so the only run one can be written to is a
+        # run that follows none: this exact screen is the whole writable road,
+        # and replacing it meant a dropped socket threw away the work a Human
+        # was in the middle of. The drawing is not claimed as the run's -- the
+        # run still says it follows no graph, and the window says who holds it.
+        assert page.locator(".g-node").count() == 8
+        notice = page.locator("#notice").inner_text()
+        assert "follows no graph yet" in notice, notice
+        assert "held in this window" in notice, notice
     finally:
         page.unroute(f"**/command/runs/{EMPTY_RUN}")
+        page.context.close()
+
+
+def test_a_read_answering_after_the_human_moved_on_paints_no_screen(
+        chromium: Browser, wire_url: str) -> None:
+    """A superseded read is not a fact about the run now on screen.
+
+    The window guards this with a read epoch, and the guard had no test of its
+    own: a mutation deleting it stayed green, because the module's other cases
+    are about the write DOOR rather than about the drawing, and a door held
+    shut says nothing about what got painted while it was.
+    """
+    page, _recorder = _open(chromium, wire_url, double=True)
+    held: dict[str, Route] = {}
+    marker = "STALE-PAINT-MARKER"
+    try:
+        _load_run(page, DURABLE_RUN)
+        # The paint is TRANSIENT, so it is WATCHED rather than looked for after
+        # the fact: a serialized re-read always follows a superseded one, so by
+        # the time any end-state assertion runs the correct facts have landed on
+        # top -- and an end-state test passes with the guard deleted.
+        page.evaluate(
+            "m => { window.__seen = false;"
+            " new MutationObserver(() => {"
+            "   if (document.body.innerText.includes(m)) window.__seen = true;"
+            " }).observe(document.body,"
+            "   {subtree: true, childList: true, characterData: true}); }",
+            marker)
+        page.route(f"**/command/runs/{DURABLE_RUN}", _hold_first(held))
+        page.evaluate(
+            "id => window.__stream.emit("
+            "JSON.stringify({kind: 'run', run_id: id}))", DURABLE_RUN)
+        while "held" not in held:
+            page.evaluate("() => new Promise(done => setTimeout(done, 20))")
+
+        page.locator("#graphRunId").fill(EMPTY_RUN)
+        page.get_by_role("button", name="Load run").click()
+        # Answered at last, and answered VISIBLY: the same document with one
+        # title replaced, so painting it would put a word on screen that this
+        # run's real plan does not carry.
+        route = held["held"]
+        body = route.fetch().json()
+        body["graph"]["definition"]["nodes"][0]["title"] = marker
+        route.fulfill(json=body)
+        page.wait_for_function(
+            "id => document.getElementById('runFacts').innerText.includes(id)",
+            arg=EMPTY_RUN)
+
+        assert page.evaluate("() => window.__seen") is False, (
+            "a superseded read painted the screen the Human had already left")
+    finally:
+        page.unroute(f"**/command/runs/{DURABLE_RUN}")
         page.context.close()
 
 

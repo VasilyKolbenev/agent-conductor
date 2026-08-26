@@ -169,6 +169,103 @@ function spoken(event, fallback) {
     ? event.notice : fallback;
 }
 
+const DRAFT_HELD = "Durable graph loaded from the authoritative run read, and "
+  + "the steps composed in this window are still held beside it as a LOCAL "
+  + "DRAFT. The plan the run follows is immutable; nothing composed here has "
+  + "been written to it.";
+const DRAFT_DISPLACED = "Durable graph loaded from the authoritative run read. "
+  + "The steps composed in this window could not be placed on the plan it "
+  + "carries, so they are no longer drawn — and nothing was written to the run.";
+
+// What an authoritative read REPLACES, and what it may not. An earlier version
+// of this comment said the read replaces the drawing and that only composed
+// nodes are spared -- that is no longer true and was never the right rule. It
+// protected the one road nothing can be saved on, because a durable plan is
+// immutable, and left the road that matters unguarded.
+//
+// The rule now: a read replaces the drawing when it BRINGS something. A durable
+// plan does, and it wins. A run that follows none brings nothing, and so does a
+// read this window cannot understand -- and neither is the Human doing
+// anything, so neither may take work they have not written. `localPlan` below
+// holds it for both, and `discard` lets it go at the one door that is the
+// Human's own: choosing another run.
+//
+// **This function is the DURABLE arm, and only that.** Here the read really
+// does bring a plan, so that plan wins and exactly the COMPOSED nodes ride on
+// top of it -- told apart by the one mark that distinguishes them: `compose`
+// sets `draft: true`, and every projected node, fixture or durable, carries
+// `draft: false`.
+//
+// The other arms keep MORE, and an earlier version of this paragraph denied it
+// three times over. `localPlan` holds the WHOLE drawing wherever the read
+// brings nothing -- a run that follows no graph, and a read this window cannot
+// understand -- so "nothing else is kept" is not true of this module. Nor does
+// the seeded-drawing ruling still stand: it was overturned on purpose, because
+// a run's plan is immutable, which makes a run that follows none the only run
+// one can ever be written to and that screen the whole writable road.
+//
+// Three things it will NOT do. It never crosses a run change, because carrying
+// one run's unwritten step onto another run's screen would offer it as that
+// run's. It never keeps an id the durable plan now carries -- once the run
+// follows a plan naming that step, the run is the authority on it. And it
+// never draws an edge with an end the merged drawing does not hold, which
+// would be a line from nothing.
+function heldDraft(state, facts) {
+  const drafts = state.nodes.filter((node) => node.draft);
+  if (!drafts.length || state.run.runId !== facts.run.runId) {
+    return {facts: null, notice: ""};
+  }
+  const arrived = new Set(facts.nodes.map((node) => node.node_id));
+  const kept = drafts.filter((node) => !arrived.has(node.node_id));
+  if (!kept.length) return {facts: null, notice: ""};
+  const keptIds = new Set(kept.map((node) => node.node_id));
+  const nodes = Object.freeze([...facts.nodes, ...kept]);
+  const known = new Set(nodes.map((node) => node.node_id));
+  const local = state.edges.filter((edge) =>
+    (keptIds.has(edge.from) || keptIds.has(edge.to))
+    && known.has(edge.from) && known.has(edge.to));
+  const edges = Object.freeze([...facts.edges, ...local]);
+  const layout = computeLayout(nodes, edges);
+  // A composed step whose anchor the run's plan does not have cannot be drawn
+  // on it. That is said out loud rather than drawn wrongly or dropped quietly.
+  if (!layout) return {facts: null, notice: DRAFT_DISPLACED};
+  return {facts: {nodes, edges, layout}, notice: DRAFT_HELD};
+}
+
+const REFUSED_HELD = " The plan on screen is still held in this window and has "
+  + "not been written to the run; nothing may be written until this run has "
+  + "been read again.";
+const LOCAL_HELD = "This run follows no graph yet, and the plan on screen is "
+  + "held in this window rather than by the run. Nothing here has been written; "
+  + "the save door is what writes it.";
+
+// A run that follows NO graph contributes no durable fact, so a drawing this
+// window holds is hiding nothing -- and it is the only copy of work a Human has
+// not written yet. Resetting to EMPTY here erased the entire writable road,
+// `empty -> start from the default -> compose -> save`, on every reconnect,
+// because a dropped socket always ends in a re-read. Measured before the fix:
+// nine steps on screen, zero after the socket came back.
+//
+// Held WHOLE rather than by the draft mark. An earlier fix kept only the nodes
+// `compose` had added, which protected the one road nothing can be saved on --
+// a durable run's plan is immutable -- and left the road that matters broken. A
+// plan missing eight of its nine steps is not a plan.
+//
+// It never crosses a run change: choosing another run discards it at that door,
+// where the Human's own action is, rather than by a comparison here.
+function localPlan(state) {
+  // A DURABLE drawing is never held across an answer. It belongs to the run
+  // that answered with it, and carrying it into a different run's "follows no
+  // graph" would show one run's written plan as another run's unwritten one --
+  // the mixing this whole seam exists to refuse, in its worst direction.
+  if (state.phase !== "loaded" || !state.nodes.length
+      || state.provenance.source === "durable") return {};
+  return {phase: "loaded", nodes: state.nodes, edges: state.edges,
+          layout: state.layout, provenance: state.provenance,
+          registry: state.registry, deployment: state.deployment,
+          run: state.run, selection: state.selection};
+}
+
 // The three answers a source can give, each with its own phase. A run that
 // follows no graph is not a graph that could not be read, and neither is
 // ever drawn as the other: an empty run is a normal answer, a refusal is a
@@ -182,27 +279,66 @@ function sourceArm(state, event) {
   const ready = Object.hasOwn(event, "ready")
     ? {writeReady: Boolean(event.ready)} : {writeReady: state.writeReady};
   if (event.type === "loaded") {
-    return Object.freeze({...EMPTY, ...event.facts, phase: "loaded",
-      ...carried(state, event), ...ready,
-      notice: LOADED_NOTICE[event.facts.provenance.source]});
+    const held = heldDraft(state, event.facts);
+    return Object.freeze({...EMPTY, ...event.facts, ...held.facts,
+      phase: "loaded", ...carried(state, event), ...ready,
+      notice: held.notice || LOADED_NOTICE[event.facts.provenance.source]});
   }
   // A refusal grants nothing and confirms nothing. It cannot say the screen
   // belongs to the chosen run, so the write door stays shut; and a save
   // outcome still waiting on a read has not been confirmed by this one, so
   // it is never announced here as though it had been.
+  //
+  // What it may NOT do is destroy the plan this window is holding, when the
+  // thing that refused was the READ. An unreadable answer brings no durable
+  // fact -- the same as a run that follows none -- and it is not the Human
+  // doing anything; taking their unwritten work for it is the same defect the
+  // `absent` arm below was corrected for, arriving by a different door.
+  //
+  // A refused FIXTURE keeps the opposite behaviour, and the difference is not
+  // a nicety: there the Human handed this window a drawing it could not read,
+  // and what goes is the drawing they handed it. `event.read` is what tells
+  // the two apart, set at the two places a READ refuses.
   if (event.type === "refused") {
-    return Object.freeze({...EMPTY, phase: "refused",
+    const kept = event.read === true ? localPlan(state) : {};
+    const said = spoken(event,
+      "The graph payload was refused: it does not name a valid graph.");
+    // The phase follows what is DRAWN, and it has to: `phase` is what hides
+    // the "No run graph loaded" card and the seed button, so leaving it
+    // `refused` over a held plan would put that sentence on screen beside nine
+    // drawn steps -- one window saying two contradictory things at once, which
+    // is the shape this package refuses everywhere else.
+    //
+    // The refusal is not softened by that. It is carried by the NOTICE, which
+    // keeps the reason the read gave and adds who holds what is on screen, and
+    // by the write door, which stays shut either way.
+    return Object.freeze({...EMPTY, ...kept,
+      phase: kept.nodes ? "loaded" : "refused",
       ...carried(state, event), writeReady: false,
-      notice: spoken(event,
-        "The graph payload was refused: it does not name a valid graph.")});
+      notice: kept.nodes ? said + REFUSED_HELD : said});
   }
-  return Object.freeze({...EMPTY, phase: "empty",
+  const local = localPlan(state);
+  return Object.freeze({...EMPTY, phase: "empty", ...local,
     ...carried(state, event), ...ready,
-    notice: spoken(event, EMPTY.notice)});
+    notice: local.nodes ? LOCAL_HELD : spoken(event, EMPTY.notice)});
 }
 
 export function reduce(state, event) {
   if (!event || typeof event.type !== "string") return state;
+  // The one door a held local plan is let go through, and it is the Human's own
+  // action rather than a transport event: choosing another run. A plan drawn
+  // against one run is not a draft of another's, and the save door beside it
+  // writes to whichever run is selected -- so it is dropped HERE, before the
+  // new run's read goes out, and never carried across on the strength of a
+  // comparison made later.
+  if (event.type === "discard") {
+    // Only what this window HOLDS is let go. A DURABLE drawing already on
+    // screen is the previous run's own answer, and it stays until the new
+    // run's read lands -- a separate promise, kept deliberately, with the
+    // write door shut in the meantime so nothing can be built from it. Blanking
+    // it here would break that and tell the Human nothing in exchange.
+    return state.provenance.source === "durable" ? state : EMPTY;
+  }
   if (["loaded", "refused", "absent"].includes(event.type)) {
     return sourceArm(state, event);
   }

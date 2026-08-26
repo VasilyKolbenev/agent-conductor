@@ -242,6 +242,71 @@ def test_hostile_text_stays_text_and_a_hostile_actor_never_reaches_the_wire(
         page.context.close()
 
 
+#: Does a pattern compile the way a browser really compiles one? Asked in the
+#: page's own engine, because no Python regex library has `v` semantics.
+_COMPILES_UNDER_V = (
+    "(p) => { try { new RegExp('^(?:' + p + ')$', 'v'); return true; }"
+    " catch (error) { return String(error); } }")
+
+
+def _validity(field) -> list[bool]:
+    """``[checkValidity(), patternMismatch]`` for one field, read from the engine.
+
+    ``patternMismatch`` rather than "not valid": an empty required field is
+    invalid too, so a test that only asked whether the field was valid would
+    pass while the pattern did nothing at all.
+    """
+    return field.evaluate(
+        "node => [node.checkValidity(), node.validity.patternMismatch]")
+
+
+def test_the_run_id_field_really_refuses_a_bad_id_in_this_engine(
+        chromium: Browser, cockpit_url: str) -> None:
+    """The run-id field's own native validation, asserted in a real engine.
+
+    Born red. The shipped attribute carried a bare trailing `-` in its class. A
+    browser compiles `pattern` with the RegExp `v` flag first, where that is a
+    syntax error, and **a pattern that fails to compile is IGNORED rather than
+    enforced** -- so the field looked validated and accepted anything. Measured
+    on chromium 151.0.7922.34 before the fix: `!!! not a run id !!!` gave
+    `patternMismatch=false` and `checkValidity()=true`. The sibling
+    `confirmed_by` field above and `graph-view.js` already carried the escape;
+    this one field did not, which is how the two surfaces came to disagree while
+    every source test stayed green.
+
+    **No expected pattern is written here.** This reads what really shipped off
+    the live DOM and asks the ENGINE about it. Spelling the pattern out would
+    pass on any build whose attribute matched the spelling -- including one the
+    browser silently discards, which is the defect itself. The compile check is
+    held separately from the validity check because a validity check alone goes
+    quiet again, and just as invisibly, the day some other character in the
+    class stops compiling.
+    """
+    page, _recorder = _open(chromium, cockpit_url)
+    try:
+        run_id = page.locator("#commandRunId")
+        run_id.wait_for(state="visible")
+        shipped = run_id.get_attribute("pattern")
+        assert shipped, "the run id field ships no pattern at all"
+
+        compiled = page.evaluate(_COMPILES_UNDER_V, shipped)
+        assert compiled is True, (
+            f"the shipped run-id pattern does not compile, so the browser "
+            f"ignores it and the field enforces nothing: {compiled}")
+
+        for bad in ("!!! not a run id !!!", "-leading-hyphen", "has space"):
+            run_id.fill(bad)
+            assert _validity(run_id) == [False, True], f"accepted {bad!r}"
+        # The positive control. Without it a pattern refusing EVERYTHING would
+        # satisfy every assertion above; the hyphen case is the one the escape
+        # is about, so it is not optional here.
+        for good in ("run-model-routing", "run.1", "A0", "a" * 128):
+            run_id.fill(good)
+            assert _validity(run_id) == [True, False], f"refused {good!r}"
+    finally:
+        page.context.close()
+
+
 def test_the_confirm_control_is_operable_and_announced_from_the_keyboard(
         chromium: Browser, cockpit_url: str) -> None:
     """Keyboard alone completes it, and one stable live region carries the news."""
