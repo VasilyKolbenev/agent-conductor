@@ -190,10 +190,19 @@ const DRAFT_DISPLACED = "Durable graph loaded from the authoritative run read. "
 // holds it for both, and `discard` lets it go at the one door that is the
 // Human's own: choosing another run.
 //
-// So exactly the composed nodes are carried across, by the one mark that tells
-// them apart: `compose` sets `draft: true`, and every projected node, fixture
-// or durable, carries `draft: false`. Nothing else is kept, which is why the
-// ruling for a seeded drawing stands untouched.
+// **This function is the DURABLE arm, and only that.** Here the read really
+// does bring a plan, so that plan wins and exactly the COMPOSED nodes ride on
+// top of it -- told apart by the one mark that distinguishes them: `compose`
+// sets `draft: true`, and every projected node, fixture or durable, carries
+// `draft: false`.
+//
+// The other arms keep MORE, and an earlier version of this paragraph denied it
+// three times over. `localPlan` holds the WHOLE drawing wherever the read
+// brings nothing -- a run that follows no graph, and a read this window cannot
+// understand -- so "nothing else is kept" is not true of this module. Nor does
+// the seeded-drawing ruling still stand: it was overturned on purpose, because
+// a run's plan is immutable, which makes a run that follows none the only run
+// one can ever be written to and that screen the whole writable road.
 //
 // Three things it will NOT do. It never crosses a run change, because carrying
 // one run's unwritten step onto another run's screen would offer it as that
