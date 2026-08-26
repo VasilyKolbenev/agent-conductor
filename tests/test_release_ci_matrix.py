@@ -34,20 +34,28 @@ WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 PLATFORMS = ("ubuntu-latest", "windows-latest", "macos-latest")
 #: The interpreters the core matrix must cover.
 PYTHONS = ("3.11", "3.12")
-#: The extras a `pip install -e ".[a,b]"` command really asks for. PARSED,
-#: because asking whether a name appears in the text is a different question:
-#: `".[dev]" # browser` contains "browser" and installs no browser extra.
-_INSTALL_EXTRAS = re.compile(r"\.\[([^\]]*)\]")
+#: The ONE install form this guard understands, matched WHOLE.
+#:
+#: Whole, because a head match reads the extras off a command that never puts
+#: the package in this job's environment. All four of these were accepted while
+#: only the first installs anything here:
+#:
+#:     python -m pip install -e ".[dev,browser]"
+#:     python -m pip install -e ".[dev,browser]" --dry-run
+#:     python -m pip install -e ".[dev,browser]" --target /tmp/elsewhere
+#:     python -m pip install -e ".[dev,browser]" --prefix /opt/nowhere
+#:
+#: So no tail is allowed at all. That is deliberately stricter than pip: a flag
+#: this guard has not reasoned about must make it FAIL rather than guess, in
+#: the same way a block scalar does. Widening it is a decision, not an edit.
+_EDITABLE_INSTALL = re.compile(
+    r'\s*python\s+-m\s+pip\s+install\s+-e\s+"\.\[(?P<extras>[^\]"]*)\]"\s*')
 #: A step's command written on the `run:` line ITSELF. The excluded first
 #: characters are the two block-scalar indicators and a comment marker.
 _RUN_INLINE = re.compile(r"^\s*run:\s*(?P<command>[^|>#\s].*)$")
 #: A step that opens a block scalar instead. Detected so its presence can be
 #: REPORTED, never read.
 _RUN_SCALAR = re.compile(r"^\s*run:\s*[|>]")
-#: A command that really invokes pip's installer, at the HEAD of the line. An
-#: `echo "python -m pip install ..."` is an active command and installs
-#: nothing, so containing the words is not enough.
-_PIP_INSTALL = re.compile(r"^(?:python\s+-m\s+)?pip\s+install\b")
 
 
 def _inline_run_commands(job: str) -> list[str]:
@@ -107,16 +115,16 @@ def _imports_module(source: str, dotted: str) -> bool:
 
 
 def _installed_extras(command: str) -> set[str]:
-    """Exactly the extras one PIP INSTALL command names, or an empty set.
+    """The extras this command really puts in the job's environment.
 
-    The command has to BE an install, not contain the words: an
-    `echo "python -m pip install -e \\".[dev,browser]\\""` is an active line
-    that installs nothing, and it answered this question yes.
+    The command has to BE the reviewed install, WHOLE. Containing the words is
+    not enough -- an `echo "python -m pip install ..."` installs nothing -- and
+    neither is starting with them, because `--dry-run`, `--target` and
+    `--prefix` all leave this environment without the package.
     """
-    if not _PIP_INSTALL.match(command):
-        return set()
-    found = _INSTALL_EXTRAS.search(command)
-    return {name.strip() for name in found.group(1).split(",")} if found else set()
+    found = _EDITABLE_INSTALL.fullmatch(command)
+    return ({name.strip() for name in found.group("extras").split(",")}
+            if found else set())
 
 
 def _extra_providing(package: str) -> str:
@@ -247,14 +255,16 @@ def test_the_core_job_installs_what_the_fast_suite_needs_to_COLLECT(
 
     job = _job(workflow, "test")
     installs = [command for command in _inline_run_commands(job)
-                if _PIP_INSTALL.match(command)]
+                if _EDITABLE_INSTALL.fullmatch(command)]
     scalars = sum(1 for line in job.splitlines() if _RUN_SCALAR.match(line))
     assert installs, (
-        "the core job runs no INLINE pip install. This guard reads only the "
-        f"`run: <command>` form and the job holds {scalars} block scalar(s); a "
-        "folded `run: >` body is ONE command, so reading one line by line "
-        "accepts an `echo` as an install. If the install moved into a block, "
-        "re-derive this test rather than widening it")
+        'the core job runs no inline `python -m pip install -e ".[...]"`. This '
+        "guard understands that exact command and nothing else: it will not "
+        f"read the {scalars} block scalar(s) it can see -- a folded `run: >` "
+        "body is ONE command, so reading it line by line accepts an `echo` as "
+        "an install -- and it refuses any tail, because --dry-run, --target "
+        "and --prefix all leave this environment without the package. "
+        "Re-derive this test rather than widening it")
     assert any(extra in _installed_extras(command) for command in installs), (
         f"the fast suite cannot be COLLECTED without the {extra!r} extra "
         f"({bridged} reach playwright through browser_tests.conftest), and no "
