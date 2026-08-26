@@ -177,12 +177,18 @@ const DRAFT_DISPLACED = "Durable graph loaded from the authoritative run read. "
   + "The steps composed in this window could not be placed on the plan it "
   + "carries, so they are no longer drawn — and nothing was written to the run.";
 
-// An authoritative read REPLACES the drawing, and for everything this window
-// merely DREW that is right: a fixture is not a fact about a run, and the
-// reconnect that proves it has its own test. It is wrong for what a Human
-// COMPOSED and has not written. Unwritten work is not a fact about the run
-// either, and losing it to a transport event -- a dropped socket, a reconnect,
-// a state greeting -- is not a decision anybody made.
+// What an authoritative read REPLACES, and what it may not. An earlier version
+// of this comment said the read replaces the drawing and that only composed
+// nodes are spared -- that is no longer true and was never the right rule. It
+// protected the one road nothing can be saved on, because a durable plan is
+// immutable, and left the road that matters unguarded.
+//
+// The rule now: a read replaces the drawing when it BRINGS something. A durable
+// plan does, and it wins. A run that follows none brings nothing, and so does a
+// read this window cannot understand -- and neither is the Human doing
+// anything, so neither may take work they have not written. `localPlan` below
+// holds it for both, and `discard` lets it go at the one door that is the
+// Human's own: choosing another run.
 //
 // So exactly the composed nodes are carried across, by the one mark that tells
 // them apart: `compose` sets `draft: true`, and every projected node, fixture
@@ -217,6 +223,9 @@ function heldDraft(state, facts) {
   return {facts: {nodes, edges, layout}, notice: DRAFT_HELD};
 }
 
+const REFUSED_HELD = " The plan on screen is still held in this window and has "
+  + "not been written to the run; nothing may be written until this run has "
+  + "been read again.";
 const LOCAL_HELD = "This run follows no graph yet, and the plan on screen is "
   + "held in this window rather than by the run. Nothing here has been written; "
   + "the save door is what writes it.";
@@ -270,11 +279,34 @@ function sourceArm(state, event) {
   // belongs to the chosen run, so the write door stays shut; and a save
   // outcome still waiting on a read has not been confirmed by this one, so
   // it is never announced here as though it had been.
+  //
+  // What it may NOT do is destroy the plan this window is holding, when the
+  // thing that refused was the READ. An unreadable answer brings no durable
+  // fact -- the same as a run that follows none -- and it is not the Human
+  // doing anything; taking their unwritten work for it is the same defect the
+  // `absent` arm below was corrected for, arriving by a different door.
+  //
+  // A refused FIXTURE keeps the opposite behaviour, and the difference is not
+  // a nicety: there the Human handed this window a drawing it could not read,
+  // and what goes is the drawing they handed it. `event.read` is what tells
+  // the two apart, set at the two places a READ refuses.
   if (event.type === "refused") {
-    return Object.freeze({...EMPTY, phase: "refused",
+    const kept = event.read === true ? localPlan(state) : {};
+    const said = spoken(event,
+      "The graph payload was refused: it does not name a valid graph.");
+    // The phase follows what is DRAWN, and it has to: `phase` is what hides
+    // the "No run graph loaded" card and the seed button, so leaving it
+    // `refused` over a held plan would put that sentence on screen beside nine
+    // drawn steps -- one window saying two contradictory things at once, which
+    // is the shape this package refuses everywhere else.
+    //
+    // The refusal is not softened by that. It is carried by the NOTICE, which
+    // keeps the reason the read gave and adds who holds what is on screen, and
+    // by the write door, which stays shut either way.
+    return Object.freeze({...EMPTY, ...kept,
+      phase: kept.nodes ? "loaded" : "refused",
       ...carried(state, event), writeReady: false,
-      notice: spoken(event,
-        "The graph payload was refused: it does not name a valid graph.")});
+      notice: kept.nodes ? said + REFUSED_HELD : said});
   }
   const local = localPlan(state);
   return Object.freeze({...EMPTY, phase: "empty", ...local,

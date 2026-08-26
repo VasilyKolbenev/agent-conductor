@@ -365,15 +365,24 @@ const STREAM_DOWN = "Connection lost. The last authoritative facts are still "
   // cannot read as one plan and one position — still announced that the plan
   // was written. Which holder answers is a decision about the verdict, so it
   // is made where the verdict is known and not one step earlier.
+  // `read: true` marks a refusal that came from READING A RUN, and it is
+  // load-bearing rather than bookkeeping. The fixture seam refuses too, through
+  // `conductGraph.load`, and the two mean opposite things about the drawing on
+  // screen: there the Human handed this window something it could not read, and
+  // the drawing they handed it goes; here the RUN could not be read, which says
+  // nothing about the plan this window is holding and is no reason to destroy
+  // it. One event type served both and the wrong half won.
   function loadOutcome(read, registry, controls) {
     const answer = adaptRunGraph(read, registry, controls);
     if (answer.state === GRAPH_LOADED) {
       const facts = projectPayload(answer.payload);
-      return facts ? {type: "loaded", facts} : {type: "refused", notice: CORRUPT};
+      return facts
+        ? {type: "loaded", facts}
+        : {type: "refused", read: true, notice: CORRUPT};
     }
     return answer.state === GRAPH_ABSENT
       ? {type: "absent", notice: ABSENT}
-      : {type: "refused", notice: CORRUPT};
+      : {type: "refused", read: true, notice: CORRUPT};
   }
   // A held save outcome is consumed only by the read that ANNOUNCES it.
   // Consuming it before the dispatch is how a plan came to be written with
@@ -439,7 +448,7 @@ const STREAM_DOWN = "Connection lost. The last authoritative facts are still "
     } catch (error) {
       if (requestEpoch !== epoch) return;
       const code = error instanceof Error ? error.message : "store_error";
-      dispatch({type: "refused", ...unconfirmed(), ready: false,
+      dispatch({type: "refused", read: true, ...unconfirmed(), ready: false,
         notice: ERROR_LABELS[code] || ERROR_LABELS.store_error});
     }
   }
