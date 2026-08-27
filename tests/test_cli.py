@@ -329,25 +329,80 @@ def test_demo_stdout_is_the_url_and_the_temp_path_is_not(tmp_path, capsys, monke
     assert "materialized" in captured.err and "materialized" not in captured.out
 
 
+#: The child this test really runs. It keeps everything the defect lives in --
+#: a separate process, a redirected and therefore BLOCK-BUFFERED stdout, and the
+#: real `_serve` through the real `main` -- and removes the one thing that is not
+#: the subject: building a socket server.
+#:
+#: On both macOS runners this test timed out at twenty seconds with an EMPTY
+#: stderr, on both Python versions. Empty stderr rules out the LOUD failure and
+#: nothing else -- an import error would have left a traceback, and an unflushed
+#: write would have been just as silent. What settled that half was not stderr:
+#: `flush=True` stands in `__main__` and a mutation removing it is held RED, so
+#: the remaining explanation was a child that had not reached the print at all
+#: -- which is how long a real server takes to stand up on a loaded shared
+#: runner. Raising the timeout would have measured the same thing for longer.
+#:
+#: The fake blocks in `serve_forever` exactly as the real one does, so the
+#: statement after the print still cannot return -- which is the whole condition
+#: the flush exists for. Real loopback and server construction are covered by
+#: their own tests and by the three-platform browser gate.
+_FLUSH_CHILD = '''\
+import threading
+
+from conductor import server
+from conductor.__main__ import main
+
+
+class _BlockingServer:
+    """A server with an address that never returns from `serve_forever`."""
+
+    server_address = ("127.0.0.1", 8765)
+
+    def serve_forever(self):
+        threading.Event().wait()
+
+    def server_close(self):
+        pass
+
+
+server.build = lambda *args, **kwargs: _BlockingServer()
+raise SystemExit(main(["up", "--dir", {root!r}, "--port", "0"]))
+'''
+
+
+# The one test here that needs a real child process. `capsys` cannot see this
+# defect: it does not buffer, and _FakeServer returns instead of blocking. In
+# the real thing stdout is block-buffered the moment it is redirected — the very
+# case the contract exists for — and the next statement blocks in
+# serve_forever(), so without flush=True the URL sits in the buffer until the
+# server stops and never arrives at all if the server is killed.
+# `conduct up | xargs open` would hang on an empty pipe.
+#
+# NO SOCKET IS OPENED. `server.build` is replaced by a fake carrying a fixed
+# `server_address`, so there is no free-port race and no bind to be slow about.
+# `--port 0` is still passed, so the CLI's own argument path is the production
+# one, but the OS never picks anything and the port in the URL is the fake's
+# 8765 — which is why the assertion reads the SHAPE of the URL and not a number.
+#
+# What the captured stderr settles, and what it does not. A child that failed
+# LOUDLY can be told from one that wrote nothing, and without that a broken
+# environment reads as this exact defect. That direction only: an EMPTY stderr
+# does not establish an unflushed write, because a child that never reached the
+# print is silent too. That is exactly what both macOS jobs looked like in
+# remote run #10, and there the cause was a real server failing to stand up on
+# a loaded runner — which is why one no longer stands up in this child.
 def test_up_flushes_the_url_while_it_is_still_serving(tmp_path):
-    # The one test here that needs a real child process. `capsys` cannot see
-    # this defect: it does not buffer, and _FakeServer returns instead of
-    # blocking. In the real thing stdout is block-buffered the moment it is
-    # redirected — the very case the contract exists for — and the next
-    # statement blocks in serve_forever(), so without flush=True the URL sits
-    # in the buffer until the server stops and never arrives at all if the
-    # server is killed. `conduct up | xargs open` would hang on an empty pipe.
-    #
-    # --port 0 lets the OS pick, so there is no free-port race. The read runs
-    # on a thread with a timeout: unflushed, readline() blocks forever, and a
-    # blocked reader must fail this test rather than hang the suite.
+    # The read runs on a thread with a timeout: unflushed, readline() blocks
+    # forever, and a blocked reader must fail this test rather than hang it.
     root = write_project(tmp_path, lanes={"claude": good_lane()})
+    child = tmp_path / "flush_child.py"
+    child.write_text(_FLUSH_CHILD.format(root=str(root)), encoding="utf-8",
+                     newline="\n")
     env = {k: v for k, v in os.environ.items() if k != "PYTHONUNBUFFERED"}
-    # stderr is captured, not discarded: an import error and an unflushed
-    # build both present as twenty seconds of silence, and only stderr tells
-    # them apart. Without it a broken environment reads as this exact defect.
+    # Captured, not discarded; see the note above for which way it cuts.
     proc = subprocess.Popen(
-        [sys.executable, "-m", "conductor", "up", "--dir", str(root), "--port", "0"],
+        [sys.executable, str(child)],
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
     first: list[str] = []
     reader = threading.Thread(target=lambda: first.append(proc.stdout.readline()),
@@ -357,9 +412,14 @@ def test_up_flushes_the_url_while_it_is_still_serving(tmp_path):
     try:
         if not first:
             proc.terminate()          # unblocks the reader so stderr can be read
-            assert first, ("no URL reached a redirected stdout in 20s; child "
-                           f"stderr was: {proc.stderr.read()!r}")
+            assert first, ("no URL reached a redirected stdout; child stderr "
+                           f"was: {proc.stderr.read()!r}")
         assert re.fullmatch(r"http://127\.0\.0\.1:\d+/", first[0].strip())
+        # WHILE IT IS STILL SERVING, which is the half the name claims and the
+        # old shape only implied: the child is blocked inside `serve_forever`
+        # and has not exited, so the URL cannot have arrived because the server
+        # stopped and let the buffer drain.
+        assert proc.poll() is None, "the child exited before the URL was read"
     finally:
         proc.terminate()
         reader.join(timeout=5)        # let the reader observe the closed pipe

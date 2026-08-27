@@ -77,7 +77,8 @@ from conductor.command.adapters.provider import ProviderConfig
 from conductor.command.contracts import ActionRequest
 from conductor.command.providers import PROVIDER_CATALOG, resolve_providers
 
-from tests import _fakecodex
+from tests import _fakecodex, _stdinseam
+from tests._fakeenv import ENV_PROBE, NO_PROBE
 
 NOW = "2026-08-22T12:00:00Z"
 DIGEST = "sha256:" + "a" * 64
@@ -105,6 +106,7 @@ def _executable(tmp_path: Path) -> Path:
 
 
 def a_harness(tmp_path: Path, *, instruction: str = INSTRUCTION_BODY,
+              ambient=None,
               root: Path | None = None, **knobs: str):
     """A registered, available Codex provider over the fake, its root and its log.
 
@@ -126,8 +128,19 @@ def a_harness(tmp_path: Path, *, instruction: str = INSTRUCTION_BODY,
     config = ProviderConfig(
         provider_id=CODEX_PROVIDER_ID, executable=str(exe),
         protocol=CODEX_PROTOCOL, env_allow=tuple(sorted(environ)))
+    # `ambient` is a monkeypatch fixture. When it is given, the knobs are planted
+    # in the REAL process environment and the runner is left to read that, so the
+    # allowlist is exercised against an environment that can actually carry a
+    # leak. Passing a synthetic dict -- what every other caller does, and what
+    # every caller used to do -- means `ProcessRunner._environ` holds only the
+    # knobs, so no parent value could reach a child however the filter behaved:
+    # a mutation copying the ambient environment stayed GREEN under it.
+    if ambient is not None:
+        for _name, _value in environ.items():
+            ambient.setenv(_name, _value)
     resolution = resolve_providers(
-        [config], root=root, clock=lambda: NOW, ids=_Ids(), environ=environ)
+        [config], root=root, clock=lambda: NOW, ids=_Ids(),
+        environ=None if ambient is not None else environ)
     return resolution.registry.resolve(CODEX_PROVIDER_ID), root, log
 
 
@@ -298,21 +311,31 @@ def test_a_task_the_leak_witness_cannot_scan_fails_instead_of_passing(tmp_path):
     assert _task_row(log)["marker"] is None
 
 
-#: Comfortably past the operating system's pipe buffer, which is where the
-#: delivery guard begins to see anything at all. Measured on this platform: a
-#: deaf child reports `delivered` up to 4 KiB and `incomplete` from 8 KiB.
-BEYOND_THE_PIPE_BUFFER = "Refactor the guard. " * 1600
+#: A prefix small enough that what stopped the write can only be the double.
+#: POSIX GUARANTEES a pipe of at least 512 bytes, so no system can refuse this
+#: many; the observed defaults -- 4 KiB on Windows, 16 KiB on macOS, 64 KiB on
+#: Linux -- are only how much room that leaves over.
+A_PREFIX = 16
 
 
-def test_an_instruction_too_large_to_buffer_is_never_a_success_if_unread(tmp_path):
+def test_an_instruction_the_child_was_never_handed_whole_is_not_a_success(
+        tmp_path, monkeypatch):
     """A deaf child exits zero honestly, about a task it was never given.
 
     Every process fact about this run is good -- completed, exit zero -- and the
-    run still did not happen. The instruction is deliberately larger than the
-    pipe buffer, because that is the only region in which the near side can tell.
+    run still did not happen.
+
+    The delivery is broken HERE, at the step that fails, rather than by asking
+    the operating system to break it. The older shape handed a deaf child more
+    bytes than a pipe can hold, which is a region that does not exist on Linux:
+    a pipe there takes 64 KiB whole, and 64 KiB is the ceiling this build bounds
+    an instruction body at, so the write, the flush and the close all succeeded
+    and the guard was right to say `delivered`. See `tests/_stdinseam.py`.
     """
-    adapter, _root, log = a_harness(
-        tmp_path, instruction=BEYOND_THE_PIPE_BUFFER, **{_fakecodex.DEAF: "1"})
+    adapter, _root, log = a_harness(tmp_path, **{_fakecodex.DEAF: "1"})
+    _stdinseam.every_child_input(
+        monkeypatch,
+        lambda real: _stdinseam.ChildInput(carrier=real, ceiling=A_PREFIX))
 
     receipt = run_once(adapter, a_request())
 
@@ -476,16 +499,25 @@ def test_a_reading_the_door_refuses_is_unreadable_and_never_absent(tmp_path):
 # --- the environment every spawn is given -------------------------------------
 
 
-def test_this_provider_forces_no_environment_and_the_child_sees_only_the_pin(
-        tmp_path):
-    """An EMPTY `forced_env`, and the child's environment proves it is empty.
+def test_this_provider_forces_no_environment_and_nothing_of_the_parents_arrives(
+        tmp_path, monkeypatch):
+    """An EMPTY `forced_env`, and a child that got nothing of the parent's.
 
     This vendor publishes its switches as config keys rather than as environment
     variables, so they ride in argv through `-c` and there is nothing left to
-    force. Asserted from the CHILD's own environment names, because an empty
-    tuple in the profile says only what this build sent, not what arrived.
+    force. That is asked of the CHILD rather than of the profile, because an
+    empty tuple says only what this build sent, not what arrived.
+
+    What is NOT claimed, and what the name used to claim: that the child sees
+    only the pin. It does not, and no build can make it -- the Python runtime
+    adds `LC_CTYPE` on POSIX and macOS adds `__CF_USER_TEXT_ENCODING`, both on
+    the far side of the interpreter. An equality here measured interpreter
+    startup, and it is what took this test red on Linux and macOS in remote run
+    #10. The two provable halves are below, and they are asserted separately.
     """
-    adapter, _root, log = a_harness(tmp_path)
+    monkeypatch.setenv("OPENAI_API_KEY", ENV_PROBE)
+    monkeypatch.setenv(ENV_PROBE, "a parent value that may not travel")
+    adapter, _root, log = a_harness(tmp_path, ambient=monkeypatch)
 
     run_once(adapter, a_request())
 
@@ -494,10 +526,15 @@ def test_this_provider_forces_no_environment_and_the_child_sees_only_the_pin(
     rows = _fakecodex.spawns(log)
     assert len(rows) == 2, f"EXPECTED_PREFLIGHT_AND_TASK={len(rows)}"
     for row in rows:
+        # Both halves, and neither of them "nothing surplus": the Python runtime
+        # adds `LC_CTYPE` on POSIX and macOS adds `__CF_USER_TEXT_ENCODING`, on
+        # the far side of the interpreter and never through `ProcessRunner`, so
+        # a surplus check measured the interpreter's own startup rather than
+        # this build. The half that IS about this build is that nothing of the
+        # PARENT's arrived, asked of every name and every value.
+        assert row["probe"] == NO_PROBE, (
+            "THE_PARENTS_ENVIRONMENT_REACHED_THE_CHILD")
         names = set(row["env_names"])
-        # Both halves: nothing surplus, and the two that must be there really
-        # are. An empty environment would satisfy the first on its own.
-        assert names - allowed == set(), f"THE_CHILD_WAS_GIVEN={sorted(names)}"
         assert allowed <= names, f"THE_CHILD_WAS_MISSING={sorted(allowed - names)}"
 
 

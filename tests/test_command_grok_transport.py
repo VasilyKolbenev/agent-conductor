@@ -48,6 +48,7 @@ from conductor.command.contracts import ActionRequest
 from conductor.command.providers import resolve_providers
 
 from tests import _fakegrok
+from tests._fakeenv import ENV_PROBE, NO_PROBE
 
 NOW = "2026-08-21T12:00:00Z"
 DIGEST = "sha256:" + "a" * 64
@@ -80,7 +81,7 @@ def _executable(tmp_path: Path) -> Path:
     return exe
 
 
-def a_harness(tmp_path: Path, **knobs: str):
+def a_harness(tmp_path: Path, ambient=None, **knobs: str):
     """A registered, available Grok provider over the fake, its root and its log."""
     exe = _executable(tmp_path)
     root = tmp_path / "root"
@@ -94,8 +95,19 @@ def a_harness(tmp_path: Path, **knobs: str):
     config = ProviderConfig(
         provider_id=GROK_PROVIDER_ID, executable=str(exe),
         protocol=GROK_PROTOCOL, env_allow=tuple(sorted(environ)))
+    # `ambient` is a monkeypatch fixture. When it is given, the knobs are planted
+    # in the REAL process environment and the runner is left to read that, so the
+    # allowlist is exercised against an environment that can actually carry a
+    # leak. Passing a synthetic dict -- what every other caller does, and what
+    # every caller used to do -- means `ProcessRunner._environ` holds only the
+    # knobs, so no parent value could reach a child however the filter behaved:
+    # a mutation copying the ambient environment stayed GREEN under it.
+    if ambient is not None:
+        for _name, _value in environ.items():
+            ambient.setenv(_name, _value)
     resolution = resolve_providers(
-        [config], root=root, clock=lambda: NOW, ids=_Ids(), environ=environ)
+        [config], root=root, clock=lambda: NOW, ids=_Ids(),
+        environ=None if ambient is not None else environ)
     return resolution.registry.resolve(GROK_PROVIDER_ID), root, log
 
 
@@ -313,16 +325,31 @@ def test_no_attempt_home_survives_a_completed_dispatch(tmp_path):
 def test_a_credential_the_operator_did_not_allow_never_reaches_the_child(
         tmp_path, monkeypatch):
     """``XAI_API_KEY`` is the vendor's documented shell channel, so it is the
-    exact name whose leak would matter."""
-    monkeypatch.setenv("XAI_API_KEY", "xai-live-never-allowed")
-    adapter, _root, log = a_harness(tmp_path)
+    exact name whose leak would matter.
+
+    Its VALUE is the suite's probe, so the credential channel and the leak
+    channel are the same measurement rather than two that could disagree, and a
+    second planting carries the probe as a NAME -- a copied environment leaks
+    through both and a scan of one would miss the other.
+    """
+    monkeypatch.setenv("XAI_API_KEY", ENV_PROBE)
+    monkeypatch.setenv(ENV_PROBE, "a parent value that may not travel")
+    adapter, _root, log = a_harness(tmp_path, ambient=monkeypatch)
 
     run_once(adapter, a_request())
 
-    names = set(_fakegrok.spawns(log)[0]["env_names"])
-    assert names == {
-        GROK_HOME_ENV, *_fakegrok.SWITCH_NAMES, _fakegrok.SPAWN_LOG}, (
-        f"THE_CHILD_ENVIRONMENT_IS_NOT_THE_ONE_THIS_BUILD_GAVE_IT: {sorted(names)}")
+    # Not set EQUALITY: the Python runtime adds `LC_CTYPE` on POSIX and macOS
+    # adds `__CF_USER_TEXT_ENCODING`, on the far side of the interpreter and
+    # never through `ProcessRunner`, so equality measured the interpreter's own
+    # startup. What is about this build is that nothing of the parent's arrived
+    # -- by name or by value, since a copied environment leaks through both.
+    row = _fakegrok.spawns(log)[0]
+    assert row["probe"] == NO_PROBE, (
+        "THE_PARENTS_ENVIRONMENT_REACHED_THE_CHILD")
+    names = set(row["env_names"])
+    assert {GROK_HOME_ENV, *_fakegrok.SWITCH_NAMES,
+            _fakegrok.SPAWN_LOG} <= names, (
+        f"THE_CHILD_WAS_MISSING={sorted(names)}")
     assert "XAI_API_KEY" not in names
 
 

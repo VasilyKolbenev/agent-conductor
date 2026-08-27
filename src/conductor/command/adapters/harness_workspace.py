@@ -131,12 +131,39 @@ def _refuse(violation: RouteViolation) -> WorkspaceNotContained:
     return WorkspaceNotContained(render_route_violation(violation))
 
 
+#: Every mark a route component may never carry, decided ONCE for every system
+#: this build runs on rather than read from the one it happens to be running on.
+#:
+#: `os.sep` and `os.altsep` are values of the CURRENT platform, and reading them
+#: meant POSIX accepted `a\b` -- a name that is a two-part ROUTE the moment the
+#: same configuration is read on Windows. A name may not mean one thing here and
+#: another there: an operator's `providers.json` travels, and so does a run.
+#:
+#: `:` stays for the drive-letter and stream forms Windows reads it as, on every
+#: platform for the same reason.
+_COMPONENT_MARKS = frozenset({"/", "\\", ":"})
+#: The highest code point this door refuses outright. NUL alone used to be
+#: checked, so a name carrying a backspace, an escape or a newline passed --
+#: reaching a filesystem, a receipt and a log, where a control character is not
+#: something a reader can see, compare or type back. Windows refused several of
+#: them at the filesystem instead, which made the hole invisible there and left
+#: it open on POSIX.
+_LAST_CONTROL = 0x1F
+
+
 def _component(name: object) -> str:
-    """Prove one route part names a child, never a route of its own."""
-    if type(name) is not str or not name or name in (os.curdir, os.pardir):
+    """Prove one route part names a child, never a route of its own.
+
+    Held by CONSTRUCTION rather than by this platform's separators, and not by
+    `Path(name).name` either: that is the same platform semantics wearing a
+    different hat, and it answers `a\\b` differently on the two systems for the
+    very reason this function exists.
+    """
+    if type(name) is not str or not name or name in (".", ".."):
         raise WorkspaceNotContained(f"{name!r} is not a single route component")
-    separators = {os.sep, os.altsep or os.sep, "/", ":", "\x00"}
-    if any(mark in name for mark in separators):
+    if any(mark in name for mark in _COMPONENT_MARKS):
+        raise WorkspaceNotContained(f"{name!r} is not a single route component")
+    if any(ord(character) <= _LAST_CONTROL for character in name):
         raise WorkspaceNotContained(f"{name!r} is not a single route component")
     return name
 
