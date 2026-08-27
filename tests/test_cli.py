@@ -335,11 +335,13 @@ def test_demo_stdout_is_the_url_and_the_temp_path_is_not(tmp_path, capsys, monke
 #: the subject: building a socket server.
 #:
 #: On both macOS runners this test timed out at twenty seconds with an EMPTY
-#: stderr, on both Python versions. Empty stderr rules out the import failure
-#: and the unflushed write alike: the child had not reached the print at all, so
-#: what was being measured was how long a real server takes to stand up on a
-#: loaded shared runner. Raising the timeout would have measured the same thing
-#: for longer.
+#: stderr, on both Python versions. Empty stderr rules out the LOUD failure and
+#: nothing else -- an import error would have left a traceback, and an unflushed
+#: write would have been just as silent. What settled that half was not stderr:
+#: `flush=True` stands in `__main__` and a mutation removing it is held RED, so
+#: the remaining explanation was a child that had not reached the print at all
+#: -- which is how long a real server takes to stand up on a loaded shared
+#: runner. Raising the timeout would have measured the same thing for longer.
 #:
 #: The fake blocks in `serve_forever` exactly as the real one does, so the
 #: statement after the print still cannot return -- which is the whole condition
