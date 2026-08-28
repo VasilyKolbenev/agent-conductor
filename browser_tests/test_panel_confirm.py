@@ -58,7 +58,9 @@ def cockpit_url(tmp_path) -> Iterator[str]:
     thread.start()
     host, port = httpd.server_address
     try:
-        yield f"http://{host}:{port}/"
+        # The classic panel's own route: `GET /` is the Workflow Studio's
+        # shell now, and the Cockpit under test is mounted by index.html.
+        yield f"http://{host}:{port}/panel/index.html"
     finally:
         httpd.shutdown()
         thread.join(timeout=5)

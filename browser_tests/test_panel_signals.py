@@ -64,7 +64,9 @@ def cockpit(tmp_path) -> Iterator[tuple[str, server.ConductServer]]:
     thread.start()
     host, port = httpd.server_address
     try:
-        yield f"http://{host}:{port}/", httpd
+        # The classic panel's own route: `GET /` is the Workflow Studio's
+        # shell now, and the signals under test are index.html's.
+        yield f"http://{host}:{port}/panel/index.html", httpd
     finally:
         httpd.shutdown()
         thread.join(timeout=5)

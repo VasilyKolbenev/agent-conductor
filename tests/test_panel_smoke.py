@@ -26,7 +26,11 @@ NOW = datetime(2026, 7, 30, 12, 0, tzinfo=timezone.utc)
 def _fetch_panel(root):
     srv, base = start(root)
     try:
-        with urllib.request.urlopen(base + "/", timeout=5) as r:
+        # The classic panel's route. `GET /` is the Workflow Studio's shell
+        # now; index.html kept its file name and moved to the asset allowlist,
+        # so this is the URL that reaches the document every assertion below
+        # is about. Only the URL moved -- nothing here asserts anything new.
+        with urllib.request.urlopen(base + "/panel/index.html", timeout=5) as r:
             return r.read().decode()
     finally:
         srv.shutdown()

@@ -1,7 +1,9 @@
 """Loopback HTTP server for the Conduct panel: merge broker, routes, SSE.
 
 `build(root, port)` returns a `ThreadingHTTPServer` bound to 127.0.0.1 that
-serves the packaged panel at `/`, the merged state at `/state.json`, the
+serves the packaged Workflow Studio shell at `/` (the classic panel keeps its
+own file name and is served at `/panel/index.html`), the merged state at
+`/state.json`, the
 bundled harness registry at `/harnesses.json`, raw lane files at
 `/lane/<author>.json`, deterministic packets at `/handoff/<author>.md`, and a
 Server-Sent-Events stream at `/events`.
@@ -91,6 +93,31 @@ PANEL_ASSETS = {
         "text/javascript; charset=utf-8", "graph-adapter.js"),
     "/panel/graph-default.js": (
         "text/javascript; charset=utf-8", "graph-default.js"),
+    # The Workflow Studio. Its shell is what `GET /` answers with, so — unlike
+    # graph.html — studio.html is NOT on this list: it is the panel route's own
+    # entry, and putting it here as well would give one document two routes.
+    # Its stylesheet and its modules are ordinary allowlisted assets.
+    "/panel/studio.css": ("text/css; charset=utf-8", "studio.css"),
+    "/panel/studio-model.js": (
+        "text/javascript; charset=utf-8", "studio-model.js"),
+    "/panel/studio.js": ("text/javascript; charset=utf-8", "studio.js"),
+    "/panel/studio-store.js": (
+        "text/javascript; charset=utf-8", "studio-store.js"),
+    "/panel/studio-view.js": (
+        "text/javascript; charset=utf-8", "studio-view.js"),
+    "/panel/studio-canvas.js": (
+        "text/javascript; charset=utf-8", "studio-canvas.js"),
+    "/panel/studio-inspector.js": (
+        "text/javascript; charset=utf-8", "studio-inspector.js"),
+    "/panel/studio-runs.js": (
+        "text/javascript; charset=utf-8", "studio-runs.js"),
+    "/panel/studio-people.js": (
+        "text/javascript; charset=utf-8", "studio-people.js"),
+    # The classic panel. It kept its file name when the Studio took the front
+    # door, and this is the route that now reaches it. It was a deliberate 404
+    # until this line existed, which is exactly why its near-misses in
+    # tests/test_server_panel_assets.py had to be re-decided in the same commit.
+    "/panel/index.html": ("text/html; charset=utf-8", "index.html"),
 }
 
 POLL_INTERVAL = 0.5   # seconds between conductor/ fingerprint polls
@@ -529,7 +556,15 @@ class Handler(BaseHTTPRequestHandler):
         self._send_body(404, "text/plain; charset=utf-8", b"not found\n")
 
     def _serve_panel(self) -> None:
-        panel = importlib.resources.files("conductor") / "panel" / "index.html"
+        """Answer `GET /` with the Workflow Studio's shell.
+
+        The front door is the Studio; the classic panel keeps its file name and
+        is reached at `/panel/index.html` from the asset allowlist. Nothing
+        about the classic panel's contents changed — only the route that gets
+        to it — and the name here is a literal, as every panel resource name in
+        this module is, so no request target can select the document served.
+        """
+        panel = importlib.resources.files("conductor") / "panel" / "studio.html"
         self._send_body(200, "text/html; charset=utf-8", panel.read_bytes())
 
     def _serve_panel_asset(self, target: str) -> None:

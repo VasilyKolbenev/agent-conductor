@@ -32,7 +32,11 @@ def test_routes(tmp_path):
         assert status == 200 and headers["Cache-Control"] == "no-store"
         state = json.loads(body)
         assert state["lanes"][0]["author"] == "claude"
-        status, body, _ = get(base + "/")
+        # The classic panel's route. `GET /` now answers with the Workflow
+        # Studio's shell; this row is about the packaged panel document, which
+        # is reached at its own name. `GET /` itself is still exercised by
+        # tests/test_server_host_allowlist.py, which asserts the same token.
+        status, body, _ = get(base + "/panel/index.html")
         assert status == 200 and b"<title>" in body
         status, _, _ = get(base + "/lane/claude.json")
         assert status == 200

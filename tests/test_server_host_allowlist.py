@@ -128,6 +128,15 @@ def _assert_served(path: str, status: int, body: bytes, headers: dict) -> None:
     assert headers["Cache-Control"] == "no-store", path
     if path == "/":
         assert headers["Content-Type"] == "text/html; charset=utf-8"
+        # The front door is the Studio shell; the classic panel kept its file
+        # name and moved to /panel/index.html. Named here rather than read off
+        # the server, because this module's subject is which Host is answered,
+        # and a route that quietly served a different document would still be
+        # answering the right Host. Which document `GET /` owes is held on its
+        # own by tests/test_server_panel_assets.py.
+        assert body == _packaged("studio.html")
+    elif path == "/panel/index.html":
+        assert headers["Content-Type"] == "text/html; charset=utf-8"
         assert body == _packaged("index.html")
     elif path == "/panel/graph.html":
         assert headers["Content-Type"] == "text/html; charset=utf-8"

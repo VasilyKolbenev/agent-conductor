@@ -75,7 +75,9 @@ def gate_url(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
     thread.start()
     host, port = httpd.server_address
     try:
-        yield f"http://{host}:{port}/"
+        # The classic panel's own route: `GET /` is the Workflow Studio's
+        # shell now, and the gate chip under test is index.html's.
+        yield f"http://{host}:{port}/panel/index.html"
     finally:
         httpd.shutdown()
         thread.join(timeout=5)

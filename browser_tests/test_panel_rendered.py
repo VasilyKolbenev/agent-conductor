@@ -31,7 +31,11 @@ def panel_url(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
     thread.start()
     host, port = httpd.server_address
     try:
-        yield f"http://{host}:{port}/"
+        # The classic panel's own route. `GET /` is the Workflow Studio's
+        # shell now; index.html kept its file name and joined the asset
+        # allowlist, so this is the URL that opens the document every test in
+        # this module is about.
+        yield f"http://{host}:{port}/panel/index.html"
     finally:
         httpd.shutdown()
         thread.join(timeout=5)
@@ -328,6 +332,11 @@ def test_the_split_cockpit_modules_boot_as_one_script_without_a_console_error(
             url.rsplit("/", 1)[1]: status for url, status in served
             if "/panel/" in url
         } == {
+            # The document itself is now a /panel/ resource: the classic panel
+            # is reached at its own name since the Studio took `GET /`. The
+            # four modules below are the assertion; index.html is the page they
+            # were loaded by, and it is listed so the map stays exact.
+            "index.html": 200,
             "command.css": 200, "command.js": 200,
             "command-projection.js": 200, "command-view.js": 200,
         }

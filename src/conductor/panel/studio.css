@@ -1,0 +1,197 @@
+/* Workflow Studio — the shell and its five screens.
+
+   The token block below is the December palette, value for value, copied from
+   index.html :root and its light override exactly as graph.css copies it.
+   There is no third palette here and there must never be one:
+   tests/test_studio_style.py holds this copy to the panel's own, and
+   tests/test_graph_source.py already holds the graph window's, so all three
+   move together or a test reds.
+
+   What is deliberately NOT copied is the Precision Cockpit material layer
+   (--panel-lit, --contour-lit, --lift-1, --lift-2). That layer belongs to the
+   panel's card model and its own guards; a shell that borrowed the tokens
+   without the guards would be spending a light level nothing here measures.
+
+   Every colour-bearing declaration in this file is either a MEASURED row in
+   tests/test_studio_style.py -- resolved through the cascade, composited onto
+   the surface its chain stands on, and held to its WCAG floor in every theme
+   and every media environment -- or a named EXEMPT with the reason written
+   beside it. A new colour that is neither reds the completeness test. */
+:root{
+  --ground:#07090D; --panel:#10141B; --sunk:#0B0E14; --line:#262D38;
+  --ink:#F3F6F8; --muted:#B9C2CC; --faint:#7F8A98;
+  --accent:#E44955; --pass:#3fa86a; --wait:#c9971f; --fail:#e0703a;
+  --mono:ui-monospace,"Cascadia Mono",Consolas,"SF Mono",monospace;
+  --sans:ui-sans-serif,-apple-system,"Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;
+}
+@media (prefers-color-scheme:light){:root{
+  --ground:#f3f5f7; --panel:#ffffff; --sunk:#e9edf1; --line:#d5dce4;
+  --ink:#11161d; --muted:#4e5965; --faint:#697684;
+  --accent:#c92f42; --pass:#247a4b; --wait:#8a6500; --fail:#b42318;
+}}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--sans);
+     font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+h1,h2,h3{margin:0}
+h1{font-size:15px;letter-spacing:-.015em}
+h2{font-size:13px;letter-spacing:.02em}
+h3{font-size:11px;letter-spacing:.08em;text-transform:uppercase}
+p{margin:0}
+button{font:inherit;cursor:pointer;background:none;border:none;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.studio-mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+
+/* Every control the shell or a screen module builds clears the 44px minimum
+   target height, and it is declared over the ELEMENT TYPES rather than over a
+   list of classes. A class list is a list somebody has to remember to extend;
+   this closes the floor by construction, so a control added later by another
+   module is already above it. */
+.studio-shell button,.studio-shell select,.studio-shell input,
+.studio-shell textarea{min-height:44px}
+
+/* ── shell ────────────────────────────────────────────────────────────── */
+/* 1600px is the wide end of an ordinary laptop; every column below it is
+   fluid, and the whole layout collapses to one reading column under 900. */
+.studio-shell{max-width:1600px;margin:0 auto;padding:16px 20px 48px;
+              display:flex;flex-direction:column;gap:14px;min-width:0}
+
+.studio-header{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;
+               border-bottom:1px solid var(--line);padding-bottom:10px}
+.studio-project{font-weight:660;min-width:0;overflow-wrap:anywhere}
+/* The connection state is a SENTENCE, not a dot: "Connected", "Reconnecting",
+   "Not connected" are three words a reader can act on, and a coloured dot
+   beside them would be the same fact told a second time in colour alone. */
+.studio-conn{font-size:11.5px;color:var(--muted)}
+/* The one primary action of the screen now showing. Empty in the static
+   document: which verb belongs here is a fact only a read can supply. */
+.studio-primary{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}
+
+/* ── the five screens ─────────────────────────────────────────────────── */
+/* Three carriers say which tab is current -- the underline, the heavier word
+   and the darker ink -- so the current screen is never named by colour alone,
+   and aria-selected carries the same fact to a reader who sees none of them. */
+.studio-nav{display:flex;gap:2px;flex-wrap:wrap;
+            border-bottom:1px solid var(--line)}
+.studio-tab{padding:6px 12px;font-size:13px;color:var(--muted);
+            border-bottom:2px solid transparent;margin-bottom:-1px}
+.studio-tab:hover{color:var(--ink)}
+.studio-tab[aria-selected="true"]{color:var(--ink);font-weight:660;
+                                  border-bottom-color:var(--accent)}
+
+.studio-main{display:flex;flex-direction:column;min-width:0}
+.studio-screen{display:flex;flex-direction:column;gap:10px;min-width:0}
+.studio-body{display:flex;flex-direction:column;gap:10px;min-width:0}
+/* The plain-language half of the seven state words. The machine half is
+   `data-state` on the screen container, so a test asserts the attribute and a
+   person reads the sentence, and neither has to parse the other. */
+.studio-state{font-size:12.5px;color:var(--muted)}
+/* One sentence of explanation where an unfamiliar concept appears, rather
+   than a link to a document the reader has to leave the screen for. */
+.studio-hint{font-size:12px;color:var(--muted);max-width:68ch}
+.studio-empty{font-size:12.5px;color:var(--muted);margin:4px 2px}
+/* The one transient sentence, announced once. It sits on the page ground
+   rather than in a card so that no screen owns it. */
+.studio-status{font-size:12px;color:var(--muted);min-height:1.5em}
+
+/* ── cards, rows, chips ───────────────────────────────────────────────── */
+.studio-card{background:var(--panel);border:1px solid var(--line);
+             border-radius:10px;padding:12px 14px;display:flex;
+             flex-direction:column;gap:8px;min-width:0}
+.studio-card h3{color:var(--faint)}
+.studio-list{list-style:none;margin:0;padding:0;display:flex;
+             flex-direction:column;gap:6px;min-width:0}
+.studio-row{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;
+            min-width:0}
+/* Plain language first, the protocol's own word second and visually
+   secondary: same line, smaller, monospace. */
+.studio-protocol{font-family:var(--mono);font-size:10.5px;color:var(--muted);
+                 overflow-wrap:anywhere}
+
+/* Status chips carry three marks -- a glyph, a word and a contour -- because
+   any one of them alone would be a state told in colour. */
+.studio-chip{font-family:var(--mono);font-size:10px;padding:1px 6px;
+             border-radius:4px;border:1px solid var(--line);color:var(--ink);
+             white-space:nowrap}
+.studio-chip .studio-glyph{font-style:normal}
+.studio-chip--long{white-space:normal;overflow-wrap:anywhere}
+.studio-chip--pass{border-color:var(--pass)}
+.studio-chip--pass .studio-glyph{color:var(--pass)}
+.studio-chip--wait{border-color:var(--wait)}
+.studio-chip--wait .studio-glyph{color:var(--wait)}
+.studio-chip--fail{border-color:var(--fail)}
+.studio-chip--fail .studio-glyph{color:var(--fail)}
+.studio-chip--none{color:var(--muted)}
+.studio-chip--none .studio-glyph{color:var(--faint)}
+
+/* ── forms ────────────────────────────────────────────────────────────── */
+.studio-field{display:flex;flex-direction:column;gap:2px;font-size:11px;
+              color:var(--muted);min-width:0}
+.studio-field input,.studio-field select,.studio-field textarea{
+  font:inherit;font-family:var(--mono);font-size:12px;color:var(--ink);
+  background:var(--sunk);border:1px solid var(--line);border-radius:6px;
+  padding:5px 7px;min-height:44px;min-width:0}
+.studio-btn{border:1px solid var(--line);border-radius:6px;padding:5px 12px;
+            background:var(--sunk);min-height:44px;align-self:flex-start}
+
+/* ── the workflow screen ──────────────────────────────────────────────── */
+.studio-toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;
+                min-width:0}
+/* Under 900 the rail follows the canvas as one reading column; the min-width
+   0 track is what keeps a wide drawing from pushing the page sideways. */
+.studio-workflow{display:grid;gap:12px;grid-template-columns:minmax(0,1fr)}
+.studio-rail{display:flex;flex-direction:column;gap:12px;min-width:0}
+/* The canvas is a well: it scrolls inside itself, so the page never scrolls
+   horizontally however wide the drawing gets. */
+.studio-canvas{position:relative;background:var(--sunk);
+               border:1px solid var(--line);border-radius:10px;
+               overflow:auto;min-height:220px;padding:12px}
+.studio-canvas svg{display:block}
+.studio-nodes{position:relative;min-height:40px}
+.studio-edge{fill:none;stroke:var(--faint);stroke-width:1.2}
+/* A step is told apart by SHAPE and LABEL: the contour style says which kind
+   it is, and the kind is written on the node as a word as well. */
+.studio-node{position:absolute;left:var(--x);top:var(--y);width:210px;
+             display:flex;flex-direction:column;align-items:flex-start;gap:4px;
+             background:var(--panel);border:1px solid var(--line);
+             border-radius:8px;padding:8px 10px;text-align:left;
+             overflow:hidden}
+/* Two classes, so this beats the 44px floor declared over every button in the
+   shell rather than losing to it on specificity. The floor is a MINIMUM and a
+   step is taller than one; a rule that silently lost to it would ship a
+   210×44 node nobody had asked for. */
+.studio-nodes .studio-node{min-height:112px}
+.studio-node[aria-pressed="true"]{border-color:var(--ink)}
+.studio-node--gate{border-style:dashed}
+.studio-node--loop{border-style:double;border-width:3px}
+.studio-node__title{font-size:12.5px;font-weight:640;overflow-wrap:anywhere}
+.studio-node__meta{font-size:10.5px;color:var(--muted);overflow-wrap:anywhere}
+.studio-node__chips{display:flex;gap:4px;flex-wrap:wrap}
+/* The inspector's six sections, each a stack under its own heading. */
+.studio-section{display:flex;flex-direction:column;gap:5px;min-width:0}
+.studio-diag{display:flex;flex-direction:column;gap:2px;font-size:11.5px;
+             min-width:0}
+.studio-diag__code{font-family:var(--mono);font-size:10.5px;
+                   color:var(--muted);overflow-wrap:anywhere}
+
+/* ── responsive ───────────────────────────────────────────────────────── */
+/* At 900 and above the workflow screen splits into canvas and rail. Below it
+   the same markup is one column, which is the degradation and not a second
+   layout: nothing is hidden, nothing moves to another container. */
+@media(min-width:900px){
+  .studio-workflow{grid-template-columns:minmax(0,1fr) 360px}
+}
+@media(min-width:1280px){
+  .studio-workflow{grid-template-columns:minmax(0,1fr) 400px}
+}
+
+/* ── motion ───────────────────────────────────────────────────────────── */
+/* The whole movement budget of this surface, and it sits behind the door: a
+   reader who asked for no motion gets none, because the declaration does not
+   exist for them at all. No key-frame block is declared in this file and none
+   may be added -- the guard on that is a plain search for the at-rule, so it
+   cannot be spelled out here without reddening it. */
+@media (prefers-reduced-motion:no-preference){
+  .studio-tab{transition:color .15s ease-out,border-color .15s ease-out}
+  .studio-node{transition:border-color .15s ease-out}
+}

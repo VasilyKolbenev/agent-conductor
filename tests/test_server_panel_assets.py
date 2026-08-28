@@ -30,6 +30,22 @@ ASSETS = {
     "/panel/graph-view.js": "text/javascript; charset=utf-8",
     "/panel/graph-adapter.js": "text/javascript; charset=utf-8",
     "/panel/graph-default.js": "text/javascript; charset=utf-8",
+    # The Workflow Studio's stylesheet and boundary module. Its SHELL is not
+    # here: studio.html is what `GET /` answers with, and a document with two
+    # routes is a document a reader can reach by two names.
+    "/panel/studio.css": "text/css; charset=utf-8",
+    "/panel/studio-model.js": "text/javascript; charset=utf-8",
+    "/panel/studio.js": "text/javascript; charset=utf-8",
+    "/panel/studio-store.js": "text/javascript; charset=utf-8",
+    "/panel/studio-view.js": "text/javascript; charset=utf-8",
+    "/panel/studio-canvas.js": "text/javascript; charset=utf-8",
+    "/panel/studio-inspector.js": "text/javascript; charset=utf-8",
+    "/panel/studio-runs.js": "text/javascript; charset=utf-8",
+    "/panel/studio-people.js": "text/javascript; charset=utf-8",
+    # The classic panel, at the route that now reaches it. This target was a
+    # deliberate 404 while `GET /` served index.html; the Studio took the front
+    # door, so the near-miss that used to assert the 404 became this row.
+    "/panel/index.html": "text/html; charset=utf-8",
 }
 #: Every shape the split must never turn into a route: a guessed sibling, a
 #: traversal, a query, a directory listing, a case fold, a trailing slash, a
@@ -39,7 +55,7 @@ ASSETS = {
 REFUSED = (
     "/panel/command.json", "/panel/../server.py", "/panel/command.js?cache=1",
     "/panel/command-view.js?v=2", "/panel/%2e%2e/server.py", "/panel/",
-    "/panel/index.html", "/panel/COMMAND-VIEW.JS", "/panel/command-view.js/",
+    "/panel/COMMAND-VIEW.JS", "/panel/command-view.js/",
     "/panel/command-view.js.map", "/panel/command-projection.js%00.txt",
     "/panel/graph.json", "/panel/graph.htm", "/panel/graph-store.json",
     "/panel/graph.js?v=1", "/panel/graph.html?run=run-001",
@@ -49,6 +65,63 @@ REFUSED = (
     "/panel/graph-runtime.js", "/panel/graph-wire.js",
     "/panel/graph-payload.json", "/panel/graph-payload.js?v=1",
     "/panel/graph-payload.js.map", "/panel/GRAPH-PAYLOAD.JS",
+    # The classic panel's own near-misses. Its route became real in the same
+    # commit that took the front door away from it, which is exactly the moment
+    # every shape around it stopped being hypothetical.
+    "/panel/index.json", "/panel/index.htm", "/panel/index.html?v=1",
+    "/panel/index.html.map", "/panel/../index.html",
+    "/panel/%2e%2e/index.html", "/panel/INDEX.HTML", "/panel/Index.html",
+    "/panel/index.html/", "/panel/index.html%00.txt",
+    # The Studio's shell is the entry `GET /` serves and has no /panel/ route
+    # at all, so every spelling of it under this prefix is a 404 -- including
+    # the correct one. A document reachable by two names is a document whose
+    # relative links resolve differently depending on which one was used.
+    "/panel/studio.html", "/panel/studio.htm", "/panel/studio.html?v=1",
+    "/panel/STUDIO.HTML", "/panel/Studio.html", "/panel/studio.html/",
+    # The Studio's stylesheet and boundary module.
+    "/panel/studio.json", "/panel/studio.css?v=1", "/panel/studio.css.map",
+    "/panel/../studio.css", "/panel/%2e%2e/studio.css", "/panel/STUDIO.CSS",
+    "/panel/Studio.css", "/panel/studio.css/", "/panel/studio.css%00.txt",
+    "/panel/studio-model.json", "/panel/studio-model.js?v=1",
+    "/panel/studio-model.js.map", "/panel/../studio-model.js",
+    "/panel/%2e%2e/studio-model.js", "/panel/STUDIO-MODEL.JS",
+    "/panel/Studio-model.js", "/panel/studio-model.js/",
+    "/panel/studio-model.js%00.txt", "/panel/studio-payload.js",
+    # The three screen modules, each given the same nine shapes.
+    "/panel/studio-canvas.json", "/panel/studio-canvas.js?v=1",
+    "/panel/studio-canvas.js.map", "/panel/../studio-canvas.js",
+    "/panel/%2e%2e/studio-canvas.js", "/panel/STUDIO-CANVAS.JS",
+    "/panel/Studio-canvas.js", "/panel/studio-canvas.js/",
+    "/panel/studio-canvas.js%00.txt",
+    "/panel/studio-runs.json", "/panel/studio-runs.js?v=1",
+    "/panel/studio-runs.js.map", "/panel/../studio-runs.js",
+    "/panel/%2e%2e/studio-runs.js", "/panel/STUDIO-RUNS.JS",
+    "/panel/Studio-runs.js", "/panel/studio-runs.js/",
+    "/panel/studio-runs.js%00.txt",
+    "/panel/studio-people.json", "/panel/studio-people.js?v=1",
+    "/panel/studio-people.js.map", "/panel/../studio-people.js",
+    "/panel/%2e%2e/studio-people.js", "/panel/STUDIO-PEOPLE.JS",
+    "/panel/Studio-people.js", "/panel/studio-people.js/",
+    "/panel/studio-people.js%00.txt",
+    "/panel/studio-inspector.json", "/panel/studio-inspector.js?v=1",
+    "/panel/studio-inspector.js.map", "/panel/../studio-inspector.js",
+    "/panel/%2e%2e/studio-inspector.js", "/panel/STUDIO-INSPECTOR.JS",
+    "/panel/Studio-inspector.js", "/panel/studio-inspector.js/",
+    "/panel/studio-inspector.js%00.txt",
+    # The transport module, the reducer and the shell view.
+    "/panel/studio.js?v=1", "/panel/studio.js.map", "/panel/../studio.js",
+    "/panel/%2e%2e/studio.js", "/panel/STUDIO.JS", "/panel/Studio.js",
+    "/panel/studio.js/", "/panel/studio.js%00.txt",
+    "/panel/studio-store.json", "/panel/studio-store.js?v=1",
+    "/panel/studio-store.js.map", "/panel/../studio-store.js",
+    "/panel/%2e%2e/studio-store.js", "/panel/STUDIO-STORE.JS",
+    "/panel/Studio-store.js", "/panel/studio-store.js/",
+    "/panel/studio-store.js%00.txt",
+    "/panel/studio-view.json", "/panel/studio-view.js?v=1",
+    "/panel/studio-view.js.map", "/panel/../studio-view.js",
+    "/panel/%2e%2e/studio-view.js", "/panel/STUDIO-VIEW.JS",
+    "/panel/Studio-view.js", "/panel/studio-view.js/",
+    "/panel/studio-view.js%00.txt",
 )
 #: Packaged panel resources served by NO route. The Graph window's files left
 #: this list when the route above became real; the partition check below is
@@ -56,9 +129,11 @@ REFUSED = (
 #: allowlisted, named here, or be the entry the panel route itself serves, so
 #: a new file cannot appear unserved and unnoticed.
 UNSERVED: tuple[str, ...] = ()
-#: index.html is neither: `GET /` serves it through `_serve_panel`, not
-#: through the asset allowlist, which is why it is refused under /panel/.
-PANEL_ROUTE_ENTRY = "index.html"
+#: studio.html is neither: `GET /` serves it through `_serve_panel`, not
+#: through the asset allowlist, which is why it is refused under /panel/. The
+#: file that used to hold this position, index.html, joined the allowlist in
+#: the same commit — the entry moved, and one name still fills the slot.
+PANEL_ROUTE_ENTRY = "studio.html"
 
 
 def _status(url, *, data=None):
@@ -221,6 +296,33 @@ def test_every_packaged_panel_resource_is_served_named_unserved_or_the_entry():
         entry.name for entry in panel.iterdir()
         if entry.name.endswith((".js", ".css", ".html"))}
     assert packaged == served | set(UNSERVED) | {PANEL_ROUTE_ENTRY}
+
+
+def test_the_panel_route_answers_with_the_entry_and_with_no_other_document(
+        tmp_path):
+    """`GET /` serves the Studio's shell, byte for byte, and says which it is.
+
+    Naming the entry in `PANEL_ROUTE_ENTRY` and partitioning the directory
+    against it proves that some file is the entry; it does not prove which file
+    the route hands over. Both documents are packaged, both are HTML and both
+    carry a `<title>`, so a route pointed back at the classic panel answers 200
+    with a title and every other test in this suite stays green — which is
+    exactly what happened when this assertion was not here. The bytes are the
+    assertion, and they are read from the packaged resource rather than
+    described.
+    """
+    root = write_project(tmp_path, lanes={"claude": good_lane()})
+    server_, base = start(root)
+    panel = importlib.resources.files("conductor") / "panel"
+    try:
+        status, body, headers = _status(base + "/")
+        assert status == 200
+        assert body == (panel / PANEL_ROUTE_ENTRY).read_bytes()
+        assert headers["Content-Type"] == "text/html; charset=utf-8"
+        assert headers["Cache-Control"] == "no-store"
+    finally:
+        server_.shutdown()
+        server_.server_close()
 
 
 def test_the_built_wheel_carries_exactly_the_panel_resources_the_server_serves(
