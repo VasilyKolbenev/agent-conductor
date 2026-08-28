@@ -18,6 +18,7 @@ that any server accepts or refuses them today.
 """
 from __future__ import annotations
 
+import ast
 import hmac
 import importlib
 import json
@@ -212,10 +213,55 @@ def test_route_table_is_an_exact_allowlist_and_every_mutation_requires_csrf():
     assert {method for method, _path, mutation, _csrf in rows if mutation} == {"POST"}
 
 
-def test_api_zero_has_no_production_command_endpoint_yet():
-    server = _SERVER.read_text(encoding="utf-8")
-    assert "/command/" not in server
-    assert "X-Conduct-CSRF" not in server
+#: Request headers whose reading is the transport's job: same-origin, the CSRF
+#: token, and framing. Response headers are deliberately absent -- `server.py`
+#: writes `Content-Type` on its own answers, which is not judging what was sent.
+_COMMAND_REQUEST_HEADERS = frozenset({
+    "Host", "Origin", "Referer", "X-Conduct-CSRF", "Transfer-Encoding"})
+_TRANSPORT = _ROOT / "src" / "conductor" / "command" / "http_transport.py"
+
+
+def _spoken_request_headers(source: str) -> frozenset[str]:
+    """The request headers a module spells out, read from the syntax tree so that
+    a header named only in a comment or a docstring is not counted as one read."""
+    spoken = {node.value for node in ast.walk(ast.parse(source))
+              if isinstance(node, ast.Constant) and isinstance(node.value, str)}
+    return frozenset(spoken & _COMMAND_REQUEST_HEADERS)
+
+
+def test_command_header_judgement_lives_in_the_transport_and_never_in_the_server():
+    """One module decides what a browser sent; the server only hands it the bytes.
+
+    This replaces an API-0 guard asserting `server.py` carried no production
+    command endpoint. That stopped being true when C/API-1 shipped, and it went on
+    passing only because `server.py` happens to write `startswith("/command")`
+    without the trailing slash: green on a false fact, which is worse than no
+    guard. The boundary underneath it is still true. A second reader of these five
+    headers is the real hazard -- two dialects of "same origin" drift apart and
+    the laxer one is the one an attacker uses -- so the vocabulary must be present
+    in the transport, absent from the server, and every name the server imports
+    from the transport must really be there.
+    """
+    server_source = _SERVER.read_text(encoding="utf-8")
+    assert _spoken_request_headers(
+        _TRANSPORT.read_text(encoding="utf-8")) == _COMMAND_REQUEST_HEADERS
+    assert _spoken_request_headers(server_source) == frozenset()
+    transport = importlib.import_module("conductor.command.http_transport")
+    delegated = {alias.name for node in ast.walk(ast.parse(server_source))
+                 if isinstance(node, ast.ImportFrom)
+                 and node.module == "conductor.command.http_transport"
+                 for alias in node.names}
+    assert delegated, "server.py reaches the transport by import, or it re-implements it"
+    absent = sorted(name for name in delegated if not hasattr(transport, name))
+    assert absent == [], absent
+    # Calibration: the scan must catch a server that read a header itself, rather
+    # than report nothing because it looks for nothing.
+    smuggled = ("def do_POST(self):\n"
+                "    if self.headers['Origin'] != 'http://' + self.headers['Host']:\n"
+                "        return\n"
+                "    if self.headers.get('X-Conduct-CSRF') != self.server.token:\n"
+                "        return\n")
+    assert _spoken_request_headers(smuggled) == {"Origin", "Host", "X-Conduct-CSRF"}
 
 
 def _typed_route_dependency_ready(dependency: dict) -> bool:

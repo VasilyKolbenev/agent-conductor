@@ -1,3 +1,19 @@
+<!-- THREAT-MATRIX:HISTORICAL -->
+
+> **Historical snapshot — not the release posture.**
+>
+> This is a dated record of base `63d261a`, where it was accurate. It asked which Day-1
+> and Day-2 seams had been built yet, and its statuses answer that question about that
+> base and no other. It was not updated as the slices landed, so by the time of the first
+> public alpha it understated the shipped product by fourteen of eighteen rows.
+>
+> The current posture is `docs/audits/2026-08-28-v1-alpha-release-threat-matrix.md`,
+> which carries all eighteen threats with a production door and a live witness each.
+> Read that document for what holds today; read this one only for what was true on
+> 2026-08-13. The rows below are deliberately left as they were written: rewriting a
+> dated record so it reads like the present destroys the only evidence of the past, and
+> the drift between the two documents is itself the finding.
+
 # December Command v2 early threat matrix
 
 - **Recorded:** 2026-08-13
