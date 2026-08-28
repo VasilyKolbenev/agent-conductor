@@ -200,4 +200,3 @@ def _gate_state(values: tuple[Any, ...], run_id: str, gate_id: str) -> str:
         return gate_decision(receipts, run_id, gate_id)
     except ContractError:
         return "unknown"
-
