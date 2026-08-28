@@ -232,8 +232,37 @@ def test_the_run_screen_never_derives_a_word_the_journal_does_not_carry(
         _read_the_run(page)
         body = page.locator("#bodyRuns").inner_text()
         assert "Opened as is what the run was CREATED as" in body
-        assert "A materialized plan records no template identity" in body
-        assert "not recorded by this build" in body
+        assert window.problems == []
+    finally:
+        page.context.close()
+
+
+def test_the_run_screen_names_the_workflow_revision_the_run_froze(
+        chromium: Browser, project: _Project) -> None:
+    """The positive witness that replaced a marker for the unknowable.
+
+    This screen used to say "A materialized plan records no template identity",
+    and that was true: `graph_id` is minted per run and names no workflow, so
+    the honest answer was that no revision could be shown. The run now freezes
+    the reference into the configuration `config_digest` is taken over, and this
+    reads it back through a real browser off a real server.
+
+    The seeded run is opened with no workflow, so what is asserted here is the
+    ABSENT half spoken in words -- which is the half a guess would have filled
+    in. `tests/test_command_run_identity.py` holds the present half against the
+    frozen document, and the source gate holds that this screen reads the
+    configuration rather than the plan.
+    """
+    page, window = _open(chromium, project)
+    try:
+        _read_the_run(page)
+        body = page.locator("#bodyRuns").inner_text()
+        assert "A materialized plan records no template identity" not in body
+        assert "Workflow" in body
+        assert "Revision" in body
+        # Absent is said, never left blank and never guessed.
+        assert "none — this run was opened without one" in body
+        assert "none — a run that follows no workflow follows no revision" in body
         assert window.problems == []
     finally:
         page.context.close()

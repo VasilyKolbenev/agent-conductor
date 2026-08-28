@@ -191,17 +191,6 @@ function section(title, children) {
     [element("h3", {text: title}), ...children]);
 }
 
-//: A field with no durable home is SAID so, in the same place the value would
-//: have stood, and with the reason. It is never left blank and never guessed.
-function unsupported(label, why) {
-  return element("p", {className: "studio-unsupported"}, [
-    element("span", {className: "studio-fact__k", text: label}),
-    element("span", {className: "studio-fact__v",
-      text: "not recorded by this build"}),
-    element("span", {className: "studio-why", text: why}),
-  ]);
-}
-
 function handlerOf(handlers, name) {
   const found = handlers ? handlers[name] : null;
   return typeof found === "function" ? found : null;
@@ -313,6 +302,10 @@ function runList(state, handlers) {
 
 function identitySection(detail, handlers) {
   const run = object(detail.run) || {};
+  // The frozen configuration owns this fact; the boundary already refused the
+  // read if the reference was there and malformed, so `null` here means the
+  // run genuinely froze none.
+  const followed = (object(detail.config) || {}).workflow || null;
   const mode = show(run.mode);
   const body = [
     fact("Run", run.run_id), fact("Cycle", run.cycle_id),
@@ -324,9 +317,21 @@ function identitySection(detail, handlers) {
       + "immutable, so it never reports where the run now stands — the "
       + "records below do that."),
     fact("Configuration digest", run.config_digest),
-    unsupported("Workflow revision",
-      "A materialized plan records no template identity, so this build cannot "
-      + "say which workflow revision a run came from without guessing."),
+    // Read out of the run's own frozen configuration, which is the document
+    // `config_digest` above is taken over -- so the two facts on this screen
+    // stand or fall together, and a run that froze no workflow says so in
+    // words rather than showing a plausible one.
+    fact("Workflow", followed === null
+      ? "none — this run was opened without one"
+      : followed.id),
+    fact("Revision", followed === null
+      ? "none — a run that follows no workflow follows no revision"
+      : `revision ${followed.revision}`),
+    note(followed === null
+      ? "A run may be opened with no workflow at all; `conduct preview` and "
+        + "the integration smoke both are. Nothing was lost."
+      : "Frozen when the run was opened. Publishing a later revision of this "
+        + "workflow does not move it: a run follows the plan it started with."),
   ];
   const warnings = rows(detail.warnings);
   if (warnings.length) {

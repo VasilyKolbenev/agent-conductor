@@ -30,7 +30,9 @@ from .adapters.provider import provider_projection
 from .api_contracts import ApiRefusal
 from .studio_contracts import parse_run, parse_workflow_revision
 from .containment import run_route_violations
-from .contracts import ActionRequest, ActionResultReceipt, ContractError, _id
+from .contracts import (
+    ActionRequest, ActionResultReceipt, ContractError, frozen_config_workflow,
+    _id)
 from .graph_projection import graph_payload
 from .graph_template import TemplateError, materialize
 from .store_errors import RecordConflict, StoreError
@@ -419,12 +421,15 @@ def run_row(store: "RunStore", run_id: str) -> dict[str, Any]:
     - ``last_outcome`` -- the ``outcome`` of the last ``action_result`` in
       append order, or ``null`` when there is none.
 
+    - ``workflow_id`` / ``revision`` -- WHICH plan this run froze itself to
+      follow, read out of the run's own frozen configuration. Both are ``null``
+      together for a run opened with no workflow at all, which `conduct preview`
+      and the control loop both are. They are read rather than derived: nothing
+      here reconstructs a provenance, and a run whose configuration names none
+      reports none.
+
     There is deliberately no derived overall phase word. The journal does not
-    carry one, and a word invented here would be a guess a reader trusts. There
-    is deliberately no ``workflow_id`` or ``revision`` either: a materialized
-    ``GraphDefinition`` records no template identity, so this build cannot say
-    which revision a run came from without guessing, and a missing key is
-    recoverable where a wrong one is not.
+    carry one, and a word invented here would be a guess a reader trusts.
 
     A run that does not replay is LISTED, with ``unreadable`` true and every
     derived field null. A run you cannot see is worse than one you cannot read.
@@ -433,7 +438,7 @@ def run_row(store: "RunStore", run_id: str) -> dict[str, Any]:
         "run_id": run_id, "unreadable": True, "cycle_id": None,
         "created_at": None, "mode": None, "envelope_status": None,
         "graph_id": None, "undecided_gates": None, "open_actions": None,
-        "last_outcome": None,
+        "last_outcome": None, "workflow_id": None, "revision": None,
     }
     if run_route_violations(store, run_id):
         return row
@@ -460,8 +465,14 @@ def _derived_row(recovered) -> dict[str, Any]:
                  if isinstance(value, ActionRequest)}
     graph = graph_payload(recovered)
     runtime = graph["runtime"]
+    # Read, never reconstructed: the frozen configuration is the one document
+    # that can say which revision this run followed, and `config_digest` has
+    # already re-verified it on this very replay.
+    followed = frozen_config_workflow(recovered.config)
     return {
         "unreadable": False,
+        "workflow_id": None if followed is None else followed[0],
+        "revision": None if followed is None else followed[1],
         "cycle_id": recovered.envelope.cycle_id,
         "created_at": recovered.envelope.created_at,
         "mode": recovered.envelope.mode.value,

@@ -638,6 +638,62 @@ def frozen_config_models(config: Mapping[str, Any]) -> dict[str, str]:
     return models
 
 
+#: The keys a frozen ``workflow`` reference carries. Both are required: half of
+#: one names a workflow at no revision or a revision of nothing, and either
+#: would be a provenance a reader could not act on.
+_WORKFLOW_FIELDS = frozenset({"id", "revision"})
+
+
+def frozen_config_workflow(
+        config: Mapping[str, Any]) -> tuple[str, int] | None:
+    """Read WHICH workflow revision this run froze itself to follow.
+
+    The reference is optional, and absence is a real answer rather than a
+    missing one: a run may be opened with no workflow at all -- `conduct
+    preview` and the control loop both do -- and such a run follows no plan
+    this store could name. ``None`` says exactly that.
+
+    What it must never do is guess. Before this key existed the run recorded no
+    template identity anywhere, and the honest consequence was that the Studio
+    showed no revision at all rather than a plausible one; a wrong provenance is
+    worse than an absent one, which is why the key is validated as strictly as
+    an id and a revision are validated anywhere else.
+
+    Args:
+        config: The frozen configuration snapshot, as replayed from a run.
+
+    Returns:
+        The ``(workflow_id, revision)`` this run follows, or ``None`` when the
+        run froze no workflow reference.
+
+    Raises:
+        ContractError: The snapshot is not an object, or the reference is
+            malformed, incomplete, or carries a key this contract does not know.
+    """
+    if not isinstance(config, Mapping):
+        raise ContractError("frozen config must be a JSON object")
+    reference = config.get("workflow", ABSENT)
+    if reference is ABSENT:
+        return None
+    if not isinstance(reference, Mapping):
+        raise ContractError("frozen config workflow must be a JSON object")
+    supplied = set(reference)
+    if supplied != _WORKFLOW_FIELDS:
+        raise ContractError(
+            "frozen config workflow carries "
+            f"{sorted(supplied)!r} and must carry exactly "
+            f"{sorted(_WORKFLOW_FIELDS)!r}")
+    revision = reference["revision"]
+    # `bool` is an `int` in Python and `True` is not revision 1. The same
+    # refusal `_exact_revision` makes at the wire, made again at the read,
+    # because a durable document is read by more callers than wrote it.
+    if type(revision) is not int or isinstance(revision, bool) or revision < 1:
+        raise ContractError(
+            f"frozen config workflow revision must be an integer >= 1, "
+            f"got {revision!r}")
+    return _id("frozen config workflow id", reference["id"]), revision
+
+
 def _configured_instances(
         config: Mapping[str, Any]) -> list[tuple[str, Mapping[str, Any]]]:
     """One walk of the frozen configuration's instance list, for both readers.

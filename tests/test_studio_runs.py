@@ -549,20 +549,55 @@ def test_no_state_is_carried_by_colour_alone(path: Path) -> None:
         assert values <= glyphs, f"{path.name}: {name} maps to {values}"
 
 
-@pytest.mark.parametrize("path", OWNED, ids=lambda path: path.name)
-def test_a_field_with_no_durable_home_is_marked_on_screen(path: Path) -> None:
-    """Not blank, not guessed, and never quietly absent."""
-    text = source(path)
-    assert 'text: "not recorded by this build"' in text
-    assert text.count("unsupported(") >= 2
+def test_a_field_with_no_durable_home_is_marked_on_screen() -> None:
+    """Not blank, not guessed, and never quietly absent.
+
+    Counted as CALL SITES, never as mentions. This guard used to run over both
+    owned files and assert `text.count("unsupported(") >= 2`; when the Runs
+    screen's last unsupported field became a real one, lowering that to `>= 1`
+    left it passing on the FUNCTION DEFINITION alone -- a guard green over a
+    helper nobody called. The definition is excluded here, so a file that
+    declares the helper and uses it nowhere reds instead of reassuring.
+
+    The relation is per-file and two-directional: a file that calls it must
+    carry the marker text, and a file that calls it nowhere must not carry the
+    helper at all, because an unreachable renderer is dead code that reads like
+    a promise.
+    """
+    for path in OWNED:
+        text = source(path)
+        calls = len(re.findall(r"(?<!function )unsupported\(", text))
+        if calls:
+            assert 'text: "not recorded by this build"' in text, path.name
+        else:
+            assert "unsupported" not in text, (
+                f"{path.name} declares an unsupported renderer it never calls")
+    # And at least one owned screen still has such a field, so this whole guard
+    # cannot pass by every marker quietly disappearing.
+    assert any(re.search(r"(?<!function )unsupported\(", source(path))
+               for path in OWNED)
 
 
-def test_the_runs_screen_marks_the_workflow_revision_it_cannot_know() -> None:
-    """A materialized plan records no template identity, so no run can say
-    which revision it came from without guessing."""
+def test_the_runs_screen_reports_the_revision_the_run_froze() -> None:
+    """The positive witness that replaced a marker for something unknowable.
+
+    This screen used to carry `unsupported("Workflow revision", ...)` because a
+    materialized plan records no template identity and the run recorded none
+    either -- so the honest answer was that no revision could be shown. The run
+    now freezes the reference into the configuration `config_digest` is taken
+    over, so the screen reads it instead of marking it.
+
+    Asserted here as SOURCE structure, and end to end in
+    `tests/test_command_run_identity.py` and the browser gate. What this holds
+    is that the screen reads the frozen configuration and never the plan: a
+    revision taken off a graph would be a guess wearing a number.
+    """
     text = source(RUNS_FILE)
-    assert 'unsupported("Workflow revision",' in text
-    assert "records no template identity" in text
+    assert 'unsupported("Workflow revision",' not in text
+    assert 'fact("Revision", followed === null' in text
+    assert "detail.config" in text
+    # Both halves refuse together, so no reader can find one and infer the other.
+    assert 'fact("Workflow", followed === null' in text
 
 
 def test_the_agents_screen_marks_the_roles_a_plan_does_not_carry() -> None:

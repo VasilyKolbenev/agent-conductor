@@ -343,6 +343,13 @@ def test_the_frozen_configs_this_product_writes_are_ones_the_boundary_admits():
     admitted = _js_array(source, "CYCLE_KEYS")
     required = _js_array(source, "CYCLE_REQUIRED")
     assert required <= admitted, "a required cycle key the boundary does not admit"
+    # The same relation ONE LEVEL UP, which was the residual this pin left open
+    # when it was written: it held the cycle and said nothing about the document
+    # holding it, so a road adding a third top-level key could still reach a
+    # browser before a test. The frozen workflow reference is that road.
+    top_admitted = _js_array(source, "CONFIG_KEYS")
+    top_required = _js_array(source, "CONFIG_REQUIRED")
+    assert top_required <= top_admitted, "a required config key not admitted"
     written = [
         ("conduct preview", preview.FROZEN_CONFIG),
         ("the control loop", control_loop.FROZEN_CONFIG),
@@ -361,6 +368,10 @@ def test_the_frozen_configs_this_product_writes_are_ones_the_boundary_admits():
         cycle = set(config["cycle"])
         assert required <= cycle, f"{who} freezes a cycle missing {required - cycle}"
         assert cycle <= admitted, f"{who} freezes a cycle the window refuses: {cycle}"
+        top = set(config)
+        assert top_required <= top, f"{who} freezes a config missing {top_required - top}"
+        assert top <= top_admitted, f"{who} freezes a config the window refuses: {top}"
+
 
 
 def test_the_instant_grammar_is_the_copy_the_graph_window_already_answers_for():
@@ -380,6 +391,29 @@ def test_the_instant_grammar_is_the_copy_the_graph_window_already_answers_for():
     assert mine.group(1) == theirs.group(1)
 
 
+def test_the_boundary_admits_the_provenance_the_open_run_route_freezes():
+    """Both sides of "optional", which one key set cannot state on its own.
+
+    A boundary that DEMANDED `workflow` would refuse every run `conduct preview`
+    and the control loop write. A boundary that REFUSED it would refuse every
+    run the Studio opens against a workflow. The test beside this one holds the
+    first direction over the two roads that omit the key; this holds the second
+    over the one road that writes it, built the way the route builds it.
+    """
+    source = MODEL.read_text(encoding="utf-8")
+    admitted = _js_array(source, "CONFIG_KEYS")
+    frozen = set(studio_contracts.RunInput(
+        run_id="run-pin", cycle_id="cycle-pin", mode="confirm",
+        participants=(studio_contracts.Participant(
+            instance_id="instance-pin", provider_id="provider-pin", model=None),),
+        workflow_id="workflow-pin", revision=1,
+        binding=graph_template.RunBinding.from_dict({"assignments": {}}),
+    ).snapshot())
+
+    assert "workflow" in frozen, "the open-run route froze no provenance"
+    assert frozen <= admitted, f"a config the window refuses: {frozen}"
+
+
 def test_the_boundary_refuses_rather_than_repairs_and_says_which_it_does():
     """The one rule that decides between dropping a row and refusing a payload.
 
@@ -392,13 +426,20 @@ def test_the_boundary_refuses_rather_than_repairs_and_says_which_it_does():
     # Navigation and the run read REFUSE: a workflow, a run or a journal row
     # this window cannot read takes the whole payload with it rather than
     # leaving a shorter truth on screen.
-    assert source.count("return null;") == 80
+    # 80 before the frozen workflow reference landed. The five new refusals are
+    # all navigation: a config whose key set this window does not know, a config
+    # missing one of the two keys every writer supplies, a run whose workflow
+    # reference is there and will not read, and the two halves of a run ROW's
+    # provenance -- half a reference, or a malformed one.
+    assert source.count("return null;") == 84
     assert source.count("return false;") == 6
     # Decoration DROPS: the provider roster, the starter offers, and the one
     # duplicate-identity arm the controls answer shares with them.
     assert source.count("continue;") == 11
     # The draft's third answer, so "no draft" and "unreadable draft" can never
-    # be the same value.
-    assert source.count("return undefined;") == 3
+    # be the same value -- and now the workflow reference's third answer too,
+    # for the same reason: a run that froze none and a run whose reference is
+    # malformed must not arrive at this window as the same value.
+    assert source.count("return undefined;") == 5
     text = MODEL.read_text(encoding="utf-8")
     assert "never dropped" in text and "is dropped" in text

@@ -96,6 +96,22 @@ class RunInput:
         The instances are sorted by id so two requests that name the same
         participants in different orders produce the same bytes, and therefore
         the same digest and the same idempotent answer.
+
+        ``workflow`` is where this run records WHICH plan it followed, and it is
+        in the frozen configuration rather than beside it for three reasons that
+        are really one: the snapshot is the document `config_digest` is taken
+        over. Being inside it means the identity is re-verified on every replay
+        (`RunStore.read` re-digests the config and refuses a mismatch), that a
+        second open naming a different revision is a `RecordConflict` rather
+        than a silent adoption (`_repeats_the_standing_run` compares the whole
+        config), and that no later edit can reach it -- a published revision 3
+        cannot change what a run that started on revision 1 is following,
+        because nothing rewrites a frozen config and the digest would refuse it
+        if anything tried.
+
+        It is OMITTED, never null, when this run follows no workflow. A run
+        opened without one freezes exactly the bytes it always did, so no
+        existing digest moves and no stored run has to be migrated.
         """
         instances = []
         for row in sorted(self.participants, key=lambda value: value.instance_id):
@@ -106,7 +122,12 @@ class RunInput:
             if row.model is not None:
                 entry["model"] = row.model
             instances.append(entry)
-        return {"cycle": {"id": self.cycle_id}, "instances": instances}
+        snapshot: dict[str, Any] = {
+            "cycle": {"id": self.cycle_id}, "instances": instances}
+        if self.workflow_id is not None:
+            snapshot["workflow"] = {"id": self.workflow_id,
+                                    "revision": self.revision}
+        return snapshot
 
     def build(self, snapshot: Mapping[str, Any], created_at: str) -> RunEnvelope:
         """One envelope over a snapshot the caller already has in hand.

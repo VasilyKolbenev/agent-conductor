@@ -399,11 +399,14 @@ export function projectRevision(payload) {
 const RUNS_KEYS = ["runs", "providers"];
 const RUN_ROW_KEYS = ["run_id", "unreadable", "cycle_id", "created_at", "mode",
   "envelope_status", "graph_id", "undecided_gates", "open_actions",
-  "last_outcome"];
+  "last_outcome", "workflow_id", "revision"];
 //: What a row whose run did not replay says about everything but its identity.
+//: The provenance is in this list rather than outside it because "this run
+//: cannot be read" and "this run followed no workflow" must not arrive here as
+//: the same row: an unreadable run knows nothing, including that.
 const UNREADABLE_ROW_FIELDS = ["cycle_id", "created_at", "mode",
   "envelope_status", "graph_id", "undecided_gates", "open_actions",
-  "last_outcome"];
+  "last_outcome", "workflow_id", "revision"];
 
 function projectRunRow(row) {
   if (!isPlainObject(row) || !exactKeys(row, RUN_ROW_KEYS)) return null;
@@ -417,9 +420,18 @@ function projectRunRow(row) {
       ? Object.freeze({
         runId: row.run_id, unreadable: true, cycleId: null, createdAt: null,
         mode: null, envelopeStatus: null, graphId: null, undecidedGates: null,
-        openActions: null, lastOutcome: null,
+        openActions: null, lastOutcome: null, workflow: null,
       })
       : null;
+  }
+  // Both halves or neither, held here as well as at the frozen configuration:
+  // a row naming a workflow at no revision, or a revision of no workflow, is
+  // half a provenance and this window shows none rather than half.
+  if ((row.workflow_id === null) !== (row.revision === null)) return null;
+  if (row.workflow_id !== null
+      && (!isId(row.workflow_id) || !Number.isInteger(row.revision)
+          || row.revision < 1)) {
+    return null;
   }
   if (!isId(row.cycle_id) || !isInstant(row.created_at)) return null;
   if (!CONTROL_MODES.includes(row.mode)) return null;
@@ -439,6 +451,8 @@ function projectRunRow(row) {
     undecidedGates: row.undecided_gates,
     openActions: row.open_actions,
     lastOutcome: row.last_outcome,
+    workflow: row.workflow_id === null ? null
+      : Object.freeze({id: row.workflow_id, revision: row.revision}),
   });
 }
 
@@ -464,7 +478,25 @@ export function projectRuns(payload) {
 
 const RUN_READ_KEYS = ["run", "config", "records", "warnings", "graph"];
 const RECORD_ROW_KEYS = ["record_type", "record"];
-const CONFIG_KEYS = ["cycle", "instances"];
+//: A frozen configuration as the PRODUCT writes it, in the same closed-set
+//: shape the cycle below already needed. `workflow` is written only by the
+//: open-run route and only when a run follows a plan at all: `conduct preview`
+//: and the control loop freeze no workflow reference, and a run that names none
+//: is a run this window must still be able to OPEN.
+//:
+//: The pair is REQUIRED-plus-OPTIONAL rather than exact for exactly the reason
+//: the cycle is. An exact set of two refuses every run that records its plan;
+//: an exact set of three refuses every run that does not. Both mistakes are the
+//: same mistake the cycle already made once, when a boundary demanding `{id}`
+//: refused the `{id, phases}` the first run most people ever have.
+const CONFIG_REQUIRED = ["cycle", "instances"];
+const CONFIG_KEYS = ["cycle", "instances", "workflow"];
+//: Both halves or neither: a workflow at no revision names a plan whose shape
+//: nobody can fetch, and a revision of nothing names no plan at all. Named
+//: RUN_ for the reference a RUN froze; `WORKFLOW_KEYS` above is a different
+//: document -- the workflow read's own payload -- and one module scope holds
+//: both.
+const RUN_WORKFLOW_KEYS = ["id", "revision"];
 //: A frozen cycle as the PRODUCT writes it, rather than as one road writes it.
 //: `command/studio_contracts.py RunInput.snapshot` -- the Studio's own open-run
 //: route -- writes `{id}`. `command/preview.py FROZEN_CONFIG` and
@@ -522,8 +554,28 @@ function projectInstance(row) {
   });
 }
 
+function projectWorkflowRef(value) {
+  if (!has(value, "workflow")) return null;
+  const row = value.workflow;
+  if (!isPlainObject(row) || !exactKeys(row, RUN_WORKFLOW_KEYS)) return undefined;
+  if (!isId(row.id) || !Number.isInteger(row.revision) || row.revision < 1) {
+    return undefined;
+  }
+  return Object.freeze({id: row.id, revision: row.revision});
+}
+
 function projectConfig(value) {
-  if (!isPlainObject(value) || !exactKeys(value, CONFIG_KEYS)) return null;
+  if (!isPlainObject(value)
+      || !Object.keys(value).every((key) => CONFIG_KEYS.includes(key))
+      || !CONFIG_REQUIRED.every((key) => has(value, key))) {
+    return null;
+  }
+  // `undefined` is a malformed reference and `null` is an absent one: a run
+  // that froze no workflow is ordinary, and a run whose reference will not read
+  // is a configuration written by something this window has never been told
+  // about, so it refuses the read whole rather than showing half a provenance.
+  const workflow = projectWorkflowRef(value);
+  if (workflow === undefined) return null;
   const cycle = value.cycle;
   if (!isPlainObject(cycle)
       || !Object.keys(cycle).every((key) => CYCLE_KEYS.includes(key))
@@ -549,6 +601,7 @@ function projectConfig(value) {
   }
   return Object.freeze({
     cycleId: value.cycle.id, instances: frozenList(instances),
+    workflow,
   });
 }
 

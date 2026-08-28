@@ -332,7 +332,10 @@ def test_a_run_named_with_a_revision_is_given_that_revisions_plan_in_one_call(
 
     assert opened.payload["config"] == {
         "cycle": {"id": "default-orbit"},
-        "instances": [{"id": INSTANCE, "adapter": PROVIDER}]}
+        "instances": [{"id": INSTANCE, "adapter": PROVIDER}],
+        # The plan this run froze itself to follow, inside the document
+        # `config_digest` is taken over, so provenance and digest are one fact.
+        "workflow": {"id": WORKFLOW, "revision": 1}}
     assert opened.payload["run"]["config_digest"] == \
         snapshot_digest(opened.payload["config"])
 
@@ -545,10 +548,14 @@ def test_the_listing_names_every_run_and_derives_each_field_from_the_records(
         "mode": recovered.envelope.mode.value,
         "envelope_status": recovered.envelope.status,
         "graph_id": definition.graph_id,
-        "undecided_gates": 1, "open_actions": 0, "last_outcome": None}
+        "undecided_gates": 1, "open_actions": 0, "last_outcome": None,
+        "workflow_id": WORKFLOW, "revision": 1}
     # A run with no plan has no gates to be undecided about, and says 0 rather
-    # than null: null is what an unreadable run answers.
+    # than null: null is what an unreadable run answers. It also froze no
+    # workflow reference, so both halves of the provenance are null together.
     assert rows["run-studio-002"]["graph_id"] is None
+    assert rows["run-studio-002"]["workflow_id"] is None
+    assert rows["run-studio-002"]["revision"] is None
     assert rows["run-studio-002"]["undecided_gates"] == 0
     assert rows["run-studio-002"]["mode"] == "observe"
     # The roster travels beside the runs, because a user with no runs at all
@@ -573,7 +580,7 @@ def test_the_creation_time_word_is_named_so_no_reader_takes_it_for_a_position(
     assert set(row) == {
         "run_id", "unreadable", "cycle_id", "created_at", "mode",
         "envelope_status", "graph_id", "undecided_gates", "open_actions",
-        "last_outcome"}
+        "last_outcome", "workflow_id", "revision"}
 
 
 def test_a_run_whose_journal_does_not_replay_is_listed_with_its_own_marker(
@@ -600,7 +607,7 @@ def test_a_run_whose_journal_does_not_replay_is_listed_with_its_own_marker(
         "run_id": "run-corrupt", "unreadable": True, "cycle_id": None,
         "created_at": None, "mode": None, "envelope_status": None,
         "graph_id": None, "undecided_gates": None, "open_actions": None,
-        "last_outcome": None}
+        "last_outcome": None, "workflow_id": None, "revision": None}
     assert rows[RUN_ID]["unreadable"] is False
     assert rows[RUN_ID]["graph_id"] is not None
 
