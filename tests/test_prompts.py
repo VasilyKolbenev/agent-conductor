@@ -1,6 +1,7 @@
 import json
 import tomllib
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 from conductor import merge, prompts, schema, store, templates, validate
@@ -14,6 +15,12 @@ NOW = datetime(2026, 7, 30, 12, 0, tzinfo=timezone.utc)
 #: about which map it was. It takes the text and not just the path on purpose,
 #: so there is no map-less call to make.
 SCAFFOLD = templates.get(templates.DEFAULT)
+
+#: The document that declares what a lane file holds, read at test time the way
+#: `tests/test_templates.py` reads its §2. The packet's whole job is to explain
+#: the protocol to an agent, so the protocol is the only honest owner of the
+#: list of things it owes an explanation of.
+PROTOCOL = Path(__file__).resolve().parents[1] / "spec" / "PROTOCOL.md"
 
 
 def _template_block(text):
@@ -537,6 +544,36 @@ def _json_blocks(text):
     return [part.split("\n```", 1)[0] for part in text.split("```json\n")[1:]]
 
 
+def _prose_of(text):
+    """A rendered packet with its fenced documents removed -- what it SAYS.
+
+    The starter carries `"now"` as a key of its own, so a claim about what the
+    packet tells an agent about `now` has to be made where the packet is
+    talking and not where it is quoting itself.
+    """
+    return "\n".join(text.split("```")[::2])
+
+
+def _spec_now_fields():
+    """Every field the protocol's own lane document gives `now` (spec §3).
+
+    Extracted rather than typed out, so a field added to `now` there reaches
+    this file on its own. An empty result is refused: a field set nothing was
+    found for would make every claim built on it vacuously true.
+    """
+    section = PROTOCOL.read_text(encoding="utf-8").split("## 3. Lane files")[1]
+    body = section[:section.index("\n## ")]
+    body = body[body.index('"now":'):]
+    depth = 0
+    for end, char in enumerate(body):
+        depth += (char == "{") - (char == "}")
+        if depth == 0 and char == "}":
+            break
+    fields = set(json.loads(body[body.index("{"):end + 1]))
+    assert fields, "PROTOCOL.md section 3 gives now no fields at all"
+    return fields
+
+
 def _packet(tmp_path, map_toml=PACKET_MAP, author="codex"):
     """Scaffold a real project, load it the way the CLI does, and vend a packet.
 
@@ -594,6 +631,29 @@ def test_the_packet_names_every_field_a_finding_must_have(tmp_path):
     required = reference.split("optional", 1)[0]
     for field in ("id", "title", "claim", "severity"):
         assert field in required, field
+
+
+def test_the_packet_explains_every_field_the_protocol_gives_now(tmp_path):
+    # The starter hands an agent the keys of `now` whether or not the packet
+    # ever says what they are for, and it validates either way -- its `task` is
+    # a placeholder and a placeholder is a legal string. An agent given the keys
+    # and no contract left `task` on that placeholder and dated `since` from its
+    # last write, so the panel's current task and Current phase, whose only
+    # inputs these are, stayed blank through the whole first hour. Held against
+    # §3 rather than a list typed here: a field added to `now` is one the packet
+    # owes a sentence about from that moment on, without anyone remembering it.
+    _, text = _packet(tmp_path)
+    block = next((para for para in _prose_of(text).split("\n\n")
+                  if '"now"' in para.split("\n", 1)[0]), None)
+    assert block is not None, "the packet says nothing about the now it vends"
+    explained = {}
+    for line in block.splitlines():
+        if line.startswith("- "):
+            field, _, sentence = line[2:].partition(":")
+            explained[field] = sentence.strip()
+    assert set(explained) == _spec_now_fields(), sorted(explained)
+    for field, sentence in explained.items():
+        assert sentence, f"{field} is listed and never explained"
 
 
 def test_a_finding_written_from_the_packets_example_is_accepted_by_the_project(

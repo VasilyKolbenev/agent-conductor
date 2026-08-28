@@ -34,7 +34,7 @@ from conductor.command.adapters.codex_cli import CODEX_PROTOCOL
 from conductor.command.adapters.provider import ProviderConfig
 from conductor.command.api_contracts import ERROR_STATUS, NO_PROVIDERS_MESSAGE
 from conductor.command.graph_definition import GraphDefinition
-from conductor.command.graph_template import RunBinding, materialize
+from conductor.command.graph_template import GraphTemplate, RunBinding, materialize
 from conductor.command.run_store import snapshot_digest
 from conductor.command.studio_contracts import CONTROL_MODES, MAX_RUN_PARTICIPANTS
 from conductor.command.template_store import TemplateStore
@@ -355,6 +355,68 @@ def test_a_run_named_with_a_revision_is_given_that_revisions_plan_in_one_call(
 
 def _binding():
     return RunBinding.from_dict({"assignments": {ROLE: INSTANCE}})
+
+
+def test_a_revision_replaced_after_it_was_judged_is_not_the_one_the_run_follows(
+        tmp_path):
+    """What was JUDGED is what is appended -- on the road a browser actually takes.
+
+    Every gate this route runs -- the roster, the revision, the plan the bound
+    adapters must be able to serve -- is spent on ONE read of the revision. A
+    second read inside the transaction would let a revision replaced between
+    the two put a plan nothing had judged into a journal that is immutable
+    afterwards: work no operator approved, or a binding no adapter can carry
+    out, standing as this run's law with no route to correct it. Publishing a
+    revision and building a graph from a template both hold this line already;
+    opening a run is the road the Studio itself uses and it held nothing.
+
+    The store is made to answer the judged revision once and a DIFFERENT
+    publishable one for ever after, so a second read cannot go unseen. Both
+    proofs the substitution offers are taken, and the CONTENT one is asserted
+    first: a call count says only that the route asked twice, while the plan's
+    own steps say which answer this run is now bound to, and that is the fact a
+    person loses.
+    """
+    subject, store, templates, events = a_project(tmp_path)
+    judged = templates.load(WORKFLOW, 1)
+    # The judged revision's own document, edited: a stored revision carries the
+    # identity a draft has not got yet, so the second answer has to be built
+    # from what the store actually holds rather than from the draft shape.
+    later = json.loads(json.dumps(judged.as_dict()))
+    for node in later["nodes"]:
+        if node["node_id"] == "do":
+            node["title"] = "Do work nobody approved"
+            node["arguments"] = dict(node["arguments"], work_item_id="work-999")
+    replaced = GraphTemplate.from_dict(later)
+    assert replaced.as_dict() != judged.as_dict(), "the two reads are one document"
+
+    reads = []
+
+    def the_judged_one_then_another(workflow_id, revision):
+        reads.append((workflow_id, revision))
+        return judged if len(reads) == 1 else replaced
+
+    subject._templates.load = the_judged_one_then_another
+    opened = post(subject, "/command/runs", a_run())
+    assert opened.status == 201, opened.payload
+
+    durable = [row.value for row in store.read(RUN_ID).records
+               if row.kind == "graph_definition"]
+    assert len(durable) == 1, "a run carries exactly one plan"
+    steps = [(node.title, node.arguments.get("work_item_id"))
+             for node in durable[0].nodes]
+    assert steps == [(node["title"], node.get("arguments", {}).get("work_item_id"))
+                     for node in a_document()["nodes"]], (
+        "the run follows a plan built from a revision nothing judged")
+
+    expected = materialize(
+        judged, _binding(), opened.payload["config"],
+        graph_id=durable[0].graph_id, run_id=RUN_ID, created_at=NOW)
+    assert durable[0] == expected
+    assert GraphDefinition.from_dict(opened.payload["graph"]) == expected
+    assert reads == [(WORKFLOW, 1)], (
+        "the revision was read again between the gate and the write")
+    assert events == [RUN_ID]
 
 
 def test_a_run_that_names_no_workflow_is_opened_with_no_plan_at_all(tmp_path):

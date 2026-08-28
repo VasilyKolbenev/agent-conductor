@@ -318,6 +318,96 @@ def test_a_torn_tail_over_a_record_this_loop_never_wrote_is_still_refused(
     assert journal.read_bytes() == before
 
 
+def _recover_that_adopts(adopted=b""):
+    """A stand-in `recover` that, like the real one, leaves durable bytes behind.
+
+    Recovery is a writer, not a reader: `_publish_rejoined_history` appends to
+    records.jsonl while it repairs. This is that shape with the adopted bytes
+    named by the caller -- the crash tail goes, `adopted` arrives once, and
+    whoever called `recover` is left to find out what the run now holds.
+    """
+    def recover(self, run_id):
+        journal = self.run_path(run_id) / "records.jsonl"
+        payload = journal.read_bytes()
+        whole = payload[:payload.rfind(b"\n") + 1]
+        if adopted and adopted not in whole:
+            whole += adopted
+        journal.write_bytes(whole)
+        return RunStore.read(self, run_id)
+    return recover
+
+
+def _own_empty_run(root):
+    """A run this gate owns whose journal a crash tore before the first record."""
+    store = RunStore(root)
+    store.create_run(
+        RunEnvelope(
+            run_id=control_loop._RUN_ID, cycle_id="control-loop-orbit",
+            created_at=control_loop._NOW,
+            config_digest=snapshot_digest(control_loop.FROZEN_CONFIG),
+            mode="confirm"),
+        control_loop.FROZEN_CONFIG)
+    journal = _journal(root)
+    _tear(journal)
+    return journal
+
+
+def test_a_repair_that_adopts_a_record_this_loop_never_wrote_is_refused_after_the_repair(
+        tmp_path, capsys, monkeypatch):
+    """The identity door is asked again about what the repair left, not what it found.
+
+    The two things recovery does today can only hand back a history the first
+    judgement has already seen: it drops a tail `read` was ignoring anyway, and
+    it rejoins orphan decision receipts, which `read` surfaces as a warning the
+    FIRST refusal catches first. So the second judgement looks like a formality
+    -- and it is not, because recovery also APPENDS. The day a repair adopts a
+    record no plain read surfaced, this is the only thing standing between those
+    bytes and a proposal, and without it the gate would propose into, spawn for
+    and sign a receipt over a run it had never agreed was its own. Recovery is
+    replaced by one that adopts a single foreign record so that otherwise
+    unreachable order -- repair, then judge -- can be watched refusing.
+    """
+    journal = _own_empty_run(tmp_path)
+
+    monkeypatch.setattr(RunStore, "recover", _recover_that_adopts(_foreign_line()))
+    _no_spawn(monkeypatch, "a repair that adopted foreign bytes reached process spawn")
+    refused = main(["integration-smoke", "--dir", str(tmp_path)])
+    captured = capsys.readouterr()
+    # Read the harm first: a receipt on stdout here is one signed over the
+    # adopted bytes, which is the whole cost of skipping the second judgement.
+    assert captured.out == ""
+    assert "history this loop did not write" in captured.err
+    assert refused == 1
+    # Nothing was proposed into it either: the adopted record is all the run holds.
+    assert [row.kind for row in _records(tmp_path)] == ["adapter_observation"]
+    assert journal.read_bytes() == _foreign_line()
+
+
+def test_a_repair_that_adopts_nothing_foreign_still_carries_the_run_to_its_receipt(
+        tmp_path, capsys, monkeypatch):
+    """The over-correction control: judging a repaired run is not refusing it.
+
+    A gate that answered "foreign" to everything a repair handed back would pass
+    the test above while bricking the crash recovery the repair exists for --
+    the wedge that cost this run its idempotence in the first place. So the same
+    substituted recovery runs again over the same torn run, this time adopting
+    nothing, and what it hands back -- this loop's own history, byte for byte --
+    has to cross the spawn and land on the identical receipt a directory no
+    crash ever touched prints.
+    """
+    _a_project(tmp_path / "undamaged")
+    assert main(["integration-smoke", "--dir", str(tmp_path / "undamaged")]) == 0
+    elsewhere = capsys.readouterr().out
+
+    torn = tmp_path / "torn"
+    _own_empty_run(torn)
+    monkeypatch.setattr(RunStore, "recover", _recover_that_adopts())
+    assert main(["integration-smoke", "--dir", str(torn)]) == 0
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    assert captured.out == elsewhere
+
+
 def test_a_torn_tail_over_a_foreign_frozen_config_is_refused_before_any_repair(
         tmp_path, capsys, monkeypatch):
     """Foreign config is judged before the tail is, and refusing edits nothing."""
