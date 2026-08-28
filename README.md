@@ -35,9 +35,13 @@ conduct demo
 ```
 
 Open the printed URL (`http://127.0.0.1:7777/`, or `conduct demo --port 8080` if 7777 is
-taken). You are looking at a release that went wrong: a red release gate, three findings,
-one reviewer disagreement, and one decision waiting for you (`demo/README.md` explains
-the scenario).
+taken). You are looking at a fictional web project whose release smoke gate went red with three
+blockers: the reviewer confirms two of the findings and partly disputes the third — so the panel
+computes exactly one disagreement — and one real ops decision, bake the payment config into the
+release image or provision it per environment, waits in the human queue. Everything on screen is
+computed from the fixture's lane files by the merge rules; nothing on it is hand-written state.
+The fixture is copied to a throwaway temp directory each run, so poking at the served files never
+touches the packaged copy.
 
 ## Use it on your own project
 
@@ -50,7 +54,7 @@ conduct doctor      # says what is not ready and gives the next command
 conduct prompt --role implementer --author claude
 conduct report      # the merged state as Markdown, on stdout
 conduct preview     # propose one dispatch and print its canonical preview (no execution)
-conduct integration-smoke  # synthetic owned-process gate; not Human Confirm
+conduct integration-smoke  # run the synthetic end-to-end gate and print its receipt
 conduct up          # panel at http://127.0.0.1:7777/
 ```
 
@@ -68,6 +72,17 @@ CI log, or a file.
 parse, but whether the project is set up to work. Each finding names the next command to
 run, and the command exits 0 only when every readiness check is OK. It reads project files
 and the bundled harness registry; it never probes your machine for installed tools.
+
+`conduct integration-smoke` runs one fixed, synthetic action end to end — it spawns a packaged
+no-op program, watches it, and writes the immutable receipt to stdout. Read the command's own
+exit status, which is `0` when the gate passed. The receipt's `outcome` will say
+`verification_failed`, and **that is the passing result**: the process finished
+(`"exit_code": 0`), but the owned-process adapter holds no independent check of the work, so it
+exposes no verifier and this product never turns an exit code into a success. Run it twice and
+the line is byte-identical; if a crash left the gate's own journal cut off mid-record, the next
+run repairs that tail itself and prints the same receipt. It is a synthetic gate, not a product
+Human Confirm surface — its actor, time and ids are fixture facts. Run it, and `conduct preview`,
+inside a project `conduct init` made; elsewhere they refuse rather than creating one.
 
 In the panel, select an agent lane to see its current harness, role, assigned stage, runtime
 phase, task, findings, and human requests. **Copy handoff packet** copies a deterministic
@@ -112,13 +127,21 @@ is never touched: init says so and exits 1.
   stale, and the panel says so. Disagreements, staleness, review coverage, and the human
   queue are all computed from the raw lanes, so no agent can bury a conflict by declining
   to write it down. Nothing unknown shows green.
-- **The panel is read-only and local.** It never calls an LLM, never spawns agents,
-  and binds to 127.0.0.1 only. It shows what needs your attention and what to decide.
+- **The panel is local, and its only writes are yours.** It binds to 127.0.0.1, answers only
+  the two loopback `Host` names it minted for its own port, and calls no model itself.
+  Reading is all it does until you act: with no run under `conductor/runs/` there is nothing
+  for it to write to. When a run exists, the Studio can append what you confirm — a proposal,
+  an action request, a decision receipt, a workflow draft or a published revision — and each
+  such request must carry that loopback `Host`, an allowed `Origin`, and the per-process CSRF
+  token the page was served with. Those writes go under `conductor/runs/` and
+  `conductor/templates/` and nowhere else: it cannot write a lane, `map.toml`,
+  `events.jsonl`, your source, or a secret.
 
 ## What it is not
 
 - Not a chat with your agents.
-- Not an orchestrator or scheduler — it never runs agents for you.
+- Not an orchestrator or scheduler — nothing runs on a timer, and no agent starts without a
+  confirmation you gave for that exact request.
 - Not a trace warehouse.
 - Not a cloud service — no account, no network access, no API keys.
 
@@ -137,9 +160,11 @@ agents move on.
 - Accepted Harness control-plane model: `docs/adr/0001-harness-control-plane-model.md`
 - Product direction and the post-alpha December Command strike:
   `docs/specs/2026-08-03-hcp-competitive-product-direction.md`
-- The demo scenario: `demo/README.md`
+- The demo scenario: described in the quickstart above; the fixture ships at
+  `src/conductor/_demo/conductor/`
 - The release smoke test, run against a release candidate before publishing:
   `docs/release-smoke.md`
+- Owner acceptance — can a person operate this without a developer: `docs/owner-acceptance.md`
 
 ## Browser-level panel checks
 
@@ -153,11 +178,14 @@ python -m playwright install chromium
 python -m pytest -q browser_tests
 ```
 
-Playwright and the pixel decoder are optional development/CI dependencies. They are
-not installed with the runtime wheel, the panel remains one static HTML file, and no
-build step is added.
+Playwright and the pixel decoder are optional development/CI dependencies. They are not
+installed with the runtime wheel, and no build step is added: the panel ships as hand-written
+files — the Workflow Studio shell at `/`, the classic panel at `/panel/index.html`, their
+stylesheets and their ES modules — served straight from the package with no bundler and nothing
+transpiled. `server.PANEL_ASSETS` is the exact list of what is served.
 
 ## Status
 
-December Command v0.1.0 alpha. Protocol v1. Python 3.11+, zero runtime dependencies. CI on Windows and Linux.
+December Command v0.1.0 alpha. Protocol v1. Python 3.11+, zero runtime dependencies. CI runs the
+suite on Linux, Windows and macOS, and the browser gate on all three.
 MIT license.

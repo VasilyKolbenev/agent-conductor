@@ -112,10 +112,11 @@ $handoff = Invoke-WebRequest -Uri "http://127.0.0.1:7801/handoff/claude.md" -Use
 ($handoff.Content -split "`n")[0]
 ```
 
-Expect `200 text/html; charset=utf-8` and a page of tens of kilobytes, with `<title>December
-</title>` in it — a served page that is only a few hundred bytes means the packaged panel did
-not make it into the wheel. Expect the state document to describe the bundled scenario, which
-`demo/README.md` sets out:
+Expect `200 text/html; charset=utf-8` and a page with `December` in its `<title>` — a served
+page of only a few hundred bytes means the packaged panel did not make it into the wheel. `GET /`
+answers the Workflow Studio shell; the classic panel is at `/panel/index.html` and is the tens-of-
+kilobytes document. Expect the state document to describe the bundled scenario, which the README's
+quickstart sets out:
 
 ```
 project=web-app state=blocked reason=human_decision
@@ -274,12 +275,12 @@ Expect the URL on stdout, `http://127.0.0.1:7802/`, and the scaffolded project's
 Expect the second `up`, on the port the first one holds, to refuse and exit 1:
 
 ```
-cannot serve on 127.0.0.1:7802: [WinError 10048] ...
+cannot serve on 127.0.0.1:7802: [WinError 10048] ... To try a different port, rerun with --port PORT.
 ```
 
-That message does not mention `--port`, though `--port` is the answer to it. Known, queued in
-the plan's backlog, and not a blocker — but it is what a person hits first, so read it here
-once and recognise it there.
+The message names its own answer: rerun with `--port`. The operating system's half of the line
+is whatever your platform says about a busy socket, and it is localized — read past it to the
+sentence Conduct adds. If that sentence is missing, this build is older than it claims to be.
 
 ## 11. `conduct preview` proposes one dispatch and inspects it without executing
 
@@ -345,5 +346,14 @@ Named so that passing it is not read as more than it is.
   and by nothing in this procedure.
 - **Ctrl-C.** The steps above stop the servers with `Stop-Process`, which is not the interrupt
   a person sends. Stop one by hand once.
-- **Any platform but this one.** Everything above ran on Windows. CI covers Windows and Linux
-  for the suite; this procedure has been executed on Windows only.
+- **Any platform but this one.** Everything above ran on Windows. CI runs the suite and the
+  browser gate on Linux, Windows and macOS — nine jobs — but this procedure has been executed
+  on Windows only, so what is unchecked here is the procedure, not the suite.
+- **A skip that does not name what it could not get.** The mutation-harness suites carry exactly
+  two skips and each names its primitive: `tests/test_mutate_harness.py:676` skips under
+  `os.geteuid() == 0` saying "root ignores the read-only bit" — the test makes a file read-only
+  to prove an unwritable source is an invalid measurement rather than a score, and root defeats
+  that premise — and `tests/test_mutate_harness_crash_safety.py:123` skips when directory
+  symlinks are unavailable, naming the `OSError` it caught. Recorded here because an earlier
+  known-issues entry cited `tests/test_mutate_harness.py:624` as an unnamed skip; line 624 is a
+  comment, and the class that entry watched has no instance in these modules.

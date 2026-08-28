@@ -1,5 +1,15 @@
 # Conduct — product direction and the Default Orbit
 
+> **Superseded — a dated direction record, not the shipped product.**
+>
+> Written on 2026-08-03, when Act and Verify were still deferred. Both ship now, and the command
+> runtime owns child processes, so the rows below that call this product an orchestrator of
+> nothing — "it never starts, stops, or schedules a harness", "no agent spawning", and the
+> read-only panel line — are false of the product today. Read
+> `docs/specs/2026-08-03-hcp-competitive-product-direction.md` for the direction that holds now.
+> The text is left as written: a dated record rewritten to read like the present is no longer
+> evidence of anything.
+
 - **Status:** Product direction — not a specification
 - **Date:** 2026-08-03
 - **Contracts:** `spec/PROTOCOL.md` (Protocol v1, normative) and

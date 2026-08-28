@@ -308,3 +308,41 @@ def test_the_wheel_smoke_rides_the_whole_core_matrix(workflow: str) -> None:
 
     assert "python -m build --wheel" in job
     assert "conduct validate --dir" in job
+
+
+#: The prose word each runner label is spoken as, where a document names the
+#: platforms to a reader. One entry per member of `PLATFORMS`, so a platform
+#: added to the matrix has to be given a word before this guard can pass.
+_PLATFORM_WORDS = {
+    "ubuntu-latest": "Linux",
+    "windows-latest": "Windows",
+    "macos-latest": "macOS",
+}
+#: The documents that tell a reader which platforms this product is proved on.
+_PLATFORM_PROSE = ("README.md", "docs/release-smoke.md")
+
+
+@pytest.mark.parametrize("relative", _PLATFORM_PROSE)
+def test_every_platform_the_workflow_runs_is_a_platform_the_docs_name(
+        workflow: str, relative: str) -> None:
+    """The prose is derived from the matrix, not remembered beside it.
+
+    This is the guard the drift wanted. `PLATFORMS` above was pinned against
+    `ci.yml` alone, so when macOS joined the matrix the workflow moved and two
+    documents went on saying "Windows and Linux" for months -- true of neither
+    the file nor the runners, and read by exactly the person deciding whether to
+    trust the build on their own machine.
+
+    Both directions, because either one alone is a half-guard. A platform in the
+    matrix that no document names understates what is proved; a platform a
+    document names that the matrix does not run is a claim nothing backs. The
+    second is the more dangerous, which is why it is not merely a warning here.
+    """
+    for label in PLATFORMS:
+        assert label in workflow, f"{label} left the matrix"
+    text = (ROOT / relative).read_text(encoding="utf-8")
+    named = {word for word in _PLATFORM_WORDS.values() if word in text}
+    expected = {_PLATFORM_WORDS[label] for label in PLATFORMS}
+    assert named == expected, (
+        f"{relative} names {sorted(named)} but the workflow runs "
+        f"{sorted(expected)}")

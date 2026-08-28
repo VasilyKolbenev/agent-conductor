@@ -35,8 +35,7 @@ attempt, an exact version preflight before any task is spawned, code-owned argv
 down to the last token, bounded and drained output that reaches no receipt,
 journal, API, SSE frame, evidence or exception message, a marker that stops a
 crashed task from being run twice, and verification that reads only independent
-workspace evidence and never answers ``verified`` while this build writes no
-durable evidence record.
+workspace evidence.
 
 Those guarantees are documented where they are implemented rather than restated
 here, because a copy of a promise is a promise that can drift from the code that

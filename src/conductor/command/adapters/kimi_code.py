@@ -54,8 +54,7 @@ exact version preflight before any prompt is spawned, code-owned argv down to
 the last token, bounded and drained output that reaches no receipt, journal,
 API, SSE frame, evidence or exception message, a marker that stops a crashed
 prompt from being run twice, and verification that reads only independent
-workspace evidence and never answers ``verified`` while this build writes no
-durable evidence record.
+workspace evidence.
 
 The home matters more here than the vendor's own default suggests. Because
 ``KIMI_CODE_HOME`` relocates "the config file, sessions, logs, OAuth credentials,
