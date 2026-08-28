@@ -166,6 +166,7 @@ def test_the_studio_boots_from_the_entry_route_with_no_error_at_all(
             "studio-model.js": 200, "studio-view.js": 200,
             "studio-canvas.js": 200, "studio-inspector.js": 200,
             "studio-runs.js": 200, "studio-people.js": 200,
+            "studio-runread.js": 200,
             "command-projection.js": 200, "command-view.js": 200,
         }
         # The reads the window opens with, both landed and both real.
@@ -360,7 +361,11 @@ def test_the_overview_derives_its_readiness_from_the_payload_it_read(
     assert "ready to run?" in body
     assert "not yet" in body
     assert "no workflow is chosen, so there is nothing to start" in body
-    assert "records no project name" in body
+    # The Overview names the project the server was started in, read out of
+    # conductor/map.toml -- `tests.test_store.write_project` writes
+    # `project = "p"`, so that is the name that must appear.
+    assert "this is p, the project this server was started in" in body
+    assert "records no project name" not in body
     # Every unreachable provider is counted as blocking, each row naming the
     # payload it came from rather than a severity this window invented.
     assert "5 blocking" in body
@@ -419,9 +424,12 @@ def test_choosing_the_published_workflow_draws_its_revision_read_only(
     assert page.locator('[data-add-kind="task"]').is_disabled()
     assert "no step can be added to it" in page.locator(
         ".studio-palette__note").inner_text()
-    # The header names the workflow being worked on, which is a fact a read
-    # supplied -- never a project name this build does not record.
-    assert page.locator("#studioProject").inner_text() == WORKFLOW_TITLE
+    # The header names the PROJECT, because that is the thing a person opened.
+    # It used to name the workflow, and only because no project name existed to
+    # show; the workflow is named on the canvas banner and in the toolbar, both
+    # asserted above, so nothing was lost by giving the largest type on screen
+    # to the project it belongs to.
+    assert page.locator("#studioProject").inner_text() == "p"
     assert problems == []
 
 

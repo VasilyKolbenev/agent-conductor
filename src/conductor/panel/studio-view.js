@@ -177,12 +177,16 @@ function tab(node, state, handlers) {
  * @param {object} handlers `onScreen`, and the primary action of each screen
  */
 export function mountShell(mounts, state, handlers) {
-  // The heading names the workflow being worked on, which is a fact a read
-  // supplied. It is not a project name: this build records none, and the
-  // Overview says so rather than putting a guess in the largest type on screen.
+  // The heading names the PROJECT when the map gives one, because that is the
+  // thing a person opened. It falls back to the workflow being worked on, and
+  // then to the product's own name: `conduct init` writes a project name on
+  // every road now, but a project scaffolded before it did carries none, and a
+  // placeholder shown as a fact would be worse than the fallback.
   const workflow = chosenWorkflow(state);
-  mounts.project.textContent = workflow === null ? "Workflow Studio"
-    : (workflow.title || workflow.workflow_id);
+  mounts.project.textContent = state.project.name !== null
+    ? state.project.name
+    : (workflow === null ? "Workflow Studio"
+      : (workflow.title || workflow.workflow_id));
   mounts.connection.textContent = connectionSentence(state);
   mounts.connection.setAttribute("data-connection", state.connection);
   mounts.primary.replaceChildren(primaryAction(state, handlers));
@@ -286,9 +290,12 @@ export function readiness(state) {
 function whatThisIs(state, handlers) {
   const workflow = chosenWorkflow(state);
   const body = [
-    element("p", {className: "studio-hint", text: "This build records no "
-      + "project name anywhere, so this screen does not show one. What it can "
-      + "name is the workflow you are working on."}),
+    element("p", {className: "studio-hint", text: state.project.name !== null
+      ? `This is ${state.project.name}, the project this server was `
+        + "started in. The name comes from conductor/map.toml."
+      : "This project has no name yet: its conductor/map.toml carries none, "
+        + "or still carries the placeholder a template ships with. Set "
+        + "`project` there and restart to see it here."}),
   ];
   if (workflow === null) {
     body.push(note("No workflow is chosen. The Workflow screen lists every "

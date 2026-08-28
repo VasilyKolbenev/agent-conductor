@@ -231,7 +231,11 @@ export function projectStarters(rows) {
 }
 
 // ── workflows ────────────────────────────────────────────────────────────
-const WORKFLOWS_KEYS = ["workflows", "providers", "starters"];
+//: `project` is a name or null, and null is a real answer: a project
+//: scaffolded before this build named one, or one still carrying the template
+//: placeholder, has none to show. The key is REQUIRED even so -- a payload that
+//: omits it was written by something this window has not been told about.
+const WORKFLOWS_KEYS = ["project", "workflows", "providers", "starters"];
 const WORKFLOW_ROW_KEYS = ["workflow_id", "title", "latest_revision",
   "revisions", "has_draft", "unreadable"];
 
@@ -269,6 +273,17 @@ function projectWorkflowRow(row) {
 
 //: `GET /command/workflows`. A workflow row is navigation, so an unreadable
 //: one refuses the list rather than vanishing from it.
+//: `templates.NAME_RE` is the Python owner: letters, digits, space and
+//: . _ - + ( ), opening on a letter or digit, at most 64 characters. Held here
+//: as a shape rather than copied as a regex, because the two spellings would
+//: drift and this window reads the name for display and for nothing else.
+const PROJECT_NAME_MAX = 64;
+
+function isProjectName(value) {
+  return isText(value) && value.length <= PROJECT_NAME_MAX
+    && value.trim() === value;
+}
+
 export function projectWorkflows(payload) {
   if (!isPlainObject(payload) || !exactKeys(payload, WORKFLOWS_KEYS)) {
     return null;
@@ -283,7 +298,12 @@ export function projectWorkflows(payload) {
     seen.add(settled.workflowId);
     rows.push(settled);
   }
+  // A name is held to the same rule the writer is held to, so a value that
+  // could not have been written by `conduct init` is refused rather than
+  // rendered: this string goes into the largest type on the Overview.
+  if (payload.project !== null && !isProjectName(payload.project)) return null;
   return Object.freeze({
+    project: payload.project,
     workflows: frozenList(rows),
     providers: projectProviders(payload.providers),
     starters: projectStarters(payload.starters),

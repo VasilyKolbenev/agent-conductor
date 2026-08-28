@@ -62,16 +62,27 @@ _PROBE_AT = "1970-01-01T00:00:00Z"
 _PROBE_GRAPH = "graph-open-run-probe"
 
 
-def list_workflows(templates: "TemplateStore", providers) -> Answer:
+def list_workflows(templates: "TemplateStore", providers,
+                   project: str | None = None) -> Answer:
     """Every workflow this project holds, what this build can reach, and what
     it ships to start from.
 
-    Three arrays, three questions. ``workflows`` is this PROJECT's durable
-    state; ``providers`` is this build and this machine; ``starters`` is what
-    the wheel ships, so "create a workflow from blank or from a template" has
-    both roads on one response.
+    Three arrays and one name. ``workflows`` is this PROJECT's durable state;
+    ``providers`` is this build and this machine; ``starters`` is what the wheel
+    ships, so "create a workflow from blank or from a template" has both roads
+    on one response.
+
+    ``project`` is the identity `conduct init` wrote into ``map.toml``, handed
+    IN rather than read here. This package holds no opinion about Protocol v1
+    documents and imports nothing that reads one; the server owns that map, and
+    it is the server that decides whether what it holds is a name at all. What
+    arrives here is a name or ``null``, and ``null`` is a real answer -- a
+    project scaffolded before this build named one, or one still carrying the
+    placeholder, has no name to show and the screen says so rather than
+    printing a placeholder in the largest type it has.
     """
     return 200, {
+        "project": project,
         "workflows": workflow_rows(templates),
         "providers": provider_projection(providers),
         "starters": starters(),

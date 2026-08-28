@@ -16,6 +16,7 @@
 // on `graph-store.js:186-267` and carried here unchanged.
 import {projectControls, projectProviders, projectRunRead, projectRuns,
   projectStarters, projectWorkflow, projectWorkflows} from "./studio-model.js";
+import {decisionRows, participantsOf} from "./studio-runread.js";
 
 //: The seven words a screen container may stand in; the plain sentence beside
 //: each is the view's.
@@ -105,7 +106,10 @@ export const EMPTY = Object.freeze({
   screen: "overview",
   connection: "connecting",   // connecting | open | closed
   notice: "Nothing has been read yet.",
-  //: `project.name` is null and stays null: no durable record carries one.
+  //: `project.name` is null until a workflows read lands, and stays null when
+  //: the project has no name to show -- scaffolded before this build wrote one,
+  //: or still carrying the template placeholder. Null is displayed as a
+  //: sentence, never as a blank and never as a guess.
   project: Object.freeze({name: null, warnings: Object.freeze([])}),
   providers: Object.freeze([]),
   workflows: WORKFLOWS,
@@ -473,61 +477,6 @@ function edited(state, edit) {
   });
 }
 
-// -- derivations off one run read -----------------------------------------
-function receiptsOf(detail) {
-  const found = new Map();
-  for (const wrapper of rows(detail.records)) {
-    if (wrapper.record_type === "decision" && isObject(wrapper.record)) {
-      found.set(wrapper.record.gate_id, wrapper.record);
-    }
-  }
-  return found;
-}
-
-//: Every gate this run's plan names, and where it stands. Read off the plan and
-//: the projection the run read already carries; nothing here is stored twice
-//: and no step is invented that the plan does not hold.
-export function decisionRows(detail) {
-  const graph = isObject(detail) ? detail.graph : null;
-  const definition = isObject(graph) ? graph.definition : null;
-  const runtime = isObject(graph) ? graph.runtime : null;
-  if (!isObject(definition) || !isObject(runtime)) return Object.freeze([]);
-  const run = isObject(detail.run) ? detail.run : {};
-  const position = new Map(rows(runtime.nodes).filter(isObject)
-    .map((row) => [row.node_id, row]));
-  const titles = new Map(rows(definition.nodes).filter(isObject)
-    .map((node) => [node.node_id, node.title]));
-  const receipts = receiptsOf(detail);
-  const found = [];
-  for (const node of rows(definition.nodes).filter(isObject)) {
-    if (typeof node.gate_id !== "string") continue;
-    const standing = position.get(node.node_id);
-    found.push(Object.freeze({
-      run_id: run.run_id, gate_id: node.gate_id, node_id: node.node_id,
-      title: node.title, mode: run.mode,
-      decision: standing && typeof standing.decision === "string"
-        ? standing.decision : "unknown",
-      unblocks: Object.freeze(rows(definition.edges).filter(isObject)
-        .filter((edge) => edge.from_node === node.node_id)
-        .map((edge) => Object.freeze({node_id: edge.to_node,
-          title: titles.has(edge.to_node) ? titles.get(edge.to_node) : null}))),
-      receipt: receipts.has(node.gate_id) ? receipts.get(node.gate_id) : null,
-    }));
-  }
-  return Object.freeze(found);
-}
-
-//: Who this run froze, joined to what this build says those bindings may be
-//: asked for. The controls read is the source; a run with none states nothing
-//: rather than defaulting a capability list to empty.
-function participantsOf(detail) {
-  const controls = isObject(detail) ? detail.controls : null;
-  if (!isObject(controls)) return Object.freeze([]);
-  const runId = isObject(detail.run) ? detail.run.run_id : undefined;
-  return Object.freeze(rows(controls.instances).map((row) => Object.freeze(
-    runId === undefined ? row : {...row, run_id: runId})));
-}
-
 // -- the arms -------------------------------------------------------------
 function spoken(state, notice) {
   return Object.freeze({...state, notice});
@@ -551,6 +500,11 @@ function workflowsLoaded(state, event) {
         + "Nothing on screen was replaced by a payload nobody can read."});
   }
   return Object.freeze({...state,
+    // The boundary already refused a name this build could not have written,
+    // so `settled.project` is a name or null and never a value to be checked
+    // again on the way to the screen.
+    project: Object.freeze({name: settled.project,
+      warnings: state.project.warnings}),
     providers: wireProviders(event.payload.providers),
     workflows: Object.freeze({...state.workflows, phase: "ready",
       list: frozenCopy(event.payload.workflows),
@@ -643,7 +597,10 @@ function runsLoaded(state, event) {
 //: standing while the others move would put two runs on one screen.
 function runMoved(state, phase, detail, notice) {
   return Object.freeze({...state,
-    project: Object.freeze({name: null,
+    // A run read carries the run's warnings and says nothing about the
+    // project's name, so the name already read is kept rather than cleared:
+    // opening a run must not un-name the project on screen.
+    project: Object.freeze({name: state.project.name,
       warnings: detail === null ? Object.freeze([]) : detail.warnings}),
     runs: Object.freeze({...state.runs, phase, detail,
       selectedId: detail === null ? state.runs.selectedId : detail.run.run_id}),

@@ -33,6 +33,19 @@ def _init_args(tmp_path, *extra):
     return _build_parser().parse_args(["init", "--dir", str(tmp_path), *extra])
 
 
+def _scaffolded(name, tmp_path):
+    """The map `conduct init` writes for one template under `tmp_path`.
+
+    Every road names the project now -- `--template` and the non-terminal path
+    included -- so the expected document is the template WITH the project
+    substituted, and the name is derived here the way `init` derives it rather
+    than spelled out, so a change to that derivation moves the expectation with
+    the code instead of leaving this file asserting yesterday's rule.
+    """
+    return templates.get(name, project=conductor.init._default_project(
+        str(tmp_path)))
+
+
 def _scripted(answers):
     """An `ask` replaying `answers`, then behaving exactly like a closed stdin.
 
@@ -75,7 +88,7 @@ TEMPLATE_NAMES = ["default-orbit", "single-harness", "empty", "minimal"]
 @pytest.mark.parametrize("name", TEMPLATE_NAMES)
 def test_init_template_writes_that_template_and_validates_clean(tmp_path, capsys, name):
     assert main(["init", "--dir", str(tmp_path), "--template", name]) == 0
-    assert _map_text(tmp_path) == templates.get(name)
+    assert _map_text(tmp_path) == _scaffolded(name, tmp_path)
     assert name in capsys.readouterr().err          # which one it used is dialogue
     assert main(["validate", "--dir", str(tmp_path)]) == 0
     assert capsys.readouterr().out == ""
@@ -101,7 +114,7 @@ def test_init_non_tty_uses_the_default_template_and_never_reads_stdin(
     monkeypatch.setattr("builtins.input", boom)
     assert _interactive() is False                   # the suite IS the non-TTY case
     assert main(["init", "--dir", str(tmp_path)]) == 0
-    assert _map_text(tmp_path) == templates.get(templates.DEFAULT)
+    assert _map_text(tmp_path) == _scaffolded(templates.DEFAULT, tmp_path)
 
 
 @pytest.mark.parametrize("extra", [[], *[["--template", n] for n in TEMPLATE_NAMES]])
@@ -119,8 +132,8 @@ def test_init_default_scaffold_is_the_default_orbit_not_the_spec_example(tmp_pat
     # Orbit is the product's entry point, and the old spec-example scaffold
     # survives only as `--template minimal`.
     assert main(["init", "--dir", str(tmp_path)]) == 0
-    assert _map_text(tmp_path) == templates.get("default-orbit")
-    assert _map_text(tmp_path) != templates.get("minimal")
+    assert _map_text(tmp_path) == _scaffolded("default-orbit", tmp_path)
+    assert _map_text(tmp_path) != _scaffolded("minimal", tmp_path)
 
 
 def test_the_result_of_init_does_not_depend_on_a_tty(tmp_path, capsys):
@@ -293,7 +306,7 @@ def test_eof_before_any_answer_falls_back_to_the_default_template(tmp_path, caps
     # That is a script saying "no input", not a person cancelling — it must
     # produce the same scaffold the non-TTY path does, not an exit 1.
     assert conductor.init.run(_init_args(tmp_path), ask=_scripted([])) == 0
-    assert _map_text(tmp_path) == templates.get(templates.DEFAULT)
+    assert _map_text(tmp_path) == _scaffolded(templates.DEFAULT, tmp_path)
     assert "no input available" in capsys.readouterr().err
 
 
@@ -308,7 +321,7 @@ def test_a_nul_stdin_run_leaves_no_question_on_stdout(tmp_path, capsys, monkeypa
     monkeypatch.setattr("builtins.input", eof)
     assert conductor.init.run(_init_args(tmp_path), ask=_console_ask) == 0
     captured = capsys.readouterr()
-    assert _map_text(tmp_path) == templates.get(templates.DEFAULT)
+    assert _map_text(tmp_path) == _scaffolded(templates.DEFAULT, tmp_path)
     for question in ("three questions", "Project name", "choice [",
                      "Which harness", "no input available"):
         assert question not in captured.out

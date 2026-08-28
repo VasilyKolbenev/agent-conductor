@@ -45,7 +45,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from conductor import harnesses, merge, report, store
+from conductor import harnesses, merge, project_identity, report, store
 from conductor.command.adapters import AdapterRegistry
 from conductor.command.adapters.provider import ProviderConfig, ProviderConfigError
 from conductor.command.api_contracts import ApiRefusal
@@ -101,6 +101,8 @@ PANEL_ASSETS = {
     "/panel/studio-model.js": (
         "text/javascript; charset=utf-8", "studio-model.js"),
     "/panel/studio.js": ("text/javascript; charset=utf-8", "studio.js"),
+    "/panel/studio-runread.js": (
+        "text/javascript; charset=utf-8", "studio-runread.js"),
     "/panel/studio-store.js": (
         "text/javascript; charset=utf-8", "studio-store.js"),
     "/panel/studio-view.js": (
@@ -194,6 +196,17 @@ class Broker:
         """Return the raw stored bytes for one lane, or None when absent."""
         with self._lock:
             return self._lane_bytes.get(author)
+
+    def project_name(self) -> str | None:
+        """This project's name, off the LAST-GOOD map rather than the last read.
+
+        A map broken by an edit in progress keeps answering with the name it
+        had, for the same reason the merged state does: losing a project's
+        identity to a syntax error is a worse answer than holding the one that
+        was true a second ago. What counts as a name at all is
+        `project_identity`'s single rule, not a second copy of it here.
+        """
+        return project_identity.project_name(self._map_data)
 
     def _merge_loaded(self, loaded: store.Loaded) -> dict:
         """Merge a snapshot, pinning the last-good map across runtime breakage."""
@@ -699,7 +712,8 @@ class ConductServer(ThreadingHTTPServer):
         self.command_api = CommandApi(
             self.command_store, self.command_registry,
             session=self.command_session, budget=budget, clock=clock, ids=ids,
-            publish_run=self.clients.publish_run, providers=self.command_providers)
+            publish_run=self.clients.publish_run, providers=self.command_providers,
+            project=self.broker.project_name)
         # The effect belongs to server-owned workers, never to a request thread:
         # the coordinator holds the API's own runtime, so it spends exactly the
         # grants that boundary minted and can spend no others. Each start() mints

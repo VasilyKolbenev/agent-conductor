@@ -124,18 +124,23 @@ class CommandApi:
             clock: Callable[[], str], ids: Callable[[str], str],
             publish_run: Callable[[str], None],
             providers: Iterable[ProviderContract] = (),
-            templates: TemplateStore | None = None) -> None:
+            templates: TemplateStore | None = None,
+            project: Callable[[], str | None] = lambda: None) -> None:
         if not isinstance(store, RunStore) or not isinstance(registry, AdapterRegistry):
             raise TypeError("CommandApi requires a RunStore and AdapterRegistry")
         if templates is not None and not isinstance(templates, TemplateStore):
             raise TypeError("CommandApi templates must be a TemplateStore")
         if not isinstance(session, CommandSession) or type(budget) is not Budget:
             raise TypeError("CommandApi requires a CommandSession and Budget")
-        if not all(callable(value) for value in (clock, ids, publish_run)):
+        if not all(callable(value)
+                   for value in (clock, ids, publish_run, project)):
             raise TypeError("CommandApi providers must be callable")
         # Reviewed descriptors only, rebuilt by the projection before one field of
         # them is read; the boundary never resolves or probes a provider itself.
         self._providers = tuple(providers)
+        # A CALLABLE, not a value: the map holding the name is re-read while the
+        # server runs, so a name captured here would go stale against it.
+        self._project = project
         self._store = store
         # Rooted at the same project as the run store, because one project owns
         # one set of reusable plans; a caller may hand in its own for a test.
@@ -262,7 +267,8 @@ class CommandApi:
 
     def _list_workflows(self) -> CommandResponse:
         return CommandResponse(
-            *studio_routes.list_workflows(self._templates, self._providers))
+            *studio_routes.list_workflows(
+                self._templates, self._providers, self._project()))
 
     def _workflow_state(self, workflow_id: str) -> CommandResponse:
         return CommandResponse(

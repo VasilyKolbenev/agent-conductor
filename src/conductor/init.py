@@ -333,9 +333,15 @@ def _wizard(ask: Callable[[str], str], default_project: str) -> tuple[str, str]:
 
 
 def _default_project(dirname: str) -> str:
-    """The project root's own directory name, when that is a legal name."""
+    """The project root's own directory name, when that is a legal name.
+
+    Falls back to the placeholder rather than to an invented name: a directory
+    whose own name `NAME_RE` refuses is one this product cannot honestly use,
+    and `templates.UNNAMED` is the value every reader already knows to treat as
+    "nobody has chosen one yet".
+    """
     name = Path(dirname).resolve().name
-    return name if templates.NAME_RE.fullmatch(name) else "your-project"
+    return name if templates.NAME_RE.fullmatch(name) else templates.UNNAMED
 
 
 class _Prompter:
@@ -373,9 +379,15 @@ def _init_map_text(args: argparse.Namespace,
             a person started and abandoned.
         KeyboardInterrupt: Propagated from the wizard on Ctrl-C.
     """
+    # Every road names the project, not just the wizard. `--template` and the
+    # non-terminal path used to return the template verbatim, so a project
+    # scaffolded by a script or by CI carried the literal placeholder for the
+    # rest of its life -- and the Overview would have shown it as a name.
+    named = _default_project(args.dir)
     if args.template is not None:
-        return args.template, templates.get(args.template)
-    default = (templates.DEFAULT, templates.get(templates.DEFAULT))
+        return args.template, templates.get(args.template, project=named)
+    default = (templates.DEFAULT,
+               templates.get(templates.DEFAULT, project=named))
     if ask is None and not _interactive():
         return default
     prompter = _Prompter(_console_ask if ask is None else ask)

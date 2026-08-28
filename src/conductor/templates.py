@@ -359,7 +359,14 @@ _TEMPLATES: dict[str, tuple[str, str]] = {
 # What the literal templates above say, and therefore what `get()` swaps out
 # when a caller supplies its own values. `minimal` is quoted from the spec and
 # names its own example project, so both placeholders are recognised.
-_DEFAULT_PROJECT = "your-project"
+#: The name a template carries when nobody has chosen one. It is a PLACEHOLDER
+#: and not a name: every surface that shows a project must be able to tell the
+#: two apart, or a scaffolded project reports itself as "your-project" in the
+#: largest type on screen. `conduct init` replaces it on every road, and
+#: `UNNAMED` is what a reader checks against for the projects scaffolded before
+#: it did.
+UNNAMED = "your-project"
+_DEFAULT_PROJECT = UNNAMED
 _LEGACY_PROJECT = "web-app"
 _DEFAULT_PRIMARY = "claude-code"
 _DEFAULT_REVIEWER = "codex"
