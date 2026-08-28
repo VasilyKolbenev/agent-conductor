@@ -38,6 +38,7 @@ from conductor.__main__ import main
 from conductor.command import preview
 from conductor.command.contracts import DecisionReceipt, RunEnvelope
 from conductor.command.run_store import RunStore, snapshot_digest
+from tests.test_command_preview import a_project
 
 
 def _seed_the_previews_identity(root):
@@ -131,7 +132,7 @@ def _refusal_holding_the_contract(root, capsys, *, watched=None):
     """
     watched = watched if watched is not None else root / "conductor" / "runs"
     before = _tree_state(watched)
-    assert main(["preview", "--dir", str(root)]) == 1
+    assert main(["preview", "--dir", str(a_project(root))]) == 1
     captured = capsys.readouterr()
     assert captured.out == ""
     assert _tree_state(watched) == before
@@ -436,7 +437,7 @@ def _drive_holding_the_phrase_to_the_snapshot(root, capsys, *argv):
     """
     run_path = root / "conductor" / "runs" / "preview-run"
     before = _run_path_state(run_path)
-    code = main(["preview", "--dir", str(root), *argv])
+    code = main(["preview", "--dir", str(a_project(root)), *argv])
     captured = capsys.readouterr()
     after = _run_path_state(run_path)
     expected = code == 1 and before == after
@@ -491,7 +492,7 @@ def test_reopening_the_previews_own_run_says_no_phrase_and_leaves_the_path_as_it
     reopen writes nothing, and the relation requires the phrase absent all the
     same, because the exit code is 0.
     """
-    assert main(["preview", "--dir", str(tmp_path)]) == 0
+    assert main(["preview", "--dir", str(a_project(tmp_path))]) == 0
     capsys.readouterr()
     code, before, after, _ = _drive_holding_the_phrase_to_the_snapshot(
         tmp_path, capsys)

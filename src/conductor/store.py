@@ -16,6 +16,25 @@ from conductor import schema
 
 AUTHOR_RE = re.compile(r"\A[A-Za-z0-9_-]+\Z")
 
+#: How every file under conductor/ is decoded. `utf-8-sig` and not `utf-8`
+#: because Windows writes the signature: PowerShell's `Out-File -Encoding utf8`
+#: and every editor offering "UTF-8 with BOM" prefix the file with EF BB BF, and
+#: a person who saved their map that way changed nothing about what it says.
+#: Under plain `utf-8` that prefix decoded to a U+FEFF character and the map
+#: failed as "Invalid statement (at line 1, column 1)", the lane was reported
+#: broken, and events.jsonl silently dropped its first record.
+#:
+#: It reads the signature; it never writes one, and it is deliberately narrower
+#: than stripping U+FEFF wherever it appears. A BOM is a DOCUMENT-START artefact,
+#: so exactly one of them, at byte zero, is a spelling of the same document. A
+#: second one, one in the middle, and one opening the second line of
+#: events.jsonl are all content, and stay malformed — which is the difference
+#: tests/test_store_bom.py holds. On a file without the signature `utf-8-sig`
+#: decodes byte for byte as `utf-8` did, and it rejects genuinely invalid UTF-8
+#: with the same UnicodeDecodeError, which is a ValueError and so still lands in
+#: the tolerant `except` clauses below.
+ENCODING = "utf-8-sig"
+
 
 class StoreError(Exception):
     """Fail-closed startup errors: no conductor/ directory, or a broken map at server start."""
@@ -65,7 +84,7 @@ def _load_map(cdir: Path, out: Loaded) -> None:
         out.map_error = "map.toml is missing"
         return
     try:
-        data = tomllib.loads(map_path.read_text(encoding="utf-8"))
+        data = tomllib.loads(map_path.read_text(encoding=ENCODING))
     except (OSError, ValueError) as e:  # TOMLDecodeError and UnicodeDecodeError are ValueErrors
         out.map_error = f"map.toml unreadable: {e}"
         return
@@ -89,7 +108,7 @@ def _load_lanes(cdir: Path, out: Loaded) -> None:
                               "error": f"lane {stem}: invalid author filename {stem!r}"})
             continue
         try:
-            data = json.loads(path.read_text(encoding="utf-8"))
+            data = json.loads(path.read_text(encoding=ENCODING))
         except (OSError, ValueError) as e:  # JSONDecodeError/UnicodeDecodeError are ValueErrors
             out.lanes.append({"author": stem, "data": None, "error": f"lane {stem}: {e}"})
             continue
@@ -108,7 +127,10 @@ def _load_events(cdir: Path, out: Loaded) -> None:
     if not events_path.is_file():
         return
     try:
-        text = events_path.read_text(encoding="utf-8")
+        # One whole-file decode, then splitlines(): the signature is stripped
+        # once, from the document, and the per-line loop below never sees a
+        # BOM it should have accepted — nor loses one it must refuse.
+        text = events_path.read_text(encoding=ENCODING)
     except (OSError, ValueError) as e:
         out.warnings.append(f"events.jsonl unreadable: {e}")
         return

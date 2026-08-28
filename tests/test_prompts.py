@@ -1,10 +1,12 @@
 import json
 import tomllib
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
-from conductor import merge, prompts, schema, store, templates
+from conductor import merge, prompts, schema, store, templates, validate
+from conductor.__main__ import main
 from tests.test_merge_review import MAP, lane, finding
+from tests.test_store import write_project
 
 NOW = datetime(2026, 7, 30, 12, 0, tzinfo=timezone.utc)
 
@@ -216,10 +218,24 @@ def test_role_prompt_omits_the_stage_block_for_an_unstaged_role():
 def test_role_prompt_omits_the_stage_block_for_a_custom_phase_name():
     # A project with its own phases is legal (spec §2): the stage is valid but
     # is not an Orbit stage. Degrade silently — never render a wrong contract.
+    #
+    # The second half was spelled `"recon" not in text`, and that premise ended
+    # when the packet began recording the runtime phase: a lane's own now.phase
+    # is exactly where a project's phase name belongs, and the phase list is
+    # what makes the field answerable. So the two claims are separated. No
+    # stage block is rendered — every one of them opens `Stage: `. And the
+    # phase name reaches only the places a phase VALUE goes, never a line of
+    # prose, which is what the blanket assertion was standing in for.
     state = merge.merge(CUSTOM_MAP, None, [], [], 0, NOW)
     text = prompts.role_prompt(state, "impl", author="codex")
     assert "Stage:" not in text
-    assert "recon" not in text
+    starter = json.loads(_template_block(text).replace(
+        prompts._UPDATED_PLACEHOLDER, "2026-07-30T12:00:00+00:00"))
+    assert starter["now"]["phase"] == "recon"
+    prose = [line for line in text.splitlines() if "recon" in line
+             and line.strip() != '"phase": "recon"'
+             and not line.startswith("Cycle phases: ")]
+    assert prose == [], prose
 
 
 def test_role_prompt_keeps_the_generic_lifecycle_alongside_the_stage_block():
@@ -462,3 +478,198 @@ def test_every_variant_of_step_two_carries_the_work_and_an_imperative_the_others
         for other, elsewhere in _STEP_IMPERATIVES.items():
             if other is not variant:
                 assert elsewhere not in flat, (imperative, elsewhere)
+
+
+# --- the vended packet is judged by the validator, not by reading it ---------
+#
+# An agent follows the packet to the letter and `conduct validate` exits 1. That
+# happened because the packet asked for a `severity` from a closed set it never
+# named, showed `"findings": []` and never the shape of one -- so `claim`, which
+# is required and is not obvious from its name, was mentioned nowhere at all --
+# and never mentioned `now`, whose `task` and `phase` are the panel's Current
+# phase and current task and so stayed blank for the whole first hour.
+#
+# Reading the packet is what let that stand. Everything below EXTRACTS the
+# packet's examples and runs them through the real `conduct validate`, on a real
+# project, so an example that would fail for its reader fails here first.
+
+#: A project the packet is vended for. TOML text and not a dict, because the
+#: state under test comes from `store.load` of this very file: the map the
+#: prompt describes and the map the validator judges are then the same bytes,
+#: rather than two hand-kept copies that can drift apart.
+PACKET_MAP = '''schema_version = 1
+project = "shop"
+
+[[nodes]]
+id = "billing"
+label = "billing"
+kind = "component"
+
+[[cycle.roles]]
+id = "scout"
+harness = "cc"
+reviews = []
+stage = "detect"
+
+[cycle]
+phases = ["goal", "detect", "diagnose", "design", "deliver"]
+'''
+
+#: The same project with no phases declared at all -- legal (spec section 2),
+#: and the case where there is no runtime phase to honestly name.
+PACKET_MAP_NO_PHASES = '''schema_version = 1
+project = "shop"
+
+[[nodes]]
+id = "billing"
+label = "billing"
+kind = "component"
+
+[[cycle.roles]]
+id = "scout"
+harness = "cc"
+reviews = []
+'''
+
+
+def _json_blocks(text):
+    """Every fenced ```json document in a rendered packet, in order."""
+    return [part.split("\n```", 1)[0] for part in text.split("```json\n")[1:]]
+
+
+def _packet(tmp_path, map_toml=PACKET_MAP, author="codex"):
+    """Scaffold a real project, load it the way the CLI does, and vend a packet.
+
+    Returns:
+        `(root, text)` -- the project on disk and the packet vended for it.
+    """
+    root = write_project(tmp_path, map_toml=map_toml)
+    state = validate.merged_state(store.load(root))
+    return root, prompts.role_prompt(state, "scout", author)
+
+
+def _as_written_by_an_agent(block):
+    """One extracted document with the placeholders an agent is told to swap."""
+    fresh = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
+    return json.loads(block.replace(prompts._UPDATED_PLACEHOLDER, fresh))
+
+
+def _validated(root, author, lane, capsys):
+    """Write `lane` into the project and report what `conduct validate` says.
+
+    The whole point of this helper: the judgement is the command a person runs,
+    not a re-reading of the packet. A clean project writes zero bytes on both
+    streams, so a merge warning is as visible here as a schema error.
+    """
+    (root / "conductor" / "lanes" / f"{author}.json").write_text(
+        json.dumps(lane, indent=2), encoding="utf-8")
+    code = main(["validate", "--dir", str(root)])
+    captured = capsys.readouterr()
+    return code, captured.out + captured.err
+
+
+def test_the_packet_offers_exactly_the_severities_the_validator_accepts(tmp_path):
+    # A closed set the packet asks a value from and never names is how
+    # severity: "high" gets written. Held as an equality in both directions:
+    # a severity the validator accepts and the packet omits fails here, and so
+    # does one the packet offers and the validator rejects.
+    _, text = _packet(tmp_path)
+    line = next((l for l in text.splitlines() if "severity" in l and "|" in l), None)
+    assert line is not None, "the packet names no severity vocabulary at all"
+    offered = {word.strip() for word in line.split(":", 1)[1].split("|")}
+    assert offered == schema.SEVERITIES
+
+
+def test_the_packet_names_every_field_a_finding_must_have(tmp_path):
+    # `claim` is the sharp edge: required, not obvious from its name, and the
+    # one required finding field the packet used to mention nowhere.
+    _, text = _packet(tmp_path)
+    reference = text.split("Finding fields:\n", 1)[-1].split("\n\n", 1)[0]
+    assert reference != text, "the packet carries no finding field reference"
+    for field in ("id", "title", "claim", "severity", "detail", "evidence", "refs"):
+        assert field in reference, field
+    # And the required four are told apart from the optional three, because
+    # "claim is a field" and "claim is a field you must fill in" are different
+    # sentences and only the second one keeps a lane valid.
+    required = reference.split("optional", 1)[0]
+    for field in ("id", "title", "claim", "severity"):
+        assert field in required, field
+
+
+def test_a_finding_written_from_the_packets_example_is_accepted_by_the_project(
+        tmp_path, capsys):
+    # The only honest check: take the example OUT of the packet, put it in the
+    # lane the packet tells the agent to write, and run the real command.
+    root, text = _packet(tmp_path)
+    blocks = _json_blocks(text)
+    assert len(blocks) == 2, f"the packet carries {len(blocks)} json example(s), not 2"
+    starter, example = (_as_written_by_an_agent(b) for b in blocks)
+    starter["findings"] = [example]
+    code, said = _validated(root, "codex", starter, capsys)
+    assert (code, said) == (0, ""), said
+
+
+def test_the_starter_the_packet_vends_is_accepted_by_the_project(tmp_path, capsys):
+    # The starter is what an agent copies verbatim, so anything added to it --
+    # `now` included -- has to survive the same command, warnings and all. A
+    # `now.phase` naming a phase the project never declared warns here.
+    root, text = _packet(tmp_path)
+    code, said = _validated(root, "codex",
+                            _as_written_by_an_agent(_json_blocks(text)[0]), capsys)
+    assert (code, said) == (0, ""), said
+
+
+def test_the_packet_records_the_current_task_and_phase_the_panel_shows(tmp_path):
+    # `now.phase` is the sole input to the panel's Current phase and `now.task`
+    # to its current task. An agent following the packet to the letter never
+    # wrote either, so both stayed blank for the entire first hour.
+    root, text = _packet(tmp_path)
+    starter = _as_written_by_an_agent(_json_blocks(text)[0])
+    assert isinstance(starter.get("now"), dict), starter.get("now")
+    assert isinstance(starter["now"].get("task"), str) and starter["now"]["task"]
+    phases = validate.merged_state(store.load(root))["cycle"]["phases"]
+    assert starter["now"].get("phase") in phases
+
+
+def test_the_copy_safe_starter_still_reports_nothing_the_agent_has_not_found(
+        tmp_path):
+    # The over-correction control. The starter is copied VERBATIM into a real
+    # lane, so a worked finding moved into it would have every new project in
+    # the world reporting a fiction on its first write -- and the example is
+    # only useful because the starter stays empty.
+    _, text = _packet(tmp_path)
+    starter = _as_written_by_an_agent(_json_blocks(text)[0])
+    assert starter["findings"] == []
+    assert starter["verdicts"] == {}
+    assert starter["waits_on_human"] == []
+
+
+def test_the_packet_invents_no_node_id_and_no_phase(tmp_path):
+    # The second over-correction control, and the reason the example is derived
+    # rather than typed. A hardcoded refs entry or a hardcoded phase reads as a
+    # perfectly good example and warns on every project but the one it was
+    # written against.
+    root, text = _packet(tmp_path)
+    state = validate.merged_state(store.load(root))
+    nodes = {n["id"] for n in state["map"]["nodes"]}
+    phases = set(state["cycle"]["phases"])
+    for block in _json_blocks(text):
+        doc = _as_written_by_an_agent(block)
+        findings = doc["findings"] if isinstance(doc.get("findings"), list) else [doc]
+        for f in findings:
+            assert set(f.get("refs", [])) <= nodes, f.get("refs")
+        assert set(doc.get("map_status", {})) <= nodes
+        phase = (doc.get("now") or {}).get("phase")
+        assert phase is None or phase in phases, phase
+
+
+def test_the_packet_records_no_phase_where_the_project_declares_none(
+        tmp_path, capsys):
+    # The third control, and the one that stops "always write a phase" from
+    # becoming the fix. A project with no cycle.phases has no runtime phase to
+    # name, and naming one anyway is a warning on the reader's own lane.
+    root, text = _packet(tmp_path, map_toml=PACKET_MAP_NO_PHASES)
+    starter = _as_written_by_an_agent(_json_blocks(text)[0])
+    assert "phase" not in starter["now"], starter["now"]
+    code, said = _validated(root, "codex", starter, capsys)
+    assert (code, said) == (0, ""), said

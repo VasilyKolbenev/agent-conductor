@@ -685,8 +685,27 @@ def test_one_resolved_root_is_one_gate_and_a_second_root_is_never_held(tmp_path,
     elsewhere.mkdir()
     with skip_when_unavailable():
         plant_route_portal(alias, root, kind=kind)
-    if _at(alias).root != _at(root).root:
-        pytest.skip(f"this platform did not resolve a {kind} to its target root")
+    # Two questions, and the skip used to answer both with one. Whether the OS
+    # resolves this portal is a platform fact, so the OS is asked -- here, by
+    # this test, with a call that reaches no product code. Whether the workspace
+    # keys its gate by what the path resolved to is the property this test
+    # exists for, so it is asserted.
+    #
+    # Merged, they were `_at(alias).root != _at(root).root`, which is the
+    # negation of the assertion four lines below computed from the very door
+    # under test. `at()` losing its resolution -- `.absolute()`, bare `Path()`,
+    # or a `_gate_key` returning the spelled path -- made that condition true,
+    # and the guard reported SKIPPED on a green suite while blaming the platform
+    # for a regression the product had just introduced. Measured, with
+    # `.resolve()` swapped for `.absolute()` in harness_workspace.at:
+    #
+    #     SKIPPED [1] this platform did not resolve a junction to its target root
+    #     SKIPPED [1] this platform did not resolve a symlink to its target root
+    os_resolved_alias, os_resolved_root = os.path.realpath(alias), os.path.realpath(root)
+    if os_resolved_alias != os_resolved_root:
+        pytest.skip(f"this OS does not resolve a {kind} to its target: "
+                    f"{os_resolved_alias!r} is not {os_resolved_root!r}")
+    assert _at(alias).root == _at(root).root, "ALIAS_KEYED_BY_ITS_OWN_SPELLING"
     held, release = threading.Event(), threading.Event()
     holder = threading.Thread(
         target=_holds, args=(_at(root), held, release), daemon=True)

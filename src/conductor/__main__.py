@@ -193,6 +193,34 @@ def _cmd_demo(args: argparse.Namespace) -> int:
     return _serve(root, args.port)
 
 
+def _require_a_project(root: Path | str) -> None:
+    """Refuse a directory that is not a Conduct project, before anything writes.
+
+    Only `conduct init` may bring a project into existence. `preview` and
+    `integration-smoke` build a run store straight from `--dir` and reach
+    `runs_root.mkdir(parents=True)`; that `parents=True` is there for `runs/`
+    under an existing `conductor/`, and creating `conductor/` itself was its
+    side effect. Run either command one directory too high and the directory
+    silently became a project — and a durably broken one, because `conduct
+    init` refuses any existing `conductor` and would then report state the
+    person never created as their own.
+
+    The question asked is the one the rest of the product already means by
+    "this is a project": `conductor/` is a directory. `store.conductor_dir`
+    defines it, `doctor` reports its absence as a project that was never set
+    up, and the message raised here is theirs — it names the directory and the
+    command that fixes it, and `main` turns it into stderr with exit 1, leaving
+    stdout empty as the stream contract requires.
+
+    Args:
+        root: The project root the command was pointed at (`--dir`).
+
+    Raises:
+        store.StoreError: If `root` holds no `conductor/` directory.
+    """
+    store.conductor_dir(root)
+
+
 def _cmd_preview(args: argparse.Namespace) -> int:
     """Print the canonical dispatch preview for one configured instance.
 
@@ -204,7 +232,11 @@ def _cmd_preview(args: argparse.Namespace) -> int:
     standing at the preview's identity that is not the preview's own run are each
     a refusal on stderr with exit 1; stdout stays empty, so a redirected preview
     is never a half-written one.
+
+    A directory that is not a Conduct project yet is the refusal that comes
+    before all of those; `_require_a_project` says why.
     """
+    _require_a_project(args.dir)
     from conductor.command import preview          # deferred: see the import block
     try:
         rendered = preview.render_dispatch_preview(
@@ -226,7 +258,11 @@ def _cmd_integration_smoke(args: argparse.Namespace) -> int:
     writes the canonical result receipt to stdout. A run at the
     scenario's fixed identity that disagrees with it is a refusal on stderr with
     exit 1; stdout stays empty, so a redirected receipt is never a half-written one.
+
+    A directory that is not a Conduct project yet is refused before any of that,
+    for the reason `_require_a_project` records.
     """
+    _require_a_project(args.dir)
     from conductor.command import control_loop      # deferred: see the import block
     try:
         rendered = control_loop.render_integration_smoke(args.dir)

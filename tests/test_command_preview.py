@@ -25,6 +25,24 @@ from conductor.command.contracts import (
 from conductor.command.run_store import RunStore, snapshot_digest
 
 
+def a_project(root):
+    """Say the one thing `conduct preview` now requires before it writes anything.
+
+    The command used to bring `conductor/` into existence as a side effect of
+    making `conductor/runs/`, which turned any directory it was pointed at into
+    a project -- and a durably broken one, because a later `conduct init` there
+    refuses an existing `conductor/` and reports state the person never created
+    as their own. Only `init` may create a project now, so every test below that
+    starts from an empty directory has to say what `init` would have said.
+
+    It is deliberately the bare directory and not a scaffolded project: the
+    preview's own circuit is what these tests hold, and anything else `init`
+    writes would be state they never asked about.
+    """
+    (root / "conductor").mkdir(parents=True, exist_ok=True)
+    return root
+
+
 # --- CMD-4 MAJOR-2: the Day-1 preview gate (create run -> propose dispatch -> inspect) ---
 #
 # `conduct preview` drives the fixed CommandService end to end from the CLI: it
@@ -34,7 +52,7 @@ from conductor.command.run_store import RunStore, snapshot_digest
 
 
 def test_preview_creates_a_run_and_prints_a_canonical_dispatch_proposal(tmp_path, capsys):
-    assert main(["preview", "--dir", str(tmp_path)]) == 0
+    assert main(["preview", "--dir", str(a_project(tmp_path))]) == 0
     captured = capsys.readouterr()
     assert captured.err == ""
     out = captured.out
@@ -52,25 +70,25 @@ def test_preview_creates_a_run_and_prints_a_canonical_dispatch_proposal(tmp_path
 
 
 def test_preview_is_deterministic_across_reruns_and_fresh_directories(tmp_path, capsys):
-    assert main(["preview", "--dir", str(tmp_path / "a")]) == 0
+    assert main(["preview", "--dir", str(a_project(tmp_path / "a"))]) == 0
     first = capsys.readouterr().out
     # Re-running in the same dir opens the existing run and yields identical bytes.
-    assert main(["preview", "--dir", str(tmp_path / "a")]) == 0
+    assert main(["preview", "--dir", str(a_project(tmp_path / "a"))]) == 0
     assert capsys.readouterr().out == first
     # A fresh dir yields the very same canonical preview: nothing hidden leaks in.
-    assert main(["preview", "--dir", str(tmp_path / "b")]) == 0
+    assert main(["preview", "--dir", str(a_project(tmp_path / "b"))]) == 0
     assert capsys.readouterr().out == first
 
 
 def test_preview_refuses_an_unknown_instance_on_stderr_with_empty_stdout(tmp_path, capsys):
-    assert main(["preview", "--dir", str(tmp_path), "--instance", "ghost"]) == 1
+    assert main(["preview", "--dir", str(a_project(tmp_path)), "--instance", "ghost"]) == 1
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "ghost" in captured.err
 
 
 def test_preview_refuses_an_adapter_that_mismatches_the_frozen_binding(tmp_path, capsys):
-    assert main(["preview", "--dir", str(tmp_path), "--adapter", "codex"]) == 1
+    assert main(["preview", "--dir", str(a_project(tmp_path)), "--adapter", "codex"]) == 1
     captured = capsys.readouterr()
     assert captured.out == ""
     # The refusal names the instance and the binding it violates, not the caller's word.
@@ -182,7 +200,7 @@ def test_the_durable_snapshot_reports_a_file_planted_at_each_path_it_names(
 def _refuses_and_leaves_the_run_directory_untouched(root, capsys):
     """Run the preview against the seeded run; return the refusal's stderr."""
     before = _durable_snapshot(root)
-    assert main(["preview", "--dir", str(root)]) == 1
+    assert main(["preview", "--dir", str(a_project(root))]) == 1
     captured = capsys.readouterr()
     assert captured.out == ""
     # Byte for byte and path for path: a refusal that wrote anyway is the defect.
@@ -199,7 +217,7 @@ def _the_previews_own_envelope(root, capsys):
     comparing it against a value the test itself seeded is comparing two facts
     that came from two different places, never one echoed back at itself.
     """
-    assert main(["preview", "--dir", str(root)]) == 0
+    assert main(["preview", "--dir", str(a_project(root))]) == 0
     capsys.readouterr()
     return RunStore(root).read("preview-run").envelope.as_dict()
 
@@ -229,14 +247,14 @@ def _refusal_sides(err, field):
 
 
 def test_preview_reopens_its_own_run_without_appending_a_second_proposal(tmp_path, capsys):
-    assert main(["preview", "--dir", str(tmp_path)]) == 0
+    assert main(["preview", "--dir", str(a_project(tmp_path))]) == 0
     first = capsys.readouterr().out
     journal = tmp_path / "conductor" / "runs" / "preview-run" / "records.jsonl"
     written = journal.read_bytes()
     assert len(written.splitlines()) == 1
     # The identical run is the one run this command may reopen, and reopening it
     # costs the history nothing: the proposal is the same immutable record.
-    assert main(["preview", "--dir", str(tmp_path)]) == 0
+    assert main(["preview", "--dir", str(a_project(tmp_path))]) == 0
     assert capsys.readouterr().out == first
     assert journal.read_bytes() == written
 
@@ -256,12 +274,12 @@ def test_preview_resumes_a_run_of_its_own_that_was_created_but_never_appended_to
     """
     # The expected stdout comes from a fresh directory the seeded run never touches:
     # what a resumed run must print is what production prints with nothing found.
-    assert main(["preview", "--dir", str(tmp_path / "fresh")]) == 0
+    assert main(["preview", "--dir", str(a_project(tmp_path / "fresh"))]) == 0
     fresh = capsys.readouterr().out
     journal = _seed_run_at_the_previews_identity(
         tmp_path, cycle_id="preview-orbit", config=preview.FROZEN_CONFIG, mode="propose")
     assert journal.read_bytes() == b""
-    assert main(["preview", "--dir", str(tmp_path)]) == 0
+    assert main(["preview", "--dir", str(a_project(tmp_path))]) == 0
     captured = capsys.readouterr()
     # Resumed, not refused and not restarted: the same canonical preview, and the
     # one proposal the empty journal was still owed, appended into the found run.
@@ -381,7 +399,7 @@ def _the_previews_own_history(root, capsys):
     Spelled out here rather than imported, so the expectation below is an
     independent restatement of the history and not the module's own answer.
     """
-    assert main(["preview", "--dir", str(root)]) == 0
+    assert main(["preview", "--dir", str(a_project(root))]) == 0
     capsys.readouterr()
     records = RunStore(root).read("preview-run").records
     return tuple(f"{row.kind} {row.value.proposal_id!r}" for row in records)
@@ -434,7 +452,7 @@ def test_preview_refuses_a_run_holding_its_own_proposal_id_on_other_facts(tmp_pa
     journal byte for byte. Without it the defence in depth would be an accident of
     a seam two modules away rather than a claim of this command's.
     """
-    assert main(["preview", "--dir", str(tmp_path / "own")]) == 0
+    assert main(["preview", "--dir", str(a_project(tmp_path / "own"))]) == 0
     capsys.readouterr()
     own = RunStore(tmp_path / "own").read("preview-run").records[0].value
     _seed_run_at_the_previews_identity(
@@ -464,7 +482,7 @@ def test_preview_refuses_a_run_holding_its_own_proposal_id_on_other_facts(tmp_pa
 
 def _the_previews_own_record_bytes(root, capsys):
     """The exact journal line a genuine `conduct preview` writes, terminator included."""
-    assert main(["preview", "--dir", str(root)]) == 0
+    assert main(["preview", "--dir", str(a_project(root))]) == 0
     capsys.readouterr()
     return (root / "conductor" / "runs" / "preview-run" / "records.jsonl").read_bytes()
 
@@ -592,7 +610,7 @@ def test_removing_a_ragged_run_out_of_band_lets_the_preview_create_a_fresh_one(
     # the preview writes the same journal it writes into a directory it has
     # never seen.
     shutil.rmtree(named)
-    assert main(["preview", "--dir", str(tmp_path)]) == 0
+    assert main(["preview", "--dir", str(a_project(tmp_path))]) == 0
     capsys.readouterr()
     assert journal.read_bytes() == genuine
 
@@ -655,10 +673,10 @@ def test_moving_a_foreign_object_out_of_band_reopens_the_run_with_records_intact
     stray.write_bytes(b"an editor's swap file, or whatever the antivirus dropped")
     err = _refuses_and_leaves_the_run_directory_untouched(tmp_path, capsys)
     assert repr(str(_named_run_path(tmp_path) / "stray.bin")) in err
-    assert main(["preview", "--dir", str(tmp_path)]) == 1  # waiting mends nothing
+    assert main(["preview", "--dir", str(a_project(tmp_path))]) == 1  # waiting mends nothing
     capsys.readouterr()
     shutil.move(str(stray), str(tmp_path / "stray.bin"))
-    assert main(["preview", "--dir", str(tmp_path)]) == 0
+    assert main(["preview", "--dir", str(a_project(tmp_path))]) == 0
     capsys.readouterr()
     assert journal.read_bytes() == genuine
 
@@ -676,11 +694,11 @@ def test_moving_a_ragged_run_aside_out_of_band_lets_a_fresh_run_be_written(
     (ragged_run / "records.jsonl").write_bytes(genuine + genuine.rstrip(b"\n"))
     err = _refuses_and_leaves_the_run_directory_untouched(tmp_path, capsys)
     assert repr(str(_named_run_path(tmp_path))) in err
-    assert main(["preview", "--dir", str(tmp_path)]) == 1  # waiting mends nothing
+    assert main(["preview", "--dir", str(a_project(tmp_path))]) == 1  # waiting mends nothing
     capsys.readouterr()
     aside = tmp_path / "kept-aside"
     shutil.move(str(ragged_run), str(aside))
-    assert main(["preview", "--dir", str(tmp_path)]) == 0
+    assert main(["preview", "--dir", str(a_project(tmp_path))]) == 0
     capsys.readouterr()
     assert (ragged_run / "records.jsonl").read_bytes() == genuine
     assert (aside / "records.jsonl").read_bytes() == genuine + genuine.rstrip(b"\n")
@@ -724,10 +742,10 @@ def test_a_refusal_on_facts_the_replay_states_still_names_the_run_directory(
     named = _named_run_path(tmp_path)
     assert repr(str(named)) in err
     assert "changed nothing in the run directory" in err
-    assert main(["preview", "--dir", str(tmp_path)]) == 1  # waiting mends nothing
+    assert main(["preview", "--dir", str(a_project(tmp_path))]) == 1  # waiting mends nothing
     capsys.readouterr()
     shutil.move(str(named), str(tmp_path / "kept-aside"))
-    assert main(["preview", "--dir", str(tmp_path)]) == 0
+    assert main(["preview", "--dir", str(a_project(tmp_path))]) == 0
     capsys.readouterr()
     assert (named / "records.jsonl").read_bytes() == _the_previews_own_record_bytes(
         tmp_path / "fresh", capsys)
@@ -786,7 +804,7 @@ def test_preview_names_a_link_the_store_does_not_own_whatever_it_points_at(
         link.rmdir()
     else:
         link.unlink()
-    assert main(["preview", "--dir", str(tmp_path)]) == 0
+    assert main(["preview", "--dir", str(a_project(tmp_path))]) == 0
     capsys.readouterr()
     assert (run_path / "records.jsonl").read_bytes() == _the_previews_own_record_bytes(
         tmp_path / "fresh", capsys)

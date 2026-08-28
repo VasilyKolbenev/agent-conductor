@@ -537,6 +537,74 @@ def test_up_on_a_genuinely_busy_port_prints_the_port_hint_from_a_real_process(tm
     assert "--port PORT" in proc.stderr
 
 
+# --- only `init` may bring a project into existence --------------------------
+#
+# `preview` and `integration-smoke` build a RunStore straight from `--dir` and
+# reach `runs_root.mkdir(parents=True)`, and that `parents=True` -- meant for
+# `runs/` under an existing `conductor/` -- created `conductor/` itself in
+# whatever directory the command was pointed at. The person who ran either
+# command in the wrong place got no warning and a durable one: `conduct init`
+# refuses any existing `conductor`, so the directory was then permanently
+# unusable as a project, and the state it refused to touch was state the user
+# never created.
+#
+# `conductor/` being a directory is what the house already means by "this is a
+# Conduct project" -- `store.conductor_dir` says so, and `doctor` reports its
+# absence as "this project was never set up". So these two commands ask that
+# question before they write, and the answer they give is the one the reader
+# has already been given everywhere else.
+
+PROJECT_COMMANDS = [["preview"], ["integration-smoke"]]
+
+
+def _tree(root):
+    """Every name under `root` with its bytes — the witness for "left alone"."""
+    return {path.relative_to(root).as_posix():
+            ("dir",) if path.is_dir() else ("file", path.read_bytes())
+            for path in sorted(root.rglob("*"))}
+
+
+@pytest.mark.parametrize("argv", PROJECT_COMMANDS)
+def test_a_command_that_is_not_init_creates_no_project_where_there_is_none(
+        argv, tmp_path, capsys):
+    # Enumerated before and after, so the claim is about the DIRECTORY and not
+    # about the one name a refusal happened to be written for.
+    before = _tree(tmp_path)
+    assert main([*argv, "--dir", str(tmp_path)]) == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""                    # the stream contract holds
+    assert "conduct init" in captured.err        # and it says what to run
+    assert _tree(tmp_path) == before == {}
+
+
+@pytest.mark.parametrize("argv", PROJECT_COMMANDS)
+def test_init_still_succeeds_in_a_directory_such_a_command_refused(
+        argv, tmp_path, capsys):
+    # The half that made this durable rather than merely untidy. A directory
+    # that has been previewed in must still be a directory a person can start a
+    # project in, and `init`'s own refusal is the thing that used to make it not
+    # one -- so the recovery is measured by running `init` for real.
+    assert main([*argv, "--dir", str(tmp_path)]) == 1
+    capsys.readouterr()
+    assert main(["init", "--template", "minimal", "--dir", str(tmp_path)]) == 0
+    assert "already exists" not in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("argv", PROJECT_COMMANDS)
+def test_inside_a_real_project_both_commands_still_do_their_whole_job(
+        argv, tmp_path, capsys):
+    # The over-correction control, and the reason the gate is `conductor/` and
+    # not something narrower. Refusing is only correct where there is nothing to
+    # work in: inside a scaffolded project each command must still print its one
+    # canonical line and leave its run durably on disk.
+    root = write_project(tmp_path)
+    assert main([*argv, "--dir", str(root)]) == 0
+    out = capsys.readouterr().out
+    assert out.endswith("\n") and out.count("\n") == 1
+    assert json.loads(out)
+    assert (root / "conductor" / "runs").is_dir()
+
+
 def test_demo_rejects_dir_flag(capsys):
     # Pin: demo materializes its own throwaway root — --dir is deliberately
     # not accepted (argparse usage error, exit 2). Demo behavior itself is

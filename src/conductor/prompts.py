@@ -85,6 +85,12 @@ _AUTHOR_PLACEHOLDER = "<your-author-id>"
 # for the current UTC ISO-8601 time on every write.
 _UPDATED_PLACEHOLDER = "REPLACE-WITH-CURRENT-UTC-ISO8601"
 
+# The literal `now.task` value. Prose rather than a token, because unlike
+# `updated` it is not swapped for a computed value: the agent writes a sentence,
+# and this is the shape of the sentence. Nothing validates it, so a lane that
+# keeps it verbatim is accepted — which is why the swap instruction names it.
+_TASK_PLACEHOLDER = "REPLACE-WITH-THE-ONE-THING-YOU-ARE-DOING"
+
 _LIFECYCLE = '''Lifecycle:
 - Read the map and the other agents' lanes before acting.
 - NEVER edit another agent's lane file.
@@ -173,10 +179,47 @@ _STAGE_CONTRACTS: dict[str, tuple[str, str, tuple[str, ...]]] = {
 }
 
 _VOCABULARIES = '''Closed vocabularies:
+- findings[].severity: blocker | major | minor | note
 - verdicts.*.disposition: confirmed | refuted | partial
 - map_status values: pass | fail | blocked | running | idle
 - waits_on_human.kind: decision | action | review
 - blocks entries and event ref values hold finding ids or map node ids'''
+
+# The one table an agent fills in when it has something to report. A field
+# reference and not a second document to reproduce — the worked example above it
+# carries the shape, and this says what each field is FOR.
+#
+# `claim` is why this block exists. It is required, it is not obvious from its
+# name, and it was the one required finding field the packet named nowhere: the
+# starter shipped `"findings": []`, and the pending-verdict section renders id,
+# title, severity, author, refs and evidence, so an agent that read a pending
+# finding and wrote one in the same shape produced a lane `conduct validate`
+# rejects. The severity vocabulary is stated once, with the other closed sets,
+# rather than a second time here — two copies of a closed set drift.
+_FINDING_FIELDS = '''  id          non-empty, and unique across every lane in the project
+  title       one line naming what you found
+  claim       your own assessment of it, as a short free-form label
+              (defect, risk, gap, question). Required, and the field
+              most often left out
+  severity    a value from the severity vocabulary listed further
+              down; there is no other legal value
+  detail      optional; the fuller explanation
+  evidence    optional; the path, log line or reproduced command
+  refs        optional; the map node ids this finding touches, and
+              only ids declared in the current map'''
+
+# What `now` is for, in the one place it can be acted on. `now.phase` is the
+# sole input to the panel's Current phase and `now.task` to its current task, so
+# a packet that never mentioned them left both blank for the whole first hour of
+# every project. `role.stage` is design-time — which phase this role works in —
+# and `now.phase` is runtime; they are told apart here because the packet
+# renders the stage and used to never name the phase it is distinct from.
+_NOW_CONTRACT = '''"now" is what the panel shows while you work, so keep it current:
+- task: one short sentence about what you are doing right now.
+- since: when you started THAT task, not when you last wrote the file.
+- phase: which cycle phase you are in — one of the phases listed
+  below, and nothing else. It is where you ARE, which is not the
+  same as the stage your role is assigned to.'''
 
 
 #: Where the map lives, relative to the project root, when no caller says
@@ -349,26 +392,82 @@ def bootstrap_prompt(map_path: str, map_text: str) -> str:
     )
 
 
-def _starter_template(role_id: str, author: str | None) -> str:
+def _runtime_phase(state: dict, role: dict) -> str | None:
+    """Pick the cycle phase this role's first lane write can honestly name.
+
+    Args:
+        state: A `state.json` dict as produced by `merge.merge()`.
+        role: The `state["cycle"]["roles"]` entry the prompt is vended for.
+
+    Returns:
+        The role's own `stage`, when the map declares one and it is a declared
+        phase, or None. Deliberately not a guess: `merge` warns on a `now.phase`
+        that names no `cycle.phases` value, so a seeded phase that is wrong
+        costs the reader a warning on their own lane every time they write it.
+        An unstaged role, and a project that declares no phases at all, get no
+        `phase` key — `_NOW_CONTRACT` and the rendered phase list still say what
+        the field is and which values are legal.
+    """
+    phases = state["cycle"]["phases"]
+    stage = role.get("stage")
+    return stage if isinstance(stage, str) and stage in phases else None
+
+
+def _starter_template(role_id: str, author: str | None, phase: str | None) -> str:
     """Serialize the copy-safe strict-JSON lane starter for one role.
 
     Args:
         role_id: The cycle role pre-filled into the template.
         author: The lane author, or None to emit the fill-in placeholder.
+        phase: The runtime phase to seed `now.phase` with, or None to omit the
+            key — see `_runtime_phase` for why an invented one is worse.
 
     Returns:
         A `json.dumps(..., indent=2)` lane skeleton that passes
-        `schema.validate_lane` once `updated` is swapped for a real time.
+        `schema.validate_lane` once `updated` is swapped for a real time, and
+        that draws no merge warning either. It stays EMPTY of findings,
+        verdicts and waits: it is copied verbatim into a real lane, so a worked
+        example living in it would have every new project report a fiction on
+        its first write. The worked example is rendered separately.
     """
+    now = {"task": _TASK_PLACEHOLDER, "since": _UPDATED_PLACEHOLDER}
+    if phase is not None:
+        now["phase"] = phase
     return json.dumps({
         "schema_version": 1,
         "author": author if author is not None else _AUTHOR_PLACEHOLDER,
         "role": role_id,
         "updated": _UPDATED_PLACEHOLDER,
+        "now": now,
         "map_status": {},
         "findings": [],
         "verdicts": {},
         "waits_on_human": [],
+    }, indent=2)
+
+
+def _finding_example(node_ids: list[str]) -> str:
+    """Serialize one worked `findings` entry, carrying every field it may hold.
+
+    Args:
+        node_ids: The current map's node ids. Only the first is used, and an
+            empty list yields empty `refs`.
+
+    Returns:
+        A `json.dumps(..., indent=2)` finding an agent can fill in and drop
+        into `findings`. `refs` is taken from the map that was actually
+        written rather than typed here: a hardcoded node id reads as a
+        perfectly good example and warns on every project but the one it was
+        written against.
+    """
+    return json.dumps({
+        "id": "F-1",
+        "title": "one line naming what you found",
+        "claim": "defect",
+        "severity": "major",
+        "detail": "the fuller explanation, when the title is not enough",
+        "evidence": "the path, log line or reproduced command that shows it",
+        "refs": node_ids[:1],
     }, indent=2)
 
 
@@ -464,12 +563,16 @@ def role_prompt(state: dict, role_id: str, author: str | None = None) -> str:
         raise UnknownRole(
             f"role {role_id!r} is not declared in cycle.roles (known roles: {known})")
     reviewed, reviewed_by = _review_directions(state, role)
-    node_ids = ", ".join(n["id"] for n in state["map"]["nodes"]) or "(none)"
+    nodes = [n["id"] for n in state["map"]["nodes"]]
+    node_ids = ", ".join(nodes) or "(none)"
+    phases = ", ".join(state["cycle"]["phases"]) or "(none declared)"
     stem = author if author is not None else _AUTHOR_PLACEHOLDER
     stage_block = _stage_block(role.get("stage"))
     lifecycle = f"{_LIFECYCLE}\n\n{stage_block}" if stage_block else _LIFECYCLE
-    swap = (f'Replace the "updated" value ({_UPDATED_PLACEHOLDER}) with the\n'
-            "current UTC ISO-8601 time on every write.")
+    swap = (f'Replace both {_UPDATED_PLACEHOLDER} values ("updated"\n'
+            'and "now.since") with real UTC ISO-8601 times, and the "now.task"\n'
+            "placeholder with what you are actually doing. Bump \"updated\" on\n"
+            "every write.")
     if author is None:
         swap += (f"\nReplace {_AUTHOR_PLACEHOLDER} with your author id — in the\n"
                  "lane file name too, not just the JSON.")
@@ -483,18 +586,32 @@ def role_prompt(state: dict, role_id: str, author: str | None = None) -> str:
         "no comments, copy it verbatim):\n"
         "\n"
         "```json\n"
-        f"{_starter_template(role_id, author)}\n"
+        f"{_starter_template(role_id, author, _runtime_phase(state, role))}\n"
         "```\n"
         "\n"
         f"{swap}\n"
         "map_status keys must be ids from the current map, listed below —\n"
         "never invent node ids.\n"
         "\n"
+        f"{_NOW_CONTRACT}\n"
+        "\n"
+        "When you have something to report, add an entry to \"findings\" with\n"
+        "this shape — do NOT copy it into your first lane, it is a worked\n"
+        "example and not a finding you have made:\n"
+        "\n"
+        "```json\n"
+        f"{_finding_example(nodes)}\n"
+        "```\n"
+        "\n"
+        "Finding fields:\n"
+        f"{_FINDING_FIELDS}\n"
+        "\n"
         f"{lifecycle}\n"
         "\n"
         f"{_VOCABULARIES}\n"
         "\n"
         f"Current map node ids: {node_ids}\n"
+        f"Cycle phases: {phases}\n"
         "\n"
         "The following findings are awaiting your verdict:\n"
         f"{_pending_block(state, role_id)}\n"
