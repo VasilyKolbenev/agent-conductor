@@ -275,6 +275,24 @@ function runButton(row, selectedId, handlers) {
   return button;
 }
 
+//: One row of the list, and the sentence its outcome word may never be shown
+//: without. The list is the FIRST place a reader meets that word -- before
+//: they have chosen anything to read -- so it is the place the rule matters
+//: most. The sentence is the one exported constant the detail already draws:
+//: there is a single copy of it in this file and it cannot drift from itself.
+//:
+//: It stands in the row BESIDE the button rather than inside it. A button's
+//: accessible name is the words it contains and a paragraph is not phrasing
+//: content, so a sentence put inside the control would be invalid markup and
+//: a name too long to be spoken as one.
+function runRow(row, selectedId, handlers) {
+  const item = element("li", {}, [runButton(row, selectedId, handlers)]);
+  if (row.last_outcome === "verification_failed") {
+    item.append(note(VERIFICATION_FAILED_NOTE));
+  }
+  return item;
+}
+
 function runList(state, handlers) {
   const list = rows(state.list);
   const body = [banner(state.phase),
@@ -284,10 +302,7 @@ function runList(state, handlers) {
       + "Workflow screen is what creates the first."));
   } else {
     const items = element("ul", {className: "studio-runs__rows"});
-    for (const row of list) {
-      items.append(
-        element("li", {}, [runButton(row, state.selectedId, handlers)]));
-    }
+    for (const row of list) items.append(runRow(row, state.selectedId, handlers));
     body.push(items);
   }
   return element("nav", {className: "studio-runs__list",

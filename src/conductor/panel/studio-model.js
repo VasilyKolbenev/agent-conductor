@@ -465,7 +465,22 @@ export function projectRuns(payload) {
 const RUN_READ_KEYS = ["run", "config", "records", "warnings", "graph"];
 const RECORD_ROW_KEYS = ["record_type", "record"];
 const CONFIG_KEYS = ["cycle", "instances"];
-const CYCLE_KEYS = ["id"];
+//: A frozen cycle as the PRODUCT writes it, rather than as one road writes it.
+//: `command/studio_contracts.py RunInput.snapshot` -- the Studio's own open-run
+//: route -- writes `{id}`. `command/preview.py FROZEN_CONFIG` and
+//: `command/control_loop.py FROZEN_CONFIG` write `{id, phases}`, through the
+//: same `RunStore.create_run` into the same runs directory this window lists,
+//: so a run from `conduct preview` or from the integration smoke is a run this
+//: window must be able to OPEN and not merely list.
+//:
+//: `phases` is admitted and it is not read: this window takes nothing out of a
+//: cycle but its id, and the word's owner (`schema.py`, `cycle.phases must be a
+//: list of strings`) puts no id grammar on a phase name, so neither does this
+//: copy. The set stays CLOSED all the same -- a cycle carrying a third key is a
+//: configuration written by something this window has never been told about,
+//: and it refuses the read whole rather than reading the half it recognises.
+const CYCLE_REQUIRED = ["id"];
+const CYCLE_KEYS = ["id", "phases"];
 //: An instance entry omits `model` rather than spelling it null: the frozen
 //: configuration reads absence as "this build pinned none", and refuses an
 //: explicit null, because a configuration that chose a value chose one that is
@@ -509,10 +524,20 @@ function projectInstance(row) {
 
 function projectConfig(value) {
   if (!isPlainObject(value) || !exactKeys(value, CONFIG_KEYS)) return null;
-  if (!isPlainObject(value.cycle) || !exactKeys(value.cycle, CYCLE_KEYS)) {
+  const cycle = value.cycle;
+  if (!isPlainObject(cycle)
+      || !Object.keys(cycle).every((key) => CYCLE_KEYS.includes(key))
+      || !CYCLE_REQUIRED.every((key) => has(cycle, key))) {
     return null;
   }
-  if (!isId(value.cycle.id)) return null;
+  // The id is read; `phases` is only held to its shape. A cycle whose phases
+  // are not a list of names is a configuration written by something this
+  // window does not know, and it refuses the read rather than reading past it.
+  if (!isId(cycle.id)
+      || (has(cycle, "phases")
+          && (!Array.isArray(cycle.phases) || !cycle.phases.every(isText)))) {
+    return null;
+  }
   if (!Array.isArray(value.instances)) return null;
   const instances = [];
   const seen = new Set();
@@ -619,4 +644,63 @@ export function projectControls(payload) {
       (row) => !conflicted.has(row.instanceId))),
     providers: projectProviders(payload.providers),
   });
+}
+
+// -- the canvas's layout: pure, and therefore here ------------------------
+//
+// `studio-canvas.js` crossed the line cap and this is the half of it that
+// computes rather than draws. It is placement arithmetic over a document,
+// with no DOM, no clock and no network -- this module's own character --
+// and the canvas re-exports both names so nothing downstream had to move.
+
+export function edgeId(from, to) { return `${from} ${to}`; }
+export function edgeEnds(id) {
+  const parts = String(id).split(" ");
+  return parts.length === 2 ? {from: parts[0], to: parts[1]} : null;
+}
+
+// -- layout ----------------------------------------------------------------
+
+//: Columns from the longest path, rows from declaration order -- the model
+//: `graph-payload.computeLayout` uses, with the one difference that matters
+//: here: a DRAFT may hold a cycle, so this never refuses. An edge that still
+//: does not move the plan forward after relaxation is reported as `back` and
+//: is drawn dashed and labelled rather than silently straightened.
+export function canvasLayout(nodes, edges) {
+  const order = new Map(nodes.map((node, index) => [node.node_id, index]));
+  const depth = new Map(nodes.map((node) => [node.node_id, 0]));
+  const live = edges.filter(
+    (edge) => order.has(edge.from_node) && order.has(edge.to_node));
+  // Clamped as well as bounded. Without the ceiling a cycle keeps pushing its
+  // own members one column further apart every round, so two steps pointing at
+  // each other drew across five columns of empty grid; no plan is ever deeper
+  // than it has steps.
+  const deepest = Math.max(0, nodes.length - 1);
+  for (let round = 0; round < nodes.length; round += 1) {
+    let moved = false;
+    for (const edge of live) {
+      const next = Math.min(deepest, depth.get(edge.from_node) + 1);
+      if (next > depth.get(edge.to_node)) {
+        depth.set(edge.to_node, next);
+        moved = true;
+      }
+    }
+    if (!moved) break;
+  }
+  const floor = nodes.length ? Math.min(...depth.values()) : 0;
+  const used = new Map();
+  const cells = {};
+  for (const node of nodes) {
+    const column = depth.get(node.node_id) - floor;
+    const row = used.get(column) || 0;
+    used.set(column, row + 1);
+    cells[node.node_id] = {column, row};
+  }
+  return {
+    cells,
+    columns: nodes.length ? Math.max(...depth.values()) - floor + 1 : 0,
+    rows: nodes.length ? Math.max(...used.values()) : 0,
+    back: new Set(live.filter((edge) => depth.get(edge.to_node)
+      <= depth.get(edge.from_node)).map((edge) => edgeId(edge.from_node, edge.to_node))),
+  };
 }

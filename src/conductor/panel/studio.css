@@ -148,6 +148,10 @@ button{font:inherit;cursor:pointer;background:none;border:none;color:inherit}
                overflow:auto;min-height:220px;padding:12px}
 .studio-canvas svg{display:block}
 .studio-nodes{position:relative;min-height:40px}
+/* The drawing itself, and the positioned ancestor every step and port is
+   placed against: `studio-canvas.restack` writes --x and --y in this box's
+   coordinates, so the box has to be the one they mean. */
+.studio-canvas__stage{position:relative;transform-origin:0 0}
 .studio-edge{fill:none;stroke:var(--faint);stroke-width:1.2}
 /* A step is told apart by SHAPE and LABEL: the contour style says which kind
    it is, and the kind is written on the node as a word as well. */
@@ -164,6 +168,22 @@ button{font:inherit;cursor:pointer;background:none;border:none;color:inherit}
 .studio-node[aria-pressed="true"]{border-color:var(--ink)}
 .studio-node--gate{border-style:dashed}
 .studio-node--loop{border-style:double;border-width:3px}
+/* The connect handle, and the rule whose absence left it unreachable: it reads
+   the same two custom properties the step does, so without this it stayed in
+   normal flow at the stage's origin with every other handle, under the
+   absolutely positioned steps. --y is the middle of its own row and the
+   translate centres it on that line. It paints nothing of its own: the arrow
+   runs on the inherited --ink over the well, which the `.studio-field input`
+   row already measures on that same --sunk surface, and the 44px target the
+   shell declares over every button is what gives it its height. */
+/* The width is bounded by what it must NOT cover. A forward connection is drawn
+   across the column gap and a pointer selects it at its own midpoint, so a
+   handle that reached that far would take the click meant for the edge -- which
+   it did at 24px, with the gap only 46px wide. It starts at the step's edge and
+   stops short of the middle. */
+.studio-port{position:absolute;left:var(--x);top:var(--y);
+             transform:translateY(-50%);width:20px;padding:0;
+             display:flex;align-items:center;justify-content:center}
 .studio-node__title{font-size:12.5px;font-weight:640;overflow-wrap:anywhere}
 .studio-node__meta{font-size:10.5px;color:var(--muted);overflow-wrap:anywhere}
 .studio-node__chips{display:flex;gap:4px;flex-wrap:wrap}

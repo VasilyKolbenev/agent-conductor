@@ -11,6 +11,11 @@
 // labelled `run`, and the banner says out loud that a step id is the only join
 // this build has: `studio_routes.run_row` states the same from the other side.
 import {element} from "./command-view.js";
+// The pure half of the canvas: where a step goes, and how an edge is named.
+// It moved next door when this file crossed the line cap, and is re-exported
+// so the surface both other slices code against did not move with it.
+import {canvasLayout, edgeEnds, edgeId} from "./studio-model.js";
+export {canvasLayout, edgeEnds, edgeId};
 
 // -- vocabularies this module consumes -------------------------------------
 //
@@ -55,9 +60,9 @@ export const EDIT_TYPES = Object.freeze([
 ]);
 
 //: Cell geometry, in the units the browser suite measures. Same model as
-//: `graph-view.CELL`. The width is `studio.css`'s own `.studio-node` width so
-//: a step fills its slot and its port sits on its edge; the row pitch is
-//: generous because that rule declares a MIN height and a step grows.
+//: `graph-view.CELL`, with one difference: the height is the FLOOR that
+//: `.studio-nodes .studio-node` declares, never the pitch -- `restack` measures
+//: that, because a step grows past its floor and a constant cannot follow it.
 export const CELL = Object.freeze({width: 210, height: 112, gapX: 46, gapY: 36});
 const ZOOM_MIN = 0.4;
 const ZOOM_MAX = 2;
@@ -67,12 +72,6 @@ const PAN_STEP = 64;
 //: click. Below it the gesture selects, which is what a shaky hand meant.
 const DRAG_SLOP = 4;
 const SVG_NS = "http://www.w3.org/2000/svg";
-
-export function edgeId(from, to) { return `${from} ${to}`; }
-export function edgeEnds(id) {
-  const parts = String(id).split(" ");
-  return parts.length === 2 ? {from: parts[0], to: parts[1]} : null;
-}
 
 function call(handlers, name, value) {
   const handler = handlers && handlers[name];
@@ -144,54 +143,37 @@ export function runtimeIndex(state) {
   return {runId: String(runtime.run_id), byNode};
 }
 
-// -- layout ----------------------------------------------------------------
-
-//: Columns from the longest path, rows from declaration order -- the model
-//: `graph-payload.computeLayout` uses, with the one difference that matters
-//: here: a DRAFT may hold a cycle, so this never refuses. An edge that still
-//: does not move the plan forward after relaxation is reported as `back` and
-//: is drawn dashed and labelled rather than silently straightened.
-export function canvasLayout(nodes, edges) {
-  const order = new Map(nodes.map((node, index) => [node.node_id, index]));
-  const depth = new Map(nodes.map((node) => [node.node_id, 0]));
-  const live = edges.filter(
-    (edge) => order.has(edge.from_node) && order.has(edge.to_node));
-  // Clamped as well as bounded. Without the ceiling a cycle keeps pushing its
-  // own members one column further apart every round, so two steps pointing at
-  // each other drew across five columns of empty grid; no plan is ever deeper
-  // than it has steps.
-  const deepest = Math.max(0, nodes.length - 1);
-  for (let round = 0; round < nodes.length; round += 1) {
-    let moved = false;
-    for (const edge of live) {
-      const next = Math.min(deepest, depth.get(edge.from_node) + 1);
-      if (next > depth.get(edge.to_node)) {
-        depth.set(edge.to_node, next);
-        moved = true;
-      }
-    }
-    if (!moved) break;
-  }
-  const floor = nodes.length ? Math.min(...depth.values()) : 0;
-  const used = new Map();
-  const cells = {};
-  for (const node of nodes) {
-    const column = depth.get(node.node_id) - floor;
-    const row = used.get(column) || 0;
-    used.set(column, row + 1);
-    cells[node.node_id] = {column, row};
-  }
-  return {
-    cells,
-    columns: nodes.length ? Math.max(...depth.values()) - floor + 1 : 0,
-    rows: nodes.length ? Math.max(...used.values()) : 0,
-    back: new Set(live.filter((edge) => depth.get(edge.to_node)
-      <= depth.get(edge.from_node)).map((edge) => edgeId(edge.from_node, edge.to_node))),
-  };
-}
-
 function cellX(cell) { return cell.column * (CELL.width + CELL.gapX); }
-function cellY(cell) { return cell.row * (CELL.height + CELL.gapY); }
+function cellY(cell, pitch) { return cell.row * pitch; }
+function cellMid(cell, pitch) { return cell.row * pitch + (pitch - CELL.gapY) / 2; }
+
+//: The row pitch, MEASURED, with every step and port put on it and the box
+//: they need. `CELL.height` is a FLOOR -- `.studio-nodes .studio-node` declares
+//: it as a `min-height` and a step grows past it -- so the constant pitch
+//: `height + gapY` drew each step in a column on top of the one above it. The
+//: tallest step the browser really laid out is the pitch instead, so no step
+//: reaches the row below; one no pass has mounted measures 0 and keeps the
+//: floor. The box holds the trailing gap: the last ports are inside it.
+//: Called twice a pass -- once on the detached stage, once mounted -- and the
+//: second call is what corrects the floor's guess. It moves nothing when the
+//: two agree, so a render that changed no step's height writes no style.
+function restack(stage, drawn, context) {
+  let tallest = CELL.height;
+  for (const each of drawn) tallest = Math.max(tallest, each.node.offsetHeight);
+  if (tallest + CELL.gapY === context.pitch) return false;
+  context.pitch = tallest + CELL.gapY;
+  for (const each of drawn) {
+    each.node.style.setProperty("--x", `${cellX(each.cell)}px`);
+    each.node.style.setProperty("--y", `${cellY(each.cell, context.pitch)}px`);
+    each.port.style.setProperty("--x", `${cellX(each.cell) + CELL.width}px`);
+    each.port.style.setProperty("--y", `${cellMid(each.cell, context.pitch)}px`);
+  }
+  context.box = {width: context.layout.columns * (CELL.width + CELL.gapX),
+    height: Math.max(0, context.layout.rows * context.pitch - CELL.gapY)};
+  stage.style.width = `${context.box.width}px`;
+  stage.style.height = `${context.box.height}px`;
+  return true;
+}
 
 // -- focus, kept across an idempotent re-render ----------------------------
 //
@@ -223,10 +205,12 @@ function banner(shown, state, runtime) {
   strip.append(element("p", {className: "mono studio-canvas__phase",
     text: `read: ${typeof workflows.phase === "string" ? workflows.phase : "empty"}`}));
   const problems = rows(workflows.diagnostics).length;
+  // The plural belongs to the noun AND to the verb the noun governs.
+  const counted = problems === 1
+    ? "1 problem blocks" : `${problems} problems block`;
   if (shown.kind === "draft") {
     strip.append(element("p", {className: "studio-canvas__diagnostics",
-      text: problems
-        ? `${problems} problem${problems === 1 ? "" : "s"} block publishing this draft.`
+      text: problems ? `${counted} publishing this draft.`
         : "Nothing blocks publishing this draft."}));
   }
   if (runtime) strip.append(element("p", {className: "studio-canvas__runnote",
@@ -374,7 +358,7 @@ function nodeLines(node, parents) {
   return lines;
 }
 
-function nodeButton(node, cell, context) {
+function nodeButton(node, context) {
   const pressed = context.selection.kind === "node"
     && context.selection.id === node.node_id;
   const button = element("button", {
@@ -383,8 +367,6 @@ function nodeButton(node, cell, context) {
     "data-focus": `node-${node.node_id}`, "data-node-id": node.node_id,
     type: "button",
   }, nodeLines(node, context.parents.get(node.node_id) || []));
-  button.style.setProperty("--x", `${cellX(cell)}px`);
-  button.style.setProperty("--y", `${cellY(cell)}px`);
   const row = context.runtime && context.runtime.byNode.get(node.node_id);
   if (row) button.append(runStrip(row));
   // The flag is CONSUMED, not only read: a keyboard Enter has no pointerdown
@@ -424,7 +406,7 @@ function bindNodeDrag(button, node, context) {
     origin = null;
     button.style.transform = "";
     if (!context.gesture.moved) return;
-    const step = Math.round(dy / (context.view.zoom * (CELL.height + CELL.gapY)));
+    const step = Math.round(dy / (context.view.zoom * context.pitch));
     if (step !== 0) {
       call(context.handlers, "onEdit", {
         type: "reorder", nodeId: node.node_id,
@@ -434,16 +416,15 @@ function bindNodeDrag(button, node, context) {
 }
 
 //: A real button beside the step, not nested inside it: the step stays a
-//: `<button>` and both remain reachable by Tab.
-function portButton(node, cell, context) {
+//: `<button>` and both stay reachable by Tab. `restack` puts it on the step's
+//: right edge through the two custom properties `.studio-port` reads.
+function portButton(node, context) {
   const port = element("button", {
     "aria-label": `Connect from ${node.title}. Drag to another step, or use `
       + "the Transitions section of the inspector.",
     className: "studio-port", "data-focus": `port-${node.node_id}`,
     "data-port": node.node_id, disabled: context.editable ? null : "",
     type: "button"}, [element("span", {text: "→"})]);
-  port.style.setProperty("--x", `${cellX(cell) + CELL.width}px`);
-  port.style.setProperty("--y", `${cellY(cell) + CELL.height / 2}px`);
   port.addEventListener("click", () => call(context.handlers, "onStatus",
     "Drag from this port onto another step to connect them, or use the "
     + "Transitions section of the inspector."));
@@ -476,13 +457,13 @@ function bindConnectDrag(port, node, context) {
 
 // -- the edge layer --------------------------------------------------------
 
-function edgePath(cells, edge, back) {
+function edgePath(cells, edge, back, pitch) {
   const from = cells[edge.from_node];
   const to = cells[edge.to_node];
   const x1 = cellX(from) + CELL.width;
-  const y1 = cellY(from) + CELL.height / 2;
+  const y1 = cellMid(from, pitch);
   const x2 = cellX(to);
-  const y2 = cellY(to) + CELL.height / 2;
+  const y2 = cellMid(to, pitch);
   const bend = Math.max(18, Math.abs(x2 - x1) / 2);
   const path = document.createElementNS(SVG_NS, "path");
   path.setAttribute("class", back ? "studio-edge studio-edge--back" : "studio-edge");
@@ -501,7 +482,7 @@ function edgeHit(cells, edge, context) {
   const id = edgeId(edge.from_node, edge.to_node);
   const selected = context.selection.kind === "edge" && context.selection.id === id;
   const hit = document.createElementNS(SVG_NS, "path");
-  const path = edgePath(cells, edge, context.layout.back.has(id));
+  const path = edgePath(cells, edge, context.layout.back.has(id), context.pitch);
   hit.setAttribute("class", "studio-edge__hit");
   hit.setAttribute("d", path.getAttribute("d"));
   hit.setAttribute("fill", "none");
@@ -528,16 +509,16 @@ function edgeHit(cells, edge, context) {
 //: The one edge a `loop` node states rather than draws. `back_to` is not in
 //: `edges` -- that list is a DAG -- so the return is its own dashed, labelled
 //: line and can never be mistaken for a forward dependency.
-function loopReturn(cells, node) {
+function loopReturn(cells, node, pitch) {
   const from = cells[node.node_id];
   const to = cells[node.loop.back_to];
   if (!from || !to) return null;
   const path = document.createElementNS(SVG_NS, "path");
   const x1 = cellX(from) + CELL.width / 2;
-  const y1 = cellY(from) + CELL.height;
+  const y1 = cellY(from, pitch) + pitch - CELL.gapY;
   const x2 = cellX(to) + CELL.width / 2;
-  const y2 = cellY(to) + CELL.height;
-  const drop = CELL.gapY + CELL.height / 2;
+  const y2 = cellY(to, pitch) + pitch - CELL.gapY;
+  const drop = pitch / 2;
   path.setAttribute("class", "studio-edge studio-edge--loop");
   path.setAttribute("fill", "none");
   path.setAttribute("data-loop-return", edgeId(node.node_id, node.loop.back_to));
@@ -553,14 +534,13 @@ function drawEdges(svg, nodes, edges, context) {
     for (const name of ["viewBox", "width", "height"]) svg.removeAttribute(name);
     return;
   }
-  const width = context.layout.columns * (CELL.width + CELL.gapX) - CELL.gapX;
-  const height = context.layout.rows * (CELL.height + CELL.gapY) - CELL.gapY;
-  svg.setAttribute("viewBox", `0 0 ${Math.max(1, width)} ${Math.max(1, height)}`);
-  svg.setAttribute("width", String(Math.max(1, width)));
-  svg.setAttribute("height", String(Math.max(1, height)));
+  const {width, height} = context.box;
+  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  svg.setAttribute("width", String(width));
+  svg.setAttribute("height", String(height));
   for (const node of nodes) {
     if (isObject(node.loop) && cells[node.node_id]) {
-      const path = loopReturn(cells, node);
+      const path = loopReturn(cells, node, context.pitch);
       if (path) svg.append(path);
     }
   }
@@ -643,9 +623,12 @@ function editKey(event, context) {
   }
   if (selection.kind === null) return false;
   if (event.key === "Delete" || event.key === "Backspace") {
+    // The edit vocabulary names an end `fromId`/`toId`, as both inspector
+    // callers do; `edgeEnds` answers in the document's own two words.
+    const ends = edgeEnds(selection.id) || {};
     call(handlers, "onEdit", selection.kind === "node"
       ? {type: "delete-node", nodeId: selection.id}
-      : {type: "delete-edge", ...edgeEnds(selection.id)});
+      : {type: "delete-edge", fromId: ends.from, toId: ends.to});
     return true;
   }
   if (event.key === "d" && selection.kind === "node") {
@@ -705,29 +688,6 @@ function emptyNote(shown) {
       + "press t, g or l."});
 }
 
-//: ONE transformed layer, and the edge layer rides inside it. `studio.css`
-//: leaves `#workflowEdges` in normal flow, so an edge layer left where the
-//: markup puts it draws a band ABOVE the steps instead of behind them -- and
-//: two independently transformed siblings would have to be kept in step by
-//: hand, a drift a pointer finds before a reader does. So the provided SVG is
-//: appended INTO the stage: it keeps its id, its class and its place under
-//: `#workflowCanvas`, and inherits the one transform instead of copying it.
-//: The browser hit-tests a transformed subtree in its transformed position, so
-//: no coordinate is converted by hand at any zoom. The stage's box is sized to
-//: the drawing; the SVG's viewBox stays the content box `drawEdges` set.
-function applyView(stage, layout, view) {
-  const width = layout.columns
-    ? layout.columns * (CELL.width + CELL.gapX) - CELL.gapX : 0;
-  const height = layout.rows
-    ? layout.rows * (CELL.height + CELL.gapY) - CELL.gapY : 0;
-  stage.style.position = "relative";
-  stage.style.transformOrigin = "0 0";
-  stage.style.transform =
-    `translate(${view.x}px, ${view.y}px) scale(${view.zoom})`;
-  stage.style.width = `${Math.max(0, width)}px`;
-  stage.style.height = `${Math.max(0, height)}px`;
-}
-
 /**
  * Draw one workflow document, and every road for editing it.
  *
@@ -751,17 +711,24 @@ export function mountCanvas(mount, svg, state, handlers) {
     (edge) => edge.to_node === node.node_id).map((edge) => edge.from_node)]));
   const context = {
     editable: shown.kind === "draft", gesture: {moved: false}, handlers,
-    index: new Map(nodes.map((node, at) => [node.node_id, at])),
+    index: new Map(nodes.map((node, at) => [node.node_id, at])), pitch: 0,
     layout, parents, runtime, selection: selectionOf(state), view,
   };
-  // The stage is focusable, so it carries a focus key like every other
-  // control: it is where the keyboard road starts.
+  // The stage is focusable: it is where the keyboard road starts, so it
+  // carries a focus key like every other control.
   const stage = element("div", {className: "studio-canvas__stage",
     "data-editable": String(context.editable), "data-focus": "canvas-stage",
     tabindex: "0"});
-  // Layout this module owns, because it owns the two-layer geometry. Every
-  // colour on both layers is `studio.css`'s; nothing here paints.
-  applyView(stage, layout, view);
+  const drawn = nodes.map((node) => ({cell: layout.cells[node.node_id],
+    node: nodeButton(node, context), port: portButton(node, context)}));
+  restack(stage, drawn, context);
+  // ONE transformed layer, and the edge layer rides inside it: `studio.css`
+  // leaves `#workflowEdges` in normal flow, so an edge layer left where the
+  // markup puts it draws a band ABOVE the steps rather than behind them. The
+  // browser hit-tests a transformed subtree in its transformed position, so no
+  // coordinate is converted by hand at any zoom.
+  stage.style.transform =
+    `translate(${view.x}px, ${view.y}px) scale(${view.zoom})`;
   if (svg) {
     svg.style.position = "absolute";
     svg.style.left = "0";
@@ -769,10 +736,7 @@ export function mountCanvas(mount, svg, state, handlers) {
     drawEdges(svg, nodes, edges, context);
     stage.append(svg);
   }
-  for (const node of nodes) {
-    const cell = layout.cells[node.node_id];
-    stage.append(nodeButton(node, cell, context), portButton(node, cell, context));
-  }
+  for (const each of drawn) stage.append(each.node, each.port);
   bindKeys(stage, nodes, context);
   bindPan(stage, view, handlers);
   const chrome = element("div", {className: "studio-canvas__chrome"}, [
@@ -787,6 +751,7 @@ export function mountCanvas(mount, svg, state, handlers) {
   // Chrome first, drawing after, both in normal flow: the well scrolls one
   // column and no control is stacked over a step.
   mount.replaceChildren(chrome, stage);
+  if (restack(stage, drawn, context) && svg) drawEdges(svg, nodes, edges, context);
   if (!nodes.length) chrome.append(emptyNote(shown));
   restoreFocus(mount, key);
 }

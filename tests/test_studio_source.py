@@ -29,7 +29,15 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from conductor.command import contracts, run_store, studio_contracts, workflow_draft
+from conductor.command import (
+    contracts,
+    control_loop,
+    graph_template,
+    preview,
+    run_store,
+    studio_contracts,
+    workflow_draft,
+)
 from conductor.command.adapters import provider
 
 from tests.test_graph_source import _code
@@ -273,6 +281,20 @@ def _js_list(source: str, name: str) -> set[str]:
     return set(found)
 
 
+def _js_array(source: str, name: str) -> set[str]:
+    """A plain `const NAME = ["a", "b"];`, for a list that is not a vocabulary.
+
+    `_js_list` reads the frozen vocabularies, which are exported and shared. The
+    key sets a projection judges against are neither: they are local to one
+    check, and reading them here does not oblige the module to publish them.
+    """
+    body = re.search(rf"{name} = \[(.*?)\];", source, re.DOTALL)
+    assert body, name
+    found = re.findall(r'"([a-z_]+)"', body.group(1))
+    assert len(found) == len(set(found)), f"{name} repeats a key"
+    return set(found)
+
+
 def test_the_boundary_vocabularies_are_copies_of_the_layers_that_own_them():
     """Every closed word this window draws is a word the runtime can mint.
 
@@ -298,6 +320,47 @@ def test_the_boundary_vocabularies_are_copies_of_the_layers_that_own_them():
     # `verification_failed` is an outcome and it is not a success: a process
     # that exits 0 has finished, which is not the same as verified.
     assert "verification_failed" in _js_list(source, "RESULT_OUTCOMES")
+
+
+def test_the_frozen_configs_this_product_writes_are_ones_the_boundary_admits():
+    """Every road that freezes a configuration, held to what the window reads.
+
+    This is the class behind a real defect rather than a hypothetical. The
+    boundary demanded a cycle of exactly ``{id}`` -- the shape
+    `studio_contracts.RunInput.snapshot` writes -- while `conduct preview` and
+    the control loop both freeze ``{id, phases}`` through the same
+    `RunStore.create_run` into the same runs directory. So the first run most
+    people ever have was listed by the Studio and could not be opened, and its
+    timeline, positions, decisions and participants went blank together.
+
+    Three writers, and until now no pin: the other vocabularies above are each
+    read out of the one Python object that owns them, but a frozen config has no
+    single owner to read, so nothing noticed the disagreement. The relation is
+    therefore asserted over every writer this build has, and a fourth road that
+    freezes some other shape reds here rather than in a browser.
+    """
+    source = MODEL.read_text(encoding="utf-8")
+    admitted = _js_array(source, "CYCLE_KEYS")
+    required = _js_array(source, "CYCLE_REQUIRED")
+    assert required <= admitted, "a required cycle key the boundary does not admit"
+    written = [
+        ("conduct preview", preview.FROZEN_CONFIG),
+        ("the control loop", control_loop.FROZEN_CONFIG),
+        # The Studio's own road, built the way the route builds it, so the third
+        # writer is exercised rather than described.
+        ("the open-run route", studio_contracts.RunInput(
+            run_id="run-pin", cycle_id="cycle-pin", mode="confirm",
+            participants=(studio_contracts.Participant(
+                instance_id="instance-pin", provider_id="provider-pin",
+                model=None),),
+            workflow_id=None, revision=None,
+            binding=graph_template.RunBinding.from_dict({"assignments": {}}),
+        ).snapshot()),
+    ]
+    for who, config in written:
+        cycle = set(config["cycle"])
+        assert required <= cycle, f"{who} freezes a cycle missing {required - cycle}"
+        assert cycle <= admitted, f"{who} freezes a cycle the window refuses: {cycle}"
 
 
 def test_the_instant_grammar_is_the_copy_the_graph_window_already_answers_for():

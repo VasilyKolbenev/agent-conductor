@@ -114,6 +114,16 @@ const ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 //: decision draft holds. It is a screen limit, not a contract one, and it is
 //: written on the label so nobody's sentence is cut off in silence.
 const REASON_LIMIT = 200;
+//: Why the one write control on this screen is shut while the socket is down.
+//: A decision write is gated on the STREAM being open -- not on any workflow's
+//: readiness, because a decision is not about a workflow -- so a control that
+//: stayed pressable while it is down would invite a press the door has already
+//: decided to refuse, which is the two workflow write controls' behaviour and
+//: not this one's. The reason is SAID here rather than left to a grey button:
+//: a control that greys with no sentence teaches a person that the product
+//: cannot do the thing, when what happened is that the line went down.
+const STREAM_DOWN_REASON = "The live connection is down, so nothing can be "
+  + "recorded until it is back. What you have typed here is kept.";
 
 const NOT_STATED = "not stated";
 
@@ -339,7 +349,7 @@ function textControl(name, key, draft, edit, label, attributes) {
   ]);
 }
 
-function decisionForm(row, draft, handlers) {
+function decisionForm(row, draft, handlers, live) {
   const edit = handlerOf(handlers, "editDecision");
   const submit = handlerOf(handlers, "submitDecision");
   const form = element("form", {className: "studio-decide"});
@@ -359,8 +369,12 @@ function decisionForm(row, draft, handlers) {
     "data-focus-key": "action:submitDecision",
     text: "Record this decision", type: "submit",
   });
-  button.disabled = stops !== null || submit === null;
+  button.disabled = stops !== null || submit === null || !live;
+  if (!live) button.title = STREAM_DOWN_REASON;
   form.append(button);
+  // The dropped stream is said first: it is the one reason of the three that
+  // no amount of typing here answers.
+  if (!live) form.append(note(STREAM_DOWN_REASON));
   if (stops !== null) form.append(note(stops));
   if (submit === null) {
     form.append(note("This screen was mounted without a submitDecision "
@@ -378,7 +392,7 @@ function decisionForm(row, draft, handlers) {
   return form;
 }
 
-function decisionDetail(row, draft, handlers) {
+function decisionDetail(row, draft, handlers, live) {
   const receipt = object(row.receipt);
   const body = [
     element("h3", {text: show(row.title)}),
@@ -389,8 +403,9 @@ function decisionDetail(row, draft, handlers) {
     section("What becomes runnable once this is answered",
       [whatItUnblocks(row)]),
   ];
-  if (row.decision === "idle") body.push(decisionForm(row, draft, handlers));
-  else {
+  if (row.decision === "idle") {
+    body.push(decisionForm(row, draft, handlers, live));
+  } else {
     body.push(note("This gate has been answered. A decision is never edited; "
       + "answering again writes a receipt that supersedes this one."));
   }
@@ -434,8 +449,14 @@ function decisionList(state, draft, handlers) {
  */
 export function mountDecisions(mount, state, handlers) {
   const key = focusKey(mount);
-  const decisions = object(state && state.decisions) || {};
+  const whole = object(state) || {};
+  const decisions = object(whole.decisions) || {};
   const draft = object(decisions.draft) || {};
+  // The same question the write door itself asks, spelled the same way: an
+  // OPEN stream, and nothing about a workflow. Anything else -- connecting,
+  // closed, or a value this build does not know -- is not open, so the control
+  // is shut and says why.
+  const live = whole.connection === "open";
   const chosen = rows(decisions.list)
     .find((row) => decisionKey(row) === draftKey(draft)) || null;
   mount.replaceChildren(element("div", {className: "studio-decisions"}, [
@@ -449,7 +470,7 @@ export function mountDecisions(mount, state, handlers) {
       ? element("div", {className: "studio-decisions__detail"},
         [note("Choose a gate on the left to see why it is asking and what "
           + "each answer causes.")])
-      : decisionDetail(chosen, draft, handlers),
+      : decisionDetail(chosen, draft, handlers, live),
   ]));
   restoreFocus(mount, key);
 }

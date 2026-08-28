@@ -357,6 +357,35 @@ def _binding():
     return RunBinding.from_dict({"assignments": {ROLE: INSTANCE}})
 
 
+def _second_read_answers_another_revision(subject, templates):
+    """Make the store answer the judged revision once, another one for ever.
+
+    The substitution has to be a document the store could really hold, so it is
+    the judged revision's own bytes with one step's title and work item changed
+    -- a stored revision carries the identity a draft has not got yet, and a
+    replacement built from the draft shape would be refused for the wrong
+    reason. Answers with the judged revision and the live list of reads, so a
+    caller can assert on the plan AND on how many times the route asked.
+    """
+    judged = templates.load(WORKFLOW, 1)
+    later = json.loads(json.dumps(judged.as_dict()))
+    for node in later["nodes"]:
+        if node["node_id"] == "do":
+            node["title"] = "Do work nobody approved"
+            node["arguments"] = dict(node["arguments"], work_item_id="work-999")
+    replaced = GraphTemplate.from_dict(later)
+    assert replaced.as_dict() != judged.as_dict(), "the two reads are one document"
+
+    reads = []
+
+    def the_judged_one_then_another(workflow_id, revision):
+        reads.append((workflow_id, revision))
+        return judged if len(reads) == 1 else replaced
+
+    subject._templates.load = the_judged_one_then_another
+    return judged, reads
+
+
 def test_a_revision_replaced_after_it_was_judged_is_not_the_one_the_run_follows(
         tmp_path):
     """What was JUDGED is what is appended -- on the road a browser actually takes.
@@ -378,25 +407,7 @@ def test_a_revision_replaced_after_it_was_judged_is_not_the_one_the_run_follows(
     person loses.
     """
     subject, store, templates, events = a_project(tmp_path)
-    judged = templates.load(WORKFLOW, 1)
-    # The judged revision's own document, edited: a stored revision carries the
-    # identity a draft has not got yet, so the second answer has to be built
-    # from what the store actually holds rather than from the draft shape.
-    later = json.loads(json.dumps(judged.as_dict()))
-    for node in later["nodes"]:
-        if node["node_id"] == "do":
-            node["title"] = "Do work nobody approved"
-            node["arguments"] = dict(node["arguments"], work_item_id="work-999")
-    replaced = GraphTemplate.from_dict(later)
-    assert replaced.as_dict() != judged.as_dict(), "the two reads are one document"
-
-    reads = []
-
-    def the_judged_one_then_another(workflow_id, revision):
-        reads.append((workflow_id, revision))
-        return judged if len(reads) == 1 else replaced
-
-    subject._templates.load = the_judged_one_then_another
+    judged, reads = _second_read_answers_another_revision(subject, templates)
     opened = post(subject, "/command/runs", a_run())
     assert opened.status == 201, opened.payload
 

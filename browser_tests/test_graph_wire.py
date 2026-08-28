@@ -85,6 +85,13 @@ def _seed(root: Path) -> None:
     # the digest covers `run_id` -- and nothing asserts on it: what it is for is
     # being a run change that lands on a plan rather than on emptiness.
     store.append(dalio_definition(run_id=SECOND_RUN))
+    # `goal` and `do`, and deliberately never `identify`. That matters to what
+    # the loop chip reads: a pass is counted off the one step the loop reopens,
+    # and this plan's `back_to` IS `identify`. That step is attempted exactly
+    # once per trip, so its attempt count is the trip the run is on -- and a
+    # journal that never attempted it depicts an ordinary first traversal with
+    # nothing sent back around yet, which is `pass 0`. A run that has reopened
+    # nothing must not read as though it had.
     store.append(a_proposal(node_id="goal", index=1))
     doing = a_proposal(node_id="do", index=2)
     store.append(doing)
@@ -303,7 +310,9 @@ def test_a_durable_read_draws_the_plan_and_the_run_in_separate_places(
         assert DIGEST in source
         loop = page.locator('[data-node-id="retry-loop"]')
         assert "×3" in loop.locator(".g-loop-bound").inner_text()
-        assert "pass 1 of ×3" in loop.locator(".g-node__run").inner_text()
+        # Zero, and `_seed` records why: nothing has been attempted at the step
+        # this loop reopens.
+        assert "pass 0 of ×3" in loop.locator(".g-node__run").inner_text()
         # …and the plan's bound is NOT inside the run group.
         assert loop.locator(".g-node__run .g-loop-bound").count() == 0
         # The headings are uppercased by the stylesheet, so the rendered text
@@ -321,13 +330,11 @@ def test_a_durable_read_draws_the_plan_and_the_run_in_separate_places(
         assert "Claude Code" in palette and "DeepSeek Harness" in palette
         badge = page.locator('[data-node-id="do"] .hb__n').inner_text()
         assert badge == "claude-dev"
-        # The DEPLOYMENT section is the other half of that same rule, and the
-        # one place a product NAME appears on a step. The plan named the
-        # instance; the run's frozen configuration says which adapter serves it,
-        # and that id DOES have a registry row -- so a reader sees "Claude Code"
-        # here and `claude-dev` on the badge, which is exactly the distinction
-        # this window exists to keep. The static default cannot show this: it
-        # carries no registry copy, on purpose.
+        # DEPLOYMENT is the other half of that rule and the one place a product
+        # NAME appears on a step: the plan named the instance, the run's frozen
+        # configuration says which adapter serves it, and that id does have a
+        # registry row. "Claude Code" here and `claude-dev` on the badge is the
+        # distinction this window exists to keep.
         assert "DEPLOYMENT" in card
         deployment = page.locator("#detailCard .hb__n").last.inner_text()
         assert deployment == "Claude Code"

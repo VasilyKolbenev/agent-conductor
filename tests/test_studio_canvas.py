@@ -120,15 +120,28 @@ def test_both_studio_files_sit_in_the_panel_under_the_line_cap():
         assert len(_text(path).splitlines()) <= 800, path.name
 
 
+#: What each of these two files may reach for, in the order it spells them. The
+#: canvas gained the model when it crossed the line cap and its pure layout half
+#: moved next door; the inspector has not needed it. Both remain leaves in the
+#: sense that matters: neither can reach the other, and neither can reach a
+#: module that reaches back.
+_ALLOWED_IMPORTS = {
+    "studio-canvas.js": ["./command-view.js", "./studio-model.js"],
+    "studio-inspector.js": ["./command-view.js"],
+}
+
+
 def test_each_module_imports_exactly_what_the_module_table_allows_it():
     """The decomposition, spelled as import lists so a cycle cannot hide.
 
-    Both files are leaves: they take the shared DOM builders and nothing else.
-    The inspector may not reach the canvas, which is why the two carry
-    duplicate vocabulary copies and why the next test holds them equal.
+    The inspector may not reach the canvas, which is why the two carry duplicate
+    vocabulary copies and why the next test holds them equal. Neither may reach
+    a module that could reach back: `studio-model.js` imports nothing at all,
+    which is what makes it a safe neighbour for the canvas rather than a step
+    toward a cycle.
     """
     for path in STUDIO_FILES:
-        assert re.findall(IMPORTS, _text(path)) == ["./command-view.js"], path.name
+        assert re.findall(IMPORTS, _text(path)) == _ALLOWED_IMPORTS[path.name], path.name
     assert "from './" not in _code(*STUDIO_FILES)
 
 

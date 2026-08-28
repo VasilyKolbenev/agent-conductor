@@ -430,15 +430,18 @@ function addNode(draft, edit) {
       + "so nothing would carry it out."};
 }
 
-//: One arm per edit word, so the closed vocabulary IS the door: a type not
-//: named here reaches no drawing at all.
+//: One arm per edit word: a type not named here reaches no drawing at all. An
+//: arm that removed nothing answers `null`, or it would call the draft unsaved.
 const EDITS = Object.freeze({
   add: addNode,
   connect,
-  "delete-edge": (draft, edit) => ({draft: {...draft,
-    edges: draft.edges.filter((edge) =>
-      !(edge.from_node === edit.fromId && edge.to_node === edit.toId))},
-  notice: ""}),
+  "delete-edge": (draft, edit) => {
+    const kept = draft.edges.filter((edge) =>
+      !(edge.from_node === edit.fromId && edge.to_node === edit.toId));
+    return kept.length === draft.edges.length
+      ? {draft: null, notice: "That connection is not in this drawing."}
+      : {draft: {...draft, edges: kept}, notice: ""};
+  },
   "delete-node": dropNode,
   duplicate,
   reorder,
