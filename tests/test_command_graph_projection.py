@@ -13,8 +13,12 @@ a ceiling over there is a position here, and a reader can never confuse them.
 """
 from __future__ import annotations
 
+import ast
+from pathlib import Path
+
 import pytest
 
+from conductor.command import graph_projection
 from conductor.command.attempts import AttemptEvent, action_request_digest
 from conductor.command.contracts import (
     ActionProposal,
@@ -357,30 +361,166 @@ def test_only_a_gate_node_carries_a_decision_and_only_a_loop_a_pass(tmp_path):
         assert ("bound_reached" in row) is (kinds[row["node_id"]] == "loop")
 
 
-# -- a loop counts the work it actually reopens --------------------------------
+# -- a loop counts the trips it sent the work around, not the steps of one -----
 
 
-def test_a_loop_counts_the_attempts_on_the_cycle_it_reopens(tmp_path):
-    """`goal` runs before the loop's target, so going around never repeats it."""
+def a_traversal(store, node_ids, *, start=1):
+    """One distinct attempt on each named node, in the order a run takes them."""
+    for offset, node_id in enumerate(node_ids):
+        store.append(a_proposal(node_id=node_id, index=start + offset))
+    return start + len(node_ids)
+
+
+def the_loop(store):
+    return node_of(payload_of(store), "retry-loop")
+
+
+def test_a_whole_first_traversal_of_the_plan_is_still_only_the_first_pass(tmp_path):
+    """The reading a Cockpit must never offer, in the shape a real run makes it.
+
+    Dalio's cycle carries four steps that can act and a bound of three. Counting
+    a pass as the attempts recorded anywhere on that cycle made one ordinary
+    top-to-bottom traversal -- goal, identify, diagnose, design, do, each
+    attempted once -- report four passes and announce the ceiling reached, while
+    the loop had never sent any work around again.
+    """
     store = a_store(tmp_path)
-    store.append(a_proposal(node_id="goal", index=1))
-    loop = node_of(payload_of(store), "retry-loop")
-    assert (loop["pass"], loop["bound_reached"]) == (0, False)
+    assert the_node("retry-loop").loop.bound == 3
+    a_traversal(store, ("goal", "identify", "diagnose", "design", DO_NODE))
 
-    store.append(a_proposal(node_id="diagnose", index=2))
-    loop = node_of(payload_of(store), "retry-loop")
+    loop = the_loop(store)
     assert (loop["pass"], loop["bound_reached"]) == (1, False)
 
 
-def test_a_loop_says_bound_reached_only_when_the_plans_ceiling_is_met(tmp_path):
-    """Three passes against a bound of three; the ceiling is the definition's."""
+def test_work_on_the_cycles_other_steps_never_moves_the_pass(tmp_path):
+    """A pass is a trip, and only the reopened step marks the start of one.
+
+    `diagnose`, `design` and `do` all sit on the road the loop sends work
+    around, so counting their attempts moved the position once per step of a
+    single trip. They are work done ON a pass; they are never evidence of a
+    second one, and a journal that has never touched the reopened step has
+    taken no trip at all.
+    """
+    store = a_store(tmp_path)
+    a_traversal(store, ("goal", "diagnose", "design", DO_NODE))
+
+    loop = the_loop(store)
+    assert (loop["pass"], loop["bound_reached"]) == (0, False)
+
+
+def test_the_first_reopening_of_the_work_is_the_second_pass(tmp_path):
+    """A second attempt at the step the loop reopens IS the run going around.
+
+    The reopened node is attempted exactly once per trip, so its attempt count
+    is the trip the run is on -- one durable fact, with no arithmetic invented
+    on top of it.
+    """
+    store = a_store(tmp_path)
+    index = a_traversal(
+        store, ("goal", "identify", "diagnose", "design", DO_NODE))
+    assert the_loop(store)["pass"] == 1
+
+    store.append(a_proposal(node_id="identify", index=index))
+
+    loop = the_loop(store)
+    assert (loop["pass"], loop["bound_reached"]) == (2, False)
+
+
+def test_the_bound_is_reached_at_the_exact_pass_the_plan_names(tmp_path):
+    """Three whole trips against a bound of three; the ceiling is the plan's.
+
+    Each trip here is the work a reopening really produces -- a fresh attempt at
+    every acting step of the cycle -- so nothing can reach the bound by counting
+    one trip's steps instead of the trips themselves, and the flip is asserted
+    at every trip rather than only at the last.
+    """
     store = a_store(tmp_path)
     assert the_node("retry-loop").loop.bound == 3
-    for index, node_id in enumerate(("diagnose", "design", DO_NODE), start=1):
-        store.append(a_proposal(node_id=node_id, index=index))
-        loop = node_of(payload_of(store), "retry-loop")
-        assert loop["pass"] == index
-        assert loop["bound_reached"] is (index >= 3)
+    index = 1
+    for trip in (1, 2, 3):
+        index = a_traversal(
+            store, ("identify", "diagnose", "design", DO_NODE), start=index)
+        loop = the_loop(store)
+        assert loop["pass"] == trip, f"after trip {trip}"
+        assert loop["bound_reached"] is (trip >= 3), f"after trip {trip}"
+
+
+def test_two_proposals_that_name_one_attempt_are_one_pass(tmp_path):
+    """A pass is a set of attempts, never a count of documents.
+
+    The store screens identity on `proposal_id`, so one attempt may legally be
+    described by two proposals. A position that counted documents on the
+    reopened step would report a trip this run never took -- the same class of
+    over-count as the cycle-wide sum, reached from the other direction.
+    """
+    store = a_store(tmp_path)
+    store.append(a_proposal(node_id="identify", index=1))
+    store.append(
+        a_proposal(node_id="identify", index=2, attempt_id="attempt-001"))
+
+    loop = the_loop(store)
+    assert (loop["pass"], loop["bound_reached"]) == (1, False)
+
+
+# -- the position is a reading for a Human, and no decision rests on it --------
+
+
+#: The modules that decide what a run DOES: the loop that drives it, the
+#: service and coordinator that own its lifecycle, and the runtime beneath
+#: them. A loop's position is recomputed from the journal on every read and
+#: exists to be shown; a decision resting on it would turn a projection into
+#: control, and would then make correcting how a pass is counted a change to
+#: what the product executes rather than to what it displays.
+DECIDING_MODULES = ("runtime.py", "control_loop.py", "service.py",
+                    "coordinator.py")
+#: The two words this projection writes for a loop node and for nothing else.
+DISPLAY_ONLY_WORDS = frozenset({"pass", "bound_reached"})
+
+
+def _reads_a_display_word(source: str) -> set[str]:
+    """Every loop display word this source names, however it reaches for one.
+
+    `pass` is a Python keyword, so a reader can only ever spell it as a string:
+    a subscript, a `get`, a comparison against a key, a name bound to it
+    earlier. So every string constant in the module is judged rather than one
+    syntactic shape, which needs no list of the ways a dict can be read.
+    """
+    spoken = {node.value for node in ast.walk(ast.parse(source))
+              if isinstance(node, ast.Constant) and isinstance(node.value, str)}
+    return spoken & DISPLAY_ONLY_WORDS
+
+
+def test_the_display_word_gate_finds_a_module_that_would_read_the_position():
+    """The instrument, calibrated on a case it must catch and one it must not.
+
+    A gate that answers "clean" whatever it is given proves nothing about the
+    modules it clears, so it is shown finding both words -- one subscripted,
+    one fetched through a name -- before it is trusted to find none.
+    """
+    reader = ("KEY = 'bound_reached'\n"
+              "def decide(row):\n"
+              "    return row['pass'] if row.get(KEY) else None\n")
+    assert _reads_a_display_word(reader) == DISPLAY_ONLY_WORDS
+    assert _reads_a_display_word(
+        "def decide(row):\n    return row['phase']\n") == set()
+
+
+def test_no_module_that_decides_what_a_run_does_reads_the_loops_position():
+    package = Path(graph_projection.__file__).resolve().parent
+    # The same walk, over a real module off the same disk that DOES speak both
+    # words: without it the clean verdict below could come from a path that
+    # read nothing at all.
+    assert _reads_a_display_word(
+        (package / "graph_projection.py").read_text(encoding="utf-8")) == (
+            DISPLAY_ONLY_WORDS)
+    offenders: dict[str, list[str]] = {}
+    for name in DECIDING_MODULES:
+        path = package / name
+        assert path.is_file(), f"{name} has left the command package"
+        spoken = _reads_a_display_word(path.read_text(encoding="utf-8"))
+        if spoken:
+            offenders[name] = sorted(spoken)
+    assert offenders == {}, f"a run decision reached for a display value: {offenders}"
 
 
 # -- the two halves of a graph share no word but the join ----------------------

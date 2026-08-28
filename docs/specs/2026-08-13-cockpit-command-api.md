@@ -1371,9 +1371,13 @@ is the one reading a Cockpit must never offer.
   than one standing decision for one gate is `unknown`: the journal supports
   two answers, so it supports neither, and this projection does not choose.
 - `pass` and `bound_reached` — loop nodes only. `pass` counts the distinct
-  attempts recorded on the cycle the loop reopens — the nodes on a road from
-  its `back_to` to the loop itself — so work that ran before that step is never
-  counted as a repeat of it. `bound_reached` is `pass >= loop.bound`.
+  attempts recorded on the one node the loop reopens, its `back_to`. That step
+  is attempted exactly once per trip, so its attempt count IS the trip the run
+  is on, with no arithmetic invented on top of a durable fact. Work on the
+  cycle's other steps is work done ON a pass and never evidence of another one,
+  and a `back_to` nothing has attempted is `pass` 0: the loop has sent nothing
+  around. `bound_reached` is `pass >= loop.bound`, so `bound` is the greatest
+  pass the work may reach.
 
 An action that names no node is projected nowhere: a graph does not make every
 action part of it. A run whose journal does not replay has no projection at
@@ -1398,15 +1402,17 @@ For the graph, proposal and request of section 4.3:
       "outcome": null, "observed_at": null, "evidence_refs": [] },
     { "node_id": "retry", "phase": "idle", "attempt_ids": [],
       "outcome": null, "observed_at": null, "evidence_refs": [],
-      "pass": 1, "bound_reached": false }
+      "pass": 0, "bound_reached": false }
   ]
 }
 ```
 
 `apply` is `requested` and its `outcome` is `null`: a Human confirmed the work
 and nothing has reported on it. `human-gate` is `idle` because no receipt
-stands, never because a gate was assumed to pass. `retry` counts one pass
-against a bound of two — the one attempt recorded on the cycle it reopens.
+stands, never because a gate was assumed to pass. `retry` is on pass 0 against
+a bound of two: the loop reopens `plan`, no attempt names `plan`, and the one
+attempt this journal holds is `apply`'s — work on the way there, not a trip
+around.
 
 ### 6.2 `GET /command/runs/<run_id>/controls` — capability-derived controls
 

@@ -36,7 +36,7 @@ from .contracts import (
     DecisionReceipt,
     gate_decision,
 )
-from .graph_definition import GraphDefinition, GraphEdge, GraphNode
+from .graph_definition import GraphDefinition, GraphNode
 
 if TYPE_CHECKING:  # pragma: no cover -- import cycle avoided at runtime
     from .run_store import RecoveredRun
@@ -133,9 +133,16 @@ def _node_runtime(
     if node.gate_id is not None:
         row["decision"] = _gate_state(values, definition.run_id, node.gate_id)
     if node.loop is not None:
-        reopened = len(_attempt_ids(values, _cycle(definition, node)))
-        row["pass"] = reopened
-        row["bound_reached"] = reopened >= node.loop.bound
+        # The trip this run is on, read off the ONE node the loop reopens.
+        # That step is attempted exactly once per trip, so its attempt count is
+        # the position, with no arithmetic invented on top of a durable fact.
+        # Counting attempts across the whole cycle instead scored one pass per
+        # acting step of a single trip: Dalio's four acting steps against a
+        # bound of three said the ceiling was reached during the first,
+        # ordinary, top-to-bottom traversal, before anything was reopened.
+        entered = len(_attempt_ids(values, {node.loop.back_to}))
+        row["pass"] = entered
+        row["bound_reached"] = entered >= node.loop.bound
     return row
 
 
@@ -194,35 +201,3 @@ def _gate_state(values: tuple[Any, ...], run_id: str, gate_id: str) -> str:
     except ContractError:
         return "unknown"
 
-
-def _cycle(definition: GraphDefinition, loop: GraphNode) -> set[str]:
-    """The nodes a loop actually reopens: forward from ``back_to``, back to it.
-
-    A loop's pass count is about the work it sends around again, so the nodes
-    that count are the ones on a road from the step it reopens to the loop
-    itself. Nodes before that step ran once and are not repeated by it, and
-    nodes after the loop are not reached by going around.
-    """
-    assert loop.loop is not None
-    forward = _reachable(definition.edges, loop.loop.back_to, forward=True)
-    backward = _reachable(definition.edges, loop.node_id, forward=False)
-    return forward & backward
-
-
-def _reachable(
-        edges: tuple[GraphEdge, ...], start: str, *, forward: bool) -> set[str]:
-    """Every node reachable from ``start`` along the edges, in one direction."""
-    following: dict[str, list[str]] = {}
-    for edge in edges:
-        source, target = (
-            (edge.from_node, edge.to_node) if forward
-            else (edge.to_node, edge.from_node))
-        following.setdefault(source, []).append(target)
-    seen = {start}
-    pending = [start]
-    while pending:
-        for target in following.get(pending.pop(), ()):
-            if target not in seen:
-                seen.add(target)
-                pending.append(target)
-    return seen

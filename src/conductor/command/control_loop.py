@@ -30,6 +30,19 @@ creation, replay, confirmation, or execution.  A foreign run or a portal/alias
 on the store route is refused read-only: no proposal is first planted into state
 the gate did not create. A refused road reaches no spawn; the successful road
 does cross the owned-process surface described above.
+
+Reopening also REPAIRS one thing, because this gate is the single writer the run
+store reserves repair to. A crash inside an append leaves a newline-free tail on
+records.jsonl; `read` reports it and leaves it in place, so without a repair the
+run warns about itself forever and every later smoke refuses it. Once the route,
+the frozen envelope and config, the surviving history and the run directory's
+own contents have all agreed the run is this loop's, `recover` truncates that
+tail and the identity door is put to the repaired history again. Nothing else is
+repaired: a complete record that breaks a contract or a relation is corruption,
+refused with the store's own line number and left byte-for-byte alone, and a
+history this loop does not write -- including a terminal an operator recorded
+through `ControlRuntime.reconcile` -- is refused as foreign. The recovery for
+those is a fresh directory, which yields the identical receipt.
 """
 from __future__ import annotations
 
@@ -60,7 +73,14 @@ from .contracts import (
     canonical_json,
 )
 from .identity import history_is_one_of, mapping_differences
-from .run_store import RunExists, RunStore, StoreError, StoredRecord, snapshot_digest
+from .run_store import (
+    RecoveredRun,
+    RunExists,
+    RunStore,
+    StoreError,
+    StoredRecord,
+    snapshot_digest,
+)
 from .runtime import (
     AuthorizationError,
     Budget,
@@ -119,14 +139,7 @@ def _open_run(store: RunStore) -> RunEnvelope:
         store.create_run(envelope, FROZEN_CONFIG)
     except RunExists:
         found = store.read(_RUN_ID)
-        differences = mapping_differences(envelope.as_dict(), found.envelope.as_dict())
-        if differences or found.config != _REPLAYED_FROZEN_CONFIG:
-            raise GateError(
-                f"run {_RUN_ID!r} already exists with foreign envelope/config facts")
-        expected = _expected_histories(envelope)
-        if found.warnings or not history_is_one_of(found.records, expected):
-            raise GateError(
-                f"run {_RUN_ID!r} already exists with history this loop did not write")
+        _hold_own_facts(envelope, found)
         try:
             foreign = unowned_paths(store.run_path(_RUN_ID))
         except OSError as e:
@@ -135,7 +148,62 @@ def _open_run(store: RunStore) -> RunEnvelope:
         if foreign:
             raise GateError(
                 f"run {_RUN_ID!r} holds unowned durable objects: {list(foreign)!r}")
+        if found.warnings:
+            _repair_own_run(store, envelope)
     return envelope
+
+
+def _hold_own_facts(envelope: RunEnvelope, found: RecoveredRun) -> None:
+    """Refuse a run standing at this gate's fixed id whose facts are not its own.
+
+    A replay warning is deliberately NOT one of these refusals. It says a crash
+    interrupted one of this writer's own appends, which is a different fact from
+    somebody else having written the journal, and folding the two together made
+    the gate answer the second question when it had only been asked the first.
+    """
+    differences = mapping_differences(envelope.as_dict(), found.envelope.as_dict())
+    if differences or found.config != _REPLAYED_FROZEN_CONFIG:
+        raise GateError(
+            f"run {_RUN_ID!r} already exists with foreign envelope/config facts")
+    if not history_is_one_of(found.records, _expected_histories(envelope)):
+        raise GateError(
+            f"run {_RUN_ID!r} already exists with history this loop did not write")
+
+
+def _repair_own_run(store: RunStore, envelope: RunEnvelope) -> None:
+    """Finish the append a crash cut in half, as the one writer entitled to.
+
+    `read` never edits a durable byte, so a newline-free tail left by a killed
+    or out-of-space `_append_bytes` survives every later read and warns about
+    itself forever. `recover` truncates it, and the store reserves that to the
+    single writer of the run -- which, for this fixed id, is this gate. It is
+    called only once the route, the frozen envelope, the history and the run
+    directory's own contents have all agreed the run is this loop's, and before
+    a proposal is put anywhere near it.
+
+    The gate repairs explicitly rather than let it happen underneath: every
+    `append` recovers first, so the propose that follows would truncate the tail
+    on its own -- but only AFTER the identity door had passed judgment on a
+    prefix missing its last line, and only as a property of `CommandService`
+    that this gate does not get to promise. Here the run is whole, and judged
+    whole, before anything is proposed into it.
+
+    Only an interrupted final line is repairable. A complete record that
+    contradicts its contract or its neighbours is `CorruptRun`, raised out of
+    the read above and reported with the store's own line number; recovery is
+    never reached for it and never rewrites it.
+
+    The verdict is then taken from a fresh `read`, not from what `recover`
+    returned: recover reports the repairs it MADE as warnings of its own, so
+    only a plain read can say whether any unjudged byte is still there.
+    """
+    store.recover(_RUN_ID)
+    repaired = store.read(_RUN_ID)
+    _hold_own_facts(envelope, repaired)
+    if repaired.warnings:
+        raise GateError(
+            f"run {_RUN_ID!r} still replays with durable bytes this loop's own writer "
+            "could not repair: " + "; ".join(repaired.warnings))
 
 
 def _loop_event(
@@ -190,6 +258,11 @@ def _expected_histories(envelope: RunEnvelope) -> tuple[tuple[StoredRecord, ...]
     })
     # A durable request without a terminal result is ambiguous: execution may
     # have happened before a crash.  It must not be resumed automatically.
+    # The terminal `ControlRuntime.reconcile` writes over such a request is
+    # deliberately NOT listed. Every prefix here is one this gate writes itself,
+    # the lease-only `unknown` below included; an operator's terminal is not,
+    # and admitting it would let the gate exit 0 printing a receipt whose
+    # dispatch never crossed the spawn surface this gate exists to prove.
     return ((), rows[:1], rows[:2], rows[:3], rows[:4], rows,
             (*rows[:3], StoredRecord("action_result", unknown)))
 

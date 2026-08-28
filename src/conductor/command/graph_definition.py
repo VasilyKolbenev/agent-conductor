@@ -244,7 +244,10 @@ class GraphResource:
 class GraphLoop:
     """The ONE sanctioned cycle: how many passes at most, and back to where.
 
-    ``bound`` is a plan -- how many times this work may be reopened. Which pass
+    ``bound`` is a plan -- the greatest pass this work may reach, so a run
+    standing on pass ``bound`` has no trip left. It is a ceiling on the
+    position, not a count of reopenings beside it, because a screen that reads
+    "pass N of B" cannot have N and B counting two different things. Which pass
     a run is on is not here and never will be: that is the projection's
     ``pass``, and the two words are kept apart so a reader can never mistake a
     ceiling for a position.

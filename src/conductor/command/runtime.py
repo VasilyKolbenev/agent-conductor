@@ -38,9 +38,11 @@ other verification answer -- `mismatch`, `error`, a verifier that raised, and
 particular is never success: an adapter that exposes no verifier has proved
 nothing, and the product says execution observed and unverified rather than
 letting an exit code stand in for proof.
-Request-only recovery has no fresh effect authority and fails closed.
-Lease-only recovery becomes terminal ``unknown`` without another execute;
-observed recovery never executes. Terminal replay calls no adapter seam.
+Request-only recovery has no fresh effect authority and fails closed; the
+operator closes it explicitly with `reconcile`, which records one terminal
+``unknown`` and reaches no adapter seam. Lease-only recovery becomes terminal
+``unknown`` without another execute; observed recovery never executes. Terminal
+replay calls no adapter seam.
 """
 from __future__ import annotations
 
@@ -53,6 +55,7 @@ from typing import Any
 from weakref import WeakValueDictionary
 
 from .adapters import AdapterRegistry, AdapterVerification, PreparedAction
+from .attempt_replay import action_request_for, attempt_events_for, terminal_result_for
 from .attempts import AttemptEvent, OBSERVED_OUTCOMES, action_request_digest
 from .containment import render_legacy_run_route_violations, run_route_violations
 from .contracts import (
@@ -462,7 +465,9 @@ class ControlRuntime:
         if grant not in self._grants:
             raise ExecutionError(
                 f"action {canonical.action_id!r} has no live execution grant; its durable "
-                "request is ambiguous and requires reconciliation")
+                "request is ambiguous and requires reconciliation -- close it with "
+                "ControlRuntime.reconcile(run_id, action_id), which records one terminal "
+                "'unknown' result, executes nothing, and never reports success")
         return self._execute_granted(canonical, recovered, grant)
 
     def _recover_authorized(
@@ -797,3 +802,55 @@ class ControlRuntime:
         return Attempt(
             request=request, state=state, receipt=receipt,
             history=(*history, state), verification_evidence=evidence)
+
+    # -- reconcile: the operator's only road out of a request-only action --
+
+    def reconcile(self, run_id: str, action_id: str) -> Attempt:
+        """Close a request-only action with one terminal ``unknown`` receipt.
+
+        A durable request with no ``effect_lease`` proves no effect was ever
+        authorized to start: `_execute_granted` appends that lease BEFORE it
+        calls the adapter's execute seam, so an action that never reached a
+        lease never reached a spawn. `execute` still refuses such an action --
+        a restarted process holds no fresh effect authority -- and that refusal
+        used to leave it neither resumable nor terminal, with no operation
+        anywhere in the product able to end it. This is that operation.
+
+        It prepares, executes and verifies nothing, resolves no adapter, and
+        records ``unknown``: the only honest terminal for an effect nobody
+        observed, and one this runtime never promotes. An action carrying any
+        attempt event, or a terminal result already, belongs to `execute`'s own
+        recovery roads and is refused here rather than given a second terminal.
+        """
+        self._hold_lock_order(ExecutionError)
+        # The only entry here that takes bare strings rather than a contract
+        # value, so the ids are held to the contract before they reach a path.
+        try:
+            run_id, action_id = _id("run_id", run_id), _id("action_id", action_id)
+        except ContractError as e:
+            raise ExecutionError(str(e)) from e
+        with _operation_lock(self._lock_key("execute", run_id, action_id)):
+            self._hold_route(run_id, ExecutionError)
+            recovered = self._store.read(run_id)
+            if recovered.envelope.mode is not ControlMode.CONFIRM:
+                raise ExecutionError("Confirm runtime requires run mode 'confirm'")
+            if recovered.warnings:
+                raise ExecutionError(
+                    "reconcile refuses a run whose replay left unjudged durable bytes")
+            values = tuple(row.value for row in recovered.records)
+            stored = action_request_for(values, action_id)
+            if stored is None:
+                raise ExecutionError(
+                    f"action {action_id!r} has no durable request in run {run_id!r}")
+            if attempt_events_for(values, action_id):
+                raise ExecutionError(
+                    f"action {action_id!r} carries a durable attempt event; that "
+                    "recovery belongs to execute, which never repeats the effect")
+            if terminal_result_for(values, action_id) is not None:
+                raise ExecutionError(
+                    f"action {action_id!r} already has a terminal result")
+            return self._finish(
+                ActionRequest.from_dict(stored.as_dict()), AttemptState.UNKNOWN,
+                (AttemptState.ACCEPTED,),
+                detail="durable request with no effect lease; no effect was ever "
+                       "authorized to start, and reconcile started none")

@@ -312,4 +312,24 @@ def test_the_frozen_projection_says_confirmed_and_refuses_to_say_succeeded():
     assert rows["apply"]["phase"] == "requested"
     assert rows["apply"]["outcome"] is None
     assert rows["human-gate"]["decision"] == "idle"
-    assert (rows["retry"]["pass"], rows["retry"]["bound_reached"]) == (1, False)
+    assert (rows["retry"]["pass"], rows["retry"]["bound_reached"]) == (0, False)
+
+
+def test_the_frozen_loop_is_on_no_pass_because_nothing_has_reopened_the_work():
+    """A pass is a trip the loop sent work around, and this journal took none.
+
+    The example's one attempt is `apply`'s, and the loop reopens `plan`. Reading
+    work elsewhere on the cycle as a pass is what let an ordinary first
+    traversal announce the ceiling reached before anything had been reopened, so
+    the claim is derived here from the frozen plan's own `back_to` rather than
+    restated as a number a later edit could quietly move.
+    """
+    graph = GraphDefinition.from_dict(CANON["graph_definition_record"]["record"])
+    loop = next(node for node in graph.nodes if node.loop is not None)
+    rows = {row["node_id"]: row
+            for row in CANON["graph_runtime_projection"]["nodes"]}
+    assert rows[loop.loop.back_to]["attempt_ids"] == []
+    assert rows["apply"]["attempt_ids"] != [], "the example does record an attempt"
+    assert rows[loop.node_id]["pass"] == 0
+    assert rows[loop.node_id]["bound_reached"] is (
+        rows[loop.node_id]["pass"] >= loop.loop.bound)

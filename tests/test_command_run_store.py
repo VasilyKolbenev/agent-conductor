@@ -231,6 +231,50 @@ def test_result_must_follow_and_match_the_action_it_claims_to_finish(tmp_path):
     assert [row.kind for row in store.recover("run-001").records] == ["action_request"]
 
 
+def test_an_event_less_action_accepts_one_terminal_result_and_refuses_a_second(tmp_path):
+    """At-most-one-terminal is a property of the action, not of its event rows.
+
+    The uniqueness rule used to live inside `validate_event_result`, which the
+    store asked only when the action already carried an RT-2 attempt event. An
+    action that never got one -- a legacy journal, or the request-only road that
+    reconciliation closes -- therefore took a second, contradicting receipt on
+    append and on replay, and the projection reported whichever landed last. The
+    rule is asked of every terminal receipt now; only the lease and observation
+    relations still need an event to be judged against.
+
+    The two controls are the reason this is not simply "one result per action":
+    an identical retry is recognised by identity before any relation is judged,
+    so it stays the no-op the caller may repeat, and the first honest terminal
+    on an event-less action is still accepted.
+    """
+    store = RunStore(tmp_path)
+    store.create_run(a_run(), CONFIG)
+    store.append(an_action())
+    store.append(evidence())
+    assert store.append(a_result()) is True
+    journal = store.run_path("run-001") / "records.jsonl"
+    before = journal.read_bytes()
+
+    contradiction = a_result(
+        receipt_id="result-002", outcome="failed", evidence_refs=(), exit_code=7)
+    assert contradiction.outcome != a_result().outcome
+    with pytest.raises(StoreError, match="already has a terminal result"):
+        store.append(contradiction)
+    assert journal.read_bytes() == before
+    # An action of its own is untouched: the rule is keyed on the action, and a
+    # second action's first terminal result is still its first.
+    store.append(an_action(
+        action_id="action-002", attempt_id="attempt-002", idempotency_key="dispatch-002"))
+    assert store.append(a_result(
+        receipt_id="result-003", action_id="action-002", attempt_id="attempt-002",
+        evidence_refs=())) is True
+    # The byte-identical retry is still the no-op it always was, recognised by
+    # identity before the new rule is ever reached.
+    assert store.append(a_result()) is False
+    assert [row.kind for row in store.read("run-001").records] == [
+        "action_request", "evidence", "action_result", "action_request", "action_result"]
+
+
 def test_identical_append_is_idempotent_but_ids_and_idempotency_keys_cannot_change_meaning(
         tmp_path):
     store = RunStore(tmp_path)
@@ -522,6 +566,15 @@ def damage_result_without_its_action(store):
     return "action result names unknown action 'action-999'"
 
 
+def damage_second_terminal_result_on_an_event_less_action(store):
+    append_line(store, {
+        "record": a_result(
+            receipt_id="result-002", outcome="failed",
+            evidence_refs=(), exit_code=7).as_dict(),
+        "record_type": "action_result"})
+    return "action 'action-001' already has a terminal result"
+
+
 def damage_envelope_naming_another_run(store):
     path = store.run_path("run-001") / "run.json"
     path.write_bytes(canonical_line(a_run(run_id="run-999").as_dict()).encode("utf-8"))
@@ -575,6 +628,7 @@ def damage_decision_file_carrying_an_uncontracted_field(store):
     damage_duplicate_identity,
     damage_duplicate_idempotency_key,
     damage_result_without_its_action,
+    damage_second_terminal_result_on_an_event_less_action,
     damage_envelope_naming_another_run,
     damage_secret_reintroduced_into_the_frozen_config,
     damage_journalled_decision_without_its_file,

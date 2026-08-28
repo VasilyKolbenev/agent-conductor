@@ -32,6 +32,23 @@ def attempt_events_for(values: Sequence[object], action_id: str) -> list[Attempt
     ]
 
 
+def terminal_result_for(
+        values: Sequence[object], action_id: str) -> ActionResultReceipt | None:
+    """The one terminal receipt an action may already hold, if it holds one.
+
+    An action carries at most one terminal result, and that is true of the
+    action alone -- not of the attempt events it happens to have collected. The
+    predicate lives here so the store and `validate_event_result` ask the same
+    question of the same values rather than each spelling it for itself; asking
+    it in only one of the two places is how a journal with no attempt event came
+    to accept a second, contradicting receipt.
+    """
+    return next((
+        value for value in values
+        if isinstance(value, ActionResultReceipt) and value.action_id == action_id
+    ), None)
+
+
 def _bound_adapter(config: Mapping[str, Any], instance_id: str) -> str:
     try:
         bound = frozen_config_bindings(config).get(instance_id)
@@ -134,8 +151,7 @@ def _validate_evidence(
 def validate_event_result(
         values: Sequence[object], result: ActionResultReceipt,
         events: Sequence[AttemptEvent]) -> None:
-    if any(isinstance(value, ActionResultReceipt) and value.action_id == result.action_id
-           for value in values):
+    if terminal_result_for(values, result.action_id) is not None:
         raise AttemptRelationError(f"action {result.action_id!r} already has a terminal result")
     lease = next((event for event in events if event.phase == "effect_lease"), None)
     if lease is None:

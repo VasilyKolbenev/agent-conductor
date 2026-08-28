@@ -29,6 +29,7 @@ from .attempt_replay import (
     AttemptRelationError,
     action_request_for,
     attempt_events_for,
+    terminal_result_for,
     validate_attempt_event,
     validate_event_result,
 )
@@ -587,6 +588,13 @@ class RunStore:
                 if getattr(action, field) != getattr(value, field):
                     raise StoreError(
                         f"action result {field} does not match action {value.action_id!r}")
+            # At most one terminal result per action, asked of every result. The
+            # relations below it need an attempt event to be judged against; this
+            # one does not, and asking it only inside that branch let an
+            # event-less action record two contradicting terminals.
+            if terminal_result_for(prior_values, value.action_id) is not None:
+                raise StoreError(
+                    f"action {value.action_id!r} already has a terminal result")
             events = attempt_events_for(prior_values, value.action_id)
             if events:
                 try:
