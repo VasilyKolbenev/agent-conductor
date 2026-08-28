@@ -6,6 +6,13 @@ bundled harness registry at `/harnesses.json`, raw lane files at
 `/lane/<author>.json`, deterministic packets at `/handoff/<author>.md`, and a
 Server-Sent-Events stream at `/events`.
 
+Every one of those reads answers only the two exact `Host` values this process
+minted for its bound port — `127.0.0.1:<port>` and `localhost:<port>` — and
+refuses any other name before dispatch. Loopback binding keeps a stranger's
+packet off the socket but says nothing about whose page sent it, and a page
+that re-resolves its own name to loopback would otherwise read the whole
+merged project from its own origin.
+
 `/harnesses.json` is a *presentation* route and not part of Protocol v1. It
 answers with `harnesses.as_payload()` — the same bytes for every project,
 computed from the bundled registry and never from the merge — so the panel can
@@ -47,7 +54,7 @@ from conductor.command.http_api import (
     CommandApi,
 )
 from conductor.command.http_transport import (
-    CommandSession, HttpRefusal, command_content_length)
+    CommandSession, HttpRefusal, command_content_length, validate_command_host)
 from conductor.command.providers import ProviderResolution, resolve_providers
 from conductor.command.run_store import RunStore
 from conductor.command.runtime import Budget
@@ -346,8 +353,11 @@ class Handler(BaseHTTPRequestHandler):
         """Dispatch a GET to the matching `_serve_*` method, else 404."""
         path = urlsplit(self.path).path
         if path.startswith("/command"):
-            self._serve_command("GET")
-        elif path == "/":
+            self._serve_command("GET")     # keeps its own Host gate and refusal
+            return
+        if not self._read_host_is_allowed():
+            return
+        if path == "/":
             self._serve_panel()
         elif self.path in PANEL_ASSETS:
             self._serve_panel_asset(self.path)
@@ -363,6 +373,43 @@ class Handler(BaseHTTPRequestHandler):
             self._serve_handoff(path)
         else:
             self._send_404()
+
+    def _read_host_is_allowed(self) -> bool:
+        """Refuse a read whose Host this process never minted; say whether to go on.
+
+        Binding to 127.0.0.1 keeps a stranger's packet off this socket, but it
+        says nothing about whose PAGE sent it: a site the operator visits while
+        `conduct up` runs can re-resolve its own name to loopback and then read
+        every route here from its own origin. The panel, the merged state, the
+        raw lanes, the handoff packets and the event stream are the whole
+        project; none of them may answer a name this process did not hand out.
+
+        The check is delegated, never re-derived. It is the same function, over
+        the same ordered raw pairs, against the same session's two exact Host
+        values that the command surface already spends -- so there is one
+        allowlist to widen, not two, and a change of mind about loopback naming
+        cannot reach one arm while the other keeps the old rule.
+
+        The refusal is written in the legacy read arm's own plain prose rather
+        than the command surface's JSON envelope. That arm answers HTML,
+        markdown and raw lane bytes and has never spoken that vocabulary; the
+        difference is also what makes it visible if this gate is ever moved
+        ahead of the command branch, where it does not belong.
+
+        Returns:
+            True when dispatch may continue. False when the refusal has already
+            been sent, and the caller must return without serving anything --
+            in particular before the event stream, which commits a 200 as its
+            first act and would leave no status line for a later refusal.
+        """
+        try:
+            validate_command_host(self.headers.raw_items(),
+                                  self.server.command_session.allowed_hosts)
+        except HttpRefusal as refusal:
+            self._send_body(refusal.status, "text/plain; charset=utf-8",
+                            f"{refusal}\n".encode("utf-8"))
+            return False
+        return True
 
     def do_POST(self) -> None:             # required BaseHTTPRequestHandler name
         """Read one bounded command body; no legacy POST route exists."""

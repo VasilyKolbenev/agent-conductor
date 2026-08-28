@@ -201,6 +201,15 @@ class ArtifactAwareTransport(HeadlessCliTransport):
         work = self._workspace.work_dir(args.work_item_id)
         before = self._workspace.digest_work_tree()
         self._workspace.claim(request.run_id, request.action_id)
+        # This is the ONE road that asks for separated stderr, and the reason is
+        # the next four lines: `outcome.output` becomes durable artifact
+        # content, so a vendor's diagnostics riding the same stream would be
+        # published as part of the review. Separated here means DISCARDED, not
+        # held: nothing in this build reads a reviewer's stderr, and it is the
+        # likeliest place for a CLI to echo a key. That also settles why the
+        # `output_contains_env_value` gate below scans stdout alone -- stdout is
+        # the whole of what can be published, so it is the whole of what a
+        # redaction gate has to cover.
         outcome = self._attempt(
             self._review_argv, f"{WORK_DIR}/{args.work_item_id}",
             timeout=request.timeout_seconds, stdin_bytes=payload,

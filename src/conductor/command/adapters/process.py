@@ -17,7 +17,9 @@ name check, and each is provable by executing the child:
 - **Sanitized environment.** The child never inherits the parent environment
   wholesale. It receives exactly the parent variables an explicit allowlist
   names (the reference set for secrets, per law 8) plus explicit literal extras;
-  a parent variable outside the allowlist never reaches the child.
+  a parent variable outside the allowlist never reaches the child. The
+  allowlist is itself bounded: a credential or a tool-discovery variable, never
+  one a runtime reads to load code ahead of the pinned entrypoint's own.
 - **Bounded output.** Captured output is truncated at a stated byte bound and
   the outcome says so; a runaway child cannot exhaust the parent, because the
   pump keeps draining the pipe while discarding everything past the bound.
@@ -106,6 +108,66 @@ _ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
 #: The one capability this adapter executes; every other control stays absent.
 DISPATCH_CAPABILITY = "dispatch"
 
+#: Environment names an operator may NOT put in `env_allow`, grouped by the
+#: runtime that reads them, each group carrying the reason it is refused.
+#:
+#: The line is a relation, not a feeling about a name. `PATH` and its kin choose
+#: a SEPARATE program the child may decide to start, and the reviewed entrypoint
+#: still runs first and still decides. Every name below instead chooses code
+#: loaded INTO the reviewed process before its own first instruction, which
+#: hands back the authority an absolute pin was taken to hold. The roster is
+#: closed against the runtimes a vendor CLI here can BE, not against today's
+#: five providers, so adding a runtime obliges adding its row. The ruling, its
+#: evidence and its stated limits: `docs/adr/0007-env-allow-trust-boundary.md`.
+_INJECTING_ENV_GROUPS: tuple[tuple[tuple[str, ...], str], ...] = (
+    (("LD_PRELOAD", "LD_AUDIT", "LD_LIBRARY_PATH"),
+     "the ELF dynamic loader maps and runs what it names inside the process "
+     "before the program's own first instruction"),
+    (("DYLD_INSERT_LIBRARIES", "DYLD_LIBRARY_PATH", "DYLD_FRAMEWORK_PATH",
+      "DYLD_FALLBACK_LIBRARY_PATH", "DYLD_FALLBACK_FRAMEWORK_PATH"),
+     "macOS dyld inserts and redirects libraries into the process before "
+     "main() runs"),
+    (("PYTHONPATH", "PYTHONHOME", "PYTHONSTARTUP", "PYTHONEXECUTABLE"),
+     "CPython reads it before the pinned entrypoint script, so the first "
+     "import that script performs can be an attacker's module"),
+    (("NODE_OPTIONS", "NODE_PATH", "NODE_REPL_EXTERNAL_MODULE"),
+     "node executes --require and --import modules, and resolves requires "
+     "through NODE_PATH, ahead of the pinned entrypoint"),
+    (("JAVA_TOOL_OPTIONS", "_JAVA_OPTIONS", "JDK_JAVA_OPTIONS", "CLASSPATH"),
+     "the JVM reads it before main: the option variables carry -javaagent, "
+     "whose premain runs first, and CLASSPATH decides which class a name is"),
+    (("DOTNET_STARTUP_HOOKS", "CORECLR_ENABLE_PROFILING", "CORECLR_PROFILER",
+      "CORECLR_PROFILER_PATH", "COR_ENABLE_PROFILING", "COR_PROFILER",
+      "COR_PROFILER_PATH"),
+     "the .NET host runs a startup hook, and loads a profiler library, before "
+     "the entrypoint's Main"),
+    (("RUBYOPT", "RUBYLIB", "PERL5OPT", "PERL5LIB", "PERLLIB"),
+     "ruby and perl read them for -r and -I, requiring a library before the "
+     "script they were pointed at"),
+)
+INJECTING_ENV: Mapping[str, str] = MappingProxyType({
+    name: reason for names, reason in _INJECTING_ENV_GROUPS for name in names})
+
+
+def injecting_env_reason(name: str, *, windows: bool | None = None) -> str | None:
+    """Say why an operator may not reference ``name``, or ``None`` if they may.
+
+    Args:
+        name: An environment variable name, in the spelling the operator wrote.
+        windows: Whether to match without regard to case. ``None`` asks the
+            running platform, which is the only honest default: Windows
+            environment names are case-insensitive, so ``Ld_Preload`` there IS
+            ``LD_PRELOAD`` and a case-sensitive rule would be bypassed by
+            shift-key alone. On POSIX the two spellings are different variables
+            and folding them would refuse a name that can inject nothing.
+
+    Returns:
+        The reason this name is refused, or ``None`` when it may be referenced.
+    """
+    if windows is None:
+        windows = os.name == "nt"
+    return INJECTING_ENV.get(name.upper() if windows else name)
+
 
 class ProcessRunnerError(RuntimeError):
     """The runner cannot safely honour the request as stated."""
@@ -139,13 +201,22 @@ def _argv(value: object) -> tuple[str, ...]:
 
 
 def _env_names(value: object) -> tuple[str, ...]:
-    """The allowlist: distinct, valid environment variable names to reference."""
+    """The allowlist: distinct, valid, non-injecting names to reference.
+
+    The refusal sits HERE because every road that starts a child ends in a spec
+    -- provider file, public dispatch body, deep adapters, all five headless
+    harnesses -- so a refusal on any one door would leave the others open.
+    """
     if isinstance(value, (str, bytes)) or not isinstance(value, Sequence):
         raise CommandSpecError("env_allow must be a list of environment variable names")
     names = tuple(value)
     for name in names:
         if not isinstance(name, str) or _ENV_NAME.fullmatch(name) is None:
             raise CommandSpecError(f"env_allow names an invalid variable: {name!r}")
+        reason = injecting_env_reason(name)
+        if reason is not None:
+            # Name AND reason: an operator told only "invalid" hunts a typo.
+            raise CommandSpecError(f"env_allow may not name {name!r}: {reason}")
     if len(set(names)) != len(names):
         raise CommandSpecError("env_allow must not repeat a variable name")
     return names
@@ -201,6 +272,15 @@ class CommandSpec:
     timeout_seconds: float | None = None
     #: Keep stderr out of ``output`` when one caller must admit stdout bytes as
     #: a typed value. False preserves the historical merged stream exactly.
+    #:
+    #: Separated does not mean kept: the stream goes to the operating system's
+    #: null device, so the child's diagnostics are neither captured nor retained
+    #: anywhere here. The one caller that asks for separation does so because
+    #: its stdout becomes a durable artifact, and a vendor's stderr -- the
+    #: likeliest place for a CLI to echo a key -- has no reader in this build,
+    #: so holding it would be secret surface kept alive for nobody. A null SINK
+    #: rather than an undrained pipe is also the only shape that cannot
+    #: deadlock the first child that writes more than a pipe holds.
     separate_stderr: bool = False
     #: What the child reads on stdin, or ``None`` for no input at all.
     #:
@@ -269,10 +349,6 @@ class ProcessOutcome:
     #: The default is ``not_provided``, which is what an outcome built by a
     #: caller that offered no input truthfully says.
     stdin_state: str = STDIN_NOT_PROVIDED
-    #: Present only when CommandSpec asked for separated stderr. Raw diagnostic
-    #: bytes are bounded and observed but never part of the stdout value.
-    error_output: bytes = field(default=b"", repr=False)
-    error_truncated: bool = False
     #: A boolean only: no environment value is copied into the outcome.
     output_contains_env_value: bool = False
 
@@ -289,7 +365,6 @@ class _Owned:
     def __init__(self, proc: "subprocess.Popen[bytes]", token: str, limit: int,
                  group: _procgroup.ProcessGroup,
                  stdin_bytes: bytes | None = None,
-                 separate_stderr: bool = False,
                  sensitive_values: tuple[bytes, ...] = ()) -> None:
         self.proc = proc
         self.token = token
@@ -299,20 +374,12 @@ class _Owned:
         self._sensitive_values = sensitive_values
         self._buf = bytearray()
         self._truncated = False
-        self._error_buf = bytearray()
-        self._error_truncated = False
         self._lock = threading.Lock()
-        self._pump = threading.Thread(
-            target=self._drain,
-            args=(self.proc.stdout, self._buf, "_truncated"), daemon=True)
+        # ONE pump, because there is only ever one stream to read: stderr is
+        # either merged into this one or sent to the null device, and neither
+        # shape leaves a second pipe for this side to hold.
+        self._pump = threading.Thread(target=self._drain, daemon=True)
         self._pump.start()
-        self._error_pump: threading.Thread | None = None
-        if separate_stderr:
-            self._error_pump = threading.Thread(
-                target=self._drain,
-                args=(self.proc.stderr, self._error_buf, "_error_truncated"),
-                daemon=True)
-            self._error_pump.start()
         # The feed starts AFTER the pump, and that order is the whole of the
         # deadlock argument: a child that answers while it is still being fed
         # would otherwise fill its stdout pipe and block, while this side blocks
@@ -372,9 +439,15 @@ class _Owned:
         if written_whole:
             self.stdin_state = STDIN_DELIVERED
 
-    def _drain(
-            self, stream, buffer: bytearray,
-            truncated_name: str) -> None:
+    def _drain(self) -> None:
+        """Read the child's captured stream to EOF, keeping only what fits.
+
+        The read continues past the bound and DISCARDS, rather than stopping:
+        a pump that stopped reading would leave the pipe to fill and the child
+        blocked on its next write, which turns a bound on what the parent keeps
+        into a bound on what the child may say.
+        """
+        stream = self.proc.stdout
         if stream is None:
             return
         fd = stream.fileno()
@@ -386,13 +459,13 @@ class _Owned:
             if not chunk:
                 break
             with self._lock:
-                room = self.limit - len(buffer)
+                room = self.limit - len(self._buf)
                 if room > 0:
-                    buffer += chunk[:room]
+                    self._buf += chunk[:room]
                     if len(chunk) > room:
-                        setattr(self, truncated_name, True)
+                        self._truncated = True
                 else:
-                    setattr(self, truncated_name, True)
+                    self._truncated = True
 
     def finish(self, status: str) -> ProcessOutcome:
         # The feeder is joined FIRST, and only ever after the caller has waited
@@ -404,19 +477,14 @@ class _Owned:
         if self._feeder is not None:
             self._feeder.join()
         self._pump.join()
-        if self._error_pump is not None:
-            self._error_pump.join()
         with self._lock:
             output, truncated = bytes(self._buf), self._truncated
-            error_output = bytes(self._error_buf)
-            error_truncated = self._error_truncated
         contains_env = any(value in output for value in self._sensitive_values)
         code = self.proc.returncode
         return ProcessOutcome(
             status=status, exit_code=code if status == "completed" else None,
             output=output, output_truncated=truncated, output_limit=self.limit,
             pid=self.pid, token=self.token, stdin_state=self.stdin_state,
-            error_output=error_output, error_truncated=error_truncated,
             output_contains_env_value=contains_env)
 
 
@@ -510,7 +578,10 @@ class ProcessRunner:
             list(spec.argv), cwd=str(cwd), env=env, shell=False, bufsize=0,
             stdin=subprocess.DEVNULL if payload is None else subprocess.PIPE,
             stdout=subprocess.PIPE,
-            stderr=(subprocess.PIPE if spec.separate_stderr
+            # Separated stderr goes to the null device, never to a pipe: this
+            # build has no reader for a vendor's diagnostics, and a pipe nobody
+            # drains stalls the child that fills it.
+            stderr=(subprocess.DEVNULL if spec.separate_stderr
                     else subprocess.STDOUT),
             **_procgroup.popen_kwargs())
         try:
@@ -522,7 +593,7 @@ class ProcessRunner:
             token = secrets.token_hex(16)
             owned = _Owned(
                 proc, token, spec.output_limit, group, payload,
-                spec.separate_stderr, sensitive_values)
+                sensitive_values)
         except BaseException:
             self._cleanup_failed_spawn(proc, group)
             raise

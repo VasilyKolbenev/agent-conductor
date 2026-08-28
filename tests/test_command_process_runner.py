@@ -12,7 +12,10 @@ in their own modules (`test_command_process_containment.py`,
 """
 from __future__ import annotations
 
+import dataclasses
 import json
+import subprocess
+import sys
 
 import pytest
 
@@ -127,7 +130,16 @@ def test_child_stderr_is_merged_into_the_captured_output(root, runners):
     assert b"on-err\n" in outcome.output
 
 
-def test_a_caller_may_bound_stderr_without_admitting_it_as_stdout(root, runners):
+def test_a_caller_may_keep_stderr_out_of_stdout_and_the_flag_admits_no_coercion(
+        root, runners):
+    """The stdout capture is exactly what the child wrote to stdout, and no more.
+
+    This test used to also assert that the diagnostics were kept in a second
+    buffer. They are not kept at all any more -- nothing in this build ever read
+    them -- so the claim that survives is the one the caller actually depends
+    on. The flag takes a real boolean and nothing that merely looks like one: a
+    spec that silently reinterprets `1` is a spec no reader can check.
+    """
     runner = runners(root)
     outcome = runner.run(CommandSpec(
         argv=fake_argv(), cwd="work",
@@ -135,12 +147,133 @@ def test_a_caller_may_bound_stderr_without_admitting_it_as_stdout(root, runners)
         timeout_seconds=10, separate_stderr=True))
 
     assert outcome.output == b"on-out\n"
-    assert outcome.error_output == b"on-err\n"
     assert outcome.output_truncated is False
-    assert outcome.error_truncated is False
 
     with pytest.raises(CommandSpecError, match="separate_stderr"):
         CommandSpec(argv=fake_argv(), cwd="work", separate_stderr=1)
+
+
+#: A stderr line no other part of this suite writes, so finding it anywhere is
+#: proof it came from the child's diagnostic stream and from nothing else.
+STDERR_MARKER = "diagnostic-marker-no-reader-ever-wanted"
+
+
+def _rendered(value: object) -> bytes:
+    """Any field value as bytes, so one scan covers bytes and non-bytes alike."""
+    return value if isinstance(value, bytes) else repr(value).encode("utf-8")
+
+
+def _floods_stderr_then_stdout(err_bytes: int, out_bytes: int) -> list[str]:
+    """A real child that writes stderr FIRST, then stdout, and exits zero.
+
+    The order is the whole witness. A parent holding an undrained stderr pipe
+    would stall this child inside the first write, so it would never reach the
+    second one -- which means an empty stdout capture is a report of a blocked
+    child rather than of a quiet one.
+    """
+    return [sys.executable, "-c",
+            "import sys\n"
+            f"sys.stderr.buffer.write(b'e' * {err_bytes})\n"
+            "sys.stderr.buffer.flush()\n"
+            f"sys.stdout.buffer.write(b'o' * {out_bytes})\n"
+            "sys.stdout.buffer.flush()\n"]
+
+
+def test_a_separated_stderr_leaves_no_bytes_anywhere_in_the_finished_outcome(
+        root, runners):
+    """Diagnostics kept out of stdout are DISCARDED, not parked with no reader.
+
+    The audit's finding was not a leak but a retention: a vendor's stderr --
+    plausibly carrying a key it echoed -- sat in a buffer on the outcome for the
+    life of that outcome, and nothing in the build ever read it. So the claim
+    here is about the whole outcome rather than one field name: every field is
+    rendered and scanned, which stays red if some future field starts carrying
+    the same bytes under a different name.
+    """
+    runner = runners(root)
+    outcome = runner.run(CommandSpec(
+        argv=fake_argv(), cwd="work",
+        env={EMIT_STDOUT: "on-out", EMIT_STDERR: STDERR_MARKER},
+        timeout_seconds=10, separate_stderr=True))
+
+    assert outcome.status == "completed" and outcome.exit_code == 0
+    assert outcome.output == b"on-out\n"
+    marker = STDERR_MARKER.encode("utf-8")
+    holding = [f.name for f in dataclasses.fields(outcome)
+               if marker in _rendered(getattr(outcome, f.name))]
+    assert holding == []
+    assert marker not in repr(outcome).encode("utf-8")
+
+
+def test_a_separated_stderr_is_handed_to_the_null_device_not_to_a_pipe(
+        root, runners, monkeypatch):
+    """The structural half of the same claim, and the only way it can hold.
+
+    "Nothing retains the diagnostics" is achievable two ways: keep the pipe and
+    drop the buffer, or take no pipe at all. The first deadlocks the moment a
+    child writes more than the pipe holds, because no one is left draining it.
+    So the sink itself is the contract, and the default road is pinned beside it
+    -- an unseparated run must still MERGE, which a blanket DEVNULL would break.
+    """
+    runner = runners(root)
+    seen = []
+    real_popen = process_module.subprocess.Popen
+
+    def recording_popen(*args, **kwargs):
+        seen.append(kwargs["stderr"])
+        return real_popen(*args, **kwargs)
+
+    monkeypatch.setattr(process_module.subprocess, "Popen", recording_popen)
+    runner.run(CommandSpec(
+        argv=fake_argv(), cwd="work", timeout_seconds=10, separate_stderr=True))
+    runner.run(CommandSpec(argv=fake_argv(), cwd="work", timeout_seconds=10))
+    assert seen == [subprocess.DEVNULL, subprocess.STDOUT]
+
+
+def test_a_child_flooding_stderr_still_finishes_with_its_stdout_bound_enforced(
+        root, runners):
+    """No deadlock and no bound regression, witnessed by a real flooding child.
+
+    Four megabytes of stderr is far past any operating system's pipe buffer, so
+    a parent that took a pipe and stopped reading it would leave this child
+    blocked forever and the run would end at its timeout with nothing captured.
+    It completes instead, and the stdout it wrote afterwards is still cut at the
+    caller's bound -- the discard changed where diagnostics go, not what the
+    capture ceiling means.
+    """
+    runner = runners(root)
+    outcome = runner.run(CommandSpec(
+        argv=_floods_stderr_then_stdout(4_000_000, 200_000), cwd="work",
+        output_limit=1024, timeout_seconds=60, separate_stderr=True))
+
+    assert outcome.status == "completed" and outcome.exit_code == 0
+    assert outcome.output == b"o" * 1024
+    assert outcome.output_truncated is True
+    assert outcome.output_limit == 1024
+    assert runner.active_tokens() == ()
+
+
+def test_separating_stderr_is_not_achieved_by_folding_it_into_stdout(
+        root, runners):
+    """The over-correction control: the two roads must stay genuinely different.
+
+    A "fix" that simply stopped separating -- letting stderr ride the merged
+    stream -- would satisfy every retention assertion above, because there would
+    be no second buffer left to hold anything. Two runs of ONE child answer it:
+    separated, the stdout capture is empty; merged, the same bytes arrive. Only
+    a real separation passes both halves.
+    """
+    runner = runners(root)
+    marker = STDERR_MARKER.encode("utf-8")
+    separated = runner.run(CommandSpec(
+        argv=fake_argv(), cwd="work", env={EMIT_STDERR: STDERR_MARKER},
+        timeout_seconds=10, separate_stderr=True))
+    merged = runner.run(CommandSpec(
+        argv=fake_argv(), cwd="work", env={EMIT_STDERR: STDERR_MARKER},
+        timeout_seconds=10))
+
+    assert separated.output == b""
+    assert merged.output == marker + b"\n"
 
 
 def test_output_only_reports_whether_it_repeated_an_allowed_env_value(
