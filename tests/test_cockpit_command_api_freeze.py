@@ -131,6 +131,13 @@ EXPECTED_ROUTES = (
     ("POST", "/command/templates", True, True),
     ("POST", "/command/runs/<run_id>/graph/from-template", True, True),
     ("POST", "/command/runs/<run_id>/artifacts", True, True),
+    ("GET", "/command/workflows", False, False),
+    ("GET", "/command/workflows/<workflow_id>", False, False),
+    ("GET", "/command/workflows/<workflow_id>/revisions/<revision>", False, False),
+    ("POST", "/command/workflows/<workflow_id>/draft", True, True),
+    ("POST", "/command/workflows/<workflow_id>/revisions", True, True),
+    ("GET", "/command/runs", False, False),
+    ("POST", "/command/runs", True, True),
 )
 
 EXPECTED_ARGUMENT_SCHEMAS = {

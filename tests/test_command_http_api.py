@@ -18,6 +18,11 @@ from tests.test_command_run_store import CONFIG, a_run
 
 
 RUN_ID = "run-001"
+#: Any well-formed workflow id. The routes that carry one refuse the BODY long
+#: before they ask the store whether that workflow exists, which is exactly what
+#: the mutating-route class below needs: a real route, a real handler, and a
+#: refusal that came from the payload rather than from the path.
+WORKFLOW_ID = "workflow-001"
 NOW = "2026-08-13T12:00:00Z"
 TOKEN = "current-process-token"
 PORT = 7802
@@ -127,6 +132,13 @@ def test_exact_route_allowlist_and_wrong_method_or_path_are_closed(tmp_path):
         ("POST", "/command/templates"),
         ("POST", "/command/runs/<run_id>/graph/from-template"),
         ("POST", "/command/runs/<run_id>/artifacts"),
+        ("GET", "/command/workflows"),
+        ("GET", "/command/workflows/<workflow_id>"),
+        ("GET", "/command/workflows/<workflow_id>/revisions/<revision>"),
+        ("POST", "/command/workflows/<workflow_id>/draft"),
+        ("POST", "/command/workflows/<workflow_id>/revisions"),
+        ("GET", "/command/runs"),
+        ("POST", "/command/runs"),
     )
     subject, _, _ = api(tmp_path)
     wrong = subject.handle("POST", "/command/session", (), b"")
@@ -154,8 +166,14 @@ def test_no_mutating_route_signals_anything_it_was_refused(tmp_path, path):
 
     # A real token and a real route, so the HANDLER runs and refuses -- a stale
     # token would be turned away by the transport and would prove nothing about
-    # what the handler does with a body it cannot use.
-    refused = post(subject, path.replace("<run_id>", RUN_ID), {})
+    # what the handler does with a body it cannot use. Every identity a path can
+    # carry is substituted, not just the run's: a placeholder left in the target
+    # would be refused as an unknown ROUTE, which says nothing about what the
+    # handler does and would quietly excuse the route from this class.
+    target = path.replace("<run_id>", RUN_ID).replace(
+        "<workflow_id>", WORKFLOW_ID)
+    assert "<" not in target, target
+    refused = post(subject, target, {})
 
     assert (refused.status, refused.payload["error"]["code"]) == (
         ERROR_STATUS["contract_invalid"], "contract_invalid")

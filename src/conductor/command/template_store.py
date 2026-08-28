@@ -20,6 +20,15 @@ name, and they get two different answers: identical bytes are an honest retry
 and succeed, and different bytes are a `RevisionConflict`. The graph route
 already answers a repeated write that way, and a store that answered a retry
 with a conflict would punish a client whose reply was lost.
+
+Beside the revisions, one DRAFT: the document a person is still editing. It
+lives in the same directory and under the same route gate -- ownership is a
+house rule, not a per-file choice -- and it is written the opposite way, by
+atomic replace rather than exclusive create, because saving it again is the
+whole point of it. The two can never be confused for one another: `revisions`
+counts `<digits>.json` and a draft is not a number, and `revision_path` builds
+its name from an `int` and so can never land on `draft.json`. Neither rule has
+to know about the other.
 """
 from __future__ import annotations
 
@@ -39,8 +48,14 @@ from .containment import (
 )
 from .contracts import ContractError, _id, canonical_json
 from .graph_template import GraphTemplate, TemplateError
-from .run_store import _canonical_bytes, _exclusive_bytes, _fsync_dir
+from .run_store import (
+    _canonical_bytes,
+    _exclusive_bytes,
+    _fsync_dir,
+    _replace_bytes,
+)
 from .store_errors import RecordConflict, StoreError
+from .workflow_draft import WorkflowDraft
 
 #: One fixed sentence per structural reason a route is not this store's to use,
 #: and not one of them names a path. `containment` reports typed FACTS exactly
@@ -91,6 +106,13 @@ def _leaf_violation(path: Path) -> RouteViolation | None:
     return None
 
 
+#: The one file name a workflow directory holds that is not a revision. It is
+#: spelled here rather than at each use so the two halves of the rule -- what
+#: `save_draft` writes at, and what `revisions` refuses to count -- read off one
+#: constant and cannot come apart.
+DRAFT_NAME = "draft.json"
+
+
 class Published(NamedTuple):
     """Where a revision stands, and whether THIS call is what put it there.
 
@@ -106,6 +128,18 @@ class Published(NamedTuple):
 
 class RouteNotOwned(StoreError):
     """The route to a revision reaches state this store cannot account for."""
+
+
+class DraftSaved(NamedTuple):
+    """Where a draft stands, and whether THIS call is what first put one there.
+
+    ``created`` distinguishes the first draft of a workflow from every later
+    save of it. A caller cannot work it out: a draft is mutable, so reading the
+    directory first and comparing is exactly the race the answer is about.
+    """
+
+    path: Path
+    created: bool
 
 
 class RevisionConflict(RecordConflict):
@@ -140,6 +174,28 @@ class TemplateStore:
             raise StoreError("a template revision starts at 1 and only goes up")
         return self.templates_root / safe / f"{revision}.json"
 
+    def draft_path(self, template_id: str) -> Path:
+        """Where one workflow's single editable document lives.
+
+        Beside its revisions, under a name that is not a number. That is not a
+        convenience: ``revisions`` counts ``<digits>.json`` and nothing else, so
+        a draft cannot be listed as a revision, and ``revision_path`` builds its
+        name from an ``int``, so a publish cannot land on the draft. Neither
+        half needs to know about the other for the partition to hold.
+        """
+        return self._workflow_dir(template_id) / DRAFT_NAME
+
+    def _workflow_dir(self, template_id: str) -> Path:
+        try:
+            safe = _id("template_id", template_id)
+        except ContractError as error:
+            raise StoreError(str(error)) from None
+        return self.templates_root / safe
+
+    @staticmethod
+    def _refuse(violation: RouteViolation) -> None:
+        raise RouteNotOwned(_ROUTE_REFUSAL[violation.code])
+
     def _owned(self, path: Path) -> None:
         """Refuse a route that reaches bytes this store cannot account for.
 
@@ -162,7 +218,7 @@ class TemplateStore:
             self.project_root / "conductor", self.templates_root, path.parent,
         )) or _leaf_violation(path)
         if violation is not None:
-            raise RouteNotOwned(_ROUTE_REFUSAL[violation.code])
+            self._refuse(violation)
 
     def save(self, template: GraphTemplate) -> Published:
         """Publish one revision, or agree that it is already published.
@@ -248,8 +304,149 @@ class TemplateStore:
         found = []
         try:
             for entry in (self.templates_root / safe).iterdir():
+                # `isdigit` is what keeps `draft.json` out of this answer, and
+                # it is DELIBERATE rather than incidental: a draft is the one
+                # file beside a workflow's revisions, and a listing that counted
+                # it would offer an unfinished document as a published one.
                 if entry.suffix == ".json" and entry.stem.isdigit():
                     found.append(int(entry.stem))
         except OSError:
             return ()
         return tuple(sorted(found))
+
+    def workflows(self) -> tuple[str, ...]:
+        """Every workflow this store holds a directory for, ascending.
+
+        Read off the directory for `revisions`' reason -- the files ARE the
+        record -- and gated on the way out for `_owned`'s reason. A name whose
+        content lives somewhere else is refused rather than skipped: a listing
+        that quietly omitted it would answer "this workflow does not exist"
+        about a name every other call on this store refuses to touch.
+        """
+        violation = first_directory_violation(
+            (self.project_root / "conductor", self.templates_root))
+        if violation is not None:
+            self._refuse(violation)
+        try:
+            entries = sorted(self.templates_root.iterdir())
+        except FileNotFoundError:
+            return ()
+        except OSError:
+            self._refuse(RouteViolation(
+                RouteViolationCode.UNREADABLE, self.templates_root))
+        found: list[str] = []
+        for entry in entries:
+            state, failure = _optional_lstat(entry)
+            if failure is not None:
+                self._refuse(failure)
+            if state is None:
+                continue
+            portal = portal_violation(entry, state)
+            if portal is not None:
+                self._refuse(portal)
+            if not stat.S_ISDIR(state.st_mode):
+                continue
+            try:
+                found.append(_id("template_id", entry.name))
+            except ContractError:
+                # A directory whose name is not an id names no workflow this
+                # store could ever address, so it is not one.
+                continue
+        return tuple(found)
+
+    def has_draft(self, template_id: str) -> bool:
+        """Whether one workflow holds an editable document, route gate included."""
+        path = self.draft_path(template_id)
+        self._owned(path)
+        return path.exists()
+
+    def save_draft(self, draft: WorkflowDraft) -> DraftSaved:
+        """Replace one workflow's editable document, all or nothing.
+
+        An atomic REPLACE, never the exclusive `os.link` a revision gets, and
+        the difference is what the two things are. A revision is an identity: it
+        is written once and a second write under that name is either the same
+        request or two plans wearing one name. A draft is the opposite by
+        definition -- saving it again with different words is the whole point --
+        so exclusivity would refuse every save after the first.
+
+        What it keeps from the revision road is the staging: the bytes are
+        written and fsynced under a private name before `os.replace` publishes
+        them, so a crash leaves the previous draft whole rather than a truncated
+        one. Identical bytes write nothing at all, so a client whose reply was
+        lost does not disturb the file it already saved.
+        """
+        if type(draft) is not WorkflowDraft:
+            raise StoreError("save_draft takes exactly a WorkflowDraft")
+        path = self.draft_path(draft.workflow_id)
+        self._owned(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self._owned(path)
+        payload = _canonical_bytes(draft.as_dict())
+        try:
+            standing = path.read_bytes() if path.exists() else None
+            if standing == payload:
+                return DraftSaved(path, created=False)
+            _replace_bytes(path, payload)
+        except OSError as error:
+            raise StoreError(
+                f"cannot save the draft for workflow {draft.workflow_id!r}: "
+                f"{error.strerror}") from None
+        _fsync_dir(path.parent)
+        return DraftSaved(path, created=standing is None)
+
+    def load_draft(self, template_id: str) -> WorkflowDraft | None:
+        """Read one workflow's editable document back, or None if it holds none.
+
+        Through `WorkflowDraft.from_dict`, exactly as `load` goes through
+        `GraphTemplate.from_dict`: a file written by an older build that this
+        one no longer speaks is refused rather than half-read. A refusal here is
+        a STORE fault and says so -- the caller supplied a workflow id and a
+        durable file contradicted it, which is not the caller's contract error.
+        """
+        path = self.draft_path(template_id)
+        self._owned(path)
+        try:
+            text = path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            return None
+        except OSError:
+            raise StoreError(
+                f"the draft for workflow {template_id!r} cannot be read") from None
+        try:
+            document = json.loads(text)
+        except json.JSONDecodeError as error:
+            raise StoreError(
+                f"the stored draft for workflow {template_id!r} is not JSON: "
+                f"{error}") from None
+        try:
+            draft = WorkflowDraft.from_dict(document)
+        except ContractError as error:
+            raise StoreError(
+                f"the stored draft for workflow {template_id!r} is not a draft "
+                f"this build can read: {error}") from None
+        if draft.workflow_id != self._workflow_dir(template_id).name:
+            raise StoreError(
+                f"the draft stored for workflow {template_id!r} answers for "
+                f"{draft.workflow_id!r} instead")
+        return draft
+
+    def discard_draft(self, template_id: str) -> bool:
+        """Remove one workflow's editable document; False if there was none.
+
+        This is the only delete this store has, and it is a delete of the one
+        thing that was never durable history. No revision is removable by any
+        call here, and none ever will be.
+        """
+        path = self.draft_path(template_id)
+        self._owned(path)
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            return False
+        except OSError as error:
+            raise StoreError(
+                f"cannot discard the draft for workflow {template_id!r}: "
+                f"{error.strerror}") from None
+        _fsync_dir(path.parent)
+        return True

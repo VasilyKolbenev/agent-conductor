@@ -14,14 +14,25 @@ from typing import Any
 from .adapters import AdapterContractError, UnsupportedCapability
 from .adapters.deep_commands import DEEP_ARGUMENT_TYPES
 from .artifacts import ArtifactDocument
-from .contracts import ActionProposal, ContractError, DecisionReceipt, _id
+from .contracts import (
+    ActionProposal,
+    ContractError,
+    ControlMode,
+    DecisionReceipt,
+    RunEnvelope,
+    _id,
+)
 from .graph_definition import GraphDefinition, GraphEdge, GraphNode
 from .graph_template import GraphTemplate, RunBinding
 from .http_transport import HttpRefusal
-from .run_store import CorruptRun, RecordConflict, StoreError
+# `snapshot_digest` opens nothing: it is canonical JSON and a hash, and it lives
+# next door only because the store was its first caller. Taking it here keeps a
+# run envelope's digest and the bytes it answers for built by one function.
+from .run_store import CorruptRun, RecordConflict, StoreError, snapshot_digest
 from .template_store import RouteNotOwned
 from .runtime import AuthorizationError, Confirmation
 from .service import ServiceError
+from .workflow_draft import parse_document
 
 ERROR_STATUS = MappingProxyType({
     "same_origin_denied": 403,
@@ -107,6 +118,16 @@ _EXCEPTION_SLOTS = frozenset({
     "__traceback__", "__cause__", "__context__", "__suppress_context__",
     "__notes__",
 })
+#: What an operator must do when this build resolved no provider at all. It is
+#: a DIFFERENT situation from naming a provider that is not available, and the
+#: two must never share a sentence: one person has written no configuration yet
+#: and the other has written one that does not carry the id they asked for. This
+#: one is actionable and says exactly where to act; it names a project-relative
+#: file the operator already owns, never a resolved path on this disk.
+NO_PROVIDERS_MESSAGE = (
+    "this build resolved no available provider; declare one in "
+    "conductor/providers.json, whose objects carry provider_id, executable, "
+    "protocol, env_allow and entrypoint")
 _PHASE_MESSAGES = MappingProxyType({
     "same_origin_denied": frozenset({
         "request Host is not allowed", "request origin is not allowed"}),
@@ -115,6 +136,7 @@ _PHASE_MESSAGES = MappingProxyType({
         "request Content-Type is not supported",
         "request body is not one JSON object",
     }),
+    "service_refused": frozenset({NO_PROVIDERS_MESSAGE}),
 })
 
 
@@ -145,6 +167,15 @@ _REVIEWED_FACTS = (
     ("service_refused", ("run_id", "template_id", "revision"),
      lambda facts: (f"no stored template '{facts['template_id']}' at revision "
                     f"{facts['revision']}")),
+    # The same fact asked WITHOUT a run: the workflow read routes belong to no
+    # run, so a run id in their refusal would be a fact they do not have. The
+    # field sets differ, which is what keeps the two reviewed rows apart.
+    ("service_refused", ("template_id", "revision"),
+     lambda facts: (f"no stored template '{facts['template_id']}' at revision "
+                    f"{facts['revision']}")),
+    ("service_refused", ("provider_id",),
+     lambda facts: (f"provider '{facts['provider_id']}' is not one this build "
+                    "resolved as available")),
 )
 
 
@@ -228,6 +259,41 @@ class ApiRefusal(Exception):
         detail = {"run_id": run_id, "template_id": template_id,
                   "revision": revision}
         message = f"no stored template '{template_id}' at revision {revision}"
+        return cls(_REFUSAL_BUILD, "service_refused", message, detail)
+
+    @classmethod
+    def missing_revision(cls, template_id: str, revision: int) -> "ApiRefusal":
+        """Name a revision this build does not hold, with no run and no path."""
+        detail = {"template_id": template_id, "revision": revision}
+        message = f"no stored template '{template_id}' at revision {revision}"
+        return cls(_REFUSAL_BUILD, "service_refused", message, detail)
+
+    @classmethod
+    def service_no_providers(cls) -> "ApiRefusal":
+        """Say that nothing is configured, and exactly where to configure it.
+
+        An empty roster is a first-class state of a fresh project, not a fault:
+        nobody has written `conductor/providers.json` yet. So the refusal is a
+        instruction rather than a diagnosis, and it carries no detail at all --
+        there is no id to name, which is precisely what distinguishes it from a
+        request that named a provider this build does not have.
+        """
+        return cls(_REFUSAL_BUILD, "service_refused", NO_PROVIDERS_MESSAGE, {})
+
+    @classmethod
+    def service_unknown_provider(cls, provider_id: str) -> "ApiRefusal":
+        """Name the PROVIDER a caller chose that this build cannot reach.
+
+        The id is the caller's own word, echoed back, so nothing about this
+        build's roster leaks: a provider that is configured and unavailable and
+        a provider nobody configured are refused in the same sentence, exactly
+        as `service_unreachable_adapter` refuses the two by one rule.
+        """
+        if not _safe_id(provider_id):
+            raise ValueError("service refusal identifiers must be safe IDs") from None
+        detail = {"provider_id": provider_id}
+        message = (f"provider '{provider_id}' is not one this build resolved as "
+                   "available")
         return cls(_REFUSAL_BUILD, "service_refused", message, detail)
 
     @classmethod

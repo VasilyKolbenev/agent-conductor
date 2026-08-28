@@ -96,6 +96,32 @@ scope, not permission for C/API-1 to invent a generic file-write endpoint.
   {
     "method": "POST", "path": "/command/runs/<run_id>/artifacts",
     "mutation": true, "csrf": true
+  },
+  {
+    "method": "GET", "path": "/command/workflows", "mutation": false, "csrf": false
+  },
+  {
+    "method": "GET", "path": "/command/workflows/<workflow_id>",
+    "mutation": false, "csrf": false
+  },
+  {
+    "method": "GET",
+    "path": "/command/workflows/<workflow_id>/revisions/<revision>",
+    "mutation": false, "csrf": false
+  },
+  {
+    "method": "POST", "path": "/command/workflows/<workflow_id>/draft",
+    "mutation": true, "csrf": true
+  },
+  {
+    "method": "POST", "path": "/command/workflows/<workflow_id>/revisions",
+    "mutation": true, "csrf": true
+  },
+  {
+    "method": "GET", "path": "/command/runs", "mutation": false, "csrf": false
+  },
+  {
+    "method": "POST", "path": "/command/runs", "mutation": true, "csrf": true
   }
 ]
 ```
@@ -878,9 +904,16 @@ mutating route, all of which re-check containment under the same lock.
 
 Maps to `TemplateStore.save(GraphTemplate)`. §4.4 said editing, versioning and
 templates were a later slice; this is that slice, and it takes only the part
-that can be frozen honestly. There is **no update, no delete and no list in
-alpha**: a revision is an identity, and a surface that could rewrite one would
-contradict the promise every other part of this contract is built on.
+that can be frozen honestly. A published revision can be **read and listed** —
+`GET /command/workflows`, `GET /command/workflows/<workflow_id>` and
+`GET /command/workflows/<workflow_id>/revisions/<revision>` answer, and a draft
+may be saved and replaced under its own name. What remains impossible, and
+always will be, is **updating or deleting a published revision**: a revision is
+an identity, and a surface that could rewrite one would contradict the promise
+every other part of this contract is built on. Publishing goes through
+`POST /command/workflows/<workflow_id>/revisions`, which carries the expected
+next revision number so two editors cannot silently overwrite each other's
+intent; `POST /command/templates` is unchanged.
 
 The body is the canonical `GraphTemplate` document and nothing else — closed to
 exactly `schema_version`, `template_id`, `revision`, `title`, `nodes` and

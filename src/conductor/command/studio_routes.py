@@ -1,0 +1,438 @@
+"""The Studio's own surface: workflows, drafts, revisions, runs, and opening one.
+
+Split out of ``http_api`` when that module reached its line cap, along the seam
+the two halves already had. What stayed there is AUTHORITY -- the route table,
+the transport gate, the registry and the reviewed provider descriptors. What
+lives here is the Studio's own orchestration: every function below reads a
+store and computes, and the two that write ask the boundary to judge rather
+than judging for themselves. ``open_run`` takes ``judge_plan`` for exactly that
+reason: a module that could decide a binding's reachability on its own would be
+a second opinion about the one question the boundary exists to answer.
+
+The seam is spelled as ``(status, payload)`` rather than as this package's
+``CommandResponse``. That type belongs to the boundary, and importing it here
+would make the two modules import each other -- so the boundary wraps, and
+nothing in this file knows how a response is shaped on the wire.
+
+Two of these answers carry a ``providers`` array, and it is the SAME
+``provider_projection`` the per-run controls route carries. It answers a
+different question from that route's ``instances``: a provider row is about this
+BUILD and this MACHINE, an instance row is about one run's frozen binding, and a
+consumer joins them by identity. It is here because a user with no runs at all
+can reach these routes and can never reach a per-run one.
+"""
+from __future__ import annotations
+
+from collections.abc import Mapping
+from typing import TYPE_CHECKING, Any
+
+from .adapters.provider import provider_projection
+from .api_contracts import ApiRefusal
+from .studio_contracts import parse_run, parse_workflow_revision
+from .containment import run_route_violations
+from .contracts import ActionRequest, ActionResultReceipt, ContractError, _id
+from .graph_projection import graph_payload
+from .graph_template import TemplateError, materialize
+from .store_errors import RecordConflict, StoreError
+from .workflow_draft import (
+    DraftRefused,
+    parse_document,
+    publish_candidate,
+    saved_draft,
+    starters,
+    workflow_rows,
+    workflow_state,
+)
+
+if TYPE_CHECKING:  # pragma: no cover - collaborators, never constructed here
+    from .run_store import RunStore
+    from .template_store import TemplateStore
+
+Answer = tuple[int, dict[str, Any]]
+
+#: The instant a materialization that is NOT about to be written is built on. A
+#: plan built to be thrown away must not read a clock, or a judgement would
+#: depend on when it was made.
+_PROBE_AT = "1970-01-01T00:00:00Z"
+#: The identity a plan built only to be judged wears. A run's real plan is named
+#: when it is about to be written; this one is thrown away, and giving it a
+#: fixed name keeps a judgement from depending on an id generator.
+_PROBE_GRAPH = "graph-open-run-probe"
+
+
+def list_workflows(templates: "TemplateStore", providers) -> Answer:
+    """Every workflow this project holds, what this build can reach, and what
+    it ships to start from.
+
+    Three arrays, three questions. ``workflows`` is this PROJECT's durable
+    state; ``providers`` is this build and this machine; ``starters`` is what
+    the wheel ships, so "create a workflow from blank or from a template" has
+    both roads on one response.
+    """
+    return 200, {
+        "workflows": workflow_rows(templates),
+        "providers": provider_projection(providers),
+        "starters": starters(),
+    }
+
+
+def read_workflow(templates: "TemplateStore", workflow_id: str) -> Answer:
+    """One workflow: its revisions, its draft, and what stops it publishing."""
+    return 200, workflow_state(templates, workflow_id)
+
+
+def read_revision(
+        templates: "TemplateStore", workflow_id: str, revision: int) -> Answer:
+    """One immutable revision, read back through the contract's own door.
+
+    ``load`` puts a stored document through ``GraphTemplate.from_dict``, so a
+    revision this build can no longer speak is refused rather than half-served,
+    and the refusal names the two facts the caller already supplied and no path.
+
+    ``ContractError`` rather than ``TemplateError``: the store raises the narrow
+    one for bytes it cannot open, and the CONTRACT raises the base class for a
+    document that opens and is not a template. Both mean the same thing to a
+    caller who asked for a revision -- this one cannot be served -- and catching
+    only the narrow one answered `contract_invalid`, blaming the caller for a
+    request that was perfectly well formed.
+    """
+    try:
+        template = templates.load(workflow_id, revision)
+    except ContractError:
+        raise ApiRefusal.missing_revision(workflow_id, revision) from None
+    return 200, {"workflow_id": workflow_id, "revision": revision,
+                 "document": template.as_dict()}
+
+
+def save_draft(
+        templates: "TemplateStore", workflow_id: str,
+        body: Mapping[str, Any], clock) -> Answer:
+    """Replace this workflow's editable document and say where it now stands.
+
+    The answer is the WHOLE workflow state rather than an acknowledgement, and
+    it is the same projection the read route answers with: a client that just
+    saved needs the diagnostics and the publishability of what it saved, and
+    computing them a second way is how a screen comes to disagree with the route
+    that will refuse it.
+
+    ``201`` when this call is what first gave the workflow a draft, ``200`` for
+    every later save. No run is involved, so no frame is published -- exactly as
+    publishing a template emits none.
+    """
+    created = saved_draft(templates, workflow_id, parse_document(body), clock)
+    return (201 if created else 200), workflow_state(templates, workflow_id)
+
+
+def publish_revision(
+        templates: "TemplateStore", workflow_id: str,
+        body: Mapping[str, Any]) -> Answer:
+    """Turn a draft into a revision, or say exactly what stops it.
+
+    The expected revision is the caller's, and it is what keeps two editors from
+    silently overwriting each other's intent. A number the store has already
+    passed is answered by the store's own arbitration -- identical bytes agree,
+    different bytes are a ``RevisionConflict`` -- and a number that skips ahead
+    of what exists is a request built on a workflow this client has not read.
+
+    The draft is read ONCE, into a value, and that value is what is judged and
+    what is published. Re-reading a durable source between the gate and the
+    write is the defect ``http_api._gated`` exists to make unrepresentable, and
+    it is exactly as available here: a draft replaced between the two would
+    publish a document nothing had judged.
+
+    The draft is discarded only AFTER the revision is on disk, and only when the
+    draft is what was published: a caller that supplied its own document said
+    nothing about the draft, so the draft is left standing.
+    """
+    asked = parse_workflow_revision(body)
+    revisions = templates.revisions(workflow_id)
+    expected = 1 if not revisions else revisions[-1] + 1
+    if asked.revision > expected:
+        raise ApiRefusal.fixed("contract_invalid")
+    from_draft = asked.document is None
+    draft = templates.load_draft(workflow_id) if from_draft else None
+    if from_draft and draft is None:
+        raise ApiRefusal.fixed("contract_invalid")
+    document = draft.settled() if draft is not None else asked.document
+    try:
+        template = publish_candidate(
+            document, workflow_id=workflow_id, revision=asked.revision)
+    except DraftRefused as refused:
+        return refused_with(refused)
+    published = templates.save(template)
+    if from_draft:
+        templates.discard_draft(workflow_id)
+    return (201 if published.created else 200), template.as_dict()
+
+
+def refused_with(refused: DraftRefused) -> Answer:
+    """One ``contract_invalid``, carrying WHY beside the frozen envelope.
+
+    The envelope is not widened: ``error`` is byte for byte the shape every
+    other refusal on this surface answers with, so a client's refusal reader
+    needs no second case. ``diagnostics`` is its sibling, and it exists because
+    "this document is not a template" is useless to somebody drawing one.
+
+    The rows come from the one real constructor, so a document this route
+    refuses is exactly a document the read route already called unpublishable.
+    """
+    answer = ApiRefusal.fixed("contract_invalid")
+    return answer.status, {
+        **answer.as_dict(),
+        "diagnostics": [dict(row) for row in refused.diagnostics]}
+
+
+def open_run(
+        store: "RunStore", templates: "TemplateStore", body: Mapping[str, Any],
+        *, clock, ids, reachable, judge_plan, publish, hold_route) -> Answer:
+    """Open one run, and give it its plan in the same call.
+
+    The standing run is looked for FIRST, before the clock, the provider
+    roster, the template store or the registry is consulted -- the rule every
+    other mutating route follows, and for the same reason: a client whose reply
+    was lost is entitled to the same answer from a process that starts with a
+    different roster, because what it is asking about is already durable.
+
+    Only a run about to be CREATED is judged, and it is judged whole before one
+    durable byte is written: the roster must carry every provider named, the
+    revision must exist, and the plan that revision would materialize against
+    this configuration must be one the bound adapters can serve. The revision is
+    read ONCE and the value that was judged is the value that is appended --
+    ``_gated`` next door exists to make the alternative unrepresentable, and
+    re-reading a durable source between the gate and the write is the defect it
+    was written for.
+    """
+    asked = parse_run(body)
+    hold_route(asked.run_id)
+    snapshot = asked.snapshot()
+    checked = None
+    if _standing_run(store, asked.run_id) is None:
+        _providers_are_configured(asked, reachable)
+        if asked.workflow_id is not None:
+            checked = _workflow_revision(templates, asked)
+            probe = materialize(
+                checked, asked.binding, snapshot, graph_id=_PROBE_GRAPH,
+                run_id=asked.run_id, created_at=_PROBE_AT)
+            judge_plan(snapshot, asked.run_id, probe.nodes)
+    with store.transaction():
+        hold_route(asked.run_id)
+        standing = _standing_run(store, asked.run_id)
+        if standing is not None:
+            envelope = _repeats_the_standing_run(asked, snapshot, standing)
+            created, graph = False, _standing_graph(standing)
+        else:
+            envelope = asked.build(snapshot, clock())
+            store.create_run(envelope, snapshot)
+            created, graph = True, None
+            if asked.workflow_id is not None:
+                if checked is None:
+                    # The transaction found no standing run while the read
+                    # before it found none either, so the revision judged above
+                    # must be in hand. Refusing beats fetching it a second time:
+                    # that is the whole defect this shape makes unrepresentable.
+                    raise ApiRefusal.fixed("store_error")
+                graph = materialize(
+                    checked, asked.binding, snapshot, graph_id=ids("graph"),
+                    run_id=asked.run_id, created_at=clock())
+                store.append(graph)
+    if created:
+        publish(asked.run_id)
+    return (201 if created else 200), {
+        "run": envelope.as_dict(), "config": plain_json(snapshot),
+        "graph": None if graph is None else graph.as_dict()}
+
+
+def _standing_run(store: "RunStore", run_id: str):
+    """The run already at this identity, or None -- and never an exception.
+
+    The directory is looked at rather than a refusal caught, because "absent"
+    and "present and corrupt" are two different answers, and swallowing a
+    ``StoreError`` would call the second the first.
+    """
+    if not store.run_path(run_id).is_dir():
+        return None
+    return store.read(run_id)
+
+
+def _repeats_the_standing_run(asked, snapshot: Mapping[str, Any], standing):
+    """A run identity is written once, so a second open IS it or conflicts.
+
+    The candidate is rebuilt on the standing envelope's own ``created_at``: the
+    caller never supplied one, so comparing anything else would call every
+    honest retry a conflict.
+    """
+    candidate = asked.build(snapshot, standing.envelope.created_at)
+    if (candidate.as_dict() != standing.envelope.as_dict()
+            or plain_json(standing.config) != snapshot):
+        raise RecordConflict(
+            f"run {asked.run_id!r} already records different facts")
+    return standing.envelope
+
+
+def _providers_are_configured(asked, reachable) -> None:
+    """Every named provider is one THIS BUILD resolved as available.
+
+    The empty roster is answered first and separately, because it is a
+    different situation and a different instruction: nobody has written a
+    provider configuration yet, and the refusal says where to write one. A
+    caller told "provider 'x' is not available" when the answer is "there are
+    none at all" would go looking for a typo.
+    """
+    if not reachable:
+        raise ApiRefusal.service_no_providers()
+    for participant in asked.participants:
+        if participant.provider_id not in reachable:
+            raise ApiRefusal.service_unknown_provider(participant.provider_id)
+
+
+def _workflow_revision(templates: "TemplateStore", asked):
+    """Read the revision this run will follow, ONCE, into one value.
+
+    ``ContractError`` for `read_revision`'s reason: a stored document that opens
+    and is not a template raises the base class, and a run asking to follow it
+    is asking for a revision this build cannot serve -- not making an invalid
+    request.
+    """
+    assert asked.workflow_id is not None and asked.revision is not None
+    try:
+        return templates.load(asked.workflow_id, asked.revision)
+    except ContractError:
+        raise ApiRefusal.missing_revision(
+            asked.workflow_id, asked.revision) from None
+
+
+def standing_graph(recovered):
+    """The one graph this run already follows, if it follows any."""
+    return next((row.value for row in recovered.records
+                 if row.kind == "graph_definition"), None)
+
+
+_standing_graph = standing_graph
+
+
+def plain_json(value: object) -> object:
+    """Copy a frozen JSON graph into the plain containers an encoder owns."""
+    if isinstance(value, Mapping):
+        return {key: plain_json(item) for key, item in value.items()}
+    if isinstance(value, (tuple, list)):
+        return [plain_json(item) for item in value]
+    return value
+
+
+def recovered_payload(recovered) -> dict[str, Any]:
+    """One run read whole: its envelope, frozen config, journal and plan.
+
+    Every part but the last is a durable record verbatim. The plan, the digest
+    computed over it and the position computed from the journal are computed
+    here and stored nowhere, so nothing in them can drift from the records they
+    were read out of.
+    """
+    return {
+        "run": recovered.envelope.as_dict(),
+        "config": plain_json(recovered.config),
+        "records": [{"record_type": row.kind, "record": row.value.as_dict()}
+                    for row in recovered.records],
+        "warnings": list(recovered.warnings),
+        "graph": graph_payload(recovered),
+    }
+
+
+def list_runs(store: "RunStore", providers) -> Answer:
+    """Every run in this project, and the roster this build resolved.
+
+    Nothing here is stored and nothing here writes: every field of every row is
+    computed from the run's own durable records, and the replay is ``read``
+    rather than ``recover``, so a listing repairs nothing either.
+    """
+    return 200, {
+        "runs": [run_row(store, run_id) for run_id in run_ids(store)],
+        "providers": provider_projection(providers),
+    }
+
+
+def run_ids(store: "RunStore") -> tuple[str, ...]:
+    """Every run directory this store could address, ascending.
+
+    Read off the directory rather than an index, for the template store's
+    reason: the directories ARE the record. A name that is not a run id names no
+    run this store could ever open, and a half-built staging directory is one of
+    those -- ``create_run`` prefixes its with a dot, which the id grammar refuses
+    at the first character.
+    """
+    try:
+        entries = sorted(store.runs_root.iterdir())
+    except OSError:
+        return ()
+    found: list[str] = []
+    for entry in entries:
+        if not entry.is_dir():
+            continue
+        try:
+            found.append(_id("run_id", entry.name))
+        except ContractError:
+            continue
+    return tuple(found)
+
+
+def run_row(store: "RunStore", run_id: str) -> dict[str, Any]:
+    """One run as a list row, with every derived word named for its source.
+
+    ``envelope_status`` is the DURABLE word and it is a creation-time one: a
+    ``RunEnvelope`` is immutable, so its ``status`` says what the run was opened
+    as and never where it now stands. It is spelled with ``envelope_`` in front
+    of it precisely so that no reader can take it for a live position.
+
+    What is live is derived here, and each key says which records it came from:
+
+    - ``undecided_gates`` -- the plan's gate nodes whose ``gate_id`` carries no
+      unsuperseded ``decision`` receipt, counted through the same projection the
+      run read answers with. ``0`` when the run follows no plan.
+    - ``open_actions`` -- ``action_request`` records with no ``action_result``
+      naming their ``action_id``.
+    - ``last_outcome`` -- the ``outcome`` of the last ``action_result`` in
+      append order, or ``null`` when there is none.
+
+    There is deliberately no derived overall phase word. The journal does not
+    carry one, and a word invented here would be a guess a reader trusts. There
+    is deliberately no ``workflow_id`` or ``revision`` either: a materialized
+    ``GraphDefinition`` records no template identity, so this build cannot say
+    which revision a run came from without guessing, and a missing key is
+    recoverable where a wrong one is not.
+
+    A run that does not replay is LISTED, with ``unreadable`` true and every
+    derived field null. A run you cannot see is worse than one you cannot read.
+    """
+    row: dict[str, Any] = {
+        "run_id": run_id, "unreadable": True, "cycle_id": None,
+        "created_at": None, "mode": None, "envelope_status": None,
+        "graph_id": None, "undecided_gates": None, "open_actions": None,
+        "last_outcome": None,
+    }
+    if run_route_violations(store, run_id):
+        return row
+    try:
+        recovered = store.read(run_id)
+    except (StoreError, ContractError):
+        return row
+    values = [stored.value for stored in recovered.records]
+    results = [value for value in values
+               if isinstance(value, ActionResultReceipt)]
+    answered = {receipt.action_id for receipt in results}
+    requested = {value.action_id for value in values
+                 if isinstance(value, ActionRequest)}
+    graph = graph_payload(recovered)
+    runtime = graph["runtime"]
+    row.update({
+        "unreadable": False,
+        "cycle_id": recovered.envelope.cycle_id,
+        "created_at": recovered.envelope.created_at,
+        "mode": recovered.envelope.mode.value,
+        "envelope_status": recovered.envelope.status,
+        "graph_id": (None if graph["definition"] is None
+                     else graph["definition"]["graph_id"]),
+        "undecided_gates": 0 if runtime is None else sum(
+            1 for node in runtime["nodes"] if node.get("decision") == "idle"),
+        "open_actions": len(requested - answered),
+        "last_outcome": results[-1].outcome if results else None,
+    })
+    return row

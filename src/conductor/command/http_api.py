@@ -18,7 +18,7 @@ own -- and it is projected through the one reviewed provider projection.
 from __future__ import annotations
 
 import re
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlsplit
@@ -41,25 +41,47 @@ from .api_contracts import (
     parse_template,
     refusal_from_exception,
 )
+from .command_routes import (
+    COMMAND_ROUTES,
+    Route as _Route,
+    match_route as _match_route,
+    target_path as _target_path,
+)
 from .containment import run_route_violations
 from .artifacts import ArtifactDocument
 from .contracts import (
+    ActionRequest,
+    ActionResultReceipt,
     ContractError,
+    RunEnvelope,
+    _id,
     frozen_config_bindings,
     frozen_config_models,
 )
 from .coordinator import ExecutionCoordinator
 from .graph_definition import GraphDefinition, GraphNode
 from .graph_projection import graph_payload
-from .graph_template import GraphTemplate, TemplateError, materialize
+from .graph_template import (
+    TEMPLATE_DIR,
+    GraphTemplate,
+    TemplateError,
+    load_template,
+    materialize,
+)
 from .http_transport import (
     CommandSession,
     validate_command_host,
 )
-from .run_store import CorruptRun, RecordConflict, RunStore
+from .run_store import CorruptRun, RecordConflict, RunStore, StoreError
 from .template_store import TemplateStore
 from .runtime import Budget, ControlRuntime
 from .service import CommandService
+from . import studio_routes
+from .studio_routes import (
+    plain_json as _plain_json,
+    recovered_payload as _recovered_payload,
+    standing_graph as _standing_graph,
+)
 
 
 PRODUCT_COMMAND_BUDGET = Budget(
@@ -68,25 +90,6 @@ PRODUCT_COMMAND_BUDGET = Budget(
     max_confirmation_age_seconds=3600,
 )
 
-COMMAND_ROUTES = (
-    ("GET", "/command/session"),
-    ("GET", "/command/runs/<run_id>"),
-    ("GET", "/command/runs/<run_id>/controls"),
-    ("POST", "/command/runs/<run_id>/proposals"),
-    ("POST", "/command/runs/<run_id>/actions"),
-    ("POST", "/command/runs/<run_id>/decisions"),
-    ("POST", "/command/runs/<run_id>/graph"),
-    ("POST", "/command/templates"),
-    ("POST", "/command/runs/<run_id>/graph/from-template"),
-    ("POST", "/command/runs/<run_id>/artifacts"),
-)
-
-_RUN_ROUTE = re.compile(
-    r"/command/runs/([A-Za-z0-9][A-Za-z0-9._-]{0,127})"
-    # The longer tail is spelled FIRST: alternation is leftmost-first, and a
-    # `graph` that matched before `graph/from-template` would send every
-    # materialization to the route that speaks a different document.
-    r"(?:/(controls|proposals|actions|decisions|graph/from-template|artifacts|graph))?\Z")
 #: The one availability state in which this build can reach a provider at
 #: all. A word from `AVAILABILITY_STATES`, compared as a STATE: what makes a
 #: binding admissible is what this build resolved about the transport, never
@@ -98,10 +101,10 @@ _REACHABLE = "available"
 #: record that already carries one -- and a plan built to be thrown away must
 #: not read a clock, or a comparison would depend on when it was made.
 _PROBE_AT = "1970-01-01T00:00:00Z"
-#: The one command route that belongs to no run. A template outlives the run
-#: that first materialized it, so a run id in its path would be a lie about
-#: what it is.
-_TEMPLATES_PATH = "/command/templates"
+#: The identity a plan built only to be judged wears. A run's real plan is named
+#: by the server when it is about to be written; this one is thrown away, and
+#: giving it a fixed name keeps a judgement from depending on an id generator.
+_PROBE_GRAPH = "graph-open-run-probe"
 
 
 @dataclass(frozen=True)
@@ -110,12 +113,6 @@ class CommandResponse:
 
     status: int
     payload: Mapping[str, Any]
-
-
-@dataclass(frozen=True)
-class _Route:
-    name: str
-    run_id: str | None = None
 
 
 class CommandApi:
@@ -215,6 +212,16 @@ class CommandApi:
     def _get(self, route: _Route, host: str) -> CommandResponse:
         if route.name == "session":
             return CommandResponse(200, self._session.session_response(host))
+        if route.name == "workflows":
+            return self._list_workflows()
+        if route.name == "runs":
+            return self._list_runs()
+        if route.name in {"workflow", "workflow_revision"}:
+            assert route.workflow_id is not None
+            if route.name == "workflow":
+                return self._workflow_state(route.workflow_id)
+            assert route.revision is not None
+            return self._read_revision(route.workflow_id, route.revision)
         assert route.run_id is not None
         self._hold_route(route.run_id)
         recovered = self._store.read(route.run_id)
@@ -225,6 +232,13 @@ class CommandApi:
     def _post(self, route: _Route, body: Mapping[str, Any]) -> CommandResponse:
         if route.name == "templates":
             return self._publish_template(body)
+        if route.name == "runs":
+            return self._open_run(body)
+        if route.name in {"workflow_draft", "workflow_revisions"}:
+            assert route.workflow_id is not None
+            if route.name == "workflow_draft":
+                return self._save_draft(route.workflow_id, body)
+            return self._publish_revision(route.workflow_id, body)
         assert route.run_id is not None
         if route.name == "graph_from_template":
             return self._materialize_graph(route.run_id, body)
@@ -237,6 +251,41 @@ class CommandApi:
         if route.name == "artifacts":
             return self._write_artifact(route.run_id, body)
         return self._decide(route.run_id, body)
+
+    # -- the Studio surface: projections computed next door, wrapped here ----
+    #
+    # Each of the five below is one line for one reason: `studio_routes` speaks
+    # `(status, payload)` and knows nothing about how a response is shaped on
+    # the wire, so the boundary that owns `CommandResponse` is the one that
+    # builds it. Putting anything else in these methods would put a second
+    # decision somewhere it could disagree with the first.
+
+    def _list_workflows(self) -> CommandResponse:
+        return CommandResponse(
+            *studio_routes.list_workflows(self._templates, self._providers))
+
+    def _workflow_state(self, workflow_id: str) -> CommandResponse:
+        return CommandResponse(
+            *studio_routes.read_workflow(self._templates, workflow_id))
+
+    def _read_revision(self, workflow_id: str, revision: int) -> CommandResponse:
+        return CommandResponse(
+            *studio_routes.read_revision(self._templates, workflow_id, revision))
+
+    def _save_draft(
+            self, workflow_id: str, body: Mapping[str, Any]) -> CommandResponse:
+        return CommandResponse(
+            *studio_routes.save_draft(
+                self._templates, workflow_id, body, self._clock))
+
+    def _publish_revision(
+            self, workflow_id: str, body: Mapping[str, Any]) -> CommandResponse:
+        return CommandResponse(
+            *studio_routes.publish_revision(self._templates, workflow_id, body))
+
+    def _list_runs(self) -> CommandResponse:
+        return CommandResponse(
+            *studio_routes.list_runs(self._store, self._providers))
 
     def _write_artifact(
             self, run_id: str, body: Mapping[str, Any]) -> CommandResponse:
@@ -287,7 +336,7 @@ class CommandApi:
             self, run_id: str, body: Mapping[str, Any]) -> CommandResponse:
         """Build this run's one plan from a stored revision and a binding.
 
-        The order is §4.4's order, for §4.4's reason: the standing graph is
+        The order is В§4.4's order, for В§4.4's reason: the standing graph is
         looked for FIRST, before the clock, the store of templates, the
         registry, the provider descriptors or the frozen configuration is
         consulted at all. A client whose reply was lost is entitled to the same
@@ -374,7 +423,7 @@ class CommandApi:
         `materialize` refuses this too, and would refuse it a moment later --
         but it refuses it as a CONTRACT fault, which is the wrong word. That an
         instance is absent from a frozen configuration is a fact about this
-        RUN, not about the shape of the request, and §4.4 already answers it
+        RUN, not about the shape of the request, and В§4.4 already answers it
         `service_refused` through this same door. Asking here keeps one word for
         one fact across both roads.
         """
@@ -386,7 +435,7 @@ class CommandApi:
             nodes: Iterable[GraphNode]) -> None:
         """Every acting node's instance is bound to a provider this build can reach.
 
-        This is the template road's rule and NOT §4.4's. That route was frozen
+        This is the template road's rule and NOT В§4.4's. That route was frozen
         without it and stays byte-compatible: adding a refusal to a surface a
         client already depends on is a change of behaviour however good the
         reason, and the two roads write the same record by different rights.
@@ -592,6 +641,37 @@ class CommandApi:
             self._publish_run(run_id)
         return CommandResponse(201 if created else 200, decision.as_dict())
 
+    # -- opening one run, plan included -------------------------------------
+
+    def _open_run(self, body: Mapping[str, Any]) -> CommandResponse:
+        """Open one run, and give it its plan in the same call.
+
+        The road itself is next door with the rest of the Studio surface; what
+        stays here is the AUTHORITY it has to ask for. `_judge_plan` is that
+        authority in one callable: this boundary owns the registry and the
+        reviewed provider descriptors, and a module that could reach around it
+        to judge a binding for itself would be a second opinion about the one
+        question this class exists to answer.
+        """
+        return CommandResponse(*studio_routes.open_run(
+            self._store, self._templates, body,
+            clock=self._clock, ids=self._ids, reachable=self._reachable(),
+            judge_plan=self._judge_plan, publish=self._publish_run,
+            hold_route=self._hold_route))
+
+    def _judge_plan(
+            self, snapshot: Mapping[str, Any], run_id: str,
+            nodes: Sequence[GraphNode]) -> None:
+        """Both binding verdicts, in the order the template road already asks them.
+
+        Reachability first: a plan naming an instance this build cannot reach is
+        refused for what the machine is, before the registry is asked what the
+        pair can serve. Answering them the other way round would report a
+        payload problem about work that could never have run at all.
+        """
+        self._bindings_are_reachable(snapshot, run_id, nodes)
+        self._bindings_are_servable(snapshot, run_id, nodes)
+
     def _hold_route(self, run_id: str) -> None:
         if run_route_violations(self._store, run_id):
             raise ApiRefusal.fixed("route_unsafe")
@@ -635,38 +715,6 @@ class CommandApi:
                 "controls": sorted(set(declared) & set(ARGUMENT_SCHEMAS)),
             })
         return {"instances": rows, "providers": provider_projection(self._providers)}
-
-
-def _match_route(method: str, path: str) -> _Route:
-    if method not in {"GET", "POST"}:
-        known = (path in {"/command/session", _TEMPLATES_PATH}
-                 or _RUN_ROUTE.fullmatch(path) is not None)
-        raise ApiRefusal.fixed("method_not_allowed" if known else "route_not_found")
-    if path == "/command/session":
-        if method != "GET":
-            raise ApiRefusal.fixed("method_not_allowed")
-        return _Route("session")
-    if path == _TEMPLATES_PATH:
-        if method != "POST":
-            raise ApiRefusal.fixed("method_not_allowed")
-        return _Route("templates")
-    matched = _RUN_ROUTE.fullmatch(path)
-    if matched is None:
-        raise ApiRefusal.fixed("route_not_found")
-    run_id, tail = matched.groups()
-    name = (tail or "run").replace("/", "_").replace("-", "_")
-    expected = "GET" if name in {"run", "controls"} else "POST"
-    if method != expected:
-        raise ApiRefusal.fixed("method_not_allowed")
-    return _Route(name, run_id)
-
-
-def _target_path(target: str) -> str:
-    """Accept an exact origin-form path; command routes have no query surface."""
-    parsed = urlsplit(target)
-    if parsed.scheme or parsed.netloc or parsed.query or parsed.fragment:
-        raise ApiRefusal.fixed("route_not_found")
-    return parsed.path
 
 
 def _plan(template: GraphTemplate, config: Mapping[str, Any], run_id: str,
@@ -736,38 +784,6 @@ def _servable_pair(
         # is this boundary's job, and a payload that does not satisfy its
         # schema is exactly `contract_invalid`.
         raise ApiRefusal.fixed("contract_invalid") from None
-
-
-def _standing_graph(recovered) -> GraphDefinition | None:
-    """The one graph this run already follows, if it follows any."""
-    return next((row.value for row in recovered.records
-                 if row.kind == "graph_definition"), None)
-
-
-def _recovered_payload(recovered) -> dict[str, object]:
-    config = _plain_json(recovered.config)
-    records = [
-        {"record_type": row.kind, "record": row.value.as_dict()}
-        for row in recovered.records]
-    return {
-        "run": recovered.envelope.as_dict(),
-        "config": config,
-        "records": records,
-        "warnings": list(recovered.warnings),
-        # The one part of this response that is not a durable record verbatim:
-        # the plan, the digest computed over it, and the position computed from
-        # the records above. Nothing here is stored, so nothing here can drift.
-        "graph": graph_payload(recovered),
-    }
-
-
-def _plain_json(value: object) -> object:
-    """Copy a frozen JSON graph into the plain containers an HTTP encoder owns."""
-    if isinstance(value, Mapping):
-        return {key: _plain_json(item) for key, item in value.items()}
-    if isinstance(value, (tuple, list)):
-        return [_plain_json(item) for item in value]
-    return value
 
 
 def _bindings(config: Mapping[str, Any]) -> dict[str, str]:
