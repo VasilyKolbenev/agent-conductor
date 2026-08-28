@@ -55,7 +55,7 @@ you are shipping.
 Expect exit 0, and this list of subcommands — no more, no fewer:
 
 ```
-usage: conduct [-h] {validate,init,doctor,prompt,report,preview,integration-smoke,up,demo} ...
+usage: conduct [-h] {validate,init,doctor,prompt,report,preview,integration-smoke,reconcile,up,demo} ...
 ```
 
 If a subcommand you expected is missing, the wheel is not built from what you think it is.
@@ -289,6 +289,7 @@ sentence Conduct adds. If that sentence is missing, this build is older than it 
 & $CONDUCT preview --dir $PROJ --instance ghost; "unknown exit=$LASTEXITCODE"
 & $CONDUCT preview --dir $PROJ --adapter codex; "mismatch exit=$LASTEXITCODE"
 & $CONDUCT integration-smoke --dir $PROJ; "integration-smoke exit=$LASTEXITCODE"
+& $CONDUCT reconcile --dir $PROJ; "reconcile exit=$LASTEXITCODE"
 ```
 
 Expect the first `conduct preview` to print a single line of canonical JSON on stdout and
@@ -302,6 +303,15 @@ frozen config declares no such instance, and an unknown instance is refused befo
 adapter is touched. Expect the third to exit 1 the same way, its stderr naming `claude-dev`
 and `codex`: the caller's adapter is cross-checked against the binding the frozen config
 declares, never trusted over it.
+
+Expect `conduct reconcile` to exit 0 with an empty stdout and one stderr line: `no action
+in this project is waiting for reconcile`. That is the answer on a healthy project, and it is
+the one you want here — a listed action would mean a run in this fixture was interrupted between
+writing an action request and taking its effect lease. When there is one, the command prints
+`<run> <action>` on stdout, one line each, and `conduct reconcile --run <RUN> --action <ACTION>`
+closes exactly one of them with a terminal `unknown` receipt. It resolves no adapter, starts
+nothing, and never reports success; ADR 0002 records why `unknown` is the only honest terminal
+for an effect nobody observed.
 
 Expect `conduct integration-smoke` to complete the fixed synthetic Day-1 loop through the
 owned-process adapter and exit 0. It is explicitly not a product Human Confirm surface: its

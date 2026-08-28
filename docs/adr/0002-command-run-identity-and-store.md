@@ -72,16 +72,33 @@ that a human had confirmed something. So it refuses, and names the way out.
 
 Because no lease was ever appended, no effect was ever authorized to start: `execute` writes the
 lease before it calls the adapter, so an action that never reached a lease never reached a spawn.
-Reconciling therefore closes the action honestly rather than guessing:
+Reconciling therefore closes the action honestly rather than guessing.
 
-    from conductor.command.run_store import RunStore
-    from conductor.command.runtime import ControlRuntime
-    ControlRuntime(RunStore(project_root)).reconcile(run_id, action_id)
+**From the command line, which is where an operator should reach for it.** Nothing in the product
+would otherwise say which run and which action, so the verb lists before it closes:
+
+    conduct reconcile --dir <project_root>
+    conduct reconcile --dir <project_root> --run <RUN_ID> --action <ACTION_ID>
+
+The first prints one `<run> <action>` line per action a crash stranded, and says on stderr when
+there are none. The second closes exactly one and writes its canonical receipt to stdout. Naming
+only one of the two ids is refused rather than completed by guesswork.
+
+**From Python, which is the same operation one layer down:**
+
+    from conductor.command.reconcile import close
+    receipt = close(project_root, run_id, action_id)
 
 It resolves no adapter, prepares, executes and verifies nothing, and appends one terminal
 `unknown` result — the only honest terminal for an effect nobody observed, and one this runtime
 never promotes to a success. It refuses a run that is not in `confirm` mode, a run whose replay
 left unjudged durable bytes, an action that already carries an attempt event (that recovery
 belongs to `execute`, which never repeats an effect), and an action that already has a terminal
-result. There is no `conduct reconcile` subcommand in this release; the runtime API above is the
-whole operation.
+result.
+
+A note on why this section grew a command. The procedure printed here used to construct the
+runtime directly, as `ControlRuntime(RunStore(project_root)).reconcile(...)` — which raises
+`TypeError` before `reconcile` is reached, because the constructor requires `registry`
+positionally and `clock` and `ids` as keyword-only. The only recovery this product documented for
+this state had never been executed. `tests/test_command_reconcile_cli.py` now runs the snippet
+above out of this file rather than trusting its prose.

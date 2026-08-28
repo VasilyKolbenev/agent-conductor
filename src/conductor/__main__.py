@@ -275,6 +275,60 @@ def _cmd_integration_smoke(args: argparse.Namespace) -> int:
     return 0
 
 
+def _reconcile_listing(root: str) -> int:
+    """Print every action a crash left for `reconcile`, or say there are none."""
+    from conductor.command import reconcile        # deferred: see the import block
+    rows = [(run_id, actions) for run_id, actions in reconcile.survey(root)
+            if actions]
+    if not rows:
+        print("no action in this project is waiting for reconcile", file=sys.stderr)
+        return 0
+    for run_id, actions in rows:
+        for action_id in actions:
+            sys.stdout.write(f"{run_id} {action_id}\n")
+    print(f"\nclose one with: conduct reconcile --run <RUN> --action <ACTION>",
+          file=sys.stderr)
+    return 0
+
+
+def _cmd_reconcile(args: argparse.Namespace) -> int:
+    """List the actions a crash stranded, or close exactly one of them.
+
+    The operation itself is `ControlRuntime.reconcile`, and this command adds
+    nothing to it but reach: every refusal it holds it still holds, no adapter
+    is resolved, and the one record appended is a terminal `unknown`. What this
+    adds is the half that made the documented procedure unusable -- a way to
+    find out which run and which action, which nothing in the product would say.
+
+    With neither `--run` nor `--action`, it lists. With both, it closes and
+    writes the canonical receipt to stdout. With exactly one it refuses, because
+    half a reference names an action of no run or a run with no action, and
+    guessing the other half is the one thing a recovery command must not do.
+    """
+    _require_a_project(args.dir)
+    from conductor.command import reconcile        # deferred: see the import block
+    from conductor.command.contract_values import ContractError, canonical_json
+    from conductor.command.runtime_values import ExecutionError
+    from conductor.command.store_errors import StoreError
+    if (args.run is None) != (args.action is None):
+        missing = "--action" if args.action is None else "--run"
+        print(f"reconcile needs --run and --action together; {missing} is missing",
+              file=sys.stderr)
+        return 1
+    if args.run is None:
+        return _reconcile_listing(args.dir)
+    # The three the operation can raise, named rather than swallowed: a refusal
+    # reconcile holds, a run that will not read, and an id the contract refuses.
+    # CorruptRun is a StoreError, so an unreadable journal lands here too.
+    try:
+        receipt = reconcile.close(args.dir, args.run, args.action)
+    except (ExecutionError, StoreError, ContractError) as e:
+        print(str(e), file=sys.stderr)
+        return 1
+    sys.stdout.write(canonical_json(receipt.as_dict()) + "\n")
+    return 0
+
+
 #: The port `up` and `demo` bind, and the one `init` tells the user to open.
 #: One constant, because init advising a port the panel is not on is worse
 #: than init saying nothing about the panel at all.
@@ -301,6 +355,22 @@ def _add_providers(p: argparse.ArgumentParser) -> None:
                         "executable, protocol and environment NAMES "
                         "(default: conductor/providers.json; absent configures "
                         "nothing)")
+
+
+def _add_stranded_ids(p: argparse.ArgumentParser) -> None:
+    """Attach `reconcile`'s two ids: the run, and the action inside it.
+
+    Two ids and a directory, and deliberately nothing else. No mode, no outcome
+    and no detail: what the terminal receipt says is code-owned, and an operator
+    who could word it could word a success for an effect nobody observed. Both
+    default to `None` so the command can tell "list everything" from "close this
+    one" without a separate flag, and half a reference is refused rather than
+    completed by guesswork.
+    """
+    p.add_argument("--run", default=None, metavar="RUN_ID",
+                   help="the run holding the stranded action")
+    p.add_argument("--action", default=None, metavar="ACTION_ID",
+                   help="the action to close; needs --run")
 
 
 def _add_dir_and_func(p: argparse.ArgumentParser,
@@ -345,13 +415,13 @@ def _add_instance_and_adapter(p: argparse.ArgumentParser) -> None:
                    help="cross-check the adapter the frozen config binds to the instance")
 
 
-def _build_parser() -> argparse.ArgumentParser:
-    """Build the `conduct` argument parser: one explicit block per subcommand."""
-    parser = argparse.ArgumentParser(
-        prog="conduct",
-        description="A local, decision-centric control plane for AI coding agents.")
-    sub = parser.add_subparsers(dest="command", required=True)
+def _add_map_commands(sub: argparse._SubParsersAction) -> None:
+    """The five verbs that read or write the project's own documents.
 
+    Split from `_build_parser` for the project's function-length limit, along
+    the seam the CLI already has: these five touch `map.toml` and the lanes and
+    reach no run store, which is why none of them is deferred-imported.
+    """
     p = sub.add_parser("validate",
                        help="check map.toml and lane files; report errors and warnings")
     _add_dir_and_func(p, _cmd_validate)
@@ -372,6 +442,15 @@ def _build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("report", help="print a Markdown report of the merged state")
     _add_dir_and_func(p, _cmd_report)
 
+
+def _build_parser() -> argparse.ArgumentParser:
+    """Build the `conduct` argument parser: one explicit block per subcommand."""
+    parser = argparse.ArgumentParser(
+        prog="conduct",
+        description="A local, decision-centric control plane for AI coding agents.")
+    sub = parser.add_subparsers(dest="command", required=True)
+    _add_map_commands(sub)
+
     p = sub.add_parser(
         "preview",
         help="propose one dispatch and print its canonical preview (no execution)")
@@ -382,6 +461,13 @@ def _build_parser() -> argparse.ArgumentParser:
         "integration-smoke",
         help="run the synthetic Day-1 owned-process loop (not Human Confirm)")
     _add_dir_and_func(p, _cmd_integration_smoke)
+
+    p = sub.add_parser(
+        "reconcile",
+        help="list the actions a crash stranded, or close one with a terminal "
+             "'unknown' (executes nothing, never reports success)")
+    _add_stranded_ids(p)
+    _add_dir_and_func(p, _cmd_reconcile)
 
     p = sub.add_parser("up", help="serve the panel on loopback HTTP with live updates")
     _add_port(p)
