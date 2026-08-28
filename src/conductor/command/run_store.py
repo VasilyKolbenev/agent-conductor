@@ -325,6 +325,41 @@ def _causal_order(
     return ordered
 
 
+def _hold_terminal_result(
+        prior_values: tuple[object, ...], value: ActionResultReceipt) -> None:
+    """Everything an action's one terminal receipt must agree with.
+
+    Extracted for `_hold_review_chain`'s reason: `_validate_new_relation` reads
+    as a dispatcher, and a branch long enough to need its own paragraph belongs
+    beside it rather than inside it.
+
+    The order is the taxonomy. The action must exist at all; the receipt must be
+    about that action's attempt and instance; there must not already be a
+    terminal; and only then are the relations that need an attempt event to be
+    judged against asked at all.
+    """
+    action = action_request_for(prior_values, value.action_id)
+    if action is None:
+        raise StoreError(f"action result names unknown action {value.action_id!r}")
+    for field in ("attempt_id", "instance_id"):
+        if getattr(action, field) != getattr(value, field):
+            raise StoreError(
+                f"action result {field} does not match action {value.action_id!r}")
+    # At most one terminal result per action, asked of EVERY result. The
+    # relations below need an attempt event to be judged against; this one does
+    # not, and asking it only inside that branch let an event-less action record
+    # two contradicting terminals.
+    if terminal_result_for(prior_values, value.action_id) is not None:
+        raise StoreError(
+            f"action {value.action_id!r} already has a terminal result")
+    events = attempt_events_for(prior_values, value.action_id)
+    if events:
+        try:
+            validate_event_result(prior_values, value, events)
+        except AttemptRelationError as e:
+            raise StoreError(str(e)) from e
+
+
 def _hold_review_chain(prior_values: tuple[object, ...], value: object) -> None:
     """The review chain's three links, each judged where it is appended.
 
@@ -581,26 +616,7 @@ class RunStore:
         if isinstance(value, ActionRequest):
             _request_repeats_its_proposal(recovered, value)
         if isinstance(value, ActionResultReceipt):
-            action = action_request_for(prior_values, value.action_id)
-            if action is None:
-                raise StoreError(f"action result names unknown action {value.action_id!r}")
-            for field in ("attempt_id", "instance_id"):
-                if getattr(action, field) != getattr(value, field):
-                    raise StoreError(
-                        f"action result {field} does not match action {value.action_id!r}")
-            # At most one terminal result per action, asked of every result. The
-            # relations below it need an attempt event to be judged against; this
-            # one does not, and asking it only inside that branch let an
-            # event-less action record two contradicting terminals.
-            if terminal_result_for(prior_values, value.action_id) is not None:
-                raise StoreError(
-                    f"action {value.action_id!r} already has a terminal result")
-            events = attempt_events_for(prior_values, value.action_id)
-            if events:
-                try:
-                    validate_event_result(prior_values, value, events)
-                except AttemptRelationError as e:
-                    raise StoreError(str(e)) from e
+            _hold_terminal_result(prior_values, value)
         if isinstance(value, AttemptEvent):
             try:
                 validate_attempt_event(recovered.config, prior_values, value)

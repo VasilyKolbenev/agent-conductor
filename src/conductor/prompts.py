@@ -564,11 +564,37 @@ def role_prompt(state: dict, role_id: str, author: str | None = None) -> str:
             f"role {role_id!r} is not declared in cycle.roles (known roles: {known})")
     reviewed, reviewed_by = _review_directions(state, role)
     nodes = [n["id"] for n in state["map"]["nodes"]]
-    node_ids = ", ".join(nodes) or "(none)"
-    phases = ", ".join(state["cycle"]["phases"]) or "(none declared)"
-    stem = author if author is not None else _AUTHOR_PLACEHOLDER
     stage_block = _stage_block(role.get("stage"))
     lifecycle = f"{_LIFECYCLE}\n\n{stage_block}" if stage_block else _LIFECYCLE
+    return (
+        f'You hold the "{role_id}" role in this project\'s Conduct cycle; '
+        f"you review findings from: {reviewed}.\n"
+        f"Your own findings are reviewed by: {reviewed_by}.\n"
+        "\n"
+        f"{_lane_contract(state, role, role_id, author)}"
+        "\n"
+        f"{_finding_contract(nodes)}"
+        "\n"
+        f"{lifecycle}\n"
+        "\n"
+        f"{_VOCABULARIES}\n"
+        "\n"
+        f"Current map node ids: {', '.join(nodes) or '(none)'}\n"
+        f"Cycle phases: {', '.join(state['cycle']['phases']) or '(none declared)'}\n"
+        "\n"
+        "The following findings are awaiting your verdict:\n"
+        f"{_pending_block(state, role_id)}\n"
+    )
+
+
+def _lane_contract(state: dict, role: dict, role_id: str, author: str | None) -> str:
+    """Where the agent's lane lives, what it starts as, and what to replace.
+
+    Split out of `role_prompt` with `_finding_contract` below: the prompt is one
+    long assembled document, and the two halves that carry a copyable JSON
+    starter are the ones a reader actually needs to find.
+    """
+    stem = author if author is not None else _AUTHOR_PLACEHOLDER
     swap = (f'Replace both {_UPDATED_PLACEHOLDER} values ("updated"\n'
             'and "now.since") with real UTC ISO-8601 times, and the "now.task"\n'
             "placeholder with what you are actually doing. Bump \"updated\" on\n"
@@ -577,10 +603,6 @@ def role_prompt(state: dict, role_id: str, author: str | None = None) -> str:
         swap += (f"\nReplace {_AUTHOR_PLACEHOLDER} with your author id — in the\n"
                  "lane file name too, not just the JSON.")
     return (
-        f'You hold the "{role_id}" role in this project\'s Conduct cycle; '
-        f"you review findings from: {reviewed}.\n"
-        f"Your own findings are reviewed by: {reviewed_by}.\n"
-        "\n"
         f"Your lane file is conductor/lanes/{stem}.json; its \"author\" field\n"
         "must equal the filename stem. Start from this template (STRICT JSON —\n"
         "no comments, copy it verbatim):\n"
@@ -594,7 +616,17 @@ def role_prompt(state: dict, role_id: str, author: str | None = None) -> str:
         "never invent node ids.\n"
         "\n"
         f"{_NOW_CONTRACT}\n"
-        "\n"
+    )
+
+
+def _finding_contract(nodes: list[str]) -> str:
+    """One worked finding, and the fields every finding must carry.
+
+    The example is built from the project's own node ids and pushed through the
+    same vocabulary the validator holds, so a packet cannot advertise a shape
+    `conduct validate` would refuse.
+    """
+    return (
         "When you have something to report, add an entry to \"findings\" with\n"
         "this shape — do NOT copy it into your first lane, it is a worked\n"
         "example and not a finding you have made:\n"
@@ -605,14 +637,4 @@ def role_prompt(state: dict, role_id: str, author: str | None = None) -> str:
         "\n"
         "Finding fields:\n"
         f"{_FINDING_FIELDS}\n"
-        "\n"
-        f"{lifecycle}\n"
-        "\n"
-        f"{_VOCABULARIES}\n"
-        "\n"
-        f"Current map node ids: {node_ids}\n"
-        f"Cycle phases: {phases}\n"
-        "\n"
-        "The following findings are awaiting your verdict:\n"
-        f"{_pending_block(state, role_id)}\n"
     )

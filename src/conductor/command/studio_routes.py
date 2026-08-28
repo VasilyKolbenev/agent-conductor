@@ -205,15 +205,8 @@ def open_run(
     asked = parse_run(body)
     hold_route(asked.run_id)
     snapshot = asked.snapshot()
-    checked = None
-    if _standing_run(store, asked.run_id) is None:
-        _providers_are_configured(asked, reachable)
-        if asked.workflow_id is not None:
-            checked = _workflow_revision(templates, asked)
-            probe = materialize(
-                checked, asked.binding, snapshot, graph_id=_PROBE_GRAPH,
-                run_id=asked.run_id, created_at=_PROBE_AT)
-            judge_plan(snapshot, asked.run_id, probe.nodes)
+    checked = _judged_revision(
+        store, templates, asked, snapshot, reachable, judge_plan)
     with store.transaction():
         hold_route(asked.run_id)
         standing = _standing_run(store, asked.run_id)
@@ -225,21 +218,55 @@ def open_run(
             store.create_run(envelope, snapshot)
             created, graph = True, None
             if asked.workflow_id is not None:
-                if checked is None:
-                    # The transaction found no standing run while the read
-                    # before it found none either, so the revision judged above
-                    # must be in hand. Refusing beats fetching it a second time:
-                    # that is the whole defect this shape makes unrepresentable.
-                    raise ApiRefusal.fixed("store_error")
                 graph = materialize(
-                    checked, asked.binding, snapshot, graph_id=ids("graph"),
-                    run_id=asked.run_id, created_at=clock())
+                    _gated(checked), asked.binding, snapshot,
+                    graph_id=ids("graph"), run_id=asked.run_id,
+                    created_at=clock())
                 store.append(graph)
     if created:
         publish(asked.run_id)
     return (201 if created else 200), {
         "run": envelope.as_dict(), "config": plain_json(snapshot),
         "graph": None if graph is None else graph.as_dict()}
+
+
+def _judged_revision(store, templates, asked, snapshot, reachable, judge_plan):
+    """Judge a run about to be created, and hand back the value that was judged.
+
+    Only a run about to be CREATED is judged: a client whose reply was lost is
+    entitled to the same answer from a process that starts with a different
+    roster, because what it is asking about is already durable.
+
+    The revision is read ONCE, here, and it is this VALUE the caller appends.
+    Handing back the name instead would let the caller read it again between the
+    gate and the write, which is exactly the defect this shape makes
+    unrepresentable.
+    """
+    if _standing_run(store, asked.run_id) is not None:
+        return None
+    _providers_are_configured(asked, reachable)
+    if asked.workflow_id is None:
+        return None
+    checked = _workflow_revision(templates, asked)
+    probe = materialize(
+        checked, asked.binding, snapshot, graph_id=_PROBE_GRAPH,
+        run_id=asked.run_id, created_at=_PROBE_AT)
+    judge_plan(snapshot, asked.run_id, probe.nodes)
+    return checked
+
+
+def _gated(checked):
+    """The revision the gates ran on, or a refusal rather than a second read.
+
+    ``None`` here would mean the transaction found no standing run while the
+    read before it found one -- impossible for a run that is created once. If it
+    ever became possible, the answer must not be to fetch the revision again.
+    What was judged is what is appended, and when what was judged is missing
+    there is nothing to append.
+    """
+    if checked is None:
+        raise ApiRefusal.fixed("store_error")
+    return checked
 
 
 def _standing_run(store: "RunStore", run_id: str):
@@ -414,6 +441,17 @@ def run_row(store: "RunStore", run_id: str) -> dict[str, Any]:
         recovered = store.read(run_id)
     except (StoreError, ContractError):
         return row
+    row.update(_derived_row(recovered))
+    return row
+
+
+def _derived_row(recovered) -> dict[str, Any]:
+    """The live half of a run row, computed from the journal it replayed.
+
+    Separated from the row above so the row's own shape -- what a reader gets
+    when a run CANNOT be read -- is visible on its own. Every key here is
+    derived; none is stored anywhere.
+    """
     values = [stored.value for stored in recovered.records]
     results = [value for value in values
                if isinstance(value, ActionResultReceipt)]
@@ -422,7 +460,7 @@ def run_row(store: "RunStore", run_id: str) -> dict[str, Any]:
                  if isinstance(value, ActionRequest)}
     graph = graph_payload(recovered)
     runtime = graph["runtime"]
-    row.update({
+    return {
         "unreadable": False,
         "cycle_id": recovered.envelope.cycle_id,
         "created_at": recovered.envelope.created_at,
@@ -434,5 +472,4 @@ def run_row(store: "RunStore", run_id: str) -> dict[str, Any]:
             1 for node in runtime["nodes"] if node.get("decision") == "idle"),
         "open_actions": len(requested - answered),
         "last_outcome": results[-1].outcome if results else None,
-    })
-    return row
+    }
