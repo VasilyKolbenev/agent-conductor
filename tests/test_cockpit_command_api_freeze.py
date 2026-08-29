@@ -117,6 +117,7 @@ EXPECTED_ERRORS = {
     "capability_unsupported": (409, "capability"),
     "authorization_refused": (409, "authorization"),
     "record_conflict": (409, "store"),
+    "draft_changed": (409, "concurrency"),
 }
 EXPECTED_ERROR_CODES = frozenset(EXPECTED_ERRORS)
 

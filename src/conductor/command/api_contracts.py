@@ -48,6 +48,7 @@ ERROR_STATUS = MappingProxyType({
     "capability_unsupported": 409,
     "authorization_refused": 409,
     "record_conflict": 409,
+    "draft_changed": 409,
 })
 
 _FIXED_MESSAGES = MappingProxyType({
@@ -64,6 +65,13 @@ _FIXED_MESSAGES = MappingProxyType({
     "capability_unsupported": "adapter does not support this capability",
     "authorization_refused": "confirmation did not authorize the request",
     "record_conflict": "durable record identity conflicts",
+    #: Its own code rather than one more `contract_invalid`, because the caller
+    #: did nothing wrong and there is something specific to DO about it: the
+    #: draft moved under an open review, and the window must fetch the new one
+    #: and ask the person to look again. A client cannot tell that from "the
+    #: request shape is invalid", so it could only offer to try again -- which
+    #: would publish the same stale review a second time.
+    "draft_changed": "the draft changed since it was reviewed; read it again",
 })
 
 ARGUMENT_SCHEMAS = MappingProxyType({

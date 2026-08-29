@@ -29,15 +29,28 @@ whole point of it. The two can never be confused for one another: `revisions`
 counts `<digits>.json` and a draft is not a number, and `revision_path` builds
 its name from an `int` and so can never land on `draft.json`. Neither rule has
 to know about the other.
+
+One draft is one mutable thing, so unlike a revision it needs an ORDER as well
+as an owner. `transaction` is that order: a process-local per-workflow gate,
+the same shape `RunStore` draws around a project root and for the same reason.
+Publishing reads the draft, judges it, writes a revision and consumes the
+draft, and the server that does this is a `ThreadingHTTPServer`; without the
+gate a save landing between the judging and the consuming was deleted by a
+publish that had never seen it, leaving no trace anywhere that it had existed.
+`discard_draft` additionally refuses to consume a draft other than the one it
+is told it is consuming, so the invariant does not rest on the lock alone.
 """
 from __future__ import annotations
 
 import json
 import os
 import stat
+from contextlib import contextmanager
 from pathlib import Path
+from threading import Lock, RLock
 from types import MappingProxyType
 from typing import NamedTuple
+from weakref import WeakValueDictionary
 
 from .containment import (
     RouteViolation,
@@ -146,6 +159,29 @@ class RevisionConflict(RecordConflict):
     """A revision was written twice with different facts under one identity."""
 
 
+class _WorkflowGate:
+    """One weakly indexed, strongly store-owned process-local workflow gate."""
+
+    __slots__ = ("lock", "__weakref__")
+
+    def __init__(self) -> None:
+        self.lock = RLock()
+
+
+_WORKFLOW_GATES_GUARD = Lock()
+_WORKFLOW_GATES: WeakValueDictionary[tuple[Path, str], _WorkflowGate] = (
+    WeakValueDictionary())
+
+
+def _workflow_gate(key: tuple[Path, str]) -> _WorkflowGate:
+    with _WORKFLOW_GATES_GUARD:
+        gate = _WORKFLOW_GATES.get(key)
+        if gate is None:
+            gate = _WorkflowGate()
+            _WORKFLOW_GATES[key] = gate
+        return gate
+
+
 class TemplateStore:
     """Single-writer store rooted at one project's `conductor/templates`.
 
@@ -157,6 +193,40 @@ class TemplateStore:
     def __init__(self, project_root: str | os.PathLike[str]) -> None:
         self.project_root = Path(project_root).resolve()
         self.templates_root = self.project_root / "conductor" / "templates"
+        # STRONGLY held, which is the half of "weakly indexed, strongly
+        # store-owned" that does the work. The module table is weak so two
+        # stores over one project share a gate and an idle project's gates are
+        # released; without a strong reference somewhere, a gate is collectable
+        # between two calls and the next caller mints a NEW lock -- so two
+        # threads serialize against different locks and the gate holds nothing.
+        # Bounded by the number of workflows this store instance has touched.
+        self._workflow_gates: dict[str, _WorkflowGate] = {}
+
+    @contextmanager
+    def transaction(self, template_id: str):
+        """Serialize one process-local transaction over ONE workflow's draft.
+
+        Per workflow rather than per store, because the thing being serialized
+        is one mutable file and two workflows share nothing. Reentrant, because
+        the chain that needs it calls several store methods that each take it
+        for their own sake -- a caller holding it must not deadlock against
+        itself.
+
+        Cross-process exclusion is out of scope here exactly as it is for
+        `RunStore.transaction`; the writer this product describes is one
+        process, and the concurrency that produced the defect was two threads
+        of one `ThreadingHTTPServer`.
+        """
+        with self._gate_for(self._workflow_dir(template_id).name).lock:
+            yield
+
+    def _gate_for(self, workflow: str) -> "_WorkflowGate":
+        """This store's own strong reference to the shared per-workflow gate."""
+        gate = self._workflow_gates.get(workflow)
+        if gate is None:
+            gate = _workflow_gate((self.templates_root, workflow))
+            self._workflow_gates[workflow] = gate
+        return gate
 
     def revision_path(self, template_id: str, revision: int) -> Path:
         """Where one revision lives, with both halves of the name validated.
@@ -378,6 +448,10 @@ class TemplateStore:
         """
         if type(draft) is not WorkflowDraft:
             raise StoreError("save_draft takes exactly a WorkflowDraft")
+        with self.transaction(draft.workflow_id):
+            return self._save_draft_locked(draft)
+
+    def _save_draft_locked(self, draft: WorkflowDraft) -> DraftSaved:
         path = self.draft_path(draft.workflow_id)
         self._owned(path)
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -404,6 +478,10 @@ class TemplateStore:
         a STORE fault and says so -- the caller supplied a workflow id and a
         durable file contradicted it, which is not the caller's contract error.
         """
+        with self.transaction(template_id):
+            return self._load_draft_locked(template_id)
+
+    def _load_draft_locked(self, template_id: str) -> WorkflowDraft | None:
         path = self.draft_path(template_id)
         self._owned(path)
         try:
@@ -431,22 +509,75 @@ class TemplateStore:
                 f"{draft.workflow_id!r} instead")
         return draft
 
-    def discard_draft(self, template_id: str) -> bool:
-        """Remove one workflow's editable document; False if there was none.
+    def discard_draft(
+            self, template_id: str, *,
+            expecting: "WorkflowDraft | None" = None) -> bool:
+        """Consume one workflow's editable document; False if there was none.
 
         This is the only delete this store has, and it is a delete of the one
         thing that was never durable history. No revision is removable by any
         call here, and none ever will be.
+
+        ``expecting`` names WHICH draft is being consumed: the value the
+        caller read, compared as the bytes it is stored as. A publish reads a
+        draft, judges it and then consumes it, and between the judging and the
+        consuming another client may save a different one; unlinking whatever
+        happens to be there then destroys work that no revision preserves and
+        that nothing records the loss of. Naming the draft converts that into a
+        no-op -- a draft that is not the one being consumed is left exactly
+        where it is.
+
+        A ``WorkflowDraft`` rather than bytes, so the one function that knows
+        how a draft is spelled on disk is still ``save_draft``'s own; a caller
+        holding a value would otherwise have to reproduce that grammar to be
+        able to name what it read.
+
+        The workflow gate makes the pair atomic, and this makes the pair CORRECT
+        -- a caller that forgets the transaction gets a refusal rather than a
+        silent deletion. ``None`` keeps the unconditional consume for callers
+        that mean "whatever is there", which is what discarding by hand means.
+
+        Returns:
+            True when a draft was consumed, False when there was none to
+            consume or when the one standing is not the one named.
         """
-        path = self.draft_path(template_id)
-        self._owned(path)
+        with self.transaction(template_id):
+            path = self.draft_path(template_id)
+            self._owned(path)
+            if not self._standing_draft_is(path, template_id, expecting):
+                return False
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                return False
+            except OSError as error:
+                raise StoreError(
+                    f"cannot discard the draft for workflow {template_id!r}: "
+                    f"{error.strerror}") from None
+            _fsync_dir(path.parent)
+            return True
+
+    def _standing_draft_is(
+            self, path: Path, template_id: str,
+            expecting: "WorkflowDraft | None") -> bool:
+        """Whether the draft on disk is the one the caller says it is consuming.
+
+        ``None`` means the caller named none and is consuming whatever stands,
+        which is what discarding a draft by hand means. Anything else is
+        compared as the bytes ``save_draft`` would have written for it, so the
+        two halves of the comparison are spelled by one function.
+        """
+        if expecting is None:
+            return True
+        if type(expecting) is not WorkflowDraft:
+            raise StoreError(
+                "discard_draft expects exactly a WorkflowDraft to consume")
         try:
-            path.unlink()
+            standing = path.read_bytes()
         except FileNotFoundError:
             return False
         except OSError as error:
             raise StoreError(
-                f"cannot discard the draft for workflow {template_id!r}: "
+                f"cannot read the draft for workflow {template_id!r}: "
                 f"{error.strerror}") from None
-        _fsync_dir(path.parent)
-        return True
+        return standing == _canonical_bytes(expecting.as_dict())

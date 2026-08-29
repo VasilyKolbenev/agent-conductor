@@ -160,6 +160,22 @@ def publish_revision(
     nothing about the draft, so the draft is left standing.
     """
     asked = parse_workflow_revision(body)
+    # The whole chain, under one per-workflow gate. Reading the draft, judging
+    # it, writing the revision and consuming the draft are four steps against
+    # one mutable file, and the server that runs them is a ThreadingHTTPServer:
+    # a save landing between the judging and the consuming was deleted by a
+    # publish that had never seen it, leaving no revision holding that work and
+    # no record anywhere that it had been saved. Under the gate there are only
+    # the two honest orders -- a save before the gate is taken makes the review
+    # stale and the publish is refused, and a save after the whole chain is a
+    # new draft standing beside the revision that was just written.
+    with templates.transaction(workflow_id):
+        return _publish_locked(templates, workflow_id, asked)
+
+
+def _publish_locked(
+        templates: "TemplateStore", workflow_id: str, asked) -> Answer:
+    """One publish, with the workflow's draft held still for its duration."""
     revisions = templates.revisions(workflow_id)
     expected = 1 if not revisions else revisions[-1] + 1
     if asked.revision > expected:
@@ -185,7 +201,11 @@ def publish_revision(
         return refused_with(refused)
     published = templates.save(template)
     if from_draft:
-        templates.discard_draft(workflow_id)
+        # The BYTES that were read, not the workflow id. The gate already makes
+        # this pair atomic; naming the draft makes it correct as well, so a
+        # future caller that publishes without the gate leaves another client's
+        # work standing instead of deleting it silently.
+        templates.discard_draft(workflow_id, expecting=draft)
     return (201 if published.created else 200), template.as_dict()
 
 
@@ -203,9 +223,15 @@ def _publishes_what_was_reviewed(from_draft: bool, asked, document) -> None:
     the alternative is this route deciding which of two drawings a person meant.
     A caller supplying its own document is exempt, since those bytes ARE the
     identity it named.
+
+    ``draft_changed`` and not ``contract_invalid``. The body is well formed and
+    the caller did nothing wrong -- what changed is the world -- and a client
+    told only that its request shape is invalid can do nothing but offer the
+    same stale review again. Told THIS, a window can do the one useful thing:
+    fetch the draft that is standing now and put it in front of the person.
     """
     if from_draft and asked.reviewed_digest != draft_digest(document):
-        raise ApiRefusal.fixed("contract_invalid")
+        raise ApiRefusal.fixed("draft_changed")
 
 
 def _says_nothing_new(templates, workflow_id: str, document, revision: int) -> bool:

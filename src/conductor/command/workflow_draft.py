@@ -483,12 +483,18 @@ def saved_draft(
     ``saved_at`` is reused when the document is the same one, and the store then
     finds bytes it already holds and writes nothing at all.
 
+    Read and write are one transaction. The read decides what the write will
+    say, so two clients saving at once could otherwise both read the same
+    standing draft and the later write would carry a `saved_at` chosen for the
+    document the earlier one replaced.
+
     Returns:
         True when this call is what first gave the workflow a draft.
     """
-    standing = templates.load_draft(workflow_id)
-    saved_at = (standing.saved_at
-                if standing is not None and standing.settled() == document
-                else clock())
-    return templates.save_draft(WorkflowDraft(
-        workflow_id=workflow_id, saved_at=saved_at, document=document)).created
+    with templates.transaction(workflow_id):
+        standing = templates.load_draft(workflow_id)
+        saved_at = (standing.saved_at
+                    if standing is not None and standing.settled() == document
+                    else clock())
+        return templates.save_draft(WorkflowDraft(
+            workflow_id=workflow_id, saved_at=saved_at, document=document)).created

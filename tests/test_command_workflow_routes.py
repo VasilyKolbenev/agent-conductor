@@ -403,10 +403,13 @@ def test_the_draft_is_cleared_only_after_the_revision_file_exists(tmp_path):
         observed.append(("save", draft_path.exists(), revision_path.exists()))
         return honest_save(template)
 
-    def watched_discard(workflow_id):
+    def watched_discard(workflow_id, **named):
         observed.append(
             ("discard", draft_path.exists(), revision_path.exists()))
-        return honest_discard(workflow_id)
+        # Passed through rather than dropped: the route names WHICH draft it is
+        # consuming, and a double that swallowed that would let the order be
+        # observed while the naming was quietly not happening.
+        return honest_discard(workflow_id, **named)
 
     templates.save, templates.discard_draft = watched_save, watched_discard
     assert post(subject, f"/command/workflows/{WORKFLOW}/revisions",

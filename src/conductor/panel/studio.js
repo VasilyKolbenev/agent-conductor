@@ -398,7 +398,12 @@ const DECIDED = "The decision is a durable receipt in this run's journal. "
   //: A decision is gated on the STREAM and a workflow write on `writeReady`,
   //: and they are two questions: readiness names one answer about one
   //: workflow, and a decision is not about a workflow at all.
-  async function write(target, subject, body, carry) {
+  //: `recover` is offered the REFUSAL, after it has been said. A refusal is
+  //: normally the end of a write, but one of them names a state this window
+  //: can still act on -- see `onPublishConfirm` -- and a window that only
+  //: printed it would leave a person looking at a review of a document that no
+  //: longer exists, with no control that does anything but fail again.
+  async function write(target, subject, body, carry, recover = null) {
     const ready = target === "decisions"
       ? streamOpen : state.workflows.writeReady;
     if (!ready) {
@@ -412,6 +417,7 @@ const DECIDED = "The decision is a durable receipt in this run's journal. "
     if (result.status !== "accepted") {
       const refusal = refusalOf(result);
       say(target, refusal.phase, refusal.notice);
+      if (recover) recover(result);
       return;
     }
     carry(result);
@@ -478,6 +484,16 @@ const DECIDED = "The decision is a durable receipt in this run's journal. "
       if (asked !== chosenWorkflow) return;
       refreshWorkflow(asked, {kind: "publish", workflowId: asked,
         revision: number, phase: "saved", notice: PUBLISHED});
+    }, (result) => {
+      // The one refusal a window can act on rather than only report: the draft
+      // moved under the open review. Leaving the panel open would show a
+      // person a drawing the server no longer holds, above a Confirm that is
+      // now guaranteed to fail. So the review is closed and the workflow is
+      // re-read; what comes back is the draft that actually stands, and the
+      // person opens a review of THAT.
+      if (result.code !== "draft_changed" || asked !== chosenWorkflow) return;
+      dispatch({type: "publish-review", open: false});
+      refreshWorkflow(asked);
     });
   }
 

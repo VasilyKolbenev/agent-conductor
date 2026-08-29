@@ -27,9 +27,14 @@ one description read twice.
 """
 from __future__ import annotations
 
+from conductor.command.template_store import TemplateStore
+from conductor.command.workflow_draft import WorkflowDraft
+
 from browser_tests.test_studio_lifecycle import _publish
 from browser_tests.test_studio_editing import (  # noqa: F401
+    DRAFT,
     SAVED_AT,
+    WORKFLOW_ID,
     _Bench,
     bench,
     studio_url,
@@ -215,3 +220,111 @@ def test_the_two_diagnostic_lists_never_answer_for_one_another(
     assert "half a binding" not in stored, (
         "the unsaved drawing's problem was reported as the stored draft's")
     assert bench.problems == []
+
+
+# -- a review that went stale while it was open ------------------------------
+
+
+def _save_over_the_open_review(tmp_path) -> None:
+    """Another client replaces the draft, through the production writer.
+
+    Saving a draft publishes no stream frame -- there is nothing for the
+    reviewing window to hear -- which is exactly why the window cannot know its
+    review has gone stale until it tries to publish.
+    """
+    TemplateStore(tmp_path).save_draft(WorkflowDraft(
+        workflow_id=WORKFLOW_ID, saved_at="2026-08-20T11:00:00Z",
+        document={**DRAFT, "title": "UNREVIEWED SERVER CHANGE"}))
+
+
+def _only_the_refusal_was_logged(bench: _Bench) -> None:
+    """Exactly one console line, and it is Chromium narrating the 409.
+
+    Every other test in this module asserts an EMPTY problem log, because every
+    other refusal in it happens in the window before anything reaches the wire.
+    These two are the first to make the browser receive a 4xx, and a browser
+    logs "Failed to load resource" for one whether or not the page handles it.
+    Allowing the log wholesale would blind the assertion; naming the one line
+    keeps every other console error and every page error failing as before.
+    """
+    assert len(bench.problems) == 1, bench.problems
+    said = bench.problems[0]
+    assert "Failed to load resource" in said, said
+    assert "409" in said, said
+
+
+def _workflow_reads(bench: _Bench) -> int:
+    """How many times this window has read the workflow whole."""
+    return len([row for row in bench.recorder.rows
+                if row[0] == "GET"
+                and row[1].endswith(f"/command/workflows/{WORKFLOW_ID}")])
+
+
+def test_a_review_that_went_stale_is_refused_and_reopened_on_the_new_draft(
+        bench: _Bench, tmp_path) -> None:
+    """The refusal a person can act on, driven in a real browser.
+
+    The window opens a review of the draft it read, another client replaces
+    that draft, and Confirm is pressed. Three things have to be true and only
+    the first one was: nothing is published; the person is told what actually
+    happened rather than that their request was malformed; and the stale review
+    is taken off the screen and the newer draft loaded in its place.
+
+    Without the third, the panel stayed open over a document the server no
+    longer held, above a Confirm guaranteed to fail every time it was pressed.
+    """
+    page = bench.page
+    page.wait_for_selector(
+        '#workflowToolbar [data-focus="action:onSaveDraft"]:not([disabled])')
+    page.locator('#workflowToolbar [data-focus="action:onPublish"]').click()
+    page.wait_for_selector('[data-review="publish"]')
+
+    reads_before = _workflow_reads(bench)
+    _save_over_the_open_review(tmp_path)
+    page.locator('[data-focus="action:onPublishConfirm"]').click()
+
+    # The review is gone rather than left standing over a document that moved.
+    page.wait_for_selector('[data-review="publish"]', state="detached")
+    said = page.locator("#workflowToolbar [data-save]").inner_text()
+    assert "draft changed while you were reviewing it" in said, said
+    assert "The request shape is invalid" not in said, said
+    # And the window went back to the server for the draft that now stands,
+    # rather than only printing a sentence over the one it was holding.
+    page.wait_for_function(
+        "() => document.querySelector('#workflowToolbar [data-save]')"
+        ".innerText.includes('draft changed')")
+    assert _workflow_reads(bench) > reads_before, (
+        "the window reported the conflict without re-reading the workflow")
+    assert TemplateStore(tmp_path).revisions(WORKFLOW_ID) == (), (
+        "a stale review published a revision")
+    _only_the_refusal_was_logged(bench)
+
+
+def test_the_reopened_review_publishes_the_draft_that_now_stands(
+        bench: _Bench, tmp_path) -> None:
+    """The over-correction control: the road must still lead somewhere.
+
+    A refusal that closed the review and left the window unable to publish
+    would trade one dead end for another. After looking again, the person
+    publishes -- and what lands is the document they were shown the second
+    time, not the one they first reviewed.
+    """
+    page = bench.page
+    page.wait_for_selector(
+        '#workflowToolbar [data-focus="action:onSaveDraft"]:not([disabled])')
+    page.locator('#workflowToolbar [data-focus="action:onPublish"]').click()
+    page.wait_for_selector('[data-review="publish"]')
+    _save_over_the_open_review(tmp_path)
+    page.locator('[data-focus="action:onPublishConfirm"]').click()
+    page.wait_for_selector('[data-review="publish"]', state="detached")
+    page.wait_for_function(
+        "() => document.querySelector('#workflowToolbar [data-save]')"
+        ".innerText.includes('draft changed')")
+
+    _publish(page)
+
+    page.wait_for_selector('.studio-canvas__banner[data-document="published"]')
+    templates = TemplateStore(tmp_path)
+    assert templates.revisions(WORKFLOW_ID) == (1,)
+    assert templates.load(WORKFLOW_ID, 1).title == "UNREVIEWED SERVER CHANGE"
+    _only_the_refusal_was_logged(bench)

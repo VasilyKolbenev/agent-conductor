@@ -326,7 +326,8 @@ choose a code.
   { "code": "service_refused",       "status": 409, "source": "service" },
   { "code": "capability_unsupported", "status": 409, "source": "capability" },
   { "code": "authorization_refused", "status": 409, "source": "authorization" },
-  { "code": "record_conflict",       "status": 409, "source": "store" }
+  { "code": "record_conflict",       "status": 409, "source": "store" },
+  { "code": "draft_changed",         "status": 409, "source": "concurrency" }
 ]
 ```
 
@@ -343,6 +344,13 @@ choose a code.
 - `authorization_refused` is one `AuthorizationError`: absent proposal,
   mismatched facts, changed digest, and temporal expiry are not falsely split
   into codes the current gate cannot type-distinguish.
+- `draft_changed` is the one refusal that is about TIMING rather than about the
+  request: the workflow draft was replaced between the read a client reviewed
+  and the publish it confirmed. It is deliberately not `contract_invalid` --
+  the body is well formed and the caller is not at fault -- and deliberately
+  not `record_conflict`, which is about a durable identity being reused. A
+  client receiving it must re-read the workflow and present the new draft for
+  review; retrying the same body is guaranteed to be refused again.
 - `route_unsafe` is held by the public typed dependency in section 1. API-1
   consumes only whether `run_route_violations` is empty; it never parses a
   rendered violation or `PreviewError` prose.

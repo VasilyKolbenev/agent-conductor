@@ -32,6 +32,8 @@ export const ERROR_LABELS = Object.freeze({
   capability_unsupported: "This capability is unavailable.",
   contract_invalid: "The request shape is invalid.",
   csrf_denied: "The local session expired. Submit again.",
+  draft_changed: "The draft changed while you were reviewing it. The newer "
+    + "version has been loaded — read it and publish again.",
   malformed_request: "The request could not be read.",
   method_not_allowed: "That operation is unavailable.",
   record_conflict: "The durable record conflicts with an existing fact.",
