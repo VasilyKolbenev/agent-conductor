@@ -50,7 +50,8 @@ LINE_CAP = 800
 #: It is a PERMISSION table: a module that has not needed one of its neighbours
 #: is not a fault, and one reaching for a neighbour it was never granted is.
 PERMITTED = {
-    "studio-store.js": frozenset({"./studio-model.js", "./studio-runread.js"}),
+    "studio-store.js": frozenset({"./studio-model.js", "./studio-runread.js",
+                                  "./studio-review.js"}),
     "studio-view.js": frozenset({"./command-view.js", "./command-projection.js",
                                  "./studio-model.js"}),
     "studio.js": frozenset({

@@ -485,12 +485,72 @@ function saveControls(state, handlers) {
   }
   if (!held.writeReady || !held.publishable) {
     publish.disabled = true;
-    publish.title = held.publishable
-      ? "This workflow has not been read since the connection came back."
-      : "Publishing needs a SAVED draft the server says would construct a "
-        + "revision. Save the drawing first, then read what stops it.";
+    publish.title = held.unchanged
+      ? "This draft is the revision already published, word for word. "
+        + "Publishing it would record an edit that never happened."
+      : (held.publishable
+        ? "This workflow has not been read since the connection came back."
+        : "Publishing needs a SAVED draft the server says would construct a "
+          + "revision. Save the drawing first, then read what stops it.");
   }
   box.append(check, save, publish);
+  if (held.reviewing) box.append(publishReview(state, handlers));
+  return box;
+}
+
+//: One line per KIND of change, and the ids under it. A person about to create
+//: an immutable revision is answering "is this what I meant", and a count with
+//: no names cannot be checked against what they remember doing.
+function changeLines(changes) {
+  const lines = [];
+  if (changes === null) return lines;
+  if (changes.title !== null) {
+    lines.push(`Title: "${changes.title.from}" becomes "${changes.title.to}"`);
+  }
+  const named = [["Steps added", changes.added],
+                 ["Steps removed", changes.removed],
+                 ["Steps changed", changes.changed],
+                 ["Connections added", changes.edgesAdded],
+                 ["Connections removed", changes.edgesRemoved]];
+  for (const [label, ids] of named) {
+    if (ids.length) lines.push(`${label} (${ids.length}): ${ids.join(", ")}`);
+  }
+  return lines;
+}
+
+//: The step between the pointer and a durable revision. It states the number
+//: about to be created, what would change, and that validation passed -- and
+//: it offers a way out. Cancel writes nothing at all: it closes this panel and
+//: leaves the draft, the drawing and the standing revisions exactly as they
+//: were, which is why it is a button and not a smaller word.
+function publishReview(state, handlers) {
+  const held = state.workflows;
+  const lines = changeLines(held.changes);
+  const box = element("div", {className: "studio-review",
+    "data-review": "publish"});
+  box.append(element("h3", {text: `Publish revision ${held.nextRevision}?`}));
+  box.append(element("p", {className: "studio-hint", text:
+    "A revision is immutable. Once written it stands, and later edits become "
+    + "further revisions rather than changing this one."}));
+  box.append(element("p", {className: "studio-fact__v", text:
+    held.diagnostics.length === 0
+      ? "Validation: the server says this draft would construct a revision."
+      : "Validation: the server refuses this draft."}));
+  if (held.changes === null) {
+    box.append(element("p", {className: "studio-hint", text:
+      "This is the first revision of this workflow, so there is nothing to "
+      + "compare it against."}));
+  } else if (lines.length === 0) {
+    box.append(element("p", {className: "studio-hint", text:
+      "No structural change was found between this drawing and the revision "
+      + "now standing."}));
+  } else {
+    box.append(element("ul", {className: "studio-review__changes"},
+      lines.map((line) => element("li", {text: line}))));
+  }
+  box.append(button(handlers, "onPublishConfirm",
+    `Confirm and publish revision ${held.nextRevision}`, null));
+  box.append(button(handlers, "onPublishCancel", "Cancel", null));
   return box;
 }
 

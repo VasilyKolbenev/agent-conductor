@@ -488,7 +488,10 @@ def test_a_workflow_nothing_is_stored_for_is_a_state_and_not_a_refusal(tmp_path)
         "workflow_id": "workflow-nobody-drew",
         "revisions": [], "latest_revision": None, "unreadable_revisions": [],
         "published": None, "draft": None, "diagnostics": [],
-        "publishable": False, "next_revision": 1,
+        # `unchanged` is False here for a reason worth stating: a workflow with
+        # nothing published has nothing to be unchanged FROM, and its first
+        # revision always says something new even when the drawing is empty.
+        "publishable": False, "unchanged": False, "next_revision": 1,
     }
 
 

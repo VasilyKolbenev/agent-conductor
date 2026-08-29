@@ -189,6 +189,49 @@ def publish_candidate(
         raise DraftRefused((_row(error),)) from None
 
 
+def unchanged_from_published(
+        draft: Mapping[str, Any] | None, published: Mapping[str, Any] | None,
+        *, workflow_id: str, revision: int) -> bool:
+    """Would publishing this draft create a revision that says nothing new?
+
+    Compared as the CANDIDATE would be built rather than as the draft is
+    stored, because the two documents differ in exactly the two fields a draft
+    never carries: `template_id` and `revision`. Comparing the stored shapes
+    would call every draft different from every revision, and comparing them
+    with the numbers stripped would call a draft equal to a revision it is not
+    actually a copy of. So the draft is turned into the candidate it would
+    publish AS, and both sides are canonicalised by the contract that owns
+    them.
+
+    A workflow with nothing published yet answers False: its first revision
+    always says something new, even when the drawing is empty.
+
+    Args:
+        draft: The stored draft document, or None when there is none.
+        published: The latest published revision as stored, or None.
+        workflow_id: The identity the candidate would carry.
+        revision: The number the candidate would carry.
+
+    Returns:
+        True only when a publish would write a document identical, field for
+        field, to the one already standing at the latest revision.
+    """
+    if draft is None or published is None:
+        return False
+    try:
+        candidate = publish_candidate(
+            draft, workflow_id=workflow_id, revision=revision).as_dict()
+    except DraftRefused:
+        # A draft that will not construct is not "unchanged"; it is refused,
+        # and the diagnostics say so. Answering True here would hide a broken
+        # draft behind a reassuring word.
+        return False
+    standing = dict(published)
+    candidate.pop("revision", None)
+    standing.pop("revision", None)
+    return canonical_json(candidate) == canonical_json(standing)
+
+
 def draft_diagnostics(
         document: Mapping[str, Any], *, workflow_id: str,
         revision: int) -> tuple[dict[str, Any], ...]:
@@ -301,6 +344,24 @@ def starters() -> list[dict[str, Any]]:
     return rows
 
 
+def _latest_published(templates, workflow_id: str, latest: int | None):
+    """The latest revision as stored, and the numbers that would not read.
+
+    ContractError, not TemplateError. The store raises the narrow one for bytes
+    it cannot open, but the CONTRACT raises the base class for a document that
+    opens and is not a template -- a missing `template_id`, an array where an
+    object belongs. Catching only the narrow one let that escape as
+    `contract_invalid`, which blames the caller for a well-formed request and
+    makes one damaged file answer for the whole workflow.
+    """
+    if latest is None:
+        return None, []
+    try:
+        return templates.load(workflow_id, latest).as_dict(), []
+    except ContractError:
+        return None, [latest]
+
+
 def workflow_state(
         templates: "TemplateStore", workflow_id: str) -> dict[str, Any]:
     """Everything the Studio needs about one workflow, published and unsaved.
@@ -316,23 +377,14 @@ def workflow_state(
     """
     revisions = templates.revisions(workflow_id)
     latest = revisions[-1] if revisions else None
-    published, unreadable = None, []
-    if latest is not None:
-        try:
-            published = templates.load(workflow_id, latest).as_dict()
-        except ContractError:
-            # ContractError, not TemplateError. The store raises the narrow one
-            # for bytes it cannot open, but the CONTRACT raises the base class
-            # for a document that opens and is not a template -- a missing
-            # `template_id`, an array where an object belongs. Catching only the
-            # narrow one let that escape as `contract_invalid`, which blames the
-            # caller for a well-formed request and makes one damaged file
-            # answer for the whole workflow.
-            unreadable.append(latest)
+    published, unreadable = _latest_published(templates, workflow_id, latest)
     next_revision = 1 if latest is None else latest + 1
     draft = templates.load_draft(workflow_id)
     diagnostics = () if draft is None else draft_diagnostics(
         draft.settled(), workflow_id=workflow_id, revision=next_revision)
+    unchanged = unchanged_from_published(
+        None if draft is None else draft.settled(), published,
+        workflow_id=workflow_id, revision=next_revision)
     return {
         "workflow_id": workflow_id,
         "revisions": list(revisions),
@@ -345,7 +397,14 @@ def workflow_state(
         # True only when there IS a draft and nothing stops it. A workflow with
         # no draft has nothing to publish, which is a different thing from a
         # draft that would be refused, and the two must not share a word.
-        "publishable": draft is not None and not diagnostics,
+        # True only when there IS a draft, nothing stops it, AND it would say
+        # something the standing revision does not. Publishing a draft nobody
+        # has changed used to create a second revision carrying the same
+        # document under a new number -- a durable record of an edit that never
+        # happened, and one no reader could tell from a real one afterwards.
+        "publishable": (draft is not None and not diagnostics
+                        and not unchanged),
+        "unchanged": unchanged,
         "next_revision": next_revision,
     }
 

@@ -41,6 +41,7 @@ from .workflow_draft import (
     parse_document,
     publish_candidate,
     saved_draft,
+    unchanged_from_published,
     starters,
     workflow_rows,
     workflow_state,
@@ -167,6 +168,14 @@ def publish_revision(
     if from_draft and draft is None:
         raise ApiRefusal.fixed("contract_invalid")
     document = draft.settled() if draft is not None else asked.document
+    # A publish that would write the document already standing is refused here
+    # and not merely discouraged on screen. The read route computes the same
+    # answer for the button's sake, but a client that never read it, or read it
+    # and posted anyway, must not be able to create a durable record of an edit
+    # that never happened -- one no reader could tell from a real one after the
+    # fact. The comparison is the same function the read route calls.
+    if _says_nothing_new(templates, workflow_id, document, asked.revision):
+        raise ApiRefusal.fixed("contract_invalid")
     try:
         template = publish_candidate(
             document, workflow_id=workflow_id, revision=asked.revision)
@@ -176,6 +185,24 @@ def publish_revision(
     if from_draft:
         templates.discard_draft(workflow_id)
     return (201 if published.created else 200), template.as_dict()
+
+
+def _says_nothing_new(templates, workflow_id: str, document, revision: int) -> bool:
+    """Whether publishing this document would repeat the standing revision.
+
+    The standing revision is read through the contract's own door; a revision
+    this build cannot read is not a document anything can be compared against,
+    so the answer is False and the publish proceeds on its own merits.
+    """
+    standing = revision - 1
+    if standing < 1:
+        return False
+    try:
+        published = templates.load(workflow_id, standing).as_dict()
+    except ContractError:
+        return False
+    return unchanged_from_published(
+        document, published, workflow_id=workflow_id, revision=revision)
 
 
 def refused_with(refused: DraftRefused) -> Answer:

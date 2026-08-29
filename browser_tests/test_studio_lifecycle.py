@@ -301,6 +301,21 @@ def _save_draft(page: Page) -> None:
     page.wait_for_selector('#workflowToolbar [data-save="saved"]')
 
 
+def _publish(page: Page) -> None:
+    """Publish through the REVIEW, which is the only road there is now.
+
+    Publishing used to be one click. It is two: the first opens a panel naming
+    the revision about to be created and what would change, and only the
+    Confirm inside it reaches the wire. A helper rather than four copies of the
+    sequence, so a third step added to the road moves every caller at once.
+    """
+    page.wait_for_selector(
+        '#workflowToolbar [data-focus="action:onPublish"]:not([disabled])')
+    page.locator('#workflowToolbar [data-focus="action:onPublish"]').click()
+    page.wait_for_selector('[data-review="publish"]')
+    page.locator('[data-focus="action:onPublishConfirm"]').click()
+
+
 def _read_the_run(page: Page) -> None:
     """Open the seeded run whole, waiting on its journal being drawn.
 
@@ -449,7 +464,11 @@ def test_publishing_makes_one_revision_clears_the_draft_and_reads_it_back(
         page.wait_for_selector(
             '#workflowToolbar [data-focus="action:onPublish"]:not([disabled])')
         assert publish.inner_text() == "Publish revision 1"
+        # The review stands between the pointer and the write, naming the
+        # number about to be created before anything is written.
         publish.click()
+        _review_names_the_number(page, project, "publish-bench", 1)
+        page.locator('[data-focus="action:onPublishConfirm"]').click()
         page.wait_for_selector(
             '.studio-canvas__banner[data-document="published"]')
 
@@ -474,6 +493,63 @@ def test_publishing_makes_one_revision_clears_the_draft_and_reads_it_back(
         page.context.close()
 
 
+def _review_names_the_number(page, project, workflow_id: str, number: int) -> None:
+    """The panel is open, says which revision, and has written nothing yet."""
+    page.wait_for_selector('[data-review="publish"]')
+    # Lowered because `inner_text` answers with what is PAINTED, and the
+    # stylesheet upper-cases this heading. Matching the source casing would be
+    # pinning the stylesheet by accident.
+    said = page.locator('[data-review="publish"]').inner_text().lower()
+    assert f"publish revision {number}?" in said, said
+    assert "immutable" in said, said
+    assert project.templates().revisions(workflow_id) == (), (
+        "the review wrote a revision before anybody confirmed it")
+
+
+def _nothing_was_written(project, window, workflow_id: str) -> None:
+    """"Wrote nothing" has three meanings, and they can come apart.
+
+    No revision on disk, no POST on the wire, and the draft still there to keep
+    editing. A Cancel that discarded the drawing would satisfy the first two and
+    still lose the user's work.
+    """
+    templates = project.templates()
+    assert templates.revisions(workflow_id) == ()
+    assert templates.load_draft(workflow_id) is not None, (
+        "cancelling the review discarded the draft")
+    assert window.writes("/revisions") == 0
+
+
+def test_cancelling_the_publish_review_writes_absolutely_nothing(
+        chromium: Browser, project: _Project) -> None:
+    """Cancel is a way out, and a way out that writes is not one.
+
+    Asserted on three surfaces because "wrote nothing" has three meanings that
+    can come apart: no revision on disk, no POST on the wire, and the draft
+    still there to keep editing. A Cancel that discarded the drawing would
+    satisfy the first two and still lose the user's work.
+    """
+    page, window = _open(chromium, project)
+    try:
+        _start_from_starter(page, "cancel-bench")
+        _save_draft(page)
+        page.wait_for_selector(
+            '#workflowToolbar [data-focus="action:onPublish"]:not([disabled])')
+        page.locator('#workflowToolbar [data-focus="action:onPublish"]').click()
+        page.wait_for_selector('[data-review="publish"]')
+
+        page.locator('[data-focus="action:onPublishCancel"]').click()
+        page.wait_for_selector('[data-review="publish"]', state="detached")
+
+        _nothing_was_written(project, window, "cancel-bench")
+        # And the road is still open: the button is back, not spent.
+        assert not page.locator(
+            '#workflowToolbar [data-focus="action:onPublish"]').is_disabled()
+        assert window.problems == []
+    finally:
+        page.context.close()
+
+
 def test_the_window_cannot_publish_the_same_document_a_second_time(
         chromium: Browser, project: _Project) -> None:
     """One document, one revision, and the second attempt is unreachable.
@@ -487,9 +563,7 @@ def test_the_window_cannot_publish_the_same_document_a_second_time(
     try:
         _start_from_starter(page, "once-bench")
         _save_draft(page)
-        page.wait_for_selector(
-            '#workflowToolbar [data-focus="action:onPublish"]:not([disabled])')
-        page.locator('#workflowToolbar [data-focus="action:onPublish"]').click()
+        _publish(page)
         page.wait_for_selector(
             '.studio-canvas__banner[data-document="published"]')
 

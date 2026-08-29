@@ -17,6 +17,7 @@
 import {projectControls, projectProviders, projectRunRead, projectRuns,
   projectStarters, projectWorkflow, projectWorkflows} from "./studio-model.js";
 import {decisionRows, participantsOf} from "./studio-runread.js";
+import {changeSummary} from "./studio-review.js";
 
 //: The seven words a screen container may stand in; the plain sentence beside
 //: each is the view's.
@@ -89,6 +90,19 @@ const WORKFLOWS = Object.freeze({
   diagnostics: Object.freeze([]),
   problems: Object.freeze([]),
   publishable: false,
+  //: The server's word for "this draft would repeat the standing revision".
+  //: Kept apart from `publishable` because the two are different sentences to
+  //: a person: one says the drawing is broken, the other says it is a copy.
+  unchanged: false,
+  //: What publishing WOULD change, computed once when the read lands, from the
+  //: two documents that read already carries. Null until there is a draft to
+  //: compare. It is state and not a render-time computation for the reason
+  //: `diagnostics` is: the review a person confirms must be the review that
+  //: was on screen when they read it.
+  changes: null,
+  //: Whether the publish REVIEW is open. Publishing is two steps now: this
+  //: window shows what would be written and waits, and only a Confirm writes.
+  reviewing: false,
   nextRevision: null,
   savedAt: null,
   //: Whether this window may WRITE. Not "is the socket up": between choosing a
@@ -533,6 +547,12 @@ function workflowLoaded(state, event) {
       provenance: merged === null ? "none" : merged.provenance,
       diagnostics: payload.diagnostics, problems: saveProblems(draft),
       publishable: payload.publishable, nextRevision: payload.next_revision,
+      unchanged: payload.unchanged === true,
+      changes: changeSummary(payload.published, draft),
+      // A landed read closes any open review: what it showed was computed from
+      // the previous answer, and confirming a review a newer read has already
+      // replaced is the stale-state write this step exists to prevent.
+      reviewing: false,
       savedAt: payload.draft === null ? null : payload.draft.saved_at,
       writeReady: event.ready === true, ...carried(state.workflows, event)}),
     notice: "",
@@ -735,6 +755,14 @@ const ARMS = Object.freeze({
   "run-loaded": runLoaded,
   "runs-loaded": runsLoaded,
   "runs-phase": (state, event) => phaseMoved(state, "runs", event),
+  //: Publishing is two steps, and this arm is the first one. It opens the
+  //: review and writes nothing; only a Confirm reaches the wire. It refuses to
+  //: open over a workflow the server has not called publishable, so a review
+  //: can never be shown for a write that would be refused anyway.
+  "publish-review": (state, event) => Object.freeze({...state,
+    workflows: Object.freeze({...state.workflows,
+      reviewing: event.open === true && state.workflows.publishable
+        && state.workflows.writeReady})}),
   save: saveMoved,
   screen: (state, event) => SCREENS.includes(event.screen)
     ? Object.freeze({...state, screen: event.screen}) : state,

@@ -52,7 +52,7 @@ MODEL = PANEL / "studio-model.js"
 #: the packaged directory in both directions.
 MODULES = ("studio.js", "studio-store.js", "studio-view.js", "studio-model.js",
            "studio-canvas.js", "studio-inspector.js", "studio-runs.js",
-           "studio-people.js", "studio-runread.js")
+           "studio-people.js", "studio-runread.js", "studio-review.js")
 #: The one transport module: every `fetch(`, the one stream, the session token
 #: and the screen router. `graph.js` holds the same position in its window, and
 #: the sealed-API guard below pins this one the same way.
@@ -70,7 +70,13 @@ PERMITTED_IMPORTS = {
     #: reached for a neighbour would be able to answer from something other
     #: than the payload it was given.
     "studio-runread.js": frozenset(),
-    "studio-store.js": frozenset({"./studio-model.js", "./studio-runread.js"}),
+    #: What a publish would change, over two documents a read already
+    #: carries. It imports nothing for the same reason: a comparison that
+    #: could reach a neighbour could answer from something other than the
+    #: two documents it was handed.
+    "studio-review.js": frozenset(),
+    "studio-store.js": frozenset({"./studio-model.js", "./studio-runread.js",
+                                  "./studio-review.js"}),
     "studio-view.js": frozenset({"./command-view.js", "./command-projection.js",
                                  "./studio-model.js"}),
     "studio-canvas.js": frozenset({"./command-view.js",
@@ -431,13 +437,14 @@ def test_the_boundary_refuses_rather_than_repairs_and_says_which_it_does():
     # Navigation and the run read REFUSE: a workflow, a run or a journal row
     # this window cannot read takes the whole payload with it rather than
     # leaving a shorter truth on screen.
-    # 80 before the frozen workflow reference landed, and 84 after it. The six
-    # new refusals are all navigation: a config whose key set this window does
-    # not know, a config missing one of the two keys every writer supplies, a
-    # run whose workflow reference is there and will not read, the two halves of
-    # a run ROW's provenance -- half a reference, or a malformed one -- and a
-    # project name this build could not have written.
-    assert source.count("return null;") == 85
+    # 80 before the frozen workflow reference landed, 84 after it, 85 with the
+    # project name and 86 with the publish review's `unchanged`. Every one of
+    # the seven is navigation: a config whose key set this window does not know,
+    # a config missing one of the two keys every writer supplies, a run whose
+    # workflow reference is there and will not read, the two halves of a run
+    # ROW's provenance, a project name this build could not have written, and a
+    # workflow read whose `unchanged` is not a boolean.
+    assert source.count("return null;") == 86
     assert source.count("return false;") == 6
     # Decoration DROPS: the provider roster, the starter offers, and the one
     # duplicate-identity arm the controls answer shares with them.

@@ -444,7 +444,21 @@ const DECIDED = "The decision is a durable receipt in this run's journal. "
     });
   }
 
+  // Publishing is two steps. This one opens the review and writes NOTHING; the
+  // reducer refuses to open it over a workflow the server has not called
+  // publishable, so a review can never be shown for a write that would be
+  // refused anyway.
   function onPublish() {
+    dispatch({type: "publish-review", open: true});
+  }
+
+  // Cancel writes nothing at all: the draft, the drawing and every standing
+  // revision are exactly as they were, and the panel closes.
+  function onPublishCancel() {
+    dispatch({type: "publish-review", open: false});
+  }
+
+  function onPublishConfirm() {
     const held = state.workflows;
     const number = held.nextRevision;
     if (!isId(chosenWorkflow) || !held.publishable
@@ -542,7 +556,8 @@ const DECIDED = "The decision is a durable receipt in this run's journal. "
     onChooseWorkflow: (workflowId) => {
       if (workflowId) refreshWorkflow(workflowId);
     },
-    onStartWorkflow, onValidate, onSaveDraft, onPublish, onOpenRun,
+    onStartWorkflow, onValidate, onSaveDraft, onPublish, onPublishConfirm,
+    onPublishCancel, onOpenRun,
     onRefreshRuns: () => loadRuns(),
     onRefreshRun: () => { if (chosenRun) refreshRun(chosenRun); },
     onRefreshAgents: () => loadWorkflows(),

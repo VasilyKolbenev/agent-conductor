@@ -27,6 +27,7 @@ one description read twice.
 """
 from __future__ import annotations
 
+from browser_tests.test_studio_lifecycle import _publish
 from browser_tests.test_studio_editing import (  # noqa: F401
     SAVED_AT,
     _Bench,
@@ -97,7 +98,7 @@ def test_a_published_revision_disables_every_editing_control_and_says_why(
     page = bench.page
     # A published revision arrives by publishing the seeded draft, which is the
     # only road this product has to one.
-    page.locator('#workflowToolbar [data-focus="action:onPublish"]').click()
+    _publish(page)
     page.wait_for_selector('.studio-canvas__banner[data-document="published"]')
     assert page.locator(".studio-canvas__document").inner_text().startswith(
         "Showing published revision 1")

@@ -310,9 +310,14 @@ export function projectWorkflows(payload) {
   });
 }
 
+//: `unchanged` is the server's word for "this draft repeats the standing
+//: revision". It is a separate key from `publishable` and not folded into it,
+//: because the two are different sentences to a person: one says the drawing
+//: is broken, the other says it is a copy, and a screen that could only say
+//: "not publishable" would send a user looking for a mistake they did not make.
 const WORKFLOW_KEYS = ["workflow_id", "revisions", "latest_revision",
   "unreadable_revisions", "published", "draft", "diagnostics", "publishable",
-  "next_revision"];
+  "unchanged", "next_revision"];
 const DRAFT_KEYS = ["document", "saved_at"];
 const DIAGNOSTIC_KEYS = ["code", "message", "node_id", "field"];
 
@@ -358,6 +363,7 @@ export function projectWorkflow(payload) {
     return null;
   }
   if (!isId(payload.workflow_id)) return null;
+  if (typeof payload.unchanged !== "boolean") return null;
   const revisions = projectRevisionList(payload.revisions);
   if (revisions === null) return null;
   const latest = revisions.length ? revisions[revisions.length - 1] : null;
