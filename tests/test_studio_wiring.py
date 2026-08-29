@@ -35,10 +35,17 @@ ROOT = Path(__file__).resolve().parents[1]
 PANEL = ROOT / "src" / "conductor" / "panel"
 HTML = PANEL / "studio.html"
 STORE = PANEL / "studio-store.js"
+#: The edit vocabulary and its arms moved here when the reducer reached the line
+#: cap. The three copies below are still held equal; what changed is which file
+#: the reducer's copy lives in.
+EDITS = PANEL / "studio-edits.js"
 VIEW = PANEL / "studio-view.js"
 BOOT = PANEL / "studio.js"
 CANVAS = PANEL / "studio-canvas.js"
 INSPECTOR = PANEL / "studio-inspector.js"
+#: The inspector's controls and its copy of the edit vocabulary moved here when
+#: that module reached the line cap. The three copies are still held equal.
+SECTIONS = PANEL / "studio-sections.js"
 RUNS = PANEL / "studio-runs.js"
 PEOPLE = PANEL / "studio-people.js"
 #: The three files this slice owns. Every guard below iterates this tuple, so a
@@ -51,7 +58,7 @@ LINE_CAP = 800
 #: is not a fault, and one reaching for a neighbour it was never granted is.
 PERMITTED = {
     "studio-store.js": frozenset({"./studio-model.js", "./studio-runread.js",
-                                  "./studio-review.js"}),
+                                  "./studio-review.js", "./studio-edits.js"}),
     "studio-view.js": frozenset({"./command-view.js", "./command-projection.js",
                                  "./studio-model.js"}),
     "studio.js": frozenset({
@@ -396,15 +403,22 @@ def test_the_three_edit_vocabularies_are_one_vocabulary():
     copies are held equal here instead. A word added to one and not the others
     is a control writing an edit nothing applies.
     """
-    store = _code(STORE)
-    types = _frozen_list(store, "EDIT_TYPES")
+    edits = _code(EDITS)
+    types = _frozen_list(edits, "EDIT_TYPES")
     assert types == _frozen_list(_code(CANVAS), "EDIT_TYPES")
-    assert types == _frozen_list(_code(INSPECTOR), "EDIT_TYPES")
-    fields = _frozen_list(store, "EDIT_FIELDS")
-    assert fields == _frozen_list(_code(INSPECTOR), "EDIT_FIELDS")
+    assert types == _frozen_list(_code(SECTIONS), "EDIT_TYPES")
+    fields = _frozen_list(edits, "EDIT_FIELDS")
+    assert fields == _frozen_list(_code(SECTIONS), "EDIT_FIELDS")
     # And every edit word has an arm: the vocabulary IS the door.
     for word in types:
-        assert re.search(rf'^\s+("{word}"|{word})[:,]', store, re.MULTILINE), word
+        assert re.search(rf'^\s+("{word}"|{word})[:,]', edits, re.MULTILINE), word
+    # The reducer no longer declares either list, so the three copies cannot
+    # quietly become four while this guard reads only three of them.
+    store, frame = _code(STORE), _code(INSPECTOR)
+    for name in ("EDIT_TYPES", "EDIT_FIELDS"):
+        for source, where in ((store, "the reducer"), (frame, "the frame")):
+            assert f"const {name}" not in source, (
+                f"{name} is declared in {where} again; three copies, not four")
 
 
 def test_every_screen_says_the_same_seven_words():

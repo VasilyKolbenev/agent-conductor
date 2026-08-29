@@ -53,7 +53,8 @@ MODEL = PANEL / "studio-model.js"
 MODULES = ("studio.js", "studio-store.js", "studio-view.js", "studio-model.js",
            "studio-canvas.js", "studio-inspector.js", "studio-runs.js",
            "studio-people.js", "studio-runread.js", "studio-review.js",
-           "studio-layout.js")
+           "studio-layout.js", "studio-edits.js",
+           "studio-sections.js")
 #: The one transport module: every `fetch(`, the one stream, the session token
 #: and the screen router. `graph.js` holds the same position in its window, and
 #: the sealed-API guard below pins this one the same way.
@@ -66,6 +67,7 @@ IMPORTS = r'from "(\./[a-z-]+\.js)";'
 #: reaching for one it was never granted is.
 PERMITTED_IMPORTS = {
     "studio-model.js": frozenset(),
+    "studio-edits.js": frozenset({"./studio-model.js"}),
     #: Projections over one run read, and nothing else. It imports nothing for
     #: the reason `studio-model.js` imports nothing: a pure computation that
     #: reached for a neighbour would be able to answer from something other
@@ -80,16 +82,20 @@ PERMITTED_IMPORTS = {
     #: two documents it was handed.
     "studio-review.js": frozenset(),
     "studio-store.js": frozenset({"./studio-model.js", "./studio-runread.js",
-                                  "./studio-review.js"}),
+                                  "./studio-review.js", "./studio-edits.js"}),
     "studio-view.js": frozenset({"./command-view.js", "./command-projection.js",
                                  "./studio-model.js"}),
     "studio-canvas.js": frozenset({"./command-view.js",
                                    "./command-projection.js",
                                    "./studio-model.js",
                                    "./studio-layout.js"}),
+    "studio-sections.js": frozenset({"./command-view.js",
+                                     "./command-projection.js",
+                                     "./studio-model.js"}),
     "studio-inspector.js": frozenset({"./command-view.js",
                                       "./command-projection.js",
-                                      "./studio-model.js"}),
+                                      "./studio-model.js",
+                                      "./studio-sections.js"}),
     "studio-runs.js": frozenset({"./command-view.js",
                                  "./command-projection.js",
                                  "./studio-model.js"}),

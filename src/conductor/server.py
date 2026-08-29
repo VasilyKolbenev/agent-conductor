@@ -68,6 +68,20 @@ from conductor.command.runtime import Budget
 HARNESSES_JSON = json.dumps(harnesses.as_payload(),
                             ensure_ascii=False).encode("utf-8")
 
+#: Every packaged Studio file that is SERVED. `studio.html` is deliberately
+#: absent: `GET /` answers with it, and a second route would give one document
+#: two. A module that is packaged and missing here fails the packaged-resource
+#: partition test in tests/test_server_panel_assets.py.
+_STUDIO_FILES = (
+    "studio.css", "studio.js", "studio-model.js", "studio-layout.js",
+    "studio-review.js", "studio-runread.js", "studio-edits.js",
+    "studio-sections.js", "studio-store.js", "studio-view.js",
+    "studio-canvas.js", "studio-inspector.js", "studio-runs.js",
+    "studio-people.js",
+)
+_STUDIO_TYPES = {"css": "text/css; charset=utf-8",
+                 "js": "text/javascript; charset=utf-8"}
+
 # Exact package resources, never a path derived from the request target.
 PANEL_ASSETS = {
     "/panel/command.css": ("text/css; charset=utf-8", "command.css"),
@@ -96,29 +110,16 @@ PANEL_ASSETS = {
     # The Workflow Studio. Its shell is what `GET /` answers with, so — unlike
     # graph.html — studio.html is NOT on this list: it is the panel route's own
     # entry, and putting it here as well would give one document two routes.
-    # Its stylesheet and its modules are ordinary allowlisted assets.
-    "/panel/studio.css": ("text/css; charset=utf-8", "studio.css"),
-    "/panel/studio-model.js": (
-        "text/javascript; charset=utf-8", "studio-model.js"),
-    "/panel/studio.js": ("text/javascript; charset=utf-8", "studio.js"),
-    "/panel/studio-layout.js": (
-        "text/javascript; charset=utf-8", "studio-layout.js"),
-    "/panel/studio-review.js": (
-        "text/javascript; charset=utf-8", "studio-review.js"),
-    "/panel/studio-runread.js": (
-        "text/javascript; charset=utf-8", "studio-runread.js"),
-    "/panel/studio-store.js": (
-        "text/javascript; charset=utf-8", "studio-store.js"),
-    "/panel/studio-view.js": (
-        "text/javascript; charset=utf-8", "studio-view.js"),
-    "/panel/studio-canvas.js": (
-        "text/javascript; charset=utf-8", "studio-canvas.js"),
-    "/panel/studio-inspector.js": (
-        "text/javascript; charset=utf-8", "studio-inspector.js"),
-    "/panel/studio-runs.js": (
-        "text/javascript; charset=utf-8", "studio-runs.js"),
-    "/panel/studio-people.js": (
-        "text/javascript; charset=utf-8", "studio-people.js"),
+    # Its stylesheet and its modules are ordinary allowlisted assets, and they
+    # are BUILT from `_STUDIO_FILES` rather than written out twice each: the
+    # route is `/panel/<name>` and the packaged file is `<name>`, which is a
+    # naming rule and not a table. Written out, every module cost two lines
+    # here and pushed this file over its own line cap the day the inspector was
+    # split. The keys are still literals derived from literals — nothing in
+    # them comes from a request — so the allowlist is exactly as closed as it
+    # was when it was typed out.
+    **{f"/panel/{name}": (_STUDIO_TYPES[name.rsplit(".", 1)[1]], name)
+       for name in _STUDIO_FILES},
     # The classic panel. It kept its file name when the Studio took the front
     # door, and this is the route that now reaches it. It was a deliberate 404
     # until this line existed, which is exactly why its near-misses in

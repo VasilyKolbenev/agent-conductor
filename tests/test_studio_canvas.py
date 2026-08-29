@@ -39,8 +39,17 @@ from conductor.command.providers import PROVIDER_CATALOG
 ROOT = Path(__file__).resolve().parents[1]
 PANEL = ROOT / "src" / "conductor" / "panel"
 CANVAS = PANEL / "studio-canvas.js"
-INSPECTOR = PANEL / "studio-inspector.js"
-STUDIO_FILES = (CANVAS, INSPECTOR)
+#: The inspector is TWO files now: the frame that decides what is selected, and
+#: the sections and field primitives it is built from. Every guard below is
+#: about the inspector SURFACE rather than about either file, so they read the
+#: union -- which is what `INSPECTOR` names. Reading only one half would let a
+#: control move across the seam and out from under a rule that still applies to
+#: it. The split cannot hide a duplicate either: a "count == 1" claim over the
+#: union goes to 2 and reds if both halves grow one.
+FRAME = PANEL / "studio-inspector.js"
+SECTIONS = PANEL / "studio-sections.js"
+INSPECTOR = (FRAME, SECTIONS)
+STUDIO_FILES = (CANVAS, FRAME, SECTIONS)
 IMPORTS = r'from "(\./[a-z-]+\.js)";'
 _LINE_COMMENT = re.compile(r"^[ \t]*//.*$", re.MULTILINE)
 _BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.DOTALL)
@@ -103,7 +112,7 @@ def test_the_comment_stripper_keeps_the_code_and_drops_the_prose():
     assert "export function mountCanvas(mount, svg, state, handlers) {" in canvas
     assert "// The one thing this file refuses to do" not in canvas
     assert len(canvas.splitlines()) > 300, "the stripper removed running code"
-    inspector = _code(INSPECTOR)
+    inspector = _code(*INSPECTOR)
     assert "export function mountInspector(mount, state, handlers) {" in inspector
     assert "//: The six sections, in the one order" not in inspector
 
@@ -127,7 +136,8 @@ def test_both_studio_files_sit_in_the_panel_under_the_line_cap():
 #: module that reaches back.
 _ALLOWED_IMPORTS = {
     "studio-canvas.js": ["./command-view.js", "./studio-layout.js"],
-    "studio-inspector.js": ["./command-view.js", "./studio-model.js"],
+    "studio-inspector.js": ["./command-view.js", "./studio-sections.js"],
+    "studio-sections.js": ["./command-view.js", "./studio-model.js"],
 }
 
 
@@ -146,7 +156,7 @@ def test_each_module_imports_exactly_what_the_module_table_allows_it():
 
 
 def test_the_two_files_carry_the_same_copy_of_every_shared_vocabulary():
-    canvas, inspector = _code(CANVAS), _code(INSPECTOR)
+    canvas, inspector = _code(CANVAS), _code(*INSPECTOR)
     for name in ("NODE_KINDS", "STAGE_NAMES", "EDIT_TYPES"):
         assert _js_ordered(canvas, name) == _js_ordered(inspector, name), name
     # Two surfaces reading two different documents at once is the confusion
@@ -157,7 +167,7 @@ def test_the_two_files_carry_the_same_copy_of_every_shared_vocabulary():
 
 def test_every_closed_vocabulary_equals_the_python_layer_that_owns_it():
     """Read off the owning module, never typed a second time into this file."""
-    canvas, inspector = _code(CANVAS), _code(INSPECTOR)
+    canvas, inspector = _code(CANVAS), _code(*INSPECTOR)
     assert set(_js_ordered(canvas, "NODE_KINDS")) == graph_definition.NODE_KINDS
     assert set(_js_ordered(inspector, "RESOURCE_KINDS")) == (
         graph_definition.RESOURCE_KINDS)
@@ -217,7 +227,7 @@ def test_no_workflow_edit_can_name_a_deployment(  # noqa: D103 - stated below
     Two directions are checked: no editable field is spelled one of them, and
     no such word appears as a literal anywhere either file can write.
     """
-    inspector = _code(INSPECTOR)
+    inspector = _code(*INSPECTOR)
     fields = set(_js_ordered(inspector, "EDIT_FIELDS"))
     assert not fields & DEPLOYMENT_ONLY_FIELDS
     # Every editable field is one a template step could carry, or one of the
@@ -236,7 +246,7 @@ def test_capability_choices_come_from_the_payload_and_never_from_a_provider_id()
     the PROVEN `controls` each row declares. So a capability name appearing as
     a literal in the inspector would be a second, silent roster.
     """
-    inspector, canvas = _code(INSPECTOR), _code(CANVAS)
+    inspector, canvas = _code(*INSPECTOR), _code(CANVAS)
     literals = set(re.findall(r'"([a-z_-]+)"', inspector))
     assert not literals & adapter_base.CAPABILITIES
     # The canvas names exactly one, and only to tell a review step apart.
@@ -259,17 +269,17 @@ def test_the_mount_api_is_exactly_the_two_signatures_slice_d_wires():
     assert ("export function mountCanvas(mount, svg, state, handlers) {"
             in _code(CANVAS))
     assert ("export function mountInspector(mount, state, handlers) {"
-            in _code(INSPECTOR))
+            in _code(*INSPECTOR))
     # One replace per mount: a render that appended would stack a second copy
     # of every control on the second call with the same state.
     assert _code(CANVAS).count("mount.replaceChildren(") == 1
-    assert _code(INSPECTOR).count("mount.replaceChildren(") == 1
+    assert _code(*INSPECTOR).count("mount.replaceChildren(") == 1
     # Neither module defines a handler; both only call the ones handed in.
-    for source in (_code(CANVAS), _code(INSPECTOR)):
+    for source in (_code(CANVAS), _code(*INSPECTOR)):
         assert "handlers.on" not in source
     assert set(re.findall(r'call\((?:context\.)?handlers, "(\w+)"', _code(CANVAS))) == {
         "onSelect", "onView", "onEdit", "onStatus"}
-    assert set(re.findall(r'call\(\w*\.?handlers, "(\w+)"', _code(INSPECTOR))) == {
+    assert set(re.findall(r'call\(\w*\.?handlers, "(\w+)"', _code(*INSPECTOR))) == {
         "onSelect", "onEdit", "onStatus"}
 
 
@@ -298,17 +308,27 @@ def test_every_control_either_module_writes_can_be_focused_after_a_re_render():
     with no `data-focus` is a keyboard Human dropped to the top of the document
     by their own edit, so every focusable this module writes must carry one.
     """
+    # Every focusable, wherever it is built. This half must cover all three
+    # files: a control that moved across a seam and lost its key would drop a
+    # keyboard Human to the top of the document on their own edit.
     for path in STUDIO_FILES:
         source = _code(path)
-        assert "function focusKey(mount)" in source
-        assert "function restoreFocus(mount, key)" in source
-        assert source.count("restoreFocus(mount, key)") >= 1
         for tag in ("button", "input", "select"):
             for block in _attribute_blocks(source, tag):
                 assert '"data-focus"' in block, f"{path.name}: {tag}: {block[:80]}"
         for block in _attribute_blocks(source, "div"):
             if "tabindex" in block:
                 assert '"data-focus"' in block, f"{path.name}: {block[:80]}"
+    # The machinery belongs to whoever MOUNTS. `studio-sections.js` builds
+    # controls and mounts nothing, so requiring it there would be requiring dead
+    # code; requiring it of the two that do replace children is the real claim.
+    for path in (CANVAS, FRAME):
+        source = _code(path)
+        assert "function focusKey(mount)" in source, path.name
+        assert "function restoreFocus(mount, key)" in source, path.name
+        assert source.count("restoreFocus(mount, key)") >= 1, path.name
+    assert "replaceChildren" not in _code(SECTIONS), (
+        "a module that builds controls has started mounting them")
     # The one focusable this module builds outside `element()`: the edge's own
     # hit path, which is an SVG node and so is built with createElementNS.
     canvas = _code(CANVAS)
@@ -409,10 +429,10 @@ def test_the_canvas_says_which_document_it_is_showing_and_never_mixes_two():
 
 def test_a_published_revision_is_immutable_on_both_surfaces():
     """One `editable` flag, granted by one word, and it is `draft`."""
-    for source in (_code(CANVAS), _code(INSPECTOR)):
+    for source in (_code(CANVAS), _code(*INSPECTOR)):
         assert 'editable: shown.kind === "draft"' in source or (
             'editable = shown.kind === "draft"' in source)
-    assert "control.disabled = true" in _code(INSPECTOR)
+    assert "control.disabled = true" in _code(*INSPECTOR)
     assert 'disabled: context.editable ? null : ""' in _code(CANVAS)
 
 
@@ -450,7 +470,7 @@ def test_every_field_with_no_durable_home_says_so_in_one_voice():
     field quietly dropping off the screen is the failure mode this rule exists
     for, and it is invisible by construction.
     """
-    inspector = _code(INSPECTOR)
+    inspector = _code(*INSPECTOR)
     assert inspector.count("not supported by this harness") == 1
     assert inspector.count('"data-unsupported"') == 1
     found = re.findall(r'unsupported\(box, "([^"]+)"', inspector)
@@ -463,7 +483,7 @@ def test_every_field_with_no_durable_home_says_so_in_one_voice():
 
 def test_the_inspector_renders_the_six_sections_in_the_one_fixed_order():
     """Six, in this order, and anything else is a panel rather than a section."""
-    inspector = _code(INSPECTOR)
+    inspector = _code(*INSPECTOR)
     sections = _js_ordered(inspector, "SECTIONS")
     assert sections == ["general", "assignment", "execution", "artifacts",
                         "verification", "transitions"]
@@ -474,8 +494,12 @@ def test_the_inspector_renders_the_six_sections_in_the_one_fixed_order():
         "general", "assignment", "execution", "artifact", "verification",
         "transition"]
     # The step's own actions and the edge panel are NOT sections: the six are
-    # counted by `data-section`, and a seventh would break that count.
-    assert re.findall(r'panelOf\("([a-z]+)"', inspector) == ["actions", "edge"]
+    # counted by `data-section`, and a seventh would break that count. Compared
+    # as a SET: the two live in different halves of the inspector now, so their
+    # order in a concatenation is a fact about which file is read first and
+    # about nothing else.
+    assert set(re.findall(r'panelOf\("([a-z]+)"', inspector)) == {"actions", "edge"}
+    assert len(re.findall(r'panelOf\("([a-z]+)"', inspector)) == 2
 
 
 def test_the_inspector_reads_a_run_only_through_records_a_contract_validated():
@@ -485,7 +509,7 @@ def test_the_inspector_reads_a_run_only_through_records_a_contract_validated():
     keeps them: a pinned model, a configuration that pinned none, and a
     configuration this window could not read.
     """
-    inspector = _code(INSPECTOR)
+    inspector = _code(*INSPECTOR)
     word = re.search(r"function modelWord\(instance\) \{(.*?)\n\}", inspector,
                      re.DOTALL).group(1)
     assert "unreadable" in word and "none pinned" in word
@@ -495,7 +519,7 @@ def test_the_inspector_reads_a_run_only_through_records_a_contract_validated():
                          r'records|envelope) of run \$\{run\.runId\}', inspector)
     assert len(sources) >= 5
     assert "Process exit 0 proves the process finished, not that the work" in (
-        _text(INSPECTOR))
+        _text(FRAME) + _text(SECTIONS))
 
 
 def test_every_edited_word_is_judged_before_it_is_written():
@@ -504,7 +528,7 @@ def test_every_edited_word_is_judged_before_it_is_written():
     The grammars are the contract's own: the id pattern above is held to
     `contract_values._ID_RE`, and the loop bound to the definition's own range.
     """
-    inspector = _code(INSPECTOR)
+    inspector = _code(*INSPECTOR)
     checks = set(re.findall(r"^  (\w+): \(value\)", re.search(
         r"const CHECKS = Object\.freeze\(\{(.*?)\n\}\);", inspector,
         re.DOTALL).group(1), re.MULTILINE))
