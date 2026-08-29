@@ -146,23 +146,35 @@ def _document(map_data: dict, views: list[dict], live: list[dict],
 
     The two derived fields are deliberately NOT here: `project_status` and
     `next_action` read the finished document, so they belong after it exists.
+
+    Every rule that appends to `warnings` is CALLED ABOVE the returned literal,
+    in the order `merge` called them before this function existed. A dict
+    literal evaluates its values in source order, so a rule invoked at its own
+    key is invoked in KEY order -- and `warnings` is a shared, ordered, public
+    list. Extracting this function put `_cycle` at the "cycle" key and
+    `_invariants` at the "invariants" key, which silently swapped two sentences
+    a reader sees in `state.json` and changed the bytes the broker fingerprints
+    for change detection. Key order and call order are two different orders and
+    this function must not conflate them again.
     """
     nodes = _nodes(map_data, live, warnings)
     findings = _findings(map_data, views, warnings)
     queue = _human_queue(live)
+    invariants = _invariants(map_data, live, warnings)
+    cycle = _cycle(map_data, live, warnings)
     disagreements = [f for f in findings if f["review_state"] == "disagreement"]
     return {
         "schema_version": schema.SCHEMA_VERSION,
         "generated_at": now.isoformat(),
         "project": map_data.get("project", ""),
         "map": {"nodes": nodes},
-        "cycle": _cycle(map_data, live, warnings),
+        "cycle": cycle,
         "lanes": [{k: v for k, v in view.items() if not k.startswith("_")}
                   for view in views],
         "findings": findings,
         "disagreements": disagreements,
         "human_queue": queue,
-        "invariants": _invariants(map_data, live, warnings),
+        "invariants": invariants,
         "events_tail": list(reversed(events[-EVENTS_TAIL:])),
         "kpi": _kpi(nodes, findings, queue, disagreements, views),
         "warnings": warnings,
