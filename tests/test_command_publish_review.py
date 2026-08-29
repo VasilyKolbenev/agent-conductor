@@ -51,6 +51,17 @@ def a_draft(store, document):
     return saved_draft(store, WORKFLOW, document, lambda: "2026-01-01T00:00:00Z")
 
 
+def reviewing(store):
+    """The publish body a window sends after reviewing the STORED draft.
+
+    The digest is read out of the workflow state, which is exactly where a real
+    window gets it: the read carries it, the window echoes it back, and nothing
+    in the browser hashes anything.
+    """
+    return {"revision": workflow_state(store, WORKFLOW)["next_revision"],
+            "reviewed_digest": workflow_state(store, WORKFLOW)["draft"]["digest"]}
+
+
 def publish(store, document, revision):
     settled = dict(document)
     settled["template_id"] = WORKFLOW
@@ -151,7 +162,7 @@ def test_the_route_refuses_a_publish_that_would_repeat_the_revision(tmp_path):
     a_draft(store, a_document())
 
     with pytest.raises(ApiRefusal):
-        publish_revision(store, WORKFLOW, {"revision": 2})
+        publish_revision(store, WORKFLOW, reviewing(store))
 
     assert store.revisions(WORKFLOW) == (1,)
 
@@ -166,7 +177,7 @@ def test_the_refusal_leaves_the_draft_standing_for_the_user_to_edit(tmp_path):
     a_draft(store, a_document())
 
     with pytest.raises(ApiRefusal):
-        publish_revision(store, WORKFLOW, {"revision": 2})
+        publish_revision(store, WORKFLOW, reviewing(store))
 
     assert store.load_draft(WORKFLOW) is not None
 
@@ -179,7 +190,7 @@ def test_a_publish_that_says_something_new_still_goes_through(tmp_path):
     publish(store, a_document(), 1)
     a_draft(store, a_document(title="Release check, revised"))
 
-    status, payload = publish_revision(store, WORKFLOW, {"revision": 2})
+    status, payload = publish_revision(store, WORKFLOW, reviewing(store))
 
     assert status == 201
     assert payload["revision"] == 2
@@ -204,3 +215,116 @@ def test_a_caller_supplied_document_is_held_to_the_same_rule(tmp_path):
                          {"revision": 2, "document": a_document()})
 
     assert store.revisions(WORKFLOW) == (1,)
+
+
+# -- the review must publish the draft it reviewed ---------------------------
+
+
+def test_a_draft_replaced_after_the_review_is_refused_rather_than_published(
+        tmp_path):
+    """The defect this section exists for, in the shape it really took.
+
+    A window opens the review for draft A. Another client saves draft B. The
+    first window is told nothing -- saving a draft publishes no frame, so there
+    is no read to close the stale review. The person confirms what they read,
+    and revision 1 used to be written from B: a revision nobody reviewed, and
+    the store's immutability then kept it forever.
+
+    The echo is what closes it. The window names WHICH draft it reviewed, and
+    the route compares that against the draft it is about to write.
+    """
+    from conductor.command.api_contracts import ApiRefusal
+    from conductor.command.studio_routes import publish_revision
+
+    store = a_store(tmp_path)
+    a_draft(store, a_document(title="Reviewed on screen"))
+    body = reviewing(store)
+
+    a_draft(store, a_document(title="UNREVIEWED SERVER CHANGE"))
+
+    with pytest.raises(ApiRefusal):
+        publish_revision(store, WORKFLOW, body)
+
+    assert store.revisions(WORKFLOW) == ()
+
+
+def test_the_refusal_leaves_the_newer_draft_exactly_where_it_was(tmp_path):
+    """A refused stale publish must not touch the draft that replaced it."""
+    from conductor.command.api_contracts import ApiRefusal
+    from conductor.command.studio_routes import publish_revision
+
+    store = a_store(tmp_path)
+    a_draft(store, a_document(title="Reviewed on screen"))
+    body = reviewing(store)
+    a_draft(store, a_document(title="UNREVIEWED SERVER CHANGE"))
+
+    with pytest.raises(ApiRefusal):
+        publish_revision(store, WORKFLOW, body)
+
+    standing = workflow_state(store, WORKFLOW)["draft"]["document"]
+    assert standing["title"] == "UNREVIEWED SERVER CHANGE"
+
+
+def test_a_review_of_the_current_draft_still_publishes(tmp_path):
+    """The over-correction control: the echo must not refuse honest work."""
+    from conductor.command.studio_routes import publish_revision
+
+    store = a_store(tmp_path)
+    a_draft(store, a_document(title="Reviewed on screen"))
+
+    status, payload = publish_revision(store, WORKFLOW, reviewing(store))
+
+    assert status == 201
+    assert payload["title"] == "Reviewed on screen"
+
+
+def test_a_publish_naming_no_reviewed_draft_is_refused(tmp_path):
+    """A client that echoes nothing has reviewed nothing this route can check.
+
+    Left optional, the whole guarantee would be advisory: any caller could omit
+    the field and get the old behaviour back.
+    """
+    from conductor.command.api_contracts import ApiRefusal
+    from conductor.command.studio_routes import publish_revision
+
+    store = a_store(tmp_path)
+    a_draft(store, a_document())
+
+    with pytest.raises(ApiRefusal):
+        publish_revision(store, WORKFLOW, {"revision": 1})
+
+    assert store.revisions(WORKFLOW) == ()
+
+
+def test_a_supplied_document_may_not_also_name_a_reviewed_draft(tmp_path):
+    """The two roads are exclusive: a supplied document IS its own identity."""
+    from conductor.command.api_contracts import ApiRefusal
+    from conductor.command.studio_routes import publish_revision
+
+    store = a_store(tmp_path)
+    a_draft(store, a_document())
+    digest = workflow_state(store, WORKFLOW)["draft"]["digest"]
+
+    with pytest.raises(ApiRefusal):
+        publish_revision(store, WORKFLOW, {
+            "revision": 1, "document": a_document(), "reviewed_digest": digest})
+
+
+def test_an_idempotent_re_save_keeps_the_review_valid(tmp_path):
+    """A digest names a DOCUMENT and not a moment.
+
+    Saving the same drawing again is what a client whose reply was lost does.
+    It must not invalidate a review of the identical document, or an ordinary
+    retry would look like someone else's edit.
+    """
+    from conductor.command.studio_routes import publish_revision
+
+    store = a_store(tmp_path)
+    a_draft(store, a_document(title="Steady"))
+    body = reviewing(store)
+    a_draft(store, a_document(title="Steady"))
+
+    status, _payload = publish_revision(store, WORKFLOW, body)
+
+    assert status == 201
+

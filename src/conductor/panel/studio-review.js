@@ -30,7 +30,24 @@ function rows(value) { return Array.isArray(value) ? value : []; }
 //: published yet -- and the screen says which of those it is rather than
 //: showing an empty summary that looks like "no changes".
 export function changeSummary(published, draft) {
-  if (!isObject(published) || !isObject(draft)) return null;
+  if (!isObject(draft)) return null;
+  // A FIRST revision has nothing to compare against, and "nothing to compare"
+  // is not the same as "nothing to review". What it creates is the whole
+  // document, so every step and every connection is an addition -- which is a
+  // readable summary rather than an apology for the absence of one.
+  if (!isObject(published)) {
+    return Object.freeze({
+      first: true,
+      title: Object.freeze({from: null, to: draft.title}),
+      added: Object.freeze(rows(draft.nodes).filter(isObject)
+        .map((node) => node.node_id)),
+      removed: Object.freeze([]),
+      changed: Object.freeze([]),
+      edgesAdded: Object.freeze(rows(draft.edges).filter(isObject)
+        .map((edge) => `${edge.from_node}->${edge.to_node}`)),
+      edgesRemoved: Object.freeze([]),
+    });
+  }
   const before = new Map(rows(published.nodes).filter(isObject)
     .map((node) => [node.node_id, node]));
   const after = new Map(rows(draft.nodes).filter(isObject)
@@ -44,6 +61,7 @@ export function changeSummary(published, draft) {
   const beforeEdges = new Set(rows(published.edges).filter(isObject).map(edgeKey));
   const afterEdges = new Set(rows(draft.edges).filter(isObject).map(edgeKey));
   return Object.freeze({
+    first: false,
     title: published.title === draft.title ? null
       : Object.freeze({from: published.title, to: draft.title}),
     added: Object.freeze([...after.keys()].filter((id) => !before.has(id))),

@@ -504,7 +504,9 @@ function saveControls(state, handlers) {
 function changeLines(changes) {
   const lines = [];
   if (changes === null) return lines;
-  if (changes.title !== null) {
+  if (changes.first) {
+    lines.push(`Creates the workflow "${changes.title.to}"`);
+  } else if (changes.title !== null) {
     lines.push(`Title: "${changes.title.from}" becomes "${changes.title.to}"`);
   }
   const named = [["Steps added", changes.added],
@@ -536,10 +538,14 @@ function publishReview(state, handlers) {
     held.diagnostics.length === 0
       ? "Validation: the server says this draft would construct a revision."
       : "Validation: the server refuses this draft."}));
+  if (held.changes !== null && held.changes.first) {
+    box.append(element("p", {className: "studio-hint", text:
+      "This is the first revision, so there is nothing to compare it against. "
+      + "What it creates is listed in full."}));
+  }
   if (held.changes === null) {
     box.append(element("p", {className: "studio-hint", text:
-      "This is the first revision of this workflow, so there is nothing to "
-      + "compare it against."}));
+      "There is no drawing to review."}));
   } else if (lines.length === 0) {
     box.append(element("p", {className: "studio-hint", text:
       "No structural change was found between this drawing and the revision "

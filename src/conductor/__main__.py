@@ -276,18 +276,33 @@ def _cmd_integration_smoke(args: argparse.Namespace) -> int:
 
 
 def _reconcile_listing(root: str) -> int:
-    """Print every action a crash left for `reconcile`, or say there are none."""
+    """Print every action a crash stranded, and name what could not be read.
+
+    Two findings, not one, and the second used to be dropped. Filtering the
+    survey to runs that HAVE actions discards an unreadable run, which has
+    none -- so a project holding nothing but a broken run answered "no action
+    is waiting", exit 0: a clean bill of health for a run nobody can open.
+    They are reported separately because they are separate repairs, and the
+    clean sentence is said only when both are empty.
+    """
     from conductor.command import reconcile        # deferred: see the import block
-    rows = [(run_id, actions) for run_id, actions in reconcile.survey(root)
-            if actions]
-    if not rows:
-        print("no action in this project is waiting for reconcile", file=sys.stderr)
-        return 0
-    for run_id, actions in rows:
-        for action_id in actions:
-            sys.stdout.write(f"{run_id} {action_id}\n")
-    print(f"\nclose one with: conduct reconcile --run <RUN> --action <ACTION>",
-          file=sys.stderr)
+    found = reconcile.survey(root)
+    stranded = [row for row in found if row.actions]
+    unreadable = [row.run_id for row in found if row.unreadable]
+    for row in stranded:
+        for action_id in row.actions:
+            sys.stdout.write(f"{row.run_id} {action_id}\n")
+    if stranded:
+        print("\nclose one with: conduct reconcile --run <RUN> --action <ACTION>",
+              file=sys.stderr)
+    if unreadable:
+        print(f"\n{len(unreadable)} run(s) could not be read, which is a "
+              f"different repair: {chr(44).join(unreadable)}", file=sys.stderr)
+        print("a journal that will not replay is not closed by reconcile; "
+              "ADR 0002 records that recovery.", file=sys.stderr)
+    if not stranded and not unreadable:
+        print("no action in this project is waiting for reconcile",
+              file=sys.stderr)
     return 0
 
 

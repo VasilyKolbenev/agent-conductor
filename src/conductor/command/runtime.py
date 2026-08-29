@@ -144,11 +144,19 @@ def _hold_plan_bounds(
     adapter has been touched. A bound checked after any of those is a bound
     that has already been exceeded once.
 
-    Attempts are counted the way the projection counts a loop's passes --
-    distinct `attempt_id`s naming this node -- so "how many attempts has this
-    step had" has one answer in this product rather than two. The proposal now
-    being authorized is one of them, which is why the count is compared with
-    `>=`: a bound of 1 permits the first attempt and refuses the second.
+    What is counted is AUTHORIZED attempts -- durable `action_request` records
+    naming this node -- and never proposals. A proposal is a request for an
+    attempt and not an attempt: nothing has been spent until a Human confirms
+    one. Counting proposals shipped once and was wrong in the worst direction,
+    because proposals are not ordered against the confirmation being judged. Two
+    proposals standing on a node with a bound of one meant authorizing EITHER of
+    them found the other already "spent", so the bound refused the first attempt
+    it was ever asked about. `tests/test_command_plan_bounds.py` drives
+    `authorize` itself now, which is the only road that spends this bound and
+    the road those first tests never touched.
+
+    Distinct `attempt_id`s rather than a row count, so a request re-appended
+    byte-identically under idempotent retry does not spend the bound twice.
 
     A node naming no ceiling constrains nothing, which is what every plan
     written before ceilings existed says, and why no stored run changes meaning.
@@ -156,15 +164,13 @@ def _hold_plan_bounds(
     node = _planned_node(recovered, proposal.node_id)
     if node is None or node.attempt_bound is None:
         return
-    values = tuple(row.value for row in recovered.records)
-    spent = {value.attempt_id for value in values
-             if isinstance(value, (ActionProposal, ActionRequest))
-             and value.node_id == proposal.node_id
-             and value.attempt_id != proposal.attempt_id}
+    spent = {row.value.attempt_id for row in recovered.records
+             if isinstance(row.value, ActionRequest)
+             and row.value.node_id == proposal.node_id}
     if len(spent) >= node.attempt_bound:
         raise AuthorizationError(
             f"plan: node {proposal.node_id!r} allows {node.attempt_bound} "
-            f"attempt(s) and has already had {len(spent)}")
+            f"attempt(s) and has already authorized {len(spent)}")
 
 
 

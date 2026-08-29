@@ -469,9 +469,12 @@ const DECIDED = "The decision is a durable receipt in this run's journal. "
       return;
     }
     const asked = chosenWorkflow;
-    // The body names the revision expected and no document: the draft the
-    // server is holding is the one durable source, read once by the route.
-    write("revisions", asked, {revision: number}, () => {
+    // The body names the revision expected, no document, and WHICH draft this
+    // window reviewed. The draft the server holds is the one durable source,
+    // read once by the route -- and the echo is what lets the route refuse when
+    // that source moved between the review and this click.
+    write("revisions", asked,
+          {revision: number, reviewed_digest: held.reviewedDigest}, () => {
       if (asked !== chosenWorkflow) return;
       refreshWorkflow(asked, {kind: "publish", workflowId: asked,
         revision: number, phase: "saved", notice: PUBLISHED});

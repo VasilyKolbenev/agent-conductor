@@ -352,7 +352,10 @@ export function projectWorkflows(payload) {
 const WORKFLOW_KEYS = ["workflow_id", "revisions", "latest_revision",
   "unreadable_revisions", "published", "draft", "diagnostics", "publishable",
   "unchanged", "next_revision"];
-const DRAFT_KEYS = ["document", "saved_at"];
+//: `digest` names WHICH draft this is, so a publish can echo back the one it
+//: reviewed. The window computes no hash of its own: it carries the server's
+//: word and hands it back, and the server compares.
+const DRAFT_KEYS = ["document", "saved_at", "digest"];
 const DIAGNOSTIC_KEYS = ["code", "message", "node_id", "field"];
 
 function projectDiagnostics(rows) {

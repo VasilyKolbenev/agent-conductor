@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .api_contracts import ApiRefusal, _closed, _contract, _json_array, parse_document
-from .contracts import ControlMode, RunEnvelope, _id
+from .contracts import ControlMode, RunEnvelope, _digest, _id
 from .graph_template import RunBinding
 from .run_store import snapshot_digest
 
@@ -30,7 +30,11 @@ from .run_store import snapshot_digest
 #: draft you are holding" -- one durable source, read once by the route, and
 #: never a second body that could disagree with the draft the screen showed.
 _REVISION_REQUIRED = frozenset({"revision"})
-_REVISION_FIELDS = _REVISION_REQUIRED | {"document"}
+#: `reviewed_digest` names WHICH draft the caller reviewed. It is required when
+#: publishing the stored draft and refused when the caller supplies its own
+#: document, because a supplied document IS its own identity. Without it a
+#: review could confirm one drawing and publish another that landed in between.
+_REVISION_FIELDS = _REVISION_REQUIRED | {"document", "reviewed_digest"}
 #: What a run-creation request supplies. Every key is REQUIRED and the two that
 #: may be empty are spelled `null`, because a browser that omits a key and a
 #: browser that says "no workflow" must not be the same request.
@@ -61,6 +65,7 @@ class RevisionInput:
 
     revision: int
     document: Mapping[str, Any] | None
+    reviewed_digest: str | None
 
 
 @dataclass(frozen=True)
@@ -164,8 +169,19 @@ def parse_workflow_revision(body: object) -> RevisionInput:
     document = None
     if "document" in supplied:
         document = _contract(parse_document, body["document"])
+    reviewed = body.get("reviewed_digest")
+    # Both or neither, in the one direction that makes sense: a caller naming a
+    # document has already said which bytes it means, and a caller publishing
+    # the stored draft has said nothing until it names which draft it read.
+    if document is not None and reviewed is not None:
+        raise ApiRefusal.fixed("contract_invalid")
+    if document is None and reviewed is None:
+        raise ApiRefusal.fixed("contract_invalid")
+    if reviewed is not None:
+        reviewed = _contract(_digest, "reviewed_digest", reviewed)
     return RevisionInput(
-        revision=_exact_revision(body["revision"]), document=document)
+        revision=_exact_revision(body["revision"]), document=document,
+        reviewed_digest=reviewed)
 
 
 def _participant(row: object) -> Participant:

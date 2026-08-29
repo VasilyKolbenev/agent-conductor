@@ -44,6 +44,11 @@ ADR = Path(__file__).resolve().parents[1] / "docs" / "adr" / \
     "0002-command-run-identity-and-store.md"
 
 
+def _row(root, run_id):
+    """One surveyed run by id, so a test names the run it means."""
+    return next(row for row in reconcile.survey(root) if row.run_id == run_id)
+
+
 def a_project(tmp_path):
     """A real project root whose run store holds one request-only action."""
     root = tmp_path / "project"
@@ -64,9 +69,11 @@ def test_the_survey_names_the_action_a_crash_stranded_and_nothing_else(tmp_path)
     root, store, authorization = a_project(tmp_path)
     action_id = authorization.request.action_id
 
-    rows = dict(reconcile.survey(root))
+    rows = {row.run_id: row for row in reconcile.survey(root)}
 
-    assert rows == {"run-001": (action_id,)}
+    assert set(rows) == {"run-001"}
+    assert rows["run-001"].actions == (action_id,)
+    assert rows["run-001"].unreadable is False
 
 
 def test_an_action_that_already_ended_is_not_offered_for_reconcile(tmp_path):
@@ -78,11 +85,11 @@ def test_an_action_that_already_ended_is_not_offered_for_reconcile(tmp_path):
     """
     root, store, authorization = a_project(tmp_path)
     action_id = authorization.request.action_id
-    assert dict(reconcile.survey(root))["run-001"] == (action_id,)
+    assert _row(root, "run-001").actions == (action_id,)
 
     reconcile.close(root, "run-001", action_id)
 
-    assert dict(reconcile.survey(root))["run-001"] == ()
+    assert _row(root, "run-001").actions == ()
 
 
 def test_the_cli_closes_exactly_the_action_its_own_listing_named(tmp_path, capsys):
@@ -199,7 +206,7 @@ def test_the_documented_recovery_runs_as_written(tmp_path):
     exec(compile(source, str(ADR), "exec"), namespace)  # noqa: S102 - the point
 
     assert namespace["receipt"].outcome == "unknown"
-    assert dict(reconcile.survey(root))["run-001"] == ()
+    assert _row(root, "run-001").actions == ()
 
 
 def test_the_adr_no_longer_says_the_operation_has_no_subcommand(tmp_path):
@@ -214,3 +221,83 @@ def test_the_adr_no_longer_says_the_operation_has_no_subcommand(tmp_path):
     assert "reconcile" in verbs
     assert "There is no `conduct reconcile` subcommand" not in text
     assert "conduct reconcile" in text
+
+
+# -- a run that cannot be read is a finding, not a silence -------------------
+
+
+def _unreadable_run(root, run_id="bad-run"):
+    """A run directory whose journal will not replay, as a crash can leave one."""
+    from conductor.command.run_store import RunStore
+
+    store = RunStore(root)
+    store.runs_root.mkdir(parents=True, exist_ok=True)
+    (store.runs_root / run_id).mkdir()
+    return run_id
+
+
+def test_a_run_that_will_not_read_is_reported_and_never_called_clean(
+        tmp_path, capsys):
+    """The defect this test exists for, in the words of the wrong answer.
+
+    `survey` deliberately reports an unreadable run so it is not hidden, and the
+    CLI then dropped every run whose action list was empty -- which is what an
+    unreadable run has. A project holding nothing BUT a broken run answered
+    "no action in this project is waiting for reconcile", exit 0: a clean bill
+    of health for a run nobody can open. The listing must say what it could not
+    read, because that is a different repair with its own procedure.
+    """
+    root = tmp_path / "project"
+    (root / "conductor").mkdir(parents=True)
+    _unreadable_run(root)
+
+    assert cli.main(["reconcile", "--dir", str(root)]) == 0
+
+    streams = capsys.readouterr()
+    assert "no action in this project is waiting" not in streams.err
+    assert "bad-run" in streams.err
+    assert "could not be read" in streams.err
+
+
+def test_an_unreadable_run_is_named_beside_the_actions_that_can_be_closed(
+        tmp_path, capsys):
+    """Both facts at once, because one must not hide the other."""
+    root, _store, authorization = a_project(tmp_path)
+    _unreadable_run(root)
+
+    assert cli.main(["reconcile", "--dir", str(root)]) == 0
+
+    streams = capsys.readouterr()
+    assert authorization.request.action_id in streams.out
+    assert "bad-run" in streams.err
+
+
+def test_a_genuinely_clean_project_still_says_so(tmp_path, capsys):
+    """The over-correction control: no run at all is still a clean answer."""
+    root = tmp_path / "project"
+    (root / "conductor").mkdir(parents=True)
+
+    assert cli.main(["reconcile", "--dir", str(root)]) == 0
+
+    streams = capsys.readouterr()
+    assert streams.out == ""
+    assert "no action in this project is waiting for reconcile" in streams.err
+
+
+def test_the_survey_tells_an_unreadable_run_from_one_with_nothing_stranded(
+        tmp_path):
+    """The two facts must be distinguishable BEFORE the CLI sees them.
+
+    They were not: both answered with an empty tuple, so no caller could tell
+    "this run is fine" from "this run cannot be opened". A listing built on that
+    could only choose which of the two to get wrong.
+    """
+    root, store, authorization = a_project(tmp_path)
+    reconcile.close(root, "run-001", authorization.request.action_id)
+    _unreadable_run(root)
+
+    rows = {row.run_id: row for row in reconcile.survey(root)}
+
+    assert rows["run-001"].actions == () and rows["run-001"].unreadable is False
+    assert rows["bad-run"].actions == () and rows["bad-run"].unreadable is True
+

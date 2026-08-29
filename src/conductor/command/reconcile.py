@@ -31,6 +31,7 @@ an operation that starts no effect.
 from __future__ import annotations
 
 import secrets
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -38,7 +39,9 @@ from typing import TYPE_CHECKING
 from .adapters.base import AdapterRegistry
 from .attempt_replay import (
     action_request_for, attempt_events_for, terminal_result_for)
+from .contract_values import ContractError
 from .run_store import RunStore
+from .store_errors import StoreError
 from .runtime import ControlRuntime
 
 if TYPE_CHECKING:  # pragma: no cover - import cycle only a checker walks
@@ -95,32 +98,49 @@ def stuck_actions(values: tuple[object, ...]) -> tuple[str, ...]:
     return tuple(found)
 
 
-def survey(root: Path | str) -> tuple[tuple[str, tuple[str, ...]], ...]:
+@dataclass(frozen=True)
+class SurveyedRun:
+    """One run as the survey found it: what it strands, and whether it read.
+
+    The two facts are separate fields because they are separate answers, and
+    collapsing them is a defect this module already shipped once. A run with
+    nothing stranded and a run nobody can open BOTH have an empty action list,
+    so a caller given only that list can tell them apart in no way at all --
+    and the CLI, filtering on "has actions", reported a project holding nothing
+    but a broken run as having nothing wrong with it.
+    """
+
+    run_id: str
+    actions: tuple[str, ...]
+    unreadable: bool
+
+
+def survey(root: Path | str) -> tuple[SurveyedRun, ...]:
     """Every run this project holds, with the actions only `reconcile` closes.
 
-    A run that cannot be replayed is reported with an EMPTY tuple rather than
-    dropped or raised over: the operator is looking for something to fix, and a
-    run whose journal will not read is a different repair with its own
-    procedure. Hiding it here would say there was nothing wrong with it.
+    A run that cannot be replayed is REPORTED rather than dropped or raised
+    over: the operator is looking for something to fix, and a run whose journal
+    will not read is a different repair with its own procedure. Hiding it would
+    say there was nothing wrong with it.
 
     Args:
         root: The project root, the directory holding `conductor/`.
 
     Returns:
-        One `(run_id, action_ids)` pair per run directory, ascending by run id.
+        One :class:`SurveyedRun` per run directory, ascending by run id.
     """
     from .studio_routes import run_ids
 
     store = RunStore(root)
-    rows: list[tuple[str, tuple[str, ...]]] = []
+    rows: list[SurveyedRun] = []
     for run_id in run_ids(store):
         try:
             recovered = store.read(run_id)
-        except Exception:  # noqa: BLE001 - any unreadable run is still listed
-            rows.append((run_id, ()))
+        except (StoreError, ContractError):
+            rows.append(SurveyedRun(run_id, (), True))
             continue
         values = tuple(row.value for row in recovered.records)
-        rows.append((run_id, stuck_actions(values)))
+        rows.append(SurveyedRun(run_id, stuck_actions(values), False))
     return tuple(rows)
 
 

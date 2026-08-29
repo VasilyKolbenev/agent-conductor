@@ -37,7 +37,9 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from .contracts import ContractError, _freeze_json, _id, _text, _timestamp, canonical_json
+from .contracts import (
+    ContractError, _content_digest, _freeze_json, _id, _text, _timestamp,
+    canonical_json)
 from .graph_definition import GraphEdge, _exact, _json_list, _json_object
 from .graph_template import (
     SCHEMA_VERSION,
@@ -187,6 +189,18 @@ def publish_candidate(
         return GraphTemplate.from_dict(candidate)
     except ContractError as error:
         raise DraftRefused((_row(error),)) from None
+
+
+def draft_digest(document: Mapping[str, Any]) -> str:
+    """The identity of one draft document, in the store's own digest grammar.
+
+    Over the CANONICAL bytes, so two documents that say the same thing in a
+    different key order have one identity, and a document that differs by a
+    single character has another. It names a DOCUMENT and never a moment: a
+    draft saved twice with identical content keeps its digest, which is what
+    makes a review of it survive an idempotent re-save.
+    """
+    return _content_digest(dict(document))
 
 
 def unchanged_from_published(
@@ -362,6 +376,20 @@ def _latest_published(templates, workflow_id: str, latest: int | None):
         return None, [latest]
 
 
+def _draft_row(draft) -> dict[str, Any] | None:
+    """One stored draft as a screen reads it: what it says, when, and which one.
+
+    The digest travels WITH the document so a client can echo back which draft
+    it reviewed without hashing anything itself; `publish_revision` refuses when
+    that echo does not match the draft it is about to write.
+    """
+    if draft is None:
+        return None
+    document = draft.settled()
+    return {"document": document, "saved_at": draft.saved_at,
+            "digest": draft_digest(document)}
+
+
 def workflow_state(
         templates: "TemplateStore", workflow_id: str) -> dict[str, Any]:
     """Everything the Studio needs about one workflow, published and unsaved.
@@ -391,8 +419,12 @@ def workflow_state(
         "latest_revision": latest,
         "unreadable_revisions": unreadable,
         "published": published,
-        "draft": None if draft is None else {
-            "document": draft.settled(), "saved_at": draft.saved_at},
+        # The digest travels WITH the document a screen is about to show, so a
+        # client can echo back which draft it reviewed without hashing anything
+        # itself. `publish_revision` refuses when the echo does not match the
+        # draft it is about to publish -- which is the whole of the fix for a
+        # review that confirmed one document and wrote another.
+        "draft": _draft_row(draft),
         "diagnostics": [dict(row) for row in diagnostics],
         # True only when there IS a draft and nothing stops it. A workflow with
         # no draft has nothing to publish, which is a different thing from a

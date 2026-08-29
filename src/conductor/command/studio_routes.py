@@ -40,6 +40,7 @@ from .workflow_draft import (
     DraftRefused,
     parse_document,
     publish_candidate,
+    draft_digest,
     saved_draft,
     unchanged_from_published,
     starters,
@@ -168,6 +169,7 @@ def publish_revision(
     if from_draft and draft is None:
         raise ApiRefusal.fixed("contract_invalid")
     document = draft.settled() if draft is not None else asked.document
+    _publishes_what_was_reviewed(from_draft, asked, document)
     # A publish that would write the document already standing is refused here
     # and not merely discouraged on screen. The read route computes the same
     # answer for the button's sake, but a client that never read it, or read it
@@ -185,6 +187,25 @@ def publish_revision(
     if from_draft:
         templates.discard_draft(workflow_id)
     return (201 if published.created else 200), template.as_dict()
+
+
+def _publishes_what_was_reviewed(from_draft: bool, asked, document) -> None:
+    """The draft about to be written is the one the caller says it reviewed.
+
+    The review a person confirmed named a specific draft, and between that
+    screen and this call another client may have saved a different one. There
+    is no notification on that road -- saving a draft publishes no frame -- so
+    the reviewing window cannot know, and publishing the CURRENT draft under a
+    review of an older one writes a revision nobody read. Immutability then
+    keeps it forever.
+
+    Compared rather than resolved: the caller is told to look again, because
+    the alternative is this route deciding which of two drawings a person meant.
+    A caller supplying its own document is exempt, since those bytes ARE the
+    identity it named.
+    """
+    if from_draft and asked.reviewed_digest != draft_digest(document):
+        raise ApiRefusal.fixed("contract_invalid")
 
 
 def _says_nothing_new(templates, workflow_id: str, document, revision: int) -> bool:

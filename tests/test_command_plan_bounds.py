@@ -200,3 +200,108 @@ def test_a_node_naming_no_ceiling_constrains_nothing(tmp_path):
     store.append(a_proposal(timeout_seconds=900))
 
     assert [row.kind for row in store.read("run-001").records][-1] ==         "action_proposal"
+
+
+# -- the attempt bound, driven through the road that spends it ---------------
+#
+# These are the witnesses this module should have opened with and did not. The
+# ceiling above was mutation-proved; the attempt bound was not, and it shipped
+# refusing the FIRST authorization because the count included proposals
+# recorded after the one being authorized. Nothing here calls a helper: every
+# test drives `ControlRuntime.authorize`, which is the only road that spends
+# this bound.
+
+
+def _authorizing(store):
+    from tests.test_command_graph_binding import a_budget, a_runtime
+
+    return a_runtime(store), a_budget()
+
+
+def _proposal_on_the_do_node(store, index, attempt):
+    """One proposal on the bounded node, appended the way a run really gets one."""
+    from tests.test_command_graph_binding import a_proposal
+
+    proposal = a_proposal(proposal_id=f"proposal-{index}",
+                          attempt_id=f"attempt-{index}")
+    store.append(proposal)
+    return proposal
+
+
+def test_a_bound_of_one_permits_the_first_authorization(tmp_path):
+    """The case that shipped broken: a later proposal must not spend the bound.
+
+    Two proposals stand in the journal and the FIRST is authorized. A proposal
+    is a request for an attempt and not an attempt, so nothing has been spent
+    yet and this must go through.
+    """
+    from tests.test_command_graph_binding import a_confirmation
+
+    store = _bounded_run(tmp_path, attempt_bound=1)
+    first = _proposal_on_the_do_node(store, 1, 1)
+    _proposal_on_the_do_node(store, 2, 2)
+    runtime, budget = _authorizing(store)
+
+    authorization = runtime.authorize(a_confirmation(first), budget=budget)
+
+    assert authorization.request.node_id == first.node_id
+
+
+def test_the_bound_refuses_the_authorization_past_it(tmp_path):
+    """The other direction: once the bound is spent, the next one is refused."""
+    from conductor.command.runtime import AuthorizationError
+    from tests.test_command_graph_binding import a_confirmation
+
+    store = _bounded_run(tmp_path, attempt_bound=1)
+    first = _proposal_on_the_do_node(store, 1, 1)
+    second = _proposal_on_the_do_node(store, 2, 2)
+    runtime, budget = _authorizing(store)
+    runtime.authorize(a_confirmation(first), budget=budget)
+
+    with pytest.raises(AuthorizationError, match="allows 1 attempt"):
+        runtime.authorize(
+            a_confirmation(second, confirmation_id="confirmation-002"),
+            budget=budget)
+
+
+def test_a_bound_of_two_permits_two_authorizations_and_refuses_the_third(
+        tmp_path):
+    """The bound is a count of authorizations, and it counts them exactly."""
+    from conductor.command.runtime import AuthorizationError
+    from tests.test_command_graph_binding import a_confirmation
+
+    store = _bounded_run(tmp_path, attempt_bound=2)
+    proposals = [_proposal_on_the_do_node(store, index, index)
+                 for index in (1, 2, 3)]
+    runtime, budget = _authorizing(store)
+
+    for index, proposal in enumerate(proposals[:2], start=1):
+        runtime.authorize(
+            a_confirmation(proposal,
+                           confirmation_id=f"confirmation-00{index}"),
+            budget=budget)
+
+    with pytest.raises(AuthorizationError, match="allows 2 attempt"):
+        runtime.authorize(
+            a_confirmation(proposals[2], confirmation_id="confirmation-003"),
+            budget=budget)
+
+
+def test_a_node_naming_no_attempt_bound_authorizes_without_limit(tmp_path):
+    """The over-correction control: an unbounded step is still unbounded."""
+    from tests.test_command_graph_binding import a_confirmation
+
+    store = _bounded_run(tmp_path)
+    proposals = [_proposal_on_the_do_node(store, index, index)
+                 for index in (1, 2, 3)]
+    runtime, budget = _authorizing(store)
+
+    for index, proposal in enumerate(proposals, start=1):
+        runtime.authorize(
+            a_confirmation(proposal,
+                           confirmation_id=f"confirmation-00{index}"),
+            budget=budget)
+
+    assert sum(1 for row in store.read("run-001").records
+               if row.kind == "action_request") == 3
+

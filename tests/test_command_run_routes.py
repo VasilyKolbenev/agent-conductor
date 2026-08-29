@@ -758,9 +758,13 @@ def test_a_browser_can_draw_a_workflow_and_open_a_run_from_it_over_a_socket(
 
         assert request(base, "POST", f"/command/workflows/{WORKFLOW}/draft",
                        token=token, body=a_document())[0] == 201
+        # A publish names WHICH draft it reviewed, and a browser gets that
+        # digest the only way there is: off the read it drew the review from.
+        read = request(base, "GET", f"/command/workflows/{WORKFLOW}")[1]
         status, document = request(
             base, "POST", f"/command/workflows/{WORKFLOW}/revisions",
-            token=token, body={"revision": 1})
+            token=token, body={"revision": 1,
+                               "reviewed_digest": read["draft"]["digest"]})
         assert status == 201, document
         assert request(base, "GET", f"/command/workflows/{WORKFLOW}/revisions/1"
                        ) == (200, {"workflow_id": WORKFLOW, "revision": 1,
@@ -786,8 +790,12 @@ def test_a_browser_can_draw_a_workflow_and_open_a_run_from_it_over_a_socket(
         # And an unfinished drawing is refused the publish, on the wire.
         assert request(base, "POST", "/command/workflows/half-drawn/draft",
                        token=token, body=INCOMPLETE["a dangling edge"])[0] == 201
+        # The echo is supplied so the refusal this reaches is the DRAWING's own
+        # and not the earlier one for naming no reviewed draft.
+        half = request(base, "GET", "/command/workflows/half-drawn")[1]
         status, refused = request(
             base, "POST", "/command/workflows/half-drawn/revisions",
-            token=token, body={"revision": 1})
+            token=token, body={"revision": 1,
+                               "reviewed_digest": half["draft"]["digest"]})
         assert status == ERROR_STATUS["contract_invalid"]
         assert refused["diagnostics"][0]["code"] == "template_refused"

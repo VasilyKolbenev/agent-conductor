@@ -106,6 +106,8 @@ const WORKFLOWS = Object.freeze({
   reviewing: false,
   nextRevision: null,
   savedAt: null,
+  //: The digest of the saved draft the last read carried, echoed on publish.
+  reviewedDigest: null,
   //: Whether this window may WRITE. Not "is the socket up": between choosing a
   //: workflow and its read landing the drawing is still the previous
   //: workflow's, and a save taken from it would write one workflow's document
@@ -551,6 +553,9 @@ function workflowLoaded(state, event) {
       publishable: payload.publishable, nextRevision: payload.next_revision,
       unchanged: payload.unchanged === true,
       changes: changeSummary(payload.published, draft),
+      // The identity of the SAVED draft this read carried. A publish echoes it
+      // so the server can refuse when the draft has moved since the review.
+      reviewedDigest: payload.draft === null ? null : payload.draft.digest,
       // A landed read closes any open review: what it showed was computed from
       // the previous answer, and confirming a review a newer read has already
       // replaced is the stale-state write this step exists to prevent.
