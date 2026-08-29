@@ -101,6 +101,8 @@ PANEL_ASSETS = {
     "/panel/studio-model.js": (
         "text/javascript; charset=utf-8", "studio-model.js"),
     "/panel/studio.js": ("text/javascript; charset=utf-8", "studio.js"),
+    "/panel/studio-layout.js": (
+        "text/javascript; charset=utf-8", "studio-layout.js"),
     "/panel/studio-review.js": (
         "text/javascript; charset=utf-8", "studio-review.js"),
     "/panel/studio-runread.js": (

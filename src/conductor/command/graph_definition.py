@@ -85,6 +85,11 @@ RESOURCE_KINDS = frozenset({
 })
 MAX_RESOURCES = 16
 MIN_LOOP_BOUND, MAX_LOOP_BOUND = 1, 99
+#: The widest timeout an ACTION contract accepts, so a plan-side ceiling is
+#: always one a real request could sit under. Held equal to the action
+#: contract's own bound by tests/test_command_graph_bounds.py rather than
+#: imported: `contracts` imports this module, and the reverse would be a cycle.
+MAX_ACTION_SECONDS = 86400
 #: The capabilities that make a node able to change the world. The runtime
 #: spells this ``adapters.process.DISPATCH_CAPABILITY``; a contract module may
 #: not import an adapter, so the two spellings are pinned equal by a test
@@ -276,6 +281,47 @@ class GraphLoop:
         return cls(bound=_take(data, "bound"), back_to=_take(data, "back_to"))
 
 
+def settled_bounds(timeout_seconds: object,
+                   attempt_bound: object) -> dict[str, int | None]:
+    """The two plan-side ceilings, judged once for both node contracts.
+
+    ONE rule with one home, called by `GraphNode` and by `TemplateNode`. A
+    second copy would be a second answer to "what may a plan ask for", and the
+    template would be able to store a ceiling the definition it materializes
+    into would then refuse -- which is a plan that cannot run, discovered at
+    run time.
+
+    The timeout range is the ACTION contract's own, so a plan-side ceiling is
+    always one a real request could sit under: a plan naming 90000 seconds
+    would refuse every legal request, which is a plan nobody can run rather
+    than a strict one. The attempt range is the loop bound's, because
+    `MIN_LOOP_BOUND..MAX_LOOP_BOUND` is already what this product means by "how
+    many times may this be reopened", and a second, wider vocabulary for one
+    idea is two answers to one question.
+
+    `None` passes through untouched and means the plan constrains nothing.
+    `bool` is refused by `_positive`, because `True` is an `int` in Python and
+    it is not one attempt.
+
+    Args:
+        timeout_seconds: The longest this step's work may run, or None.
+        attempt_bound: The most attempts the plan allows it, or None.
+
+    Returns:
+        The settled values, keyed by field name.
+
+    Raises:
+        ContractError: Either value is present and not an integer in range.
+    """
+    settled: dict[str, int | None] = {}
+    for name, value, high in (
+            ("timeout_seconds", timeout_seconds, MAX_ACTION_SECONDS),
+            ("attempt_bound", attempt_bound, MAX_LOOP_BOUND)):
+        settled[name] = None if value is None else _positive(
+            f"node {name}", value, low=1, high=high)
+    return settled
+
+
 @dataclass(frozen=True)
 class GraphNode:
     """One step of the plan: what it is, where it runs, and what it needs."""
@@ -290,13 +336,25 @@ class GraphNode:
     resources: tuple[GraphResource, ...] = ()
     gate_id: str | None = None
     loop: GraphLoop | None = None
+    #: The longest this step's work may run, and the most attempts the plan
+    #: allows it. Both are OPTIONAL and both are CEILINGS, never defaults: a
+    #: node that names neither constrains neither, which is what every plan
+    #: written before they existed says, and its bytes do not move.
+    #:
+    #: They are here rather than only on the action a Human confirms because a
+    #: bound that lives only on the request is a bound the requester chooses.
+    #: The plan names the ceiling; the request may ask for less and never more.
+    timeout_seconds: int | None = None
+    attempt_bound: int | None = None
 
     _FIELDS = frozenset({
         "node_id", "kind", "title", "stage", "instance_id", "capability",
-        "arguments", "resources", "gate_id", "loop",
+        "arguments", "resources", "gate_id", "loop", "timeout_seconds",
+        "attempt_bound",
     })
 
     def __post_init__(self) -> None:
+        self._settle_bounds()
         object.__setattr__(self, "node_id", _id("node_id", self.node_id))
         object.__setattr__(self, "kind", _enum("node kind", self.kind, NODE_KINDS))
         object.__setattr__(self, "title", _text("title", self.title))
@@ -304,6 +362,12 @@ class GraphNode:
         self._settle_binding()
         object.__setattr__(self, "resources", self._settled_resources())
         self._settle_kind_attachments()
+
+    def _settle_bounds(self) -> None:
+        """Hold this node's two ceilings, through the one rule that owns them."""
+        for name, value in settled_bounds(
+                self.timeout_seconds, self.attempt_bound).items():
+            object.__setattr__(self, name, value)
 
     def _settle_stage(self) -> None:
         """A stage is a task's optional membership, and gates and loops have none."""
@@ -410,6 +474,12 @@ class GraphNode:
             out["gate_id"] = self.gate_id
         if self.loop is not None:
             out["loop"] = self.loop.as_dict()
+        # Written only when named, so a plan that constrains neither digests
+        # exactly as it always did and no frozen revision moves.
+        if self.timeout_seconds is not None:
+            out["timeout_seconds"] = self.timeout_seconds
+        if self.attempt_bound is not None:
+            out["attempt_bound"] = self.attempt_bound
         return out
 
     @classmethod
@@ -432,7 +502,9 @@ class GraphNode:
             arguments={} if arguments is _ABSENT else arguments,
             resources=tuple(GraphResource.from_dict(row) for row in resources),
             gate_id=data.pop("gate_id", None),
-            loop=None if loop is None else GraphLoop.from_dict(loop))
+            loop=None if loop is None else GraphLoop.from_dict(loop),
+            timeout_seconds=data.pop("timeout_seconds", None),
+            attempt_bound=data.pop("attempt_bound", None))
 
 
 @dataclass(frozen=True)
@@ -478,7 +550,9 @@ def _rebuilt_node(row: object) -> "GraphNode":
         node_id=node.node_id, kind=node.kind, title=node.title, stage=node.stage,
         instance_id=node.instance_id, capability=node.capability,
         arguments=node.payload(), resources=node.resources,
-        gate_id=node.gate_id, loop=node.loop)
+        gate_id=node.gate_id, loop=node.loop,
+        timeout_seconds=node.timeout_seconds,
+        attempt_bound=node.attempt_bound)
 
 
 def _acyclic(nodes: tuple[GraphNode, ...], edges: tuple[GraphEdge, ...]) -> None:

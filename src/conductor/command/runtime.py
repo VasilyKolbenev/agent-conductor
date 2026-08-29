@@ -123,6 +123,50 @@ def _instant(name: str, value: object) -> datetime:
     """Parse one validated RFC 3339 UTC timestamp into an aware datetime."""
     text = _timestamp(name, value)
     return datetime.fromisoformat(text[:-1] + "+00:00" if text.endswith("Z") else text)
+def _planned_node(recovered: RecoveredRun, node_id: str | None):
+    """The node this document names, out of the run's own frozen plan."""
+    if node_id is None:
+        return None
+    graph = next((row.value for row in recovered.records
+                  if row.kind == "graph_definition"), None)
+    if graph is None:
+        return None
+    return next((row for row in graph.nodes if row.node_id == node_id), None)
+
+
+def _hold_plan_bounds(
+        proposal: ActionProposal, recovered: RecoveredRun) -> None:
+    """The ceilings the PLAN placed on this step, spent before anything durable.
+
+    Here rather than at execute, and here rather than only in the store's
+    relation, because this is the last frame before a request is minted: no
+    durable byte has been written, no effect authority has been granted, and no
+    adapter has been touched. A bound checked after any of those is a bound
+    that has already been exceeded once.
+
+    Attempts are counted the way the projection counts a loop's passes --
+    distinct `attempt_id`s naming this node -- so "how many attempts has this
+    step had" has one answer in this product rather than two. The proposal now
+    being authorized is one of them, which is why the count is compared with
+    `>=`: a bound of 1 permits the first attempt and refuses the second.
+
+    A node naming no ceiling constrains nothing, which is what every plan
+    written before ceilings existed says, and why no stored run changes meaning.
+    """
+    node = _planned_node(recovered, proposal.node_id)
+    if node is None or node.attempt_bound is None:
+        return
+    values = tuple(row.value for row in recovered.records)
+    spent = {value.attempt_id for value in values
+             if isinstance(value, (ActionProposal, ActionRequest))
+             and value.node_id == proposal.node_id
+             and value.attempt_id != proposal.attempt_id}
+    if len(spent) >= node.attempt_bound:
+        raise AuthorizationError(
+            f"plan: node {proposal.node_id!r} allows {node.attempt_bound} "
+            f"attempt(s) and has already had {len(spent)}")
+
+
 
 
 class ControlRuntime:
@@ -296,6 +340,8 @@ class ControlRuntime:
             raise AuthorizationError(
                 f"budget: the proposal asks for {proposal.timeout_seconds}s, past the "
                 f"{budget.max_action_seconds}s time budget")
+        _hold_plan_bounds(proposal, recovered)
+
 
     def _mint_request(
             self, confirmation: Confirmation, proposal: ActionProposal, *,

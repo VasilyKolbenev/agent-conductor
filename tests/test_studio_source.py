@@ -52,7 +52,8 @@ MODEL = PANEL / "studio-model.js"
 #: the packaged directory in both directions.
 MODULES = ("studio.js", "studio-store.js", "studio-view.js", "studio-model.js",
            "studio-canvas.js", "studio-inspector.js", "studio-runs.js",
-           "studio-people.js", "studio-runread.js", "studio-review.js")
+           "studio-people.js", "studio-runread.js", "studio-review.js",
+           "studio-layout.js")
 #: The one transport module: every `fetch(`, the one stream, the session token
 #: and the screen router. `graph.js` holds the same position in its window, and
 #: the sealed-API guard below pins this one the same way.
@@ -69,6 +70,9 @@ PERMITTED_IMPORTS = {
     #: the reason `studio-model.js` imports nothing: a pure computation that
     #: reached for a neighbour would be able to answer from something other
     #: than the payload it was given.
+    #: Where a step sits and which connection joins which. Pure arithmetic,
+    #: importing nothing for the boundary's own reason.
+    "studio-layout.js": frozenset(),
     "studio-runread.js": frozenset(),
     #: What a publish would change, over two documents a read already
     #: carries. It imports nothing for the same reason: a comparison that
@@ -81,7 +85,8 @@ PERMITTED_IMPORTS = {
                                  "./studio-model.js"}),
     "studio-canvas.js": frozenset({"./command-view.js",
                                    "./command-projection.js",
-                                   "./studio-model.js"}),
+                                   "./studio-model.js",
+                                   "./studio-layout.js"}),
     "studio-inspector.js": frozenset({"./command-view.js",
                                       "./command-projection.js",
                                       "./studio-model.js"}),

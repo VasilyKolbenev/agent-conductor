@@ -126,8 +126,8 @@ def test_both_studio_files_sit_in_the_panel_under_the_line_cap():
 #: sense that matters: neither can reach the other, and neither can reach a
 #: module that reaches back.
 _ALLOWED_IMPORTS = {
-    "studio-canvas.js": ["./command-view.js", "./studio-model.js"],
-    "studio-inspector.js": ["./command-view.js"],
+    "studio-canvas.js": ["./command-view.js", "./studio-layout.js"],
+    "studio-inspector.js": ["./command-view.js", "./studio-model.js"],
 }
 
 
@@ -419,10 +419,14 @@ def test_a_published_revision_is_immutable_on_both_surfaces():
 #: Every field of the six sections that has no durable home in this build. The
 #: list is the report: a field named here SAYS so where it would have been, and
 #: a field that stops saying so -- or a new one that quietly appears -- reds.
+#: Two names left this register by becoming real rather than by being deleted:
+#: `Timeout` and `Retry / attempt bound` are now `timeout_seconds` and
+#: `attempt_bound` on the node, spent in `graph_causality` and in
+#: `ControlRuntime._hold_budget`, and held by tests/test_command_plan_bounds.py.
+#: The register shrinks as fields become real; it must never shrink because a
+#: label was quietly dropped, which is what the two-directional check below is.
 UNSUPPORTED_FIELDS = (
     "Purpose / description",
-    "Timeout",
-    "Retry / attempt bound",
     "Output budget",
     "Required input artifacts",
     "Produced artifacts",

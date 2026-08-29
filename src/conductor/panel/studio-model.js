@@ -26,6 +26,40 @@
 // ── closed vocabularies, each a copy of its Python owner ──────────────────
 //: command/contract_values.py ControlMode, through studio_contracts.CONTROL_MODES.
 //: The whole authority ladder; there is no hidden autonomous mode.
+//: The two ceilings a workflow step may place on itself, and the ranges
+//: `graph_definition.settled_bounds` holds them to. A vocabulary rather than a
+//: rule of this window's own: the numbers are the Python contract's, and
+//: `tests/test_studio_canvas.py` pins them to it in both directions.
+//:
+//: The empty field means ABSENT and never zero. "This step has no limit" and
+//: "this step may run for no time at all" are different sentences, and only
+//: one of them is a plan.
+export const CEILINGS = Object.freeze({
+  timeout_seconds: Object.freeze({min: 1, max: 86400,
+    what: "a timeout in seconds"}),
+  attempt_bound: Object.freeze({min: 1, max: 99, what: "an attempt bound"}),
+});
+
+//: What a person may put in a ceiling field, judged by the vocabulary above.
+//: Here rather than in the reducer because it moves no state: given a node and
+//: a typed value it answers the same way forever, which is what everything else
+//: in this module does. The window refuses out of range at the FIELD so a
+//: person is told there rather than at a publish.
+export function withCeiling(node, name, value) {
+  const rule = CEILINGS[name];
+  const raw = typeof value === "string" ? value.trim() : "";
+  if (raw === "") {
+    const {[name]: _dropped, ...rest} = node;
+    return {node: rest, notice: ""};
+  }
+  const number = Number(raw);
+  if (!Number.isInteger(number) || number < rule.min || number > rule.max) {
+    return {node, notice: `${rule.what} is a whole number from ${rule.min} `
+      + `to ${rule.max}, or empty for no limit.`};
+  }
+  return {node: {...node, [name]: number}, notice: ""};
+}
+
 export const CONTROL_MODES = Object.freeze(
   ["observe", "propose", "confirm", "policy"]);
 //: command/adapters/provider.py AVAILABILITY_STATES -- whether THIS BUILD on
@@ -723,63 +757,4 @@ export function projectControls(payload) {
       (row) => !conflicted.has(row.instanceId))),
     providers: projectProviders(payload.providers),
   });
-}
-
-// -- the canvas's layout: pure, and therefore here ------------------------
-//
-// `studio-canvas.js` crossed the line cap and this is the half of it that
-// computes rather than draws. It is placement arithmetic over a document,
-// with no DOM, no clock and no network -- this module's own character --
-// and the canvas re-exports both names so nothing downstream had to move.
-
-export function edgeId(from, to) { return `${from} ${to}`; }
-export function edgeEnds(id) {
-  const parts = String(id).split(" ");
-  return parts.length === 2 ? {from: parts[0], to: parts[1]} : null;
-}
-
-// -- layout ----------------------------------------------------------------
-
-//: Columns from the longest path, rows from declaration order -- the model
-//: `graph-payload.computeLayout` uses, with the one difference that matters
-//: here: a DRAFT may hold a cycle, so this never refuses. An edge that still
-//: does not move the plan forward after relaxation is reported as `back` and
-//: is drawn dashed and labelled rather than silently straightened.
-export function canvasLayout(nodes, edges) {
-  const order = new Map(nodes.map((node, index) => [node.node_id, index]));
-  const depth = new Map(nodes.map((node) => [node.node_id, 0]));
-  const live = edges.filter(
-    (edge) => order.has(edge.from_node) && order.has(edge.to_node));
-  // Clamped as well as bounded. Without the ceiling a cycle keeps pushing its
-  // own members one column further apart every round, so two steps pointing at
-  // each other drew across five columns of empty grid; no plan is ever deeper
-  // than it has steps.
-  const deepest = Math.max(0, nodes.length - 1);
-  for (let round = 0; round < nodes.length; round += 1) {
-    let moved = false;
-    for (const edge of live) {
-      const next = Math.min(deepest, depth.get(edge.from_node) + 1);
-      if (next > depth.get(edge.to_node)) {
-        depth.set(edge.to_node, next);
-        moved = true;
-      }
-    }
-    if (!moved) break;
-  }
-  const floor = nodes.length ? Math.min(...depth.values()) : 0;
-  const used = new Map();
-  const cells = {};
-  for (const node of nodes) {
-    const column = depth.get(node.node_id) - floor;
-    const row = used.get(column) || 0;
-    used.set(column, row + 1);
-    cells[node.node_id] = {column, row};
-  }
-  return {
-    cells,
-    columns: nodes.length ? Math.max(...depth.values()) - floor + 1 : 0,
-    rows: nodes.length ? Math.max(...used.values()) : 0,
-    back: new Set(live.filter((edge) => depth.get(edge.to_node)
-      <= depth.get(edge.from_node)).map((edge) => edgeId(edge.from_node, edge.to_node))),
-  };
 }

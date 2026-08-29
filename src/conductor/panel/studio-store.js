@@ -14,7 +14,7 @@
 //
 // The draft rules below are this product's most expensive invariants, measured
 // on `graph-store.js:186-267` and carried here unchanged.
-import {projectControls, projectProviders, projectRunRead, projectRuns,
+import {CEILINGS, withCeiling, projectControls, projectProviders, projectRunRead, projectRuns,
   projectStarters, projectWorkflow, projectWorkflows} from "./studio-model.js";
 import {decisionRows, participantsOf} from "./studio-runread.js";
 import {changeSummary} from "./studio-review.js";
@@ -32,8 +32,9 @@ export const SCREENS = Object.freeze(
 //: every field name a `set-field` edit may carry, held the same way.
 export const EDIT_TYPES = Object.freeze(["add", "connect", "delete-edge",
   "delete-node", "duplicate", "reorder", "set-field"]);
-export const EDIT_FIELDS = Object.freeze(["capability", "gate_id", "kind",
-  "loop_back_to", "loop_bound", "resources", "role_id", "stage", "title"]);
+export const EDIT_FIELDS = Object.freeze(["attempt_bound", "capability",
+  "gate_id", "kind", "loop_back_to", "loop_bound", "resources", "role_id",
+  "stage", "timeout_seconds", "title"]);
 //: `graph_definition.NODE_KINDS`, its loop and resource bounds, and
 //: `workflow_draft.MAX_DRAFT_NODES` / `MAX_DRAFT_EDGES`.
 export const NODE_KINDS = Object.freeze(["task", "gate", "loop"]);
@@ -357,6 +358,7 @@ function withField(node, name, value) {
   if (name === "loop_bound" || name === "loop_back_to") {
     return withLoop(node, name, value);
   }
+  if (Object.hasOwn(CEILINGS, name)) return withCeiling(node, name, value);
   if (name === "kind") {
     return NODE_KINDS.includes(value)
       ? {node: withKind(node, value), notice: ""}

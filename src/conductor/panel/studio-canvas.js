@@ -14,7 +14,7 @@ import {element} from "./command-view.js";
 // The pure half of the canvas: where a step goes, and how an edge is named.
 // It moved next door when this file crossed the line cap, and is re-exported
 // so the surface both other slices code against did not move with it.
-import {canvasLayout, edgeEnds, edgeId} from "./studio-model.js";
+import {canvasLayout, edgeEnds, edgeId} from "./studio-layout.js";
 export {canvasLayout, edgeEnds, edgeId};
 
 // -- vocabularies this module consumes -------------------------------------

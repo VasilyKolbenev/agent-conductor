@@ -17,6 +17,7 @@
 // does not support it. Nothing on this screen writes inert data, and nothing
 // silently disappears. Every unsupported line carries `data-unsupported`.
 import {element, field} from "./command-view.js";
+import {CEILINGS} from "./studio-model.js";
 
 // -- vocabularies this module consumes -------------------------------------
 //
@@ -49,8 +50,8 @@ export const EDIT_TYPES = Object.freeze([
 //: are spelled flat because an edit names ONE field, and a nested path would be
 //: a second grammar for slice D to parse.
 export const EDIT_FIELDS = Object.freeze([
-  "capability", "gate_id", "kind", "loop_back_to", "loop_bound", "resources",
-  "role_id", "stage", "title",
+  "attempt_bound", "capability", "gate_id", "kind", "loop_back_to",
+  "loop_bound", "resources", "role_id", "stage", "timeout_seconds", "title",
 ]);
 //: The six sections, in the one order the design fixes them in.
 export const SECTIONS = Object.freeze([
@@ -453,6 +454,23 @@ function argumentRows(box, node) {
         ? "(a structured value)" : String(payload[name]))}))));
 }
 
+//: One control for both plan-side ceilings, because they are one idea: a whole
+//: number in the contract's range, or empty for "the plan does not constrain
+//: this". The range comes from `CEILINGS`, whose numbers are the Python
+//: contract's own, so the field cannot offer what the store would refuse.
+function ceilingField(box, form, label, name) {
+  const rule = CEILINGS[name];
+  const input = element("input", {"data-edit-field": name,
+    "data-focus": `edit-${name}`, max: String(rule.max), min: String(rule.min),
+    name, placeholder: "no limit", step: "1", type: "number"});
+  const held = form.node[name];
+  input.value = held === undefined || held === null ? "" : String(held);
+  input.addEventListener("change", () => commit(form, name, input.value));
+  const wrapper = field(label, editable(input, form));
+  wrapper.classList.add("studio-field");
+  box.append(wrapper);
+}
+
 function executionSection(form) {
   const {node, run} = form;
   const box = sectionOf("execution", "Execution");
@@ -461,11 +479,14 @@ function executionSection(form) {
     : "the run read");
   note(box, "A mode is a RUN's authority ladder, not a step's: the same "
     + "workflow can be run under any of them.");
-  unsupported(box, "Timeout", "A timeout is a per-action field carried on a "
-    + "proposal, not on a workflow step; a number typed here would reach no "
-    + "run.");
-  unsupported(box, "Retry / attempt bound", "The only bound a workflow "
-    + "document carries is a loop's, and it is edited under Transitions.");
+  ceilingField(box, form, "Timeout (seconds)", "timeout_seconds");
+  note(box, "A CEILING, not a default. The action a Human confirms may ask for "
+    + "less and never more, and a step that names none is unlimited by the "
+    + "plan. Empty means no limit.");
+  ceilingField(box, form, "Attempt bound", "attempt_bound");
+  note(box, "How many attempts this step may have. Counted the way a loop "
+    + "counts its passes -- distinct attempts naming this step -- and spent "
+    + "before an action is authorized, so the bound is never exceeded once.");
   unsupported(box, "Output budget", "This build carries no output budget on a "
     + "workflow step. The reviewed dispatch arguments carry an output limit "
     + "profile, and those are set where a proposal is composed.");

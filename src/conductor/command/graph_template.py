@@ -75,6 +75,7 @@ from .graph_definition import (
     GraphEdge,
     GraphLoop,
     GraphNode,
+    settled_bounds,
     GraphResource,
     _ABSENT,
     _exact,
@@ -143,10 +144,17 @@ class TemplateNode:
     resources: tuple[GraphResource, ...] = ()
     gate_id: str | None = None
     loop: GraphLoop | None = None
+    #: The two ceilings a plan may place on one step: the longest its work may
+    #: run, and the most attempts it allows. Optional, and absent means the plan
+    #: constrains neither -- which is what every template written before they
+    #: existed says, so `dalio-v1` digests exactly as it did.
+    timeout_seconds: int | None = None
+    attempt_bound: int | None = None
 
     _FIELDS = frozenset({
         "node_id", "kind", "title", "stage", "role_id", "capability",
-        "arguments", "resources", "gate_id", "loop",
+        "arguments", "resources", "gate_id", "loop", "timeout_seconds",
+        "attempt_bound",
     })
 
     def __post_init__(self) -> None:
@@ -166,6 +174,12 @@ class TemplateNode:
         if self.capability is not None:
             object.__setattr__(self, "capability", _id("capability", self.capability))
         self._settle_arguments()
+        # The DEFINITION's own rule, not a second copy of it: a template
+        # ceiling the layer below would refuse is a template that cannot
+        # materialize, and run time is too late to find that out.
+        for name, value in settled_bounds(
+                self.timeout_seconds, self.attempt_bound).items():
+            object.__setattr__(self, name, value)
 
     def _settle_arguments(self) -> None:
         """Take the caller's payload once, then answer only from our own copy.
@@ -220,6 +234,12 @@ class TemplateNode:
             out["gate_id"] = self.gate_id
         if self.loop is not None:
             out["loop"] = self.loop.as_dict()
+        # Written only when named, so a template that constrains neither is the
+        # document it always was and its revision digest does not move.
+        if self.timeout_seconds is not None:
+            out["timeout_seconds"] = self.timeout_seconds
+        if self.attempt_bound is not None:
+            out["attempt_bound"] = self.attempt_bound
         out["resources"] = [row.as_dict() for row in self.resources]
         return out
 
@@ -258,7 +278,9 @@ class TemplateNode:
             arguments={} if arguments is _ABSENT else arguments,
             resources=tuple(GraphResource.from_dict(row) for row in resources),
             gate_id=data.pop("gate_id", None),
-            loop=None if loop is None else GraphLoop.from_dict(loop))
+            loop=None if loop is None else GraphLoop.from_dict(loop),
+            timeout_seconds=data.pop("timeout_seconds", None),
+            attempt_bound=data.pop("attempt_bound", None))
 
 
 @dataclass(frozen=True)
@@ -454,7 +476,8 @@ def _rebuilt_node(row: object) -> TemplateNode:
     return TemplateNode(
         node_id=row.node_id, kind=row.kind, title=row.title, stage=row.stage,
         role_id=row.role_id, capability=row.capability, arguments=row.payload(),
-        resources=row.resources, gate_id=row.gate_id, loop=row.loop)
+        resources=row.resources, gate_id=row.gate_id, loop=row.loop,
+        timeout_seconds=row.timeout_seconds, attempt_bound=row.attempt_bound)
 
 
 def _rebuilt_edge(row: object) -> GraphEdge:
@@ -548,7 +571,11 @@ def _build(template: GraphTemplate, assignments: Mapping[str, str], *,
             stage=node.stage,
             instance_id=None if node.role_id is None else assignments[node.role_id],
             capability=node.capability, arguments=node.payload(),
-            resources=node.resources, gate_id=node.gate_id, loop=node.loop)
+            resources=node.resources, gate_id=node.gate_id, loop=node.loop,
+            # Carried across, or the plan's ceilings would be a template fact
+            # the run it materializes never hears about.
+            timeout_seconds=node.timeout_seconds,
+            attempt_bound=node.attempt_bound)
         for node in steps)
     return GraphDefinition(graph_id=graph_id, run_id=run_id,
                            created_at=created_at, nodes=nodes, edges=edges)

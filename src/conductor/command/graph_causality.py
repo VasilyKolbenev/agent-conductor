@@ -46,7 +46,8 @@ DISPATCH_KEY_PREFIX = "dispatch-"
 
 def _matches_its_node(
         recovered: "RecoveredRun", subject: str, node_id: str | None,
-        instance_id: str, capability: str, arguments: object) -> None:
+        instance_id: str, capability: str, arguments: object,
+        timeout_seconds: int | None = None) -> None:
     """A document that names a node must be the work that node describes.
 
     An unbound document is left alone: runs without a graph existed before
@@ -85,12 +86,32 @@ def _matches_its_node(
     if _thaw_json(arguments) != node.payload():
         raise StoreError(
             f"{subject} arguments do not match node {node.node_id!r}")
+    _within_the_planned_ceiling(subject, node, timeout_seconds)
+
+
+def _within_the_planned_ceiling(subject: str, node, timeout_seconds) -> None:
+    """A document may ask for less time than the plan allows, and never more.
+
+    Held HERE and not only where the runtime authorizes, because this relation
+    is the one rule that runs on the honest road AND again on a journal
+    replayed from disk. A record written straight into the journal cannot buy
+    itself more time than the plan gave the step.
+
+    A node naming no ceiling constrains nothing -- which is what every plan
+    written before ceilings existed says, and why no stored run changes meaning.
+    """
+    if (node.timeout_seconds is not None and timeout_seconds is not None
+            and timeout_seconds > node.timeout_seconds):
+        raise StoreError(
+            f"{subject} asks for {timeout_seconds}s, past the "
+            f"{node.timeout_seconds}s ceiling node {node.node_id!r} names")
 
 
 def _proposal_matches_its_node(
         recovered: "RecoveredRun", value: ActionProposal) -> None:
     _matches_its_node(recovered, "proposal", value.node_id, value.instance_id,
-                      value.capability, value.arguments)
+                      value.capability, value.arguments,
+                      value.timeout_seconds)
 
 
 def _proposal_named_by(
@@ -152,4 +173,5 @@ def _request_repeats_its_proposal(
         raise StoreError(
             f"request arguments do not match proposal {proposal.proposal_id!r}")
     _matches_its_node(recovered, "request", value.node_id, value.instance_id,
-                      value.capability, value.arguments)
+                      value.capability, value.arguments,
+                      value.timeout_seconds)
