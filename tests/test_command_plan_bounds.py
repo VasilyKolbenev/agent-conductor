@@ -304,4 +304,3 @@ def test_a_node_naming_no_attempt_bound_authorizes_without_limit(tmp_path):
 
     assert sum(1 for row in store.read("run-001").records
                if row.kind == "action_request") == 3
-

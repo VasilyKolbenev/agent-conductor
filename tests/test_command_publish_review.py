@@ -327,4 +327,3 @@ def test_an_idempotent_re_save_keeps_the_review_valid(tmp_path):
     status, _payload = publish_revision(store, WORKFLOW, body)
 
     assert status == 201
-

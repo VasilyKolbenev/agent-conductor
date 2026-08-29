@@ -333,6 +333,24 @@ def _node_step(map_text: str) -> str:
     return _STEP_SOME_NODES_ARE_PLACEHOLDERS
 
 
+#: What the map must still satisfy when the agent is done, listed for the
+#: agent rather than left to `conduct validate` to discover one at a time.
+#: A constant rather than eight lines inside the prompt, because the prompt
+#: crossed the function-length limit and because these are the validator
+#: rules restated -- so a reader comparing them against `schema.py` has one
+#: block to compare rather than a slice of a longer string.
+_STILL_TRUE = (
+    "What must still be true when you are done:\n"
+    "- schema_version == 1\n"
+    "- node ids are unique, and there is at least one node\n"
+    "- every depends_on entry names a node declared in this file\n"
+    "- every reviews entry names a role declared in this file\n"
+    "- every role's stage, where it has one, names one of cycle.phases\n"
+    "\n"
+    "4. Run `conduct validate` and fix anything it reports before you finish.\n"
+)
+
+
 def bootstrap_prompt(map_path: str, map_text: str) -> str:
     """Return the instruction block for filling in an already-written map.
 
@@ -381,14 +399,7 @@ def bootstrap_prompt(map_path: str, map_text: str) -> str:
         "   project, say so and stop — do not restructure it on your own\n"
         "   initiative.\n"
         "\n"
-        "What must still be true when you are done:\n"
-        "- schema_version == 1\n"
-        "- node ids are unique, and there is at least one node\n"
-        "- every depends_on entry names a node declared in this file\n"
-        "- every reviews entry names a role declared in this file\n"
-        "- every role's stage, where it has one, names one of cycle.phases\n"
-        "\n"
-        "4. Run `conduct validate` and fix anything it reports before you finish.\n"
+        f"{_STILL_TRUE}"
     )
 
 

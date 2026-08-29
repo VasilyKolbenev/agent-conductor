@@ -250,15 +250,17 @@ def test_extended_srgb_is_measured_as_the_pixels_chromium_draws(panel_page: Page
     assert _contrast(panel_page, "#gamutProbe") == pytest.approx(1.0)
 
 
-def test_rendered_orbit_keeps_order_return_and_non_overlapping_stages(panel_page: Page) -> None:
-    """Both responsive layouts remain a closed, data-sized cycle in the live DOM."""
-    names = ["plan", "implement", "review", "human-gate"]
-    assert panel_page.locator("#orbitBody .orb__name").all_text_contents() == names
-    assert "orbit--ring" in (panel_page.locator("#orbitField").get_attribute("class") or "")
-    assert panel_page.locator("#orbitSvg .trk").count() == len(names)
-    assert panel_page.locator("#orbitSvg .trk--next").count() == 1
+def _ring_geometry(page: Page) -> dict[str, object]:
+    """The drawn ring as measurements: its links, its area, and its overlaps.
 
-    geometry = panel_page.locator("#orbitField").evaluate(
+    Which stages each track joins, the area the stage centres enclose, and how
+    many stage boxes overlap. A track's endpoints are matched to the NEAREST
+    stage centre in screen space rather than read off the markup, so what is
+    asserted is the cycle a reader sees drawn. A path re-pointed in the DOM but
+    landing in the same places is the same picture; one drawn somewhere else
+    fails whatever its markup claims.
+    """
+    return page.locator("#orbitField").evaluate(
         """field => {
           const stages = [...field.querySelectorAll(".orb")];
           const centers = stages.map(stage => {
@@ -289,6 +291,17 @@ def test_rendered_orbit_keeps_order_return_and_non_overlapping_stages(panel_page
           return {area, links, overlaps};
         }"""
     )
+
+
+def test_rendered_orbit_keeps_order_return_and_non_overlapping_stages(panel_page: Page) -> None:
+    """Both responsive layouts remain a closed, data-sized cycle in the live DOM."""
+    names = ["plan", "implement", "review", "human-gate"]
+    assert panel_page.locator("#orbitBody .orb__name").all_text_contents() == names
+    assert "orbit--ring" in (panel_page.locator("#orbitField").get_attribute("class") or "")
+    assert panel_page.locator("#orbitSvg .trk").count() == len(names)
+    assert panel_page.locator("#orbitSvg .trk--next").count() == 1
+
+    geometry = _ring_geometry(panel_page)
     assert geometry["overlaps"] == 0
     assert geometry["area"] > 1_000
     assert geometry["links"] == [[0, 1], [1, 2], [2, 3], [3, 0]]

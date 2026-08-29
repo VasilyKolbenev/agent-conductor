@@ -239,6 +239,39 @@ def _validate_lane_map_status(data: dict, where: str, errors: list[str]) -> None
                           f"{sorted(NODE_STATUSES)}")
 
 
+def _optional_string_list(
+        holder: dict, key: str, subject: str, where: str,
+        errors: list[str]) -> None:
+    """One optional key that, when present, must be a list of strings.
+
+    `findings[].refs` and `waits_on_human[].blocks` are the same rule written
+    twice, and both were written as a `for` inside an `else` inside an `if`
+    inside a `for` -- five levels, which is one more than this project allows
+    and about three more than a reader needs to see the rule. Naming it removes
+    the nest from both callers and leaves one place to correct if the rule ever
+    changes.
+
+    Absent is legal and says nothing; the key is optional in the protocol.
+
+    Args:
+        holder: The finding or wait carrying the key.
+        key: The key to check.
+        subject: How to name the holder in a message, already quoted.
+        where: The lane the message is about.
+        errors: The list every schema error is appended to.
+    """
+    if key not in holder:
+        return
+    value = holder[key]
+    if not isinstance(value, list):
+        errors.append(f"{where}: {subject} {key} must be a list")
+        return
+    for item in value:
+        if not isinstance(item, str):
+            errors.append(f"{where}: {subject} {key} element must be a string, "
+                          f"got {item!r}")
+
+
 def _validate_lane_findings(data: dict, where: str, errors: list[str]) -> None:
     if "findings" not in data:
         return
@@ -265,16 +298,7 @@ def _validate_lane_findings(data: dict, where: str, errors: list[str]) -> None:
             if key in f and not isinstance(f[key], str):
                 errors.append(f"{where}: finding {fid!r} {key} must be a string, "
                               f"got {f[key]!r}")
-        if "refs" in f:
-            refs = f["refs"]
-            if not isinstance(refs, list):
-                errors.append(f"{where}: finding {fid!r} refs must be a list")
-            else:
-                for ref in refs:
-                    if not isinstance(ref, str):
-                        errors.append(
-                            f"{where}: finding {fid!r} refs element must be a string, "
-                            f"got {ref!r}")
+        _optional_string_list(f, "refs", f"finding {fid!r}", where, errors)
 
 
 def _validate_lane_verdicts(data: dict, where: str, errors: list[str]) -> None:
@@ -312,16 +336,7 @@ def _validate_lane_waits(data: dict, where: str, errors: list[str]) -> None:
         if "title" in w and not isinstance(w["title"], str):
             errors.append(f"{where}: wait {wid!r} title must be a string, "
                           f"got {w['title']!r}")
-        if "blocks" in w:
-            blocks = w["blocks"]
-            if not isinstance(blocks, list):
-                errors.append(f"{where}: wait {wid!r} blocks must be a list")
-            else:
-                for b in blocks:
-                    if not isinstance(b, str):
-                        errors.append(
-                            f"{where}: wait {wid!r} blocks element must be a string, "
-                            f"got {b!r}")
+        _optional_string_list(w, "blocks", f"wait {wid!r}", where, errors)
 
 
 def _validate_lane_invariants(data: dict, where: str, errors: list[str]) -> None:

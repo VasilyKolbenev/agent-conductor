@@ -2,10 +2,13 @@
 
 The panel's palette is the owner's and is approved (plan §8.3, §8.4). What this
 module measures is not the palette but the *shipped pairs*: which foreground the
-panel's declarations put on which background, what each of those measures, and
-whether the states stay apart when colour is taken away. Every number lives here
-rather than in a comment beside a token, because a number in a comment goes
-stale the moment the token changes and says nothing when it does.
+panel's declarations put on which background, and what each of those measures.
+Whether the states stay apart when colour itself is taken away — the redundant
+carriers a chip keeps, and what a dichromat is left with — moved whole to
+tests/test_panel_colour_alone.py when this file passed the project's 800-line
+cap. Every number lives here rather than in a comment beside a token, because a
+number in a comment goes stale the moment the token changes and says nothing
+when it does.
 
 A pair is a pair of *composited* colours, not of tokens. Most of the panel's
 status text sits on `color-mix(<status> N%, transparent)` over a card, so the
@@ -46,7 +49,7 @@ import pytest
 
 from tests.test_panel_cascade import (
     INTERACTIONS, E, computed, environments, panel_html, script, touched)
-from tests.test_panel_colour import JND, contrast, delta_e, simulate_cvd
+from tests.test_panel_colour import contrast
 from tests.test_panel_style import root_declarations
 
 # WCAG 2.1 thresholds. 1.4.3 normal text; 1.4.11 non-text and large text.
@@ -717,24 +720,6 @@ def test_each_recorded_composite_still_measures_what_it_was_recorded_at(usage, t
     assert round(ratio, 2) == RECORDED_COMPOSITES[(usage, theme)]
 
 
-@pytest.mark.parametrize("interaction", [None, *sorted(INTERACTIONS)])
-@pytest.mark.parametrize("theme", THEMES)
-def test_no_chip_says_its_status_with_colour_alone(theme, interaction):
-    # Moving chip words onto --ink is only safe because the status keeps two
-    # other carriers. If a chip ever lost both, the word would be all that is
-    # left and the colour channel would be gone entirely. Held under the pointer
-    # as well as at rest: a hover rule collapsing the glyph onto the word colour
-    # takes the same carrier away, and used to do it with this test passing.
-    for build, classes in ((_pill, ("pass", "fail", "blocked", "running", "idle")),
-                           (lambda c: _vd(c, "alert"), ("ok", "bad", "wait", "idle"))):
-        for cls in classes:
-            chain = touched(build(cls), interaction)
-            glyph = foreground(theme, chain + touched([E("i", "gl")], interaction), "color")
-            border = foreground(theme, chain, "border-color")
-            word = foreground(theme, chain, "color")
-            assert glyph != word and border != word, (cls, interaction)
-
-
 @pytest.mark.parametrize("theme", THEMES)
 @pytest.mark.parametrize("surf", ["--panel", "--sunk"])
 @pytest.mark.parametrize("token", ["--fail", "--wait"])
@@ -776,60 +761,3 @@ def test_a_lit_card_reads_as_lit_because_its_contour_gains_real_contrast(theme):
     resting = contrast(t["--line"], t["--panel-lit"])
     lit = contrast(t["--contour-lit"], t["--panel-lit"])
     assert round(lit / resting, 2) == LIT_GAIN[theme]
-
-
-# ── accent against fail, measured rather than estimated ────────────────────
-# Plan §8.3 carried a coordinator's *estimate* of roughly 1.24:1 between the
-# light accent and the light fail. Measured, it is 1.2425:1 — the estimate was
-# right, and it is now a computation instead of a recollection.
-ACCENT_FAIL_RATIO = {"dark": 1.22, "light": 1.24}
-
-
-@pytest.mark.parametrize("theme", THEMES)
-def test_accent_and_fail_are_nearly_the_same_lightness_in_both_themes(theme):
-    t = tokens(theme)
-    ratio = contrast(t["--accent"], t["--fail"])
-    assert round(ratio, 2) == ACCENT_FAIL_RATIO[theme]
-    assert ratio < 1.3, "the two reds are close enough that lightness cannot separate them"
-
-
-# ── colour-vision deficiency ───────────────────────────────────────────────
-# The CIE76 dE*ab between fail and wait as a dichromat sees them. A difference
-# under about 2.3 is the standard just-noticeable-difference floor: below it the
-# two are the same colour. These are measurements of the owner's approved
-# palette, recorded as facts; the palette is not reopened by them. The floor
-# itself and the arithmetic live in tests/test_panel_colour.py.
-CVD_FAIL_WAIT = {
-    ("dark", "protanopia"): 19.9,
-    ("dark", "deuteranopia"): 11.1,
-    ("light", "protanopia"): 17.3,
-    ("light", "deuteranopia"): 1.5,
-}
-
-
-@pytest.mark.parametrize("theme,kind", [k for k in CVD_FAIL_WAIT])
-def test_the_measured_distance_between_fail_and_wait_under_cvd_is_what_was_recorded(theme, kind):
-    t = tokens(theme)
-    measured = delta_e(simulate_cvd(t["--fail"], kind), simulate_cvd(t["--wait"], kind))
-    assert round(measured, 1) == CVD_FAIL_WAIT[(theme, kind)]
-
-
-def test_fail_and_wait_become_the_same_colour_under_deuteranopia_in_the_light_theme():
-    # The strongest evidence in this module that the glyph/text/shape rule is
-    # load-bearing rather than decorative. Under deuteranopia the light theme's
-    # fail #b42318 and wait #8a6500 both render near #707000/#737300 — apart by
-    # less than the just-noticeable difference. For those users, colour carries
-    # nothing here and every bit of the distinction is carried by the glyph and
-    # the spelt-out label.
-    t = tokens("light")
-    measured = delta_e(simulate_cvd(t["--fail"], "deuteranopia"),
-                       simulate_cvd(t["--wait"], "deuteranopia"))
-    assert measured < JND, f"measured {measured:.2f}"
-
-
-def test_fail_and_wait_stay_apart_under_protanopia_in_both_themes():
-    for theme in THEMES:
-        t = tokens(theme)
-        measured = delta_e(simulate_cvd(t["--fail"], "protanopia"),
-                           simulate_cvd(t["--wait"], "protanopia"))
-        assert measured > JND * 4, f"{theme}: {measured:.2f}"

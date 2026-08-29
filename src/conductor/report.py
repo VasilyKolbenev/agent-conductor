@@ -581,6 +581,65 @@ def render(state: dict) -> str:
     return body + "\n"
 
 
+def _handoff_section(heading: str, rows: list, render, empty: str) -> list[str]:
+    """One counted section of the packet, and the sentence it says when empty.
+
+    The two lists were written twice with one word changed. An empty section
+    must SAY it is empty rather than leave a heading over nothing: a reader
+    cannot tell a section with no rows from one that failed to render. One
+    shape, so the two can never come to disagree about that.
+
+    `heading` arrives as the finished line and is PLACED, never interpolated.
+    A function outside `_from_document` that renders a value it was handed
+    cannot show where that value came from, and `tests/test_report_funnel.py`
+    refuses the shape rather than trusting the argument -- correctly, since
+    the next caller may hand it something the door never saw.
+    """
+    out = ["", heading, ""]
+    if not rows:
+        return [*out, empty]
+    for row in rows:
+        out += render(row)
+    return out
+
+
+def _handoff_lane(state: dict, author: str, lane: dict, role_id, role: dict,
+                  now: dict) -> list[str]:
+    """The packet's heading and its lane block, in the document's own words.
+
+    Lifted out of `handoff` for the project's function-length limit, at the
+    seam the packet already has: this is the part that describes WHO the lane
+    is, and what follows it is what the lane has to say. Every value is read
+    through `_from_document`, so a field the state does not carry is reported
+    as absent rather than guessed at.
+    """
+    out = [
+        f"# Conduct handoff — {_from_document(author, _PROSE, '(unknown author)')}",
+        "",
+        f"Project: "
+        f"{_from_document(state.get('project'), _PROSE, '(unnamed project)')}",
+        "",
+        "## Lane",
+        "",
+        f"- Author: {_from_document(lane.get('author'), _SPAN)}",
+        f"- Role: {_from_document(role_id, _SPAN)}",
+        f"- Harness: {_from_document(role.get('harness'), _SPAN)}",
+        f"- Assigned stage: {_from_document(role.get('stage'), _SPAN)}",
+        f"- Reviews roles: {_id_list(role.get('reviews'))}",
+        f"- Updated: {_from_document(lane.get('updated'), _SPAN)}",
+        f"- Stale: {_from_document(lane.get('stale'), _SPAN)}",
+        f"- Broken: {_from_document(lane.get('broken'), _SPAN)}",
+        f"- Current task: "
+        f"{_from_document(now.get('task'), _PROSE, '(not recorded in state.json)')}",
+        f"- Runtime phase: {_from_document(now.get('phase'), _SPAN)}",
+        f"- Task since: {_from_document(now.get('since'), _SPAN)}",
+    ]
+    if lane.get("error") is not None:
+        out.append(f"- Lane error: "
+                   f"{_from_document(lane.get('error'), _PROSE, _RECORDED_NULL)}")
+    return out
+
+
 def handoff(state: dict, author: str) -> str:
     """Render the current packet for one lane, from §6.1 fields only.
 
@@ -615,43 +674,14 @@ def handoff(state: dict, author: str) -> str:
     waits = [item for item in state.get("human_queue") or []
              if author in (item.get("sources") or [])]
 
-    out = [
-        f"# Conduct handoff — {_from_document(author, _PROSE, '(unknown author)')}",
-        "",
-        f"Project: "
-        f"{_from_document(state.get('project'), _PROSE, '(unnamed project)')}",
-        "",
-        "## Lane",
-        "",
-        f"- Author: {_from_document(lane.get('author'), _SPAN)}",
-        f"- Role: {_from_document(role_id, _SPAN)}",
-        f"- Harness: {_from_document(role.get('harness'), _SPAN)}",
-        f"- Assigned stage: {_from_document(role.get('stage'), _SPAN)}",
-        f"- Reviews roles: {_id_list(role.get('reviews'))}",
-        f"- Updated: {_from_document(lane.get('updated'), _SPAN)}",
-        f"- Stale: {_from_document(lane.get('stale'), _SPAN)}",
-        f"- Broken: {_from_document(lane.get('broken'), _SPAN)}",
-        f"- Current task: "
-        f"{_from_document(now.get('task'), _PROSE, '(not recorded in state.json)')}",
-        f"- Runtime phase: {_from_document(now.get('phase'), _SPAN)}",
-        f"- Task since: {_from_document(now.get('since'), _SPAN)}",
-    ]
-    if lane.get("error") is not None:
-        out.append(f"- Lane error: "
-                   f"{_from_document(lane.get('error'), _PROSE, _RECORDED_NULL)}")
+    out = _handoff_lane(state, author, lane, role_id, role, now)
 
-    out += ["", f"## Findings from this lane — {len(findings)}", ""]
-    if findings:
-        for finding in findings:
-            out += _finding(finding, state)
-    else:
-        out.append("No finding in the document names this lane as its author.")
-
-    out += ["", f"## Human requests from this lane — {len(waits)}", ""]
-    if waits:
-        for item in waits:
-            out += _queue_item(item)
-    else:
-        out.append("No human-queue item in the document names this lane as a source.")
-
+    out += _handoff_section(
+        f"## Findings from this lane — {len(findings)}", findings,
+        lambda row: _finding(row, state),
+        "No finding in the document names this lane as its author.")
+    out += _handoff_section(
+        f"## Human requests from this lane — {len(waits)}", waits,
+        _queue_item,
+        "No human-queue item in the document names this lane as a source.")
     return "\n".join([*out, ""])

@@ -269,6 +269,29 @@ class Offer(NamedTuple):
 EMPTY_OFFER = Offer({}, {}, {}, {})
 
 
+def _bind_imported(alias: ast.alias, target: str, source: Offer,
+                   held: Offer) -> None:
+    """Bind, under the name one alias binds locally, what `target` offers.
+
+    `from m import C as D` binds the AS name, which is the whole trick a bypass
+    uses. What a name MEANS is copied from the module that offered it; where the
+    value CAME FROM is not, so a name reached through a re-export keeps the
+    `(module, symbol)` of the declaration it was copied from, however many names
+    and imports ago that was.
+
+    `held` is the offer being built: its four tables are written into, which is
+    why the same block reads a file's own imports and a package's re-exports.
+    """
+    local = alias.asname or alias.name
+    for into, offered in ((held.strings, source.strings),
+                          (held.classes, source.classes),
+                          (held.containers, source.containers)):
+        if alias.name in offered:
+            into[local] = offered[alias.name]
+            held.origins[local] = source.origins.get(
+                alias.name, (target, alias.name))
+
+
 def _exported_offer(module: str, trees: Mapping[str, ast.Module],
                     seen: frozenset[str] = frozenset()) -> Offer:
     """Everything a module offers under a name -- its own, and its re-exports.
@@ -287,18 +310,12 @@ def _exported_offer(module: str, trees: Mapping[str, ast.Module],
     classes: dict[str, dict[str, str]] = {}
     containers: dict[str, Container] = {}
     origins: dict[str, tuple[str, str]] = {}
+    held = Offer(strings, classes, containers, origins)
     for node in _import_froms(tree):
         target = _absolute(node, file_name)
         source = _exported_offer(target, trees, seen | {module})
         for alias in node.names:
-            local = alias.asname or alias.name
-            for held, offered in ((strings, source.strings),
-                                  (classes, source.classes),
-                                  (containers, source.containers)):
-                if alias.name in offered:
-                    held[local] = offered[alias.name]
-                    origins[local] = source.origins.get(
-                        alias.name, (target, alias.name))
+            _bind_imported(alias, target, source, held)
     return _settled(module, tree, strings, classes, containers, origins)
 
 
@@ -374,6 +391,7 @@ def _local_names(module: str, tree: ast.AST,
     classes: dict[str, dict[str, str]] = {}
     containers: dict[str, Container] = {}
     origins: dict[str, tuple[str, str]] = {}
+    held = Offer(strings, classes, containers, origins)
     modules: dict[str, str] = {}
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
@@ -383,16 +401,9 @@ def _local_names(module: str, tree: ast.AST,
             target = _absolute(node, module)
             source = _offered(target, trees)
             for alias in node.names:
-                local = alias.asname or alias.name
-                for held, offered in ((strings, source.strings),
-                                      (classes, source.classes),
-                                      (containers, source.containers)):
-                    if alias.name in offered:
-                        held[local] = offered[alias.name]
-                        origins[local] = source.origins.get(
-                            alias.name, (target, alias.name))
+                _bind_imported(alias, target, source, held)
                 if _file_of(f"{target}.{alias.name}", trees) is not None:
-                    modules[local] = f"{target}.{alias.name}"
+                    modules[alias.asname or alias.name] = f"{target}.{alias.name}"
     return _settled(module, tree, strings, classes, containers, origins), modules
 
 

@@ -134,6 +134,22 @@ def _timeout_of(node):
     return next((kw.value for kw in node.keywords if kw.arg == "timeout"), None)
 
 
+def _defaulted_bounds(node: ast.AST) -> set[str]:
+    """The named bounds one node hands on as a keyword default, if it is a def.
+
+    A bound reaches a wait through a keyword DEFAULT too, which is a `timeout=`
+    site one hop away: `_run_together` takes its bound as a parameter so a test
+    can prove the lifecycle gives up without spending the real one. Reading
+    those defaults is what lets them count as USE -- otherwise the forwarded
+    bound would have to be carved out by name.
+    """
+    if not isinstance(node, ast.FunctionDef):
+        return set()
+    return {default.id
+            for default in node.args.kw_defaults + node.args.defaults
+            if isinstance(default, ast.Name) and default.id in _NAMED_BOUNDS}
+
+
 def _unnamed_waits(*paths: Path) -> tuple[list[str], set[str]]:
     """Every blocking call in `paths` that spells its bound, or carries none.
 
@@ -142,18 +158,14 @@ def _unnamed_waits(*paths: Path) -> tuple[list[str], set[str]]:
     remote job until the runner kills it instead of naming what did not happen.
 
     Also reports which named bounds are actually IN USE, so a caller can refuse
-    to guard an empty set. A bound reaches a wait through a keyword DEFAULT too,
-    which is a `timeout=` site one hop away, and those are counted -- otherwise
-    the forwarded one would have to be carved out by name.
+    to guard an empty set: the ones spelled at a wait, and the ones
+    `_defaulted_bounds` finds one hop away.
     """
     offenders: list[str] = []
     used: set[str] = set()
     for path in paths:
         for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
-            if isinstance(node, ast.FunctionDef):
-                for default in node.args.kw_defaults + node.args.defaults:
-                    if isinstance(default, ast.Name) and default.id in _NAMED_BOUNDS:
-                        used.add(default.id)
+            used |= _defaulted_bounds(node)
             if not (isinstance(node, ast.Call)
                     and isinstance(node.func, ast.Attribute)):
                 continue

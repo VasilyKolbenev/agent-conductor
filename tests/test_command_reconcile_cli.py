@@ -300,4 +300,3 @@ def test_the_survey_tells_an_unreadable_run_from_one_with_nothing_stranded(
 
     assert rows["run-001"].actions == () and rows["run-001"].unreadable is False
     assert rows["bad-run"].actions == () and rows["bad-run"].unreadable is True
-

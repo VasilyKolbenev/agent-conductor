@@ -48,6 +48,28 @@ def _lane_view(entry: dict, now: datetime, warnings: list[str]) -> dict:
             "now": data.get("now") or {}, "_data": data, "_dt": dt, "_future": future}
 
 
+def _kpi(nodes: list[dict], findings: list[dict], queue: list[dict],
+         disagreements: list[dict], views: list[dict]) -> dict:
+    """The seven counts §6.1 names, each read off the merged document.
+
+    Lifted out of `merge` for the project's function-length limit, and it is a
+    seam rather than a slice: every value here is a COUNT of something the
+    merge already decided, so nothing is judged in this function and nothing
+    that is judged elsewhere is counted twice. A reader asking "where does
+    `blockers` come from" gets one short answer instead of scrolling a
+    seventy-line assembly.
+    """
+    return {
+        "nodes_pass": sum(1 for n in nodes if n["status"] == "pass"),
+        "nodes_total": len(nodes),
+        "blockers": sum(1 for f in findings if f["severity"] == "blocker"),
+        "queue": len(queue),
+        "disagreements": len(disagreements),
+        "broken_lanes": sum(1 for v in views if v["broken"]),
+        "stale_lanes": sum(1 for v in views if v["stale"]),
+    }
+
+
 def merge(map_data: dict | None, map_error: str | None, lanes: list[dict],
           events: list[dict], skipped_events: int, now: datetime,
           *, extra_warnings: tuple[str, ...] | list[str] = ()) -> dict:
@@ -76,57 +98,75 @@ def merge(map_data: dict | None, map_error: str | None, lanes: list[dict],
     Returns:
         The `state.json` dict per PROTOCOL.md §6.1.
     """
-    # extra_warnings: schema-version and other loader-level warnings (§4.5) —
-    # store.load collects them, callers pass them through so they surface in state.
-    warnings: list[str] = list(extra_warnings)
-    if map_data is None:
-        warnings.append(f"map is unreadable: {map_error}")
-        map_data = {"nodes": [], "cycle": {}, "invariants": []}
-    if skipped_events:
-        warnings.append(f"events.jsonl: skipped {skipped_events} malformed line(s)")
-
+    map_data, warnings = _readable_map(
+        map_data, map_error, skipped_events, extra_warnings)
     views = [_lane_view(entry, now, warnings) for entry in lanes]
-    live = [v for v in views if not v["broken"]]
-
-    nodes = _nodes(map_data, live, warnings)
-    findings = _findings(map_data, views, warnings)
-    queue = _human_queue(live)
-    invariants = _invariants(map_data, live, warnings)
-    cycle = _cycle(map_data, live, warnings)
-
-    lanes_out = [{k: v for k, v in view.items() if not k.startswith("_")}
-                 for view in views]
-    disagreements = [f for f in findings if f["review_state"] == "disagreement"]
-    kpi = {
-        "nodes_pass": sum(1 for n in nodes if n["status"] == "pass"),
-        "nodes_total": len(nodes),
-        "blockers": sum(1 for f in findings if f["severity"] == "blocker"),
-        "queue": len(queue),
-        "disagreements": len(disagreements),
-        "broken_lanes": sum(1 for v in views if v["broken"]),
-        "stale_lanes": sum(1 for v in views if v["stale"]),
-    }
-    state = {
-        "schema_version": schema.SCHEMA_VERSION,
-        "generated_at": now.isoformat(),
-        "project": map_data.get("project", ""),
-        "map": {"nodes": nodes},
-        "cycle": cycle,
-        "lanes": lanes_out,
-        "findings": findings,
-        "disagreements": disagreements,
-        "human_queue": queue,
-        "invariants": invariants,
-        "events_tail": list(reversed(events[-EVENTS_TAIL:])),
-        "kpi": kpi,
-        "warnings": warnings,
-    }
+    live = [view for view in views if not view["broken"]]
+    state = _document(map_data, views, live, events, now, warnings)
     # Derived from the finished state (both read `pending_verdicts`, which
     # takes a whole state dict); next_action reads project_status, so order
     # matters here.
     state["project_status"] = _project_status(state, map_error)
     state["next_action"] = _next_action(state, map_error)
     return state
+
+
+def _readable_map(map_data: dict | None, map_error: str | None,
+                  skipped_events: int,
+                  extra_warnings: tuple[str, ...] | list[str]) -> tuple[dict, list[str]]:
+    """A map to merge against, and the warnings the loader and this step raise.
+
+    A map that would not load is not a refusal here: the merger represents it
+    as an empty one and SAYS so in `warnings`, because a project whose map is
+    briefly broken still has lanes, findings and a queue worth showing.
+
+    `extra_warnings` are schema-version and other loader-level warnings (§4.5)
+    that `store.load` collected; callers pass them through so they surface in
+    state rather than being dropped between the reader and the document.
+    """
+    warnings: list[str] = list(extra_warnings)
+    if map_data is None:
+        warnings.append(f"map is unreadable: {map_error}")
+        map_data = {"nodes": [], "cycle": {}, "invariants": []}
+    if skipped_events:
+        warnings.append(f"events.jsonl: skipped {skipped_events} malformed line(s)")
+    return map_data, warnings
+
+
+def _document(map_data: dict, views: list[dict], live: list[dict],
+              events: list[dict], now: datetime,
+              warnings: list[str]) -> dict:
+    """The `state.json` document of §6.1, assembled from the merged parts.
+
+    Split from `merge` for the project's function-length limit, along the seam
+    that was already there: `merge` decides WHAT is true -- which lanes are
+    live, what each rule computes -- and this assembles the document those
+    answers make. Nothing is judged here; every value is either a call to a
+    rule that owns it or a rearrangement of one.
+
+    The two derived fields are deliberately NOT here: `project_status` and
+    `next_action` read the finished document, so they belong after it exists.
+    """
+    nodes = _nodes(map_data, live, warnings)
+    findings = _findings(map_data, views, warnings)
+    queue = _human_queue(live)
+    disagreements = [f for f in findings if f["review_state"] == "disagreement"]
+    return {
+        "schema_version": schema.SCHEMA_VERSION,
+        "generated_at": now.isoformat(),
+        "project": map_data.get("project", ""),
+        "map": {"nodes": nodes},
+        "cycle": _cycle(map_data, live, warnings),
+        "lanes": [{k: v for k, v in view.items() if not k.startswith("_")}
+                  for view in views],
+        "findings": findings,
+        "disagreements": disagreements,
+        "human_queue": queue,
+        "invariants": _invariants(map_data, live, warnings),
+        "events_tail": list(reversed(events[-EVENTS_TAIL:])),
+        "kpi": _kpi(nodes, findings, queue, disagreements, views),
+        "warnings": warnings,
+    }
 
 
 # Under no-last-write-wins, the recency race only runs among AGREEING

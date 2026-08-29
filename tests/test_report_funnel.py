@@ -115,6 +115,18 @@ def _bindings(node):
     return None
 
 
+def _bound_names(targets):
+    """Every name one binding's targets bind.
+
+    Walked rather than read off the target, because `a, (b, c) = ...` and
+    `for row, *rest in ...` bind through a pattern: a name nested in one is
+    bound by the same statement, and taking only the outermost would leave the
+    inner ones looking untainted.
+    """
+    return {name.id for target in targets for name in ast.walk(target)
+            if isinstance(name, ast.Name)}
+
+
 def _tainted_names(func):
     """Every local of `func` that can hold a value taken from the document.
 
@@ -132,11 +144,10 @@ def _tainted_names(func):
             bound = _bindings(node)
             if not bound or not _carries(bound[0], names):
                 continue
-            for target in bound[1]:
-                for name in ast.walk(target):
-                    if isinstance(name, ast.Name) and name.id not in names:
-                        names.add(name.id)
-                        growing = True
+            fresh = _bound_names(bound[1]) - names
+            if fresh:
+                names |= fresh
+                growing = True
     return names
 
 
