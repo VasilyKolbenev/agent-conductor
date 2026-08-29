@@ -56,6 +56,7 @@ conduct report      # the merged state as Markdown, on stdout
 conduct preview     # propose one dispatch and print its canonical preview (no execution)
 conduct integration-smoke  # run the synthetic end-to-end gate and print its receipt
 conduct reconcile   # list the actions a crash stranded; close one with --run/--action
+conduct providers   # configure a harness: paths and env NAMES, never a credential
 conduct up          # panel at http://127.0.0.1:7777/
 ```
 

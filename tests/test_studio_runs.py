@@ -450,6 +450,17 @@ def test_the_no_participant_state_names_the_real_file_keys_and_command() -> None
         _OPTIONAL_KEYS)
     assert 'PROVIDER_CONFIG_COMMAND = "conduct up"' in text
     assert "noProviders" in text
+    # The setup command is named BEFORE the file, because the file is what the
+    # command writes rather than what a person has to compose. A panel that
+    # listed the keys first would still be teaching the schema. Read out of the
+    # panel's own body rather than the whole module, so the export line above
+    # cannot satisfy the ordering on its own.
+    assert 'PROVIDER_SETUP_COMMAND = "conduct providers"' in text
+    body = text[text.index("function noProviders("):]
+    body = body[:body.index("\n}")]
+    assert body.index("PROVIDER_SETUP_COMMAND") < body.index(
+        "PROVIDER_CONFIG_FILE"), (
+        "the empty roster names the file before the command that writes it")
 
 
 @pytest.mark.parametrize("path", OWNED, ids=lambda path: path.name)

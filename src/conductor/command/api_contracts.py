@@ -130,12 +130,15 @@ _EXCEPTION_SLOTS = frozenset({
 #: a DIFFERENT situation from naming a provider that is not available, and the
 #: two must never share a sentence: one person has written no configuration yet
 #: and the other has written one that does not carry the id they asked for. This
-#: one is actionable and says exactly where to act; it names a project-relative
-#: file the operator already owns, never a resolved path on this disk.
+#: one is actionable and says exactly what to DO. It used to say where to act
+#: -- the file and its five keys -- which was the only actionable thing there
+#: was to say while hand-writing that file was the only road. Now there is a
+#: command, so the sentence names the command; the file is still named, because
+#: an operator who prefers to write it is not being told they may not.
 NO_PROVIDERS_MESSAGE = (
-    "this build resolved no available provider; declare one in "
-    "conductor/providers.json, whose objects carry provider_id, executable, "
-    "protocol, env_allow and entrypoint")
+    "this build resolved no available provider; run `conduct providers` to "
+    "configure one — it asks for the paths and the environment variable names, "
+    "and writes conductor/providers.json for you")
 _PHASE_MESSAGES = MappingProxyType({
     "same_origin_denied": frozenset({
         "request Host is not allowed", "request origin is not allowed"}),

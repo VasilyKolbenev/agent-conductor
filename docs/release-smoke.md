@@ -6,7 +6,7 @@ already runs in CI, and this procedure exists to check the things a suite cannot
 built artifact installs, that the console script appears on PATH, that the panel answers a
 real browser request on a real socket, and that it answers on loopback and nowhere else.
 
-Eleven steps, in order. Every one of them names what you must see. A step whose output does not
+Twelve steps, in order. Every one of them names what you must see. A step whose output does not
 match is a release blocker, not a note for later.
 
 **Shell.** The commands below are Windows PowerShell, because that is the shell the procedure
@@ -55,7 +55,7 @@ you are shipping.
 Expect exit 0, and this list of subcommands — no more, no fewer:
 
 ```
-usage: conduct [-h] {validate,init,doctor,prompt,report,preview,integration-smoke,reconcile,up,demo} ...
+usage: conduct [-h] {validate,init,doctor,prompt,report,preview,integration-smoke,reconcile,providers,up,demo} ...
 ```
 
 If a subcommand you expected is missing, the wheel is not built from what you think it is.
@@ -325,6 +325,32 @@ and this product never turns an exit code into a success. **`verification_failed
 expected pass here.** The exit status to read is the command's own `exit=0`, and the proof
 that the loop ran is the durable record it left, not a success token. Run it twice and the
 line is byte-identical: the receipt is deterministic, and reopening the run appends nothing.
+
+## 12. `conduct providers` refuses to be scripted, and never takes a value
+
+```powershell
+& $CONDUCT providers --dir $PROJ; "providers exit=$LASTEXITCODE"
+```
+
+Expect exit 1, an empty stdout, and one stderr line: `conduct providers needs a terminal:
+every answer is a fact about this machine and none of them has a default.` That refusal IS
+the check at this step. Every answer the wizard wants — which harness, where it is on this
+disk, which environment variables it may read — is a fact about one machine, and a command
+that guessed any of them would write a provider configuration nobody chose.
+
+Run it once by hand in a real terminal to see the rest, because a release nobody has driven
+interactively has not been driven. It asks four questions and writes
+`$PROJ\conductor\providers.json`. Two things to watch for, because they are the reason this
+command exists rather than an instruction to open an editor:
+
+- type `ANTHROPIC_API_KEY=sk-something` at the environment question. It must be refused,
+  naming the variable and saying the value is read from your environment. **No credential
+  value may ever reach that file**, and there is nowhere in the dialogue one fits;
+- type `PYTHONPATH` or `LD_PRELOAD`. It must be refused with the reason, at the moment you
+  type it — not later, from a harness that would not start.
+
+The protocol is never asked for: it is a fact about the provider that this build already
+holds, and a person retyping it could only get it wrong.
 
 ## Teardown
 

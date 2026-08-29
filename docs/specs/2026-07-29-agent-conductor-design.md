@@ -3,7 +3,7 @@
 > **Superseded — a dated design record, not the shipped product.**
 >
 > This is the v0.1 design as it stood on 2026-07-29. Much of it did not survive contact: the CLI
-> now ships ten commands, the panel is served from `src/conductor/panel/`, and the command
+> now ships eleven commands, the panel is served from `src/conductor/panel/`, and the command
 > runtime owns child processes, so the "never spawns processes" and "panel is read-only" lines
 > below are false of the product today. Read `docs/adr/0001-harness-control-plane-model.md` and
 > `docs/specs/2026-08-03-hcp-competitive-product-direction.md` for what holds now. The text is

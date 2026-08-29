@@ -78,6 +78,10 @@ export const PROVIDER_CONFIG_REQUIRED = Object.freeze(
 export const PROVIDER_CONFIG_OPTIONAL = Object.freeze(
   ["entrypoint", "env_allow"]);
 export const PROVIDER_CONFIG_COMMAND = "conduct up";
+//: The command that WRITES that file, so nobody has to. It is named before the
+//: file below it: the file is what gets written, not what a person has to sit
+//: down and compose.
+export const PROVIDER_SETUP_COMMAND = "conduct providers";
 //: The seven words a screen container may stand in, and the plain sentence
 //: each one is said with.
 export const PHASE_SENTENCES = Object.freeze({
@@ -486,13 +490,14 @@ function noProviders(handlers) {
     note("This build resolved no provider, so nothing on this machine can "
       + "carry out a step. That is a configuration this project does not have "
       + "yet, not a failure."),
-    fact("Write this file", PROVIDER_CONFIG_FILE),
-    fact("Each row must carry", PROVIDER_CONFIG_REQUIRED),
-    fact("Each row may also carry", PROVIDER_CONFIG_OPTIONAL),
-    note("Both paths are absolute and are pinned by you. The file holds no "
-      + "argv, no working directory, no URL and no secret VALUE: env_allow "
-      + "names environment variables, and their values are read at start "
-      + "time and never written down here."),
+    fact("Run this", PROVIDER_SETUP_COMMAND),
+    note("It asks which harness you have, where it is on this machine, and "
+      + "which environment variables it may read — NAMES only. It never asks "
+      + "for a credential: a value is read from your environment when a step "
+      + "runs and is written down nowhere."),
+    fact("It writes", PROVIDER_CONFIG_FILE),
+    fact("Each row carries", PROVIDER_CONFIG_REQUIRED),
+    fact("And may also carry", PROVIDER_CONFIG_OPTIONAL),
     fact("Then restart with", PROVIDER_CONFIG_COMMAND),
     actionButton(handlers, "refreshAgents", "Read the roster again", null),
   ]);

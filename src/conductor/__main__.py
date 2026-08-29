@@ -13,6 +13,9 @@ config, propose one dispatch through the command service, and print its canonica
 preview for inspection — it prepares and executes nothing); `integration-smoke`
 (run the fixed synthetic Day-1 loop through the owned-process adapter, verify
 honestly, and print the immutable result receipt; it is not Human Confirm);
+`providers` (ask for one harness's absolute paths and the
+environment variable NAMES it may read, and write `conductor/providers.json`;
+it takes no setting on the command line and accepts no credential value);
 `up` (serve the panel
 on 127.0.0.1 with SSE
 live updates; Ctrl-C → exit 0; `--providers PATH` names the operator provider
@@ -179,6 +182,19 @@ def _serve(root: Path | str, port: int, providers: str | None = None) -> int:
 def _cmd_up(args: argparse.Namespace) -> int:
     """Serve the panel on 127.0.0.1; Ctrl-C shuts down cleanly (exit 0)."""
     return _serve(args.dir, args.port, args.providers)
+
+
+def _cmd_providers(args: argparse.Namespace) -> int:
+    """Configure one provider interactively; deferred so `init` never imports it.
+
+    `conductor.provider_setup` reaches the command package for the catalogue,
+    the provider contract and the operator file. Importing it at module scope
+    would put all of that on `conduct init`'s import path, which
+    tests/test_init_probing_ban.py measures.
+    """
+    from conductor import provider_setup          # deferred: see the import block
+
+    return provider_setup.run(args)
 
 
 def _cmd_demo(args: argparse.Namespace) -> int:
@@ -502,6 +518,12 @@ def _build_parser() -> argparse.ArgumentParser:
              "'unknown' (executes nothing, never reports success)")
     _add_stranded_ids(p)
     _add_dir_and_func(p, _cmd_reconcile)
+
+    p = sub.add_parser(
+        "providers",
+        help="configure a harness this machine can run; asks for paths and "
+             "environment variable NAMES, never a credential")
+    _add_dir_and_func(p, _cmd_providers)
 
     p = sub.add_parser("up", help="serve the panel on loopback HTTP with live updates")
     _add_port(p)

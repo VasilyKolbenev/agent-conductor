@@ -8,8 +8,10 @@ Fifteen steps. Every one names what you must be able to see or do **without open
 log, reading source, or asking the person who wrote it**. A step you cannot complete from the
 screen alone is a finding, and the finding is the product's, not yours.
 
-You do not edit a file by hand at any point after step 2. If you find yourself reaching for an
-editor, stop and write down which step sent you there.
+**You do not open a text editor at any point in this script.** There is no longer an exception:
+step 7 used to send you to `conductor/providers.json` and called that deliberate, which was an
+honest description of a gap rather than a design. If you find yourself reaching for an editor,
+stop and write down which step sent you there — that is the finding this line exists to catch.
 
 **Shell.** Windows PowerShell below, because that is where this was written. The `conduct`
 commands are identical on every platform.
@@ -30,7 +32,7 @@ $CONDUCT = "$ACC\venv\Scripts\conduct.exe"
 & $CONDUCT --help
 ```
 
-**You must see** the ten subcommands and no traceback. Nothing on `PYTHONPATH`: an editable
+**You must see** the eleven subcommands and no traceback. Nothing on `PYTHONPATH`: an editable
 working tree would answer every command below and prove nothing.
 
 ## 2. Create a project
@@ -93,12 +95,34 @@ Go to **Agents**.
 
 On a fresh machine you will see the providers this build knows about, each marked
 **unconfigured** — the product ships no credentials and discovers nothing. The screen must tell
-you exactly what to do about that: which file to write (`conductor/providers.json`), which keys
-it takes, and that it is read at startup.
+you exactly what to do about it, and what it must name is a COMMAND:
 
-**This is the one place the script sends you back to a file**, and it is deliberate: a provider
-pins an absolute executable path on your machine, and no browser should be able to write one.
-Write it, restart `conduct up`, and the same screen must now show that provider as available.
+```powershell
+& $CONDUCT providers --dir $PROJ
+```
+
+It asks four questions: which harness you have, where it is on this disk, an optional
+entrypoint, and which environment variables it may read. Then it shows you what it will write
+and asks before writing it.
+
+**Two things you must try, because they are the reason this is a command and not an editor:**
+
+- at the environment question, type a credential the way somebody in a hurry would paste one:
+  `ANTHROPIC_API_KEY=sk-something`. It must refuse, name the variable, and say the value is
+  read from your environment when a step runs. **No credential value may reach that file.**
+- type `PYTHONPATH`, or `LD_PRELOAD`. It must refuse with the reason, while you are typing it.
+  A name like that chooses code to load into the harness before its own first instruction, and
+  a refusal that arrived later would arrive as a harness that simply would not start.
+
+It never asks for the protocol. That is a fact about the provider this build already holds, and
+retyping it could only introduce an error.
+
+The browser writes none of this: a provider pins an absolute path on your machine, and the
+reviewed position is that no browser should be able to write one. The command is how that
+position stops costing you a text editor.
+
+Restart `conduct up`, and the same Agents screen must now show that provider as **available** —
+providers are read once at startup, and the command says so when it finishes.
 
 If you have no harness installed, stop here and record that. Steps 8-13 need one.
 
