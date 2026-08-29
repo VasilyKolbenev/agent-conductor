@@ -207,14 +207,49 @@ def test_recovery_ref_is_exclusive_to_one_action_identity(tmp_path):
 
 
 def test_attempt_id_is_exclusive_to_one_action_identity(tmp_path):
+    """The relation is unchanged; what enforces it moved one identity earlier.
+
+    This used to append a second REQUEST carrying the first's `attempt_id` and
+    then prove that the second action's EVENT was refused. The request is now
+    refused itself -- `attempt_replay.validate_action_request`, added with the
+    same sentence -- so the state this test used to build cannot be reached
+    through the store at all, and the claim is measured where it now holds. The
+    event rule is still guarded, directly, in the test below: it is shadowed,
+    not gone, and a shadowed rule with no witness is one nobody notices losing.
+    """
     store = a_store(tmp_path)
     store.append(an_event())
     second = an_action(
         action_id="action-002", idempotency_key="dispatch-002")
-    store.append(second)
+
     with pytest.raises(StoreError, match="attempt_id.*another action"):
-        store.append(an_event(
-            event_id="event-other", action=second, recovery_ref="recovery-002"))
+        store.append(second)
+
+    assert [row.value.action_id for row in store.read("run-001").records
+            if isinstance(row.value, ActionRequest)] == ["action-001"]
+
+
+def test_the_event_rule_refusing_a_rebound_attempt_id_still_holds_when_asked(
+        tmp_path):
+    """The shadowed half, driven directly against the values it judges.
+
+    No journal can present these two records to the store any more, because the
+    request rule refuses the second before an event exists to judge. The rule
+    is kept as the inner of two locks on one door, and it is asked here through
+    the function that owns it so that removing it cannot be silent.
+    """
+    from conductor.command.attempt_replay import (
+        AttemptRelationError, validate_attempt_event)
+
+    first = an_action()
+    second = an_action(action_id="action-002", idempotency_key="dispatch-002")
+    values = [first, an_event(action=first), second]
+
+    with pytest.raises(AttemptRelationError, match="attempt_id.*another action"):
+        validate_attempt_event(
+            CONFIG, values,
+            an_event(event_id="event-other", action=second,
+                     recovery_ref="recovery-002"))
 
 
 @pytest.mark.parametrize("phase", ["effect_lease", "execution_observed"])

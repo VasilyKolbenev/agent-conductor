@@ -69,6 +69,43 @@ def _hold_event_identity(action: ActionRequest, event: AttemptEvent) -> None:
             f"attempt event request_digest does not match action {event.action_id!r}")
 
 
+def validate_action_request(values: Sequence[object], request: ActionRequest) -> None:
+    """One attempt id names one action, held over the requests themselves.
+
+    ``validate_attempt_event`` below has said "attempt_id already belongs to
+    another action" since attempt events existed, and it said it only of the
+    EVENTS. The requests those events describe were never held to the same
+    relation, so a journal could record two authorized actions under one attempt
+    identity and remain, by every rule that existed, valid.
+
+    It did not stay quiet. The first of those actions to record an event claimed
+    the id, and from then on every other action holding it was refused an event
+    of its own -- work that had been authorized, could not proceed, and had no
+    explanation anywhere in the run. The contradiction was reachable through the
+    honest road: the attempt bound counted DISTINCT attempt ids, so repeating
+    one was also how a caller bought itself extra authorizations.
+
+    Asked of the request rather than only at authorize time because a record
+    appended directly, or a journal replayed from disk, reaches the store
+    without passing the runtime -- the same argument
+    ``_request_repeats_its_proposal`` is written under, one identity down.
+
+    Args:
+        values: The records already replayed, oldest first.
+        request: The request about to join them.
+
+    Raises:
+        AttemptRelationError: A different action already holds this attempt id.
+    """
+    for prior in values:
+        if (isinstance(prior, ActionRequest)
+                and prior.attempt_id == request.attempt_id
+                and prior.action_id != request.action_id):
+            raise AttemptRelationError(
+                f"attempt_id {request.attempt_id!r} already belongs to another "
+                f"action, {prior.action_id!r}")
+
+
 def validate_attempt_event(
         config: Mapping[str, Any], values: Sequence[object], event: AttemptEvent) -> None:
     action = action_request_for(values, event.action_id)

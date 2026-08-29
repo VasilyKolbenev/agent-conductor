@@ -57,6 +57,7 @@ from weakref import WeakValueDictionary
 from .adapters import AdapterRegistry, AdapterVerification, PreparedAction
 from .attempt_replay import action_request_for, attempt_events_for, terminal_result_for
 from .attempts import AttemptEvent, OBSERVED_OUTCOMES, action_request_digest
+from .authorize_holds import _hold_attempt_identity, _hold_plan_bounds
 from .containment import render_legacy_run_route_violations, run_route_violations
 from .contracts import (
     ActionProposal,
@@ -75,8 +76,6 @@ from .contracts import (
     frozen_config_models,
 )
 from .run_store import RecoveredRun, RunStore
-
-
 from .runtime_values import (
     NON_SUCCESS as _NON_SUCCESS,
     Attempt,
@@ -123,54 +122,6 @@ def _instant(name: str, value: object) -> datetime:
     """Parse one validated RFC 3339 UTC timestamp into an aware datetime."""
     text = _timestamp(name, value)
     return datetime.fromisoformat(text[:-1] + "+00:00" if text.endswith("Z") else text)
-def _planned_node(recovered: RecoveredRun, node_id: str | None):
-    """The node this document names, out of the run's own frozen plan."""
-    if node_id is None:
-        return None
-    graph = next((row.value for row in recovered.records
-                  if row.kind == "graph_definition"), None)
-    if graph is None:
-        return None
-    return next((row for row in graph.nodes if row.node_id == node_id), None)
-
-
-def _hold_plan_bounds(
-        proposal: ActionProposal, recovered: RecoveredRun) -> None:
-    """The ceilings the PLAN placed on this step, spent before anything durable.
-
-    Here rather than at execute, and here rather than only in the store's
-    relation, because this is the last frame before a request is minted: no
-    durable byte has been written, no effect authority has been granted, and no
-    adapter has been touched. A bound checked after any of those is a bound
-    that has already been exceeded once.
-
-    What is counted is AUTHORIZED attempts -- durable `action_request` records
-    naming this node -- and never proposals. A proposal is a request for an
-    attempt and not an attempt: nothing has been spent until a Human confirms
-    one. Counting proposals shipped once and was wrong in the worst direction,
-    because proposals are not ordered against the confirmation being judged. Two
-    proposals standing on a node with a bound of one meant authorizing EITHER of
-    them found the other already "spent", so the bound refused the first attempt
-    it was ever asked about. `tests/test_command_plan_bounds.py` drives
-    `authorize` itself now, which is the only road that spends this bound and
-    the road those first tests never touched.
-
-    Distinct `attempt_id`s rather than a row count, so a request re-appended
-    byte-identically under idempotent retry does not spend the bound twice.
-
-    A node naming no ceiling constrains nothing, which is what every plan
-    written before ceilings existed says, and why no stored run changes meaning.
-    """
-    node = _planned_node(recovered, proposal.node_id)
-    if node is None or node.attempt_bound is None:
-        return
-    spent = {row.value.attempt_id for row in recovered.records
-             if isinstance(row.value, ActionRequest)
-             and row.value.node_id == proposal.node_id}
-    if len(spent) >= node.attempt_bound:
-        raise AuthorizationError(
-            f"plan: node {proposal.node_id!r} allows {node.attempt_bound} "
-            f"attempt(s) and has already authorized {len(spent)}")
 
 
 
@@ -271,6 +222,10 @@ class ControlRuntime:
             # An identical retry is not a new budget action and writes nothing.
             return Authorization(request=prior, record_created=False)
         self._hold_freshness(confirmation, budget)
+        # Below the exact-retry road above, so a client whose reply was lost is
+        # answered by its own standing request rather than refused for holding
+        # the attempt id that request already carries.
+        _hold_attempt_identity(proposal, recovered)
         self._hold_budget(proposal, recovered, budget)
         request = self._mint_request(confirmation, proposal)
         self._hold_route(confirmation.run_id, AuthorizationError)

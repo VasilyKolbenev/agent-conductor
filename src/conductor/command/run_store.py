@@ -30,6 +30,7 @@ from .attempt_replay import (
     action_request_for,
     attempt_events_for,
     terminal_result_for,
+    validate_action_request,
     validate_attempt_event,
     validate_event_result,
 )
@@ -615,6 +616,10 @@ class RunStore:
             _proposal_matches_its_node(recovered, value)
         if isinstance(value, ActionRequest):
             _request_repeats_its_proposal(recovered, value)
+            try:
+                validate_action_request(prior_values, value)
+            except AttemptRelationError as e:
+                raise StoreError(str(e)) from e
         if isinstance(value, ActionResultReceipt):
             _hold_terminal_result(prior_values, value)
         if isinstance(value, AttemptEvent):
