@@ -63,6 +63,14 @@ button{font:inherit;cursor:pointer;background:none;border:none;color:inherit}
    "Not connected" are three words a reader can act on, and a coloured dot
    beside them would be the same fact told a second time in colour alone. */
 .studio-conn{font-size:11.5px;color:var(--muted)}
+/* The route to the Protocol v1 surfaces this application does not hold. Sized
+   and coloured as the connection sentence beside it, because it is chrome
+   rather than the screen's own action -- and underlined, so it is a link by
+   two carriers and not by colour alone. It clears the shell's 44px target
+   floor here rather than through the element-type rule above, which names the
+   four control types the shell builds and not the one anchor it declares. */
+.studio-elsewhere{font-size:11.5px;color:var(--muted);text-decoration:underline;
+                  min-height:44px;display:inline-flex;align-items:center}
 /* The one primary action of the screen now showing. Empty in the static
    document: which verb belongs here is a fact only a read can supply. */
 .studio-primary{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}

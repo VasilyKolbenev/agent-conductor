@@ -30,7 +30,7 @@ $CONDUCT = "$ACC\venv\Scripts\conduct.exe"
 & $CONDUCT --help
 ```
 
-**You must see** the nine subcommands and no traceback. Nothing on `PYTHONPATH`: an editable
+**You must see** the ten subcommands and no traceback. Nothing on `PYTHONPATH`: an editable
 working tree would answer every command below and prove nothing.
 
 ## 2. Create a project

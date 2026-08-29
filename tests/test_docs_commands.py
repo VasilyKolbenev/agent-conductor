@@ -213,3 +213,62 @@ def test_every_repository_document_the_readme_points_a_reader_at_exists():
     assert named, "the README no longer points a reader at any document"
     for path in sorted(named):
         assert (ROOT / path).exists(), path
+
+
+# -- how many subcommands a document tells a person to expect ----------------
+#
+# `conduct reconcile` landed and made two documents wrong in the same instant:
+# both said "nine" and there were ten. Neither was guarded. The two that ARE
+# guarded above -- the README and the release smoke -- are guarded by NAME, so
+# a total nobody derives went stale in silence beside them.
+#
+# Not every counted claim is live. A `docs/audits/*` file is a dated record of
+# what was true when it was written, and so is the body of a superseded spec;
+# rewriting either to agree with today would destroy the only reason to keep
+# it. What is live is a sentence somebody acts on now: the acceptance script's
+# step 1, and the present-tense banner that tells a reader of the old design
+# what the product does TODAY.
+
+ACCEPTANCE = ROOT / "docs" / "owner-acceptance.md"
+DESIGN = ROOT / "docs" / "specs" / "2026-07-29-agent-conductor-design.md"
+CLOSEOUT = ROOT / "docs" / "audits" / "2026-08-10-alpha-closeout.md"
+
+#: (document, the sentence that states the CURRENT count). Each pattern must
+#: match exactly once, so a reworded sentence reds here and is re-decided
+#: rather than quietly becoming an unguarded number again.
+_LIVE_COUNTS = (
+    (ACCEPTANCE, re.compile(r"You must see\*\* the (\w+) subcommands")),
+    (DESIGN, re.compile(r"now ships (\w+) commands")),
+)
+#: (document, the word it states) for claims that are CORRECT because they are
+#: about a day that has passed.
+_DATED_COUNTS = ((CLOSEOUT, "seven"), (DESIGN, "five"))
+
+
+def test_every_document_that_counts_the_subcommands_counts_them_correctly():
+    """The count is derived from the parser, never transcribed beside it."""
+    real = subcommands()
+    for path, pattern in _LIVE_COUNTS:
+        found = pattern.findall(path.read_text(encoding="utf-8"))
+        assert len(found) == 1, (
+            f"{path.name}: expected exactly one counted claim, found {found}")
+        assert _NUMBER_WORDS.get(found[0]) == len(real), (
+            f"{path.name} says {found[0]!r}; conduct has {len(real)}: "
+            f"{sorted(real)}")
+
+
+def test_a_dated_record_is_not_held_to_todays_count():
+    """The other half of the ruling, so nobody later "fixes" the evidence.
+
+    Both of these state a smaller number and both are correct, because both
+    describe a day that has passed. A guard that swept every counted claim into
+    agreement with the parser would quietly rewrite the audit trail, so the
+    exclusion is written down and measured rather than left to whoever reads
+    the regex next.
+    """
+    for path, word in _DATED_COUNTS:
+        assert re.search(rf"\b{word}\s+(?:sub)?commands\b",
+                         path.read_text(encoding="utf-8")), path.name
+        assert _NUMBER_WORDS[word] != len(subcommands()), (
+            f"{path.name} states {word!r}, which is now today's count; this "
+            "record and the live ones can no longer be told apart by number")

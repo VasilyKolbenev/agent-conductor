@@ -18,7 +18,8 @@ on 127.0.0.1 with SSE
 live updates; Ctrl-C → exit 0; `--providers PATH` names the operator provider
 file, default `conductor/providers.json`, and an absent one configures nothing);
 `demo` (materialize the bundled fixture into a
-temp directory and serve it — takes `--port` but no `--dir`). Every other
+temp directory, write the workflow, revision and run the Studio reads, and serve
+both halves — takes `--port` but no `--dir`). Every other
 command takes `--dir` (the project root, default `.`).
 
 THE STREAM CONTRACT, which every command here obeys and every command added
@@ -181,15 +182,33 @@ def _cmd_up(args: argparse.Namespace) -> int:
 
 
 def _cmd_demo(args: argparse.Namespace) -> int:
-    """Materialize the bundled demo fixture into a temp dir and serve it."""
+    """Materialize the bundled demo into a temp dir and serve BOTH its halves.
+
+    The front door is the Workflow Studio, which reads the command surface; the
+    packaged fixture is Protocol v1, which the Studio does not read. Writing
+    only the fixture served a person an empty Overview, an empty workflow list
+    and an empty run list over a directory that in fact held the whole story.
+    So both halves are written here, and `populate` is not optional: a demo
+    that cannot build its own story is a broken demo and says so, rather than
+    serving the empty front door that made this a finding.
+    """
     import tempfile               # local to its one use; no boundary rides on it
     from conductor import demo                # deferred: see the import block
+    from conductor.command.run_store import StoreError   # deferred with it
     try:
         root = demo.materialize(Path(tempfile.mkdtemp(prefix="conduct-demo-")))
     except OSError as e:                  # unwritable temp dir / broken package data
         print(f"cannot materialize the demo fixture: {e}", file=sys.stderr)
         return 1
+    try:
+        named = demo.populate(root)
+    except (OSError, StoreError) as e:
+        print(f"cannot build the demo workflow and run: {e}", file=sys.stderr)
+        return 1
     print(f"demo fixture materialized in {root} (throwaway copy)", file=sys.stderr)
+    print(f"demo workflow {named['workflow_id']} revision {named['revision']}, "
+          f"run {named['run_id']}, gate {named['waiting_gate']} is waiting",
+          file=sys.stderr)
     return _serve(root, args.port)
 
 
@@ -490,7 +509,9 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_dir_and_func(p, _cmd_up)
 
     # No --dir: demo materializes its own throwaway root.
-    p = sub.add_parser("demo", help="serve the bundled demo fixture")
+    p = sub.add_parser(
+        "demo", help="serve the bundled demo: a workflow, a run and a "
+                     "project map, in a throwaway directory")
     _add_port(p)
     p.set_defaults(func=_cmd_demo)
 

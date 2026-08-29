@@ -325,6 +325,51 @@ def test_the_shell_says_it_is_connected_in_a_machine_word_and_in_english(
     assert problems == []
 
 
+def test_the_classic_surfaces_are_reachable_from_every_screen_of_the_studio(
+        studio: tuple[Page, list[str]]) -> None:
+    """The map, findings, feed and handoffs are not in this application yet.
+
+    While they are not, a person has to be able to GET to them, and the only
+    route that existed was a sentence inside `<noscript>` -- markup a browser
+    running the Studio never renders at all. So the claim is measured the way a
+    person meets it: a visible, focusable link, present on every screen rather
+    than on one, pointing at a route this server serves.
+    """
+    page, problems = studio
+    link = page.locator("header .studio-elsewhere")
+    assert link.get_attribute("href") == "/panel/index.html"
+    said = link.inner_text()
+    for word in ("Map", "findings", "feed", "handoffs"):
+        assert word in said, said
+    for _screen, tab, _container, _state in SCREENS:
+        page.locator(f"#{tab}").click()
+        assert link.is_visible(), f"the route disappeared on {tab}"
+    # Focusable by keyboard, and its target is large enough to hit.
+    link.focus()
+    assert page.evaluate(
+        "() => document.activeElement.classList.contains('studio-elsewhere')")
+    assert link.bounding_box()["height"] >= 44
+    assert problems == []
+
+
+def test_the_classic_route_the_studio_offers_is_answered_by_the_server(
+        studio: tuple[Page, list[str]]) -> None:
+    """A link is discoverability only if what is behind it answers.
+
+    Followed for real rather than asserted from the allowlist: the shell could
+    name a route the asset table serves and still send a person somewhere that
+    renders nothing.
+    """
+    page, problems = studio
+    page.locator("header .studio-elsewhere").click()
+    page.wait_for_load_state("load")
+    assert page.url.endswith("/panel/index.html")
+    assert page.locator("h2", has_text="Map").count() >= 1
+    assert page.locator("h2", has_text="Findings").count() >= 1
+    assert page.locator("h2", has_text="Feed").count() >= 1
+    assert problems == []
+
+
 def test_each_tab_names_the_panel_it_controls_and_each_panel_names_its_tab(
         studio: tuple[Page, list[str]]) -> None:
     """The two halves of the tablist relation, both directions, in the DOM.

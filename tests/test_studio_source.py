@@ -253,16 +253,27 @@ def test_the_shell_names_one_script_and_only_this_origin_s_packaged_files():
     traversal, so the served document reaches this origin's own packaged
     directory and nothing else. It cannot be document-relative -- the shell is
     served at `/` -- and the substitute is asserted rather than assumed.
+
+    The list is exact as well as constrained, so a third reference has to be
+    argued for here. Two of them are what this document LOADS; the third is
+    where it SENDS a person, and that one is on the list because the Protocol
+    v1 surfaces -- the map, the findings, the feed, the handoffs -- have not
+    moved into this application and a route to them that only a `<noscript>`
+    block carried was not a route anybody could take.
     """
     html = HTML.read_text(encoding="utf-8")
     assert html.count("<script") == 1
     assert "<style" not in html
     assert not re.search(r"\son[a-z]+=", html), "an inline handler is a script"
     refs = re.findall(r'(?:href|src)="([^"]*)"', html)
-    assert refs == ["/panel/studio.css", "/panel/studio.js"]
+    assert refs == ["/panel/studio.css", "/panel/studio.js", "/panel/index.html"]
     for ref in refs:
         assert ref.startswith("/panel/")
         assert "//" not in ref and ".." not in ref and ":" not in ref
+    # And every one of them is a route this server actually serves, so the
+    # shell cannot send a person at a 404.
+    from conductor.server import PANEL_ASSETS
+    assert set(refs) <= set(PANEL_ASSETS), sorted(set(refs) - set(PANEL_ASSETS))
     assert '<link rel="stylesheet" href="/panel/studio.css">' in html
     assert '<script src="/panel/studio.js" type="module"></script>' in html
 

@@ -34,6 +34,19 @@
   <header class="studio-header" id="studioHeader">
     <h1 class="studio-project" id="studioProject">Workflow Studio</h1>
     <p class="studio-conn" id="studioConnection">Not connected yet.</p>
+    <!-- The route to what this application does not hold yet. The Studio reads
+         the command surface; the project map, the lane findings, the event feed
+         and the per-agent handoff documents are Protocol v1, which the command
+         package deliberately does not read. Until they move, they are reached
+         from HERE: a real anchor in the header of every screen, named by what
+         is on the other side rather than by which build it belongs to.
+
+         It is static markup with no id: nothing mounts into it, it says the
+         same words in every state, and a link that only appeared once a read
+         had landed would be missing on exactly the screens a person reaches
+         when a read did not. -->
+    <a class="studio-elsewhere" href="/panel/index.html">Map, findings, feed
+      and handoffs — classic panel</a>
     <div class="studio-primary" id="studioPrimary"></div>
   </header>
 

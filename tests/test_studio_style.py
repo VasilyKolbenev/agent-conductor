@@ -72,6 +72,7 @@ MEASURED = {
         (CARD + [E("button", states=FOCUSED)], "outline", NONTEXT_MIN, "--panel"),
         (CARD + [E("input", states=FOCUSED)], "outline", NONTEXT_MIN, "--sunk")],
     ".studio-conn": [_rows_on(HEADER, E("p", "studio-conn"))],
+    ".studio-elsewhere": [_rows_on(HEADER, E("a", "studio-elsewhere"))],
     ".studio-tab": [_rows_on(TAB)],
     ".studio-tab:hover": [_rows_on(NAV, E("button", "studio-tab",
                                           states=("hover",)))],
