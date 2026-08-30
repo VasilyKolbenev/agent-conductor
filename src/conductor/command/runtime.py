@@ -63,6 +63,7 @@ from .authorize_holds import (
     _planned_node,
 )
 from .containment import render_legacy_run_route_violations, run_route_violations
+from .graph_causality import demanded_evidence
 from .contracts import (
     ActionProposal,
     ActionRequest,
@@ -649,7 +650,7 @@ class ControlRuntime:
                        "nothing about the work is verified",
                 exit_code=report.exit_code)
         if verification.state == "verified":
-            evidence = self._causal_evidence(
+            evidence, refused = self._causal_evidence(
                 request, verifier, observed, verification.evidence_refs)
             if evidence is not None:
                 return self._finish(
@@ -658,18 +659,33 @@ class ControlRuntime:
                     exit_code=report.exit_code, evidence=evidence)
             return self._finish(
                 request, AttemptState.VERIFICATION_FAILED, history,
-                detail="verified evidence did not satisfy the causal store relation",
-                exit_code=report.exit_code)
+                detail=refused, exit_code=report.exit_code)
         state = AttemptState.VERIFICATION_FAILED
         detail = f"adapter verification was {verification.state}"
         return self._finish(
             request, state, history, detail=detail,
             exit_code=report.exit_code)
 
+    #: What a refusal says when the ROW itself is the problem.
+    _EVIDENCE_UNSOUND = "verified evidence did not satisfy the causal store relation"
+
     def _causal_evidence(
             self, request: ActionRequest, verifier: str, observed: AttemptEvent,
-            refs: tuple[str, ...]) -> tuple[EvidenceRef, ...] | None:
-        """Resolve only bound verification evidence recorded after observation."""
+            refs: tuple[str, ...]) -> tuple[tuple[EvidenceRef, ...] | None, str]:
+        """Resolve only bound verification evidence recorded after observation.
+
+        Answers the evidence and no complaint, or `None` and the sentence saying
+        WHICH relation refused: a row that does not stand is this runtime's own
+        rule, a row standing while naming nothing checked is the PLAN's demand,
+        and one sentence for both would hide the field from whoever meets
+        `verification_failed`.
+
+        That demand is read through `graph_causality.demanded_evidence`, the
+        same function the store spends on both its roads, so the honest road and
+        a forged journal cannot disagree about what a plan said. Refusing here
+        too is `_hold_plan_bounds`' two-place shape: before a `succeeded`
+        receipt exists, and again over bytes we did not write.
+        """
         self._hold_route(request.run_id, ExecutionError)
         recovered = self._store.read(request.run_id)
         rows = list(recovered.records)
@@ -677,22 +693,27 @@ class ControlRuntime:
             position for position, row in enumerate(rows)
             if row.kind == "attempt_event" and row.value == observed), None)
         if index is None:
-            return None
+            return None, self._EVIDENCE_UNSOUND
         eligible = {
             row.value.evidence_id: row.value for row in rows[index + 1:]
             if row.kind == "evidence"
         }
         evidence = tuple(eligible.get(ref) for ref in refs)
         if any(row is None for row in evidence):
-            return None
+            return None, self._EVIDENCE_UNSOUND
         expected_uri = f"verification/{request.action_id}"
         if any(
                 row.run_id != request.run_id or row.kind != "verification"
                 or row.uri != expected_uri or row.created_by != verifier
                 or row.verification != "verified" or row.verified_by != verifier
                 for row in evidence):
-            return None
-        return tuple(EvidenceRef.from_dict(row.as_dict()) for row in evidence)
+            return None, self._EVIDENCE_UNSOUND
+        if (demanded_evidence(recovered, request.action_id) == "digest"
+                and any(row.digest is None for row in evidence)):
+            return None, ("this run's plan requires this step's verification "
+                          "to name what it checked, and it names no digest")
+        return tuple(EvidenceRef.from_dict(row.as_dict())
+                     for row in evidence), ""
 
     def _finish(
             self, request: ActionRequest, state: AttemptState,

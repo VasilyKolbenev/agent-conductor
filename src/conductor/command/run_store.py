@@ -46,6 +46,7 @@ from .graph_causality import (
     _one_graph_per_run,
     _proposal_matches_its_node,
     _request_repeats_its_proposal,
+    demanded_evidence,
     permitted_verifier,
 )
 from .graph_definition import GraphDefinition
@@ -360,7 +361,12 @@ def _hold_terminal_result(
         try:
             validate_event_result(
                 prior_values, value, events,
-                permitted_verifier(recovered, value.action_id))
+                permitted_verifier(recovered, value.action_id),
+                # WHO may sign, and what the signature must be over. Both are
+                # read from the run's own frozen plan and neither from the
+                # receipt being judged, which is what makes them hold against
+                # bytes this process did not write.
+                demanded=demanded_evidence(recovered, value.action_id))
         except AttemptRelationError as e:
             raise StoreError(str(e)) from e
 

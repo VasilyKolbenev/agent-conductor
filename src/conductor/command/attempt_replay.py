@@ -155,7 +155,8 @@ _OBSERVED_FINALS = {
 
 def _validate_result_evidence(
         values: Sequence[object], result: ActionResultReceipt,
-        observed: AttemptEvent, signer: str | None = None) -> None:
+        observed: AttemptEvent, signer: str | None = None,
+        demanded: str | None = None) -> None:
     if len(set(result.evidence_refs)) != len(result.evidence_refs):
         raise AttemptRelationError("event-bearing result evidence_refs must be unique")
     if result.evidence_refs and result.outcome != "succeeded":
@@ -167,13 +168,13 @@ def _validate_result_evidence(
     }
     for evidence_id in result.evidence_refs:
         _validate_evidence(eligible.get(evidence_id), evidence_id, result,
-                           observed, signer)
+                           observed, signer, demanded)
 
 
 def _validate_evidence(
         evidence: EvidenceRef | None, evidence_id: str,
         result: ActionResultReceipt, observed: AttemptEvent,
-        signer: str | None = None) -> None:
+        signer: str | None = None, demanded: str | None = None) -> None:
     """Exactly ONE adapter identity may sign this action's verification.
 
     `signer` is that identity when the run's own frozen plan named a verifier
@@ -183,7 +184,16 @@ def _validate_evidence(
     verifier still answers.
 
     The CARDINALITY is the invariant and it is untouched: one permitted
-    signer, derived from frozen bytes, never from anything a caller supplies."""
+    signer, derived from frozen bytes, never from anything a caller supplies.
+
+    `demanded` is what the run's own plan requires this verification to NAME,
+    and it is the one degree of freedom the predicate below leaves. Every other
+    field of the row is pinned; `digest` is optional in the contract, so a
+    verification could stand -- and a `succeeded` receipt could rest on it --
+    without saying WHAT was checked. Four durable artifacts do exactly that and
+    they may not be rewritten, which is why this is the plan's demand and not a
+    blanket correction: `None` is what every journal that exists answers, and
+    the clause is reached only for a step whose plan asked for more."""
     if evidence is None:
         raise AttemptRelationError(
             f"result evidence {evidence_id!r} must follow its observed attempt event")
@@ -198,11 +208,24 @@ def _validate_evidence(
             f"result evidence {evidence_id!r} is not verified by "
             f"{permitted!r}, the adapter this run's plan makes "
             "authoritative for it")
+    if demanded == "digest" and evidence.digest is None:
+        raise AttemptRelationError(
+            f"result evidence {evidence_id!r} names no digest, and this run's "
+            "plan requires this step's verification to name what it checked")
 
 
 def validate_event_result(
         values: Sequence[object], result: ActionResultReceipt,
-        events: Sequence[AttemptEvent], signer: str | None = None) -> None:
+        events: Sequence[AttemptEvent], signer: str | None = None, *,
+        demanded: str | None = None) -> None:
+    """Everything a terminal receipt must agree with, plus what its plan asked.
+
+    `demanded` is KEYWORD-ONLY and defaults to None, which is the whole of its
+    backward compatibility: every existing call is unchanged, and no caller can
+    slide a value into `signer`'s place by counting positions. What it carries
+    is `graph_causality.demanded_evidence` -- read from the run's frozen plan,
+    never from the receipt being judged.
+    """
     if terminal_result_for(values, result.action_id) is not None:
         raise AttemptRelationError(f"action {result.action_id!r} already has a terminal result")
     lease = next((event for event in events if event.phase == "effect_lease"), None)
@@ -218,7 +241,7 @@ def validate_event_result(
             f"result outcome {result.outcome!r} contradicts observed {observed.outcome!r}")
     if result.exit_code != observed.exit_code:
         raise AttemptRelationError("result exit_code does not match the observed attempt event")
-    _validate_result_evidence(values, result, observed, signer)
+    _validate_result_evidence(values, result, observed, signer, demanded)
 
 
 def _validate_lease_only_result(result: ActionResultReceipt) -> None:

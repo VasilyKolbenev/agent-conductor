@@ -177,6 +177,67 @@ def _request_repeats_its_proposal(
                       value.timeout_seconds)
 
 
+def _planned_node_of(recovered: "RecoveredRun", action_id: str):
+    """The node this action's request was bound to, out of the run's own plan.
+
+    The lookup both plan-derived holds below are written on, extracted so there
+    is ONE answer to "which step is this action". Two copies would be two
+    chances to disagree about a run with no request, no binding, no graph or no
+    such node -- and disagreeing there means one rule firing on a journal the
+    other passes, which is the shape a four-layer refusal exists to prevent.
+
+    Every value it reads is durable: the run's own `action_request` record and
+    its own `graph_definition` record, both already part of the frozen set this
+    validation is a pure function of, and neither of them anything a caller
+    supplies. `None` means the plan says nothing about this action -- which is
+    what every journal written before graphs, before bindings, and before either
+    of these fields answers.
+    """
+    request = next(
+        (row.value for row in recovered.records
+         if row.kind == "action_request" and row.value.action_id == action_id),
+        None)
+    if request is None or request.node_id is None:
+        return None
+    graph = next((row.value for row in recovered.records
+                  if row.kind == "graph_definition"), None)
+    if graph is None:
+        return None
+    return next((row for row in graph.nodes
+                 if row.node_id == request.node_id), None)
+
+
+def demanded_evidence(recovered: "RecoveredRun", action_id: str) -> str | None:
+    """What the PLAN requires this action's verification to NAME, if anything.
+
+    Beside `permitted_verifier` and written to the same law, because it is the
+    same kind of fact: a demand the plan makes, derived from frozen bytes and
+    from nothing a caller supplies, spent by the one relation that runs on the
+    append road and again on the raw-replay road.
+
+    Where `permitted_verifier` says WHO may sign, this says what the signature
+    must be OVER. Together they are the whole of what a plan may say about the
+    proof a step rests on, and neither can be answered from the evidence row
+    itself -- which is exactly why a forged row cannot answer for it.
+
+    `None` means the plan requires nothing beyond what the runtime already
+    demands of every step. Every journal written before this field existed
+    answers `None`, and so does a request naming no node, a run following no
+    graph, and a node this run's graph does not carry: their verdicts are
+    byte-identical to what they always were.
+
+    Args:
+        recovered: The run replayed so far, oldest record first.
+        action_id: The action whose verification is being judged.
+
+    Returns:
+        The word from `graph_values.REQUIRED_EVIDENCE` the plan names for this
+        step, or None.
+    """
+    node = _planned_node_of(recovered, action_id)
+    return None if node is None else node.required_evidence
+
+
 def permitted_verifier(recovered: "RecoveredRun", action_id: str) -> str | None:
     """The adapter the PLAN says may sign this action's verification, if any.
 
@@ -197,18 +258,7 @@ def permitted_verifier(recovered: "RecoveredRun", action_id: str) -> str | None:
     this field existed answers `None`: their verdicts are byte-identical to
     what they always were.
     """
-    request = next(
-        (row.value for row in recovered.records
-         if row.kind == "action_request" and row.value.action_id == action_id),
-        None)
-    if request is None or request.node_id is None:
-        return None
-    graph = next((row.value for row in recovered.records
-                  if row.kind == "graph_definition"), None)
-    if graph is None:
-        return None
-    node = next((row for row in graph.nodes
-                 if row.node_id == request.node_id), None)
+    node = _planned_node_of(recovered, action_id)
     if node is None or node.verifier_instance_id is None:
         return None
     from .contracts import frozen_config_bindings
