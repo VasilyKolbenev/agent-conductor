@@ -59,6 +59,11 @@ SECTIONS = PANEL / "studio-sections.js"
 #: cap. It carries `commit` -- the one writer of a `set-field` edit -- so it is
 #: exactly the file a fourth copy of the vocabulary would appear in.
 FIELDS = PANEL / "studio-fields.js"
+#: Inputs and outputs, split off the sections before THAT module reached the cap
+#: a second time. It builds controls like its neighbour, so it is exactly as
+#: eligible to grow a fourth copy of the edit vocabulary, and is read below for
+#: that reason.
+ARTIFACTS = PANEL / "studio-artifacts.js"
 RUNS = PANEL / "studio-runs.js"
 PEOPLE = PANEL / "studio-people.js"
 #: The files this slice owns. Every guard below iterates this tuple, so a new
@@ -443,7 +448,8 @@ def test_the_three_edit_vocabularies_are_one_vocabulary():
     # there: `commit` lives in that file, and a word list beside the writer is
     # exactly where a fourth copy would look like it belonged.
     named = ((_code(STORE), "the reducer"), (_code(INSPECTOR), "the frame"),
-             (_code(FIELDS), "the field primitives"))
+             (_code(FIELDS), "the field primitives"),
+             (_code(ARTIFACTS), "the inputs and outputs section"))
     for name in ("EDIT_TYPES", "EDIT_FIELDS"):
         for source, where in named:
             assert f"const {name}" not in source, (

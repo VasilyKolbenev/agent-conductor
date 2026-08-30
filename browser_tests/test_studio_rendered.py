@@ -176,7 +176,8 @@ def test_the_studio_boots_from_the_entry_route_with_no_error_at_all(
             "studio-runs.js": 200, "studio-people.js": 200,
             "studio-runread.js": 200, "studio-review.js": 200,
             "studio-layout.js": 200, "studio-edits.js": 200,
-            "studio-sections.js": 200, "studio-fields.js": 200,
+            "studio-sections.js": 200, "studio-artifacts.js": 200,
+            "studio-fields.js": 200,
             "command-projection.js": 200, "command-view.js": 200,
         }
         # The reads the window opens with, both landed and both real.

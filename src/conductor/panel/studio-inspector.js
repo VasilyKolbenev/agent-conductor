@@ -21,6 +21,11 @@
 // does not support it. Nothing on this screen writes inert data, and nothing
 // silently disappears. Every unsupported line carries `data-unsupported`.
 import {element} from "./command-view.js";
+//: The fourth section is a module of its own -- what a step consumes and what
+//: it produces is the one of the six that grows, so it left `studio-sections`
+//: before that file reached the cap. It is appended in the same place it always
+//: was; only the file it is read from changed.
+import {artifactSection} from "./studio-artifacts.js";
 //: The primitives come from the toolkit and the sections from the sections:
 //: this frame reaches past `studio-sections.js` for `note` and `panelOf` the
 //: way that module does, because both build controls out of one toolkit and a
@@ -34,7 +39,6 @@ import {
   unsupported,
 } from "./studio-fields.js";
 import {
-  artifactSection,
   assignmentSection,
   executionSection,
   generalSection,

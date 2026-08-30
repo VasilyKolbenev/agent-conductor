@@ -11,9 +11,14 @@
 //
 // The primitives came with them and then left again, when this file reached
 // the cap in its turn: they are `studio-fields.js` now, at the seam the header
-// above already named. The dependency still runs one way and it now runs
-// through three files -- the frame knows about the sections, the sections know
-// about the primitives, and the primitives know nothing about either.
+// above already named. Then INPUTS AND OUTPUTS left, whole, for the same
+// reason: it is the one of the six that grows, and the artifact trio would have
+// pushed this file through the cap in a single slice. It is
+// `studio-artifacts.js`, and the frame appends it in the same fourth place.
+//
+// The dependency still runs one way and it now runs through four files -- the
+// frame knows about the sections and about the artifacts, both of those know
+// about the primitives, and the primitives know nothing about any of them.
 //
 // The completeness rule is this module's to keep. A field is finished when it
 // is validated in the primitive it is built from, written through
@@ -495,30 +500,12 @@ export function executionSection(form) {
   return box;
 }
 
-// -- 4. Inputs and outputs -------------------------------------------------
-
-export function artifactSection(form) {
-  const {run} = form;
-  const box = sectionOf("artifacts", "Inputs and outputs");
-  unsupported(box, "Required input artifacts", "A workflow step declares "
-    + "resources — model, tool, skill, session, sandbox, filesystem — and no "
-    + "artifact requirement, so nothing would read one.");
-  unsupported(box, "Produced artifacts", "A workflow step declares no output "
-    + "contract. What a run actually produced is durable, and it is shown "
-    + "below as the run's own fact.");
-  unsupported(box, "Handoff mapping", "This build carries no step-to-step "
-    + "artifact mapping in a workflow document.");
-  unsupported(box, "Missing-artifact behaviour", "With no declared artifact "
-    + "requirement there is no missing-artifact case for a policy to answer.");
-  const refs = run && run.position ? rows(run.position.evidence_refs) : [];
-  if (run && run.position) {
-    context(box, "Evidence references", refs.length ? refs.join(", ") : "none",
-      `the durable records of run ${run.runId}`);
-    note(box, "Identifiers only. Nothing here states that any of them "
-      + "verified anything.");
-  }
-  return box;
-}
+// -- 4. Inputs and outputs is `studio-artifacts.js` -------------------------
+//
+// It left when this module neared the cap, whole rather than in pieces: the
+// frame imports `artifactSection` from there and appends it in the same place.
+// Nothing of it stayed behind, so there is no half of that section here to
+// drift away from the other.
 
 // -- 5. Verification -------------------------------------------------------
 

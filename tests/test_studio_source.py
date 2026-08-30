@@ -54,7 +54,8 @@ MODULES = ("studio.js", "studio-store.js", "studio-view.js", "studio-model.js",
            "studio-canvas.js", "studio-inspector.js", "studio-runs.js",
            "studio-people.js", "studio-runread.js", "studio-review.js",
            "studio-layout.js", "studio-edits.js",
-           "studio-sections.js", "studio-runform.js", "studio-fields.js")
+           "studio-sections.js", "studio-artifacts.js", "studio-runform.js",
+           "studio-fields.js")
 #: The one transport module: every `fetch(`, the one stream, the session token
 #: and the screen router. `graph.js` holds the same position in its window, and
 #: the sealed-API guard below pins this one the same way.
@@ -101,9 +102,17 @@ PERMITTED_IMPORTS = {
                                      "./command-projection.js",
                                      "./studio-model.js",
                                      "./studio-fields.js"}),
+    #: The fourth section, on its own. It sits BESIDE the sections rather than
+    #: above or below them: neither may import the other, so the two cannot
+    #: close into a ring and neither can grow a control the other half of the
+    #: inspector cannot see.
+    "studio-artifacts.js": frozenset({"./command-view.js",
+                                      "./command-projection.js",
+                                      "./studio-fields.js"}),
     "studio-inspector.js": frozenset({"./command-view.js",
                                       "./command-projection.js",
                                       "./studio-model.js",
+                                      "./studio-artifacts.js",
                                       "./studio-fields.js",
                                       "./studio-sections.js"}),
     "studio-runs.js": frozenset({"./command-view.js",

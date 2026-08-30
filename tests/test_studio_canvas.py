@@ -39,8 +39,9 @@ from conductor.command.providers import PROVIDER_CATALOG
 ROOT = Path(__file__).resolve().parents[1]
 PANEL = ROOT / "src" / "conductor" / "panel"
 CANVAS = PANEL / "studio-canvas.js"
-#: The inspector is THREE files now: the frame that decides what is selected,
-#: the six sections, and the field primitives every control in them is built
+#: The inspector is FOUR files now: the frame that decides what is selected,
+#: five of the six sections, the sixth -- inputs and outputs, which grows and so
+#: went first -- and the field primitives every control in all of them is built
 #: from. Every guard below is about the inspector SURFACE rather than about any
 #: one file, so they read the union -- which is what `INSPECTOR` names. Reading
 #: one part alone would let a control move across a seam and out from under a
@@ -49,9 +50,10 @@ CANVAS = PANEL / "studio-canvas.js"
 #: a "count == 1" claim over the union goes to 2 and reds if two parts grow one.
 FRAME = PANEL / "studio-inspector.js"
 SECTIONS = PANEL / "studio-sections.js"
+ARTIFACTS = PANEL / "studio-artifacts.js"
 FIELDS = PANEL / "studio-fields.js"
-INSPECTOR = (FRAME, SECTIONS, FIELDS)
-STUDIO_FILES = (CANVAS, FRAME, SECTIONS, FIELDS)
+INSPECTOR = (FRAME, SECTIONS, ARTIFACTS, FIELDS)
+STUDIO_FILES = (CANVAS, FRAME, SECTIONS, ARTIFACTS, FIELDS)
 IMPORTS = r'from "(\./[a-z-]+\.js)";'
 _LINE_COMMENT = re.compile(r"^[ \t]*//.*$", re.MULTILINE)
 _BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.DOTALL)
@@ -140,14 +142,21 @@ def test_both_studio_files_sit_in_the_panel_under_the_line_cap():
 #: the ring both of these splits were drawn to open.
 _ALLOWED_IMPORTS = {
     "studio-canvas.js": ["./command-view.js", "./studio-layout.js"],
-    "studio-inspector.js": ["./command-view.js", "./studio-fields.js",
-                            "./studio-sections.js"],
+    "studio-inspector.js": ["./command-view.js", "./studio-artifacts.js",
+                            "./studio-fields.js", "./studio-sections.js"],
     #: The sections gained the REVIEWED argument projection when the output
     #: budget became editable: the words that control may offer are the ones
     #: that schema declares, and reading them is what stops this window growing
     #: a second copy of a vocabulary somebody else reviews.
     "studio-sections.js": ["./command-view.js", "./command-projection.js",
                            "./studio-fields.js", "./studio-model.js"],
+    #: The fourth section, alone. It reaches NEITHER the sections nor the
+    #: frame: two halves of one inspector that could import each other would
+    #: close the ring this split was drawn to open. The list is a
+    #: REQUIREMENT and not a permission -- what is written here is what the
+    #: file really imports today, so a neighbour it starts reaching for has to
+    #: be admitted deliberately.
+    "studio-artifacts.js": ["./studio-fields.js"],
     "studio-fields.js": ["./command-view.js"],
 }
 
@@ -495,7 +504,16 @@ def test_the_inspector_renders_the_six_sections_in_the_one_fixed_order():
     sections = _js_ordered(inspector, "SECTIONS")
     assert sections == ["general", "assignment", "execution", "artifacts",
                         "verification", "transitions"]
-    assert re.findall(r'sectionOf\("([a-z]+)"', inspector) == sections
+    # Compared as a SET with the count beside it, for the reason the panels
+    # below are: `artifacts` builds its box in a file of its own now, so where
+    # its `sectionOf` call falls in a concatenation is a fact about which file
+    # is read first and about nothing else. Each name is still built exactly
+    # once across the whole surface, so a duplicated or a vanished section box
+    # still reds -- and the ORDER a person meets them in is the append below,
+    # which is the only place that order is real.
+    built = re.findall(r'sectionOf\("([a-z]+)"', inspector)
+    assert set(built) == set(sections)
+    assert len(built) == len(sections)
     appended = re.search(r"mount\.append\(generalSection(.*?)\);", inspector,
                          re.DOTALL).group(1)
     assert re.findall(r"(\w+)Section\(form\)", "generalSection(form)" + appended) == [
