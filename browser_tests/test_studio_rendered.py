@@ -171,6 +171,7 @@ def test_the_studio_boots_from_the_entry_route_with_no_error_at_all(
         assert names == {
             "studio.css": 200, "studio.js": 200, "studio-store.js": 200,
             "studio-model.js": 200, "studio-view.js": 200,
+            "studio-runform.js": 200,
             "studio-canvas.js": 200, "studio-inspector.js": 200,
             "studio-runs.js": 200, "studio-people.js": 200,
             "studio-runread.js": 200, "studio-review.js": 200,

@@ -76,8 +76,8 @@ _STUDIO_FILES = (
     "studio.css", "studio.js", "studio-model.js", "studio-layout.js",
     "studio-review.js", "studio-runread.js", "studio-edits.js",
     "studio-sections.js", "studio-store.js", "studio-view.js",
-    "studio-canvas.js", "studio-inspector.js", "studio-runs.js",
-    "studio-people.js",
+    "studio-runform.js", "studio-canvas.js", "studio-inspector.js",
+    "studio-runs.js", "studio-people.js",
 )
 _STUDIO_TYPES = {"css": "text/css; charset=utf-8",
                  "js": "text/javascript; charset=utf-8"}

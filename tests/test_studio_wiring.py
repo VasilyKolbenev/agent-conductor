@@ -1,8 +1,8 @@
-"""Source-level contract for the three modules that WIRE the Studio together.
+"""Source-level contract for the modules that WIRE the Studio together.
 
 `test_studio_source.py` holds the whole package to one shape -- the line cap,
 the layering, the sealed API list and the shell's frozen ids. This module holds
-the integrator's own three files to what only they can be held to:
+the integrator's own files to what only they can be held to:
 
 * the reducer touches no DOM and no wire, so a rule about the SCREEN can never
   quietly become a rule about the browser it is running in;
@@ -40,6 +40,15 @@ STORE = PANEL / "studio-store.js"
 #: the reducer's copy lives in.
 EDITS = PANEL / "studio-edits.js"
 VIEW = PANEL / "studio-view.js"
+#: The form that opens a run left the shell view when that file reached the line
+#: cap. It is the same SURFACE -- a module handed a state and a handler table
+#: that answers with DOM -- so every guard below that is about what the view may
+#: touch reads both files rather than the one the code used to live in.
+RUNFORM = PANEL / "studio-runform.js"
+#: What the view builds a run form out of, and what the Overview's readiness
+#: card asks the same question with. Both are read out of the module below by
+#: name, so the split cannot quietly leave the view importing neither.
+VIEW_SURFACE = (VIEW, RUNFORM)
 BOOT = PANEL / "studio.js"
 CANVAS = PANEL / "studio-canvas.js"
 INSPECTOR = PANEL / "studio-inspector.js"
@@ -48,19 +57,24 @@ INSPECTOR = PANEL / "studio-inspector.js"
 SECTIONS = PANEL / "studio-sections.js"
 RUNS = PANEL / "studio-runs.js"
 PEOPLE = PANEL / "studio-people.js"
-#: The three files this slice owns. Every guard below iterates this tuple, so a
-#: fourth file cannot join the integrator without passing all of them.
-MINE = (STORE, VIEW, BOOT)
+#: The files this slice owns. Every guard below iterates this tuple, so a new
+#: file cannot join the integrator without passing all of them -- which is what
+#: `studio-runform.js` did when the shell view reached the line cap.
+MINE = (STORE, VIEW, RUNFORM, BOOT)
 LINE_CAP = 800
 
-#: The frontend contract's "May import" column for these three rows, verbatim.
-#: It is a PERMISSION table: a module that has not needed one of its neighbours
-#: is not a fault, and one reaching for a neighbour it was never granted is.
+#: The frontend contract's "May import" column for these rows, verbatim. It is
+#: a PERMISSION table: a module that has not needed one of its neighbours is not
+#: a fault, and one reaching for a neighbour it was never granted is.
 PERMITTED = {
     "studio-store.js": frozenset({"./studio-model.js", "./studio-runread.js",
                                   "./studio-review.js", "./studio-edits.js"}),
     "studio-view.js": frozenset({"./command-view.js", "./command-projection.js",
-                                 "./studio-model.js"}),
+                                 "./studio-model.js", "./studio-runform.js"}),
+    #: The run form sits BELOW the view and never reaches back up: the view
+    #: imports it, and a permission to import the view is what would let the
+    #: pair close into a cycle, so it is not granted.
+    "studio-runform.js": frozenset({"./command-view.js", "./studio-model.js"}),
     "studio.js": frozenset({
         "./command-view.js", "./command-projection.js", "./studio-model.js",
         "./studio-store.js", "./studio-view.js", "./studio-canvas.js",
@@ -220,14 +234,14 @@ def test_the_expression_reader_keeps_the_code_and_drops_the_sentences():
     assert len(view.splitlines()) == len(_code(VIEW).splitlines())
 
 
-def test_the_integrator_s_three_files_sit_in_the_panel_under_the_line_cap():
+def test_every_file_the_integrator_owns_sits_in_the_panel_under_the_line_cap():
     for path in MINE:
         assert path.is_file() and path.parent == PANEL, path
         lines = len(path.read_text(encoding="utf-8").splitlines())
         assert lines <= LINE_CAP, f"{path.name} is {lines} lines"
 
 
-def test_the_three_import_only_what_the_contract_grants_them_and_make_no_cycle():
+def test_they_import_only_what_the_contract_grants_them_and_make_no_cycle():
     """The layering, spelled as permissions, with acyclicity COMPUTED.
 
     A permission table alone would allow a cycle the moment two modules were
@@ -278,18 +292,25 @@ def test_the_view_writes_dom_through_the_builder_and_never_reaches_the_wire():
     Banning the DOM globals here is not decoration: a module that can reach
     `document` can reach `document.cookie`, and one that reaches the network
     can write a durable record from a screen nobody audits for it.
+
+    Read over the whole view SURFACE rather than over one file. The claim is
+    about what the view may touch, and the run form is the view -- so a guard
+    that kept reading `studio-view.js` alone would have stopped covering the
+    code the moment it moved next door, which is precisely when a split is at
+    its most dangerous.
     """
-    source = _expressions(_code(VIEW)).lower()
-    for forbidden in TRANSPORT:
-        assert forbidden not in source, forbidden
-    for forbidden in ("document.", "window.", "globalthis."):
-        assert forbidden not in source, forbidden
-    assert 'from "./command-view.js"' in VIEW.read_text(encoding="utf-8")
+    for path in VIEW_SURFACE:
+        source = _expressions(_code(path)).lower()
+        for forbidden in TRANSPORT:
+            assert forbidden not in source, (path.name, forbidden)
+        for forbidden in ("document.", "window.", "globalthis."):
+            assert forbidden not in source, (path.name, forbidden)
+        assert 'from "./command-view.js"' in path.read_text(encoding="utf-8")
 
 
 def test_the_wire_door_is_the_boot_module_and_it_carries_exactly_these_doors():
     """One transport module, and its doors counted rather than merely allowed."""
-    quiet = _expressions(_code(STORE, VIEW)).lower()
+    quiet = _expressions(_code(*(path for path in MINE if path != BOOT))).lower()
     for forbidden in TRANSPORT:
         assert forbidden not in quiet, forbidden
     boot = _code(BOOT)
@@ -297,7 +318,7 @@ def test_the_wire_door_is_the_boot_module_and_it_carries_exactly_these_doors():
         assert boot.count(door) == count, (door, boot.count(door))
 
 
-def test_none_of_the_three_reaches_a_sealed_api():
+def test_none_of_the_files_the_integrator_owns_reaches_a_sealed_api():
     everything = _code(*MINE).lower()
     for forbidden in SEALED:
         assert forbidden not in everything, forbidden

@@ -54,7 +54,7 @@ MODULES = ("studio.js", "studio-store.js", "studio-view.js", "studio-model.js",
            "studio-canvas.js", "studio-inspector.js", "studio-runs.js",
            "studio-people.js", "studio-runread.js", "studio-review.js",
            "studio-layout.js", "studio-edits.js",
-           "studio-sections.js")
+           "studio-sections.js", "studio-runform.js")
 #: The one transport module: every `fetch(`, the one stream, the session token
 #: and the screen router. `graph.js` holds the same position in its window, and
 #: the sealed-API guard below pins this one the same way.
@@ -84,7 +84,11 @@ PERMITTED_IMPORTS = {
     "studio-store.js": frozenset({"./studio-model.js", "./studio-runread.js",
                                   "./studio-review.js", "./studio-edits.js"}),
     "studio-view.js": frozenset({"./command-view.js", "./command-projection.js",
-                                 "./studio-model.js"}),
+                                 "./studio-model.js", "./studio-runform.js"}),
+    #: The form that opens a run, split off the shell view at the line cap. It
+    #: sits BELOW the view rather than beside it: the view imports it, and it
+    #: imports nothing of the view's, which is what keeps the two out of a cycle.
+    "studio-runform.js": frozenset({"./command-view.js", "./studio-model.js"}),
     "studio-canvas.js": frozenset({"./command-view.js",
                                    "./command-projection.js",
                                    "./studio-model.js",
