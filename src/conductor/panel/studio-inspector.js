@@ -21,19 +21,25 @@
 // does not support it. Nothing on this screen writes inert data, and nothing
 // silently disappears. Every unsupported line carries `data-unsupported`.
 import {element} from "./command-view.js";
+//: The primitives come from the toolkit and the sections from the sections:
+//: this frame reaches past `studio-sections.js` for `note` and `panelOf` the
+//: way that module does, because both build controls out of one toolkit and a
+//: re-export would be a second name for one thing.
 import {
-  artifactSection,
-  assignmentSection,
   call,
   context,
   editable,
-  executionSection,
-  generalSection,
   note,
   panelOf,
+  unsupported,
+} from "./studio-fields.js";
+import {
+  artifactSection,
+  assignmentSection,
+  executionSection,
+  generalSection,
   stepActions,
   transitionSection,
-  unsupported,
   verificationSection,
 } from "./studio-sections.js";
 

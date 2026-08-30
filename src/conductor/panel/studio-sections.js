@@ -9,18 +9,36 @@
 // step -- and that is where the work is, because every field this product
 // learns to store is a control in one of these six sections.
 //
-// The primitives came with them rather than staying behind, and that is forced
-// rather than chosen: both halves build controls, and a shared toolkit left in
-// the frame would make the frame import the sections and the sections import
-// the frame. The dependency runs one way -- the frame knows about the sections,
-// the sections know nothing about the frame.
+// The primitives came with them and then left again, when this file reached
+// the cap in its turn: they are `studio-fields.js` now, at the seam the header
+// above already named. The dependency still runs one way and it now runs
+// through three files -- the frame knows about the sections, the sections know
+// about the primitives, and the primitives know nothing about either.
 //
 // The completeness rule is this module's to keep. A field is finished when it
-// is validated here, written through `handlers.onEdit`, stored by the draft
-// route and read back by the real product -- or it says, in place, that this
-// harness does not support it. Nothing here writes inert data and nothing
-// silently disappears; every unsupported line carries `data-unsupported`.
+// is validated in the primitive it is built from, written through
+// `handlers.onEdit`, stored by the draft route and read back by the real
+// product -- or it says, in place, that this harness does not support it.
+// Nothing here writes inert data and nothing silently disappears; every
+// unsupported line carries `data-unsupported`.
 import {element, field} from "./command-view.js";
+import {
+  ID_PATTERN,
+  MAX_PURPOSE,
+  actionButton,
+  call,
+  commit,
+  context,
+  editable,
+  note,
+  option,
+  panelOf,
+  sectionOf,
+  selectField,
+  suggestedField,
+  textField,
+  unsupported,
+} from "./studio-fields.js";
 import {CEILINGS} from "./studio-model.js";
 
 // -- vocabularies this module consumes -------------------------------------
@@ -41,9 +59,6 @@ export const STAGE_NAMES = Object.freeze([
 export const LOOP_BOUND = Object.freeze({min: 1, max: 99});
 //: `graph_definition.MAX_RESOURCES`.
 export const MAX_RESOURCES = 16;
-//: `contract_values._ID_RE`, character for character, and the same grammar
-//: `command-projection.RUN_ID` already holds on the Cockpit side.
-export const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 //: The same closed edit vocabulary `studio-canvas.EDIT_TYPES` names, so both
 //: surfaces reach the draft through one callback and one word list.
 export const EDIT_TYPES = Object.freeze([
@@ -64,158 +79,13 @@ export const SECTIONS = Object.freeze([
   "transitions",
 ]);
 
-export function call(handlers, name, value) {
-  const handler = handlers && handlers[name];
-  if (typeof handler === "function") handler(value);
-}
-
 function isObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function rows(value) { return Array.isArray(value) ? value : []; }
 
-// -- the writers -----------------------------------------------------------
-
-function sectionOf(name, title) {
-  return element("section", {className: "studio-section",
-    "data-section": name}, [element("h3", {text: title})]);
-}
-
-//: Anything that is NOT one of the six. `data-section` names exactly the six
-//: the design fixes, so a reader — and a browser test — can count them.
-export function panelOf(name, title) {
-  return element("section", {className: "studio-panel",
-    "data-panel": name}, [element("h3", {text: title})]);
-}
-
-//: One machine word for a label a human reads, so a test can address a row
-//: without matching prose that is allowed to be rewritten.
-function slug(label) {
-  return label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-}
-
-//: The one shape an unsupported field takes. It NAMES the field, says this
-//: harness does not support it, and gives the reason -- so a reader learns
-//: what the product does not do rather than finding a gap where a control
-//: should be. `data-unsupported` is the machine word beside the sentence.
-export function unsupported(mount, label, reason) {
-  mount.append(element("p", {className: "studio-unsupported",
-    "data-unsupported": slug(label)}, [
-    element("strong", {text: label}),
-    element("span", {text: ` — not supported by this harness. ${reason}`}),
-  ]));
-}
-
-//: A fact this screen READS and cannot write, with the document it came from
-//: named beside it. A value with no named source is a claim nobody can check.
-export function context(mount, label, value, source) {
-  mount.append(element("p", {className: "studio-context",
-    "data-context": slug(label)}, [
-    element("strong", {text: label}),
-    element("span", {className: "mono", text: `: ${value}`}),
-    element("i", {className: "mono studio-context__source", text: ` (${source})`}),
-  ]));
-}
-
-export function note(mount, text) {
-  mount.append(element("p", {className: "studio-note", text}));
-}
-
-function option(value, label) {
-  return element("option", {text: label === undefined ? value : label, value});
-}
-
-//: Every control this module writes is disabled together when the document on
-//: screen cannot be edited, and the reason is on screen rather than implied by
-//: a grey box: a published revision is immutable, by design and forever.
-export function editable(control, form) {
-  if (!form.editable) control.disabled = true;
-  return control;
-}
-
-function commit(form, name, value) {
-  call(form.handlers, "onEdit", {
-    type: "set-field", nodeId: form.node.node_id, field: name, value});
-}
-
-//: `graph_definition.MAX_PURPOSE`, held equal to it by a test rather than
-//: guessed: a window that let somebody type past the contract's bound would
-//: send a save the server refuses, for a reason nothing on screen explains.
-export const MAX_PURPOSE = 500;
-
-//: What each edited word must be, in the grammar its Python contract already
-//: holds it to. A field says what is wrong beside itself and refuses to write,
-//: which is the difference between a control that validates and a control that
-//: posts a body for the server to reject.
-const CHECKS = Object.freeze({
-  title: (value) => value.trim() && !value.includes("\0") ? null
-    : "A display name must be a non-empty string and must not contain NUL.",
-  //: Empty is a real answer -- it means the step names no purpose -- so this
-  //: judges only what a NON-empty one may be, and it judges the same three
-  //: things `settled_purpose` does one layer down.
-  purpose: (value) => !value.trim() || (
-    value.length <= MAX_PURPOSE && !/[\0\r\n]/.test(value)) ? null
-    : `A purpose is one line of at most ${MAX_PURPOSE} characters, with no `
-      + "line break and no NUL.",
-  role_id: (value) => value === "" || ID_PATTERN.test(value) ? null
-    : "A role must match [A-Za-z0-9][A-Za-z0-9._-]{0,127}, or be empty.",
-  gate_id: (value) => value === "" || ID_PATTERN.test(value) ? null
-    : "A gate id must match [A-Za-z0-9][A-Za-z0-9._-]{0,127}, or be empty.",
-  //: The same grammar `role_id` is held to, because it IS a role -- the one a
-  //: run binds to whoever confirms this step. Empty is a real answer: it means
-  //: nobody is named as the verifier of this step.
-  verifier_role_id: (value) => value === "" || ID_PATTERN.test(value) ? null
-    : "A verifier role must match [A-Za-z0-9][A-Za-z0-9._-]{0,127}, or be empty.",
-});
-
-//: The error sits beside the control from the first render, `hidden` until it
-//: has something to say, so a keyboard reader hears it through
-//: `aria-describedby` without this module holding a second copy of the state.
-function textField(mount, form, label, name, value, help) {
-  const check = CHECKS[name] || (() => null);
-  const errorId = `studio-invalid-${name}`;
-  const error = element("p", {className: "studio-invalid", hidden: "",
-    id: errorId, role: "note"});
-  const control = element("input", {
-    "aria-describedby": errorId, autocomplete: "off",
-    "data-edit-field": name, "data-focus": `edit-${name}`, name,
-    spellcheck: "false", type: "text"});
-  control.value = value === null || value === undefined ? "" : String(value);
-  const judge = () => {
-    const said = check(control.value);
-    error.textContent = said || "";
-    error.hidden = !said;
-    control.setAttribute("aria-invalid", said ? "true" : "false");
-    return said;
-  };
-  control.addEventListener("input", judge);
-  control.addEventListener("change", () => {
-    if (judge()) return;
-    commit(form, name, name.endsWith("_id") && control.value === ""
-      ? null : control.value);
-  });
-  const wrapper = field(label, editable(control, form));
-  wrapper.classList.add("studio-field");
-  mount.append(wrapper, error);
-  if (help) note(mount, help);
-  return control;
-}
-
-//: A text field whose value stays FREE, with names already in this document
-//: offered beside it. A datalist and never a `<select>`: what is offered is a
-//: convenience, and typing a name no step carries is first-class -- which is
-//: the whole point where a separate reviewer is concerned, because a picker
-//: limited to names already in use would force somebody to invent a fictitious
-//: step before they could name the person who checks the real one.
-function suggestedField(mount, form, label, name, value, help, offers) {
-  const control = textField(mount, form, label, name, value, help);
-  const listId = `studio-offers-${name}`;
-  control.setAttribute("list", listId);
-  mount.append(element("datalist", {id: listId},
-    offers.map((offer) => option(offer))));
-  return control;
-}
+// -- the sections ----------------------------------------------------------
 
 //: Every role THIS document names, of either kind. A role a step carries out
 //: and a role that verifies one are both roles a run binds, so an offer list
@@ -231,28 +101,6 @@ function roleOffers(form) {
     }
   }
   return [...found].sort();
-}
-
-function selectField(mount, form, label, name, values, value) {
-  const control = element("select", {"data-edit-field": name,
-    "data-focus": `edit-${name}`, name}, values.map((row) => option(row.value,
-      row.label)));
-  control.value = value === null || value === undefined ? "" : String(value);
-  control.addEventListener("change", () => commit(form, name,
-    control.value === "" ? null : control.value));
-  const wrapper = field(label, editable(control, form));
-  wrapper.classList.add("studio-field");
-  mount.append(wrapper);
-  return control;
-}
-
-function actionButton(mount, form, label, key, edit) {
-  const button = element("button", {className: "studio-action",
-    "data-action": key, "data-focus": `action-${key}`, type: "button"},
-  [element("span", {text: label})]);
-  button.addEventListener("click", () => call(form.handlers, "onEdit", edit));
-  mount.append(editable(button, form));
-  return button;
 }
 
 //: The furthest from the origin a step may be put. `graph_template`'s

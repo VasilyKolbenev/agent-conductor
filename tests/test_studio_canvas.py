@@ -39,17 +39,19 @@ from conductor.command.providers import PROVIDER_CATALOG
 ROOT = Path(__file__).resolve().parents[1]
 PANEL = ROOT / "src" / "conductor" / "panel"
 CANVAS = PANEL / "studio-canvas.js"
-#: The inspector is TWO files now: the frame that decides what is selected, and
-#: the sections and field primitives it is built from. Every guard below is
-#: about the inspector SURFACE rather than about either file, so they read the
-#: union -- which is what `INSPECTOR` names. Reading only one half would let a
-#: control move across the seam and out from under a rule that still applies to
-#: it. The split cannot hide a duplicate either: a "count == 1" claim over the
-#: union goes to 2 and reds if both halves grow one.
+#: The inspector is THREE files now: the frame that decides what is selected,
+#: the six sections, and the field primitives every control in them is built
+#: from. Every guard below is about the inspector SURFACE rather than about any
+#: one file, so they read the union -- which is what `INSPECTOR` names. Reading
+#: one part alone would let a control move across a seam and out from under a
+#: rule that still applies to it, which is exactly what a split is for and
+#: exactly when it is most dangerous. The split cannot hide a duplicate either:
+#: a "count == 1" claim over the union goes to 2 and reds if two parts grow one.
 FRAME = PANEL / "studio-inspector.js"
 SECTIONS = PANEL / "studio-sections.js"
-INSPECTOR = (FRAME, SECTIONS)
-STUDIO_FILES = (CANVAS, FRAME, SECTIONS)
+FIELDS = PANEL / "studio-fields.js"
+INSPECTOR = (FRAME, SECTIONS, FIELDS)
+STUDIO_FILES = (CANVAS, FRAME, SECTIONS, FIELDS)
 IMPORTS = r'from "(\./[a-z-]+\.js)";'
 _LINE_COMMENT = re.compile(r"^[ \t]*//.*$", re.MULTILINE)
 _BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.DOTALL)
@@ -129,15 +131,20 @@ def test_both_studio_files_sit_in_the_panel_under_the_line_cap():
         assert len(_text(path).splitlines()) <= 800, path.name
 
 
-#: What each of these two files may reach for, in the order it spells them. The
+#: What each of these files may reach for, in the order it spells them. The
 #: canvas gained the model when it crossed the line cap and its pure layout half
-#: moved next door; the inspector has not needed it. Both remain leaves in the
-#: sense that matters: neither can reach the other, and neither can reach a
-#: module that reaches back.
+#: moved next door; the inspector's three parts form a chain and nothing in it
+#: reaches back -- the frame knows the sections and the toolkit, the sections
+#: know the toolkit, and the toolkit knows only the node builder. That last row
+#: is the load-bearing one: a primitive that could import a section would close
+#: the ring both of these splits were drawn to open.
 _ALLOWED_IMPORTS = {
     "studio-canvas.js": ["./command-view.js", "./studio-layout.js"],
-    "studio-inspector.js": ["./command-view.js", "./studio-sections.js"],
-    "studio-sections.js": ["./command-view.js", "./studio-model.js"],
+    "studio-inspector.js": ["./command-view.js", "./studio-fields.js",
+                            "./studio-sections.js"],
+    "studio-sections.js": ["./command-view.js", "./studio-fields.js",
+                           "./studio-model.js"],
+    "studio-fields.js": ["./command-view.js"],
 }
 
 
@@ -568,7 +575,7 @@ def test_the_inspector_reads_a_run_only_through_records_a_contract_validated():
                          r'records|envelope) of run \$\{run\.runId\}', inspector)
     assert len(sources) >= 5
     assert "Process exit 0 proves the process finished, not that the work" in (
-        _text(FRAME) + _text(SECTIONS))
+        "".join(_text(path) for path in INSPECTOR))
 
 
 def test_every_edited_word_is_judged_before_it_is_written():

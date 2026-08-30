@@ -55,6 +55,10 @@ INSPECTOR = PANEL / "studio-inspector.js"
 #: The inspector's controls and its copy of the edit vocabulary moved here when
 #: that module reached the line cap. The three copies are still held equal.
 SECTIONS = PANEL / "studio-sections.js"
+#: The field primitives, split off the sections when THAT module reached the
+#: cap. It carries `commit` -- the one writer of a `set-field` edit -- so it is
+#: exactly the file a fourth copy of the vocabulary would appear in.
+FIELDS = PANEL / "studio-fields.js"
 RUNS = PANEL / "studio-runs.js"
 PEOPLE = PANEL / "studio-people.js"
 #: The files this slice owns. Every guard below iterates this tuple, so a new
@@ -434,10 +438,14 @@ def test_the_three_edit_vocabularies_are_one_vocabulary():
     for word in types:
         assert re.search(rf'^\s+("{word}"|{word})[:,]', edits, re.MULTILINE), word
     # The reducer no longer declares either list, so the three copies cannot
-    # quietly become four while this guard reads only three of them.
-    store, frame = _code(STORE), _code(INSPECTOR)
+    # quietly become four while this guard reads only three of them. The field
+    # primitives are checked for the same reason and it is not hypothetical
+    # there: `commit` lives in that file, and a word list beside the writer is
+    # exactly where a fourth copy would look like it belonged.
+    named = ((_code(STORE), "the reducer"), (_code(INSPECTOR), "the frame"),
+             (_code(FIELDS), "the field primitives"))
     for name in ("EDIT_TYPES", "EDIT_FIELDS"):
-        for source, where in ((store, "the reducer"), (frame, "the frame")):
+        for source, where in named:
             assert f"const {name}" not in source, (
                 f"{name} is declared in {where} again; three copies, not four")
 
