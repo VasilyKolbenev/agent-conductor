@@ -78,6 +78,7 @@ from .graph_values import (  # noqa: F401 -- re-exported under old names
     NodePosition,
     settled_bounds,
     settled_purpose,
+    settled_required_evidence,
 )
 
 #: Dalio's five stages in the ONE order the product shows them. The order is
@@ -107,6 +108,15 @@ EFFECTING_CAPABILITIES = frozenset({"dispatch"})
 #: smuggle execution state into something called immutable. ``arguments`` is
 #: exempt by design: it is the capability's own payload, judged by the
 #: capability's own schema at the provider door.
+#:
+#: ``required_evidence`` is NOT one of these and must never become one, which is
+#: worth saying because the two look alike from a distance: ``evidence`` and
+#: ``evidence_refs`` are what a RUN produced, and the whole of this refusal is
+#: that a plan may not carry them. ``required_evidence`` is a DEMAND the plan
+#: makes of a run that has not happened -- it names no evidence, resolves to no
+#: row, and is written by whoever drew the workflow. ``_reserved`` matches keys
+#: exactly, so the difference is a fact of the code and not of this comment; a
+#: node carrying a nested ``{"evidence": ...}`` is refused exactly as it was.
 RUNTIME_ONLY_FIELDS = frozenset({
     "attempt_id", "attempt_ids", "attempts", "availability", "bound_reached",
     "decided_at", "decision", "decisions", "evidence", "evidence_refs",
@@ -299,17 +309,28 @@ class GraphNode:
     #: the only authority on which adapter drives an instance, so this changes
     #: which binding is resolved and never how one is resolved.
     verifier_instance_id: str | None = None
+    #: WHAT this step's verification must name, beyond having happened. Absent
+    #: means the runtime's own rule is the whole of it, which is what every plan
+    #: written before this existed says and what the runtime did unconditionally.
+    #:
+    #: A DEMAND and never an observation: it is written by whoever drew the
+    #: workflow, it names no evidence row, and it is frozen here so that the
+    #: refusal it buys is the PLAN's -- held on the honest road and again
+    #: against bytes this process did not write.
+    required_evidence: str | None = None
 
     _FIELDS = frozenset({
         "node_id", "kind", "title", "stage", "instance_id", "capability",
         "arguments", "resources", "gate_id", "loop", "timeout_seconds",
         "attempt_bound", "purpose", "verifier_instance_id",
+        "required_evidence",
     })
 
     def __post_init__(self) -> None:
         self._settle_bounds()
         object.__setattr__(self, "purpose", settled_purpose(self.purpose))
         self._settle_verifier()
+        self._settle_evidence_demand()
         object.__setattr__(self, "node_id", _id("node_id", self.node_id))
         object.__setattr__(self, "kind", _enum("node kind", self.kind, NODE_KINDS))
         object.__setattr__(self, "title", _text("title", self.title))
@@ -351,6 +372,24 @@ class GraphNode:
                 "step that carries nothing out has nothing to verify")
         object.__setattr__(self, "verifier_instance_id",
                            _id("verifier_instance_id", self.verifier_instance_id))
+
+    def _settle_evidence_demand(self) -> None:
+        """A demand on a verification belongs to a step that produces one.
+
+        The pairing rule next door, one field over and for the same reason: a
+        gate and a loop are carried out by nobody, so no adapter ever verifies
+        them and no evidence row is ever written for them. A demand on that
+        verification would be a field nothing in the product could reach, and a
+        plan that stores an unreachable field is a plan saying something it
+        cannot do.
+        """
+        object.__setattr__(self, "required_evidence",
+                           settled_required_evidence(self.required_evidence))
+        if self.required_evidence is not None and self.capability is None:
+            raise ContractError(
+                f"node {self.node_id!r} requires evidence and names no "
+                "capability; a step that carries nothing out is verified by "
+                "nobody, so there is no verification to require anything of")
 
     def _settle_binding(self) -> None:
         """A binding is whole or absent; half a binding names no runnable place."""
@@ -457,6 +496,8 @@ class GraphNode:
             out["purpose"] = self.purpose
         if self.verifier_instance_id is not None:
             out["verifier_instance_id"] = self.verifier_instance_id
+        if self.required_evidence is not None:
+            out["required_evidence"] = self.required_evidence
         return out
 
     @classmethod
@@ -483,7 +524,8 @@ class GraphNode:
             timeout_seconds=data.pop("timeout_seconds", None),
             attempt_bound=data.pop("attempt_bound", None),
             purpose=data.pop("purpose", None),
-            verifier_instance_id=data.pop("verifier_instance_id", None))
+            verifier_instance_id=data.pop("verifier_instance_id", None),
+            required_evidence=data.pop("required_evidence", None))
 
 
 @dataclass(frozen=True)
@@ -532,7 +574,8 @@ def _rebuilt_node(row: object) -> "GraphNode":
         gate_id=node.gate_id, loop=node.loop,
         timeout_seconds=node.timeout_seconds,
         attempt_bound=node.attempt_bound, purpose=node.purpose,
-        verifier_instance_id=node.verifier_instance_id)
+        verifier_instance_id=node.verifier_instance_id,
+        required_evidence=node.required_evidence)
 
 
 def _acyclic(nodes: tuple[GraphNode, ...], edges: tuple[GraphEdge, ...]) -> None:

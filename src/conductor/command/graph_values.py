@@ -174,6 +174,60 @@ def settled_purpose(purpose: object) -> str | None:
     return settled
 
 
+#: What a plan may require of a step's verification, BEYOND the fact that one
+#: happened. A closed set, and the one word in it names the one degree of
+#: freedom the evidence contract still has: `EvidenceRef.digest` is optional, so
+#: a verification may stand without naming WHAT it checked, and the replay
+#: relation has therefore never asked for one.
+#:
+#: The set is closed in one direction only, and that asymmetry is the field.
+#: A plan may TIGHTEN what a run must prove and it may never loosen it, so there
+#: is no word here for "less": a document saying `"none"`, `"optional"` or
+#: `"any"` would be asking the runtime to drop a demand it makes of every step,
+#: and it is refused rather than quietly ignored.
+REQUIRED_EVIDENCE = frozenset({"digest"})
+
+
+def settled_required_evidence(value: object) -> str | None:
+    """One grammar for a step's evidence demand, judged the same in both.
+
+    Here for `settled_purpose`'s reason one field over: a template that stored a
+    word the definition would refuse is a plan that cannot materialize, found
+    out at run time rather than where it was drawn.
+
+    Absent stays absent, and so does whitespace -- an empty string is the same
+    answer as saying nothing -- so no document written before this field existed
+    changes a byte or moves a digest. Anything else is one of `REQUIRED_EVIDENCE`
+    and nothing else: this vocabulary may only ever grow words that ask for
+    MORE, so a word it does not carry is refused rather than read as "no
+    requirement".
+
+    Args:
+        value: What the document says this step's verification must name.
+
+    Returns:
+        The settled word, or None when the plan requires nothing extra.
+
+    Raises:
+        ContractError: The value is not text, or is a word this build has no
+            tightening for.
+    """
+    if value is None:
+        return None
+    if type(value) is not str:
+        raise ContractError(
+            "a step's evidence requirement is text, or nothing at all")
+    settled = value.strip()
+    if not settled:
+        return None
+    if settled not in REQUIRED_EVIDENCE:
+        raise ContractError(
+            f"a step may require {sorted(REQUIRED_EVIDENCE)} of its "
+            f"verification, and {settled!r} is not one of them; a plan may ask "
+            "for more proof than the runtime already demands and never for less")
+    return settled
+
+
 def settled_bounds(timeout_seconds: object,
                    attempt_bound: object) -> dict[str, int | None]:
     """The two plan-side ceilings, judged once for both node contracts.
