@@ -491,12 +491,17 @@ def test_a_published_revision_is_immutable_on_both_surfaces():
 #: the plan already carried. It is not a field that became supported by being
 #: relabelled: `tests/test_command_output_budget.py` drives a real dispatch and
 #: reads the byte count off the CommandSpec the runner was handed.
+#: `Verifier` left it when a step gained a durable `verifier_role_id`:
+#: `TemplateNode` stores it, `GraphTemplate._roles_of` counts it so a binding
+#: must assign it, `materialize` freezes it into the plan as
+#: `verifier_instance_id`, and `graph_causality.permitted_verifier` spends it --
+#: driven end to end by tests/test_command_plan_verifier.py. The positive
+#: witness that it did not leave the SCREEN with the label is below.
 UNSUPPORTED_FIELDS = (
     "Required input artifacts",
     "Produced artifacts",
     "Handoff mapping",
     "Missing-artifact behaviour",
-    "Verifier",
     "Evidence requirements",
     "Success criteria",
     "Verification failure policy",
@@ -576,7 +581,8 @@ def test_every_edited_word_is_judged_before_it_is_written():
     checks = set(re.findall(r"^  (\w+): \(value\)", re.search(
         r"const CHECKS = Object\.freeze\(\{(.*?)\n\}\);", inspector,
         re.DOTALL).group(1), re.MULTILINE))
-    assert checks == {"title", "role_id", "gate_id", "purpose"}
+    assert checks == {"title", "role_id", "gate_id", "purpose",
+                      "verifier_role_id"}
     assert "if (judge()) return;" in inspector
     # The purpose bound is the CONTRACT's, read from it rather than typed here.
     # A window that let somebody type past it would send a save the server
@@ -692,3 +698,45 @@ def test_the_inspector_states_the_output_budget_it_stopped_calling_unsupported()
     assert "Output budget" not in re.sub(
         r"function outputBudget\(box, node\) \{.*?\n\}", "", inspector,
         flags=re.DOTALL), "the budget is stated in more than one voice"
+
+
+def test_the_inspector_states_the_verifier_it_stopped_calling_unsupported():
+    """A field that leaves the unsupported list must not leave the screen with it.
+
+    Deleting the line would satisfy the completeness census -- `Verifier` is not
+    in `UNSUPPORTED_FIELDS` any more -- and leave a person with no way to name
+    the role that confirms a step, which is a field the template stores, the
+    binding must assign, `materialize` freezes into the plan and the runtime
+    spends.
+
+    The SHAPE of the control is asserted as well as its presence, because the
+    easy way to get this wrong is a picker: offering only roles some step
+    already carries out would refuse the one case this field exists for -- a
+    reviewer role no step carries out, which is exactly what a separate reviewer
+    is. So it is free text with a datalist beside it, and the offers are the
+    union of both kinds of role, the same union `studio-runform.roleNames` reads
+    one screen over.
+    """
+    inspector = _code(*INSPECTOR)
+    assert "verifierControl(box, form);" in inspector
+    verification = re.search(
+        r"export function verificationSection\(form\) \{(.*?)\n\}",
+        inspector, re.DOTALL).group(1)
+    assert "verifierControl(box, form);" in verification, verification
+    body = re.search(r"function verifierControl\(box, form\) \{(.*?)\n\}",
+                     inspector, re.DOTALL).group(1)
+    assert '"Verifier role", "verifier_role_id"' in body, body
+    assert "roleOffers(form)" in body, body
+    # Offered and never enforced: the suggestions are a datalist over a text
+    # input, so what the control commits is whatever was typed.
+    offered = re.search(r"function suggestedField\((.*?)\n\}", inspector,
+                        re.DOTALL).group(1)
+    assert 'element("datalist"' in offered, offered
+    assert "textField(mount, form, label, name, value, help)" in offered, offered
+    union = re.search(r"function roleOffers\(form\) \{(.*?)\n\}", inspector,
+                      re.DOTALL).group(1)
+    assert "node.role_id, node.verifier_role_id" in union, union
+    # The contract's pairing rule is said in place, not only met at the save.
+    assert "has nothing to verify" in body, body
+    # And in one voice: one label, one section.
+    assert inspector.count('"Verifier role"') == 1

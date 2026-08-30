@@ -56,7 +56,7 @@ export const EDIT_TYPES = Object.freeze([
 export const EDIT_FIELDS = Object.freeze([
   "attempt_bound", "capability", "gate_id", "kind", "loop_back_to",
   "loop_bound", "purpose", "resources", "role_id", "stage",
-  "timeout_seconds", "title",
+  "timeout_seconds", "title", "verifier_role_id",
 ]);
 //: The six sections, in the one order the design fixes them in.
 export const SECTIONS = Object.freeze([
@@ -162,6 +162,11 @@ const CHECKS = Object.freeze({
     : "A role must match [A-Za-z0-9][A-Za-z0-9._-]{0,127}, or be empty.",
   gate_id: (value) => value === "" || ID_PATTERN.test(value) ? null
     : "A gate id must match [A-Za-z0-9][A-Za-z0-9._-]{0,127}, or be empty.",
+  //: The same grammar `role_id` is held to, because it IS a role -- the one a
+  //: run binds to whoever confirms this step. Empty is a real answer: it means
+  //: nobody is named as the verifier of this step.
+  verifier_role_id: (value) => value === "" || ID_PATTERN.test(value) ? null
+    : "A verifier role must match [A-Za-z0-9][A-Za-z0-9._-]{0,127}, or be empty.",
 });
 
 //: The error sits beside the control from the first render, `hidden` until it
@@ -195,6 +200,37 @@ function textField(mount, form, label, name, value, help) {
   mount.append(wrapper, error);
   if (help) note(mount, help);
   return control;
+}
+
+//: A text field whose value stays FREE, with names already in this document
+//: offered beside it. A datalist and never a `<select>`: what is offered is a
+//: convenience, and typing a name no step carries is first-class -- which is
+//: the whole point where a separate reviewer is concerned, because a picker
+//: limited to names already in use would force somebody to invent a fictitious
+//: step before they could name the person who checks the real one.
+function suggestedField(mount, form, label, name, value, help, offers) {
+  const control = textField(mount, form, label, name, value, help);
+  const listId = `studio-offers-${name}`;
+  control.setAttribute("list", listId);
+  mount.append(element("datalist", {id: listId},
+    offers.map((offer) => option(offer))));
+  return control;
+}
+
+//: Every role THIS document names, of either kind. A role a step carries out
+//: and a role that verifies one are both roles a run binds, so an offer list
+//: that read only the first would hide exactly the reviewer this control exists
+//: to name. `roleNames` in `studio-runform.js` reads the same union one screen
+//: over, and for the same reason.
+function roleOffers(form) {
+  const found = new Set();
+  for (const node of rows(form.nodes)) {
+    if (!isObject(node)) continue;
+    for (const role of [node.role_id, node.verifier_role_id]) {
+      if (typeof role === "string" && role !== "") found.add(role);
+    }
+  }
+  return [...found].sort();
 }
 
 function selectField(mount, form, label, name, values, value) {
@@ -559,12 +595,36 @@ export function artifactSection(form) {
 
 // -- 5. Verification -------------------------------------------------------
 
+//: WHO must confirm this step, as a ROLE and never as a participant: a template
+//: may not name an instance, so which person or product fills the role is the
+//: RUN's fact, settled by its binding and frozen into the plan as
+//: `verifier_instance_id`.
+//:
+//: The pairing rule is the contract's, stated here rather than only met at the
+//: save: `TemplateNode.__post_init__` refuses a verifier on a step that binds no
+//: role of its own, because a step that carries nothing out has nothing to
+//: verify. Clearing the role clears this with it, over in `studio-edits`.
+function verifierControl(box, form) {
+  const {node} = form;
+  const bound = node.role_id !== null && node.role_id !== undefined;
+  suggestedField(box, form, "Verifier role", "verifier_role_id",
+    node.verifier_role_id,
+    "A role, not a person: a run binds it to a participant like any other. "
+    + "Type any name — a reviewer role no step carries out is exactly the "
+    + "shape a separate reviewer takes — or pick one this document already "
+    + "names.", roleOffers(form));
+  note(box, bound
+    ? "Naming a verifier here makes this step's confirmation somebody's job in "
+      + "every run of this workflow, and Open a run will ask who fills it."
+    : "This step binds no role of its own, so it may not name a verifier: a "
+      + "step that carries nothing out has nothing to verify. Give it a role "
+      + "and a capability under Assignment first.");
+}
+
 export function verificationSection(form) {
   const {run} = form;
   const box = sectionOf("verification", "Verification");
-  unsupported(box, "Verifier", "A workflow step names no verifier. "
-    + "Verification is recorded on the evidence a run produces, by the "
-    + "contract that validated it.");
+  verifierControl(box, form);
   unsupported(box, "Evidence requirements", "This build carries no per-step "
     + "evidence requirement in a workflow document.");
   unsupported(box, "Success criteria", "A workflow step states no success "

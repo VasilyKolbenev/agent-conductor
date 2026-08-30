@@ -31,7 +31,7 @@ export const EDIT_TYPES = Object.freeze(["add", "connect", "delete-edge",
   "delete-node", "duplicate", "move", "reorder", "set-field"]);
 export const EDIT_FIELDS = Object.freeze(["attempt_bound", "capability",
   "gate_id", "kind", "loop_back_to", "loop_bound", "purpose", "resources",
-  "role_id", "stage", "timeout_seconds", "title"]);
+  "role_id", "stage", "timeout_seconds", "title", "verifier_role_id"]);
 //: `graph_definition.NODE_KINDS`, its loop and resource bounds, and
 //: `workflow_draft.MAX_DRAFT_NODES` / `MAX_DRAFT_EDGES`.
 export const NODE_KINDS = Object.freeze(["task", "gate", "loop"]);
@@ -65,6 +65,12 @@ function withBinding(node, name, value) {
     // as ONE fact, and half of one names a step nobody can carry out.
     delete next.role_id;
     delete next.capability;
+    // And the VERIFIER goes with them. `TemplateNode.__post_init__` refuses a
+    // verifier role on a step that binds no role of its own -- a step that
+    // carries nothing out has nothing to verify -- so leaving one behind here
+    // would make a draft unsavable by clearing a field, and the person would
+    // meet it as a refusal about a control they did not touch.
+    delete next.verifier_role_id;
     return next;
   }
   next[name] = value;

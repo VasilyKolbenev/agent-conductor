@@ -63,10 +63,21 @@ export function reachable(state) {
   return rows(state.providers).filter((row) => row.availability === "available");
 }
 
+//: Every role this revision names, of BOTH kinds. A step's own `role_id` says
+//: who carries it out and its `verifier_role_id` says who confirms it, and
+//: `GraphTemplate._roles_of` counts both -- so `RunBinding.covers` demands an
+//: assignment for both and `open_run` refuses a binding that leaves either
+//: unassigned. Reading only the first is what would make a revision whose
+//: reviewer role no step carries out impossible to open a run of: the picker
+//: would not exist, nothing would be assigned, and the refusal would arrive
+//: from the server naming a role this form never offered.
 function roleNames(held) {
   const found = new Set();
   for (const node of rows(held && held.nodes)) {
-    if (node && typeof node.role_id === "string") found.add(node.role_id);
+    if (!node) continue;
+    for (const role of [node.role_id, node.verifier_role_id]) {
+      if (typeof role === "string") found.add(role);
+    }
   }
   return [...found].sort();
 }

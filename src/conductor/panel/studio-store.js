@@ -233,6 +233,12 @@ function nodeProblems(node, found) {
       + "stored together or neither, so this draft cannot be saved until the "
       + "other half is chosen.");
   }
+  if (Object.hasOwn(node, "verifier_role_id") && !Object.hasOwn(node, "role_id")) {
+    found.push(`Step ${named} names a verifier role and binds no role of its `
+      + "own. A step that carries nothing out has nothing to verify, so this "
+      + "draft cannot be saved until the step names a role or the verifier is "
+      + "cleared.");
+  }
   if (rows(node.resources).length > MAX_RESOURCES) {
     found.push(`Step ${named} attaches more than ${MAX_RESOURCES} resources.`);
   }
