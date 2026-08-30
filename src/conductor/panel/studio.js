@@ -39,6 +39,17 @@ const RUN_OPENED = "The run is open and its plan is materialized from that "
   + "exact revision. Nothing about the workflow changed.";
 const DECIDED = "The decision is a durable receipt in this run's journal. "
   + "Nothing was executed by answering.";
+//: The refusals a PUBLISH can meet that this window recovers from instead of
+//: only reporting: both say the reviewed draft is not what the server holds --
+//: one because its content moved, one because it is gone -- and both are
+//: answered by closing the stale review and reading the workflow again. Every
+//: other refusal is reported and nothing is reopened.
+//:
+//: A SAVE refused as `draft_conflict` is deliberately not on any such list. A
+//: read there would merge the server's draft into the drawing on screen, which
+//: is the automatic overwrite this whole seam exists to refuse: the person's
+//: unsaved work stays exactly as it is and the read is theirs to ask for.
+const REOPENED = Object.freeze(["draft_changed", "draft_conflict"]);
 
 (() => {
   const shell = document.getElementById("studioShell");
@@ -438,7 +449,16 @@ const DECIDED = "The decision is a durable receipt in this run's journal. "
     }
     // The document is read into a value ONCE and that value is what is judged,
     // what is sent, and what the confirming read is compared against.
-    const body = JSON.parse(JSON.stringify(drawing));
+    const written = JSON.parse(JSON.stringify(drawing));
+    // Beside it, WHICH stored draft this window is replacing: the digest the
+    // last read carried, or the claim that the last read carried none. It is
+    // the same echo the publish body sends, one road earlier, and it is what
+    // stops this save silently overwriting a draft another window stored after
+    // this one last looked. `reviewedDigest` is exactly that answer and is
+    // taken away by the read that would make it wrong.
+    const body = held.reviewedDigest === null
+      ? {document: written, expected_absent: true}
+      : {document: written, expected_digest: held.reviewedDigest};
     const asked = chosenWorkflow;
     write("draft", asked, body, () => {
       // The answer belongs to the workflow it was asked about. If the Human
@@ -446,7 +466,7 @@ const DECIDED = "The decision is a durable receipt in this run's journal. "
       // workflow this write never touched.
       if (asked !== chosenWorkflow) return;
       refreshWorkflow(asked, {kind: "draft", workflowId: asked,
-        text: canonicalJson(body), phase: "saved", notice: SAVED});
+        text: canonicalJson(written), phase: "saved", notice: SAVED});
     });
   }
 
@@ -485,13 +505,15 @@ const DECIDED = "The decision is a durable receipt in this run's journal. "
       refreshWorkflow(asked, {kind: "publish", workflowId: asked,
         revision: number, phase: "saved", notice: PUBLISHED});
     }, (result) => {
-      // The one refusal a window can act on rather than only report: the draft
-      // moved under the open review. Leaving the panel open would show a
-      // person a drawing the server no longer holds, above a Confirm that is
-      // now guaranteed to fail. So the review is closed and the workflow is
-      // re-read; what comes back is the draft that actually stands, and the
-      // person opens a review of THAT.
-      if (result.code !== "draft_changed" || asked !== chosenWorkflow) return;
+      // The two refusals a window can act on rather than only report, and the
+      // recovery is one shape because the situation is: the review on screen is
+      // of a document the server no longer holds. Leaving the panel open would
+      // show a person that document above a Confirm now guaranteed to fail. So
+      // the review is closed and the workflow is re-read, and what comes back
+      // is what actually stands -- the newer DRAFT, which the person reviews
+      // instead, or, when the draft was consumed rather than replaced, the
+      // published REVISION, from which Edit as new draft is the road on.
+      if (!REOPENED.includes(result.code) || asked !== chosenWorkflow) return;
       dispatch({type: "publish-review", open: false});
       refreshWorkflow(asked);
     });
@@ -558,6 +580,38 @@ const DECIDED = "The decision is a durable receipt in this run's journal. "
     dispatch({type: "seed", document: draftFrom(seed)});
   }
 
+  //: The one road out of a published workflow that holds no draft. It copies
+  //: the revision ON SCREEN -- `detail.published`, the document the canvas is
+  //: drawing -- into a draft this window holds, and reaches the wire not at
+  //: all: `draftFrom` rebuilds it without `template_id` and `revision`, the two
+  //: words the save route refuses, and Save draft is what puts it on the server
+  //: through the draft route that already exists. The revision is untouched;
+  //: publishing the copy makes the NEXT one, which is what immutability means
+  //: from the editing side.
+  //:
+  //: It seeds for the workflow ALREADY chosen and never re-chooses it. Choosing
+  //: is the one door a held drawing is let go through, and it clears the very
+  //: read this copy is taken from, so a re-choose here would throw away the
+  //: published document on the way to copying it.
+  //:
+  //: The two refusals are this door's own rule rather than a second opinion
+  //: about the control's: a drawing already on screen is work a copy would
+  //: destroy, and a revision that is not there cannot be copied. The toolbar
+  //: shuts the control on those same two facts and on the write door besides,
+  //: because the road ends in a write.
+  function onEditPublished() {
+    const held = state.workflows;
+    const copy = held.detail === null ? null : draftFrom(held.detail.published);
+    if (held.draft !== null || copy === null) {
+      dispatch({type: "status", notice: held.draft !== null
+        ? "There is already a drawing on screen, and copying the published "
+          + "revision would replace it. Nothing was copied."
+        : "There is no published revision on screen to copy."});
+      return;
+    }
+    dispatch({type: "seed", document: copy});
+  }
+
   function onValidate() {
     if (!isId(chosenWorkflow)) return;
     refreshWorkflow(chosenWorkflow);
@@ -576,7 +630,7 @@ const DECIDED = "The decision is a durable receipt in this run's journal. "
       if (workflowId) refreshWorkflow(workflowId);
     },
     onStartWorkflow, onValidate, onSaveDraft, onPublish, onPublishConfirm,
-    onPublishCancel, onOpenRun,
+    onPublishCancel, onEditPublished, onOpenRun,
     onRefreshRuns: () => loadRuns(),
     onRefreshRun: () => { if (chosenRun) refreshRun(chosenRun); },
     onRefreshAgents: () => loadWorkflows(),

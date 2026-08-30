@@ -30,7 +30,11 @@ from __future__ import annotations
 from conductor.command.template_store import TemplateStore
 from conductor.command.workflow_draft import WorkflowDraft
 
-from browser_tests.test_studio_lifecycle import _publish
+from browser_tests.test_studio_lifecycle import (
+    NEW_DRAFT,
+    NEW_DRAFT_CONTROL,
+    _publish,
+)
 from browser_tests.test_studio_editing import (  # noqa: F401
     DRAFT,
     SAVED_AT,
@@ -99,6 +103,13 @@ def test_a_published_revision_disables_every_editing_control_and_says_why(
     This is the same window, on a document that is immutable by design. Every
     control the editing tests press is disabled here, and the reason is ON
     SCREEN rather than implied by a grey box.
+
+    Immutable is not the same as finished, and the second half of this test is
+    that distinction. Every editing control stays shut -- nothing below this
+    line was relaxed -- and the screen OFFERS the one road that does not edit
+    the revision: copying it into a draft. Both surfaces that state the
+    immutability name that road in the same words, so a reader is never told
+    what they cannot do without being told what they can.
     """
     page = bench.page
     # A published revision arrives by publishing the seeded draft, which is the
@@ -118,6 +129,15 @@ def test_a_published_revision_disables_every_editing_control_and_says_why(
     before = bench.node_ids()
     bench.stage().press("t")
     assert bench.node_ids() == before
+
+    fresh = page.locator(NEW_DRAFT_CONTROL)
+    assert not fresh.is_disabled(), (
+        "every control was shut and no road was offered in their place")
+    assert fresh.inner_text() == NEW_DRAFT
+    for said in (page.locator(".studio-canvas__document").inner_text(),
+                 page.locator("#workflowInspector").inner_text()):
+        assert NEW_DRAFT in said, said
+        assert "stays exactly as it is" in said, said
     assert bench.problems == []
 
 

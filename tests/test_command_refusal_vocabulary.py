@@ -88,3 +88,45 @@ def test_draft_changed_is_a_conflict_and_says_what_to_do_about_it():
     """
     assert ERROR_STATUS["draft_changed"] == 409
     assert "read it again" in _FIXED_MESSAGES["draft_changed"]
+
+
+def test_draft_conflict_is_its_own_conflict_and_never_blames_the_request():
+    """The sibling code, pinned where it is decided.
+
+    Both arms it answers used to be something else, and both were wrong in the
+    same way. A save that found another window's draft standing overwrote it
+    silently -- no refusal at all. A publish whose reviewed draft had been
+    consumed answered `contract_invalid`, telling a window its REQUEST SHAPE was
+    invalid for a confirm that was perfectly well formed. It is 409 because the
+    request was right and the world moved, and it is not `draft_changed`
+    because that names a draft that is still stored and says something else.
+    """
+    assert ERROR_STATUS["draft_conflict"] == 409
+    assert ERROR_STATUS["draft_conflict"] != ERROR_STATUS["contract_invalid"]
+    assert "not the one this request" in _FIXED_MESSAGES["draft_conflict"]
+    assert _FIXED_MESSAGES["draft_conflict"] != _FIXED_MESSAGES["draft_changed"]
+
+
+def test_both_draft_conflict_roads_are_reviewed_facts_naming_no_digest():
+    """The two reviewed rows, built through the factories that own them.
+
+    A reviewed fact is rendered into a browser, so what may appear in one is
+    argued for a field at a time. These two carry ids the caller already
+    supplied and nothing else -- in particular never the standing draft's
+    digest, which is a fact about somebody else's document.
+    """
+    from conductor.command.api_contracts import ApiRefusal
+
+    save = ApiRefusal.conflicting_draft("release-check")
+    publish = ApiRefusal.unpublishable_draft("release-check", 2)
+
+    assert save.code == publish.code == "draft_conflict"
+    assert save.status == publish.status == 409
+    assert dict(save.detail) == {"workflow_id": "release-check"}
+    assert dict(publish.detail) == {"workflow_id": "release-check", "revision": 2}
+    for refusal in (save, publish):
+        assert "sha256" not in refusal.message
+        assert set(refusal.as_dict()["error"]) == {"code", "message", "detail"}
+    # The two are told apart by their field sets, so neither may answer with
+    # the other's sentence -- which is what a single row would have allowed.
+    assert save.message != publish.message

@@ -5,6 +5,7 @@
     "contract_invalid": 422,
     "csrf_denied": 403,
     "draft_changed": 409,
+    "draft_conflict": 409,
     "malformed_request": 400,
     "method_not_allowed": 405,
     "record_conflict": 409,

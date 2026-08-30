@@ -186,6 +186,70 @@ def test_a_stale_review_is_refused_as_a_conflict_and_not_as_a_bad_request(
     assert "read it again" in refused.value.message
 
 
+def test_a_review_whose_draft_was_published_first_is_refused_as_a_conflict(
+        tmp_path):
+    """The other way a review goes stale, and it needed its own code.
+
+    A workflow holds ONE draft. When a second window saves over the first's and
+    publishes, the draft the first window reviewed is not replaced but CONSUMED
+    -- so the digest comparison that raises `draft_changed` is never reached and
+    the arm above it answers instead. That arm said `contract_invalid`, which
+    told a window whose confirm was perfectly well formed that its request shape
+    was wrong: safe and unrecoverable at once, which is the same defect
+    `draft_changed` was minted to close, one arm further up.
+
+    Both halves are asserted -- the code and the durable tree -- because a
+    refusal that renamed itself while quietly writing something would satisfy
+    the first alone.
+    """
+    from conductor.command.api_contracts import ApiRefusal
+
+    store = a_store(tmp_path)
+    save(store, "FIRST REVISION")
+    studio_routes.publish_revision(store, WORKFLOW, reviewing(store))
+    save(store, "REVIEWED FIRST CLIENT DRAFT")
+    body = reviewing(store)
+    save(store, "SECOND CLIENT WORK")
+    studio_routes.publish_revision(store, WORKFLOW, reviewing(store))
+    assert store.revisions(WORKFLOW) == (1, 2) and standing_title(store) is None
+
+    with pytest.raises(ApiRefusal) as refused:
+        studio_routes.publish_revision(store, WORKFLOW, body)
+
+    assert refused.value.code == "draft_conflict"
+    assert refused.value.status == 409
+    assert refused.value.message == (
+        f"no draft of '{WORKFLOW}' stands to publish as revision 2")
+    assert dict(refused.value.detail) == {"workflow_id": WORKFLOW, "revision": 2}
+    assert store.revisions(WORKFLOW) == (1, 2), "the stale confirm published"
+    assert store.load(WORKFLOW, 2).title == "SECOND CLIENT WORK"
+
+
+def test_a_publish_naming_a_draft_the_store_does_not_hold_says_the_same_thing(
+        tmp_path):
+    """One arm, one code, and the route does not guess how it got here.
+
+    A publish-from-draft always names WHICH draft it reviewed --
+    `parse_workflow_revision` refuses a body carrying neither a document nor a
+    digest -- so this arm is only ever reached by a caller naming a draft the
+    store does not have. Consumed under an open review and never stored at all
+    are the same fact from here: the named draft is absent. Splitting them
+    would mean inventing a distinction out of a file that is missing either
+    way.
+    """
+    from conductor.command.api_contracts import ApiRefusal
+
+    store = a_store(tmp_path)
+
+    with pytest.raises(ApiRefusal) as refused:
+        studio_routes.publish_revision(
+            store, WORKFLOW,
+            {"revision": 1, "reviewed_digest": "sha256:" + "0" * 64})
+
+    assert refused.value.code == "draft_conflict"
+    assert store.revisions(WORKFLOW) == ()
+
+
 def test_a_malformed_publish_body_is_still_an_ordinary_contract_refusal(
         tmp_path):
     """The over-correction control: the new code must not swallow the old one.

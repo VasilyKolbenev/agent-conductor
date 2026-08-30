@@ -335,6 +335,8 @@ def test_every_fixed_code_has_one_test_owned_exact_message_and_empty_detail():
         "authorization_refused": "confirmation did not authorize the request",
         "record_conflict": "durable record identity conflicts",
         "draft_changed": "the draft changed since it was reviewed; read it again",
+        "draft_conflict": "the stored draft is not the one this request was "
+                          "working from",
     }
     assert set(expected) == set(ERROR_STATUS)
     for code, message in expected.items():

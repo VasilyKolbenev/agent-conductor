@@ -534,12 +534,26 @@ function saveControls(state, handlers) {
     held.nextRevision === null ? "Publish revision"
       : `Publish revision ${held.nextRevision}`, null);
   const check = button(handlers, "onValidate", "Validate", null);
+  //: The road out of a published revision, named once so the control and the
+  //: sentence beside it cannot drift apart, and shut with a reason -- never a
+  //: bare grey button -- whenever pressing it would do nothing.
+  const NEW_DRAFT = "Edit as new draft";
+  const shut = held.draft !== null
+    ? "There is already a drawing on screen; edit it and save the draft."
+    : (object(held.detail) === null || object(held.detail.published) === null
+      ? "This workflow has no published revision to copy."
+      : (held.writeReady ? null
+        : "This workflow has not been read since the connection came back."));
+  const fresh = button(handlers, "onEditPublished", NEW_DRAFT, null,
+    {disabled: shut === null ? null : "", title: shut});
   if (!held.writeReady || held.draft === null
       || held.savePhase === "submitting") {
     save.disabled = true;
-    save.title = held.draft === null
-      ? "There is no drawing to save."
-      : "This workflow has not been read since the connection came back.";
+    save.title = held.draft !== null
+      ? "This workflow has not been read since the connection came back."
+      : shut !== null ? "There is no drawing to save."
+        : `There is no drawing to save. ${NEW_DRAFT} copies the published `
+          + "revision into one you can change.";
   }
   if (!held.writeReady || !held.publishable) {
     publish.disabled = true;
@@ -551,7 +565,7 @@ function saveControls(state, handlers) {
         : "Publishing needs a SAVED draft the server says would construct a "
           + "revision. Save the drawing first, then read what stops it.");
   }
-  box.append(check, save, publish);
+  box.append(check, save, publish, fresh);
   if (held.reviewing) box.append(publishReview(state, handlers));
   return box;
 }
@@ -721,7 +735,7 @@ function runForm(state, handlers) {
  * @param {Element} mount `#workflowToolbar`
  * @param {object} state the reducer's frozen value
  * @param {object} handlers `onChooseWorkflow`, `onStartWorkflow`, `onValidate`,
- *   `onSaveDraft`, `onPublish`, `onOpenRun`
+ *   `onSaveDraft`, `onPublish`, `onEditPublished`, `onOpenRun`
  */
 export function mountToolbar(mount, state, handlers) {
   mount.replaceChildren(workflowPicker(state, handlers),

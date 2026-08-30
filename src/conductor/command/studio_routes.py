@@ -28,7 +28,7 @@ from typing import TYPE_CHECKING, Any
 
 from .adapters.provider import provider_projection
 from .api_contracts import ApiRefusal
-from .studio_contracts import parse_run, parse_workflow_revision
+from .studio_contracts import parse_draft_save, parse_run, parse_workflow_revision
 from .containment import run_route_violations
 from .contracts import (
     ActionRequest, ActionResultReceipt, ContractError, frozen_config_workflow,
@@ -38,7 +38,6 @@ from .graph_template import TemplateError, materialize
 from .store_errors import RecordConflict, StoreError
 from .workflow_draft import (
     DraftRefused,
-    parse_document,
     publish_candidate,
     draft_digest,
     saved_draft,
@@ -133,9 +132,42 @@ def save_draft(
     ``201`` when this call is what first gave the workflow a draft, ``200`` for
     every later save. No run is involved, so no frame is published -- exactly as
     publishing a template emits none.
+
+    The save is OPTIMISTIC: the body names which stored draft it is replacing,
+    and a save whose expectation is not what stands is refused rather than
+    written. Reading the standing draft, comparing it and writing are one
+    transaction for the reason the publish chain is one: the read is what
+    decides whether the write may happen, and a save landing between the two is
+    exactly the thing the comparison exists to refuse.
     """
-    created = saved_draft(templates, workflow_id, parse_document(body), clock)
-    return (201 if created else 200), workflow_state(templates, workflow_id)
+    asked = parse_draft_save(body)
+    with templates.transaction(workflow_id):
+        _replaces_what_was_read(templates, workflow_id, asked)
+        created = saved_draft(templates, workflow_id, asked.document, clock)
+        return (201 if created else 200), workflow_state(templates, workflow_id)
+
+
+def _replaces_what_was_read(
+        templates: "TemplateStore", workflow_id: str, asked) -> None:
+    """The draft this save replaces is the one its client last read.
+
+    Measured with two browser windows on one workflow: both drew, both saved,
+    and the second write replaced the first's stored document with no revision
+    holding it and no record anywhere that it had been saved. That is user work
+    destroyed silently, which is worse than any refusal.
+
+    Compared rather than merged: the alternative is this route deciding which of
+    two people's drawings is the real one. The refused client keeps its own
+    drawing -- nothing here touched it -- and the road forward is a read.
+
+    A client that read NO draft expects none, and a draft that has appeared
+    since is a conflict in exactly the same way: `None` on both sides agrees,
+    and `None` against a stored draft does not.
+    """
+    standing = templates.load_draft(workflow_id)
+    held = None if standing is None else draft_digest(standing.settled())
+    if held != asked.expected_digest:
+        raise ApiRefusal.conflicting_draft(workflow_id)
 
 
 def publish_revision(
@@ -183,7 +215,17 @@ def _publish_locked(
     from_draft = asked.document is None
     draft = templates.load_draft(workflow_id) if from_draft else None
     if from_draft and draft is None:
-        raise ApiRefusal.fixed("contract_invalid")
+        # `draft_conflict` and not `contract_invalid`: the body is well formed
+        # and the caller did nothing wrong -- the draft it named is not there.
+        # Measured in a browser with two windows on one workflow: the second
+        # saved and published, which consumed the one draft this workflow has,
+        # and the first was told its REQUEST SHAPE was invalid for a confirm
+        # that was perfectly well formed. A window told that can only offer the
+        # same confirm again; told this, it re-reads and puts the revision that
+        # now stands in front of the person. It is the same class as the save
+        # road's refusal one door back, because it is the same fact: the draft
+        # this client was working from is not what the store holds.
+        raise ApiRefusal.unpublishable_draft(workflow_id, asked.revision)
     document = draft.settled() if draft is not None else asked.document
     _publishes_what_was_reviewed(from_draft, asked, document)
     # A publish that would write the document already standing is refused here

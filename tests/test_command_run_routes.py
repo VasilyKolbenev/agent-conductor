@@ -47,6 +47,7 @@ from tests.test_command_workflow_routes import (
     api,
     code_of,
     contracts,
+    drafting,
     durable_digest,
     get,
     post,
@@ -513,7 +514,8 @@ def test_opening_a_run_announces_it_exactly_once(tmp_path):
     all four are driven and the whole list of frames is asserted.
     """
     subject, _store, _templates, events = a_project(tmp_path)
-    post(subject, f"/command/workflows/{WORKFLOW}/draft", INCOMPLETE["a cycle"])
+    post(subject, f"/command/workflows/{WORKFLOW}/draft",
+         drafting(subject, WORKFLOW, INCOMPLETE["a cycle"]))
     post(subject, "/command/runs", a_run(mode="nonsense"))
     assert post(subject, "/command/runs", a_run()).status == 201
     assert post(subject, "/command/runs", a_run()).status == 200

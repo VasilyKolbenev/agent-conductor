@@ -70,6 +70,13 @@ SCREENS = (
 #: shell invented one.
 PHASES = ("empty", "loading", "ready", "stale", "refused", "failed",
           "disconnected")
+#: The control that copies a published revision into an editable draft, and the
+#: selector that reaches it. Spelled here rather than imported: this module runs
+#: against its own read-only project and shares no fixture with the modules that
+#: write, so a label pinned in two places is two independent statements about
+#: one product rather than one statement made twice.
+NEW_DRAFT = "Edit as new draft"
+NEW_DRAFT_CONTROL = '#workflowToolbar [data-focus="action:onEditPublished"]'
 
 
 @pytest.fixture(scope="session")
@@ -535,6 +542,11 @@ def test_choosing_the_published_workflow_draws_its_revision_read_only(
     This is the read path end to end: a select change, a real GET, a landed
     payload, two drawn steps and one drawn connection -- and every editing
     control disabled with the reason on screen rather than implied by grey.
+
+    The banner also has to say what a reader may do INSTEAD, and the control
+    that does it has to be there and be pressable. Read-only was the whole
+    sentence once, and it left a person looking at a workflow they had no way
+    to change; the revision is still untouchable, and the road on is a copy.
     """
     page, problems = studio
     page.locator("#navWorkflow").click()
@@ -548,6 +560,11 @@ def test_choosing_the_published_workflow_draws_its_revision_read_only(
     assert page.locator('[data-add-kind="task"]').is_disabled()
     assert "no step can be added to it" in page.locator(
         ".studio-palette__note").inner_text()
+    assert f"{NEW_DRAFT} copies it into a draft you can change" in banner, banner
+    fresh = page.locator(NEW_DRAFT_CONTROL)
+    assert fresh.inner_text() == NEW_DRAFT
+    assert not fresh.is_disabled(), (
+        "the read-only revision was drawn with no road on from it")
     # The header names the PROJECT, because that is the thing a person opened.
     # It used to name the workflow, and only because no project name existed to
     # show; the workflow is named on the canvas banner and in the toolbar, both

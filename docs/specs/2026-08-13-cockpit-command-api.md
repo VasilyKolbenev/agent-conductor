@@ -327,7 +327,8 @@ choose a code.
   { "code": "capability_unsupported", "status": 409, "source": "capability" },
   { "code": "authorization_refused", "status": 409, "source": "authorization" },
   { "code": "record_conflict",       "status": 409, "source": "store" },
-  { "code": "draft_changed",         "status": 409, "source": "concurrency" }
+  { "code": "draft_changed",         "status": 409, "source": "concurrency" },
+  { "code": "draft_conflict",        "status": 409, "source": "concurrency" }
 ]
 ```
 
@@ -351,6 +352,21 @@ choose a code.
   not `record_conflict`, which is about a durable identity being reused. A
   client receiving it must re-read the workflow and present the new draft for
   review; retrying the same body is guaranteed to be refused again.
+- `draft_conflict` is its sibling, and the two are the whole concurrency
+  vocabulary this surface has. Every write against a workflow's draft names the
+  draft the client last READ — a save names the one it means to replace
+  (`expected_digest` / `expected_absent`), a publish names the one it reviewed
+  (`reviewed_digest`) — and this is the answer when the store no longer holds
+  that draft. It covers a save whose standing draft was replaced or has appeared
+  since the client looked, and a publish whose reviewed draft was consumed by
+  another client's publish or never existed. `draft_changed` stays a separate
+  word for a separate fact: there the reviewed draft is still stored and its
+  CONTENT moved. Neither is `contract_invalid` — the body is well formed, the
+  caller is not at fault, and a client told its request shape was wrong can only
+  send that shape again. A client receiving `draft_conflict` must re-read the
+  workflow; it MUST NOT resend, and it MUST NOT discard the drawing it holds.
+  The refusal carries reviewed detail naming the workflow, and the revision as
+  well on the publish road; it never names the standing draft's digest.
 - `route_unsafe` is held by the public typed dependency in section 1. API-1
   consumes only whether `run_route_violations` is empty; it never parses a
   rendered violation or `PreviewError` prose.

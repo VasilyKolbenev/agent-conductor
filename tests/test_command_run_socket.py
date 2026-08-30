@@ -128,7 +128,9 @@ def test_a_browser_can_draw_a_workflow_and_open_a_run_from_it_over_a_socket(
             sorted(SHIPPED)
 
         assert request(base, "POST", f"/command/workflows/{WORKFLOW}/draft",
-                       token=token, body=a_document())[0] == 201
+                       token=token,
+                       body={"document": a_document(),
+                             "expected_absent": True})[0] == 201
         status, document = _publish(base, token, WORKFLOW, 1)
         assert status == 201, document
         assert request(base, "GET", f"/command/workflows/{WORKFLOW}/revisions/1"
@@ -154,7 +156,9 @@ def test_a_browser_can_draw_a_workflow_and_open_a_run_from_it_over_a_socket(
 
         # And an unfinished drawing is refused the publish, on the wire.
         assert request(base, "POST", "/command/workflows/half-drawn/draft",
-                       token=token, body=INCOMPLETE["a dangling edge"])[0] == 201
+                       token=token,
+                       body={"document": INCOMPLETE["a dangling edge"],
+                             "expected_absent": True})[0] == 201
         status, refused = _publish(base, token, "half-drawn", 1)
         assert status == ERROR_STATUS["contract_invalid"]
         assert refused["diagnostics"][0]["code"] == "template_refused"

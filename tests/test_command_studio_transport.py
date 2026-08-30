@@ -34,6 +34,7 @@ from tests.test_command_workflow_routes import (
     a_document,
     api,
     code_of,
+    drafting,
     durable_digest,
     encode,
     get,
@@ -198,7 +199,7 @@ def test_a_studio_read_is_gated_on_host_and_needs_no_csrf_token(tmp_path):
     """
     subject, _store, _templates, _events = api(tmp_path)
     assert post(subject, f"/command/workflows/{WORKFLOW}/draft",
-                a_document()).status == 201
+                drafting(subject, WORKFLOW, a_document())).status == 201
     assert post(subject, f"/command/workflows/{WORKFLOW}/revisions",
                 publishing(subject, WORKFLOW, 1)).status == 201
     for path in ("/command/workflows", "/command/runs",

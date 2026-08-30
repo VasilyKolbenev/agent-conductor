@@ -204,6 +204,21 @@ def publishing(subject, workflow_id, revision):
             "reviewed_digest": None if draft is None else draft["digest"]}
 
 
+def drafting(subject, workflow_id, document):
+    """The draft body a window sends, naming the draft it expects to replace.
+
+    The expectation is read out of the workflow state -- the same place a real
+    window reads it -- so a contract change moves every call site together
+    rather than fifteen of them separately. ``expected_absent`` is the claim
+    that the client looked and found no stored draft, which is what every first
+    save says and what no blind save is able to say.
+    """
+    read = get(subject, f"/command/workflows/{workflow_id}").payload
+    draft = read.get("draft")
+    return ({"document": document, "expected_absent": True} if draft is None
+            else {"document": document, "expected_digest": draft["digest"]})
+
+
 def post(subject, path, body, **changes):
     return subject.handle(
         "POST", path, post_headers(body, **changes), encode(body))
@@ -227,7 +242,7 @@ def seeded(tmp_path, **changes):
     assert post(subject, f"/command/workflows/{SEEDED}/revisions",
                 {"revision": 1, "document": a_document()}).status == 201
     assert post(subject, f"/command/workflows/{SEEDED}/draft",
-                INCOMPLETE["a cycle"]).status == 201
+                drafting(subject, SEEDED, INCOMPLETE["a cycle"])).status == 201
     events.clear()
     return subject, store, templates, events
 
@@ -261,7 +276,7 @@ def test_the_durable_witness_this_module_uses_can_see_a_moved_byte(tmp_path):
         durable_digest(tmp_path)
 
     assert post(subject, f"/command/workflows/{WORKFLOW}/draft",
-                a_document()).status == 201
+                drafting(subject, WORKFLOW, a_document())).status == 201
     before = durable_digest(tmp_path)
     templates.draft_path(WORKFLOW).write_bytes(b"{}")
     assert durable_digest(tmp_path) != before
@@ -279,14 +294,16 @@ def test_a_draft_saved_over_the_route_is_durable_and_answers_the_whole_state(
     with the route that will refuse it.
     """
     subject, _store, templates, events = api(tmp_path)
-    created = post(subject, f"/command/workflows/{WORKFLOW}/draft", a_document())
+    created = post(subject, f"/command/workflows/{WORKFLOW}/draft",
+                   drafting(subject, WORKFLOW, a_document()))
     assert created.status == 201
     assert created.payload["publishable"] is True
     assert created.payload["diagnostics"] == []
     assert created.payload["next_revision"] == 1
     assert created.payload["draft"]["saved_at"] == NOW
 
-    again = post(subject, f"/command/workflows/{WORKFLOW}/draft", a_document())
+    again = post(subject, f"/command/workflows/{WORKFLOW}/draft",
+                 drafting(subject, WORKFLOW, a_document()))
     assert again.status == 200 and again.payload == created.payload
 
     # A FRESH API over the same directory sees the same draft.
@@ -298,6 +315,105 @@ def test_a_draft_saved_over_the_route_is_durable_and_answers_the_whole_state(
                             "workflow_id": WORKFLOW, "title": None,
                             "latest_revision": None, "revisions": [],
                             "has_draft": True, "unreadable": False}]
+    assert events == []
+
+
+#: Every body the save route refuses before it looks at a store: both
+#: expectation words, neither of them, and an "absent" that is not the claim it
+#: is supposed to be. Each is a request shape, so each is `contract_invalid` --
+#: and none of them may be read as an expectation the route then compares.
+MALFORMED_SAVES = {
+    "no expectation at all": lambda document: {"document": document},
+    "both expectations at once": lambda document: {
+        "document": document, "expected_absent": True,
+        "expected_digest": "sha256:" + "0" * 64},
+    "an absence claimed as false": lambda document: {
+        "document": document, "expected_absent": False},
+    "an absence claimed as a string": lambda document: {
+        "document": document, "expected_absent": "yes"},
+    "a digest that is not one": lambda document: {
+        "document": document, "expected_digest": "not-a-digest"},
+    "no document": lambda _document: {"expected_absent": True},
+    "an unknown field": lambda document: {
+        "document": document, "expected_absent": True, "because": "why not"},
+}
+
+
+@pytest.mark.parametrize("reason", sorted(MALFORMED_SAVES))
+def test_a_save_that_names_no_honest_expectation_is_refused_before_the_store(
+        tmp_path, reason):
+    """The expectation is part of the request shape, not an optional hint.
+
+    A save that could omit it would be a blind write wearing the new contract's
+    clothes, and blind writes are what silently destroyed another window's
+    stored draft. So "I did not look" has no spelling here: every one of these
+    is refused for its shape, before a durable byte is read or written.
+    """
+    subject, _store, templates, events = api(tmp_path)
+    # One honest save first, so the witness below is comparing a tree that has
+    # durable bytes in it rather than reporting about an empty directory.
+    assert post(subject, f"/command/workflows/{WORKFLOW}/draft",
+                {"document": a_document(), "expected_absent": True}
+                ).status == 201
+    events.clear()
+    before = durable_digest(tmp_path)
+
+    refused = post(subject, "/command/workflows/malformed-bench/draft",
+                   MALFORMED_SAVES[reason](a_document()))
+
+    assert (refused.status, code_of(refused)) == (
+        ERROR_STATUS["contract_invalid"], "contract_invalid"), reason
+    assert durable_digest(tmp_path) == before
+    assert templates.load_draft("malformed-bench") is None and events == []
+
+
+def test_a_save_whose_expectation_is_not_what_stands_is_refused_as_a_conflict(
+        tmp_path):
+    """Optimistic concurrency on the save road, in all three directions.
+
+    This is the fix for user work destroyed silently: two windows editing one
+    workflow both saved, the later write replaced the earlier one's stored
+    document, and no revision held it and no record said it had existed. Now a
+    save names the draft it means to replace and is refused when that is not
+    what stands.
+
+    Three ways to be wrong and each is asserted, because a build that compared
+    only one of them would pass a witness written for another: a stale digest,
+    an "absent" claimed over a draft that exists, and a digest named when
+    nothing is stored at all.
+    """
+    subject, _store, templates, events = api(tmp_path)
+    assert post(subject, f"/command/workflows/{WORKFLOW}/draft",
+                {"document": a_document(), "expected_absent": True}
+                ).status == 201
+    stored = templates.draft_path(WORKFLOW).read_bytes()
+    stale = get(subject, f"/command/workflows/{WORKFLOW}"
+                ).payload["draft"]["digest"]
+    assert post(subject, f"/command/workflows/{WORKFLOW}/draft",
+                {"document": a_document(title="Second"),
+                 "expected_digest": stale}).status == 200
+    events.clear()
+    before = durable_digest(tmp_path)
+
+    wrong = (
+        ("a stale digest", WORKFLOW, {"expected_digest": stale}),
+        ("an absence over a stored draft", WORKFLOW, {"expected_absent": True}),
+        ("a digest over no draft", "never-drawn",
+         {"expected_digest": stale}),
+    )
+    for reason, workflow_id, expectation in wrong:
+        refused = post(subject, f"/command/workflows/{workflow_id}/draft",
+                       {"document": a_document(title="Third"), **expectation})
+        assert (refused.status, code_of(refused)) == (
+            ERROR_STATUS["draft_conflict"], "draft_conflict"), reason
+        assert refused.payload["error"]["detail"] == {
+            "workflow_id": workflow_id}, reason
+        assert "sha256" not in refused.payload["error"]["message"], reason
+
+    assert durable_digest(tmp_path) == before, "a refused save wrote anyway"
+    assert templates.draft_path(WORKFLOW).read_bytes() != stored, (
+        "this test never replaced the first draft, so it proved nothing")
+    assert templates.load_draft(WORKFLOW).document["title"] == "Second"
     assert events == []
 
 
@@ -316,7 +432,7 @@ def test_reading_one_workflow_answers_a_json_object_a_browser_can_read(tmp_path)
     """
     subject, _store, templates, _events = api(tmp_path)
     assert post(subject, f"/command/workflows/{WORKFLOW}/draft",
-                a_document()).status == 201
+                drafting(subject, WORKFLOW, a_document())).status == 201
     read = get(subject, f"/command/workflows/{WORKFLOW}")
 
     assert read.payload == studio_routes.read_workflow(templates, WORKFLOW)[1]
@@ -328,7 +444,7 @@ def test_an_incomplete_draft_saves_over_the_route_and_refuses_to_publish(tmp_pat
     """Both halves of the draft contract, on the road a browser really takes."""
     subject, _store, templates, events = api(tmp_path)
     saved = post(subject, f"/command/workflows/{WORKFLOW}/draft",
-                 INCOMPLETE["a dangling edge"])
+                 drafting(subject, WORKFLOW, INCOMPLETE["a dangling edge"]))
     assert saved.status == 201 and saved.payload["publishable"] is False
     assert [row["code"] for row in saved.payload["diagnostics"]] == \
         ["template_refused"]
@@ -356,7 +472,7 @@ def test_a_foreign_draft_is_refused_over_the_route_with_no_diagnostics(
     subject, _store, templates, events = seeded(tmp_path)
     before = durable_digest(tmp_path)
     refused = post(subject, f"/command/workflows/{WORKFLOW}/draft",
-                   FOREIGN[reason])
+                   drafting(subject, WORKFLOW, FOREIGN[reason]))
     assert (refused.status, code_of(refused)) == (
         ERROR_STATUS["contract_invalid"], "contract_invalid")
     assert "diagnostics" not in refused.payload
@@ -368,7 +484,7 @@ def test_a_valid_draft_publishes_revision_one_and_the_draft_is_cleared(tmp_path)
     """The whole road: draw, save, publish, and the draft is spent."""
     subject, _store, templates, events = api(tmp_path)
     assert post(subject, f"/command/workflows/{WORKFLOW}/draft",
-                a_document()).status == 201
+                drafting(subject, WORKFLOW, a_document())).status == 201
     published = post(subject, f"/command/workflows/{WORKFLOW}/revisions",
                      publishing(subject, WORKFLOW, 1))
     assert published.status == 201
@@ -393,7 +509,7 @@ def test_the_draft_is_cleared_only_after_the_revision_file_exists(tmp_path):
     """
     subject, _store, templates, _events = api(tmp_path)
     assert post(subject, f"/command/workflows/{WORKFLOW}/draft",
-                a_document()).status == 201
+                drafting(subject, WORKFLOW, a_document())).status == 201
     draft_path = templates.draft_path(WORKFLOW)
     revision_path = templates.revision_path(WORKFLOW, 1)
     honest_save, honest_discard = templates.save, templates.discard_draft
@@ -422,7 +538,7 @@ def test_a_publish_that_carried_its_own_document_leaves_the_draft_standing(
     """A caller that supplied a document said nothing about anybody's draft."""
     subject, _store, templates, _events = api(tmp_path)
     assert post(subject, f"/command/workflows/{WORKFLOW}/draft",
-                INCOMPLETE["a cycle"]).status == 201
+                drafting(subject, WORKFLOW, INCOMPLETE["a cycle"])).status == 201
     standing = templates.draft_path(WORKFLOW).read_bytes()
     published = post(subject, f"/command/workflows/{WORKFLOW}/revisions",
                      {"revision": 1, "document": a_document()})
@@ -493,11 +609,11 @@ def test_publishing_can_never_rewrite_a_revision_that_already_stands(tmp_path):
     frozen = templates.revision_path(WORKFLOW, 1).read_bytes()
 
     post(subject, f"/command/workflows/{WORKFLOW}/draft",
-         a_document(title="Still drawing"))
+         drafting(subject, WORKFLOW, a_document(title="Still drawing")))
     post(subject, f"/command/workflows/{WORKFLOW}/revisions",
          publishing(subject, WORKFLOW, 2))
     post(subject, f"/command/workflows/{WORKFLOW}/draft",
-         INCOMPLETE["a dangling edge"])
+         drafting(subject, WORKFLOW, INCOMPLETE["a dangling edge"]))
     post(subject, f"/command/workflows/{WORKFLOW}/revisions",
          publishing(subject, WORKFLOW, 3))
     post(subject, f"/command/workflows/{WORKFLOW}/revisions",
@@ -524,7 +640,8 @@ def test_a_workflow_named_after_a_bundled_document_cannot_shadow_it(
     offered = get(subject, "/command/workflows").payload["starters"]
 
     assert post(subject, f"/command/workflows/{workflow_id}/draft",
-                a_document(title="A shadow")).status == 201
+                drafting(subject, workflow_id,
+                         a_document(title="A shadow"))).status == 201
     assert post(subject, f"/command/workflows/{workflow_id}/revisions",
                 publishing(subject, workflow_id, 1)).status == 201
 
@@ -545,9 +662,11 @@ def test_no_studio_read_moves_one_durable_byte(tmp_path):
     and an unreadable one -- the whole tree digested on both sides.
     """
     subject, _store, templates, events = api(tmp_path)
-    post(subject, f"/command/workflows/{WORKFLOW}/draft", a_document())
+    post(subject, f"/command/workflows/{WORKFLOW}/draft",
+         drafting(subject, WORKFLOW, a_document()))
     post(subject, f"/command/workflows/{WORKFLOW}/revisions", {"revision": 1})
-    post(subject, f"/command/workflows/{WORKFLOW}/draft", INCOMPLETE["a cycle"])
+    post(subject, f"/command/workflows/{WORKFLOW}/draft",
+         drafting(subject, WORKFLOW, INCOMPLETE["a cycle"]))
     post(subject, "/command/workflows/broken-workflow/revisions",
          {"revision": 1, "document": a_document()})
     # Unreadable in the one way this build already handles: a schema it does not

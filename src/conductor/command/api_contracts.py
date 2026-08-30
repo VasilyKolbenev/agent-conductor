@@ -49,6 +49,7 @@ ERROR_STATUS = MappingProxyType({
     "authorization_refused": 409,
     "record_conflict": 409,
     "draft_changed": 409,
+    "draft_conflict": 409,
 })
 
 _FIXED_MESSAGES = MappingProxyType({
@@ -72,6 +73,21 @@ _FIXED_MESSAGES = MappingProxyType({
     #: request shape is invalid", so it could only offer to try again -- which
     #: would publish the same stale review a second time.
     "draft_changed": "the draft changed since it was reviewed; read it again",
+    #: One class, two roads. A client writes against the draft it last READ --
+    #: a save names the one it means to replace, a publish names the one it
+    #: reviewed -- and this is the answer when the store no longer holds that
+    #: draft. `draft_changed` stays a separate word because it is a separate,
+    #: already-reviewed fact: the reviewed draft is still there and its CONTENT
+    #: moved. This one covers the draft that was replaced under a save and the
+    #: draft that is gone under a confirm, and neither is `contract_invalid`:
+    #: the body is well formed, the caller is not at fault, and a client told
+    #: its request shape was wrong can only send that shape again.
+    #:
+    #: The two roads carry different detail -- see `_REVIEWED_FACTS` -- so this
+    #: fixed sentence is the vocabulary-completeness one, never the answer a
+    #: real refusal on either road gives.
+    "draft_conflict": "the stored draft is not the one this request was "
+                      "working from",
 })
 
 ARGUMENT_SCHEMAS = MappingProxyType({
@@ -187,6 +203,18 @@ _REVIEWED_FACTS = (
     ("service_refused", ("provider_id",),
      lambda facts: (f"provider '{facts['provider_id']}' is not one this build "
                     "resolved as available")),
+    # The two roads a client writes against a draft it has read, kept apart by
+    # their field sets exactly as the two template rows above are: a SAVE names
+    # the workflow whose stored draft is not the one it meant to replace, and a
+    # PUBLISH names the revision it can no longer construct. Neither names the
+    # standing digest: which document is there is not something a refused
+    # caller should infer, and the read that follows answers it properly.
+    ("draft_conflict", ("workflow_id",),
+     lambda facts: (f"the stored draft of '{facts['workflow_id']}' is not the "
+                    "one this request expected to replace")),
+    ("draft_conflict", ("workflow_id", "revision"),
+     lambda facts: (f"no draft of '{facts['workflow_id']}' stands to publish "
+                    f"as revision {facts['revision']}")),
 )
 
 
@@ -278,6 +306,37 @@ class ApiRefusal(Exception):
         detail = {"template_id": template_id, "revision": revision}
         message = f"no stored template '{template_id}' at revision {revision}"
         return cls(_REFUSAL_BUILD, "service_refused", message, detail)
+
+    @classmethod
+    def conflicting_draft(cls, workflow_id: str) -> "ApiRefusal":
+        """Say the stored draft is not the one this save meant to replace.
+
+        The save road's half of `draft_conflict`. It names the workflow and
+        nothing about the document that is standing: the refused caller's road
+        forward is a READ, which answers that properly and in full.
+        """
+        if not _safe_id(workflow_id):
+            raise ValueError("draft refusal identifiers must be safe IDs") from None
+        detail = {"workflow_id": workflow_id}
+        message = (f"the stored draft of '{workflow_id}' is not the one this "
+                   "request expected to replace")
+        return cls(_REFUSAL_BUILD, "draft_conflict", message, detail)
+
+    @classmethod
+    def unpublishable_draft(cls, workflow_id: str, revision: int) -> "ApiRefusal":
+        """Say no draft stands to publish as the revision the caller named.
+
+        The publish road's half of the same class. A publish-from-draft always
+        names WHICH draft it reviewed, so this is only reached by a caller
+        naming one the store does not hold -- consumed by another client's
+        publish, or never stored at all, which is one fact from here.
+        """
+        if not _safe_id(workflow_id):
+            raise ValueError("draft refusal identifiers must be safe IDs") from None
+        detail = {"workflow_id": workflow_id, "revision": revision}
+        message = (f"no draft of '{workflow_id}' stands to publish as revision "
+                   f"{revision}")
+        return cls(_REFUSAL_BUILD, "draft_conflict", message, detail)
 
     @classmethod
     def service_no_providers(cls) -> "ApiRefusal":

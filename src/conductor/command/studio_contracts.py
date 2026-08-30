@@ -35,6 +35,14 @@ _REVISION_REQUIRED = frozenset({"revision"})
 #: document, because a supplied document IS its own identity. Without it a
 #: review could confirm one drawing and publish another that landed in between.
 _REVISION_FIELDS = _REVISION_REQUIRED | {"document", "reviewed_digest"}
+#: What a draft SAVE carries: the document, and which stored draft the client
+#: was working from when it drew. Exactly one of the two expectation words, for
+#: the reason `_REVISION_FIELDS` holds exactly one of its two -- a client that
+#: read a draft names its digest and one that read none says so out loud. There
+#: is no third spelling for "I did not look": a blind save is what silently
+#: destroyed another window's stored work, and it is unrepresentable now.
+_DRAFT_REQUIRED = frozenset({"document"})
+_DRAFT_FIELDS = _DRAFT_REQUIRED | {"expected_digest", "expected_absent"}
 #: What a run-creation request supplies. Every key is REQUIRED and the two that
 #: may be empty are spelled `null`, because a browser that omits a key and a
 #: browser that says "no workflow" must not be the same request.
@@ -66,6 +74,20 @@ class RevisionInput:
     revision: int
     document: Mapping[str, Any] | None
     reviewed_digest: str | None
+
+
+@dataclass(frozen=True)
+class DraftInput:
+    """One draft save, and the stored draft it expects to be replacing.
+
+    ``expected_digest`` is ``None`` when the client says it read no draft --
+    the settled form of ``expected_absent``. That is an EXPECTATION and not a
+    missing field: a save that arrives with neither word is refused, so ``None``
+    here always means "I looked and there was nothing", never "I did not look".
+    """
+
+    document: Mapping[str, Any]
+    expected_digest: str | None
 
 
 @dataclass(frozen=True)
@@ -151,6 +173,36 @@ def _exact_revision(value: object) -> int:
     if type(value) is not int or isinstance(value, bool) or value < 1:
         raise ApiRefusal.fixed("contract_invalid")
     return value
+
+
+def parse_draft_save(body: object) -> DraftInput:
+    """Validate a draft save: the document, and what it expects to overwrite.
+
+    The expectation is what makes this an OPTIMISTIC write rather than a blind
+    one, and it closes the same class `reviewed_digest` closes on the publish
+    road, one road earlier. Without it, two windows editing one workflow both
+    saved, the later write silently replaced the earlier one's stored work, and
+    nothing anywhere recorded that the earlier document had ever existed.
+
+    Exactly one of the two words, never both and never neither, and
+    ``expected_absent`` is exactly ``true``: "I read no draft" is a claim about
+    what the client saw, so it is said rather than spelled as a missing key that
+    a client which never looked would send by accident.
+    """
+    if not isinstance(body, Mapping) or any(not isinstance(key, str) for key in body):
+        raise ApiRefusal.fixed("contract_invalid")
+    supplied = set(body)
+    if not _DRAFT_REQUIRED <= supplied <= _DRAFT_FIELDS:
+        raise ApiRefusal.fixed("contract_invalid")
+    if ("expected_absent" in supplied) == ("expected_digest" in supplied):
+        raise ApiRefusal.fixed("contract_invalid")
+    absent = body.get("expected_absent")
+    if "expected_absent" in supplied and absent is not True:
+        raise ApiRefusal.fixed("contract_invalid")
+    return DraftInput(
+        document=_contract(parse_document, body["document"]),
+        expected_digest=None if absent is True
+        else _contract(_digest, "expected_digest", body["expected_digest"]))
 
 
 def parse_workflow_revision(body: object) -> RevisionInput:

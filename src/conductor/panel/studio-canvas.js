@@ -232,7 +232,8 @@ function documentSentence(shown) {
   if (shown.kind === "published") {
     const named = shown.revision === null ? "" : ` ${shown.revision}`;
     return `Showing published revision${named} — immutable and read-only. `
-      + "Save a draft to change this workflow.";
+      + "Edit as new draft copies it into a draft you can change; this "
+      + "revision stays exactly as it is.";
   }
   return "No workflow document is open. Choose a workflow, or start one from "
     + "a bundled starter.";

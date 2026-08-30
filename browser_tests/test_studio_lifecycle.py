@@ -55,6 +55,7 @@ from conductor.command.adapters.base import AdapterRegistry
 from conductor.command.contracts import DecisionReceipt
 from conductor.command.run_store import RunStore, snapshot_digest
 from conductor.command.template_store import TemplateStore
+from conductor.command.workflow_draft import draft_digest
 
 from tests.alpha3_graph_artifacts import dalio_definition
 from tests.test_command_graph_projection import (
@@ -77,6 +78,10 @@ DECIDER = "release-owner"
 #: The bundled starter this module draws from, and what it carries.
 STARTER = "dalio-v1"
 STARTER_STEPS = 8
+#: The control that copies a published revision into a draft, spelled the way
+#: `studio-view.saveControls` spells it, and named once for every importer.
+NEW_DRAFT = "Edit as new draft"
+NEW_DRAFT_CONTROL = '#workflowToolbar [data-focus="action:onEditPublished"]'
 TOKEN = "browser-only-process-token"
 #: The frozen configuration the Studio's OWN open-run route writes, spelled the
 #: way ``studio_contracts.RunInput.snapshot`` spells it: a cycle that is exactly
@@ -238,13 +243,15 @@ class _Window:
         #: network stack and is not a fault in the code under test.
         self.console_errors: list[str] = []
         self.page_errors: list[str] = []
-        self.rows: list[tuple[str, str]] = []
+        #: Method, url and BODY: the draft route's expectation is a fact a
+        #: window can drop with no rendered assertion noticing.
+        self.rows: list[tuple[str, str, str | None]] = []
         page.on("console", lambda message: self.console_errors.append(
             getattr(message, "text", ""))
             if getattr(message, "type", "") == "error" else None)
         page.on("pageerror", lambda error: self.page_errors.append(str(error)))
         page.on("request", lambda request: self.rows.append(
-            (request.method, request.url)))
+            (request.method, request.url, request.post_data)))
 
     @property
     def problems(self) -> list[str]:
@@ -253,6 +260,11 @@ class _Window:
     def writes(self, fragment: str) -> int:
         return len([row for row in self.rows
                     if row[0] == "POST" and fragment in row[1]])
+
+    def posted(self, fragment: str) -> list[dict]:
+        """Every body this window POSTed to a matching route, parsed."""
+        return [json.loads(row[2]) for row in self.rows
+                if row[0] == "POST" and fragment in row[1] and row[2]]
 
     def node_ids(self) -> list[str]:
         return self.page.locator("[data-node-id]").evaluate_all(
@@ -437,6 +449,11 @@ def test_saving_the_same_drawing_twice_does_not_move_the_stored_instant(
         assert again.settled() == first.settled()
         assert window.writes("/draft") == 2, (
             "the second save never reached the server, so this proved nothing")
+        # Two saves, two claims: the second names the draft the first stored.
+        sent = window.posted("/draft")
+        assert [sorted(set(body) - {"document"}) for body in sent] == [
+            ["expected_absent"], ["expected_digest"]]
+        assert sent[1]["expected_digest"] == draft_digest(first.settled())
         assert window.problems == []
     finally:
         page.context.close()
@@ -557,7 +574,9 @@ def test_the_window_cannot_publish_the_same_document_a_second_time(
     After a publish the draft is gone, so there is nothing to publish and
     nothing to save -- and both controls say exactly that rather than sitting
     there ready to write a second identical revision. The durable tree is
-    checked as well, because "the button is grey" is a claim about a button.
+    checked too, because "the button is grey" is a claim about a button. What
+    may NOT follow is a dead end, and this test used to record one: three
+    disabled controls and no road on at all.
     """
     page, window = _open(chromium, project)
     try:
@@ -571,10 +590,16 @@ def test_the_window_cannot_publish_the_same_document_a_second_time(
             '#workflowToolbar [data-focus="action:onPublish"]')
         save = page.locator(
             '#workflowToolbar [data-focus="action:onSaveDraft"]')
+        fresh = page.locator(NEW_DRAFT_CONTROL)
         assert publish.is_disabled()
         assert "Publishing needs a SAVED draft" in publish.get_attribute("title")
         assert save.is_disabled()
-        assert save.get_attribute("title") == "There is no drawing to save."
+        assert save.get_attribute("title") == (
+            "There is no drawing to save. Edit as new draft copies the "
+            "published revision into one you can change.")
+        assert not fresh.is_disabled(), "no road on was offered"
+        assert fresh.inner_text() == NEW_DRAFT
+        assert fresh.get_attribute("title") is None, "an excuse on a live road"
         assert window.writes("/revisions") == 1
         assert project.templates().revisions("once-bench") == (1,)
         assert window.problems == []

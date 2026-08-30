@@ -170,7 +170,8 @@ function documentHeader(shown) {
       : shown.kind === "published"
         ? `Showing published revision${shown.revision === null ? ""
           : ` ${shown.revision}`}. A published revision is immutable, so every `
-          + "control here is disabled."
+          + "control here is disabled. Edit as new draft copies it into a "
+          + "draft you can change; this revision stays exactly as it is."
         : "No workflow document is open."}));
   return head;
 }
