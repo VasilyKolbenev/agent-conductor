@@ -48,6 +48,7 @@ from conductor.command.graph_definition import GraphDefinition, GraphEdge, Graph
 from conductor.command.graph_values import REQUIRED_EVIDENCE
 from conductor.command.run_store import CorruptRun, RunStore, StoreError, snapshot_digest
 from conductor.command.runtime import AttemptState, ControlRuntime
+from conductor.command.verify_holds import EVIDENCE_UNNAMED, EVIDENCE_UNSOUND
 
 from tests.test_command_run_store import CONFIG, a_run
 from tests.test_command_runtime_authorize import (
@@ -229,11 +230,13 @@ def test_a_demanding_step_whose_verification_names_nothing_fails_verification(
 
     assert attempt.state is AttemptState.VERIFICATION_FAILED, attempt.state
     assert attempt.verification_evidence == ()
-    # The FACT: this refusal has a detail of its OWN, read from the runtime
-    # rather than typed here -- so a build that collapsed the two sentences reds
-    # whichever of them it kept. The word below is the change-detector beside it,
-    # and it is free to be reworded as long as it still says which field spoke.
-    assert attempt.receipt.detail != ControlRuntime._EVIDENCE_UNSOUND
+    # The FACT: this refusal has a detail of its OWN, and both sentences are read
+    # from `verify_holds` rather than typed here -- so a build that collapsed
+    # them into one reds whichever of them it kept. The word below is the
+    # change-detector beside it, free to be reworded as long as it still says
+    # which field spoke.
+    assert attempt.receipt.detail == EVIDENCE_UNNAMED
+    assert EVIDENCE_UNNAMED != EVIDENCE_UNSOUND
     assert "digest" in attempt.receipt.detail, attempt.receipt.detail
     # A terminal receipt was recorded, and it is not a success.
     outcomes = [row.value.outcome for row in store.read(RUN_ID).records
@@ -250,7 +253,7 @@ def test_the_plans_refusal_reads_differently_from_an_unsound_evidence_row(
     causal store relation" says nothing about a plan having asked for more.
     """
     _, demanded = a_run_of(tmp_path, required_evidence="digest", fields={})
-    assert demanded.receipt.detail != ControlRuntime._EVIDENCE_UNSOUND
+    assert demanded.receipt.detail != EVIDENCE_UNSOUND
 
     # The other refusal is unchanged, and it is the one the verifier suite pins:
     # a verification for another action does not stand at all.
@@ -270,7 +273,7 @@ def test_the_plans_refusal_reads_differently_from_an_unsound_evidence_row(
     unsound = runtime.execute(authorization)
 
     assert unsound.state is AttemptState.VERIFICATION_FAILED
-    assert unsound.receipt.detail == ControlRuntime._EVIDENCE_UNSOUND
+    assert unsound.receipt.detail == EVIDENCE_UNSOUND
 
 
 def test_a_step_that_demands_nothing_still_succeeds_on_a_digestless_verification(

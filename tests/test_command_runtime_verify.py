@@ -27,6 +27,7 @@ import pytest
 from conductor.command.adapters import AdapterVerification
 from conductor.command.contracts import EvidenceRef
 from conductor.command.runtime import AttemptState
+from conductor.command import verify_holds
 
 from tests.test_command_runtime_authorize import NOW, a_store
 from tests.test_command_runtime_execute import (
@@ -46,6 +47,75 @@ def seed_verified_evidence(store, adapter_id="claude-code", *,
         verified_by=adapter_id, verified_at=NOW)
     store.append(evidence)
     return evidence
+
+
+#: Each road out of the verify circuit, and the sentence the terminal receipt
+#: is owed on it. The expected values are READ from `verify_holds` rather than
+#: written here, so this is a relation between a road and the constant the
+#: product names for it -- not a pin on prose, which is free to be rewritten in
+#: one place and stay right in every other.
+ROADS = {
+    "raised": verify_holds.VERIFY_RAISED,
+    "another action": verify_holds.NOT_THIS_ACTION,
+    "unavailable": verify_holds.NO_VERIFIER,
+    "mismatch": "adapter verification was mismatch",
+    "unsound evidence": verify_holds.EVIDENCE_UNSOUND,
+    "verified": verify_holds.VERIFIED,
+}
+
+
+def _drive(store, road):
+    """One attempt down one of the six roads, through the real runtime."""
+    adapter = {
+        "raised": lambda: ScriptedAdapter(verify_raises=True),
+        "another action": lambda: ScriptedAdapter(
+            verify_state="verified",
+            verification_changes={"action_id": "action-somebody-else"}),
+        "unavailable": lambda: ScriptedAdapter(verify_state="unavailable"),
+        "mismatch": lambda: ScriptedAdapter(verify_state="mismatch"),
+        # Answers `verified` and names a ref nothing ever wrote, so the row
+        # relation is what refuses rather than the adapter's own word.
+        "unsound evidence": lambda: ScriptedAdapter(verify_state="verified"),
+        "verified": lambda: VerifiedAdapter(store),
+    }[road]()
+    runtime, authorization = authorized(store, adapter)
+    return runtime.execute(authorization)
+
+
+@pytest.mark.parametrize("road", sorted(ROADS))
+def test_each_road_out_of_the_verify_circuit_carries_its_own_sentence(
+        tmp_path, road):
+    """A receipt may not say something its outcome denies.
+
+    The five refusals and the one success are named constants in one module now,
+    which is what makes them one voice -- and also what makes swapping two of
+    them a single-token edit. A mutation did exactly that: the raised-verifier
+    road was made to carry "post-effect evidence was verified by the bound
+    adapter", so a `verification_failed` receipt claimed in its own detail that
+    the work had been verified, and every test in this suite stayed green. The
+    outcome was pinned everywhere and the sentence beside it nowhere.
+
+    So each road is driven and asked for its own sentence. The pairing below is
+    the point: five distinct refusals and one success, none of them
+    interchangeable, and the success sentence reachable only from the one road
+    that actually succeeds.
+    """
+    attempt = _drive(a_store(tmp_path), road)
+
+    assert attempt.receipt.detail == ROADS[road], attempt.receipt.detail
+    succeeded = road == "verified"
+    assert (attempt.state is AttemptState.SUCCEEDED) is succeeded, attempt.state
+    assert (attempt.receipt.detail == verify_holds.VERIFIED) is succeeded
+
+
+def test_no_two_roads_out_of_the_verify_circuit_say_the_same_thing():
+    """Six roads, six sentences. Two that matched would be one road to a reader.
+
+    Held over the constants rather than over a run, because it is a fact about
+    the vocabulary and not about any one attempt -- and because a duplicate here
+    would make the parametrized relation above pass for the wrong reason.
+    """
+    assert len(set(ROADS.values())) == len(ROADS)
 
 
 # -- Verified evidence must follow the durable effect observation --

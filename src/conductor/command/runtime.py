@@ -54,7 +54,7 @@ from threading import Lock
 from typing import Any
 from weakref import WeakValueDictionary
 
-from .adapters import AdapterRegistry, AdapterVerification, PreparedAction
+from .adapters import AdapterRegistry, PreparedAction
 from .attempt_replay import action_request_for, attempt_events_for, terminal_result_for
 from .attempts import AttemptEvent, OBSERVED_OUTCOMES, action_request_digest
 from .authorize_holds import (
@@ -63,7 +63,6 @@ from .authorize_holds import (
     _planned_node,
 )
 from .containment import render_legacy_run_route_violations, run_route_violations
-from .graph_causality import demanded_evidence
 from .contracts import (
     ActionProposal,
     ActionRequest,
@@ -90,6 +89,12 @@ from .runtime_values import (
     Budget,
     Confirmation,
     ExecutionError,
+)
+from .verify_holds import (
+    VERIFIED,
+    VERIFY_RAISED,
+    refused_verification,
+    standing_evidence,
 )
 
 
@@ -623,97 +628,45 @@ class ControlRuntime:
             self, request: ActionRequest, verifier: str,
             report: ActionResultReceipt, observed: AttemptEvent,
             history: tuple[AttemptState, ...]) -> Attempt:
-        """A reported success is not the terminal word until verify confirms it."""
+        """A reported success is not the terminal word until verify confirms it.
+
+        The three verdicts this arm reaches for are `verify_holds`': whether the
+        answer is proof at all, whether anything durable backs it, and the
+        sentence each refusal is owed. What stays here is what TOUCHES -- the
+        registry seam, the route gate, the store read, and the one durable
+        receipt `_finish` appends.
+        """
         try:
             verification = self._registry.verify(verifier, request, report)
         except Exception:  # noqa: BLE001 -- a broken verifier cannot confirm success
             return self._finish(
                 request, AttemptState.VERIFICATION_FAILED, history,
-                detail="adapter verify failed",
-                exit_code=report.exit_code)
-        if (not isinstance(verification, AdapterVerification)
-                or verification.action_id != request.action_id
-                or verification.adapter_id != verifier):
-            return self._finish(
-                request, AttemptState.VERIFICATION_FAILED, history,
-                detail="the adapter returned no verification for this action",
-                exit_code=report.exit_code)
-        if verification.state == "unavailable":
-            # No verifier is no proof, and no proof is not a success. This is the
-            # one place the whole product could be talked into believing an exit
-            # code, so the refusal lives HERE rather than inside whichever
-            # adapter happens to be honest today: any next harness may answer
-            # `unavailable`, and none of them may be believed for it.
-            return self._finish(
-                request, AttemptState.VERIFICATION_FAILED, history,
-                detail="execution observed; the adapter exposed no verifier, so "
-                       "nothing about the work is verified",
-                exit_code=report.exit_code)
-        if verification.state == "verified":
+                detail=VERIFY_RAISED, exit_code=report.exit_code)
+        refused = refused_verification(verification, request, verifier)
+        if refused is None:
             evidence, refused = self._causal_evidence(
                 request, verifier, observed, verification.evidence_refs)
             if evidence is not None:
                 return self._finish(
                     request, AttemptState.SUCCEEDED, history,
-                    detail="post-effect evidence was verified by the bound adapter",
+                    detail=VERIFIED,
                     exit_code=report.exit_code, evidence=evidence)
-            return self._finish(
-                request, AttemptState.VERIFICATION_FAILED, history,
-                detail=refused, exit_code=report.exit_code)
-        state = AttemptState.VERIFICATION_FAILED
-        detail = f"adapter verification was {verification.state}"
         return self._finish(
-            request, state, history, detail=detail,
-            exit_code=report.exit_code)
-
-    #: What a refusal says when the ROW itself is the problem.
-    _EVIDENCE_UNSOUND = "verified evidence did not satisfy the causal store relation"
+            request, AttemptState.VERIFICATION_FAILED, history,
+            detail=refused, exit_code=report.exit_code)
 
     def _causal_evidence(
             self, request: ActionRequest, verifier: str, observed: AttemptEvent,
             refs: tuple[str, ...]) -> tuple[tuple[EvidenceRef, ...] | None, str]:
-        """Resolve only bound verification evidence recorded after observation.
+        """Read this run back and ask `verify_holds` what its evidence proves.
 
-        Answers the evidence and no complaint, or `None` and the sentence saying
-        WHICH relation refused: a row that does not stand is this runtime's own
-        rule, a row standing while naming nothing checked is the PLAN's demand,
-        and one sentence for both would hide the field from whoever meets
-        `verification_failed`.
-
-        That demand is read through `graph_causality.demanded_evidence`, the
-        same function the store spends on both its roads, so the honest road and
-        a forged journal cannot disagree about what a plan said. Refusing here
-        too is `_hold_plan_bounds`' two-place shape: before a `succeeded`
-        receipt exists, and again over bytes we did not write.
+        The two lines that stayed are the two that touch: the route gate a read
+        of this run must pass, and the read itself. The relation is next door,
+        where it can be asked of a replayed run by anything that holds one.
         """
         self._hold_route(request.run_id, ExecutionError)
-        recovered = self._store.read(request.run_id)
-        rows = list(recovered.records)
-        index = next((
-            position for position, row in enumerate(rows)
-            if row.kind == "attempt_event" and row.value == observed), None)
-        if index is None:
-            return None, self._EVIDENCE_UNSOUND
-        eligible = {
-            row.value.evidence_id: row.value for row in rows[index + 1:]
-            if row.kind == "evidence"
-        }
-        evidence = tuple(eligible.get(ref) for ref in refs)
-        if any(row is None for row in evidence):
-            return None, self._EVIDENCE_UNSOUND
-        expected_uri = f"verification/{request.action_id}"
-        if any(
-                row.run_id != request.run_id or row.kind != "verification"
-                or row.uri != expected_uri or row.created_by != verifier
-                or row.verification != "verified" or row.verified_by != verifier
-                for row in evidence):
-            return None, self._EVIDENCE_UNSOUND
-        if (demanded_evidence(recovered, request.action_id) == "digest"
-                and any(row.digest is None for row in evidence)):
-            return None, ("this run's plan requires this step's verification "
-                          "to name what it checked, and it names no digest")
-        return tuple(EvidenceRef.from_dict(row.as_dict())
-                     for row in evidence), ""
+        return standing_evidence(
+            self._store.read(request.run_id), request, verifier, observed, refs)
 
     def _finish(
             self, request: ActionRequest, state: AttemptState,
