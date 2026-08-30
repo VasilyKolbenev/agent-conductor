@@ -175,3 +175,42 @@ def _request_repeats_its_proposal(
     _matches_its_node(recovered, "request", value.node_id, value.instance_id,
                       value.capability, value.arguments,
                       value.timeout_seconds)
+
+
+def permitted_verifier(recovered: "RecoveredRun", action_id: str) -> str | None:
+    """The adapter the PLAN says may sign this action's verification, if any.
+
+    `attempt_replay` requires a terminal success to carry verification evidence
+    signed by exactly ONE adapter identity, and until a plan could name a
+    verifier that identity could only be the one observed executing. A plan that
+    names a `verifier_instance_id` says somebody else checks, and evidence
+    signed by the doer is then precisely what must NOT be accepted -- so the
+    rule has to learn which identity the plan meant.
+
+    What does not change is the shape of the rule. Exactly one adapter may sign,
+    it is derived from FROZEN bytes and from nothing a caller supplies -- the
+    run's own graph record and its own frozen configuration, both already part
+    of the durable set this validation is a pure function of -- and an instance
+    the configuration does not declare resolves to nothing, which refuses.
+
+    `None` means the plan named no verifier, and every journal written before
+    this field existed answers `None`: their verdicts are byte-identical to
+    what they always were.
+    """
+    request = next(
+        (row.value for row in recovered.records
+         if row.kind == "action_request" and row.value.action_id == action_id),
+        None)
+    if request is None or request.node_id is None:
+        return None
+    graph = next((row.value for row in recovered.records
+                  if row.kind == "graph_definition"), None)
+    if graph is None:
+        return None
+    node = next((row for row in graph.nodes
+                 if row.node_id == request.node_id), None)
+    if node is None or node.verifier_instance_id is None:
+        return None
+    from .contracts import frozen_config_bindings
+
+    return frozen_config_bindings(recovered.config).get(node.verifier_instance_id)

@@ -46,6 +46,7 @@ from .graph_causality import (
     _one_graph_per_run,
     _proposal_matches_its_node,
     _request_repeats_its_proposal,
+    permitted_verifier,
 )
 from .graph_definition import GraphDefinition
 from .store_errors import (  # noqa: F401 -- re-exported under their old names
@@ -327,7 +328,8 @@ def _causal_order(
 
 
 def _hold_terminal_result(
-        prior_values: tuple[object, ...], value: ActionResultReceipt) -> None:
+        recovered: RecoveredRun, prior_values: tuple[object, ...],
+        value: ActionResultReceipt) -> None:
     """Everything an action's one terminal receipt must agree with.
 
     Extracted for `_hold_review_chain`'s reason: `_validate_new_relation` reads
@@ -356,7 +358,9 @@ def _hold_terminal_result(
     events = attempt_events_for(prior_values, value.action_id)
     if events:
         try:
-            validate_event_result(prior_values, value, events)
+            validate_event_result(
+                prior_values, value, events,
+                permitted_verifier(recovered, value.action_id))
         except AttemptRelationError as e:
             raise StoreError(str(e)) from e
 
@@ -621,7 +625,7 @@ class RunStore:
             except AttemptRelationError as e:
                 raise StoreError(str(e)) from e
         if isinstance(value, ActionResultReceipt):
-            _hold_terminal_result(prior_values, value)
+            _hold_terminal_result(recovered, prior_values, value)
         if isinstance(value, AttemptEvent):
             try:
                 validate_attempt_event(recovered.config, prior_values, value)

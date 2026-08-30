@@ -155,7 +155,7 @@ _OBSERVED_FINALS = {
 
 def _validate_result_evidence(
         values: Sequence[object], result: ActionResultReceipt,
-        observed: AttemptEvent) -> None:
+        observed: AttemptEvent, signer: str | None = None) -> None:
     if len(set(result.evidence_refs)) != len(result.evidence_refs):
         raise AttemptRelationError("event-bearing result evidence_refs must be unique")
     if result.evidence_refs and result.outcome != "succeeded":
@@ -166,28 +166,43 @@ def _validate_result_evidence(
         if isinstance(value, EvidenceRef)
     }
     for evidence_id in result.evidence_refs:
-        _validate_evidence(eligible.get(evidence_id), evidence_id, result, observed)
+        _validate_evidence(eligible.get(evidence_id), evidence_id, result,
+                           observed, signer)
 
 
 def _validate_evidence(
         evidence: EvidenceRef | None, evidence_id: str,
-        result: ActionResultReceipt, observed: AttemptEvent) -> None:
+        result: ActionResultReceipt, observed: AttemptEvent,
+        signer: str | None = None) -> None:
+    """Exactly ONE adapter identity may sign this action's verification.
+
+    `signer` is that identity when the run's own frozen plan named a verifier
+    other than the doer, and `None` when it did not -- in which case the
+    identity is the adapter observed executing, which is what this rule has
+    always required and what every journal written before a plan could name a
+    verifier still answers.
+
+    The CARDINALITY is the invariant and it is untouched: one permitted
+    signer, derived from frozen bytes, never from anything a caller supplies."""
     if evidence is None:
         raise AttemptRelationError(
             f"result evidence {evidence_id!r} must follow its observed attempt event")
     expected_uri = f"verification/{result.action_id}"
+    permitted = observed.adapter_id if signer is None else signer
     if (evidence.run_id != result.run_id
             or evidence.kind != "verification" or evidence.uri != expected_uri
-            or evidence.created_by != observed.adapter_id
-            or evidence.verified_by != observed.adapter_id
+            or evidence.created_by != permitted
+            or evidence.verified_by != permitted
             or evidence.verification != "verified"):
         raise AttemptRelationError(
-            f"result evidence {evidence_id!r} is not verified by the bound adapter")
+            f"result evidence {evidence_id!r} is not verified by "
+            f"{permitted!r}, the adapter this run's plan makes "
+            "authoritative for it")
 
 
 def validate_event_result(
         values: Sequence[object], result: ActionResultReceipt,
-        events: Sequence[AttemptEvent]) -> None:
+        events: Sequence[AttemptEvent], signer: str | None = None) -> None:
     if terminal_result_for(values, result.action_id) is not None:
         raise AttemptRelationError(f"action {result.action_id!r} already has a terminal result")
     lease = next((event for event in events if event.phase == "effect_lease"), None)
@@ -203,7 +218,7 @@ def validate_event_result(
             f"result outcome {result.outcome!r} contradicts observed {observed.outcome!r}")
     if result.exit_code != observed.exit_code:
         raise AttemptRelationError("result exit_code does not match the observed attempt event")
-    _validate_result_evidence(values, result, observed)
+    _validate_result_evidence(values, result, observed, signer)
 
 
 def _validate_lease_only_result(result: ActionResultReceipt) -> None:

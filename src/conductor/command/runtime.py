@@ -57,7 +57,11 @@ from weakref import WeakValueDictionary
 from .adapters import AdapterRegistry, AdapterVerification, PreparedAction
 from .attempt_replay import action_request_for, attempt_events_for, terminal_result_for
 from .attempts import AttemptEvent, OBSERVED_OUTCOMES, action_request_digest
-from .authorize_holds import _hold_attempt_identity, _hold_plan_bounds
+from .authorize_holds import (
+    _hold_attempt_identity,
+    _hold_plan_bounds,
+    _planned_node,
+)
 from .containment import render_legacy_run_route_violations, run_route_violations
 from .contracts import (
     ActionProposal,
@@ -418,7 +422,8 @@ class ControlRuntime:
         if report is None:
             return self._finish(canonical, AttemptState.UNKNOWN, history, detail=note)
         canonical_report = self._observed_report(canonical, observed)
-        return self._resolve(canonical, bound, canonical_report, observed, history)
+        return self._resolve(canonical, self._verifier_for(recovered, canonical),
+                             canonical_report, observed, history)
 
     @staticmethod
     def _replayed_attempt(request: ActionRequest, recovered: RecoveredRun) -> Attempt | None:
@@ -530,10 +535,10 @@ class ControlRuntime:
             self, request: ActionRequest, recovered: RecoveredRun,
             observed: AttemptEvent) -> Attempt:
         """Resolve a durable observation without preparing or executing again."""
-        _, bound = self._bound_adapter(recovered, request.instance_id)
         report = self._observed_report(request, observed)
         history = (AttemptState.ACCEPTED, AttemptState.STARTED)
-        return self._resolve(request, bound, report, observed, history)
+        return self._resolve(request, self._verifier_for(recovered, request),
+                             report, observed, history)
 
     @staticmethod
     def _observed_report(
@@ -582,23 +587,44 @@ class ControlRuntime:
             return report.exit_code is None or report.exit_code != 0
         return report.exit_code is None
 
+    def _verifier_for(self, recovered: RecoveredRun, request) -> str:
+        """WHICH adapter must confirm this action, out of the run's own config.
+
+        The plan may name a verifier other than the instance that does the work.
+        It names an INSTANCE, and this resolves it through `_bound_adapter` --
+        the same door, reading the same frozen configuration, refusing an
+        instance that configuration does not declare. So the ruling this
+        runtime has always held is untouched: a plan still cannot name an
+        adapter, a provider or a model, and which adapter drives an instance is
+        still a fact of the run and of nothing else. What a plan may now say is
+        WHO checks, in the vocabulary of the run's own bindings.
+
+        A step that names none is verified by the instance that did the work,
+        which is what this method returns and what every plan written before
+        this field existed says.
+        """
+        node = _planned_node(recovered, request.node_id)
+        named = None if node is None else node.verifier_instance_id
+        instance = request.instance_id if named is None else named
+        return self._bound_adapter(recovered, instance)[1]
+
     def _resolve(
-            self, request: ActionRequest, bound: str, report: ActionResultReceipt,
-            observed: AttemptEvent,
+            self, request: ActionRequest, verifier: str,
+            report: ActionResultReceipt, observed: AttemptEvent,
             history: tuple[AttemptState, ...]) -> Attempt:
         if report.outcome != "succeeded":
             return self._finish(
                 request, _NON_SUCCESS[report.outcome], history,
                 detail=f"adapter reported {report.outcome}", exit_code=report.exit_code)
-        return self._verify(request, bound, report, observed, history)
+        return self._verify(request, verifier, report, observed, history)
 
     def _verify(
-            self, request: ActionRequest, bound: str, report: ActionResultReceipt,
-            observed: AttemptEvent,
+            self, request: ActionRequest, verifier: str,
+            report: ActionResultReceipt, observed: AttemptEvent,
             history: tuple[AttemptState, ...]) -> Attempt:
         """A reported success is not the terminal word until verify confirms it."""
         try:
-            verification = self._registry.verify(bound, request, report)
+            verification = self._registry.verify(verifier, request, report)
         except Exception:  # noqa: BLE001 -- a broken verifier cannot confirm success
             return self._finish(
                 request, AttemptState.VERIFICATION_FAILED, history,
@@ -606,7 +632,7 @@ class ControlRuntime:
                 exit_code=report.exit_code)
         if (not isinstance(verification, AdapterVerification)
                 or verification.action_id != request.action_id
-                or verification.adapter_id != bound):
+                or verification.adapter_id != verifier):
             return self._finish(
                 request, AttemptState.VERIFICATION_FAILED, history,
                 detail="the adapter returned no verification for this action",
@@ -624,7 +650,7 @@ class ControlRuntime:
                 exit_code=report.exit_code)
         if verification.state == "verified":
             evidence = self._causal_evidence(
-                request, bound, observed, verification.evidence_refs)
+                request, verifier, observed, verification.evidence_refs)
             if evidence is not None:
                 return self._finish(
                     request, AttemptState.SUCCEEDED, history,
@@ -641,7 +667,7 @@ class ControlRuntime:
             exit_code=report.exit_code)
 
     def _causal_evidence(
-            self, request: ActionRequest, bound: str, observed: AttemptEvent,
+            self, request: ActionRequest, verifier: str, observed: AttemptEvent,
             refs: tuple[str, ...]) -> tuple[EvidenceRef, ...] | None:
         """Resolve only bound verification evidence recorded after observation."""
         self._hold_route(request.run_id, ExecutionError)
@@ -662,8 +688,8 @@ class ControlRuntime:
         expected_uri = f"verification/{request.action_id}"
         if any(
                 row.run_id != request.run_id or row.kind != "verification"
-                or row.uri != expected_uri or row.created_by != bound
-                or row.verification != "verified" or row.verified_by != bound
+                or row.uri != expected_uri or row.created_by != verifier
+                or row.verification != "verified" or row.verified_by != verifier
                 for row in evidence):
             return None
         return tuple(EvidenceRef.from_dict(row.as_dict()) for row in evidence)

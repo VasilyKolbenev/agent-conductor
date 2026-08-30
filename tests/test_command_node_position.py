@@ -1,5 +1,10 @@
 """Where a step SITS: a durable editor fact that no run may ever read.
 
+The refusals are `ContractError` rather than `TemplateError`: this value
+lives in `graph_values` with the other grammars both node contracts share,
+and it raises the base the way `settled_bounds` and `settled_purpose` beside
+it do. `TemplateError` subclasses it, so nothing narrowed.
+
 The mandate asks for "real 2D editor coordinates persisted SEPARATELY from
 execution semantics". Both halves of that are claims, and they fail in
 different ways, so both are held here:
@@ -28,13 +33,13 @@ from __future__ import annotations
 
 import pytest
 
+from conductor.command.contracts import ContractError
 from conductor.command.graph_definition import GraphDefinition, GraphNode
 from conductor.command.graph_template import (
     POSITION_LIMIT,
     GraphTemplate,
     NodePosition,
     RunBinding,
-    TemplateError,
     TemplateNode,
     load_template,
     materialize,
@@ -62,9 +67,9 @@ def test_a_coordinate_is_a_whole_number_of_pixels(value):
     so a check written as `isinstance(value, int)` admits them, and a step at
     `x=True` would be stored, read back and drawn at one pixel.
     """
-    with pytest.raises(TemplateError, match="whole pixels"):
+    with pytest.raises(ContractError, match="whole pixels"):
         NodePosition(x=value, y=0)
-    with pytest.raises(TemplateError, match="whole pixels"):
+    with pytest.raises(ContractError, match="whole pixels"):
         NodePosition(x=0, y=value)
 
 
@@ -78,9 +83,9 @@ def test_a_coordinate_stays_within_reach_of_the_origin():
     for sign in (1, -1):
         assert NodePosition(x=sign * POSITION_LIMIT, y=0).x == sign * POSITION_LIMIT
         assert NodePosition(x=0, y=sign * POSITION_LIMIT).y == sign * POSITION_LIMIT
-        with pytest.raises(TemplateError, match="within"):
+        with pytest.raises(ContractError, match="within"):
             NodePosition(x=sign * (POSITION_LIMIT + 1), y=0)
-        with pytest.raises(TemplateError, match="within"):
+        with pytest.raises(ContractError, match="within"):
             NodePosition(x=0, y=sign * (POSITION_LIMIT + 1))
 
 
@@ -90,11 +95,11 @@ def test_a_half_placed_step_is_refused_rather_than_completed():
     Nobody could tell that from one they chose, which is the whole reason the
     two axes are one value rather than two optional fields.
     """
-    with pytest.raises(TemplateError, match="both axes"):
+    with pytest.raises(ContractError, match="both axes"):
         NodePosition.from_dict({"x": 10})
-    with pytest.raises(TemplateError, match="both axes"):
+    with pytest.raises(ContractError, match="both axes"):
         NodePosition.from_dict({"y": 10})
-    with pytest.raises(TemplateError, match="unsupported field"):
+    with pytest.raises(ContractError, match="unsupported field"):
         NodePosition.from_dict({"x": 1, "y": 2, "z": 3})
 
 

@@ -67,6 +67,19 @@ from .contracts import (
     _timestamp,
 )
 
+from .graph_values import (  # noqa: F401 -- re-exported under old names
+    MAX_PURPOSE,
+    _json_object,
+    _positive,
+    MAX_ACTION_SECONDS,
+    MIN_LOOP_BOUND,
+    MAX_LOOP_BOUND,
+    POSITION_LIMIT,
+    NodePosition,
+    settled_bounds,
+    settled_purpose,
+)
+
 #: Dalio's five stages in the ONE order the product shows them. The order is
 #: part of the contract: a reader numbers the stages by index, so re-spelling
 #: this tuple re-numbers the product.
@@ -84,12 +97,6 @@ RESOURCE_KINDS = frozenset({
     "model", "tool", "skill", "session", "sandbox", "filesystem",
 })
 MAX_RESOURCES = 16
-MIN_LOOP_BOUND, MAX_LOOP_BOUND = 1, 99
-#: The widest timeout an ACTION contract accepts, so a plan-side ceiling is
-#: always one a real request could sit under. Held equal to the action
-#: contract's own bound by tests/test_command_graph_bounds.py rather than
-#: imported: `contracts` imports this module, and the reverse would be a cycle.
-MAX_ACTION_SECONDS = 86400
 #: The capabilities that make a node able to change the world. The runtime
 #: spells this ``adapters.process.DISPATCH_CAPABILITY``; a contract module may
 #: not import an adapter, so the two spellings are pinned equal by a test
@@ -176,26 +183,6 @@ def _json_list(name: str, value: object) -> list[Any]:
 _ABSENT = object()
 
 
-def _json_object(name: str, value: object) -> dict[str, Any]:
-    """A JSON object is exactly ``dict``, settled BEFORE anything reads it.
-
-    Everything else was being laundered rather than refused. A falsy value --
-    ``None``, ``[]``, ``""``, ``0``, ``False`` -- became an empty payload, so a
-    caller who sent the wrong shape was told nothing and the node claimed
-    arguments it never received. A list of pairs became a DIFFERENT object,
-    inventing a mapping nobody wrote. And a string or a number reached
-    ``dict()`` and left an untyped ``TypeError``/``ValueError`` carrying
-    whatever it carried.
-
-    A ``dict`` subclass is refused too: it answers ``items`` however it likes,
-    and this value is copied and digested.
-    """
-    if type(value) is not dict:
-        raise ContractError(
-            f"{name} must be a JSON object") from None
-    return value
-
-
 def _sequence(name: str, value: object) -> tuple[Any, ...]:
     """Materialize a caller's sequence, or refuse in this contract's own words.
 
@@ -209,14 +196,6 @@ def _sequence(name: str, value: object) -> tuple[Any, ...]:
         return tuple(value)
     except Exception:  # noqa: BLE001 -- a hostile iterable carries its own words
         raise ContractError(f"{name} could not be read as a sequence") from None
-
-
-def _positive(name: str, value: object, *, low: int, high: int) -> int:
-    if isinstance(value, bool) or not isinstance(value, int):
-        raise ContractError(f"{name} must be an integer, got {value!r}")
-    if not low <= value <= high:
-        raise ContractError(f"{name} must be between {low} and {high}, got {value}")
-    return value
 
 
 @dataclass(frozen=True)
@@ -281,86 +260,6 @@ class GraphLoop:
         return cls(bound=_take(data, "bound"), back_to=_take(data, "back_to"))
 
 
-#: The longest a step's purpose may be. A bound rather than free text: a purpose
-#: is durable, it is frozen into every run's plan, and for a task it is carried
-#: into the code-owned frame handed to a vendor binary -- three places where "as
-#: long as somebody pasted" is not an answer. Long enough for a sentence that
-#: says why a step exists, short enough that it cannot become the instruction.
-MAX_PURPOSE = 500
-
-
-def settled_purpose(purpose: object) -> str | None:
-    """One grammar for a step's purpose, judged the same in template and plan.
-
-    Prose a PERSON wrote about why a step exists. It is project-authored
-    context, and it is bounded, single-line and NUL-free for the reason the
-    bound exists: on a task node this rides into the frame a vendor binary is
-    handed, where an unbounded multi-line value would stop being context and
-    start being an instruction.
-
-    Absent stays absent, and so does whitespace -- an empty string is the same
-    answer as saying nothing -- so no document written before this field existed
-    changes a byte or moves a digest.
-    """
-    if purpose is None:
-        return None
-    if type(purpose) is not str:
-        raise ContractError("a step's purpose is text, or nothing at all")
-    settled = purpose.strip()
-    if not settled:
-        return None
-    if any(character in settled for character in ("\x00", "\n", "\r")):
-        raise ContractError(
-            "a step's purpose is one line of text: it carries no NUL and no "
-            "line break")
-    if len(settled) > MAX_PURPOSE:
-        raise ContractError(
-            f"a step's purpose is at most {MAX_PURPOSE} characters; this one "
-            f"is {len(settled)}")
-    return settled
-
-
-def settled_bounds(timeout_seconds: object,
-                   attempt_bound: object) -> dict[str, int | None]:
-    """The two plan-side ceilings, judged once for both node contracts.
-
-    ONE rule with one home, called by `GraphNode` and by `TemplateNode`. A
-    second copy would be a second answer to "what may a plan ask for", and the
-    template would be able to store a ceiling the definition it materializes
-    into would then refuse -- which is a plan that cannot run, discovered at
-    run time.
-
-    The timeout range is the ACTION contract's own, so a plan-side ceiling is
-    always one a real request could sit under: a plan naming 90000 seconds
-    would refuse every legal request, which is a plan nobody can run rather
-    than a strict one. The attempt range is the loop bound's, because
-    `MIN_LOOP_BOUND..MAX_LOOP_BOUND` is already what this product means by "how
-    many times may this be reopened", and a second, wider vocabulary for one
-    idea is two answers to one question.
-
-    `None` passes through untouched and means the plan constrains nothing.
-    `bool` is refused by `_positive`, because `True` is an `int` in Python and
-    it is not one attempt.
-
-    Args:
-        timeout_seconds: The longest this step's work may run, or None.
-        attempt_bound: The most attempts the plan allows it, or None.
-
-    Returns:
-        The settled values, keyed by field name.
-
-    Raises:
-        ContractError: Either value is present and not an integer in range.
-    """
-    settled: dict[str, int | None] = {}
-    for name, value, high in (
-            ("timeout_seconds", timeout_seconds, MAX_ACTION_SECONDS),
-            ("attempt_bound", attempt_bound, MAX_LOOP_BOUND)):
-        settled[name] = None if value is None else _positive(
-            f"node {name}", value, low=1, high=high)
-    return settled
-
-
 @dataclass(frozen=True)
 class GraphNode:
     """One step of the plan: what it is, where it runs, and what it needs."""
@@ -391,16 +290,26 @@ class GraphNode:
     #: vendor binary is handed. It decides nothing: no traversal, no ceiling and
     #: no verdict reads it.
     purpose: str | None = None
+    #: WHICH instance must confirm this step's success, when the plan names one
+    #: other than the instance that does the work. Absent means the doer
+    #: verifies itself, which is what every plan written before this existed
+    #: says and what the runtime did unconditionally.
+    #:
+    #: An INSTANCE and never an adapter: the run's frozen configuration remains
+    #: the only authority on which adapter drives an instance, so this changes
+    #: which binding is resolved and never how one is resolved.
+    verifier_instance_id: str | None = None
 
     _FIELDS = frozenset({
         "node_id", "kind", "title", "stage", "instance_id", "capability",
         "arguments", "resources", "gate_id", "loop", "timeout_seconds",
-        "attempt_bound", "purpose",
+        "attempt_bound", "purpose", "verifier_instance_id",
     })
 
     def __post_init__(self) -> None:
         self._settle_bounds()
         object.__setattr__(self, "purpose", settled_purpose(self.purpose))
+        self._settle_verifier()
         object.__setattr__(self, "node_id", _id("node_id", self.node_id))
         object.__setattr__(self, "kind", _enum("node kind", self.kind, NODE_KINDS))
         object.__setattr__(self, "title", _text("title", self.title))
@@ -424,6 +333,24 @@ class GraphNode:
             raise ContractError(
                 f"{self.kind} node {self.node_id!r} must not name a stage: a stage is "
                 "the work a task belongs to, not a gate or a loop")
+
+    def _settle_verifier(self) -> None:
+        """A verifier belongs to a step that has work to confirm, or to nothing.
+
+        A gate and a loop carry nothing out, so there is no execution for a
+        verifier to judge and naming one would be a field the runtime could
+        never reach. Refused here rather than ignored later, for the reason the
+        binding rule next door gives: a plan that stores an unreachable field is
+        a plan that says something it cannot do.
+        """
+        if self.verifier_instance_id is None:
+            return
+        if self.capability is None:
+            raise ContractError(
+                f"node {self.node_id!r} names a verifier and no capability; a "
+                "step that carries nothing out has nothing to verify")
+        object.__setattr__(self, "verifier_instance_id",
+                           _id("verifier_instance_id", self.verifier_instance_id))
 
     def _settle_binding(self) -> None:
         """A binding is whole or absent; half a binding names no runnable place."""
@@ -528,6 +455,8 @@ class GraphNode:
             out["attempt_bound"] = self.attempt_bound
         if self.purpose is not None:
             out["purpose"] = self.purpose
+        if self.verifier_instance_id is not None:
+            out["verifier_instance_id"] = self.verifier_instance_id
         return out
 
     @classmethod
@@ -553,7 +482,8 @@ class GraphNode:
             loop=None if loop is None else GraphLoop.from_dict(loop),
             timeout_seconds=data.pop("timeout_seconds", None),
             attempt_bound=data.pop("attempt_bound", None),
-            purpose=data.pop("purpose", None))
+            purpose=data.pop("purpose", None),
+            verifier_instance_id=data.pop("verifier_instance_id", None))
 
 
 @dataclass(frozen=True)
@@ -601,7 +531,8 @@ def _rebuilt_node(row: object) -> "GraphNode":
         arguments=node.payload(), resources=node.resources,
         gate_id=node.gate_id, loop=node.loop,
         timeout_seconds=node.timeout_seconds,
-        attempt_bound=node.attempt_bound, purpose=node.purpose)
+        attempt_bound=node.attempt_bound, purpose=node.purpose,
+        verifier_instance_id=node.verifier_instance_id)
 
 
 def _acyclic(nodes: tuple[GraphNode, ...], edges: tuple[GraphEdge, ...]) -> None:

@@ -75,14 +75,20 @@ from .graph_definition import (
     GraphEdge,
     GraphLoop,
     GraphNode,
-    settled_bounds,
-    settled_purpose,
     GraphResource,
     _ABSENT,
     _exact,
     _json_list,
     _json_object,
     _sequence,
+)
+
+from .graph_values import (
+    POSITION_LIMIT,
+    NodePosition,
+    _position,
+    settled_bounds,
+    settled_purpose,
 )
 
 #: Every word that names a DEPLOYMENT rather than a piece of work. A template
@@ -114,63 +120,6 @@ _PROBE_AT = "1970-01-01T00:00:00Z"
 _PROBE_GRAPH = "graph-template-probe"
 
 MAX_ROLES = 64
-#: How far a step may sit from the canvas origin, on either axis. A bound
-#: rather than a free integer, because a document is durable and a coordinate
-#: nobody could ever scroll to is a step a person cannot find again. Whole
-#: pixels: a canvas is a grid of them, and a fraction would put a rendering
-#: detail into a digested document.
-POSITION_LIMIT = 100_000
-
-
-@dataclass(frozen=True)
-class NodePosition:
-    """Where a person PUT a step on the canvas. Editor state, made durable.
-
-    It is on the template node and deliberately nowhere else. A position is not
-    execution semantics: `materialize` drops it, so a run's frozen plan carries
-    no coordinate, no replay depends on one, and moving a box on a screen can
-    never change what a run does. That separation is the whole reason this is a
-    value of its own rather than two more fields on the step -- a reader asking
-    "what does this step DO" never has to walk past where it sits.
-
-    Absent means the canvas may place the step itself, which is what every
-    template written before this existed says. `dalio-v1` and `dalio-v2` name
-    no position, so their revision digests do not move.
-    """
-
-    x: int
-    y: int
-
-    _FIELDS = frozenset({"x", "y"})
-
-    def __post_init__(self) -> None:
-        for name in self._FIELDS:
-            value = getattr(self, name)
-            if isinstance(value, bool) or not isinstance(value, int):
-                raise TemplateError(
-                    f"a node position names whole pixels; {name} is {value!r}")
-            if not -POSITION_LIMIT <= value <= POSITION_LIMIT:
-                raise TemplateError(
-                    f"a node position stays within {POSITION_LIMIT} of the "
-                    f"origin; {name} is {value}")
-
-    def as_dict(self) -> dict[str, Any]:
-        return {"x": self.x, "y": self.y}
-
-    @classmethod
-    def from_dict(cls, value: object) -> "NodePosition":
-        data = dict(_json_object("node position", value))
-        unknown = sorted(set(data) - cls._FIELDS)
-        if unknown:
-            raise TemplateError(
-                f"a node position carries unsupported field(s) {unknown!r}")
-        missing = sorted(cls._FIELDS - set(data))
-        if missing:
-            raise TemplateError(
-                f"a node position needs both axes; missing {missing!r}")
-        return cls(x=data["x"], y=data["y"])
-
-
 #: The one schema this contract speaks, and it is held EXACTLY rather than as a
 #: floor. `graph_definition` tolerates a forward version because it is an OPEN
 #: document: it carries fields it does not know through in `extra`, so a later
@@ -211,6 +160,12 @@ class TemplateNode:
     #: Why this step exists, in the words of whoever drew it. Optional, so every
     #: template written before it existed digests exactly as it did.
     purpose: str | None = None
+    #: WHO must confirm this step, as a ROLE. A template may not name an
+    #: instance -- `DEPLOYMENT_ONLY_FIELDS` refuses one -- and that is exactly
+    #: right here: a workflow says "a reviewer confirms this", and WHICH
+    #: participant fills that role is a fact of the run, settled by the binding
+    #: and frozen into the plan as `verifier_instance_id`.
+    verifier_role_id: str | None = None
     #: Where a person put this step on the canvas, or None to let the canvas
     #: place it. Editor state and not execution semantics: `materialize` does
     #: not carry it into the run's frozen plan, so no replay and no runtime
@@ -220,7 +175,7 @@ class TemplateNode:
     _FIELDS = frozenset({
         "node_id", "kind", "title", "stage", "role_id", "capability",
         "arguments", "resources", "gate_id", "loop", "timeout_seconds",
-        "attempt_bound", "purpose", "position",
+        "attempt_bound", "purpose", "verifier_role_id", "position",
     })
 
     def __post_init__(self) -> None:
@@ -252,6 +207,14 @@ class TemplateNode:
         # The DEFINITION's grammar, imported rather than restated: a purpose the
         # layer below would refuse is a template that cannot materialize.
         object.__setattr__(self, "purpose", settled_purpose(self.purpose))
+        if self.verifier_role_id is not None:
+            if self.role_id is None:
+                raise TemplateError(
+                    f"node {self.node_id!r} names a verifier role and binds no "
+                    "role of its own; a step that carries nothing out has "
+                    "nothing to verify")
+            object.__setattr__(self, "verifier_role_id",
+                               _id("verifier_role_id", self.verifier_role_id))
 
     def _settle_arguments(self) -> None:
         """Take the caller's payload once, then answer only from our own copy.
@@ -314,6 +277,8 @@ class TemplateNode:
             out["attempt_bound"] = self.attempt_bound
         if self.purpose is not None:
             out["purpose"] = self.purpose
+        if self.verifier_role_id is not None:
+            out["verifier_role_id"] = self.verifier_role_id
         if self.position is not None:
             out["position"] = self.position.as_dict()
         out["resources"] = [row.as_dict() for row in self.resources]
@@ -358,6 +323,7 @@ class TemplateNode:
             timeout_seconds=data.pop("timeout_seconds", None),
             attempt_bound=data.pop("attempt_bound", None),
             purpose=data.pop("purpose", None),
+            verifier_role_id=data.pop("verifier_role_id", None),
             position=_position(data.pop("position", None)))
 
 
@@ -418,10 +384,18 @@ class GraphTemplate:
 
     @staticmethod
     def _roles_of(nodes: Iterable[TemplateNode]) -> tuple[str, ...]:
+        """Every role a binding must cover, the doing ones and the verifying ones.
+
+        A verifier role counts. A binding that covered only the roles that do
+        work would leave a step naming a verifier nobody had assigned, and
+        `materialize` would then have to invent an instance or drop the field --
+        both of which are the thing this contract exists to prevent.
+        """
         seen: list[str] = []
         for node in nodes:
-            if node.role_id is not None and node.role_id not in seen:
-                seen.append(node.role_id)
+            for role in (node.role_id, node.verifier_role_id):
+                if role is not None and role not in seen:
+                    seen.append(role)
         return tuple(seen)
 
     @property
@@ -540,21 +514,6 @@ def _revision(value: object) -> int:
     return number
 
 
-def _position(value: object) -> "NodePosition | None":
-    """A position, or None when the document names none.
-
-    Absent and explicit-null are ONE fact here, unlike `arguments` next door:
-    there is no third thing a coordinate could mean, and a document that says
-    `"position": null` is saying the canvas may place this step -- which is
-    what saying nothing says.
-    """
-    if value is None:
-        return None
-    if type(value) is NodePosition:
-        return value
-    return NodePosition.from_dict(value)
-
-
 def _rebuilt_node(row: object) -> TemplateNode:
     """Take a node by IDENTITY of type and rebuild it from its attributes.
 
@@ -571,7 +530,8 @@ def _rebuilt_node(row: object) -> TemplateNode:
         role_id=row.role_id, capability=row.capability, arguments=row.payload(),
         resources=row.resources, gate_id=row.gate_id, loop=row.loop,
         timeout_seconds=row.timeout_seconds, attempt_bound=row.attempt_bound,
-        purpose=row.purpose, position=row.position)
+        purpose=row.purpose, verifier_role_id=row.verifier_role_id,
+        position=row.position)
 
 
 def _rebuilt_edge(row: object) -> GraphEdge:
@@ -690,7 +650,15 @@ def _build(template: GraphTemplate, assignments: Mapping[str, str], *,
             # Carried across, or the plan's ceilings would be a template fact
             # the run it materializes never hears about.
             timeout_seconds=node.timeout_seconds,
-            attempt_bound=node.attempt_bound, purpose=node.purpose)
+            attempt_bound=node.attempt_bound, purpose=node.purpose,
+            # A ROLE becomes an INSTANCE here and only here, through the same
+            # assignments every other binding goes through. That is what keeps
+            # the runtime adapter-agnostic: a plan names who verifies in the
+            # workflow's own vocabulary, and which adapter that resolves to is
+            # read from the run's frozen configuration like any other binding.
+            verifier_instance_id=(
+                None if node.verifier_role_id is None
+                else assignments[node.verifier_role_id]))
         for node in steps)
     return GraphDefinition(graph_id=graph_id, run_id=run_id,
                            created_at=created_at, nodes=nodes, edges=edges)
