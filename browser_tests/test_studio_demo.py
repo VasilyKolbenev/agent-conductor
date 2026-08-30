@@ -133,6 +133,13 @@ def test_the_runs_screen_lists_the_demo_run_with_its_outcome(
     said = page.locator("#bodyRuns").inner_text()
     assert "succeeded" in said, said
     assert "1 gate(s) waiting" in said, said
+    # WHICH plan it followed, in the LIST row rather than only after opening it.
+    # This test used to assert the outcome and the gate and stop there, which
+    # was exactly the shape of the complaint: two runs of two workflows were
+    # indistinguishable until you clicked into each. The payload carried both
+    # halves the whole time; the row simply did not render them.
+    assert (f"{demo_scenario.WORKFLOW_ID} rev {demo_scenario.REVISION}"
+            in said), said
     assert problems == []
 
 
@@ -196,4 +203,43 @@ def test_the_decisions_screen_shows_the_gate_still_waiting_for_a_person(
     # one alone never shows what an answer looks like afterwards.
     assert "gate satisfied" in said, said
     assert "gate idle" in said, said
+    assert problems == []
+
+
+def test_the_demo_front_door_does_not_open_on_five_blockers(front_door) -> None:
+    """The mandate's own complaint, measured where a first-time visitor meets it.
+
+    The Overview greeted a new visitor with five blocking rows -- one per
+    catalogued provider, each `unconfigured` -- before they had chosen a
+    workflow that needed any of them. Nothing was wrong with the machine; it
+    was a fresh install being described as five problems.
+
+    What is blocking now is a capability the CHOSEN revision declares that no
+    available provider serves, so nothing is blocking until a workflow is
+    chosen, and the row names the capability and the steps rather than the
+    product. Both halves are asserted: the five rows are gone, and the thing
+    that replaced them still appears when it is true.
+    """
+    page, problems = front_door
+    said = page.locator("#screenOverview").inner_text().lower()
+
+    assert "5 blocking" not in said, said
+    assert "is unconfigured on this machine" not in said, said
+
+    page.locator("#navWorkflow").click()
+    page.locator("#workflowToolbar select[name='workflow']").select_option(
+        demo_scenario.WORKFLOW_ID)
+    page.wait_for_selector('.studio-canvas__banner[data-document="published"]')
+    page.locator("#navOverview").click()
+    page.wait_for_function(
+        "() => document.getElementById('screenOverview').innerText"
+        ".toLowerCase().includes('no available provider serves')")
+
+    moved = page.locator("#screenOverview").inner_text().lower()
+    assert "no available provider serves dispatch" in moved, moved
+    assert "step(s) of this workflow need it" in moved, moved
+    # And it is still not one row per provider: the demo configures none, and
+    # the roster has five, so a rule that had merely been reworded would show
+    # five rows here too.
+    assert moved.count("no available provider serves") <= 2, moved
     assert problems == []

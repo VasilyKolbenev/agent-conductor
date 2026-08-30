@@ -390,6 +390,45 @@ def test_each_tab_names_the_panel_it_controls_and_each_panel_names_its_tab(
     assert problems == []
 
 
+def _choose_the_published_workflow(page: Page) -> None:
+    """Pick this project's one workflow and come back to the Overview."""
+    page.locator("#navWorkflow").click()
+    page.locator("#workflowToolbar select[name='workflow']").select_option(
+        WORKFLOW_ID)
+    page.wait_for_selector('.studio-canvas__banner[data-document="published"]')
+    page.locator("#navOverview").click()
+
+
+def test_the_overview_counts_as_blocking_only_what_a_revision_needs(
+        studio: tuple[Page, list[str]]) -> None:
+    """Not one row per unconfigured provider, before or after a workflow.
+
+    This project's readiness card DOES say no provider is available, and the
+    blocked card says nothing is blocking, and both are true: "you cannot open
+    a run yet" and "something stands between this workflow and running" are
+    different questions. This revision's two steps declare no capability at
+    all, so no provider could be in its way.
+
+    These assertions used to read `"5 blocking"` and `"provider claude-code is
+    unconfigured on this machine"` -- one row per catalogued provider, before
+    anybody had chosen a workflow that needed any of them. That was the
+    mandate's own complaint and this test was pinning it.
+
+    The POSITIVE case needs a revision that declares capabilities, so it lives
+    on the demo: `browser_tests/test_studio_demo.py`.
+    """
+    page, problems = studio
+    body = page.locator("#bodyOverview").inner_text().lower()
+    assert "nothing read so far is blocking" in body, body
+    assert "is unconfigured on this machine" not in body, body
+
+    _choose_the_published_workflow(page)
+    moved = page.locator("#bodyOverview").inner_text().lower()
+    assert "nothing read so far is blocking" in moved, moved
+    assert "is unconfigured on this machine" not in moved, moved
+    assert problems == []
+
+
 def test_the_overview_derives_its_readiness_from_the_payload_it_read(
         studio: tuple[Page, list[str]]) -> None:
     """A sentence with a REASON in it, and the reason MOVES with the payload.
@@ -413,16 +452,8 @@ def test_the_overview_derives_its_readiness_from_the_payload_it_read(
     # `project = "p"`, so that is the name that must appear.
     assert "this is p, the project this server was started in" in body
     assert "records no project name" not in body
-    # Every unreachable provider is counted as blocking, each row naming the
-    # payload it came from rather than a severity this window invented.
-    assert "5 blocking" in body
-    assert "provider claude-code is unconfigured on this machine" in body
 
-    page.locator("#navWorkflow").click()
-    page.locator("#workflowToolbar select[name='workflow']").select_option(
-        WORKFLOW_ID)
-    page.wait_for_selector('.studio-canvas__banner[data-document="published"]')
-    page.locator("#navOverview").click()
+    _choose_the_published_workflow(page)
     moved = page.locator("#bodyOverview").inner_text().lower()
     assert "no configured provider is available on this machine" in moved
     assert "no workflow is chosen" not in moved
@@ -581,4 +612,66 @@ def test_the_window_writes_nothing_into_browser_storage_while_it_reads(
         page.wait_for_selector(f"#{container}:not([hidden])")
     assert page.evaluate(
         "() => [localStorage.length, sessionStorage.length]") == [0, 0]
+    assert problems == []
+
+
+def _blocking(page: Page, state: object) -> list[str]:
+    """Ask the SHIPPED `blockingRows` what it makes of one crafted state.
+
+    The rendered assertions above cover the two states this project can be put
+    into from the screen. The third -- a provider that IS available and DOES
+    serve the capability a step needs -- cannot be reached that way, because the
+    fixture configures no provider and the demo configures none either. It is
+    the over-correction control and it is the one that matters: a rule that
+    answered "blocked" whatever the roster said would satisfy both rendered
+    cases and be wrong about the only case a working install is ever in.
+    """
+    import json
+
+    return page.evaluate(
+        "async (given) => { const m = await import('/panel/studio-view.js');"
+        " return m.blockingRows(given).map((row) => row.text); }",
+        json.loads(json.dumps(state)))
+
+
+def _state(*, nodes, providers):
+    """The smallest state shape `blockingRows` reads, and nothing else."""
+    return {
+        "workflows": {"problems": [], "diagnostics": [], "list": [],
+                      "detail": {"published": {"nodes": nodes}}},
+        "runs": {"list": []},
+        "providers": providers,
+    }
+
+
+def test_a_provider_blocks_only_what_the_chosen_revision_actually_needs(
+        studio: tuple[Page, list[str]]) -> None:
+    """The whole truth table, including the case the screens cannot produce."""
+    page, problems = studio
+    dispatching = [{"node_id": "do", "capability": "dispatch"}]
+    unconfigured = [{"provider_id": "claude-code", "availability": "unconfigured",
+                     "controls": ["dispatch", "review"]}]
+
+    # Nothing chosen: five unconfigured providers are five setup facts, not five
+    # problems. This is the mandate's complaint, stated as an empty list.
+    assert _blocking(page, _state(nodes=[], providers=unconfigured * 5)) == []
+
+    # Chosen, and nothing available serves what it needs: exactly ONE row, and
+    # it names the capability and the step rather than any product.
+    said = _blocking(page, _state(nodes=dispatching, providers=unconfigured * 5))
+    assert len(said) == 1, said
+    assert "No available provider serves dispatch" in said[0], said
+    assert "do" in said[0], said
+
+    # THE CONTROL: available, and serving that capability. Nothing is blocked.
+    serving = [{"provider_id": "claude-code", "availability": "available",
+                "controls": ["dispatch", "review"]}]
+    assert _blocking(page, _state(nodes=dispatching, providers=serving)) == []
+
+    # Available, but serving something else: blocked again, so "available" alone
+    # is not what the rule reads.
+    elsewhere = [{"provider_id": "claude-code", "availability": "available",
+                  "controls": ["review"]}]
+    assert len(_blocking(page, _state(nodes=dispatching,
+                                      providers=elsewhere))) == 1
     assert problems == []

@@ -229,6 +229,21 @@ function object(value) {
 
 // -- the list -----------------------------------------------------------------
 
+//: The plan a run froze itself to follow, as one phrase for a list row.
+//:
+//: Both halves or neither: `workflow_id` and `revision` are written together by
+//: the route and are null together for a run opened without a workflow, so a
+//: row showing an id with no revision would be describing a state the store
+//: cannot produce. The revision is the half that matters — two runs of one
+//: workflow at two revisions are two different plans.
+function followed(row) {
+  if (typeof row.workflow_id !== "string"
+      || !Number.isInteger(row.revision)) {
+    return "no workflow";
+  }
+  return `${row.workflow_id} rev ${row.revision}`;
+}
+
 function runSummary(row) {
   if (row.unreadable === true) {
     return [chip("fail", "unreadable"),
@@ -236,7 +251,13 @@ function runSummary(row) {
         text: "this journal did not replay"})];
   }
   const waiting = row.undecided_gates;
-  const parts = [`opened as ${show(row.envelope_status)}`,
+  // WHICH plan this run froze itself to follow, first, because it is the
+  // question a list of runs is usually being scanned for. The detail below has
+  // always shown it and the row payload has always carried it -- the row simply
+  // did not render it, so telling two runs of two workflows apart meant opening
+  // both. A run that follows no workflow says so rather than showing a gap.
+  const parts = [followed(row),
+    `opened as ${show(row.envelope_status)}`,
     `mode ${show(row.mode)}`,
     `${show(waiting)} gate(s) waiting`,
     `${show(row.open_actions)} action(s) open`];

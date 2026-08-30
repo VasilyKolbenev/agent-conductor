@@ -250,13 +250,46 @@ export function blockingRows(state) {
       text: `Run ${row.run_id} did not replay, so nothing derived from it can `
         + "be shown. It is listed rather than hidden."});
   }
-  for (const row of rows(state.providers).filter(
-    (entry) => entry.availability !== "available")) {
+  for (const [capability, steps] of unservedCapabilities(state)) {
     found.push({where: "agents", screen: "agents",
-      text: `Provider ${row.provider_id} is ${row.availability} on this `
-        + "machine, so nothing bound to it could carry a step out."});
+      text: `No available provider serves ${capability}, and ${steps.length} `
+        + `step(s) of this workflow need it: ${steps.join(", ")}.`});
   }
   return found;
+}
+
+//: Which capabilities THIS drawing needs that nothing available can carry out.
+//:
+//: This used to be one row per provider that was not `available`, which on a
+//: fresh install meant five blocking rows before the person had a workflow that
+//: needed any of them -- the mandate's own complaint, and a fair one: an
+//: unconfigured provider is a setup fact for the Agents screen, not a thing
+//: standing between this project and a run.
+//:
+//: What genuinely blocks is a capability the chosen steps declare and no
+//: available provider offers. It names the capability and the steps rather than
+//: the provider, because the plan asks for a capability and which product
+//: serves it is bound when a run opens. With no workflow chosen there is
+//: nothing to be blocked ON, and this answers empty.
+//:
+//: Read off the PUBLISHED revision and never off the drawing, for the reason
+//: `roleNames` gives one screen over: a run materializes a revision, so a
+//: capability only this window has drawn is one no run could ask for yet.
+function unservedCapabilities(state) {
+  const detail = object(state.workflows.detail);
+  const published = detail === null ? null : object(detail.published);
+  const needed = new Map();
+  for (const node of rows(published && published.nodes)) {
+    if (!node || typeof node.capability !== "string") continue;
+    if (!needed.has(node.capability)) needed.set(node.capability, []);
+    needed.get(node.capability).push(node.node_id);
+  }
+  const servable = new Set();
+  for (const row of rows(state.providers)) {
+    if (row.availability !== "available") continue;
+    for (const control of rows(row.controls)) servable.add(control);
+  }
+  return [...needed].filter(([capability]) => !servable.has(capability));
 }
 
 //: Whether this project could start a run, and WHY -- never a bare yes. The two
