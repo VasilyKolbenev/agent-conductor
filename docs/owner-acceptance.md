@@ -67,6 +67,15 @@ the screen must say it in words. A blank area is a finding. A spinner with no ex
 Go to **Workflow**. Create one, either empty or from a bundled starting point (the Dalio
 five-step cycle ships with the product and needs no network).
 
+**Two starters ship, and they must not look alike.** Each row names its revision and says
+whether it is ready to run; one of them says that four of its review steps name no result
+artifact, so those steps cannot succeed. If the two rows read identically you cannot choose
+between them, and that is a finding — they are not equal choices.
+
+**The workflow you just named must be the one the picker says is chosen**, immediately, without
+a save and without a reload. A picker that falls back to "choose a workflow" while you are
+looking at that workflow's drawing is a finding.
+
 **You must be able to tell**, from the screen: which workflow you are editing, whether what you
 are looking at is the published revision or your unsaved draft, and what stops it being
 publishable right now.
@@ -78,6 +87,16 @@ canvas must be operable from the keyboard, and every operation must also exist i
 
 **You must be able to** pan, zoom, select a step, select a connection, move a step, delete one,
 and duplicate one. A step you cannot reach with the Tab key is a finding.
+
+**Place a step three ways, and satisfy yourself they are one operation.** Drag one. Move another
+with Alt and an arrow. Type a coordinate pair into the inspector's **General** section for a
+third — a position the canvas alone can set is exactly the pointer-only affordance this step is
+looking for. Then use **Let the canvas place it** to hand one back to the automatic layout: if
+placing a step is a door that only opens one way, that is a finding.
+
+Where you put a step is stored in the workflow document, and step 14 asks you to confirm it came
+back. It is **not** execution semantics: a run's frozen plan carries no coordinate at all, so
+rearranging a drawing can never change what a run does.
 
 ## 6. Assign an implementer and a reviewer
 
@@ -205,9 +224,10 @@ following the revision it started with.
 Reload the page. Then stop `conduct up`, watch the screen, and start it again.
 
 **You must see**: the same published revision and the same draft after a reload — the draft is
-stored on the server, not in your browser; an honest disconnected state while the server is
-down, with write controls disabled rather than failing silently; and everything back after it
-returns, without losing work you had not saved.
+stored on the server, not in your browser; **every step you moved still where you left it**, for
+the same reason; an honest disconnected state while the server is down, with write controls
+disabled rather than failing silently; and everything back after it returns, without losing work
+you had not saved.
 
 ```powershell
 Get-Process conduct -ErrorAction SilentlyContinue | Stop-Process -Force

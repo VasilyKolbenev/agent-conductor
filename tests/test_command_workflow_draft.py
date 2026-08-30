@@ -559,8 +559,10 @@ def test_the_starters_are_read_off_the_wheel_and_are_nobodys_workflow(tmp_path):
     assert [row["starter_id"] for row in rows] == sorted(
         path.stem for path in TEMPLATE_DIR.glob("*.json"))
     for row in rows:
-        assert set(row) == {"starter_id", "title", "document"}
+        assert set(row) == {"starter_id", "title", "revision", "caveats",
+                            "document"}
         assert row["document"] == load_template(row["starter_id"]).as_dict()
+        assert row["revision"] == row["document"]["revision"]
 
     # A starter's document is a DRAFT once its two extra words are removed, and
     # that draft publishes as revision 1 of the workflow its user named.
@@ -569,3 +571,62 @@ def test_the_starters_are_read_off_the_wheel_and_are_nobodys_workflow(tmp_path):
     assert save(store, document, workflow="my-own-cycle").created
     assert publish(store, document, workflow="my-own-cycle").created
     assert store.load("my-own-cycle", 1).template_id == "my-own-cycle"
+
+
+def test_a_starter_carries_what_tells_it_apart_from_the_other_one():
+    """Two shipped starters, one title. The picker offered a coin flip.
+
+    `dalio-v1` and `dalio-v2` are both titled `Dalio five-step cycle` and differ
+    in a revision number and four arguments, so a list of titles showed two rows
+    nobody could tell apart. They are not equivalent choices either: v1's review
+    steps name no `result_artifact_ref`, and that is exactly what
+    `artifact_transport._review` refuses -- four of its steps cannot succeed.
+
+    The caveat is DERIVED from the document, by the same relation the runtime
+    enforces. A sentence written down beside the files would be a second
+    description free to go stale; this one cannot, and it is why no shipped byte
+    moved to fix a picker.
+    """
+    rows = {row["starter_id"]: row for row in starters()}
+    assert {row["title"] for row in rows.values()} == {"Dalio five-step cycle"}, (
+        "the starters stopped sharing a title; this test's premise is gone")
+
+    assert rows["dalio-v1"]["revision"] == 1
+    assert rows["dalio-v2"]["revision"] == 2
+    assert rows["dalio-v2"]["caveats"] == []
+    said = rows["dalio-v1"]["caveats"]
+    assert len(said) == 1, said
+    assert "4 review step(s) name no result artifact" in said[0], said
+    for node_id in ("goal", "identify", "diagnose", "design"):
+        assert node_id in said[0], said
+
+
+def test_a_starter_whose_reviews_publish_a_result_carries_no_caveat():
+    """The over-correction control, driven on documents this test builds.
+
+    A rule that answered "unpublishable" for everything would put a caveat on
+    the starter a person should choose, which is worse than no caveat at all.
+    Both directions, on the same document with one argument moved.
+    """
+    from conductor.command.workflow_draft import starter_caveats
+
+    published = load_template("dalio-v2")
+    assert starter_caveats(published) == []
+
+    unpublished = load_template("dalio-v1")
+    assert len(starter_caveats(unpublished)) == 1
+
+    # And the relation really is the argument, not the file name: the same
+    # document, with one review's result artifact removed, gains a caveat.
+    from conductor.command.graph_template import GraphTemplate
+
+    document = published.as_dict()
+    for node in document["nodes"]:
+        if node.get("capability") == "review":
+            node["arguments"] = {key: value
+                                 for key, value in node["arguments"].items()
+                                 if key != "result_artifact_ref"}
+            break
+    weakened = GraphTemplate.from_dict(document)
+    said = starter_caveats(weakened)
+    assert len(said) == 1 and "1 review step(s)" in said[0], said

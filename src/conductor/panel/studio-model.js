@@ -239,12 +239,18 @@ export function projectProviders(rows) {
   return frozenList(out.filter((row) => !conflicted.has(row.providerId)));
 }
 
-const STARTER_KEYS = ["starter_id", "title", "document"];
+const STARTER_KEYS = ["starter_id", "title", "revision", "caveats", "document"];
 
 //: The workflow documents this BUILD ships, offered as a starting point. The
 //: document travels whole and is carried unread: what makes it a template is
 //: the publish route's question, and asking it a second time here is how two
 //: judges are born.
+//:
+//: `revision` and `caveats` are carried because both shipped starters have the
+//: same title and are NOT equivalent choices. They are derived server-side from
+//: the documents themselves, so this end judges their SHAPE and never their
+//: content: a caveat is prose from the route, and a row whose caveats are not a
+//: list of strings is refused like any other malformed row.
 export function projectStarters(rows) {
   if (!Array.isArray(rows)) return frozenList([]);
   const out = [];
@@ -252,12 +258,17 @@ export function projectStarters(rows) {
   for (const row of rows) {
     if (!isPlainObject(row) || !exactKeys(row, STARTER_KEYS)) continue;
     if (!isId(row.starter_id) || !isText(row.title)) continue;
+    if (!Number.isInteger(row.revision) || row.revision < 1) continue;
+    if (!Array.isArray(row.caveats)
+        || !row.caveats.every((line) => isText(line))) continue;
     if (!isPlainObject(row.document) || !isJson(row.document, 0)) continue;
     if (seen.has(row.starter_id)) continue;
     seen.add(row.starter_id);
     out.push(Object.freeze({
       starterId: row.starter_id,
       title: row.title,
+      revision: row.revision,
+      caveats: frozenList(row.caveats.slice()),
       document: frozenJson(row.document),
     }));
   }

@@ -113,6 +113,63 @@ _PROBE_AT = "1970-01-01T00:00:00Z"
 _PROBE_GRAPH = "graph-template-probe"
 
 MAX_ROLES = 64
+#: How far a step may sit from the canvas origin, on either axis. A bound
+#: rather than a free integer, because a document is durable and a coordinate
+#: nobody could ever scroll to is a step a person cannot find again. Whole
+#: pixels: a canvas is a grid of them, and a fraction would put a rendering
+#: detail into a digested document.
+POSITION_LIMIT = 100_000
+
+
+@dataclass(frozen=True)
+class NodePosition:
+    """Where a person PUT a step on the canvas. Editor state, made durable.
+
+    It is on the template node and deliberately nowhere else. A position is not
+    execution semantics: `materialize` drops it, so a run's frozen plan carries
+    no coordinate, no replay depends on one, and moving a box on a screen can
+    never change what a run does. That separation is the whole reason this is a
+    value of its own rather than two more fields on the step -- a reader asking
+    "what does this step DO" never has to walk past where it sits.
+
+    Absent means the canvas may place the step itself, which is what every
+    template written before this existed says. `dalio-v1` and `dalio-v2` name
+    no position, so their revision digests do not move.
+    """
+
+    x: int
+    y: int
+
+    _FIELDS = frozenset({"x", "y"})
+
+    def __post_init__(self) -> None:
+        for name in self._FIELDS:
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, int):
+                raise TemplateError(
+                    f"a node position names whole pixels; {name} is {value!r}")
+            if not -POSITION_LIMIT <= value <= POSITION_LIMIT:
+                raise TemplateError(
+                    f"a node position stays within {POSITION_LIMIT} of the "
+                    f"origin; {name} is {value}")
+
+    def as_dict(self) -> dict[str, Any]:
+        return {"x": self.x, "y": self.y}
+
+    @classmethod
+    def from_dict(cls, value: object) -> "NodePosition":
+        data = dict(_json_object("node position", value))
+        unknown = sorted(set(data) - cls._FIELDS)
+        if unknown:
+            raise TemplateError(
+                f"a node position carries unsupported field(s) {unknown!r}")
+        missing = sorted(cls._FIELDS - set(data))
+        if missing:
+            raise TemplateError(
+                f"a node position needs both axes; missing {missing!r}")
+        return cls(x=data["x"], y=data["y"])
+
+
 #: The one schema this contract speaks, and it is held EXACTLY rather than as a
 #: floor. `graph_definition` tolerates a forward version because it is an OPEN
 #: document: it carries fields it does not know through in `extra`, so a later
@@ -150,11 +207,16 @@ class TemplateNode:
     #: existed says, so `dalio-v1` digests exactly as it did.
     timeout_seconds: int | None = None
     attempt_bound: int | None = None
+    #: Where a person put this step on the canvas, or None to let the canvas
+    #: place it. Editor state and not execution semantics: `materialize` does
+    #: not carry it into the run's frozen plan, so no replay and no runtime
+    #: decision can depend on where a box sits.
+    position: NodePosition | None = None
 
     _FIELDS = frozenset({
         "node_id", "kind", "title", "stage", "role_id", "capability",
         "arguments", "resources", "gate_id", "loop", "timeout_seconds",
-        "attempt_bound",
+        "attempt_bound", "position",
     })
 
     def __post_init__(self) -> None:
@@ -180,6 +242,9 @@ class TemplateNode:
         for name, value in settled_bounds(
                 self.timeout_seconds, self.attempt_bound).items():
             object.__setattr__(self, name, value)
+        # Taken through the same door a document goes through, so a caller
+        # handing a raw mapping and a caller handing a value get one answer.
+        object.__setattr__(self, "position", _position(self.position))
 
     def _settle_arguments(self) -> None:
         """Take the caller's payload once, then answer only from our own copy.
@@ -240,6 +305,8 @@ class TemplateNode:
             out["timeout_seconds"] = self.timeout_seconds
         if self.attempt_bound is not None:
             out["attempt_bound"] = self.attempt_bound
+        if self.position is not None:
+            out["position"] = self.position.as_dict()
         out["resources"] = [row.as_dict() for row in self.resources]
         return out
 
@@ -280,7 +347,8 @@ class TemplateNode:
             gate_id=data.pop("gate_id", None),
             loop=None if loop is None else GraphLoop.from_dict(loop),
             timeout_seconds=data.pop("timeout_seconds", None),
-            attempt_bound=data.pop("attempt_bound", None))
+            attempt_bound=data.pop("attempt_bound", None),
+            position=_position(data.pop("position", None)))
 
 
 @dataclass(frozen=True)
@@ -462,6 +530,21 @@ def _revision(value: object) -> int:
     return number
 
 
+def _position(value: object) -> "NodePosition | None":
+    """A position, or None when the document names none.
+
+    Absent and explicit-null are ONE fact here, unlike `arguments` next door:
+    there is no third thing a coordinate could mean, and a document that says
+    `"position": null` is saying the canvas may place this step -- which is
+    what saying nothing says.
+    """
+    if value is None:
+        return None
+    if type(value) is NodePosition:
+        return value
+    return NodePosition.from_dict(value)
+
+
 def _rebuilt_node(row: object) -> TemplateNode:
     """Take a node by IDENTITY of type and rebuild it from its attributes.
 
@@ -477,7 +560,8 @@ def _rebuilt_node(row: object) -> TemplateNode:
         node_id=row.node_id, kind=row.kind, title=row.title, stage=row.stage,
         role_id=row.role_id, capability=row.capability, arguments=row.payload(),
         resources=row.resources, gate_id=row.gate_id, loop=row.loop,
-        timeout_seconds=row.timeout_seconds, attempt_bound=row.attempt_bound)
+        timeout_seconds=row.timeout_seconds, attempt_bound=row.attempt_bound,
+        position=row.position)
 
 
 def _rebuilt_edge(row: object) -> GraphEdge:

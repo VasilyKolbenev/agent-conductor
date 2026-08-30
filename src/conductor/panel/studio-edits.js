@@ -28,7 +28,7 @@ function text(value) { return typeof value === "string" ? value : ""; }
 //: tests/test_studio_wiring.py holds the three copies equal. `EDIT_FIELDS` is
 //: every field name a `set-field` edit may carry, held the same way.
 export const EDIT_TYPES = Object.freeze(["add", "connect", "delete-edge",
-  "delete-node", "duplicate", "reorder", "set-field"]);
+  "delete-node", "duplicate", "move", "reorder", "set-field"]);
 export const EDIT_FIELDS = Object.freeze(["attempt_bound", "capability",
   "gate_id", "kind", "loop_back_to", "loop_bound", "resources", "role_id",
   "stage", "timeout_seconds", "title"]);
@@ -151,6 +151,47 @@ function withField(node, name, value) {
   return {node: optional(node, name, value), notice: ""};
 }
 
+//: The furthest from the origin a step may be put, and the grammar of a
+//: coordinate. `graph_template.POSITION_LIMIT` and `NodePosition` own the same
+//: two rules one layer down; refusing here as well is what stops a drag
+//: writing a draft the save route would then reject, which the person would
+//: meet as a save that failed for a reason nothing on screen explains.
+const POSITION_LIMIT = 100000;
+
+//: Unplacing is the same operation as placing -- it writes the same one field
+//: -- so it is a flag on `move` rather than a seventh word in a closed
+//: vocabulary that three modules hold equal. Without it a placement is a
+//: ONE-WAY door: the first drag takes a step out of the automatic layout for
+//: good, and `NodePosition | None` was built to allow exactly the way back.
+function unplaceNode(draft, edit) {
+  return replaceNode(draft, edit.nodeId, (node) => {
+    if (!isObject(node.position)) return {node, notice: ""};
+    const next = {...node};
+    delete next.position;
+    return {node: next, notice: ""};
+  });
+}
+
+function moveNode(draft, edit) {
+  if (edit.clear === true) return unplaceNode(draft, edit);
+  const x = Math.round(Number(edit.x));
+  const y = Math.round(Number(edit.y));
+  if (!Number.isInteger(x) || !Number.isInteger(y)
+      || Math.abs(x) > POSITION_LIMIT || Math.abs(y) > POSITION_LIMIT) {
+    return {draft: null,
+      notice: "A step stays within the canvas this build can store."};
+  }
+  return replaceNode(draft, edit.nodeId, (node) => {
+    const at = node.position;
+    // A move to where the step already is changes nothing, and saying it did
+    // would call a saved draft unsaved for a gesture that did not land.
+    if (isObject(at) && at.x === x && at.y === y) {
+      return {node, notice: ""};
+    }
+    return {node: {...node, position: {x, y}}, notice: ""};
+  });
+}
+
 function replaceNode(draft, nodeId, make) {
   const at = rows(draft.nodes).findIndex((node) => node.node_id === nodeId);
   if (at < 0) return {draft: null, notice: "That step is not in this drawing."};
@@ -241,6 +282,7 @@ const EDITS = Object.freeze({
   },
   "delete-node": dropNode,
   duplicate,
+  move: moveNode,
   reorder,
   "set-field": (draft, edit) => EDIT_FIELDS.includes(edit.field)
     ? replaceNode(draft, edit.nodeId,

@@ -446,8 +446,54 @@ def test_the_workflow_screen_offers_the_project_workflow_and_the_bundled_starter
     assert picker.locator("option").all_inner_texts() == [
         "choose a workflow", f"{WORKFLOW_ID} — {WORKFLOW_TITLE}"]
     starters = page.locator("#workflowToolbar select[name='new-from']")
-    assert starters.locator("option").all_inner_texts() == [
-        "start blank", "Dalio five-step cycle", "Dalio five-step cycle"]
+    offered = starters.locator("option").all_inner_texts()
+    assert offered[0] == "start blank"
+    # This used to read `["start blank", "Dalio five-step cycle", "Dalio
+    # five-step cycle"]`, and it passed: it was pinning the defect. Both shipped
+    # starters carry that one title, so the picker offered a person two rows
+    # they could not choose between -- and they are not equivalent, which is the
+    # half that made it worth fixing rather than tolerating.
+    assert len(offered[1:]) == len(set(offered[1:])) == 2, offered
+    assert all("Dalio five-step cycle · revision " in row for row in offered[1:])
+    ready = [row for row in offered[1:] if row.endswith("ready to run")]
+    caveated = [row for row in offered[1:] if "name no result artifact" in row]
+    assert len(ready) == 1 and len(caveated) == 1, offered
+    # And the caveat is the DERIVED one, naming the steps it read.
+    assert "4 review step(s)" in caveated[0], caveated
+    assert problems == []
+
+
+def test_a_workflow_just_started_is_the_one_the_picker_says_is_chosen(
+        studio: tuple[Page, list[str]]) -> None:
+    """A person who names a workflow is looking at it; the picker must agree.
+
+    The picker's rows are the SERVER's list, and a workflow just started is not
+    in it -- nothing has been saved under that id. Setting the control's value
+    to a name no option carried left it falling back to "choose a workflow",
+    so somebody who had just named a workflow and seeded its drawing was told
+    nothing was chosen, and only a save plus a reload put it right.
+
+    Nothing is written here: starting a workflow seeds a draft in the window and
+    issues a read, which is why this belongs in a module whose project is
+    otherwise read-only.
+    """
+    page, problems = studio
+    page.locator("#navWorkflow").click()
+    page.wait_for_selector("#screenWorkflow:not([hidden])")
+    picker = page.locator("#workflowToolbar select[name='workflow']")
+
+    page.locator('[data-focus="new-workflow"]').fill("a-brand-new-cycle")
+    page.locator('[data-focus="action:onStartWorkflow"]').click()
+    page.wait_for_function(
+        "() => document.querySelector(\"#workflowToolbar select[name='workflow']\")"
+        ".value === 'a-brand-new-cycle'")
+
+    assert picker.input_value() == "a-brand-new-cycle"
+    chosen = picker.locator("option:checked").inner_text()
+    assert chosen == "a-brand-new-cycle — new, not saved yet", chosen
+    # And the server's own row is still there, unshadowed by the new one.
+    assert f"{WORKFLOW_ID} — {WORKFLOW_TITLE}" in (
+        picker.locator("option").all_inner_texts())
     assert problems == []
 
 

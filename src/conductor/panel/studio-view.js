@@ -432,14 +432,39 @@ export function mountOverview(mount, state, handlers) {
 // -- the workflow toolbar -------------------------------------------------
 function workflowPicker(state, handlers) {
   const choose = handlerOf(handlers, "onChooseWorkflow");
+  const held = rows(state.workflows.list);
+  const chosen = state.workflows.selectedId || "";
+  // A workflow just STARTED is not in the server's list — nothing has been
+  // saved under that id yet — so setting `value` to it matched no option and
+  // the picker fell back to "choose a workflow". A person who had named a
+  // workflow and seeded its drawing was told nothing was chosen, and only a
+  // reload (after a save) fixed it. It gets an option of its own, saying what
+  // it is, so the picker reports the state the rest of the screen is in.
+  const unsaved = chosen && !held.some((row) => row.workflow_id === chosen)
+    ? [option(chosen, `${chosen} — new, not saved yet`)] : [];
   const control = element("select", {"data-focus": "pick-workflow",
     name: "workflow"}, [option("", "choose a workflow")].concat(
-    rows(state.workflows.list).map((row) => option(row.workflow_id,
-      `${row.workflow_id}${row.title === null ? "" : ` — ${row.title}`}`))));
-  control.value = state.workflows.selectedId || "";
+    held.map((row) => option(row.workflow_id,
+      `${row.workflow_id}${row.title === null ? "" : ` — ${row.title}`}`)),
+    unsaved));
+  control.value = chosen;
   if (choose === null) control.disabled = true;
   else control.addEventListener("change", () => choose(control.value || null));
   return field("Workflow", control);
+}
+
+//: What one starter is CALLED in the picker.
+//:
+//: Not its title. Both shipped starters are titled `Dalio five-step cycle`, so
+//: a list of titles offered two rows a person could not tell apart and could
+//: not choose between — and they are not equivalent: one ships four review
+//: steps that cannot succeed. The revision separates them and the caveat says
+//: which one to avoid, both derived by the route from the documents themselves.
+function starterLabel(row) {
+  const named = `${row.title} · revision ${row.revision}`;
+  return rows(row.caveats).length === 0
+    ? `${named} — ready to run`
+    : `${named} — ${row.caveats[0]}`;
 }
 
 //: Starting a workflow is TWO facts: the id it will live under, and the
@@ -452,7 +477,7 @@ function starterControls(state, handlers) {
     pattern: ID_PATTERN, spellcheck: "false", type: "text"});
   const from = element("select", {"data-focus": "new-from", name: "new-from"},
     [option("", "start blank")].concat(rows(state.workflows.starters).map(
-      (row) => option(row.starter_id, row.title))));
+      (row) => option(row.starter_id, starterLabel(row)))));
   const start = handlerOf(handlers, "onStartWorkflow");
   const go = element("button", {className: "studio-btn",
     "data-focus": "action:onStartWorkflow", text: "Start a workflow",

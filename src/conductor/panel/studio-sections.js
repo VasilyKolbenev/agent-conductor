@@ -47,8 +47,8 @@ export const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 //: The same closed edit vocabulary `studio-canvas.EDIT_TYPES` names, so both
 //: surfaces reach the draft through one callback and one word list.
 export const EDIT_TYPES = Object.freeze([
-  "add", "connect", "delete-edge", "delete-node", "duplicate", "reorder",
-  "set-field",
+  "add", "connect", "delete-edge", "delete-node", "duplicate", "move",
+  "reorder", "set-field",
 ]);
 //: Every field name an inspector edit may carry. `loop_bound` and `loop_back_to`
 //: are spelled flat because an edit names ONE field, and a nested path would be
@@ -206,6 +206,57 @@ function actionButton(mount, form, label, key, edit) {
   return button;
 }
 
+//: The furthest from the origin a step may be put. `graph_template`'s
+//: `POSITION_LIMIT` and `studio-edits` hold the same number; this one bounds
+//: the SPINNER, so the browser refuses out of range before a keystroke becomes
+//: an edit the reducer would have to talk somebody out of.
+const POSITION_LIMIT = 100000;
+
+//: Where a step sits, editable by typing as well as by dragging.
+//:
+//: The mandate asks for every canvas operation to be reachable through the
+//: inspector, and a position was the one that was not: a step could be placed
+//: by pointer and by Alt+arrow and by nothing a person could TYPE. It emits the
+//: same `move` edit the drag emits -- one operation, two surfaces, not two
+//: implementations of one idea.
+//:
+//: Both axes are committed together, from the pair's current values, because
+//: `NodePosition` refuses a half-placed step: an x with no y would be drawn at
+//: a coordinate this window invented and nobody could tell it from one they
+//: chose.
+function positionControls(box, form) {
+  const at = isObject(form.node.position) ? form.node.position : null;
+  const axes = {};
+  const send = () => call(form.handlers, "onEdit", {
+    type: "move", nodeId: form.node.node_id,
+    x: axes.x.value === "" ? 0 : Number(axes.x.value),
+    y: axes.y.value === "" ? 0 : Number(axes.y.value)});
+  for (const name of ["x", "y"]) {
+    const input = element("input", {"data-edit-field": `position_${name}`,
+      "data-focus": `edit-position-${name}`, max: String(POSITION_LIMIT),
+      min: String(-POSITION_LIMIT), name: `position_${name}`,
+      placeholder: "laid out", step: "1", type: "number"});
+    input.value = at === null ? "" : String(at[name]);
+    input.addEventListener("change", send);
+    const wrapper = field(`Canvas ${name}`, editable(input, form));
+    wrapper.classList.add("studio-field");
+    box.append(wrapper);
+    axes[name] = input;
+  }
+  if (at !== null) {
+    actionButton(box, form, "Let the canvas place it", "unplace",
+      {type: "move", nodeId: form.node.node_id, clear: true});
+  }
+  note(box, at === null
+    ? "Nobody has placed this step, so the canvas lays it out: its column "
+      + "comes from the connections and its row from the document's order. "
+      + "Type a pair here, or drag it, and it stays where you put it."
+    : "This step was placed. Where it sits is stored in the workflow document "
+      + "and comes back on reload — and it is not execution semantics: a run's "
+      + "frozen plan carries no coordinate, so moving a box can never change "
+      + "what the run does.");
+}
+
 // -- 1. General ------------------------------------------------------------
 
 export function generalSection(form) {
@@ -231,6 +282,7 @@ export function generalSection(form) {
     context(box, "Stage", "none — a gate or a loop names no stage",
       "the workflow contract");
   }
+  positionControls(box, form);
   unsupported(box, "Purpose / description",
     "A workflow step carries a title and no description field, so a "
     + "paragraph typed here would be stored nowhere and read by nothing.");
@@ -608,8 +660,10 @@ export function stepActions(form) {
     {type: "duplicate", nodeId: form.node.node_id});
   actionButton(box, form, "Delete step", "delete",
     {type: "delete-node", nodeId: form.node.node_id});
-  note(box, "Order is what the canvas rows read, and it is stored in the "
-    + "document. Columns come from the connections, so moving a step earlier "
-    + "or later never changes what depends on what.");
+  note(box, "Order is stored in the document, and it is what the canvas reads "
+    + "for the row of a step NOBODY HAS PLACED — a step with a canvas position "
+    + "sits where it was put and takes no row. Columns come from the "
+    + "connections either way, so moving a step earlier or later never changes "
+    + "what depends on what.");
   return box;
 }

@@ -14,8 +14,9 @@ import {element} from "./command-view.js";
 // The pure half of the canvas: where a step goes, and how an edge is named.
 // It moved next door when this file crossed the line cap, and is re-exported
 // so the surface both other slices code against did not move with it.
-import {canvasLayout, edgeEnds, edgeId} from "./studio-layout.js";
-export {canvasLayout, edgeEnds, edgeId};
+import {CELL, MOVE_NUDGE, canvasLayout, cellMid, cellX, cellY, droppedAt,
+  edgeEnds, edgeId} from "./studio-layout.js";
+export {CELL, canvasLayout, edgeEnds, edgeId};
 
 // -- vocabularies this module consumes -------------------------------------
 //
@@ -55,15 +56,14 @@ export const REVIEW_MARK = Object.freeze({
 //: `handlers.onEdit` is the single door to the draft document, so slice D wires
 //: one function and a new kind of edit cannot arrive unremarked.
 export const EDIT_TYPES = Object.freeze([
-  "add", "connect", "delete-edge", "delete-node", "duplicate", "reorder",
-  "set-field",
+  "add", "connect", "delete-edge", "delete-node", "duplicate", "move",
+  "reorder", "set-field",
 ]);
 
 //: Cell geometry, in the units the browser suite measures. Same model as
 //: `graph-view.CELL`, with one difference: the height is the FLOOR that
 //: `.studio-nodes .studio-node` declares, never the pitch -- `restack` measures
 //: that, because a step grows past its floor and a constant cannot follow it.
-export const CELL = Object.freeze({width: 210, height: 112, gapX: 46, gapY: 36});
 const ZOOM_MIN = 0.4;
 const ZOOM_MAX = 2;
 const ZOOM_STEP = 1.25;
@@ -143,10 +143,6 @@ export function runtimeIndex(state) {
   return {runId: String(runtime.run_id), byNode};
 }
 
-function cellX(cell) { return cell.column * (CELL.width + CELL.gapX); }
-function cellY(cell, pitch) { return cell.row * pitch; }
-function cellMid(cell, pitch) { return cell.row * pitch + (pitch - CELL.gapY) / 2; }
-
 //: The row pitch, MEASURED, with every step and port put on it and the box
 //: they need. `CELL.height` is a FLOOR -- `.studio-nodes .studio-node` declares
 //: it as a `min-height` and a step grows past it -- so the constant pitch
@@ -168,8 +164,15 @@ function restack(stage, drawn, context) {
     each.port.style.setProperty("--x", `${cellX(each.cell) + CELL.width}px`);
     each.port.style.setProperty("--y", `${cellMid(each.cell, context.pitch)}px`);
   }
-  context.box = {width: context.layout.columns * (CELL.width + CELL.gapX),
-    height: Math.max(0, context.layout.rows * context.pitch - CELL.gapY)};
+  // The stage holds the grid AND anything dragged past it, or a step placed to
+  // the right of every column would sit outside the scrollable area and be
+  // unreachable by the pointer that put it there.
+  const far = context.layout.far;
+  context.box = {
+    width: Math.max(context.layout.columns * (CELL.width + CELL.gapX),
+                    far.x + CELL.width),
+    height: Math.max(0, context.layout.rows * context.pitch - CELL.gapY,
+                     far.y + context.pitch - CELL.gapY)};
   stage.style.width = `${context.box.width}px`;
   stage.style.height = `${context.box.height}px`;
   return true;
@@ -296,8 +299,8 @@ function viewControls(view, handlers) {
 
 //: Every pointer road on this canvas has a key beside it, written down where
 //: the canvas is rather than in a document nobody opens.
-const KEY_LEGEND = "Keyboard: arrows move the selection · Alt+Up/Down "
-  + "moves the selected step earlier or later · Shift+arrows pan · "
+const KEY_LEGEND = "Keyboard: arrows move the selection · Alt+arrows move the "
+  + "selected step on the canvas · Shift+arrows pan · "
   + "+ and − zoom, 0 resets · t, g, l add a task, a human gate or a "
   + "loop after the selection · d duplicates · Delete removes · "
   + "Esc clears. Connecting two steps is a drag from a step's port, or the "
@@ -381,10 +384,15 @@ function nodeButton(node, context) {
   return button;
 }
 
-//: Dragging a step changes its ORDER in the document, which is the fact the
-//: layout reads -- a workflow step has no coordinates and this build stores
-//: none, so a drag that moved only pixels would be a control writing inert
-//: data. The row a step is dropped on is the index it takes.
+//: Dragging a step MOVES it: the document stores a position now, so where a
+//: person puts a box is a fact this build keeps and reads back. It used to
+//: change the step's ORDER instead, because a step had no coordinates and a
+//: drag that moved only pixels would have been a control writing nothing --
+//: the honest behaviour for a build that could not store the answer.
+//:
+//: Order is still a fact and still editable, in the inspector, where it is
+//: named as what it is. The two stopped being the same gesture the moment
+//: either could be expressed on its own.
 function bindNodeDrag(button, node, context) {
   let origin = null;
   button.addEventListener("pointerdown", (event) => {
@@ -398,20 +406,22 @@ function bindNodeDrag(button, node, context) {
     const dy = event.clientY - origin.y;
     const dx = event.clientX - origin.x;
     if (Math.abs(dx) + Math.abs(dy) > DRAG_SLOP) context.gesture.moved = true;
-    if (context.gesture.moved) button.style.transform = `translate(0px, ${dy}px)`;
+    // Both axes now: the x delta used to be measured and thrown away.
+    if (context.gesture.moved) {
+      button.style.transform = `translate(${dx}px, ${dy}px)`;
+    }
   });
   button.addEventListener("pointerup", (event) => {
     if (!origin) return;
-    const dy = event.clientY - origin.y;
+    const delta = {x: event.clientX - origin.x, y: event.clientY - origin.y};
     origin = null;
     button.style.transform = "";
     if (!context.gesture.moved) return;
-    const step = Math.round(dy / (context.view.zoom * context.pitch));
-    if (step !== 0) {
-      call(context.handlers, "onEdit", {
-        type: "reorder", nodeId: node.node_id,
-        index: context.index.get(node.node_id) + step});
-    }
+    const cell = context.layout.cells[node.node_id];
+    if (!cell) return;
+    const at = droppedAt(cell, context.pitch, delta, context.view.zoom);
+    call(context.handlers, "onEdit", {
+      type: "move", nodeId: node.node_id, x: at.x, y: at.y});
   });
 }
 
@@ -613,7 +623,7 @@ function selectionKey(event, nodes, context) {
 }
 
 function editKey(event, context) {
-  const {selection, handlers, editable, index} = context;
+  const {selection, handlers, editable} = context;
   if (!editable) return false;
   const kind = keyAdds(event.key);
   if (kind) {
@@ -635,12 +645,20 @@ function editKey(event, context) {
     call(handlers, "onEdit", {type: "duplicate", nodeId: selection.id});
     return true;
   }
-  const at = index.get(selection.id);
-  if (event.altKey && selection.kind === "node" && at !== undefined
-      && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
-    call(handlers, "onEdit", {type: "reorder", nodeId: selection.id,
-      index: at + (event.key === "ArrowDown" ? 1 : -1)});
-    return true;
+  // Alt and an arrow MOVE the selected step, on the same grid a drag snaps to
+  // and on all four axes -- pointer parity, which is the point: every gesture
+  // the canvas offers a pointer it offers a keyboard, or the canvas is a
+  // pointer-only surface with a keyboard story told about it. Order is edited
+  // in the inspector, by two buttons that say "Move earlier" and "Move later".
+  const nudge = MOVE_NUDGE[event.key];
+  if (event.altKey && selection.kind === "node" && nudge) {
+    const cell = context.layout.cells[selection.id];
+    if (cell) {
+      call(handlers, "onEdit", {
+        type: "move", nodeId: selection.id,
+        x: cellX(cell) + nudge.x, y: cellY(cell, context.pitch) + nudge.y});
+      return true;
+    }
   }
   return false;
 }
@@ -744,9 +762,10 @@ export function mountCanvas(mount, svg, state, handlers) {
       context.selection), viewControls(view, handlers),
     element("p", {className: "mono studio-canvas__keys", text: KEY_LEGEND}),
     element("p", {className: "studio-canvas__positions", text:
-      "Free positions are not stored by this build — a workflow step has "
-      + "no coordinates. Dragging a step changes its ORDER in the document, "
-      + "which is what the layout reads; columns come from the connections."}),
+      "Drag a step to place it, or hold Alt and press an arrow. Where you put "
+      + "it is stored in the workflow document and comes back on reload. A "
+      + "step nobody has placed is laid out by its connections; order is "
+      + "edited in the inspector, and it is a different fact from position."}),
   ]);
   // Chrome first, drawing after, both in normal flow: the well scrolls one
   // column and no control is stacked over a step.

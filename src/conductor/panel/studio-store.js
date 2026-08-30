@@ -136,7 +136,8 @@ function wireProviders(value) {
 
 function wireStarters(value) {
   return Object.freeze(projectStarters(value).map((row) => Object.freeze({
-    starter_id: row.starterId, title: row.title, document: row.document,
+    starter_id: row.starterId, title: row.title, revision: row.revision,
+    caveats: row.caveats, document: row.document,
   })));
 }
 

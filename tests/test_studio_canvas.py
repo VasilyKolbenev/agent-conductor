@@ -341,6 +341,14 @@ def test_the_canvas_offers_a_keyboard_road_beside_every_pointer_one():
 
     The add keys are derived from the step vocabulary rather than listed, so a
     fourth kind cannot arrive with no key beside it.
+
+    The MODIFIERS are derived too, and that is a correction. This list used to
+    carry `Alt+Up/Down`, which named a binding rather than a fact: Alt reordered
+    a step then and moves it now, so the pin went red on an honest rewrite while
+    saying nothing about whether Alt was still bound to anything at all. What
+    the legend owes is a mention of every modifier the canvas BRANCHES on --
+    unbind one and the derived set shrinks with the code, which is the failure
+    this test exists to catch.
     """
     canvas = _code(CANVAS)
     adds = dict(re.findall(r'(\w+): "(\w+)"', re.search(
@@ -348,15 +356,40 @@ def test_the_canvas_offers_a_keyboard_road_beside_every_pointer_one():
         re.DOTALL).group(1)))
     assert set(adds.values()) == graph_definition.NODE_KINDS
     legend = re.search(r'const KEY_LEGEND = (.*?);\n', canvas, re.DOTALL).group(1)
-    for key in list(adds) + ["Alt+Up/Down", "Shift+arrows", "Delete", "Esc",
-                             "arrows move the selection", "d duplicates",
-                             "+ and − zoom, 0 resets"]:
+    modifiers = {"altKey": "Alt+", "shiftKey": "Shift+"}
+    named = sorted(word for branch, word in modifiers.items()
+                   if f"event.{branch}" in canvas)
+    assert named == ["Alt+", "Shift+"], (
+        "a modifier stopped being branched on, or a new one arrived unnamed")
+    for key in list(adds) + named + ["Delete", "Esc",
+                                     "arrows move the selection",
+                                     "d duplicates", "+ and − zoom, 0 resets"]:
         assert key in legend, key
     # Every keyed operation is reachable without one: selection, view, add,
     # delete, duplicate and reorder all go through the same closed vocabulary
     # the palette, the view bar and the inspector use.
     assert set(re.findall(r'type: "([a-z-]+)"', canvas)) <= set(
         _js_ordered(canvas, "EDIT_TYPES")) | {"button"}
+
+
+def test_the_alt_modifier_moves_the_selected_step_and_says_so():
+    """What Alt DOES, held where the wording is free to change and the fact is not.
+
+    Two halves, because they fail separately: the canvas must reach the `move`
+    edit from a key -- not only from a drag -- and the legend must describe that
+    key as moving rather than as whatever it used to do. A build that unbound
+    the key would keep a legend advertising it; a build that rewrote the legend
+    would keep a key nobody could find.
+    """
+    canvas = _code(CANVAS)
+    branch = re.search(
+        r"const nudge = MOVE_NUDGE\[event\.key\];\s*(.*?)\n  \}\n  return false;",
+        canvas, re.DOTALL)
+    assert branch, "Alt no longer reaches a move through MOVE_NUDGE"
+    assert "event.altKey" in branch.group(1)
+    assert 'type: "move"' in branch.group(1)
+    legend = re.search(r'const KEY_LEGEND = (.*?);\n', canvas, re.DOTALL).group(1)
+    assert "move" in legend.lower(), legend
 
 
 def test_the_step_a_cell_holds_is_the_size_the_stylesheet_gives_it():
@@ -369,8 +402,13 @@ def test_the_step_a_cell_holds_is_the_size_the_stylesheet_gives_it():
     css = (PANEL / "studio.css").read_text(encoding="utf-8")
     declared = re.search(r"\.studio-node\{[^}]*width:(\d+)px", css)
     floor = re.search(r"\.studio-nodes \.studio-node\{min-height:(\d+)px\}", css)
+    # `CELL` moved to `studio-layout.js` with the rest of the placement
+    # arithmetic. It is read from where it is DECLARED rather than from the
+    # canvas that re-exports it, so this measures the value the geometry uses
+    # and not a name the canvas happens to pass along.
     cell = re.search(r"CELL = Object\.freeze\(\{width: (\d+), height: (\d+), "
-                     r"gapX: (\d+), gapY: (\d+)\}\)", _code(CANVAS))
+                     r"gapX: (\d+), gapY: (\d+)\}\)",
+                     _code(PANEL / "studio-layout.js"))
     assert declared and floor and cell
     assert int(cell.group(1)) == int(declared.group(1))
     # A rule that declares a MINIMUM lets a step grow, so the cell may not be
@@ -539,3 +577,63 @@ def test_every_edited_word_is_judged_before_it_is_written():
     assert "Number.isInteger(value)" in bound
     assert "LOOP_BOUND.min" in bound and "LOOP_BOUND.max" in bound
     assert "return;" in bound.split("commit(")[0]
+
+
+# -- a position is editable in the inspector, not only by pointer ------------
+
+
+def test_the_inspector_edits_a_position_through_the_same_edit_a_drag_emits():
+    """"Support nodes and edges through the inspector" — the position included.
+
+    A position was reachable by dragging and by Alt+arrow and by nothing a
+    person could TYPE, which is the pointer-only affordance this surface counts
+    as a bug. What closes it is not a second implementation of placing: the
+    inspector emits the SAME `move` edit the canvas emits, so one reducer arm
+    answers both and neither surface can drift into its own idea of a
+    coordinate.
+    """
+    inspector = _code(*INSPECTOR)
+    block = re.search(r"function positionControls\(box, form\) \{(.*?)\n\}",
+                      inspector, re.DOTALL)
+    assert block, "the inspector no longer writes a position control"
+    body = block.group(1)
+    assert 'type: "move"' in body, body
+    # Both axes are committed TOGETHER, in ONE edit read from the pair's current
+    # values: `NodePosition` refuses a half-placed step, so a control that sent
+    # one axis would write a draft the save route rejects for a reason nothing
+    # on screen explains.
+    send = re.search(r"const send = \(\) => call\(\s*form\.handlers,"
+                     r' "onEdit", \{(.*?)\}\);', body, re.DOTALL)
+    assert send, body
+    assert "x: axes.x.value" in send.group(1), send.group(1)
+    assert "y: axes.y.value" in send.group(1), send.group(1)
+    assert re.search(r'for \(const name of \["x", "y"\]\)', body), body
+    # And it is offered inside General, where a reader looking at what a step
+    # IS will meet it, rather than in a seventh section.
+    assert "positionControls(box, form);" in inspector
+    general = re.search(r"export function generalSection\(form\) \{(.*?)\n\}",
+                        inspector, re.DOTALL).group(1)
+    assert "positionControls(box, form);" in general
+
+
+def test_a_placed_step_can_be_given_back_to_the_canvas():
+    """Placing must not be a one-way door.
+
+    `NodePosition | None` was built so a step can be unplaced, and without a
+    control for it the first drag takes a step out of the automatic layout for
+    good. It is a flag on `move` rather than a seventh word in the closed edit
+    vocabulary three modules hold equal: unplacing writes the same one field
+    placing does, so a word per direction would double the list for no new
+    authority.
+    """
+    inspector, edits = _code(*INSPECTOR), _code(PANEL / "studio-edits.js")
+    assert 'type: "move", nodeId: form.node.node_id, clear: true' in inspector
+    assert "if (edit.clear === true) return unplaceNode(draft, edit);" in edits
+    body = re.search(r"function unplaceNode\(draft, edit\) \{(.*?)\n\}",
+                     edits, re.DOTALL).group(1)
+    assert "delete next.position;" in body, body
+    # A step nobody placed is already unplaced, and saying otherwise would mark
+    # a saved draft unsaved for a gesture that changed nothing.
+    assert "if (!isObject(node.position)) return {node, notice: \"\"};" in body
+    assert "clear" not in _js_ordered(edits, "EDIT_TYPES"), (
+        "unplacing became a seventh edit word")

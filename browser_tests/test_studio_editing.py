@@ -681,46 +681,6 @@ def _save_and_confirm_clean(bench: _Bench) -> None:
         "#bodyOverview").inner_text()
 
 
-# -- moving a step: both roads ----------------------------------------------
-
-
-def test_dragging_a_step_downwards_moves_it_later_in_the_document(
-        bench: _Bench) -> None:
-    """A drag edits ORDER, which is the only thing this build stores.
-
-    A workflow step has no coordinates, so a drag that moved pixels would be a
-    control writing inert data. The canvas says that out loud beside itself,
-    and this measures that the document really moved.
-    """
-    assert "Dragging a step changes its ORDER" in bench.page.locator(
-        ".studio-canvas__positions").inner_text()
-    x, y = _centre(bench.page, '[data-node-id="alpha"]')
-    _drag(bench.page, (x, y), (x, y + DRAG_ONE_ROW))
-    bench.page.wait_for_function(
-        "() => document.querySelector('[data-node-id]').dataset.nodeId"
-        " === 'beta'")
-    assert bench.node_ids() == ["beta", "alpha", "gamma"]
-    assert bench.problems == []
-
-
-def test_alt_and_an_arrow_move_the_selected_step_by_keyboard_alone(
-        bench: _Bench) -> None:
-    """The same edit, reached with two keys, and it moves both ways."""
-    bench.stage().press("ArrowDown")
-    assert bench.selection() == ("node", "alpha")
-    bench.stage().press("Alt+ArrowDown")
-    bench.page.wait_for_function(
-        "() => document.querySelector('[data-node-id]').dataset.nodeId"
-        " === 'beta'")
-    assert bench.node_ids() == ["beta", "alpha", "gamma"]
-    bench.stage().press("Alt+ArrowUp")
-    bench.page.wait_for_function(
-        "() => document.querySelector('[data-node-id]').dataset.nodeId"
-        " === 'alpha'")
-    assert bench.node_ids() == ["alpha", "beta", "gamma"]
-    assert bench.problems == []
-
-
 # -- deleting and duplicating: both roads ------------------------------------
 
 

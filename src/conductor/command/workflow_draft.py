@@ -354,8 +354,41 @@ def starters() -> list[dict[str, Any]]:
     for path in sorted(TEMPLATE_DIR.glob("*.json")):
         template = load_template(path.stem)
         rows.append({"starter_id": path.stem, "title": template.title,
+                     "revision": template.revision,
+                     "caveats": starter_caveats(template),
                      "document": template.as_dict()})
     return rows
+
+
+def starter_caveats(template) -> list[str]:
+    """What somebody should know before starting from this document.
+
+    Both shipped starters are titled `Dalio five-step cycle` and differ in one
+    revision number and four arguments, so a picker showing titles offered two
+    rows nobody could tell apart -- and they are not equivalent choices. In
+    `dalio-v1` no review step names a `result_artifact_ref`, and
+    `artifact_transport._review` refuses exactly that: "this review names no
+    result artifact, so nothing it produced could be published; no task was
+    spawned". Four of its steps cannot succeed.
+
+    DERIVED, never written down beside the files. A sentence typed here would
+    be a second description of a document, free to go stale the moment somebody
+    edits the JSON; this reads the same relation the runtime enforces, so a
+    starter that gains its missing argument loses its caveat by itself. It is
+    also why nothing in the shipped documents moved: their bytes are untouched
+    and both revision digests are exactly what they were.
+    """
+    from .artifacts import REVIEW_CAPABILITY
+
+    unpublishable = sorted(
+        node.node_id for node in template.nodes
+        if node.capability == REVIEW_CAPABILITY
+        and not node.payload().get("result_artifact_ref"))
+    if not unpublishable:
+        return []
+    return [f"{len(unpublishable)} review step(s) name no result artifact, so "
+            f"each of them fails without spawning anything: "
+            f"{', '.join(unpublishable)}. A later starter may fix this."]
 
 
 def _latest_published(templates, workflow_id: str, latest: int | None):
