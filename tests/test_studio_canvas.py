@@ -150,13 +150,15 @@ _ALLOWED_IMPORTS = {
     #: a second copy of a vocabulary somebody else reviews.
     "studio-sections.js": ["./command-view.js", "./command-projection.js",
                            "./studio-fields.js", "./studio-model.js"],
-    #: The fourth section, alone. It reaches NEITHER the sections nor the
-    #: frame: two halves of one inspector that could import each other would
-    #: close the ring this split was drawn to open. The list is a
-    #: REQUIREMENT and not a permission -- what is written here is what the
-    #: file really imports today, so a neighbour it starts reaching for has to
-    #: be admitted deliberately.
-    "studio-artifacts.js": ["./studio-fields.js"],
+    #: The fourth section, alone. It reads the same REVIEWED projection its
+    #: neighbour does, because which argument field carries a step's inputs and
+    #: which carries its output is that schema's fact -- and looking it up is
+    #: what stops this window naming a capability to find them. It reaches
+    #: NEITHER the sections nor the frame: two halves of one inspector that
+    #: could import each other would close the ring this split was drawn to
+    #: open.
+    "studio-artifacts.js": ["./command-view.js", "./command-projection.js",
+                            "./studio-fields.js"],
     "studio-fields.js": ["./command-view.js"],
 }
 

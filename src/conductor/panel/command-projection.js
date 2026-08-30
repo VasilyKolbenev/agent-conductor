@@ -4,16 +4,31 @@
 export const RUN_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const CONTROL_NAMES = new Set(
   ["dispatch", "review", "evidence", "stop", "retry", "switch"]);
+// The `artifact-` prefix on a kind names WHAT the id refers to -- a durable
+// artifact this run can resolve -- and never a different grammar.
+// `artifact-ids` is judged exactly as `ids` is, `artifact-id` exactly as `id`,
+// and `baseKind` below is the one place that is said. Three fields carry it and
+// they are the whole artifact seam of the closed schemas: the two that name
+// what a step must be GIVEN, and the one that names what it PUBLISHES.
+//
+// It exists because a reader of this table could not tell those apart before.
+// `result_artifact_ref` was spelled `id`, exactly like `work_item_id` and
+// `instruction_ref`, so anything wanting to know which field publishes an
+// artifact had to name a capability to find out -- and a capability is a word
+// the provider roster supplies at run time, so naming one is a second, silent
+// copy of a schema somebody else reviews. The Studio's inputs-and-outputs
+// section finds both of its controls through this prefix and names no
+// capability at all.
 export const CAPABILITY_FIELDS = Object.freeze({
   dispatch: Object.freeze([
     ["work_item_id", "id"], ["instruction_ref", "id"],
     ["profile", "enum", ["implement", "review"]],
-    ["artifact_refs", "ids"],
+    ["artifact_refs", "artifact-ids"],
     ["output_limit_profile", "enum", ["small", "normal"]],
   ]),
   review: Object.freeze([
-    ["work_item_id", "id"], ["target_artifact_refs", "ids-required"],
-    ["result_artifact_ref", "id"],
+    ["work_item_id", "id"], ["target_artifact_refs", "artifact-ids-required"],
+    ["result_artifact_ref", "artifact-id"],
     ["review_profile", "enum", ["quality", "security", "spec"]],
   ]),
   evidence: Object.freeze([["target_action_id", "id"],
@@ -62,6 +77,16 @@ export const DECISION_STATES = Object.freeze({
   request_changes: "changes_requested",
   waive: "waived",
 });
+// What a declared kind is JUDGED as. Every reader of `CAPABILITY_FIELDS` that
+// branches on the kind normalizes through this first, so marking a field as
+// referring to an artifact cannot change how its value is validated, rendered
+// or required. Two readers do branch -- `exactArguments` below and
+// `command-view.argumentControl` -- and both go through here.
+const ARTIFACT_PREFIX = "artifact-";
+export function baseKind(kind) {
+  return kind.startsWith(ARTIFACT_PREFIX)
+    ? kind.slice(ARTIFACT_PREFIX.length) : kind;
+}
 export function isId(value) {
   return typeof value === "string" && RUN_ID.test(value);
 }
@@ -179,7 +204,8 @@ export function projectScope(value) {
 }
 export function exactArguments(capability, data) {
   const output = {};
-  for (const [name, kind, choices] of CAPABILITY_FIELDS[capability] || []) {
+  for (const [name, declared, choices] of CAPABILITY_FIELDS[capability] || []) {
+    const kind = baseKind(declared);
     const raw = String(data.get(`argument:${name}`) || "").trim();
     if (kind === "id") {
       if (!isId(raw)) return null;

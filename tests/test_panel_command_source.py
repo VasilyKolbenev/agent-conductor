@@ -4,6 +4,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 PANEL = ROOT / "src" / "conductor" / "panel"
@@ -123,12 +124,116 @@ def test_proposal_composer_has_only_reviewed_closed_fields():
             for name in exact_fields if body.find(f"  {name}: Object.freeze", start + 1) >= 0
         ]
         section = body[start:min(next_starts) if next_starts else len(body)]
-        assert tuple(re.findall(r'\["([a-z_]+)", "(?:id|ids|ids-required|enum|enum-list)"',
-                                section)) == fields
+        # The `artifact-` prefix is ADMITTED here and judged below for what it
+        # means: this is about which fields are declared and in what order.
+        assert tuple(re.findall(
+            r'\["([a-z_]+)", "(?:artifact-)?(?:id|ids|ids-required|enum'
+            r'|enum-list)"', section)) == fields
     assert '"implement", "review"' in body
     assert '"quality", "security", "spec"' in body
     assert '"result", "diff", "tests", "status"' in body
     assert '"failed", "unknown", "verification_failed", "user"' in body
+
+
+def _artifact_marks() -> dict[str, list[tuple[str, str]]]:
+    """Every ``artifact-`` marked field of every capability, per capability."""
+    body = re.search(
+        r"const CAPABILITY_FIELDS = Object\.freeze\(\{(.*?)\n\}\);",
+        PROJECTION.read_text(encoding="utf-8"), re.S).group(1)
+    heads = list(re.finditer(r"^  ([a-z]+): Object\.freeze", body, re.M))
+    marked: dict[str, list[tuple[str, str]]] = {}
+    for at, head in enumerate(heads):
+        end = heads[at + 1].start() if at + 1 < len(heads) else len(body)
+        marked[head.group(1)] = re.findall(
+            r'\["([a-z_]+)", "(artifact-[a-z-]+)"', body[head.start():end])
+    return marked
+
+
+#: A payload each argument type ACCEPTS whole, so a refusal driven below is
+#: caused by the one field that was replaced and by nothing else.
+_WHOLE_PAYLOAD = {
+    "dispatch": {
+        "work_item_id": "work-1", "instruction_ref": "instr-1",
+        "profile": "implement", "artifact_refs": ["a-1"],
+        "output_limit_profile": "normal"},
+    "review": {
+        "work_item_id": "work-1", "target_artifact_refs": ["a-1"],
+        "result_artifact_ref": "a-2", "review_profile": "quality"},
+}
+
+
+def test_exactly_three_fields_are_marked_as_carrying_artifact_references():
+    """Which field carries artifacts is READ off the projection, so pin it.
+
+    The Studio's inputs-and-outputs section finds both of its controls by the
+    ``artifact-`` prefix and names no capability at all -- which is the whole
+    point, because a capability is a word the provider roster supplies at run
+    time. That makes these three rows load-bearing in a way no row in this
+    table was before: mark the wrong field and a person edits the wrong
+    argument, in a window that would look entirely correct.
+
+    The last relation is the sharpest. The field marked as a step's own OUTPUT
+    belongs to exactly the capability ``artifacts.REVIEW_CAPABILITY`` names --
+    the one whose action publishes a durable artifact -- and it is held in BOTH
+    directions, because the reachable mistake is marking a second capability as
+    publishing one when its evidence is a change digest and no artifact exists
+    to name at all.
+    """
+    from conductor.command import artifacts
+
+    marked = _artifact_marks()
+    assert marked["dispatch"] == [("artifact_refs", "artifact-ids")]
+    assert marked["review"] == [
+        ("target_artifact_refs", "artifact-ids-required"),
+        ("result_artifact_ref", "artifact-id")]
+    # Every OTHER capability marks nothing, so the lookup finds no control to
+    # draw on a step whose schema has no artifact seam at all.
+    assert {name for name, found in marked.items() if found} == {
+        "dispatch", "review"}
+    produced = {
+        capability for capability, found in marked.items()
+        if any(kind == "artifact-id" for _, kind in found)}
+    assert produced == {artifacts.REVIEW_CAPABILITY}, produced
+
+
+def test_each_artifact_mark_is_what_the_python_schema_really_enforces():
+    """The marks, driven against the argument types rather than read beside them.
+
+    Three relations, and each is a claim the window makes out loud:
+
+    - a field marked as a LIST is one the type refuses a bare string for;
+    - a field marked ``-required`` is one it refuses an EMPTY list for, and one
+      marked without that suffix is one it ACCEPTS an empty list for. That is a
+      real difference between the two shipped schemas -- a step that carries
+      work out may require nothing, a step that checks work may not -- and the
+      window states it beside the control, so flattening it here would let the
+      window flatten it too;
+    - a field marked as a scalar is one the type refuses a list for.
+    """
+    from conductor.command.adapters.deep_commands import (
+        DEEP_ARGUMENT_TYPES,
+        DeepContractError,
+    )
+
+    for capability, found in _artifact_marks().items():
+        if not found:
+            continue
+        whole = _WHOLE_PAYLOAD[capability]
+        argument_type = DEEP_ARGUMENT_TYPES[capability]
+        assert argument_type.from_dict(dict(whole)) is not None
+        for name, kind in found:
+            if kind == "artifact-id":
+                with pytest.raises(DeepContractError):
+                    argument_type.from_dict({**whole, name: ["a-2"]})
+                continue
+            with pytest.raises(DeepContractError):
+                argument_type.from_dict({**whole, name: "a-1"})
+            empty = {**whole, name: []}
+            if kind.endswith("-required"):
+                with pytest.raises(DeepContractError):
+                    argument_type.from_dict(empty)
+            else:
+                assert argument_type.from_dict(empty) is not None
 
 
 def test_proposal_response_is_bound_and_never_automatically_retried_or_confirmed():

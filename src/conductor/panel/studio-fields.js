@@ -98,6 +98,30 @@ export function commit(form, name, value) {
     type: "set-field", nodeId: form.node.node_id, field: name, value});
 }
 
+//: This step's argument map with ONE key set or removed and every other key
+//: carried across untouched.
+//:
+//: The spread is the whole point. A reviewed dispatch payload carries four
+//: other fields, and an edit that rebuilt the map out of this one value would
+//: delete them -- silently, into a draft that saves, surfacing later as a run
+//: that cannot open. `set-field` carries one field; `arguments` IS one field,
+//: so the value it carries is the whole map.
+//:
+//: It sits in the toolkit rather than beside any one control because two
+//: sections write arguments now -- the output budget and the artifact pair --
+//: and two copies of this spread would be two chances to lose a sibling. What
+//: REMOVES a key is the empty string, and only that: an empty ARRAY is a real
+//: and different answer, because a step that requires no input artifact
+//: honestly carries `[]` and its schema admits one.
+export function withArgument(node, field, chosen) {
+  const held = node.arguments !== null && typeof node.arguments === "object"
+    && !Array.isArray(node.arguments) ? node.arguments : {};
+  const next = {...held};
+  if (chosen === "") delete next[field];
+  else next[field] = chosen;
+  return next;
+}
+
 //: What each edited word must be, in the grammar its Python contract already
 //: holds it to. A field says what is wrong beside itself and refuses to write,
 //: which is the difference between a control that validates and a control that

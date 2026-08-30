@@ -104,8 +104,10 @@ PERMITTED_IMPORTS = {
                                      "./studio-fields.js"}),
     #: The fourth section, on its own. It sits BESIDE the sections rather than
     #: above or below them: neither may import the other, so the two cannot
-    #: close into a ring and neither can grow a control the other half of the
-    #: inspector cannot see.
+    #: close into a ring. It is granted the reviewed argument projection for
+    #: the reason its neighbour is -- what a step may require and publish is
+    #: declared by the capability's schema, and this window reads that rather
+    #: than keeping an idea of its own.
     "studio-artifacts.js": frozenset({"./command-view.js",
                                       "./command-projection.js",
                                       "./studio-fields.js"}),

@@ -1,6 +1,6 @@
 "use strict";
 // Every Cockpit node is built from text: no markup string is ever parsed here.
-import {CAPABILITY_FIELDS} from "./command-projection.js";
+import {CAPABILITY_FIELDS, baseKind} from "./command-projection.js";
 
 export function element(tag, attributes = {}, children = []) {
   const node = document.createElement(tag);
@@ -31,6 +31,10 @@ export function gateRow(gateState, text) {
   return element("li", {className: "command-gate",
     "data-gate-state": gateState, text});
 }
+// `kind` arrives already normalized by `fillArguments`: whether an id refers to
+// a durable artifact changes nothing about the control that collects it, so
+// this function never sees the `artifact-` prefix and cannot grow a branch on
+// one.
 function argumentControl(draft, name, kind, choices) {
   const saved = (draft.arguments[draft.capability] || {})[name];
   if (kind === "enum") {
@@ -60,8 +64,9 @@ function fillArguments(argumentFields, draft) {
   argumentFields.replaceChildren(element("legend", {
     text: "Closed capability arguments",
   }));
-  for (const [name, kind, choices = []] of CAPABILITY_FIELDS[draft.capability]) {
-    argumentFields.append(field(name, argumentControl(draft, name, kind, choices)));
+  for (const [name, declared, choices = []] of CAPABILITY_FIELDS[draft.capability]) {
+    argumentFields.append(field(name, argumentControl(
+      draft, name, baseKind(declared), choices)));
   }
 }
 function proposalInput(draft, name, fallback, type = "text") {

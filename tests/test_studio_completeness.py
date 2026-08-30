@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import re
 
-from tests.test_studio_canvas import INSPECTOR, PANEL, _code, _text
+from tests.test_studio_canvas import INSPECTOR, PANEL, ROOT, _code, _text
 
 #: Every field of the six sections that has no durable home in this build. The
 #: list is the report: a field named here SAYS so where it would have been, and
@@ -55,10 +55,23 @@ from tests.test_studio_canvas import INSPECTOR, PANEL, _code, _text
 #: `verifier_instance_id`, and `graph_causality.permitted_verifier` spends it --
 #: driven end to end by tests/test_command_plan_verifier.py. The positive
 #: witness that it did not leave the SCREEN with the label is below.
+#:
+#: THREE MORE LEFT TOGETHER, and they are one fact rather than three:
+#: `Required input artifacts`, `Produced artifacts` and `Handoff mapping`. None
+#: of them became a field on a workflow step and none of them may -- they were
+#: ALREADY durable, as the capability's own reviewed arguments. `artifact_refs`
+#: and `target_artifact_refs` are resolved by `artifact_handoff.resolve`, and a
+#: step whose input is unavailable is refused without spawning;
+#: `result_artifact_ref` is where a step's output is published, and
+#: `artifacts._artifact_answers_its_request` holds the document to it at append
+#: and again at replay. What was missing was a way to SAY any of it, which is
+#: what those three labels were admitting. The mapping is derived rather than
+#: stored, and it is honest about the case the shipped starters really have: a
+#: reference no step in the document produces, which a run receives from
+#: outside. tests/test_command_artifact_flow.py drives one step's product into
+#: another step's requirement end to end, through the real transport. The three
+#: positive witnesses that none of them left the SCREEN are below.
 UNSUPPORTED_FIELDS = (
-    "Required input artifacts",
-    "Produced artifacts",
-    "Handoff mapping",
     "Missing-artifact behaviour",
     "Evidence requirements",
     "Success criteria",
@@ -268,3 +281,224 @@ def test_the_inspector_states_the_verifier_it_stopped_calling_unsupported():
     assert "has nothing to verify" in body, body
     # And in one voice: one label, one section.
     assert inspector.count('"Verifier role"') == 1
+
+
+# -- the artifact trio: required, produced, and where each one comes from ------
+
+
+def test_the_inspector_states_the_required_inputs_and_lets_them_be_edited():
+    """A field that leaves the unsupported list must not leave the screen with it.
+
+    Deleting the control satisfies the census -- `Required input artifacts` is
+    not in `UNSUPPORTED_FIELDS` any more -- and leaves a person with no way to
+    say what a step must be handed, which is a fact the payload stores, the
+    plan freezes, `artifact_handoff.resolve` spends, and the transport refuses
+    a step for lacking.
+
+    Both STATES are said, and the control is mounted beside them: a schema with
+    no artifact input at all, and -- in one line with two arms -- a step that
+    names references and a step that does not. The judging half is next door.
+    """
+    inspector = _code(*INSPECTOR)
+    assert "requiredInputs(box, form);" in inspector
+    section = re.search(r"export function artifactSection\(form\) \{(.*?)\n\}",
+                        inspector, re.DOTALL).group(1)
+    assert "requiredInputs(box, form);" in section, section
+    body = re.search(r"function requiredInputs\(box, form\) \{(.*?)\n\}",
+                     inspector, re.DOTALL).group(1)
+    assert body.count('context(box, "Required input artifacts"') == 2, body
+    assert "declares no artifact input" in body, body
+    assert "names no input artifact" in body, body
+    # The two directions of the control the section really mounts. A list that
+    # could only be added to is the one-way door this suite refuses everywhere.
+    assert "inputRows(box, form, held, found.name);" in body, body
+    assert "inputAdder(box, form, held, found.name);" in body, body
+    # The schema's own asymmetry, stated rather than flattened: one of the two
+    # kinds may be empty and the other may not, and the cost is said in place.
+    assert "found.kind === NON_EMPTY" in body, body
+    assert "no run of this workflow can be opened" in body, body
+    assert "admits an EMPTY list" in body, body
+
+
+def test_every_required_input_is_judged_before_it_reaches_the_draft():
+    """The grammar and the duplicate, neither of them invented in this window.
+
+    The grammar is `contract_values._ID_RE`, held to it next door. The
+    duplicate is `latest_artifacts`' own rule -- it resolves through
+    `_unique_ids`, so a list asking for one name twice is refused at the spawn,
+    and a control that let one be typed would write a draft that saves and a
+    run that will not resolve.
+
+    Both refusals RETURN before the commit, so a rejected reference cannot
+    reach the draft on its way to being reported; and both roads that do write
+    carry the whole argument map, rebuilt around one key.
+    """
+    inspector = _code(*INSPECTOR)
+    drop = re.search(r"function inputRows\(box, form, held, name\) \{(.*?)\n\}",
+                     inspector, re.DOTALL).group(1)
+    assert "held.filter((_, index) => index !== at)" in drop, drop
+    add = re.search(r"function inputAdder\(box, form, held, name\) \{(.*?)\n\}",
+                    inspector, re.DOTALL).group(1)
+    assert "ID_PATTERN.test(input.value)" in add, add
+    assert "held.includes(input.value)" in add, add
+    assert "held.concat([input.value])" in add, add
+    assert add.count("return;") == 2, add
+    assert add.index("commit(form,") > add.rindex("return;"), add
+    for source in (drop, add):
+        assert 'commit(form, "arguments",' in source, source
+        assert "withArgument(form.node, name," in source, source
+
+
+def test_the_inspector_states_what_a_step_publishes_and_what_clearing_costs():
+    """The other half of the pair, and the half with a real asymmetry in it.
+
+    A step that carries work out publishes NO artifact -- its evidence is a
+    digest of the change it made -- and a step that checks work publishes one.
+    That difference is the reviewed schema's, so the control is drawn from a
+    LOOKUP and the absent case is stated rather than left blank. Both arms are
+    pinned, because the easy way to get this wrong is to draw the control
+    everywhere and let a person name an output that nothing would ever publish.
+
+    Clearing is allowed and its cost is said in place: a step of that kind
+    naming no result artifact is refused when it is reached, with no task
+    spawned. The FACT is what is pinned, not the sentence -- the transport's
+    own wording is free to be rewritten, and
+    `tests/test_command_artifact_flow.py` is what holds the behaviour.
+    """
+    inspector = _code(*INSPECTOR)
+    assert "producedArtifacts(box, form);" in inspector
+    body = re.search(r"function producedArtifacts\(box, form\) \{(.*?)\n\}",
+                     inspector, re.DOTALL).group(1)
+    assert body.count('context(box, "Produced artifacts"') == 2, body
+    assert "declares no result artifact reference" in body, body
+    assert "names no result artifact" in body, body
+    # The absent arm says what stands in its place, so a reader of such a step
+    # learns what the run WILL leave rather than that there is nothing.
+    assert "digests" in body and "work directory" in body, body
+    assert "verification evidence" in body, body
+    # The clearing cost, stated beside the control rather than met at a run.
+    assert "no task is spawned" in body, body
+    # The control itself, judged before it writes and writing the whole map.
+    assert "producedControl(box, form, found.name, named);" in body, body
+    control = re.search(
+        r"function producedControl\(box, form, name, named\) \{(.*?)\n\}",
+        inspector, re.DOTALL).group(1)
+    assert "ID_PATTERN.test(control.value)" in control, control
+    assert 'control.value === ""' in control, control
+    assert "if (judge()) return;" in control, control
+    assert 'commit(form, "arguments",' in control, control
+    assert "withArgument(form.node, name, control.value)" in control, control
+
+
+def test_the_handoff_mapping_is_derived_from_the_document_and_names_producers():
+    """Where each requirement is met, computed rather than stored.
+
+    Nothing durable holds a step-to-step artifact mapping and nothing should:
+    it is the JOIN of two facts the document already carries, so storing it
+    would be a third copy that can disagree with either. It is derived on every
+    render out of `form.nodes`, the way `roleOffers` derives the roles this
+    document names.
+
+    Two arms and the second one is the one the shipped starters really need:
+    `dalio-v2` produces four of its five references and receives
+    `artifact-brief` from outside, and `dalio-v1` produces none of them at all.
+    A mapping that could only say "produced by X" would be silent about every
+    real external input, which is exactly the case a person needs told.
+
+    The producing FIELD is looked up per node from that node's own capability.
+    A walk that assumed one field name would find no producer on a document
+    that mixes kinds of step -- and would report every reference as external,
+    which reads as correct and is not.
+    """
+    inspector = _code(*INSPECTOR)
+    assert "handoffMapping(box, form);" in inspector
+    body = re.search(r"function handoffMapping\(box, form\) \{(.*?)\n\}",
+                     inspector, re.DOTALL).group(1)
+    assert "producersOf(form.nodes, ref)" in body, body
+    assert "produced by" in body, body
+    assert "no step in this workflow produces it" in body, body
+    assert "through the artifacts route" in body, body
+    # The empty case is a third answer and not the external sentence: a step
+    # that requires nothing is not a step whose requirement is unmet.
+    assert 'context(box, "Handoff mapping"' in body, body
+    assert "this step requires no artifact" in body, body
+    producers = re.search(r"function producersOf\(nodes, ref\) \{(.*?)\n\}",
+                          inspector, re.DOTALL).group(1)
+    # Compared reference against reference, through the lookup, per node.
+    assert "artifactField(node.capability, OUTPUT_KINDS)" in producers, producers
+    assert "refOf(node, declared.name) === ref" in producers, producers
+
+
+def test_the_missing_artifact_line_says_what_this_build_really_does():
+    """The one label of the four that stayed -- and it had to stop lying.
+
+    Its reason was "With no declared artifact requirement there is no
+    missing-artifact case for a policy to answer", which was true while nothing
+    could declare one and became false the moment the control above shipped.
+
+    What is unsupported is the POLICY, not the behaviour: the behaviour is
+    fixed and fail-closed, and it is what `artifact_transport` really does on
+    both roads -- a dispatch whose input will not resolve and a review whose
+    input will not resolve each answer `failed` with no task spawned. So the
+    line now states the behaviour and names the absent field, and the old
+    sentence is asserted GONE rather than merely not asserted present.
+    """
+    inspector = _code(*INSPECTOR)
+    reason = re.search(
+        r'unsupported\(box, "Missing-artifact behaviour", (.*?)\);',
+        inspector, re.DOTALL).group(1)
+    assert "no missing-artifact case" not in inspector, (
+        "the missing-artifact line still says there is no such case")
+    assert "fail-closed" in reason, reason
+    assert "no task is spawned" in reason, reason
+    assert "no per-step policy field" in reason, reason
+    # A CHANGE DETECTOR on the two roads this line describes, not a proof of
+    # them: the transport's own wording is free to be rewritten, and what
+    # really holds the behaviour is
+    # tests/test_command_artifact_dispatch.py, tests/test_command_claude_review.py
+    # and the negative arm of tests/test_command_artifact_flow.py, each of
+    # which drives a real transport and counts the spawns. What this adds is
+    # that the screen's claim breaks HERE, beside the sentence making it,
+    # rather than in a browser three modules away.
+    transport = _text(
+        ROOT / "src" / "conductor" / "command" / "adapters"
+        / "artifact_transport.py")
+    assert transport.count(
+        "input was unavailable, so no task was spawned") == 2, (
+        "the fail-closed input roads this line describes are no longer two")
+
+
+def test_a_run_s_own_artifacts_are_joined_to_the_step_that_produced_them():
+    """The runtime half, and it is a join no single record can answer.
+
+    An `ArtifactDocument` names its source ACTION; an `ActionRequest` names the
+    NODE it was bound to. So attributing an artifact to a step needs both rows,
+    and a build that read either alone would either show a run's every artifact
+    under every step or show none at all.
+
+    The projection is what the frame hands over -- three facts and no road back
+    to the records -- so no control below it can grow a second reading of the
+    journal, or reach an artifact's CONTENT. The Runs screen shows the same
+    three facts and no more, and that is deliberate.
+    """
+    inspector = _code(*INSPECTOR)
+    join = re.search(r"function producedBy\(detail, nodeId\) \{(.*?)\n\}",
+                     inspector, re.DOTALL).group(1)
+    assert 'row.record_type !== "action_request"' in join, join
+    assert 'row.record_type !== "artifact"' in join, join
+    assert "boundTo.set(record.action_id, record.node_id)" in join, join
+    assert "boundTo.get(record.source_action_id) !== nodeId" in join, join
+    # Three facts carried, and the content is not among them.
+    carried = set(re.findall(r"record\.(\w+)", join))
+    assert carried == {"action_id", "node_id", "source_action_id",
+                       "artifact_id", "artifact_ref", "media_type"}, carried
+    assert "content" not in join, join
+    # It reaches the section through `runContext`, and the section states both
+    # arms: a step whose actions produced artifacts, and one whose did not.
+    assert "products: producedBy(detail, nodeId)," in inspector
+    body = re.search(r"function runProducts\(box, form\) \{(.*?)\n\}",
+                     inspector, re.DOTALL).group(1)
+    assert "rows(run.products)" in body, body
+    assert body.count('context(box, "Produced in this run"') == 2, body
+    assert "was published by an action of this step" in body, body
+    assert "row.artifactRef" in body and "row.mediaType" in body, body

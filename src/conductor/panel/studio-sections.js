@@ -47,6 +47,7 @@ import {
   suggestedField,
   textField,
   unsupported,
+  withArgument,
 } from "./studio-fields.js";
 import {CEILINGS} from "./studio-model.js";
 
@@ -390,22 +391,6 @@ function enumChoices(capability, field) {
   const row = CAPABILITY_FIELDS[capability].find(
     (entry) => entry[0] === field && entry[1] === "enum");
   return row === undefined ? null : row[2];
-}
-
-//: This step's argument map with ONE key set or removed and every other key
-//: carried across untouched.
-//:
-//: The spread is the whole point. A reviewed dispatch payload carries four
-//: other fields, and an edit that rebuilt the map out of this one value would
-//: delete them -- silently, into a draft that saves, surfacing later as a run
-//: that cannot open. `set-field` carries one field; `arguments` IS one field,
-//: so the value it carries is the whole map.
-function withArgument(node, field, chosen) {
-  const held = isObject(node.arguments) ? node.arguments : {};
-  const next = {...held};
-  if (chosen === "") delete next[field];
-  else next[field] = chosen;
-  return next;
 }
 
 //: One profile said the way a person can act on it. A word the projection

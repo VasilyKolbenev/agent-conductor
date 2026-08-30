@@ -88,6 +88,40 @@ function selectionOf(state) {
   return {kind, id: kind === null ? null : String(selection.id)};
 }
 
+//: Every durable artifact THIS step's actions published in the open run.
+//:
+//: A two-hop join, and both hops are the journal's own. An `ArtifactDocument`
+//: names the action that produced it (`source_action_id`); an `ActionRequest`
+//: names the step that action was bound to (`node_id`). Neither record carries
+//: the other half, so no step's outputs can be read off one row -- and an
+//: artifact whose source action this journal does not hold, or whose request
+//: was bound to no step, is attributed to NOTHING rather than to the step
+//: whoever is looking happens to have selected.
+//:
+//: Three facts are carried and the content is not one of them. An artifact is
+//: durable material a run hands between roles; this window says which exist.
+function producedBy(detail, nodeId) {
+  const boundTo = new Map();
+  for (const row of rows(detail.records)) {
+    if (!isObject(row) || row.record_type !== "action_request") continue;
+    const record = isObject(row.record) ? row.record : {};
+    if (typeof record.action_id !== "string") continue;
+    boundTo.set(record.action_id, record.node_id);
+  }
+  const found = [];
+  for (const row of rows(detail.records)) {
+    if (!isObject(row) || row.record_type !== "artifact") continue;
+    const record = isObject(row.record) ? row.record : {};
+    if (boundTo.get(record.source_action_id) !== nodeId) continue;
+    found.push({
+      artifactId: String(record.artifact_id),
+      artifactRef: String(record.artifact_ref),
+      mediaType: String(record.media_type),
+    });
+  }
+  return found;
+}
+
 //: What a RUN says about this step, and the run it says it about. Every field
 //: is optional and nothing is defaulted: a step no run named answers `null`,
 //: which is a different thing from a step a run named with nothing to report.
@@ -113,6 +147,11 @@ export function runContext(state, nodeId) {
       ? rows(runtime.nodes).find((row) => isObject(row) && row.node_id === nodeId)
         || null
       : null,
+    //: A PROJECTION of the journal rather than the journal itself: the
+    //: sections are handed the three facts about this step's own artifacts and
+    //: no road to the records the join was made from, so no control can grow a
+    //: second reading of them -- or reach an artifact's content.
+    products: producedBy(detail, nodeId),
   };
 }
 
