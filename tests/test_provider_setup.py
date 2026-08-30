@@ -655,3 +655,50 @@ def test_the_preamble_says_the_terminal_echoes_what_you_type(project, capsys):
     said = capsys.readouterr().err
     assert "TERMINAL echoes what you type" in said, said
     assert "never repeat one back" in said, said
+
+
+# -- the input that ends -----------------------------------------------------
+
+
+def ending(*answers):
+    """A prompter that answers, then reaches the end of its input.
+
+    What a real terminal does when a pipe closes, a person presses Ctrl+Z, or
+    the command is run somewhere with nothing to read.
+    """
+    remaining = iter(answers)
+
+    def ask(_prompt: str) -> str:
+        try:
+            return next(remaining)
+        except StopIteration:
+            raise EOFError from None
+
+    return ask
+
+
+@pytest.mark.parametrize("given", [
+    (),                                  # ends at the very first question
+    ("1",),                              # ends midway through the pin
+    ("1", EXECUTABLE, "MY_TOKEN_NAME"),  # ends at the confirmation
+])
+def test_an_input_that_ends_says_so_in_the_products_own_words(
+        project, capsys, given):
+    """Python's name for this is "EOF when reading a line", and it reached a
+    person's screen.
+
+    Nobody who sees that has done anything wrong -- a pipe closed, or this was
+    run where there is nothing to type into. `docs/owner-acceptance.md` asks
+    that every failure be understandable without opening a terminal log, and an
+    exception's own repr is the opposite of that. All three ending points are
+    driven, because the last one is a different `ask` call in a different arm.
+    """
+    assert provider_setup.run(
+        argparse.Namespace(dir=str(project)), ask=ending(*given)) == 1
+
+    said = capsys.readouterr().err
+    assert "the input ended before" in said, said
+    assert "nothing was written" in said, said
+    assert "EOF when reading a line" not in said, said
+    path = operator_config.provider_config_path(project / "conductor")
+    assert not path.exists(), "a refused dialogue wrote a file"

@@ -359,6 +359,41 @@ def _open_the_file(directory: str):
         return None
 
 
+#: What an input that STOPS is told, in the product's own words.
+#:
+#: Python's phrase for it is "EOF when reading a line", and that sentence used
+#: to reach the screen of somebody who had done nothing wrong: a pipe closed, a
+#: Ctrl+Z, a command run where there is nothing to type into.
+#: `docs/owner-acceptance.md` asks that every failure be understandable without
+#: opening a terminal log, and the name of an exception is the opposite of that.
+_ENDED = "the input ended before"
+
+
+def _collected(ask: Callable[[str], str]):
+    """The four answers, or None with the reason already said."""
+    try:
+        return _collect(ask)
+    except EOFError:
+        _say(f"\n{_ENDED} the questions did, so nothing was written. Run this "
+             "again in a terminal you can type into.")
+    except SetupError as error:
+        _say(f"\n{error or 'nothing was written'}")
+    return None
+
+
+def _confirmed(ask: Callable[[str], str]) -> bool:
+    """The last question is a real question, and it may also go unanswered."""
+    try:
+        answer = ask("\nWrite it? [y/N]: ")
+    except EOFError:
+        _say(f"\n{_ENDED} the last question, so nothing was written.")
+        return False
+    if answer.strip().lower() in {"y", "yes"}:
+        return True
+    _say("nothing was written.")
+    return False
+
+
 def run(args: argparse.Namespace, ask: Callable[[str], str] | None = None) -> int:
     """Configure one provider interactively and write the operator's file.
 
@@ -385,15 +420,12 @@ def run(args: argparse.Namespace, ask: Callable[[str], str] | None = None) -> in
     _say(_PREAMBLE)
     _say(f"\nConfigured now: "
          f"{', '.join(row.provider_id for row in standing) or '(none)'}")
-    try:
-        config = _collect(ask)
-    except (SetupError, EOFError) as error:
-        _say(f"\n{error or 'nothing was written'}")
+    config = _collected(ask)
+    if config is None:
         return 1
     _warn_if_absent(config)
     _summarise(config, path, [row.provider_id for row in standing])
-    if ask("\nWrite it? [y/N]: ").strip().lower() not in {"y", "yes"}:
-        _say("nothing was written.")
+    if not _confirmed(ask):
         return 1
     return _write(path, standing, config)
 
