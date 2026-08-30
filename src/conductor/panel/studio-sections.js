@@ -22,6 +22,10 @@
 // Nothing here writes inert data and nothing silently disappears; every
 // unsupported line carries `data-unsupported`.
 import {element, field} from "./command-view.js";
+//: The REVIEWED argument schemas, projected. The Cockpit's proposal composer is
+//: built from this same table, so a choice this inspector offers is a choice
+//: that door already admits -- and there is no second vocabulary to keep equal.
+import {CAPABILITY_FIELDS} from "./command-projection.js";
 import {
   ID_PATTERN,
   MAX_PURPOSE,
@@ -69,8 +73,8 @@ export const EDIT_TYPES = Object.freeze([
 //: are spelled flat because an edit names ONE field, and a nested path would be
 //: a second grammar for slice D to parse.
 export const EDIT_FIELDS = Object.freeze([
-  "attempt_bound", "capability", "gate_id", "kind", "loop_back_to",
-  "loop_bound", "purpose", "resources", "role_id", "stage",
+  "arguments", "attempt_bound", "capability", "gate_id", "kind",
+  "loop_back_to", "loop_bound", "purpose", "resources", "role_id", "stage",
   "timeout_seconds", "title", "verifier_role_id",
 ]);
 //: The six sections, in the one order the design fixes them in.
@@ -359,30 +363,105 @@ function ceilingField(box, form, label, name) {
 //: showed a budget the spawn does not use would be worse than showing none.
 const OUTPUT_LIMIT_BYTES = Object.freeze({small: 4096, normal: 16384});
 
-//: What this step's output budget IS, said in bytes.
+//: The one capability argument this window WRITES, named once so the control,
+//: the lookup and the edit cannot drift apart.
+const OUTPUT_LIMIT_FIELD = "output_limit_profile";
+
+//: What the REVIEWED schema declares one enum field of one capability may be.
+//:
+//: Read out of `CAPABILITY_FIELDS` -- the same projection the Cockpit's own
+//: proposal composer is built from -- so this window offers exactly the words
+//: that schema admits and can never grow a second vocabulary beside it. That is
+//: the whole reason this is a lookup and not a list: a capability is a word the
+//: roster supplies at run time, so a control that named one would be a second,
+//: silent copy of a schema somebody else reviews.
+//:
+//: A capability this build carries no row for, or a row that does not declare
+//: this field as an enum, answers null -- and the control then says the step
+//: cannot name one rather than inventing choices for it.
+function enumChoices(capability, field) {
+  if (typeof capability !== "string"
+      || !Object.hasOwn(CAPABILITY_FIELDS, capability)) return null;
+  const row = CAPABILITY_FIELDS[capability].find(
+    (entry) => entry[0] === field && entry[1] === "enum");
+  return row === undefined ? null : row[2];
+}
+
+//: This step's argument map with ONE key set or removed and every other key
+//: carried across untouched.
+//:
+//: The spread is the whole point. A reviewed dispatch payload carries four
+//: other fields, and an edit that rebuilt the map out of this one value would
+//: delete them -- silently, into a draft that saves, surfacing later as a run
+//: that cannot open. `set-field` carries one field; `arguments` IS one field,
+//: so the value it carries is the whole map.
+function withArgument(node, field, chosen) {
+  const held = isObject(node.arguments) ? node.arguments : {};
+  const next = {...held};
+  if (chosen === "") delete next[field];
+  else next[field] = chosen;
+  return next;
+}
+
+//: One profile said the way a person can act on it. A word the projection
+//: admits and this build has no byte count for is NAMED as that, never shown as
+//: `undefined bytes`: the two tables are held equal by a test, and this is what
+//: the screen does on the day they are not.
+function budgetLabel(word) {
+  return Object.hasOwn(OUTPUT_LIMIT_BYTES, word)
+    ? `${word} · ${OUTPUT_LIMIT_BYTES[word]} bytes`
+    : `${word} · this build knows no byte count for it`;
+}
+
+//: The select that writes it. Empty is offered beside the profiles, and it is
+//: not decoration: a step that names no profile is the state every dispatch
+//: step this window draws starts in, so a control that could not return one
+//: there would be the one-way door `unplaceNode` exists to refuse. What it
+//: costs is stated beside it rather than met at a run that will not start.
+function budgetSelect(box, form, choices, named) {
+  const control = element("select", {"data-edit-field": OUTPUT_LIMIT_FIELD,
+    "data-focus": `edit-${OUTPUT_LIMIT_FIELD}`, name: OUTPUT_LIMIT_FIELD},
+  [option("", "no profile")].concat(
+    choices.map((word) => option(word, budgetLabel(word)))));
+  control.value = choices.includes(named) ? named : "";
+  control.addEventListener("change", () => commit(form, "arguments",
+    withArgument(form.node, OUTPUT_LIMIT_FIELD, control.value)));
+  const wrapper = field("Output budget", editable(control, form));
+  wrapper.classList.add("studio-field");
+  box.append(wrapper);
+}
+
+//: What this step's output budget IS, said in bytes, and the control that sets
+//: it.
 //:
 //: It said "not supported by this harness" until the spawn actually read the
-//: profile. That was true and it was the release verdict's own example of the
-//: shape to avoid: a field declared, validated, stored, shipped in both
-//: starters and read by nothing. It is read now, so the honest line is the
-//: number, where it comes from, and the fact that the provider's own reviewed
-//: ceiling still binds -- a plan may ask for less and never for more.
-function outputBudget(box, node) {
-  const named = (node.arguments || {}).output_limit_profile;
-  const bytes = OUTPUT_LIMIT_BYTES[named];
-  if (bytes === undefined) {
-    context(box, "Output budget",
-      "none — this step names no output limit profile, so the provider's own "
-      + "reviewed ceiling is what bounds it",
-      "the step's capability arguments");
+//: profile, and then stated it read-only. Both were the release verdict's own
+//: example of the shape to avoid: a field declared, validated, stored, shipped
+//: in both starters, and reachable from nowhere a person could change it.
+function outputBudget(box, form) {
+  const {node} = form;
+  const held = isObject(node.arguments) ? node.arguments : {};
+  const named = held[OUTPUT_LIMIT_FIELD];
+  const choices = enumChoices(node.capability, OUTPUT_LIMIT_FIELD);
+  if (choices === null) {
+    context(box, "Output budget", "none — the reviewed schema for this step's "
+      + "capability declares no output limit profile, so there is none to name",
+    "the step's capability arguments");
     return;
   }
-  context(box, "Output budget", `${named} · ${bytes} bytes`,
-    "the step's capability arguments, spent at the spawn");
+  budgetSelect(box, form, choices, named);
+  context(box, "Output budget", choices.includes(named) ? budgetLabel(named)
+    : "none — this step names no output limit profile, so the provider's own "
+      + "reviewed ceiling is what bounds it",
+  "the step's capability arguments, spent at the spawn");
   note(box, "A CEILING, like the timeout above: the smaller of this and the "
-    + "provider's own reviewed limit is what the child may write. Set with the "
-    + "capability arguments below, which are composed where a proposal is, "
-    + "against the closed schema registered for this capability.");
+    + "provider's own reviewed limit is what the child may write. The choices "
+    + "are the reviewed schema's own, and every other argument of this step is "
+    + "carried across untouched when this one changes. Leaving it at no profile "
+    + "is a real answer and it has a plain cost: this schema REQUIRES the "
+    + "field, so while a dispatching step names none, no run of this workflow "
+    + "can be opened at all — the open-run route refuses it, by the contract "
+    + "rather than by this window.");
 }
 
 export function executionSection(form) {
@@ -401,7 +480,7 @@ export function executionSection(form) {
   note(box, "How many attempts this step may have. Counted the way a loop "
     + "counts its passes -- distinct attempts naming this step -- and spent "
     + "before an action is authorized, so the bound is never exceeded once.");
-  outputBudget(box, node);
+  outputBudget(box, form);
   box.append(element("h4", {text: "Sandbox and policy attachments"}));
   note(box, "The closed attachment vocabulary a step may declare. `sandbox` "
     + "and `filesystem` are the policy-bearing kinds; every one of them is "
