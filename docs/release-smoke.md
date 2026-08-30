@@ -339,13 +339,29 @@ disk, which environment variables it may read — is a fact about one machine, a
 that guessed any of them would write a provider configuration nobody chose.
 
 Run it once by hand in a real terminal to see the rest, because a release nobody has driven
-interactively has not been driven. It asks four questions and writes
-`$PROJ\conductor\providers.json`. Two things to watch for, because they are the reason this
+interactively has not been driven. It writes `$PROJ\conductor\providers.json` and, before
+writing, prints the availability that pin will resolve to — `availability available` when
+both pinned files are there. **A run that ends `available` is the check.** The command used
+to report only that it had written the file, which was true and told nobody whether the
+result was usable.
+
+How many questions it asks depends on the harness, and that is the point: an
+interpreter-backed provider (`deepseek-harness`) is asked for the script its interpreter
+runs and will not accept an empty answer, while a single-executable one (`claude-code`,
+`codex`, `grok-build`, `kimi-code`) is never asked for an entrypoint at all. **Drive at
+least one of each.** Offering the same optional entrypoint to both wrote a config the
+server then refused — `executable_absent` for the first shape, `version_mismatch` for the
+second — under a message that said the file had been written.
+
+Three things to watch for at the environment question, because they are the reason this
 command exists rather than an instruction to open an editor:
 
-- type `ANTHROPIC_API_KEY=sk-something` at the environment question. It must be refused,
-  naming the variable and saying the value is read from your environment. **No credential
-  value may ever reach that file**, and there is nowhere in the dialogue one fits;
+- type `ANTHROPIC_API_KEY=sk-something`. It must be refused, naming the VARIABLE and saying
+  the value is read from your environment. **No credential value may ever reach that file**,
+  and there is nowhere in the dialogue one fits;
+- type a bare key-shaped token — `sk-live-anything` — as somebody who misread the question
+  would paste one. It must be refused **without repeating the token back**: the refusal says
+  which entry it means, never what was in it;
 - type `PYTHONPATH` or `LD_PRELOAD`. It must be refused with the reason, at the moment you
   type it — not later, from a harness that would not start.
 

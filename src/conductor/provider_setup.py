@@ -51,7 +51,12 @@ _PREAMBLE = (
     "Nothing you type here is a secret. A credential is NAMED, never written: "
     "you give the name of an environment variable, and its value is read from "
     "your environment when a step runs. The file this writes holds no value, "
-    "no argv, no working directory and no URL.")
+    "no argv, no working directory and no URL.\n"
+    "\n"
+    "Your TERMINAL echoes what you type, and this command cannot stop it: a "
+    "credential pasted here would be on your screen and in your scrollback "
+    "whatever this command did. What it does promise is that it will never "
+    "repeat one back — a refusal names the question, not the token.")
 _ENV_QUESTION = (
     "Environment variable NAMES this provider may read, separated by spaces.\n"
     "  Names only — never a value, and never NAME=value. Enter for none.")
@@ -116,12 +121,17 @@ def _choose_provider(ask: Callable[[str], str]) -> tuple[str, str, str]:
 
 
 def _ask_absolute(ask: Callable[[str], str], question: str, *,
-                  optional: bool) -> str:
+                  optional: bool, noun: str = "executable") -> str:
     """Read one absolute path, re-asking until it is one.
 
     Judged by the same predicate the durable contract uses, imported rather than
     reimplemented: a wizard with its own idea of "absolute" would accept a path
     the config then refuses, after the person had been told it was saved.
+
+    `noun` is what the empty answer is refused FOR. It exists because this reads
+    two different required paths now, and one refusal saying "a provider needs
+    an executable" under the entrypoint question sends a person back to check a
+    path that was never the problem.
     """
     from conductor.command.adapters.provider import _is_absolute
 
@@ -130,7 +140,7 @@ def _ask_absolute(ask: Callable[[str], str], question: str, *,
         if not answer:
             if optional:
                 return ""
-            _say("  a provider needs an executable; there is no default.")
+            _say(f"  this provider needs an {noun}; there is no default.")
             continue
         if "\x00" in answer:
             _say("  that is not a path this build can pin.")
@@ -142,40 +152,71 @@ def _ask_absolute(ask: Callable[[str], str], question: str, *,
         return answer
 
 
+def _quotable(token: str) -> bool:
+    """Whether this token may be repeated back to the person who typed it.
+
+    Only a well-formed environment variable NAME may. Everything else is
+    something the dialogue did not ask for, and the one thing somebody in a
+    hurry pastes into this question is a credential: a key-shaped token fails
+    the name grammar and used to be echoed WHOLE inside its own refusal, which
+    put it on the screen, in the scrollback and in any log that captured
+    stderr. A refusal has to identify which token it means -- it does that by
+    POSITION now, which locates a typo just as well and carries nothing.
+    """
+    from conductor.command.adapters.deep_contracts import _ENV_NAME
+
+    return _ENV_NAME.fullmatch(token) is not None
+
+
+def _place(index: int, total: int) -> str:
+    """Which token a refusal is about, without saying what it was."""
+    return "what you typed" if total == 1 else f"entry {index} of {total}"
+
+
+def _refuse_name(token: str, index: int, total: int) -> str | None:
+    """Why this token is not a name this build will allow, or None if it is.
+
+    Every branch is careful about what it repeats: the head of a `NAME=value`
+    is quoted only when the head is itself a name, because `sk-live-x=y` has a
+    left half too and it is not one.
+    """
+    from conductor.command.adapters.process import injecting_env_reason
+
+    where = _place(index, total)
+    if "=" in token:
+        head = token.split("=", 1)[0]
+        shown = repr(head) if _quotable(head) else where
+        return (f"{shown} looks like NAME=value. Give the name alone; the "
+                "value is read from your environment when a step runs.")
+    if not _quotable(token):
+        return (f"{where} is not an environment variable name. A name is "
+                "letters, digits and underscores, and does not start with a "
+                "digit. It is not repeated back here: if that was a credential "
+                "VALUE, this question wants the NAME of the variable holding it.")
+    reason = injecting_env_reason(token)
+    if reason is not None:
+        return f"{token!r} may not be allowed: {reason}"
+    return None
+
+
 def _ask_env_names(ask: Callable[[str], str]) -> list[str]:
     """Read environment variable NAMES, refusing a value and an injector alike.
 
-    Both refusals name the offending token and say WHY, because "invalid" sends
-    a person hunting for a typo in a line that has no typo in it.
+    A refusal says WHY, because "invalid" sends a person hunting for a typo in
+    a line that has no typo in it. What it does not do is quote a token that is
+    not a name -- see `_quotable`.
     """
-    from conductor.command.adapters.process import injecting_env_reason
-    from conductor.command.adapters.deep_contracts import _ENV_NAME
-
     _say("\n" + _ENV_QUESTION)
     while True:
         answer = ask("> ").strip()
         if not answer:
             return []
         names = answer.replace(",", " ").split()
-        refused = False
-        for name in names:
-            if "=" in name:
-                _say(f"  {name.split('=')[0]!r} looks like NAME=value. Give the "
-                     "name alone; the value is read from your environment.")
-                refused = True
-                break
-            if _ENV_NAME.fullmatch(name) is None:
-                _say(f"  {name!r} is not an environment variable name. A name "
-                     "is letters, digits and underscores, and does not start "
-                     "with a digit.")
-                refused = True
-                break
-            reason = injecting_env_reason(name)
-            if reason is not None:
-                _say(f"  {name!r} may not be allowed: {reason}")
-                refused = True
-                break
-        if refused:
+        refusals = [_refuse_name(name, place, len(names))
+                    for place, name in enumerate(names, 1)]
+        stated = next((why for why in refusals if why is not None), None)
+        if stated is not None:
+            _say(f"  {stated}")
             continue
         if len(set(names)) != len(names):
             _say("  each name once, please.")
@@ -184,7 +225,7 @@ def _ask_env_names(ask: Callable[[str], str]) -> list[str]:
 
 
 def _summarise(config, path: Path, existing: Iterable[str]) -> None:
-    """Show exactly what will be written, before anything is."""
+    """Show exactly what will be written, and what the server will make of it."""
     _say(f"\nWriting {path}:")
     _say(f"  provider    {config.provider_id}")
     _say(f"  protocol    {config.protocol}   (chosen by this build, not by you)")
@@ -194,20 +235,62 @@ def _summarise(config, path: Path, existing: Iterable[str]) -> None:
     kept = [name for name in existing if name != config.provider_id]
     if kept:
         _say(f"  keeping     {', '.join(kept)}")
+    _say(f"  availability {_availability(config)}")
+
+
+def _ask_entrypoint(ask: Callable[[str], str], provider_id: str,
+                    rule: str) -> str:
+    """Ask for the second half of the pin, or do not ask at all.
+
+    The SHAPE comes from `providers.entrypoint_rule`, which is the same rule
+    availability is resolved against one layer down. It used to be asked the
+    same way of every provider -- "Optional entrypoint … or Enter for none" --
+    and both halves of that were wrong for four of the five catalogued rows and
+    for the fifth in the other direction:
+
+    - an interpreter-backed provider whose operator pressed Enter was written
+      with no entrypoint, reported as written, and resolved `executable_absent`;
+    - a single-executable provider whose operator supplied one was written with
+      it, reported as written, and resolved `version_mismatch`.
+
+    Neither answer named the question that produced it, and the end-to-end test
+    drove only the catalogue's first row -- the one shape where pressing Enter
+    happens to be right.
+    """
+    from conductor.command.providers import (
+        ENTRYPOINT_FORBIDDEN, ENTRYPOINT_REQUIRED)
+
+    if rule == ENTRYPOINT_FORBIDDEN:
+        # Not asked, because there is no answer this build could honour: this
+        # provider IS its executable. A question with one acceptable answer is
+        # a way to get it wrong, not a choice.
+        _say("\nThis provider is a single executable, so there is no "
+             "entrypoint to pin and none is asked for.")
+        return ""
+    if rule == ENTRYPOINT_REQUIRED:
+        _say(f"\n{provider_id} runs through an interpreter: the executable "
+             "above is the interpreter, and it needs the absolute path of the "
+             "script it runs. Both files must be present for this provider to "
+             "be available.")
+        return _ask_absolute(
+            ask, "Absolute path to the entrypoint it runs: ", optional=False,
+            noun="entrypoint")
+    return _ask_absolute(
+        ask, "Optional entrypoint (absolute path), or Enter for none: ",
+        optional=True)
 
 
 def _collect(ask: Callable[[str], str]):
-    """Ask the four questions and build the config they describe."""
+    """Ask the questions this provider's pin shape needs, and build the config."""
     from conductor.command.adapters.provider import (
         ProviderConfig, ProviderConfigError)
+    from conductor.command.providers import entrypoint_rule
 
     provider_id, protocol, display = _choose_provider(ask)
     _say(f"\n{display}")
     executable = _ask_absolute(
         ask, f"Absolute path to the {provider_id} executable: ", optional=False)
-    entrypoint = _ask_absolute(
-        ask, "Optional entrypoint (absolute path), or Enter for none: ",
-        optional=True)
+    entrypoint = _ask_entrypoint(ask, provider_id, entrypoint_rule(protocol))
     env_allow = _ask_env_names(ask)
     try:
         return ProviderConfig(
@@ -217,18 +300,38 @@ def _collect(ask: Callable[[str], str]):
         raise SetupError(f"this build refuses that provider: {error}") from None
 
 
+def _availability(config) -> str:
+    """What the SERVER will call this pin, asked of the server's own resolver.
+
+    Not re-derived here. A second opinion about availability is a second way to
+    be wrong, and the whole defect this closes was two surfaces holding
+    different ideas of the same rule.
+    """
+    from conductor.command.providers import availability_of
+
+    return availability_of(config)
+
+
 def _warn_if_absent(config) -> None:
-    """Say what will happen if the pinned executable is not there.
+    """Say which pinned file is not there, when that is what stands between
+    this config and an available provider.
 
     Not a refusal: the durable contract requires an absolute path, not a present
     one, and refusing here would stop somebody configuring a harness they are
     about to install. What it must not do is stay quiet and let them discover it
     from a screen that says `executable_absent` with no idea why.
+
+    The SHAPE of the pin is settled before this by `_ask_entrypoint`, so a
+    missing file is the only thing left that can hold a finished dialogue back.
     """
-    if not Path(config.executable).exists():
-        _say(f"\nnote: {config.executable} is not on this machine yet. The file "
-             "will be written; the Agents screen will show this provider as "
-             "unavailable until the path exists.")
+    if _availability(config) == "available":
+        return
+    absent = [pin for pin in (config.executable, config.entrypoint)
+              if pin and not Path(pin).exists()]
+    for pin in absent:
+        _say(f"\nnote: {pin} is not on this machine yet. The file will be "
+             "written; the Agents screen will show this provider as "
+             "unavailable until that path exists.")
 
 
 def _open_the_file(directory: str):

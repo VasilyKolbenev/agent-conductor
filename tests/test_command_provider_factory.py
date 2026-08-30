@@ -22,6 +22,7 @@ from conductor.command.adapters.provider import ProviderConfig, provider_project
 from conductor.command.contracts import canonical_json
 from conductor.command.adapters.claude_code import CLAUDE_PROTOCOL
 from conductor.command.adapters.codex_cli import CODEX_PROTOCOL
+from conductor.command.adapters.dsh_harness import DSH_PROTOCOL
 from conductor.command.adapters.process import ProcessRunner
 from conductor.command.providers import PROVIDER_CATALOG, resolve_providers
 from tests.test_store import good_lane, write_project
@@ -267,3 +268,107 @@ def test_build_refuses_an_explicit_registry_beside_provider_config(tmp_path):
             root, 0, registry=AdapterRegistry(),
             providers=[_config("claude-code", executable, CLAUDE_PROTOCOL)],
             clock=lambda: NOW, ids=_ids())
+
+
+# -- the PIN SHAPE, which availability judges and nothing held ---------------
+#
+# Two arms of `_resolve_availability` decide whether the operator pinned the
+# right NUMBER of files: an interpreter-backed provider must name a second
+# absolute path, and a single-executable one may not. Deleting either arm left
+# all 199 tests across every provider module green, which is how `conduct
+# providers` came to offer the same "optional entrypoint" question to all five
+# rows and write two kinds of config the server would then refuse. The wizard's
+# own tests cannot cover this any more -- it can no longer express either
+# mistake -- so the rule is held here, where it lives.
+
+
+def _contract(resolution, provider_id: str):
+    """The descriptor for one provider, found by identity rather than position.
+
+    `_catalogued_ids` puts the configured rows first, so index 0 is the
+    configured one for a single-config resolution -- but that is an ordering
+    detail, and a test that reads it measures the ordering as well as the rule.
+    """
+    found = [row for row in resolution.contracts
+             if row.provider_id == provider_id]
+    assert len(found) == 1, [row.provider_id for row in resolution.contracts]
+    return found[0]
+
+
+def _pinned(tmp_path: Path, provider_id: str, protocol: str, *,
+            entrypoint: str | None) -> ProviderConfig:
+    """A config whose files all exist, so only the SHAPE can make it unavailable."""
+    return ProviderConfig(
+        provider_id=provider_id, executable=_present(tmp_path, "interpreter"),
+        protocol=protocol, env_allow=(),
+        entrypoint="" if entrypoint is None else entrypoint)
+
+
+def test_an_interpreter_backed_provider_with_no_entrypoint_is_unavailable(tmp_path):
+    """An interpreter with nothing to run is not a usable provider.
+
+    Both files are present, so `executable_absent` here is a statement about the
+    pin's SHAPE and not about the disk -- which is what makes it the right
+    answer: there is a second file, and the operator named none.
+    """
+    resolution = resolve_providers(
+        [_pinned(tmp_path, "deepseek-harness", DSH_PROTOCOL, entrypoint=None)],
+        root=tmp_path, clock=lambda: NOW, ids=_ids())
+
+    assert _contract(resolution, "deepseek-harness").availability == (
+        "executable_absent")
+    assert resolution.spawn_capable("deepseek-harness") is False
+
+
+def test_an_interpreter_backed_provider_with_both_halves_is_available(tmp_path):
+    """The over-correction control: the arm above must not refuse a good pin."""
+    resolution = resolve_providers(
+        [_pinned(tmp_path, "deepseek-harness", DSH_PROTOCOL,
+                 entrypoint=_present(tmp_path, "agent.py"))],
+        root=tmp_path, clock=lambda: NOW, ids=_ids())
+
+    assert _contract(resolution, "deepseek-harness").availability == "available"
+    assert resolution.spawn_capable("deepseek-harness") is True
+
+
+def test_a_single_executable_provider_pinned_with_an_entrypoint_is_unavailable(
+        tmp_path):
+    """The mirror image, and it is answered as unavailability rather than raised.
+
+    Raising from the adapter factory took down the whole roster: `conduct up`
+    does not catch `ProviderConfigError`, so one operator typo ended the server
+    with a traceback and no descriptor for any provider at all.
+    """
+    resolution = resolve_providers(
+        [_pinned(tmp_path, "claude-code", CLAUDE_PROTOCOL,
+                 entrypoint=_present(tmp_path, "extra.js"))],
+        root=tmp_path, clock=lambda: NOW, ids=_ids())
+
+    assert _contract(resolution, "claude-code").availability == "version_mismatch"
+    assert resolution.spawn_capable("claude-code") is False
+
+
+def test_a_single_executable_provider_with_one_file_is_available(tmp_path):
+    """The over-correction control for the mirror arm."""
+    resolution = resolve_providers(
+        [_pinned(tmp_path, "claude-code", CLAUDE_PROTOCOL, entrypoint=None)],
+        root=tmp_path, clock=lambda: NOW, ids=_ids())
+
+    assert _contract(resolution, "claude-code").availability == "available"
+    assert resolution.spawn_capable("claude-code") is True
+
+
+def test_the_pin_shape_rule_covers_every_catalogued_protocol():
+    """No catalogued provider may have an unstated pin shape.
+
+    `optional` is honest for a protocol this build does not catalogue -- nothing
+    constrains such a pin either way. It is NOT honest for one that ships: a
+    catalogued row whose shape nobody has decided is a row an operator can pin
+    two ways, one of which the server will refuse without saying so.
+    """
+    unstated = sorted(
+        entry.protocol for entry in PROVIDER_CATALOG.values()
+        if provider_factory.entrypoint_rule(entry.protocol)
+        == provider_factory.ENTRYPOINT_OPTIONAL)
+
+    assert unstated == []

@@ -37,6 +37,27 @@ from conductor.command import operator_config
 from conductor.command.adapters.provider import ProviderConfig
 
 EXECUTABLE = "/opt/harness/bin/agent"
+ENTRYPOINT = "/opt/harness/lib/agent.py"
+
+#: What each catalogued provider's pin LOOKS like, stated here rather than read
+#: from `providers.entrypoint_rule`.
+#:
+#: This is the independent expectation, and it has to be independent: the rule
+#: is exactly what these tests judge, so a table derived from it would move with
+#: a mutation and call the result a pass. Written down, it is a claim about five
+#: vendors that a person can check against their documentation.
+#:
+#: `required` — the pinned executable is an INTERPRETER, and the script it runs
+#: is a second absolute path. `forbidden` — the pinned executable is the whole
+#: harness, so there is no second file and offering to pin one produces a config
+#: this build will not honour.
+PIN_SHAPES = {
+    "claude-code": "forbidden",
+    "codex": "forbidden",
+    "deepseek-harness": "required",
+    "grok-build": "forbidden",
+    "kimi-code": "forbidden",
+}
 
 
 @pytest.fixture
@@ -44,6 +65,26 @@ def project(tmp_path):
     """A real project, scaffolded by the real `conduct init`."""
     assert main(["init", "--dir", str(tmp_path)]) == 0
     return tmp_path
+
+
+def menu_choice(provider_id: str) -> str:
+    """The number a person types to pick this provider from the printed menu."""
+    from conductor.command.providers import PROVIDER_CATALOG
+
+    return str(sorted(PROVIDER_CATALOG).index(provider_id) + 1)
+
+
+def pin_answers(provider_id: str, executable, entrypoint) -> list[str]:
+    """The path answers this provider's dialogue asks for, per `PIN_SHAPES`.
+
+    A `forbidden` row is given NO entrypoint answer, so a dialogue that asked
+    for one would consume the env-name answer here and the test would fail on
+    the shifted script rather than on a hidden default.
+    """
+    answers = [menu_choice(provider_id), str(executable)]
+    if PIN_SHAPES[provider_id] == "required":
+        answers.append(str(entrypoint))
+    return answers
 
 
 def scripted(*answers):
@@ -88,7 +129,7 @@ def test_the_owner_path_after_init_reaches_an_available_provider(
     executable = tmp_path / "harness-executable"
     executable.write_text("", encoding="utf-8", newline="\n")
 
-    assert configure(project, "1", str(executable), "", "MY_TOKEN_NAME", "y") == 0
+    assert configure(project, "1", str(executable), "MY_TOKEN_NAME", "y") == 0
 
     pinned = operator_config.load_provider_configs(
         operator_config.provider_config_path(project / "conductor"))
@@ -121,7 +162,7 @@ def test_the_wizard_writes_what_the_reader_admits(project, tmp_path):
     executable = tmp_path / "harness-executable"
     executable.write_text("", encoding="utf-8", newline="\n")
 
-    assert configure(project, "1", str(executable), "", "MY_TOKEN_NAME", "y") == 0
+    assert configure(project, "1", str(executable), "MY_TOKEN_NAME", "y") == 0
 
     configs = operator_config.load_provider_configs(
         operator_config.provider_config_path(project / "conductor"))
@@ -138,7 +179,7 @@ def test_the_protocol_is_derived_and_never_asked_for(project):
     """
     from conductor.command.providers import PROVIDER_CATALOG
 
-    assert configure(project, "1", EXECUTABLE, "", "", "y") == 0
+    assert configure(project, "1", EXECUTABLE, "", "y") == 0
 
     row = written(project)["providers"][0]
     assert row["protocol"] == PROVIDER_CATALOG[row["provider_id"]].protocol
@@ -154,7 +195,7 @@ def test_a_pasted_credential_is_refused_and_never_written(project):
     the refusal is a re-ask rather than a failure: a person is corrected, not
     thrown out of the flow.
     """
-    assert configure(project, "1", EXECUTABLE, "",
+    assert configure(project, "1", EXECUTABLE,
                      "ANTHROPIC_API_KEY=sk-live-secret", "MY_TOKEN_NAME",
                      "y") == 0
 
@@ -173,7 +214,7 @@ def test_the_refusal_says_the_value_is_read_from_the_environment(
     it deletes is the only sentence that tells somebody WHY, and a flow that
     answers "that is not a name" to a pasted key is one they will fight.
     """
-    configure(project, "1", EXECUTABLE, "", "TOKEN=abc", "MY_TOKEN_NAME", "y")
+    configure(project, "1", EXECUTABLE, "TOKEN=abc", "MY_TOKEN_NAME", "y")
 
     said = capsys.readouterr().err
     assert "looks like NAME=value" in said, said
@@ -190,7 +231,7 @@ def test_a_name_that_would_inject_code_is_refused_while_it_is_typed(
     harness that will not start, naming neither the variable nor the file, long
     after the person who typed it has moved on.
     """
-    assert configure(project, "1", EXECUTABLE, "", name, "MY_TOKEN_NAME",
+    assert configure(project, "1", EXECUTABLE, name, "MY_TOKEN_NAME",
                      "y") == 0
 
     said = capsys.readouterr().err
@@ -204,7 +245,7 @@ def test_an_allowed_name_is_still_allowed(project):
     `env_allow` is how a credential reaches a harness at all. A flow that
     refused every name would be secure and useless.
     """
-    assert configure(project, "1", EXECUTABLE, "",
+    assert configure(project, "1", EXECUTABLE,
                      "ANTHROPIC_API_KEY OPENAI_API_KEY", "y") == 0
 
     assert written(project)["providers"][0]["env_allow"] == [
@@ -252,7 +293,7 @@ def test_a_non_terminal_is_refused_rather_than_defaulted(project, capsys):
 
 def test_declining_the_confirmation_writes_nothing(project):
     """The last question is a real question."""
-    assert configure(project, "1", EXECUTABLE, "", "", "n") == 1
+    assert configure(project, "1", EXECUTABLE, "", "n") == 1
 
     assert not operator_config.provider_config_path(
         project / "conductor").exists()
@@ -260,8 +301,8 @@ def test_declining_the_confirmation_writes_nothing(project):
 
 def test_configuring_a_second_provider_keeps_the_first(project):
     """Adding is adding. A wizard that replaced the file would silently unconfigure."""
-    assert configure(project, "1", EXECUTABLE, "", "", "y") == 0
-    assert configure(project, "2", "/opt/other/bin/agent", "", "", "y") == 0
+    assert configure(project, "1", EXECUTABLE, "", "y") == 0
+    assert configure(project, "2", "/opt/other/bin/agent", "", "y") == 0
 
     ids = [row.provider_id for row in operator_config.load_provider_configs(
         operator_config.provider_config_path(project / "conductor"))]
@@ -274,8 +315,8 @@ def test_configuring_the_same_provider_twice_corrects_it(project):
     So the second pass replaces by identity rather than appending, which is
     also what a person means the second time: they are correcting the path.
     """
-    assert configure(project, "1", EXECUTABLE, "", "", "y") == 0
-    assert configure(project, "1", "/opt/corrected/bin/agent", "", "", "y") == 0
+    assert configure(project, "1", EXECUTABLE, "", "y") == 0
+    assert configure(project, "1", "/opt/corrected/bin/agent", "", "y") == 0
 
     configs = operator_config.load_provider_configs(
         operator_config.provider_config_path(project / "conductor"))
@@ -295,7 +336,7 @@ def test_a_file_this_build_cannot_read_is_not_overwritten(project, capsys):
                     encoding="utf-8", newline="\n")
     before = path.read_bytes()
 
-    assert configure(project, "1", EXECUTABLE, "", "", "y") == 1
+    assert configure(project, "1", EXECUTABLE, "", "y") == 1
 
     assert path.read_bytes() == before
     assert "will not overwrite what it cannot read" in capsys.readouterr().err
@@ -303,7 +344,7 @@ def test_a_file_this_build_cannot_read_is_not_overwritten(project, capsys):
 
 def test_a_relative_path_is_refused_and_re_asked(project):
     """The contract wants an absolute pin; the wizard says so in those words."""
-    assert configure(project, "1", "bin/agent", EXECUTABLE, "", "", "y") == 0
+    assert configure(project, "1", "bin/agent", EXECUTABLE, "", "y") == 0
 
     assert written(project)["providers"][0]["executable"] == EXECUTABLE
 
@@ -359,3 +400,258 @@ def test_the_writer_refuses_a_document_its_own_reader_would_reject(tmp_path):
         operator_config.save_provider_configs(path, twice)
 
     assert not path.exists()
+
+
+# -- the claim: every pin shape in the catalogue, not just the first row ------
+#
+# The end-to-end test above drives the catalogue's FIRST row, and that is the
+# one shape where pressing Enter at the entrypoint question happens to be
+# right. Everything below exists because that was the whole of the coverage,
+# and two real defects lived in the space it did not reach: an interpreter-
+# backed provider written with no entrypoint (`rc=0`, then `executable_absent`
+# from the server), and a single-executable provider written WITH one (`rc=0`,
+# then `version_mismatch`). Both were reported as "wrote providers.json".
+
+
+def recording():
+    """A prompter that keeps the QUESTIONS as well as answering them.
+
+    The question text is handed to `ask` and never printed to stderr, so a test
+    that reads captured output cannot see which questions were put. A dialogue
+    that stops asking something is exactly what has to be measured here.
+    """
+    asked: list[str] = []
+    answers: list[str] = []
+
+    def ask(prompt: str) -> str:
+        asked.append(prompt)
+        return answers.pop(0)
+
+    return asked, answers, ask
+
+
+def pinned_files(tmp_path, provider_id):
+    """Two real files to pin, so availability turns on shape and not on disk."""
+    executable = tmp_path / f"{provider_id}-executable"
+    entrypoint = tmp_path / f"{provider_id}-entrypoint"
+    for path in (executable, entrypoint):
+        path.write_text("", encoding="utf-8", newline="\n")
+    return executable, entrypoint
+
+
+def server_availability(root):
+    """What `conduct up` would report, asked of the road `conduct up` uses."""
+    from conductor.command.providers import resolve_providers
+
+    pinned = operator_config.load_provider_configs(
+        operator_config.provider_config_path(root / "conductor"))
+    counter = iter(range(1, 10_000))
+    resolution = resolve_providers(
+        pinned, root=root, clock=lambda: "2026-01-01T00:00:00Z",
+        ids=lambda kind: f"{kind}-{next(counter)}")
+    return {row.provider_id: row.availability for row in resolution.contracts}
+
+
+def test_every_catalogued_provider_has_a_stated_pin_shape():
+    """`PIN_SHAPES` is the independent expectation, so it must stay complete.
+
+    Both directions. A provider added to the catalogue with no row here fails
+    until somebody states its pin shape, which is the point at which the
+    question "does this run through an interpreter?" is cheap to answer; and a
+    row here for a provider that no longer exists is a stale expectation the
+    tests below would quietly stop exercising.
+    """
+    from conductor.command.providers import PROVIDER_CATALOG
+
+    assert set(PIN_SHAPES) == set(PROVIDER_CATALOG)
+    assert set(PIN_SHAPES.values()) == {"required", "forbidden"}
+
+
+@pytest.mark.parametrize("provider_id", sorted(PIN_SHAPES))
+def test_every_pin_shape_reaches_an_available_provider(
+        project, tmp_path, provider_id):
+    """The editor-free path, driven for EVERY row, ending at the server's word.
+
+    `available` is the whole assertion, and it is asked of `resolve_providers`
+    -- the function `conduct up` hands its file to -- rather than of any
+    convenience the wizard itself calls. Before the pin shape was derived, four
+    of these five failed: `deepseek-harness` at `executable_absent` and the
+    other rows at `version_mismatch` had an entrypoint been offered to them.
+    """
+    executable, entrypoint = pinned_files(tmp_path, provider_id)
+
+    assert configure(project,
+                     *pin_answers(provider_id, executable, entrypoint),
+                     "MY_TOKEN_NAME", "y") == 0
+
+    assert server_availability(project)[provider_id] == "available"
+
+
+def test_an_interpreter_backed_provider_refuses_an_empty_entrypoint(
+        project, tmp_path, capsys):
+    """Enter is what the old dialogue invited, and it produced a dead config.
+
+    The refusal is a re-ask, and it names the ENTRYPOINT: a message saying "a
+    provider needs an executable" under this question sends somebody back to
+    check a path that was never the problem.
+    """
+    executable, entrypoint = pinned_files(tmp_path, "deepseek-harness")
+
+    assert configure(project, menu_choice("deepseek-harness"), str(executable),
+                     "", str(entrypoint), "MY_TOKEN_NAME", "y") == 0
+
+    said = capsys.readouterr().err
+    assert "needs an entrypoint" in said, said
+    assert "executable; there is no default" not in said, said
+    assert written(project)["providers"][0]["entrypoint"] == str(entrypoint)
+    assert server_availability(project)["deepseek-harness"] == "available"
+
+
+@pytest.mark.parametrize("provider_id", sorted(
+    name for name, shape in PIN_SHAPES.items() if shape == "forbidden"))
+def test_a_single_executable_provider_is_never_asked_for_an_entrypoint(
+        project, tmp_path, provider_id):
+    """Not "asked and ignored" -- the question is not put at all.
+
+    Measured on the QUESTIONS, because a dialogue that still asked and then
+    discarded the answer would leave the same three durable facts as one that
+    never asked, and the person would still have typed a path this build cannot
+    honour. A question with one acceptable answer is a way to get it wrong.
+    """
+    executable, _ = pinned_files(tmp_path, provider_id)
+    asked, answers, ask = recording()
+    answers.extend([menu_choice(provider_id), str(executable),
+                    "MY_TOKEN_NAME", "y"])
+
+    assert provider_setup.run(
+        argparse.Namespace(dir=str(project)), ask=ask) == 0
+
+    assert not [question for question in asked
+                if "entrypoint" in question.lower()], asked
+    assert "entrypoint" not in written(project)["providers"][0]
+    assert server_availability(project)[provider_id] == "available"
+
+
+def test_the_wizard_states_the_availability_the_server_will_report(
+        project, tmp_path, capsys):
+    """"wrote providers.json" was a claim nothing had checked.
+
+    Both directions, because a line that always said `available` would pass the
+    first half: a pin whose file is not there yet is written, said to be
+    `executable_absent`, and the absent path is named.
+    """
+    executable, _ = pinned_files(tmp_path, "claude-code")
+
+    assert configure(project, "1", str(executable), "MY_TOKEN_NAME", "y") == 0
+    said = capsys.readouterr().err
+    assert "availability available" in said, said
+
+    missing = tmp_path / "not-installed-yet"
+    assert configure(project, "1", str(missing), "MY_TOKEN_NAME", "y") == 0
+    said = capsys.readouterr().err
+    assert "availability executable_absent" in said, said
+    # The NOTE, not the summary. `executable  <path>` prints the same path one
+    # line above, so asserting the path alone passed with the note deleted --
+    # a mutation found that, and it is the reason this reads the sentence.
+    note = next((line for line in said.splitlines()
+                 if "is not on this machine yet" in line), "")
+    assert str(missing) in note, said
+    assert server_availability(project)["claude-code"] == "executable_absent"
+
+
+def test_the_pin_shape_rule_answers_optional_for_a_protocol_in_neither_set():
+    """The over-correction control on the rule itself.
+
+    A protocol this build does not catalogue constrains the pin NEITHER way, and
+    `optional` is the honest word for that. A rule that answered `required` for
+    everything it did not recognise would demand a second path from a provider
+    that has none, which is the defect this closed, in the other direction.
+    """
+    from conductor.command import providers
+
+    assert providers.entrypoint_rule(
+        "a-protocol-this-build-never-reviewed") == providers.ENTRYPOINT_OPTIONAL
+    assert providers.ENTRYPOINT_RULES == {"required", "forbidden", "optional"}
+
+
+# -- the claim: a refusal never repeats the token back -----------------------
+#
+# `NAME=value` was refused with only its name half quoted, which was right. A
+# bare key-shaped token -- what a paste actually looks like when somebody
+# misreads the question -- fell through to the name-grammar arm and was echoed
+# WHOLE inside its own refusal, onto the screen, into the scrollback and into
+# anything capturing stderr.
+
+#: A token shaped like a live vendor key and belonging to nobody. It is spelled
+#: with a marker rather than a plausible body so that finding it in any file or
+#: any log is unambiguous.
+SYNTHETIC_KEY = "sk-live-SYNTHETIC-DO-NOT-USE"
+
+
+@pytest.mark.parametrize("typed", [
+    SYNTHETIC_KEY,                        # a bare paste into the wrong question
+    f"{SYNTHETIC_KEY}=x",                 # a paste whose own LEFT half is secret
+    f"ANTHROPIC_API_KEY={SYNTHETIC_KEY}",  # the shape that was already handled
+])
+def test_a_pasted_credential_is_never_repeated_back(project, capsys, typed):
+    """No arm of the env-name question may put the token on the screen.
+
+    Three shapes rather than one, because the arm that catches each is
+    different: the name grammar, the `=` split whose head is not a name either,
+    and the `=` split whose head IS one. The third is the case that was already
+    right, and it is here so a redaction that swallowed everything would be
+    caught by the test below rather than by nobody.
+    """
+    assert configure(project, "1", EXECUTABLE, typed,
+                     "MY_TOKEN_NAME", "y") == 0
+
+    said = capsys.readouterr().err
+    assert SYNTHETIC_KEY not in said, said
+    assert "MY_TOKEN_NAME" in json.dumps(written(project))
+    assert SYNTHETIC_KEY not in json.dumps(written(project))
+
+
+def test_a_refusal_still_quotes_a_head_that_is_itself_a_name(project, capsys):
+    """The over-correction control: redaction must not eat the useful case.
+
+    `MY_TOKEN=abc` is a person who understood the question and typed one
+    character too many. Naming `'MY_TOKEN'` back is how they see that; refusing
+    with a position and no name would make the good case as opaque as the bad
+    one, and the value half still may not appear.
+    """
+    configure(project, "1", EXECUTABLE, "MY_TOKEN=abc", "MY_TOKEN", "y")
+
+    said = capsys.readouterr().err
+    assert "'MY_TOKEN' looks like NAME=value" in said, said
+    assert "abc" not in said, said
+
+
+def test_a_refusal_names_which_entry_it_means_when_several_were_typed(
+        project, capsys):
+    """A position locates a typo as well as a quotation does, and carries nothing.
+
+    Somebody who typed three names needs to know which one is wrong. That is the
+    only thing the echoed token was doing that a person needed.
+    """
+    assert configure(project, "1", EXECUTABLE,
+                     f"ONE TWO {SYNTHETIC_KEY}", "ONE TWO", "y") == 0
+
+    said = capsys.readouterr().err
+    assert "entry 3 of 3" in said, said
+    assert SYNTHETIC_KEY not in said, said
+    assert written(project)["providers"][0]["env_allow"] == ["ONE", "TWO"]
+
+
+def test_the_preamble_says_the_terminal_echoes_what_you_type(project, capsys):
+    """The honest half of the claim, since this command cannot silence a terminal.
+
+    A dialogue that said only "nothing you type here is a secret" invites the
+    reading that pasting one is safe. It is not: the terminal has already drawn
+    it. What this command controls is whether IT repeats it, and that is what it
+    promises.
+    """
+    configure(project, "1", EXECUTABLE, "", "n")
+
+    said = capsys.readouterr().err
+    assert "TERMINAL echoes what you type" in said, said
+    assert "never repeat one back" in said, said

@@ -101,15 +101,26 @@ you exactly what to do about it, and what it must name is a COMMAND:
 & $CONDUCT providers --dir $PROJ
 ```
 
-It asks four questions: which harness you have, where it is on this disk, an optional
-entrypoint, and which environment variables it may read. Then it shows you what it will write
-and asks before writing it.
+It asks which harness you have, where it is on this disk, and which environment variables it
+may read. Whether it asks a fourth question — the entrypoint — depends on the harness, and it
+must not ask you to choose: `deepseek-harness` runs through an interpreter, so it asks for the
+script that interpreter runs and will not take an empty answer; the others are a single
+executable, so no entrypoint is asked for and the screen says why.
 
-**Two things you must try, because they are the reason this is a command and not an editor:**
+Then it shows you what it will write, **including the availability that pin will resolve to**,
+and asks before writing it. If it says `availability available`, restarting `conduct up` must
+show that provider as available. If it says anything else, it names the file that is missing.
+A wizard that reported only "wrote providers.json" is what this replaced.
+
+**Three things you must try, because they are the reason this is a command and not an editor:**
 
 - at the environment question, type a credential the way somebody in a hurry would paste one:
-  `ANTHROPIC_API_KEY=sk-something`. It must refuse, name the variable, and say the value is
+  `ANTHROPIC_API_KEY=sk-something`. It must refuse, name the VARIABLE, and say the value is
   read from your environment when a step runs. **No credential value may reach that file.**
+- then type a bare key-shaped token on its own — `sk-live-anything`, with no `NAME=` in front,
+  which is what a paste into the wrong question actually looks like. It must refuse **and the
+  token must not appear in the refusal**. Your terminal will have drawn what you typed, and
+  the command says so up front; what it controls is whether it repeats it.
 - type `PYTHONPATH`, or `LD_PRELOAD`. It must refuse with the reason, while you are typing it.
   A name like that chooses code to load into the harness before its own first instruction, and
   a refusal that arrived later would arrive as a harness that simply would not start.

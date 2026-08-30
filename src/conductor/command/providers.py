@@ -98,6 +98,14 @@ _ENTRYPOINT_PROTOCOLS = frozenset({DSH_PROTOCOL})
 #: has nothing to permit here. Two products sharing a shape share this row.
 _SINGLE_EXECUTABLE_PROTOCOLS = frozenset(
     {KIMI_PROTOCOL, GROK_PROTOCOL, CLAUDE_PROTOCOL, CODEX_PROTOCOL})
+#: What a pin for one protocol must LOOK like, in the three words a surface that
+#: asks an operator for one needs. A closed vocabulary rather than two booleans,
+#: so a caller cannot spell "both" or "neither" and get an answer.
+ENTRYPOINT_REQUIRED = "required"
+ENTRYPOINT_FORBIDDEN = "forbidden"
+ENTRYPOINT_OPTIONAL = "optional"
+ENTRYPOINT_RULES = frozenset(
+    {ENTRYPOINT_REQUIRED, ENTRYPOINT_FORBIDDEN, ENTRYPOINT_OPTIONAL})
 #: The dsh harness carries one control and says so; stop, retry and switch are
 #: absent from the manifest, so the door cannot admit them.
 _DSH_CAPABILITIES = ("observe", "dispatch")
@@ -190,6 +198,49 @@ def _dispatchable_controls(entry: ProviderCatalogEntry) -> frozenset[str]:
     return frozenset(entry.capabilities) - SCHEMALESS_CAPABILITIES
 
 
+def entrypoint_rule(protocol: str) -> str:
+    """Whether a pin for this protocol must name an entrypoint, may not, or neither.
+
+    The pin SHAPE, said out loud, because two surfaces need it and only one of
+    them was reading it. `_resolve_availability` below judges a finished config
+    against these same two sets; `conduct providers` ASKS an operator to build
+    one. While the asking surface carried its own idea -- it offered an optional
+    entrypoint to every provider -- an operator could answer every question,
+    be told the file was written, and get `executable_absent` from the server for
+    the interpreter-backed row and `version_mismatch` for the single-executable
+    ones. Neither answer named the question that produced it.
+
+    So the rule is read from one place by both, and a protocol that changes shape
+    moves the dialogue with it. A protocol in neither set constrains the pin
+    NEITHER way, and `optional` is the honest word for that -- it is what
+    availability below then requires, not a gap in this function.
+
+    Args:
+        protocol: A reviewed protocol token, as carried by a catalogue entry.
+
+    Returns:
+        One of `ENTRYPOINT_REQUIRED`, `ENTRYPOINT_FORBIDDEN`, `ENTRYPOINT_OPTIONAL`.
+    """
+    if protocol in _ENTRYPOINT_PROTOCOLS:
+        return ENTRYPOINT_REQUIRED
+    if protocol in _SINGLE_EXECUTABLE_PROTOCOLS:
+        return ENTRYPOINT_FORBIDDEN
+    return ENTRYPOINT_OPTIONAL
+
+
+def availability_of(config: ProviderConfig, *,
+                    catalog: object = PROVIDER_CATALOG) -> str:
+    """What `resolve_providers` will call this config, without building anything.
+
+    The same judgement, asked without a project root, a clock or an id source,
+    so a surface that has just collected a pin can say what the server will say
+    about it instead of reporting that a file was written and leaving the
+    operator to discover the rest from a screen that names no cause.
+    """
+    return _resolve_availability(
+        reconstruct_config(config), _catalogued(catalog, config.provider_id))
+
+
 def _resolve_availability(config: ProviderConfig, entry: ProviderCatalogEntry) -> str:
     """Availability is a fact about pinned FILES, never about a name or a hope."""
     if not _dispatchable_controls(entry):
@@ -202,11 +253,12 @@ def _resolve_availability(config: ProviderConfig, entry: ProviderCatalogEntry) -
         return "version_mismatch"
     if config.protocol != entry.protocol:
         return "version_mismatch"
-    if entry.protocol in _ENTRYPOINT_PROTOCOLS and not config.entrypoint:
+    rule = entrypoint_rule(entry.protocol)
+    if rule == ENTRYPOINT_REQUIRED and not config.entrypoint:
         # An interpreter with nothing to run is not a usable provider, and
         # inventing the missing half is exactly what this factory refuses to do.
         return "executable_absent"
-    if entry.protocol in _SINGLE_EXECUTABLE_PROTOCOLS and config.entrypoint:
+    if rule == ENTRYPOINT_FORBIDDEN and config.entrypoint:
         # The mirror image: this provider runs ONE binary, so an entrypoint
         # pinned beside it is a config this build cannot honour -- the operator
         # believes a second file is run and nothing here would run it.
