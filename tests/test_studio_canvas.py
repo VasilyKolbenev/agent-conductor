@@ -483,9 +483,12 @@ def test_a_published_revision_is_immutable_on_both_surfaces():
 #: `ControlRuntime._hold_budget`, and held by tests/test_command_plan_bounds.py.
 #: The register shrinks as fields become real; it must never shrink because a
 #: label was quietly dropped, which is what the two-directional check below is.
+#: `Output budget` left this list when the spawn started reading the profile
+#: the plan already carried. It is not a field that became supported by being
+#: relabelled: `tests/test_command_output_budget.py` drives a real dispatch and
+#: reads the byte count off the CommandSpec the runner was handed.
 UNSUPPORTED_FIELDS = (
     "Purpose / description",
-    "Output budget",
     "Required input artifacts",
     "Produced artifacts",
     "Handoff mapping",
@@ -637,3 +640,45 @@ def test_a_placed_step_can_be_given_back_to_the_canvas():
     assert "if (!isObject(node.position)) return {node, notice: \"\"};" in body
     assert "clear" not in _js_ordered(edits, "EDIT_TYPES"), (
         "unplacing became a seventh edit word")
+
+
+def test_the_window_and_the_spawn_agree_what_an_output_profile_is_worth():
+    """Two copies of one table, held equal, because a window may not invent one.
+
+    The inspector states this step's budget in BYTES. Those numbers live in
+    Python -- `deep_commands.OUTPUT_LIMIT_BYTES` is what the spawn spends -- so
+    a window carrying its own idea would show a person a ceiling the child never
+    had. The copy exists because the module table forbids the inspector reaching
+    anything that could reach back; what it may not do is drift.
+    """
+    from conductor.command.adapters.deep_commands import OUTPUT_LIMIT_BYTES
+
+    source = _code(*INSPECTOR)
+    literal = re.search(
+        r"const OUTPUT_LIMIT_BYTES = Object\.freeze\(\{(.*?)\}\);",
+        source, re.DOTALL)
+    assert literal, "the inspector no longer names what a profile is worth"
+    held = {name: int(value) for name, value in
+            re.findall(r"(\w+): (\d+)", literal.group(1))}
+    assert held == dict(OUTPUT_LIMIT_BYTES), (held, dict(OUTPUT_LIMIT_BYTES))
+
+
+def test_the_inspector_states_the_output_budget_it_stopped_calling_unsupported():
+    """A field that leaves the unsupported list must not leave the screen with it.
+
+    Deleting the line entirely would satisfy the completeness census -- the
+    label is not in `UNSUPPORTED_FIELDS` any more -- and leave a person with no
+    way to see the ceiling their step will actually be spawned under. Both
+    states are held, because the one that is easy to lose is the second: a step
+    that names no profile still has a bound, and saying nothing about it reads
+    as unbounded.
+    """
+    inspector = _code(*INSPECTOR)
+    assert "outputBudget(box, node);" in inspector
+    body = re.search(r"function outputBudget\(box, node\) \{(.*?)\n\}",
+                     inspector, re.DOTALL).group(1)
+    assert body.count('context(box, "Output budget"') == 2, body
+    assert "output_limit_profile" in body
+    assert "Output budget" not in re.sub(
+        r"function outputBudget\(box, node\) \{.*?\n\}", "", inspector,
+        flags=re.DOTALL), "the budget is stated in more than one voice"

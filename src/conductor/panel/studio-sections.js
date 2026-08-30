@@ -450,6 +450,38 @@ function ceilingField(box, form, label, name) {
   box.append(wrapper);
 }
 
+//: How many bytes each output-limit profile is worth. The Python table
+//: `deep_commands.OUTPUT_LIMIT_BYTES` owns the same two numbers, and
+//: `tests/test_studio_canvas.py` holds the two copies equal -- a window that
+//: showed a budget the spawn does not use would be worse than showing none.
+const OUTPUT_LIMIT_BYTES = Object.freeze({small: 4096, normal: 16384});
+
+//: What this step's output budget IS, said in bytes.
+//:
+//: It said "not supported by this harness" until the spawn actually read the
+//: profile. That was true and it was the release verdict's own example of the
+//: shape to avoid: a field declared, validated, stored, shipped in both
+//: starters and read by nothing. It is read now, so the honest line is the
+//: number, where it comes from, and the fact that the provider's own reviewed
+//: ceiling still binds -- a plan may ask for less and never for more.
+function outputBudget(box, node) {
+  const named = (node.arguments || {}).output_limit_profile;
+  const bytes = OUTPUT_LIMIT_BYTES[named];
+  if (bytes === undefined) {
+    context(box, "Output budget",
+      "none — this step names no output limit profile, so the provider's own "
+      + "reviewed ceiling is what bounds it",
+      "the step's capability arguments");
+    return;
+  }
+  context(box, "Output budget", `${named} · ${bytes} bytes`,
+    "the step's capability arguments, spent at the spawn");
+  note(box, "A CEILING, like the timeout above: the smaller of this and the "
+    + "provider's own reviewed limit is what the child may write. Set with the "
+    + "capability arguments below, which are composed where a proposal is, "
+    + "against the closed schema registered for this capability.");
+}
+
 export function executionSection(form) {
   const {node, run} = form;
   const box = sectionOf("execution", "Execution");
@@ -466,9 +498,7 @@ export function executionSection(form) {
   note(box, "How many attempts this step may have. Counted the way a loop "
     + "counts its passes -- distinct attempts naming this step -- and spent "
     + "before an action is authorized, so the bound is never exceeded once.");
-  unsupported(box, "Output budget", "This build carries no output budget on a "
-    + "workflow step. The reviewed dispatch arguments carry an output limit "
-    + "profile, and those are set where a proposal is composed.");
+  outputBudget(box, node);
   box.append(element("h4", {text: "Sandbox and policy attachments"}));
   note(box, "The closed attachment vocabulary a step may declare. `sandbox` "
     + "and `filesystem` are the policy-bearing kinds; every one of them is "

@@ -397,3 +397,21 @@ class HarnessProfile:
             raise HeadlessCliError(
                 "unstable_models declares moving names for a provider this "
                 "build has no model flag for, so none of them can be routed")
+
+
+def bounded_output(profile, asked: int | None) -> int:
+    """The output ceiling for one spawn: the provider's, or less if a plan said so.
+
+    A CEILING and never a raise. `HarnessProfile.output_limit` is what this
+    build's transport for that vendor was reviewed against, so a plan may ask a
+    step to write less and can never ask a provider to tolerate more. The same
+    rule `timeout_seconds` already follows, and for the same reason: a bound the
+    requester could widen is not a bound.
+
+    `None` means no plan named one -- a review, a version probe -- and the
+    provider's own limit stands, exactly as it did before a profile meant
+    anything.
+    """
+    if asked is None:
+        return profile.output_limit
+    return min(profile.output_limit, asked)

@@ -77,6 +77,7 @@ from .harness_profile import (
     ExecutablePin,
     HarnessProfile,
     HeadlessCliError,
+    bounded_output,
     is_absolute,
     residue_detail,
     retained_detail,
@@ -92,7 +93,7 @@ from .base import (
     PreparedAction,
     UnsupportedCapability,
 )
-from .deep_commands import DeepDispatchArgs
+from .deep_commands import OUTPUT_LIMIT_BYTES, DeepDispatchArgs
 from .harness_workspace import (
     WORK_DIR,
     HarnessWorkspace,
@@ -368,6 +369,20 @@ class HeadlessCliTransport(ModelRouting):
                     uncontained_detail(self.profile.tool_noun))
         raise self.error("unreachable")
 
+    def _already_claimed(self, request: ActionRequest):
+        """A marker already claims this action, so nothing is spawned for it.
+
+        An earlier attempt reached the spawn. Whether it finished is genuinely
+        unknown, and guessing would be worse than saying so -- but running the
+        task twice is not an option, so this answers `unknown` and stops.
+        """
+        if not self._workspace.is_claimed(request.run_id, request.action_id):
+            return None
+        return self._receipt(
+            request, "unknown", None,
+            "a marker from an earlier attempt already claims this action; "
+            f"the {self.profile.task_noun} is never repeated after a crash")
+
     def _dispatch(
             self, request: ActionRequest, args: DeepDispatchArgs,
             model: str | None = None) -> ActionResultReceipt:
@@ -378,15 +393,9 @@ class HeadlessCliTransport(ModelRouting):
         else left it or the version probe did.
         """
         self._retained = 0
-        if self._workspace.is_claimed(request.run_id, request.action_id):
-            # A marker already claims this action: an earlier attempt reached the
-            # spawn. Whether it finished is genuinely unknown, and guessing would
-            # be worse than saying so -- but running the task twice is not an
-            # option, so this returns without spawning anything.
-            return self._receipt(
-                request, "unknown", None,
-                "a marker from an earlier attempt already claims this action; "
-                f"the {self.profile.task_noun} is never repeated after a crash")
+        claimed = self._already_claimed(request)
+        if claimed is not None:
+            return claimed
         instruction = self._workspace.read_instruction(args.instruction_ref)
         # A home a crashed attempt left behind is model text this build promised
         # not to retain, so it goes before this attempt mints its own. What the
@@ -414,7 +423,8 @@ class HeadlessCliTransport(ModelRouting):
         argv, payload = self._task_command(task_text)
         outcome = self._attempt(
             argv, f"{WORK_DIR}/{args.work_item_id}",
-            timeout=request.timeout_seconds, stdin_bytes=payload, model=model)
+            timeout=request.timeout_seconds, stdin_bytes=payload, model=model,
+            output_limit=OUTPUT_LIMIT_BYTES[args.output_limit_profile])
         self._attempts[attempt_relation(request)] = _Attempt(
             work_dir=work, before=before, after=self._evidence())
         return self._observed(request, outcome)
@@ -488,7 +498,8 @@ class HeadlessCliTransport(ModelRouting):
             timeout: int | float,
             stdin_bytes: bytes | None = None,
             separate_stderr: bool = False,
-            model: str | None = None) -> ProcessOutcome:
+            model: str | None = None,
+            output_limit: int | None = None) -> ProcessOutcome:
         """One spawn inside one FRESH home, and the home goes when the spawn does.
 
         This is the whole of the retention promise: a real harness may write
@@ -507,7 +518,8 @@ class HeadlessCliTransport(ModelRouting):
         try:
             outcome = self._spawn(
                 argv, home, cwd, timeout=timeout, stdin_bytes=stdin_bytes,
-                separate_stderr=separate_stderr, model=model)
+                separate_stderr=separate_stderr, model=model,
+                output_limit=output_limit)
             self._read_attempt_home(home)
             return outcome
         finally:
@@ -549,7 +561,8 @@ class HeadlessCliTransport(ModelRouting):
             timeout: int | float,
             stdin_bytes: bytes | None = None,
             separate_stderr: bool = False,
-            model: str | None = None) -> ProcessOutcome:
+            model: str | None = None,
+            output_limit: int | None = None) -> ProcessOutcome:
         """The ONE place a child is started; argv, env and bounds are code-owned.
 
         ``cwd`` is a route RELATIVE to the project root, so the runner's own
@@ -575,7 +588,8 @@ class HeadlessCliTransport(ModelRouting):
                 # ordering means the promise holds even if it did not.
                 env={**dict(profile.forced_env),
                      profile.home_env: str(home)},
-                output_limit=profile.output_limit, timeout_seconds=timeout,
+                output_limit=bounded_output(profile, output_limit),
+                timeout_seconds=timeout,
                 stdin_bytes=stdin_bytes, separate_stderr=separate_stderr)
             return self._runner.run(spec)
         except ProcessRunnerError:  # noqa: BLE001 -- carry no child detail onward

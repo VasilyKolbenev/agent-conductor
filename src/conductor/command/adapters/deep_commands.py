@@ -31,7 +31,24 @@ DEEP_WORKING_DIRECTORY = "work"
 DEEP_OUTPUT_PROFILE = "bounded-jsonl-v1"
 DEEP_OUTPUT_LIMIT = 16 * 1024
 DISPATCH_PROFILES = frozenset({"implement", "review"})
-OUTPUT_LIMIT_PROFILES = frozenset({"small", "normal"})
+#: What each output-limit profile MEANS, in bytes a child may write.
+#:
+#: The profile has been a validated word with no consequence: every dispatch
+#: carried one, the closed schema refused any other value, both shipped starters
+#: name `normal` -- and the byte count handed to the runner was a constant, so
+#: naming `small` bought a step nothing. That is the exact shape the release
+#: verdict rejects, and it was the example it named.
+#:
+#: A CEILING, never a raise. `_spawn` takes the smaller of this and the
+#: provider's own `HarnessProfile.output_limit`, so a plan may ask a step to
+#: write less and can never ask a provider to tolerate more than its own
+#: transport was reviewed for -- the same rule `timeout_seconds` already
+#: follows. `normal` is deliberately the standing default, so no step that
+#: names it changes behaviour and no shipped document moves.
+OUTPUT_LIMIT_BYTES = MappingProxyType({"small": 4 * 1024, "normal": 16 * 1024})
+#: Derived from the table above rather than written twice: a profile that has
+#: no byte count is a word the schema would admit and the spawn could not honour.
+OUTPUT_LIMIT_PROFILES = frozenset(OUTPUT_LIMIT_BYTES)
 REVIEW_PROFILES = frozenset({"quality", "security", "spec"})
 REQUESTED_EVIDENCE_KINDS = frozenset({"result", "diff", "tests", "status"})
 STOP_REASONS = frozenset({"user", "timeout", "switch"})
