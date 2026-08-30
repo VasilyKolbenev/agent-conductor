@@ -30,7 +30,12 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from conductor.command import contract_values, graph_definition, graph_projection
+from conductor.command import (
+    contract_values,
+    graph_definition,
+    graph_projection,
+    graph_values,
+)
 from conductor.command.adapters import base as adapter_base
 from conductor.command.adapters import provider as provider_module
 from conductor.command.graph_template import DEPLOYMENT_ONLY_FIELDS, TemplateNode
@@ -198,6 +203,11 @@ def test_every_closed_vocabulary_equals_the_python_layer_that_owns_it():
     for source in (canvas, inspector):
         assert _js_ordered(source, "STAGE_NAMES") == list(
             graph_definition.DALIO_STAGES)
+    # What a plan may require of a step's verification. A set rather than a
+    # list: nothing numbers these, and the window offers them in whatever order
+    # the contract carries them.
+    assert set(_js_ordered(inspector, "REQUIRED_EVIDENCE")) == (
+        graph_values.REQUIRED_EVIDENCE)
     assert _js_ordered(canvas, "NODE_PHASES") == list(graph_projection.NODE_PHASES)
     assert _js_ordered(canvas, "GATE_STATES") == list(graph_projection.GATE_STATES)
     bound = re.search(r"LOOP_BOUND = Object\.freeze\(\{min: (\d+), max: (\d+)\}\)",

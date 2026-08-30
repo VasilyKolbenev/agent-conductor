@@ -239,6 +239,13 @@ function nodeProblems(node, found) {
       + "draft cannot be saved until the step names a role or the verifier is "
       + "cleared.");
   }
+  if (Object.hasOwn(node, "required_evidence")
+      && !Object.hasOwn(node, "role_id")) {
+    found.push(`Step ${named} requires evidence of a verification it will `
+      + "never have. A step that binds no role carries nothing out and is "
+      + "verified by nobody, so this draft cannot be saved until the step "
+      + "names a role or the requirement is cleared.");
+  }
   if (rows(node.resources).length > MAX_RESOURCES) {
     found.push(`Step ${named} attaches more than ${MAX_RESOURCES} resources.`);
   }

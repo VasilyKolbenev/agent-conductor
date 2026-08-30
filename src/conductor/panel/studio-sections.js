@@ -69,6 +69,12 @@ export const STAGE_NAMES = Object.freeze([
 export const LOOP_BOUND = Object.freeze({min: 1, max: 99});
 //: `graph_definition.MAX_RESOURCES`.
 export const MAX_RESOURCES = 16;
+//: `graph_values.REQUIRED_EVIDENCE` -- what a plan may require of a step's
+//: verification BEYOND the fact that one happened. A closed vocabulary this
+//: window mirrors rather than invents, held to its Python owner by
+//: `tests/test_studio_canvas.py`, and closed in one direction only: every word
+//: in it asks for MORE proof, and there is none for less.
+export const REQUIRED_EVIDENCE = Object.freeze(["digest"]);
 //: The same closed edit vocabulary `studio-canvas.EDIT_TYPES` names, so both
 //: surfaces reach the draft through one callback and one word list.
 export const EDIT_TYPES = Object.freeze([
@@ -80,8 +86,8 @@ export const EDIT_TYPES = Object.freeze([
 //: a second grammar for slice D to parse.
 export const EDIT_FIELDS = Object.freeze([
   "arguments", "attempt_bound", "capability", "gate_id", "kind",
-  "loop_back_to", "loop_bound", "purpose", "resources", "role_id", "stage",
-  "timeout_seconds", "title", "verifier_role_id",
+  "loop_back_to", "loop_bound", "purpose", "required_evidence", "resources",
+  "role_id", "stage", "timeout_seconds", "title", "verifier_role_id",
 ]);
 //: The six sections, in the one order the design fixes them in.
 export const SECTIONS = Object.freeze([
@@ -520,17 +526,101 @@ function verifierControl(box, form) {
       + "and a capability under Assignment first.");
 }
 
+//: What each word of the vocabulary ASKS FOR, said the way somebody choosing it
+//: has to read it. A word the contract carries and this build has no sentence
+//: for is NAMED as that rather than offered as a bare token -- `budgetLabel`'s
+//: shape next door, and it is what the screen does on the day the two move
+//: apart rather than showing `undefined`.
+const EVIDENCE_DEMANDS = Object.freeze({
+  digest: "the verification must name what it checked",
+});
+
+function evidenceLabel(word) {
+  return Object.hasOwn(EVIDENCE_DEMANDS, word) ? EVIDENCE_DEMANDS[word]
+    : `${word} — this build has no sentence for what it requires`;
+}
+
+//: WHAT this step's verification must name, beyond having happened.
+//:
+//: The pairing rule is the contract's, met here rather than only at the save:
+//: `TemplateNode.__post_init__` refuses a requirement on a step that binds no
+//: role of its own, because a step that carries nothing out is verified by
+//: nobody and there is no verification to require anything of. So that step
+//: gets the reason and no control, which is the shape `outputBudget` already
+//: has for a capability whose schema declares no profile. Clearing the role
+//: clears this with it, over in `studio-edits`.
+function evidenceRequirement(box, form) {
+  const {node} = form;
+  const named = typeof node.required_evidence === "string"
+    ? node.required_evidence : "";
+  if (node.role_id === null || node.role_id === undefined) {
+    context(box, "Evidence requirements", "none — this step binds no role, so "
+      + "nobody verifies it and there is no verification to require anything "
+      + "of", "the workflow contract");
+    return;
+  }
+  selectField(box, form, "Evidence requirements", "required_evidence",
+    [{value: "", label: "no requirement — the verification is held to the "
+      + "runtime's own rule"}].concat(REQUIRED_EVIDENCE.map(
+      (word) => ({value: word, label: evidenceLabel(word)}))),
+    named);
+  context(box, "Evidence requirements",
+    REQUIRED_EVIDENCE.includes(named) ? evidenceLabel(named)
+      : "none — this step is held to the runtime's own rule and to nothing "
+        + "more", "the workflow document");
+  note(box, "A TIGHTENING, and only ever a tightening. Every step already needs "
+    + "a verification signed by the one adapter this plan makes authoritative "
+    + "for it, recorded after the work was observed. What a requirement adds is "
+    + "that the verification NAME what it checked. A run whose step asks for "
+    + "this and whose harness writes no digest records verification_failed "
+    + "instead of succeeded — and the same refusal is made again when the "
+    + "journal is replayed from disk, so a hand-written record cannot buy the "
+    + "success either.");
+}
+
+//: What the OPEN RUN's own frozen plan demands of this step, which is not
+//: necessarily what the draft on screen says: a run materialized before this
+//: field was edited follows the plan it was given, and that difference is
+//: exactly what somebody looking at both needs told.
+//:
+//: Read off `run.planned` -- the run's `graph_definition` node -- and never off
+//: `run.position`, which is the runtime PROJECTION: an outcome and a phase, and
+//: no plan fact at all. A demand is a durable intention, so reading one out of
+//: the record of what happened would be reading the wrong document.
+function runEvidenceRow(box, form) {
+  const {run} = form;
+  if (!run) return;
+  if (!run.planned) {
+    context(box, "Required by the open run", "none — the open run's plan does "
+      + "not name this step", `run ${run.runId}`);
+    return;
+  }
+  const demanded = run.planned.required_evidence;
+  context(box, "Required by the open run",
+    typeof demanded === "string" && demanded !== ""
+      ? evidenceLabel(demanded)
+      : "nothing beyond the runtime's own rule",
+    `the plan of run ${run.runId}`);
+}
+
 export function verificationSection(form) {
   const {run} = form;
   const box = sectionOf("verification", "Verification");
   verifierControl(box, form);
-  unsupported(box, "Evidence requirements", "This build carries no per-step "
-    + "evidence requirement in a workflow document.");
-  unsupported(box, "Success criteria", "A workflow step states no success "
-    + "criteria; an outcome is reported by the immutable result record of a "
-    + "run and by nothing a plan could assert in advance.");
-  unsupported(box, "Verification failure policy", "With no declared criteria "
-    + "there is no failure policy for a plan to carry.");
+  evidenceRequirement(box, form);
+  unsupported(box, "Success criteria", "Every criterion a plan could state, "
+    + "this build already demands of every step: a success is verified, by the "
+    + "one adapter the plan makes authoritative for it, over evidence recorded "
+    + "after the work was observed — and, where the step asks for it, naming "
+    + "what was checked. Anything a plan could add beside that would be weaker "
+    + "than what it is already held to.");
+  unsupported(box, "Verification failure policy", "The behaviour is fixed and "
+    + "there is no choice for a plan to make: this build walks no connections "
+    + "and computes no next step, so a step that fails verification records "
+    + "verification_failed and what happens after it is a Human's next "
+    + "decision. A policy field arrives with the scheduler that could act on "
+    + "one.");
+  runEvidenceRow(box, form);
   note(box, "Process exit 0 proves the process finished, not that the work "
     + "was verified. A run that reports verification_failed reached its "
     + "boundary and did not prove its work.");

@@ -45,7 +45,19 @@ from tests.test_studio_canvas import INSPECTOR, PANEL, ROOT, _code, _text
 #: that the Decisions and Runs screens read and that a dispatching step carries
 #: into the frame its harness is handed --
 #: `tests/test_command_step_purpose.py` drives that chain to a real child's
-#: argv. `Output budget` left it when the spawn started reading the profile
+#: argv.
+#: `Evidence requirements` left it when a step gained a durable
+#: `required_evidence`: both node contracts store it, `materialize` freezes it
+#: into the plan, `graph_causality.demanded_evidence` reads it back off those
+#: frozen bytes, and four layers spend it -- the template refuses a word that
+#: would ask for LESS, `ControlRuntime._causal_evidence` records
+#: `verification_failed` rather than `succeeded` when a demanding step's
+#: verification names nothing checked, and `run_store` makes the same refusal on
+#: append and again on raw replay, so a hand-written journal cannot buy the
+#: success either. tests/test_command_required_evidence.py and
+#: tests/test_command_evidence_demand.py drive the two halves. The positive
+#: witness that the label did not leave the SCREEN is below.
+#: `Output budget` left it when the spawn started reading the profile
 #: the plan already carried. It is not a field that became supported by being
 #: relabelled: `tests/test_command_output_budget.py` drives a real dispatch and
 #: reads the byte count off the CommandSpec the runner was handed.
@@ -73,7 +85,6 @@ from tests.test_studio_canvas import INSPECTOR, PANEL, ROOT, _code, _text
 #: positive witnesses that none of them left the SCREEN are below.
 UNSUPPORTED_FIELDS = (
     "Missing-artifact behaviour",
-    "Evidence requirements",
     "Success criteria",
     "Verification failure policy",
     "Edge conditions",
@@ -281,6 +292,144 @@ def test_the_inspector_states_the_verifier_it_stopped_calling_unsupported():
     assert "has nothing to verify" in body, body
     # And in one voice: one label, one section.
     assert inspector.count('"Verifier role"') == 1
+
+
+# -- the evidence requirement: stated, chosen, and only ever a tightening ------
+
+
+def test_the_inspector_states_the_evidence_requirement_and_lets_it_be_chosen():
+    """A field that leaves the unsupported list must not leave the screen with it.
+
+    Deleting the control satisfies the census -- `Evidence requirements` is not
+    in `UNSUPPORTED_FIELDS` any more -- and leaves a person with no way to say
+    that a step's verification must name WHAT it checked, which is the one
+    degree of freedom the evidence contract has left and the only thing a plan
+    can honestly tighten about it.
+
+    Both STATES are said and the control is mounted beside them: a step that
+    binds no role, which is verified by nobody, and -- in one line with two arms
+    -- a step that names a requirement and a step that does not. The section
+    really mounts it, so a helper defined and never called cannot pass.
+    """
+    inspector = _code(*INSPECTOR)
+    assert "evidenceRequirement(box, form);" in inspector
+    verification = re.search(
+        r"export function verificationSection\(form\) \{(.*?)\n\}",
+        inspector, re.DOTALL).group(1)
+    assert "evidenceRequirement(box, form);" in verification, verification
+    body = re.search(r"function evidenceRequirement\(box, form\) \{(.*?)\n\}",
+                     inspector, re.DOTALL).group(1)
+    assert body.count('context(box, "Evidence requirements"') == 2, body
+    assert "nobody verifies it" in body, body
+    assert "held to the runtime's own rule" in body, body
+    # The control the section mounts, and it writes the NODE field rather than a
+    # capability argument: this is a plan word, not a payload key.
+    assert '"Evidence requirements", "required_evidence"' in body, body
+    assert "REQUIRED_EVIDENCE.map(" in body, body
+    # Both directions: an empty option is offered first, so a step that named a
+    # requirement can stop naming one. A control that could only add is the
+    # one-way door this suite refuses everywhere.
+    assert '[{value: "", label:' in body, body
+    # And in one voice: one label for the writable row, one section.
+    assert inspector.count('"Evidence requirements", "required_evidence"') == 1
+
+
+def test_the_requirement_the_open_run_follows_is_read_off_its_plan():
+    """A durable demand comes from the DEFINITION, never from the projection.
+
+    `run.position` is this run's runtime projection -- an outcome and a phase --
+    and `run.planned` is the node of the plan it froze. A window reading the
+    demand off the projection would be reading a durable intention out of the
+    record of what happened, which is the split
+    `graph_definition`/`graph_projection` exists to keep.
+    """
+    inspector = _code(*INSPECTOR)
+    body = re.search(r"function runEvidenceRow\(box, form\) \{(.*?)\n\}",
+                     inspector, re.DOTALL).group(1)
+    assert "run.planned.required_evidence" in body, body
+    assert "run.position" not in body, body
+    # Both arms: a run whose plan does not name this step says so rather than
+    # reporting "nothing required", which would be a different claim.
+    assert "if (!run.planned) {" in body, body
+    assert "not name this step" in body, body
+    assert body.count('context(box, "Required by the open run"') == 2, body
+
+
+def test_the_requirement_may_only_ever_ask_for_more_than_the_runtime_does():
+    """The choices are the CONTRACT's vocabulary, and it has no word for less.
+
+    The control cannot offer a loosening because the list it maps over is the
+    mirror of `graph_values.REQUIRED_EVIDENCE`, held to it by
+    `tests/test_studio_canvas.py`. What is pinned here is the other half: every
+    word the window can render has a sentence saying what it asks for, so no
+    choice can reach the screen as a bare token.
+    """
+    from conductor.command.graph_values import REQUIRED_EVIDENCE
+
+    inspector = _code(*INSPECTOR)
+    demands = re.search(
+        r"const EVIDENCE_DEMANDS = Object\.freeze\(\{(.*?)\n\}\);",
+        inspector, re.DOTALL)
+    assert demands, "the inspector no longer says what a requirement asks for"
+    assert set(re.findall(r"^  (\w+):", demands.group(1), re.MULTILINE)) == set(
+        REQUIRED_EVIDENCE)
+    # The fallback is the shape `budgetLabel` already has: a word this build has
+    # no sentence for is NAMED as that, never rendered as `undefined`.
+    fallback = re.search(r"function evidenceLabel\(word\) \{(.*?)\n\}",
+                         inspector, re.DOTALL).group(1)
+    assert "Object.hasOwn(EVIDENCE_DEMANDS, word)" in fallback, fallback
+    assert "no sentence for what it requires" in fallback, fallback
+
+
+# -- the two labels that stayed, and had to stop being evasive -----------------
+
+
+def test_the_success_criteria_line_says_why_there_is_nothing_left_to_add():
+    """The old sentence was true and evasive; the new one is the actual reason.
+
+    "an outcome is reported by the immutable result record" described where an
+    outcome is WRITTEN, which is not why a plan may not state a criterion. The
+    reason is that every criterion a plan could state is already demanded of
+    every step -- verified, by the one adapter the plan makes authoritative,
+    over evidence recorded after the work was observed -- so anything a plan
+    could add beside it would be weaker than what it is already held to.
+
+    The old wording is asserted GONE rather than merely not asserted present,
+    which is the shape the missing-artifact line below already has.
+    """
+    inspector = _code(*INSPECTOR)
+    assert "reported by the immutable result record" not in inspector, (
+        "the success-criteria line still says where an outcome is written "
+        "instead of why a plan may not state one")
+    reason = re.search(r'unsupported\(box, "Success criteria", (.*?)\);',
+                       inspector, re.DOTALL).group(1)
+    assert "already demands of every step" in reason, reason
+    assert "would be weaker" in reason, reason
+
+
+def test_the_failure_policy_line_says_what_this_build_really_does_instead():
+    """Its old reason became false the moment the control above shipped.
+
+    It said "With no declared criteria there is no failure policy for a plan to
+    carry", and a step can now declare an evidence requirement -- so the reason
+    had to move to the real one: nothing in this build computes a next step, so
+    there is no choice for a policy to make. What is unsupported is the POLICY;
+    the behaviour is fixed and the line now states it.
+
+    A CHANGE DETECTOR on the claim, not a proof of it: what really holds "this
+    build walks no connections" is `tests/test_studio_canvas.py`'s edge-condition
+    census and the absence of any scheduler module. What this adds is that the
+    screen's claim breaks beside the sentence making it.
+    """
+    inspector = _code(*INSPECTOR)
+    assert "With no declared criteria" not in inspector, (
+        "the failure-policy line still rests on there being no declared criteria")
+    reason = re.search(
+        r'unsupported\(box, "Verification failure policy", (.*?)\);',
+        inspector, re.DOTALL).group(1)
+    assert "walks no connections" in reason, reason
+    assert "verification_failed" in reason, reason
+    assert "arrives with the scheduler" in reason, reason
 
 
 # -- the artifact trio: required, produced, and where each one comes from ------
