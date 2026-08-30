@@ -381,9 +381,9 @@ the service. Every listed key is required and no other key is accepted:
 ```json
 {
   "dispatch": ["work_item_id", "instruction_ref", "profile", "artifact_refs",
-    "output_limit_profile"],
+    "output_limit_profile", "step_purpose"],
   "review": ["work_item_id", "target_artifact_refs", "result_artifact_ref",
-    "review_profile"],
+    "review_profile", "step_purpose"],
   "evidence": ["target_action_id", "kinds"],
   "stop": ["target_attempt_id", "reason"],
   "retry": ["prior_action_id", "reason"],
@@ -393,7 +393,16 @@ the service. Every listed key is required and no other key is accepted:
 
 This registry is derived from the six exact public types in
 `DEEP_ARGUMENT_TYPES`; their `from_dict`/`as_dict` round trip is the authority,
-including exact JSON-list fields and closed enum values. `message`, `pause`,
+including exact JSON-list fields and closed enum values. It is the field SET,
+not the required set: `result_artifact_ref` and `step_purpose` are OMITTABLE, so
+a payload written before either existed still reads and no frozen revision moves.
+
+`step_purpose` is not composed by a caller. It is the plan's own sentence about
+a step, materialized into that node's payload by `graph_template`, and
+§`graph_causality` refuses any proposal or request whose arguments are not
+byte-identical to the node's — so a purpose the workflow's author did not write
+cannot be added on the way to a harness. It carries the same bound the plan
+contract applies: one line, no NUL, at most 500 characters. `message`, `pause`,
 `resume`, and `notify` are absent because no proven deep adapter owns them.
 `observe` is absent because observations are adapter-authored facts. A
 capability absent here or from the bound adapter manifest is

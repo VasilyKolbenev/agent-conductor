@@ -407,3 +407,49 @@ class AdapterRecovery:
         data["result"] = None if data["result"] is None else NormalizedResult.from_dict(
             data["result"])
         return AdapterRecovery(**data)
+
+
+#: The longest a carried step purpose may be. `graph_definition.MAX_PURPOSE` is
+#: the same number one layer up, and `tests/test_command_step_purpose.py` pins
+#: the two equal in both directions.
+#:
+#: The value is spelled twice for the reason `EFFECTING_CAPABILITIES` already
+#: is: an adapter value module may not import a contract module -- the reviewed
+#: import surface in `tests/test_command_deep_contracts.py` says so by name --
+#: so the alternative to two spellings pinned by a test is one door that judges
+#: nothing at all on this side.
+MAX_STEP_PURPOSE = 500
+
+
+def settle_step_purpose(args) -> None:
+    """Judge a carried purpose at the door where it becomes a child's context.
+
+    The plan already refused an over-long, multi-line or NUL-bearing purpose
+    before freezing it, and `graph_causality` refuses any request whose
+    arguments are not byte-identical to the plan node's -- so in production this
+    is a second lock on a door that is already shut. It exists anyway because
+    this value is the ONE piece of project-authored prose that reaches a vendor
+    binary, and an adapter driven with a hand-made request reaches no plan and
+    no causality check.
+
+    A blank or whitespace-only value settles to OMITTED rather than to an empty
+    string, so "carried nothing" has one spelling in a payload that digests.
+    """
+    said = args.step_purpose
+    if said is OMITTED:
+        return
+    if type(said) is not str:
+        raise DeepContractError("step_purpose is text, or is not carried at all")
+    settled = said.strip()
+    if not settled:
+        object.__setattr__(args, "step_purpose", OMITTED)
+        return
+    if any(character in settled for character in ("\x00", "\n", "\r")):
+        raise DeepContractError(
+            "step_purpose is one line of text: it carries no NUL and no line "
+            "break")
+    if len(settled) > MAX_STEP_PURPOSE:
+        raise DeepContractError(
+            f"step_purpose is at most {MAX_STEP_PURPOSE} characters; this one "
+            f"is {len(settled)}")
+    object.__setattr__(args, "step_purpose", settled)

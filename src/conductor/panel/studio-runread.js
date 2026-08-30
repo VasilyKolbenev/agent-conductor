@@ -54,6 +54,11 @@ export function decisionRows(detail) {
     found.push(Object.freeze({
       run_id: run.run_id, gate_id: node.gate_id, node_id: node.node_id,
       title: node.title, mode: run.mode,
+      // Why the plan says this gate exists, frozen into the plan the run
+      // followed. A person asked to decide something is entitled to the
+      // workflow author's own sentence about it, and this is the only place
+      // that sentence exists after the drawing was published.
+      purpose: typeof node.purpose === "string" ? node.purpose : null,
       decision: standing && typeof standing.decision === "string"
         ? standing.decision : "unknown",
       unblocks: Object.freeze(rows(definition.edges).filter(isObject)

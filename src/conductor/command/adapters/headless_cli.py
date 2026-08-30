@@ -107,6 +107,7 @@ from .headless_values import (
     _version_token,
     attempt_relation,
     flagless,
+    purpose_clause,
 )
 from .process import (
     STDIN_INCOMPLETE,
@@ -323,7 +324,7 @@ class HeadlessCliTransport(ModelRouting):
         refs = " ".join(args.artifact_refs) or "none"
         return flagless(
             f"conduct work item {args.work_item_id} under the {args.profile} "
-            f"profile over artifacts {refs}. instruction "
+            f"profile over artifacts {refs}.{purpose_clause(args)} instruction "
             f"{args.instruction_ref} reads:\n{instruction}",
             "task text", f"{self.profile.tool_noun} launcher", self.error)
 

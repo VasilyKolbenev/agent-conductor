@@ -76,6 +76,7 @@ from .graph_definition import (
     GraphLoop,
     GraphNode,
     settled_bounds,
+    settled_purpose,
     GraphResource,
     _ABSENT,
     _exact,
@@ -207,6 +208,9 @@ class TemplateNode:
     #: existed says, so `dalio-v1` digests exactly as it did.
     timeout_seconds: int | None = None
     attempt_bound: int | None = None
+    #: Why this step exists, in the words of whoever drew it. Optional, so every
+    #: template written before it existed digests exactly as it did.
+    purpose: str | None = None
     #: Where a person put this step on the canvas, or None to let the canvas
     #: place it. Editor state and not execution semantics: `materialize` does
     #: not carry it into the run's frozen plan, so no replay and no runtime
@@ -216,7 +220,7 @@ class TemplateNode:
     _FIELDS = frozenset({
         "node_id", "kind", "title", "stage", "role_id", "capability",
         "arguments", "resources", "gate_id", "loop", "timeout_seconds",
-        "attempt_bound", "position",
+        "attempt_bound", "purpose", "position",
     })
 
     def __post_init__(self) -> None:
@@ -245,6 +249,9 @@ class TemplateNode:
         # Taken through the same door a document goes through, so a caller
         # handing a raw mapping and a caller handing a value get one answer.
         object.__setattr__(self, "position", _position(self.position))
+        # The DEFINITION's grammar, imported rather than restated: a purpose the
+        # layer below would refuse is a template that cannot materialize.
+        object.__setattr__(self, "purpose", settled_purpose(self.purpose))
 
     def _settle_arguments(self) -> None:
         """Take the caller's payload once, then answer only from our own copy.
@@ -305,6 +312,8 @@ class TemplateNode:
             out["timeout_seconds"] = self.timeout_seconds
         if self.attempt_bound is not None:
             out["attempt_bound"] = self.attempt_bound
+        if self.purpose is not None:
+            out["purpose"] = self.purpose
         if self.position is not None:
             out["position"] = self.position.as_dict()
         out["resources"] = [row.as_dict() for row in self.resources]
@@ -348,6 +357,7 @@ class TemplateNode:
             loop=None if loop is None else GraphLoop.from_dict(loop),
             timeout_seconds=data.pop("timeout_seconds", None),
             attempt_bound=data.pop("attempt_bound", None),
+            purpose=data.pop("purpose", None),
             position=_position(data.pop("position", None)))
 
 
@@ -561,7 +571,7 @@ def _rebuilt_node(row: object) -> TemplateNode:
         role_id=row.role_id, capability=row.capability, arguments=row.payload(),
         resources=row.resources, gate_id=row.gate_id, loop=row.loop,
         timeout_seconds=row.timeout_seconds, attempt_bound=row.attempt_bound,
-        position=row.position)
+        purpose=row.purpose, position=row.position)
 
 
 def _rebuilt_edge(row: object) -> GraphEdge:
@@ -645,6 +655,27 @@ class RunBinding:
             "run binding assignments", data.get("assignments", {})))
 
 
+def _dispatch_payload(node) -> dict[str, Any]:
+    """One step's capability payload, with its purpose carried into it.
+
+    A purpose has to travel INSIDE the payload for a step that acts, and this is
+    the one place it can be put. An adapter is handed a request and never sees
+    the plan, so a value left only on the node would reach no vendor binary; and
+    `graph_causality` refuses any proposal or request whose arguments are not
+    byte-identical to the node's payload, so putting it here makes the PLAN the
+    authority over what a child is told, durably and on replay -- rather than
+    trusting whoever composes a proposal to copy it faithfully.
+
+    A step that carries out nothing gets nothing added: a gate and a loop have
+    no capability, no payload and no child, and their purpose is read by the
+    Decision, Run and Inspector surfaces off the node itself.
+    """
+    payload = node.payload()
+    if node.capability is None or node.purpose is None:
+        return payload
+    return {**payload, "step_purpose": node.purpose}
+
+
 def _build(template: GraphTemplate, assignments: Mapping[str, str], *,
            graph_id: str, run_id: str, created_at: str) -> GraphDefinition:
     """Substitute roles for instances and hand the result to the base contract."""
@@ -654,12 +685,12 @@ def _build(template: GraphTemplate, assignments: Mapping[str, str], *,
             node_id=node.node_id, kind=node.kind, title=node.title,
             stage=node.stage,
             instance_id=None if node.role_id is None else assignments[node.role_id],
-            capability=node.capability, arguments=node.payload(),
+            capability=node.capability, arguments=_dispatch_payload(node),
             resources=node.resources, gate_id=node.gate_id, loop=node.loop,
             # Carried across, or the plan's ceilings would be a template fact
             # the run it materializes never hears about.
             timeout_seconds=node.timeout_seconds,
-            attempt_bound=node.attempt_bound)
+            attempt_bound=node.attempt_bound, purpose=node.purpose)
         for node in steps)
     return GraphDefinition(graph_id=graph_id, run_id=run_id,
                            created_at=created_at, nodes=nodes, edges=edges)

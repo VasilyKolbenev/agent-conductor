@@ -5,6 +5,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
+from .deep_contracts import OMITTED
 from .harness_profile import HeadlessCliError
 
 
@@ -121,3 +122,26 @@ ArgvSource = tuple[str, ...] | Callable[[Path, str | None], tuple[str, ...]]
 AttemptEvidence = _Attempt
 _changed = changed_paths
 _version_token = version_token
+
+
+def purpose_clause(args) -> str:
+    """The plan's own words about this step, LABELLED as the plan's own words.
+
+    It is project-authored context and it is framed as exactly that. The label
+    is not decoration: everything else in the frame is a code-owned identifier
+    the request validated, and a sentence somebody typed into a workflow sitting
+    unmarked beside those would read as this build's own instruction.
+
+    It cannot reach argv -- the whole frame goes through `flagless` -- and it
+    stands before the instruction, so the ordering that keeps an instruction out
+    of a flag position keeps this out too. It cannot be long, span lines or
+    carry a NUL either: `settled_purpose` refused all three before the plan was
+    frozen, and the argument door refuses them again on the way back in.
+
+    Empty when the plan named none, so a step with no purpose is handed exactly
+    the frame it was handed before this field existed.
+    """
+    said = getattr(args, "step_purpose", OMITTED)
+    if said is OMITTED:
+        return ""
+    return f" the workflow says this step's purpose is: {said}."

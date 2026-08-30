@@ -242,6 +242,13 @@ function whyAsked(row) {
   const carried = [note("A gate is a step the plan itself marks as needing a "
     + "person's answer. Nothing behind it is carried out until one is "
     + "recorded, and no amount of waiting changes that.")];
+  // The workflow author's own words about this step, when they wrote any. It
+  // is stated as theirs rather than as this build's: everything else on this
+  // screen is a fact the product derived, and an unattributed sentence beside
+  // those would read as one more of them.
+  if (typeof row.purpose === "string" && row.purpose) {
+    carried.push(fact("The workflow says", row.purpose));
+  }
   if (typeof row.mode === "string") {
     carried.push(fact("This run's authority", row.mode));
   }

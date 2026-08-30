@@ -281,6 +281,45 @@ class GraphLoop:
         return cls(bound=_take(data, "bound"), back_to=_take(data, "back_to"))
 
 
+#: The longest a step's purpose may be. A bound rather than free text: a purpose
+#: is durable, it is frozen into every run's plan, and for a task it is carried
+#: into the code-owned frame handed to a vendor binary -- three places where "as
+#: long as somebody pasted" is not an answer. Long enough for a sentence that
+#: says why a step exists, short enough that it cannot become the instruction.
+MAX_PURPOSE = 500
+
+
+def settled_purpose(purpose: object) -> str | None:
+    """One grammar for a step's purpose, judged the same in template and plan.
+
+    Prose a PERSON wrote about why a step exists. It is project-authored
+    context, and it is bounded, single-line and NUL-free for the reason the
+    bound exists: on a task node this rides into the frame a vendor binary is
+    handed, where an unbounded multi-line value would stop being context and
+    start being an instruction.
+
+    Absent stays absent, and so does whitespace -- an empty string is the same
+    answer as saying nothing -- so no document written before this field existed
+    changes a byte or moves a digest.
+    """
+    if purpose is None:
+        return None
+    if type(purpose) is not str:
+        raise ContractError("a step's purpose is text, or nothing at all")
+    settled = purpose.strip()
+    if not settled:
+        return None
+    if any(character in settled for character in ("\x00", "\n", "\r")):
+        raise ContractError(
+            "a step's purpose is one line of text: it carries no NUL and no "
+            "line break")
+    if len(settled) > MAX_PURPOSE:
+        raise ContractError(
+            f"a step's purpose is at most {MAX_PURPOSE} characters; this one "
+            f"is {len(settled)}")
+    return settled
+
+
 def settled_bounds(timeout_seconds: object,
                    attempt_bound: object) -> dict[str, int | None]:
     """The two plan-side ceilings, judged once for both node contracts.
@@ -346,15 +385,22 @@ class GraphNode:
     #: The plan names the ceiling; the request may ask for less and never more.
     timeout_seconds: int | None = None
     attempt_bound: int | None = None
+    #: Why this step exists, as a person wrote it. Frozen into the plan so a
+    #: Decision, a Run and an Inspector can all say the same sentence about the
+    #: same step -- and, for a step that dispatches, carried into the frame the
+    #: vendor binary is handed. It decides nothing: no traversal, no ceiling and
+    #: no verdict reads it.
+    purpose: str | None = None
 
     _FIELDS = frozenset({
         "node_id", "kind", "title", "stage", "instance_id", "capability",
         "arguments", "resources", "gate_id", "loop", "timeout_seconds",
-        "attempt_bound",
+        "attempt_bound", "purpose",
     })
 
     def __post_init__(self) -> None:
         self._settle_bounds()
+        object.__setattr__(self, "purpose", settled_purpose(self.purpose))
         object.__setattr__(self, "node_id", _id("node_id", self.node_id))
         object.__setattr__(self, "kind", _enum("node kind", self.kind, NODE_KINDS))
         object.__setattr__(self, "title", _text("title", self.title))
@@ -480,6 +526,8 @@ class GraphNode:
             out["timeout_seconds"] = self.timeout_seconds
         if self.attempt_bound is not None:
             out["attempt_bound"] = self.attempt_bound
+        if self.purpose is not None:
+            out["purpose"] = self.purpose
         return out
 
     @classmethod
@@ -504,7 +552,8 @@ class GraphNode:
             gate_id=data.pop("gate_id", None),
             loop=None if loop is None else GraphLoop.from_dict(loop),
             timeout_seconds=data.pop("timeout_seconds", None),
-            attempt_bound=data.pop("attempt_bound", None))
+            attempt_bound=data.pop("attempt_bound", None),
+            purpose=data.pop("purpose", None))
 
 
 @dataclass(frozen=True)
@@ -552,7 +601,7 @@ def _rebuilt_node(row: object) -> "GraphNode":
         arguments=node.payload(), resources=node.resources,
         gate_id=node.gate_id, loop=node.loop,
         timeout_seconds=node.timeout_seconds,
-        attempt_bound=node.attempt_bound)
+        attempt_bound=node.attempt_bound, purpose=node.purpose)
 
 
 def _acyclic(nodes: tuple[GraphNode, ...], edges: tuple[GraphEdge, ...]) -> None:

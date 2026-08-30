@@ -623,3 +623,27 @@ def test_a_provider_row_and_an_instance_row_answer_different_questions() -> None
     assert "a consumer joins them by identity, never by a displayed label" in text
     assert "roster.get(providerId)" in text
     assert "providerSection" in text and "participantSection" in text
+
+
+def test_a_gate_asks_with_the_workflows_own_words_when_the_plan_carried_any():
+    """A person asked to decide is entitled to why the plan says the gate exists.
+
+    The purpose is frozen into the plan the run followed, so this is the only
+    place that sentence still exists after the drawing was published. Two halves
+    are held, because they fail apart: the row must CARRY it out of the frozen
+    definition, and the screen must SAY it -- attributed, because everything
+    else on that screen is a fact the product derived and an unattributed
+    sentence beside those reads as one more of them.
+    """
+    read = (PANEL / "studio-runread.js").read_text(encoding="utf-8")
+    carried = re.search(r"for \(const node of rows\(definition\.nodes\)(.*?)\n  \}",
+                        read, re.DOTALL).group(1)
+    assert 'purpose: typeof node.purpose === "string" ? node.purpose : null,' in (
+        carried), carried
+
+    people = PEOPLE_FILE.read_text(encoding="utf-8")
+    why = re.search(r"function whyAsked\(row\) \{(.*?)\n\}", people,
+                    re.DOTALL).group(1)
+    assert 'fact("The workflow says", row.purpose)' in why, why
+    # And only when there IS one: an empty attribution is worse than silence.
+    assert 'typeof row.purpose === "string" && row.purpose' in why, why

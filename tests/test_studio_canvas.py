@@ -483,12 +483,15 @@ def test_a_published_revision_is_immutable_on_both_surfaces():
 #: `ControlRuntime._hold_budget`, and held by tests/test_command_plan_bounds.py.
 #: The register shrinks as fields become real; it must never shrink because a
 #: label was quietly dropped, which is what the two-directional check below is.
-#: `Output budget` left this list when the spawn started reading the profile
+#: `Purpose / description` left this list when a step gained a durable purpose
+#: that the Decisions and Runs screens read and that a dispatching step carries
+#: into the frame its harness is handed --
+#: `tests/test_command_step_purpose.py` drives that chain to a real child's
+#: argv. `Output budget` left it when the spawn started reading the profile
 #: the plan already carried. It is not a field that became supported by being
 #: relabelled: `tests/test_command_output_budget.py` drives a real dispatch and
 #: reads the byte count off the CommandSpec the runner was handed.
 UNSUPPORTED_FIELDS = (
-    "Purpose / description",
     "Required input artifacts",
     "Produced artifacts",
     "Handoff mapping",
@@ -573,8 +576,15 @@ def test_every_edited_word_is_judged_before_it_is_written():
     checks = set(re.findall(r"^  (\w+): \(value\)", re.search(
         r"const CHECKS = Object\.freeze\(\{(.*?)\n\}\);", inspector,
         re.DOTALL).group(1), re.MULTILINE))
-    assert checks == {"title", "role_id", "gate_id"}
+    assert checks == {"title", "role_id", "gate_id", "purpose"}
     assert "if (judge()) return;" in inspector
+    # The purpose bound is the CONTRACT's, read from it rather than typed here.
+    # A window that let somebody type past it would send a save the server
+    # refuses, for a reason nothing on the screen explains.
+    from conductor.command.graph_definition import MAX_PURPOSE
+
+    held = re.search(r"export const MAX_PURPOSE = (\d+);", inspector)
+    assert held and int(held.group(1)) == MAX_PURPOSE, held
     bound = re.search(r"bound\.addEventListener\(\"change\", \(\) => \{(.*?)\n  \}\)",
                       inspector, re.DOTALL).group(1)
     assert "Number.isInteger(value)" in bound

@@ -141,13 +141,18 @@ EXPECTED_ROUTES = (
     ("POST", "/command/runs", True, True),
 )
 
+#: `step_purpose` is the plan's own sentence about a step, and it is on exactly
+#: the two roads that reach a child. It is not a command escape key and is held
+#: against `UNRESTRICTED_KEYS` below like every other field: it names no
+#: executable, no path, no argv and no environment, and the transport puts it
+#: inside a code-owned frame rather than on a command line.
 EXPECTED_ARGUMENT_SCHEMAS = {
     "dispatch": (
         "work_item_id", "instruction_ref", "profile", "artifact_refs",
-        "output_limit_profile"),
+        "output_limit_profile", "step_purpose"),
     "review": (
         "work_item_id", "target_artifact_refs", "result_artifact_ref",
-        "review_profile"),
+        "review_profile", "step_purpose"),
     "evidence": ("target_action_id", "kinds"),
     "stop": ("target_attempt_id", "reason"),
     "retry": ("prior_action_id", "reason"),

@@ -17,6 +17,7 @@ from .deep_contracts import (
     _exact,
     _ids,
     _Omitted,
+    settle_step_purpose,
 )
 
 if TYPE_CHECKING:
@@ -111,9 +112,16 @@ class DeepDispatchArgs(_StrictArguments):
     profile: str
     artifact_refs: tuple[str, ...] | list[str]
     output_limit_profile: str
+    #: Why the PLAN says this step exists, materialized into the payload by
+    #: `graph_template._dispatch_payload`. Omittable, so every document written
+    #: before it existed still reads and no frozen revision moves; and never
+    #: composed by hand, because `graph_causality` refuses any request whose
+    #: arguments are not byte-identical to the plan node's.
+    step_purpose: "str | _Omitted" = OMITTED
     _FIELDS = frozenset({
         "work_item_id", "instruction_ref", "profile", "artifact_refs",
-        "output_limit_profile"})
+        "output_limit_profile", "step_purpose"})
+    _OPTIONAL_FIELDS = frozenset({"step_purpose"})
     _ARRAY_FIELDS = frozenset({"artifact_refs"})
 
     def __post_init__(self) -> None:
@@ -128,6 +136,7 @@ class DeepDispatchArgs(_StrictArguments):
         object.__setattr__(self, "output_limit_profile", _enum(
             "output_limit_profile", self.output_limit_profile,
             OUTPUT_LIMIT_PROFILES))
+        settle_step_purpose(self)
 
 
 @dataclass(frozen=True)
@@ -151,10 +160,12 @@ class DeepReviewArgs(_StrictArguments):
     #: other wrong one; only a payload that says nothing is admitted.
     result_artifact_ref: "str | _Omitted"
     review_profile: str
+    #: The same plan-authored context a dispatch carries; see `DeepDispatchArgs`.
+    step_purpose: "str | _Omitted" = OMITTED
     _FIELDS = frozenset({
         "work_item_id", "target_artifact_refs", "result_artifact_ref",
-        "review_profile"})
-    _OPTIONAL_FIELDS = frozenset({"result_artifact_ref"})
+        "review_profile", "step_purpose"})
+    _OPTIONAL_FIELDS = frozenset({"result_artifact_ref", "step_purpose"})
     _ARRAY_FIELDS = frozenset({"target_artifact_refs"})
 
     def __post_init__(self) -> None:
@@ -168,6 +179,7 @@ class DeepReviewArgs(_StrictArguments):
         object.__setattr__(self, "review_profile", _enum(
             "review_profile", self.review_profile,
             REVIEW_PROFILES))
+        settle_step_purpose(self)
 
 
 @dataclass(frozen=True)

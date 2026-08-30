@@ -300,12 +300,16 @@ def test_public_deep_schema_authority_names_each_exact_argument_base_type():
     assert {
         capability: value._FIELDS for capability, value in DEEP_ARGUMENT_TYPES.items()
     } == {
+        # `step_purpose` is on both roads that reach a child, and on neither of
+        # the four that do not: the plan's own words about a step are context
+        # for work being carried out, and a stop, a retry, a switch or an
+        # evidence request carries out nothing.
         "dispatch": {
             "work_item_id", "instruction_ref", "profile", "artifact_refs",
-            "output_limit_profile"},
+            "output_limit_profile", "step_purpose"},
         "review": {
             "work_item_id", "target_artifact_refs", "result_artifact_ref",
-            "review_profile"},
+            "review_profile", "step_purpose"},
         "evidence": {"target_action_id", "kinds"},
         "stop": {"target_attempt_id", "reason"},
         "retry": {"prior_action_id", "reason"},

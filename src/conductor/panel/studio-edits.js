@@ -30,8 +30,8 @@ function text(value) { return typeof value === "string" ? value : ""; }
 export const EDIT_TYPES = Object.freeze(["add", "connect", "delete-edge",
   "delete-node", "duplicate", "move", "reorder", "set-field"]);
 export const EDIT_FIELDS = Object.freeze(["attempt_bound", "capability",
-  "gate_id", "kind", "loop_back_to", "loop_bound", "resources", "role_id",
-  "stage", "timeout_seconds", "title"]);
+  "gate_id", "kind", "loop_back_to", "loop_bound", "purpose", "resources",
+  "role_id", "stage", "timeout_seconds", "title"]);
 //: `graph_definition.NODE_KINDS`, its loop and resource bounds, and
 //: `workflow_draft.MAX_DRAFT_NODES` / `MAX_DRAFT_EDGES`.
 export const NODE_KINDS = Object.freeze(["task", "gate", "loop"]);

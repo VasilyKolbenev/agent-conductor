@@ -55,7 +55,8 @@ export const EDIT_TYPES = Object.freeze([
 //: a second grammar for slice D to parse.
 export const EDIT_FIELDS = Object.freeze([
   "attempt_bound", "capability", "gate_id", "kind", "loop_back_to",
-  "loop_bound", "resources", "role_id", "stage", "timeout_seconds", "title",
+  "loop_bound", "purpose", "resources", "role_id", "stage",
+  "timeout_seconds", "title",
 ]);
 //: The six sections, in the one order the design fixes them in.
 export const SECTIONS = Object.freeze([
@@ -138,6 +139,11 @@ function commit(form, name, value) {
     type: "set-field", nodeId: form.node.node_id, field: name, value});
 }
 
+//: `graph_definition.MAX_PURPOSE`, held equal to it by a test rather than
+//: guessed: a window that let somebody type past the contract's bound would
+//: send a save the server refuses, for a reason nothing on screen explains.
+export const MAX_PURPOSE = 500;
+
 //: What each edited word must be, in the grammar its Python contract already
 //: holds it to. A field says what is wrong beside itself and refuses to write,
 //: which is the difference between a control that validates and a control that
@@ -145,6 +151,13 @@ function commit(form, name, value) {
 const CHECKS = Object.freeze({
   title: (value) => value.trim() && !value.includes("\0") ? null
     : "A display name must be a non-empty string and must not contain NUL.",
+  //: Empty is a real answer -- it means the step names no purpose -- so this
+  //: judges only what a NON-empty one may be, and it judges the same three
+  //: things `settled_purpose` does one layer down.
+  purpose: (value) => !value.trim() || (
+    value.length <= MAX_PURPOSE && !/[\0\r\n]/.test(value)) ? null
+    : `A purpose is one line of at most ${MAX_PURPOSE} characters, with no `
+      + "line break and no NUL.",
   role_id: (value) => value === "" || ID_PATTERN.test(value) ? null
     : "A role must match [A-Za-z0-9][A-Za-z0-9._-]{0,127}, or be empty.",
   gate_id: (value) => value === "" || ID_PATTERN.test(value) ? null
@@ -283,9 +296,15 @@ export function generalSection(form) {
       "the workflow contract");
   }
   positionControls(box, form);
-  unsupported(box, "Purpose / description",
-    "A workflow step carries a title and no description field, so a "
-    + "paragraph typed here would be stored nowhere and read by nothing.");
+  textField(box, form, "Purpose / description", "purpose", node.purpose || "",
+    node.capability === null || node.capability === undefined
+      ? "Stored on the step and frozen into every run's plan, where the "
+        + "Decisions and Runs screens read it. A step that carries nothing out "
+        + "reaches no harness, so this is written for the people who do."
+      : "Stored on the step, frozen into the plan, and carried into the frame "
+        + "the harness is handed — labelled there as the workflow's own words, "
+        + "never as an instruction. One line, at most "
+        + `${MAX_PURPOSE} characters.`);
   return box;
 }
 
