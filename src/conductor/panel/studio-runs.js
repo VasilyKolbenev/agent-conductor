@@ -69,6 +69,7 @@ export const RECORD_KINDS = Object.freeze({
   decision: "A Human answered a gate",
   evidence: "Evidence was claimed",
   graph_definition: "The run was given its plan",
+  run_terminal: "The plan has nothing left to open",
 });
 //: contract_values.ControlMode -- the whole authority ladder, and what each
 //: rung PERMITS. There is no hidden autonomous rung.
@@ -92,7 +93,7 @@ const INSTANT_FIELDS = Object.freeze({
   action_result: "observed_at", adapter_observation: "observed_at",
   artifact: "created_at", attempt_event: "recorded_at",
   decision: "decided_at", evidence: "observed_at",
-  graph_definition: "created_at",
+  graph_definition: "created_at", run_terminal: "recorded_at",
 });
 //: The identity fields each kind is summarised by, in reading order. Payload
 //: bodies (`arguments`, `content`) are deliberately absent: a timeline row is
@@ -115,6 +116,8 @@ const ROW_FACTS = Object.freeze({
   evidence: ["evidence_id", "kind", "label", "uri", "verification",
     "verified_by", "verified_at"],
   graph_definition: ["graph_id", "schema_version"],
+  run_terminal: ["terminal_id", "graph_id", "state", "settled_nodes",
+    "unreachable_nodes"],
 });
 //: Status is its own channel and never the only carrier: every chip below
 //: draws a glyph and a word as well.

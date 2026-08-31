@@ -93,7 +93,7 @@ export const RESULT_OUTCOMES = Object.freeze(
 export const RECORD_KINDS = Object.freeze(
   ["action_request", "action_result", "evidence", "decision",
     "action_proposal", "adapter_observation", "attempt_event",
-    "graph_definition", "artifact"]);
+    "graph_definition", "artifact", "run_terminal"]);
 //: command/contracts.py RunEnvelope._FIELDS -- the seven words a run envelope
 //: answers for. The durable contract also carries an `extra` seam, so a key
 //: outside this list is not a fault and is not refused; it is simply a key this

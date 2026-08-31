@@ -22,9 +22,14 @@ from conductor.command.graph_definition import (
     GraphEdge,
     GraphNode,
 )
-from conductor.command.run_store import RecordConflict, RunStore, snapshot_digest
+from conductor.command.run_store import (
+    RecordConflict,
+    RunStore,
+    StoreError,
+    snapshot_digest,
+)
 from tests.alpha3_graph_artifacts import dalio_definition
-from tests.test_command_run_store import CONFIG, a_run
+from tests.test_command_run_store import CONFIG, a_decision, a_run
 
 RUN_ID = "run-001"
 
@@ -136,3 +141,51 @@ def test_a_graph_may_be_written_after_a_run_already_holds_other_records(tmp_path
     recovered = store.read(RUN_ID)
     assert recovered.warnings == ()
     assert [row.kind for row in recovered.records] == ["graph_definition"]
+
+
+# -- a decision on a planned run answers a gate the plan carries ---------------
+
+
+def test_a_decision_naming_a_gate_the_plan_does_not_carry_is_refused(tmp_path):
+    """A Human answer to a question the plan never asked reaches nothing.
+
+    No node names that gate, so no road it might open exists -- and the receipt
+    would sit in the journal looking exactly like an answer that mattered.
+    """
+    store = a_store(tmp_path)
+    store.append(a_graph())
+
+    with pytest.raises(StoreError, match="which graph 'graph-dalio' does not"):
+        store.append(a_decision(run_id=RUN_ID, gate_id="release"))
+
+    assert [row.kind for row in store.read(RUN_ID).records] == [
+        "graph_definition"]
+
+
+@pytest.mark.parametrize("gate_id", ["gate-confirm-do", "gate-result"])
+def test_a_decision_naming_a_gate_the_plan_carries_is_taken(tmp_path, gate_id):
+    """The positive control, over both gates this plan actually draws."""
+    store = a_store(tmp_path)
+    store.append(a_graph())
+
+    assert store.append(a_decision(run_id=RUN_ID, gate_id=gate_id)) is True
+
+    rows = [row.value for row in store.read(RUN_ID).records
+            if row.kind == "decision"]
+    assert [row.gate_id for row in rows] == [gate_id]
+
+
+def test_a_decision_written_before_the_plan_stays_legal(tmp_path):
+    """Not a concession: a run may be answered and then given a graph, and
+    every journal written before graphs existed is one such run. Judging those
+    records against a plan they predate would make them unreplayable."""
+    store = a_store(tmp_path)
+
+    assert store.append(a_decision(run_id=RUN_ID, gate_id="release")) is True
+
+    store.append(a_graph())
+    recovered = store.read(RUN_ID)
+
+    assert [row.kind for row in recovered.records] == [
+        "decision", "graph_definition"]
+    assert recovered.warnings == ()

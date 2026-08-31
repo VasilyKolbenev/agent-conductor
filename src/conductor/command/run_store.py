@@ -43,6 +43,8 @@ from .artifacts import (
 )
 from .graph_causality import (
     DISPATCH_KEY_PREFIX,  # noqa: F401 -- re-exported at its original home
+    _decision_names_a_planned_gate,
+    _hold_run_terminal, _hold_terminal_is_last,
     _one_graph_per_run,
     _proposal_matches_its_node,
     _request_repeats_its_proposal,
@@ -50,6 +52,7 @@ from .graph_causality import (
     permitted_verifier,
 )
 from .graph_definition import GraphDefinition
+from .run_terminal import RunTerminal
 from .store_errors import (  # noqa: F401 -- re-exported under their old names
     CorruptRun,
     RecordConflict,
@@ -107,7 +110,7 @@ def _transactional(method):
 RecordValue = (
     ActionRequest | ActionResultReceipt | EvidenceRef | DecisionReceipt
     | ActionProposal | ObservationRecord | AttemptEvent | GraphDefinition
-    | ArtifactDocument
+    | ArtifactDocument | RunTerminal
 )
 
 
@@ -139,6 +142,7 @@ _RECORDS: dict[str, tuple[type[RecordValue], str]] = {
     "attempt_event": (AttemptEvent, "event_id"),
     "graph_definition": (GraphDefinition, "graph_id"),
     "artifact": (ArtifactDocument, "artifact_id"),
+    "run_terminal": (RunTerminal, "terminal_id"),
 }
 
 # A named-key screen, not a proof that the snapshot is secret-free: a key is
@@ -632,6 +636,8 @@ class RunStore:
                 raise StoreError(str(e)) from e
         if isinstance(value, ActionResultReceipt):
             _hold_terminal_result(recovered, prior_values, value)
+        if isinstance(value, RunTerminal):
+            _hold_run_terminal(recovered, value)
         if isinstance(value, AttemptEvent):
             try:
                 validate_attempt_event(recovered.config, prior_values, value)
@@ -641,6 +647,7 @@ class RunStore:
         if isinstance(value, DecisionReceipt):
             if value.config_digest != recovered.envelope.config_digest:
                 raise StoreError("decision config_digest does not match the frozen run")
+            _decision_names_a_planned_gate(recovered, value)
             if value.supersedes is not None:
                 prior = next((row.value for row in recovered.records
                               if isinstance(row.value, DecisionReceipt)
@@ -658,6 +665,7 @@ class RunStore:
             cls, envelope: RunEnvelope, config: Mapping[str, Any],
             records: list[StoredRecord]) -> None:
         """Hold causal relations even when bytes were written outside this process."""
+        _hold_terminal_is_last(records)
         seen: list[StoredRecord] = []
         idempotency: dict[str, str] = {}
         for row in records:

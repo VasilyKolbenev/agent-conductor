@@ -67,6 +67,8 @@ from .contracts import (
     _timestamp,
 )
 
+from .graph_conditions import settle_edge_conditions, settled_edge_condition
+
 from .graph_values import (  # noqa: F401 -- re-exported under old names
     MAX_PURPOSE,
     _json_object,
@@ -534,17 +536,29 @@ class GraphEdge:
 
     from_node: str
     to_node: str
+    #: WHEN this road opens, as one word the step behind it can produce.
+    #: Absent means unconditional, which is what every plan written before
+    #: conditions existed says: the road opens once that step has settled. The
+    #: grammar and the document rules are `graph_conditions`' own.
+    condition: str | None = None
 
-    _FIELDS = frozenset({"from_node", "to_node"})
+    _FIELDS = frozenset({"from_node", "to_node", "condition"})
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "from_node", _id("edge from_node", self.from_node))
         object.__setattr__(self, "to_node", _id("edge to_node", self.to_node))
+        object.__setattr__(self, "condition",
+                           settled_edge_condition(self.condition))
         if self.from_node == self.to_node:
             raise ContractError(f"edge {self.from_node!r} names itself on both ends")
 
     def as_dict(self) -> dict[str, Any]:
-        return {"from_node": self.from_node, "to_node": self.to_node}
+        out = {"from_node": self.from_node, "to_node": self.to_node}
+        # Written only when named, so an unconditional road digests exactly as
+        # it always did and no frozen revision moves.
+        if self.condition is not None:
+            out["condition"] = self.condition
+        return out
 
     @classmethod
     def from_dict(cls, value: object) -> "GraphEdge":
@@ -553,7 +567,8 @@ class GraphEdge:
         unknown = sorted(set(data) - cls._FIELDS)
         if unknown:
             raise ContractError(f"edge carries unsupported field(s) {unknown!r}")
-        return cls(from_node=_take(data, "from_node"), to_node=_take(data, "to_node"))
+        return cls(from_node=_take(data, "from_node"), to_node=_take(data, "to_node"),
+                   condition=data.pop("condition", None))
 
 
 def _rebuilt_node(row: object) -> "GraphNode":
@@ -631,6 +646,7 @@ class GraphDefinition:
         _reserved("graph", self.extra)
         object.__setattr__(self, "nodes", self._settled_nodes())
         object.__setattr__(self, "edges", self._settled_edges())
+        settle_edge_conditions(self.nodes, self.edges)
         _acyclic(self.nodes, self.edges)
         self._settle_loops()
         self._settle_effect_roads()
@@ -650,7 +666,7 @@ class GraphDefinition:
     def _settled_edges(self) -> tuple[GraphEdge, ...]:
         rows = tuple(
             GraphEdge(from_node=_exact("graph edge", row, GraphEdge).from_node,
-                      to_node=row.to_node)
+                      to_node=row.to_node, condition=row.condition)
             for row in _sequence("graph edges", self.edges))
         known = {row.node_id for row in self.nodes}
         for edge in rows:

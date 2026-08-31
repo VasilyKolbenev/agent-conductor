@@ -13,9 +13,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from .contracts import ActionProposal, ActionRequest, _thaw_json
+from .contracts import ActionProposal, ActionRequest, DecisionReceipt, _thaw_json
 from .graph_definition import GraphDefinition
-from .store_errors import RecordConflict, StoreError
+from .run_terminal import RunTerminal
+from .store_errors import CorruptRun, RecordConflict, StoreError
 
 if TYPE_CHECKING:  # pragma: no cover -- import cycle avoided at runtime
     from .run_store import RecoveredRun
@@ -175,6 +176,90 @@ def _request_repeats_its_proposal(
     _matches_its_node(recovered, "request", value.node_id, value.instance_id,
                       value.capability, value.arguments,
                       value.timeout_seconds)
+
+
+def _standing_graph(recovered: "RecoveredRun") -> GraphDefinition | None:
+    """The one plan this run follows, out of its own prior records."""
+    return next((row.value for row in recovered.records
+                 if row.kind == "graph_definition"), None)
+
+
+def _decision_names_a_planned_gate(
+        recovered: "RecoveredRun", value: DecisionReceipt) -> None:
+    """A decision on a planned run answers a gate that run's plan carries.
+
+    A `gate_id` nobody planned is a Human answer to a question the plan never
+    asked. Nothing downstream could ever read it -- no node names that gate, so
+    no road it might open exists -- and it would sit in the journal looking
+    exactly like an answer that mattered.
+
+    A decision written BEFORE the plan stays legal, and that is not a
+    concession: a run may be answered and then given a graph, every journal
+    written before graphs existed is one such run, and judging those records
+    against a plan they predate would make them unreplayable. So the rule is
+    guarded by the plan's presence among the PRIOR records, which is the same
+    frozen set every other relation here is a pure function of.
+    """
+    graph = _standing_graph(recovered)
+    if graph is None:
+        return
+    planned = {node.gate_id for node in graph.nodes if node.gate_id is not None}
+    if value.gate_id not in planned:
+        raise StoreError(
+            f"decision {value.receipt_id!r} names gate {value.gate_id!r}, "
+            f"which graph {graph.graph_id!r} does not carry")
+
+
+def _hold_run_terminal(recovered: "RecoveredRun", value: RunTerminal) -> None:
+    """A run records its terminal once, and only about the plan it follows.
+
+    Rule 1 is why a plan-less journal can never hold one of these at all: the
+    record names a `graph_id`, and a run with no `graph_definition` has no
+    graph_id to name. Rule 2 is what makes the record an identity rather than a
+    reading -- a second terminal, under any id, would be a second answer to a
+    question that was already answered, and re-minting one at a later instant
+    would let one identity carry different facts.
+
+    OWED, and not held here: the third rule of the design, that the recorded
+    verdict must equal what `graph_schedule.schedule` computes from this run's
+    own prior records. That module does not exist in this commit and this
+    relation is deliberately not written against a function it cannot call.
+    Nothing in this commit appends a `RunTerminal`, so no road reaches the gap;
+    it closes in the commit that brings the schedule.
+    """
+    graph = _standing_graph(recovered)
+    if graph is None:
+        raise StoreError(
+            f"run {recovered.envelope.run_id!r} follows no graph, so its plan "
+            "has no terminal to record")
+    if value.graph_id != graph.graph_id:
+        raise StoreError(
+            f"run terminal names graph {value.graph_id!r}, and run "
+            f"{recovered.envelope.run_id!r} follows {graph.graph_id!r}")
+    standing = next((row.value for row in recovered.records
+                     if row.kind == "run_terminal"), None)
+    if standing is not None:
+        raise RecordConflict(
+            f"run {recovered.envelope.run_id!r} already recorded its terminal")
+
+
+def _hold_terminal_is_last(records) -> None:
+    """A recorded terminal is the last record the journal carries.
+
+    The whole-journal half of the same fact the live doors refuse: a run that
+    has recorded its terminal accepts nothing further. Written over the record
+    list rather than per record because that is what it says -- everything
+    after the terminal is wrong, not the terminal itself.
+
+    It cannot change the verdict on any journal that exists, because none holds
+    a terminal, and it stays a REPLAY rule: a hand-written journal carrying a
+    record after its terminal is corrupt whatever door wrote it.
+    """
+    for index, row in enumerate(records):
+        if row.kind == "run_terminal" and index != len(records) - 1:
+            raise CorruptRun(
+                f"{records[index + 1].kind} follows the run terminal; a run "
+                "that recorded its terminal accepts no further records")
 
 
 def _planned_node_of(recovered: "RecoveredRun", action_id: str):

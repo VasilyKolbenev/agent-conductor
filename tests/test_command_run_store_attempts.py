@@ -18,6 +18,7 @@ from conductor.command.contracts import (
     ObservationRecord,
 )
 from conductor.command.run_store import CorruptRun, RunStore, StoreError
+from conductor.command.run_terminal import RunTerminal
 
 from tests.test_command_run_store import (
     CONFIG,
@@ -125,6 +126,7 @@ def test_the_record_registry_is_exactly_this_closed_set_of_contract_identity_pai
         "attempt_event": (AttemptEvent, "event_id"),
         "artifact": (ArtifactDocument, "artifact_id"),
         "graph_definition": (GraphDefinition, "graph_id"),
+        "run_terminal": (RunTerminal, "terminal_id"),
     }
 
 

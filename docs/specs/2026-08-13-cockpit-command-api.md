@@ -1264,9 +1264,11 @@ infer one from prose. The record kinds and their contracts are the closed v2 voc
 `action_request` (`ActionRequest`), `action_result` (`ActionResultReceipt`),
 `evidence` (`EvidenceRef`), `decision` (`DecisionReceipt`),
 `action_proposal` (`ActionProposal`), `adapter_observation` (`ObservationRecord`),
-`attempt_event` (`AttemptEvent`), `graph_definition` (`GraphDefinition`), and
-`artifact` (`ArtifactDocument`). One run follows at most one graph, and a second
-under another id is refused.
+`attempt_event` (`AttemptEvent`), `graph_definition` (`GraphDefinition`),
+`artifact` (`ArtifactDocument`), and `run_terminal` (`RunTerminal`). One run
+follows at most one graph, and a second under another id is refused. A run
+records at most one `run_terminal`, it is refused on a run that follows no
+graph, and no record may follow it.
 
 <!-- CANONICAL:run_read_response -->
 ```json

@@ -560,7 +560,8 @@ def _rebuilt_node(row: object) -> TemplateNode:
 def _rebuilt_edge(row: object) -> GraphEdge:
     if type(row) is not GraphEdge:
         raise TemplateError("template edges must be GraphEdge values")
-    return GraphEdge(from_node=row.from_node, to_node=row.to_node)
+    return GraphEdge(from_node=row.from_node, to_node=row.to_node,
+                     condition=row.condition)
 
 
 @dataclass(frozen=True)
