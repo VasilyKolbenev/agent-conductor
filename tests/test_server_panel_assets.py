@@ -41,6 +41,7 @@ ASSETS = {
     "/panel/studio-edits.js": "text/javascript; charset=utf-8",
     "/panel/studio-sections.js": "text/javascript; charset=utf-8",
     "/panel/studio-artifacts.js": "text/javascript; charset=utf-8",
+    "/panel/studio-transitions.js": "text/javascript; charset=utf-8",
     "/panel/studio-fields.js": "text/javascript; charset=utf-8",
     "/panel/studio-runread.js": "text/javascript; charset=utf-8",
     "/panel/studio-store.js": "text/javascript; charset=utf-8",

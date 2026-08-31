@@ -43,9 +43,9 @@ import {
   executionSection,
   generalSection,
   stepActions,
-  transitionSection,
   verificationSection,
 } from "./studio-sections.js";
+import {transitionSection} from "./studio-transitions.js";
 
 //: The two shapes this frame asks of a payload before handing it to a control.
 //: Kept here rather than imported: they are three lines each, and a boundary

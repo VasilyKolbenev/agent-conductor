@@ -55,7 +55,7 @@ MODULES = ("studio.js", "studio-store.js", "studio-view.js", "studio-model.js",
            "studio-people.js", "studio-runread.js", "studio-review.js",
            "studio-layout.js", "studio-edits.js",
            "studio-sections.js", "studio-artifacts.js", "studio-runform.js",
-           "studio-fields.js")
+           "studio-transitions.js", "studio-fields.js")
 #: The one transport module: every `fetch(`, the one stream, the session token
 #: and the screen router. `graph.js` holds the same position in its window, and
 #: the sealed-API guard below pins this one the same way.
@@ -111,12 +111,18 @@ PERMITTED_IMPORTS = {
     "studio-artifacts.js": frozenset({"./command-view.js",
                                       "./command-projection.js",
                                       "./studio-fields.js"}),
+    #: The sixth section, on its own, beside the other two for the same
+    #: reason: where a step goes next is about to carry conditions, and a
+    #: control that offers one belongs with the roads it draws.
+    "studio-transitions.js": frozenset({"./command-view.js",
+                                        "./studio-fields.js"}),
     "studio-inspector.js": frozenset({"./command-view.js",
                                       "./command-projection.js",
                                       "./studio-model.js",
                                       "./studio-artifacts.js",
                                       "./studio-fields.js",
-                                      "./studio-sections.js"}),
+                                      "./studio-sections.js",
+                                      "./studio-transitions.js"}),
     "studio-runs.js": frozenset({"./command-view.js",
                                  "./command-projection.js",
                                  "./studio-model.js"}),

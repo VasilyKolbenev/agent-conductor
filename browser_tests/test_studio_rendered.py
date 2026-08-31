@@ -177,6 +177,7 @@ def test_the_studio_boots_from_the_entry_route_with_no_error_at_all(
             "studio-runread.js": 200, "studio-review.js": 200,
             "studio-layout.js": 200, "studio-edits.js": 200,
             "studio-sections.js": 200, "studio-artifacts.js": 200,
+            "studio-transitions.js": 200,
             "studio-fields.js": 200,
             "command-projection.js": 200, "command-view.js": 200,
         }

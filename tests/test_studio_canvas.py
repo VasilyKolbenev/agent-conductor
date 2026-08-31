@@ -56,9 +56,10 @@ CANVAS = PANEL / "studio-canvas.js"
 FRAME = PANEL / "studio-inspector.js"
 SECTIONS = PANEL / "studio-sections.js"
 ARTIFACTS = PANEL / "studio-artifacts.js"
+TRANSITIONS = PANEL / "studio-transitions.js"
 FIELDS = PANEL / "studio-fields.js"
-INSPECTOR = (FRAME, SECTIONS, ARTIFACTS, FIELDS)
-STUDIO_FILES = (CANVAS, FRAME, SECTIONS, ARTIFACTS, FIELDS)
+INSPECTOR = (FRAME, SECTIONS, ARTIFACTS, TRANSITIONS, FIELDS)
+STUDIO_FILES = (CANVAS, FRAME, SECTIONS, ARTIFACTS, TRANSITIONS, FIELDS)
 IMPORTS = r'from "(\./[a-z-]+\.js)";'
 _LINE_COMMENT = re.compile(r"^[ \t]*//.*$", re.MULTILINE)
 _BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.DOTALL)
@@ -148,7 +149,8 @@ def test_both_studio_files_sit_in_the_panel_under_the_line_cap():
 _ALLOWED_IMPORTS = {
     "studio-canvas.js": ["./command-view.js", "./studio-layout.js"],
     "studio-inspector.js": ["./command-view.js", "./studio-artifacts.js",
-                            "./studio-fields.js", "./studio-sections.js"],
+                            "./studio-fields.js", "./studio-sections.js",
+                            "./studio-transitions.js"],
     #: The sections gained the REVIEWED argument projection when the output
     #: budget became editable: the words that control may offer are the ones
     #: that schema declares, and reading them is what stops this window growing
@@ -164,6 +166,11 @@ _ALLOWED_IMPORTS = {
     #: open.
     "studio-artifacts.js": ["./command-view.js", "./command-projection.js",
                             "./studio-fields.js"],
+    #: The sixth section, alone. Where a step goes next and on what: the
+    #: conditions a road may carry, the gate whose answer routes, and the
+    #: loop that reopens. It reaches the toolkit and nothing else, for the
+    #: reason its neighbour above gives.
+    "studio-transitions.js": ["./command-view.js", "./studio-fields.js"],
     "studio-fields.js": ["./command-view.js"],
 }
 
@@ -359,8 +366,10 @@ def test_every_control_either_module_writes_can_be_focused_after_a_re_render():
         assert "function focusKey(mount)" in source, path.name
         assert "function restoreFocus(mount, key)" in source, path.name
         assert source.count("restoreFocus(mount, key)") >= 1, path.name
-    assert "replaceChildren" not in _code(SECTIONS), (
-        "a module that builds controls has started mounting them")
+    for path in (SECTIONS, ARTIFACTS, TRANSITIONS):
+        assert "replaceChildren" not in _code(path), (
+            f"{path.name}: a module that builds controls has started "
+            "mounting them")
     # The one focusable this module builds outside `element()`: the edge's own
     # hit path, which is an SVG node and so is built with createElementNS.
     canvas = _code(CANVAS)
