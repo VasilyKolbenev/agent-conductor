@@ -68,6 +68,12 @@ from .graph_template import (
     load_template,
     materialize,
 )
+from .plan_admission import (  # noqa: F401 -- re-exported under their old names
+    _bindings,
+    _gated,
+    _plan,
+    _servable_pair,
+)
 from .http_transport import (
     CommandSession,
     validate_command_host,
@@ -721,80 +727,3 @@ class CommandApi:
                 "controls": sorted(set(declared) & set(ARGUMENT_SCHEMAS)),
             })
         return {"instances": rows, "providers": provider_projection(self._providers)}
-
-
-def _plan(template: GraphTemplate, config: Mapping[str, Any], run_id: str,
-          asked: TemplateRef, created_at: str) -> GraphDefinition:
-    """Build one plan from one snapshot, by the production door alone.
-
-    Nothing assembles a definition field by field. `materialize` is the one
-    constructor, and the template it is given is a value already in hand --
-    never a name this function goes and resolves, which is what kept the judged
-    revision and the appended one from being the same one.
-    """
-    return materialize(template, asked.binding, config, graph_id=asked.graph_id,
-                       run_id=run_id, created_at=created_at)
-
-
-def _gated(checked: GraphTemplate | None) -> GraphTemplate:
-    """The revision the gates ran on, or a refusal rather than a second read.
-
-    `None` here would mean the transaction found no standing graph while the
-    read before it found one -- impossible for an append-only record. If it
-    ever became possible, the answer must not be to fetch the revision again:
-    that is the whole defect this shape makes unrepresentable. What was judged
-    is what is appended, and when what was judged is missing there is nothing
-    to append.
-    """
-    if checked is None:
-        raise ApiRefusal.fixed("store_error")
-    return checked
-
-
-def _servable_pair(
-        registry: AdapterRegistry, bound: str, capability: str,
-        arguments: Mapping[str, Any]) -> None:
-    """One verdict for one (adapter, capability, arguments), whichever road asks.
-
-    A plan and a proposal describe the same work, so they may not disagree about
-    whether that work can be carried out. They did. The graph route asked the
-    registry what it recorded for the pair; the proposal route asked only
-    whether the manifest named the capability, and the registry's own
-    validation is a no-op for an adapter that declared no schema -- so a
-    proposal reached Confirm through an adapter that never said how it reads
-    those arguments. The other direction disagreed on the WORD: a capability
-    this API's registry does not carry answered `contract_invalid` on one road
-    and `capability_unsupported` on the other.
-
-    So both roads ask this, in this order, and the order is the taxonomy:
-
-    1. the frozen API must carry an argument schema for the capability at all;
-    2. the pair must serve it through the one family this API speaks;
-    3. the payload must satisfy that pair's schema.
-
-    The first two are `capability_unsupported`: this build cannot carry out
-    that work, whatever the request said. The third is `contract_invalid`: the
-    work is servable and these particular values are not.
-    """
-    if capability not in ARGUMENT_SCHEMAS:
-        raise UnsupportedCapability(
-            "the frozen command API carries no argument schema for this capability")
-    if registry.argument_schema(bound, capability) != COMMAND_ARGUMENT_SCHEMA:
-        raise UnsupportedCapability(
-            "bound adapter does not serve this capability through the "
-            "argument schema this API speaks")
-    try:
-        registry.validate_arguments(bound, capability, arguments)
-    except AdapterContractError:
-        # The registry judged; naming the answer in the frozen HTTP vocabulary
-        # is this boundary's job, and a payload that does not satisfy its
-        # schema is exactly `contract_invalid`.
-        raise ApiRefusal.fixed("contract_invalid") from None
-
-
-def _bindings(config: Mapping[str, Any]) -> dict[str, str]:
-    """Treat an invalid durable binding as corruption, never caller input."""
-    try:
-        return frozen_config_bindings(config)
-    except ContractError:
-        raise CorruptRun("frozen configuration has invalid instance bindings") from None

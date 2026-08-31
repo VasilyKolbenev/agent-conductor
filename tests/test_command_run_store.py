@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from conductor.command import run_store
+from conductor.command import run_files, run_store
 from conductor.command.contracts import (
     ActionRequest,
     ActionResultReceipt,
@@ -344,7 +344,11 @@ def test_a_crash_while_writing_a_decision_receipt_publishes_no_receipt_at_all(
         os.write(fd, payload[:12])
         raise OSError("the machine lost power mid-write")
 
-    monkeypatch.setattr(run_store, "_write_all", tear)
+    # Patched where the writer LIVES, not where the store imports it: the
+    # staging call resolves `_write_all` in its own module's globals, so a patch
+    # on the store's namespace would be a torn write nothing performs -- and the
+    # test would pass while proving nothing about the crash it names.
+    monkeypatch.setattr(run_files, "_write_all", tear)
     with pytest.raises(StoreError, match="cannot create decision receipt"):
         store.append(a_decision())
     assert list(decisions.iterdir()) == []

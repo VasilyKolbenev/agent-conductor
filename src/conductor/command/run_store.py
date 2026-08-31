@@ -52,6 +52,14 @@ from .graph_causality import (
     permitted_verifier,
 )
 from .graph_definition import GraphDefinition
+from .run_files import (  # noqa: F401 -- re-exported under their old names
+    _append_bytes,
+    _canonical_bytes,
+    _exclusive_bytes,
+    _fsync_dir,
+    _json_object,
+    _replace_bytes,
+)
 from .run_terminal import RunTerminal
 from .store_errors import (  # noqa: F401 -- re-exported under their old names
     CorruptRun,
@@ -193,109 +201,6 @@ def _secret_field(value: object, path: tuple[str, ...] = ()) -> str | None:
             if found is not None:
                 return found
     return None
-
-
-def _canonical_bytes(value: object) -> bytes:
-    try:
-        return (canonical_json(value) + "\n").encode("utf-8")
-    except ContractError as e:
-        raise StoreError(f"value is not canonical JSON: {e}") from e
-
-
-def _write_all(fd: int, payload: bytes) -> None:
-    offset = 0
-    while offset < len(payload):
-        written = os.write(fd, payload[offset:])
-        if written <= 0:
-            raise OSError("write returned no progress")
-        offset += written
-
-
-def _exclusive_bytes(path: Path, payload: bytes) -> None:
-    """Publish `payload` at `path` all-or-nothing, and only if `path` is unclaimed.
-
-    The content is staged under a private name and fsynced first, so a crash can
-    never publish a half-written or zero-length file; `os.link` then refuses an
-    already-claimed name on every supported platform, which keeps exclusivity the
-    arbiter between two writers racing for the same identity.
-    """
-    fd, raw = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
-    stage = Path(raw)
-    try:
-        _write_all(fd, payload)
-        os.fsync(fd)
-        os.close(fd)
-        fd = -1
-        os.link(stage, path)
-    finally:
-        if fd >= 0:
-            os.close(fd)
-        try:
-            stage.unlink()
-        except FileNotFoundError:
-            pass
-
-
-#: Windows opens a descriptor in text mode unless told otherwise, and the CRT
-#: then translates every LF written through it into CRLF. `tempfile.mkstemp`
-#: already sets this flag for the staged writes, so without it here the two
-#: durable spellings of one record would differ by a CR each: the journal line is
-#: appended, while `run.json`, `config.json` and every `decisions/*.json` are
-#: staged. Absent on POSIX, where `getattr` supplies the no-op 0.
-_O_BINARY = getattr(os, "O_BINARY", 0)
-
-
-def _append_bytes(path: Path, payload: bytes) -> None:
-    fd: int | None = None
-    try:
-        fd = os.open(path, os.O_WRONLY | os.O_APPEND | _O_BINARY)
-        _write_all(fd, payload)
-        os.fsync(fd)
-    finally:
-        if fd is not None:
-            os.close(fd)
-
-
-def _replace_bytes(path: Path, payload: bytes) -> None:
-    fd, raw = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
-    temp = Path(raw)
-    try:
-        _write_all(fd, payload)
-        os.fsync(fd)
-        os.close(fd)
-        fd = -1
-        os.replace(temp, path)
-    finally:
-        if fd >= 0:
-            os.close(fd)
-        try:
-            temp.unlink()
-        except FileNotFoundError:
-            pass
-
-
-def _fsync_dir(path: Path) -> None:
-    """Best-effort directory durability; Windows cannot open directories this way."""
-    try:
-        fd = os.open(path, os.O_RDONLY)
-    except OSError:
-        return
-    try:
-        os.fsync(fd)
-    except OSError:
-        pass
-    finally:
-        os.close(fd)
-
-
-def _json_object(path: Path, description: str) -> dict[str, Any]:
-    try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError) as e:
-        raise CorruptRun(f"{description} is unreadable: {e}") from e
-    if not isinstance(value, dict):
-        raise CorruptRun(f"{description} must be a JSON object")
-    return value
 
 
 def _record_parts(value: RecordValue) -> tuple[str, str, str]:
