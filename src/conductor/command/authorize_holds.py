@@ -16,6 +16,7 @@ here is what makes it true early.
 from __future__ import annotations
 
 from .contracts import ActionProposal, ActionRequest
+from .graph_schedule import authorized_attempts
 from .run_store import RecoveredRun
 from .runtime_values import AuthorizationError
 
@@ -69,9 +70,8 @@ def _hold_plan_bounds(
     node = _planned_node(recovered, proposal.node_id)
     if node is None or node.attempt_bound is None:
         return
-    spent = sum(1 for row in recovered.records
-                if isinstance(row.value, ActionRequest)
-                and row.value.node_id == proposal.node_id)
+    spent = authorized_attempts(
+        tuple(row.value for row in recovered.records), proposal.node_id)
     if spent >= node.attempt_bound:
         raise AuthorizationError(
             f"plan: node {proposal.node_id!r} allows {node.attempt_bound} "

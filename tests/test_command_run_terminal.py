@@ -18,11 +18,16 @@ What this module holds, and how each claim fails on its own:
 - **nothing follows it.** The whole-journal rule, held on the raw-replay road
   where a hand-written journal arrives.
 
-**OWED, and deliberately absent here:** the design's third relation -- that the
-recorded partitions equal what `graph_schedule.schedule` recomputes from this
-run's own prior records. That module lands in the next commit and this one does
-not write a relation against a function it cannot call. Nothing in this commit
-appends a terminal on any production road, so no road reaches the gap.
+- **it says what this run's own records support.** The verdict is recomputed
+  from the plan's bytes and the journal's prefix and compared entry for entry,
+  so a terminal whose partitions were altered by a single name is refused on the
+  append road AND again on the raw-replay road. That is what stops the record
+  being a stored projection: it cannot say anything the plan does not.
+
+The plan these tests use is deliberately the smallest one that ends -- a single
+task carrying no capability, which is settled by arriving and is settled the
+moment the plan is written. A terminal is then reachable from an empty journal,
+so the record's own rules are driven without a run first being played out.
 """
 from __future__ import annotations
 
@@ -31,6 +36,12 @@ import json
 import pytest
 
 from conductor.command.contracts import ContractError, canonical_json
+from conductor.command.graph_definition import (
+    GraphDefinition,
+    GraphEdge,
+    GraphNode,
+)
+from conductor.command.graph_schedule import schedule
 from conductor.command.run_store import (
     CorruptRun,
     RecordConflict,
@@ -40,15 +51,23 @@ from conductor.command.run_store import (
 )
 from conductor.command.run_terminal import TERMINAL_STATES, RunTerminal
 from conductor.command import run_store as run_store_module
-from tests.alpha3_graph_artifacts import dalio_definition
-from tests.test_command_run_store import CONFIG, a_run
+from tests.test_command_run_store import CONFIG, a_decision, a_run
 
 RUN_ID = "run-001"
 NOW = "2026-08-30T10:00:00Z"
-#: The Dalio plan's own node ids, in definition order, which is the order the
-#: record's two partitions are written in.
-PLANNED = ("goal", "identify", "diagnose", "design", "confirm-gate", "do",
-           "result-gate", "retry-loop")
+
+
+def a_plan(**changes) -> GraphDefinition:
+    """The smallest plan that ENDS: one step carried out by nobody.
+
+    A task naming no capability is settled by arriving, so this plan is complete
+    the moment it is written and a terminal is reachable from an empty journal.
+    """
+    body = dict(graph_id="graph-note", run_id=RUN_ID, created_at=NOW,
+                nodes=(GraphNode(node_id="note", kind="task", title="Note"),),
+                edges=())
+    body.update(changes)
+    return GraphDefinition(**body)
 
 
 def a_store(tmp_path, *, with_graph=True):
@@ -56,15 +75,16 @@ def a_store(tmp_path, *, with_graph=True):
     store.create_run(
         a_run(run_id=RUN_ID, config_digest=snapshot_digest(CONFIG)), CONFIG)
     if with_graph:
-        store.append(dalio_definition(run_id=RUN_ID))
+        store.append(a_plan())
     return store
 
 
 def a_terminal(**changes) -> RunTerminal:
+    """The verdict this plan's own records support, unless a caller bends it."""
     values = {
         "terminal_id": "terminal-001", "run_id": RUN_ID,
-        "graph_id": "graph-dalio", "state": "complete",
-        "settled_nodes": PLANNED[:-1], "unreachable_nodes": ("retry-loop",),
+        "graph_id": "graph-note", "state": "complete",
+        "settled_nodes": ("note",), "unreachable_nodes": (),
         "recorded_at": NOW,
     }
     values.update(changes)
@@ -74,6 +94,15 @@ def a_terminal(**changes) -> RunTerminal:
 def journal_lines(store):
     text = (store.run_path(RUN_ID) / "records.jsonl").read_text(encoding="utf-8")
     return [json.loads(line) for line in text.splitlines() if line]
+
+
+def raw_append(store, kind, value):
+    """Write one canonical record straight into the journal, past every door."""
+    line = json.dumps({"record": value.as_dict(), "record_type": kind},
+                      ensure_ascii=False, sort_keys=True,
+                      separators=(",", ":")) + "\n"
+    with (store.run_path(RUN_ID) / "records.jsonl").open("ab") as stream:
+        stream.write(line.encode("utf-8"))
 
 
 # -- the record contract -------------------------------------------------------
@@ -269,16 +298,109 @@ def test_the_journal_replays_to_the_same_single_terminal(tmp_path):
     assert first.warnings == second.warnings == ()
 
 
+# -- it says what this run's own records support -------------------------------
+
+
+def test_the_recorded_verdict_is_the_one_the_plan_itself_computes(tmp_path):
+    """The positive control: what is written is what `schedule` says, so the
+    refusals below are about disagreement and not about the comparison."""
+    store = a_store(tmp_path)
+    computed = schedule(a_plan(), (a_plan(),))
+
+    assert store.append(a_terminal()) is True
+
+    terminal = store.read(RUN_ID).records[-1].value
+    assert (terminal.state, terminal.settled_nodes, terminal.unreachable_nodes) \
+        == (computed.run_state, computed.settled, computed.unreachable)
+
+
+def a_gated_plan() -> GraphDefinition:
+    """A plan whose verdict cannot be read off the drawing alone.
+
+    The one-step plan above is complete the moment it is written, so a
+    recomputation that ignored the journal entirely would still agree with it.
+    Here nothing settles until a Human answers the gate, so the verdict is a
+    fact of the RECORDS and a recomputation over an empty prefix says `open`.
+    """
+    return GraphDefinition(
+        graph_id="graph-gated", run_id=RUN_ID, created_at=NOW,
+        nodes=(GraphNode(node_id="gate", kind="gate", title="Gate",
+                         gate_id="gate-1"),
+               GraphNode(node_id="note", kind="task", title="Note")),
+        edges=(GraphEdge(from_node="gate", to_node="note"),))
+
+
+def test_the_verdict_is_recomputed_from_this_runs_records_and_not_its_plan(
+        tmp_path):
+    """The terminal of a run that only ended because of what it did.
+
+    Before the decision the plan is `open` and no terminal may be recorded at
+    all; after it, exactly one verdict is supported. A recomputation that read
+    the plan without its journal would refuse the honest record here.
+    """
+    store = RunStore(tmp_path)
+    store.create_run(
+        a_run(run_id=RUN_ID, config_digest=snapshot_digest(CONFIG)), CONFIG)
+    store.append(a_gated_plan())
+    terminal = a_terminal(graph_id="graph-gated",
+                          settled_nodes=("gate", "note"))
+
+    with pytest.raises(StoreError, match="does not match what this run"):
+        store.append(terminal)
+
+    store.append(a_decision(run_id=RUN_ID, gate_id="gate-1"))
+    assert store.append(terminal) is True
+    assert store.read(RUN_ID).records[-1].value == terminal
+
+
+@pytest.mark.parametrize("bent", [
+    {"settled_nodes": ()},
+    {"settled_nodes": ("note", "ghost")},
+    {"unreachable_nodes": ("note",), "settled_nodes": ()},
+    {"state": "stalled"},
+])
+def test_a_terminal_altered_by_one_entry_is_refused_on_append(tmp_path, bent):
+    """One name added, one removed, one partition swapped, one word changed."""
+    store = a_store(tmp_path)
+
+    with pytest.raises(StoreError, match="does not match what this run"):
+        store.append(a_terminal(**bent))
+
+    assert [row["record_type"] for row in journal_lines(store)] == [
+        "graph_definition"]
+
+
+@pytest.mark.parametrize("bent", [
+    {"settled_nodes": ()},
+    {"state": "stalled"},
+])
+def test_a_terminal_altered_by_one_entry_is_refused_on_replay(tmp_path, bent):
+    """The same rule against bytes this process did not write.
+
+    `schedule` is a pure function of the plan and the prefix before the record,
+    and `_validate_records` replays each record against exactly that prefix --
+    so a forgery written straight into the journal is judged by the same
+    arithmetic that would have refused it at the door.
+    """
+    store = a_store(tmp_path)
+    raw_append(store, "run_terminal", a_terminal(**bent))
+
+    with pytest.raises(CorruptRun, match="breaks replay causality"):
+        store.read(RUN_ID)
+
+
+def test_an_honest_terminal_written_straight_into_the_journal_replays(tmp_path):
+    """The calibration for the two above: raw bytes are not what is refused."""
+    store = a_store(tmp_path)
+    raw_append(store, "run_terminal", a_terminal())
+
+    recovered = store.read(RUN_ID)
+
+    assert [row.kind for row in recovered.records] == [
+        "graph_definition", "run_terminal"]
+
+
 # -- nothing follows a recorded terminal --------------------------------------
-
-
-def raw_append(store, kind, value):
-    """Write one canonical record straight into the journal, past every door."""
-    line = json.dumps({"record": value.as_dict(), "record_type": kind},
-                      ensure_ascii=False, sort_keys=True,
-                      separators=(",", ":")) + "\n"
-    with (store.run_path(RUN_ID) / "records.jsonl").open("ab") as stream:
-        stream.write(line.encode("utf-8"))
 
 
 def test_a_journal_carrying_a_record_after_its_terminal_is_corrupt(tmp_path):
@@ -286,8 +408,7 @@ def test_a_journal_carrying_a_record_after_its_terminal_is_corrupt(tmp_path):
     bytes a hostile or a broken writer would have written."""
     store = a_store(tmp_path)
     store.append(a_terminal())
-    raw_append(store, "graph_definition",
-               dalio_definition(run_id=RUN_ID, graph_id="graph-second"))
+    raw_append(store, "graph_definition", a_plan(graph_id="graph-second"))
 
     with pytest.raises(CorruptRun, match="follows the run terminal"):
         store.read(RUN_ID)
@@ -298,8 +419,7 @@ def test_the_refusal_names_the_kind_that_followed_the_terminal(tmp_path):
     did -- the journal is append-only and the row cannot be pointed at."""
     store = a_store(tmp_path)
     store.append(a_terminal())
-    raw_append(store, "graph_definition",
-               dalio_definition(run_id=RUN_ID, graph_id="graph-second"))
+    raw_append(store, "graph_definition", a_plan(graph_id="graph-second"))
 
     with pytest.raises(CorruptRun) as caught:
         store.read(RUN_ID)

@@ -37,6 +37,7 @@ from .contracts import (
     gate_decision,
 )
 from .graph_definition import GraphDefinition, GraphNode
+from .graph_schedule import loop_position
 
 if TYPE_CHECKING:  # pragma: no cover -- import cycle avoided at runtime
     from .run_store import RecoveredRun
@@ -133,16 +134,13 @@ def _node_runtime(
     if node.gate_id is not None:
         row["decision"] = _gate_state(values, definition.run_id, node.gate_id)
     if node.loop is not None:
-        # The trip this run is on, read off the ONE node the loop reopens.
-        # That step is attempted exactly once per trip, so its attempt count is
-        # the position, with no arithmetic invented on top of a durable fact.
-        # Counting attempts across the whole cycle instead scored one pass per
-        # acting step of a single trip: Dalio's four acting steps against a
-        # bound of three said the ceiling was reached during the first,
-        # ordinary, top-to-bottom traversal, before anything was reopened.
-        entered = len(_attempt_ids(values, {node.loop.back_to}))
-        row["pass"] = entered
-        row["bound_reached"] = entered >= node.loop.bound
+        # The trip this run is on, read off the ONE node the loop reopens --
+        # asked of `graph_schedule`, which owns the arithmetic, rather than
+        # computed a second time here. The reading is unchanged and its reasons
+        # are recorded at that owner; what changes is that the module which
+        # ROUTES on this position and the screen that DISPLAYS it can no longer
+        # come to disagree about it.
+        row["pass"], row["bound_reached"] = loop_position(values, node)
     return row
 
 

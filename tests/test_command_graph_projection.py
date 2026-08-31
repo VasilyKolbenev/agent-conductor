@@ -471,8 +471,17 @@ def test_two_proposals_that_name_one_attempt_are_one_pass(tmp_path):
 #: exists to be shown; a decision resting on it would turn a projection into
 #: control, and would then make correcting how a pass is counted a change to
 #: what the product executes rather than to what it displays.
+#:
+#: `graph_schedule` joins them, and it is the interesting entry: it OWNS the
+#: loop position now, and it routes on it. It may compute that position and it
+#: may not spell either display word -- `loop_position` hands back a pair, so
+#: the two names stay the projection's alone and correcting how a pass is
+#: counted stays a change to what is displayed. `authorize_holds` and
+#: `verify_holds` are refusals that decide whether work happens at all, which is
+#: exactly the property this list is about.
 DECIDING_MODULES = ("runtime.py", "control_loop.py", "service.py",
-                    "coordinator.py")
+                    "coordinator.py", "graph_schedule.py",
+                    "authorize_holds.py", "verify_holds.py")
 #: The two words this projection writes for a loop node and for nothing else.
 DISPLAY_ONLY_WORDS = frozenset({"pass", "bound_reached"})
 

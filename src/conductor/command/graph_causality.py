@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 
 from .contracts import ActionProposal, ActionRequest, DecisionReceipt, _thaw_json
 from .graph_definition import GraphDefinition
+from .graph_schedule import schedule
 from .run_terminal import RunTerminal
 from .store_errors import CorruptRun, RecordConflict, StoreError
 
@@ -220,12 +221,14 @@ def _hold_run_terminal(recovered: "RecoveredRun", value: RunTerminal) -> None:
     question that was already answered, and re-minting one at a later instant
     would let one identity carry different facts.
 
-    OWED, and not held here: the third rule of the design, that the recorded
-    verdict must equal what `graph_schedule.schedule` computes from this run's
-    own prior records. That module does not exist in this commit and this
-    relation is deliberately not written against a function it cannot call.
-    Nothing in this commit appends a `RunTerminal`, so no road reaches the gap;
-    it closes in the commit that brings the schedule.
+    Rule 3 is what keeps the record from being anything a writer pleases. The
+    verdict is RECOMPUTED here from the plan's own bytes and the run's own prior
+    records, and the recorded partitions must equal it entry for entry -- so a
+    forged terminal, or one whose `settled_nodes` was altered by a single name,
+    is refused on the append road and again on the raw-replay road. `schedule`
+    is a pure function of a frozen plan and a frozen prefix, and
+    `_validate_records` replays each record against exactly the prefix before
+    it, so identical bytes reach an identical verdict every time they are read.
     """
     graph = _standing_graph(recovered)
     if graph is None:
@@ -241,6 +244,11 @@ def _hold_run_terminal(recovered: "RecoveredRun", value: RunTerminal) -> None:
     if standing is not None:
         raise RecordConflict(
             f"run {recovered.envelope.run_id!r} already recorded its terminal")
+    computed = schedule(graph, tuple(row.value for row in recovered.records))
+    if (value.state, value.settled_nodes, value.unreachable_nodes) != (
+            computed.run_state, computed.settled, computed.unreachable):
+        raise StoreError(
+            "run terminal does not match what this run's own records support")
 
 
 def _hold_terminal_is_last(records) -> None:
