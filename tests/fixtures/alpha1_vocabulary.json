@@ -12,6 +12,7 @@
     "route_not_found": 404,
     "route_unsafe": 409,
     "run_corrupt": 409,
+    "run_terminal": 409,
     "same_origin_denied": 403,
     "service_refused": 409,
     "store_error": 500

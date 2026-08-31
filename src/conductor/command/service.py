@@ -29,6 +29,31 @@ class ServiceError(RuntimeError):
     """The service refuses an operation the authority ladder does not permit."""
 
 
+def _hold_proposal_names_its_node(recovered, run_id: str,
+                                  node_id: str | None) -> None:
+    """A proposal on a PLANNED run says which step it carries out.
+
+    An unbound proposal on a run that follows a graph is authority the plan
+    never gave. Nothing downstream can hold it to a node's facts, its ceilings
+    or its verifier -- and it silently MIS-RESOLVES that verifier, because both
+    verifier doors key off the request's binding, so an unbound action on a
+    verifier-carrying node falls back to the doer that was supposed to be
+    checked by somebody else.
+
+    A plan-less run is guarded by the graph's absence and is byte-identical to
+    what it always was: runs without a graph existed before graphs did.
+
+    Raises:
+        ServiceError: The run follows a graph and the proposal names no node.
+    """
+    graph = next((row.value for row in recovered.records
+                  if row.kind == "graph_definition"), None)
+    if graph is not None and node_id is None:
+        raise ServiceError(
+            f"run {run_id!r} follows graph {graph.graph_id!r}; a proposal on a "
+            "planned run must name the node it carries out")
+
+
 class CommandService:
     """Bind one RunStore and one AdapterRegistry into the observe/propose seam."""
 
@@ -102,6 +127,7 @@ class CommandService:
             raise ServiceError(
                 "propose is not permitted in observe mode; observe first, "
                 "then raise the run to propose")
+        _hold_proposal_names_its_node(recovered, run_id, node_id)
         # The adapter is derived from the pinned frozen config, so an unknown
         # instance or a mismatched adapter is refused before the manifest is read.
         bound = self._bound_adapter(recovered.config, instance_id, adapter_id)

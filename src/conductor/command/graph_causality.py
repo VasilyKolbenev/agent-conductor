@@ -185,6 +185,23 @@ def _standing_graph(recovered: "RecoveredRun") -> GraphDefinition | None:
                  if row.kind == "graph_definition"), None)
 
 
+def standing_terminal(recovered: "RecoveredRun") -> RunTerminal | None:
+    """The terminal witness this run has recorded, if it has recorded one.
+
+    ONE predicate, spent by every door that must refuse once a run has ended:
+    the two HTTP boundaries, the runtime hold beneath them, and the closing road
+    that must not mint a second ending. A second spelling would be a second
+    answer to "has this run finished", and the doors would disagree about it on
+    exactly the journals where it matters.
+
+    `None` for every run that follows no plan, and that is not a special case:
+    such a run can never hold a terminal at all, because `_hold_run_terminal`
+    refuses one outright.
+    """
+    return next((row.value for row in recovered.records
+                 if row.kind == "run_terminal"), None)
+
+
 def _decision_names_a_planned_gate(
         recovered: "RecoveredRun", value: DecisionReceipt) -> None:
     """A decision on a planned run answers a gate that run's plan carries.
@@ -239,9 +256,7 @@ def _hold_run_terminal(recovered: "RecoveredRun", value: RunTerminal) -> None:
         raise StoreError(
             f"run terminal names graph {value.graph_id!r}, and run "
             f"{recovered.envelope.run_id!r} follows {graph.graph_id!r}")
-    standing = next((row.value for row in recovered.records
-                     if row.kind == "run_terminal"), None)
-    if standing is not None:
+    if standing_terminal(recovered) is not None:
         raise RecordConflict(
             f"run {recovered.envelope.run_id!r} already recorded its terminal")
     computed = schedule(graph, tuple(row.value for row in recovered.records))

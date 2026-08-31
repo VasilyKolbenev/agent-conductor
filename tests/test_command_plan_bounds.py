@@ -144,7 +144,8 @@ def _bounded_run(tmp_path, **bounds):
     fields set, so what is exercised is a plan this product really materializes
     rather than a graph invented here.
     """
-    from tests.test_command_graph_binding import CONFIG, RUN_ID, a_run
+    from tests.test_command_graph_binding import (
+        CONFIG, RUN_ID, a_run, let_the_gate_through)
     from tests.alpha3_graph_artifacts import dalio_definition
     from conductor.command.run_store import RunStore, snapshot_digest
 
@@ -160,6 +161,7 @@ def _bounded_run(tmp_path, **bounds):
     store.append(GraphDefinition(
         graph_id=plan.graph_id, run_id=plan.run_id,
         created_at=plan.created_at, nodes=nodes, edges=plan.edges))
+    let_the_gate_through(store)
     return store
 
 

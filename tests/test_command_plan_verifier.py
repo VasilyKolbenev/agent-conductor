@@ -32,6 +32,7 @@ from conductor.command.graph_definition import GraphDefinition, GraphEdge, Graph
 from conductor.command.run_store import RunStore, snapshot_digest
 from conductor.command.runtime import AttemptState, ControlRuntime, ExecutionError
 
+from tests.test_command_graph_binding import let_the_gate_through
 from tests.test_command_run_store import CONFIG, a_run
 from tests.test_command_runtime_authorize import (
     NOW,
@@ -103,6 +104,7 @@ def a_bound_store(tmp_path, *, verifier):
         a_run(run_id=RUN_ID, mode="confirm",
               config_digest=snapshot_digest(CONFIG)), CONFIG)
     a_plan(store, verifier=verifier)
+    let_the_gate_through(store)
     return store
 
 

@@ -36,6 +36,20 @@ class AuthorizationError(RuntimeError):
     """A confirmation fact is changed or stale; the action is refused before preparation."""
 
 
+class RunAlreadyTerminal(AuthorizationError):
+    """The run recorded that its plan ended; nothing further may be authorized.
+
+    A SUBCLASS, deliberately, and the two halves of that matter separately.
+    Every `except AuthorizationError` handler in the product keeps working, so
+    adding this cannot make a road that used to refuse start admitting. And the
+    HTTP boundary can still tell it apart by type, which is the only way it may:
+    the runtime cannot raise an `ApiRefusal` -- `api_contracts` imports from
+    `runtime`, so the reverse would be a cycle -- and reading a message to
+    choose a wire word is exactly what the translation layer's own docstring
+    forbids.
+    """
+
+
 class ExecutionError(RuntimeError):
     """The runtime cannot drive a request the store never authorized or cannot bind."""
 

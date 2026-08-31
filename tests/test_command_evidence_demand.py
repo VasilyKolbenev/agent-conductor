@@ -50,6 +50,7 @@ from conductor.command.run_store import CorruptRun, RunStore, StoreError, snapsh
 from conductor.command.runtime import AttemptState, ControlRuntime
 from conductor.command.verify_holds import EVIDENCE_UNNAMED, EVIDENCE_UNSOUND
 
+from tests.test_command_graph_binding import let_the_gate_through
 from tests.test_command_run_store import CONFIG, a_run
 from tests.test_command_runtime_authorize import (
     NOW,
@@ -131,6 +132,7 @@ def a_bound_store(tmp_path, *, required_evidence):
         a_run(run_id=RUN_ID, mode="confirm",
               config_digest=snapshot_digest(CONFIG)), CONFIG)
     a_plan(store, required_evidence=required_evidence)
+    let_the_gate_through(store)
     return store
 
 
@@ -355,8 +357,13 @@ def test_the_same_forged_bytes_are_refused_by_the_writer_as_well(tmp_path):
     receipt = attempt.receipt
 
     strip_the_digest(store)
+    # The terminal goes with the receipt it was taken from. A run that reaches
+    # its last step records that its plan ended, and a journal keeping that
+    # verdict while deleting the fact that caused it is corrupt for a DIFFERENT
+    # reason -- which would mask the forgery this witness is about.
     rewrite(store, [row for row in rows_of(store)
-                    if row["record_type"] != "action_result"])
+                    if row["record_type"] not in ("action_result",
+                                                  "run_terminal")])
     # The prefix alone is sound: the demand fires on the terminal receipt, so
     # what follows is the writer's verdict and not a corrupt run.
     assert RunStore(tmp_path).read(RUN_ID).records
@@ -398,12 +405,20 @@ def test_the_hold_says_nothing_about_a_run_whose_plan_says_nothing(tmp_path):
     frozen bytes must decline rather than guess at, and together they are why no
     stored run changes meaning.
     """
-    store = a_bound_store(tmp_path, required_evidence="digest")
+    # The unbound request is authorized BEFORE the plan is written, which is
+    # the only order that still reaches it: a run following a graph names the
+    # step it carries out. The journal then holds all four shapes at once, and
+    # the ordering is one a real run may have -- a plan may arrive after work
+    # has already been authorized.
+    store = RunStore(tmp_path)
+    store.create_run(a_run(run_id=RUN_ID, mode="confirm",
+                           config_digest=snapshot_digest(CONFIG)), CONFIG)
     unbound = a_proposal(store, instance_id=DOER, capability="dispatch",
                          arguments={"handoff": "packet-001"})
     runtime = ControlRuntime(store, AdapterRegistry([]), clock=fixed_clock(),
                              ids=fixed_ids())
     request = runtime.authorize(a_confirmation(unbound), budget=a_budget()).request
+    a_plan(store, required_evidence="digest")
     recovered = store.read(RUN_ID)
 
     # An UNBOUND request: legal, and older than graphs.

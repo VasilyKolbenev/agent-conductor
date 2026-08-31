@@ -18,7 +18,12 @@ import json
 
 import pytest
 
-from conductor.command.contracts import ActionProposal, ActionRequest, ContractError
+from conductor.command.contracts import (
+    ActionProposal,
+    ActionRequest,
+    ContractError,
+    DecisionReceipt,
+)
 from conductor.command.run_store import (
     CorruptRun,
     RunStore,
@@ -46,6 +51,26 @@ def a_store(tmp_path, *, with_graph=True):
 
 def the_do_node():
     return dalio_definition(run_id=RUN_ID).stage_node("do")
+
+
+def let_the_gate_through(store, run_id=RUN_ID):
+    """Answer the gate the Do node stands behind, so the plan REACHES that node.
+
+    A plan is now a permission as well as a description: `authorize` refuses a
+    step the run has not arrived at. Every witness below that authorizes the Do
+    node therefore has to show the run being let through its gate first --
+    which is what a real run does, and what these journals were quietly
+    skipping while the plan was only a description.
+
+    One decision is enough and no ancestor need be settled: the Do node's own
+    in-edge comes from the gate, and a node's standing is decided by the roads
+    into IT.
+    """
+    store.append(DecisionReceipt(
+        receipt_id="decision-gate-confirm-do", run_id=run_id,
+        gate_id="gate-confirm-do", action="approve", actor="release-owner",
+        decided_at=NOW, reason="Let the work through.", scope_refs=("src",),
+        config_digest=snapshot_digest(CONFIG)))
 
 
 def a_proposal(**changes):
@@ -235,6 +260,7 @@ def a_confirmation(proposal, **changes):
 def test_the_authorized_request_carries_the_stored_proposals_binding(tmp_path):
     """What a Human confirmed is the proposal they were shown, binding included."""
     store = a_store(tmp_path)
+    let_the_gate_through(store)
     proposal = a_proposal()
     store.append(proposal)
 
@@ -248,7 +274,16 @@ def test_the_authorized_request_carries_the_stored_proposals_binding(tmp_path):
 
 
 def test_an_unbound_proposal_authorizes_an_unbound_request(tmp_path):
-    store = a_store(tmp_path)
+    """On a run that follows NO plan, which is the only run that may now.
+
+    An unbound proposal on a PLANNED run is refused at authorize -- the very
+    hole the eligibility rule closes -- so this witness moved to the run whose
+    behaviour is unchanged: runs without a graph existed before graphs did and
+    they propose, confirm and authorize exactly as they always have. The
+    refusal on the other side is `test_an_unbound_proposal_on_a_planned_run_is_
+    refused_at_authorize` below.
+    """
+    store = a_store(tmp_path, with_graph=False)
     proposal = a_proposal(node_id=None)
     store.append(proposal)
 
@@ -257,6 +292,27 @@ def test_an_unbound_proposal_authorizes_an_unbound_request(tmp_path):
 
     assert authorization.request.node_id is None
     assert "node_id" not in authorization.request.as_dict()
+
+
+def test_an_unbound_proposal_on_a_planned_run_is_refused_at_authorize(tmp_path):
+    """The other direction, and the hole this rule exists to close.
+
+    The proposal reached the journal before the plan did, so the store's own
+    relations had nothing to say about it. `authorize` does: a run following a
+    graph names the step it carries out, or nothing is minted for it.
+    """
+    from conductor.command.runtime_values import AuthorizationError
+
+    store = a_store(tmp_path, with_graph=False)
+    proposal = a_proposal(node_id=None)
+    store.append(proposal)
+    store.append(dalio_definition(run_id=RUN_ID))
+    before = (store.run_path(RUN_ID) / "records.jsonl").read_bytes()
+
+    with pytest.raises(AuthorizationError, match="names no node"):
+        a_runtime(store).authorize(a_confirmation(proposal), budget=a_budget())
+
+    assert (store.run_path(RUN_ID) / "records.jsonl").read_bytes() == before
 
 
 def test_a_confirm_body_may_not_name_a_node_at_all():

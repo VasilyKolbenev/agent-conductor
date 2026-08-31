@@ -16,9 +16,10 @@ here is what makes it true early.
 from __future__ import annotations
 
 from .contracts import ActionProposal, ActionRequest
-from .graph_schedule import authorized_attempts
+from .graph_causality import _standing_graph, standing_terminal
+from .graph_schedule import authorized_attempts, schedule
 from .run_store import RecoveredRun
-from .runtime_values import AuthorizationError
+from .runtime_values import AuthorizationError, RunAlreadyTerminal
 
 
 def _planned_node(recovered: RecoveredRun, node_id: str | None):
@@ -76,6 +77,78 @@ def _hold_plan_bounds(
         raise AuthorizationError(
             f"plan: node {proposal.node_id!r} allows {node.attempt_bound} "
             f"attempt(s) and has already authorized {spent}")
+
+
+def _hold_node_is_eligible(
+        proposal: ActionProposal, recovered: RecoveredRun) -> None:
+    """A planned run authorizes the steps its PLAN makes runnable, and no others.
+
+    This is what closes the caller-selected `node_id`. The binding was already
+    held to the node's own facts -- same instance, same capability, same
+    arguments -- but nothing asked whether the plan had reached that step at
+    all. A caller could name any node the graph carried and have the work
+    authorized out of order, and the plan would look like it was being followed.
+
+    The rule is MEMBERSHIP in what the schedule computes, never the presence of
+    a field: `runnable` never carries a node whose predecessors are unsettled,
+    whose gate is unanswered, whose road was closed, which is already settled,
+    or which has spent its `attempt_bound`. So the refusals for all five arrive
+    together and cannot drift apart.
+
+    A plan-less run returns at the first line, unchanged: runs without a graph
+    existed before graphs did and they still do. A proposal naming NO node on a
+    run that has one is refused rather than exempted -- an unbound action on a
+    planned run is the very hole this closes, and it also mis-resolves the
+    verifier, because both verifier doors key off the request's binding.
+    """
+    definition = _standing_graph(recovered)
+    if definition is None:
+        return
+    if proposal.node_id is None:
+        raise AuthorizationError(
+            f"plan: run {recovered.envelope.run_id!r} follows graph "
+            f"{definition.graph_id!r} and this proposal names no node")
+    computed = schedule(
+        definition, tuple(row.value for row in recovered.records))
+    if proposal.node_id not in computed.runnable:
+        raise AuthorizationError(
+            f"plan: node {proposal.node_id!r} is "
+            f"{computed.state_of(proposal.node_id)} and this run's plan makes "
+            f"{list(computed.runnable)} runnable now")
+
+
+def _hold_plan_admits(
+        proposal: ActionProposal, recovered: RecoveredRun) -> None:
+    """Everything the PLAN says about this authorization, asked in one place.
+
+    Ended first, then eligible: a run that has recorded its ending has no
+    runnable steps to speak of, so asking which step is eligible would answer a
+    question about a run that is over. One call site keeps the order a fact of
+    this module rather than of whoever wired it in.
+    """
+    _hold_run_not_terminal(recovered)
+    _hold_node_is_eligible(proposal, recovered)
+
+
+def _hold_run_not_terminal(recovered: RecoveredRun) -> None:
+    """A run that recorded its ending authorizes nothing further.
+
+    The depth half of a refusal the HTTP boundary also makes, and the doubling
+    is the same one `_hold_route` already has for the same reason: the boundary
+    refuses early, and this refuses whatever the caller. A record appended after
+    a terminal makes the journal `CorruptRun` on its very next read, so the only
+    acceptable place to find out is before any byte is written.
+
+    It raises its OWN type rather than a plain `AuthorizationError`, because the
+    wire word for this is not "your confirmation did not authorize" -- it is
+    "this run is over". The translation is by type and never by reading a
+    message.
+    """
+    terminal = standing_terminal(recovered)
+    if terminal is not None:
+        raise RunAlreadyTerminal(
+            f"run {recovered.envelope.run_id!r} recorded its terminal "
+            f"{terminal.terminal_id!r} and accepts no further records")
 
 
 def _hold_attempt_identity(

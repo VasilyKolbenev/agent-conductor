@@ -58,6 +58,8 @@ export const ERROR_LABELS = Object.freeze({
   route_not_found: "The run route was not found.",
   route_unsafe: "The run route is structurally unsafe.",
   run_corrupt: "The run history is corrupt.",
+  run_terminal: "This run has finished. Its plan has nothing left to open, so "
+    + "nothing further can be proposed, decided or authorized on it.",
   same_origin_denied: "The local origin was refused.",
   service_refused: "The command service refused the request.",
   store_error: "The run store is unavailable.",

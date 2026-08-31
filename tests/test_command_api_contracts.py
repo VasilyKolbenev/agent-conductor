@@ -337,6 +337,8 @@ def test_every_fixed_code_has_one_test_owned_exact_message_and_empty_detail():
         "draft_changed": "the draft changed since it was reviewed; read it again",
         "draft_conflict": "the stored draft is not the one this request was "
                           "working from",
+        "run_terminal": "run has recorded its terminal and accepts no further "
+                        "records",
     }
     assert set(expected) == set(ERROR_STATUS)
     for code, message in expected.items():

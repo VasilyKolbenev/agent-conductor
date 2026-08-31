@@ -68,6 +68,8 @@ from .graph_template import (
     load_template,
     materialize,
 )
+from .graph_causality import standing_terminal
+from .run_closing import close_if_terminal
 from .plan_admission import (  # noqa: F401 -- re-exported under their old names
     _bindings,
     _gated,
@@ -580,6 +582,7 @@ class CommandApi:
         with self._store.transaction():
             self._hold_route(run_id)
             recovered = self._store.read(run_id)
+            self._hold_not_terminal(recovered)
             prior_ids = {
                 row.value.proposal_id for row in recovered.records
                 if row.kind == "action_proposal"}
@@ -634,6 +637,7 @@ class CommandApi:
         with self._store.transaction():
             self._hold_route(run_id)
             recovered = self._store.read(run_id)
+            self._hold_not_terminal(recovered)
             prior = next((
                 row.value for row in recovered.records
                 if row.kind == "decision"
@@ -649,6 +653,11 @@ class CommandApi:
                 decision = prior
             else:
                 created = self._store.append(decision)
+                # A decision is one of the two facts that can settle a step, so
+                # the plan is asked whether this run has just ended -- inside
+                # the same transaction, against the journal that now holds it.
+                close_if_terminal(self._store, run_id, clock=self._clock,
+                                  ids=self._ids)
         if created:
             self._publish_run(run_id)
         return CommandResponse(201 if created else 200, decision.as_dict())
@@ -687,6 +696,27 @@ class CommandApi:
     def _hold_route(self, run_id: str) -> None:
         if run_route_violations(self._store, run_id):
             raise ApiRefusal.fixed("route_unsafe")
+
+    @staticmethod
+    def _hold_not_terminal(recovered) -> None:
+        """A run that recorded its ending accepts nothing further, at the door.
+
+        The gap this closes is exact. `_validate_records` never judges the
+        record being APPENDED: it runs over the journal as read, which passes,
+        and then `_validate_new_relation` is asked about the new value alone --
+        and none of its arms fires for a decision or a proposal on a terminated
+        run. The byte gets written, and only the NEXT read fails
+        terminal-must-be-last. The product would brick a run through its own
+        front door and then report the journal as corrupt.
+
+        So both write doors ask this inside their transaction and strictly
+        before the first call that can write, and they ask it through one method
+        so the sentence exists once. The runtime holds it again beneath them,
+        which is the doubling `_hold_route` already has: the boundary refuses
+        early, the depth refuses whatever the caller.
+        """
+        if standing_terminal(recovered) is not None:
+            raise ApiRefusal.fixed("run_terminal")
 
     def _bound_adapter(
             self, config: Mapping[str, Any], run_id: str, instance_id: str) -> str:

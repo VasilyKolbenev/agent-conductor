@@ -30,7 +30,7 @@ from .http_transport import HttpRefusal
 # run envelope's digest and the bytes it answers for built by one function.
 from .run_store import CorruptRun, RecordConflict, StoreError, snapshot_digest
 from .template_store import RouteNotOwned
-from .runtime import AuthorizationError, Confirmation
+from .runtime import AuthorizationError, Confirmation, RunAlreadyTerminal
 from .service import ServiceError
 from .workflow_draft import parse_document
 
@@ -50,6 +50,7 @@ ERROR_STATUS = MappingProxyType({
     "record_conflict": 409,
     "draft_changed": 409,
     "draft_conflict": 409,
+    "run_terminal": 409,
 })
 
 _FIXED_MESSAGES = MappingProxyType({
@@ -88,6 +89,14 @@ _FIXED_MESSAGES = MappingProxyType({
     #: real refusal on either road gives.
     "draft_conflict": "the stored draft is not the one this request was "
                       "working from",
+    #: Its own code rather than `record_conflict` or `service_refused`, because
+    #: it is neither a clash of identities nor a service declining: the run
+    #: recorded that its plan ended, and NOTHING will be accepted on it again.
+    #: A client told `service_refused` could reasonably retry; there is nothing
+    #: here to retry. It carries no detail, so it is judged by the fixed-message
+    #: branch and needs no `_REVIEWED_FACTS` row.
+    "run_terminal": "run has recorded its terminal and accepts no further "
+                    "records",
 })
 
 ARGUMENT_SCHEMAS = MappingProxyType({
@@ -762,6 +771,11 @@ def refusal_from_exception(error: Exception) -> ApiRefusal:
         return ApiRefusal.fixed("service_refused")
     if isinstance(error, ServiceError):
         return ApiRefusal.fixed("service_refused")
+    # BEFORE the `AuthorizationError` arm, because it is a subclass of it: the
+    # order is what makes the wire word the specific one. Coded by TYPE, never
+    # by reading the message this exception happens to carry.
+    if isinstance(error, RunAlreadyTerminal):
+        return ApiRefusal.fixed("run_terminal")
     if isinstance(error, AuthorizationError):
         return ApiRefusal.fixed("authorization_refused")
     if isinstance(error, ContractError):

@@ -35,7 +35,8 @@ from conductor.command.run_store import RunStore, StoreError, snapshot_digest
 from conductor.command.runtime import AuthorizationError
 from tests.alpha3_graph_artifacts import dalio_definition
 from tests.test_command_graph_binding import (
-    CONFIG, RUN_ID, a_budget, a_confirmation, a_proposal, a_run, a_runtime)
+    CONFIG, RUN_ID, a_budget, a_confirmation, a_proposal, a_run, a_runtime,
+    let_the_gate_through)
 
 
 def a_bounded_run(tmp_path, **bounds):
@@ -53,6 +54,7 @@ def a_bounded_run(tmp_path, **bounds):
     store.append(GraphDefinition(
         graph_id=plan.graph_id, run_id=plan.run_id,
         created_at=plan.created_at, nodes=nodes, edges=plan.edges))
+    let_the_gate_through(store)
     return store
 
 

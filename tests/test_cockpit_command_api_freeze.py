@@ -121,6 +121,10 @@ EXPECTED_ERRORS = {
     "record_conflict": (409, "store"),
     "draft_changed": (409, "concurrency"),
     "draft_conflict": (409, "concurrency"),
+    #: Its source is the PLAN, not the store: the record exists, the request is
+    #: well formed, and what refuses it is that this run's plan has nothing left
+    #: to open. Every other 409 here names something a caller might change.
+    "run_terminal": (409, "plan"),
 }
 EXPECTED_ERROR_CODES = frozenset(EXPECTED_ERRORS)
 

@@ -59,9 +59,11 @@ from .attempt_replay import action_request_for, attempt_events_for, terminal_res
 from .attempts import AttemptEvent, OBSERVED_OUTCOMES, action_request_digest
 from .authorize_holds import (
     _hold_attempt_identity,
+    _hold_plan_admits,
     _hold_plan_bounds,
     _planned_node,
 )
+from .run_closing import close_if_terminal
 from .containment import render_legacy_run_route_violations, run_route_violations
 from .contracts import (
     ActionProposal,
@@ -89,6 +91,7 @@ from .runtime_values import (
     Budget,
     Confirmation,
     ExecutionError,
+    RunAlreadyTerminal,  # noqa: F401 -- re-exported at its original home
 )
 from .verify_holds import (
     VERIFIED,
@@ -237,6 +240,7 @@ class ControlRuntime:
         # the attempt id that request already carries.
         _hold_attempt_identity(proposal, recovered)
         self._hold_budget(proposal, recovered, budget)
+        _hold_plan_admits(proposal, recovered)
         request = self._mint_request(confirmation, proposal)
         self._hold_route(confirmation.run_id, AuthorizationError)
         if admit is not None:
@@ -691,7 +695,13 @@ class ControlRuntime:
             detail=detail,
             exit_code=exit_code,
         )
-        self._store.append(receipt)
+        # One transaction, so the receipt and the ending it may cause are one
+        # durable step: a verdict taken against a journal that does not yet hold
+        # the fact that caused it would be a verdict about a different run.
+        with self._store.transaction():
+            self._store.append(receipt)
+            close_if_terminal(
+                self._store, request.run_id, clock=self._clock, ids=self._ids)
         self._notify(request.run_id)
         return Attempt(
             request=request, state=state, receipt=receipt,

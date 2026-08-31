@@ -328,7 +328,8 @@ choose a code.
   { "code": "authorization_refused", "status": 409, "source": "authorization" },
   { "code": "record_conflict",       "status": 409, "source": "store" },
   { "code": "draft_changed",         "status": 409, "source": "concurrency" },
-  { "code": "draft_conflict",        "status": 409, "source": "concurrency" }
+  { "code": "draft_conflict",        "status": 409, "source": "concurrency" },
+  { "code": "run_terminal",          "status": 409, "source": "plan" }
 ]
 ```
 
