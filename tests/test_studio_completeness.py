@@ -21,6 +21,13 @@ surfaces -- the module table, the pure-DOM rules, the keyboard roads, the
 geometry, the six-section order. That file answers "is this still the same kind
 of thing"; this one answers "is every field on it finished".
 
+Step 2 is what makes this module grow, and it crossed the cap once already: the
+four routing labels that became real moved to ``test_studio_routing_labels.py``
+whole. Their register entries stayed HERE, in ``UNSUPPORTED_FIELDS``' own
+history, because the census is one list and splitting it would be splitting the
+rule. A label that leaves the register still owes a positive witness; that file
+is now one of the two places it may live.
+
 The helpers and the file constants are imported rather than re-spelled, so both
 modules read the same inspector surface: ``INSPECTOR`` is a union of three
 files, and a control that moved across one of those seams must stay under every
@@ -96,10 +103,20 @@ from tests.test_studio_canvas import INSPECTOR, PANEL, ROOT, _code, _text
 #: derived READING instead, which is what the three positive witnesses below
 #: hold: two controls that write `set-edge-condition`, and one reading that
 #: states where each answer sends the run.
+#:
+#: `Verification failure policy` left last, under a shorter label -- it is
+#: `Failure policy` now, because the policy fires on every failed outcome
+#: this build records and not on verification alone, and one definition of
+#: "this step failed" serves both the edge condition and the policy.
+#: `TemplateNode` and `GraphNode` store it, `graph_values` owns the one
+#: word, `materialize` freezes it into the plan, and `graph_schedule` spends
+#: it: a settled step whose outcome failed and whose policy says halt makes
+#: every step that could still run blocked, so the run reads `stalled` and
+#: `close_if_terminal` records that ending through the road it already had.
+#: tests/test_command_failure_policy.py drives it end to end.
 UNSUPPORTED_FIELDS = (
     "Missing-artifact behaviour",
     "Success criteria",
-    "Verification failure policy",
 )
 
 
@@ -417,39 +434,72 @@ def test_the_success_criteria_line_says_why_there_is_nothing_left_to_add():
     assert "would be weaker" in reason, reason
 
 
-def test_the_failure_policy_line_says_what_this_build_really_does_instead():
-    """Its reason has now been false TWICE, and each time for a good reason.
+def test_the_failure_policy_became_a_control_and_kept_its_place_on_screen():
+    """The label left the register by becoming real, not by being deleted.
 
-    First it said "With no declared criteria there is no failure policy for a
-    plan to carry" -- and a step can declare an evidence requirement, so the
-    reason moved to: nothing in this build computes a next step, so there is no
-    choice for a policy to make.
+    Its reason was false TWICE before it went, and each move is recorded here
+    because the sequence is the argument for the field existing at all. First
+    it said "With no declared criteria there is no failure policy for a plan to
+    carry" -- and a step could declare an evidence requirement. Then it said
+    this build walks no connections and computes no next step -- and the
+    scheduler landed, so a plan CAN say where a failure goes.
 
-    Then that became false as well. The scheduler landed: an edge may carry a
-    condition, `graph_schedule` opens or closes a road on the word a step
-    produced, and `on_failed` is one of those words. So a plan CAN now say where
-    a failure goes. What it still cannot say is HALT -- stop this whole run,
-    including branches no road from this step reaches -- which is a tightening
-    and not routing, and needs a durable field of its own.
+    What was left was the thing routing cannot express: HALT. An `on_failed`
+    road says where the plan goes next; a policy says nothing further may be
+    authorized in this run at all, including branches no road from the failing
+    step could reach. That is a durable field, and it is now one.
 
-    A CHANGE DETECTOR on the claim, not a proof of it. Twice now the claim has
-    changed legitimately and this test has had to move with it, which is the
-    point: what it buys is that the screen's sentence cannot go on asserting
-    something the build stopped doing. The old false clause is asserted ABSENT
-    for the same reason the first one is.
+    Held here as a POSITIVE witness: the control is built, it writes the field,
+    it offers the vocabulary the Python layer owns, and the step that cannot
+    fail is told so rather than shown a control whose every use is refused.
     """
     inspector = _code(*INSPECTOR)
-    assert "With no declared criteria" not in inspector, (
-        "the failure-policy line still rests on there being no declared criteria")
-    reason = re.search(
-        r'unsupported\(box, "Verification failure policy", (.*?)\);',
-        inspector, re.DOTALL).group(1)
-    assert "walks no connections" not in reason, (
-        "the failure-policy line still claims this build walks no connections, "
-        "which the schedule made false")
-    assert "the schedule walks it" in reason, reason
-    assert "HALT" in reason, reason
-    assert "verification_failed" in reason, reason
+    assert "failurePolicy(box, form);" in inspector
+    body = re.search(r"function failurePolicy\(box, form\) \{(.*?)\n\}",
+                     inspector, re.DOTALL).group(1)
+    # A control, and the field it writes.
+    assert 'selectField(box, form, "Failure policy", "failure_policy"' in body
+    assert '{value: "halt_run",' in body, body
+    # Empty clears, exactly as the contract reads absent and blank as one.
+    assert '[{value: "", label: "no policy' in body, body
+    # The pairing rule met on screen: a step binding no role gets the reason.
+    assert "node.role_id === null || node.role_id === undefined" in body, body
+    assert "carries nothing out and cannot fail" in body, body
+    # And it says what it is NOT, because routing is the thing it will be
+    # mistaken for.
+    assert "This is NOT routing" in body, body
+    # The owner's Q1 ruling reaches the screen: `unknown` is not a failure.
+    assert "unknown means the journal supports no answer" in body, body
+
+
+def test_the_failure_policy_offers_the_words_the_python_layer_owns():
+    """A window may not invent a policy word, in either direction."""
+    from conductor.command.graph_values import FAILURE_POLICIES
+
+    offered = set(re.findall(r'\{value: "([a-z_]+)",',
+                             _code(*INSPECTOR)))
+
+    assert FAILURE_POLICIES <= offered, offered
+    spelled = re.search(r"FAILURE_POLICIES = Object\.freeze\(\[(.*?)\]\)",
+                        _code(*INSPECTOR), re.DOTALL)
+    assert spelled, "the inspector no longer states the policy vocabulary"
+    assert set(re.findall(r'"([a-z_]+)"', spelled.group(1))) == FAILURE_POLICIES
+
+
+def test_the_open_runs_own_policy_is_read_off_its_frozen_plan():
+    """Not off the draft, and not off the runtime projection.
+
+    A run materialized before this field was edited follows the plan it was
+    given. A demand is a durable intention, so reading one out of the record of
+    what happened would be reading the wrong document.
+    """
+    inspector = _code(*INSPECTOR)
+    body = re.search(r"function runEvidenceRow\(box, form\) \{(.*?)\n\}",
+                     inspector, re.DOTALL).group(1)
+
+    assert 'run.planned.failure_policy === "halt_run"' in body, body
+    assert "If this step fails in the open run" in body, body
+    assert "run.position" not in body, body
 
 
 # -- the artifact trio: required, produced, and where each one comes from ------
@@ -671,101 +721,3 @@ def test_a_run_s_own_artifacts_are_joined_to_the_step_that_produced_them():
     assert body.count('context(box, "Produced in this run"') == 2, body
     assert "was published by an action of this step" in body, body
     assert "row.artifactRef" in body and "row.mediaType" in body, body
-
-
-# -- the three routing labels left the register, and not the screen -----------
-
-
-def test_a_connection_offers_the_words_its_own_source_can_produce():
-    """`Edge conditions` became a control, one per road out of the step.
-
-    The words offered are the family the SOURCE's kind can produce, read from
-    the vocabulary rather than typed beside the control -- and a step that
-    carries out no work is offered none at all, because the contract refuses a
-    condition on its roads and a select whose every use is refused on save is
-    worse than no select.
-    """
-    inspector = _code(*INSPECTOR)
-    control = re.search(r"function conditionControl\(form, edge\) \{(.*?)\n\}",
-                        inspector, re.DOTALL).group(1)
-    assert "conditionWords(form.node)" in control, control
-    assert "carries out no work" in control, control
-    assert 'element("select"' in control, control
-    assert 'type: "set-edge-condition"' in control, control
-    assert "editable(control, form)" in control, control
-    words = re.search(r"function conditionWords\(node\) \{(.*?)\n\}",
-                      inspector, re.DOTALL).group(1)
-    assert 'node.kind === "task" && !node.capability' in words, words
-    assert "CONDITIONS_BY_KIND[node.kind]" in words, words
-
-
-def test_the_edge_panel_offers_that_same_control_and_not_a_second_one():
-    """`Condition` became the SAME select, exported rather than rebuilt.
-
-    Two surfaces building one control from two copies of one vocabulary is how
-    they come to offer different words for one road.
-    """
-    inspector = _code(*INSPECTOR)
-    assert "edgeConditionRow(box, form, parts[0], parts[1]);" in inspector
-    body = re.search(
-        r"export function edgeConditionRow\(box, form, fromId, toId\) \{(.*?)\n\}",
-        inspector, re.DOTALL).group(1)
-    assert "conditionWords(source)" in body, body
-    assert 'type: "set-edge-condition"' in body, body
-    assert "editable(control, form)" in body, body
-    # A road this drawing does not carry is SAID, never offered a control.
-    assert "does not carry that road" in body, body
-
-
-def test_decision_routing_became_a_reading_and_not_a_second_control():
-    """It states where each answer sends the run, off the roads already drawn.
-
-    A control here would be a second authority over one edge. The reading is
-    derived from the node's own out-edges, and the three cases a person can
-    actually be in are each said: a gate that routes, a gate whose every answer
-    opens the same step, and a step that is not a gate at all.
-    """
-    inspector = _code(*INSPECTOR)
-    body = re.search(r"function decisionRouting\(box, form\) \{(.*?)\n\}",
-                     inspector, re.DOTALL).group(1)
-    assert 'form.node.kind !== "gate"' in body, body
-    assert "only a gate's answer routes" in body, body
-    assert "every answer opens" in body, body
-    assert 'typeof edge.condition === "string"' in body, body
-    # Read-only: it writes no edit of any kind.
-    assert "onEdit" not in body, body
-    assert "decisionRouting(box, form);" in inspector
-
-
-def test_a_blocked_join_says_that_ALL_incoming_roads_are_required():
-    """Joins are AND-only, and the screen may not imply otherwise.
-
-    "Waiting for a predecessor" reads as ANY. A person told that would expect
-    the step to start as soon as one branch arrived, and would read the plan as
-    doing something it never does.
-    """
-    runs = _code(PANEL / "studio-runs.js")
-    sentence = re.search(r'const ALL_ROADS = "([^"]+)"', runs)
-    assert sentence, "the Runs screen no longer states the join rule"
-    assert sentence.group(1).startswith("ALL incoming roads must open")
-    body = re.search(r"function planStanding\(item, standing\) \{(.*?)\n\}",
-                     runs, re.DOTALL).group(1)
-    assert "note(ALL_ROADS)" in body, body
-    assert "waiting for a predecessor" not in runs.lower()
-
-
-def test_the_plan_word_is_never_drawn_as_a_success():
-    """`complete` says the plan has nothing left to open, never that it worked.
-
-    A run that exhausted every retry and a run that was approved reach the same
-    word, so the chip is the neutral channel and the two facts that tell them
-    apart are stated beside it.
-    """
-    runs = _code(PANEL / "studio-runs.js")
-    body = re.search(r"function planWord\(graph\) \{(.*?)\n\}",
-                     runs, re.DOTALL).group(1)
-    assert 'chip("none", word)' in body, body
-    assert 'chip("pass"' not in body, body
-    assert "bound reached" in body, body
-    assert "Last gate answer" in body and "Last outcome" in body, body
-    assert "does NOT mean the run " in runs

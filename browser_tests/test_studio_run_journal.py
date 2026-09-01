@@ -90,20 +90,29 @@ def _choose_the_gates_decision(page: Page) -> None:
 
 
 def _wait_for_the_write_and_the_read_after_it(page: Page) -> None:
-    """Two signals, in order, and the second is the one that matters.
+    """The READ first, and only then the sentence the write left behind.
 
-    The window says what it did, and then the READ that follows the write lands
-    and moves the gate off `idle`. Waiting for the second is what makes a
-    receipt read afterwards a READ rather than an echo of the body this window
-    posted.
+    Both signals are waited on, and the ORDER is the whole point. It used to be
+    the other way round -- the sentence first, then the read -- and that made
+    this a sampling test rather than a guard: a write announces itself and then
+    triggers the authoritative re-read of what it changed, and every read arm of
+    the store blanked the notice, so the receipt was drawn for ONE animation
+    frame and erased. A `wait_for_function` polls once per frame, so it caught
+    that frame about half the time; three of six runs of this test failed, in
+    both directions, for a defect that was in the product the whole time.
+
+    Waiting for the read FIRST is what makes the sentence a durable fact on
+    screen instead of a frame that happened to be sampled. It is also what makes
+    the receipt read afterwards a READ rather than an echo of the body this
+    window posted.
     """
-    page.wait_for_function(
-        "() => document.getElementById('studioStatus').innerText"
-        ".includes('durable receipt')")
     page.wait_for_function(
         "key => !document.querySelector(`[data-focus-key='${key}']`)"
         ".innerText.includes('gate idle')",
         arg=f"decision:{RUN_ID}/{CONFIRM_GATE}")
+    page.wait_for_function(
+        "() => document.getElementById('studioStatus').innerText"
+        ".includes('durable receipt')")
 
 
 def test_the_timeline_is_the_journal_in_order_and_names_every_record_kind(
@@ -313,6 +322,106 @@ def test_recording_a_decision_writes_a_receipt_this_window_then_reads_back(
         assert "A decision is immutable" in detail
         assert DECIDER in detail
         assert window.writes("/decisions") == 1
+        assert window.problems == []
+    finally:
+        page.context.close()
+
+
+def test_the_receipt_sentence_outlives_every_read_the_write_itself_caused(
+        chromium: Browser, project: _Project) -> None:
+    """WRITTEN RED, against a defect this module was sampling instead of holding.
+
+    Answering a gate dispatches one sentence -- "The decision is a durable
+    receipt in this run's journal" -- and, in the same breath, three reads: the
+    run detail and its controls, because the window refreshes what it changed,
+    and the run LIST, because the server publishes a run frame before it answers
+    the POST. Every read arm of the store wrote `notice: ""` on its success
+    path. So the last read to land deleted the sentence, about twelve
+    milliseconds after it appeared, and no person has ever read it.
+
+    The measurement: the sentence was born at t+943.7ms and gone at t+956.1ms,
+    erased by the run-list answer that arrived at t+953.5ms. One animation
+    frame. The test above polls once per frame and therefore caught it three
+    times in six, which is what a coin flip looks like when it is mistaken for
+    a regression.
+
+    A read may replace its OWN sentence and may say nothing at all, but it may
+    not delete a sentence about what the person just did. This waits for all
+    three reads to land -- the run list is the one that used to win the race, so
+    its answer is what is waited on -- and then asserts the sentence is still
+    there. It fails on the old store within a frame of the decision landing.
+    """
+    page, window = _open(chromium, project)
+    try:
+        _read_the_run(page)
+        _choose_the_gates_decision(page)
+        page.locator('[data-focus-key="field:actor"]').fill(DECIDER)
+        page.locator('[data-focus-key="field:actor"]').press("Tab")
+        page.wait_for_selector(
+            '[data-focus-key="action:submitDecision"]:not([disabled])')
+        with page.expect_response(
+                lambda answer: answer.url.endswith("/command/runs")
+                and answer.request.method == "GET") as listed:
+            page.locator('[data-focus-key="action:submitDecision"]').click()
+            _wait_for_the_write_and_the_read_after_it(page)
+        assert listed.value.ok
+        # The run list has answered and the detail has been re-read. Nothing
+        # further is in flight, and the sentence is a fact on screen rather
+        # than a frame that happened to be sampled.
+        page.wait_for_timeout(250)
+        said = page.locator("#studioStatus").inner_text()
+        assert "durable receipt" in said, (
+            "a read the write itself caused erased the receipt: " + repr(said))
+        assert window.problems == []
+    finally:
+        page.context.close()
+
+
+#: Two starting states and two landed reads, driven through the module the page
+#: really loaded. Both starting states are built by the reducer's OWN arms: the
+#: person's by the `status` arm a control dispatches into, the read's by a
+#: run-list answer this build cannot read. Answers with both sentences as well
+#: as both outcomes, so the caller can check the setup was real.
+_PROVENANCE = """() => import("/panel/studio-store.js").then((module) => {
+  const landed = [
+    ["runs-loaded", {payload: {runs: [], providers: []}}],
+    ["workflows-loaded", {payload: {project: null, workflows: [],
+                                    starters: [], providers: []}}],
+  ];
+  const human = module.reduce(module.EMPTY,
+    {type: "status", notice: "The decision is a durable receipt."});
+  const read = module.reduce(module.EMPTY,
+    {type: "runs-loaded", payload: {runs: "not a list"}});
+  return [human.notice, read.notice,
+    landed.map(([type, event]) => module.reduce(human, {type, ...event}).notice),
+    landed.map(([type, event]) => module.reduce(read, {type, ...event}).notice)];
+})"""
+
+
+def test_a_read_replaces_its_own_sentence_and_never_the_persons(
+        chromium: Browser, project: _Project) -> None:
+    """The rule above, in the shipped reducer, in both directions.
+
+    The rendered witness proves the decision receipt survives. This proves the
+    RULE it survives by, on every arm that lands a read, and proves the other
+    half with it: a sentence a READ wrote is still cleared by the next read that
+    succeeds. Without that half, a stale "could not be read" would sit under a
+    run that reads perfectly well, and the fix would have traded one lie for
+    another.
+
+    Constructing either starting state by hand would be this test deciding what
+    the two provenances are, which is the one thing it exists to check the
+    shipped module decides -- so `_PROVENANCE` builds both through the arms.
+    """
+    page, window = _open(chromium, project)
+    try:
+        said, refused, kept, cleared = page.evaluate(_PROVENANCE)
+        # Both starting states are real: one sentence from the person, one from
+        # a read that failed. Neither is asserted from the outside.
+        assert said == "The decision is a durable receipt.", said
+        assert "could not be read" in refused, refused
+        assert kept == [said] * 2, kept
+        assert cleared == ["", ""], cleared
         assert window.problems == []
     finally:
         page.context.close()

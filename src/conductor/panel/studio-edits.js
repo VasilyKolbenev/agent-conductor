@@ -31,9 +31,9 @@ export const EDIT_TYPES = Object.freeze(["add", "connect", "delete-edge",
   "delete-node", "duplicate", "move", "reorder", "set-edge-condition",
   "set-field"]);
 export const EDIT_FIELDS = Object.freeze(["arguments", "attempt_bound",
-  "capability", "gate_id", "kind", "loop_back_to", "loop_bound", "purpose",
-  "required_evidence", "resources", "role_id", "stage", "timeout_seconds",
-  "title", "verifier_role_id"]);
+  "capability", "failure_policy", "gate_id", "kind", "loop_back_to",
+  "loop_bound", "purpose", "required_evidence", "resources", "role_id",
+  "stage", "timeout_seconds", "title", "verifier_role_id"]);
 //: `graph_definition.NODE_KINDS`, its loop and resource bounds, and
 //: `workflow_draft.MAX_DRAFT_NODES` / `MAX_DRAFT_EDGES`.
 export const NODE_KINDS = Object.freeze(["task", "gate", "loop"]);
@@ -92,6 +92,10 @@ function withBinding(node, name, value) {
     // `TemplateNode.__post_init__` refuses a demand made of a verification
     // that will never exist.
     delete next.required_evidence;
+    // And the FAILURE POLICY, for the same reason again: a step that
+    // carries nothing out cannot fail, so there is no failure for a
+    // policy to answer and the contract refuses one.
+    delete next.failure_policy;
     return next;
   }
   next[name] = value;

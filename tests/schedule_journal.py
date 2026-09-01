@@ -44,10 +44,15 @@ SOLO = {"instances": [{"id": "solo", "adapter": "claude-code"}]}
 class Journal:
     """Record values in append order, with one counter and one standing answer."""
 
-    def __init__(self) -> None:
+    def __init__(self, config_digest: str = DIGEST) -> None:
         self.values: list = []
         self.standing: dict[str, str] = {}
         self.count = 0
+        #: The frozen run this journal belongs to. `schedule` never reads
+        #: it, so most witnesses leave it at the fixture value -- but a
+        #: journal written THROUGH the store must carry that run's own
+        #: digest, because the store refuses a decision that does not.
+        self.config_digest = config_digest
 
     def _next(self, prefix: str) -> str:
         self.count += 1
@@ -71,8 +76,8 @@ class Journal:
             attempt_id=attempt or self._next("attempt"), instance_id="solo",
             capability="review", arguments={}, scope=("docs",),
             proposed_by="lane", proposed_at=NOW, timeout_seconds=60,
-            rationale="because the plan says so", config_digest=DIGEST,
-            node_id=node_id))
+            rationale="because the plan says so",
+            config_digest=self.config_digest, node_id=node_id))
 
     def result(self, action_id: str, outcome: str = "succeeded") -> None:
         self.values.append(ActionResultReceipt(
@@ -91,7 +96,8 @@ class Journal:
         self.values.append(DecisionReceipt(
             receipt_id=receipt_id, run_id=RUN_ID, gate_id=gate_id,
             action=action, actor="operator", decided_at=NOW,
-            reason="stated", scope_refs=("docs",), config_digest=DIGEST,
+            reason="stated", scope_refs=("docs",),
+            config_digest=self.config_digest,
             supersedes=self.standing.get(gate_id) if supersede else None))
         if supersede:
             self.standing[gate_id] = receipt_id

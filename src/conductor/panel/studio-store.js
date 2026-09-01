@@ -109,6 +109,15 @@ export const EMPTY = Object.freeze({
   screen: "overview",
   connection: "connecting",   // connecting | open | closed
   notice: "Nothing has been read yet.",
+  //: WHOSE sentence the notice above is. A read may replace its own sentence
+  //: with a newer one or with nothing; it may not delete a sentence about what
+  //: the PERSON just did. Every write on this surface announces itself and then
+  //: triggers the authoritative re-read of what it changed -- so a read that
+  //: blanks the notice erases the receipt for the write that caused the read,
+  //: within one animation frame of it appearing. That is how "The decision is a
+  //: durable receipt in this run's journal" came to be drawn for ten
+  //: milliseconds and read by nobody.
+  noticeFrom: "read",   // read | human
   //: `project.name` is null until a workflows read lands, and stays null when
   //: the project has no name to show -- scaffolded before this build wrote one,
   //: or still carrying the template placeholder. Null is displayed as a
@@ -246,6 +255,13 @@ function nodeProblems(node, found) {
       + "verified by nobody, so this draft cannot be saved until the step "
       + "names a role or the requirement is cleared.");
   }
+  if (Object.hasOwn(node, "failure_policy")
+      && !Object.hasOwn(node, "role_id")) {
+    found.push(`Step ${named} names a failure policy for work it never `
+      + "carries out. A step that binds no role cannot fail, so this "
+      + "draft cannot be saved until the step names a role or the policy "
+      + "is cleared.");
+  }
   if (rows(node.resources).length > MAX_RESOURCES) {
     found.push(`Step ${named} attaches more than ${MAX_RESOURCES} resources.`);
   }
@@ -283,14 +299,29 @@ function edited(state, edit) {
     ? Object.freeze([...held.localIds, answer.added]) : held.localIds;
   return Object.freeze({...state,
     notice: answer.notice || state.notice,
+    noticeFrom: answer.notice ? "human" : state.noticeFrom,
     workflows: Object.freeze({...held, draft, localIds, provenance: "local",
       problems: saveProblems(draft), savePhase: "idle", saveNotice: ""}),
   });
 }
 
 // -- the arms -------------------------------------------------------------
+//: Every caller of this is the PERSON: the `status` arm a control dispatches
+//: into, an edit their drawing refused, a starting document they opened. A read
+//: that has something to say writes its own sentence and says `read` where it
+//: writes it, so there is no second kind of caller here to parameterise for.
 function spoken(state, notice) {
-  return Object.freeze({...state, notice});
+  return Object.freeze({...state, notice, noticeFrom: "human"});
+}
+
+//: What a landed read leaves in the notice: nothing of its own, and whatever
+//: the person's last action put there. One rule, spelled once, for every arm
+//: that used to write `notice: ""` -- which is a read deleting a sentence it
+//: did not write.
+function afterRead(state) {
+  return state.noticeFrom === "human"
+    ? {notice: state.notice, noticeFrom: "human"}
+    : {notice: "", noticeFrom: "read"};
 }
 
 // A save outcome is carried THROUGH the authoritative answer that follows it;
@@ -307,6 +338,7 @@ function workflowsLoaded(state, event) {
   if (settled === null) {
     return Object.freeze({...state,
       workflows: Object.freeze({...state.workflows, phase: "failed"}),
+      noticeFrom: "read",
       notice: "The workflow list could not be read as this build speaks it. "
         + "Nothing on screen was replaced by a payload nobody can read."});
   }
@@ -321,7 +353,7 @@ function workflowsLoaded(state, event) {
       list: frozenCopy(event.payload.workflows),
       starters: wireStarters(event.payload.starters)}),
     agents: Object.freeze({...state.agents, phase: "ready"}),
-    notice: "",
+    ...afterRead(state),
   });
 }
 
@@ -355,7 +387,7 @@ function workflowLoaded(state, event) {
       reviewing: false,
       savedAt: payload.draft === null ? null : payload.draft.saved_at,
       writeReady: event.ready === true, ...carried(state.workflows, event)}),
-    notice: "",
+    ...afterRead(state),
   });
 }
 
@@ -372,6 +404,7 @@ function workflowUnread(state, event, phase, notice) {
       localIds: kept === null ? held.localIds : kept.localIds,
       provenance: kept === null ? held.provenance : kept.provenance,
       writeReady: false, ...carried(held, event)}),
+    noticeFrom: "read",
     notice: kept === null ? notice : notice + " The drawing on screen is still "
       + "held in this window and has not been saved; nothing may be written "
       + "until this workflow has been read again.",
@@ -391,7 +424,9 @@ function workflowChosen(state, workflowId) {
       selectedId: workflowId}),
     canvas: Object.freeze({...state.canvas,
       selection: Object.freeze({kind: null, id: null})}),
-    notice: "",
+    // A Human action, not a read: this one is ENTITLED to clear the sentence,
+    // because the sentence it clears was about the workflow being left.
+    notice: "", noticeFrom: "read",
   });
 }
 
@@ -400,6 +435,7 @@ function runsLoaded(state, event) {
   if (settled === null) {
     return Object.freeze({...state,
       runs: Object.freeze({...state.runs, phase: "failed"}),
+      noticeFrom: "read",
       notice: "The run list could not be read as this build speaks it, so it "
         + "is not shown at all: a run you cannot see is worse than one you "
         + "cannot read."});
@@ -408,14 +444,17 @@ function runsLoaded(state, event) {
     providers: wireProviders(event.payload.providers),
     runs: Object.freeze({...state.runs, phase: "ready",
       list: frozenCopy(event.payload.runs)}),
-    notice: "",
+    ...afterRead(state),
   });
 }
 
 //: The run read, the decisions waiting in it and the participants it froze
 //: move together: all three come out of the SAME answer, and leaving one
 //: standing while the others move would put two runs on one screen.
-function runMoved(state, phase, detail, notice) {
+//: `said` is the notice and whose it is, together: every caller of this has an
+//: opinion about both, and passing the sentence alone is what let a read blank
+//: a Human's receipt.
+function runMoved(state, phase, detail, said) {
   return Object.freeze({...state,
     // A run read carries the run's warnings and says nothing about the
     // project's name, so the name already read is kept rather than cleared:
@@ -429,28 +468,29 @@ function runMoved(state, phase, detail, notice) {
     agents: Object.freeze({...state.agents, phase,
       participants: detail === null
         ? Object.freeze([]) : participantsOf(detail)}),
-    notice,
+    ...said,
   });
 }
 
 function runLoaded(state, event) {
   if (projectRunRead(event.read) === null) {
-    return runMoved(state, "failed", null,
-      "This run answered with a payload this build cannot read. Nothing about "
-      + "it is inferred from a document nobody can read.");
+    return runMoved(state, "failed", null, {noticeFrom: "read",
+      notice: "This run answered with a payload this build cannot read. "
+        + "Nothing about it is inferred from a document nobody can read."});
   }
   const controls = isObject(event.controls)
     ? projectControls(event.controls) : null;
   const detail = frozenCopy({...event.read,
     controls: controls === null ? null : {instances: wireInstances(controls)}});
-  const moved = runMoved(state, "ready", detail, "");
+  const moved = runMoved(state, "ready", detail, afterRead(state));
   return controls === null ? moved : Object.freeze({...moved,
     providers: wireProviders(event.controls.providers)});
 }
 
 function runChosen(state, runId) {
   if (state.runs.selectedId === runId) return state;
-  return Object.freeze({...runMoved(state, "loading", null, state.notice),
+  return Object.freeze({...runMoved(state, "loading", null,
+      {notice: state.notice, noticeFrom: state.noticeFrom}),
     runs: Object.freeze({...state.runs, phase: "loading", selectedId: runId,
       detail: null})});
 }
@@ -469,6 +509,7 @@ function seeded(state, event) {
       problems: saveProblems(draft), savePhase: "idle", saveNotice: ""}),
     notice: "This drawing is held in this window and has been saved nowhere. "
       + "Save the draft to put it on the server.",
+    noticeFrom: "human",
   });
 }
 
@@ -484,6 +525,7 @@ function connectionMoved(state, value) {
       : "Connection lost. The last read facts are still on screen, and nothing "
         + "may be written until the stream is back and this workflow has been "
         + "read again.",
+    noticeFrom: open ? state.noticeFrom : "read",
   });
 }
 
@@ -519,9 +561,13 @@ function decisionDrafted(state, patch) {
 
 function phaseMoved(state, screen, event) {
   if (!PHASES.includes(event.phase)) return state;
+  // A phase move is a READ saying where it got to, so a sentence it carries is
+  // that read's own; one it does not carry leaves the standing sentence alone.
+  const carries = typeof event.notice === "string";
   return Object.freeze({...state, [screen]: Object.freeze({
     ...state[screen], phase: event.phase}),
-  notice: typeof event.notice === "string" ? event.notice : state.notice});
+  notice: carries ? event.notice : state.notice,
+  noticeFrom: carries ? "read" : state.noticeFrom});
 }
 
 // -- the one way to move --------------------------------------------------

@@ -385,8 +385,111 @@ def test_the_register_on_screen_is_the_register_the_census_pins(
     bench.select("study")
     said = verification.inner_text()
     assert "already demands of every step" in said, said
-    # And the failure-policy row no longer claims this build walks nothing: it
-    # does now, and what a plan still cannot say is HALT.
-    assert "the schedule walks it" in said, said
+    # And the failure policy is no longer a row here at all: it left the
+    # register by becoming a control, so what stands in its place is the select
+    # and the sentence telling a person it is not routing.
+    assert "This is NOT routing" in said, said
     assert "walks no connections" not in said, said
+    assert bench.page.locator(
+        '[data-edit-field="failure_policy"]').count() == 1
     assert bench.problems == []
+
+
+# -- 7. the failure policy: chosen, stored, and told apart from routing -------
+
+
+POLICY_FIELD = '[data-edit-field="failure_policy"]'
+POLICY_LINE = '[data-context="failure-policy"]'
+HALT = "halt_run"
+
+
+def test_the_failure_policy_is_chosen_on_screen_and_reaches_the_stored_draft(
+        bench: _Bench, project: _Project) -> None:
+    """The whole road, and the last step is read out of the SERVER's draft.
+
+    A window that showed the word and sent nothing would satisfy every source
+    guard in this repository. This asks the stored document what it holds, then
+    reloads and asks the screen again -- so nothing here can be satisfied by a
+    window keeping the change in a tab.
+    """
+    before = project.stored_node("study")
+    assert "failure_policy" not in before, before
+
+    bench.select("study")
+    bench.page.locator(POLICY_FIELD).select_option(HALT)
+    bench.page.wait_for_function(
+        "() => document.querySelector('[data-context=\\'failure-policy\\']')"
+        ".innerText.includes('the whole run stops')")
+    _save_draft(bench.page)
+
+    stored = project.stored_node("study")
+    assert stored["failure_policy"] == HALT, stored
+
+    bench.page.reload(wait_until="load")
+    _settle(bench.page)
+    _open_the_workflow(bench.page)
+    bench.select("study")
+
+    assert bench.page.locator(POLICY_FIELD).input_value() == HALT
+    assert bench.problems == []
+
+
+def test_the_policy_offers_only_the_word_this_build_has_behaviour_for(
+        bench: _Bench) -> None:
+    """One word and the empty clear. There is no word for "carry on": carrying
+    on is what a plan that says nothing already gets."""
+    from conductor.command.graph_values import FAILURE_POLICIES
+
+    bench.select("study")
+    offered = bench.page.locator(f"{POLICY_FIELD} option").evaluate_all(
+        "rows => rows.map(row => row.value)")
+
+    assert offered[0] == ""
+    assert set(offered[1:]) == FAILURE_POLICIES
+
+
+def test_clearing_the_policy_removes_it_from_the_stored_draft(
+        bench: _Bench, project: _Project) -> None:
+    """Empty is not a ninth word: it is the field being absent, exactly as the
+    contract reads absent and blank as one answer."""
+    bench.select("study")
+    bench.page.locator(POLICY_FIELD).select_option(HALT)
+    _save_draft(bench.page)
+    assert project.stored_node("study")["failure_policy"] == HALT
+
+    bench.select("study")
+    bench.page.locator(POLICY_FIELD).select_option("")
+    _save_draft(bench.page)
+
+    assert "failure_policy" not in project.stored_node("study")
+    assert bench.problems == []
+
+
+def test_the_screen_says_a_policy_is_not_routing(bench: _Bench) -> None:
+    """The one thing it will be mistaken for, said where it is chosen.
+
+    A road out of this step may open on its failure and send the run somewhere.
+    A policy says the run goes nowhere at all -- including branches no road from
+    here can reach -- and a person choosing it is entitled to that distinction
+    rather than having to infer it.
+    """
+    bench.select("study")
+
+    said = bench.page.locator('[data-section="verification"]').inner_text()
+
+    assert "This is NOT routing" in said, said
+    assert "unknown" in said, said
+    assert "stalled" in said, said
+
+
+def test_a_step_that_binds_no_role_is_told_why_it_has_no_policy(
+        bench: _Bench) -> None:
+    """The pairing rule met on screen: it cannot fail, so there is no failure
+    for a policy to answer -- and it is SAID rather than silently missing."""
+    bench.select("loose")
+
+    said = bench.page.locator(POLICY_LINE).inner_text()
+
+    assert "binds no role" in said, said
+    assert "cannot fail" in said, said
+    assert bench.page.locator(POLICY_FIELD).count() == 0

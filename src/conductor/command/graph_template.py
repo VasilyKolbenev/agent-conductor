@@ -89,6 +89,7 @@ from .graph_values import (
     _position,
     settled_bounds,
     settled_purpose,
+    settled_failure_policy,
     settled_required_evidence,
 )
 
@@ -178,12 +179,15 @@ class TemplateNode:
     #: for a binding to resolve and `materialize` copies it across as it stands.
     #: Optional, so every template written before it existed digests as it did.
     required_evidence: str | None = None
+    #: The DEFINITION's word again, carried across unchanged: it names no
+    #: role, so a binding resolves nothing. Optional, so no digest moves.
+    failure_policy: str | None = None
 
     _FIELDS = frozenset({
         "node_id", "kind", "title", "stage", "role_id", "capability",
         "arguments", "resources", "gate_id", "loop", "timeout_seconds",
         "attempt_bound", "purpose", "verifier_role_id", "position",
-        "required_evidence",
+        "required_evidence", "failure_policy",
     })
 
     def __post_init__(self) -> None:
@@ -223,11 +227,16 @@ class TemplateNode:
                     "nothing to verify")
             object.__setattr__(self, "verifier_role_id",
                                _id("verifier_role_id", self.verifier_role_id))
-        # The DEFINITION's grammar again, and then the definition's pairing rule
-        # said in this document's vocabulary: a template step that binds no role
-        # of its own carries nothing out, is verified by nobody, and so has no
-        # verification to make a demand of. Refused where the workflow is drawn
-        # rather than at the run it could not materialize.
+        self._settle_verification_demands()
+
+    def _settle_verification_demands(self) -> None:
+        """The two things a plan may say about a step's own outcome.
+
+        The DEFINITION's grammars and pairing rules in this document's
+        vocabulary: a step binding no role carries nothing out, so it is
+        verified by nobody and it cannot fail. Refused where the workflow is
+        DRAWN, not at the run it could not materialize.
+        """
         object.__setattr__(self, "required_evidence",
                            settled_required_evidence(self.required_evidence))
         if self.required_evidence is not None and self.role_id is None:
@@ -235,6 +244,13 @@ class TemplateNode:
                 f"node {self.node_id!r} requires evidence and binds no role of "
                 "its own; a step that carries nothing out is verified by "
                 "nobody, so there is no verification to require anything of")
+        object.__setattr__(self, "failure_policy",
+                           settled_failure_policy(self.failure_policy))
+        if self.failure_policy is not None and self.role_id is None:
+            raise TemplateError(
+                f"node {self.node_id!r} names a failure policy and binds no "
+                "role of its own; a step that carries nothing out cannot "
+                "fail, so there is no failure for a policy to answer")
 
     def _settle_arguments(self) -> None:
         """Take the caller's payload once, then answer only from our own copy.
@@ -301,6 +317,8 @@ class TemplateNode:
             out["verifier_role_id"] = self.verifier_role_id
         if self.required_evidence is not None:
             out["required_evidence"] = self.required_evidence
+        if self.failure_policy is not None:
+            out["failure_policy"] = self.failure_policy
         if self.position is not None:
             out["position"] = self.position.as_dict()
         out["resources"] = [row.as_dict() for row in self.resources]
@@ -347,7 +365,8 @@ class TemplateNode:
             purpose=data.pop("purpose", None),
             verifier_role_id=data.pop("verifier_role_id", None),
             position=_position(data.pop("position", None)),
-            required_evidence=data.pop("required_evidence", None))
+            required_evidence=data.pop("required_evidence", None),
+            failure_policy=data.pop("failure_policy", None))
 
 
 @dataclass(frozen=True)
@@ -554,7 +573,8 @@ def _rebuilt_node(row: object) -> TemplateNode:
         resources=row.resources, gate_id=row.gate_id, loop=row.loop,
         timeout_seconds=row.timeout_seconds, attempt_bound=row.attempt_bound,
         purpose=row.purpose, verifier_role_id=row.verifier_role_id,
-        position=row.position, required_evidence=row.required_evidence)
+        position=row.position, required_evidence=row.required_evidence,
+        failure_policy=row.failure_policy)
 
 
 def _rebuilt_edge(row: object) -> GraphEdge:
@@ -687,7 +707,8 @@ def _build(template: GraphTemplate, assignments: Mapping[str, str], *,
             # nobody: it is a demand on the verification, in the same closed
             # vocabulary both contracts share, so there is no role to substitute
             # and a run's plan carries the template's own word.
-            required_evidence=node.required_evidence)
+            required_evidence=node.required_evidence,
+            failure_policy=node.failure_policy)
         for node in steps)
     return GraphDefinition(graph_id=graph_id, run_id=run_id,
                            created_at=created_at, nodes=nodes, edges=edges)

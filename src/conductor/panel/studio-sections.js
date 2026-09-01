@@ -76,6 +76,10 @@ export const MAX_RESOURCES = 16;
 //: `tests/test_studio_canvas.py`, and closed in one direction only: every word
 //: in it asks for MORE proof, and there is none for less.
 export const REQUIRED_EVIDENCE = Object.freeze(["digest"]);
+//: `graph_values.FAILURE_POLICIES` -- what a plan may do to the REST of a
+//: run when one step fails. Held to the Python owner by
+//: tests/test_studio_canvas.py rather than trusted here.
+export const FAILURE_POLICIES = Object.freeze(["halt_run"]);
 //: The same closed edit vocabulary `studio-canvas.EDIT_TYPES` names, so both
 //: surfaces reach the draft through one callback and one word list.
 export const EDIT_TYPES = Object.freeze([
@@ -86,9 +90,10 @@ export const EDIT_TYPES = Object.freeze([
 //: are spelled flat because an edit names ONE field, and a nested path would be
 //: a second grammar for slice D to parse.
 export const EDIT_FIELDS = Object.freeze([
-  "arguments", "attempt_bound", "capability", "gate_id", "kind",
-  "loop_back_to", "loop_bound", "purpose", "required_evidence", "resources",
-  "role_id", "stage", "timeout_seconds", "title", "verifier_role_id",
+  "arguments", "attempt_bound", "capability", "failure_policy", "gate_id",
+  "kind", "loop_back_to", "loop_bound", "purpose", "required_evidence",
+  "resources", "role_id", "stage", "timeout_seconds", "title",
+  "verifier_role_id",
 ]);
 //: The six sections, in the one order the design fixes them in.
 export const SECTIONS = Object.freeze([
@@ -579,6 +584,47 @@ function evidenceRequirement(box, form) {
     + "success either.");
 }
 
+//: The one word a plan may say about what a FAILURE does to the rest of the run.
+//:
+//: A tightening and never routing, and the sentences below have to keep the two
+//: apart or the control is worse than none: an `on_failed` road says where the
+//: plan goes next, and this says nothing further may be authorized at all --
+//: including branches no road from this step could reach. A person choosing it
+//: is entitled to know it is the second thing and not the first.
+//:
+//: The pairing rule is the contract's, met here rather than only at the save:
+//: a step binding no role of its own carries nothing out and cannot fail, so it
+//: gets the reason and no control -- the shape `evidenceRequirement` next door
+//: already has. Clearing the role clears this with it, over in `studio-edits`.
+function failurePolicy(box, form) {
+  const {node} = form;
+  const named = typeof node.failure_policy === "string"
+    ? node.failure_policy : "";
+  if (node.role_id === null || node.role_id === undefined) {
+    context(box, "Failure policy", "none — this step binds no role, so it "
+      + "carries nothing out and cannot fail", "the workflow contract");
+    return;
+  }
+  selectField(box, form, "Failure policy", "failure_policy",
+    [{value: "", label: "no policy — a failure here stops nothing else"},
+      {value: "halt_run",
+        label: "halt the run — authorize nothing further, anywhere in it"}],
+    named);
+  context(box, "Failure policy",
+    named === "halt_run"
+      ? "the whole run stops when this step fails"
+      : "none — a failure here ends this step and no more",
+    "the workflow document");
+  note(box, "This is NOT routing. A connection out of this step may open on "
+    + "its failure and send the run somewhere; a policy says the run goes "
+    + "nowhere at all. It fires on every failed outcome this build records — "
+    + "failed, cancelled, rejected and verification_failed — and never on "
+    + "unknown, because unknown means the journal supports no answer and an "
+    + "unanswered question stays askable. What it does is make every step that "
+    + "could still run blocked, so the run reads stalled and records that "
+    + "ending.");
+}
+
 //: What the OPEN RUN's own frozen plan demands of this step, which is not
 //: necessarily what the draft on screen says: a run materialized before this
 //: field was edited follows the plan it was given, and that difference is
@@ -602,6 +648,15 @@ function runEvidenceRow(box, form) {
       ? evidenceLabel(demanded)
       : "nothing beyond the runtime's own rule",
     `the plan of run ${run.runId}`);
+  // The POLICY the open run froze, read off the same document and never off
+  // the draft: a run materialized before this field was edited follows the
+  // plan it was given, and that difference is what somebody looking at both
+  // needs told.
+  context(box, "If this step fails in the open run",
+    run.planned.failure_policy === "halt_run"
+      ? "the whole run stops — nothing further may be authorized in it"
+      : "this step ends and the rest of the run carries on",
+    `the plan of run ${run.runId}`);
 }
 
 export function verificationSection(form) {
@@ -615,13 +670,7 @@ export function verificationSection(form) {
     + "after the work was observed — and, where the step asks for it, naming "
     + "what was checked. Anything a plan could add beside that would be weaker "
     + "than what it is already held to.");
-  unsupported(box, "Verification failure policy", "A step that fails "
-    + "verification records verification_failed, and what happens next is what "
-    + "this plan's own connections say: a road may open on that failure, and "
-    + "the schedule walks it. What a plan cannot yet say is HALT — stop this "
-    + "run entirely, including branches no road from this step reaches — which "
-    + "is a different thing from routing and needs a durable field of its own. "
-    + "That field is the next thing to arrive.");
+  failurePolicy(box, form);
   runEvidenceRow(box, form);
   note(box, "Process exit 0 proves the process finished, not that the work "
     + "was verified. A run that reports verification_failed reached its "

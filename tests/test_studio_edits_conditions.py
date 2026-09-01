@@ -129,3 +129,24 @@ def test_each_unblocked_step_carries_the_word_the_road_opens_on():
     assert 'condition: typeof row.condition === "string" ? row.condition : null'\
         in rows, rows
     assert "node_id: row.to_node" in rows, rows
+
+
+def test_clearing_a_binding_clears_everything_that_depended_on_it():
+    """Three fields go with the role, and the contract is why.
+
+    `TemplateNode` refuses a verifier, an evidence requirement and a failure
+    policy on a step that binds no role of its own -- a step that carries
+    nothing out has nothing to verify and cannot fail. Leaving any of them
+    behind would make a draft unsavable by CLEARING a field, and the person
+    would meet it as a refusal about a control they did not touch.
+
+    None of the three had a guard here before the policy arrived; adding one
+    field without one would have widened a hole rather than closed it.
+    """
+    body = re.search(r"function withBinding\(node, name, value\) \{(.*?)\n\}",
+                     _code(EDITS), re.DOTALL).group(1)
+
+    for field in ("verifier_role_id", "required_evidence", "failure_policy"):
+        assert f"delete next.{field};" in body, field
+    # And they go only when the binding itself is being cleared.
+    assert 'value === null || value === ""' in body, body

@@ -79,6 +79,7 @@ from .graph_values import (  # noqa: F401 -- re-exported under old names
     POSITION_LIMIT,
     NodePosition,
     settled_bounds,
+    settled_failure_policy,
     settled_purpose,
     settled_required_evidence,
 )
@@ -320,12 +321,18 @@ class GraphNode:
     #: refusal it buys is the PLAN's -- held on the honest road and again
     #: against bytes this process did not write.
     required_evidence: str | None = None
+    #: What happens to the REST of this run when this step fails. Absent
+    #: means nothing does, which is what every plan written before this
+    #: existed says. A TIGHTENING and never routing: an `on_failed` road
+    #: says where the plan goes next, and this says nothing further may be
+    #: authorized at all -- branches no road from here can reach included.
+    failure_policy: str | None = None
 
     _FIELDS = frozenset({
         "node_id", "kind", "title", "stage", "instance_id", "capability",
         "arguments", "resources", "gate_id", "loop", "timeout_seconds",
         "attempt_bound", "purpose", "verifier_instance_id",
-        "required_evidence",
+        "required_evidence", "failure_policy",
     })
 
     def __post_init__(self) -> None:
@@ -333,6 +340,7 @@ class GraphNode:
         object.__setattr__(self, "purpose", settled_purpose(self.purpose))
         self._settle_verifier()
         self._settle_evidence_demand()
+        self._settle_failure_policy()
         object.__setattr__(self, "node_id", _id("node_id", self.node_id))
         object.__setattr__(self, "kind", _enum("node kind", self.kind, NODE_KINDS))
         object.__setattr__(self, "title", _text("title", self.title))
@@ -392,6 +400,22 @@ class GraphNode:
                 f"node {self.node_id!r} requires evidence and names no "
                 "capability; a step that carries nothing out is verified by "
                 "nobody, so there is no verification to require anything of")
+
+    def _settle_failure_policy(self) -> None:
+        """A policy about failing belongs to a step that can fail.
+
+        The pairing rule next door, one field over: a gate and a loop are
+        carried out by nobody, so no adapter ever reports an outcome for them
+        and no failure of theirs could ever fire this. A plan that stores an
+        unreachable field is a plan saying something it cannot do.
+        """
+        object.__setattr__(self, "failure_policy",
+                           settled_failure_policy(self.failure_policy))
+        if self.failure_policy is not None and self.capability is None:
+            raise ContractError(
+                f"node {self.node_id!r} names a failure policy and no "
+                "capability; a step that carries nothing out cannot fail, so "
+                "there is no failure for a policy to answer")
 
     def _settle_binding(self) -> None:
         """A binding is whole or absent; half a binding names no runnable place."""
@@ -500,6 +524,8 @@ class GraphNode:
             out["verifier_instance_id"] = self.verifier_instance_id
         if self.required_evidence is not None:
             out["required_evidence"] = self.required_evidence
+        if self.failure_policy is not None:
+            out["failure_policy"] = self.failure_policy
         return out
 
     @classmethod
@@ -527,7 +553,8 @@ class GraphNode:
             attempt_bound=data.pop("attempt_bound", None),
             purpose=data.pop("purpose", None),
             verifier_instance_id=data.pop("verifier_instance_id", None),
-            required_evidence=data.pop("required_evidence", None))
+            required_evidence=data.pop("required_evidence", None),
+            failure_policy=data.pop("failure_policy", None))
 
 
 @dataclass(frozen=True)
@@ -590,7 +617,8 @@ def _rebuilt_node(row: object) -> "GraphNode":
         timeout_seconds=node.timeout_seconds,
         attempt_bound=node.attempt_bound, purpose=node.purpose,
         verifier_instance_id=node.verifier_instance_id,
-        required_evidence=node.required_evidence)
+        required_evidence=node.required_evidence,
+        failure_policy=node.failure_policy)
 
 
 def _acyclic(nodes: tuple[GraphNode, ...], edges: tuple[GraphEdge, ...]) -> None:

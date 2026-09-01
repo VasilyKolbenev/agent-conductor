@@ -524,6 +524,44 @@ def _run_state(rows: tuple[NodeSchedule, ...]) -> str:
     return "complete" if "blocked" not in states else "stalled"
 
 
+def _halted(plan: _Plan, rows: tuple[NodeSchedule, ...]) -> tuple[NodeSchedule, ...]:
+    """Stop the whole run when a step that failed asked for it.
+
+    A TIGHTENING and not routing, and the difference is the whole reason the
+    field exists. An `on_failed` road says where the plan goes next; this says
+    nothing further may be authorized in this run at all -- including branches
+    no road from the failing step could ever reach. Neither can express the
+    other, and a build that folded them together would have to choose which of
+    the two it meant.
+
+    It needs no new run word and no new record. Every step that could still run
+    becomes `blocked`, so `runnable` is empty and `blocked` is not, and §5.3's
+    own arithmetic then reads `stalled` -- which `close_if_terminal` records
+    through the road it already had, and which `_hold_run_terminal` recomputes
+    from the plan's own bytes on replay, so forged bytes cannot weaken it.
+
+    `unreachable` is left alone. Those steps were already impossible and saying
+    `blocked` about them would lose that, and would move a name out of the
+    terminal's `unreachable_nodes` where it belongs. What changes is only what
+    could otherwise have been offered as work.
+
+    `unknown` is excluded by the owner's ruling: it is this product's word for
+    *the journal supports no answer*, and an unanswered question stays askable
+    rather than halting a run.
+    """
+    if not any(_halts(plan, plan.by_id[row.node_id]) for row in rows
+               if row.state == "settled"):
+        return rows
+    return tuple(row if row.state != "runnable" else NodeSchedule(
+        **{**vars(row), "state": "blocked"}) for row in rows)
+
+
+def _halts(plan: _Plan, node: GraphNode) -> bool:
+    """Whether this settled step's own outcome asked the run to stop."""
+    return (node.failure_policy == "halt_run"
+            and _standing_outcome(plan, node) in FAILED_OUTCOMES)
+
+
 def schedule(definition: GraphDefinition,
              values: tuple[Any, ...]) -> RunSchedule:
     """What this plan says may happen now, given this run's records.
@@ -549,7 +587,8 @@ def schedule(definition: GraphDefinition,
     words = {node.node_id: _produced_word(plan, node)
              for node in definition.nodes}
     rows = _walked_states(definition, plan, outgoing, owed, frames, words)
-    ordered = tuple(rows[node.node_id] for node in definition.nodes)
+    ordered = _halted(plan, tuple(rows[node.node_id]
+                                  for node in definition.nodes))
     return RunSchedule(
         run_id=definition.run_id, graph_id=definition.graph_id, nodes=ordered,
         runnable=_subset(ordered, "runnable"),

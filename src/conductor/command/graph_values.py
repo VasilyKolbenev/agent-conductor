@@ -228,6 +228,58 @@ def settled_required_evidence(value: object) -> str | None:
     return settled
 
 
+#: What a plan may do to the REST of a run when one step fails. One word, and
+#: the asymmetry is the same as `REQUIRED_EVIDENCE`'s next door: this vocabulary
+#: may only ever grow words that TIGHTEN. There is no word here for "carry on",
+#: because carrying on is what a plan that says nothing already gets.
+#:
+#: `halt_run` is not routing and the two must never be folded together. An
+#: `on_failed` edge says where the plan goes NEXT; this says nothing further may
+#: be authorized in this run at all -- including branches no edge from the
+#: failing step can reach. Neither can express the other, which is why the field
+#: exists beside the conditions rather than instead of them.
+FAILURE_POLICIES = frozenset({"halt_run"})
+
+
+def settled_failure_policy(value: object) -> str | None:
+    """One grammar for a step's failure policy, judged the same in both.
+
+    Here for `settled_required_evidence`'s reason one field over: a template
+    that stored a word the definition would refuse is a plan that cannot
+    materialize, found out at run time rather than where it was drawn.
+
+    Absent stays absent, and so does whitespace -- an empty string is the same
+    answer as saying nothing, which is what a Studio select spells when a person
+    clears it -- so no document written before this field existed changes a byte
+    or moves a digest.
+
+    Args:
+        value: What the document says should happen to the run when this step
+            fails.
+
+    Returns:
+        The settled word, or None when the plan asks for no halt.
+
+    Raises:
+        ContractError: The value is not text, or is a word this build has no
+            behaviour for.
+    """
+    if value is None:
+        return None
+    if type(value) is not str:
+        raise ContractError(
+            "a step's failure policy is text, or nothing at all")
+    settled = value.strip()
+    if not settled:
+        return None
+    if settled not in FAILURE_POLICIES:
+        raise ContractError(
+            f"a step's failure policy is one of {sorted(FAILURE_POLICIES)}, "
+            f"and {settled!r} is not one of them; this vocabulary may only "
+            "grow words that stop a run, never words that let one continue")
+    return settled
+
+
 def settled_bounds(timeout_seconds: object,
                    attempt_bound: object) -> dict[str, int | None]:
     """The two plan-side ceilings, judged once for both node contracts.
