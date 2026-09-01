@@ -70,9 +70,16 @@ from .contracts import (
 from .graph_conditions import settle_edge_conditions, settled_edge_condition
 
 from .graph_values import (  # noqa: F401 -- re-exported under old names
+    EXEMPT_FIELD,
     MAX_PURPOSE,
+    RUNTIME_ONLY_FIELDS,
+    _ABSENT,
+    _exact,
+    _json_list,
     _json_object,
     _positive,
+    _reserved,
+    _sequence,
     MAX_ACTION_SECONDS,
     MIN_LOOP_BOUND,
     MAX_LOOP_BOUND,
@@ -80,9 +87,11 @@ from .graph_values import (  # noqa: F401 -- re-exported under old names
     NodePosition,
     settled_bounds,
     settled_failure_policy,
+    settled_missing_artifact_policy,
     settled_purpose,
     settled_required_evidence,
 )
+from .artifacts import requires_input_artifacts
 
 #: Dalio's five stages in the ONE order the product shows them. The order is
 #: part of the contract: a reader numbers the stages by index, so re-spelling
@@ -106,110 +115,6 @@ MAX_RESOURCES = 16
 #: not import an adapter, so the two spellings are pinned equal by a test
 #: instead of by a comment nobody executes.
 EFFECTING_CAPABILITIES = frozenset({"dispatch"})
-#: Every word that belongs to a RUN rather than to a plan. Refused as a field
-#: name anywhere in this document, at every level, so no amount of nesting can
-#: smuggle execution state into something called immutable. ``arguments`` is
-#: exempt by design: it is the capability's own payload, judged by the
-#: capability's own schema at the provider door.
-#:
-#: ``required_evidence`` is NOT one of these and must never become one, which is
-#: worth saying because the two look alike from a distance: ``evidence`` and
-#: ``evidence_refs`` are what a RUN produced, and the whole of this refusal is
-#: that a plan may not carry them. ``required_evidence`` is a DEMAND the plan
-#: makes of a run that has not happened -- it names no evidence, resolves to no
-#: row, and is written by whoever drew the workflow. ``_reserved`` matches keys
-#: exactly, so the difference is a fact of the code and not of this comment; a
-#: node carrying a nested ``{"evidence": ...}`` is refused exactly as it was.
-RUNTIME_ONLY_FIELDS = frozenset({
-    "attempt_id", "attempt_ids", "attempts", "availability", "bound_reached",
-    "decided_at", "decision", "decisions", "evidence", "evidence_refs",
-    "health", "observed_at", "outcome", "outcomes", "pass", "passes", "phase",
-    "started_at", "state", "status", "timeline",
-})
-
-
-#: The one FIELD whose value is a capability's own payload. Its exemption is
-#: applied by the code that handles that field -- ``GraphNode.from_dict`` lifts
-#: the value out before the walk runs -- and never by the walk itself: a name
-#: is not a field, and a key merely SPELLED ``arguments`` in some tolerant
-#: metadata is nobody's payload and got scanned by nothing.
-EXEMPT_FIELD = "arguments"
-
-
-def _reserved(name: str, document: Mapping[str, Any]) -> None:
-    """Refuse a runtime word used as a field name at ANY depth, with no exception.
-
-    Checking one level was a promise this could not keep, and exempting a NAME
-    was the same mistake one layer down: a tolerant ``extra`` holds arbitrary
-    JSON, so ``{"arguments": {"status": ...}}`` was skipped by a walk that had
-    no idea whose payload it was looking at. This walk skips nothing. The one
-    real payload is lifted out by its own field before the walk ever sees it.
-    """
-    stack: list[Any] = [document]
-    found: set[str] = set()
-    while stack:
-        value = stack.pop()
-        if isinstance(value, Mapping):
-            found |= set(value) & RUNTIME_ONLY_FIELDS
-            stack.extend(value.values())
-        elif isinstance(value, (list, tuple)):
-            stack.extend(value)
-    if found:
-        raise ContractError(
-            f"{name} carries runtime-only field(s) {sorted(found)!r}; a graph "
-            "definition records intent, and what a run did belongs to its projection")
-
-
-def _exact(name: str, value: object, expected: type) -> Any:
-    """Accept the base type itself, never a subclass that can act on its own.
-
-    A subclass satisfies ``isinstance`` and then answers ``as_dict`` with
-    whatever it likes -- which is how a runtime word reached a definition and
-    its digest. Identity of type is the only check that closes that, and it is
-    followed by a rebuild, because a value can also be edited after it was
-    validated.
-    """
-    if type(value) is not expected:
-        raise ContractError(
-            f"{name} must be exactly {expected.__name__}; a subclass may answer "
-            "for itself and is not accepted at this boundary")
-    return value
-
-
-def _json_list(name: str, value: object) -> list[Any]:
-    """A JSON array is exactly ``list``, refused BEFORE anything iterates it.
-
-    A tuple reaching here came from Python, not from JSON. A ``list`` subclass
-    reaching here is worse: it satisfies ``isinstance`` and then answers
-    ``__iter__`` with an exception of its own, whose message this contract would
-    have carried outward. Identity of type settles both, and it is checked
-    before the value is touched.
-    """
-    if type(value) is not list:
-        raise ContractError(f"{name} must be a JSON array") from None
-    return value
-
-
-#: Tells "the field was not there" apart from "the field was there and was
-#: null". Absent means the capability was given nothing; present-and-null is a
-#: caller saying something, and what it says is not a JSON object.
-_ABSENT = object()
-
-
-def _sequence(name: str, value: object) -> tuple[Any, ...]:
-    """Materialize a caller's sequence, or refuse in this contract's own words.
-
-    The Python-side constructors take any sequence, which means they take one
-    whose iteration raises. Whatever it raises is the caller's, not ours, so it
-    is replaced here rather than allowed to travel with whatever it carries.
-    """
-    if isinstance(value, (str, bytes, Mapping)):
-        raise ContractError(f"{name} must be a sequence of records") from None
-    try:
-        return tuple(value)
-    except Exception:  # noqa: BLE001 -- a hostile iterable carries its own words
-        raise ContractError(f"{name} could not be read as a sequence") from None
-
 
 @dataclass(frozen=True)
 class GraphResource:
@@ -327,12 +232,19 @@ class GraphNode:
     #: says where the plan goes next, and this says nothing further may be
     #: authorized at all -- branches no road from here can reach included.
     failure_policy: str | None = None
+    #: What happens when a document this step requires does not exist when the
+    #: step is reached. Absent means `fail`, which is what this build has always
+    #: done and what every plan written before this existed asks for: the input
+    #: is resolved at spawn, the resolution refuses, and a durable `failed`
+    #: receipt is written with no task spawned. `block` says the step is not
+    #: offered at all until the document exists.
+    missing_artifact_policy: str | None = None
 
     _FIELDS = frozenset({
         "node_id", "kind", "title", "stage", "instance_id", "capability",
         "arguments", "resources", "gate_id", "loop", "timeout_seconds",
         "attempt_bound", "purpose", "verifier_instance_id",
-        "required_evidence", "failure_policy",
+        "required_evidence", "failure_policy", "missing_artifact_policy",
     })
 
     def __post_init__(self) -> None:
@@ -341,6 +253,7 @@ class GraphNode:
         self._settle_verifier()
         self._settle_evidence_demand()
         self._settle_failure_policy()
+        self._settle_missing_artifact_policy()
         object.__setattr__(self, "node_id", _id("node_id", self.node_id))
         object.__setattr__(self, "kind", _enum("node kind", self.kind, NODE_KINDS))
         object.__setattr__(self, "title", _text("title", self.title))
@@ -416,6 +329,32 @@ class GraphNode:
                 f"node {self.node_id!r} names a failure policy and no "
                 "capability; a step that carries nothing out cannot fail, so "
                 "there is no failure for a policy to answer")
+
+    def _settle_missing_artifact_policy(self) -> None:
+        """A policy about a missing input belongs to a step that HAS inputs.
+
+        Tighter than the two pairing rules above, and the difference is the
+        point. Those ask whether the step carries anything out at all; this asks
+        whether the capability it carries out is one the reviewed schemas give
+        documents to. `evidence`, `stop`, `retry` and `switch` each name an
+        action or an attempt and are handed no artifact, so a policy stored on
+        one of them would be a word with no behaviour -- and a person reading it
+        would believe the step waits for something it is never given.
+
+        The question is asked of `artifacts`, which owns the one map of which
+        argument key each capability's inputs live under. Answering it here
+        would be a second copy of that map, free to disagree with the schedule
+        that spends it.
+        """
+        object.__setattr__(
+            self, "missing_artifact_policy",
+            settled_missing_artifact_policy(self.missing_artifact_policy))
+        if self.missing_artifact_policy is not None and not (
+                requires_input_artifacts(self.capability)):
+            raise ContractError(
+                f"node {self.node_id!r} names a missing-artifact policy and no "
+                "capability that is given artifacts; there is no input for it "
+                "to be missing")
 
     def _settle_binding(self) -> None:
         """A binding is whole or absent; half a binding names no runnable place."""
@@ -526,6 +465,8 @@ class GraphNode:
             out["required_evidence"] = self.required_evidence
         if self.failure_policy is not None:
             out["failure_policy"] = self.failure_policy
+        if self.missing_artifact_policy is not None:
+            out["missing_artifact_policy"] = self.missing_artifact_policy
         return out
 
     @classmethod
@@ -554,7 +495,8 @@ class GraphNode:
             purpose=data.pop("purpose", None),
             verifier_instance_id=data.pop("verifier_instance_id", None),
             required_evidence=data.pop("required_evidence", None),
-            failure_policy=data.pop("failure_policy", None))
+            failure_policy=data.pop("failure_policy", None),
+            missing_artifact_policy=data.pop("missing_artifact_policy", None))
 
 
 @dataclass(frozen=True)
@@ -618,7 +560,8 @@ def _rebuilt_node(row: object) -> "GraphNode":
         attempt_bound=node.attempt_bound, purpose=node.purpose,
         verifier_instance_id=node.verifier_instance_id,
         required_evidence=node.required_evidence,
-        failure_policy=node.failure_policy)
+        failure_policy=node.failure_policy,
+        missing_artifact_policy=node.missing_artifact_policy)
 
 
 def _acyclic(nodes: tuple[GraphNode, ...], edges: tuple[GraphEdge, ...]) -> None:

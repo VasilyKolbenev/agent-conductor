@@ -21,6 +21,7 @@ or adapter imports.
 """
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -280,6 +281,66 @@ def settled_failure_policy(value: object) -> str | None:
     return settled
 
 
+#: What a step may ask this build to do when a document it requires does not
+#: exist when the step is reached. Both words are FAIL-CLOSED and there is no
+#: third: nothing here skips the step, substitutes another document, or lets the
+#: run go on as though the input had arrived.
+#:
+#: `fail` is what this build has always done, now sayable out loud: the step is
+#: reached, the input is resolved, the resolution refuses, and a durable
+#: `failed` receipt is written with no task spawned and no model call spent.
+#: `block` is the new one: the step is never offered at all while the document
+#: is absent, so nothing is attempted and nothing fails -- the plan waits, and
+#: the screen says which document it waits for.
+#:
+#: Saying nothing means `fail`. That is not a default chosen here for
+#: convenience: it is the behaviour every plan already written has, and the
+#: enum's `fail` exists so a person can say it on purpose rather than to name a
+#: second behaviour. A witness holds the two identical.
+MISSING_ARTIFACT_POLICIES = frozenset({"fail", "block"})
+
+
+def settled_missing_artifact_policy(value: object) -> str | None:
+    """One grammar for a step's missing-artifact policy, judged the same in both.
+
+    Here for `settled_failure_policy`'s reason one field over: a template that
+    stored a word the definition would refuse is a plan that cannot materialize,
+    found out at run time rather than where it was drawn.
+
+    Absent stays absent, and so does whitespace -- an empty string is the same
+    answer as saying nothing, which is what a Studio select spells when a person
+    clears it -- so no document written before this field existed changes a byte
+    or moves a digest.
+
+    Args:
+        value: What the document says should happen when a required input
+            artifact does not exist.
+
+    Returns:
+        The settled word, or None when the plan names no policy -- which reads
+        as `fail`, the behaviour every plan already had.
+
+    Raises:
+        ContractError: The value is not text, or is a word this build has no
+            behaviour for.
+    """
+    if value is None:
+        return None
+    if type(value) is not str:
+        raise ContractError(
+            "a step's missing-artifact policy is text, or nothing at all")
+    settled = value.strip()
+    if not settled:
+        return None
+    if settled not in MISSING_ARTIFACT_POLICIES:
+        raise ContractError(
+            f"a step's missing-artifact policy is one of "
+            f"{sorted(MISSING_ARTIFACT_POLICIES)}, and {settled!r} is not one "
+            "of them; every word this vocabulary may grow must be fail-closed, "
+            "because a missing input is never evidence that the work is done")
+    return settled
+
+
 def settled_bounds(timeout_seconds: object,
                    attempt_bound: object) -> dict[str, int | None]:
     """The two plan-side ceilings, judged once for both node contracts.
@@ -319,3 +380,118 @@ def settled_bounds(timeout_seconds: object,
         settled[name] = None if value is None else _positive(
             f"node {name}", value, low=1, high=high)
     return settled
+
+
+# -- the closed document's own grammars ------------------------------------
+#
+# Moved here from `graph_definition` when it crossed the cap a second time,
+# along the seam this module was already the far side of: `_json_object` has
+# lived here since the first split while `_json_list` beside it did not, and
+# a walk that both contracts are held to is exactly what this module is for.
+# `graph_definition` imports them back under their old names, so no caller
+# anywhere learns that they moved.
+
+
+#: Every word that belongs to a RUN rather than to a plan. Refused as a field
+#: name anywhere in this document, at every level, so no amount of nesting can
+#: smuggle execution state into something called immutable. ``arguments`` is
+#: exempt by design: it is the capability's own payload, judged by the
+#: capability's own schema at the provider door.
+#:
+#: ``required_evidence`` is NOT one of these and must never become one, which is
+#: worth saying because the two look alike from a distance: ``evidence`` and
+#: ``evidence_refs`` are what a RUN produced, and the whole of this refusal is
+#: that a plan may not carry them. ``required_evidence`` is a DEMAND the plan
+#: makes of a run that has not happened -- it names no evidence, resolves to no
+#: row, and is written by whoever drew the workflow. ``_reserved`` matches keys
+#: exactly, so the difference is a fact of the code and not of this comment; a
+#: node carrying a nested ``{"evidence": ...}`` is refused exactly as it was.
+RUNTIME_ONLY_FIELDS = frozenset({
+    "attempt_id", "attempt_ids", "attempts", "availability", "bound_reached",
+    "decided_at", "decision", "decisions", "evidence", "evidence_refs",
+    "health", "observed_at", "outcome", "outcomes", "pass", "passes", "phase",
+    "started_at", "state", "status", "timeline",
+})
+
+
+#: The one FIELD whose value is a capability's own payload. Its exemption is
+#: applied by the code that handles that field -- ``GraphNode.from_dict`` lifts
+#: the value out before the walk runs -- and never by the walk itself: a name
+#: is not a field, and a key merely SPELLED ``arguments`` in some tolerant
+#: metadata is nobody's payload and got scanned by nothing.
+EXEMPT_FIELD = "arguments"
+
+
+def _reserved(name: str, document: Mapping[str, Any]) -> None:
+    """Refuse a runtime word used as a field name at ANY depth, with no exception.
+
+    Checking one level was a promise this could not keep, and exempting a NAME
+    was the same mistake one layer down: a tolerant ``extra`` holds arbitrary
+    JSON, so ``{"arguments": {"status": ...}}`` was skipped by a walk that had
+    no idea whose payload it was looking at. This walk skips nothing. The one
+    real payload is lifted out by its own field before the walk ever sees it.
+    """
+    stack: list[Any] = [document]
+    found: set[str] = set()
+    while stack:
+        value = stack.pop()
+        if isinstance(value, Mapping):
+            found |= set(value) & RUNTIME_ONLY_FIELDS
+            stack.extend(value.values())
+        elif isinstance(value, (list, tuple)):
+            stack.extend(value)
+    if found:
+        raise ContractError(
+            f"{name} carries runtime-only field(s) {sorted(found)!r}; a graph "
+            "definition records intent, and what a run did belongs to its projection")
+
+
+def _exact(name: str, value: object, expected: type) -> Any:
+    """Accept the base type itself, never a subclass that can act on its own.
+
+    A subclass satisfies ``isinstance`` and then answers ``as_dict`` with
+    whatever it likes -- which is how a runtime word reached a definition and
+    its digest. Identity of type is the only check that closes that, and it is
+    followed by a rebuild, because a value can also be edited after it was
+    validated.
+    """
+    if type(value) is not expected:
+        raise ContractError(
+            f"{name} must be exactly {expected.__name__}; a subclass may answer "
+            "for itself and is not accepted at this boundary")
+    return value
+
+
+def _json_list(name: str, value: object) -> list[Any]:
+    """A JSON array is exactly ``list``, refused BEFORE anything iterates it.
+
+    A tuple reaching here came from Python, not from JSON. A ``list`` subclass
+    reaching here is worse: it satisfies ``isinstance`` and then answers
+    ``__iter__`` with an exception of its own, whose message this contract would
+    have carried outward. Identity of type settles both, and it is checked
+    before the value is touched.
+    """
+    if type(value) is not list:
+        raise ContractError(f"{name} must be a JSON array") from None
+    return value
+
+
+#: Tells "the field was not there" apart from "the field was there and was
+#: null". Absent means the capability was given nothing; present-and-null is a
+#: caller saying something, and what it says is not a JSON object.
+_ABSENT = object()
+
+
+def _sequence(name: str, value: object) -> tuple[Any, ...]:
+    """Materialize a caller's sequence, or refuse in this contract's own words.
+
+    The Python-side constructors take any sequence, which means they take one
+    whose iteration raises. Whatever it raises is the caller's, not ours, so it
+    is replaced here rather than allowed to travel with whatever it carries.
+    """
+    if isinstance(value, (str, bytes, Mapping)):
+        raise ContractError(f"{name} must be a sequence of records") from None
+    try:
+        return tuple(value)
+    except Exception:  # noqa: BLE001 -- a hostile iterable carries its own words
+        raise ContractError(f"{name} could not be read as a sequence") from None

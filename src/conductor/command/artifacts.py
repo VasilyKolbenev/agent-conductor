@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
+from types import MappingProxyType
 from typing import Any
 
 from .attempt_replay import action_request_for
@@ -170,6 +171,103 @@ def validate_artifact_source(
 #: only a review turns material into a new document.
 REVIEW_CAPABILITY = "review"
 
+#: The one capability whose action is given artifacts without publishing one.
+DISPATCH_CAPABILITY = "dispatch"
+
+#: WHICH argument key of each capability names the documents a step must be
+#: GIVEN before it can do anything. Two keys and no third: the reviewed argument
+#: schemas mark exactly these two as artifact inputs, and the two differ on one
+#: real rule -- a dispatch's list may be empty, a review's may not -- which is
+#: why they are two entries and not one shared name.
+#:
+#: This map is the ONE Python authority on the question, and it exists because
+#: two readers now need the same answer: the chain rule below, which resolves a
+#: published artifact's inputs against what its request asked for, and the
+#: SCHEDULE, which refuses to call a step runnable while a document it needs
+#: does not exist. Those two disagreeing would be a screen offering work the
+#: store is about to refuse, or a store admitting a chain the plan never
+#: authorized. `graph_schedule` therefore learns no argument key of its own; it
+#: asks here.
+#:
+#: A capability with no entry requires no input DOCUMENT at all. That is not an
+#: omission: `evidence`, `stop`, `retry` and `switch` each name an action or an
+#: attempt, and `observe` carries no arguments this build reads.
+_INPUT_REF_KEYS = MappingProxyType({
+    DISPATCH_CAPABILITY: "artifact_refs",
+    REVIEW_CAPABILITY: "target_artifact_refs",
+})
+
+
+def requires_input_artifacts(capability: object) -> bool:
+    """Whether this capability's schema carries an artifact-input field at all.
+
+    The pairing rule both node contracts ask before letting a step name a
+    missing-artifact policy: a step that is never GIVEN a document cannot be
+    waiting for one, and a policy stored on it would be a word with no
+    behaviour -- which is worse than no field, because a person would read it as
+    doing something.
+    """
+    return capability in _INPUT_REF_KEYS
+
+
+def required_input_refs(capability: object,
+                        arguments: Mapping[str, Any]) -> object:
+    """What one step's arguments say it must be GIVEN, unjudged.
+
+    Answers the RAW value under whichever key this capability owns, so that each
+    caller applies its own judgement to it and this function adds none. The
+    chain rule hands it to `latest_artifacts`, which refuses a malformed one by
+    the grammar it already held; the schedule reads it through
+    `unresolved_input_refs` below, which may not raise at all.
+
+    Returning the raw value rather than a settled tuple is deliberate. A tuple
+    settled here would have to decide what a malformed value means, and the two
+    callers need different answers: a store validating a durable record must
+    REFUSE it, and a pure reading recomputed on every question must not.
+
+    Args:
+        capability: The capability this step carries out, or None.
+        arguments: The step's own argument map.
+
+    Returns:
+        The value under this capability's input key, or `()` when the
+        capability names no such key or the arguments carry none.
+    """
+    key = _INPUT_REF_KEYS.get(capability)
+    return () if key is None else arguments.get(key, ())
+
+
+def unresolved_input_refs(
+        documents: Iterable[ArtifactDocument], capability: object,
+        arguments: Mapping[str, Any]) -> tuple[str, ...]:
+    """Which of this step's required inputs no document stands for yet.
+
+    A READING and never a refusal: it is recomputed from the journal on every
+    question, so it answers for a plan whose arguments are malformed rather than
+    raising at a caller that has no way to report it. Entries that are not text
+    are not references and are passed over here; the argument schema refuses
+    them at the door where a receipt can say so.
+
+    Args:
+        documents: Every value the run holds; non-artifacts are ignored.
+        capability: The capability this step carries out, or None.
+        arguments: The step's own argument map.
+
+    Returns:
+        The refs this step needs that no artifact stands for, in the order the
+        step named them, with repeats collapsed to their first mention.
+    """
+    asked = required_input_refs(capability, arguments)
+    if not isinstance(asked, (list, tuple)):
+        return ()
+    standing = {document.artifact_ref for document in documents
+                if type(document) is ArtifactDocument}
+    missing: list[str] = []
+    for ref in asked:
+        if type(ref) is str and ref not in standing and ref not in missing:
+            missing.append(ref)
+    return tuple(missing)
+
 
 def _artifact_answers_its_request(
         document: ArtifactDocument, source: Any,
@@ -206,7 +304,8 @@ def _artifact_answers_its_request(
         prior for prior in prior_values if isinstance(prior, ArtifactDocument)]
     try:
         resolved = latest_artifacts(
-            prior_artifacts, arguments.get("target_artifact_refs", ()))
+            prior_artifacts,
+            required_input_refs(source.capability, arguments))
     except ContractError as error:
         raise ContractError(
             f"action {document.source_action_id!r} names inputs this run cannot "
