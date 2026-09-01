@@ -391,6 +391,64 @@ def starter_caveats(template) -> list[str]:
             f"{', '.join(unpublishable)}. A later starter may fix this."]
 
 
+#: The one warning this build emits, word for word. "MAY", not "will": whether
+#: a step is reached on every pass depends on the conditions its roads carry,
+#: and a branch can end a run before the bounded step is asked for again. A
+#: stronger claim is only true where the step lies on EVERY path from the loop's
+#: `back_to` to the loop and no edge on any of them carries a condition --
+#: recorded here so a later build can add the strong form without re-deriving
+#: it, and deliberately not emitted by this one.
+BOUND_WARNING = "Attempt bound may be exhausted before the loop's final pass."
+
+
+def publish_warnings(
+        document: Mapping[str, Any], *, workflow_id: str,
+        revision: int) -> list[str]:
+    """What a person should know about a candidate that is nonetheless publishable.
+
+    A warning is NOT a diagnostic and must never become one. `DIAGNOSTIC_CODES`
+    stays what it was, `publishable` does not consult this, and nothing here can
+    refuse a publish -- because what it describes is not an error. The document
+    is legal, the run it produces may simply be unable to finish, and that is a
+    judgement for whoever drew it.
+
+    The interaction it names is real and is invisible from either field alone.
+    `attempt_bound` is spent per step across the WHOLE run -- every
+    `action_request` naming that step, never reset per lap -- while a loop asks
+    the step to settle once per lap. So an effecting step with a bound below its
+    loop's bound can settle fewer times than the loop needs, and the last lap
+    can never complete: the run stalls. Neither number is wrong on its own,
+    which is why nothing refuses them.
+
+    DERIVED, never written beside the files, for `starter_caveats`' reason one
+    function over: a sentence typed next to a document is a second description
+    free to go stale the moment somebody edits the JSON.
+    """
+    from .graph_definition import EFFECTING_CAPABILITIES
+    from .graph_schedule import loop_body
+
+    try:
+        candidate = publish_candidate(
+            document, workflow_id=workflow_id, revision=revision)
+    except DraftRefused:
+        # A document that does not construct has no bodies to walk. Its
+        # diagnostics are the answer, and a warning beside them would be
+        # advice about a revision that cannot exist.
+        return []
+    nodes, edges = candidate.settled()
+    bounded = {node.node_id: node for node in nodes
+               if node.capability in EFFECTING_CAPABILITIES
+               and node.attempt_bound is not None}
+    for loop in nodes:
+        if loop.loop is None:
+            continue
+        for node_id in loop_body(nodes, edges, loop):
+            node = bounded.get(node_id)
+            if node is not None and node.attempt_bound < loop.loop.bound:
+                return [BOUND_WARNING]
+    return []
+
+
 def _latest_published(templates, workflow_id: str, latest: int | None):
     """The latest revision as stored, and the numbers that would not read.
 
@@ -421,6 +479,18 @@ def _draft_row(draft) -> dict[str, Any] | None:
     document = draft.settled()
     return {"document": document, "saved_at": draft.saved_at,
             "digest": draft_digest(document)}
+
+
+def _warnings_for(draft, workflow_id: str, revision: int) -> list[str]:
+    """Beside the diagnostics and nothing like them.
+
+    A diagnostic stops a publish and a warning never does. `publishable` does
+    not read this, and a workflow with no draft has no candidate to warn about.
+    """
+    if draft is None:
+        return []
+    return publish_warnings(
+        draft.settled(), workflow_id=workflow_id, revision=revision)
 
 
 def workflow_state(
@@ -459,6 +529,7 @@ def workflow_state(
         # review that confirmed one document and wrote another.
         "draft": _draft_row(draft),
         "diagnostics": [dict(row) for row in diagnostics],
+        "warnings": _warnings_for(draft, workflow_id, next_revision),
         # True only when there IS a draft and nothing stops it. A workflow with
         # no draft has nothing to publish, which is a different thing from a
         # draft that would be refused, and the two must not share a word.

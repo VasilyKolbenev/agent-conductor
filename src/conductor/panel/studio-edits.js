@@ -28,7 +28,8 @@ function text(value) { return typeof value === "string" ? value : ""; }
 //: tests/test_studio_wiring.py holds the three copies equal. `EDIT_FIELDS` is
 //: every field name a `set-field` edit may carry, held the same way.
 export const EDIT_TYPES = Object.freeze(["add", "connect", "delete-edge",
-  "delete-node", "duplicate", "move", "reorder", "set-field"]);
+  "delete-node", "duplicate", "move", "reorder", "set-edge-condition",
+  "set-field"]);
 export const EDIT_FIELDS = Object.freeze(["arguments", "attempt_bound",
   "capability", "gate_id", "kind", "loop_back_to", "loop_bound", "purpose",
   "required_evidence", "resources", "role_id", "stage", "timeout_seconds",
@@ -40,6 +41,20 @@ export const LOOP_BOUND = Object.freeze({min: 1, max: 99});
 export const MAX_RESOURCES = 16;
 export const MAX_NODES = 256;
 export const MAX_EDGES = 1024;
+//: `graph_conditions.EDGE_CONDITIONS` -- the eight words a road may open
+//: on, and `_CONDITIONS_BY_KIND` beside it, so a select offers exactly the
+//: family the step behind the road can produce. Copies of the layer that
+//: owns them, held equal by tests/test_studio_wiring.py rather than trusted.
+export const EDGE_CONDITIONS = Object.freeze([
+  "on_approved", "on_rejected", "on_changes_requested", "on_waived",
+  "on_succeeded", "on_failed",
+  "on_bound_reached", "on_bound_remaining"]);
+export const CONDITIONS_BY_KIND = Object.freeze({
+  gate: Object.freeze([
+    "on_approved", "on_rejected", "on_changes_requested", "on_waived"]),
+  task: Object.freeze(["on_succeeded", "on_failed"]),
+  loop: Object.freeze(["on_bound_reached", "on_bound_remaining"]),
+});
 
 export function nodeIds(held) {
   return rows(held && held.nodes).filter(isObject).map((node) => node.node_id);
@@ -296,6 +311,29 @@ const EDITS = Object.freeze({
   duplicate,
   move: moveNode,
   reorder,
+  //: An empty value CLEARS, which is how a person says "unconditional"
+  //: through a select. Absent and empty are one answer here, exactly as
+  //: `settled_edge_condition` reads them, so the window cannot compose a
+  //: document the contract would rewrite under it.
+  "set-edge-condition": (draft, edit) => {
+    if (edit.value !== "" && !EDGE_CONDITIONS.includes(edit.value)) {
+      return {draft: null, notice: "That is not a word a connection can "
+        + "open on."};
+    }
+    let moved = false;
+    const edges = rows(draft.edges).map((edge) => {
+      if (edge.from_node !== edit.fromId || edge.to_node !== edit.toId) {
+        return edge;
+      }
+      const {condition, ...rest} = edge;
+      const next = edit.value === "" ? rest : {...rest, condition: edit.value};
+      moved = moved || (condition || "") !== edit.value;
+      return next;
+    });
+    return moved
+      ? {draft: {...draft, edges}, notice: ""}
+      : {draft: null, notice: "That connection already opens on that."};
+  },
   "set-field": (draft, edit) => EDIT_FIELDS.includes(edit.field)
     ? replaceNode(draft, edit.nodeId,
       (node) => withField(node, edit.field, edit.value))

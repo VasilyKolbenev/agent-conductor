@@ -52,6 +52,16 @@ RESULTS = {
 #: is a review decision; a reordered key in the file is not a change at all.
 REVISION_ONE_DIGEST = "79776b1ecbbfb71c3e5d84d32292f3e2522c31ae67c7a62a1f39455194d13f50"
 REVISION_TWO_DIGEST = "25b4772a53df720149989d7a2be57bc16d0e00d58922724495ae32bb789c6cab"
+REVISION_THREE_DIGEST = "329d229f96d0a80c497f2015d164df402f42f9fedc6497b6f3e95eed6d502c82"
+
+#: Which road each answer opens, in revision 3 and in no earlier one. Read
+#: off the cycle it makes real: approving the confirm gate is what opens the
+#: effecting step, and asking for changes at the result gate is what sends
+#: the run round again. An approval there closes that road and ends the run.
+ROUTES = {
+    ("confirm-gate", "do"): "on_approved",
+    ("result-gate", "retry-loop"): "on_changes_requested",
+}
 
 
 def _document(name: str) -> dict:
@@ -144,3 +154,62 @@ def test_the_artifact_chain_closes_in_revision_two_and_is_absent_from_one():
     for node in load_template("dalio-v1").steps():
         if node.capability == "review":
             assert "result_artifact_ref" not in node.arguments
+
+
+def derive_revision_three() -> dict:
+    """Revision 2, plus a condition on exactly two roads, and nothing else.
+
+    Revision 2's cycle cannot terminate and a rejected confirm gate still opens
+    the effecting step: both edges are unconditional, and `retry-loop` is a sink
+    with no road out. Revision 3 is the same drawing with two roads narrowed --
+    approval opens the work, and only a request for changes sends the run round
+    again -- which is what makes the cycle a cycle a run can leave.
+
+    Derived here for the reason revision 2 is: written by hand the two would
+    drift, and nothing else in this suite compares them.
+    """
+    document = _document("dalio-v2")
+    document["revision"] = 3
+    document["edges"] = [
+        {**edge, "condition": ROUTES[(edge["from_node"], edge["to_node"])]}
+        if (edge["from_node"], edge["to_node"]) in ROUTES else edge
+        for edge in document["edges"]]
+    return document
+
+
+def test_revision_three_is_exactly_revision_two_plus_two_conditions():
+    """The shipped revision 3 IS the derivation, as a canonical document."""
+    shipped = _document("dalio-v3")
+
+    assert shipped == derive_revision_three()
+    assert canonical_json(shipped) == canonical_json(derive_revision_three())
+    assert _digest(shipped) == REVISION_THREE_DIGEST
+
+
+def test_revision_three_keeps_the_title_and_the_identity_of_the_cycle():
+    """One template at three revisions, not a second cycle wearing its name."""
+    one, two, three = (load_template(name)
+                       for name in ("dalio-v1", "dalio-v2", "dalio-v3"))
+
+    assert three.template_id == two.template_id == one.template_id
+    assert three.title == two.title == "Dalio five-step cycle"
+    assert (one.revision, two.revision, three.revision) == (1, 2, 3)
+    assert [node.node_id for node in three.steps()] == [
+        node.node_id for node in two.steps()]
+
+
+def test_only_revision_three_routes_and_the_earlier_two_are_untouched():
+    """The conditions are revision 3's alone, in both directions.
+
+    Revision 2 stays a compatibility and replay witness: it carries no
+    condition, it cannot terminate, and it must not be presented anywhere as
+    demonstrating routing.
+    """
+    routed = {(edge.from_node, edge.to_node): edge.condition
+              for edge in load_template("dalio-v3").settled()[1]
+              if edge.condition is not None}
+
+    assert routed == ROUTES
+    for name in ("dalio-v1", "dalio-v2"):
+        assert all(edge.condition is None
+                   for edge in load_template(name).settled()[1]), name

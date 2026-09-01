@@ -1328,7 +1328,10 @@ graph, and no record may follow it.
       "recovery_ref": "recovery-cockpit-001", "outcome": "succeeded", "exit_code": 0 } }
   ],
   "warnings": [],
-  "graph": { "definition": null, "definition_digest": null, "runtime": null }
+  "graph": {
+    "definition": null, "definition_digest": null, "runtime": null,
+    "schedule": null
+  }
 }
 ```
 

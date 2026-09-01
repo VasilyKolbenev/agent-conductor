@@ -37,7 +37,7 @@ from .contracts import (
     gate_decision,
 )
 from .graph_definition import GraphDefinition, GraphNode
-from .graph_schedule import loop_position
+from .graph_schedule import loop_position, schedule
 
 if TYPE_CHECKING:  # pragma: no cover -- import cycle avoided at runtime
     from .run_store import RecoveredRun
@@ -67,7 +67,9 @@ def graph_payload(recovered: "RecoveredRun") -> dict[str, Any]:
     """
     definition = _definition(recovered)
     if definition is None:
-        return {"definition": None, "definition_digest": None, "runtime": None}
+        return {"definition": None, "definition_digest": None, "runtime": None,
+                "schedule": None}
+    values = tuple(row.value for row in recovered.records)
     return {
         "definition": definition.as_dict(),
         # Computed here rather than stored beside the document, exactly as the
@@ -75,6 +77,44 @@ def graph_payload(recovered: "RecoveredRun") -> dict[str, Any]:
         # down can disagree with oneself.
         "definition_digest": definition.digest(),
         "runtime": graph_runtime(recovered, definition),
+        "schedule": _schedule_payload(definition, values),
+    }
+
+
+def _schedule_payload(
+        definition: GraphDefinition, values: tuple[Any, ...]) -> dict[str, Any]:
+    """What the plan says may happen now, as the wire spells it.
+
+    A THIRD reading beside the other two, and deliberately not folded into
+    either. The definition says what was intended and the runtime says what was
+    observed; this says what those two together permit, and it is a pure
+    function of both -- so it is computed here on every read rather than stored,
+    for the reason the digest beside it is.
+
+    It is the browser's only source for "where could this step go next". The
+    window used to walk the edge list itself and call every out-edge an
+    unblocking, which was true only while no edge could carry a condition. One
+    successor computation, in Python, is what stops a screen and a refusal
+    disagreeing about which step may run.
+    """
+    computed = schedule(definition, values)
+    return {
+        "run_state": computed.run_state,
+        "runnable": list(computed.runnable),
+        "settled": list(computed.settled),
+        "unreachable": list(computed.unreachable),
+        "nodes": [{
+            "node_id": row.node_id,
+            "state": row.state,
+            "opened_by": list(row.opened_by),
+            "blocked_by": list(row.blocked_by),
+            "closed_by": list(row.closed_by),
+            "opens": [{"to_node": to_node, "condition": condition}
+                      for to_node, condition in row.opens],
+            "required_pass": row.required_pass,
+            "settled_laps": row.settled_laps,
+            "attempts_spent": row.attempts_spent,
+        } for row in computed.nodes],
     }
 
 

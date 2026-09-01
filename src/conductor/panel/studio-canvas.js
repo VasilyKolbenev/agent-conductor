@@ -57,7 +57,7 @@ export const REVIEW_MARK = Object.freeze({
 //: one function and a new kind of edit cannot arrive unremarked.
 export const EDIT_TYPES = Object.freeze([
   "add", "connect", "delete-edge", "delete-node", "duplicate", "move",
-  "reorder", "set-field",
+  "reorder", "set-edge-condition", "set-field",
 ]);
 
 //: Cell geometry, in the units the browser suite measures. Same model as

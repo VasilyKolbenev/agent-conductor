@@ -32,6 +32,8 @@ so a set that grew a duplicate is caught on the way in.
 """
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from conductor.command.graph_template import GraphTemplate
@@ -108,6 +110,25 @@ def test_the_workflow_read_payload_is_exactly_what_the_window_admits(tmp_path):
     assert set(payload) == _js_array(_model_source(), "WORKFLOW_KEYS")
 
 
+def test_the_window_judges_the_shape_of_the_warnings_it_admits(tmp_path):
+    """A key admitted is not a key judged, and the two are different guards.
+
+    `WORKFLOW_KEYS` above says the window will not refuse a payload for
+    carrying `warnings`. This says it refuses one whose warnings are not
+    SENTENCES -- which is what they are: prose a person reads, with no code and
+    nothing acting on them. Without this, widening the key set would have been
+    enough to make the boundary accept any shape at all under that name, and
+    the refusal-count guard next door cannot see the difference because the
+    `return null;` it counts is still there either way.
+    """
+    source = _model_source()
+    body = re.search(r"export function projectWorkflow\(payload\) \{(.*?)\n\}",
+                     source, re.DOTALL).group(1)
+
+    assert "Array.isArray(payload.warnings)" in body, body
+    assert 'typeof row === "string"' in body, body
+    # And what it hands on is frozen, like every other list this window carries.
+    assert "warnings: frozenList(payload.warnings)," in body, body
 def test_the_revision_read_payload_is_exactly_what_the_window_admits(tmp_path):
     _, payload = studio_routes.read_revision(_published(tmp_path), WORKFLOW, 1)
 

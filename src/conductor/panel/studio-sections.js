@@ -80,7 +80,7 @@ export const REQUIRED_EVIDENCE = Object.freeze(["digest"]);
 //: surfaces reach the draft through one callback and one word list.
 export const EDIT_TYPES = Object.freeze([
   "add", "connect", "delete-edge", "delete-node", "duplicate", "move",
-  "reorder", "set-field",
+  "reorder", "set-edge-condition", "set-field",
 ]);
 //: Every field name an inspector edit may carry. `loop_bound` and `loop_back_to`
 //: are spelled flat because an edit names ONE field, and a nested path would be
@@ -615,12 +615,13 @@ export function verificationSection(form) {
     + "after the work was observed — and, where the step asks for it, naming "
     + "what was checked. Anything a plan could add beside that would be weaker "
     + "than what it is already held to.");
-  unsupported(box, "Verification failure policy", "The behaviour is fixed and "
-    + "there is no choice for a plan to make: this build walks no connections "
-    + "and computes no next step, so a step that fails verification records "
-    + "verification_failed and what happens after it is a Human's next "
-    + "decision. A policy field arrives with the scheduler that could act on "
-    + "one.");
+  unsupported(box, "Verification failure policy", "A step that fails "
+    + "verification records verification_failed, and what happens next is what "
+    + "this plan's own connections say: a road may open on that failure, and "
+    + "the schedule walks it. What a plan cannot yet say is HALT — stop this "
+    + "run entirely, including branches no road from this step reaches — which "
+    + "is a different thing from routing and needs a durable field of its own. "
+    + "That field is the next thing to arrive.");
   runEvidenceRow(box, form);
   note(box, "Process exit 0 proves the process finished, not that the work "
     + "was verified. A run that reports verification_failed reached its "

@@ -362,15 +362,18 @@ def test_the_register_on_screen_is_the_register_the_census_pins(
     A label that left `UNSUPPORTED_FIELDS` by being deleted from the screen
     would satisfy the Python census and leave a gap where an honest "this build
     does not do that" belonged. So the rendered rows are counted and their union
-    is held against the register itself -- five on a step, one on a connection,
-    and `Evidence requirements` among neither because it is a control now.
+    is held against the register itself -- all three on a step now, and NONE on
+    a connection, because `Condition` became a control in the routing slice.
     """
     bench.select("study")
     on_a_step = bench.unsupported_rows()
     bench.select_edge("study", "loose")
     on_an_edge = bench.unsupported_rows()
 
-    assert on_an_edge == ["condition"], on_an_edge
+    # The edge panel says nothing is unsupported any more: it offers the select.
+    assert on_an_edge == [], on_an_edge
+    assert bench.page.locator(
+        '[data-panel="edge"] select[name="edge_condition"]').count() == 1
     assert set(on_a_step) | set(on_an_edge) == {
         row.lower().replace(" ", "-").replace("/", "-")
         for row in UNSUPPORTED_FIELDS}
@@ -382,5 +385,8 @@ def test_the_register_on_screen_is_the_register_the_census_pins(
     bench.select("study")
     said = verification.inner_text()
     assert "already demands of every step" in said, said
-    assert "walks no connections" in said, said
+    # And the failure-policy row no longer claims this build walks nothing: it
+    # does now, and what a plan still cannot say is HALT.
+    assert "the schedule walks it" in said, said
+    assert "walks no connections" not in said, said
     assert bench.problems == []

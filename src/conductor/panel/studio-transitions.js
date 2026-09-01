@@ -42,13 +42,28 @@ import {
   sectionOf,
   selectField,
   textField,
-  unsupported,
 } from "./studio-fields.js";
 
 //: `graph_definition.MIN_LOOP_BOUND` / `MAX_LOOP_BOUND`. A copy of the layer
 //: that owns it, held equal by `tests/test_studio_canvas.py` against the Python
 //: contract rather than trusted here.
 export const LOOP_BOUND = Object.freeze({min: 1, max: 99});
+
+//: `graph_conditions.EDGE_CONDITIONS` and `_CONDITIONS_BY_KIND`. A COPY,
+//: like every other vocabulary in this window, because the module table
+//: forbids reaching the edit module from here -- and held equal to the
+//: Python owner, and to that module's own copy, by
+//: `tests/test_studio_wiring.py` rather than trusted.
+export const EDGE_CONDITIONS = Object.freeze([
+  "on_approved", "on_rejected", "on_changes_requested", "on_waived",
+  "on_succeeded", "on_failed",
+  "on_bound_reached", "on_bound_remaining"]);
+export const CONDITIONS_BY_KIND = Object.freeze({
+  gate: Object.freeze([
+    "on_approved", "on_rejected", "on_changes_requested", "on_waived"]),
+  task: Object.freeze(["on_succeeded", "on_failed"]),
+  loop: Object.freeze(["on_bound_reached", "on_bound_remaining"]),
+});
 
 function isObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -75,10 +90,83 @@ function outgoingRows(box, form) {
     type: "button"}, [element("span", {text: "Disconnect"})]);
     drop.addEventListener("click", () => call(form.handlers, "onEdit", {
       type: "delete-edge", fromId: edge.from_node, toId: edge.to_node}));
-    item.append(open, editable(drop, form));
+    item.append(open, conditionControl(form, edge), editable(drop, form));
     list.append(item);
   }
   box.append(list);
+}
+
+//: What the step BEHIND a road can produce, or nothing at all.
+//
+// A task carrying no capability is carried out by nobody: no adapter runs it,
+// no receipt is written for it, and it produces no word. The contract refuses a
+// condition on any road out of one, so this offers none -- a select whose every
+// use is refused on save is worse than no select.
+function conditionWords(node) {
+  if (node.kind === "task" && !node.capability) return [];
+  return CONDITIONS_BY_KIND[node.kind] || [];
+}
+
+function conditionControl(form, edge) {
+  const words = conditionWords(form.node);
+  if (!words.length) {
+    return element("span", {className: "studio-edge-row__note",
+      text: "carries out no work — no condition"});
+  }
+  const control = element("select", {"data-edge-condition":
+    `${edge.from_node} ${edge.to_node}`,
+  "data-focus": `edge-condition-${edge.from_node} ${edge.to_node}`,
+  name: "edge_condition"},
+  [option("", "always — unconditional"),
+    ...words.map((word) => option(word, conditionLabel(word)))]);
+  control.value = typeof edge.condition === "string" ? edge.condition : "";
+  control.addEventListener("change", () => call(form.handlers, "onEdit", {
+    type: "set-edge-condition", fromId: edge.from_node, toId: edge.to_node,
+    value: control.value}));
+  return editable(control, form);
+}
+
+//: One word, one sentence a person reads. Derived from the vocabulary rather
+//: than typed beside it: a word this build gains and nobody labels would show
+//: as its own identifier, which is a control nobody can use.
+function conditionLabel(word) {
+  return word.replace(/^on_/, "").replace(/_/g, " ");
+}
+
+//: Where a decision SENDS this run, read off the roads already drawn.
+//
+// Read-only on purpose. A gate answers, and the answer routes down whichever
+// road carries that word -- so the place to change routing is the road, and a
+// second control here would be a second authority over one edge. What this
+// gives a person is the reading they cannot get from the edge list alone: which
+// answer opens which step.
+function decisionRouting(box, form) {
+  if (form.node.kind !== "gate") {
+    context(box, "Decision routing", "none — only a gate's answer routes",
+      "the workflow contract");
+    return;
+  }
+  const outgoing = form.edges.filter(
+    (edge) => edge.from_node === form.node.node_id);
+  const routed = outgoing.filter((edge) => typeof edge.condition === "string");
+  if (!outgoing.length) {
+    context(box, "Decision routing", "none — this gate opens no step",
+      "the workflow document");
+    return;
+  }
+  if (!routed.length) {
+    context(box, "Decision routing",
+      `every answer opens ${outgoing.map((edge) => edge.to_node).join(", ")}`,
+      "the workflow document");
+    return;
+  }
+  const list = element("ul", {className: "studio-routes"});
+  for (const edge of routed) {
+    list.append(element("li", {className: "studio-route",
+      "data-route": `${edge.condition} ${edge.to_node}`,
+      text: `${conditionLabel(edge.condition)} → ${edge.to_node}`}));
+  }
+  box.append(field("Decision routing", list));
 }
 
 function connectControl(box, form) {
@@ -109,9 +197,7 @@ function gateControls(box, form) {
     context(box, "Human decision", "none — only a gate step carries one",
       "the workflow contract");
   }
-  unsupported(box, "Decision routing", "This build runs one plan: a decision "
-    + "records approval, rejection, changes requested or a waiver, and it "
-    + "does not choose between two different onward paths.");
+  decisionRouting(box, form);
 }
 
 function loopControls(box, form) {
@@ -148,16 +234,52 @@ function loopControls(box, form) {
     + "context, never here.");
 }
 
+//: The SAME select, on the edge's own panel in the frame next door.
+//
+// Exported rather than rebuilt there, because the two surfaces must not be able
+// to offer different words for one road -- and because the frame may not reach
+// the module that owns this vocabulary. A road whose source this drawing no
+// longer carries, or whose source produces no word, states the fact rather than
+// offering a control nothing could accept.
+export function edgeConditionRow(box, form, fromId, toId) {
+  const source = form.nodes.filter(isObject)
+    .find((node) => node.node_id === fromId);
+  const edge = form.edges.filter(isObject).find(
+    (row) => row.from_node === fromId && row.to_node === toId);
+  if (!source || !edge) {
+    context(box, "Condition", "none — this drawing does not carry that road",
+      "the workflow document");
+    return;
+  }
+  const words = conditionWords(source);
+  if (!words.length) {
+    context(box, "Condition",
+      `none — ${fromId} carries out no work, so it produces no word`,
+      "the workflow contract");
+    return;
+  }
+  const control = element("select", {"data-edge-condition": `${fromId} ${toId}`,
+    "data-focus": "edge-condition", name: "edge_condition"},
+  [option("", "always — unconditional"),
+    ...words.map((word) => option(word, conditionLabel(word)))]);
+  control.value = typeof edge.condition === "string" ? edge.condition : "";
+  control.addEventListener("change", () => call(form.handlers, "onEdit", {
+    type: "set-edge-condition", fromId, toId, value: control.value}));
+  const wrapper = field("Condition", editable(control, form));
+  wrapper.classList.add("studio-field");
+  box.append(wrapper);
+}
+
+
 export function transitionSection(form) {
   const box = sectionOf("transitions", "Transitions");
   box.append(element("h4", {text: "Outgoing connections"}));
   outgoingRows(box, form);
   connectControl(box, form);
-  unsupported(box, "Edge conditions", "A connection carries exactly the two "
-    + "steps it joins. There is no condition field for one to be stored in.");
   box.append(element("h4", {text: "Human decision routing"}));
   gateControls(box, form);
   box.append(element("h4", {text: "Loop"}));
   loopControls(box, form);
   return box;
 }
+

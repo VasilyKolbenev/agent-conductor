@@ -456,6 +456,42 @@ def test_the_three_edit_vocabularies_are_one_vocabulary():
                 f"{name} is declared in {where} again; three copies, not four")
 
 
+
+def test_the_condition_vocabulary_is_the_python_owners_word_for_word():
+    """Two JS copies, one Python owner, held equal in both directions.
+
+    A window that offered a word the contract refuses would compose a document
+    the server rejects on save; one that offered fewer would hide a road a plan
+    may legally carry. Neither is visible from the window alone, so both copies
+    are read out of the source and compared to `graph_conditions` itself.
+    """
+    from conductor.command.graph_conditions import (
+        EDGE_CONDITIONS,
+        _CONDITIONS_BY_KIND,
+    )
+
+    transitions = _code(PANEL / "studio-transitions.js")
+    edits = _code(EDITS)
+    for source, where in ((transitions, "the transitions section"),
+                          (edits, "the reducer")):
+        assert set(_frozen_list(source, "EDGE_CONDITIONS")) == EDGE_CONDITIONS, where
+        assert len(_frozen_list(source, "EDGE_CONDITIONS")) == len(
+            EDGE_CONDITIONS), where
+    # And the per-kind families, which is what a select actually offers.
+    for source, where in ((transitions, "the transitions section"),
+                          (edits, "the reducer")):
+        body = re.search(
+            r"CONDITIONS_BY_KIND = Object\.freeze\(\{(.*?)\n\}\);",
+            source, re.DOTALL).group(1)
+        for kind, words in sorted(_CONDITIONS_BY_KIND.items()):
+            spelled = re.search(
+                rf"{kind}: Object\.freeze\(\[(.*?)\]\)", body, re.DOTALL)
+            assert spelled, f"{where} offers nothing for a {kind}"
+            assert set(re.findall(r'"([a-z_]+)"', spelled.group(1))) == set(
+                words), (where, kind)
+        assert set(re.findall(r"^  (\w+):", body, re.MULTILINE)) == set(
+            _CONDITIONS_BY_KIND), where
+
 def test_every_screen_says_the_same_seven_words():
     """One state vocabulary across the shell, the runs screen and the people.
 

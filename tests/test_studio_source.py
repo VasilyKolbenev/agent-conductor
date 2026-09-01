@@ -487,13 +487,16 @@ def test_the_boundary_refuses_rather_than_repairs_and_says_which_it_does():
     # this window cannot read takes the whole payload with it rather than
     # leaving a shorter truth on screen.
     # 80 before the frozen workflow reference landed, 84 after it, 85 with the
-    # project name and 86 with the publish review's `unchanged`. Every one of
-    # the seven is navigation: a config whose key set this window does not know,
-    # a config missing one of the two keys every writer supplies, a run whose
+    # project name, 86 with the publish review's `unchanged` and 87 with the
+    # publish WARNINGS -- which are sentences, so a payload whose `warnings` is
+    # not an array of strings is one this window cannot read. Every one of the
+    # eight is navigation: a config whose key set this window does not know, a
+    # config missing one of the two keys every writer supplies, a run whose
     # workflow reference is there and will not read, the two halves of a run
-    # ROW's provenance, a project name this build could not have written, and a
-    # workflow read whose `unchanged` is not a boolean.
-    assert source.count("return null;") == 86
+    # ROW's provenance, a project name this build could not have written, a
+    # workflow read whose `unchanged` is not a boolean, and one whose warnings
+    # are not sentences.
+    assert source.count("return null;") == 87
     assert source.count("return false;") == 6
     # Decoration DROPS: the provider roster, the starter offers, and the one
     # duplicate-identity arm the controls answer shares with them.

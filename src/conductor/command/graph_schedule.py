@@ -158,13 +158,18 @@ class _Frame:
     ceiling: int
 
 
-def _roads(definition: GraphDefinition) -> tuple[dict, dict]:
-    """Each step's in-edges and out-edges, both in `definition.edges` order."""
+def _roads(nodes, edges) -> tuple[dict, dict]:
+    """Each step's in-edges and out-edges, both in document order.
+
+    Takes the two sequences rather than the document that carries them, so
+    a TEMPLATE can be asked the same questions a plan can -- which is what
+    the publish-time warning needs, one revision before a plan exists.
+    """
     incoming: dict[str, list[GraphEdge]] = {
-        node.node_id: [] for node in definition.nodes}
+        node.node_id: [] for node in nodes}
     outgoing: dict[str, list[GraphEdge]] = {
-        node.node_id: [] for node in definition.nodes}
-    for edge in definition.edges:
+        node.node_id: [] for node in nodes}
+    for edge in edges:
         incoming[edge.to_node].append(edge)
         outgoing[edge.from_node].append(edge)
     return ({key: tuple(rows) for key, rows in incoming.items()},
@@ -367,16 +372,20 @@ def _arrivals(plan: _Plan, node: GraphNode, frame: _Frame) -> int:
                 for edge in plan.incoming[node.node_id]), default=0)
 
 
-def _body(plan: _Plan, outgoing: Mapping[str, tuple[GraphEdge, ...]],
-          loop: GraphNode) -> frozenset[str]:
+def loop_body(nodes, edges, loop) -> frozenset[str]:
     """The steps one loop reopens: forward from `back_to`, backward from the loop.
 
-    Both ends inclusive, and over the immutable plan alone -- no record is read,
-    so which steps a loop owns is a property of the drawing and cannot change
-    while a run is in flight.
+    Both ends inclusive, and over the drawing alone -- no record is read, so
+    which steps a loop owns cannot change while a run is in flight.
+
+    Public, and asked of a template as well as of a plan: the publish-time
+    warning has to know which steps a loop reopens BEFORE any run exists, and
+    a second implementation of "what a loop owns" would be a second answer to
+    the question the schedule decides laps by.
     """
+    incoming, outgoing = _roads(nodes, edges)
     forward = _reachable(loop.loop.back_to, outgoing, "to_node")
-    backward = _reachable(loop.node_id, plan.incoming, "from_node")
+    backward = _reachable(loop.node_id, incoming, "from_node")
     return forward & backward
 
 
@@ -394,8 +403,8 @@ def _reachable(start: str, roads: Mapping[str, tuple[GraphEdge, ...]],
     return frozenset(found)
 
 
-def _lap_demands(definition: GraphDefinition, plan: _Plan,
-                 outgoing: Mapping[str, tuple[GraphEdge, ...]]) -> tuple[dict, dict]:
+def _lap_demands(definition: GraphDefinition,
+                 plan: _Plan) -> tuple[dict, dict]:
     """Which lap each step owes, and the lap frame that question was asked in.
 
     A step outside every loop body owes one pass, in the frame where every
@@ -416,7 +425,7 @@ def _lap_demands(definition: GraphDefinition, plan: _Plan,
         frame = _Frame(marks=_lap_marks(plan.values, loop.loop.back_to),
                        ceiling=loop.loop.bound)
         demand = min(1 + _arrivals(plan, loop, frame), loop.loop.bound)
-        for node_id in _body(plan, outgoing, loop):
+        for node_id in loop_body(definition.nodes, definition.edges, loop):
             if demand > owed[node_id]:
                 owed[node_id] = demand
                 frames[node_id] = frame
@@ -532,11 +541,11 @@ def schedule(definition: GraphDefinition,
         Every step's standing, the three subsets a reader acts on, and the
         plan's own word for the run.
     """
-    incoming, outgoing = _roads(definition)
+    incoming, outgoing = _roads(definition.nodes, definition.edges)
     plan = _Plan(run_id=definition.run_id, values=values,
                  by_id={node.node_id: node for node in definition.nodes},
                  incoming=incoming)
-    owed, frames = _lap_demands(definition, plan, outgoing)
+    owed, frames = _lap_demands(definition, plan)
     words = {node.node_id: _produced_word(plan, node)
              for node in definition.nodes}
     rows = _walked_states(definition, plan, outgoing, owed, frames, words)

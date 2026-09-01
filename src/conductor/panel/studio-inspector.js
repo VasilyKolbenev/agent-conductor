@@ -45,7 +45,10 @@ import {
   stepActions,
   verificationSection,
 } from "./studio-sections.js";
-import {transitionSection} from "./studio-transitions.js";
+import {
+  edgeConditionRow,
+  transitionSection,
+} from "./studio-transitions.js";
 
 //: The two shapes this frame asks of a payload before handing it to a control.
 //: Kept here rather than imported: they are three lines each, and a boundary
@@ -184,8 +187,7 @@ function edgePanel(mount, form, id) {
   }
   context(box, "From", parts[0], "the workflow document");
   context(box, "To", parts[1], "the workflow document");
-  unsupported(box, "Condition", "A connection carries exactly the two steps "
-    + "it joins; there is no condition field for one to be stored in.");
+  edgeConditionRow(box, form, parts[0], parts[1]);
   const drop = element("button", {className: "studio-action",
     "data-action": "delete-edge", "data-focus": "action-delete-edge",
     type: "button"}, [element("span", {text: "Disconnect"})]);

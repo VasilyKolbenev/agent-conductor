@@ -35,6 +35,10 @@ from .contracts import (
     _id)
 from .graph_projection import graph_payload
 from .graph_template import TemplateError, materialize
+#: ONE `_gated`, shared with the command API. Two copies of "what was
+#: judged is what is appended" could come to disagree about the one
+#: thing that rule exists to make unrepresentable.
+from .plan_admission import _gated
 from .store_errors import RecordConflict, StoreError
 from .workflow_draft import (
     DraftRefused,
@@ -381,20 +385,6 @@ def _judged_revision(store, templates, asked, snapshot, reachable, judge_plan):
         checked, asked.binding, snapshot, graph_id=_PROBE_GRAPH,
         run_id=asked.run_id, created_at=_PROBE_AT)
     judge_plan(snapshot, asked.run_id, probe.nodes)
-    return checked
-
-
-def _gated(checked):
-    """The revision the gates ran on, or a refusal rather than a second read.
-
-    ``None`` here would mean the transaction found no standing run while the
-    read before it found one -- impossible for a run that is created once. If it
-    ever became possible, the answer must not be to fetch the revision again.
-    What was judged is what is appended, and when what was judged is missing
-    there is nothing to append.
-    """
-    if checked is None:
-        raise ApiRefusal.fixed("store_error")
     return checked
 
 

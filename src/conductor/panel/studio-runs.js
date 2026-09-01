@@ -146,6 +146,16 @@ export const VERIFICATION_FAILED_NOTE = "Process exit 0 proves the process "
   + "finished, not that the work was verified. This run reached the end of an "
   + "action and its verification did not pass, so nothing here says the work "
   + "is done.";
+//: The one sentence, handed to whichever container is showing the word. Every
+//: container carrying `verification_failed` needs its OWN copy -- one written
+//: elsewhere on the screen does not cover a section that shows the word alone
+//: -- and spelling that rule at each site is how a sixth site came to forget
+//: it. Spelled once here, spread into whatever is being built.
+function alsoSay(outcome) {
+  return outcome === "verification_failed"
+    ? [note(VERIFICATION_FAILED_NOTE)] : [];
+}
+
 //: The seven words a screen container may stand in, and the plain sentence
 //: each one is said with.
 export const PHASE_SENTENCES = Object.freeze({
@@ -300,9 +310,7 @@ function runButton(row, selectedId, handlers) {
 //: a name too long to be spoken as one.
 function runRow(row, selectedId, handlers) {
   const item = element("li", {}, [runButton(row, selectedId, handlers)]);
-  if (row.last_outcome === "verification_failed") {
-    item.append(note(VERIFICATION_FAILED_NOTE));
-  }
+  item.append(...alsoSay(row.last_outcome));
   return item;
 }
 
@@ -414,10 +422,58 @@ function planSection(detail) {
     fact("Plan", definition.graph_id),
     fact("Digest", graph.definition_digest),
     fact("Steps", rows(definition.nodes).length),
+    ...planWord(graph),
     note("A plan is written once and never edited. Editing the workflow it "
       + "came from makes a new revision and leaves this one exactly as it "
       + "was."),
   ]);
+}
+
+//: What each run word MEANS. `complete` is the one a reader will get wrong: it
+//: says the plan has nothing left to open and never that the run succeeded.
+const PLAN_WORDS = Object.freeze({
+  open: "steps remain that this run may still take",
+  complete: "the plan has nothing left to open — this does NOT mean the run "
+    + "succeeded",
+  stalled: "nothing is runnable and something is still owed",
+});
+
+function lastWhere(nodes, pick) {
+  const found = nodes.filter(pick);
+  return found.length ? found[found.length - 1] : null;
+}
+
+//: Where the plan stands, and the facts a person needs BESIDE it.
+//
+// The neutral channel and never `pass`. A green tick against `complete` would
+// be the product telling somebody their run worked when what it knows is only
+// that there is nothing left to do -- and the run that burned every retry lands
+// on the same word. So the word is stated, and the loop's position and the last
+// answer are stated beside it, because those two tell the two apart.
+function planWord(graph) {
+  const schedule = object(graph.schedule);
+  if (schedule === null) return [];
+  const word = typeof schedule.run_state === "string"
+    ? schedule.run_state : "unknown";
+  const body = [element("p", {className: "studio-fact"}, [
+    element("span", {className: "studio-fact__k", text: "Plan"}),
+    chip("none", word),
+    element("span", {className: "studio-fact__v",
+      text: PLAN_WORDS[word] || "this build does not know that word"}),
+  ])];
+  const runtime = object(graph.runtime);
+  const nodes = rows(runtime && runtime.nodes);
+  const spent = lastWhere(nodes, (row) => row.bound_reached === true);
+  const gate = lastWhere(nodes, (row) => typeof row.decision === "string"
+    && row.decision !== "idle");
+  const seen = lastWhere(nodes, (row) => typeof row.outcome === "string");
+  if (spent) body.push(fact("Loop", `${show(spent.node_id)} — bound reached`));
+  if (gate) body.push(fact("Last gate answer", `${show(gate.node_id)} — `
+    + `${gate.decision}`));
+  if (seen) body.push(fact("Last outcome", `${show(seen.node_id)} — `
+    + `${seen.outcome}`));
+  if (seen) body.push(...alsoSay(seen.outcome));
+  return body;
 }
 
 function loopLine(node, runtime) {
@@ -433,7 +489,43 @@ function loopLine(node, runtime) {
       + reached});
 }
 
-function positionRow(node, runtime) {
+//: The ONE sentence this product uses for a step waiting at a join.
+//
+// "Waiting for a predecessor" reads as ANY, and joins are AND-only: every
+// road into a step must open before it may run. A person told the weaker
+// thing would expect the step to start as soon as one branch arrived, and
+// would read the plan as doing something it never does. Pinned by a source
+// test, and spelled once so both readings cannot drift.
+const ALL_ROADS = "ALL incoming roads must open before this step may run.";
+
+//: Why a step stands where it does, off the server's own schedule.
+function standingOf(schedule, nodeId) {
+  return rows(schedule && schedule.nodes)
+    .find((node) => node.node_id === nodeId) || null;
+}
+
+function planStanding(item, standing) {
+  if (standing === null) return;
+  item.append(chip("none", `plan: ${show(standing.state)}`));
+  if (standing.state === "blocked" && standing.attempts_spent === true) {
+    item.append(note("Every attempt this plan allows the step has been "
+      + "authorized, so it can never settle again."));
+    return;
+  }
+  if (standing.state === "blocked") {
+    item.append(fact("Waiting on", rows(standing.blocked_by).join(", ")));
+    item.append(note(ALL_ROADS));
+    return;
+  }
+  if (standing.state === "unreachable") {
+    const closed = rows(standing.closed_by);
+    item.append(note(closed.length
+      ? `No run reaches this step: ${closed.join(", ")} took another road.`
+      : "No run reaches this step: what leads to it is unreachable too."));
+  }
+}
+
+function positionRow(node, runtime, standing) {
   const item = element("li", {className: "studio-position"}, [
     element("span", {className: "studio-position__t", text: show(node.title)}),
     element("span", {className: "studio-mono",
@@ -453,9 +545,8 @@ function positionRow(node, runtime) {
     fact("Evidence", runtime.evidence_refs));
   const loop = loopLine(node, runtime);
   if (loop !== null) item.append(loop);
-  if (runtime.outcome === "verification_failed") {
-    item.append(note(VERIFICATION_FAILED_NOTE));
-  }
+  planStanding(item, standing === undefined ? null : standing);
+  item.append(...alsoSay(runtime.outcome));
   return item;
 }
 
@@ -473,8 +564,10 @@ function positionSection(detail) {
   const planned = new Map(rows(definition.nodes)
     .map((node) => [node.node_id, node]));
   const list = element("ul", {className: "studio-positions"});
+  const schedule = object(graph.schedule);
   for (const row of rows(runtime.nodes)) {
-    list.append(positionRow(planned.get(row.node_id) || {}, row));
+    list.append(positionRow(planned.get(row.node_id) || {}, row,
+      standingOf(schedule, row.node_id)));
   }
   return section("Where this run stands", [
     note("Each step reports its CURRENT action only. Observed says an "
@@ -507,9 +600,7 @@ function outcomeSection(records) {
       fact("Exit code", last.exit_code),
       fact("Detail recorded by the code", last.detail),
       fact("Action", last.action_id));
-    if (last.outcome === "verification_failed") {
-      body.push(note(VERIFICATION_FAILED_NOTE));
-    }
+    body.push(...alsoSay(last.outcome));
   }
   if (!evidence.length) {
     body.push(note("This run claims no evidence, so nothing about it has "
@@ -604,9 +695,7 @@ function timelineRow(wrapper, index) {
   if (badge !== null) head.append(badge);
   const item = element("li", {className: "studio-row"},
     [head, timelineFacts(kind, record)]);
-  if (record.outcome === "verification_failed") {
-    item.append(note(VERIFICATION_FAILED_NOTE));
-  }
+  item.append(...alsoSay(record.outcome));
   return item;
 }
 

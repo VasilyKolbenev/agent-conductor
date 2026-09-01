@@ -662,7 +662,8 @@ def test_the_run_read_carries_the_plan_its_digest_and_a_computed_runtime(tmp_pat
 def test_a_run_that_follows_no_plan_still_answers_the_graph_key(tmp_path):
     subject, _, _ = graph_api(tmp_path)
     assert read_run(subject).payload["graph"] == {
-        "definition": None, "definition_digest": None, "runtime": None}
+        "definition": None, "definition_digest": None, "runtime": None,
+        "schedule": None}
 
 
 def test_a_run_whose_journal_does_not_replay_is_given_no_projection_at_all(

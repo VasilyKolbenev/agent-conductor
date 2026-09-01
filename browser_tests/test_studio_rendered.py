@@ -494,11 +494,16 @@ def test_the_workflow_screen_offers_the_project_workflow_and_the_bundled_starter
     # starters carry that one title, so the picker offered a person two rows
     # they could not choose between -- and they are not equivalent, which is the
     # half that made it worth fixing rather than tolerating.
-    assert len(offered[1:]) == len(set(offered[1:])) == 2, offered
+    # Three shipped revisions since the routed one landed, and still no two
+    # rows a person cannot tell apart.
+    assert len(offered[1:]) == len(set(offered[1:])) == 3, offered
     assert all("Dalio five-step cycle · revision " in row for row in offered[1:])
     ready = [row for row in offered[1:] if row.endswith("ready to run")]
     caveated = [row for row in offered[1:] if "name no result artifact" in row]
-    assert len(ready) == 1 and len(caveated) == 1, offered
+    # Two run-ready revisions since the routed one landed, and still exactly one
+    # caveated: the caveat is DERIVED, so revision 3 inherits revision 2's fixed
+    # artifact chain rather than a sentence somebody remembered to copy.
+    assert len(ready) == 2 and len(caveated) == 1, offered
     # And the caveat is the DERIVED one, naming the steps it read.
     assert "4 review step(s)" in caveated[0], caveated
     assert problems == []

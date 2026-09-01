@@ -226,8 +226,15 @@ export function adaptDeployment(controls) {
 export function adaptRunGraph(read, registry, controls) {
   if (!isObject(read) || !isObject(read.run)) return refused();
   const graph = read.graph;
+  // `schedule` is ADMITTED and read by nothing here. This window is closed to
+  // the keys it knows, so a run read that grew a fourth was refused outright --
+  // a plan this window could draw perfectly well, rejected for carrying a
+  // reading it does not use. Admitting it is not the same as reading it: the
+  // pair below still judges the three documents this window actually draws, and
+  // the Studio is the surface that acts on what the plan permits.
   if (!isObject(graph) || !keysWithin(
-    ["definition", "definition_digest", "runtime"], graph)) return refused();
+    ["definition", "definition_digest", "runtime", "schedule"],
+    graph)) return refused();
   const pair = pairState(read, graph);
   if (pair === GRAPH_ABSENT) {
     return Object.freeze({state: GRAPH_ABSENT, payload: null});

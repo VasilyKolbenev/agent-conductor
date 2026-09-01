@@ -360,9 +360,13 @@ export function projectWorkflows(payload) {
 //: because the two are different sentences to a person: one says the drawing
 //: is broken, the other says it is a copy, and a screen that could only say
 //: "not publishable" would send a user looking for a mistake they did not make.
+//: `warnings` is beside `diagnostics` and is nothing like it: a diagnostic
+//: stops a publish and a warning never does. The window admits it as its
+//: own key for that reason -- folding the two together would make a screen
+//: unable to say "this will publish, and here is what to know about it".
 const WORKFLOW_KEYS = ["workflow_id", "revisions", "latest_revision",
-  "unreadable_revisions", "published", "draft", "diagnostics", "publishable",
-  "unchanged", "next_revision"];
+  "unreadable_revisions", "published", "draft", "diagnostics", "warnings",
+  "publishable", "unchanged", "next_revision"];
 //: `digest` names WHICH draft this is, so a publish can echo back the one it
 //: reviewed. The window computes no hash of its own: it carries the server's
 //: word and hands it back, and the server compares.
@@ -431,6 +435,11 @@ export function projectWorkflow(payload) {
   if (draft === undefined) return null;
   const diagnostics = projectDiagnostics(payload.diagnostics);
   if (diagnostics === null) return null;
+  // Sentences, not rows: a warning has no code and nothing acts on it.
+  if (!Array.isArray(payload.warnings)
+      || !payload.warnings.every((row) => typeof row === "string")) {
+    return null;
+  }
   if (typeof payload.publishable !== "boolean") return null;
   // Publishable is true only when there IS a draft and nothing stops it. A
   // workflow with no draft has nothing to publish, which is a different thing
@@ -446,6 +455,7 @@ export function projectWorkflow(payload) {
       : frozenJson(payload.published),
     draft,
     diagnostics,
+    warnings: frozenList(payload.warnings),
     publishable: payload.publishable,
     nextRevision: payload.next_revision,
   });

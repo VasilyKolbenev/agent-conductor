@@ -494,19 +494,40 @@ def test_an_unreadable_run_is_drawn_with_what_the_operator_can_do() -> None:
 
 
 def test_verification_failed_never_appears_without_its_explanation() -> None:
-    """Exit 0 proves the process finished, not that the work was verified."""
-    note = re.search(
-        r'VERIFICATION_FAILED_NOTE = "(.+?)";', source(RUNS_FILE), re.DOTALL)
+    """Exit 0 proves the process finished, not that the work was verified.
+
+    This used to be held by COUNTING: every comparison against the word had to
+    be matched by a sentence written beside it. Five containers each spelled the
+    rule out, and when the schedule brought a SIXTH container into the run
+    detail it was written without either half -- so the count still balanced
+    and this stayed green while the screen showed the word bare. The browser
+    sweep in `test_studio_run_journal` caught it; this did not.
+
+    The shape changed in response, and what is held now cannot have that hole:
+    there is exactly ONE place the word is compared, that place is also the only
+    place the sentence is written, and every container that can show an outcome
+    spends it. A new container cannot forget the rule without failing to call
+    the only thing that renders the outcome's explanation at all.
+    """
+    text = source(RUNS_FILE)
+    note = re.search(r'VERIFICATION_FAILED_NOTE = "(.+?)";', text, re.DOTALL)
     assert note is not None
     words = note.group(1).replace('"\n  + "', "")
     assert "exit 0" in words
     assert "not that the work was verified" in words
-    text = source(RUNS_FILE)
-    # Every place the word is TESTED for is a place the sentence is written.
-    compared = len(re.findall(r'=== "verification_failed"', text))
-    explained = text.count("note(VERIFICATION_FAILED_NOTE)")
-    assert compared >= 3, compared
-    assert explained == compared, (compared, explained)
+    # One comparison, one writer, and they are the same function.
+    assert len(re.findall(r'=== "verification_failed"', text)) == 1, text
+    assert text.count("note(VERIFICATION_FAILED_NOTE)") == 1
+    emitter = re.search(r"function alsoSay\(outcome\) \{(.*?)\n\}",
+                        text, re.DOTALL)
+    assert emitter, "the one-voice emitter is gone"
+    assert '=== "verification_failed"' in emitter.group(1)
+    assert "note(VERIFICATION_FAILED_NOTE)" in emitter.group(1)
+    # And it is SPENT by every container that can show an outcome word: the run
+    # row, the plan section, the position row, the outcome section and the
+    # timeline row. One declaration called once would be the same defect
+    # wearing a new shape, so the call sites are counted too.
+    assert text.count("alsoSay(") == 6, text.count("alsoSay(")
 
 
 def test_a_loop_reads_its_position_and_its_ceiling_from_two_documents() -> None:

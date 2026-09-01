@@ -255,6 +255,13 @@ function whyAsked(row) {
   return carried;
 }
 
+//: Where this answer sends the run, off the server's own schedule.
+//
+// The condition is shown when the road carries one, because otherwise this
+// section overstates itself: a road reading `on_approved` becomes runnable when
+// this gate is APPROVED and is closed by every other answer, and a person
+// deciding is entitled to know which of the four they are being asked for.
+// A road carrying none opens on any decided answer, and says nothing extra.
 function whatItUnblocks(row) {
   const next = rows(row.unblocks);
   if (!next.length) {
@@ -265,6 +272,8 @@ function whatItUnblocks(row) {
     next.map((step) => element("li", {}, [
       element("span", {text: show(step.title)}),
       protocolWord(show(step.node_id)),
+      ...(typeof step.condition === "string"
+        ? [protocolWord(`opens on ${step.condition}`)] : []),
     ])));
 }
 

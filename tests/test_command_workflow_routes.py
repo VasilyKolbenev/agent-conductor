@@ -45,6 +45,7 @@ from conductor.command.workflow_draft import NOT_YET_FIELDS
 
 from tests.test_alpha6_dalio_revision import (
     REVISION_ONE_DIGEST,
+    REVISION_THREE_DIGEST,
     REVISION_TWO_DIGEST,
 )
 from tests.test_command_schema_doubles import DeepPlanAdapter
@@ -86,7 +87,8 @@ NEW_POSTS = tuple(row for row in NEW_ROUTES if row[0] == "POST")
 BOTH_VERBS = "/command/runs"
 #: The two shipped files this module publishes documents derived from. Nothing
 #: any test does may move one byte of either.
-SHIPPED = {"dalio-v1": REVISION_ONE_DIGEST, "dalio-v2": REVISION_TWO_DIGEST}
+SHIPPED = {"dalio-v1": REVISION_ONE_DIGEST, "dalio-v2": REVISION_TWO_DIGEST,
+           "dalio-v3": REVISION_THREE_DIGEST}
 
 
 def target(path):

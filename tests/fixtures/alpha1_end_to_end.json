@@ -152,7 +152,8 @@
         "graph": {
           "definition": null,
           "definition_digest": null,
-          "runtime": null
+          "runtime": null,
+          "schedule": null
         },
         "records": [
           {

@@ -33,6 +33,19 @@ function receiptsOf(detail) {
   return found;
 }
 
+//: The roads out of one step, as the server's own schedule states them.
+//
+// A run read from a build that answers no schedule states NO successors rather
+// than falling back to the edge list. Guessing here is exactly the failure this
+// key exists to remove, and an empty list is a reading a person can see is
+// empty; a wrong one is not.
+function opensOf(schedule, nodeId) {
+  if (!isObject(schedule)) return [];
+  const row = rows(schedule.nodes).filter(isObject)
+    .find((node) => node.node_id === nodeId);
+  return isObject(row) ? rows(row.opens).filter(isObject) : [];
+}
+
 //: Every gate this run's plan names, and where it stands. Read off the plan and
 //: the projection the run read already carries; nothing here is stored twice
 //: and no step is invented that the plan does not hold.
@@ -40,6 +53,7 @@ export function decisionRows(detail) {
   const graph = isObject(detail) ? detail.graph : null;
   const definition = isObject(graph) ? graph.definition : null;
   const runtime = isObject(graph) ? graph.runtime : null;
+  const schedule = isObject(graph) ? graph.schedule : null;
   if (!isObject(definition) || !isObject(runtime)) return Object.freeze([]);
   const run = isObject(detail.run) ? detail.run : {};
   const position = new Map(rows(runtime.nodes).filter(isObject)
@@ -61,10 +75,16 @@ export function decisionRows(detail) {
       purpose: typeof node.purpose === "string" ? node.purpose : null,
       decision: standing && typeof standing.decision === "string"
         ? standing.decision : "unknown",
-      unblocks: Object.freeze(rows(definition.edges).filter(isObject)
-        .filter((edge) => edge.from_node === node.node_id)
-        .map((edge) => Object.freeze({node_id: edge.to_node,
-          title: titles.has(edge.to_node) ? titles.get(edge.to_node) : null}))),
+      // WHERE this answer sends the run, read off the schedule the server
+      // computed. This window used to walk the edge list and call every
+      // out-edge an unblocking, which was true only while no road could carry
+      // a condition -- afterwards it would have promised a person that
+      // approving opens a step their approval actually closes. There is one
+      // successor computation in this product and it is in Python.
+      unblocks: Object.freeze(opensOf(schedule, node.node_id)
+        .map((row) => Object.freeze({node_id: row.to_node,
+          condition: typeof row.condition === "string" ? row.condition : null,
+          title: titles.has(row.to_node) ? titles.get(row.to_node) : null}))),
       receipt: receipts.has(node.gate_id) ? receipts.get(node.gate_id) : null,
     }));
   }

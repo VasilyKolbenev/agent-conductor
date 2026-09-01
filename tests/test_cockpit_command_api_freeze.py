@@ -375,7 +375,8 @@ def test_run_envelope_and_run_read_response_bind_to_the_run_contract():
     # nulls -- an absent key would leave a reader guessing whether the server
     # is old or the run simply has no plan.
     assert read["graph"] == {
-        "definition": None, "definition_digest": None, "runtime": None}
+        "definition": None, "definition_digest": None, "runtime": None,
+        "schedule": None}
     assert not any(row["record_type"] == "graph_definition"
                    for row in read["records"])
     envelope = RunEnvelope.from_dict(read["run"])
