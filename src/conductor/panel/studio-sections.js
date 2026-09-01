@@ -297,6 +297,48 @@ function modelWord(instance) {
 
 // -- 3. Execution ----------------------------------------------------------
 
+//: `containment.SANDBOX_ROUTES` -- every route demand this build can actually
+//: meet. Held to the Python owner by a source test rather than trusted here.
+export const SANDBOX_ROUTES = Object.freeze(["project-root"]);
+//: The one attachment kind this build spends. Named so the sentence below can
+//: say which of the six does something without naming five of them twice.
+const CONSUMED_KIND = "sandbox";
+
+//: What the attachments mean, in the vocabulary of the module that enforces
+//: them, and what they do NOT mean.
+//:
+//: The word "sandbox" is never left to stand on its own here. What a
+//: `project-root` demand buys is ROUTE CONTAINMENT: before a child is started
+//: its working route is walked from the project root with `os.lstat`, and the
+//: walk refuses a symlink, a junction, a reparse point, a hard link, a `..`
+//: segment, or anything not strictly beneath the root. That is a structural
+//: door, not an operating-system one -- there is no privilege drop and no
+//: filesystem jail anywhere in this build -- and the walk establishes its facts
+//: at the instant it reads them, so a component swapped concurrently and an
+//: NTFS alternate data stream are outside it. Saying otherwise on this screen
+//: would be selling a promise the product does not keep.
+function routeAttachments(box, form) {
+  note(box, "A `sandbox` row is a demand this plan makes of the machine that "
+    + "runs the step, and this build provides one route: `project-root`. What "
+    + "it buys is ROUTE CONTAINMENT — before a child is started, the route it "
+    + "will run on is walked from the project root and refused if it leaves: a "
+    + "symlink, a junction, a reparse point, a hard link, a `..` segment, or "
+    + "anything not strictly beneath the root. A step demanding any other "
+    + "route is refused before anything is spawned — when the run is opened, "
+    + "and again when an attempt is authorized.");
+  note(box, "This is NOT operating-system isolation. There is no privilege "
+    + "drop and no filesystem jail in this build, and the check reads the "
+    + "route at the instant it walks it — a component swapped underneath it "
+    + "afterwards, and an NTFS alternate data stream, are outside this door. "
+    + "It is a structural check on where work may stand, and nothing more.");
+  note(box, "The other five kinds — model, tool, skill, session and "
+    + "filesystem — are stored on the step and materialized into a run's plan, "
+    + "and this build does nothing else with them. They accept any name and "
+    + "are refused by nobody, because refusing a name nothing reads would be "
+    + "inventing a promise about it.");
+  resourceAdder(box, form, resourceRows(box, form));
+}
+
 function resourceRows(box, form) {
   const held = rows(form.node.resources).filter(isObject);
   if (!held.length) note(box, "This step attaches nothing.");
@@ -483,11 +525,8 @@ export function executionSection(form) {
     + "counts its passes -- distinct attempts naming this step -- and spent "
     + "before an action is authorized, so the bound is never exceeded once.");
   outputBudget(box, form);
-  box.append(element("h4", {text: "Sandbox and policy attachments"}));
-  note(box, "The closed attachment vocabulary a step may declare. `sandbox` "
-    + "and `filesystem` are the policy-bearing kinds; every one of them is "
-    + "stored on the step and materialized into a run's plan.");
-  resourceAdder(box, form, resourceRows(box, form));
+  box.append(element("h4", {text: "Route and policy attachments"}));
+  routeAttachments(box, form);
   box.append(element("h4", {text: "Provider-specific options"}));
   argumentRows(box, node);
   note(box, "Read-only here. Capability arguments are judged by the reviewed "

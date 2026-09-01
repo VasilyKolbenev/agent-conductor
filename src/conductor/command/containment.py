@@ -379,3 +379,64 @@ def contained_directory(root: Path, relative: Path) -> tuple[Path, str | None]:
     walked, violation = _walk_directory_route(root, relative)
     rendered = render_route_violation(violation) if violation is not None else None
     return walked, rendered
+
+
+# -- what a PLAN may demand of the route its work runs on ---------------------
+
+#: The sandbox routes this build can actually provide, and there is one.
+#:
+#: A `sandbox` resource on a step is a DEMAND the plan makes of whatever machine
+#: runs it. Until this vocabulary existed the demand was recorded and spent by
+#: nobody, so a plan could name any route-shaped word and the run would proceed
+#: exactly as if it had named none -- which is the lie this closes.
+#:
+#: `project-root` names the boundary the walk above is ANCHORED to, and not the
+#: directory a child stands in. The child's cwd is `work/<work_item_id>`, chosen
+#: from the capability's own argument; what `project-root` promises is that this
+#: route is walked from the project root with `os.lstat` and refused if it
+#: leaves -- a symlink, a junction, a reparse point, a hard link, a `..`
+#: segment, or anything not strictly beneath it. That promise is what
+#: `assess_cwd_route` already enforces on every spawn, and naming it is how a
+#: plan says it wants it.
+#:
+#: It is NOT an operating-system sandbox, and this module's own docstring says
+#: why: the walk establishes facts with `os.lstat` at the instant it reads them,
+#: so a concurrent component swap and NTFS alternate data streams are outside
+#: it. There is no privilege drop and no filesystem jail anywhere in this build.
+#: A word added here must name a route this product really provides.
+SANDBOX_ROUTES = frozenset({"project-root"})
+
+#: The one resource kind this build spends. The other five are recorded on the
+#: step, materialized into a run's plan, and consumed by nothing -- which is a
+#: true and deliberately narrow claim, held by a census test rather than by this
+#: comment. Only THIS kind is judged against a closed vocabulary; a `model`,
+#: `tool`, `skill`, `session` or `filesystem` row may name anything id-shaped
+#: and is refused by nobody, because refusing a name this build has no
+#: behaviour for would be inventing a promise about it.
+SANDBOX_KIND = "sandbox"
+
+
+def unprovidable_sandboxes(resources: Iterable[object]) -> tuple[str, ...]:
+    """The sandbox routes one step demands that this build cannot provide.
+
+    A pure reading over a step's declared attachments, in the order the step
+    declared them. Rows of every other kind are passed over -- see
+    `SANDBOX_KIND` -- and so is a row whose shape this function cannot read,
+    because the node contract already refused those at the door and a second
+    opinion here could only disagree with it.
+
+    Args:
+        resources: One step's `GraphResource` rows.
+
+    Returns:
+        Each demanded route this build does not provide, first mention only.
+    """
+    found: list[str] = []
+    for row in resources:
+        kind = getattr(row, "kind", None)
+        name = getattr(row, "name", None)
+        if kind != SANDBOX_KIND or type(name) is not str:
+            continue
+        if name not in SANDBOX_ROUTES and name not in found:
+            found.append(name)
+    return tuple(found)

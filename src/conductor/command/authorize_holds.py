@@ -15,6 +15,7 @@ here is what makes it true early.
 """
 from __future__ import annotations
 
+from .containment import unprovidable_sandboxes
 from .contracts import ActionProposal, ActionRequest
 from .graph_causality import _standing_graph, standing_terminal
 from .graph_schedule import authorized_attempts, schedule
@@ -135,6 +136,43 @@ def _awaiting(computed, proposal: ActionProposal) -> str:
             f"{list(row.awaiting_artifacts)} its plan requires before it runs")
 
 
+def _hold_node_sandbox_is_provided(
+        proposal: ActionProposal, recovered: RecoveredRun) -> None:
+    """A step may not be attempted on a route this build cannot give it.
+
+    A `sandbox` resource is a DEMAND the plan makes of whatever machine runs the
+    work, and until it had a consumer the demand was recorded and spent by
+    nobody: a plan naming any route-shaped word ran exactly as if it had named
+    none. That is the lie this closes, and it is closed BEFORE the spawn rather
+    than at it, because the answer is knowable from the plan alone -- no attempt
+    is made, no task is started, and no receipt has to explain one.
+
+    This is the SECOND of the two doors, and it exists for the runs the first
+    one cannot reach: a run opened before this rule, or a plan written onto a
+    run by another road. `studio_routes.open_run` refuses at the door where a
+    run is created; this refuses at the door where an attempt is authorized.
+    Their sentences are deliberately different, and each is witnessed against
+    its own, because two doors saying one sentence is one door with two names.
+
+    Only `sandbox` rows are judged. The other five kinds are recorded and
+    consumed by nothing, so a name outside any list is admitted and inert --
+    refusing one would be inventing a promise this build does not keep.
+    """
+    definition = _standing_graph(recovered)
+    if definition is None or proposal.node_id is None:
+        return
+    node = next((row for row in definition.nodes
+                 if row.node_id == proposal.node_id), None)
+    if node is None:
+        return
+    missing = unprovidable_sandboxes(node.resources)
+    if missing:
+        raise AuthorizationError(
+            f"plan: step {proposal.node_id!r} demands sandbox route(s) "
+            f"{list(missing)} that this build does not provide, so no attempt "
+            "may be authorized for it")
+
+
 def _hold_plan_admits(
         proposal: ActionProposal, recovered: RecoveredRun) -> None:
     """Everything the PLAN says about this authorization, asked in one place.
@@ -146,6 +184,7 @@ def _hold_plan_admits(
     """
     _hold_run_not_terminal(recovered)
     _hold_node_is_eligible(proposal, recovered)
+    _hold_node_sandbox_is_provided(proposal, recovered)
 
 
 def _hold_run_not_terminal(recovered: RecoveredRun) -> None:

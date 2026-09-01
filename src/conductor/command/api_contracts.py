@@ -224,6 +224,11 @@ _REVIEWED_FACTS = (
     ("draft_conflict", ("workflow_id", "revision"),
      lambda facts: (f"no draft of '{facts['workflow_id']}' stands to publish "
                     f"as revision {facts['revision']}")),
+    # ONE route, never a list: by the rule above a detail is a safe id or a
+    # counting number, reviewed one fact at a time because it is rendered.
+    ("service_refused", ("run_id", "node_id", "sandbox"),
+     lambda facts: (f"step '{facts['node_id']}' demands sandbox route "
+                    f"'{facts['sandbox']}' that this build does not provide")),
 )
 
 
@@ -389,6 +394,18 @@ class ApiRefusal(Exception):
         detail = {"run_id": run_id, "instance_id": instance_id}
         message = (f"instance '{instance_id}' is bound to a provider this build "
                    "cannot reach")
+        return cls(_REFUSAL_BUILD, "service_refused", message, detail)
+
+
+    @classmethod
+    def plan_sandbox_unprovidable(
+            cls, run_id: str, node_id: str, route: str) -> "ApiRefusal":
+        """The STEP and ONE route, both the caller's own words: no vendor is
+        near this fact, so echoing the route says which row to change.
+        """
+        detail = {"run_id": run_id, "node_id": node_id, "sandbox": route}
+        message = (f"step '{node_id}' demands sandbox route "
+                   f"'{route}' that this build does not provide")
         return cls(_REFUSAL_BUILD, "service_refused", message, detail)
 
 

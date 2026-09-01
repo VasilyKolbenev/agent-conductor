@@ -47,7 +47,7 @@ from .command_routes import (
     match_route as _match_route,
     target_path as _target_path,
 )
-from .containment import run_route_violations
+from .containment import run_route_violations, unprovidable_sandboxes
 from .artifacts import ArtifactDocument
 from .contracts import (
     ActionRequest,
@@ -689,9 +689,42 @@ class CommandApi:
         refused for what the machine is, before the registry is asked what the
         pair can serve. Answering them the other way round would report a
         payload problem about work that could never have run at all.
+
+        The ROUTE demand is asked last and is a different kind of question from
+        the two above: those ask whether the machine a step is bound to can do
+        the work, and this asks whether the machine can give the work the route
+        the plan demanded. A step may be perfectly bound and still name a
+        sandbox nothing here provides.
         """
         self._bindings_are_reachable(snapshot, run_id, nodes)
         self._bindings_are_servable(snapshot, run_id, nodes)
+        self._sandboxes_are_provided(run_id, nodes)
+
+    @staticmethod
+    def _sandboxes_are_provided(
+            run_id: str, nodes: Iterable[GraphNode]) -> None:
+        """No run is opened on a plan demanding a route this build cannot give.
+
+        The FIRST of two pre-spawn doors, and the earliest one there is: nothing
+        is created, so there is no run to explain afterwards. `authorize_holds`
+        holds the same rule at the door where an attempt is authorized, for runs
+        opened before this one existed.
+
+        It is deliberately NOT a contract rule. `GraphResource` still admits any
+        id-shaped name, so no shipped document moves a byte, no digest changes,
+        and a journal already carrying an unprovidable route still REPLAYS --
+        it simply authorizes nothing. Refusing in the contract would make such a
+        run unreadable, which turns a plan this build cannot honour into a
+        journal nobody can read.
+        """
+        for node in nodes:
+            # The FIRST unprovidable route, because a refusal detail is one
+            # reviewed fact -- a safe id or a counting number -- and never a
+            # list. The caller fixes that row and the next attempt names the
+            # next, which is how every other refusal on this boundary behaves.
+            for route in unprovidable_sandboxes(node.resources)[:1]:
+                raise ApiRefusal.plan_sandbox_unprovidable(
+                    run_id, node.node_id, route)
 
     def _hold_route(self, run_id: str) -> None:
         if run_route_violations(self._store, run_id):
