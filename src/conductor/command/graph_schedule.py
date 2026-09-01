@@ -7,8 +7,13 @@ a daemon -- nothing here dispatches, nothing runs on a timer, and the product's
 shipped claim that it is not an orchestrator stays true. A computation plus the
 refusals that spend it is the whole of *the plan constrains what may run*.
 
-It imports the two contracts and nothing else: no store, no clock, no adapter,
-no filesystem. `values` is exactly `tuple(row.value for row in
+It imports the two contracts and `artifacts` -- and nothing else: no store, no
+clock, no adapter, no filesystem. `artifacts` joined that list when `block`
+arrived, and it had to: WHICH argument key names a step's required documents is
+the store's own knowledge, spent by the chain rule that judges a published
+artifact, and a second spelling here would let this module offer work the store
+is about to refuse. It is imported for one pure reading and nothing else.
+`values` is exactly `tuple(row.value for row in
 recovered.records)`, the spelling `graph_runtime` already builds, **in journal
 order** -- which the lap arithmetic below depends on and which the store already
 fixes and replay already reproduces.
@@ -45,6 +50,7 @@ from .contracts import (
     DecisionReceipt,
     gate_decision,
 )
+from .artifacts import unresolved_input_refs
 from .graph_definition import GraphDefinition, GraphEdge, GraphNode
 from .graph_schedule_values import (  # noqa: F401 -- this module's own words
     GATE_ROUTES,
@@ -472,7 +478,8 @@ def _road_key(edge: GraphEdge) -> tuple[str, str]:
 
 
 def _node_state(plan: _Plan, node: GraphNode, settled: bool, spent: bool,
-                roads: Mapping[str, str], states: Mapping[str, str]) -> str:
+                roads: Mapping[str, str], states: Mapping[str, str],
+                awaited: bool) -> str:
     """Where one step stands, asked in the one order the answers permit.
 
     Settled first: a settled step is settled whatever its roads now say, which
@@ -480,7 +487,14 @@ def _node_state(plan: _Plan, node: GraphNode, settled: bool, spent: bool,
     unreachable, because a closed road or a dead predecessor ends the matter.
     Then spent, because a step that can never settle again must not be offered
     as runnable -- that would be a button `authorize` is bound to refuse. Then
-    runnable, which needs EVERY road in to be open.
+    AWAITED, for the same reason one line up: a step whose plan says `block` may
+    not be offered while a document it is given does not exist, because the only
+    thing pressing it could produce is the fail-closed receipt `block` was
+    chosen to avoid. Then runnable, which needs EVERY road in to be open.
+
+    Awaited comes after spent deliberately. Both answer `blocked`, and a spent
+    step can never settle again whatever arrives, so that is the stronger fact
+    and it keeps its place in the row a reader is shown.
     """
     if settled:
         return "settled"
@@ -488,7 +502,7 @@ def _node_state(plan: _Plan, node: GraphNode, settled: bool, spent: bool,
     if any(roads[_road_key(edge)] == "closed" for edge in ways) or any(
             states[edge.from_node] == "unreachable" for edge in ways):
         return "unreachable"
-    if spent:
+    if spent or awaited:
         return "blocked"
     if all(roads[_road_key(edge)] == "open" for edge in ways):
         return "runnable"
@@ -500,6 +514,25 @@ def _spent(plan: _Plan, node: GraphNode) -> bool:
     if node.attempt_bound is None or node.capability is None:
         return False
     return authorized_attempts(plan.values, node.node_id) >= node.attempt_bound
+
+
+def _awaited(plan: _Plan, node: GraphNode) -> tuple[str, ...]:
+    """Which documents this step's plan says it must wait for, if any.
+
+    Empty for every step but one: a step whose `missing_artifact_policy` is
+    `block` and whose required inputs are not all standing among this run's
+    artifact records. `fail` and an absent policy answer nothing here, and that
+    is the whole of "absent is fail" in the scheduler -- both leave the step to
+    be offered, reached, and refused at spawn exactly as they always were.
+
+    WHICH argument key names those inputs is not known here and must not be:
+    `artifacts` owns that map and the store's own chain rule spends it too. A
+    second spelling in this module would let a screen offer work the store is
+    about to refuse.
+    """
+    if node.missing_artifact_policy != "block":
+        return ()
+    return unresolved_input_refs(plan.values, node.capability, node.arguments)
 
 
 def _run_state(rows: tuple[NodeSchedule, ...]) -> str:
@@ -613,10 +646,16 @@ def _walked_states(definition: GraphDefinition, plan: _Plan,
         settled[node_id] = _is_settled(
             plan, node, frames[node_id], owed[node_id], roads)
         spent = _spent(plan, node)
+        awaited = _awaited(plan, node)
         states[node_id] = _node_state(
-            plan, node, settled[node_id], spent, roads, states)
+            plan, node, settled[node_id], spent, roads, states, bool(awaited))
         rows[node_id] = NodeSchedule(
             node_id=node_id, state=states[node_id],
+            # Named only where it is the answer to "why is this not offered".
+            # A settled step resolved its inputs to run at all, and naming
+            # documents for a step no run reaches would be a sentence about
+            # work that will not happen.
+            awaiting_artifacts=awaited if states[node_id] == "blocked" else (),
             opened_by=_by_state(plan, node_id, roads, "open"),
             blocked_by=_by_state(plan, node_id, roads, "pending"),
             closed_by=_by_state(plan, node_id, roads, "closed"),

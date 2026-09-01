@@ -37,8 +37,13 @@ PANEL = Path(__file__).resolve().parents[1] / "src" / "conductor" / "panel"
 #: window that draws them. Listed again here it would be a second opinion; read
 #: from the source it is the same list, so a build that renames a step moves
 #: this test with it and a build that stops writing one reds.
+#: Declared in `studio-runwords.js` since `studio-runs.js` crossed the line cap
+#: -- the screen re-exports it, but this reads the DECLARATION so it is still
+#: one list read from its one owner rather than from a re-export that could
+#: outlive it.
 TIMELINE_STEPS = tuple(_frozen_list(
-    (PANEL / "studio-runs.js").read_text(encoding="utf-8"), "TIMELINE_STEPS"))
+    (PANEL / "studio-runwords.js").read_text(encoding="utf-8"),
+    "TIMELINE_STEPS"))
 
 
 @pytest.fixture

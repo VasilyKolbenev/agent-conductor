@@ -50,7 +50,7 @@ import {
   editable,
   note,
   sectionOf,
-  unsupported,
+  selectField,
   withArgument,
 } from "./studio-fields.js";
 
@@ -341,6 +341,65 @@ function runProducts(box, form) {
     + "it — the Runs screen shows the same three facts and no more.");
 }
 
+// -- 3b. what happens when a required input is not there --------------------
+
+//: `graph_values.MISSING_ARTIFACT_POLICIES` -- the two fail-closed words a plan
+//: may say. Held to the Python owner by a source test rather than trusted here,
+//: the way every other closed vocabulary on this surface is.
+export const MISSING_ARTIFACT_POLICIES = Object.freeze(["fail", "block"]);
+
+//: The label the register carried while this had no durable home. It keeps the
+//: label, so a person who read the old sentence finds the control where the
+//: explanation used to be.
+function missingArtifactPolicy(box, form, run) {
+  const {node} = form;
+  const named = typeof node.missing_artifact_policy === "string"
+    ? node.missing_artifact_policy : "";
+  // The pairing rule both Python contracts hold, said here in the vocabulary a
+  // person drew in: a step nothing hands a document to has no input to be
+  // missing, and the reason names the CAPABILITY because that is the half they
+  // can change.
+  if (artifactField(node.capability, INPUT_KINDS) === null) {
+    context(box, "Missing-artifact behaviour",
+      "none — this step is given no input artifacts, so there is none to be "
+      + "missing", "the workflow contract");
+    return;
+  }
+  selectField(box, form, "Missing-artifact behaviour",
+    "missing_artifact_policy",
+    [{value: "", label: "fail — reach the step, then refuse it (the default)"},
+      {value: "fail", label: "fail — reach the step, then refuse it"},
+      {value: "block",
+        label: "block — do not offer the step until the artifact exists"}],
+    named);
+  note(box, "Both answers are fail-closed and nothing here skips the step or "
+    + "substitutes another document. With FAIL — which is also what saying "
+    + "nothing means — the step is offered, reached, and refused when the "
+    + "input cannot be resolved: no task is spawned and no model call is "
+    + "spent, and the run carries a durable failure. With BLOCK the step is "
+    + "never offered at all while the artifact is absent, so nothing is "
+    + "attempted and nothing fails — the plan waits, and this screen says "
+    + "which document it is waiting for.");
+  runWaiting(box, run, node);
+}
+
+//: What the OPEN run is doing about it, read off the schedule the server
+//: computed rather than recomputed here. Absent for a step that is not waiting,
+//: because a line saying "waiting for nothing" is a line about nothing.
+function runWaiting(box, run, node) {
+  const standing = run && run.schedule
+    ? rows(run.schedule.nodes).find((row) => row.node_id === node.node_id)
+    : null;
+  const waiting = standing === null || standing === undefined
+    ? [] : rows(standing.awaiting_artifacts);
+  if (!waiting.length) return;
+  context(box, "Waiting for", waiting.join(", "),
+    `the plan run ${run.runId} froze`);
+  note(box, "This step is not offered until every artifact named above "
+    + "exists in this run. Publish them, or answer the step that produces "
+    + "them, and it becomes available.");
+}
+
 // -- 4. Inputs and outputs -------------------------------------------------
 
 export function artifactSection(form) {
@@ -350,12 +409,7 @@ export function artifactSection(form) {
   producedArtifacts(box, form);
   box.append(element("h4", {text: "Handoff mapping"}));
   handoffMapping(box, form);
-  unsupported(box, "Missing-artifact behaviour", "What HAPPENS is fixed, and "
-    + "it is fail-closed: a required input that cannot be resolved when this "
-    + "step is reached refuses the step, so no task is spawned and no model "
-    + "call is spent. What a workflow cannot do is ask for anything else — "
-    + "there is no per-step policy field for waiting, skipping or substituting "
-    + "to be stored in.");
+  missingArtifactPolicy(box, form, run);
   box.append(element("h4", {text: "What this run produced"}));
   runProducts(box, form);
   const refs = run && run.position ? rows(run.position.evidence_refs) : [];

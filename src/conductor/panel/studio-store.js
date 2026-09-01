@@ -262,6 +262,22 @@ function nodeProblems(node, found) {
       + "draft cannot be saved until the step names a role or the policy "
       + "is cleared.");
   }
+  // The half of the missing-artifact pairing rule this module can answer. The
+  // contract's rule is about the CAPABILITY -- only the two the reviewed
+  // schemas hand documents to may name a policy -- and which those are lives in
+  // `command-projection`, which the module table does not grant this file and
+  // should not: a reducer that could read the argument schemas could answer
+  // about a step from something other than the draft it was given. So the
+  // binding half is caught here, before the wire, and a capability SWITCH that
+  // strands a policy is refused at the door by `TemplateNode`, whose sentence
+  // names the capability and sends the person to the control they changed.
+  if (Object.hasOwn(node, "missing_artifact_policy")
+      && !Object.hasOwn(node, "capability")) {
+    found.push(`Step ${named} says what to do about a missing input artifact `
+      + "and is given none. A step that binds no capability is handed no "
+      + "documents, so this draft cannot be saved until the step names one or "
+      + "the behaviour is cleared.");
+  }
   if (rows(node.resources).length > MAX_RESOURCES) {
     found.push(`Step ${named} attaches more than ${MAX_RESOURCES} resources.`);
   }

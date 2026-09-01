@@ -44,7 +44,11 @@ from conductor.command.artifacts import (
     requires_input_artifacts,
     unresolved_input_refs,
 )
-from conductor.command.contracts import ContractError, canonical_json
+from conductor.command.contracts import (
+    ContractError,
+    DecisionReceipt,
+    canonical_json,
+)
 from conductor.command.graph_definition import (
     GraphDefinition,
     GraphEdge,
@@ -52,6 +56,7 @@ from conductor.command.graph_definition import (
     _rebuilt_node,
 )
 from conductor.command.graph_schedule import schedule
+from conductor.command.run_store import CorruptRun, RunStore, snapshot_digest
 from conductor.command.graph_template import (
     RunBinding,
     TemplateError,
@@ -67,10 +72,14 @@ from conductor.command.graph_values import (
     settled_missing_artifact_policy,
 )
 from conductor.command.workflow_draft import parse_document, publish_candidate
+from tests.test_command_run_store import CONFIG, a_run
 
 NOW = "2026-09-01T10:00:00Z"
 SOLO = {"instances": [{"id": "solo", "adapter": "claude-code"}]}
 STARTERS = ("dalio-v1", "dalio-v2", "dalio-v3")
+#: The store-backed witnesses use their own run id, because the run they open
+#: is a real one built by `tests.test_command_run_store`'s own helpers.
+STORE_RUN = "run-001"
 
 #: The four capabilities the reviewed schemas hand no document to. Each names an
 #: action or an attempt instead, which is why a policy about a missing DOCUMENT
@@ -127,9 +136,10 @@ def a_plan(*, policy=None) -> GraphDefinition:
                GraphEdge(from_node="gate", to_node="tell")))
 
 
-def an_artifact(ref: str, *, at: str = "artifact-1") -> ArtifactDocument:
+def an_artifact(ref: str, *, at: str = "artifact-1",
+                run: str = "run-001") -> ArtifactDocument:
     return ArtifactDocument(
-        artifact_id=at, artifact_ref=ref, run_id="run-001", created_at=NOW,
+        artifact_id=at, artifact_ref=ref, run_id=run, created_at=NOW,
         media_type="text/markdown", content="# Brief\n\nwhat to do")
 
 

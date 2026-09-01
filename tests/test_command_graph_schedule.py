@@ -438,8 +438,9 @@ def test_the_schedule_never_sorts_and_never_answers_with_a_set():
                for row in (NodeSchedule(
                    node_id="n", state="blocked", opened_by=(), blocked_by=(),
                    closed_by=(), opens=(), required_pass=1, settled_laps=0,
-                   attempts_spent=False),)
-               for name in ("opened_by", "blocked_by", "closed_by", "opens"))
+                   attempts_spent=False, awaiting_artifacts=()),)
+               for name in ("opened_by", "blocked_by", "closed_by", "opens",
+                            "awaiting_artifacts"))
 
 
 def test_every_state_a_step_can_hold_is_one_of_the_four_words():

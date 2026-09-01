@@ -50,9 +50,22 @@ from conductor.command.run_store import _RECORDS
 
 PANEL = Path(__file__).resolve().parents[1] / "src" / "conductor" / "panel"
 RUNS_FILE = PANEL / "studio-runs.js"
+#: The closed vocabularies this screen is held to moved next door when
+#: `studio-runs.js` crossed the line cap. The parity guards below read THAT
+#: file against their Python owners; everything about how the screen
+#: RENDERS is still read from the screen itself. Two files, one screen, and
+#: the split is invisible to every other reader because `studio-runs.js`
+#: re-exports every name.
+WORDS_FILE = PANEL / "studio-runwords.js"
 PEOPLE_FILE = PANEL / "studio-people.js"
 #: Both files this slice owns, and the only files it may write.
 OWNED = (RUNS_FILE, PEOPLE_FILE)
+#: Where each screen's closed words are DECLARED. Only the Runs screen's
+#: moved, so this is a lookup rather than a rule: a guard that asked the
+#: rendering file for a vocabulary would red for the wrong reason, and one
+#: that asked the words file about rendering would pass for the wrong one.
+WORDS_OF = {RUNS_FILE: PANEL / "studio-runwords.js",
+            PEOPLE_FILE: PEOPLE_FILE}
 #: The seven words a Studio screen container may stand in, from the frontend
 #: contract. Both modules must say all seven and no eighth.
 SCREEN_STATES = frozenset({
@@ -297,45 +310,46 @@ def test_every_listener_is_attached_to_a_real_form_control(path: Path) -> None:
 
 
 def test_the_runs_screen_spells_the_projections_node_phases() -> None:
-    assert frozen_list(RUNS_FILE, "NODE_PHASES") == list(NODE_PHASES)
+    assert frozen_list(WORDS_FILE, "NODE_PHASES") == list(NODE_PHASES)
 
 
 @pytest.mark.parametrize("path", OWNED, ids=lambda path: path.name)
 def test_both_screens_spell_the_projections_gate_states(path: Path) -> None:
-    assert sorted(frozen_list(path, "GATE_STATES")) == sorted(GATE_STATES)
+    assert sorted(frozen_list(WORDS_OF[path], "GATE_STATES")) == sorted(
+        GATE_STATES)
 
 
 def test_the_runs_screen_spells_the_contracts_result_outcomes() -> None:
-    assert frozen_list(RUNS_FILE, "RESULT_OUTCOMES") == sorted(_RESULT_OUTCOMES)
+    assert frozen_list(WORDS_FILE, "RESULT_OUTCOMES") == sorted(_RESULT_OUTCOMES)
 
 
 def test_the_runs_screen_spells_the_contracts_verification_states() -> None:
-    assert frozen_list(RUNS_FILE, "VERIFICATION_STATES") == sorted(
+    assert frozen_list(WORDS_FILE, "VERIFICATION_STATES") == sorted(
         _VERIFICATION_STATES)
 
 
 def test_the_runs_screen_spells_the_contracts_run_states() -> None:
-    assert frozen_list(RUNS_FILE, "RUN_STATES") == sorted(_RUN_STATES)
+    assert frozen_list(WORDS_FILE, "RUN_STATES") == sorted(_RUN_STATES)
 
 
 def test_the_runs_screen_spells_both_durable_attempt_phases() -> None:
-    assert frozen_list(RUNS_FILE, "ATTEMPT_PHASES") == sorted(ATTEMPT_PHASES)
+    assert frozen_list(WORDS_FILE, "ATTEMPT_PHASES") == sorted(ATTEMPT_PHASES)
 
 
 def test_the_runs_screen_names_every_record_kind_the_store_can_hold() -> None:
     """The timeline renders the journal, so it must know every kind of it."""
-    assert frozen_keys(RUNS_FILE, "RECORD_KINDS") == sorted(_RECORDS)
+    assert frozen_keys(WORDS_FILE, "RECORD_KINDS") == sorted(_RECORDS)
 
 
 @pytest.mark.parametrize("name", ["INSTANT_FIELDS", "ROW_FACTS"])
 def test_every_timeline_table_is_keyed_by_real_record_kinds(name: str) -> None:
-    assert frozen_keys(RUNS_FILE, name) == sorted(_RECORDS)
+    assert frozen_keys(WORDS_FILE, name) == sorted(_RECORDS)
 
 
 def test_every_field_a_timeline_row_shows_is_one_the_record_really_has() -> None:
     """A misspelled field renders nothing and looks like an empty record. The
     names are held against each contract's own exact field set."""
-    facts = frozen_arrays(RUNS_FILE, "ROW_FACTS")
+    facts = frozen_arrays(WORDS_FILE, "ROW_FACTS")
     assert set(facts) == set(_RECORDS)
     for kind, names in sorted(facts.items()):
         contract, _ = _RECORDS[kind]
@@ -345,7 +359,7 @@ def test_every_field_a_timeline_row_shows_is_one_the_record_really_has() -> None
 
 
 def test_every_instant_a_timeline_row_stamps_is_the_records_own() -> None:
-    stamps = frozen_pairs(RUNS_FILE, "INSTANT_FIELDS")
+    stamps = frozen_pairs(WORDS_FILE, "INSTANT_FIELDS")
     assert set(stamps) == set(_RECORDS)
     for kind, stamp in sorted(stamps.items()):
         contract, _ = _RECORDS[kind]
@@ -355,14 +369,14 @@ def test_every_instant_a_timeline_row_stamps_is_the_records_own() -> None:
 def test_the_runs_screen_spells_the_whole_authority_ladder_in_order() -> None:
     """A mode a run can hold and this screen cannot describe is a silent gap,
     and the ladder's own order is the enum's declaration order."""
-    assert frozen_keys(RUNS_FILE, "CONTROL_MODES") == [
+    assert frozen_keys(WORDS_FILE, "CONTROL_MODES") == [
         mode.value for mode in ControlMode]
 
 
 def test_the_five_progression_steps_are_records_and_attempt_phases() -> None:
     """The progression is not a story this screen tells: three of its five
     names are record kinds and two are the attempt event's own phases."""
-    steps = frozen_list(RUNS_FILE, "TIMELINE_STEPS")
+    steps = frozen_list(WORDS_FILE, "TIMELINE_STEPS")
     assert steps == ["action_proposal", "action_request", "effect_lease",
                      "execution_observed", "action_result"]
     assert {steps[0], steps[1], steps[4]} <= set(_RECORDS)
@@ -509,8 +523,13 @@ def test_verification_failed_never_appears_without_its_explanation() -> None:
     spends it. A new container cannot forget the rule without failing to call
     the only thing that renders the outcome's explanation at all.
     """
-    text = source(RUNS_FILE)
-    note = re.search(r'VERIFICATION_FAILED_NOTE = "(.+?)";', text, re.DOTALL)
+    # The SENTENCE moved to the words module and the one-voice emitter that
+    # spends it did not. Both are still read, so the rule -- one comparison,
+    # one writer, one emitter, spent by every container -- is held across
+    # the split rather than weakened by it.
+    text, words = source(RUNS_FILE), source(WORDS_OF[RUNS_FILE])
+    note = re.search(r'VERIFICATION_FAILED_NOTE = "(.+?)";', words,
+                     re.DOTALL)
     assert note is not None
     words = note.group(1).replace('"\n  + "', "")
     assert "exit 0" in words
@@ -571,13 +590,17 @@ def test_no_screen_branches_on_a_provider_name(path: Path) -> None:
 def test_no_state_is_carried_by_colour_alone(path: Path) -> None:
     """Every chip draws a glyph and a word. A channel with no glyph could
     reach the screen as colour and nothing else."""
-    text = source(path)
-    glyphs = set(frozen_keys(path, "CHANNEL_GLYPHS"))
+    # The chips are drawn HERE and the channels are declared THERE, which
+    # for one screen is now two files. Both halves are still asked, so a
+    # channel that mapped to no glyph would still be caught wherever the
+    # table lives.
+    text, words = source(path), source(WORDS_OF[path])
+    glyphs = set(frozen_keys(WORDS_OF[path], "CHANNEL_GLYPHS"))
     assert glyphs == {"pass", "wait", "fail", "none"}
     used = set(re.findall(r'chip\("(\w+)"', text))
     assert used <= glyphs, f"{path.name} draws {sorted(used - glyphs)}"
-    for name in re.findall(r"const (\w+_CHANNEL) = Object\.freeze", text):
-        values = set(frozen_pairs(path, name).values())
+    for name in re.findall(r"const (\w+_CHANNEL) = Object\.freeze", words):
+        values = set(frozen_pairs(WORDS_OF[path], name).values())
         assert values <= glyphs, f"{path.name}: {name} maps to {values}"
 
 

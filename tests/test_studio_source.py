@@ -52,6 +52,7 @@ MODEL = PANEL / "studio-model.js"
 #: the packaged directory in both directions.
 MODULES = ("studio.js", "studio-store.js", "studio-view.js", "studio-model.js",
            "studio-canvas.js", "studio-inspector.js", "studio-runs.js",
+           "studio-runwords.js",
            "studio-people.js", "studio-runread.js", "studio-review.js",
            "studio-layout.js", "studio-edits.js",
            "studio-sections.js", "studio-artifacts.js", "studio-runform.js",
@@ -125,7 +126,13 @@ PERMITTED_IMPORTS = {
                                       "./studio-transitions.js"}),
     "studio-runs.js": frozenset({"./command-view.js",
                                  "./command-projection.js",
-                                 "./studio-model.js"}),
+                                 "./studio-model.js",
+                                 "./studio-runwords.js"}),
+    #: The Runs screen's closed vocabularies, each a copy of exactly one
+    #: Python owner. It imports NOTHING, for `studio-model.js`'s reason: a
+    #: list this build must hold equal to a Python module may not be able to
+    #: answer from anything but itself.
+    "studio-runwords.js": frozenset(),
     "studio-people.js": frozenset({"./command-view.js",
                                    "./command-projection.js",
                                    "./studio-model.js"}),

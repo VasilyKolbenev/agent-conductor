@@ -63,6 +63,8 @@ from conductor.command.adapters.deep_commands import DeepDispatchArgs
 from conductor.command.adapters.headless_values import changed_paths
 from conductor.command.artifacts import ArtifactDocument
 from conductor.command.contracts import ActionProposal, RunEnvelope, _content_digest
+from conductor.command.graph_definition import GraphDefinition, GraphNode
+from conductor.command.graph_schedule import schedule
 from conductor.command.run_store import RunStore, snapshot_digest
 from conductor.command.store_errors import RecordConflict, StoreError
 from conductor.command.runtime import (
@@ -403,3 +405,101 @@ def test_the_refusal_names_the_unavailable_handoff_at_the_adapter_boundary(
     assert receipt.detail == UNAVAILABLE
     assert _fakeclaude.prompt_spawns(flow["build_log"]) == []
     assert [row.kind for row in store.read(RUN_ID).records] == before
+
+
+# -- 5. with `block`, the plan waits instead of spawning a refusal ------------
+
+
+def _before_the_dispatch(flow) -> tuple:
+    """This run's journal at the moment B became eligible, and no later.
+
+    Every record of B's own action is dropped, so what is left is exactly what
+    stood when the plan was asked whether B could run: the seed, A's records,
+    and whatever A published. A real journal prefix rather than a hand-built
+    one -- these bytes were written by the transports above.
+    """
+    action_id = flow["second"].request.action_id
+    return tuple(
+        row.value for row in flow["store"].read(RUN_ID).records
+        if getattr(row.value, "action_id", None) != action_id)
+
+
+def _waiting_plan(policy: str | None) -> GraphDefinition:
+    """One step, no roads in, needing the document A publishes.
+
+    A REVIEW rather than a dispatch, and the contract chose that: an
+    effect-capable step must stand behind a gate, and a gate would give this
+    plan a road whose state could open or close the step for a reason that is
+    not the document. A review consumes the same handoff by the same reference
+    through the same one authority, so the step below is blocked or runnable
+    for exactly one reason and the witness can say which.
+    """
+    return GraphDefinition(
+        graph_id="graph-handoff", run_id=RUN_ID, created_at=NOW,
+        nodes=(GraphNode(node_id="check", kind="task", title="Check it",
+                         instance_id=REVIEWER, capability="review",
+                         arguments={"work_item_id": "work-flow",
+                                    "target_artifact_refs": [HANDOFF_REF],
+                                    "result_artifact_ref": "artifact-verdict",
+                                    "review_profile": "quality"},
+                         missing_artifact_policy=policy),),
+        edges=())
+
+
+def test_a_blocking_step_waits_until_a_real_review_publishes_its_input(tmp_path):
+    """The arrival, end to end, on the road a review actually takes.
+
+    The step has no predecessors at all, so nothing about the plan's shape can
+    open or close it: the ONLY difference between the two journals below is
+    whether `artifact-handoff` exists. In the first it does not, because no
+    review ran. In the second a real review ran through a real transport and
+    published it, and the store admitted the document only because its chain
+    rule agreed it was the one that request asked for.
+
+    That is the owner's requirement demonstrated rather than described: with
+    `block`, the plan WAITS for a document, and the thing that ends the wait is
+    the document arriving.
+    """
+    # Two roots: one run id, and a store refuses to open it twice.
+    waiting = schedule(_waiting_plan("block"), _before_the_dispatch(
+        _flow(tmp_path / "unpublished", seeded=False)))
+    arrived = schedule(_waiting_plan("block"), _before_the_dispatch(
+        _flow(tmp_path / "published", seeded=True)))
+
+    assert waiting.state_of("check") == "blocked"
+    assert waiting.nodes[0].awaiting_artifacts == (HANDOFF_REF,)
+    assert waiting.runnable == () and waiting.run_state == "stalled"
+
+    assert arrived.state_of("check") == "runnable"
+    assert arrived.nodes[0].awaiting_artifacts == ()
+    assert arrived.runnable == ("check",) and arrived.run_state == "open"
+
+
+@pytest.mark.parametrize("policy", [None, "fail"])
+def test_the_same_journal_without_block_offers_the_step_and_fails_closed(
+        tmp_path, policy):
+    """The discriminating control, and it is the one that carries the ruling.
+
+    The SAME journal that leaves a `block` step waiting leaves a `fail` step --
+    and a step naming no policy at all -- RUNNABLE. Without this, every
+    assertion above would also pass on a build that blocked every step whose
+    inputs were missing, which is not what any plan written before this field
+    existed asks for.
+
+    What such a step then meets is the shipped fail-closed refusal, asserted
+    here as the same sentence section 4 above holds: the plan offers the work,
+    the transport resolves the input, and the refusal is durable with no task
+    spawned. `fail` and silence are one behaviour, said twice.
+    """
+    flow = _flow(tmp_path, seeded=False)
+    offered = schedule(_waiting_plan(policy), _before_the_dispatch(flow))
+
+    assert offered.state_of("check") == "runnable"
+    assert offered.nodes[0].awaiting_artifacts == ()
+    assert offered.run_state == "open"
+
+    builder = flow["builder"]
+    receipt = builder.execute(builder.prepare(flow["second"].request))
+    assert receipt.outcome == "failed"
+    assert receipt.detail == UNAVAILABLE
+    assert _fakeclaude.prompt_spawns(flow["build_log"]) == []

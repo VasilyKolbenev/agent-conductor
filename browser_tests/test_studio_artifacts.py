@@ -71,6 +71,16 @@ NOW = "2026-08-19T09:00:00Z"
 #: document the run really froze.
 RUN_ID = "run-001"
 PRODUCING_NODE = "goal"
+#: The step this run's plan tells to WAIT, and the document it waits
+#: for. Nothing in the seeded journal publishes `artifact-plan`, which
+#: is what makes the wait real rather than described.
+WAITING_NODE = "do"
+AWAITED_REF = "artifact-plan"
+#: And a step waiting for a document and for nothing else: no road
+#: reaches it, so its row is the one that shows what a screen says when
+#: the ONLY reason is the document.
+LONE_WAITING_NODE = "cross-check"
+LONE_AWAITED_REF = "artifact-audit"
 #: The reference the first step of the cycle is GIVEN, which nothing in the
 #: document produces -- the shipped starters' own external input.
 EXTERNAL_REF = "artifact-brief"
@@ -136,21 +146,66 @@ def _run_definition():
     for a snapshot: a `GraphNode` rebuilt from a partial reading is a different
     node wearing the same id.
     """
-    nodes = []
-    for node in dalio_nodes():
-        if node.node_id == PRODUCING_NODE:
-            node = GraphNode(
-                node_id=node.node_id, kind=node.kind, title=node.title,
-                stage=node.stage, instance_id=node.instance_id,
-                capability=node.capability,
-                arguments={**node.arguments,
-                           "result_artifact_ref": HANDOFF_REF},
-                resources=node.resources, gate_id=node.gate_id, loop=node.loop,
-                timeout_seconds=node.timeout_seconds,
-                attempt_bound=node.attempt_bound, purpose=node.purpose,
-                verifier_instance_id=node.verifier_instance_id)
-        nodes.append(node)
+    nodes = [_publishing(node) if node.node_id == PRODUCING_NODE
+             else _waiting(node) if node.node_id == WAITING_NODE
+             else node
+             for node in dalio_nodes()]
+    nodes.append(_lone_waiter(nodes[0].instance_id))
     return dalio_definition(run_id=RUN_ID, nodes=tuple(nodes))
+
+
+
+def _copy(node, **changes):
+    """One node through the production contract, every field carried by name.
+
+    The house rule for a snapshot: a `GraphNode` rebuilt from a partial reading
+    is a different node wearing the same id. `payload()` rather than
+    `arguments`, because the contract freezes the map and sees a replacement by
+    identity.
+    """
+    values = dict(
+        node_id=node.node_id, kind=node.kind, title=node.title,
+        stage=node.stage, instance_id=node.instance_id,
+        capability=node.capability, arguments=node.payload(),
+        resources=node.resources, gate_id=node.gate_id, loop=node.loop,
+        timeout_seconds=node.timeout_seconds,
+        attempt_bound=node.attempt_bound, purpose=node.purpose,
+        verifier_instance_id=node.verifier_instance_id)
+    values.update(changes)
+    return GraphNode(**values)
+
+
+def _publishing(node):
+    """The one node taught to publish its output, so the seed can carry one."""
+    return _copy(node, arguments={**node.payload(),
+                                  "result_artifact_ref": HANDOFF_REF})
+
+
+def _waiting(node):
+    """The step told to WAIT, which is also behind an unanswered gate.
+
+    It requires `artifact-plan`, which this run's journal never publishes, so
+    its row carries both reasons a step can be held back at once.
+    """
+    return _copy(node, missing_artifact_policy="block")
+
+
+def _lone_waiter(instance_id):
+    """A step waiting for a document and for NOTHING else.
+
+    No road reaches it, which a review may do -- it is offerable the moment its
+    document exists. `do` cannot show what a screen says when only the document
+    is missing, because its gate is unanswered too, and the empty "Waiting on"
+    this field made reachable is exactly that case.
+    """
+    return GraphNode(
+        node_id=LONE_WAITING_NODE, kind="task", title="Cross-check",
+        instance_id=instance_id, capability="review",
+        arguments={"work_item_id": "wi-001",
+                   "target_artifact_refs": [LONE_AWAITED_REF],
+                   "result_artifact_ref": "artifact-crosscheck",
+                   "review_profile": "quality"},
+        missing_artifact_policy="block")
 
 
 def _seed_run(root: Path) -> None:

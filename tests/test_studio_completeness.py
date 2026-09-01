@@ -115,7 +115,6 @@ from tests.test_studio_canvas import INSPECTOR, PANEL, ROOT, _code, _text
 #: `close_if_terminal` records that ending through the road it already had.
 #: tests/test_command_failure_policy.py drives it end to end.
 UNSUPPORTED_FIELDS = (
-    "Missing-artifact behaviour",
     "Success criteria",
 )
 
@@ -648,43 +647,93 @@ def test_the_handoff_mapping_is_derived_from_the_document_and_names_producers():
     assert "refOf(node, declared.name) === ref" in producers, producers
 
 
-def test_the_missing_artifact_line_says_what_this_build_really_does():
-    """The one label of the four that stayed -- and it had to stop lying.
+def test_the_missing_artifact_behaviour_became_a_control_and_kept_its_label():
+    """The last of the four routing-and-behaviour labels to become real.
 
-    Its reason was "With no declared artifact requirement there is no
-    missing-artifact case for a policy to answer", which was true while nothing
-    could declare one and became false the moment the control above shipped.
-
-    What is unsupported is the POLICY, not the behaviour: the behaviour is
-    fixed and fail-closed, and it is what `artifact_transport` really does on
-    both roads -- a dispatch whose input will not resolve and a review whose
-    input will not resolve each answer `failed` with no task spawned. So the
-    line now states the behaviour and names the absent field, and the old
-    sentence is asserted GONE rather than merely not asserted present.
+    It kept the LABEL it carried while it had no durable home, so a person who
+    read the old sentence finds the control where the explanation used to be --
+    and the register census above no longer names it, which is the other half
+    of the same fact. Deleting the control entirely would satisfy that census,
+    and this is what refuses it.
     """
     inspector = _code(*INSPECTOR)
-    reason = re.search(
-        r'unsupported\(box, "Missing-artifact behaviour", (.*?)\);',
+    body = re.search(
+        r"function missingArtifactPolicy\(box, form, run\) \{(.*?)\n\}",
         inspector, re.DOTALL).group(1)
-    assert "no missing-artifact case" not in inspector, (
-        "the missing-artifact line still says there is no such case")
-    assert "fail-closed" in reason, reason
-    assert "no task is spawned" in reason, reason
-    assert "no per-step policy field" in reason, reason
-    # A CHANGE DETECTOR on the two roads this line describes, not a proof of
-    # them: the transport's own wording is free to be rewritten, and what
-    # really holds the behaviour is
+    assert 'unsupported(box, "Missing-artifact behaviour"' not in inspector
+    assert 'selectField(box, form, "Missing-artifact behaviour",' in body, body
+    assert '"missing_artifact_policy",' in body, body
+    assert "missingArtifactPolicy(box, form, run);" in inspector
+
+
+def test_the_control_offers_the_two_words_the_python_layer_owns():
+    """Read out of the layer that owns the vocabulary, never typed beside the
+    control: a window offering a third word would be offering a plan the store
+    refuses, and one offering a word Python dropped would hide a real change."""
+    from conductor.command.graph_values import MISSING_ARTIFACT_POLICIES
+
+    inspector = _code(*INSPECTOR)
+    declared = re.search(
+        r"export const MISSING_ARTIFACT_POLICIES = Object\.freeze\(\[(.*?)\]\)",
+        inspector, re.DOTALL).group(1)
+    offered = set(re.findall(r'"([a-z_]+)"', declared))
+
+    assert offered == set(MISSING_ARTIFACT_POLICIES), offered
+    body = re.search(
+        r"function missingArtifactPolicy\(box, form, run\) \{(.*?)\n\}",
+        inspector, re.DOTALL).group(1)
+    assert all(f'value: "{word}"' in body for word in offered), body
+
+
+def test_the_control_states_both_words_are_fail_closed_and_neither_skips():
+    """The promise beside the control, and it is the one a person acts on.
+
+    Both answers refuse to proceed without the document and the sentence says
+    so in both directions -- what each word does, and what NEITHER does. A
+    screen that offered `block` without saying `fail` is what silence means
+    would leave every plan written before this field existed unexplained.
+    """
+    inspector = _code(*INSPECTOR)
+    body = re.search(
+        r"function missingArtifactPolicy\(box, form, run\) \{(.*?)\n\}",
+        inspector, re.DOTALL).group(1)
+
+    assert "Both answers are fail-closed" in body, body
+    assert "nothing here skips the step" in body, body
+    assert "which is also what saying" in body and "nothing means" in body, body
+    assert "no task is spawned" in body, body
+    assert "never offered at all while the artifact is absent" in body, body
+    # A CHANGE DETECTOR on the two roads the FAIL half describes, not a proof of
+    # them: what really holds the behaviour is
     # tests/test_command_artifact_dispatch.py, tests/test_command_claude_review.py
     # and the negative arm of tests/test_command_artifact_flow.py, each of
     # which drives a real transport and counts the spawns. What this adds is
-    # that the screen's claim breaks HERE, beside the sentence making it,
-    # rather than in a browser three modules away.
+    # that the screen's claim breaks HERE, beside the sentence making it.
     transport = _text(
         ROOT / "src" / "conductor" / "command" / "adapters"
         / "artifact_transport.py")
     assert transport.count(
         "input was unavailable, so no task was spawned") == 2, (
         "the fail-closed input roads this line describes are no longer two")
+
+
+def test_the_open_run_says_which_document_it_is_waiting_for():
+    """The run half, read off the server's own schedule row.
+
+    `block` is only honest if the screen says WHAT the wait is for. The row is
+    the one `graph_schedule` computed -- this window derives nothing -- and the
+    line is absent for a step that is not waiting, because a sentence saying
+    "waiting for nothing" is a sentence about nothing.
+    """
+    inspector = _code(*INSPECTOR)
+    body = re.search(r"function runWaiting\(box, run, node\) \{(.*?)\n\}",
+                     inspector, re.DOTALL).group(1)
+
+    assert "run.schedule" in body, body
+    assert "standing.awaiting_artifacts" in body, body
+    assert 'context(box, "Waiting for"' in body, body
+    assert "if (!waiting.length) return;" in body, body
+    assert "runWaiting(box, run, node);" in inspector
 
 
 def test_a_run_s_own_artifacts_are_joined_to_the_step_that_produced_them():

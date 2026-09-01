@@ -113,8 +113,26 @@ def _hold_node_is_eligible(
     if proposal.node_id not in computed.runnable:
         raise AuthorizationError(
             f"plan: node {proposal.node_id!r} is "
-            f"{computed.state_of(proposal.node_id)} and this run's plan makes "
-            f"{list(computed.runnable)} runnable now")
+            f"{computed.state_of(proposal.node_id)}{_awaiting(computed, proposal)}"
+            f" and this run's plan makes {list(computed.runnable)} runnable now")
+
+
+def _awaiting(computed, proposal: ActionProposal) -> str:
+    """Why a step is blocked, when the plan can say something more than the word.
+
+    `blocked` covers three situations and a caller meeting the bare word cannot
+    tell them apart. Two of them are about this plan's own shape and a reader
+    can see them in it; the third is about a DOCUMENT that does not exist yet,
+    which is nowhere in the plan and which somebody has to go and publish. So
+    that one is named here. The schedule already computed it -- this reads the
+    row and derives nothing of its own.
+    """
+    row = next((row for row in computed.nodes
+                if row.node_id == proposal.node_id), None)
+    if row is None or not row.awaiting_artifacts:
+        return ""
+    return (" waiting for artifact(s) "
+            f"{list(row.awaiting_artifacts)} its plan requires before it runs")
 
 
 def _hold_plan_admits(

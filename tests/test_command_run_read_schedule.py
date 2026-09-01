@@ -90,7 +90,12 @@ def test_every_step_reports_its_standing_and_its_roads():
 
     assert set(rows[0]) == {
         "node_id", "state", "opened_by", "blocked_by", "closed_by", "opens",
-        "required_pass", "settled_laps", "attempts_spent"}
+        "required_pass", "settled_laps", "attempts_spent",
+        "awaiting_artifacts"}
+    # The third reason a step can be blocked reaches the window as its own key
+    # rather than inside `blocked_by`, which carries predecessors and is
+    # rendered beside a sentence about roads.
+    assert all(row["awaiting_artifacts"] == [] for row in rows), rows
     assert [row["node_id"] for row in rows] == [
         "goal", "identify", "diagnose", "design", "confirm-gate", "do",
         "result-gate", "retry-loop"]

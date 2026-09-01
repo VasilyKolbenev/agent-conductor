@@ -27,125 +27,39 @@
 // shown BY NAME rather than dropped.
 import {element} from "./command-view.js";
 
-// -- closed vocabularies, each a copy of exactly one Python owner ------------
-//
-// Held equal to their owners by tests/test_studio_runs.py, which reads this
-// source and the Python module side by side. A word added on either side and
-// not the other reds that module.
+//: The closed vocabularies and the one-voice sentence, re-exported under the
+//: names they have always had. See `studio-runwords.js` for why they moved and
+//: why that module imports nothing.
+export {
+  ATTEMPT_PHASES,
+  CONTROL_MODES,
+  GATE_STATES,
+  NODE_PHASES,
+  RECORD_KINDS,
+  RESULT_OUTCOMES,
+  RUN_STATES,
+  TIMELINE_STEPS,
+  VERIFICATION_FAILED_NOTE,
+  VERIFICATION_STATES,
+} from "./studio-runwords.js";
+//: What this file's own rendering reads. The `export` above is the public
+//: surface; this is the working set, and the two lists are separate because a
+//: name can be one without being the other.
+import {
+  ATTEMPT_PHASES,
+  CHANNEL_GLYPHS,
+  CONTROL_MODES,
+  GATE_CHANNEL,
+  INSTANT_FIELDS,
+  OUTCOME_CHANNEL,
+  PHASE_CHANNEL,
+  RECORD_KINDS,
+  ROW_FACTS,
+  TIMELINE_STEPS,
+  VERIFICATION_CHANNEL,
+  VERIFICATION_FAILED_NOTE,
+} from "./studio-runwords.js";
 
-//: graph_projection.NODE_PHASES -- how far a node's CURRENT action got. Read
-//: `observed` as "a boundary was reached", never as success: the outcome is a
-//: separate word from a separate record (safety law 9).
-export const NODE_PHASES = Object.freeze(
-  ["idle", "proposed", "requested", "running", "observed"]);
-//: graph_projection.GATE_STATES. `unknown` is the projection refusing to
-//: choose between two standing receipts, not a soft pending.
-export const GATE_STATES = Object.freeze(
-  ["idle", "satisfied", "failed", "changes_requested", "waived", "unknown"]);
-//: contract_values._RESULT_OUTCOMES -- what an ActionResultReceipt may say.
-export const RESULT_OUTCOMES = Object.freeze(
-  ["cancelled", "failed", "rejected", "succeeded", "unknown",
-    "verification_failed"]);
-//: contract_values._VERIFICATION_STATES -- what an EvidenceRef may say.
-export const VERIFICATION_STATES = Object.freeze(
-  ["error", "mismatch", "unavailable", "unverified", "verified"]);
-//: contract_values._RUN_STATES -- the words a RunEnvelope's status may hold.
-export const RUN_STATES = Object.freeze(
-  ["active", "blocked", "cancelled", "complete", "created", "failed",
-    "paused", "unknown"]);
-//: attempts.ATTEMPT_PHASES -- the two durable boundaries of one attempt.
-export const ATTEMPT_PHASES = Object.freeze(
-  ["effect_lease", "execution_observed"]);
-//: run_store._RECORDS -- every record kind a run directory may hold, with the
-//: plain-language name this screen puts beside the protocol word. The keys are
-//: the contract; the values are prose and are never parsed.
-export const RECORD_KINDS = Object.freeze({
-  action_proposal: "A lane proposed an action",
-  action_request: "A Human authorized one request",
-  action_result: "A result was observed",
-  adapter_observation: "An adapter reported its health",
-  artifact: "An artifact was written",
-  attempt_event: "An attempt crossed a durable boundary",
-  decision: "A Human answered a gate",
-  evidence: "Evidence was claimed",
-  graph_definition: "The run was given its plan",
-  run_terminal: "The plan has nothing left to open",
-});
-//: contract_values.ControlMode -- the whole authority ladder, and what each
-//: rung PERMITS. There is no hidden autonomous rung.
-export const CONTROL_MODES = Object.freeze({
-  observe: "Reads and reports. Nothing is proposed and nothing runs.",
-  propose: "May propose work. Nothing runs without a Human authorizing it.",
-  confirm: "A Human confirms each proposal, and only then may it run.",
-  policy: "A written policy authorizes requests instead of a Human.",
-});
-//: The five steps of the real progression, in the one order they can happen.
-//: The first, second and fifth are record kinds; the third and fourth are the
-//: two phases of an `attempt_event`. Nothing here decides that a step is
-//: MISSING -- a step is named only when a record carries it.
-export const TIMELINE_STEPS = Object.freeze([
-  "action_proposal", "action_request", "effect_lease", "execution_observed",
-  "action_result"]);
-//: Which field carries a record's instant. A kind absent from this map states
-//: no instant this build knows, and is said so rather than stamped with one.
-const INSTANT_FIELDS = Object.freeze({
-  action_proposal: "proposed_at", action_request: "requested_at",
-  action_result: "observed_at", adapter_observation: "observed_at",
-  artifact: "created_at", attempt_event: "recorded_at",
-  decision: "decided_at", evidence: "observed_at",
-  graph_definition: "created_at", run_terminal: "recorded_at",
-});
-//: The identity fields each kind is summarised by, in reading order. Payload
-//: bodies (`arguments`, `content`) are deliberately absent: a timeline row is
-//: an index into the journal, never a second copy of it.
-const ROW_FACTS = Object.freeze({
-  action_proposal: ["proposal_id", "attempt_id", "node_id", "instance_id",
-    "capability", "proposed_by"],
-  action_request: ["action_id", "attempt_id", "node_id", "instance_id",
-    "capability", "mode", "requested_by"],
-  action_result: ["receipt_id", "action_id", "attempt_id", "instance_id",
-    "outcome", "exit_code", "detail", "evidence_refs"],
-  adapter_observation: ["observation_id", "adapter_id", "instance_id",
-    "health", "available_capabilities", "detail"],
-  artifact: ["artifact_id", "artifact_ref", "media_type", "source_action_id",
-    "input_artifact_ids"],
-  attempt_event: ["event_id", "action_id", "attempt_id", "instance_id",
-    "adapter_id", "phase", "outcome", "exit_code"],
-  decision: ["receipt_id", "gate_id", "action", "actor", "reason",
-    "supersedes"],
-  evidence: ["evidence_id", "kind", "label", "uri", "verification",
-    "verified_by", "verified_at"],
-  graph_definition: ["graph_id", "schema_version"],
-  run_terminal: ["terminal_id", "graph_id", "state", "settled_nodes",
-    "unreachable_nodes"],
-});
-//: Status is its own channel and never the only carrier: every chip below
-//: draws a glyph and a word as well.
-const OUTCOME_CHANNEL = Object.freeze({
-  succeeded: "pass", failed: "fail", cancelled: "none", rejected: "fail",
-  verification_failed: "fail", unknown: "none",
-});
-const PHASE_CHANNEL = Object.freeze({
-  idle: "none", proposed: "wait", requested: "wait", running: "wait",
-  observed: "wait",
-});
-const GATE_CHANNEL = Object.freeze({
-  idle: "wait", satisfied: "pass", failed: "fail",
-  changes_requested: "wait", waived: "none", unknown: "wait",
-});
-const VERIFICATION_CHANNEL = Object.freeze({
-  verified: "pass", unverified: "wait", unavailable: "none",
-  mismatch: "fail", error: "fail",
-});
-const CHANNEL_GLYPHS = Object.freeze({
-  pass: "✓", wait: "●", fail: "✕", none: "·",
-});
-//: The one sentence `verification_failed` must never appear without. The
-//: protocol word travels beside it, never instead of it.
-export const VERIFICATION_FAILED_NOTE = "Process exit 0 proves the process "
-  + "finished, not that the work was verified. This run reached the end of an "
-  + "action and its verification did not pass, so nothing here says the work "
-  + "is done.";
 //: The one sentence, handed to whichever container is showing the word. Every
 //: container carrying `verification_failed` needs its OWN copy -- one written
 //: elsewhere on the screen does not cover a section that shows the word alone
@@ -512,9 +426,25 @@ function planStanding(item, standing) {
       + "authorized, so it can never settle again."));
     return;
   }
+  // A step waiting for a DOCUMENT is asked about before the roads are. The two
+  // are different sentences and only one of them is about this plan's shape:
+  // `blocked_by` carries predecessors, so rendering it for an artifact wait
+  // printed an empty "Waiting on" beside a rule about roads -- a true sentence
+  // about the wrong thing, and a person reading it would go looking for a step
+  // that does not exist. Both are said when both are true.
+  const awaited = rows(standing.awaiting_artifacts);
+  if (standing.state === "blocked" && awaited.length) {
+    item.append(fact("Waiting for artifact", awaited.join(", ")));
+    item.append(note("This step's plan says to wait rather than to try and "
+      + "fail: it is not offered until every artifact named here exists in "
+      + "this run. Nothing has been attempted for it."));
+  }
   if (standing.state === "blocked") {
-    item.append(fact("Waiting on", rows(standing.blocked_by).join(", ")));
-    item.append(note(ALL_ROADS));
+    const roads = rows(standing.blocked_by);
+    if (roads.length) {
+      item.append(fact("Waiting on", roads.join(", ")));
+      item.append(note(ALL_ROADS));
+    }
     return;
   }
   if (standing.state === "unreachable") {

@@ -114,6 +114,7 @@ def _schedule_payload(
             "required_pass": row.required_pass,
             "settled_laps": row.settled_laps,
             "attempts_spent": row.attempts_spent,
+            "awaiting_artifacts": list(row.awaiting_artifacts),
         } for row in computed.nodes],
     }
 

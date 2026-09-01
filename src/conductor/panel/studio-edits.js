@@ -32,8 +32,9 @@ export const EDIT_TYPES = Object.freeze(["add", "connect", "delete-edge",
   "set-field"]);
 export const EDIT_FIELDS = Object.freeze(["arguments", "attempt_bound",
   "capability", "failure_policy", "gate_id", "kind", "loop_back_to",
-  "loop_bound", "purpose", "required_evidence", "resources", "role_id",
-  "stage", "timeout_seconds", "title", "verifier_role_id"]);
+  "loop_bound", "missing_artifact_policy", "purpose", "required_evidence",
+  "resources", "role_id", "stage", "timeout_seconds", "title",
+  "verifier_role_id"]);
 //: `graph_definition.NODE_KINDS`, its loop and resource bounds, and
 //: `workflow_draft.MAX_DRAFT_NODES` / `MAX_DRAFT_EDGES`.
 export const NODE_KINDS = Object.freeze(["task", "gate", "loop"]);
@@ -96,6 +97,12 @@ function withBinding(node, name, value) {
     // carries nothing out cannot fail, so there is no failure for a
     // policy to answer and the contract refuses one.
     delete next.failure_policy;
+    // And the MISSING-ARTIFACT BEHAVIOUR. Its pairing rule is the
+    // tightest of the four -- only a capability the reviewed schemas hand
+    // documents to may name one -- so a binding cleared to nothing strands
+    // it just as surely, and the person would meet a refusal about a
+    // control they did not touch.
+    delete next.missing_artifact_policy;
     return next;
   }
   next[name] = value;

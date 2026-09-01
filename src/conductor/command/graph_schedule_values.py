@@ -86,6 +86,19 @@ class NodeSchedule:
     #: never settle again and no Human action can change that. The sole producer
     #: of a stalled run.
     attempts_spent: bool
+    #: The documents this step is WAITING for, in the order its own arguments
+    #: name them. Non-empty only for a `blocked` step whose plan says `block`
+    #: and whose inputs are not all standing -- so it is the answer to "why is
+    #: this not offered", and it is a third reason distinct from the two above.
+    #:
+    #: It is NOT part of `blocked_by`, and the difference is load-bearing rather
+    #: than tidy. Those three tuples partition this step's IN-EDGES by
+    #: predecessor, and the Runs screen renders `blocked_by` under "Waiting on"
+    #: followed by the sentence that ALL incoming roads must open. An artifact
+    #: reference put there would be read as a step name, and a step waiting only
+    #: for a document would render an empty "Waiting on" beside a rule about
+    #: roads -- a true sentence about the wrong thing.
+    awaiting_artifacts: tuple[str, ...]
 
 
 @dataclass(frozen=True)
