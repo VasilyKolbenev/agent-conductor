@@ -451,12 +451,33 @@ def test_the_requested_at_instant_is_validated_by_calendar_not_only_the_regex():
 
 
 def test_mutation_controls_are_disabled_while_disconnected_stale_or_uncertain():
+    """Which phases may still be worked, and which may not.
+
+    This used to pin the expression `state.phase !== "ready"` by its exact
+    spelling, which made it a change detector on a rule rather than a guard on
+    a fact -- and the rule was wrong: a BACKGROUND refresh disabled the form,
+    and disabling a form blurs whatever is focused in it, so a signal arriving
+    while somebody typed took the keyboard away from them for the length of an
+    authoritative read. What is held now is the fact: the phases a person may
+    work in are an allowlist, `refreshing` is on it, and the phases that mean
+    "nothing may be written" are not.
+    """
     view = VIEW.read_text(encoding="utf-8")
     source = SCRIPT.read_text(encoding="utf-8")
-    assert view.count('const disabled = state.phase !== "ready"') == 2
+    workable = re.search(
+        r"const WORKABLE_PHASES = Object\.freeze\(\[(.*?)\]\)", view)
+    assert workable, "the phase allowlist is gone"
+    allowed = set(re.findall(r'"([a-z-]+)"', workable.group(1)))
+    assert allowed == {"ready", "refreshing"}, allowed
+    # Both forms are held to it, and both still shut on the uncertain arm.
+    assert view.count("!WORKABLE_PHASES.includes(state.phase)") == 2
     assert view.count('["submitting", "outcome-unknown"].includes') == 2
     assert view.count("for (const control of ") == 2
     assert "includes(state.confirmPhase)" in view
+    # And the keyboard is given back on both, by NAME rather than by position.
+    assert view.count("restoreFocus(") == 2 or (
+        view.count("restoreFocus(") == 1 and "actor.focus()" in view)
+    assert 'form.querySelector(`[name="${name}"], #${name}`)' in view
     disconnected = source[
         source.index('window.addEventListener("conduct:disconnected"'):]
     for fact in ("epoch += 1", "sessionEpoch += 1", 'csrfToken = ""',

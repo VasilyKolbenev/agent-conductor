@@ -82,7 +82,43 @@ function proposalInput(draft, name, fallback, type = "text") {
   control.addEventListener("input", () => { draft[key] = control.value; });
   return control;
 }
+//: The phases in which a person may still work the controls. A BACKGROUND
+//: refresh is on this list and that is the whole of a measured defect: it is
+//: not the person's action, it re-reads facts the form under their hands does
+//: not depend on, and disabling a form blurs whatever is focused in it. So a
+//: signal arriving while somebody typed took the keyboard away from them --
+//: for the length of an authoritative read, which under load is long enough to
+//: swallow keystrokes and to throw a screen reader to the top of the document.
+//:
+//: `stale` and `refused` are NOT on it: the connection is down or the read
+//: failed, and nothing may be written on either. `loading` is not, because an
+//: explicit load is the person's own request for different facts. What still
+//: guards a write during a background read is what always did -- the frozen
+//: `preview_digest` the server compares, and the submitting arm below.
+const WORKABLE_PHASES = Object.freeze(["ready", "refreshing"]);
+
+//: Which control inside a re-rendered form should be given the keyboard back.
+//: Answered BEFORE the form is replaced, by name, because the node itself is
+//: about to stop existing. A form nobody was working in answers null and no
+//: focus is taken from wherever it really is.
+function focusedName(mount) {
+  const active = document.activeElement;
+  return mount.contains(active) && active !== mount
+    ? (active.getAttribute("name") || active.id || null) : null;
+}
+
+//: Give it back, to the control of that name in the rebuilt form. Silent when
+//: the name is gone -- a field that no longer exists cannot be refocused, and
+//: guessing a neighbour would put a person somewhere they never chose.
+function restoreFocus(form, name) {
+  if (!name) return;
+  const control = form.querySelector(`[name="${name}"], #${name}`);
+  if (control && !control.disabled) control.focus();
+}
+
 export function renderComposer(composer, proposalStatus, state, draft, onSubmit) {
+  // Asked before the replacement, for `focusedName`'s reason.
+  const keepFocus = focusedName(composer);
   composer.replaceChildren();
   proposalStatus.textContent = state.proposalNotice;
   proposalStatus.dataset.proposalState = state.proposalPhase;
@@ -125,9 +161,10 @@ export function renderComposer(composer, proposalStatus, state, draft, onSubmit)
   );
   proposalForm.addEventListener("submit", onSubmit);
   composer.append(proposalForm);
-  const disabled = state.phase !== "ready"
+  const disabled = !WORKABLE_PHASES.includes(state.phase)
     || ["submitting", "outcome-unknown"].includes(state.proposalPhase);
   for (const control of proposalForm.elements) control.disabled = disabled;
+  restoreFocus(proposalForm, keepFocus);
 }
 export function renderProposalReview(review, proposal) {
   review.replaceChildren();
@@ -178,7 +215,7 @@ export function renderConfirm(confirm, confirmStatus, state, draft, onConfirm) {
       element("strong", {text: label}), element("span", {text: value}),
     ]));
   }
-  const disabled = state.phase !== "ready"
+  const disabled = !WORKABLE_PHASES.includes(state.phase)
     || ["submitting", "outcome-unknown"].includes(state.confirmPhase);
   for (const control of form.elements) control.disabled = disabled;
   if (keepFocus && !disabled) actor.focus();
