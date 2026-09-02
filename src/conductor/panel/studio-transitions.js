@@ -324,4 +324,3 @@ export function transitionSection(form) {
   loopControls(box, form);
   return box;
 }
-
