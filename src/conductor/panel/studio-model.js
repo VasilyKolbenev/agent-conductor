@@ -246,8 +246,8 @@ const STARTER_KEYS = ["starter_id", "title", "revision", "caveats", "document"];
 //: the publish route's question, and asking it a second time here is how two
 //: judges are born.
 //:
-//: `revision` and `caveats` are carried because both shipped starters have the
-//: same title and are NOT equivalent choices. They are derived server-side from
+//: `revision` and `caveats` are carried because every shipped starter has the
+//: same title and they are NOT equivalent choices. They are derived server-side from
 //: the documents themselves, so this end judges their SHAPE and never their
 //: content: a caveat is prose from the route, and a row whose caveats are not a
 //: list of strings is refused like any other malformed row.

@@ -35,8 +35,8 @@ DISPATCH_PROFILES = frozenset({"implement", "review"})
 #: What each output-limit profile MEANS, in bytes a child may write.
 #:
 #: The profile has been a validated word with no consequence: every dispatch
-#: carried one, the closed schema refused any other value, both shipped starters
-#: name `normal` -- and the byte count handed to the runner was a constant, so
+#: carried one, the closed schema refused any other value, every shipped starter
+#: names `normal` -- and the byte count handed to the runner was a constant, so
 #: naming `small` bought a step nothing. That is the exact shape the release
 #: verdict rejects, and it was the example it named.
 #:
@@ -51,6 +51,22 @@ OUTPUT_LIMIT_BYTES = MappingProxyType({"small": 4 * 1024, "normal": 16 * 1024})
 #: no byte count is a word the schema would admit and the spawn could not honour.
 OUTPUT_LIMIT_PROFILES = frozenset(OUTPUT_LIMIT_BYTES)
 REVIEW_PROFILES = frozenset({"quality", "security", "spec"})
+#: UNREACHABLE IN THIS RELEASE, and said here rather than discovered later.
+#:
+#: This and the three below belong to the `evidence`, `stop`, `retry` and
+#: `switch` capabilities of the deep protocol. Every provider in
+#: `providers.PROVIDER_CATALOG` declares only `observe`, `dispatch` and
+#: `review`, so no run this build can open will ever compose an argument these
+#: vocabularies judge. They are exercised by the deep contract tests and by the
+#: fake harness, and by nothing a person can reach.
+#:
+#: They are kept, and kept HERE, on purpose. The argument dataclasses beside
+#: them are the reviewed schema for those capabilities; a vocabulary moved away
+#: from the validator that spends it is a vocabulary free to drift from it, and
+#: deleting the pair would mean re-deriving both the day a provider declares one.
+#: What the comment buys is that nobody reads this as shipped surface: a
+#: capability with no provider is not a feature, and this file must not imply
+#: otherwise.
 REQUESTED_EVIDENCE_KINDS = frozenset({"result", "diff", "tests", "status"})
 STOP_REASONS = frozenset({"user", "timeout", "switch"})
 RETRY_REASONS = frozenset({

@@ -5,7 +5,13 @@
 > Written on 2026-08-03, when Act and Verify were still deferred. Both ship now, and the command
 > runtime owns child processes, so the rows below that call this product an orchestrator of
 > nothing — "it never starts, stops, or schedules a harness", "no agent spawning", and the
-> read-only panel line — are false of the product today. Read
+> read-only panel line — are false of the product today. Three more of its denials have since
+> been overtaken and are also false: §7.2 defers "any scheduler or conditional-execution
+> engine", and §9 forbids "scheduling" and "No conditional-execution engine". The v1 alpha
+> ships `graph_schedule.py`, which reads a run's plan and its journal, computes which steps may
+> run, and walks each road out of a settled step against its condition. What §9 was protecting
+> is nevertheless intact: it dispatches nothing, runs on no timer, and starts nothing without a
+> confirmation a person gave for that exact request. Read
 > `docs/specs/2026-08-03-hcp-competitive-product-direction.md` for the direction that holds now.
 > The text is left as written: a dated record rewritten to read like the present is no longer
 > evidence of anything.

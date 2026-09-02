@@ -39,6 +39,7 @@ from conductor.command.api_contracts import (
 from conductor.command.attempts import AttemptEvent, action_request_digest
 from conductor.command.artifacts import ArtifactDocument
 from conductor.command.containment import RouteViolation, run_route_violations
+from conductor.command import graph_projection
 from conductor.command.graph_definition import GraphDefinition
 from conductor.command.run_terminal import RunTerminal
 from conductor.command.contracts import (
@@ -371,14 +372,18 @@ def test_every_contract_example_round_trips_through_its_contract(name):
 def test_run_envelope_and_run_read_response_bind_to_the_run_contract():
     read = CANON["run_read_response"]
     assert set(read) == {"run", "config", "records", "warnings", "graph"}
-    # This run holds no graph_definition record, so its graph half is three
-    # nulls -- an absent key would leave a reader guessing whether the server
-    # is old or the run simply has no plan.
-    assert read["graph"] == {
-        "definition": None, "definition_digest": None, "runtime": None,
-        "schedule": None}
+    # This run holds no graph_definition record, so its graph half is the whole
+    # block, empty -- an absent key would leave a reader guessing whether the
+    # server is old or the run simply has no plan.
     assert not any(row["record_type"] == "graph_definition"
                    for row in read["records"])
+    # And the shape is taken from the projection that really serves it, not
+    # typed out beside it. A literal here would have gone on passing every time
+    # the wire grew a key -- which is how this document came to promise three.
+    assert read["graph"] == graph_projection.graph_payload(
+        run_store_module.RecoveredRun(
+            envelope=RunEnvelope.from_dict(read["run"]),
+            config=read["config"], records=(), warnings=()))
     envelope = RunEnvelope.from_dict(read["run"])
     assert envelope.as_dict() == read["run"]
     assert envelope.run_id == RUN_ID

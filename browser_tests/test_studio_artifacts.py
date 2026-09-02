@@ -535,7 +535,7 @@ def test_the_handoff_mapping_names_the_producer_or_says_nobody_produces_it(
     by its TITLE -- a person reading a workflow thinks in titles, and the id is
     beside it on the canvas. `goal` requires `artifact-brief`, which no step in
     this document produces: that is not a defect and not a hypothetical, it is
-    the shape both shipped starters really have, so the mapping says where such
+    the shape every shipped starter really has, so the mapping says where such
     a reference has to come from instead of leaving the line blank.
     """
     bench.select_step("identify")

@@ -2,7 +2,7 @@
 
 ``output_limit_profile`` was the release verdict's own example of a field built
 and never reached: declared on every dispatch, validated against a closed
-vocabulary, carried in both shipped starters, and spent for real by
+vocabulary, carried in every shipped starter, and spent for real by
 ``headless_cli._spawn`` -- while the one window that draws a workflow could only
 STATE it. This module drives the control that closes that, against the real
 loopback server and the real ``TemplateStore``.

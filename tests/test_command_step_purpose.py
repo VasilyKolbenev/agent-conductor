@@ -22,7 +22,7 @@ Three properties fail in different ways and are therefore held separately:
   instruction. Refused by the plan contract before freezing, and again at the
   argument door, because an adapter driven with a hand-made request reaches no
   plan;
-- **absent stays absent.** Both shipped starters name no purpose, so their
+- **absent stays absent.** No shipped starter names a purpose, so their
   revision digests must not move and a step without one must be handed exactly
   the frame it was handed before this field existed;
 - **the plan is the authority.** `graph_causality` refuses any proposal whose
@@ -183,7 +183,7 @@ def test_only_a_step_that_carries_something_out_carries_it_into_its_payload():
 def test_a_template_that_names_no_purpose_materializes_byte_for_byte_as_before():
     """The backward-compatibility measurement.
 
-    Both shipped starters predate this field. If `as_dict` had started writing
+    Every shipped starter predates this field. If `as_dict` had started writing
     it, or `materialize` had started injecting one, every frozen revision digest
     in this suite would move -- and a frozen byte pin is the one thing this
     build may never break to add a feature.

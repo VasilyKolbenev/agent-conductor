@@ -474,8 +474,8 @@ function workflowPicker(state, handlers) {
 
 //: What one starter is CALLED in the picker.
 //:
-//: Not its title. Both shipped starters are titled `Dalio five-step cycle`, so
-//: a list of titles offered two rows a person could not tell apart and could
+//: Not its title. EVERY shipped starter is titled `Dalio five-step cycle`, so
+//: a list of titles offered rows a person could not tell apart and could
 //: not choose between — and they are not equivalent: one ships four review
 //: steps that cannot succeed. The revision separates them and the caveat says
 //: which one to avoid, both derived by the route from the documents themselves.

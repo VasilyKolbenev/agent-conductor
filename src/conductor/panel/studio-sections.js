@@ -481,7 +481,7 @@ function budgetSelect(box, form, choices, named) {
 //: It said "not supported by this harness" until the spawn actually read the
 //: profile, and then stated it read-only. Both were the release verdict's own
 //: example of the shape to avoid: a field declared, validated, stored, shipped
-//: in both starters, and reachable from nowhere a person could change it.
+//: in every starter, and reachable from nowhere a person could change it.
 function outputBudget(box, form) {
   const {node} = form;
   const held = isObject(node.arguments) ? node.arguments : {};

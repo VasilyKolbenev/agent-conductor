@@ -207,7 +207,7 @@ def test_the_inspector_lets_the_output_budget_be_chosen_and_still_states_it():
     named a profile and a step that named none both said what bound them.
     Stating a durable field a person cannot reach is the same defect one step
     on -- the release verdict's own example was a field declared, validated,
-    stored, shipped in both starters and changeable from nowhere -- so the
+    stored, shipped in every starter and changeable from nowhere -- so the
     control is pinned beside the statement now, and BOTH halves still are.
 
     The two arms survive, in their new places: the select shows what is chosen,

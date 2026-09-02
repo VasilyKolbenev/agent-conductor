@@ -300,7 +300,7 @@
         },
         "warnings": []
       },
-      "note": "The durable truth after the effect: the request, both attempt_events, the verification evidence and the terminal action_result. The computed graph half is three nulls: this run follows no plan."
+      "note": "The durable truth after the effect: the request, both attempt_events, the verification evidence and the terminal action_result. The computed graph half is present and empty: this run follows no plan."
     }
   ]
 }

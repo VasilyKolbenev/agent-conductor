@@ -12,6 +12,30 @@
   `docs/adr/0001-harness-control-plane-model.md`, and
   `docs/adr/0004-command-panel-writes-and-human-decisions.md`.
 
+## Implementation status — added 2026-09-02, after this freeze
+
+**The body below is the 2026-08-13 freeze, left as it was written.** Every present
+tense in it is as of that date, and the paragraphs describing what does not exist
+yet are a record of what was true when the contract was fixed, not a description
+of this build. That is deliberate: a freeze that gets edited to match the code it
+was supposed to constrain has stopped being a freeze. What has since happened:
+
+- **The routes exist.** `command_routes.COMMAND_ROUTES` is the seventeen-entry
+  table the loopback server really serves, and it is the current authority on the
+  surface — not the route list in section 0, which names none of them.
+- **The `graph` block grew from three keys to five.** Section 6.1.1 has been
+  brought up to date, because a reader counting keys off a stale list would build
+  a broken client; the freeze's *rule* — the whole block present, never an absent
+  key — is what it always was.
+- **Design edits got routes.** Section 8 records that they had none. Workflow
+  drafts and published revisions are now served under `/command/workflows/…`,
+  and what the browser may write is still exactly what safety law 3 permits.
+- **The CSRF fixtures have consumers.** Section 9 calls them data for tests that
+  do not exist yet; `tests/test_command_http_transport.py` is now one of them.
+
+Where this document and the tree disagree about anything else, the tree is the
+fact and this file is the history.
+
 ## 0. What this freezes, and what it does not implement — FROZEN CONTRACT
 
 This document is a **freeze**, not an implementation report. It fixes the URL,
@@ -1330,14 +1354,16 @@ graph, and no record may follow it.
   "warnings": [],
   "graph": {
     "definition": null, "definition_digest": null, "runtime": null,
-    "schedule": null
+    "schedule": null, "success_criteria": {}
   }
 }
 ```
 
-This run follows no graph, and says so with three nulls rather than an absent
-key: a reader that has to tell "no graph" from "old server" by the shape of a
-response is a reader guessing.
+This run follows no graph, and says so with the whole block present and empty —
+four nulls and an empty object — rather than an absent key: a reader that has to
+tell "no graph" from "old server" by the shape of a response is a reader
+guessing. `success_criteria` is an object rather than a null because it is a
+map from step to criteria, and a plan with no steps has none, not "unknown".
 
 The two attempt phases are separate append-ordered facts. They bind to the same
 durable request, frozen adapter, attempt, and opaque recovery reference:
@@ -1393,7 +1419,9 @@ frozen so the UI does not invent them:
 
 #### 6.1.1 `graph` — the plan, its digest, and what the run did with it
 
-`graph` carries exactly three keys and is present on every run read:
+`graph` carries exactly five keys and is present on every run read. Three of them
+are the three readings of one plan — what was intended, what was observed, and
+what those two together permit — and no two of them share a word:
 
 - `definition` — the `graph_definition` record's body verbatim, the same object
   `records` already carries. It is repeated here so a reader has the plan and
@@ -1405,8 +1433,19 @@ frozen so the UI does not invent them:
   records and held nowhere else**. It is not a record, it is never appended,
   and no route writes it. A second mutable copy of a run's position would be a
   copy that can disagree with the journal it was copied from.
+- `schedule` — what the definition and those same records together permit right
+  now: which steps may run, which are blocked and why, which are settled, and
+  which no run can still reach. Computed on every read for the reason the digest
+  beside it is, and it dispatches nothing — its whole output is a permission or
+  a refusal.
+- `success_criteria` — for each step, what would count as success, **derived
+  from the rules that really operate on that step** and held nowhere. It is
+  beside the definition rather than inside it, because a plan's bytes are what
+  its digest is taken over, and a sentence this build composes is not part of
+  what anybody published.
 
-A run following no graph answers `null` for all three.
+A run following no graph answers `null` for the first four and `{}` for
+`success_criteria`.
 
 The projection and the definition share no word but the join. Every name a
 `runtime` node carries is a name the definition REFUSES as a field
@@ -1655,9 +1694,9 @@ fields are:
 - `GET …/runs/<id>` → `RecoveredRun`: nothing injected — a read-only replay whose
   records are wrapped exactly as the store wraps them,
   `{ "record_type": <kind>, "record": <as_dict> }`. Its `graph` key adds no
-  record field either: `definition` is a record body verbatim, and
-  `definition_digest` and `runtime` are computed from records the response
-  already carries (6.1.1).
+  record field either: `definition` is a record body verbatim, and every other
+  key in the block is computed from records the response already carries
+  (6.1.1) and stored nowhere.
 
 Invariants this freeze pins, all already enforced by the contracts (so the
 endpoint inherits them, never re-encodes them):
@@ -1676,6 +1715,9 @@ endpoint inherits them, never re-encodes them):
   extra browser mutation surface.
 
 ## 8. Out of scope for this freeze — named, not implemented
+
+*(Overtaken in part — see Implementation status at the top: workflow drafts and
+published revisions now have routes.)*
 
 <!-- CANONICAL:mutation_boundary -->
 ```json
@@ -1719,7 +1761,8 @@ or a new request field is a contract change, not harmless implementation detail.
   is top-level fixture state, and provenance is separate metadata. Changing a
   presented value while leaving its provenance label untouched is therefore a
   real mismatch, not a word game. They are data for tests that do not exist yet,
-  not a claim that any endpoint passes today. The pin test validates their
+  not a claim that any endpoint passes today. *(Overtaken —
+  `tests/test_command_http_transport.py` consumes them now.)* The pin test validates their
   internal accept/refuse relation against the frozen vocabulary above.
   Its hostile transport cases retain ordered raw header pairs and exact body
   bytes (hex-encoded); no fixture pre-normalizes away duplicates.

@@ -8,7 +8,9 @@
 
 December Command is a self-hosted control plane for the AI coding harnesses already working on
 your code — Claude Code, Codex, or anything that can write a JSON file. Each agent keeps
-one file — its lane — saying what it is doing, what it found, and what it needs from you.
+one file — its lane — saying what it is doing, what it found, and what it needs from you. When
+you want to run a process rather than watch one, the Workflow Studio lets you publish a workflow
+and open a run against it, where nothing is dispatched until you confirm it.
 
 *Alpha — Protocol v1. The distribution is `agent-conductor`; the CLI is `conduct`.*
 
@@ -35,13 +37,21 @@ conduct demo
 ```
 
 Open the printed URL (`http://127.0.0.1:7777/`, or `conduct demo --port 8080` if 7777 is
-taken). You are looking at a fictional web project whose release smoke gate went red with three
-blockers: the reviewer confirms two of the findings and partly disputes the third — so the panel
-computes exactly one disagreement — and one real ops decision, bake the payment config into the
-release image or provision it per environment, waits in the human queue. Everything on screen is
-computed from the fixture's lane files by the merge rules; nothing on it is hand-written state.
-The fixture is copied to a throwaway temp directory each run, so poking at the served files never
-touches the packaged copy.
+taken). The demo materializes both halves of the product into a throwaway temp directory, so
+poking at the served files never touches the packaged copy.
+
+**The front door is the Workflow Studio.** It opens on one published workflow revision and one
+run frozen against that exact revision, with one step carried through all five durable timeline
+records, one gate a person already answered, and one gate still waiting for you. Every record
+was written by the production writers — the same code paths your own runs use — so it is a
+demonstration of the product, not a picture of one.
+
+**The classic panel is at `/panel/index.html`.** It shows a fictional web project whose release
+smoke gate went red with three blockers: the reviewer confirms two of the findings and partly
+disputes the third — so the panel computes exactly one disagreement — and one real ops decision,
+bake the payment config into the release image or provision it per environment, waits in the
+human queue. Everything on that screen is computed from the fixture's lane files by the merge
+rules; nothing on it is hand-written state.
 
 ## Use it on your own project
 
@@ -57,7 +67,7 @@ conduct preview     # propose one dispatch and print its canonical preview (no e
 conduct integration-smoke  # run the synthetic end-to-end gate and print its receipt
 conduct reconcile   # list the actions a crash stranded; close one with --run/--action
 conduct providers   # configure a harness: paths and env NAMES, never a credential
-conduct up          # panel at http://127.0.0.1:7777/
+conduct up          # Workflow Studio at http://127.0.0.1:7777/
 ```
 
 `conduct prompt` prints the working instructions for one agent — paste the output into
@@ -86,8 +96,9 @@ run repairs that tail itself and prints the same receipt. It is a synthetic gate
 Human Confirm surface — its actor, time and ids are fixture facts. Run it, and `conduct preview`,
 inside a project `conduct init` made; elsewhere they refuse rather than creating one.
 
-In the panel, select an agent lane to see its current harness, role, assigned stage, runtime
-phase, task, findings, and human requests. **Copy handoff packet** copies a deterministic
+In the classic panel at `/panel/index.html`, select an agent lane to see its current harness,
+role, assigned stage, runtime phase, task, findings, and human requests. **Copy handoff packet**
+copies a deterministic
 Markdown packet rendered from that same `state.json`; fields Protocol v1 does not have — model,
 prompt, skills, runtime controls — are not guessed or shown as empty placeholders.
 
@@ -124,7 +135,10 @@ is never touched: init says so and exits 1.
 
 - **Files are the API.** All state lives in a `conductor/` directory inside your
   project: `map.toml` (the project map), `lanes/<author>.json` (one file per agent),
-  and `events.jsonl` (an append-only log). Any tool that writes JSON can participate.
+  `events.jsonl` (an append-only log), and — once you use the Studio — `templates/`
+  (published workflow revisions and drafts) and `runs/` (each run's append-only journal
+  of proposals, confirmations, decisions and receipts). Any tool that writes JSON can
+  participate.
 - **Silence is not consent.** An agent that stops reporting does not stay green — it goes
   stale, and the panel says so. Disagreements, staleness, review coverage, and the human
   queue are all computed from the raw lanes, so no agent can bury a conflict by declining
@@ -142,19 +156,33 @@ is never touched: init says so and exits 1.
 ## What it is not
 
 - Not a chat with your agents.
-- Not an orchestrator or scheduler — nothing runs on a timer, and no agent starts without a
-  confirmation you gave for that exact request.
+- Not an orchestrator — nothing runs on a timer, and no agent starts without a confirmation you
+  gave for that exact request. There *is* a scheduler, and it is worth being exact about what it
+  does: it reads a run's plan and its durable records and computes which steps may run now,
+  which are blocked, which are settled and which no run can reach. It dispatches nothing. Its
+  whole output is a refusal or a permission — the runtime asks it before authorizing an attempt,
+  and a step it does not make runnable is one no confirmation can start.
 - Not a trace warehouse.
 - Not a cloud service — no account, no network access, no API keys.
 
 ## How it works
 
-Each agent owns exactly one lane file and rewrites it as it works: current task, node
-statuses, findings, verdicts on other agents' findings, and questions for the human.
-The merge step reads the map and every lane and computes the project state
-deterministically — same inputs, same state, no model in the loop. The panel renders
-that state live and hands you a copyable decision brief for each wait. You answer; the
-agents move on.
+There are two halves, and they read different files.
+
+**Reporting — the lanes.** Each agent owns exactly one lane file and rewrites it as it works:
+current task, node statuses, findings, verdicts on other agents' findings, and questions for the
+human. The merge step reads the map and every lane and computes the project state
+deterministically — same inputs, same state, no model in the loop. The classic panel renders
+that state live and hands you a copyable decision brief for each wait. You answer; the agents
+move on.
+
+**Conducting — the runs.** In the Workflow Studio you draft a workflow, publish it as an
+immutable revision, and open a run frozen against that exact revision. From then on nothing is
+overwritten: every proposal, confirmation, decision, receipt and gate answer is appended to that
+run's journal, and the state you see is computed from the records rather than stored beside
+them. The scheduler reads the plan and those records and says which steps may run now; you
+confirm one, or you answer the gate that is waiting. No step starts without a confirmation you
+gave for that exact request.
 
 ## Documentation
 
@@ -184,7 +212,8 @@ Playwright and the pixel decoder are optional development/CI dependencies. They 
 installed with the runtime wheel, and no build step is added: the panel ships as hand-written
 files — the Workflow Studio shell at `/`, the classic panel at `/panel/index.html`, their
 stylesheets and their ES modules — served straight from the package with no bundler and nothing
-transpiled. `server.PANEL_ASSETS` is the exact list of what is served.
+transpiled. `server.PANEL_ASSETS` is the exact list of the `/panel/*` routes; the Studio shell
+is not in it, because it is not a `/panel/*` route — it is what `GET /` answers with.
 
 ## Status
 

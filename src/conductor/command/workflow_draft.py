@@ -346,7 +346,7 @@ def starters() -> list[dict[str, Any]]:
     is rooted at its own ``conductor/templates``.
 
     The whole document travels rather than a name to fetch it by. The bundled
-    set is code-owned -- an operator cannot add to it -- and is two files of
+    set is code-owned -- an operator cannot add to it -- and is three files of
     about 3 KB each, so a second round trip per starter would buy nothing and a
     conditional payload shape would cost every client a second code path.
     """
@@ -363,20 +363,20 @@ def starters() -> list[dict[str, Any]]:
 def starter_caveats(template) -> list[str]:
     """What somebody should know before starting from this document.
 
-    Both shipped starters are titled `Dalio five-step cycle` and differ in one
-    revision number and four arguments, so a picker showing titles offered two
-    rows nobody could tell apart -- and they are not equivalent choices. In
-    `dalio-v1` no review step names a `result_artifact_ref`, and
-    `artifact_transport._review` refuses exactly that: "this review names no
-    result artifact, so nothing it produced could be published; no task was
-    spawned". Four of its steps cannot succeed.
+    All THREE shipped starters are titled `Dalio five-step cycle`, so a picker
+    showing titles offered rows nobody could tell apart -- and they are not
+    equivalent choices. In `dalio-v1` no review step names a
+    `result_artifact_ref`, and `artifact_transport._review` refuses exactly
+    that: "this review names no result artifact, so nothing it produced could be
+    published; no task was spawned". Four of its steps cannot succeed. `v2`
+    fixes that, and `v3` adds the conditions that make the cycle route.
 
     DERIVED, never written down beside the files. A sentence typed here would
     be a second description of a document, free to go stale the moment somebody
     edits the JSON; this reads the same relation the runtime enforces, so a
     starter that gains its missing argument loses its caveat by itself. It is
     also why nothing in the shipped documents moved: their bytes are untouched
-    and both revision digests are exactly what they were.
+    and every revision digest is exactly what it was.
     """
     from .artifacts import REVIEW_CAPABILITY
 

@@ -1,10 +1,15 @@
 # Release smoke test
 
 What a person runs against a release candidate before publishing it: install it clean, run
-every command it ships, and look at the living panel. Nothing here is automated — the suite
+every command it ships, and fetch what it serves. Nothing here is automated — the suite
 already runs in CI, and this procedure exists to check the things a suite cannot: that the
-built artifact installs, that the console script appears on PATH, that the panel answers a
+built artifact installs, that the console script appears on PATH, that the server answers a
 real browser request on a real socket, and that it answers on loopback and nowhere else.
+
+**This procedure is a server check, not a product check.** It fetches documents and reads
+what came back; it never operates the Workflow Studio, because nothing scriptable can. What a
+person must do by hand — open the Studio, publish a workflow, confirm a gate, watch a run — is
+`docs/owner-acceptance.md`, and a release needs both.
 
 Twelve steps, in order. Every one of them names what you must see. A step whose output does not
 match is a release blocker, not a note for later.
@@ -73,7 +78,7 @@ The CLI has no `--version` flag — `conduct --version` is an argparse usage err
 and nothing in the package compares the two, so the only thing standing between them is you,
 here, before you publish.
 
-## 4. The demo serves a panel
+## 4. The demo serves, and says what it built
 
 ```powershell
 $demo = Start-Process -FilePath $CONDUCT -ArgumentList "demo","--port","7801" `
@@ -90,14 +95,21 @@ Expect stdout to be the URL alone — it is the command's result and has to surv
 http://127.0.0.1:7801/
 ```
 
-and stderr to carry the throwaway fixture path and the lifecycle line:
+and stderr to carry **three** lines: the throwaway fixture path, what the demo built on the
+command surface, and the lifecycle line. The middle line is the one that says the front door has
+something to show — `conduct demo` publishes a workflow revision and opens a run against it, and
+a demo that served an empty Studio was the finding that added it:
 
 ```
 demo fixture materialized in ...\conduct-demo-rup_x8pc (throwaway copy)
+demo workflow demo-orbit revision 1, run run-demo-001, gate gate-confirm-do is waiting
 serving ...\conduct-demo-rup_x8pc — Ctrl+C to stop
 ```
 
-## 5. The panel and the state document answer
+The ids are the demo's own and will match what `conduct demo` prints; what must be there is the
+line, with a workflow, a revision, a run and a waiting gate named.
+
+## 5. The Studio, the panel and the state document answer
 
 ```powershell
 $r = Invoke-WebRequest -Uri "http://127.0.0.1:7801/" -UseBasicParsing
@@ -143,41 +155,75 @@ Expect exactly one listening row, `LocalAddress 127.0.0.1`, and the fetch at the
 LAN address to fail to connect. Two separate facts: the first is what the socket was bound to,
 the second is what a machine on the same network can actually reach.
 
-## 7. The panel asks nothing of the network
+## 7. Nothing it serves asks anything of the network
+
+`/` serves the Workflow Studio, which is a shell that loads a directory of ES modules. Fetching
+`/` would therefore scan a document with almost no code in it, and fetching a hand-typed list of
+module URLs would go stale the first time a module is added — a scan that silently misses a file
+is worse than no scan. So scan **the whole panel directory of the installed wheel**, which is
+complete by construction and is exactly the bytes the server will hand a browser:
 
 ```powershell
-$html = (Invoke-WebRequest -Uri "http://127.0.0.1:7801/" -UseBasicParsing).Content
-[regex]::Matches($html, 'https?://[^\s"''<>)]+') | ForEach-Object { $_.Value } | Sort-Object -Unique
-[regex]::Matches($html, '(?:fetch|EventSource|XMLHttpRequest|WebSocket)\s*\(\s*[^)]{0,40}') |
+$panel = & $PY -c "import conductor, pathlib; print(pathlib.Path(conductor.__file__).parent / 'panel')"
+$text = (Get-ChildItem -File $panel | Get-Content -Raw) -join "`n"
+"scanned: $((Get-ChildItem -File $panel).Count) files in $panel"
+[regex]::Matches($text, 'https?://[^\s"''<>)]+') | ForEach-Object { $_.Value } | Sort-Object -Unique
+[regex]::Matches($text, '(?:fetch|EventSource|XMLHttpRequest|WebSocket)\s*\(\s*[^)]{0,40}') |
     ForEach-Object { $_.Value.Trim() } | Sort-Object -Unique
 $resource = '(?:\bsrc|\bhref|\bposter)\s*[:=]\s*["'']?[^"''\s>;)]{0,60}' +
             '|@import[^;]{0,60}|@font-face|url\(\s*[^)]{0,60}'
-[regex]::Matches($html, $resource) | ForEach-Object { $_.Value.Trim() } | Sort-Object -Unique
+[regex]::Matches($text, $resource) | ForEach-Object { $_.Value.Trim() } | Sort-Object -Unique
 ```
 
-Expect the only absolute URL in the served page to be `http://www.w3.org/2000/svg`, which is
-an XML namespace name and not an address anything fetches, and the only two network calls to
-be same-origin:
+**Judge the property, not the transcript.** The exact strings move as the Studio grows, so what
+you are checking is:
 
-```
-EventSource("/events"
-fetch("/state.json", { cache: "no-store" }
-```
+- **the only absolute URL is an XML namespace.** Expect exactly one line,
+  `http://www.w3.org/2000/svg` — a namespace is an identifier, not an address, and nothing
+  fetches it. Any second absolute URL is a blocker.
+- **every network call is same-origin.** Every hit must open with `/`, or with a backtick
+  template that does. You will see `EventSource("/events"`, `fetch("/state.json"`,
+  `fetch("/harnesses.json"`, `fetch("/command/session"` and several `fetch(path`/`fetch(target`
+  calls whose argument is built one line above from a `/command/...` path. A call naming a host
+  is a blocker. Hits with no argument at all are prose — these files carry `//:` comment blocks,
+  and a sentence about `fetch(` is not a call.
+- **every resource is same-origin or a bare `#fragment`.** Expect `/panel/...` paths from the
+  Studio shell and `url(#...)` references into the classic panel's own SVG.
 
 The third scan exists because the first two cannot see the spellings this step's own verdict
-names. A CDN script tag or a web font can be loaded without a scheme — `src="//cdn.example.com/x.js"`,
-`@font-face { src: url(//cdn.example.com/x.woff2) }` — and neither the absolute-URL scan nor
-the call scan reports one. Expect exactly two hits, both fragment references into the page's
-own SVG:
+names. A CDN script tag or a web font can be loaded without a scheme —
+`src="//cdn.example.com/x.js"`, `@font-face { src: url(//cdn.example.com/x.woff2) }` — and
+neither the absolute-URL scan nor the call scan reports one. A hit naming a host, with a scheme
+or without one, is a blocker: this is offline software and a page that reaches out is not.
 
-```
-url(#arw
-url(#ctstFill
+**If the file count is small, you scanned the wrong directory.** The panel ships tens of files.
+A scan that reports three or four has found something other than the installed package, and its
+silence means nothing.
+
+This step reads the wheel rather than the socket, deliberately: the server hands a browser these
+same bytes, and step 5 has already confirmed the wheel is what is being served. Reading the
+directory is the only form of this check that cannot quietly skip a file.
+
+**The one place absolute URLs are legitimate, and the scan above cannot see it.** The panel draws
+a "docs" link for each harness in the bundled registry, and those URLs live in
+`harnesses.py`, not in `panel/` — the scan shows only `href: h.docs`, a variable. Check them
+where they are served:
+
+```powershell
+$h = (Invoke-WebRequest -Uri "http://127.0.0.1:7801/harnesses.json" -UseBasicParsing).Content |
+     ConvertFrom-Json          # a bare JSON array, one object per harness
+$h | ForEach-Object { "$($_.id)  $($_.docs)" }
 ```
 
-Every hit from the third scan must be same-origin or a bare `#fragment`. A hit naming a host,
-with a scheme or without one, is a blocker, and so is any absolute URL beyond the namespace
-above: the panel is offline software and a page that reaches out is not.
+Expect one row per registered harness, and every non-empty `docs` value to begin `https://` and
+name that harness's own vendor documentation — `https://docs.claude.com/en/docs/claude-code`,
+`https://developers.openai.com/codex/`, and so on. Exactly one row, `custom`, has an empty
+`docs`: it stands for a harness this registry has never heard of, and it links to no vendor
+because there is none to link to. **Nothing fetches any of them.** They are rendered
+as `target="_blank" rel="noreferrer noopener"` anchors, the page drops any value that is not
+`https://` before drawing one, and a person clicking one is a person choosing to leave. A value
+that is not `https://`, or one pointing somewhere other than that harness's documentation, is a
+blocker — this is the only route by which a bundled string becomes something a person can click.
 
 Stop the demo when you are done with it:
 
@@ -378,6 +424,50 @@ The demo's own fixture is a copy in the system temp directory, printed on stderr
 it is thrown away with the rest of the temp directory and nothing in the package is touched
 by any of the above.
 
+## Known gaps in this release
+
+Product gaps rather than gaps in this procedure, each with what it costs a person. A gap named
+here is one somebody will meet; a gap nobody named is one they meet alone.
+
+- **No screen can publish an artifact.** The Studio's write targets are the draft, revisions,
+  runs and decisions — artifacts are not among them, so the window reads durable documents and
+  cannot create one. **What it costs:** a step whose missing-artifact behaviour is `block` and
+  whose input nobody has produced can only be unblocked by calling the artifacts route directly.
+  `docs/owner-acceptance.md` step 12 shows that call, and says there that needing it is the
+  finding. A run seeded this way is otherwise entirely normal.
+- **A run cannot name the roles it was opened with.** Materialization substitutes instances for
+  roles and only the result becomes durable; the run envelope carries no assignments. **What it
+  costs:** on the Agents screen a participant shows its instance, provider and availability, and
+  the "Roles it carries" row says the run's plan does not carry roles — which is true. The
+  mapping is recoverable by joining the plan's step→instance to the workflow revision's
+  step→role, because the frozen configuration names the workflow and revision; this build does
+  not perform that join.
+- **Four of the six declared capabilities have no provider.** `evidence`, `stop`, `retry` and
+  `switch` are part of the deep protocol and every provider in the catalogue declares only
+  `observe`, `dispatch` and `review`. **What it costs:** a workflow cannot use those capabilities
+  at all, and their argument vocabularies are exercised only by the contract tests and the fake
+  harness. `adapters/deep_commands.py` says so at the vocabularies themselves.
+- **A plan naming a sandbox route this build cannot provide no longer opens a run.** This is the
+  one backward-incompatible change in the release, and it is deliberate. `project-root` is the
+  only route this build provides; a step attaching any other `sandbox` row is now refused twice —
+  when a run is opened, naming the step and the route (*step 'X' demands sandbox route 'Y' that
+  this build does not provide*), and again when an attempt is authorized, for runs that were
+  opened before the rule existed. **What it costs:** a workflow drawn against an earlier build
+  that named such a route must be edited before a run will open against it — remove or change
+  that attachment in the inspector's **Route and policy attachments** and publish a new revision.
+  Nothing about the stored document changes: publishing one is still allowed, every shipped
+  revision digest is untouched, and a journal already carrying such a route still replays — it
+  simply authorizes nothing. **Why it is a gain and not a regression:** the earlier build accepted
+  the demand and then ignored it, which told a person their step was contained when it was not.
+  Refusing out loud is the point. A person meets this at `docs/owner-acceptance.md` step 10,
+  where a run is started; step 8's **Route and policy attachments** row is where the screen
+  states the rule before you can trip over it.
+- **The browser gate is sensitive to socket exhaustion on Windows.** Consecutive full-gate runs
+  can fail with `ERR_NO_BUFFER_SPACE` or a setup stall while sockets sit in `TIME_WAIT`.
+  **What it costs:** whoever runs the gate must let the host drain between runs and re-run a
+  failed module in isolation before calling it a defect. Every failure of this class seen in this
+  session passed in isolation.
+
 ## What this procedure does not check
 
 Named so that passing it is not read as more than it is.
@@ -386,10 +476,18 @@ Named so that passing it is not read as more than it is.
   can answer them — driving a console prompt is not the same act as a person answering one.
   Run it once by hand, with a terminal genuinely attached, and see the three questions and the
   template line that follows your answers.
-- **The panel in a browser.** Steps 5 to 7 check what the server sends. Nobody has looked at
+- **Anything in a browser.** Steps 5 to 7 check what the server sends. Nobody has looked at
   what a browser draws from it, and the live update is checked only as far as the page opening
-  an `EventSource`. Open the demo URL, edit a lane file in the printed fixture directory, and
-  watch the panel move.
+  an `EventSource`. For the classic panel: open `/panel/index.html`, edit a lane file in the
+  printed fixture directory, and watch it move. For the Workflow Studio, which is what `/`
+  serves and where every write in this product is made, this procedure checks nothing at all —
+  no step here opens a screen, publishes a revision, confirms a gate or reads a receipt. That
+  is `docs/owner-acceptance.md`, seventeen steps, done by a person.
+- **Every `/command/*` route.** The Studio's whole API — proposals, action requests, decisions,
+  drafts, revisions, the run journal, the scheduler's readings — is untouched above. Steps 5
+  to 7 fetch `/`, `/state.json`, `/handoff/claude.md` and the panel's static files, and nothing
+  else. A release candidate that served those four perfectly and refused every write would pass
+  this procedure.
 - **The no-terminal default.** Step 8 passes `--template`, which short-circuits before
   `conduct init` consults the terminal at all, so nothing above exercises what init does
   when stdin is a pipe or a CI runner — the path that would hang every runner if it broke.

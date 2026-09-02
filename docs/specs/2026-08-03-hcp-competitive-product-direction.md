@@ -5,6 +5,12 @@
 - **Builds on:** `docs/adr/0001-harness-control-plane-model.md`
 - **Does not modify:** Protocol v1 semantics
 
+> **Read as of its date (note added 2026-09-02).** This is a planning document,
+> kept as written. Its scope calls say what was intended on 2026-08-03, and two
+> of them were overtaken: conditional execution and the scheduler shipped in the
+> v1 alpha — see the marked bullet in §8. Where this document and the tree
+> disagree, the tree is the fact.
+
 ## 1. Product decision
 
 HCP is a **local-first, self-hostable control plane for heterogeneous AI
@@ -616,7 +622,11 @@ does not restart the strike.
 ### Later, deliberately not alpha
 
 - drag-and-drop graph editing;
-- conditional execution and a general scheduler;
+- ~~conditional execution and a general scheduler~~ — **overtaken; both shipped
+  in the v1 alpha.** `graph_schedule.py` computes which steps may run from the
+  plan and the journal, and walks each road out of a settled step against its
+  condition. It is a computation, not a daemon: it dispatches nothing, and the
+  "not an orchestrator" claim above is unaffected;
 - built-in chat or direct LLM calls from the merger;
 - hosting, cloud storage, or broad SaaS integrations;
 - multi-project analytics, teams, auth, and RBAC;

@@ -4,14 +4,18 @@
 question, and it is the one that decides an alpha: **can somebody who did not build this open it
 and get work done?**
 
-Fifteen steps. Every one names what you must be able to see or do **without opening a terminal
+Seventeen steps. Every one names what you must be able to see or do **without opening a terminal
 log, reading source, or asking the person who wrote it**. A step you cannot complete from the
 screen alone is a finding, and the finding is the product's, not yours.
 
-**You do not open a text editor at any point in this script.** There is no longer an exception:
-step 7 used to send you to `conductor/providers.json` and called that deliberate, which was an
-honest description of a gap rather than a design. If you find yourself reaching for an editor,
-stop and write down which step sent you there — that is the finding this line exists to catch.
+**You do not open a text editor at any point in this script.** There is no exception: step 7
+used to send you to `conductor/providers.json` and called that deliberate, which was an honest
+description of a gap rather than a design. If you find yourself reaching for an editor, stop and
+write down which step sent you there — that is the finding this line exists to catch.
+
+**Where this script types at a shell, it is running a `conduct` command or calling the product's
+own HTTP API** — never editing a file, never reading a log to find out what happened. Step 12 is
+the one place it calls the API directly, and it says why that is itself a finding.
 
 **Shell.** Windows PowerShell below, because that is where this was written. The `conduct`
 commands are identical on every platform.
@@ -62,15 +66,17 @@ the most recent run, and a route to the thing that is blocking.
 On a brand-new project most of those answers are "nothing yet". That is a legitimate answer and
 the screen must say it in words. A blank area is a finding. A spinner with no exit is a finding.
 
-## 4. Create a workflow, from blank or from a template
+## 4. Create a workflow, from blank or from a starting point
 
 Go to **Workflow**. Create one, either empty or from a bundled starting point (the Dalio
 five-step cycle ships with the product and needs no network).
 
-**Two starters ship, and they must not look alike.** Each row names its revision and says
-whether it is ready to run; one of them says that four of its review steps name no result
-artifact, so those steps cannot succeed. If the two rows read identically you cannot choose
-between them, and that is a finding — they are not equal choices.
+**Three starters ship, and they must not look alike.** Each row names its revision and says
+whether it is ready to run. One says that four of its review steps name no result artifact, so
+those steps cannot succeed. One draws the routed cycle: its connections carry conditions, so
+approving the confirm gate opens the effecting step and asking for changes at the result gate
+sends the run round again. If the rows read identically you cannot choose between them, and that
+is a finding — they are not equal choices.
 
 **The workflow you just named must be the one the picker says is chosen**, immediately, without
 a save and without a reload. A picker that falls back to "choose a workflow" while you are
@@ -94,7 +100,7 @@ third — a position the canvas alone can set is exactly the pointer-only afford
 looking for. Then use **Let the canvas place it** to hand one back to the automatic layout: if
 placing a step is a door that only opens one way, that is a finding.
 
-Where you put a step is stored in the workflow document, and step 14 asks you to confirm it came
+Where you put a step is stored in the workflow document, and step 16 asks you to confirm it came
 back. It is **not** execution semantics: a run's frozen plan carries no coordinate at all, so
 rearranging a drawing can never change what a run does.
 
@@ -154,18 +160,52 @@ position stops costing you a text editor.
 Restart `conduct up`, and the same Agents screen must now show that provider as **available** —
 providers are read once at startup, and the command says so when it finishes.
 
-If you have no harness installed, stop here and record that. Steps 8-13 need one.
+If you have no harness installed, stop here and record that. Steps 8-15 need one.
 
-## 8. Configure execution, artifacts and verification
+## 8. Walk every field of the inspector
 
 Back in **Workflow**, walk the inspector's six sections for a step: General, Assignment,
 Execution, Inputs and outputs, Verification, Transitions.
 
-**Every field must do one of two things**: be validated, saved, read back and used by the
-product — or say plainly that this harness does not support it. A control that looks editable
-and changes nothing is a finding. A field that disappears without explanation is a finding.
-Several fields in this release honestly say they are unsupported, and each says where the fact
-actually lives instead. That is the intended behaviour; a silent one is not.
+**The rule for this step is absolute: every field either writes something the product reads
+back and acts on, or states a fact with the document it was read from named beside it. There is
+no third kind.** Nothing in this release says "not supported by this harness". If you find such
+a row, that is a finding — the register of unsupported labels reached zero, and a new one may
+only appear as a deliberate report.
+
+For each field below: **edit it, save the draft, reload the page, and see it come back.** Where
+the third column names a consumption, that is what you must also be able to see happen.
+
+| Field | Section | What you must see |
+| --- | --- | --- |
+| **Purpose** | General | Free text, saved and read back. It travels INSIDE the step's payload when the step runs, so a harness is told why the plan says this step exists. |
+| **Position** | General | A coordinate pair you can type, and **Let the canvas place it** to hand it back. Step 16 checks it survived. |
+| **Timeout** | Execution | Seconds, refused outside the contract's bounds with the bound named. It becomes the attempt's own ceiling. |
+| **Attempt bound** | Execution | A count. When a step has spent it, the Runs screen says so in words — *Every attempt this plan allows the step has been authorized, so it can never settle again.* — and offers no button the runtime would refuse. |
+| **Output budget** | Execution | A chosen profile, with the byte ceiling it resolves to stated beside it. The window states the number rather than implying one. |
+| **Route and policy attachments** | Execution | `sandbox: project-root` is a demand on the machine that runs the step, and the screen says exactly what it buys: the route a child will run on is walked from the project root and refused if it leaves — a symlink, a junction, a reparse point, a hard link, a `..` segment, or anything not strictly beneath the root. **It must also say what it is not:** not operating-system isolation, no privilege drop, no filesystem jail, and the check reads the route at the instant it walks it. A step demanding any other route is refused before anything is spawned — **when the run is opened, and again when an attempt is authorized**, and the screen must say both. That refusal is new in this release: a workflow drawn against an earlier build that names another route still publishes, and no longer opens a run, until you change this row. The other five kinds — model, tool, skill, session, filesystem — are recorded and the screen says this build does nothing else with them. |
+| **Required input artifacts** | Inputs and outputs | Add and remove references. The control writes the argument the reviewed schema marks, and refuses a malformed reference rather than posting it. |
+| **Produced artifacts** | Inputs and outputs | The reference this step publishes, editable where the schema declares one, and the cost of clearing it stated. |
+| **Handoff mapping** | Inputs and outputs | Derived from the document: for each required reference, which step produces it — or that nobody does. Both arms must appear on one document. |
+| **Missing-artifact behaviour** | Inputs and outputs | A choice of two, both fail-closed. **fail** (which is also what saying nothing means): the step is offered, reached, and refused when the input cannot be resolved — no task spawned. **block**: the step is never offered while the artifact is absent. Step 12 makes you watch a `block` wait and end it. |
+| **Verifier** | Verification | A role. Naming one means evidence from the doer is refused; naming none means the doer answers. |
+| **Evidence requirements** | Verification | `digest`, and only ever a tightening — the control offers no word that would ask for less. |
+| **Success criteria** | Verification | **Read-only, and there is no field to edit.** Sentences the server derived from the rules that really operate, each beside the layer that enforces it: the result must be verified; who may answer for it, named out of the plan; for a review, the result artifact that must stand and answer its request; and the digest when the step demands one. **No sentence may say "signed" or "signature"** — there is no cryptographic signature anywhere in this product, and a screen implying one is a finding. |
+| **Verification failure policy** | Verification | `halt the run`. It is a tightening and not routing: it says nothing further may be authorized in this run at all, including branches no road from the failing step could reach. |
+| **Human decision** | Transitions | A gate id, and — on a gate — **Require explicit human approval — waiver disabled**. Step 14 makes you meet what it removes. |
+| **Decision routing** | Transitions | Read-only: where each answer sends the run, derived from the roads already drawn. A gate whose every answer opens the same step says so; a step that is not a gate says so. |
+| **Edge conditions** | Transitions | On each road out of a step, the words that step's own kind can produce — and none at all for a step that carries out no work, because the contract refuses a condition there. |
+| **Loop target and bound** | Transitions | A loop names where it reopens and how many passes at most. |
+
+**Two consumptions you must provoke here, not merely read about.**
+
+- Give an effecting step an **attempt bound lower than the bound of a loop that contains it**,
+  then publish. **You must see** the warning, in these words: *Attempt bound may be exhausted
+  before the loop's final pass.* It must **not** refuse the publish — the document is legal and
+  the judgement is yours. A refusal here is a finding, and so is silence.
+- Put **`on_waived`** on a road out of a gate that requires explicit human approval. **You must
+  see** the publish refused, because that gate can never produce that word: the road is one no
+  run could travel.
 
 ## 9. Validate and publish a revision
 
@@ -185,6 +225,14 @@ Start a run from the workflow you just published, binding each role to a partici
 **You must be able to see** which revision the run is following. A run freezes the plan it
 starts with: editing the workflow afterwards must not change what that run is doing.
 
+**If you are opening a run against a workflow drawn on an earlier build, this is where it can
+be refused.** A step attaching a `sandbox` route other than `project-root` is refused here,
+naming the step and the route. That is the intended answer, not a defect: the earlier build
+accepted such a demand and then ignored it. Go back to that step's **Route and policy
+attachments** (step 8), remove or change the row, publish a new revision, and open the run
+against that one. **You must see the refusal name the step and the route** — a refusal that
+does not tell you which row to change is itself a finding.
+
 ## 11. Inspect the run's real durable timeline
 
 Go to **Runs** and open it.
@@ -202,7 +250,56 @@ screen says about it**: a process that exits 0 has finished, which is not the sa
 verified. If that sentence is not on the screen, that is a finding — it is the single most
 confusing thing this product can show you.
 
-## 12. Submit a human decision
+## 12. Watch a step wait for a document, and end the wait
+
+Give a step **`block`** as its missing-artifact behaviour, requiring a reference nothing in the
+run has published — `artifact-brief` — then publish and start a run.
+
+**You must see**, on the Runs screen, that step held back with a **Waiting for artifact** row
+naming `artifact-brief`, and a sentence saying it is not offered until that artifact exists.
+It must **not** say it is waiting on a predecessor step, and it must not show an empty "Waiting
+on" line. Nothing has been attempted for it, and nothing has failed.
+
+Now publish the artifact. **The Studio cannot do this** — that is a real gap and it is recorded
+as a residual in `docs/release-smoke.md`; the product's own screens can read artifacts but not
+create one. So this step calls the product's own API:
+
+```powershell
+$BASE = "http://127.0.0.1:7801"
+$RUN  = "<the run id from step 10>"
+$S = Invoke-RestMethod "$BASE/command/session"
+$body = @{
+  artifact_id  = "artifact-brief-1"
+  artifact_ref = "artifact-brief"
+  media_type   = "text/markdown"
+  content      = "# Brief`n`nWhat this cycle is for."
+} | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri "$BASE/command/runs/$RUN/artifacts" `
+  -Headers @{ "X-Conduct-CSRF" = $S.csrf_token; "Origin" = $BASE } `
+  -ContentType "application/json" -Body $body
+```
+
+**You must then see**, without reloading anything by hand, the waiting sentence disappear and the
+step become available. If you have to reload to see it, record that.
+
+## 13. Drive the cycle and read the plan's own word
+
+Use the routed starter (`dalio-v3`) for this step, because its roads carry conditions.
+
+**First pass, approve.** Answer the confirm gate `approve`, let the step run, and answer the
+result gate `approve`. **You must see** the run reach **Plan: complete** — and beside it the two
+facts that tell you what "complete" means: the last gate answer and the last outcome.
+
+**"Complete" must never be drawn as a success.** It is the neutral chip, the same one a run that
+exhausted every retry reaches, and the screen must say so. A green tick on that word is a
+finding.
+
+**Second pass, send it back.** Start another run and answer the result gate `request_changes`
+three times. **You must see** the loop reopen twice and the third answer end it, with the loop's
+position and its ceiling both on screen. A run that reopens forever, or a screen that shows a
+position without its ceiling, is a finding.
+
+## 14. Submit a human decision, and meet a gate that refuses one
 
 Go to **Decisions**.
 
@@ -210,16 +307,26 @@ Go to **Decisions**.
 what your choices are, and what each choice causes. Submit one.
 
 **You must then see** a durable receipt, and what became runnable as a result. A decision that
-vanishes without a receipt is a finding.
+vanishes without a receipt is a finding. **Read the receipt again after the screen has re-read
+the run** — choose the gate a second time, and the receipt's own id, the actor and the immutability
+sentence must all still be there. A receipt that survives only until the next refresh is a
+finding.
 
-## 13. Modify the workflow and publish another immutable revision
+Now open a gate whose plan says **Require explicit human approval**. **You must see** that
+`waive` is not offered at all, with the reason on screen — and that `approve`, `reject` and
+`request_changes` are all still offered. This makes a gate harder to pass and never harder to
+fail; if the other answers disappeared too, that is a finding.
 
-Go back to **Workflow**, change something, and publish again.
+## 15. Modify the workflow and publish another immutable revision
 
-**You must see** revision 2 (or 3) created, revision 1 unchanged, and the run from step 10 still
-following the revision it started with.
+Go back to **Workflow**. **Use Edit to start a new draft from the published revision** — a
+published revision is immutable and its controls are shut, so the way to change it is to draw a
+new draft on top of it. Change something and publish again.
 
-## 14. Reload and reconnect
+**You must see** revision 2 created, revision 1 unchanged, the diff before you confirm, and the
+run from step 10 still following the revision it started with.
+
+## 16. Reload and reconnect
 
 Reload the page. Then stop `conduct up`, watch the screen, and start it again.
 
@@ -229,11 +336,15 @@ the same reason; an honest disconnected state while the server is down, with wri
 disabled rather than failing silently; and everything back after it returns, without losing work
 you had not saved.
 
+**While it is down, put your cursor in a text field and leave it there.** When the connection
+returns, the controls must come back without throwing you out of the field you were typing in,
+and without moving your cursor to the end of what you had typed.
+
 ```powershell
 Get-Process conduct -ErrorAction SilentlyContinue | Stop-Process -Force
 ```
 
-## 15. Understand every failure without opening a terminal log
+## 17. Understand every failure without opening a terminal log
 
 Cause a failure on purpose — name a provider that is not configured, publish an invalid
 workflow, or point a step at a step you deleted.

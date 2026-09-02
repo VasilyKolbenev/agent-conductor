@@ -20,8 +20,8 @@ different ways, so both are held here:
   materializer that tried to carry one would not construct.
 
 A third claim is here because it is the reason the field could be added at all:
-absent stays absent. Both shipped starters name no position, so their revision
-digests are exactly what they were before this existed -- and those two digests
+absent stays absent. No shipped starter names a position, so their revision
+digests are exactly what they were before this existed -- and those digests
 are pinned bytes elsewhere in this suite, which is what makes "backward
 compatible" a measurement rather than an intention.
 

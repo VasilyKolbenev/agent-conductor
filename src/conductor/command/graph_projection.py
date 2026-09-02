@@ -62,9 +62,11 @@ GATE_STATES = (
 def graph_payload(recovered: "RecoveredRun") -> dict[str, Any]:
     """The whole graph half of a run read: the plan, its digest, and the run.
 
-    A run that follows no graph answers three nulls rather than an absent key,
-    because a reader that has to tell "no graph" from "old server" by the shape
-    of a response is a reader guessing.
+    A run that follows no graph answers the whole block, empty -- four nulls and
+    an empty object -- rather than an absent key, because a reader that has to
+    tell "no graph" from "old server" by the shape of a response is a reader
+    guessing. `success_criteria` is `{}` and not null because it is a map from
+    step to criteria: a plan with no steps has none, which is not "unknown".
     """
     definition = _definition(recovered)
     if definition is None:

@@ -2,7 +2,7 @@
 
 `output_limit_profile` was the release verdict's own named example of what not
 to build: a field declared on every dispatch, validated against a closed
-vocabulary, carried in both shipped starters, projected into the panel -- and
+vocabulary, carried in every shipped starter, projected into the panel -- and
 read by nothing. `headless_cli._spawn` handed the runner a constant, so `small`
 and `normal` produced identical spawns and a step that asked for a smaller
 budget got the same one.

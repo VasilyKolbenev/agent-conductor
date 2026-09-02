@@ -384,7 +384,7 @@ def _end_to_end_document(
                 note=("The durable truth after the effect: the request, both "
                       "attempt_events, the verification evidence and the "
                       "terminal action_result. The computed graph half is "
-                      "three nulls: this run follows no plan.")),
+                      "present and empty: this run follows no plan.")),
         ],
     }
 
