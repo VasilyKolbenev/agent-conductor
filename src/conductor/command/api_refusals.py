@@ -186,6 +186,12 @@ _REVIEWED_FACTS = (
                     f"as revision {facts['revision']}")),
     # ONE route, never a list: by the rule above a detail is a safe id or a
     # counting number, reviewed one fact at a time because it is rendered.
+    # A gate that may not be set aside, named by the GATE id the caller
+    # themself sent -- not by the node, because a person answering a gate knows
+    # it by the id on the decision they are making.
+    ("service_refused", ("run_id", "gate_id"),
+     lambda facts: (f"gate '{facts['gate_id']}' requires explicit human "
+                    "approval and cannot be waived")),
     ("service_refused", ("run_id", "node_id", "sandbox"),
      lambda facts: (f"step '{facts['node_id']}' demands sandbox route "
                     f"'{facts['sandbox']}' that this build does not provide")),
@@ -356,6 +362,19 @@ class ApiRefusal(Exception):
                    "cannot reach")
         return cls(_REFUSAL_BUILD, "service_refused", message, detail)
 
+
+    @classmethod
+    def gate_refuses_waiver(cls, run_id: str, gate_id: str) -> "ApiRefusal":
+        """The gate's own id back, because that is what the caller named.
+
+        A waiver is refused BEFORE anything is appended, so this sentence is
+        the whole of what the run records about the attempt: nothing else
+        happened. The gate id came out of the caller's own decision body.
+        """
+        detail = {"run_id": run_id, "gate_id": gate_id}
+        message = (f"gate '{gate_id}' requires explicit human approval and "
+                   "cannot be waived")
+        return cls(_REFUSAL_BUILD, "service_refused", message, detail)
 
     @classmethod
     def plan_sandbox_unprovidable(

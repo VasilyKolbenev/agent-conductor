@@ -72,6 +72,7 @@ from .graph_values import (
     settled_purpose,
     settled_failure_policy,
     settled_missing_artifact_policy,
+    settled_success_requires,
     settled_required_evidence,
 )
 from .artifacts import requires_input_artifacts
@@ -168,12 +169,16 @@ class TemplateNode:
     #: The DEFINITION's word again, carried across unchanged. Optional,
     #: so no template written before it existed moves a digest.
     missing_artifact_policy: str | None = None
+    #: The DEFINITION's word again, carried across unchanged. Optional,
+    #: so no template written before it existed moves a digest.
+    success_requires: str | None = None
 
     _FIELDS = frozenset({
         "node_id", "kind", "title", "stage", "role_id", "capability",
         "arguments", "resources", "gate_id", "loop", "timeout_seconds",
         "attempt_bound", "purpose", "verifier_role_id", "position",
         "required_evidence", "failure_policy", "missing_artifact_policy",
+        "success_requires",
     })
 
     def __post_init__(self) -> None:
@@ -215,6 +220,7 @@ class TemplateNode:
                                _id("verifier_role_id", self.verifier_role_id))
         self._settle_verification_demands()
         self._settle_missing_artifact_policy()
+        self._settle_success_requires()
 
     def _settle_missing_artifact_policy(self) -> None:
         """A policy about a missing input belongs to a step that HAS inputs.
@@ -236,6 +242,24 @@ class TemplateNode:
                 f"node {self.node_id!r} names a missing-artifact policy and is "
                 f"given no artifacts: {self.capability!r} takes no input "
                 "documents, so there is no input for it to be missing")
+
+    def _settle_success_requires(self) -> None:
+        """The DEFINITION's rule in this document's vocabulary.
+
+        Its own half is the KIND, said as the person drew it: they chose a step
+        type from a closed list, and being told which type they chose is what
+        sends them to the control they can change. The layer below refuses the
+        same document; what this adds is that a workflow carrying such a step
+        cannot be PUBLISHED at all, so no run is ever opened on a plan whose
+        protection was never real.
+        """
+        object.__setattr__(self, "success_requires",
+                           settled_success_requires(self.success_requires))
+        if self.success_requires is not None and self.kind != "gate":
+            raise TemplateError(
+                f"node {self.node_id!r} names a gate success requirement and "
+                f"is a {self.kind!r}, not a gate; only a gate is answered by a "
+                "Human, so only a gate can demand anything of that answer")
 
     def _settle_verification_demands(self) -> None:
         """The two things a plan may say about a step's own outcome.
@@ -329,6 +353,8 @@ class TemplateNode:
             out["failure_policy"] = self.failure_policy
         if self.missing_artifact_policy is not None:
             out["missing_artifact_policy"] = self.missing_artifact_policy
+        if self.success_requires is not None:
+            out["success_requires"] = self.success_requires
         if self.position is not None:
             out["position"] = self.position.as_dict()
         out["resources"] = [row.as_dict() for row in self.resources]
@@ -378,7 +404,8 @@ class TemplateNode:
             required_evidence=data.pop("required_evidence", None),
             failure_policy=data.pop("failure_policy", None),
             missing_artifact_policy=data.pop(
-                "missing_artifact_policy", None))
+                "missing_artifact_policy", None),
+            success_requires=data.pop("success_requires", None))
 
 
 @dataclass(frozen=True)
@@ -587,7 +614,8 @@ def _rebuilt_node(row: object) -> TemplateNode:
         purpose=row.purpose, verifier_role_id=row.verifier_role_id,
         position=row.position, required_evidence=row.required_evidence,
         failure_policy=row.failure_policy,
-        missing_artifact_policy=row.missing_artifact_policy)
+        missing_artifact_policy=row.missing_artifact_policy,
+        success_requires=row.success_requires)
 
 
 def _rebuilt_edge(row: object) -> GraphEdge:
@@ -647,7 +675,8 @@ def _build(template: GraphTemplate, assignments: Mapping[str, str], *,
             # and a run's plan carries the template's own word.
             required_evidence=node.required_evidence,
             failure_policy=node.failure_policy,
-            missing_artifact_policy=node.missing_artifact_policy)
+            missing_artifact_policy=node.missing_artifact_policy,
+            success_requires=node.success_requires)
         for node in steps)
     return GraphDefinition(graph_id=graph_id, run_id=run_id,
                            created_at=created_at, nodes=nodes, edges=edges)

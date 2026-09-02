@@ -33,8 +33,8 @@ export const EDIT_TYPES = Object.freeze(["add", "connect", "delete-edge",
 export const EDIT_FIELDS = Object.freeze(["arguments", "attempt_bound",
   "capability", "failure_policy", "gate_id", "kind", "loop_back_to",
   "loop_bound", "missing_artifact_policy", "purpose", "required_evidence",
-  "resources", "role_id", "stage", "timeout_seconds", "title",
-  "verifier_role_id"]);
+  "resources", "role_id", "stage", "success_requires", "timeout_seconds",
+  "title", "verifier_role_id"]);
 //: `graph_definition.NODE_KINDS`, its loop and resource bounds, and
 //: `workflow_draft.MAX_DRAFT_NODES` / `MAX_DRAFT_EDGES`.
 export const NODE_KINDS = Object.freeze(["task", "gate", "loop"]);

@@ -73,6 +73,12 @@ export function decisionRows(detail) {
       // workflow author's own sentence about it, and this is the only place
       // that sentence exists after the drawing was published.
       purpose: typeof node.purpose === "string" ? node.purpose : null,
+      // The plan's own word about what this gate demands of its answer,
+      // carried through rather than interpreted: this window decides nothing
+      // about it beyond which control to stop offering. The server is what
+      // refuses a waiver, and the store refuses one written around the server.
+      success_requires: typeof node.success_requires === "string"
+        ? node.success_requires : null,
       decision: standing && typeof standing.decision === "string"
         ? standing.decision : "unknown",
       // WHERE this answer sends the run, read off the schedule the server

@@ -43,6 +43,7 @@ from .artifacts import (
 )
 from .graph_causality import (
     DISPATCH_KEY_PREFIX,  # noqa: F401 -- re-exported at its original home
+    _decision_may_settle_that_gate,
     _decision_names_a_planned_gate,
     _hold_run_terminal, _hold_terminal_is_last,
     _one_graph_per_run,
@@ -553,6 +554,7 @@ class RunStore:
             if value.config_digest != recovered.envelope.config_digest:
                 raise StoreError("decision config_digest does not match the frozen run")
             _decision_names_a_planned_gate(recovered, value)
+            _decision_may_settle_that_gate(recovered, value)
             if value.supersedes is not None:
                 prior = next((row.value for row in recovered.records
                               if isinstance(row.value, DecisionReceipt)

@@ -69,6 +69,14 @@ from .graph_template import (
     materialize,
 )
 from .graph_causality import standing_terminal
+#: The three holds this boundary answers from records alone. They live next
+#: door because a method that never touches `self` is a function, and this
+#: module reached its line cap carrying three of them.
+from .http_holds import (
+    _hold_gate_admits,
+    _hold_not_terminal,
+    _sandboxes_are_provided,
+)
 from .run_closing import close_if_terminal
 from .plan_admission import (  # noqa: F401 -- re-exported under their old names
     _bindings,
@@ -582,7 +590,7 @@ class CommandApi:
         with self._store.transaction():
             self._hold_route(run_id)
             recovered = self._store.read(run_id)
-            self._hold_not_terminal(recovered)
+            _hold_not_terminal(recovered)
             prior_ids = {
                 row.value.proposal_id for row in recovered.records
                 if row.kind == "action_proposal"}
@@ -637,7 +645,8 @@ class CommandApi:
         with self._store.transaction():
             self._hold_route(run_id)
             recovered = self._store.read(run_id)
-            self._hold_not_terminal(recovered)
+            _hold_not_terminal(recovered)
+            _hold_gate_admits(run_id, recovered, submitted)
             prior = next((
                 row.value for row in recovered.records
                 if row.kind == "decision"
@@ -698,58 +707,11 @@ class CommandApi:
         """
         self._bindings_are_reachable(snapshot, run_id, nodes)
         self._bindings_are_servable(snapshot, run_id, nodes)
-        self._sandboxes_are_provided(run_id, nodes)
-
-    @staticmethod
-    def _sandboxes_are_provided(
-            run_id: str, nodes: Iterable[GraphNode]) -> None:
-        """No run is opened on a plan demanding a route this build cannot give.
-
-        The FIRST of two pre-spawn doors, and the earliest one there is: nothing
-        is created, so there is no run to explain afterwards. `authorize_holds`
-        holds the same rule at the door where an attempt is authorized, for runs
-        opened before this one existed.
-
-        It is deliberately NOT a contract rule. `GraphResource` still admits any
-        id-shaped name, so no shipped document moves a byte, no digest changes,
-        and a journal already carrying an unprovidable route still REPLAYS --
-        it simply authorizes nothing. Refusing in the contract would make such a
-        run unreadable, which turns a plan this build cannot honour into a
-        journal nobody can read.
-        """
-        for node in nodes:
-            # The FIRST unprovidable route, because a refusal detail is one
-            # reviewed fact -- a safe id or a counting number -- and never a
-            # list. The caller fixes that row and the next attempt names the
-            # next, which is how every other refusal on this boundary behaves.
-            for route in unprovidable_sandboxes(node.resources)[:1]:
-                raise ApiRefusal.plan_sandbox_unprovidable(
-                    run_id, node.node_id, route)
+        _sandboxes_are_provided(run_id, nodes)
 
     def _hold_route(self, run_id: str) -> None:
         if run_route_violations(self._store, run_id):
             raise ApiRefusal.fixed("route_unsafe")
-
-    @staticmethod
-    def _hold_not_terminal(recovered) -> None:
-        """A run that recorded its ending accepts nothing further, at the door.
-
-        The gap this closes is exact. `_validate_records` never judges the
-        record being APPENDED: it runs over the journal as read, which passes,
-        and then `_validate_new_relation` is asked about the new value alone --
-        and none of its arms fires for a decision or a proposal on a terminated
-        run. The byte gets written, and only the NEXT read fails
-        terminal-must-be-last. The product would brick a run through its own
-        front door and then report the journal as corrupt.
-
-        So both write doors ask this inside their transaction and strictly
-        before the first call that can write, and they ask it through one method
-        so the sentence exists once. The runtime holds it again beneath them,
-        which is the doubling `_hold_route` already has: the boundary refuses
-        early, the depth refuses whatever the caller.
-        """
-        if standing_terminal(recovered) is not None:
-            raise ApiRefusal.fixed("run_terminal")
 
     def _bound_adapter(
             self, config: Mapping[str, Any], run_id: str, instance_id: str) -> str:

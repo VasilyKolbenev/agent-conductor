@@ -228,6 +228,49 @@ def _decision_names_a_planned_gate(
             f"which graph {graph.graph_id!r} does not carry")
 
 
+def gate_refuses_waiver(recovered: "RecoveredRun", gate_id: object) -> bool:
+    """Whether this run's plan says that gate may not be set aside.
+
+    The ONE reading of that question, and both doors spend it: the boundary
+    asks before it appends, and the store asks again on raw replay. A second
+    spelling would let the two disagree -- and the whole point of the pair is
+    that bytes written around the boundary are still refused when they are
+    read, which only holds if both are asking the same thing.
+
+    A run following no plan answers False: there is no gate to protect, and a
+    journal written before graphs existed must go on replaying.
+    """
+    graph = _standing_graph(recovered)
+    if graph is None:
+        return False
+    return any(node.gate_id == gate_id and node.success_requires is not None
+               for node in graph.nodes)
+
+
+def _decision_may_settle_that_gate(
+        recovered: "RecoveredRun", value: DecisionReceipt) -> None:
+    """A gate demanding explicit approval carries no waiver, ever.
+
+    The rule above asks whether the gate is one the plan CARRIES; this asks
+    whether the answer is one that gate ALLOWS. Both are pure functions of the
+    plan's own bytes among the PRIOR records, and both are guarded by the
+    plan's presence there for the same reason: a decision written before the
+    plan stays legal, and judging a record against a plan it predates would
+    make a journal written before graphs existed unreplayable.
+
+    This is the half a forged journal meets. The boundary refuses a waiver
+    before it is appended; bytes written around that boundary -- by hand, by an
+    older build, by anything -- are refused when they are READ, so the
+    protection cannot be edited into the file.
+    """
+    if value.action != "waive" or not gate_refuses_waiver(
+            recovered, value.gate_id):
+        return
+    raise StoreError(
+        f"decision {value.receipt_id!r} waives gate {value.gate_id!r}, which "
+        "this run's plan says requires explicit human approval")
+
+
 def _hold_run_terminal(recovered: "RecoveredRun", value: RunTerminal) -> None:
     """A run records its terminal once, and only about the plan it follows.
 

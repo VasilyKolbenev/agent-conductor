@@ -131,7 +131,18 @@ def settle_edge_conditions(nodes, edges) -> None:
 
 
 def _settle_source_can_say_it(source, edge) -> None:
-    """A road opens on a word the step behind it actually produces."""
+    """A road opens on a word the step behind it actually produces.
+
+    Three refusals, and the last two are the same idea asked of different
+    facts: a road nobody could ever travel is a road a reader will believe in.
+    The kind test asks whether the word belongs to this kind of step at all; the
+    capability test asks whether this particular step produces any word; and the
+    waiver test asks whether this particular GATE can produce THIS word -- a
+    gate demanding explicit human approval refuses `waive` at the door and again
+    on replay, so a road opening on it is dead by construction. Refused where
+    the workflow is PUBLISHED, which is the last moment a person can still fix
+    the drawing.
+    """
     if edge.condition is None:
         return
     if edge.condition not in _CONDITIONS_BY_KIND[source.kind]:
@@ -142,6 +153,12 @@ def _settle_source_can_say_it(source, edge) -> None:
         raise ContractError(
             f"node {source.node_id!r} carries out no work, so no condition it "
             "names could ever be produced")
+    if edge.condition == "on_waived" and source.success_requires is not None:
+        raise ContractError(
+            f"node {source.node_id!r} demands "
+            f"{source.success_requires!r} and can therefore never be waived, "
+            f"so the road to {edge.to_node!r} on 'on_waived' is one no run "
+            "could ever travel")
 
 
 def _settle_no_mixed_roads(edges) -> None:

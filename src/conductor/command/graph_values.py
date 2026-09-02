@@ -299,6 +299,59 @@ def settled_failure_policy(value: object) -> str | None:
 #: second behaviour. A witness holds the two identical.
 MISSING_ARTIFACT_POLICIES = frozenset({"fail", "block"})
 
+#: What a GATE may demand of the answer that settles it. One word, and it only
+#: ever TIGHTENS: `human_approval` says this gate may not be set aside, so the
+#: one answer that closes a gate without judging the work -- `waive` -- is
+#: refused on it, at the door and again on replay.
+#:
+#: Absent is the whole of backward compatibility: every gate written before this
+#: existed may still be waived, exactly as it always could, and no shipped
+#: document moves a byte. A word added here must make an answer HARDER to give;
+#: a word that made one easier would let a revision quietly loosen a gate a
+#: person already approved under stricter terms.
+GATE_SUCCESS_DEMANDS = frozenset({"human_approval"})
+
+
+def settled_success_requires(value: object) -> str | None:
+    """One grammar for what a gate demands of its answer, judged in both.
+
+    Here for `settled_missing_artifact_policy`'s reason one field over: a
+    template that stored a word the definition would refuse is a plan that
+    cannot materialize, found out at run time rather than where it was drawn.
+
+    Absent stays absent, and so does whitespace -- an empty string is the same
+    answer as saying nothing, which is what a Studio select spells when a person
+    clears it -- so no document written before this field existed changes a byte
+    or moves a digest.
+
+    Args:
+        value: What the document demands of the answer that settles this gate.
+
+    Returns:
+        The settled word, or None when the gate demands nothing extra and may
+        be answered every way this build has always allowed.
+
+    Raises:
+        ContractError: The value is not text, or is a word this build has no
+            behaviour for.
+    """
+    if value is None:
+        return None
+    if type(value) is not str:
+        raise ContractError(
+            "a gate's success requirement is text, or nothing at all")
+    settled = value.strip()
+    if not settled:
+        return None
+    if settled not in GATE_SUCCESS_DEMANDS:
+        raise ContractError(
+            f"a gate's success requirement is one of "
+            f"{sorted(GATE_SUCCESS_DEMANDS)}, and {settled!r} is not one of "
+            "them; every word this vocabulary may grow must make the answer "
+            "harder to give, never easier, because a revision that loosened a "
+            "gate would change what an earlier approval meant")
+    return settled
+
 
 def settled_missing_artifact_policy(value: object) -> str | None:
     """One grammar for a step's missing-artifact policy, judged the same in both.

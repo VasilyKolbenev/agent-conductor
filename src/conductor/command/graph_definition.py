@@ -88,6 +88,7 @@ from .graph_values import (  # noqa: F401 -- re-exported under old names
     settled_bounds,
     settled_failure_policy,
     settled_missing_artifact_policy,
+    settled_success_requires,
     settled_purpose,
     settled_required_evidence,
 )
@@ -239,12 +240,19 @@ class GraphNode:
     #: receipt is written with no task spawned. `block` says the step is not
     #: offered at all until the document exists.
     missing_artifact_policy: str | None = None
+    #: What this GATE demands of the answer that settles it. Absent means
+    #: every answer this build has always allowed, `waive` included.
+    #: `human_approval` says the gate may not be set aside: the server
+    #: refuses a waive on it before the append, and a forged journal
+    #: carrying one is refused on replay.
+    success_requires: str | None = None
 
     _FIELDS = frozenset({
         "node_id", "kind", "title", "stage", "instance_id", "capability",
         "arguments", "resources", "gate_id", "loop", "timeout_seconds",
         "attempt_bound", "purpose", "verifier_instance_id",
         "required_evidence", "failure_policy", "missing_artifact_policy",
+        "success_requires",
     })
 
     def __post_init__(self) -> None:
@@ -254,6 +262,7 @@ class GraphNode:
         self._settle_evidence_demand()
         self._settle_failure_policy()
         self._settle_missing_artifact_policy()
+        self._settle_success_requires()
         object.__setattr__(self, "node_id", _id("node_id", self.node_id))
         object.__setattr__(self, "kind", _enum("node kind", self.kind, NODE_KINDS))
         object.__setattr__(self, "title", _text("title", self.title))
@@ -355,6 +364,24 @@ class GraphNode:
                 f"node {self.node_id!r} names a missing-artifact policy and no "
                 "capability that is given artifacts; there is no input for it "
                 "to be missing")
+
+    def _settle_success_requires(self) -> None:
+        """What a GATE demands of the answer that settles it, and only a gate.
+
+        The tightest pairing rule on this contract, and the narrowest: `waive`
+        is a GATE's answer, so a demand that it may not be given is a fact about
+        a gate and about nothing else. A task settles by an outcome and a loop
+        by its arithmetic; neither is ever waived, so a demand stored on one
+        would be a word with no behaviour, and a person reading it would believe
+        the step was protected when nothing was protecting it.
+        """
+        object.__setattr__(self, "success_requires",
+                           settled_success_requires(self.success_requires))
+        if self.success_requires is not None and self.kind != "gate":
+            raise ContractError(
+                f"node {self.node_id!r} is a {self.kind} and names a gate "
+                "success requirement; only a gate is answered by a Human, so "
+                "only a gate can demand anything of that answer")
 
     def _settle_binding(self) -> None:
         """A binding is whole or absent; half a binding names no runnable place."""
@@ -467,6 +494,8 @@ class GraphNode:
             out["failure_policy"] = self.failure_policy
         if self.missing_artifact_policy is not None:
             out["missing_artifact_policy"] = self.missing_artifact_policy
+        if self.success_requires is not None:
+            out["success_requires"] = self.success_requires
         return out
 
     @classmethod
@@ -496,7 +525,8 @@ class GraphNode:
             verifier_instance_id=data.pop("verifier_instance_id", None),
             required_evidence=data.pop("required_evidence", None),
             failure_policy=data.pop("failure_policy", None),
-            missing_artifact_policy=data.pop("missing_artifact_policy", None))
+            missing_artifact_policy=data.pop("missing_artifact_policy", None),
+            success_requires=data.pop("success_requires", None))
 
 
 @dataclass(frozen=True)
@@ -561,7 +591,8 @@ def _rebuilt_node(row: object) -> "GraphNode":
         verifier_instance_id=node.verifier_instance_id,
         required_evidence=node.required_evidence,
         failure_policy=node.failure_policy,
-        missing_artifact_policy=node.missing_artifact_policy)
+        missing_artifact_policy=node.missing_artifact_policy,
+        success_requires=node.success_requires)
 
 
 def _acyclic(nodes: tuple[GraphNode, ...], edges: tuple[GraphEdge, ...]) -> None:

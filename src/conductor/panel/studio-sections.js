@@ -93,7 +93,7 @@ export const EDIT_FIELDS = Object.freeze([
   "arguments", "attempt_bound", "capability", "failure_policy", "gate_id",
   "kind", "loop_back_to", "loop_bound", "missing_artifact_policy",
   "purpose", "required_evidence", "resources", "role_id", "stage",
-  "timeout_seconds", "title", "verifier_role_id",
+  "success_requires", "timeout_seconds", "title", "verifier_role_id",
 ]);
 //: The six sections, in the one order the design fixes them in.
 export const SECTIONS = Object.freeze([

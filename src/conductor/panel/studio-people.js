@@ -375,8 +375,18 @@ function decisionForm(row, draft, handlers, live) {
   const form = element("form", {className: "studio-decide"});
   const choices = element("fieldset", {className: "studio-choices"},
     [element("legend", {text: "Your answer, and what each one causes"})]);
+  // A gate whose plan demands explicit human approval is not offered the one
+  // answer that would set it aside. Offering it and refusing the save would
+  // teach a person the product is broken; the plan said this before the run
+  // opened, so the screen says it here.
+  const demanded = typeof row.success_requires === "string";
   for (const action of Object.keys(DECISION_ACTIONS)) {
+    if (demanded && action === "waive") continue;
     choices.append(choiceControl(action, draft, edit));
+  }
+  if (demanded) {
+    choices.append(note("This gate requires explicit human approval, so it "
+      + "cannot be waived. Approve it, reject it, or ask for changes."));
   }
   form.append(choices,
     textControl("actor", "actor", draft, edit, "Decided by",

@@ -188,11 +188,53 @@ function connectControl(box, form) {
   box.append(wrapper, editable(go, form));
 }
 
+//: `graph_values.GATE_SUCCESS_DEMANDS` -- what a gate may demand of the answer
+//: that settles it. Held to the Python owner by a source test rather than
+//: trusted here, like every other closed vocabulary on this surface.
+export const GATE_SUCCESS_DEMANDS = Object.freeze(["human_approval"]);
+//: What each of those words is offered AS. The control is built from the
+//: vocabulary above rather than from a second list beside it, so a word the
+//: Python layer grows appears here instead of being silently unofferable --
+//: and a word with no sentence yet shows as itself rather than as nothing,
+//: which is a visible fault instead of a missing option.
+const DEMAND_LABELS = Object.freeze({
+  human_approval: "yes — this gate may not be waived",
+});
+
+//: The one thing a gate may demand, and the only place it can be said.
+//:
+//: It is a TIGHTENING and it is the only kind this vocabulary may grow: saying
+//: it removes an answer, and saying nothing leaves every answer a gate has
+//: always had. What it removes is `waive` -- the one answer that closes a gate
+//: without judging the work -- and the removal is real at three doors: this
+//: window stops offering it, the server refuses it before anything is written,
+//: and the store refuses a journal that carries one anyway.
+function gateDemand(box, form) {
+  const named = typeof form.node.success_requires === "string"
+    ? form.node.success_requires : "";
+  selectField(box, form, "Require explicit human approval — waiver disabled",
+    "success_requires",
+    [{value: "", label: "no — this gate may be approved, rejected, sent back "
+      + "for changes, or waived"}].concat(
+      GATE_SUCCESS_DEMANDS.map((word) => ({value: word,
+        label: DEMAND_LABELS[word] || word}))),
+    named);
+  note(box, "Waiving is the one answer that closes a gate without judging the "
+    + "work. Requiring explicit human approval removes it: the Decisions "
+    + "screen stops offering it, the server refuses it before anything is "
+    + "recorded, and a journal carrying one is refused when it is read. "
+    + "Rejecting and requesting changes stay available — this makes the gate "
+    + "harder to pass, never harder to fail. A connection out of this gate on "
+    + "`on_waived` becomes a road no run could travel, so publishing one is "
+    + "refused.");
+}
+
 function gateControls(box, form) {
   if (form.node.kind === "gate") {
     textField(box, form, "Gate id", "gate_id", form.node.gate_id,
       "The id a Human's decision receipt names. A run's gate state is read "
       + "through it, and through nothing else.");
+    gateDemand(box, form);
   } else {
     context(box, "Human decision", "none — only a gate step carries one",
       "the workflow contract");
