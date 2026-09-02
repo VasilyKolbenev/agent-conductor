@@ -453,14 +453,17 @@ def test_the_requested_at_instant_is_validated_by_calendar_not_only_the_regex():
 def test_mutation_controls_are_disabled_while_disconnected_stale_or_uncertain():
     """Which phases may still be worked, and which may not.
 
-    This used to pin the expression `state.phase !== "ready"` by its exact
-    spelling, which made it a change detector on a rule rather than a guard on
-    a fact -- and the rule was wrong: a BACKGROUND refresh disabled the form,
-    and disabling a form blurs whatever is focused in it, so a signal arriving
-    while somebody typed took the keyboard away from them for the length of an
-    authoritative read. What is held now is the fact: the phases a person may
-    work in are an allowlist, `refreshing` is on it, and the phases that mean
-    "nothing may be written" are not.
+    This used to pin `state.phase !== "ready"` by its spelling, which made it a
+    change detector on a rule rather than a guard on a fact -- and the rule was
+    wrong: a BACKGROUND refresh disabled the form, and disabling a form blurs
+    whatever is focused in it, so a signal took the keyboard away from whoever
+    was typing for the length of a read. The fact held now is the allowlist.
+
+    Putting `refreshing` on it opened a hole of its own, which is the second
+    fact here: a phase says what the last READ did and any later read overwrites
+    it, so a refresh starting after the stream dropped replaced `stale` with
+    `refreshing` and the write door came back open on a dead connection. The
+    LINE is tracked apart from the phase and asked first.
     """
     view = VIEW.read_text(encoding="utf-8")
     source = SCRIPT.read_text(encoding="utf-8")
@@ -469,19 +472,25 @@ def test_mutation_controls_are_disabled_while_disconnected_stale_or_uncertain():
     assert workable, "the phase allowlist is gone"
     allowed = set(re.findall(r'"([a-z-]+)"', workable.group(1)))
     assert allowed == {"ready", "refreshing"}, allowed
+    # The line is asked FIRST, and by a helper both forms spend -- a second
+    # copy of this question is how one form comes to open while the other shuts.
+    gate = re.search(r"function workable\(state\) \{(.*?)\n\}", view, re.S)
+    assert gate, "the workable-state helper is gone"
+    assert "state.connected !== false" in gate.group(1), gate.group(1)
+    assert "WORKABLE_PHASES.includes(state.phase)" in gate.group(1)
     # Both forms are held to it, and both still shut on the uncertain arm.
-    assert view.count("!WORKABLE_PHASES.includes(state.phase)") == 2
+    assert view.count("!workable(state)") == 2
+    # And nothing but the stream's own two signals moves the line.
+    assert source.count("state.connected = false") == 1
+    assert source.count("state.connected = true") == 1
+    assert "connected: true," in source
     assert view.count('["submitting", "outcome-unknown"].includes') == 2
     assert view.count("for (const control of ") == 2
     assert "includes(state.confirmPhase)" in view
-    # And the keyboard is given back on both, by NAME rather than by position.
-    assert view.count("restoreFocus(") == 2 or (
-        view.count("restoreFocus(") == 1 and "actor.focus()" in view)
-    assert 'form.querySelector(`[name="${name}"], #${name}`)' in view
     disconnected = source[
         source.index('window.addEventListener("conduct:disconnected"'):]
     for fact in ("epoch += 1", "sessionEpoch += 1", 'csrfToken = ""',
-                 'state.phase = "stale"'):
+                 "state.connected = false", 'state.phase = "stale"'):
         assert fact in disconnected
     fresh = re.search(
         r"if \(explicit && runId !== state\.runId\) \{(.*?)\n    \}", source, re.S)
@@ -491,6 +500,33 @@ def test_mutation_controls_are_disabled_while_disconnected_stale_or_uncertain():
         assert reset in fresh.group(1)
     assert 'state.confirmNotice = "Authoritative run reloaded."' in source
 
+
+
+def test_the_keyboard_is_given_back_where_the_person_actually_was():
+    """The other half of the same render, and its own fact.
+
+    A form that may be worked is no use to somebody the render threw out of it.
+    Both forms give the place back through ONE helper -- two call sites and the
+    one declaration -- because two copies of a restoration is how they come to
+    disagree about what "where a person was" means. By NAME rather than by
+    position, and with the CARET rather than just the field: a control handed
+    back with the caret at the end moves a person who was correcting a letter
+    to the end of their own word.
+    """
+    view = VIEW.read_text(encoding="utf-8")
+
+    assert view.count("restoreFocus(") == 3, view.count("restoreFocus(")
+    assert view.count("focusedPlace(") == 3, view.count("focusedPlace(")
+    assert 'form.querySelector(\n    `[name="${place.name}"], #${place.name}`)' in view
+    assert "control.setSelectionRange(place.caret.start, place.caret.end)" in view
+    # Read BEFORE the replacement, on both forms: the node is about to stop
+    # existing, so nothing about it can be read afterwards.
+    for mount in ("composer", "confirm"):
+        before = view.index(f"focusedPlace({mount})")
+        assert before < view.index(f"{mount}.replaceChildren()"), mount
+    # A form nobody was working in answers null, so no focus is taken from
+    # wherever it really is.
+    assert "if (!mount.contains(active) || active === mount) return null;" in view
 
 def test_the_local_session_token_is_only_ever_a_header_value_in_memory():
     for forbidden in (

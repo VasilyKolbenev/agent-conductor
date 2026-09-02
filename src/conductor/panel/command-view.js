@@ -97,28 +97,76 @@ function proposalInput(draft, name, fallback, type = "text") {
 //: `preview_digest` the server compares, and the submitting arm below.
 const WORKABLE_PHASES = Object.freeze(["ready", "refreshing"]);
 
-//: Which control inside a re-rendered form should be given the keyboard back.
-//: Answered BEFORE the form is replaced, by name, because the node itself is
-//: about to stop existing. A form nobody was working in answers null and no
-//: focus is taken from wherever it really is.
-function focusedName(mount) {
-  const active = document.activeElement;
-  return mount.contains(active) && active !== mount
-    ? (active.getAttribute("name") || active.id || null) : null;
+//: Whether a person may work these controls at all. The LINE first, because a
+//: phase is what the last read did and a read that starts after the stream
+//: drops overwrites `stale` with `refreshing` -- which, once a background
+//: refresh stopped disabling the forms, re-opened the write door on a dead
+//: connection. Measured: dispatch a disconnect while a refresh is queued
+//: behind it, and the confirm control came back enabled.
+function workable(state) {
+  return state.connected !== false && WORKABLE_PHASES.includes(state.phase);
 }
 
-//: Give it back, to the control of that name in the rebuilt form. Silent when
-//: the name is gone -- a field that no longer exists cannot be refocused, and
-//: guessing a neighbour would put a person somewhere they never chose.
-function restoreFocus(form, name) {
-  if (!name) return;
-  const control = form.querySelector(`[name="${name}"], #${name}`);
-  if (control && !control.disabled) control.focus();
+//: WHERE a person is working, answered BEFORE the form is replaced: which
+//: control by name, and where their caret stands inside it. The node itself is
+//: about to stop existing, so nothing about it can be read afterwards.
+//:
+//: The caret is not a refinement of the focus, it is the other half of the same
+//: fact. Giving somebody the field back with the caret at the END moves them
+//: mid-word: the owner's own acceptance walk has them typing an actor name and
+//: a reason, and a signal landing while they correct a letter would silently
+//: append the rest of the word to the end of the value.
+//:
+//: A form nobody was working in answers null, and no focus is taken from
+//: wherever it really is.
+function focusedPlace(mount) {
+  const active = document.activeElement;
+  if (!mount.contains(active) || active === mount) return null;
+  return {
+    name: active.getAttribute("name") || active.id || null,
+    caret: caretOf(active),
+  };
+}
+
+//: A control's selection, or null for one that carries none.
+//:
+//: MEASURED in the browser this ships against, because the guard depends on
+//: which half of the pair misbehaves. READING `selectionStart` does not throw:
+//: a `number` input answers null and a `<select>` answers undefined. WRITING
+//: does -- `setSelectionRange` raises `InvalidStateError` on the number input
+//: and `TypeError` on the select, and it would raise inside a render, leaving
+//: the form half-built and the person with far less than a caret.
+//:
+//: So the type test is the whole guard and it is on the READ, where the answer
+//: is already honest. A `try` around either call would be a guard nothing in
+//: this panel can make fail -- the composer's `timeout_seconds` and its two
+//: selects are the only controls of those kinds, and both are covered by this
+//: one line. An earlier version wrapped both and survived its own mutation for
+//: exactly that reason.
+function caretOf(control) {
+  return typeof control.selectionStart === "number"
+    ? {start: control.selectionStart, end: control.selectionEnd} : null;
+}
+
+//: Give the place back, to the control of that name in the rebuilt form.
+//: Silent when the name is gone -- a field that no longer exists cannot be
+//: refocused, and guessing a neighbour would put a person somewhere they never
+//: chose. A caret is written only where one was read, which by `caretOf` above
+//: means a control whose type really carries one.
+function restoreFocus(form, place) {
+  if (!place || !place.name) return;
+  const control = form.querySelector(
+    `[name="${place.name}"], #${place.name}`);
+  if (!control || control.disabled) return;
+  control.focus();
+  if (place.caret) {
+    control.setSelectionRange(place.caret.start, place.caret.end);
+  }
 }
 
 export function renderComposer(composer, proposalStatus, state, draft, onSubmit) {
   // Asked before the replacement, for `focusedName`'s reason.
-  const keepFocus = focusedName(composer);
+  const keepFocus = focusedPlace(composer);
   composer.replaceChildren();
   proposalStatus.textContent = state.proposalNotice;
   proposalStatus.dataset.proposalState = state.proposalPhase;
@@ -161,7 +209,7 @@ export function renderComposer(composer, proposalStatus, state, draft, onSubmit)
   );
   proposalForm.addEventListener("submit", onSubmit);
   composer.append(proposalForm);
-  const disabled = !WORKABLE_PHASES.includes(state.phase)
+  const disabled = !workable(state)
     || ["submitting", "outcome-unknown"].includes(state.proposalPhase);
   for (const control of proposalForm.elements) control.disabled = disabled;
   restoreFocus(proposalForm, keepFocus);
@@ -183,7 +231,12 @@ export const CONFIRM_NOTE = "This sends only the frozen snapshot above plus the 
 export function renderConfirm(confirm, confirmStatus, state, draft, onConfirm) {
   // Focus intent outlives the disabled in-flight render, so a keyboard Human is
   // never dropped to the top of the document by their own confirmation.
-  const keepFocus = confirm.contains(document.activeElement) || draft.confirmFocus;
+  // The place is read before the replacement and kept on the draft, because a
+  // render that leaves the form disabled has to hand it to the NEXT one -- the
+  // same reason the typed value has lived there since this form existed.
+  const place = focusedPlace(confirm);
+  if (place) draft.confirmPlace = place;
+  const keepFocus = place !== null || draft.confirmFocus;
   confirm.replaceChildren();
   confirmStatus.textContent = state.confirmNotice;
   confirmStatus.dataset.confirmState = state.confirmPhase;
@@ -215,8 +268,11 @@ export function renderConfirm(confirm, confirmStatus, state, draft, onConfirm) {
       element("strong", {text: label}), element("span", {text: value}),
     ]));
   }
-  const disabled = !WORKABLE_PHASES.includes(state.phase)
+  const disabled = !workable(state)
     || ["submitting", "outcome-unknown"].includes(state.confirmPhase);
   for (const control of form.elements) control.disabled = disabled;
-  if (keepFocus && !disabled) actor.focus();
+  if (keepFocus && !disabled) {
+    restoreFocus(form, {name: "confirmed_by",
+                        caret: (draft.confirmPlace || {}).caret || null});
+  }
 }

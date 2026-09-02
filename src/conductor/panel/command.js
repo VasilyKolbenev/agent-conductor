@@ -13,7 +13,14 @@ import {
   if (!mount) return;
   const UNKNOWN = "Outcome unknown. Reload the authoritative run.";
   const ACCEPTED = "Action request accepted and recorded. Nothing was executed.";
+  //: `connected` is the LINE, and it is deliberately not a phase. A phase says
+  //: what the last read did and any later read overwrites it -- so a refresh
+  //: starting after the stream dropped replaced `stale` with `refreshing`, and
+  //: once a background refresh stopped disabling the forms that re-opened the
+  //: write door on a dead connection. The line is moved by the stream's own two
+  //: signals and by nothing else, so no read can talk it back up.
   const state = {action: null, confirmNotice: "", confirmPhase: "idle",
+    connected: true,
     controls: [], gates: {corrupt: false, rows: []}, mode: "unknown",
     phase: "idle", proposal: null, proposalNotice: "", proposalPhase: "idle",
     records: [], runId: "", warningCount: 0};
@@ -372,12 +379,15 @@ import {
     epoch += 1;
     sessionEpoch += 1;
     csrfToken = "";
+    state.connected = false;
     if (!state.runId) return;
     state.phase = "stale";
     status.textContent = "Connection lost. Showing the last authoritative facts.";
     render();
   });
   window.addEventListener("conduct:connected", () => {
+    state.connected = true;
     if (state.runId) refreshSelectedRun(state.runId);
+    else render();
   });
 })();
