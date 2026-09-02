@@ -25,8 +25,11 @@ Step 2 is what makes this module grow, and it crossed the cap once already: the
 four routing labels that became real moved to ``test_studio_routing_labels.py``
 whole. Their register entries stayed HERE, in ``UNSUPPORTED_FIELDS``' own
 history, because the census is one list and splitting it would be splitting the
-rule. A label that leaves the register still owes a positive witness; that file
-is now one of the two places it may live.
+rule. A label that leaves the register still owes a positive witness, and there
+are now three places one may live: here, ``test_studio_routing_labels.py`` for
+the four routing labels, and ``test_studio_success_criteria.py`` for the last
+one to leave -- the only one of the fifteen that became a READING rather than a
+field, which is why its witnesses are about what the window may not compute.
 
 The helpers and the file constants are imported rather than re-spelled, so both
 modules read the same inspector surface: ``INSPECTOR`` is a union of three
@@ -114,9 +117,16 @@ from tests.test_studio_canvas import INSPECTOR, PANEL, ROOT, _code, _text
 #: every step that could still run blocked, so the run reads `stalled` and
 #: `close_if_terminal` records that ending through the road it already had.
 #: tests/test_command_failure_policy.py drives it end to end.
-UNSUPPORTED_FIELDS = (
-    "Success criteria",
-)
+#: EMPTY, and that is the whole arc of this file. Every field the mandate
+#: named now has either a control that writes it or a derived statement
+#: with a named source -- the census below is what holds that, and this
+#: tuple staying empty is what stops a new evasion being added quietly.
+#:
+#: A name arriving here again is not forbidden; it is a REPORT, and the
+#: rule that admits one is unchanged: while a field has no durable home it
+#: says so where it would have been, and when it gets one the label leaves
+#: this tuple and a positive witness arrives in its place.
+UNSUPPORTED_FIELDS = ()
 
 
 def test_every_field_with_no_durable_home_says_so_in_one_voice():
@@ -408,30 +418,6 @@ def test_the_requirement_may_only_ever_ask_for_more_than_the_runtime_does():
 
 
 # -- the two labels that stayed, and had to stop being evasive -----------------
-
-
-def test_the_success_criteria_line_says_why_there_is_nothing_left_to_add():
-    """The old sentence was true and evasive; the new one is the actual reason.
-
-    "an outcome is reported by the immutable result record" described where an
-    outcome is WRITTEN, which is not why a plan may not state a criterion. The
-    reason is that every criterion a plan could state is already demanded of
-    every step -- verified, by the one adapter the plan makes authoritative,
-    over evidence recorded after the work was observed -- so anything a plan
-    could add beside it would be weaker than what it is already held to.
-
-    The old wording is asserted GONE rather than merely not asserted present,
-    which is the shape the missing-artifact line below already has.
-    """
-    inspector = _code(*INSPECTOR)
-    assert "reported by the immutable result record" not in inspector, (
-        "the success-criteria line still says where an outcome is written "
-        "instead of why a plan may not state one")
-    reason = re.search(r'unsupported\(box, "Success criteria", (.*?)\);',
-                       inspector, re.DOTALL).group(1)
-    assert "already demands of every step" in reason, reason
-    assert "would be weaker" in reason, reason
-
 
 def test_the_failure_policy_became_a_control_and_kept_its_place_on_screen():
     """The label left the register by becoming real, not by being deleted.

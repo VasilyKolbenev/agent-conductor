@@ -59,20 +59,31 @@ def payload_of(journal=None, *, plan=True):
 # -- the shape ----------------------------------------------------------------
 
 
-def test_the_graph_half_of_a_run_read_now_carries_four_keys():
+def test_the_graph_half_of_a_run_read_now_carries_five_keys():
+    """The fifth is `success_criteria`: what counts as success for each
+    step, derived from the rules that operate rather than stored. It sits
+    BESIDE the definition rather than inside it, because a plan's bytes
+    are what its digest is taken over."""
     payload = payload_of()
 
     assert set(payload) == {
-        "definition", "definition_digest", "runtime", "schedule"}
+        "definition", "definition_digest", "runtime", "schedule",
+        "success_criteria"}
 
 
-def test_a_run_that_follows_no_plan_answers_a_fourth_null():
-    """Four nulls rather than an absent key, for the reason the other three
-    are: a reader telling "no plan" from "old server" by shape is guessing."""
+def test_a_run_that_follows_no_plan_answers_nulls_and_no_criteria():
+    """Nulls rather than absent keys, for the reason the others are: a
+    reader telling "no plan" from "old server" by shape is guessing.
+
+    The criteria answer an empty MAP rather than a null, and the
+    difference is honest: the other four are one document that is not
+    there, and this is a per-step reading over no steps.
+    """
     payload = payload_of(plan=False)
 
     assert payload == {"definition": None, "definition_digest": None,
-                       "runtime": None, "schedule": None}
+                       "runtime": None, "schedule": None,
+                       "success_criteria": {}}
 
 
 def test_the_schedule_states_the_run_word_and_the_three_subsets():

@@ -362,8 +362,12 @@ def test_the_register_on_screen_is_the_register_the_census_pins(
     A label that left `UNSUPPORTED_FIELDS` by being deleted from the screen
     would satisfy the Python census and leave a gap where an honest "this build
     does not do that" belonged. So the rendered rows are counted and their union
-    is held against the register itself -- all three on a step now, and NONE on
-    a connection, because `Condition` became a control in the routing slice.
+    is held against the register itself -- which is now EMPTY on both surfaces.
+
+    That the register reached zero is not the end of this guard, it is what it
+    now guards: the union must go on matching, so a new evasion appearing on
+    screen without a name in the register reds here, and a name added to the
+    register with no row on screen reds too.
     """
     bench.select("study")
     on_a_step = bench.unsupported_rows()
@@ -377,14 +381,13 @@ def test_the_register_on_screen_is_the_register_the_census_pins(
     assert set(on_a_step) | set(on_an_edge) == {
         row.lower().replace(" ", "-").replace("/", "-")
         for row in UNSUPPORTED_FIELDS}
-    assert len(on_a_step) + len(on_an_edge) == len(UNSUPPORTED_FIELDS)
-    assert "evidence-requirements" not in on_a_step, (
-        "the requirement is a control now and must not also say it is unsupported")
-    # The two rewritten rows still SAY something, and say the right thing.
-    verification = bench.page.locator('[data-section="verification"]')
+    assert len(on_a_step) + len(on_an_edge) == len(UNSUPPORTED_FIELDS) == 0
+    # And the row that used to be the last evasion now STATES something: the
+    # rules that decide success, each beside the layer that enforces it.
     bench.select("study")
-    said = verification.inner_text()
-    assert "already demands of every step" in said, said
+    said = bench.page.locator('[data-section="verification"]').inner_text()
+    assert "The result must be verified" in said, said
+    assert "the runtime's verification rule" in said, said
     # And the failure policy is no longer a row here at all: it left the
     # register by becoming a control, so what stands in its place is the select
     # and the sentence telling a person it is not routing.
@@ -493,3 +496,117 @@ def test_a_step_that_binds_no_role_is_told_why_it_has_no_policy(
     assert "binds no role" in said, said
     assert "cannot fail" in said, said
     assert bench.page.locator(POLICY_FIELD).count() == 0
+# -- 5. success criteria: served, not composed --------------------------------
+
+
+def _criteria_on_screen(bench: _Bench) -> list[str]:
+    """Every success-criteria sentence the section is showing, in order."""
+    return bench.page.locator(
+        '[data-section="verification"] [data-context="success-criteria"] '
+        "span.mono").evaluate_all(
+            "rows => rows.map(row => row.innerText.replace(/^: /, ''))")
+
+
+def test_the_screen_shows_exactly_the_sentences_the_server_derived(
+        bench: _Bench, project: _Project) -> None:
+    """The whole ruling in one assertion: rendered, never re-computed.
+
+    The expected sentences are produced by the Python owner in this process,
+    from the same node the page is showing -- so this is a comparison between
+    the derivation and the screen, not between the screen and a copy of the
+    sentences typed here. A window that composed its own would differ on the
+    first rule that ever moved.
+    """
+    from conductor.command.graph_template_document import TemplateNode
+    from conductor.command.success_criteria import for_template_node
+
+    bench.select("study")
+    shown = _criteria_on_screen(bench)
+
+    drawn = next(row for row in DRAFT["nodes"] if row["node_id"] == "study")
+    expected = [row["text"]
+                for row in for_template_node(TemplateNode.from_dict(drawn))]
+
+    assert expected, "the owner derived nothing, so this proves nothing"
+    assert shown == expected, (shown, expected)
+    assert bench.problems == []
+
+
+def test_each_sentence_is_shown_beside_the_layer_that_enforces_it(
+        bench: _Bench) -> None:
+    """A reader who doubts a clause is told where to go and check it."""
+    bench.select("study")
+    said = bench.page.locator('[data-section="verification"]').inner_text()
+
+    assert "the runtime's verification rule" in said, said
+    assert "the frozen plan" in said, said
+
+
+def test_a_step_that_carries_nothing_out_is_told_so_rather_than_shown_nothing(
+        bench: _Bench) -> None:
+    """The other arm, and it is a reading rather than a blank.
+
+    `loose` binds no role, so nothing is executed for it and no verification is
+    owed. A section that simply showed no rows would look like a screen that
+    failed to load.
+    """
+    bench.select("loose")
+    said = bench.page.locator('[data-section="verification"]').inner_text()
+
+    assert "this step carries nothing out" in said, said
+    # ONE row, and it is the statement itself. An empty section would look like
+    # a screen that failed to load, which is why the reading says "none" out
+    # loud rather than rendering nothing at all.
+    shown = _criteria_on_screen(bench)
+    assert len(shown) == 1, shown
+    assert shown[0].startswith("none"), shown
+
+
+def test_the_register_is_empty_and_no_field_says_it_has_no_home(
+        bench: _Bench) -> None:
+    """Register ZERO, asserted on the rendered surface rather than in source.
+
+    Every field the mandate named now has a control that writes it or a derived
+    statement with a named source. A marker appearing here again is not
+    forbidden -- it is a report -- but it may never appear unnoticed.
+    """
+    for node_id in ("study", "loose"):
+        bench.select(node_id)
+        assert bench.unsupported_rows() == [], node_id
+    assert bench.problems == []
+#: Two states through the module the PAGE loaded: one where a run is open and
+#: one where none is, both carrying a criteria map under the same node id. The
+#: sentences are sentinels rather than real ones -- what is under test is WHICH
+#: document is read, not what either says.
+_TWO_SOURCES = """() => import("/panel/studio-inspector.js").then((module) => {
+  const drawn = {workflows: {detail: {success_criteria:
+    {study: [{text: "FROM THE DRAWING", source: "s"}]}}}};
+  const running = {...drawn, runs: {detail: {graph: {success_criteria:
+    {study: [{text: "FROM THE OPEN RUN", source: "s"}]}}}}};
+  const pick = (state) => module.servedCriteria(state, "study")
+    .map((row) => row.text);
+  return {drawn: pick(drawn), running: pick(running),
+          unknown: pick({}), missing: pick(running, "nobody")};
+})"""
+
+
+def test_an_open_run_is_described_by_its_own_frozen_plan(
+        bench: _Bench) -> None:
+    """WRITTEN RED. Which document the sentences come from is the whole point.
+
+    A person watching a run must be told what success means for the plan that
+    RUN froze, not for the drawing somebody has since edited. The two can differ
+    the moment a draft is touched, and a window that preferred the drawing would
+    describe a step by rules the open run is not being held to.
+
+    Driven through the module the page really loaded, so this is the shipped
+    lookup answering rather than a copy of its rule kept beside the test.
+    """
+    seen = bench.page.evaluate(_TWO_SOURCES)
+
+    assert seen["running"] == ["FROM THE OPEN RUN"], seen
+    assert seen["drawn"] == ["FROM THE DRAWING"], seen
+    # And a state carrying neither answers an empty list rather than throwing,
+    # because the inspector renders before any read has landed.
+    assert seen["unknown"] == [], seen
+    assert bench.problems == []

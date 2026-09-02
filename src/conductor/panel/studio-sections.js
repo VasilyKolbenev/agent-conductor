@@ -698,17 +698,35 @@ function runEvidenceRow(box, form) {
     `the plan of run ${run.runId}`);
 }
 
+//: What counts as success for this step, READ rather than set.
+//:
+//: There is no editable field here and there never was: success for a step is
+//: already decided by rules this build enforces, so the honest control is no
+//: control at all. Each clause arrives from the server with the layer that
+//: enforces it, and this function prints the pair. It composes no sentence,
+//: because a sentence composed here would be a second opinion about somebody
+//: else's rule -- right until that rule moved.
+function successCriteria(box, form) {
+  const rows = Array.isArray(form.criteria) ? form.criteria : [];
+  if (!rows.length) {
+    context(box, "Success criteria",
+      "none — this step carries nothing out, so nothing is executed for it "
+      + "and no verification is owed", "the workflow contract");
+    return;
+  }
+  for (const row of rows) {
+    if (!row || typeof row.text !== "string") continue;
+    context(box, "Success criteria", row.text,
+      typeof row.source === "string" ? row.source : "the server");
+  }
+}
+
 export function verificationSection(form) {
   const {run} = form;
   const box = sectionOf("verification", "Verification");
   verifierControl(box, form);
   evidenceRequirement(box, form);
-  unsupported(box, "Success criteria", "Every criterion a plan could state, "
-    + "this build already demands of every step: a success is verified, by the "
-    + "one adapter the plan makes authoritative for it, over evidence recorded "
-    + "after the work was observed — and, where the step asks for it, naming "
-    + "what was checked. Anything a plan could add beside that would be weaker "
-    + "than what it is already held to.");
+  successCriteria(box, form);
   failurePolicy(box, form);
   runEvidenceRow(box, form);
   note(box, "Process exit 0 proves the process finished, not that the work "

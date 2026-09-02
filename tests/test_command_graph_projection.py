@@ -157,7 +157,7 @@ def test_a_run_that_follows_no_graph_answers_three_nulls(tmp_path):
     payload = payload_of(a_store(tmp_path, with_graph=False))
     assert payload == {
         "definition": None, "definition_digest": None, "runtime": None,
-        "schedule": None}
+        "schedule": None, "success_criteria": {}}
 
 
 def test_the_definition_and_its_digest_are_the_contracts_own(tmp_path):

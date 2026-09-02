@@ -496,6 +496,11 @@ def test_a_workflow_nothing_is_stored_for_is_a_state_and_not_a_refusal(tmp_path)
         # nothing published has nothing to be unchanged FROM, and its first
         # revision always says something new even when the drawing is empty.
         "publishable": False, "unchanged": False, "next_revision": 1,
+        # What counts as success for each step of the document this
+        # workflow is showing. There is no document, so there are no
+        # steps -- an empty map rather than an absent key, for the reason
+        # `warnings` is an empty list above.
+        "success_criteria": {},
     }
 
 

@@ -128,6 +128,29 @@ function producedBy(detail, nodeId) {
 //: What a RUN says about this step, and the run it says it about. Every field
 //: is optional and nothing is defaulted: a step no run named answers `null`,
 //: which is a different thing from a step a run named with nothing to report.
+//: What the SERVER says counts as success for one step. Read out of whichever
+//: document this screen is really showing -- the open run's frozen plan when
+//: there is one, the workflow read otherwise -- and never computed here.
+//:
+//: Every clause is a rule this build enforces somewhere else, and a copy of any
+//: of them in this window would be right until the day the rule moved. A source
+//: guard refuses the rule words in these files for exactly that reason: what
+//: this function does is LOOK UP a sentence, and what the section does is print
+//: it beside the layer it came from.
+export function servedCriteria(state, nodeId) {
+  const runs = isObject(state) && isObject(state.runs) ? state.runs : {};
+  const detail = isObject(runs.detail) ? runs.detail : null;
+  const graph = detail && isObject(detail.graph) ? detail.graph : null;
+  const fromRun = graph && isObject(graph.success_criteria)
+    ? graph.success_criteria[nodeId] : null;
+  if (Array.isArray(fromRun)) return fromRun;
+  const held = isObject(state) && isObject(state.workflows)
+    ? state.workflows.detail : null;
+  const drawn = isObject(held) && isObject(held.success_criteria)
+    ? held.success_criteria[nodeId] : null;
+  return Array.isArray(drawn) ? drawn : [];
+}
+
 export function runContext(state, nodeId) {
   const detail = isObject(state) && isObject(state.runs) ? state.runs.detail : null;
   if (!isObject(detail)) return null;
@@ -259,7 +282,8 @@ export function mountInspector(mount, state, handlers) {
     restoreFocus(mount, key);
     return;
   }
-  const form = {...base, node, run: runContext(state, node.node_id)};
+  const form = {...base, node, run: runContext(state, node.node_id),
+    criteria: servedCriteria(state, node.node_id)};
   mount.append(generalSection(form), assignmentSection(form),
     executionSection(form), artifactSection(form), verificationSection(form),
     transitionSection(form), stepActions(form));

@@ -233,7 +233,8 @@ export function adaptRunGraph(read, registry, controls) {
   // pair below still judges the three documents this window actually draws, and
   // the Studio is the surface that acts on what the plan permits.
   if (!isObject(graph) || !keysWithin(
-    ["definition", "definition_digest", "runtime", "schedule"],
+    ["definition", "definition_digest", "runtime", "schedule",
+     "success_criteria"],
     graph)) return refused();
   const pair = pairState(read, graph);
   if (pair === GRAPH_ABSENT) {

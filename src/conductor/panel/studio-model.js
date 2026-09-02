@@ -364,9 +364,16 @@ export function projectWorkflows(payload) {
 //: stops a publish and a warning never does. The window admits it as its
 //: own key for that reason -- folding the two together would make a screen
 //: unable to say "this will publish, and here is what to know about it".
+//: `success_criteria` is a READING the server derives per step -- what
+//: counts as success, in the words of the rules that enforce it. It is
+//: admitted here because this is a CLOSED set and it refused the payload
+//: outright when the key first arrived, which is the boundary working: a
+//: key nobody declared is a key nobody reviewed. Admitting it is not the
+//: same as trusting it -- the inspector renders the sentences and holds no
+//: opinion about them, and a malformed row is skipped where it is drawn.
 const WORKFLOW_KEYS = ["workflow_id", "revisions", "latest_revision",
   "unreadable_revisions", "published", "draft", "diagnostics", "warnings",
-  "publishable", "unchanged", "next_revision"];
+  "publishable", "unchanged", "next_revision", "success_criteria"];
 //: `digest` names WHICH draft this is, so a publish can echo back the one it
 //: reviewed. The window computes no hash of its own: it carries the server's
 //: word and hands it back, and the server compares.

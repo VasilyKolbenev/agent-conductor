@@ -663,7 +663,11 @@ def test_a_run_that_follows_no_plan_still_answers_the_graph_key(tmp_path):
     subject, _, _ = graph_api(tmp_path)
     assert read_run(subject).payload["graph"] == {
         "definition": None, "definition_digest": None, "runtime": None,
-        "schedule": None}
+        "schedule": None,
+        # An empty MAP rather than a fifth null, and the difference is
+        # honest: the four above are one document that is not there, and
+        # this is a per-step reading over no steps.
+        "success_criteria": {}}
 
 
 def test_a_run_whose_journal_does_not_replay_is_given_no_projection_at_all(

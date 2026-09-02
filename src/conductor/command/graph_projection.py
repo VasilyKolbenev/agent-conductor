@@ -38,6 +38,7 @@ from .contracts import (
 )
 from .graph_definition import GraphDefinition, GraphNode
 from .graph_schedule import loop_position, schedule
+from .success_criteria import for_plan
 
 if TYPE_CHECKING:  # pragma: no cover -- import cycle avoided at runtime
     from .run_store import RecoveredRun
@@ -68,7 +69,7 @@ def graph_payload(recovered: "RecoveredRun") -> dict[str, Any]:
     definition = _definition(recovered)
     if definition is None:
         return {"definition": None, "definition_digest": None, "runtime": None,
-                "schedule": None}
+                "schedule": None, "success_criteria": {}}
     values = tuple(row.value for row in recovered.records)
     return {
         "definition": definition.as_dict(),
@@ -78,6 +79,12 @@ def graph_payload(recovered: "RecoveredRun") -> dict[str, Any]:
         "definition_digest": definition.digest(),
         "runtime": graph_runtime(recovered, definition),
         "schedule": _schedule_payload(definition, values),
+        # What counts as success for each step, derived from the rules
+        # that really operate on it. A READING and never a stored field:
+        # it is beside the definition rather than inside it, because a
+        # plan's bytes are what its digest is taken over and a sentence
+        # this build composes is not part of what anybody published.
+        "success_criteria": for_plan(definition.nodes),
     }
 
 

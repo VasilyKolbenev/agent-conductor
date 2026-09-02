@@ -627,10 +627,44 @@ def test_a_field_with_no_durable_home_is_marked_on_screen() -> None:
         else:
             assert "unsupported" not in text, (
                 f"{path.name} declares an unsupported renderer it never calls")
-    # And at least one owned screen still has such a field, so this whole guard
-    # cannot pass by every marker quietly disappearing.
-    assert any(re.search(r"(?<!function )unsupported\(", source(path))
-               for path in OWNED)
+    # What this used to end with, and why it could not stay: "at least one
+    # owned screen still has such a field, so this guard cannot pass by every
+    # marker quietly disappearing". That was the right instinct while there
+    # WERE such fields -- it is what stopped the census being satisfied by
+    # deleting rows instead of building them. It became a rule that a lie must
+    # survive somewhere, and the last one on these two screens is now true.
+    #
+    # So the floor moved rather than being removed. What must not vanish is not
+    # a marker but a STATEMENT: the one row on these screens that still says a
+    # fact is unavailable must go on saying WHY, in words a reader can check.
+    assert _the_surviving_statement_is_true()
+
+
+def _the_surviving_statement_is_true() -> bool:
+    """The one remaining `unsupported` row on these screens, judged.
+
+    `Roles it carries` on the Agents screen. It is TRUE as written, and that was
+    measured rather than assumed: `materialize` substitutes roles for instances
+    and the result is what becomes durable, `RunEnvelope` carries no
+    assignments, and nothing else in a run's records keeps the binding. A run's
+    own journal genuinely cannot name the roles it was opened with.
+
+    It is also INCOMPLETE, and that is a residual rather than a lie: the run's
+    frozen configuration names the workflow and revision it froze, so the
+    mapping is recoverable by joining the plan's `instance_id` per node to the
+    template's `role_id` per node. That join is a feature this build does not
+    have, not a sentence this build gets wrong -- and the row already shows the
+    roles whenever a payload carries them.
+    """
+    text = source(PEOPLE_FILE)
+    body = re.search(r'unsupported\("Roles it carries",(.*?)\)\);',
+                     text, re.S)
+    if body is None:
+        return False
+    said = body.group(1)
+    return ("A materialized plan names instances, not roles" in said
+            and "not carried into the run's plan" in said
+            and 'fact("Roles it carries", row.role_ids)' in text)
 
 
 def test_the_runs_screen_reports_the_revision_the_run_froze() -> None:

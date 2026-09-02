@@ -493,6 +493,40 @@ def _warnings_for(draft, workflow_id: str, revision: int) -> list[str]:
         draft.settled(), workflow_id=workflow_id, revision=revision)
 
 
+def _criteria_for(draft, published) -> dict:
+    """The criteria for whichever document this workflow is really showing.
+
+    The same reading the RUN read carries, for the document a person is
+    drawing: the rules that will operate on the run are the rules stated here,
+    so the drawing surface and the run half cannot disagree about what success
+    means for a step.
+
+    The DRAFT when there is one, because that is what the inspector draws and
+    what the person is editing; the published revision otherwise. Answering for
+    a document nobody is looking at would put a sentence on screen about a step
+    as it used to be.
+    """
+    from .graph_template_document import TemplateNode
+    from .success_criteria import for_document
+
+    document = draft.settled() if draft is not None else published
+    if not isinstance(document, Mapping):
+        return {}
+    rows = document.get("nodes")
+    if not isinstance(rows, list):
+        return {}
+    settled = []
+    for row in rows:
+        try:
+            settled.append(TemplateNode.from_dict(row))
+        except ContractError:
+            # A node this build cannot read is not described. The draft road
+            # already reports it as a diagnostic; inventing a success sentence
+            # for it would be this reading guessing at a step nobody can open.
+            continue
+    return for_document(settled)
+
+
 def workflow_state(
         templates: "TemplateStore", workflow_id: str) -> dict[str, Any]:
     """Everything the Studio needs about one workflow, published and unsaved.
@@ -503,8 +537,8 @@ def workflow_state(
 
     ``published`` is the latest revision as stored. A revision this build cannot
     read through the contract is NOT silently dropped -- its number appears in
-    ``unreadable_revisions``, because a revision you cannot read is a fact and a
-    revision you cannot see is a lie.
+    ``unreadable_revisions``: a revision you cannot read is a fact, and one you
+    cannot see is a lie.
     """
     revisions = templates.revisions(workflow_id)
     latest = revisions[-1] if revisions else None
@@ -530,11 +564,10 @@ def workflow_state(
         "draft": _draft_row(draft),
         "diagnostics": [dict(row) for row in diagnostics],
         "warnings": _warnings_for(draft, workflow_id, next_revision),
-        # True only when there IS a draft and nothing stops it. A workflow with
-        # no draft has nothing to publish, which is a different thing from a
-        # draft that would be refused, and the two must not share a word.
         # True only when there IS a draft, nothing stops it, AND it would say
-        # something the standing revision does not. Publishing a draft nobody
+        # something the standing revision does not. A workflow with no draft has
+        # nothing to publish, which is a different thing from a draft that would
+        # be refused, and the two must not share a word. Publishing a draft nobody
         # has changed used to create a second revision carrying the same
         # document under a new number -- a durable record of an edit that never
         # happened, and one no reader could tell from a real one afterwards.
@@ -542,6 +575,7 @@ def workflow_state(
                         and not unchanged),
         "unchanged": unchanged,
         "next_revision": next_revision,
+        "success_criteria": _criteria_for(draft, published),
     }
 
 
