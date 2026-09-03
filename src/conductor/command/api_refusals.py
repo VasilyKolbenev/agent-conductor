@@ -53,6 +53,7 @@ ERROR_STATUS = MappingProxyType({
     "draft_changed": 409,
     "draft_conflict": 409,
     "run_terminal": 409,
+    "gate_unreached": 409,
 })
 
 _FIXED_MESSAGES = MappingProxyType({
@@ -99,6 +100,16 @@ _FIXED_MESSAGES = MappingProxyType({
     #: branch and needs no `_REVIEWED_FACTS` row.
     "run_terminal": "run has recorded its terminal and accepts no further "
                     "records",
+    #: Its own code rather than `service_refused`, and for `run_terminal`'s
+    #: reason: the source is the PLAN. The body is well formed, the caller is
+    #: not at fault, and what refuses them is that this run has not arrived at
+    #: the gate they are answering -- which is a fact that CHANGES as the plan
+    #: goes on, so a client is being told to wait rather than to correct
+    #: anything. It carries no detail: what is still owed is the schedule's
+    #: answer, and the screen already reads it from `graph.schedule` rather
+    #: than from a refusal envelope.
+    "gate_unreached": "a decision may stand only on a gate this run's plan "
+                      "has reached",
 })
 
 

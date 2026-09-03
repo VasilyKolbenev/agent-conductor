@@ -16,6 +16,11 @@
 // run that bound one says nothing about whether this machine can still reach
 // it.
 import {element} from "./command-view.js";
+//: The AND-join sentence, from the module that declares it. The Runs screen
+//: says it about a step that is not offered and this screen says it about a
+//: gate that cannot be answered yet; a second copy here would be a second
+//: chance to say one rule two ways about one run.
+import {ALL_ROADS} from "./studio-runwords.js";
 
 // -- closed vocabularies, each a copy of exactly one Python owner ------------
 //
@@ -369,16 +374,32 @@ function textControl(name, key, draft, edit, label, attributes) {
   ]);
 }
 
-function decisionForm(row, draft, handlers, live) {
-  const edit = handlerOf(handlers, "editDecision");
-  const submit = handlerOf(handlers, "submitDecision");
-  const form = element("form", {className: "studio-decide"});
+//: What an answer on a gate that already HAS one does, said before the
+//: controls because it changes what pressing them means.
+//
+// A receipt still standing means one of two things and both are the same act:
+// a loop sent the work back around, or the person is taking back what they
+// just said. Either way this answer REPLACES that one rather than standing
+// beside it, and it is posted as `supersedes` -- which is what keeps the gate
+// readable instead of `unknown`. Spelled as a list so the form appends it the
+// way it appends every other optional note.
+function reopenedNote(row) {
+  if (typeof row.standing !== "string") return [];
+  return [note("This gate was already answered. Answering it now writes a "
+    + `receipt that supersedes ${row.standing}; both stay in the journal, `
+    + "and a decision is never edited.")];
+}
+
+//: The four answers, minus the one this gate's plan refuses, plus what each
+//: means and what a second answer would replace.
+//
+// A gate whose plan demands explicit human approval is not offered the one
+// answer that would set it aside. Offering it and refusing the save would
+// teach a person the product is broken; the plan said this before the run
+// opened, so the screen says it here.
+function answerChoices(row, draft, edit) {
   const choices = element("fieldset", {className: "studio-choices"},
     [element("legend", {text: "Your answer, and what each one causes"})]);
-  // A gate whose plan demands explicit human approval is not offered the one
-  // answer that would set it aside. Offering it and refusing the save would
-  // teach a person the product is broken; the plan said this before the run
-  // opened, so the screen says it here.
   const demanded = typeof row.success_requires === "string";
   for (const action of Object.keys(DECISION_ACTIONS)) {
     if (demanded && action === "waive") continue;
@@ -388,7 +409,15 @@ function decisionForm(row, draft, handlers, live) {
     choices.append(note("This gate requires explicit human approval, so it "
       + "cannot be waived. Approve it, reject it, or ask for changes."));
   }
-  form.append(choices,
+  for (const said of reopenedNote(row)) choices.append(said);
+  return choices;
+}
+
+function decisionForm(row, draft, handlers, live) {
+  const edit = handlerOf(handlers, "editDecision");
+  const submit = handlerOf(handlers, "submitDecision");
+  const form = element("form", {className: "studio-decide"});
+  form.append(answerChoices(row, draft, edit),
     textControl("actor", "actor", draft, edit, "Decided by",
       {maxlength: "128", pattern: ID_PATTERN, required: ""}),
     textControl("reason", "reason", draft, edit,
@@ -422,6 +451,62 @@ function decisionForm(row, draft, handlers, live) {
   return form;
 }
 
+//: Whether this gate may be answered NOW. The write door's own rule, spelled
+//: the same way on this side of the wire.
+//
+// A run that has ENDED offers nothing at all, whatever any gate says: the
+// write door refuses every record once a terminal stands. A gate whose
+// recorded answers contradict each other is offered nothing either -- there is
+// no current answer to replace and a receipt replacing none would be a third.
+// A gate a receipt STANDS on may be answered whenever the plan carries it,
+// because replacing that answer is legal both when a loop has reopened the
+// gate and when a person is taking back what they just said. And a gate
+// nothing stands on may be answered once the plan has REACHED it.
+//
+// It never reads the word `runnable`, and a source guard holds it to that. A
+// halt rewrites every runnable row to blocked so nothing further is offered as
+// WORK, and a decision is not work -- so a screen reading `runnable` explained
+// a gate whose roads were all open by saying its roads had not opened.
+function offersAnAnswer(row) {
+  return row.ended !== true && row.decision !== "unknown"
+    && (typeof row.standing === "string"
+      || (row.reachable && row.standing === null));
+}
+
+//: Why this gate is offering nothing, in the user's words. Five situations,
+//: five sentences, and they are nothing alike -- one ends when the steps in
+//: front of it finish, one never ends at all, and one has already ended.
+function whyNotYet(row) {
+  if (row.ended === true) {
+    return note("This run has ended (Plan: " + show(row.plan_word) + "); no "
+      + "decision can be recorded.");
+  }
+  if (row.decision === "unknown") {
+    return note("This gate's recorded answers contradict each other; the "
+      + "journal supports no answer and the screen offers none.");
+  }
+  if (row.state === null) {
+    return note("This build was not given this run's schedule, so this window "
+      + "cannot say whether the plan has reached this gate. It offers no "
+      + "answer rather than guessing at one.");
+  }
+  const waiting = rows(row.blocked_by).join(", ");
+  if (waiting) {
+    return note("This gate cannot be answered yet. " + ALL_ROADS
+      + ` Waiting on: ${waiting}.`);
+  }
+  const closed = rows(row.closed_by).join(", ");
+  if (closed) {
+    return note("This gate will never be asked: the road into it was closed "
+      + `by ${closed}.`);
+  }
+  if (row.reachable) {
+    return note("Nothing further is offered in this run: it was halted.");
+  }
+  return note("This gate will never be asked: what leads to it is "
+    + "unreachable too.");
+}
+
 function decisionDetail(row, draft, handlers, live) {
   const receipt = object(row.receipt);
   const body = [
@@ -433,11 +518,10 @@ function decisionDetail(row, draft, handlers, live) {
     section("What becomes runnable once this is answered",
       [whatItUnblocks(row)]),
   ];
-  if (row.decision === "idle") {
+  if (offersAnAnswer(row)) {
     body.push(decisionForm(row, draft, handlers, live));
   } else {
-    body.push(note("This gate has been answered. A decision is never edited; "
-      + "answering again writes a receipt that supersedes this one."));
+    body.push(whyNotYet(row));
   }
   if (receipt !== null) body.push(receiptBlock(receipt));
   else if (row.decision !== "idle") {

@@ -135,3 +135,16 @@ export const VERIFICATION_FAILED_NOTE = "Process exit 0 proves the process "
   + "finished, not that the work was verified. This run reached the end of an "
   + "action and its verification did not pass, so nothing here says the work "
   + "is done.";
+//: The ONE sentence this product uses for a step waiting at a join.
+//
+// "Waiting for a predecessor" reads as ANY, and joins are AND-only: every
+// road into a step must open before it may run. A person told the weaker
+// thing would expect the step to start as soon as one branch arrived, and
+// would read the plan as doing something it never does.
+//
+// It lives HERE rather than beside either screen because two screens say it
+// now: the Runs screen about a step that is not offered, and the Decisions
+// screen about a gate that cannot be answered yet. Two copies of one rule are
+// two chances to say it differently about one run.
+export const ALL_ROADS = "ALL incoming roads must open before this step may "
+  + "run.";

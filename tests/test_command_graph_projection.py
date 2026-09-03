@@ -140,6 +140,72 @@ def a_decision(index=1, gate_id=CONFIRM_GATE, **changes):
     return DecisionReceipt(**body)
 
 
+#: The four steps this plan puts in front of its first gate. A decision on
+#: `gate-confirm-do` is admitted only once the run has ARRIVED at it, so every
+#: witness that answers that gate through the live door has to carry them out
+#: first -- which is what a real run does, and what these journals used to skip
+#: while a gate settled from its own receipt alone.
+BEFORE_THE_GATE = ("goal", "identify", "diagnose", "design")
+
+
+def settle_node(store, node_id, *, index, run_id=RUN_ID, config_digest=None,
+                outcome="failed"):
+    """Carry one acting step out, as the three records a real one writes.
+
+    The outcome is `failed` by default and that is not a shortcut: a step
+    settles on any terminal result that is not `unknown`, the roads between
+    these steps carry no condition, so a failure opens them exactly as a
+    success would -- and a `succeeded` receipt would drag in the verification
+    evidence a success must name, which is a different rule with its own
+    witnesses and which would put the word "succeeded" into journals whose
+    windows are asserted never to show it.
+
+    Args:
+        store: The run store to append into.
+        node_id: The plan step being carried out.
+        index: The identity counter for this attempt's three records.
+        run_id: The run the records belong to.
+        config_digest: The run's frozen digest, when it is not `CONFIG`'s.
+        outcome: The terminal outcome the result receipt records.
+
+    Returns:
+        The `ActionRequest` that was authorized.
+    """
+    facts = {} if config_digest is None else {"config_digest": config_digest}
+    proposal = a_proposal(node_id=node_id, index=index, run_id=run_id, **facts)
+    store.append(proposal)
+    request = a_request(proposal, index=index, run_id=run_id)
+    store.append(request)
+    store.append(a_result(request, index=index, run_id=run_id,
+                          outcome=outcome, evidence_refs=()))
+    return request
+
+
+def settle_to_the_confirm_gate(store, *, start=11, run_id=RUN_ID,
+                               config_digest=None):
+    """Every step in front of the plan's first gate, carried out.
+
+    `start` is well clear of the indices the seeds themselves use, so a journal
+    that already holds an attempt or two does not collide with these -- two
+    records under one identity are a conflict the store refuses, and a seed
+    that failed that way would look like a defect in the door under test.
+    """
+    for offset, node_id in enumerate(BEFORE_THE_GATE):
+        settle_node(store, node_id, index=start + offset, run_id=run_id,
+                    config_digest=config_digest)
+
+
+def reach_the_confirm_gate(root, *, run_id=RUN_ID, config_digest=None):
+    """The same, over a project ROOT rather than a store already opened.
+
+    The shape a browser seed wants: those tests hold the served directory and
+    not the store behind it, and every one of them that ANSWERS a gate has to
+    let the plan reach it first, which is what a real run does.
+    """
+    settle_to_the_confirm_gate(RunStore(root), run_id=run_id,
+                               config_digest=config_digest)
+
+
 def payload_of(store):
     return graph_payload(store.read(RUN_ID))
 

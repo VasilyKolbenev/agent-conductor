@@ -17,6 +17,10 @@ import json
 import pytest
 from playwright.sync_api import Browser, Route
 
+from conductor.command.run_store import RunStore
+
+from tests.test_command_graph_projection import settle_to_the_confirm_gate
+
 # ``wire_url`` is imported to be used as a fixture: the seeded server whose
 # journal already holds the frozen plan and some records against it.
 from browser_tests.test_graph_wire import (  # noqa: F401
@@ -34,14 +38,22 @@ from browser_tests.test_graph_wire import (  # noqa: F401
 )
 
 def test_a_run_frame_for_the_selected_run_buys_a_re_read_and_the_graph_moves(
-        chromium: Browser, wire_url: str) -> None:
+        chromium: Browser, tmp_path, wire_url: str) -> None:
     """The real stream, the real frame, and a visibly different gate after it.
 
     The decision is recorded through the run's own route from inside the page,
     so the server publishes exactly the identifier-only frame it publishes for
     any mutation. Nothing in that frame is a fact: the gate below changes
     because the authoritative read was taken again.
+
+    The four steps in front of the gate are carried out first, because the
+    decision door now refuses a gate the run has not ARRIVED at -- and this
+    witness is about the STREAM, not about that refusal. They are settled here
+    rather than in `_seed` so the module's other witnesses go on reading the
+    journal they were written against: `goal` proposed and nothing more, and a
+    loop that has reopened nothing.
     """
+    settle_to_the_confirm_gate(RunStore(tmp_path), run_id=DURABLE_RUN)
     page, recorder = _open(chromium, wire_url)
     try:
         _load_run(page, DURABLE_RUN)

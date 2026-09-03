@@ -126,6 +126,11 @@ EXPECTED_ERRORS = {
     #: well formed, and what refuses it is that this run's plan has nothing left
     #: to open. Every other 409 here names something a caller might change.
     "run_terminal": (409, "plan"),
+    #: The PLAN again, and the other direction of the same authority: that one
+    #: says the plan has nothing left to open, this says the plan has not
+    #: opened this gate yet. Neither is the store's, the service's or the
+    #: caller's fault, and both change only when a record arrives.
+    "gate_unreached": (409, "plan"),
 }
 EXPECTED_ERROR_CODES = frozenset(EXPECTED_ERRORS)
 

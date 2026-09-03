@@ -1,6 +1,6 @@
 """What the command boundary refuses from the records alone.
 
-Three holds, and what makes them one circuit is what they do NOT need: no
+Five holds, and what makes them one circuit is what they do NOT need: no
 registry, no clock, no session, nothing this process happens to be holding.
 Each is a pure question about a run's own durable records and the caller's own
 body, which is why each was a `@staticmethod` on ``CommandApi`` -- a method
@@ -20,7 +20,13 @@ from collections.abc import Iterable
 
 from .api_contracts import ApiRefusal
 from .containment import unprovidable_sandboxes
-from .graph_causality import gate_refuses_waiver, standing_terminal
+from .contracts import DecisionReceipt
+from .graph_causality import (
+    _standing_graph,
+    decision_is_reached,
+    gate_refuses_waiver,
+    standing_terminal,
+)
 from .graph_definition import GraphNode
 
 
@@ -71,6 +77,74 @@ def _hold_gate_admits(run_id: str, recovered, submitted) -> None:
     if submitted.action == "waive" and gate_refuses_waiver(
             recovered, submitted.gate_id):
         raise ApiRefusal.gate_refuses_waiver(run_id, submitted.gate_id)
+
+
+def _hold_gate_is_reached(recovered, submitted) -> None:
+    """A decision stands only on a gate this run's plan has REACHED.
+
+    The eligibility rule `authorize` already holds, said at the other door a
+    Human acts through. Without it a receipt could settle a gate no road had
+    opened -- and because a gate settles from its receipts alone, the step
+    behind it became runnable at once and every predecessor was skipped.
+
+    It takes no `run_id`: the whole question is asked of the run's own plan and
+    the run's own records, which `recovered` already is, and a parameter this
+    hold could not spend would be a fact it looked authorized to use.
+
+    A run following NO plan is not judged at all, exactly as
+    `_hold_gate_admits` is not: there is no plan to have reached anything, and
+    a journal written before graphs existed must go on being writable.
+
+    The SCHEDULER is deliberately untouched. It settles a gate from that gate's
+    receipts alone (scheduler-design §4.1), which is what lets a receipt
+    appended straight into the journal -- by an older build, by a fixture, by
+    the demo -- still settle its gate on replay. This refuses the LIVE road
+    only, so no stored run changes meaning and no recorded terminal is
+    recomputed differently.
+
+    Asked inside the transaction, AFTER the prior-receipt lookup and after
+    `_hold_not_terminal`, for `_write_artifact`'s reason: the refusal is about
+    a NEW record, an exact retry of one that already stands appends none, and
+    a changed retry of that identity is a conflict whatever the plan says.
+    Strictly before the clock and the append, so a refusal reads no instant and
+    leaves `records.jsonl` byte-identical.
+    """
+    definition = _standing_graph(recovered)
+    if definition is None:
+        return
+    if not decision_is_reached(
+            definition, tuple(row.value for row in recovered.records),
+            submitted.gate_id, submitted.supersedes):
+        raise ApiRefusal.fixed("gate_unreached")
+
+
+def _hold_plan_pre_answers_no_gate(run_id: str, recovered, nodes) -> None:
+    """A plan may not land on a run that already answered one of its gates.
+
+    The second road to the same defect, and it needs its own door because the
+    order is reversed: a run with no plan is not judged by the hold above, so a
+    decision may legally be written first -- and then the PLAN arrives carrying
+    that very gate, which is already settled, with every step in front of it
+    untouched. The receipt was legal when it was written and the plan is
+    refused instead.
+
+    A decision written before the plan STAYS legal, which is the rule
+    `_decision_names_a_planned_gate` keeps and every journal written before
+    graphs existed depends on. This does not take it back: what is refused is
+    the plan that would adopt such an answer, and only when the plan itself
+    carries that gate. A receipt naming a gate the candidate does not draw is
+    admitted exactly as it always was.
+
+    Asked inside the transaction of both plan-writing roads, after the standing
+    graph is looked for and before the append, so a refused plan leaves the run
+    byte-identical.
+    """
+    planned = {node.gate_id for node in nodes if node.gate_id is not None}
+    for row in recovered.records:
+        if isinstance(row.value, DecisionReceipt) \
+                and row.value.run_id == run_id \
+                and row.value.gate_id in planned:
+            raise ApiRefusal.fixed("gate_unreached")
 
 
 def _sandboxes_are_provided(

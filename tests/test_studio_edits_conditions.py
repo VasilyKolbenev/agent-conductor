@@ -84,16 +84,29 @@ def test_the_arm_touches_only_the_road_the_edit_names():
 
 
 def test_the_run_read_takes_its_successors_from_the_schedule(tmp_path):
-    """`unblocks` reads `graph.schedule`, and the edge list is not consulted."""
+    """`unblocks` reads `graph.schedule`, and the edge list is not consulted.
+
+    The three fields the DRAWING contributes to a gate row moved into
+    `drawnFacts` when `decisionRows` crossed the fifty-line rule, so the row
+    builder is read for the schedule lookup it does and that function for what
+    it makes of it. Both halves are still here, in one test, because they are
+    one claim.
+    """
     source = _code(RUNREAD)
     rows = re.search(r"export function decisionRows\(detail\) \{(.*?)\n\}",
                      source, re.DOTALL).group(1)
+    drawn = re.search(
+        r"function drawnFacts\(node, titles, planned\) \{(.*?)\n\}",
+        source, re.DOTALL).group(1)
 
     assert "const schedule = isObject(graph) ? graph.schedule : null;" in rows
-    assert "opensOf(schedule, node.node_id)" in rows, rows
+    assert "const planned = scheduleRow(schedule, node.node_id);" in rows, rows
+    assert "...drawnFacts(node, titles, planned)," in rows, rows
+    assert "opensOf(planned)" in drawn, drawn
     # The edge list is still read for the plan's own facts, but never to decide
     # what a decision unblocks.
     assert "definition.edges" not in rows, rows
+    assert "definition.edges" not in drawn, drawn
 
 
 def test_a_build_answering_no_schedule_states_no_successors(tmp_path):
@@ -109,26 +122,36 @@ def test_a_build_answering_no_schedule_states_no_successors(tmp_path):
     defect was found by mutation and its load-bearing witness is the browser
     one -- `test_studio_routing` reads the rendered row. This is the cheap
     tripwire beside it, so the fast suite reds too.
+
+    The lookup itself is `scheduleRow`, and it is ONE lookup on purpose: where
+    a gate stands, what it waits on and where it goes next are three fields of
+    one schedule row, and three separate finds would be three chances to read
+    them off different rows.
     """
     source = _code(RUNREAD)
-    body = re.search(r"function opensOf\(schedule, nodeId\) \{(.*?)\n\}",
+    lookup = re.search(r"function scheduleRow\(schedule, nodeId\) \{(.*?)\n\}",
+                       source, re.DOTALL).group(1)
+    body = re.search(r"function opensOf\(row\) \{(.*?)\n\}",
                      source, re.DOTALL).group(1)
 
-    assert "if (!isObject(schedule)) return [];" in body, body
+    assert "if (!isObject(schedule)) return null;" in lookup, lookup
+    assert "rows(schedule.nodes)" in lookup, lookup
+    assert "return isObject(row) ? row : null;" in lookup, lookup
+    assert "edges" not in lookup, lookup
     assert "edges" not in body, body
-    assert "rows(schedule.nodes)" in body, body
-    assert "return isObject(row) ? rows(row.opens).filter(isObject) : [];" in (
+    assert "return row === null ? [] : rows(row.opens).filter(isObject);" in (
         body), body
 
 
 def test_each_unblocked_step_carries_the_word_the_road_opens_on():
     """The one fact a bare edge list cannot state."""
-    rows = re.search(r"export function decisionRows\(detail\) \{(.*?)\n\}",
-                     _code(RUNREAD), re.DOTALL).group(1)
+    drawn = re.search(
+        r"function drawnFacts\(node, titles, planned\) \{(.*?)\n\}",
+        _code(RUNREAD), re.DOTALL).group(1)
 
     assert 'condition: typeof row.condition === "string" ? row.condition : null'\
-        in rows, rows
-    assert "node_id: row.to_node" in rows, rows
+        in drawn, drawn
+    assert "node_id: row.to_node" in drawn, drawn
 
 
 def test_clearing_a_binding_clears_everything_that_depended_on_it():

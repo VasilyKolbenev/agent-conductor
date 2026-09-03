@@ -65,6 +65,10 @@ from tests.test_command_graph_projection import (
     an_event,
     an_evidence,
 )
+#: Re-exported for the decision witnesses next door, which drive this seed's
+#: gate and must let the plan REACH it first. It lives with the record helpers
+#: rather than here; this line is the seam, not a second copy.
+from tests.test_command_graph_projection import reach_the_confirm_gate  # noqa: F401
 from tests.test_command_run_store import a_run
 from tests.test_command_schema_doubles import DeepPlanAdapter
 from tests.test_store import good_lane, write_project
@@ -639,50 +643,6 @@ def test_a_dropped_stream_says_so_on_every_screen_and_shuts_the_write_door(
             '#workflowToolbar [data-focus="action:onPublish"]').is_disabled()
         assert page.locator(
             '#studioPrimary [data-focus="action:onSaveDraft"]').is_disabled()
-        assert window.problems == []
-    finally:
-        page.context.close()
-
-
-def test_a_decision_pressed_while_the_stream_is_down_refuses_and_writes_nothing(
-        chromium: Browser, project: _Project) -> None:
-    """With the stream down the decision control closes, and says why.
-
-    This test first held the opposite: the control stayed pressable while the
-    two workflow write controls disabled themselves, which was reported as a
-    minor asymmetry rather than a defect because the door refused loudly and
-    nothing durable moved. It was still a control that looked available while
-    nothing could be written, which is the thing this screen exists not to do.
-    It now matches its neighbours.
-
-    Disabled is not enough on its own, and the assertions below say so: a greyed
-    button with no sentence is a dead end, so the reason has to be on screen,
-    the typed actor has to survive, and nothing may reach the durable store.
-    """
-    page, window = _open(chromium, project, double=True)
-    try:
-        _read_the_run(page)
-        page.locator('[data-focus-key="action:showDecisions"]').click()
-        page.locator(
-            f'[data-focus-key="decision:{RUN_ID}/{CONFIRM_GATE}"]').click()
-        page.locator('[data-focus-key="field:actor"]').fill(DECIDER)
-        page.locator('[data-focus-key="field:actor"]').press("Tab")
-        submit = page.locator('[data-focus-key="action:submitDecision"]')
-        page.wait_for_selector(
-            '[data-focus-key="action:submitDecision"]:not([disabled])')
-        page.evaluate("() => window.__stream.fire('error')")
-        page.wait_for_selector('#studioConnection[data-connection="closed"]')
-
-        assert submit.is_disabled(), (
-            "the decision control stayed pressable while nothing could be written")
-        said = page.locator(".studio-decide").inner_text()
-        assert "connection is down" in said, (
-            "the control closed without saying why: " + said)
-        assert page.locator(
-            '[data-focus-key="field:actor"]').input_value() == DECIDER, (
-            "the drop discarded what the reader had already typed")
-        assert window.writes("/decisions") == 0
-        assert project.receipts() == []
         assert window.problems == []
     finally:
         page.context.close()

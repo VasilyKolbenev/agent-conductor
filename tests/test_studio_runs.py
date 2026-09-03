@@ -96,8 +96,15 @@ BANNED_APIS = (
     "settimeout", "setinterval", "fetch(", "new eventsource",
     "xmlhttprequest", "websocket", "navigator.", "createelement",
 )
-#: The one module either file may import.
-ALLOWED_IMPORT = "./command-view.js"
+#: What either screen may import, as a permission table. It used to be one
+#: name -- `command-view.js`, the shared DOM builder -- and the guard below
+#: only ever saw single-line imports, so the words module `studio-runs.js`
+#: already read from went unnoticed because its import spans lines. The guard
+#: now reads BOTH shapes, which is why the permitted set has to say what was
+#: always true: a screen may reach the builder it writes DOM with, and the
+#: module that declares the closed words and one-voice sentences it is held to.
+#: Neither may reach a transport, a model, or the other screen.
+ALLOWED_IMPORTS = frozenset({"./command-view.js", "./studio-runwords.js"})
 #: The tags a listener may be attached to. A click on a `div` is not operable
 #: by a keyboard, and no amount of `tabindex` makes it a control.
 LISTENABLE_TAGS = frozenset({"button", "form", "input"})
@@ -193,10 +200,20 @@ def test_neither_screen_module_reaches_a_banned_api(path: Path) -> None:
 @pytest.mark.parametrize("path", OWNED, ids=lambda path: path.name)
 def test_each_screen_module_imports_only_the_shared_dom_builder(
         path: Path) -> None:
-    """These modules read state and write text; they own no transport."""
-    imports = re.findall(r'^import .*? from "([^"]+)";', source(path),
-                         flags=re.MULTILINE)
-    assert imports == [ALLOWED_IMPORT], f"{path.name} imports {imports}"
+    """These modules read state and write text; they own no transport.
+
+    Both import SHAPES are read. The pattern used to stop at a newline, so a
+    multi-line import list was invisible to it -- and `studio-runs.js` has read
+    its vocabularies out of `studio-runwords.js` through exactly such a list
+    the whole time. A guard that cannot see half the imports is not a guard on
+    imports, so the match spans lines and the permitted set says what may be
+    there.
+    """
+    imports = set(re.findall(r'^import\s[\s\S]*?from "([^"]+)";', source(path),
+                             flags=re.MULTILINE))
+    assert imports, f"{path.name} imports nothing at all"
+    assert imports <= ALLOWED_IMPORTS, (
+        f"{path.name} imports {sorted(imports - ALLOWED_IMPORTS)}")
 
 
 @pytest.mark.parametrize("path", OWNED, ids=lambda path: path.name)
@@ -714,8 +731,12 @@ def test_a_gate_asks_with_the_workflows_own_words_when_the_plan_carried_any():
     sentence beside those reads as one more of them.
     """
     read = (PANEL / "studio-runread.js").read_text(encoding="utf-8")
-    carried = re.search(r"for \(const node of rows\(definition\.nodes\)(.*?)\n  \}",
-                        read, re.DOTALL).group(1)
+    # The three fields the DRAWING contributes moved into `drawnFacts` when the
+    # row builder crossed the fifty-line rule; the row still spreads them in.
+    carried = re.search(
+        r"function drawnFacts\(node, titles, planned\) \{(.*?)\n\}",
+        read, re.DOTALL).group(1)
+    assert "...drawnFacts(node, titles, planned)," in read, read
     assert 'purpose: typeof node.purpose === "string" ? node.purpose : null,' in (
         carried), carried
 

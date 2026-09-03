@@ -133,9 +133,17 @@ PERMITTED_IMPORTS = {
     #: list this build must hold equal to a Python module may not be able to
     #: answer from anything but itself.
     "studio-runwords.js": frozenset(),
+    #: The Decisions and Agents screens. `studio-runwords.js` joined the row
+    #: when the AND-join sentence had to be said on two screens: this one says
+    #: it about a gate that cannot be answered yet and the Runs screen says it
+    #: about a step that is not offered, and one rule said twice in two files
+    #: is one rule that can be said two ways. The grant is to the words module
+    #: alone -- never to `studio-runs.js`, which would put two screens in one
+    #: ring.
     "studio-people.js": frozenset({"./command-view.js",
                                    "./command-projection.js",
-                                   "./studio-model.js"}),
+                                   "./studio-model.js",
+                                   "./studio-runwords.js"}),
     "studio.js": frozenset(
         {f"./{name}" for name in MODULES if name != BOOT}
         | {"./command-view.js", "./command-projection.js"}),

@@ -370,7 +370,8 @@ choose a code.
   { "code": "record_conflict",       "status": 409, "source": "store" },
   { "code": "draft_changed",         "status": 409, "source": "concurrency" },
   { "code": "draft_conflict",        "status": 409, "source": "concurrency" },
-  { "code": "run_terminal",          "status": 409, "source": "plan" }
+  { "code": "run_terminal",          "status": 409, "source": "plan" },
+  { "code": "gate_unreached",        "status": 409, "source": "plan" }
 ]
 ```
 
@@ -1274,6 +1275,21 @@ are `record_conflict`.
 On a run that has recorded its `run_terminal`, an exact retry of a standing
 receipt still returns 200 — including the very decision that ended the run —
 while a NEW receipt is refused `run_terminal` (409) with nothing written.
+On a run that follows a plan, a NEW receipt for a gate that plan carries is
+admitted in exactly two cases, asked in this order. If the gate's own receipts
+contradict each other — two that nothing supersedes, which the projection reads
+as `unknown` — nothing is admitted at all. Otherwise, if a receipt STANDS on
+that gate, the request must name it in `supersedes`, whether or not the plan
+has reached the gate: taking back the answer just given, and answering a gate a
+loop has reopened, are the same act. If no receipt stands, the request must
+supersede nothing AND the plan must have REACHED the gate — no road into it
+still pending, none closed by a branch not taken, and the lap it owes not
+already answered. A halt does not un-reach a gate: it stops work being offered,
+and a decision is not work. Anything else is refused `gate_unreached` (409)
+with nothing written, including a `supersedes` this run cannot resolve, and a
+plan landing on a run that already answered one of the gates it carries is
+refused the same way. Consequently two answers can no longer stand on one gate
+through the live road.
 Response `201` is a new `DecisionReceipt.as_dict()`:
 
 <!-- CANONICAL:decision_receipt -->

@@ -27,6 +27,7 @@ import pytest
 from conductor import demo
 from conductor.command import demo_scenario
 from conductor.command.graph_projection import graph_payload
+from conductor.command.graph_schedule import schedule
 from conductor.command.run_store import RunStore
 from conductor.command.template_store import TemplateStore
 
@@ -161,6 +162,51 @@ def test_the_carried_step_ends_verified_with_its_evidence(built):
     assert receipt.evidence_refs, "a succeeded receipt with no evidence"
     for evidence_id in receipt.evidence_refs:
         assert evidence[evidence_id].verification == "verified"
+
+
+#: What the demo's journal holds, in order. Pinned exactly rather than by
+#: membership: the calibration below is that the SCHEDULER did not change, and
+#: a journal that grew or lost a record would be a different measurement
+#: wearing the same assertion.
+DEMO_KINDS = (
+    "graph_definition", "decision", "action_proposal", "action_request",
+    "attempt_event", "attempt_event", "evidence", "action_result")
+
+
+def test_the_demo_journal_still_settles_the_gate_a_receipt_alone_answered(
+        built):
+    """The calibration for the decision doors: the SCHEDULER did not change.
+
+    `_hold_gate_is_reached` refuses a decision for a gate whose roads are not
+    all open -- at the LIVE door only. A gate still settles from its own
+    receipts alone, which is what lets a receipt appended straight into a
+    journal go on answering it: this demo writes exactly such a receipt,
+    through `RunStore.append`, while `goal`, `identify`, `diagnose` and
+    `design` have never run.
+
+    So this is the two-sided half of that door. If a durable or scheduler-level
+    rule had been written instead, `confirm-gate` here would read `blocked`,
+    `do` would never have been reachable, and the demo a person meets first
+    would show a gate answered by a receipt the plan says is impossible.
+    """
+    root, _named = built
+
+    recovered = _read(root)
+    definition = next(row.value for row in recovered.records
+                      if row.kind == "graph_definition")
+    computed = schedule(definition,
+                        tuple(row.value for row in recovered.records))
+    runtime = graph_payload(recovered)["runtime"]
+
+    assert recovered.warnings == ()
+    assert tuple(row.kind for row in recovered.records) == DEMO_KINDS
+    assert {node["node_id"]: node["decision"]
+            for node in runtime["nodes"] if "decision" in node} == {
+        "confirm-gate": "satisfied", "result-gate": "idle"}
+    assert computed.state_of("confirm-gate") == "settled"
+    assert computed.state_of("do") == "settled"
+    assert computed.state_of("result-gate") == "runnable"
+    assert computed.run_state == "open"
 
 
 # -- the regression: the command has to actually call it ---------------------

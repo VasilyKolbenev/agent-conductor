@@ -31,6 +31,7 @@ import {element} from "./command-view.js";
 //: names they have always had. See `studio-runwords.js` for why they moved and
 //: why that module imports nothing.
 export {
+  ALL_ROADS,
   ATTEMPT_PHASES,
   CONTROL_MODES,
   GATE_STATES,
@@ -46,6 +47,7 @@ export {
 //: surface; this is the working set, and the two lists are separate because a
 //: name can be one without being the other.
 import {
+  ALL_ROADS,
   ATTEMPT_PHASES,
   CHANNEL_GLYPHS,
   CONTROL_MODES,
@@ -403,15 +405,6 @@ function loopLine(node, runtime) {
     text: `bounded loop · ${at} · reopens ${show(loop.back_to)}`
       + reached});
 }
-
-//: The ONE sentence this product uses for a step waiting at a join.
-//
-// "Waiting for a predecessor" reads as ANY, and joins are AND-only: every
-// road into a step must open before it may run. A person told the weaker
-// thing would expect the step to start as soon as one branch arrived, and
-// would read the plan as doing something it never does. Pinned by a source
-// test, and spelled once so both readings cannot drift.
-const ALL_ROADS = "ALL incoming roads must open before this step may run.";
 
 //: Why a step stands where it does, off the server's own schedule.
 function standingOf(schedule, nodeId) {

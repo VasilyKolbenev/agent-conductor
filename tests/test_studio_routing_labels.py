@@ -96,11 +96,21 @@ def test_a_blocked_join_says_that_ALL_incoming_roads_are_required():
     "Waiting for a predecessor" reads as ANY. A person told that would expect
     the step to start as soon as one branch arrived, and would read the plan as
     doing something it never does.
+
+    The sentence is DECLARED in `studio-runwords.js` and spent here. It moved
+    there when a second screen had to say it -- the Decisions screen, about a
+    gate that cannot be answered yet -- and one rule written out in two files
+    is one rule that can be said two ways. What this holds is unchanged: the
+    Runs screen states the AND-only rule where a step is blocked, and states
+    nothing weaker anywhere.
     """
     runs = _code(PANEL / "studio-runs.js")
-    sentence = re.search(r'const ALL_ROADS = "([^"]+)"', runs)
-    assert sentence, "the Runs screen no longer states the join rule"
-    assert sentence.group(1).startswith("ALL incoming roads must open")
+    words = _code(PANEL / "studio-runwords.js")
+    sentence = re.search(r'ALL_ROADS = "(.+?)";', words, re.DOTALL)
+    assert sentence, "no module declares the join rule"
+    assert sentence.group(1).replace('"\n  + "', "").startswith(
+        "ALL incoming roads must open")
+    assert "ALL_ROADS," in runs, "the Runs screen no longer reads the join rule"
     body = re.search(r"function planStanding\(item, standing\) \{(.*?)\n\}",
                      runs, re.DOTALL).group(1)
     assert "note(ALL_ROADS)" in body, body

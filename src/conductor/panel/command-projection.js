@@ -52,6 +52,8 @@ export const ERROR_LABELS = Object.freeze({
   draft_conflict: "The stored draft is not the one this window last read — "
     + "another window saved or published it. Nothing here was written and your "
     + "drawing is untouched. Read the workflow again to see what stands now.",
+  gate_unreached: "This gate has not been reached yet. ALL roads into it must "
+    + "open first; the run was read again.",
   malformed_request: "The request could not be read.",
   method_not_allowed: "That operation is unavailable.",
   record_conflict: "The durable record conflicts with an existing fact.",

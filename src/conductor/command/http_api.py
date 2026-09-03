@@ -69,12 +69,14 @@ from .graph_template import (
     materialize,
 )
 from .graph_causality import standing_terminal
-#: The three holds this boundary answers from records alone. They live next
+#: The five holds this boundary answers from records alone. They live next
 #: door because a method that never touches `self` is a function, and this
 #: module reached its line cap carrying three of them.
 from .http_holds import (
     _hold_gate_admits,
+    _hold_gate_is_reached,
     _hold_not_terminal,
+    _hold_plan_pre_answers_no_gate,
     _sandboxes_are_provided,
 )
 from .run_closing import close_if_terminal
@@ -386,11 +388,14 @@ class CommandApi:
             self._bindings_are_servable(initial.config, run_id, probe.nodes)
         with self._store.transaction():
             self._hold_route(run_id)
-            standing = _standing_graph(self._store.read(run_id))
+            recovered = self._store.read(run_id)
+            standing = _standing_graph(recovered)
             if standing is not None:
                 self._repeats_the_standing_plan(run_id, standing, asked, checked)
                 created, graph = False, standing
             else:
+                _hold_plan_pre_answers_no_gate(
+                    run_id, recovered, _gated(checked).nodes)
                 graph = _plan(_gated(checked), initial.config, run_id, asked,
                               self._clock())
                 created = self._store.append(graph)
@@ -521,11 +526,14 @@ class CommandApi:
                 initial.config, run_id, submitted.nodes)
         with self._store.transaction():
             self._hold_route(run_id)
-            standing = _standing_graph(self._store.read(run_id))
+            recovered = self._store.read(run_id)
+            standing = _standing_graph(recovered)
             if standing is not None:
                 self._repeats_the_standing_graph(run_id, standing, submitted)
                 created, graph = False, standing
             else:
+                _hold_plan_pre_answers_no_gate(
+                    run_id, recovered, submitted.nodes)
                 graph = submitted.build(run_id=run_id, created_at=self._clock())
                 created = self._store.append(graph)
         if created:
@@ -682,6 +690,10 @@ class CommandApi:
                 # decision that ended the run. Before the clock and the append,
                 # so a refusal reads no instant and leaves the run byte-identical.
                 _hold_not_terminal(recovered)
+                # And beside it the plan's own permission: this run must have
+                # ARRIVED at the gate, or the receipt must correct the one
+                # standing on it. Its sentence is next door, with the rest.
+                _hold_gate_is_reached(recovered, submitted)
                 decision = submitted.build(
                     run_id=run_id, decided_at=self._clock(),
                     config_digest=recovered.envelope.config_digest)

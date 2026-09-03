@@ -33,11 +33,13 @@ from playwright.sync_api import Browser, Page
 from browser_tests.test_studio_lifecycle import (  # noqa: F401
     CONFIRM_GATE,
     DECIDER,
+    DIGEST,
     PREVIEW_RUN,
     RUN_ID,
     _open,
     _Project,
     project,
+    reach_the_confirm_gate,
 )
 
 
@@ -288,6 +290,7 @@ def test_recording_a_decision_writes_a_receipt_this_window_then_reads_back(
     followed by a READ of the run, and what is drawn is what came back. The
     durable check beside it is the store's own.
     """
+    reach_the_confirm_gate(project.root, config_digest=DIGEST)
     page, window = _open(chromium, project)
     try:
         assert project.receipts() == []
@@ -306,7 +309,11 @@ def test_recording_a_decision_writes_a_receipt_this_window_then_reads_back(
         assert receipts[0].gate_id == CONFIRM_GATE
         assert receipts[0].actor == DECIDER
         assert receipts[0].action == "approve"
-        assert receipts[0].receipt_id == f"receipt-{CONFIRM_GATE}-{DECIDER}"
+        # The gate, how many answers stood before this one, and the person --
+        # in that order. The count is always there and never last: as an
+        # optional suffix it collided across people, because `bob-1` answering
+        # first mints what `bob` answering second would.
+        assert receipts[0].receipt_id == f"receipt-{CONFIRM_GATE}-0-{DECIDER}"
 
         # The answer landed, so the gate is no longer waiting for one.
         assert "gate satisfied" in page.locator(
@@ -351,6 +358,7 @@ def test_the_receipt_sentence_outlives_every_read_the_write_itself_caused(
     its answer is what is waited on -- and then asserts the sentence is still
     there. It fails on the old store within a frame of the decision landing.
     """
+    reach_the_confirm_gate(project.root, config_digest=DIGEST)
     page, window = _open(chromium, project)
     try:
         _read_the_run(page)
@@ -372,6 +380,53 @@ def test_the_receipt_sentence_outlives_every_read_the_write_itself_caused(
         said = page.locator("#studioStatus").inner_text()
         assert "durable receipt" in said, (
             "a read the write itself caused erased the receipt: " + repr(said))
+        assert window.problems == []
+    finally:
+        page.context.close()
+
+
+def test_a_decision_pressed_while_the_stream_is_down_refuses_and_writes_nothing(
+        chromium: Browser, project: _Project) -> None:
+    """With the stream down the decision control closes, and says why.
+
+    This test first held the opposite: the control stayed pressable while the
+    two workflow write controls disabled themselves, which was reported as a
+    minor asymmetry rather than a defect because the door refused loudly and
+    nothing durable moved. It was still a control that looked available while
+    nothing could be written, which is the thing this screen exists not to do.
+    It now matches its neighbours.
+
+    Disabled is not enough on its own, and the assertions below say so: a greyed
+    button with no sentence is a dead end, so the reason has to be on screen,
+    the typed actor has to survive, and nothing may reach the durable store.
+
+    It sits with the other decision witnesses rather than in
+    ``test_studio_lifecycle``: they share this seed AND the seeding that lets
+    the plan reach the gate, and that module was one line under its cap.
+    """
+    reach_the_confirm_gate(project.root, config_digest=DIGEST)
+    page, window = _open(chromium, project, double=True)
+    try:
+        _read_the_run(page)
+        _choose_the_gates_decision(page)
+        page.locator('[data-focus-key="field:actor"]').fill(DECIDER)
+        page.locator('[data-focus-key="field:actor"]').press("Tab")
+        submit = page.locator('[data-focus-key="action:submitDecision"]')
+        page.wait_for_selector(
+            '[data-focus-key="action:submitDecision"]:not([disabled])')
+        page.evaluate("() => window.__stream.fire('error')")
+        page.wait_for_selector('#studioConnection[data-connection="closed"]')
+
+        assert submit.is_disabled(), (
+            "the decision control stayed pressable while nothing could be written")
+        said = page.locator(".studio-decide").inner_text()
+        assert "connection is down" in said, (
+            "the control closed without saying why: " + said)
+        assert page.locator(
+            '[data-focus-key="field:actor"]').input_value() == DECIDER, (
+            "the drop discarded what the reader had already typed")
+        assert window.writes("/decisions") == 0
+        assert project.receipts() == []
         assert window.problems == []
     finally:
         page.context.close()
@@ -434,6 +489,7 @@ def test_a_decision_the_receipt_contract_refuses_never_reaches_the_wire(
     The rule is `DecisionReceipt`'s own, asked at the control so a person is
     told what is missing instead of watching a request be rejected.
     """
+    reach_the_confirm_gate(project.root, config_digest=DIGEST)
     page, window = _open(chromium, project)
     try:
         _read_the_run(page)

@@ -391,6 +391,66 @@ def test_the_mutation_door_names_exactly_four_write_targets():
     assert boot.count("async function submit(") == 1
 
 
+def test_a_decision_names_the_receipt_it_replaces_and_never_hard_codes_none():
+    """`supersedes: null` was a constant, and on a reopened lap it was a lie.
+
+    A gate a loop sends back around is answered again, and the second receipt
+    must NAME the first: two unsuperseded answers on one gate are a journal
+    `gate_decision` refuses to read, so the gate rendered `unknown` the moment
+    a person answered it twice. The value comes off the row the run read
+    carries -- the receipt the SERVER says is standing -- and never from
+    anything this window remembers.
+
+    Both halves are held, and they fail apart: a body that always sent `null`
+    is the defect, and a body that sent the row's field without checking its
+    type would put whatever the payload happened to hold on the wire.
+    """
+    boot = _code(BOOT)
+    assert "supersedes: null" not in boot, (
+        "a decision that always supersedes nothing writes a second standing "
+        "answer on a reopened gate")
+    assert ('const supersedes = typeof row.standing === "string" '
+            "? row.standing : null;") in boot, boot
+    assert boot.count("evidence_refs: [], supersedes};") == 1, boot
+
+
+def test_a_decision_id_counts_the_answers_before_it_and_ends_with_the_person():
+    """One answer, one identity, and no way for two people to mint one id.
+
+    The count must be ALWAYS present and must stand BEFORE the actor. As a
+    suffix it collided across people -- `bob-1` answering a gate first writes
+    the same id as `bob` answering it second -- and nothing may follow the
+    actor, because the actor is the one part of this id a person chooses.
+    """
+    boot = _code(BOOT)
+    assert ("receipt_id: `receipt-${row.gate_id}-${answered}-${draft.actor}`"
+            in boot), boot
+    assert "${draft.actor}`\n" not in boot.replace(
+        "receipt_id: `receipt-${row.gate_id}-${answered}-${draft.actor}`", "")
+    assert ('const answered = Number.isInteger(row.answers) ? row.answers : 0;'
+            in boot), boot
+
+
+def test_a_gate_unreached_refusal_buys_a_re_read_of_the_run_it_named():
+    """The one decision refusal this window acts on rather than only reports.
+
+    Its recovery is `draft_conflict`'s shape for `draft_conflict`'s reason: the
+    screen is offering an answer for a gate the server says the run has not
+    reached, so what is on screen is out of date and the READ is what makes it
+    current. A recovery that only wrote a sentence would leave the same stale
+    form under the same person, still offering the same refused answer.
+
+    The callback BODY is pinned, not merely the code it matches on: replacing
+    the re-read with a status dispatch left every substring here intact.
+    """
+    boot = _code(BOOT)
+    recover = re.search(
+        r'if \(result\.code !== "gate_unreached" \|\| asked !== chosenRun\)'
+        r" return;\n(.*?)\n    \}\);", boot, re.DOTALL)
+    assert recover is not None, "the gate_unreached recovery is gone"
+    assert recover.group(1).strip() == "refreshRun(asked);", recover.group(1)
+
+
 def test_the_session_token_is_read_in_one_place_and_meets_no_sink():
     """The token goes into a request header and nowhere else.
 

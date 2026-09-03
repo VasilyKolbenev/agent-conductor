@@ -11,9 +11,16 @@ has met the same rules.
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-from .contracts import ActionProposal, ActionRequest, DecisionReceipt, _thaw_json
+from .contracts import (
+    ActionProposal,
+    ActionRequest,
+    ContractError,
+    DecisionReceipt,
+    _thaw_json,
+    gate_decision,
+)
 from .graph_definition import GraphDefinition
 from .graph_schedule import schedule
 from .run_terminal import RunTerminal
@@ -245,6 +252,151 @@ def gate_refuses_waiver(recovered: "RecoveredRun", gate_id: object) -> bool:
         return False
     return any(node.gate_id == gate_id and node.success_requires is not None
                for node in graph.nodes)
+
+
+def gate_answer(values: tuple[Any, ...], run_id: str,
+                gate_id: str) -> str | None:
+    """What `gate_decision` says about this gate, or None when it REFUSES.
+
+    The two absences a caller must be able to tell apart, which the projection
+    deliberately collapses into one word on its way to a screen. `idle` is
+    nobody has answered; `None` here is the journal holding answers that
+    contradict each other -- two receipts nothing supersedes -- which the
+    schedule renders as `unknown` and which is not a state any further receipt
+    may be written against.
+
+    One reading, spent by both the standing lookup and the door beneath it, so
+    the two can never disagree about which journals are readable.
+    """
+    receipts = [value for value in values if isinstance(value, DecisionReceipt)]
+    try:
+        return gate_decision(receipts, run_id, gate_id)
+    except ContractError:
+        return None
+
+
+def standing_receipt(values: tuple[Any, ...], run_id: str,
+                     gate_id: str) -> DecisionReceipt | None:
+    """The ONE receipt that stands for this gate right now, or None.
+
+    Derived THROUGH `gate_decision` rather than beside it. That function is
+    this product's single authority on which receipt a gate's answer comes
+    from, and a second walk of `supersedes` here would be a second answer to
+    the question the projection and the schedule already ask -- disagreeing
+    on exactly the journals where it matters, which is the one thing a
+    superseding answer must not do.
+
+    So it is asked first, and only a gate it gives one of its four DECIDED
+    words for reaches the pick below: each of those words means exactly one
+    unsuperseded receipt matched, so the pick cannot be ambiguous.
+
+    `None` for a gate nobody has answered -- `idle` -- and for a journal whose
+    receipts contradict each other, which `gate_decision` refuses and the
+    schedule calls `unknown`. Neither is a receipt anybody may supersede: the
+    first does not exist, and the second is the plan saying it cannot tell
+    which of two answers is current.
+
+    Args:
+        values: The run's record values, in journal order.
+        run_id: The run whose receipts are asked about.
+        gate_id: The gate whose standing answer is asked for.
+
+    Returns:
+        The unsuperseded receipt, or None.
+    """
+    receipts = [value for value in values if isinstance(value, DecisionReceipt)]
+    if gate_answer(values, run_id, gate_id) in (None, "idle"):
+        return None
+    matching = [receipt for receipt in receipts
+                if receipt.run_id == run_id and receipt.gate_id == gate_id]
+    superseded = {receipt.supersedes for receipt in matching
+                  if receipt.supersedes is not None}
+    return next(receipt for receipt in matching
+                if receipt.receipt_id not in superseded)
+
+
+def _gate_has_arrived(computed, node_id: str) -> bool:
+    """Whether the plan has ARRIVED at this gate, off the schedule's own row.
+
+    The plain reading of the word, and every part of it is the schedule's own
+    answer: every road into the gate is OPEN -- none still pending, none closed
+    -- and the gate has not already answered the lap it owes.
+
+    The settled clause is what makes this the SAME reading the Decisions screen
+    takes, spelled the same way on both sides. Under `decision_is_reached` it
+    is subsumed: that predicate reaches here only when NO receipt stands, and a
+    gate no receipt stands on is never settled. It is kept so the two readings
+    are one reading, and so a screen and a door cannot drift about which gate a
+    person may answer.
+
+    It is deliberately NOT `state == "runnable"`, and the difference is one
+    case. A HALT rewrites every runnable row to `blocked` so that nothing
+    further is offered as WORK, and a decision is not work; reading the halt as
+    unreachedness would refuse the very decision that records a halted run's
+    ending. Nothing else separates the two readings for a gate: the other three
+    producers of `blocked` are a spent attempt bound, an unpublished document
+    and an attempt in flight, and a gate has no attempts and no arguments to
+    wait on.
+
+    An `unreachable` gate is refused by the same two clauses rather than by its
+    name -- a closed road in is named in `closed_by`, and a predecessor that is
+    itself unreachable leaves its road PENDING, which is `blocked_by`.
+    """
+    row = next(row for row in computed.nodes if row.node_id == node_id)
+    return (row.state != "settled" and not row.blocked_by
+            and not row.closed_by)
+
+
+def decision_is_reached(definition: GraphDefinition, values: tuple[Any, ...],
+                        gate_id: str, supersedes: str | None) -> bool:
+    """Whether this run's plan admits the decision a caller is offering.
+
+    The plan is a permission as well as a description, and this is that rule
+    for the one door where a Human acts on a gate. `authorize` already asks
+    membership of what `schedule` computes before it mints an attempt; nothing
+    asked it before a receipt, so a decision could settle a gate the run had
+    not reached and open the step behind it over the top of every predecessor.
+
+    Four arms, and the ORDER is the rule. Arrival is asked LAST because it is
+    the weakest question: a gate can be arrived at and still hold an answer,
+    which is what a reopened lap IS -- and a predicate that answered arrival
+    first admitted a second receipt superseding nothing onto a gate that
+    already had one. Two then stood, the gate read `unknown` for the rest of
+    the run, and no later receipt could repair it.
+
+    (a) The plan carries no node with this gate: True. The store's
+        `_decision_names_a_planned_gate` refuses it beneath this door in its
+        own words, and a second sentence here would take that name away.
+    (b) The gate's receipts contradict: False -- nothing may be written
+        against a journal the projection cannot read.
+    (c) A receipt STANDS: the only legal answer replaces it, arrived at or not
+        -- taking back what was just said is as legal as a lap answering
+        again. Any other `supersedes` is refused HERE rather than by the store,
+        which reports one it cannot resolve as a server fault.
+    (d) Nothing stands: the plan must have ARRIVED, and the receipt must
+        supersede nothing -- a first answer claiming to replace something is a
+        claim about a journal this run does not have.
+
+    Args:
+        definition: The run's immutable plan.
+        values: The run's record values, in journal order.
+        gate_id: The gate the submitted decision answers.
+        supersedes: The receipt the submitted decision replaces, or None.
+
+    Returns:
+        Whether the decision may stand.
+    """
+    node = next((row for row in definition.nodes if row.gate_id == gate_id),
+                None)
+    if node is None:
+        return True
+    if gate_answer(values, definition.run_id, gate_id) is None:
+        return False
+    standing = standing_receipt(values, definition.run_id, gate_id)
+    if standing is not None:
+        return supersedes == standing.receipt_id
+    return supersedes is None and _gate_has_arrived(
+        schedule(definition, values), node.node_id)
 
 
 def _decision_may_settle_that_gate(
