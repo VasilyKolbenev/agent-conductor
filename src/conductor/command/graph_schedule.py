@@ -89,6 +89,41 @@ def authorized_attempts(values: tuple[Any, ...], node_id: str) -> int:
                if isinstance(value, ActionRequest) and value.node_id == node_id)
 
 
+def attempt_in_flight(values: tuple[Any, ...],
+                      node_id: str | None = None) -> bool:
+    """Whether an authorized attempt has not been answered -- anywhere, or here.
+
+    One `action_request` with no `action_result` naming its `action_id` is a
+    worker executing right now, or one that died without being reconciled.
+    Either way the attempt is not over: the records it will write are still to
+    come, and `reconcile` is the road that ends it when nobody comes back.
+
+    Defined once, here, and spent by three readers for `authorized_attempts`'s
+    reason: §4 blocks the step it names, §5.3 keeps the whole run open, and the
+    eligibility refusal says which of those a caller has met. A second spelling
+    would let a screen offer work `authorize` is bound to refuse.
+
+    Judged by `action_id` and never by "some request, some result". Two attempts
+    on one step are two identities, and a rule that only asked whether ANY
+    answer had arrived would call the second one finished the moment the first
+    reported -- which is the exact journal that recorded an ending in front of a
+    worker that was still running.
+
+    `unknown` counts as an answer. It is a terminal receipt and the attempt it
+    closes is over; what it settles is a different question, asked by §4.1.
+
+    Args:
+        values: The run's record values, in journal order.
+        node_id: Ask about one step's attempts alone, or about the whole run.
+    """
+    answered = {value.action_id for value in values
+                if isinstance(value, ActionResultReceipt)}
+    return any(isinstance(value, ActionRequest)
+               and value.action_id not in answered
+               and (node_id is None or value.node_id == node_id)
+               for value in values)
+
+
 def loop_position(values: tuple[Any, ...],
                   node: GraphNode) -> tuple[int, bool]:
     """The trip this run is on, and whether the plan's ceiling is reached.
@@ -490,11 +525,22 @@ def _node_state(plan: _Plan, node: GraphNode, settled: bool, spent: bool,
     AWAITED, for the same reason one line up: a step whose plan says `block` may
     not be offered while a document it is given does not exist, because the only
     thing pressing it could produce is the fail-closed receipt `block` was
-    chosen to avoid. Then runnable, which needs EVERY road in to be open.
+    chosen to avoid. Beside it, IN FLIGHT: a step whose authorized attempt has
+    not answered yet may not be offered a second one, because two attempts on
+    one step race for one effect and append to one journal -- and the schedule
+    that admitted the second is the same reading that then called the step
+    settled and ended the run over the top of it. Then runnable, which needs
+    EVERY road in to be open.
 
-    Awaited comes after spent deliberately. Both answer `blocked`, and a spent
-    step can never settle again whatever arrives, so that is the stronger fact
-    and it keeps its place in the row a reader is shown.
+    Awaited and in-flight come after spent deliberately. All three answer
+    `blocked`, and a spent step can never settle again whatever arrives, so that
+    is the stronger fact and it keeps its place in the row a reader is shown.
+    The other two are TEMPORARY, and each ends by a record arriving: a document
+    somebody publishes, or the result the worker is going to write.
+
+    In flight is asked here rather than handed in like the other two, because no
+    field of the row is derived from it: `attempts_spent` counts authorizations
+    and says nothing about whether one is still open.
     """
     if settled:
         return "settled"
@@ -502,7 +548,7 @@ def _node_state(plan: _Plan, node: GraphNode, settled: bool, spent: bool,
     if any(roads[_road_key(edge)] == "closed" for edge in ways) or any(
             states[edge.from_node] == "unreachable" for edge in ways):
         return "unreachable"
-    if spent or awaited:
+    if spent or awaited or attempt_in_flight(plan.values, node.node_id):
         return "blocked"
     if all(roads[_road_key(edge)] == "open" for edge in ways):
         return "runnable"
@@ -535,12 +581,54 @@ def _awaited(plan: _Plan, node: GraphNode) -> tuple[str, ...]:
     return unresolved_input_refs(plan.values, node.capability, node.arguments)
 
 
-def _run_state(rows: tuple[NodeSchedule, ...]) -> str:
+def _waits_for_a_document(row: NodeSchedule) -> bool:
+    """Whether this step is blocked for a document and for nothing else.
+
+    Four facts, and each excludes a different thing. It must be `blocked`,
+    because a settled or unreachable step is not waiting for anything. It must
+    NAME a document, which is `_awaited`'s answer above -- and which is also
+    what excludes a step whose attempt is in flight, the fourth producer of
+    `blocked` and the one that names no document at all. Its attempts must not
+    be spent, because a step that can never settle again will not run whatever
+    anybody publishes. And no road into it may still be pending: a step whose
+    turn has not come is waiting for the plan as well, and the plan may never
+    get there.
+
+    The last two are the difference between a wait somebody can END and a wait
+    that is really a dead end wearing a document's name. The document conjunct
+    has no witness of its own through the run word, and cannot: the only row it
+    excludes is one in flight, and `pending` has already answered `open` for
+    that run before this function is asked anything.
+    """
+    return (row.state == "blocked" and bool(row.awaiting_artifacts)
+            and row.attempts_spent is False and row.blocked_by == ())
+
+
+def _run_state(rows: tuple[NodeSchedule, ...], *, halted: bool,
+               pending: bool) -> str:
     """The plan's own word, and there is no fourth one.
 
     `complete` means nothing is runnable and nothing is still owed -- never that
-    the run succeeded. `stalled` means nothing is runnable and something is
-    still owed, which is exactly what a spent step leaves behind.
+    the run succeeded. `stalled` means what is still owed is owed FOR GOOD, and
+    it has exactly two producers: a step that has spent its attempt bound, and
+    a run a halt has stopped. Neither a document that has not arrived nor an
+    attempt that has not answered is one of them -- both are things that are
+    still going to happen, and an ending recorded over either is a durable lie
+    that also refuses the very record which would have ended the wait.
+
+    So a run with nothing runnable is still OPEN while an attempt is in flight,
+    and while some step waits only for a document a person can go and publish.
+    A halt takes the second of those back: nothing may be authorized in that
+    run again, so what it is waiting for will never be spent on anything.
+
+    `complete` is refused while any attempt is unanswered, and that clause was
+    argued away once on the ground that the two could not meet: a request
+    settles nothing, so the step it names must be blocked or runnable. False,
+    in the one shape nobody drove -- a SECOND attempt authorized on a step an
+    earlier answer already settled. The step reads `settled`, nothing is
+    blocked, and the plan really has nothing left to open, so the word was
+    `complete` while a worker still held an authorization. It is asked here on
+    the fact itself, and never inferred from the rows.
 
     The design also asked that `settled` be non-empty before `complete` is said,
     and that condition is PROVED here rather than checked: a graph carries at
@@ -554,11 +642,17 @@ def _run_state(rows: tuple[NodeSchedule, ...]) -> str:
     states = tuple(row.state for row in rows)
     if "runnable" in states:
         return "open"
-    return "complete" if "blocked" not in states else "stalled"
+    if pending:
+        return "open"
+    if "blocked" not in states:
+        return "complete"
+    if not halted and any(_waits_for_a_document(row) for row in rows):
+        return "open"
+    return "stalled"
 
 
-def _halted(plan: _Plan, rows: tuple[NodeSchedule, ...]) -> tuple[NodeSchedule, ...]:
-    """Stop the whole run when a step that failed asked for it.
+def _is_halted(plan: _Plan, rows: tuple[NodeSchedule, ...]) -> bool:
+    """Whether a settled step that failed asked this whole run to stop.
 
     A TIGHTENING and not routing, and the difference is the whole reason the
     field exists. An `on_failed` road says where the plan goes next; this says
@@ -566,6 +660,22 @@ def _halted(plan: _Plan, rows: tuple[NodeSchedule, ...]) -> tuple[NodeSchedule, 
     no road from the failing step could ever reach. Neither can express the
     other, and a build that folded them together would have to choose which of
     the two it meant.
+
+    `unknown` is excluded by the owner's ruling: it is this product's word for
+    *the journal supports no answer*, and an unanswered question stays askable
+    rather than halting a run.
+
+    Answered as a VALUE rather than by rewriting the rows, because the run word
+    needs it twice over: once to stop what could still be offered, and once to
+    say that a step still waiting for a document is waiting for something that
+    is never going to be spent.
+    """
+    return any(_halts(plan, plan.by_id[row.node_id]) for row in rows
+               if row.state == "settled")
+
+
+def _stop_runnable(rows: tuple[NodeSchedule, ...]) -> tuple[NodeSchedule, ...]:
+    """Offer nothing further, which is what a halt means and all it means.
 
     It needs no new run word and no new record. Every step that could still run
     becomes `blocked`, so `runnable` is empty and `blocked` is not, and §5.3's
@@ -577,14 +687,7 @@ def _halted(plan: _Plan, rows: tuple[NodeSchedule, ...]) -> tuple[NodeSchedule, 
     `blocked` about them would lose that, and would move a name out of the
     terminal's `unreachable_nodes` where it belongs. What changes is only what
     could otherwise have been offered as work.
-
-    `unknown` is excluded by the owner's ruling: it is this product's word for
-    *the journal supports no answer*, and an unanswered question stays askable
-    rather than halting a run.
     """
-    if not any(_halts(plan, plan.by_id[row.node_id]) for row in rows
-               if row.state == "settled"):
-        return rows
     return tuple(row if row.state != "runnable" else NodeSchedule(
         **{**vars(row), "state": "blocked"}) for row in rows)
 
@@ -620,14 +723,17 @@ def schedule(definition: GraphDefinition,
     words = {node.node_id: _produced_word(plan, node)
              for node in definition.nodes}
     rows = _walked_states(definition, plan, outgoing, owed, frames, words)
-    ordered = _halted(plan, tuple(rows[node.node_id]
-                                  for node in definition.nodes))
+    ordered = tuple(rows[node.node_id] for node in definition.nodes)
+    halted = _is_halted(plan, ordered)
+    if halted:
+        ordered = _stop_runnable(ordered)
     return RunSchedule(
         run_id=definition.run_id, graph_id=definition.graph_id, nodes=ordered,
         runnable=_subset(ordered, "runnable"),
         settled=_subset(ordered, "settled"),
         unreachable=_subset(ordered, "unreachable"),
-        run_state=_run_state(ordered))
+        run_state=_run_state(ordered, halted=halted,
+                             pending=attempt_in_flight(values)))
 
 
 def _walked_states(definition: GraphDefinition, plan: _Plan,

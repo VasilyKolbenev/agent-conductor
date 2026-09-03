@@ -24,10 +24,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from types import MappingProxyType
 
-#: Where one step stands. `blocked` covers two situations a reader must be able
-#: to tell apart, and `NodeSchedule.attempts_spent` is what tells them: a step
-#: waiting for a road to open can still run, and a step that has spent its
-#: `attempt_bound` never can.
+#: Where one step stands. `blocked` covers four situations a reader must be able
+#: to tell apart, and the row carries what tells them: a step waiting for a road
+#: to open names it in `blocked_by`, one waiting for a document names it in
+#: `awaiting_artifacts`, one that has spent its `attempt_bound` says so there --
+#: and one whose authorized attempt has not answered yet names none of the
+#: three, because the fact that holds it is the attempt's own, which the Runs
+#: screen shows beside this row as the attempt's phase. Only the spent one can
+#: never run again; the other three all end when a record arrives.
 NODE_SCHEDULE_STATES = ("blocked", "runnable", "settled", "unreachable")
 
 #: Where the whole plan stands. `complete` means the plan has nothing left to
@@ -83,8 +87,9 @@ class NodeSchedule:
     required_pass: int
     settled_laps: int
     #: This step has authorized every attempt the plan allows it, so it can
-    #: never settle again and no Human action can change that. The sole producer
-    #: of a stalled run.
+    #: never settle again and no Human action can change that. One of the two
+    #: facts that produce a stalled run -- the other is a halted one -- and the
+    #: fact that tells a dead end from a step merely waiting for a document.
     attempts_spent: bool
     #: The documents this step is WAITING for, in the order its own arguments
     #: name them. Non-empty only for a `blocked` step whose plan says `block`

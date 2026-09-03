@@ -47,8 +47,10 @@ from .contract_values import (
 #: The two words a run's plan may END on, and the whole of them. `complete`
 #: means the plan has nothing left to do and never that the run succeeded --
 #: a run that exhausted its retries and a run that was approved both reach it,
-#: and only the facts beside it tell a person which. `stalled` means nothing is
-#: runnable and something is still owed.
+#: and only the facts beside it tell a person which. `stalled` means what is
+#: still owed is owed for good -- a spent bound, or a halt -- with nothing
+#: runnable and no attempt in flight. A step waiting for a document keeps a
+#: run open only while nothing has halted it: a halt takes even that back.
 TERMINAL_STATES = frozenset({"complete", "stalled"})
 
 

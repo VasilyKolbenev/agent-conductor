@@ -14,7 +14,9 @@ It needs no new record and no new run word, and the four claims below are why:
 - **the schedule spends it.** A settled step whose standing outcome is one of
   the failed words and whose policy says halt makes every step that could still
   run `blocked`; `runnable` is then empty and `blocked` is not, and §5.3's own
-  arithmetic reads `stalled`.
+  arithmetic reads `stalled`. The halt is one of the TWO facts that word has,
+  and it beats a document wait: a run stopped for good will never authorize
+  anything again, whoever publishes what it was waiting for.
 - **the ending is recorded through the road that already existed**, and
   `_hold_run_terminal` recomputes it from the plan's own bytes on replay -- so
   a journal that strips the field to soften the verdict is corrupt.
@@ -94,7 +96,7 @@ def a_failing_journal(outcome="failed") -> Journal:
 #: store holds a request to its node's own instance, capability and arguments --
 #: and the helpers that build store-valid records are written for that node. The
 #: only thing this adds to it is the policy under test.
-def a_stored_plan(*, policy):
+def a_stored_plan(*, policy, waiting=False):
     from tests.alpha3_graph_artifacts import dalio_definition
 
     doing = next(row for row in dalio_definition(run_id=STORE_RUN).nodes
@@ -107,13 +109,33 @@ def a_stored_plan(*, policy):
                   instance_id=doing.instance_id, capability="review",
                   arguments={}),
     )
+    if waiting:
+        nodes = (*nodes, a_waiting_node(doing.instance_id))
     return GraphDefinition(
         graph_id="graph-halt", run_id=STORE_RUN, created_at=NOW, nodes=nodes,
         edges=(GraphEdge(from_node="gate", to_node="do"),
                GraphEdge(from_node="gate", to_node="elsewhere")))
 
 
-def a_store(tmp_path, *, policy, outcome="failed", decided=True):
+def a_waiting_node(instance_id: str) -> GraphNode:
+    """A step with no roads in whose plan says to wait for a document.
+
+    A ROOT, so nothing about the drawing can hold it back: the only thing
+    standing between it and being offered is an artifact nobody published --
+    which is exactly the wait a halted run must not be kept open by.
+    """
+    return GraphNode(
+        node_id="check", kind="task", title="Check it",
+        instance_id=instance_id, capability="review",
+        arguments={"work_item_id": "work-1",
+                   "target_artifact_refs": ["artifact-brief"],
+                   "result_artifact_ref": "artifact-verdict",
+                   "review_profile": "quality"},
+        missing_artifact_policy="block")
+
+
+def a_store(tmp_path, *, policy, outcome="failed", decided=True,
+            waiting=False):
     """One real run: the gate answered, the work attempted, the work failing.
 
     ``decided=False`` leaves the gate open, so the ANSWER is the settling fact
@@ -130,7 +152,7 @@ def a_store(tmp_path, *, policy, outcome="failed", decided=True):
     store.create_run(
         a_run(run_id=STORE_RUN, mode="confirm",
               config_digest=snapshot_digest(PLAN_CONFIG)), PLAN_CONFIG)
-    store.append(a_stored_plan(policy=policy))
+    store.append(a_stored_plan(policy=policy, waiting=waiting))
     if decided:
         store.append(DecisionReceipt(
             receipt_id="decision-1", run_id=STORE_RUN, gate_id="gate-1",
@@ -294,6 +316,127 @@ def test_the_halted_run_records_a_stalled_terminal(tmp_path):
     assert terminal.state == "stalled"
     assert terminal.settled_nodes == ("gate", "do")
     assert [row.kind for row in store.read(STORE_RUN).records][-1] == "run_terminal"
+
+
+def _computed(store):
+    """This run's schedule, taken over the journal the store really holds."""
+    recovered = store.read(STORE_RUN)
+    return schedule(
+        next(row.value for row in recovered.records
+             if row.kind == "graph_definition"),
+        tuple(row.value for row in recovered.records))
+
+
+def a_pending_attempt(store, node):
+    """One attempt authorized on this step and never answered.
+
+    Written straight into the journal rather than driven through `authorize`,
+    because what the witness needs is the RECORD: driving it would take a
+    runtime, an adapter and a confirmation to say the same thing. `elsewhere`
+    is this module's own node, so its documents are built here -- the
+    projection's helpers are written against the shipped plan's nodes.
+    """
+    from conductor.command.contracts import ActionProposal
+    from tests.test_command_graph_projection import a_request
+
+    proposal = ActionProposal(
+        proposal_id="proposal-2", run_id=STORE_RUN, attempt_id="attempt-002",
+        instance_id=node.instance_id, capability=node.capability,
+        arguments=node.payload(), scope=("src",), proposed_by="claude-dev",
+        proposed_at=NOW, timeout_seconds=900,
+        rationale=f"Carry out {node.node_id}.",
+        config_digest=snapshot_digest(CONFIG), node_id=node.node_id)
+    store.append(proposal)
+    request = a_request(proposal, index=2, run_id=STORE_RUN)
+    store.append(request)
+    return request
+
+
+def test_a_halted_run_with_an_attempt_still_in_flight_is_not_over_yet(tmp_path):
+    """What a halt does NOT take back, and the ordering that says so.
+
+    A halt stops what could still be offered, and a document wait is one of
+    those: nobody may spend the document, so waiting for it is not a reason to
+    keep the run open. An attempt already RUNNING is the other way round. The
+    halt cannot recall it, the worker is going to append whatever the plan now
+    says, and an ending recorded in front of that append is the same durable
+    lie -- and bricks the same journal.
+
+    So the run stays open until that attempt answers, and the ending is
+    recorded on its road, after its own record.
+    """
+    from tests.test_command_graph_projection import a_result
+
+    store = a_store(tmp_path, policy="halt_run")
+    elsewhere = next(row for row in a_stored_plan(policy="halt_run").nodes
+                     if row.node_id == "elsewhere")
+    request = a_pending_attempt(store, elsewhere)
+    path = store.run_path(STORE_RUN) / "records.jsonl"
+    before = path.read_bytes()
+
+    assert _computed(store).run_state == "open"
+    assert close_if_terminal(store, STORE_RUN, clock=lambda: NOW,
+                             ids=lambda kind: f"{kind}-001") is None
+    assert path.read_bytes() == before
+
+    store.append(a_result(request, index=2, run_id=STORE_RUN,
+                          outcome="unknown", evidence_refs=()))
+    terminal = close_if_terminal(store, STORE_RUN, clock=lambda: NOW,
+                                 ids=lambda kind: f"{kind}-001")
+
+    assert terminal is not None and terminal.state == "stalled"
+    replayed = store.read(STORE_RUN)
+    assert [row.kind for row in replayed.records][-2:] == [
+        "action_result", "run_terminal"]
+    assert replayed.warnings == ()
+
+
+def test_a_halt_takes_back_a_document_wait_and_not_an_attempt_in_flight():
+    """The two halves side by side, over one differing record.
+
+    The same plan and the same halt. In the first journal the second step's
+    attempt is unanswered and the run is open; in the second that attempt has
+    been answered `unknown`, and with nothing left in flight the halt is the
+    whole of what remains -- so the run is over and says so.
+    """
+    running, answered = Journal(), Journal()
+    for journal in (running, answered):
+        journal.decide("gate-1", "approve")
+    running.request("elsewhere")
+    answered.result(answered.request("elsewhere"), "unknown")
+    for journal in (running, answered):
+        journal.result(journal.request("do"), "failed")
+
+    assert schedule(a_plan(policy="halt_run"),
+                    running.rows()).run_state == "open"
+    assert schedule(a_plan(policy="halt_run"),
+                    answered.rows()).run_state == "stalled"
+
+
+def test_a_halted_run_carrying_a_waiting_step_is_still_stalled(tmp_path):
+    """A halt beats a wait, and the ordering is the whole of this witness.
+
+    A document wait keeps a run open because publishing the document is
+    something a person can still go and do. Under a halt it is not: nothing may
+    be authorized in this run again whatever arrives, so the waiting step is not
+    work that is pending -- it is one more thing that will never happen.
+    """
+    store = a_store(tmp_path, policy="halt_run", waiting=True)
+    computed = _computed(store)
+
+    waiting = row_of(computed, "check")
+
+    assert waiting.state == "blocked"
+    assert waiting.awaiting_artifacts == ("artifact-brief",)
+    assert waiting.attempts_spent is False and waiting.blocked_by == ()
+    assert computed.run_state == "stalled"
+
+    terminal = close_if_terminal(store, STORE_RUN, clock=lambda: NOW,
+                                 ids=lambda kind: f"{kind}-001")
+
+    assert terminal is not None and terminal.state == "stalled"
+    assert [row.kind for row in store.read(STORE_RUN).records][-1] == (
+        "run_terminal")
 
 
 def test_the_unhalted_twin_records_no_terminal_at_all(tmp_path):

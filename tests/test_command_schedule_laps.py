@@ -15,7 +15,7 @@ knew the loop's road had never opened. `test_approving_on_the_first_pass_...`
 below is written to fail against it. The trigger is now the durable fact of that
 road ACTUALLY opening, which an approval closes for good.
 
-The other three claims here:
+The other four claims here:
 
 - **a retraction inside one lap is a correction and never a trip.** Distinct
   laps are counted, not receipts, and the LAST answer in a lap is that lap's
@@ -25,8 +25,13 @@ The other three claims here:
   what ends the cycle rather than letting it run on.
 - **`unknown` is not an answer, and the owner's refinement has two halves.** A
   step whose terminal result is `unknown` stays askable while attempts remain
-  and is `blocked` when they are spent -- and that second half is the only
-  producer of a stalled run.
+  and is `blocked` when they are spent -- and that second half is one of the two
+  facts that produce a stalled run, the other being a halted one.
+- **an attempt in flight is not an ending.** An authorized attempt with no
+  result yet blocks its own step and holds the whole run open -- whatever the
+  bound says, and even where the step it names is already settled by an earlier
+  answer, because an ending minted then stands in front of records that are
+  still coming.
 """
 from __future__ import annotations
 
@@ -465,10 +470,12 @@ def test_a_later_success_settles_the_step_the_unknown_left_open():
 
 
 def test_the_same_unknown_with_the_bound_spent_blocks_the_step_and_stalls_the_run():
-    """Witness 14, second half, and the sole producer of a stalled run.
+    """Witness 14, second half, and one of the two producers of a stalled run.
 
     A step that can never settle again must not be offered as runnable, because
-    that is a button `authorize` is bound to refuse.
+    that is a button `authorize` is bound to refuse. The attempt here is
+    ANSWERED -- `unknown` is a reading the journal holds -- which is the one
+    fact that tells this apart from the attempt still in flight below.
     """
     journal = Journal()
     journal.decide("gate-1", "approve")
@@ -491,6 +498,100 @@ def test_a_step_with_attempts_left_is_runnable_where_a_spent_one_is_not():
 
     assert schedule(a_bounded_plan(2), rows).run_state == "open"
     assert schedule(a_bounded_plan(1), rows).run_state == "stalled"
+
+
+def test_a_run_whose_attempt_is_in_flight_stays_open_with_nothing_runnable():
+    """The journal above one record short, and that record is the whole rule.
+
+    The bound is spent the moment the attempt is AUTHORIZED, so this step is
+    `blocked` and nothing at all is runnable -- and yet a worker is executing
+    right now and will append. `stalled` here would mint an ending in front of
+    records that are still coming, which is exactly what bricked the journal.
+    """
+    journal = Journal()
+    journal.decide("gate-1", "approve")
+    journal.request("do")
+
+    computed = schedule(a_bounded_plan(1), journal.rows())
+
+    assert row_of(computed, "do").attempts_spent is True
+    assert computed.state_of("do") == "blocked"
+    assert computed.runnable == ()
+    assert computed.run_state == "open"
+
+
+def test_an_unanswered_request_blocks_its_own_step_at_every_bound():
+    """`complete` is refused while any attempt is unanswered, at every bound.
+
+    A first draft of this argued the two could not MEET -- a request settles
+    nothing, so the step it names must be blocked or runnable -- and that was
+    false in the one shape nobody drove: a SECOND attempt on a step an earlier
+    answer already settled. The step is `settled`, nothing is blocked, and the
+    run read `complete` while a worker was still holding an authorization. The
+    word is now refused on the fact itself, and this holds every bound to it.
+    """
+    journal = Journal()
+    journal.decide("gate-1", "approve")
+    journal.request("do")
+    rows = journal.rows()
+
+    for bound in (1, 2, None):
+        computed = schedule(a_bounded_plan(bound), rows)
+        assert computed.state_of("do") == "blocked", bound
+        assert computed.run_state == "open", bound
+
+
+def test_a_second_attempt_in_flight_keeps_a_settled_step_from_ending_the_run():
+    """The shape that read `complete` with a worker still executing.
+
+    Two attempts are authorized on one step and only the first is answered.
+    That answer SETTLES the step -- so nothing is runnable, nothing is blocked,
+    and the plan has nothing left to open -- while the second attempt is still
+    in flight and about to append. `complete` recorded there is a terminal in
+    front of records that are still coming, which is how the journal bricked.
+
+    Answering the second is what ends it, on the word its own journal supports.
+    """
+    journal = Journal()
+    journal.decide("gate-1", "approve")
+    answered = journal.request("do")
+    in_flight = journal.request("do")
+    journal.result(answered, "failed")
+
+    computed = schedule(a_bounded_plan(None), journal.rows())
+
+    assert computed.state_of("do") == "settled"
+    assert computed.runnable == ()
+    assert computed.run_state == "open"
+
+    journal.result(in_flight, "failed")
+
+    assert schedule(a_bounded_plan(None), journal.rows()).run_state == "complete"
+
+
+def test_a_second_attempt_in_flight_on_a_spent_bound_keeps_the_run_open():
+    """The same rule where the first answer settles nothing at all.
+
+    `unknown` leaves the step unsettled and the bound of two is gone, so this
+    step is `blocked` rather than `settled` -- a different row and the same
+    verdict, because what holds the run open is the unanswered attempt and not
+    anything about the step's own standing.
+    """
+    journal = Journal()
+    journal.decide("gate-1", "approve")
+    answered = journal.request("do")
+    in_flight = journal.request("do")
+    journal.result(answered, "unknown")
+
+    computed = schedule(a_bounded_plan(2), journal.rows())
+
+    assert row_of(computed, "do").attempts_spent is True
+    assert computed.state_of("do") == "blocked"
+    assert computed.run_state == "open"
+
+    journal.result(in_flight, "unknown")
+
+    assert schedule(a_bounded_plan(2), journal.rows()).run_state == "stalled"
 
 
 def test_a_succeeded_step_settles_where_the_same_step_with_unknown_does_not():

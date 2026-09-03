@@ -430,15 +430,172 @@ def test_the_stalled_terminal_replays_to_the_same_verdict(tmp_path):
     assert replayed.warnings == ()
 
 
+def test_closing_a_run_whose_attempt_is_in_flight_writes_nothing(tmp_path):
+    """The closing road's own arm of the in-flight rule.
+
+    The very same plan as the witness above, one record short: the attempt is
+    authorized and nothing has answered it. The bound is spent, so nothing is
+    runnable and nothing else is owed -- and yet a worker holds this
+    authorization and is going to append. An ending minted now would stand in
+    front of records that are still coming, which is how the journal bricked.
+    """
+    store = _a_stalling_run(tmp_path)
+    proposal = a_proposal()
+    store.append(proposal)
+    a_runtime(store).authorize(a_confirmation(proposal), budget=a_budget())
+    before = journal_bytes(store)
+
+    assert close_if_terminal(store, RUN_ID, clock=lambda: NOW,
+                             ids=lambda kind: "terminal-001") is None
+    assert journal_bytes(store) == before
+
+
+def test_a_second_attempt_while_the_first_runs_is_refused_and_nothing_bricks(
+        tmp_path):
+    """The other half of the in-flight rule, on the road that bricked a journal.
+
+    Two attempts are allowed and the first is executing. Before this rule the
+    second was authorized on the spot; the first then answered, the schedule
+    called the step settled with nothing else owed, and the run's terminal was
+    minted while a second worker still held an authorization -- whose appends
+    made every later read of that run `run_corrupt`.
+
+    Now the second is refused while the first is open, the first's own result
+    lands with no terminal in front of it, and the run reads clean afterwards.
+    """
+    subject, store = _a_bounded_api_run(tmp_path, bound=2)
+    first = a_proposal()
+    store.append(first)
+    authorized = subject.runtime.authorize(
+        a_confirmation(first), budget=a_budget())
+    second = a_proposal(proposal_id="proposal-2", attempt_id="attempt-002")
+    store.append(second)
+    before = journal_bytes(store)
+
+    with pytest.raises(AuthorizationError, match="still in flight"):
+        subject.runtime.authorize(
+            a_confirmation(second, confirmation_id="confirmation-002"),
+            budget=a_budget())
+
+    assert journal_bytes(store) == before
+    assert kinds(store) == ["graph_definition", "decision", "action_proposal",
+                            "action_request", "action_proposal"]
+
+    subject.runtime.execute(authorized)
+
+    written = kinds(store)
+    assert written[-1] == "action_result"
+    assert "run_terminal" not in written
+    assert store.read(RUN_ID).warnings == ()
+
+
+def _a_bounded_api_run(tmp_path, *, bound):
+    """The gate and the one effecting step behind it, over the real boundary.
+
+    `_a_stalling_run`'s plan with whatever ceiling is asked, built through
+    `api()` so the runtime under test is the one the HTTP doors share.
+    """
+    from tests.alpha3_graph_artifacts import dalio_definition
+
+    subject, store, _ = api(tmp_path, adapters=[DeepDispatchAdapter()],
+                            clock=lambda: NOW)
+    plan = dalio_definition(run_id=RUN_ID)
+    doing = next(row for row in plan.nodes if row.node_id == "do")
+    store.append(GraphDefinition(
+        graph_id=plan.graph_id, run_id=RUN_ID, created_at=plan.created_at,
+        nodes=(GraphNode(node_id="confirm-gate", kind="gate",
+                         title="Human Gate", gate_id="gate-confirm-do"),
+               GraphNode.from_dict({**doing.as_dict(),
+                                    "attempt_bound": bound})),
+        edges=(GraphEdge(from_node="confirm-gate", to_node="do"),)))
+    let_the_gate_through(store)
+    return subject, store
+
+
+def _a_two_gate_run(tmp_path):
+    """The stalling run's plan, plus a question that has nothing to do with it.
+
+    `confirm-gate -> do` is the work. `gate-b -> note` is a second, unrelated
+    thing a Human can answer at any moment -- including the moment the work is
+    executing, which is the whole of what the witness below is about.
+    """
+    from tests.alpha3_graph_artifacts import dalio_definition
+
+    subject, store, _ = api(tmp_path, adapters=[DeepDispatchAdapter()],
+                            clock=lambda: NOW)
+    plan = dalio_definition(run_id=RUN_ID)
+    doing = next(row for row in plan.nodes if row.node_id == "do")
+    store.append(GraphDefinition(
+        graph_id=plan.graph_id, run_id=RUN_ID, created_at=plan.created_at,
+        nodes=(GraphNode(node_id="confirm-gate", kind="gate",
+                         title="Human Gate", gate_id="gate-confirm-do"),
+               GraphNode.from_dict({**doing.as_dict(), "attempt_bound": 1}),
+               GraphNode(node_id="gate-b", kind="gate", title="Release",
+                         gate_id="release"),
+               GraphNode(node_id="note", kind="task", title="Note")),
+        edges=(GraphEdge(from_node="confirm-gate", to_node="do"),
+               GraphEdge(from_node="gate-b", to_node="note"))))
+    let_the_gate_through(store)
+    return subject, store
+
+
+def test_a_decision_landing_while_an_attempt_is_in_flight_does_not_end_the_run(
+        tmp_path):
+    """The product road, and the defect it closes end to end.
+
+    A Human answers the OTHER gate while the work is executing. Every other
+    step then settles, and the working step reads spent -- so the decision's own
+    closing call used to mint the run's ending on the spot. The worker then
+    appended its events and its result behind that terminal and every read of
+    the run answered `run_corrupt` from then on.
+
+    Here the decision answers its gate and ends nothing; the ending arrives
+    afterwards, on the result's own road, and the journal replays clean.
+
+    The word that ending lands on is read out of what really happened rather
+    than chosen: the fake observes no verification, so the attempt reports
+    `unknown`, which settles nothing -- and with the one attempt gone the Do
+    step can never settle, which is `stalled` for the reason it always was.
+    """
+    from conductor.command.runtime import AttemptState
+
+    subject, store = _a_two_gate_run(tmp_path)
+    proposal = a_proposal()
+    store.append(proposal)
+    authorization = subject.runtime.authorize(
+        a_confirmation(proposal), budget=a_budget())
+
+    answered = post(subject, f"/command/runs/{RUN_ID}/decisions",
+                    decision_body())
+
+    assert authorization.record_created is True
+    assert answered.status == 201
+    assert kinds(store)[-1] == "decision"
+    assert "run_terminal" not in kinds(store)
+
+    attempt = subject.runtime.execute(authorization)
+
+    written = kinds(store)
+    assert attempt.state is AttemptState.UNKNOWN
+    assert written[-1] == "run_terminal"
+    assert written.index("action_result") < written.index("run_terminal")
+    replayed = store.read(RUN_ID)
+    terminal = replayed.records[-1].value
+    assert terminal.state == "stalled"
+    assert "do" not in terminal.settled_nodes
+    assert replayed.warnings == ()
+
+
 def _a_stalling_run(tmp_path):
     """A gate and the one effecting step behind it, allowed a single attempt.
 
     The shipped cycle will not do here, and the reason is the point of the
     word: with `goal` still runnable the plan is `open`, not `stalled`. A run
-    stalls only when NOTHING is runnable and something is still owed, so the
-    plan has to be one whose whole remaining work is the step that spent its
-    bound. The Do node is taken from the shipped plan verbatim -- instance,
-    capability and arguments -- so the proposal below is the real one.
+    stalls only when NOTHING is runnable, no attempt is in flight, nothing is
+    merely waiting for a document, and something is still owed -- so the plan
+    has to be one whose whole remaining work is the step that spent its bound.
+    The Do node is taken from the shipped plan verbatim -- instance, capability
+    and arguments -- so the proposal below is the real one.
     """
     from tests.alpha3_graph_artifacts import dalio_definition
 

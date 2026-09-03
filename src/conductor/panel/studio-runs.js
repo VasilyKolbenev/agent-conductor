@@ -349,7 +349,8 @@ const PLAN_WORDS = Object.freeze({
   open: "steps remain that this run may still take",
   complete: "the plan has nothing left to open — this does NOT mean the run "
     + "succeeded",
-  stalled: "nothing is runnable and something is still owed",
+  stalled: "nothing is runnable, no attempt is still running, and what is "
+    + "still owed can never be spent: a bound is exhausted or the run was halted",
 });
 
 function lastWhere(nodes, pick) {

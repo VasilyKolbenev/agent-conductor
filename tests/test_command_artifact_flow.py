@@ -468,7 +468,9 @@ def test_a_blocking_step_waits_until_a_real_review_publishes_its_input(tmp_path)
 
     assert waiting.state_of("check") == "blocked"
     assert waiting.nodes[0].awaiting_artifacts == (HANDOFF_REF,)
-    assert waiting.runnable == () and waiting.run_state == "stalled"
+    # Nothing is runnable and the run is still OPEN, because the thing it is
+    # waiting for is a thing somebody can still go and publish.
+    assert waiting.runnable == () and waiting.run_state == "open"
 
     assert arrived.state_of("check") == "runnable"
     assert arrived.nodes[0].awaiting_artifacts == ()

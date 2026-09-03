@@ -74,6 +74,21 @@ def authorize(runtime, proposal, index, budget):
         budget=budget)
 
 
+def answer(store, request, index):
+    """That attempt is over, said with the record a run really writes.
+
+    Attempts on one step may not OVERLAP -- a step whose authorized attempt has
+    not answered is blocked -- so every witness below that takes more than one
+    answers each before asking for the next. `unknown` deliberately: it settles
+    nothing, so the step stays askable while attempts remain and what the last
+    authorization meets is the ceiling itself.
+    """
+    from tests.test_command_graph_projection import a_result
+
+    store.append(a_result(request, index=index, outcome="unknown",
+                          evidence_refs=()))
+
+
 def a_request_restating(held, proposal):
     """The request `authorize` WOULD have minted for `proposal`, hand-written.
 
@@ -253,7 +268,9 @@ def test_distinct_attempt_ids_still_authorize_up_to_the_bound(tmp_path):
     """The bound counts rows, and it counts them exactly.
 
     Two distinct attempt ids under a bound of two both authorize; the third is
-    refused BY THE BOUND, naming it, and not by the identity relation.
+    refused BY THE BOUND, naming it, and not by the identity relation. Each is
+    answered before the next is asked for, so what the third meets is the
+    ceiling and never the refusal that stops two attempts overlapping.
     """
     store = a_bounded_run(tmp_path, attempt_bound=2)
     proposals = [a_proposal(proposal_id=f"proposal-{index}",
@@ -264,7 +281,7 @@ def test_distinct_attempt_ids_still_authorize_up_to_the_bound(tmp_path):
     runtime, budget = a_runtime(store), a_budget()
 
     for index, proposal in enumerate(proposals[:2], start=1):
-        authorize(runtime, proposal, index, budget)
+        answer(store, authorize(runtime, proposal, index, budget).request, index)
 
     with pytest.raises(AuthorizationError, match="allows 2 attempt"):
         authorize(runtime, proposals[2], 3, budget)
@@ -272,7 +289,11 @@ def test_distinct_attempt_ids_still_authorize_up_to_the_bound(tmp_path):
 
 def test_an_unbounded_node_still_authorizes_distinct_attempts_without_limit(
         tmp_path):
-    """A plan that named no ceiling must still name none."""
+    """A plan that named no ceiling must still name none.
+
+    Unbounded is how MANY attempts the plan allows, and never how many may be
+    open at once -- so each is answered before the next, as a run does.
+    """
     store = a_bounded_run(tmp_path)
     proposals = [a_proposal(proposal_id=f"proposal-{index}",
                             attempt_id=f"attempt-{index:03d}")
@@ -282,7 +303,7 @@ def test_an_unbounded_node_still_authorizes_distinct_attempts_without_limit(
     runtime, budget = a_runtime(store), a_budget()
 
     for index, proposal in enumerate(proposals, start=1):
-        authorize(runtime, proposal, index, budget)
+        answer(store, authorize(runtime, proposal, index, budget).request, index)
 
     assert sum(1 for row in store.read(RUN_ID).records
                if row.kind == "action_request") == 3

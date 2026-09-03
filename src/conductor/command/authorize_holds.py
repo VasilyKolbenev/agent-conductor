@@ -18,7 +18,7 @@ from __future__ import annotations
 from .containment import unprovidable_sandboxes
 from .contracts import ActionProposal, ActionRequest
 from .graph_causality import _standing_graph, standing_terminal
-from .graph_schedule import authorized_attempts, schedule
+from .graph_schedule import attempt_in_flight, authorized_attempts, schedule
 from .run_store import RecoveredRun
 from .runtime_values import AuthorizationError, RunAlreadyTerminal
 
@@ -93,8 +93,9 @@ def _hold_node_is_eligible(
     The rule is MEMBERSHIP in what the schedule computes, never the presence of
     a field: `runnable` never carries a node whose predecessors are unsettled,
     whose gate is unanswered, whose road was closed, which is already settled,
-    or which has spent its `attempt_bound`. So the refusals for all five arrive
-    together and cannot drift apart.
+    which has spent its `attempt_bound`, or which has an attempt still in
+    flight. So the refusals for all six arrive together and cannot drift apart
+    -- and the last of them is why a bound of two never means two at once.
 
     A plan-less run returns at the first line, unchanged: runs without a graph
     existed before graphs did and they still do. A proposal naming NO node on a
@@ -109,31 +110,40 @@ def _hold_node_is_eligible(
         raise AuthorizationError(
             f"plan: run {recovered.envelope.run_id!r} follows graph "
             f"{definition.graph_id!r} and this proposal names no node")
-    computed = schedule(
-        definition, tuple(row.value for row in recovered.records))
+    values = tuple(row.value for row in recovered.records)
+    computed = schedule(definition, values)
     if proposal.node_id not in computed.runnable:
         raise AuthorizationError(
             f"plan: node {proposal.node_id!r} is "
-            f"{computed.state_of(proposal.node_id)}{_awaiting(computed, proposal)}"
+            f"{computed.state_of(proposal.node_id)}"
+            f"{_awaiting(computed, proposal, values)}"
             f" and this run's plan makes {list(computed.runnable)} runnable now")
 
 
-def _awaiting(computed, proposal: ActionProposal) -> str:
+def _awaiting(computed, proposal: ActionProposal, values: tuple) -> str:
     """Why a step is blocked, when the plan can say something more than the word.
 
-    `blocked` covers three situations and a caller meeting the bare word cannot
+    `blocked` covers four situations and a caller meeting the bare word cannot
     tell them apart. Two of them are about this plan's own shape and a reader
-    can see them in it; the third is about a DOCUMENT that does not exist yet,
-    which is nowhere in the plan and which somebody has to go and publish. So
-    that one is named here. The schedule already computed it -- this reads the
-    row and derives nothing of its own.
+    can see them in it. The other two are not in the plan at all and each is
+    something a person can act on, so each is named here: a DOCUMENT that does
+    not exist yet, which somebody has to go and publish, and an ATTEMPT that is
+    already running, which ends by itself and needs nothing but waiting.
+
+    The document is asked first and neither arm derives anything: the schedule
+    computed the row, and the in-flight fact is read through the one function
+    §4 and §5.3 also spend, so the sentence and the refusal cannot disagree.
     """
     row = next((row for row in computed.nodes
                 if row.node_id == proposal.node_id), None)
-    if row is None or not row.awaiting_artifacts:
+    if row is None:
         return ""
-    return (" waiting for artifact(s) "
-            f"{list(row.awaiting_artifacts)} its plan requires before it runs")
+    if row.awaiting_artifacts:
+        return (" waiting for artifact(s) "
+                f"{list(row.awaiting_artifacts)} its plan requires before it runs")
+    if attempt_in_flight(values, proposal.node_id):
+        return " because an attempt on this step is still in flight"
+    return ""
 
 
 def _hold_node_sandbox_is_provided(

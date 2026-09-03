@@ -230,6 +230,21 @@ def _proposal_on_the_do_node(store, index, attempt):
     return proposal
 
 
+def _answer(store, request, index):
+    """The attempt is over, said the way a run says it: a terminal receipt.
+
+    `unknown` deliberately. It settles nothing, so the step stays askable while
+    attempts remain and what the NEXT authorization meets is the bound itself
+    rather than a step the plan has finished with. Every witness below that
+    takes more than one attempt answers each before asking for the next,
+    because two attempts on one step may not be open at once.
+    """
+    from tests.test_command_graph_projection import a_result
+
+    store.append(a_result(request, index=index, outcome="unknown",
+                          evidence_refs=()))
+
+
 def test_a_bound_of_one_permits_the_first_authorization(tmp_path):
     """The case that shipped broken: a later proposal must not spend the bound.
 
@@ -268,7 +283,14 @@ def test_the_bound_refuses_the_authorization_past_it(tmp_path):
 
 def test_a_bound_of_two_permits_two_authorizations_and_refuses_the_third(
         tmp_path):
-    """The bound is a count of authorizations, and it counts them exactly."""
+    """The bound is a count of authorizations, and it counts them exactly.
+
+    Each attempt is ANSWERED before the next is asked for, because attempts on
+    one step may not overlap: a step whose attempt is unanswered is blocked, so
+    a run authorizing two at once would meet the in-flight refusal and this
+    would stop measuring the bound at all. The answers are `unknown`, which
+    settles nothing, so what the third authorization meets is the ceiling.
+    """
     from conductor.command.runtime import AuthorizationError
     from tests.test_command_graph_binding import a_confirmation
 
@@ -278,10 +300,11 @@ def test_a_bound_of_two_permits_two_authorizations_and_refuses_the_third(
     runtime, budget = _authorizing(store)
 
     for index, proposal in enumerate(proposals[:2], start=1):
-        runtime.authorize(
+        authorized = runtime.authorize(
             a_confirmation(proposal,
                            confirmation_id=f"confirmation-00{index}"),
             budget=budget)
+        _answer(store, authorized.request, index)
 
     with pytest.raises(AuthorizationError, match="allows 2 attempt"):
         runtime.authorize(
@@ -290,7 +313,11 @@ def test_a_bound_of_two_permits_two_authorizations_and_refuses_the_third(
 
 
 def test_a_node_naming_no_attempt_bound_authorizes_without_limit(tmp_path):
-    """The over-correction control: an unbounded step is still unbounded."""
+    """The over-correction control: an unbounded step is still unbounded.
+
+    Answered between attempts for the reason above -- what is unbounded here is
+    how MANY attempts the plan allows, and never how many may be open at once.
+    """
     from tests.test_command_graph_binding import a_confirmation
 
     store = _bounded_run(tmp_path)
@@ -299,10 +326,81 @@ def test_a_node_naming_no_attempt_bound_authorizes_without_limit(tmp_path):
     runtime, budget = _authorizing(store)
 
     for index, proposal in enumerate(proposals, start=1):
-        runtime.authorize(
+        authorized = runtime.authorize(
             a_confirmation(proposal,
                            confirmation_id=f"confirmation-00{index}"),
             budget=budget)
+        _answer(store, authorized.request, index)
 
     assert sum(1 for row in store.read("run-001").records
                if row.kind == "action_request") == 3
+
+
+def test_a_second_attempt_is_refused_while_the_first_is_still_in_flight(
+        tmp_path):
+    """What the bound could never say: two attempts may not be OPEN at once.
+
+    A ceiling counts authorizations and cannot say that two of them must not
+    overlap. Two attempts on one step race for the same effect and append to
+    one journal, and the second is admitted against a schedule that still calls
+    the step runnable while the first is executing -- which is how a run came
+    to record its ending with a worker still holding an authorization.
+
+    So the refusal names WHICH of `blocked`'s four meanings this is. A caller
+    told the bare word cannot tell "somebody is running it right now" from "its
+    turn never came", and only the first ends by itself.
+    """
+    from conductor.command.runtime import AuthorizationError
+    from tests.test_command_graph_binding import a_confirmation
+
+    store = _bounded_run(tmp_path, attempt_bound=2)
+    first = _proposal_on_the_do_node(store, 1, 1)
+    second = _proposal_on_the_do_node(store, 2, 2)
+    runtime, budget = _authorizing(store)
+    authorized = runtime.authorize(a_confirmation(first), budget=budget)
+    journal = store.run_path("run-001") / "records.jsonl"
+    before = journal.read_bytes()
+
+    with pytest.raises(AuthorizationError, match="still in flight") as refused:
+        runtime.authorize(
+            a_confirmation(second, confirmation_id="confirmation-002"),
+            budget=budget)
+
+    assert "node 'do' is blocked" in str(refused.value)
+    assert journal.read_bytes() == before
+
+    _answer(store, authorized.request, 1)
+    admitted = runtime.authorize(
+        a_confirmation(second, confirmation_id="confirmation-002"),
+        budget=budget)
+
+    assert admitted.record_created is True
+
+
+def test_the_step_an_attempt_is_running_on_is_blocked_and_not_offered(tmp_path):
+    """The row the refusal above reads, and the three fields that place it.
+
+    `blocked` with nothing spent, no document named and no road pending is the
+    fourth producer of that word, and it is TEMPORARY like the document wait:
+    the result its worker writes ends it. The Runs screen shows the attempt's
+    own phase beside this row, which is what tells a person the difference.
+    """
+    from conductor.command.graph_schedule import schedule
+    from tests.test_command_graph_binding import a_confirmation
+
+    store = _bounded_run(tmp_path, attempt_bound=2)
+    first = _proposal_on_the_do_node(store, 1, 1)
+    runtime, budget = _authorizing(store)
+    runtime.authorize(a_confirmation(first), budget=budget)
+
+    recovered = store.read("run-001")
+    computed = schedule(
+        next(row.value for row in recovered.records
+             if row.kind == "graph_definition"),
+        tuple(row.value for row in recovered.records))
+    row = next(row for row in computed.nodes if row.node_id == "do")
+
+    assert row.state == "blocked" and "do" not in computed.runnable
+    assert row.attempts_spent is False
+    assert row.awaiting_artifacts == () and row.blocked_by == ()
+    assert computed.run_state == "open"
