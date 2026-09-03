@@ -35,7 +35,12 @@ from conductor.command.api_contracts import (
 )
 from conductor.command.contracts import ContractError, canonical_json
 from conductor.command.http_transport import HttpRefusal
-from conductor.command.run_store import CorruptRun, RecordConflict, StoreError
+from conductor.command.run_store import (
+    CorruptRun,
+    RecordConflict,
+    RunClosed,
+    StoreError,
+)
 from conductor.command.runtime import AuthorizationError, Confirmation
 from conductor.command.service import ServiceError
 
@@ -207,6 +212,7 @@ def test_deep_argument_arrays_must_arrive_as_json_lists(capability, array_field)
 @pytest.mark.parametrize("error,code", [
     (CorruptRun("APIKEY_SECRET_OS_PATH"), "run_corrupt"),
     (RecordConflict("APIKEY_SECRET_OS_PATH"), "record_conflict"),
+    (RunClosed("APIKEY_SECRET_OS_PATH"), "run_terminal"),
     (StoreError("APIKEY_SECRET_OS_PATH"), "store_error"),
     (UnsupportedCapability("APIKEY_SECRET_OS_PATH"), "capability_unsupported"),
     (ServiceError("APIKEY_SECRET_OS_PATH"), "service_refused"),
@@ -223,6 +229,7 @@ def test_exception_mapping_is_by_type_and_discards_all_exception_prose(error, co
 def test_exception_type_precedence_distinguishes_store_subclasses():
     assert refusal_from_exception(CorruptRun("same prose")).code == "run_corrupt"
     assert refusal_from_exception(RecordConflict("same prose")).code == "record_conflict"
+    assert refusal_from_exception(RunClosed("same prose")).code == "run_terminal"
     assert refusal_from_exception(StoreError("same prose")).code == "store_error"
     assert refusal_from_exception(ServiceError("same prose")).code == "service_refused"
     with pytest.raises(TypeError, match="no frozen API translation"):

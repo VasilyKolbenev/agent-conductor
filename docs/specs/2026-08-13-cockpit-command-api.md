@@ -32,6 +32,23 @@ was supposed to constrain has stopped being a freeze. What has since happened:
   and what the browser may write is still exactly what safety law 3 permits.
 - **The CSRF fixtures have consumers.** Section 9 calls them data for tests that
   do not exist yet; `tests/test_command_http_transport.py` is now one of them.
+- **A run that recorded its ending is closed at four doors and beneath them,
+  under ONE rule.** The refusal is about RECORDS, so at every door an exact
+  retry of a record that already stands returns `200` and appends nothing, a
+  changed retry of that same identity is `record_conflict` (409), and only a NEW
+  record is refused `run_terminal` (409) with nothing written — no byte, no
+  clock read, no frame. `POST …/decisions` and `POST …/artifacts` ask
+  `http_holds._hold_not_terminal` inside their transaction, after their identity
+  lookup and strictly before anything that writes; `POST …/proposals` asks it
+  before, and needs no exception, because it mints the id itself and so receives
+  no exact retry; the runtime's authorize road asks the same question of the
+  same predicate and raises `RunAlreadyTerminal`. Beneath them
+  `RunStore._validate_new_relation` refuses ANY record except a second
+  `RunTerminal` — that one is still `record_conflict` — offered to a run whose
+  terminal stands, so a direct appender holding a stale authorization is refused
+  before its byte rather than after it, and `RunClosed` is translated by type to
+  `run_terminal` rather than reported as a server fault. Replay is unchanged:
+  bytes written past every door are still `run_corrupt` on read.
 
 Where this document and the tree disagree about anything else, the tree is the
 fact and this file is the history.
@@ -1178,6 +1195,12 @@ and facts returns `200`, while the same id with different content is
 `record_conflict` (409). A new document returns `201` and exactly one
 identifier-only run frame; a retry and every refusal emit none.
 
+On a run that has recorded its `run_terminal`, a NEW document is refused
+`run_terminal` (409) and nothing is written: no record, no clock read, no frame.
+The refusal is about RECORDS and not about requests, so an exact retry of a
+document that already stands BEFORE the terminal still returns `200`, and the
+same `artifact_id` carrying different facts is still `record_conflict` (409).
+
 The digest is computed from the canonical `ArtifactDocument` and is not stored
 beside it. A stored digest could disagree with the content it purported to
 name. The existing run read returns the document as an append-ordered
@@ -1248,6 +1271,9 @@ required for `request_changes` and `waive` (the contract enforces this). A
 `store_error` under the current store taxonomy. An exact retry of the same
 `receipt_id` and facts returns the existing receipt with 200; different facts
 are `record_conflict`.
+On a run that has recorded its `run_terminal`, an exact retry of a standing
+receipt still returns 200 — including the very decision that ended the run —
+while a NEW receipt is refused `run_terminal` (409) with nothing written.
 Response `201` is a new `DecisionReceipt.as_dict()`:
 
 <!-- CANONICAL:decision_receipt -->

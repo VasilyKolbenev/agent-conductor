@@ -35,6 +35,8 @@ import json
 
 import pytest
 
+from conductor.command.artifacts import ArtifactDocument
+from conductor.command.attempts import AttemptEvent
 from conductor.command.contracts import ContractError, canonical_json
 from conductor.command.graph_definition import (
     GraphDefinition,
@@ -45,6 +47,7 @@ from conductor.command.graph_schedule import schedule
 from conductor.command.run_store import (
     CorruptRun,
     RecordConflict,
+    RunClosed,
     RunStore,
     StoreError,
     snapshot_digest,
@@ -89,6 +92,28 @@ def a_terminal(**changes) -> RunTerminal:
     }
     values.update(changes)
     return RunTerminal(**values)
+
+
+def an_artifact() -> ArtifactDocument:
+    """A record this run relates to in no way at all."""
+    return ArtifactDocument(
+        artifact_id="artifact-document-001", artifact_ref="artifact-brief",
+        run_id=RUN_ID, created_at=NOW, media_type="text/markdown",
+        content="# Goal\nShip the bounded alpha.")
+
+
+def an_attempt_event() -> AttemptEvent:
+    """The record the runtime writes around an effect, naming no durable request.
+
+    Its own relation rule would refuse it for that. The witness below shows the
+    ending refusing it FIRST, which is the whole point of the arm's position.
+    """
+    return AttemptEvent(
+        event_id="effect-lease-event-001", run_id=RUN_ID, action_id="action-1",
+        attempt_id="attempt-001", instance_id="claude-dev",
+        adapter_id="deep-dispatch", phase="effect_lease", recorded_at=NOW,
+        request_digest="sha256:" + "0" * 64, recovery_ref="recovery-001",
+        outcome=None, exit_code=None, schema_version=2)
 
 
 def journal_lines(store):
@@ -425,6 +450,72 @@ def test_the_refusal_names_the_kind_that_followed_the_terminal(tmp_path):
         store.read(RUN_ID)
 
     assert "graph_definition follows the run terminal" in str(caught.value)
+
+
+def test_the_store_refuses_any_record_after_a_terminal_before_the_byte(tmp_path):
+    """The append-road half of the rule above, which had only a replay half.
+
+    `_hold_terminal_is_last` is written over the record list as READ, so it
+    judged nothing about the record being appended: every direct appender -- the
+    runtime's attempt events and result receipts, the artifact handoff, the
+    observation seam -- wrote its byte and only the NEXT read called the journal
+    corrupt. A product cannot repair what it has already written down, so the
+    rule has to be asked where the record can still be refused.
+
+    Two kinds, deliberately: one nothing in the run relates to, and one whose own
+    relation rules would have refused it for a different reason. Both are refused
+    for THIS reason, which is what "any record" means.
+
+    The TYPE is asserted here, where it is raised, and not only where it is
+    translated. A store raising a bare `StoreError` carrying this exact sentence
+    passes every message-shaped assertion and then answers the wire
+    `store_error` (500) for a run that merely ended -- the misreport the
+    translation arm exists to prevent, reported as a server fault.
+    """
+    store = a_store(tmp_path)
+    store.append(a_terminal())
+    before = (store.run_path(RUN_ID) / "records.jsonl").read_bytes()
+
+    with pytest.raises(RunClosed, match="accepts no further records"):
+        store.append(an_artifact())
+    with pytest.raises(RunClosed, match="accepts no further records"):
+        store.append(an_attempt_event())
+
+    assert (store.run_path(RUN_ID) / "records.jsonl").read_bytes() == before
+    assert [row.kind for row in store.read(RUN_ID).records] == [
+        "graph_definition", "run_terminal"]
+
+
+def test_the_store_refusal_names_the_run_and_the_terminal_that_stands(tmp_path):
+    """An operator has to know WHICH ending refused them, not merely that one
+    did: a run's journal is append-only and carries at most one."""
+    store = a_store(tmp_path)
+    store.append(a_terminal())
+
+    with pytest.raises(RunClosed) as caught:
+        store.append(an_artifact())
+
+    assert RUN_ID in str(caught.value) and "terminal-001" in str(caught.value)
+
+
+def test_the_store_refusal_translates_to_run_terminal():
+    """The depth answers the wire in the word the doors already say.
+
+    Coded by TYPE and placed before the general `StoreError` arm, which is what
+    keeps a finished run from being reported as a server fault. `store_error`
+    would tell a caller their request was fine and this build was broken.
+
+    This half is only worth anything joined to the other: it is the store's own
+    exception that must reach here, which is why the witnesses above name the
+    type rather than the sentence.
+    """
+    from conductor.command.api_contracts import ERROR_STATUS, refusal_from_exception
+
+    refusal = refusal_from_exception(RunClosed("anything at all"))
+
+    assert refusal.code == "run_terminal"
+    assert refusal.status == ERROR_STATUS["run_terminal"] == 409
+    assert refusal.detail == {}
 
 
 def test_a_terminal_that_is_last_replays_clean(tmp_path):

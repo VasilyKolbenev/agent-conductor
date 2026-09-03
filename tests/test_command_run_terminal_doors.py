@@ -11,17 +11,28 @@ Three refusals land here, and they are three different sentences about one idea
   is the one intended behavioural change to a shipped surface: the legacy
   panel's composer emits seven keys and CANNOT emit `node_id`, so it is refused
   on every planned run and unchanged on a plan-less one. Both directions below.
-- **the ending.** Once a run records its terminal, all three write doors refuse
-  and NOTHING is written. The witnesses read `records.jsonl` as BYTES either
-  side of the refused call, because "the record is absent" would also be true
-  of a journal that had been rewritten.
+- **the ending.** Once a run records its terminal, all four write doors refuse
+  a NEW record and NOTHING is written -- while an exact retry of a record that
+  already stands is still answered, because the refusal is about records and a
+  retry appends none. The witnesses read `records.jsonl` as BYTES either side
+  of the refused call, because "the record is absent" would also be true of a
+  journal that had been rewritten.
 
 The last one is the amendment that matters most, and the gap it closes is exact:
 `_validate_records` never judges the record being APPENDED. It runs over the
 journal as read -- which passes, the terminal being last -- and then
-`_validate_new_relation` is asked about the new value alone, and none of its
-arms fires for a decision or a proposal on a terminated run. Without a live
+`_validate_new_relation` is asked about the new value alone. Without a live
 refusal the byte is written and only the NEXT read reports the run as corrupt.
+
+The artifacts door is the fourth, and its own witnesses are next door in
+`tests/test_command_terminal_artifact_door.py` -- a circuit of its own because
+it drives the retry and the conflict in full, and because this module had
+reached its line cap. The decide door answers by the same rule and its two
+retry witnesses are here, beside the refusal they used to contradict; `propose`
+mints its own ids, receives no retry, and refuses every resubmit. Beneath all
+four the store refuses any record appended behind a standing terminal, whatever
+door asked, which is the last witness here: a caller holding a stale
+authorization writes no byte either.
 """
 from __future__ import annotations
 
@@ -29,14 +40,14 @@ import json
 
 import pytest
 
-from conductor.command.api_contracts import ERROR_STATUS
+from conductor.command.api_contracts import ERROR_STATUS, refusal_from_exception
 from conductor.command.graph_definition import (
     GraphDefinition,
     GraphEdge,
     GraphNode,
 )
 from conductor.command.run_closing import close_if_terminal
-from conductor.command.run_store import RunStore, snapshot_digest
+from conductor.command.run_store import RunClosed, RunStore, snapshot_digest
 from conductor.command.runtime_values import (
     AuthorizationError,
     RunAlreadyTerminal,
@@ -244,18 +255,24 @@ def _propose_unbound(store):
         run_id=RUN_ID, node_id=None, **body)
 
 
-# -- the ending: three doors, one word, and not one byte -----------------------
+# -- the ending: four doors, one word, the depth, and not one byte -------------
 
 
-def a_run_that_ends(tmp_path):
-    """A run whose plan completes the moment its one gate is answered."""
-    subject, store, events = api(tmp_path, adapters=[DeepDispatchAdapter()])
-    store.append(GraphDefinition(
+def a_gated_plan():
+    """The one plan behind every ending below: a gate, and one step after it."""
+    return GraphDefinition(
         graph_id="graph-gated", run_id=RUN_ID, created_at=NOW,
         nodes=(GraphNode(node_id="gate", kind="gate", title="Gate",
                          gate_id="release"),
                GraphNode(node_id="note", kind="task", title="Note")),
-        edges=(GraphEdge(from_node="gate", to_node="note"),)))
+        edges=(GraphEdge(from_node="gate", to_node="note"),))
+
+
+def a_run_that_ends(tmp_path, **api_changes):
+    """A run whose plan completes the moment its one gate is answered."""
+    subject, store, events = api(
+        tmp_path, adapters=[DeepDispatchAdapter()], **api_changes)
+    store.append(a_gated_plan())
     answered = post(subject, f"/command/runs/{RUN_ID}/decisions", decision_body())
     assert answered.status == 201
     return subject, store, events
@@ -281,6 +298,59 @@ def test_a_decision_after_the_terminal_is_refused_and_writes_no_byte(tmp_path):
 
     assert refused.status == ERROR_STATUS["run_terminal"]
     assert refused.payload["error"]["code"] == "run_terminal"
+    assert journal_bytes(store) == before
+
+
+def test_the_decision_that_ended_the_run_is_still_answered_by_its_exact_retry(
+        tmp_path):
+    """One exact-retry rule at every door, and this is where it was two.
+
+    The refusal is about RECORDS. An exact retry of a receipt this run already
+    carries appends none, so there is nothing for the ending to refuse -- and
+    the receipt being retried is, in the commonest case, the very decision that
+    ENDED the run. A client that lost the response to the call that finished a
+    run would ask again and be told the run had finished, which is true and is
+    not an answer to what it asked. `authorize` and the artifacts door already
+    answered `200` here, and §5.1 promised it unconditionally.
+
+    Four facts, because `200` alone would also be true of a door that answered
+    from the request rather than from the journal: the payload is the standing
+    receipt, no byte moved, no frame was published, and no instant was read.
+    """
+    ticks = []
+    subject, store, events = a_run_that_ends(
+        tmp_path, clock=lambda: ticks.append(NOW) or NOW)
+    standing = store.read(RUN_ID).records[1].value
+    before, published, read_by_now = (
+        journal_bytes(store), list(events), len(ticks))
+
+    retried = post(subject, f"/command/runs/{RUN_ID}/decisions", decision_body())
+
+    assert retried.status == 200
+    assert retried.payload == standing.as_dict()
+    assert journal_bytes(store) == before
+    assert list(events) == published
+    assert len(ticks) == read_by_now
+
+
+def test_a_changed_retry_of_the_ending_decision_is_still_a_record_conflict(
+        tmp_path):
+    """The other half of the placement, and the reason it is not simply `200`.
+
+    One receipt id may never carry two answers, and a run's ending does not
+    change what a caller contradicting their own durable record is doing. Told
+    `run_terminal` instead, a client would go looking for another run to decide
+    in rather than fixing the id it reused.
+    """
+    subject, store, _ = a_run_that_ends(tmp_path)
+    before = journal_bytes(store)
+
+    refused = post(subject, f"/command/runs/{RUN_ID}/decisions",
+                   decision_body(action="reject",
+                                 reason="Rejected after review."))
+
+    assert refused.status == ERROR_STATUS["record_conflict"]
+    assert refused.payload["error"]["code"] == "record_conflict"
     assert journal_bytes(store) == before
 
 
@@ -340,6 +410,51 @@ def test_the_wire_word_is_chosen_by_type_and_not_by_message():
     assert specific.code == "run_terminal"
     assert general.code == "authorization_refused"
     assert specific.status == ERROR_STATUS["run_terminal"] == 409
+
+
+def test_a_late_worker_holding_a_stale_authorization_writes_no_byte(tmp_path):
+    """The depth, on the road no boundary door can see.
+
+    The run ends honestly: one attempt is allowed, the operator reconciles the
+    one nobody came back from, and the spent bound stalls the run. A worker that
+    was holding that authorization all along then comes back and publishes its
+    verification through the handoff seam -- which reads no plan, asks no door,
+    and appends straight into the journal.
+
+    `execute` cannot get there any more: the durable result the reconcile wrote
+    is replayed instead of executed, so the runtime's own road appends nothing.
+    The handoff still would, and the store is what refuses it -- before the byte,
+    so the ending stays the last record and the run stays readable.
+
+    The exception the STORE raised is the one carried to the translation, rather
+    than one this test built to match. A store raising a bare `StoreError` with
+    the identical sentence satisfies every message-shaped assertion and then
+    tells the caller `store_error` -- a server fault -- about a run that simply
+    ended.
+    """
+    from conductor.command.artifact_handoff import ArtifactHandoff
+    from conductor.command.runtime import AttemptState
+
+    store = _a_stalling_run(tmp_path)
+    proposal = a_proposal()
+    store.append(proposal)
+    runtime = a_runtime(store)
+    authorization = runtime.authorize(a_confirmation(proposal), budget=a_budget())
+    a_runtime(store).reconcile(RUN_ID, authorization.request.action_id)
+    assert kinds(store)[-1] == "run_terminal"
+    before = journal_bytes(store)
+
+    assert runtime.execute(authorization).state is AttemptState.UNKNOWN
+    with pytest.raises(RunClosed, match="accepts no further records") as caught:
+        ArtifactHandoff(
+            store, clock=lambda: NOW, ids=lambda kind: f"{kind}-late"
+        ).record_dispatch(authorization.request, adapter_id="deep-dispatch",
+                          digest="sha256:" + "0" * 64)
+
+    assert refusal_from_exception(caught.value).code == "run_terminal"
+    assert journal_bytes(store) == before
+    assert kinds(store)[-1] == "run_terminal"
+    assert store.read(RUN_ID).warnings == ()
 
 
 # -- closing is a no-op unless it has something new to say ---------------------

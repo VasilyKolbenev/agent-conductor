@@ -21,3 +21,7 @@ class RecordConflict(StoreError):
 
 class CorruptRun(StoreError):
     """Durable bytes contradict the contracts or one another."""
+
+
+class RunClosed(StoreError):
+    """A record was offered to a run that has already recorded its terminal."""

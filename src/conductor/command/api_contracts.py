@@ -28,7 +28,13 @@ from .http_transport import HttpRefusal
 # `snapshot_digest` opens nothing: it is canonical JSON and a hash, and it lives
 # next door only because the store was its first caller. Taking it here keeps a
 # run envelope's digest and the bytes it answers for built by one function.
-from .run_store import CorruptRun, RecordConflict, StoreError, snapshot_digest
+from .run_store import (
+    CorruptRun,
+    RecordConflict,
+    RunClosed,
+    StoreError,
+    snapshot_digest,
+)
 from .template_store import RouteNotOwned
 from .runtime import AuthorizationError, Confirmation, RunAlreadyTerminal
 from .service import ServiceError
@@ -443,6 +449,12 @@ def refusal_from_exception(error: Exception) -> ApiRefusal:
         # fact `run_route_violations` reports for a run, and it gets the same
         # word. `store_error` would call a caller's answer a server fault.
         return ApiRefusal.fixed("route_unsafe")
+    # BEFORE the generic `StoreError` arm, and for `RunAlreadyTerminal`'s reason:
+    # a run that has ended is not a server fault, and `store_error` would tell a
+    # caller their request was fine and this build was broken. The word is the
+    # one the four write doors already say.
+    if isinstance(error, RunClosed):
+        return ApiRefusal.fixed("run_terminal")
     if isinstance(error, StoreError):
         return ApiRefusal.fixed("store_error")
     if isinstance(error, UnsupportedCapability):

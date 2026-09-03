@@ -9,10 +9,10 @@ that never touches ``self`` is a function that has not been moved yet, and
 
 They are the boundary's half of a doubling this build uses deliberately. Every
 one of them is asked again beneath the boundary -- the store refuses a waiver on
-a protected gate when it READS the journal, and refuses a record after a
-terminal the same way -- so bytes written around this door are still refused
-when they come back. The boundary refuses early and says why; the depth refuses
-whatever the caller.
+a protected gate when it READS the journal, and refuses any record offered to a
+run that has recorded its terminal when it APPENDS one, and again when it reads
+-- so bytes written around this door are still refused when they come back. The
+boundary refuses early and says why; the depth refuses whatever the caller.
 """
 from __future__ import annotations
 
@@ -27,19 +27,29 @@ from .graph_definition import GraphNode
 def _hold_not_terminal(recovered) -> None:
     """A run that recorded its ending accepts nothing further, at the door.
 
-    The gap this closes is exact. `_validate_records` never judges the
-    record being APPENDED: it runs over the journal as read, which passes,
-    and then `_validate_new_relation` is asked about the new value alone --
-    and none of its arms fires for a decision or a proposal on a terminated
-    run. The byte gets written, and only the NEXT read fails
+    The gap this closes is exact. `_hold_terminal_is_last` is written over
+    the journal as READ, so it judged nothing about the record being
+    APPENDED: the byte got written, and only the NEXT read failed
     terminal-must-be-last. The product would brick a run through its own
     front door and then report the journal as corrupt.
 
-    So both write doors ask this inside their transaction and strictly
-    before the first call that can write, and they ask it through one method
-    so the sentence exists once. The runtime holds it again beneath them,
-    which is the doubling `_hold_route` already has: the boundary refuses
-    early, the depth refuses whatever the caller.
+    So all three HTTP write doors -- proposals, decisions and artifacts --
+    ask this inside their transaction and strictly before the first call
+    that can write, and they ask it through one method so the sentence
+    exists once. `authorize_holds._hold_run_not_terminal` is the fourth
+    door, asking the same question of the same predicate and raising its own
+    type, because the runtime's callers are not on this wire.
+
+    Decisions and artifacts ask it AFTER their identity branch, and that is
+    the whole rule rather than a concession: the refusal is about RECORDS,
+    an exact retry of one that already stands appends none, and a changed
+    retry of that identity is a conflict whatever the run's state. Proposals
+    ask it before and need no exception -- the id is minted here, so no
+    request that door receives can be a retry of a standing record.
+
+    The store holds the same rule beneath all of them, on the append road as
+    well as on replay, which is the doubling `_hold_route` already has: the
+    boundary refuses early and by name, the depth refuses whatever the caller.
     """
     if standing_terminal(recovered) is not None:
         raise ApiRefusal.fixed("run_terminal")

@@ -311,7 +311,7 @@ class CommandApi:
 
     def _write_artifact(
             self, run_id: str, body: Mapping[str, Any]) -> CommandResponse:
-        """Append one immutable handoff, or return its exact durable retry."""
+        """Append one immutable handoff, return its exact retry, or refuse an end."""
         submitted = parse_artifact(body)
         self._hold_route(run_id)
         with self._store.transaction():
@@ -331,6 +331,11 @@ class CommandApi:
                         "already records different facts")
                 created, artifact = False, standing
             else:
+                # AFTER the identity branch, because the ending refuses RECORDS
+                # and an exact retry appends none; strictly before the clock and
+                # the append, so a refusal reads no instant and leaves the run
+                # byte-identical.
+                _hold_not_terminal(recovered)
                 artifact = submitted.build(
                     run_id=run_id, created_at=self._clock())
                 created = self._store.append(artifact)
@@ -575,6 +580,16 @@ class CommandApi:
                 self._registry, bound, node.capability, node.payload())
 
     def _propose(self, run_id: str, body: Mapping[str, Any]) -> CommandResponse:
+        """Record one proposal; a resubmit after the ending is a NEW record.
+
+        The one door where the ending is asked before the identity lookup, and
+        it is not an exception to the rule the other three follow. A caller
+        cannot name a proposal: the id is minted here, so no request this door
+        receives can be an exact retry of a record that already stands, and the
+        `200` below is reached only by a mint that collided with one. Every
+        resubmit after a run has ended asks for a record that does not exist
+        yet, which is exactly what a finished run refuses.
+        """
         submitted = parse_proposal(body)
         self._hold_route(run_id)
         initial = self._store.read(run_id)
@@ -645,22 +660,31 @@ class CommandApi:
         with self._store.transaction():
             self._hold_route(run_id)
             recovered = self._store.read(run_id)
-            _hold_not_terminal(recovered)
+            # The waiver rule is about the decision's CONTENT and not about
+            # records, so it stays in front of everything: a waived protected
+            # gate is refused whether or not this receipt already stands.
             _hold_gate_admits(run_id, recovered, submitted)
             prior = next((
                 row.value for row in recovered.records
                 if row.kind == "decision"
                 and row.value.receipt_id == submitted.receipt_id), None)
-            decided_at = prior.decided_at if prior is not None else self._clock()
-            decision = submitted.build(
-                run_id=run_id, decided_at=decided_at,
-                config_digest=recovered.envelope.config_digest)
             if prior is not None:
+                decision = submitted.build(
+                    run_id=run_id, decided_at=prior.decided_at,
+                    config_digest=recovered.envelope.config_digest)
                 if prior != decision:
                     raise RecordConflict("decision identity records different facts")
-                created = False
-                decision = prior
+                created, decision = False, prior
             else:
+                # AFTER the prior lookup, exactly as `_write_artifact` asks it:
+                # the ending refuses RECORDS, and an exact retry of a receipt
+                # this run already carries appends none -- including the very
+                # decision that ended the run. Before the clock and the append,
+                # so a refusal reads no instant and leaves the run byte-identical.
+                _hold_not_terminal(recovered)
+                decision = submitted.build(
+                    run_id=run_id, decided_at=self._clock(),
+                    config_digest=recovered.envelope.config_digest)
                 created = self._store.append(decision)
                 # A decision is one of the two facts that can settle a step, so
                 # the plan is asked whether this run has just ended -- inside

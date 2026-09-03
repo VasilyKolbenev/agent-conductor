@@ -51,6 +51,7 @@ from .graph_causality import (
     _request_repeats_its_proposal,
     demanded_evidence,
     permitted_verifier,
+    standing_terminal,
 )
 from .graph_definition import GraphDefinition
 from .run_files import (  # noqa: F401 -- re-exported under their old names
@@ -65,6 +66,7 @@ from .run_terminal import RunTerminal
 from .store_errors import (  # noqa: F401 -- re-exported under their old names
     CorruptRun,
     RecordConflict,
+    RunClosed,
     RunExists,
     StoreError,
 )
@@ -309,6 +311,37 @@ def _hold_review_chain(prior_values: tuple[object, ...], value: object) -> None:
         _as_store_error(validate_review_result, value, prior_values)
 
 
+def _hold_run_accepts_records(recovered: RecoveredRun, value: RecordValue) -> None:
+    """A run that recorded its terminal accepts nothing further, before the byte.
+
+    The append-road half of `_hold_terminal_is_last`, which is written over the
+    record list as READ and therefore judges nothing about the record being
+    offered. Every direct appender -- the runtime's attempt events and result
+    receipts, the artifact handoff, the observation seam, and whatever is written
+    next -- wrote its byte and learned on the NEXT read that it had made the
+    journal unreadable. A product cannot repair what it has already written down,
+    so the question has to be asked where the record can still be refused.
+
+    Asked FIRST, so the ending is the reason a caller is given rather than
+    whichever relation rule the record would also have failed. The boundary asks
+    the same thing at its four write doors and answers earlier and by name; this
+    refuses whatever the caller, which is the doubling `_hold_route` already has.
+
+    A `RunTerminal` is exempt, and only it: a second ending is a second answer to
+    a question already answered, which is `_hold_run_terminal`'s own sentence and
+    a `RecordConflict` rather than a closed run. Replay is untouched -- bytes
+    written past this door still reach `_hold_terminal_is_last` first and are
+    still `CorruptRun`.
+    """
+    if isinstance(value, RunTerminal):
+        return
+    terminal = standing_terminal(recovered)
+    if terminal is not None:
+        raise RunClosed(
+            f"run {recovered.envelope.run_id!r} recorded its terminal "
+            f"{terminal.terminal_id!r} and accepts no further records")
+
+
 def _as_store_error(rule, value: object, prior_values: tuple[object, ...]) -> None:
     try:
         rule(value, prior_values)
@@ -527,6 +560,7 @@ class RunStore:
 
     @staticmethod
     def _validate_new_relation(recovered: RecoveredRun, value: RecordValue) -> None:
+        _hold_run_accepts_records(recovered, value)
         prior_values = tuple(row.value for row in recovered.records)
         if isinstance(value, GraphDefinition):
             _one_graph_per_run(recovered, value)
