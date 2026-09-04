@@ -181,7 +181,7 @@ the third column names a consumption, that is what you must also be able to see 
 | **Purpose** | General | Free text, saved and read back. It travels INSIDE the step's payload when the step runs, so a harness is told why the plan says this step exists. |
 | **Position** | General | A coordinate pair you can type, and **Let the canvas place it** to hand it back. Step 16 checks it survived. |
 | **Timeout** | Execution | Seconds, refused outside the contract's bounds with the bound named. It becomes the attempt's own ceiling. |
-| **Attempt bound** | Execution | A count. When a step has spent it, the Runs screen says so in words — *Every attempt this plan allows the step has been authorized, so it can never settle again.* — and offers no button the runtime would refuse. |
+| **Attempt bound** | Execution | A count. When a step has spent it, the Runs screen says so in words — *Every attempt this plan allows the step has been authorized, so it can never settle again.* — and offers no button the runtime would refuse. While an attempt is executing the same screen says the attempt is in flight and offers the step no second control: a bound of two never means two at once. |
 | **Output budget** | Execution | A chosen profile, with the byte ceiling it resolves to stated beside it. The window states the number rather than implying one. |
 | **Route and policy attachments** | Execution | `sandbox: project-root` is a demand on the machine that runs the step, and the screen says exactly what it buys: the route a child will run on is walked from the project root and refused if it leaves — a symlink, a junction, a reparse point, a hard link, a `..` segment, or anything not strictly beneath the root. **It must also say what it is not:** not operating-system isolation, no privilege drop, no filesystem jail, and the check reads the route at the instant it walks it. A step demanding any other route is refused before anything is spawned — **when the run is opened, and again when an attempt is authorized**, and the screen must say both. That refusal is new in this release: a workflow drawn against an earlier build that names another route still publishes, and no longer opens a run, until you change this row. The other five kinds — model, tool, skill, session, filesystem — are recorded and the screen says this build does nothing else with them. |
 | **Required input artifacts** | Inputs and outputs | Add and remove references. The control writes the argument the reviewed schema marks, and refuses a malformed reference rather than posting it. |
@@ -286,18 +286,33 @@ step become available. If you have to reload to see it, record that.
 
 Use the routed starter (`dalio-v3`) for this step, because its roads carry conditions.
 
-**First pass, approve.** Answer the confirm gate `approve`, let the step run, and answer the
-result gate `approve`. **You must see** the run reach **Plan: complete** — and beside it the two
-facts that tell you what "complete" means: the last gate answer and the last outcome.
+**First pass, approve.** Answer the confirm gate `approve`. Then go to **Runs** and open the
+run: the `do` row now reads `plan: runnable` and offers **Propose this step**. Press it. **You
+must see** the facts the proposal will carry — instance, capability, arguments, timeout,
+attempt id — drawn from the frozen plan and not from anything you can type; the only fields
+you fill are who proposes and why. Send it, and **you must see** the row read `proposed` and
+offer **Confirm this proposal**, with the proposal's own id and digest beside it. Give your
+name and confirm. **You must then see**, without reloading, the timeline grow on its own —
+`action_request → effect_lease → execution_observed → action_result` — and, while the attempt
+runs, the row say *An attempt on this step is still in flight; the plan offers it again only
+after that attempt answers.* with no second control. Nothing runs by itself: a step that is
+never proposed and confirmed never runs, and a run that starts work without those two clicks
+is a finding. When the result lands, answer the result gate `approve`. **You must see** the
+run reach **Plan: complete** — and beside it the two facts that tell you what "complete"
+means: the last gate answer and the last outcome.
 
 **"Complete" must never be drawn as a success.** It is the neutral chip, the same one a run that
 exhausted every retry reaches, and the screen must say so. A green tick on that word is a
 finding.
 
 **Second pass, send it back.** Start another run and answer the result gate `request_changes`
-three times. **You must see** the loop reopen twice and the third answer end it, with the loop's
-position and its ceiling both on screen. A run that reopens forever, or a screen that shows a
-position without its ceiling, is a finding.
+three times, driving the body round between answers the same way. **You must see** the loop
+reopen twice and the third answer end it, with the loop's position and its ceiling both on
+screen. From the second answer on, the Decisions screen must say that answering again
+supersedes the receipt standing on that gate, and name it — a second answer that is written
+beside the first rather than in its place leaves the gate reading `unknown`, and that is a
+finding. A run that reopens forever, or a screen that shows a position without its ceiling,
+is a finding.
 
 ## 14. Submit a human decision, and meet a gate that refuses one
 
@@ -305,6 +320,13 @@ Go to **Decisions**.
 
 **You must see**, for each waiting decision: why a human is needed, which step and run it affects,
 what your choices are, and what each choice causes. Submit one.
+
+**A gate the plan has not reached offers no form.** Choose the confirm gate of a run whose
+earlier steps have not settled. **You must see** no submit control at all, the sentence *This
+gate cannot be answered yet. ALL incoming roads must open before this step may run.*, and
+*Waiting on:* followed by the names of the steps it is waiting on. A form offered there is a finding: its only possible
+outcome is a refusal, and a build that accepted the answer would let the step behind the gate
+run before the steps in front of it.
 
 **You must then see** a durable receipt, and what became runnable as a result. A decision that
 vanishes without a receipt is a finding. **Read the receipt again after the screen has re-read

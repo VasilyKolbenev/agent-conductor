@@ -429,9 +429,9 @@ by any of the above.
 Product gaps rather than gaps in this procedure, each with what it costs a person. A gap named
 here is one somebody will meet; a gap nobody named is one they meet alone.
 
-- **No screen can publish an artifact.** The Studio's write targets are the draft, revisions,
-  runs and decisions — artifacts are not among them, so the window reads durable documents and
-  cannot create one. **What it costs:** a step whose missing-artifact behaviour is `block` and
+- **No screen can publish an artifact.** The Studio's write targets are `draft`, `revisions`,
+  `runs`, `decisions`, `proposals` and `actions` — artifacts are not among them, so the window
+  reads durable documents and cannot create one. **What it costs:** a step whose missing-artifact behaviour is `block` and
   whose input nobody has produced can only be unblocked by calling the artifacts route directly.
   `docs/owner-acceptance.md` step 12 shows that call, and says there that needing it is the
   finding. A run seeded this way is otherwise entirely normal.
@@ -462,6 +462,26 @@ here is one somebody will meet; a gap nobody named is one they meet alone.
   Refusing out loud is the point. A person meets this at `docs/owner-acceptance.md` step 10,
   where a run is started; step 8's **Route and policy attachments** row is where the screen
   states the rule before you can trip over it.
+- **A run waiting only for a document never ends by itself.** A step whose missing-artifact
+  behaviour is `block` keeps its run `open` until the document is published, a standing
+  decision is superseded, or a halt lands; this build has no cancel or abandon door. **What it
+  costs:** a run seeded against a document nobody will ever publish stays open in the Runs
+  list, saying what it waits for, until somebody publishes it through the artifacts route or
+  removes the project by hand.
+- **An attempt that dies unreconciled keeps its run open and its step blocked.** An
+  `action_request` with no `action_result` is an attempt in flight: the run stays `open`, the
+  step is not offered again, and the Runs screen says so beside the attempt's phase. **What it
+  costs:** nothing on screen prompts the operator; `conduct reconcile` is the road that ends it,
+  and the run's word moves only after the `unknown` result it writes.
+- **A gate whose recorded answers contradict each other accepts nothing through the live
+  road.** Two unsuperseded receipts on one gate — which only bytes written around the product
+  can produce now — read as `unknown`; the Decisions screen offers no form and the route refuses
+  every receipt, because a correction supersedes one receipt and there are two. **What it
+  costs:** such a journal is repaired only outside the product.
+- **A receipt appended by hand onto a gate the plan has not reached still settles it.** The
+  live route refuses that decision; the scheduler, by design, settles a gate from its receipts
+  alone, so a journal written around the route keeps its meaning — the shipped demo journal is
+  one. **What it costs:** nothing through the screens; a forged journal is a forged journal.
 - **The browser gate is sensitive to socket exhaustion on Windows.** Consecutive full-gate runs
   can fail with `ERR_NO_BUFFER_SPACE` or a setup stall while sockets sit in `TIME_WAIT`.
   **What it costs:** whoever runs the gate must let the host drain between runs and re-run a
