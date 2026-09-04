@@ -148,3 +148,19 @@ export const VERIFICATION_FAILED_NOTE = "Process exit 0 proves the process "
 // two chances to say it differently about one run.
 export const ALL_ROADS = "ALL incoming roads must open before this step may "
   + "run.";
+//: The ONE sentence a write control says while the socket is down.
+//
+// Every write control on this window's run screens is gated on the STREAM
+// being open -- not on any workflow's readiness, because neither a decision
+// nor a step is about a workflow -- so a control that stayed pressable while
+// it is down would invite a press the door has already decided to refuse. The
+// reason is SAID rather than left to a grey button: a control that greys with
+// no sentence teaches a person the product cannot do the thing, when what
+// happened is that the line went down.
+//
+// It lives HERE for `ALL_ROADS`'s reason: two files say it now -- the
+// Decisions screen about recording an answer, the step control about proposing
+// and confirming -- and one rule written out twice is one rule that can be
+// said two ways.
+export const STREAM_DOWN_REASON = "The live connection is down, so nothing can "
+  + "be recorded until it is back. What you have typed here is kept.";

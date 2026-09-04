@@ -19,8 +19,11 @@ import {element} from "./command-view.js";
 //: The AND-join sentence, from the module that declares it. The Runs screen
 //: says it about a step that is not offered and this screen says it about a
 //: gate that cannot be answered yet; a second copy here would be a second
-//: chance to say one rule two ways about one run.
-import {ALL_ROADS} from "./studio-runwords.js";
+//: chance to say one rule two ways about one run. `STREAM_DOWN_REASON` moved
+//: there for the same reason when the step control had to say it too: this
+//: screen says it about recording an answer, that one about proposing and
+//: confirming, and both mean one shut door.
+import {ALL_ROADS, STREAM_DOWN_REASON} from "./studio-runwords.js";
 
 // -- closed vocabularies, each a copy of exactly one Python owner ------------
 //
@@ -123,16 +126,6 @@ const ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 //: decision draft holds. It is a screen limit, not a contract one, and it is
 //: written on the label so nobody's sentence is cut off in silence.
 const REASON_LIMIT = 200;
-//: Why the one write control on this screen is shut while the socket is down.
-//: A decision write is gated on the STREAM being open -- not on any workflow's
-//: readiness, because a decision is not about a workflow -- so a control that
-//: stayed pressable while it is down would invite a press the door has already
-//: decided to refuse, which is the two workflow write controls' behaviour and
-//: not this one's. The reason is SAID here rather than left to a grey button:
-//: a control that greys with no sentence teaches a person that the product
-//: cannot do the thing, when what happened is that the line went down.
-const STREAM_DOWN_REASON = "The live connection is down, so nothing can be "
-  + "recorded until it is back. What you have typed here is kept.";
 
 const NOT_STATED = "not stated";
 

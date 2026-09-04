@@ -78,8 +78,8 @@ _STUDIO_FILES = (
     "studio-sections.js", "studio-artifacts.js", "studio-fields.js",
     "studio-transitions.js", "studio-store.js", "studio-view.js",
     "studio-runform.js", "studio-canvas.js", "studio-inspector.js",
-    "studio-runs.js", "studio-runwords.js", "studio-people.js",
-)
+    "studio-runs.js", "studio-runwords.js", "studio-runstep.js",
+    "studio-runwrite.js", "studio-people.js")
 _STUDIO_TYPES = {"css": "text/css; charset=utf-8",
                  "js": "text/javascript; charset=utf-8"}
 

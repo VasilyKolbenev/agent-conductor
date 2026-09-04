@@ -61,6 +61,15 @@ import {
   VERIFICATION_CHANNEL,
   VERIFICATION_FAILED_NOTE,
 } from "./studio-runwords.js";
+//: Whether an authorized attempt on one step is still unanswered, read off the
+//: run's own records the way `graph_schedule` reads it. A projection over one
+//: run read, so it lives with the other projections rather than here.
+import {attemptInFlight} from "./studio-runread.js";
+//: The two controls a position row may carry, from the module that owns them.
+//: They are the one part of this screen that WRITES, and they live next door so
+//: that the part a reader has to audit is a whole file rather than a region of
+//: this one. Nothing about the offer rule is decided here.
+import {stepControls} from "./studio-runstep.js";
 
 //: The one sentence, handed to whichever container is showing the word. Every
 //: container carrying `verification_failed` needs its OWN copy -- one written
@@ -412,9 +421,37 @@ function standingOf(schedule, nodeId) {
     .find((node) => node.node_id === nodeId) || null;
 }
 
-function planStanding(item, standing) {
+//: Why a step is blocked when the plan itself has nothing more to say about it.
+//
+// A `blocked` row naming no road, awaiting no document and with attempts left
+// is one of exactly two situations, and `graph_schedule` produces no third: an
+// attempt on it has not answered, so `attempt_in_flight` blocks the step until
+// its result lands; or a halt rewrote every runnable row to blocked
+// (`_stop_runnable`) so nothing further is offered as work. Until this was
+// asked the row drew a bare `plan: blocked` chip with no sentence at all -- a
+// person meeting it could not tell a worker that is running from a run that
+// has stopped.
+//
+// `flying` is the RECORDS' answer and never the runtime phase's -- see
+// `attemptInFlight`, which is where two readings of the phase went wrong.
+function stillOwed(flying) {
+  return flying
+    ? "An attempt on this step is still in flight; the plan offers it again "
+      + "only after that attempt answers."
+    : "Nothing further is offered in this run: it was halted.";
+}
+
+function planStanding(item, standing, flying) {
   if (standing === null) return;
   item.append(chip("none", `plan: ${show(standing.state)}`));
+  // A settled step is DONE with, and the plan says so rather than leaving the
+  // word to be read as "waiting". The one thing that reopens it is a loop, and
+  // that is stated because it is the only road back.
+  if (standing.state === "settled") {
+    item.append(note("This step has settled; the plan offers it no further "
+      + "attempt unless a loop reopens it."));
+    return;
+  }
   if (standing.state === "blocked" && standing.attempts_spent === true) {
     item.append(note("Every attempt this plan allows the step has been "
       + "authorized, so it can never settle again."));
@@ -438,6 +475,8 @@ function planStanding(item, standing) {
     if (roads.length) {
       item.append(fact("Waiting on", roads.join(", ")));
       item.append(note(ALL_ROADS));
+    } else if (!awaited.length) {
+      item.append(note(stillOwed(flying)));
     }
     return;
   }
@@ -449,7 +488,7 @@ function planStanding(item, standing) {
   }
 }
 
-function positionRow(node, runtime, standing) {
+function positionRow(node, runtime, standing, detail, state, handlers) {
   const item = element("li", {className: "studio-position"}, [
     element("span", {className: "studio-position__t", text: show(node.title)}),
     element("span", {className: "studio-mono",
@@ -469,15 +508,23 @@ function positionRow(node, runtime, standing) {
     fact("Evidence", runtime.evidence_refs));
   const loop = loopLine(node, runtime);
   if (loop !== null) item.append(loop);
-  planStanding(item, standing === undefined ? null : standing);
+  const plan = standing === undefined ? null : standing;
+  // The RUNTIME row's id, never the plan node's: a runtime row the definition
+  // does not name arrives here with an empty node, and an absent id would then
+  // match every unbound request in the journal.
+  planStanding(item, plan, attemptInFlight(detail, runtime.node_id));
   item.append(...alsoSay(runtime.outcome));
+  // …and last, the one thing on this screen a person can DO to the run. It is
+  // offered on the SCHEDULE's word and nothing else; the sentences above have
+  // already said why a row that gets none gets none.
+  item.append(...stepControls(node, runtime, plan, detail, state, handlers));
   return item;
 }
 
 //: Where each step stands, from the runtime projection joined to the plan by
 //: `node_id` -- the one name the two documents share. There is deliberately no
 //: run-wide phase word: the journal carries none.
-function positionSection(detail) {
+function positionSection(detail, state, handlers) {
   const graph = object(detail.graph);
   const runtime = graph ? object(graph.runtime) : null;
   if (runtime === null) {
@@ -491,7 +538,7 @@ function positionSection(detail) {
   const schedule = object(graph.schedule);
   for (const row of rows(runtime.nodes)) {
     list.append(positionRow(planned.get(row.node_id) || {}, row,
-      standingOf(schedule, row.node_id)));
+      standingOf(schedule, row.node_id), detail, state, handlers));
   }
   return section("Where this run stands", [
     note("Each step reports its CURRENT action only. Observed says an "
@@ -657,13 +704,13 @@ function selectedRow(state) {
   return rows(state.list).find((row) => row.run_id === state.selectedId) || null;
 }
 
-function detailColumn(state, handlers) {
-  const row = selectedRow(state);
+function detailColumn(runs, state, handlers) {
+  const row = selectedRow(runs);
   if (row !== null && row.unreadable === true) return unreadableDetail(row);
-  const detail = object(state.detail);
+  const detail = object(runs.detail);
   if (detail === null) {
     return element("div", {className: "studio-runs__detail"}, [
-      note(state.selectedId
+      note(runs.selectedId
         ? "This run has been chosen and its read has not landed here yet."
         : "Choose a run on the left to read it whole.")]);
   }
@@ -673,7 +720,7 @@ function detailColumn(state, handlers) {
     identitySection(detail, handlers),
     assignmentSection(detail),
     planSection(detail),
-    positionSection(detail),
+    positionSection(detail, state, handlers),
     outcomeSection(records),
     artifactSection(records),
     timelineSection(records),
@@ -706,11 +753,16 @@ function restoreFocus(mount, key) {
  * @param {Element} mount The screen container this module owns entirely.
  * @param {object} state The reducer's frozen value.
  * @param {object} handlers Callbacks this module invokes and never defines:
- *   `selectRun(runId)`, `refreshRuns()`, `showDecisions(runId)`.
+ *   `selectRun(runId)`, `refreshRuns()`, `showDecisions(runId)`, and the four
+ *   `studio-runstep.js` invokes on a step this screen hands it.
  */
 export function mountRuns(mount, state, handlers) {
   const key = focusKey(mount);
-  const runs = object(state && state.runs) || {};
+  // The WHOLE state travels into the detail column: a step control is gated on
+  // the stream being open, which is a fact about the window and not about this
+  // screen's own slice.
+  const whole = object(state) || {};
+  const runs = object(whole.runs) || {};
   mount.replaceChildren(element("div", {className: "studio-runs"}, [
     element("h2", {text: "Runs"}),
     element("p", {className: "studio-lede", text:
@@ -718,7 +770,7 @@ export function mountRuns(mount, state, handlers) {
       + "was frozen against, and the journal it wrote. Everything below is "
       + "read out of that journal and nothing is stored twice."}),
     runList(runs, handlers),
-    detailColumn(runs, handlers),
+    detailColumn(runs, whole, handlers),
   ]));
   restoreFocus(mount, key);
 }

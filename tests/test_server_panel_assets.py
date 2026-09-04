@@ -51,6 +51,8 @@ ASSETS = {
     "/panel/studio-inspector.js": "text/javascript; charset=utf-8",
     "/panel/studio-runs.js": "text/javascript; charset=utf-8",
     "/panel/studio-runwords.js": "text/javascript; charset=utf-8",
+    "/panel/studio-runstep.js": "text/javascript; charset=utf-8",
+    "/panel/studio-runwrite.js": "text/javascript; charset=utf-8",
     "/panel/studio-people.js": "text/javascript; charset=utf-8",
     # The classic panel, at the route that now reaches it. This target was a
     # deliberate 404 while `GET /` served index.html; the Studio took the front

@@ -111,10 +111,116 @@ def test_a_blocked_join_says_that_ALL_incoming_roads_are_required():
     assert sentence.group(1).replace('"\n  + "', "").startswith(
         "ALL incoming roads must open")
     assert "ALL_ROADS," in runs, "the Runs screen no longer reads the join rule"
-    body = re.search(r"function planStanding\(item, standing\) \{(.*?)\n\}",
-                     runs, re.DOTALL).group(1)
-    assert "note(ALL_ROADS)" in body, body
+    assert "note(ALL_ROADS)" in _plan_standing(runs)
     assert "waiting for a predecessor" not in runs.lower()
+
+
+def _plan_standing(runs: str) -> str:
+    """The body of the one function that says where a step stands.
+
+    Read by name and by SIGNATURE, and the miss is an assertion rather than an
+    ``AttributeError`` on ``None``: this reader used to end in one, so a
+    renamed parameter reported "'NoneType' has no attribute 'group'" instead of
+    naming the function it could not find.
+
+    The signature is pinned because it is the guard's own subject. It has twice
+    been the wrong document: a `phase`, then the whole runtime row. Neither can
+    answer the question below -- the phase reports the node's CURRENT action,
+    and the current action is the LAST proposal or request naming it. What is
+    handed in now is the ANSWER, computed from the records next door.
+    """
+    body = re.search(
+        r"function planStanding\(item, standing, flying\) \{(.*?)\n\}",
+        runs, re.DOTALL)
+    assert body is not None, (
+        "studio-runs.js declares no planStanding(item, standing, flying)")
+    return body.group(1)
+
+
+def test_a_blocked_step_with_nothing_else_to_say_says_which_of_the_two_it_is():
+    """The bare `plan: blocked` chip, and the two situations behind it.
+
+    A `blocked` row naming no road, awaiting no document and with attempts left
+    is one of exactly two things and `graph_schedule` produces no third: an
+    attempt on it has not answered (`attempt_in_flight`), or a halt rewrote
+    every runnable row to blocked (`_stop_runnable`). Before this the row drew
+    the word and stopped, and a person could not tell a worker that is running
+    from a run that has stopped.
+
+    Both sentences are held, and so is what CHOOSES between them.
+    """
+    runs = _code(PANEL / "studio-runs.js")
+    owed = re.search(r"function stillOwed\(flying\) \{(.*?)\n\}", runs,
+                     re.DOTALL)
+    assert owed is not None, "studio-runs.js says nothing about a bare blocked"
+    said = owed.group(1)
+    assert "An attempt on this step is still in flight; the plan offers it " \
+        "again \"\n      + \"only after that attempt answers." in said, said
+    assert "Nothing further is offered in this run: it was halted." in said
+    # And it is REACHED: a sentence nothing calls is a row that still says
+    # nothing. The call sits on the branch where no road and no document is
+    # named, which is the branch that used to fall through.
+    assert "} else if (!awaited.length) {\n      item.append(note(stillOwed(" \
+        "flying)));" in _plan_standing(runs)
+
+
+def test_an_attempt_is_in_flight_by_the_records_and_never_by_the_phase():
+    """The runtime phase answers a different question, and it answered it twice.
+
+    `graph_projection._current_action` is the LAST proposal or request naming a
+    node, and the phase reports how far THAT got. So `observed` is answered for
+    an attempt whose result has already landed -- and a proposal appended over
+    an unanswered request, which the propose door admits because it holds no
+    schedule check, pushes the phase back to `proposed` while a worker is still
+    executing. The screen said the run had been halted while its worker ran.
+
+    What is asked now is `graph_schedule.attempt_in_flight`'s own question,
+    spelled the same way: a request naming this step whose `action_id` no
+    result closes. Judged by `action_id` and never by "some request, some
+    result" -- two attempts on one step are two identities, and the weaker rule
+    would call the second finished the moment the first reported.
+
+    Held on the reader AND on the screen that spends it, because they fail
+    apart: a correct reader nothing calls leaves the same wrong sentence up.
+    """
+    read = _code(PANEL / "studio-runread.js")
+    body = re.search(
+        r"export function attemptInFlight\(detail, nodeId\) \{(.*?)\n\}",
+        read, re.DOTALL)
+    assert body is not None, "no module reads an attempt out of the records"
+    said = body.group(1)
+    assert 'row.record_type === "action_result"' in said, said
+    assert 'row.record_type === "action_request"' in said, said
+    assert "row.record.node_id === nodeId" in said, said
+    assert "!answered.has(row.record.action_id)" in said, said
+    # The phase and the outcome are not consulted anywhere in it.
+    for gone in (".phase", ".outcome", "IN_FLIGHT"):
+        assert gone not in said, gone
+
+    runs = _code(PANEL / "studio-runs.js")
+    assert 'import {attemptInFlight} from "./studio-runread.js";' in runs
+    # The RUNTIME row's id, never the plan node's: a runtime row the definition
+    # does not name arrives with an empty node, and an absent id would match
+    # every unbound request in the journal.
+    assert "planStanding(item, plan, attemptInFlight(detail, runtime.node_id));" \
+        in runs, runs
+    # And the phase-based reading is gone from this screen entirely.
+    assert "IN_FLIGHT" not in runs, "the phase list survived the correction"
+    assert "function inFlight(" not in runs
+
+
+def test_a_settled_step_says_the_plan_offers_it_nothing_further():
+    """`plan: settled` is not `plan: waiting`, and the row now says which.
+
+    The word alone reads as a position rather than as an ending, and the one
+    thing that reopens a settled step is a loop -- so that is stated, because
+    it is the only road back and a person looking for one would otherwise look
+    for a control that is never coming.
+    """
+    body = _plan_standing(_code(PANEL / "studio-runs.js"))
+    assert 'standing.state === "settled"' in body, body
+    assert "This step has settled; the plan offers it no further " in body
+    assert "attempt unless a loop reopens it." in body
 
 
 def test_the_plan_word_is_never_drawn_as_a_success():

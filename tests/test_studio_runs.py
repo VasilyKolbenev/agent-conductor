@@ -58,8 +58,17 @@ RUNS_FILE = PANEL / "studio-runs.js"
 #: re-exports every name.
 WORDS_FILE = PANEL / "studio-runwords.js"
 PEOPLE_FILE = PANEL / "studio-people.js"
-#: Both files this slice owns, and the only files it may write.
-OWNED = (RUNS_FILE, PEOPLE_FILE)
+#: The two controls that WRITE, split off the Runs screen when the propose and
+#: confirm road arrived and `studio-runs.js` had no room for it. It is a screen
+#: FRAGMENT rather than a screen: it mounts nothing, owns no container and
+#: carries no state vocabulary of its own, so the guards below that are about
+#: a MOUNT read `MOUNTED` and the guards that are about a file read `OWNED`.
+STEP_FILE = PANEL / "studio-runstep.js"
+#: Every file this slice owns, and the only files it may write.
+OWNED = (RUNS_FILE, STEP_FILE, PEOPLE_FILE)
+#: The two of them that own a screen container: one mount, one focus pass, one
+#: set of state words each.
+MOUNTED = (RUNS_FILE, PEOPLE_FILE)
 #: Where each screen's closed words are DECLARED. Only the Runs screen's
 #: moved, so this is a lookup rather than a rule: a guard that asked the
 #: rendering file for a vocabulary would red for the wrong reason, and one
@@ -76,16 +85,20 @@ MOUNT_SIGNATURES = (
     (PEOPLE_FILE, "mountDecisions"),
     (PEOPLE_FILE, "mountAgents"),
 )
-#: Every callback name these screens invoke. They define none of them.
+#: Every callback name these files invoke. They define none of them. The Runs
+#: screen's four step callbacks are NOT on its row: it hands `handlers` through
+#: to the step control and looks none of them up, which is exactly what keeps
+#: the offer rule and the write in one file.
 HANDLER_NAMES = {
     RUNS_FILE: {"selectRun", "refreshRuns", "showDecisions"},
+    STEP_FILE: {"chooseStep", "editStep", "proposeStep", "confirmStep"},
     PEOPLE_FILE: {"selectDecision", "editDecision", "submitDecision",
                   "refreshAgents"},
 }
 #: How many controls in each file answer a missing handler by disabling
 #: themselves. Pinned exactly rather than "at least one": presence alone let a
 #: deleted disable through, because a sibling still carried the phrase.
-DISABLED_CONTROLS = {RUNS_FILE: 2, PEOPLE_FILE: 5}
+DISABLED_CONTROLS = {RUNS_FILE: 2, STEP_FILE: 2, PEOPLE_FILE: 5}
 #: Nothing in a pure DOM writer may reach the network, the clock, storage, the
 #: console, a parser of markup, or a dynamic module. Matched case-insensitively
 #: against the whole source, comments included: a banned call written in a
@@ -96,15 +109,24 @@ BANNED_APIS = (
     "settimeout", "setinterval", "fetch(", "new eventsource",
     "xmlhttprequest", "websocket", "navigator.", "createelement",
 )
-#: What either screen may import, as a permission table. It used to be one
-#: name -- `command-view.js`, the shared DOM builder -- and the guard below
-#: only ever saw single-line imports, so the words module `studio-runs.js`
-#: already read from went unnoticed because its import spans lines. The guard
-#: now reads BOTH shapes, which is why the permitted set has to say what was
-#: always true: a screen may reach the builder it writes DOM with, and the
-#: module that declares the closed words and one-voice sentences it is held to.
-#: Neither may reach a transport, a model, or the other screen.
-ALLOWED_IMPORTS = frozenset({"./command-view.js", "./studio-runwords.js"})
+#: What each of these files may import, as a permission table. It used to be
+#: one name for both -- `command-view.js`, the shared DOM builder -- and the
+#: guard below only ever saw single-line imports, so the words module
+#: `studio-runs.js` already read from went unnoticed because its import spans
+#: lines. The guard now reads BOTH shapes, and the table is PER FILE because
+#: the three rows are no longer one permission: the Runs screen may reach the
+#: step control it draws, the step control may reach the canonical-text
+#: function it shows a plan's arguments with, and the Decisions screen may
+#: reach neither. None may reach a transport, a model, or another screen, and
+#: nothing may import `studio-runs.js`: it imports the step control, so a
+#: permission the other way is what would close the pair into a ring.
+ALLOWED_IMPORTS = {
+    RUNS_FILE: frozenset({"./command-view.js", "./studio-runwords.js",
+                          "./studio-runread.js", "./studio-runstep.js"}),
+    STEP_FILE: frozenset({"./command-view.js", "./command-projection.js",
+                          "./studio-runwords.js"}),
+    PEOPLE_FILE: frozenset({"./command-view.js", "./studio-runwords.js"}),
+}
 #: The tags a listener may be attached to. A click on a `div` is not operable
 #: by a keyboard, and no amount of `tabindex` makes it a control.
 LISTENABLE_TAGS = frozenset({"button", "form", "input"})
@@ -209,11 +231,15 @@ def test_each_screen_module_imports_only_the_shared_dom_builder(
     imports, so the match spans lines and the permitted set says what may be
     there.
     """
+    permitted = ALLOWED_IMPORTS[path]
     imports = set(re.findall(r'^import\s[\s\S]*?from "([^"]+)";', source(path),
                              flags=re.MULTILINE))
     assert imports, f"{path.name} imports nothing at all"
-    assert imports <= ALLOWED_IMPORTS, (
-        f"{path.name} imports {sorted(imports - ALLOWED_IMPORTS)}")
+    assert imports <= permitted, (
+        f"{path.name} imports {sorted(imports - permitted)}")
+    # And nothing here may import the screen that draws it: the Runs screen
+    # imports the step control, so the reverse edge is a cycle.
+    assert "./studio-runs.js" not in imports, path.name
 
 
 @pytest.mark.parametrize("path", OWNED, ids=lambda path: path.name)
@@ -235,7 +261,7 @@ def test_each_mount_is_exported_with_the_frozen_signature(
     assert signature in source(path), f"{path.name} lacks {signature}"
 
 
-@pytest.mark.parametrize("path", OWNED, ids=lambda path: path.name)
+@pytest.mark.parametrize("path", MOUNTED, ids=lambda path: path.name)
 def test_every_exported_function_of_a_screen_module_is_one_of_its_mounts(
         path: Path) -> None:
     """No second entry point, and no default export to guess at."""
@@ -245,7 +271,27 @@ def test_every_exported_function_of_a_screen_module_is_one_of_its_mounts(
     assert "export default" not in source(path)
 
 
-@pytest.mark.parametrize("path", OWNED, ids=lambda path: path.name)
+def test_the_step_control_exports_one_builder_and_mounts_nothing() -> None:
+    """The fragment's own shape, which is not a mount's.
+
+    It is handed a row's facts and answers with nodes; the screen next door
+    owns the container and the focus pass. So the guards above read `MOUNTED`
+    and this reads the one file they cannot: exactly one exported FUNCTION,
+    no default, no container of its own, and no chip -- a channel drawn here
+    would be a state carried by colour outside the module whose glyph table
+    the colour guard reads.
+    """
+    text = source(STEP_FILE)
+    assert set(re.findall(r"export function (\w+)\(", text)) == {"stepControls"}
+    assert "export default" not in text
+    assert "mount.replaceChildren(" not in text
+    assert "focusKey(" not in text and "restoreFocus(" not in text
+    assert "chip(" not in text
+    assert ("export function stepControls(node, runtime, standing, detail, "
+            "state, handlers) {") in text
+
+
+@pytest.mark.parametrize("path", MOUNTED, ids=lambda path: path.name)
 def test_a_mount_replaces_its_whole_subtree_exactly_once(path: Path) -> None:
     """Idempotent re-render: the subtree is replaced, never appended to."""
     text = source(path)
@@ -253,7 +299,7 @@ def test_a_mount_replaces_its_whole_subtree_exactly_once(path: Path) -> None:
     assert text.count("mount.replaceChildren(") == len(mounts)
 
 
-@pytest.mark.parametrize("path", OWNED, ids=lambda path: path.name)
+@pytest.mark.parametrize("path", MOUNTED, ids=lambda path: path.name)
 def test_a_mount_captures_focus_before_the_pass_and_restores_it_after(
         path: Path) -> None:
     """A keyboard Human is never dropped to the top by their own re-render.
@@ -330,7 +376,7 @@ def test_the_runs_screen_spells_the_projections_node_phases() -> None:
     assert frozen_list(WORDS_FILE, "NODE_PHASES") == list(NODE_PHASES)
 
 
-@pytest.mark.parametrize("path", OWNED, ids=lambda path: path.name)
+@pytest.mark.parametrize("path", MOUNTED, ids=lambda path: path.name)
 def test_both_screens_spell_the_projections_gate_states(path: Path) -> None:
     assert sorted(frozen_list(WORDS_OF[path], "GATE_STATES")) == sorted(
         GATE_STATES)
@@ -494,7 +540,7 @@ def test_the_no_participant_state_names_the_real_file_keys_and_command() -> None
         "the empty roster names the file before the command that writes it")
 
 
-@pytest.mark.parametrize("path", OWNED, ids=lambda path: path.name)
+@pytest.mark.parametrize("path", MOUNTED, ids=lambda path: path.name)
 def test_each_screen_says_all_seven_states_and_no_eighth(path: Path) -> None:
     assert set(frozen_keys(path, "PHASE_SENTENCES")) == SCREEN_STATES
 
@@ -603,7 +649,7 @@ def test_no_screen_branches_on_a_provider_name(path: Path) -> None:
     assert not named, f"{path.name} names {named}"
 
 
-@pytest.mark.parametrize("path", OWNED, ids=lambda path: path.name)
+@pytest.mark.parametrize("path", MOUNTED, ids=lambda path: path.name)
 def test_no_state_is_carried_by_colour_alone(path: Path) -> None:
     """Every chip draws a glyph and a word. A channel with no glyph could
     reach the screen as colour and nothing else."""

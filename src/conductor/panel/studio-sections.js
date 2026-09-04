@@ -661,7 +661,8 @@ function failurePolicy(box, form) {
     + "unknown, because unknown means the journal supports no answer and an "
     + "unanswered question stays askable. What it does is make every step that "
     + "could still run blocked, so the run reads stalled and records that "
-    + "ending.");
+    + "ending — unless an attempt is still executing, in which case the ending "
+    + "is recorded when that attempt answers.");
 }
 
 //: What the OPEN RUN's own frozen plan demands of this step, which is not

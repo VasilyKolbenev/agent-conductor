@@ -20,6 +20,9 @@ import {mountCanvas} from "./studio-canvas.js";
 import {mountInspector} from "./studio-inspector.js";
 import {mountAgents, mountDecisions} from "./studio-people.js";
 import {mountRuns} from "./studio-runs.js";
+//: What a Human's press on a step control MEANS. The wire stays HERE: that
+//: module is handed this one's `write` and reaches no socket of its own.
+import {stepWriters} from "./studio-runwrite.js";
 import {EMPTY, SCREENS, draftFrom, reduce, saveProblems} from "./studio-store.js";
 import {isId, mountDiagnostics, mountOverview, mountShell, mountToolbar}
   from "./studio-view.js";
@@ -189,11 +192,17 @@ const REOPENED = Object.freeze(["draft_changed", "draft_conflict"]);
     run: (id) => `/command/runs/${encodeURIComponent(id)}`,
     controls: (id) => `/command/runs/${encodeURIComponent(id)}/controls`,
     decisions: (id) => `/command/runs/${encodeURIComponent(id)}/decisions`,
+    proposals: (id) => `/command/runs/${encodeURIComponent(id)}/proposals`,
+    actions: (id) => `/command/runs/${encodeURIComponent(id)}/actions`,
   });
-  //: The four targets the one mutation door may name. A write to anything else
+  //: The six targets the one mutation door may name. A write to anything else
   //: is unrepresentable rather than screened out afterwards.
   const WRITE_TARGETS = Object.freeze(
-    ["draft", "revisions", "runs", "decisions"]);
+    ["draft", "revisions", "runs", "decisions", "proposals", "actions"]);
+  //: Which of them are about a RUN. They are gated on the STREAM being open
+  //: rather than on a workflow's readiness, because none of them is about a
+  //: workflow at all.
+  const RUN_SCOPED = Object.freeze(["decisions", "proposals", "actions"]);
 
   function said(code) {
     return ERROR_LABELS[code] || ERROR_LABELS.store_error;
@@ -396,7 +405,7 @@ const REOPENED = Object.freeze(["draft_changed", "draft_conflict"]);
   //: refusal written to the workflow save line would answer one question in
   //: the place another was asked.
   function say(channel, phase, notice) {
-    dispatch(channel === "decisions"
+    dispatch(RUN_SCOPED.includes(channel)
       ? {type: "status", notice} : {type: "save", phase, notice});
   }
 
@@ -406,16 +415,16 @@ const REOPENED = Object.freeze(["draft_changed", "draft_conflict"]);
   //: after the Human has moved to another would otherwise announce the first's
   //: success on the second's screen.
   //:
-  //: A decision is gated on the STREAM and a workflow write on `writeReady`,
-  //: and they are two questions: readiness names one answer about one
-  //: workflow, and a decision is not about a workflow at all.
+  //: A RUN-SCOPED write is gated on the STREAM and a workflow write on
+  //: `writeReady`, and they are two questions: readiness names one answer about
+  //: one workflow, and a run write is not about a workflow at all.
   //: `recover` is offered the REFUSAL, after it has been said. A refusal is
   //: normally the end of a write, but one of them names a state this window
   //: can still act on -- see `onPublishConfirm` -- and a window that only
   //: printed it would leave a person looking at a review of a document that no
   //: longer exists, with no control that does anything but fail again.
   async function write(target, subject, body, carry, recover = null) {
-    const ready = target === "decisions"
+    const ready = RUN_SCOPED.includes(target)
       ? streamOpen : state.workflows.writeReady;
     if (!ready) {
       say(target, "refused", STREAM_DOWN);
@@ -573,9 +582,13 @@ const REOPENED = Object.freeze(["draft_changed", "draft_conflict"]);
       reason: typeof draft.reason === "string" ? draft.reason.trim() : "",
       scope_refs: [], evidence_refs: [], supersedes};
     const asked = row.run_id;
+    // Both roads below SPEND the draft before the read they provoke. A landed
+    // read of the same run keeps what is typed -- it has no way to know the
+    // words are finished with -- so the two places that do know say so.
     write("decisions", asked, body, () => {
       if (asked !== chosenRun) return;
       dispatch({type: "status", notice: DECIDED});
+      dispatch({type: "decision-chosen", key: null});
       refreshRun(asked);
     }, (result) => {
       // The one refusal a decision can meet that this window acts on rather
@@ -584,6 +597,7 @@ const REOPENED = Object.freeze(["draft_changed", "draft_conflict"]);
       // the server says the run has not reached, so what is on screen is out
       // of date. The read is what makes it current again.
       if (result.code !== "gate_unreached" || asked !== chosenRun) return;
+      dispatch({type: "decision-chosen", key: null});
       refreshRun(asked);
     });
   }
@@ -646,6 +660,11 @@ const REOPENED = Object.freeze(["draft_changed", "draft_conflict"]);
       + "already sees about the drawing, which has not been sent."});
   }
 
+  //: The step road's four callbacks, handed the doors they may use and no
+  //: others. `chosenRun` is a getter because the answer moves.
+  const step = stepWriters({chosenRun: () => chosenRun, dispatch, isId,
+    refreshRun, said, write});
+
   const handlers = Object.freeze({
     onScreen: (screen) => {
       if (!SCREENS.includes(screen)) return;
@@ -674,6 +693,10 @@ const REOPENED = Object.freeze(["draft_changed", "draft_conflict"]);
       dispatch({type: "screen", screen: "decisions"});
       if (isId(runId)) refreshRun(runId);
     },
+    chooseStep: step.chooseStep,
+    editStep: step.editStep,
+    proposeStep: step.proposeStep,
+    confirmStep: step.confirmStep,
     selectDecision: (key) => dispatch({type: "decision-chosen", key}),
     editDecision: (patch) => dispatch({type: "decision-edit", patch}),
     submitDecision: onSubmitDecision,

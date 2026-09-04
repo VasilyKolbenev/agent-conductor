@@ -1,16 +1,12 @@
 """A plan that constrains what may run: eligibility, and the doors after an end.
 
-Three refusals land here, and they are three different sentences about one idea
--- the plan is a permission and not only a description:
+Two refusals land here, and they are two different sentences about one idea --
+the plan is a permission and not only a description:
 
 - **eligibility.** `authorize` mints nothing for a step the run has not reached.
   The rule is MEMBERSHIP in what the schedule computes, so the refusals for a
   blocked step, a settled one, an unreachable one, a spent one and a stranger
   all arrive together and cannot drift apart.
-- **presence.** A proposal on a planned run names the step it carries out. This
-  is the one intended behavioural change to a shipped surface: the legacy
-  panel's composer emits seven keys and CANNOT emit `node_id`, so it is refused
-  on every planned run and unchanged on a plan-less one. Both directions below.
 - **the ending.** Once a run records its terminal, all four write doors refuse
   a NEW record and NOTHING is written -- while an exact retry of a record that
   already stands is still answered, because the refusal is about records and a
@@ -33,6 +29,13 @@ mints its own ids, receives no retry, and refuses every resubmit. Beneath all
 four the store refuses any record appended behind a standing terminal, whatever
 door asked, which is the last witness here: a caller holding a stale
 authorization writes no byte either.
+
+The THIRD circuit this module used to hold -- **presence**, that a proposal on
+a planned run names the step it carries out -- is now
+``tests/test_command_step_presence.py``, moved byte-identically when this file
+reached the line cap. It is about a different door and it grew two witnesses of
+its own; the helpers it still shares (`journal_bytes`, `kinds`, `NOW`) are
+imported from here rather than copied, so there is one definition of each.
 """
 from __future__ import annotations
 
@@ -52,7 +55,6 @@ from conductor.command.runtime_values import (
     AuthorizationError,
     RunAlreadyTerminal,
 )
-from conductor.command.service import ServiceError
 from tests.test_command_graph_binding import (
     CONFIG,
     RUN_ID,
@@ -174,85 +176,6 @@ def _a_bounded_run(tmp_path):
         created_at=plan.created_at, nodes=nodes, edges=plan.edges))
     let_the_gate_through(store)
     return store
-
-
-# -- presence: a proposal on a planned run names its step ----------------------
-
-
-def legacy_composer_body():
-    """Exactly the seven keys `panel/command.js` `proposalBody` can emit.
-
-    Written out rather than derived, because the point is what that composer
-    CANNOT put in: there is no `node_id` key anywhere in it, and no branch of
-    that function adds one.
-    """
-    body = proposal_body()
-    assert set(body) == {
-        "instance_id", "attempt_id", "capability", "arguments", "scope",
-        "proposed_by", "rationale", "timeout_seconds"}
-    return body
-
-
-def test_the_legacy_composers_body_is_refused_on_a_planned_run(tmp_path):
-    """Witness 3, first direction, and the intended behavioural change.
-
-    An unbound proposal on a planned run is authority the plan never gave, and
-    it silently mis-resolves the verifier as well. Refusing is the only honest
-    answer until that panel learns to bind a node.
-    """
-    from tests.alpha3_graph_artifacts import dalio_definition
-
-    subject, store, _ = api(tmp_path, adapters=[DeepDispatchAdapter()])
-    store.append(dalio_definition(run_id=RUN_ID))
-    before = journal_bytes(store)
-
-    refused = post(subject, f"/command/runs/{RUN_ID}/proposals",
-                   legacy_composer_body())
-
-    assert refused.status == ERROR_STATUS["service_refused"]
-    assert refused.payload["error"]["code"] == "service_refused"
-    assert journal_bytes(store) == before
-
-
-def test_the_same_body_is_accepted_unchanged_on_a_plan_less_run(tmp_path):
-    """Witness 3, second direction: runs without a graph are byte-identical.
-
-    Without this the refusal above could equally be a composer that stopped
-    working at all.
-    """
-    subject, store, _ = api(tmp_path, adapters=[DeepDispatchAdapter()])
-
-    answer = post(subject, f"/command/runs/{RUN_ID}/proposals",
-                  legacy_composer_body())
-
-    assert answer.status == 201
-    assert "node_id" not in answer.payload
-    assert kinds(store) == ["action_proposal"]
-
-
-def test_the_service_refusal_names_the_graph_and_what_is_missing(tmp_path):
-    """A caller has to learn WHICH plan is making the demand."""
-    from tests.alpha3_graph_artifacts import dalio_definition
-
-    store = a_store(tmp_path, with_graph=False)
-    store.append(dalio_definition(run_id=RUN_ID))
-    service = a_runtime(store)  # builds the store-backed service seam too
-
-    assert service is not None
-    with pytest.raises(ServiceError, match="must name the node it carries out"):
-        _propose_unbound(store)
-
-
-def _propose_unbound(store):
-    from conductor.command.adapters import AdapterRegistry
-    from conductor.command.service import CommandService
-    from tests.test_command_schema_doubles import DeepDispatchAdapter
-
-    body = legacy_composer_body()
-    CommandService(store, AdapterRegistry([DeepDispatchAdapter()]),
-                   clock=lambda: NOW,
-                   ids=lambda kind: f"{kind}-001").propose(
-        run_id=RUN_ID, node_id=None, **body)
 
 
 # -- the ending: four doors, one word, the depth, and not one byte -------------

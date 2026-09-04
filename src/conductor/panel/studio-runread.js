@@ -150,6 +150,36 @@ function drawnFacts(node, titles, planned) {
   };
 }
 
+//: Whether an authorized attempt on ONE step has not been answered.
+//
+// `graph_schedule.attempt_in_flight`, spelled the same way on this side of the
+// wire: an `action_request` naming this step whose `action_id` no
+// `action_result` closes. Records, and nothing else.
+//
+// It was the runtime PHASE first, and twice over that was the wrong document.
+// The phase reports how far the node's CURRENT action got, and
+// `graph_projection._current_action` is the LAST proposal or request naming it
+// -- so a phase of `observed` is answered for an attempt whose result has
+// already landed, and a proposal appended OVER an unanswered request (a stale
+// second window; the propose door holds no schedule check) pushes the phase
+// back to `proposed` while a worker is still executing. The screen then told a
+// person the run had been halted while its worker ran.
+//
+// Judged by `action_id` and never by "some request, some result", for the same
+// reason the Python does: two attempts on one step are two identities, and a
+// rule that asked only whether ANY answer had arrived would call the second
+// one finished the moment the first reported.
+export function attemptInFlight(detail, nodeId) {
+  if (typeof nodeId !== "string") return false;
+  const records = rows(isObject(detail) ? detail.records : null);
+  const answered = new Set(records
+    .filter((row) => row.record_type === "action_result" && isObject(row.record))
+    .map((row) => row.record.action_id));
+  return records.some((row) => row.record_type === "action_request"
+    && isObject(row.record) && row.record.node_id === nodeId
+    && !answered.has(row.record.action_id));
+}
+
 //: Whether this run is OVER, by either of the two facts that say so.
 //
 // The plan's own word for a run nothing can be added to, or the durable

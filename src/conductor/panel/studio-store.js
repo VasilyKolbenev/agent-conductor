@@ -55,6 +55,21 @@ function frozenCopy(value) {
 }
 const NO_DRAFT = Object.freeze({key: null, action: "approve", actor: "",
   reason: ""});
+//: What a person has typed against ONE step of a run's plan, and which step
+//: that is. Nothing about the WORK is here: a proposal's instance, capability,
+//: arguments and ceiling are the frozen plan's and are never typed, so the only
+//: fields this draft can hold are the three a person supplies and the id that
+//: says whose they are. Frozen like `NO_DRAFT`, and reset by the same event: a
+//: landed run read moves the run, so a draft against the run that was there is
+//: not a draft against this one.
+//:
+//: `writing` is the fifth field and is not typed by anybody: it says a write
+//: for this draft is in flight. It exists because the draft is NOT destroyed at
+//: the door -- a refusal that brings no read must give the control back with
+//: what was typed still in it -- so something else has to make a second press
+//: impossible, and this is it.
+const NO_STEP = Object.freeze({nodeId: null, proposedBy: "", rationale: "",
+  confirmedBy: "", writing: false});
 const WORKFLOWS = Object.freeze({
   phase: "empty",
   list: Object.freeze([]),
@@ -128,7 +143,7 @@ export const EMPTY = Object.freeze({
   canvas: Object.freeze({pan: Object.freeze({x: 0, y: 0}), zoom: 1,
     selection: Object.freeze({kind: null, id: null})}),
   runs: Object.freeze({phase: "empty", list: Object.freeze([]),
-    selectedId: null, detail: null}),
+    selectedId: null, detail: null, step: NO_STEP}),
   decisions: Object.freeze({phase: "empty", list: Object.freeze([]),
     draft: NO_DRAFT}),
   agents: Object.freeze({phase: "empty", participants: Object.freeze([])}),
@@ -470,16 +485,49 @@ function runsLoaded(state, event) {
 //: `said` is the notice and whose it is, together: every caller of this has an
 //: opinion about both, and passing the sentence alone is what let a read blank
 //: a Human's receipt.
+//: What a landed read does to what a person is TYPING, which is nothing at all
+//: when it is a read of the SAME run.
+//
+// Both drafts used to be reset here unconditionally, and every road into this
+// function is a READ: a `run` frame for an attempt event on another branch, a
+// `state` frame, the reconnect's own re-read. So the words vanished from under
+// a person's hands while the control beside them promised that what they typed
+// is kept -- and owner acceptance step 16 asks for the opposite in so many
+// words: coming back from a dropped connection may not throw somebody out of
+// the field they were typing in.
+//
+// A read that brings ANOTHER run, or none, still resets both: a draft is about
+// one step and one gate of ONE run, and it means nothing about another.
+//
+// The WRITE roads clear their own draft before the read they provoke, which is
+// why an accepted write still comes back to an empty form. That is deliberate
+// and it is where the clearing belongs: the write knows those words are spent,
+// and a read never does.
+//
+// `writing` goes off here whatever else is kept. It is a fact about a request
+// that is over the moment its answer has been read.
+function keptDrafts(state, detail) {
+  const same = detail !== null
+    && detail.run.run_id === state.runs.selectedId;
+  const step = same ? state.runs.step : NO_STEP;
+  return {
+    draft: same ? state.decisions.draft : NO_DRAFT,
+    step: step.writing === true
+      ? Object.freeze({...step, writing: false}) : step,
+  };
+}
+
 function runMoved(state, phase, detail, said) {
+  const kept = keptDrafts(state, detail);
   return Object.freeze({...state,
     // A run read carries the run's warnings and says nothing about the
     // project's name, so the name already read is kept rather than cleared:
     // opening a run must not un-name the project on screen.
     project: Object.freeze({name: state.project.name,
       warnings: detail === null ? Object.freeze([]) : detail.warnings}),
-    runs: Object.freeze({...state.runs, phase, detail,
+    runs: Object.freeze({...state.runs, phase, detail, step: kept.step,
       selectedId: detail === null ? state.runs.selectedId : detail.run.run_id}),
-    decisions: Object.freeze({...state.decisions, phase, draft: NO_DRAFT,
+    decisions: Object.freeze({...state.decisions, phase, draft: kept.draft,
       list: detail === null ? Object.freeze([]) : decisionRows(detail)}),
     agents: Object.freeze({...state.agents, phase,
       participants: detail === null
@@ -508,7 +556,7 @@ function runChosen(state, runId) {
   return Object.freeze({...runMoved(state, "loading", null,
       {notice: state.notice, noticeFrom: state.noticeFrom}),
     runs: Object.freeze({...state.runs, phase: "loading", selectedId: runId,
-      detail: null})});
+      detail: null, step: NO_STEP})});
 }
 
 function seeded(state, event) {
@@ -575,6 +623,40 @@ function decisionDrafted(state, patch) {
     draft: Object.freeze(next)})});
 }
 
+//: Which STEP the run screen's draft is addressing, and nothing else carried
+//: over. It clears rather than merges for `decisionChosen`'s reason: what was
+//: typed against one step is not an answer about another, and a draft that kept
+//: a field across a change of subject would propose one step in another's name.
+function stepChosen(state, event) {
+  return Object.freeze({...state, runs: Object.freeze({...state.runs,
+    step: Object.freeze({...NO_STEP,
+      nodeId: typeof event.nodeId === "string" ? event.nodeId : null})})});
+}
+
+//: One typed field of that draft. The three keys are closed: a patch naming
+//: anything else -- a node id, a capability, an argument, `writing` -- moves
+//: nothing, which is what keeps the plan's own facts out of a person's reach
+//: and keeps the write flag out of a control's.
+function stepDrafted(state, patch) {
+  const next = {...state.runs.step};
+  for (const key of ["proposedBy", "rationale", "confirmedBy"]) {
+    if (isObject(patch) && Object.hasOwn(patch, key)) next[key] = patch[key];
+  }
+  return Object.freeze({...state, runs: Object.freeze({...state.runs,
+    step: Object.freeze(next)})});
+}
+
+//: Whether a write for the standing draft is in flight, and nothing else about
+//: it. What was typed SURVIVES: a refusal that brings no read leaves the person
+//: their words and gives the control back, which is what the shut-door sentence
+//: beside it has always promised. Only an accepting read takes the draft away,
+//: and it takes the whole of it.
+function stepWriting(state, event) {
+  return Object.freeze({...state, runs: Object.freeze({...state.runs,
+    step: Object.freeze({...state.runs.step,
+      writing: event.writing === true})})});
+}
+
 function phaseMoved(state, screen, event) {
   if (!PHASES.includes(event.phase)) return state;
   // A phase move is a READ saying where it got to, so a sentence it carries is
@@ -630,6 +712,9 @@ const ARMS = Object.freeze({
     ? Object.freeze({...state, screen: event.screen}) : state,
   seed: seeded,
   status: (state, event) => spoken(state, text(event.notice)),
+  "step-chosen": stepChosen,
+  "step-edit": (state, event) => stepDrafted(state, event.patch),
+  "step-writing": stepWriting,
   "workflow-chosen": (state, event) => workflowChosen(state, event.workflowId),
   "workflow-loaded": workflowLoaded,
   "workflow-unread": (state, event) => workflowUnread(state, event,

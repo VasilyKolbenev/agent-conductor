@@ -455,6 +455,15 @@ def test_the_failure_policy_became_a_control_and_kept_its_place_on_screen():
     assert "This is NOT routing" in body, body
     # The owner's Q1 ruling reaches the screen: `unknown` is not a failure.
     assert "unknown means the journal supports no answer" in body, body
+    # And WHEN the ending it causes is recorded, which is not "at once". This
+    # copy used to end at "records that ending", and `graph_schedule._run_state`
+    # answers `open` while any attempt is unanswered -- `pending` is asked
+    # before the stalled arm -- so a halt fired while a worker is still running
+    # records nothing until that worker comes back. A person told the shorter
+    # sentence would read a run that is still executing as one that has stopped.
+    assert "unless an attempt is still executing, in which case the ending" \
+        in body, body
+    assert "is recorded when that attempt answers" in body, body
 
 
 def test_the_failure_policy_offers_the_words_the_python_layer_owns():

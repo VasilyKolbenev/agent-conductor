@@ -52,7 +52,7 @@ MODEL = PANEL / "studio-model.js"
 #: the packaged directory in both directions.
 MODULES = ("studio.js", "studio-store.js", "studio-view.js", "studio-model.js",
            "studio-canvas.js", "studio-inspector.js", "studio-runs.js",
-           "studio-runwords.js",
+           "studio-runwords.js", "studio-runstep.js", "studio-runwrite.js",
            "studio-people.js", "studio-runread.js", "studio-review.js",
            "studio-layout.js", "studio-edits.js",
            "studio-sections.js", "studio-artifacts.js", "studio-runform.js",
@@ -124,10 +124,30 @@ PERMITTED_IMPORTS = {
                                       "./studio-fields.js",
                                       "./studio-sections.js",
                                       "./studio-transitions.js"}),
+    #: `studio-runread.js` joined the row when the Runs screen had to decide
+    #: "is an attempt still unanswered" from the RECORDS rather than from the
+    #: runtime phase. It is a projection over one run read and imports nothing,
+    #: so the grant adds a leaf and cannot add a ring.
     "studio-runs.js": frozenset({"./command-view.js",
                                  "./command-projection.js",
                                  "./studio-model.js",
-                                 "./studio-runwords.js"}),
+                                 "./studio-runwords.js",
+                                 "./studio-runread.js",
+                                 "./studio-runstep.js"}),
+    #: The two controls that WRITE, on their own beneath the screen that draws
+    #: them. It reaches the DOM builder, the canonical-text function it shows a
+    #: plan's arguments with, and the module that declares the sentences two
+    #: screens say -- and nothing else. It is granted no model and no transport,
+    #: and it may not import `studio-runs.js`: the screen imports IT, and a
+    #: permission the other way is what would close the pair into a ring.
+    "studio-runstep.js": frozenset({"./command-view.js",
+                                    "./command-projection.js",
+                                    "./studio-runwords.js"}),
+    #: What a press on one of those controls MEANS, split off the boot module
+    #: when it reached the line cap. It reaches the step control's own
+    #: sentences and NOTHING else: no DOM builder, no model, and above all no
+    #: transport -- the boot module hands it a `write` and keeps every socket.
+    "studio-runwrite.js": frozenset({"./studio-runstep.js"}),
     #: The Runs screen's closed vocabularies, each a copy of exactly one
     #: Python owner. It imports NOTHING, for `studio-model.js`'s reason: a
     #: list this build must hold equal to a Python module may not be able to
