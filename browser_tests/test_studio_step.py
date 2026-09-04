@@ -763,5 +763,3 @@ def test_the_window_asks_for_the_steps_own_ceiling_when_it_is_the_smaller(
     finally:
         assert window.problems == []
         page.context.close()
-
-
