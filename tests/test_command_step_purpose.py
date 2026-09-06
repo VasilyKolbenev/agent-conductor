@@ -292,3 +292,109 @@ def test_a_purpose_too_long_for_the_frame_never_reaches_a_child(tmp_path):
     for at, bad in enumerate([chr(120) * (MAX_STEP_PURPOSE + 1)] + BAD_TEXT):
         with pytest.raises(KimiCodeError, match="closed deep dispatch schema"):
             _task_text(tmp_path / f"case-{at}", step_purpose=bad)
+
+
+# -- the review child, measured by the child ---------------------------------
+#
+# R05 of the Codex review of 8dec0e4: `DeepReviewArgs.step_purpose` was stored
+# and read back, and `_review_task` never spent it -- two real review children
+# handed different purposes received byte-identical stdin. Every witness below
+# reads what the CHILD measured of its own stdin (a byte count, a digest, and
+# where a probe token reached), never what the composer says it sent: proving
+# transmission by recomputing the task with the same composer would pass with
+# the composer wrong.
+
+REVIEW_PURPOSE = "Audit authentication, ignore cosmetic formatting."
+#: The clause `purpose_clause` puts in a frame, spelled here as a literal so
+#: this file cannot agree with the composer by construction.
+REVIEW_CLAUSE = f" the workflow says this step's purpose is: {REVIEW_PURPOSE}."
+DELIVERED = {"in_stdin": True, "in_argv": False, "in_cwd": False, "in_env": False}
+
+
+def _review_child(tmp_path, *, purpose, seed_content):
+    """Drive a REAL review through Confirm; return the attempt and the child's row."""
+    from tests import _fakeclaude
+    from tests.test_command_claude_review import ARGUMENTS as REVIEW_ARGUMENTS
+    from tests.test_command_claude_review import _run
+
+    arguments = dict(REVIEW_ARGUMENTS)
+    if purpose is not None:
+        arguments["step_purpose"] = purpose
+    attempt, _store, _adapter, _seed, log, _root = _run(
+        tmp_path, arguments=arguments, seed_content=seed_content)
+    rows = _fakeclaude.prompt_spawns(log)
+    assert len(rows) == 1, rows
+    return attempt, rows[0]
+
+
+def test_the_review_childs_own_stdin_carries_the_purpose(tmp_path):
+    """Transmission, measured by the child.
+
+    The probe token rides ONLY inside the purpose -- the seed artifact carries
+    none -- so the child's leak scan finding exactly one token in what it read
+    is the purpose having arrived on stdin, and nowhere else. On a build whose
+    review frame drops the field the child reads no token, exits
+    `PROBE_MISSING_EXIT`, and the attempt is not a success.
+    """
+    from conductor.command.runtime import AttemptState
+    from tests.test_command_claude_review import PROBE
+
+    attempt, spawn = _review_child(
+        tmp_path, purpose=f"{REVIEW_PURPOSE} {PROBE}",
+        seed_content="# Candidate\n\nReview this exact proposal.")
+
+    assert attempt.state is AttemptState.SUCCEEDED, attempt.receipt.detail
+    assert spawn["marker"] == DELIVERED, spawn["marker"]
+    # And it stood in the FRAME, before the first durable input: the child
+    # measured where the token was and where the material began. Context that
+    # landed among the documents under review would be indistinguishable from
+    # them by count and digest -- two mutants that moved the clause survived
+    # every witness that read only those.
+    frame = spawn["frame"]
+    assert frame["inputs_at"] > 0, frame
+    assert 0 <= frame["probe_at"] < frame["inputs_at"], frame
+
+
+def test_a_review_with_no_purpose_is_handed_the_task_it_always_was(tmp_path):
+    """The over-correction control, as a byte difference the child measured.
+
+    Two real review children, identical but for the field: the stdin the one
+    with a purpose read is longer by exactly the clause, and no more. A frame
+    that gained a label, an empty sentence or a stray space for a step naming
+    nothing would change every review this build has ever sent.
+    """
+    from tests.test_command_claude_review import SEED_CONTENT
+
+    _plain, without = _review_child(
+        tmp_path / "a", purpose=None, seed_content=SEED_CONTENT)
+    _said, with_one = _review_child(
+        tmp_path / "b", purpose=REVIEW_PURPOSE, seed_content=SEED_CONTENT)
+
+    assert without["stdin"]["read"] and with_one["stdin"]["read"]
+    assert with_one["stdin"]["bytes"] - without["stdin"]["bytes"] == len(
+        REVIEW_CLAUSE.encode("utf-8")), (without["stdin"], with_one["stdin"])
+    assert with_one["stdin"]["sha256"] != without["stdin"]["sha256"]
+
+
+def test_the_dispatch_childs_own_stdin_carries_the_purpose(tmp_path):
+    """The dispatch half of the same measurement, on the stdin channel.
+
+    The Kimi witness above reads the argv the runner was handed; this one reads
+    what a stdin-channel child measured, so both channels are held by the
+    child's own account and the review witness has its dispatch twin.
+    """
+    from tests import _fakeclaude
+    from tests.test_command_claude_review import PROBE
+    from tests.test_command_claude_transport import a_harness, a_request, run_once
+
+    adapter, _root, log = a_harness(
+        tmp_path, **{_fakeclaude.LEAK_CHECK: "enabled-dispatch-leak-check"})
+    body = {"work_item_id": "work-001", "instruction_ref": "instr-001",
+            "profile": "implement", "artifact_refs": [],
+            "output_limit_profile": "normal",
+            "step_purpose": f"{PURPOSE} {PROBE}"}
+    receipt = run_once(adapter, a_request(arguments=body))
+
+    assert receipt.outcome == "succeeded", receipt.detail
+    rows = _fakeclaude.prompt_spawns(log)
+    assert len(rows) == 1 and rows[0]["marker"] == DELIVERED, rows

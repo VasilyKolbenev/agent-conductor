@@ -186,28 +186,43 @@ def _read_task() -> tuple[dict, str]:
     }, payload.decode("utf-8", errors="replace")
 
 
-def _probe_report(argv: list[str], task_text: str) -> dict | None:
-    """Where the probe token reached, as booleans and nothing else.
+#: The delimiter the review frame draws before each durable input document.
+#: Measured for its POSITION only, so a witness can say the plan's own words
+#: stood before the material and not among it.
+INPUTS_MARK = "--- durable artifact"
+
+
+def _probe_report(argv: list[str], task_text: str) -> tuple[dict, dict]:
+    """Where the probe token reached, as booleans and offsets and nothing else.
 
     The token is taken from the task this child just read, so the only channel
     it is known to have travelled by is the one under test. Every other channel
     is then scanned WITHOUT exception -- argv, cwd, and every environment value
     including the ones this fake's own knobs occupy.
 
-    ``None`` means no task was read at all, which is the version preflight and
-    the deaf child. It never means "a task was read and the scan was skipped":
-    that case raises out of the caller instead.
+    The second answer is WHERE in the task the token stood, beside where the
+    first durable input began (``-1`` when the frame carried none): two
+    integers, never a byte of the text. A frame that put project-authored
+    context AMONG the material it was asked to review would be indistinguishable
+    by count and digest alone.
+
+    A task was read, or this is not called: the version preflight and the deaf
+    child record ``None`` markers in the caller instead. A task without exactly
+    one token raises out of here rather than guessing.
     """
     found = set(PROBE_FORM.findall(task_text))
     if len(found) != 1:
         raise _ProbeMissing(len(found))
     probe = found.pop()
-    return {
+    report = {
         "in_stdin": True,
         "in_argv": any(probe in token for token in argv),
         "in_cwd": probe in os.getcwd(),
         "in_env": any(probe in value for value in os.environ.values()),
     }
+    frame = {"probe_at": task_text.find(probe),
+             "inputs_at": task_text.find(INPUTS_MARK)}
+    return report, frame
 
 
 class _ProbeMissing(Exception):
@@ -218,7 +233,8 @@ class _ProbeMissing(Exception):
         self.count = count
 
 
-def _record(argv: list[str], task: dict | None, marker: dict | None) -> None:
+def _record(argv: list[str], task: dict | None, marker: dict | None,
+            frame: dict | None = None) -> None:
     """One JSON line per spawn, carrying measurements and never contents.
 
     What is deliberately ABSENT: every environment VALUE, and the text of the
@@ -226,7 +242,8 @@ def _record(argv: list[str], task: dict | None, marker: dict | None) -> None:
     holding values would hold a real credential on any machine that has one --
     and this file is a test artefact, written where nothing sweeps it. The two
     documented switches are recorded by name because their values are constants
-    this build chose, not secrets it was handed.
+    this build chose, not secrets it was handed. `frame` is two offsets into
+    the task, recorded only when a probe was found, and never the task.
     """
     log = os.environ.get(SPAWN_LOG)
     if not log:
@@ -239,6 +256,7 @@ def _record(argv: list[str], task: dict | None, marker: dict | None) -> None:
         "env_names": sorted(os.environ),
         "stdin": task,
         "marker": marker,
+        "frame": frame,
     }
     with open(log, "a", encoding="utf-8", newline="\n") as handle:
         handle.write(json.dumps(row, sort_keys=True) + "\n")
@@ -302,13 +320,13 @@ def main() -> int:
         _record(argv, task, None)
         return _run_prompt()
     try:
-        report = _probe_report(argv, task_text)
+        report, frame = _probe_report(argv, task_text)
     except _ProbeMissing as missing:
         _record(argv, task, None)
         sys.stderr.buffer.write(f"FAKECLAUDE: {missing}\n".encode("utf-8"))
         sys.stderr.buffer.flush()
         return PROBE_MISSING_EXIT
-    _record(argv, task, report)
+    _record(argv, task, report, frame)
     return _run_prompt()
 
 

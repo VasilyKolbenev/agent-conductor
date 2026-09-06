@@ -78,7 +78,19 @@ def _confirmation(proposal: ActionProposal) -> Confirmation:
         confirmed_by="release-owner", confirmed_at=NOW)
 
 
-def _run(tmp_path, *, arguments=ARGUMENTS, **knobs: str):
+#: What the seeded input artifact says by default: the probe token rides INSIDE
+#: the durable material, so the leak scan has exactly one token to find.
+SEED_CONTENT = f"# Candidate\n\nReview this exact proposal. {PROBE}"
+
+
+def _run(tmp_path, *, arguments=ARGUMENTS, seed_content=SEED_CONTENT,
+         **knobs: str):
+    """Drive one review through Confirm; `seed_content` moves the probe elsewhere.
+
+    A caller proving that some OTHER part of the task reached the child -- the
+    step's purpose, say -- puts the probe there and hands in a seed without one,
+    because the child refuses a stdin carrying two tokens as firmly as none.
+    """
     values = {
         _fakeclaude.EMIT_REVIEW: "enabled-review-output",
         _fakeclaude.LEAK_CHECK: "enabled-review-leak-check",
@@ -95,7 +107,7 @@ def _run(tmp_path, *, arguments=ARGUMENTS, **knobs: str):
     seed = ArtifactDocument(
         artifact_id="artifact-source-1", artifact_ref=INPUT_REF,
         run_id=RUN_ID, created_at=NOW, media_type="text/markdown",
-        content=f"# Candidate\n\nReview this exact proposal. {PROBE}")
+        content=seed_content)
     store.append(seed)
     proposal = _proposal(arguments)
     store.append(proposal)
