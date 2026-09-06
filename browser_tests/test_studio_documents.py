@@ -134,8 +134,6 @@ def test_a_document_published_from_the_runs_screen_unblocks_the_step_waiting_for
             arg=LONE_WAITING_NODE)
         posted = window.posted("/artifacts")
         assert len(posted) == 1
-        assert set(posted[0]) == {"artifact_id", "artifact_ref", "media_type",
-                                  "content"}
         assert posted[0] == {"artifact_id": f"{LONE_AWAITED_REF}-0",
                              "artifact_ref": LONE_AWAITED_REF,
                              "media_type": "text/markdown", "content": words}
@@ -291,6 +289,23 @@ def _instruction_fact(page: Page, step: str) -> str:
     return _fact(page, step, f"Instruction {INSTRUCTION_REF}")
 
 
+def _confirm_do(page: Page) -> None:
+    """Confirm the standing proposal and wait for ONE MORE result.
+
+    The settled steps before the gate already carry results, so the wait is
+    for the count to grow past what the timeline shows now.
+    """
+    _type(page, "field:confirmed_by", ACTOR)
+    results_before = page.evaluate(
+        "() => [...document.querySelectorAll('ol.studio-timeline > li')]"
+        ".filter(item => item.innerText.includes('action_result')).length")
+    page.locator(f'[data-focus-key="confirm:{DO}"]').click()
+    page.wait_for_function(
+        "n => [...document.querySelectorAll('ol.studio-timeline > li')]"
+        ".filter(item => item.innerText.includes('action_result')).length > n",
+        arg=results_before, timeout=20000)
+
+
 def test_the_step_forms_name_the_document_a_proposal_binds_and_keep_naming_it(
         chromium: Browser, bench: _Bench) -> None:
     """The Propose form: what a proposal made now would bind. The Confirm
@@ -328,17 +343,7 @@ def test_the_step_forms_name_the_document_a_proposal_binds_and_keep_naming_it(
             f"durable document {INSTRUCTION_REF}-0")
         assert "bound by" in _row(page, DO) and f"{INSTRUCTION_REF}-0" in _row(page, DO)
 
-        _type(page, "field:confirmed_by", ACTOR)
-        # The settled steps before the gate already carry results, so the
-        # wait is for one MORE result than the timeline shows now.
-        results_before = page.evaluate(
-            "() => [...document.querySelectorAll('ol.studio-timeline > li')]"
-            ".filter(item => item.innerText.includes('action_result')).length")
-        page.locator(f'[data-focus-key="confirm:{DO}"]').click()
-        page.wait_for_function(
-            "n => [...document.querySelectorAll('ol.studio-timeline > li')]"
-            ".filter(item => item.innerText.includes('action_result')).length > n",
-            arg=results_before, timeout=20000)
+        _confirm_do(page)
         results = [row for row in bench.records(BOUND_RUN, "action_result")
                    if row.attempt_id.startswith(f"attempt-{DO}-")]
         assert len(results) == 1, [row.attempt_id for row in results]

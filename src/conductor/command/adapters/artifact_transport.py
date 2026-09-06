@@ -20,7 +20,6 @@ from .headless_values import (
     attempt_relation,
     changed_paths,
     flagless,
-    proposal_of,
     purpose_clause,
 )
 
@@ -147,7 +146,7 @@ class ArtifactAwareTransport(HeadlessCliTransport):
         written -- never one published afterwards. A hand-made request names
         no proposal and is answered as before, with the latest under each ref.
         """
-        proposal_id = proposal_of(request)
+        proposal_id = ArtifactHandoff.named_proposal(request)
         try:
             if proposal_id is None:
                 return self._handoff.resolve(request.run_id, artifact_refs)
@@ -166,7 +165,7 @@ class ArtifactAwareTransport(HeadlessCliTransport):
         road is kept byte-for-byte for a step no document was published for;
         neither is the refusal it always was, before any preflight.
         """
-        proposal_id = proposal_of(request)
+        proposal_id = ArtifactHandoff.named_proposal(request)
         if proposal_id is not None:
             try:
                 document = self._handoff.instruction(

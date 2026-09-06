@@ -233,10 +233,8 @@ def _seed_run(root: Path) -> None:
     store.append(definition)
     node = next(row for row in definition.nodes
                 if row.node_id == PRODUCING_NODE)
-    # The input stands BEFORE the proposal that reads it, as it must in any
-    # journal the product writes: a review's inputs are bound at its proposal
-    # (R04), and the store now judges a produced artifact's inputs against
-    # the records standing when that proposal was written.
+    # The input stands BEFORE the proposal that reads it, as in any journal the
+    # product writes: a review's inputs are bound at its proposal (R04).
     given = ArtifactDocument(
         artifact_id="artifact-brief-1", artifact_ref=EXTERNAL_REF,
         run_id=RUN_ID, created_at=NOW, media_type="text/markdown",

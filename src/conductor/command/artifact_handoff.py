@@ -4,7 +4,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 
 from .artifacts import ArtifactDocument, latest_artifacts
-from .attempt_replay import values_the_proposal_saw
+from .attempt_replay import proposal_named_by, values_the_proposal_saw
 from .contract_values import _unique_ids
 from .contracts import ActionRequest, EvidenceRef
 from .run_store import RecordConflict, RecoveredRun, RunStore, StoreError
@@ -44,6 +44,20 @@ class ArtifactHandoff:
     # substituted the material the person had confirmed. These two answer from
     # the records standing BEFORE the proposal the request was minted from, so
     # the same journal binds the same bytes on every read, replay included.
+
+    @staticmethod
+    def named_proposal(request: ActionRequest) -> str | None:
+        """The proposal a request was minted from, or None for one naming none.
+
+        ONE spelling of the link, and it is the replay's
+        (`attempt_replay.proposal_named_by`), reached through this seam because
+        the adapters' value modules may import no relation module: the transport
+        binds a request's inputs to the journal position the replay judges them
+        against, so the two cannot drift. A request naming no proposal -- a
+        transport test's, say -- is handed the file road and the latest document
+        under each ref, byte-for-byte as before the binding existed.
+        """
+        return proposal_named_by(request)
 
     def bound(
             self, run_id: str, proposal_id: str,

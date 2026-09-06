@@ -426,10 +426,13 @@ def test_a_request_names_the_proposal_it_was_minted_from_or_nobody():
     """
     # Imported here rather than at the top, so that every behavioural witness
     # above still collects -- and reds on its own behaviour -- on a tree that
-    # does not carry the seam yet.
-    from conductor.command.adapters.headless_values import proposal_of
+    # does not carry the seam yet. The rule is the replay's; the transport
+    # reaches it through the handoff seam, and both answers are held equal.
+    from conductor.command.attempt_replay import proposal_named_by
 
-    assert proposal_of(a_request()) is None
+    assert proposal_named_by(a_request()) is None
     minted = ActionRequest.from_dict({
         **a_request().as_dict(), "idempotency_key": "dispatch-proposal-7"})
-    assert proposal_of(minted) == "proposal-7"
+    assert proposal_named_by(minted) == "proposal-7"
+    assert ArtifactHandoff.named_proposal(minted) == "proposal-7"
+    assert ArtifactHandoff.named_proposal(a_request()) is None
