@@ -6,7 +6,11 @@ from collections.abc import Iterable, Mapping
 from types import MappingProxyType
 from typing import Any
 
-from .attempt_replay import action_request_for
+from .attempt_replay import (
+    action_request_for,
+    proposal_named_by,
+    values_the_proposal_saw,
+)
 from .attempts import AttemptEvent
 from .contract_values import (
     ABSENT,
@@ -289,7 +293,9 @@ def _artifact_answers_its_request(
     - the inputs are exactly the documents the request's own references resolve
       to, IN THE ORDER the request named them. Resolution is `latest_artifacts`
       -- the same function the transport resolves with -- against the records
-      standing BEFORE this artifact, so "latest" means what it meant then.
+      standing when the request's PROPOSAL was written (`_the_request_saw`):
+      "latest" means what it meant when a person confirmed it, and a document
+      published after that proposal was never this review's material.
     """
     if source.capability != REVIEW_CAPABILITY:
         raise ContractError(
@@ -301,7 +307,8 @@ def _artifact_answers_its_request(
             f"artifact {document.artifact_ref!r} is not the result reference "
             f"action {document.source_action_id!r} asked for")
     prior_artifacts = [
-        prior for prior in prior_values if isinstance(prior, ArtifactDocument)]
+        prior for prior in _the_request_saw(source, prior_values)
+        if isinstance(prior, ArtifactDocument)]
     try:
         resolved = latest_artifacts(
             prior_artifacts,
@@ -315,6 +322,22 @@ def _artifact_answers_its_request(
         raise ContractError(
             f"artifact input ids do not match what action "
             f"{document.source_action_id!r} asked for")
+
+
+def _the_request_saw(
+        source: Any, prior_values: tuple[object, ...]) -> tuple[object, ...]:
+    """The records a request's inputs are resolved over.
+
+    Those standing when the request's proposal was written, for a request the
+    runtime minted; everything standing before the artifact, for one that
+    names no proposal -- so every journal written before the binding existed
+    replays exactly as it did. The transport binds with the same two answers
+    (`ArtifactHandoff.bound`, `.resolve`), which is what makes a review's
+    recorded inputs and this judgement agree on every journal.
+    """
+    named = proposal_named_by(source)
+    seen = None if named is None else values_the_proposal_saw(prior_values, named)
+    return prior_values if seen is None else tuple(seen)
 
 
 #: What each rule calls itself when it refuses a record naming no action. The

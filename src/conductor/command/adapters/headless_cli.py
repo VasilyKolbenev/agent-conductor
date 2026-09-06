@@ -80,7 +80,6 @@ from .harness_profile import (
     bounded_output,
     is_absolute,
     residue_detail,
-    retained_detail,
     reviewed_env_allow,
     reviewed_pin_path,
     uncontained_detail,
@@ -99,6 +98,7 @@ from .harness_workspace import (
     HarnessWorkspace,
     WorkspaceNotContained,
 )
+from .headless_receipts import ReceiptWriting
 from .headless_routing import ModelRouting
 from .headless_values import (
     ArgvSource,
@@ -110,7 +110,6 @@ from .headless_values import (
     purpose_clause,
 )
 from .process import (
-    STDIN_INCOMPLETE,
     CommandSpec,
     ProcessOutcome,
     ProcessRunner,
@@ -118,7 +117,7 @@ from .process import (
 )
 
 
-class HeadlessCliTransport(ModelRouting):
+class HeadlessCliTransport(ReceiptWriting, ModelRouting):
     """Run one headless task per authorized action, and prove nothing more.
 
     A concrete provider subclasses this in its OWN module, sets ``profile``, and
@@ -334,6 +333,17 @@ class HeadlessCliTransport(ModelRouting):
         """Materialize one dispatch task; subclasses may add durable inputs."""
         return self._task_text(args, instruction)
 
+    def _instruction_text(
+            self, request: ActionRequest, args: DeepDispatchArgs) -> str:
+        """The instruction the child is asked to do: this base reads the file.
+
+        One contained name under the workspace's instruction directory, or the
+        refusal that reaches no child. A subclass with a durable road answers
+        from the run's own journal first and falls back to exactly this.
+        """
+        del request
+        return self._workspace.read_instruction(args.instruction_ref)
+
     # -- execution: preflight, mark, spawn once ---------------------------------
 
     def execute(self, prepared: PreparedAction) -> ActionResultReceipt:
@@ -397,7 +407,7 @@ class HeadlessCliTransport(ModelRouting):
         claimed = self._already_claimed(request)
         if claimed is not None:
             return claimed
-        instruction = self._workspace.read_instruction(args.instruction_ref)
+        instruction = self._instruction_text(request, args)
         # A home a crashed attempt left behind is model text this build promised
         # not to retain, so it goes before this attempt mints its own. What the
         # sweep could NOT take is the whole reason this dispatch stops: state of
@@ -623,79 +633,6 @@ class HeadlessCliTransport(ModelRouting):
         """
         return _version_token(output) == self.profile.reviewed_version
 
-    def _observed(
-            self, request: ActionRequest,
-            outcome: ProcessOutcome) -> ActionResultReceipt:
-        """Report what was OBSERVED. Exit zero is an observation, not a success."""
-        noun = self.profile.task_noun
-        if outcome.status == "timed_out":
-            return self._receipt(
-                request, "failed", None,
-                f"the {noun} exceeded its timeout and was terminated")
-        if outcome.status == "stopped":
-            return self._receipt(
-                request, "cancelled", None,
-                f"the {noun} was stopped by the runner")
-        if outcome.stdin_state == STDIN_INCOMPLETE:
-            # The mirror image of the capture bound below, and the earlier of the
-            # two failures: there the answer was not read whole, here the QUESTION
-            # was not delivered whole. A provider that takes its task on stdin and
-            # exits zero without having received it has reported honestly about
-            # something else, and no exit code can repair that. Checked before the
-            # capture bound because a task never posed makes the answer moot.
-            return self._receipt(
-                request, "failed", None,
-                f"the {noun} was never handed its whole instruction, so nothing "
-                "it did can be read as an attempt at the one that was asked")
-        if outcome.output_truncated:
-            # The headless transport answers on stdout. A stream that overran the
-            # capture bound was not read to its end, so whatever the exit code
-            # says, this build did not see the answer -- and a bounded reader that
-            # called that success would be lying about what it observed.
-            return self._receipt(
-                request, "failed", None,
-                f"the {noun} wrote past the capture bound, so its result was "
-                "never read whole and no success can be claimed for it")
-        if outcome.exit_code == 0:
-            return self._receipt(request, "succeeded", 0, self._zero_detail())
-        return self._receipt(
-            request, "failed", outcome.exit_code,
-            f"the {noun} was observed to exit non-zero")
-
-    def _zero_detail(self) -> str:
-        """What an exit of zero is allowed to mean, given what the vendor published.
-
-        Both readings end in the same place -- an observation of the process and
-        never a verification of the work -- but they do not start in the same
-        place, and a receipt that flattened them would overstate the weaker one.
-        A vendor that documents no exit-code contract for its one-shot mode has
-        not told this build what a zero means at all.
-        """
-        noun = self.profile.task_noun
-        if self.profile.exit_codes_published:
-            return (
-                f"the {noun} was observed to exit zero; that is an observation "
-                "of the process only, it is not a verification of the work, and "
-                "this build cannot turn it into one")
-        return (
-            f"the {noun} was observed to exit zero; the vendor publishes no "
-            "exit-code contract for this mode, so the code is read as the "
-            "process having ended and as nothing else. It is not a verification "
-            "of the work, and this build cannot turn it into one")
-
-    def _receipt(
-            self, request: ActionRequest, observed: str, exit_code: int | None,
-            detail: str) -> ActionResultReceipt:
-        """The one receipt funnel, so an undiscarded home cannot escape unsaid."""
-        return ActionResultReceipt(
-            receipt_id=self._ids("receipt"), action_id=request.action_id,
-            run_id=request.run_id, attempt_id=request.attempt_id,
-            instance_id=request.instance_id, outcome=observed,
-            observed_at=self._clock(),
-            detail=(detail + retained_detail(self.profile.tool_noun)
-                    if self._retained else detail),
-            exit_code=exit_code)
-
     # -- verification: independent workspace evidence only ----------------------
 
     def verify(
@@ -776,14 +713,6 @@ class HeadlessCliTransport(ModelRouting):
             f"{len(changed)} file(s) changed inside the action's authorized work "
             f"subtree, but this build writes no durable evidence record for them, "
             f"so no verified success may be claimed on their account")
-
-    def _verification(
-            self, request: ActionRequest, state: str, refs: tuple[str, ...],
-            detail: str) -> AdapterVerification:
-        return AdapterVerification(
-            adapter_id=self.manifest.adapter_id, action_id=request.action_id,
-            state=state, observed_at=self._clock(), detail=detail,
-            evidence_refs=refs)
 
     # -- the owned subtrees -----------------------------------------------------
 

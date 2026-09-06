@@ -5,6 +5,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
+from ..attempt_replay import proposal_named_by
 from .deep_contracts import OMITTED
 from .harness_profile import HeadlessCliError
 
@@ -145,3 +146,12 @@ def purpose_clause(args) -> str:
     if said is OMITTED:
         return ""
     return f" the workflow says this step's purpose is: {said}."
+
+
+#: The proposal a request was minted from, or None for one that names none.
+#: ONE spelling of the link, and it is the replay's: the transport binds a
+#: request's durable inputs to the journal position `attempt_replay` judges
+#: them against, so the two cannot drift. A request that names no proposal --
+#: a transport test's, say -- is handed the workspace file road and the latest
+#: document under each ref, byte-for-byte as before the binding existed.
+proposal_of = proposal_named_by

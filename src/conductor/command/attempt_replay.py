@@ -6,6 +6,7 @@ from typing import Any
 
 from .attempts import AttemptEvent, action_request_digest
 from .contracts import (
+    ActionProposal,
     ActionRequest,
     ActionResultReceipt,
     ContractError,
@@ -13,9 +14,45 @@ from .contracts import (
     frozen_config_bindings,
 )
 
+#: How `ControlRuntime.authorize` spells the link from a request to the
+#: proposal it was minted from -- `idempotency_key == "dispatch-<proposal_id>"`
+#: -- and nothing else writes that key. It is the journal position a request's
+#: durable inputs are bound to: a source is bound when it is confirmed, never
+#: chosen again at execution (the owner's correction, 2026-09-06).
+PROPOSAL_KEY = "dispatch-"
+
 
 class AttemptRelationError(ValueError):
     """A sequence of individually valid attempt facts contradicts itself."""
+
+
+def proposal_named_by(request: object) -> str | None:
+    """The proposal a request was minted from, or None for one that names none.
+
+    A request the runtime authorized always names one. A request composed by
+    hand -- a transport test's, an older fixture's -- carries whatever key its
+    author wrote and names no proposal; every reader of this answer keeps the
+    road it took before the binding existed for such a request.
+    """
+    key = getattr(request, "idempotency_key", None)
+    if not isinstance(key, str) or not key.startswith(PROPOSAL_KEY):
+        return None
+    named = key[len(PROPOSAL_KEY):]
+    return named if named else None
+
+
+def values_the_proposal_saw(
+        values: Sequence[object], proposal_id: str) -> Sequence[object] | None:
+    """Everything appended before the named proposal, or None when it is absent.
+
+    In journal order and cut at the proposal, so the same journal answers the
+    same records on every read -- the replay's, the writer's and the
+    transport's -- whatever was published after it.
+    """
+    for index, value in enumerate(values):
+        if isinstance(value, ActionProposal) and value.proposal_id == proposal_id:
+            return values[:index]
+    return None
 
 
 def action_request_for(values: Sequence[object], action_id: str) -> ActionRequest | None:

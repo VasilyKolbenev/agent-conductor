@@ -20,6 +20,7 @@ from .headless_values import (
     attempt_relation,
     changed_paths,
     flagless,
+    proposal_of,
     purpose_clause,
 )
 
@@ -90,6 +91,11 @@ class ArtifactAwareTransport(HeadlessCliTransport):
         #: one run whatever another run left. Both hold IDS, never documents.
         self._dispatch_inputs: dict[tuple[str, str, str, str], tuple[str, ...]] = {}
         self._review_attempts: dict[tuple[str, str, str, str], _ReviewAttempt] = {}
+        #: The id of the durable document a dispatch's instruction was read
+        #: from, between `_instruction_text` and `_dispatch_task`, which folds
+        #: it into `_dispatch_inputs` so the evidence digest names it. An id,
+        #: never the document.
+        self._bound_instruction: dict[tuple[str, str, str, str], str] = {}
 
     def prepare(self, request: ActionRequest) -> PreparedAction:
         if request.capability != REVIEW_CAPABILITY:
@@ -131,15 +137,57 @@ class ArtifactAwareTransport(HeadlessCliTransport):
                     prepared.request, "failed", None,
                     "the review workspace is not locally contained, so no task was spawned")
 
+    def _inputs(
+            self, request: ActionRequest,
+            artifact_refs: object) -> tuple[ArtifactDocument, ...]:
+        """The durable inputs this request may read: bound at its proposal.
+
+        A request the runtime minted names the proposal it came from, and the
+        documents it reads are the ones standing when that proposal was
+        written -- never one published afterwards. A hand-made request names
+        no proposal and is answered as before, with the latest under each ref.
+        """
+        proposal_id = proposal_of(request)
+        try:
+            if proposal_id is None:
+                return self._handoff.resolve(request.run_id, artifact_refs)
+            return self._handoff.bound(request.run_id, proposal_id, artifact_refs)
+        except Exception as error:
+            raise _HandoffUnavailable from error
+
+    def _instruction_text(
+            self, request: ActionRequest, args: DeepDispatchArgs) -> str:
+        """The instruction: the durable document the proposal saw, else the file.
+
+        R04 of the review of `8dec0e4`: a clean project holds no
+        `instructions/` at all, so the shipped starter's first step could not
+        be run from the product. A document published under the step's
+        `instruction_ref` before the proposal is the instruction now; the file
+        road is kept byte-for-byte for a step no document was published for;
+        neither is the refusal it always was, before any preflight.
+        """
+        proposal_id = proposal_of(request)
+        if proposal_id is not None:
+            try:
+                document = self._handoff.instruction(
+                    request.run_id, proposal_id, args.instruction_ref)
+            except Exception as error:
+                raise _HandoffUnavailable from error
+            if document is not None:
+                self._bound_instruction[attempt_relation(request)] = (
+                    document.artifact_id)
+                return document.content
+        return super()._instruction_text(request, args)
+
     def _dispatch_task(
             self, request: ActionRequest, args: DeepDispatchArgs,
             instruction: str) -> str:
-        try:
-            inputs = self._handoff.resolve(request.run_id, args.artifact_refs)
-        except Exception as error:
-            raise _HandoffUnavailable from error
-        self._dispatch_inputs[attempt_relation(request)] = tuple(
-            document.artifact_id for document in inputs)
+        inputs = self._inputs(request, args.artifact_refs)
+        relation = attempt_relation(request)
+        bound = self._bound_instruction.pop(relation, None)
+        self._dispatch_inputs[relation] = (
+            (() if bound is None else (bound,))
+            + tuple(document.artifact_id for document in inputs))
         task = super()._dispatch_task(request, args, instruction)
         return task + self._render_inputs(inputs)
 
@@ -181,8 +229,7 @@ class ArtifactAwareTransport(HeadlessCliTransport):
         if self._retained:
             return self._receipt(request, "failed", None, PREFLIGHT_RESIDUE_DETAIL)
         try:
-            inputs = self._handoff.resolve(
-                request.run_id, args.target_artifact_refs)
+            inputs = self._inputs(request, args.target_artifact_refs)
             task = self._review_task(args, inputs)
             payload = self._task_stdin(task)
         except Exception:
@@ -313,6 +360,7 @@ class ArtifactAwareTransport(HeadlessCliTransport):
         """
         relation = attempt_relation(request)
         self._dispatch_inputs.pop(relation, None)
+        self._bound_instruction.pop(relation, None)
         self._review_attempts.pop(relation, None)
         self._attempts.pop(relation, None)
 

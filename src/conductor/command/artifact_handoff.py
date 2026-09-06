@@ -4,6 +4,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 
 from .artifacts import ArtifactDocument, latest_artifacts
+from .attempt_replay import values_the_proposal_saw
 from .contract_values import _unique_ids
 from .contracts import ActionRequest, EvidenceRef
 from .run_store import RecordConflict, RecoveredRun, RunStore, StoreError
@@ -33,6 +34,55 @@ class ArtifactHandoff:
             row.value for row in recovered.records if row.kind == "artifact")
         return tuple(ArtifactDocument.from_dict(row.as_dict()) for row in (
             latest_artifacts(documents, asked)))
+
+    # -- what stood when the proposal was written --------------------------------
+    #
+    # A source is bound when it is confirmed, never chosen again at execution
+    # (the owner's correction, 2026-09-06; R04 of the review of `8dec0e4`).
+    # `resolve` answers "the latest document under the ref" at the moment it is
+    # asked, so a document published between a confirmation and its execution
+    # substituted the material the person had confirmed. These two answer from
+    # the records standing BEFORE the proposal the request was minted from, so
+    # the same journal binds the same bytes on every read, replay included.
+
+    def bound(
+            self, run_id: str, proposal_id: str,
+            artifact_refs: object) -> tuple[ArtifactDocument, ...]:
+        """The latest document under each ref among those the proposal saw."""
+        asked = _unique_ids("artifact_refs", artifact_refs)
+        if not asked:
+            return ()
+        return tuple(ArtifactDocument.from_dict(row.as_dict()) for row in (
+            latest_artifacts(self._before(run_id, proposal_id), asked)))
+
+    def instruction(
+            self, run_id: str, proposal_id: str,
+            instruction_ref: str) -> ArtifactDocument | None:
+        """The latest document under the instruction's ref the proposal saw, or None.
+
+        None is the file road's answer and not a refusal: a step whose
+        instruction was never published as a document is read from the
+        workspace file, byte-for-byte as before the durable road existed.
+        """
+        standing = [row for row in self._before(run_id, proposal_id)
+                    if row.artifact_ref == instruction_ref]
+        return ArtifactDocument.from_dict(standing[-1].as_dict()) if standing else None
+
+    def _before(self, run_id: str, proposal_id: str) -> tuple[ArtifactDocument, ...]:
+        """Every document appended before the named proposal, in journal order.
+
+        Cut where the replay cuts (`attempt_replay.values_the_proposal_saw`),
+        so what the transport hands a child and what `artifacts` later judges
+        a review's inputs against are one answer.
+        """
+        recovered = self._store.read(run_id)
+        if recovered.warnings:
+            raise StoreError("artifact resolution refuses unjudged durable bytes")
+        seen = values_the_proposal_saw(
+            tuple(row.value for row in recovered.records), proposal_id)
+        if seen is None:
+            raise StoreError(f"proposal {proposal_id!r} is not in run {run_id!r}")
+        return tuple(value for value in seen if isinstance(value, ArtifactDocument))
 
     def record_review(
             self, request: ActionRequest, artifact_ref: str, *,
