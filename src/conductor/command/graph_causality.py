@@ -22,7 +22,7 @@ from .contracts import (
     gate_decision,
 )
 from .graph_definition import GraphDefinition
-from .graph_schedule import schedule
+from .graph_schedule import lap_is_current, schedule
 from .run_terminal import RunTerminal
 from .store_errors import CorruptRun, RecordConflict, StoreError
 
@@ -361,21 +361,19 @@ def decision_is_reached(definition: GraphDefinition, values: tuple[Any, ...],
     the weakest question: a gate can be arrived at and still hold an answer,
     which is what a reopened lap IS -- and a predicate that answered arrival
     first admitted a second receipt superseding nothing onto a gate that
-    already had one. Two then stood, the gate read `unknown` for the rest of
-    the run, and no later receipt could repair it.
+    already had one, so two stood and the gate read `unknown` for good.
 
-    (a) The plan carries no node with this gate: True. The store's
-        `_decision_names_a_planned_gate` refuses it beneath this door in its
-        own words, and a second sentence here would take that name away.
+    (a) The plan carries no node with this gate: True; the store's
+        `_decision_names_a_planned_gate` refuses it in its own words.
     (b) The gate's receipts contradict: False -- nothing may be written
         against a journal the projection cannot read.
-    (c) A receipt STANDS: the only legal answer replaces it, arrived at or not
-        -- taking back what was just said is as legal as a lap answering
-        again. Any other `supersedes` is refused HERE rather than by the store,
-        which reports one it cannot resolve as a server fault.
-    (d) Nothing stands: the plan must have ARRIVED, and the receipt must
-        supersede nothing -- a first answer claiming to replace something is a
-        claim about a journal this run does not have.
+    (c) A receipt STANDS: the only legal answer replaces it, and only as THIS
+        lap's correction or as a later lap's answer once the plan has reached
+        the gate again -- `_correction_admitted` below. Any other `supersedes`
+        is refused HERE rather than as the store's server fault.
+    (d) Nothing stands: the plan must have ARRIVED and the receipt must
+        supersede nothing -- a first answer replacing something is a claim
+        about a journal this run does not have.
 
     Args:
         definition: The run's immutable plan.
@@ -394,9 +392,37 @@ def decision_is_reached(definition: GraphDefinition, values: tuple[Any, ...],
         return False
     standing = standing_receipt(values, definition.run_id, gate_id)
     if standing is not None:
-        return supersedes == standing.receipt_id
+        return _correction_admitted(
+            definition, values, node.node_id, standing, supersedes)
     return supersedes is None and _gate_has_arrived(
         schedule(definition, values), node.node_id)
+
+
+def _correction_admitted(definition: GraphDefinition, values: tuple[Any, ...],
+                         node_id: str, standing: DecisionReceipt,
+                         supersedes: str | None) -> bool:
+    """Arm (c): when a receipt that replaces the standing one may land.
+
+    Two situations and no third. The standing answer belongs to the lap the
+    gate is on NOW -- a person taking back what they just said, before any loop
+    has begun another lap (walk-through §5.4(c): a retraction is not a trip). Or
+    the plan has REACHED the gate again in a later lap, which is how a reopened
+    gate is answered a second time.
+
+    The arm used to admit a supersede "arrived at or not", and R02 of the
+    review of `8dec0e4` showed what that let through: with the loop already on
+    its second lap and only `identify` carried out, a supersede of lap one's
+    approval on `confirm-gate` landed 201, the gate read two laps settled, and
+    `do` was proposed and authorized over `diagnose` and `design` never run. An
+    approval is never carried into a lap whose predecessors have not settled.
+    """
+    if supersedes != standing.receipt_id:
+        return False
+    index = next(position for position, value in enumerate(values)
+                 if isinstance(value, DecisionReceipt)
+                 and value.receipt_id == standing.receipt_id)
+    return (lap_is_current(definition, values, node_id, index)
+            or _gate_has_arrived(schedule(definition, values), node_id))
 
 
 def _decision_may_settle_that_gate(

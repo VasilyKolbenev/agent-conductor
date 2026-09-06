@@ -444,17 +444,23 @@ function decisionForm(row, draft, handlers, live) {
   return form;
 }
 
-//: Whether this gate may be answered NOW. The write door's own rule, spelled
-//: the same way on this side of the wire.
+//: Whether this gate may be answered NOW: the write door's own verdict, read
+//: off the run read rather than spelled again on this side of the wire.
 //
 // A run that has ENDED offers nothing at all, whatever any gate says: the
 // write door refuses every record once a terminal stands. A gate whose
 // recorded answers contradict each other is offered nothing either -- there is
 // no current answer to replace and a receipt replacing none would be a third.
-// A gate a receipt STANDS on may be answered whenever the plan carries it,
-// because replacing that answer is legal both when a loop has reopened the
-// gate and when a person is taking back what they just said. And a gate
-// nothing stands on may be answered once the plan has REACHED it.
+// Everything else is `answerable`, the door's own word served on the schedule
+// row: `first` for an arrived gate nothing stands on, `supersede` where the
+// standing answer may be replaced -- this lap's correction, or a reopened lap
+// the plan has reached again -- and `none` where the door would refuse.
+//
+// This window used to spell the door's arms for itself and say "a receipt
+// stands, so it may be replaced". The door says more: replacing lap one's
+// approval on a gate that lap two has not carried the run to is not a
+// correction, and it refused every form this screen offered there. One rule,
+// living in one place, cannot drift from itself.
 //
 // It never reads the word `runnable`, and a source guard holds it to that. A
 // halt rewrites every runnable row to blocked so nothing further is offered as
@@ -462,8 +468,7 @@ function decisionForm(row, draft, handlers, live) {
 // a gate whose roads were all open by saying its roads had not opened.
 function offersAnAnswer(row) {
   return row.ended !== true && row.decision !== "unknown"
-    && (typeof row.standing === "string"
-      || (row.reachable && row.standing === null));
+    && (row.answerable === "first" || row.answerable === "supersede");
 }
 
 //: Why this gate is offering nothing, in the user's words. Five situations,

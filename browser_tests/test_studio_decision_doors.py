@@ -308,6 +308,52 @@ def test_the_same_gate_offers_the_form_once_its_predecessors_settle(
         page.context.close()
 
 
+def test_a_gate_answered_last_lap_offers_no_second_answer_until_this_lap_reaches_it(
+        chromium: Browser, project: _Project) -> None:
+    """R02 of the Codex review of `8dec0e4`, on the screen it reached through.
+
+    The result gate sent the work back and `identify` has been carried out
+    again, so a second lap has begun; `confirm-gate` -- approved in lap one --
+    stands behind `diagnose` and `design` with that approval still standing.
+    The screen used to offer the supersede form there, because a receipt stood,
+    and the door accepted it: lap one's approval carried into lap two and `do`
+    was authorized over two steps never carried out. Now the screen reads the
+    door's own verdict off the run read and offers nothing, saying why; once
+    the lap reaches the gate the form is back and names what it would replace.
+    """
+    _reach_the_result_gate(project, lap=1)
+    store = RunStore(project.root)
+    _decide(store, gate_id=RESULT_GATE, receipt_id="result-1",
+            action="request_changes")
+    settle_node(store, "identify", index=20, run_id=GATED_RUN,
+                config_digest=DIGEST)
+    page, window = _open(chromium, project)
+    try:
+        said = _open_the_gate(page, project, CONFIRM_GATE)
+
+        assert page.locator(
+            '[data-focus-key="action:submitDecision"]').count() == 0, said
+        assert "This gate cannot be answered yet." in said, said
+        assert "ALL incoming roads must open" in said, said
+        assert "Waiting on: design" in said, said
+        assert window.writes("/decisions") == 0
+
+        settle_node(store, "diagnose", index=21, run_id=GATED_RUN,
+                    config_digest=DIGEST)
+        settle_node(store, "design", index=22, run_id=GATED_RUN,
+                    config_digest=DIGEST)
+        page.reload(wait_until="load")
+        _settle(page)
+        said = _open_the_gate(page, project, CONFIRM_GATE)
+
+        assert page.locator(
+            '[data-focus-key="action:submitDecision"]').count() == 1, said
+        assert "supersedes confirm-1" in said, said
+        assert window.problems == []
+    finally:
+        page.context.close()
+
+
 def test_a_run_that_has_ended_offers_no_answer_and_says_it_has_ended(
         chromium: Browser, project: _Project) -> None:
     """A stalled run: the step spent its bound, and its terminal is recorded.

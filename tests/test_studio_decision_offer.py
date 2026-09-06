@@ -43,14 +43,25 @@ def _decision_rows() -> str:
 #: `closed_by` happens to be empty -- keeps every substring a looser guard
 #: would look for while admitting the answers the door refuses. So what is
 #: asserted is the body, whitespace-normalized and nothing else.
+#:
+#: The word the screen gates on is the SERVER's: `answerable` on the gate's
+#: schedule row is the decision door's own verdict, served on the read. The
+#: screen used to spell the door's arms for itself -- "a receipt stands, so it
+#: may be replaced" -- and offered a supersede on a gate whose lap-one answer
+#: stood while the loop had already begun a second lap the plan had not carried
+#: to that gate; the door refused every one of those (R02 of the review of
+#: `8dec0e4`). A rule that lives in one place cannot drift from itself.
 OFFER_RULE = (
     'return row.ended !== true && row.decision !== "unknown" '
-    '&& (typeof row.standing === "string" '
-    "|| (row.reachable && row.standing === null));")
-#: And the server's own reading of ARRIVED, spelled the same way on this side.
+    '&& (row.answerable === "first" || row.answerable === "supersede");')
+#: The server's own reading of ARRIVED, still carried for the sentences that
+#: explain a halted run, and beside it the door's verdict, carried verbatim.
 REACHABLE_RULE = (
     'reachable: state !== null && state !== "settled" '
     "&& blocked.length === 0 && closed.length === 0,")
+ANSWERABLE_RULE = (
+    'answerable: planned !== null && typeof planned.answerable === "string" '
+    "? planned.answerable : null,")
 
 
 def _body(text: str, signature: str) -> str:
@@ -84,8 +95,9 @@ def test_the_decisions_screen_offers_an_answer_only_where_the_plan_admits_one():
     carried = _decision_rows()
     assert "...planWords(planned, answered)," in carried, carried
     read = RUNREAD_FILE.read_text(encoding="utf-8")
-    assert REACHABLE_RULE in " ".join(
-        _body(read, "planWords(planned, answered)").split()), read
+    words = " ".join(_body(read, "planWords(planned, answered)").split())
+    assert REACHABLE_RULE in words, read
+    assert ANSWERABLE_RULE in words, read
 
     people = source(PEOPLE_FILE)
     assert _body(people, "offersAnAnswer(row)") == OFFER_RULE, _body(

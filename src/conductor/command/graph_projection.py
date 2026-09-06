@@ -36,8 +36,10 @@ from .contracts import (
     DecisionReceipt,
     gate_decision,
 )
+from .graph_causality import decision_is_reached, standing_receipt
 from .graph_definition import GraphDefinition, GraphNode
 from .graph_schedule import loop_position, schedule
+from .run_terminal import RunTerminal
 from .success_criteria import for_plan
 
 if TYPE_CHECKING:  # pragma: no cover -- import cycle avoided at runtime
@@ -107,6 +109,7 @@ def _schedule_payload(
     disagreeing about which step may run.
     """
     computed = schedule(definition, values)
+    drawn = {node.node_id: node for node in definition.nodes}
     return {
         "run_state": computed.run_state,
         "runnable": list(computed.runnable),
@@ -124,8 +127,43 @@ def _schedule_payload(
             "settled_laps": row.settled_laps,
             "attempts_spent": row.attempts_spent,
             "awaiting_artifacts": list(row.awaiting_artifacts),
+            "answerable": _answerable(definition, values, drawn[row.node_id]),
         } for row in computed.nodes],
     }
+
+
+def _answerable(definition: GraphDefinition, values: tuple[Any, ...],
+                node: GraphNode) -> str | None:
+    """The decision door's verdict for a receipt offered on this gate NOW.
+
+    `first` when nothing stands and the plan has reached the gate; `supersede`
+    when the standing answer may be replaced -- this lap's correction, or a
+    reopened lap the plan has reached again; `none` when the door would refuse;
+    and None on a step that is not a gate at all.
+
+    Asked of `decision_is_reached` itself and never re-derived: R02 of the
+    review of `8dec0e4` was a screen spelling the door's arms for itself and
+    offering a supersede the door refused. One of the arms -- whether the
+    standing answer belongs to the lap the gate is on now -- needs the lap
+    arithmetic, and a second copy of that in a browser is how the two came to
+    disagree. Served on the read, the screen has nothing left to compute.
+
+    A run that has recorded its ending answers `none` on every gate: the door
+    refuses every receipt there (`run_terminal`) before it asks the plan
+    anything, and a word served from the plan alone said `supersede` about a
+    run nothing can be added to.
+    """
+    if node.gate_id is None:
+        return None
+    if any(isinstance(value, RunTerminal) for value in values):
+        return "none"
+    stands = standing_receipt(values, definition.run_id, node.gate_id)
+    admitted = decision_is_reached(
+        definition, values, node.gate_id,
+        None if stands is None else stands.receipt_id)
+    if not admitted:
+        return "none"
+    return "first" if stands is None else "supersede"
 
 
 def graph_runtime(

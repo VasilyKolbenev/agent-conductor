@@ -43,14 +43,17 @@ from conductor.command.graph_causality import (
     standing_receipt,
 )
 from conductor.command.graph_definition import GraphDefinition, GraphEdge, GraphNode
+from conductor.command.graph_projection import graph_payload
 from conductor.command.graph_schedule import schedule
 from conductor.command.graph_template import RunBinding, load_template, materialize
 from tests.test_command_http_api import (
     NOW,
     RUN_ID,
     api,
+    confirm_body,
     decision_body,
     post,
+    proposal_body,
 )
 from tests.test_command_run_terminal_doors import journal_bytes, kinds
 from tests.test_command_schema_doubles import DeepDispatchAdapter
@@ -303,6 +306,93 @@ def test_a_supersede_naming_a_receipt_that_is_not_standing_is_refused(tmp_path):
     assert refused.status == ERROR_STATUS["gate_unreached"] == 409
     assert refusal_of(refused)["code"] == "gate_unreached"
     assert journal_bytes(store) == before
+
+
+def test_a_supersede_cannot_carry_an_approval_into_a_lap_the_plan_has_not_reached(
+        tmp_path):
+    """R02 of the Codex review of `8dec0e4`, at the door it came through.
+
+    The result gate sent the work back around and `identify` has been carried
+    out again, so a SECOND lap has begun -- and `confirm-gate`, answered in the
+    first, stands behind `diagnose` and `design` with its lap-one approval
+    still the standing receipt. A supersede naming that receipt is neither a
+    correction of this lap's answer (there is none) nor the reopened lap's
+    answer (the plan has not reached the gate in this lap). Before the rule it
+    landed 201, the gate read two laps settled, and `do` was proposed and
+    AUTHORIZED with two thinking steps never carried out.
+
+    The propose door holds no schedule check and answers 201 either way; the
+    authorize door is where the plan is a permission, so both are driven.
+    """
+    subject, store, events, definition = a_reopened_result_gate(tmp_path)
+    settle(store, definition, "identify", index=6)
+    assert standing(store, definition, "diagnose") == "runnable"
+    assert standing(store, definition, "confirm-gate") == "blocked"
+    # What the run READ serves about this gate, before the door is asked: the
+    # word the screen gates its form on must be the door's own answer.
+    assert served_word(store, "confirm-gate") == "none"
+    before = journal_bytes(store)
+    events.clear()
+
+    refused = post(subject, DECISIONS, decision_body(
+        gate_id="gate-confirm-do", receipt_id="early-lap-2",
+        supersedes="decision-confirm"))
+
+    assert refused.status == ERROR_STATUS["gate_unreached"] == 409
+    assert refusal_of(refused)["code"] == "gate_unreached"
+    assert journal_bytes(store) == before
+    assert events == []
+    assert laps_of(store, definition, "confirm-gate") == 1
+    assert standing(store, definition, "do") == "blocked"
+
+    node = next(row for row in definition.nodes if row.node_id == "do")
+    proposed = post(subject, f"/command/runs/{RUN_ID}/proposals", {
+        **proposal_body(), "node_id": "do", "attempt_id": "attempt-do-2",
+        "instance_id": node.instance_id, "capability": node.capability,
+        "arguments": node.payload()})
+    assert proposed.status == 201, proposed.payload
+    authorized = post(subject, f"/command/runs/{RUN_ID}/actions",
+                      confirm_body(proposed.payload))
+    assert authorized.status == ERROR_STATUS["authorization_refused"] == 409
+    assert refusal_of(authorized)["code"] == "authorization_refused"
+
+
+def test_a_correction_of_this_laps_answer_is_admitted_on_a_settled_gate(tmp_path):
+    """The over-correction control: taking back an approval before the loop moves.
+
+    Every road into `confirm-gate` is open, this lap's answer stands, and no
+    later lap has begun -- so the gate is SETTLED, not arrived at, and a rule
+    that admitted a supersede only on an arrived gate would refuse the very
+    correction §5.4(c) protects. It lands, the lap count does not move, and the
+    road the approval had opened closes behind it.
+    """
+    subject, store, _events, definition = a_planned_run(tmp_path)
+    settle_the_body(store, definition)
+    assert post(subject, DECISIONS, decision_body(
+        gate_id="gate-confirm-do", receipt_id="decision-confirm")).status == 201
+    assert standing(store, definition, "confirm-gate") == "settled"
+    assert standing(store, definition, "do") == "runnable"
+    assert served_word(store, "confirm-gate") == "supersede"
+
+    corrected = post(subject, DECISIONS, decision_body(
+        gate_id="gate-confirm-do", receipt_id="decision-confirm-2",
+        action="reject", supersedes="decision-confirm"))
+
+    assert corrected.status == 201
+    assert laps_of(store, definition, "confirm-gate") == 1
+    assert standing(store, definition, "do") == "unreachable"
+
+
+def served_word(store, node_id: str) -> str | None:
+    """The `answerable` word the run read serves for one gate, off the store.
+
+    `graph_payload` is what the run route answers with; asking it here beside
+    the POST is what ties the served word to the live door with two independent
+    instruments -- the projection and the HTTP boundary -- rather than to a copy
+    of the door's own predicate.
+    """
+    rows = graph_payload(store.read(RUN_ID))["schedule"]["nodes"]
+    return next(row["answerable"] for row in rows if row["node_id"] == node_id)
 
 
 def a_reopened_confirm_gate(tmp_path):

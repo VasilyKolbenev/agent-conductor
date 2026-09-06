@@ -121,6 +121,16 @@ function planWords(planned, answered) {
     // records keeps the identity derivable -- a lost reply re-sent before the
     // write lands counts the same answers and re-sends the same id.
     answers: answered.length,
+    // The decision DOOR's own verdict for a receipt offered now, served on the
+    // read: `first`, `supersede` or `none` on a gate, null elsewhere -- and
+    // null from a build that answers no such word, which offers nothing. The
+    // form is gated on THIS and not on the two words above, because one of the
+    // door's arms is a fact this window cannot compute without a second copy of
+    // the lap arithmetic: whether the standing answer belongs to the lap the
+    // gate is on now. A copy here offered a supersede of lap one's approval on
+    // a gate lap two had not reached, and the door refused every one of them.
+    answerable: planned !== null && typeof planned.answerable === "string"
+      ? planned.answerable : null,
   };
 }
 

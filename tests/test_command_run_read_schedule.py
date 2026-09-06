@@ -26,7 +26,7 @@ from conductor.command.run_store import (
     _record_parts,
     snapshot_digest,
 )
-from tests.schedule_journal import Journal, routed_dalio, through_the_body
+from tests.schedule_journal import NOW, Journal, routed_dalio, through_the_body
 from tests.test_command_run_store import CONFIG, a_run
 
 RUN_ID = "run-001"
@@ -102,7 +102,7 @@ def test_every_step_reports_its_standing_and_its_roads():
     assert set(rows[0]) == {
         "node_id", "state", "opened_by", "blocked_by", "closed_by", "opens",
         "required_pass", "settled_laps", "attempts_spent",
-        "awaiting_artifacts"}
+        "awaiting_artifacts", "answerable"}
     # The third reason a step can be blocked reaches the window as its own key
     # rather than inside `blocked_by`, which carries predecessors and is
     # rendered beside a sentence about roads.
@@ -110,6 +110,78 @@ def test_every_step_reports_its_standing_and_its_roads():
     assert [row["node_id"] for row in rows] == [
         "goal", "identify", "diagnose", "design", "confirm-gate", "do",
         "result-gate", "retry-loop"]
+
+
+def _answerable(journal) -> dict[str, str | None]:
+    return {row["node_id"]: row["answerable"]
+            for row in payload_of(journal)["schedule"]["nodes"]}
+
+
+def test_a_gate_row_says_whether_an_answer_would_be_admitted_and_how():
+    """`answerable` is the decision DOOR's own verdict, served on the read.
+
+    R02 of the Codex review of `8dec0e4` asked that the live door, the
+    authorize hold and the screen live by ONE rule. The screen cannot compute
+    laps without a second copy of the arithmetic, so the read carries the
+    door's answer: `first` for an arrived gate nothing stands on, `supersede`
+    where the standing answer may be replaced -- this lap's answer taken back,
+    or a reopened lap the plan has reached again -- `none` where the door would
+    refuse, and `null` on a step that is not a gate. Walked in order, because
+    each state is a different arm.
+    """
+    journal = Journal()
+    journal.did("goal")
+    through_the_body(journal)
+    first = _answerable(journal)
+    assert first["goal"] is None and first["do"] is None
+    assert first["retry-loop"] is None
+    assert first["result-gate"] == "first"
+    assert first["confirm-gate"] == "supersede"
+
+    journal.decide("gate-result", "request_changes")
+    reopened = _answerable(journal)
+    assert reopened["result-gate"] == "supersede"
+    assert reopened["confirm-gate"] == "supersede"
+
+    journal.did("identify")
+    moved = _answerable(journal)
+    assert moved["result-gate"] == "none"
+    assert moved["confirm-gate"] == "none"
+
+    journal.did("diagnose")
+    journal.did("design")
+    reached = _answerable(journal)
+    assert reached["confirm-gate"] == "supersede"
+    assert reached["result-gate"] == "none"
+
+
+def test_a_run_that_recorded_its_ending_answers_none_on_every_gate():
+    """The door refuses every receipt on an ended run before it asks the plan.
+
+    A word served from the plan alone said `supersede` about the result gate
+    of a run nothing can be added to -- the slice review's probe watched the
+    POST answer 409 `run_terminal` beside it. The read now says what the door
+    will say, on every gate at once.
+    """
+    from conductor.command.run_terminal import RunTerminal
+
+    journal = Journal()
+    journal.did("goal")
+    through_the_body(journal)
+    journal.decide("gate-result", "approve")
+    computed = schedule(routed_dalio(), journal.rows())
+    assert computed.run_state == "complete"
+    open_words = _answerable(journal)
+    assert open_words["result-gate"] == "supersede", open_words
+
+    journal.values.append(RunTerminal(
+        terminal_id="terminal-1", run_id=RUN_ID, graph_id=routed_dalio().graph_id,
+        state=computed.run_state, settled_nodes=computed.settled,
+        unreachable_nodes=computed.unreachable, recorded_at=NOW))
+
+    ended = _answerable(journal)
+    assert {ended[node] for node in ("confirm-gate", "result-gate")} == {"none"}
+    assert ended["goal"] is None
 
 
 # -- it is the schedule's own answer, not a second one ------------------------

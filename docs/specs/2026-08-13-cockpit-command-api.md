@@ -1279,9 +1279,13 @@ On a run that follows a plan, a NEW receipt for a gate that plan carries is
 admitted in exactly two cases, asked in this order. If the gate's own receipts
 contradict each other — two that nothing supersedes, which the projection reads
 as `unknown` — nothing is admitted at all. Otherwise, if a receipt STANDS on
-that gate, the request must name it in `supersedes`, whether or not the plan
-has reached the gate: taking back the answer just given, and answering a gate a
-loop has reopened, are the same act. If no receipt stands, the request must
+that gate, the request must name it in `supersedes`, and it is admitted in
+exactly two situations: the standing answer belongs to the lap the gate is on
+NOW — taking back what was just said, before any loop has begun another lap —
+or the plan has REACHED the gate again in a later lap, which is how a reopened
+gate is answered a second time. A standing answer from an earlier lap, on a gate
+the current lap has not carried the run to, is refused: an approval is never
+carried into a lap whose predecessors have not settled. If no receipt stands, the request must
 supersede nothing AND the plan must have REACHED the gate — no road into it
 still pending, none closed by a branch not taken, and the lap it owes not
 already answered. A halt does not un-reach a gate: it stops work being offered,
@@ -1479,7 +1483,12 @@ what those two together permit — and no two of them share a word:
   now: which steps may run, which are blocked and why, which are settled, and
   which no run can still reach. Computed on every read for the reason the digest
   beside it is, and it dispatches nothing — its whole output is a permission or
-  a refusal.
+  a refusal. Each node row carries `answerable`: on a gate, the decision door's
+  own verdict for a receipt offered now — `first` (nothing stands and the plan
+  has reached it), `supersede` (the standing answer may be replaced, as this
+  lap's correction or as a reopened lap the plan has reached again) or `none`;
+  `null` on a step that is not a gate. It is computed by the predicate the door
+  refuses with, so a screen reading it cannot offer an answer the door refuses.
 - `success_criteria` — for each step, what would count as success, **derived
   from the rules that really operate on that step** and held nowhere. It is
   beside the definition rather than inside it, because a plan's bytes are what
