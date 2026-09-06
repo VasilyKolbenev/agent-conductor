@@ -501,13 +501,20 @@ def test_the_workflow_screen_offers_the_project_workflow_and_the_bundled_starter
     assert len(offered[1:]) == len(set(offered[1:])) == 3, offered
     assert all("Dalio five-step cycle · revision " in row for row in offered[1:])
     ready = [row for row in offered[1:] if row.endswith("ready to run")]
-    caveated = [row for row in offered[1:] if "name no result artifact" in row]
+    caveated = [row for row in offered[1:] if row.endswith("see the note")]
     # Two run-ready revisions since the routed one landed, and still exactly one
     # caveated: the caveat is DERIVED, so revision 3 inherits revision 2's fixed
     # artifact chain rather than a sentence somebody remembered to copy.
     assert len(ready) == 2 and len(caveated) == 1, offered
-    # And the caveat is the DERIVED one, naming the steps it read.
-    assert "4 review step(s)" in caveated[0], caveated
+    # The caveat itself is no longer IN the option -- its 191 characters were
+    # the select's intrinsic width and the page's overflow (R08) -- but under
+    # the control, for the starter chosen, and it is the DERIVED one, naming
+    # the steps it read.
+    values = starters.locator("option").evaluate_all(
+        "items => items.map(item => item.value)")
+    starters.select_option(values[offered.index(caveated[0])])
+    said = page.locator("#workflowToolbar [data-starter-note]").inner_text()
+    assert "4 review step(s)" in said and "name no result artifact" in said, said
     assert problems == []
 
 

@@ -72,11 +72,20 @@ Go to **Workflow**. Create one, either empty or from a bundled starting point (t
 five-step cycle ships with the product and needs no network).
 
 **Three starters ship, and they must not look alike.** Each row names its revision and says
-whether it is ready to run. One says that four of its review steps name no result artifact, so
-those steps cannot succeed. One draws the routed cycle: its connections carry conditions, so
-approving the confirm gate opens the effecting step and asking for changes at the result gate
-sends the run round again. If the rows read identically you cannot choose between them, and that
-is a finding — they are not equal choices.
+either *ready to run* or *see the note*; the note itself is the readable text under the control,
+for the starter you have chosen, and it changes with your choice. One note says that four of
+that starter's review steps name no result artifact, so those steps cannot succeed. One starter
+draws the routed cycle: its connections carry conditions, so approving the confirm gate opens
+the effecting step and asking for changes at the result gate sends the run round again. If the
+rows read identically you cannot choose between them, and that is a finding — they are not
+equal choices.
+
+**The screen fits an ordinary window.** At 1280 px wide nothing scrolls sideways and the canvas
+begins within the first screen. *Start a new workflow* and *Open a run* each sit behind a fold
+whose heading says what it holds and where that stands (*Open a run — publish a revision
+first*); the start box is open while no workflow is chosen, the run box while a revision is
+published and you are not editing a draft, and either opens with a click or with Tab and Enter.
+A page that scrolls sideways, or a fold whose heading does not say what is inside, is a finding.
 
 **The workflow you just named must be the one the picker says is chosen**, immediately, without
 a save and without a reload. A picker that falls back to "choose a workflow" while you are

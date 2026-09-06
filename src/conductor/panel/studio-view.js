@@ -472,31 +472,51 @@ function workflowPicker(state, handlers) {
   return field("Workflow", control);
 }
 
-//: What one starter is CALLED in the picker.
+//: What one starter is CALLED in the picker, and what it is not.
 //:
 //: Not its title. EVERY shipped starter is titled `Dalio five-step cycle`, so
 //: a list of titles offered rows a person could not tell apart and could
 //: not choose between — and they are not equivalent: one ships four review
-//: steps that cannot succeed. The revision separates them and the caveat says
-//: which one to avoid, both derived by the route from the documents themselves.
+//: steps that cannot succeed. The revision separates them, and the caveat
+//: says which one to avoid — but NOT here (R08 of the review of `8dec0e4`):
+//: a native option's text is the select's intrinsic width, and one caveat of
+//: 191 characters made the control 1379px wide and the page 1399 in a 1280px
+//: window. The label says that a note exists; `starterNote` draws the note
+//: itself, whole, under the control, for the starter chosen.
 function starterLabel(row) {
   const named = `${row.title} · revision ${row.revision}`;
   return rows(row.caveats).length === 0
     ? `${named} — ready to run`
-    : `${named} — ${row.caveats[0]}`;
+    : `${named} — see the note`;
+}
+
+//: The chosen starter's caveats, every one and in full, as readable text.
+function starterNote(row) {
+  if (row === null) return "A blank start is an empty drawing.";
+  const caveats = rows(row.caveats);
+  return caveats.length === 0
+    ? `${row.title} · revision ${row.revision} is ready to run.`
+    : caveats.join(" ");
 }
 
 //: Starting a workflow is TWO facts: the id it will live under, and the
 //: document it starts from. Neither is guessed: a blank start is an empty
 //: drawing, and every other offer is a document this BUILD ships.
 function starterControls(state, handlers) {
-  const box = element("div", {className: "studio-field"});
+  const box = element("div", {className: "studio-field studio-field--row"});
   const name = element("input", {autocomplete: "off",
     "data-focus": "new-workflow", maxlength: "128", name: "new-workflow",
     pattern: ID_PATTERN, spellcheck: "false", type: "text"});
+  const starters = rows(state.workflows.starters);
   const from = element("select", {"data-focus": "new-from", name: "new-from"},
-    [option("", "start blank")].concat(rows(state.workflows.starters).map(
+    [option("", "start blank")].concat(starters.map(
       (row) => option(row.starter_id, starterLabel(row)))));
+  const said = element("p", {className: "studio-hint",
+    "data-starter-note": "", text: starterNote(null)});
+  from.addEventListener("change", () => {
+    said.textContent = starterNote(
+      starters.find((row) => row.starter_id === from.value) || null);
+  });
   const start = handlerOf(handlers, "onStartWorkflow");
   const go = element("button", {className: "studio-btn",
     "data-focus": "action:onStartWorkflow", text: "Start a workflow",
@@ -508,13 +528,14 @@ function starterControls(state, handlers) {
     go.addEventListener("click", () => start(
       {workflowId: name.value.trim(), starterId: from.value || null}));
   }
-  box.append(field("New workflow id", name), field("Start from", from), go);
+  box.append(field("New workflow id", name), field("Start from", from), said,
+    go);
   return box;
 }
 
 function saveControls(state, handlers) {
   const held = state.workflows;
-  const box = element("div", {className: "studio-field"});
+  const box = element("div", {className: "studio-field studio-field--row"});
   const save = button(handlers, "onSaveDraft", "Save draft", null);
   const publish = button(handlers, "onPublish",
     held.nextRevision === null ? "Publish revision"
@@ -625,13 +646,37 @@ function saveLine(state) {
   return said;
 }
 
+//: A box folded behind a summary that names its state. The toolbar's forms
+//: stood 395px tall over the canvas, which began at 653 of 800 (R08 of the
+//: review of `8dec0e4`). `<details>` is the platform's own disclosure: the
+//: summary is a focusable, keyboard-toggled control with no script of its
+//: own, and what is folded stays in the document. Which boxes start OPEN is
+//: decided by the state, so nothing a person needs now is hidden: the start
+//: box while no workflow is chosen, the run box while a revision is published
+//: and no drawing is being edited. The summary says what the fold holds and
+//: where that stands, so a closed one is a sentence and not a blank.
+function disclosure(name, summary, open, body) {
+  return element("details", Object.assign({className: "studio-fold",
+    "data-fold": name}, open ? {open: ""} : {}),
+  [element("summary", {text: summary}), body]);
+}
+
+function runSummary(held) {
+  const detail = object(held.detail);
+  const published = detail === null ? null : object(detail.published);
+  return published === null
+    ? "Open a run — publish a revision first"
+    : `Open a run — revision ${published.revision} is published`;
+}
+
 /**
  * Draw the workflow toolbar: which workflow, how to start one, the two write
  * doors and the form that opens a run.
  *
  * The run form itself is `studio-runform.js`'s: it is the only part of this
  * toolbar that starts something running rather than describing the document,
- * and it left here when this file reached the line cap.
+ * and it left here when this file reached the line cap. It and the start box
+ * sit behind a disclosure each (`disclosure`), open or folded by the state.
  *
  * @param {Element} mount `#workflowToolbar`
  * @param {object} state the reducer's frozen value
@@ -639,9 +684,16 @@ function saveLine(state) {
  *   `onSaveDraft`, `onPublish`, `onEditPublished`, `onOpenRun`
  */
 export function mountToolbar(mount, state, handlers) {
+  const held = state.workflows;
+  const chosen = typeof held.selectedId === "string" && held.selectedId !== "";
+  const detail = object(held.detail);
+  const published = detail !== null && object(detail.published) !== null;
   mount.replaceChildren(workflowPicker(state, handlers),
-    starterControls(state, handlers), saveControls(state, handlers),
-    saveLine(state), runForm(state, handlers));
+    disclosure("start", "Start a new workflow", !chosen,
+      starterControls(state, handlers)),
+    saveControls(state, handlers), saveLine(state),
+    disclosure("run", runSummary(held), published && held.draft === null,
+      runForm(state, handlers)));
 }
 
 // -- the diagnostics panel ------------------------------------------------

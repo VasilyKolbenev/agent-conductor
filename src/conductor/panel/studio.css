@@ -145,6 +145,25 @@ button{font:inherit;cursor:pointer;background:none;border:none;color:inherit}
 /* ── the workflow screen ──────────────────────────────────────────────── */
 .studio-toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;
                 min-width:0}
+/* The two folded boxes of the toolbar: a native disclosure, keyboard-toggled,
+   whose summary is sized like every other target and names the state it
+   folds. Nothing here paints -- the word runs on the toolbar's own ink. */
+.studio-fold{min-width:0}
+.studio-fold summary{cursor:pointer;min-height:44px;display:flex;
+                     align-items:center;font-size:11px}
+/* The start box and the write doors lie in a ROW: stacked, the two columns
+   stood 200px and 182px tall and the canvas began at 458 of 800 even with the
+   run form folded. A sentence or a panel in either box takes the whole row
+   beneath the controls, and a button lines up with the fields' baseline
+   rather than with the shell-wide flex-start it is otherwise given. */
+.studio-field--row{flex-direction:row;flex-wrap:wrap;align-items:flex-end;
+                   gap:8px}
+.studio-field--row .studio-btn{align-self:flex-end}
+.studio-field--row p,.studio-field--row div{flex-basis:100%}
+/* A select is sized by its widest option, so one long option once made this
+   control 1379px wide and the page 1399 in a 1280px window. The labels are
+   short now (`starterLabel`); this bounds the intrinsic width as well. */
+.studio-field select{max-width:100%}
 /* Under 900 the rail follows the canvas as one reading column; the min-width
    0 track is what keeps a wide drawing from pushing the page sideways. */
 .studio-workflow{display:grid;gap:12px;grid-template-columns:minmax(0,1fr)}
