@@ -16,11 +16,11 @@
 //
 // THE OFFER RULE IS READ FROM DURABLE FACTS AND NEVER FROM A REFUSAL. The
 // server's own schedule row must say `runnable`, the node must bind a
-// capability, and this run's controls read must say the bound instance's
-// adapter serves it. A build that serves none still draws the control,
-// DISABLED, naming the pair it cannot serve -- a control that vanishes teaches
-// a person the product cannot do the thing, when what happened is that this
-// machine has no provider for it.
+// capability, the run's frozen authority must permit the write, and this run's
+// controls read must say the bound instance's adapter serves it. A build that
+// serves none still draws the control, DISABLED, naming the pair it cannot
+// serve -- a control that vanishes teaches a person the product cannot do the
+// thing, when what happened is that this machine has no provider for it.
 //
 // It builds fragments and mounts nothing. `studio-runs.js` owns the screen and
 // calls this once per position row. The split is the line cap's, but the seam
@@ -200,6 +200,53 @@ function whyNoAdapter(detail, node) {
       + "carry this step out. The step is offered and the control is shut.";
   }
   return null;
+}
+
+// -- the run's authority ------------------------------------------------------
+
+//: What each rung of the authority ladder PERMITS on this screen, read off the
+//: run's frozen envelope (`contract_values.ControlMode`) before any control is
+//: drawn. Two server refusals are the source: `service.propose` refuses every
+//: proposal in `observe`, and `runtime.authorize` refuses every confirmation
+//: unless the run's mode is `confirm`. `policy` is a word the vocabulary
+//: carries and nothing serves -- this build ships no policy executor -- so a
+//: policy run permits what a propose run permits, and says so rather than
+//: offering a Confirm the server is bound to refuse.
+//
+// R06 of the review of `8dec0e4`: the controls read the schedule and never the
+// mode, so an observe run offered a Propose that answered 409 and a propose run
+// offered a Confirm that answered 409, each under a sentence sending a person
+// to a plan that had not moved. A word this table does not carry permits
+// nothing: a write this window cannot describe is not offered.
+const PERMITS = Object.freeze({
+  observe: "nothing", propose: "proposals", policy: "proposals",
+  confirm: "confirmations",
+});
+//: Where a person gets the authority this run withholds. Named in every
+//: sentence that withholds it: a shut door without the open one beside it
+//: teaches that the product cannot do the thing.
+const CONFIRM_ROAD = "To carry a step out, open a new run of this revision "
+  + "with authority confirm: the Open a run form on the Workflow screen grants "
+  + "it explicitly.";
+
+function authorityOf(detail) {
+  const mode = (object(detail.run) || {}).mode;
+  return {mode: show(mode), permits: PERMITS[mode] || "nothing"};
+}
+
+function nothingPermitted(mode) {
+  return note(`This run's authority is ${mode}: nothing may be proposed on it `
+    + `and nothing runs. ${CONFIRM_ROAD}`);
+}
+
+function proposalsOnly(mode) {
+  return note(`A proposal stands on this step and this run's authority is `
+    + `${mode}: nothing can confirm it here. ${CONFIRM_ROAD}`);
+}
+
+function proposedUnder(mode) {
+  return note(`In a ${mode} run a proposal is a durable record and nothing `
+    + "carries it out here.");
 }
 
 // -- the facts the plan already decided ---------------------------------------
@@ -429,7 +476,7 @@ function proposalBody(node, runtime, draft) {
   };
 }
 
-function proposeForm(node, runtime, detail, state, handlers) {
+function proposeForm(node, runtime, detail, state, handlers, authority) {
   const draft = draftFor(state, node);
   const submit = handlerOf(handlers, "proposeStep");
   const wire = wireFor("proposeStep", `propose:${node.node_id}`,
@@ -440,6 +487,8 @@ function proposeForm(node, runtime, detail, state, handlers) {
   const form = element("form", {className: "studio-step",
     "data-step": `propose:${show(node.node_id)}`},
   [element("h4", {text: "Propose this step"}), note(PROPOSED_NOTE),
+    ...(authority.permits === "proposals"
+      ? [proposedUnder(authority.mode)] : []),
     ...planFacts(node, runtime),
     textControl("proposed_by", "proposedBy",
       draft === null ? "" : text(draft.proposedBy), wire.edit, "Proposed by",
@@ -570,7 +619,11 @@ function confirmForm(node, detail, state, handlers) {
  * Everything else -- blocked, settled, unreachable, a gate, a loop -- is
  * offered nothing, and the row's own sentence next door says why. Which of the
  * two controls it is comes from the runtime phase: a step with a proposal
- * standing on it is confirmed, and every other phase proposes.
+ * standing on it is confirmed, and every other phase proposes -- within what
+ * the run's frozen authority permits (`PERMITS`): an observe run is offered
+ * neither and told where authority is granted; a propose or policy run is
+ * offered the proposal and, once one stands, told that nothing here confirms
+ * it; a confirm run is offered both.
  *
  * @param {object} node The plan's frozen node, joined by `node_id`.
  * @param {object} runtime That node's row of the runtime projection.
@@ -589,7 +642,14 @@ export function stepControls(node, runtime, standing, detail, state, handlers) {
       || typeof node.capability !== "string") {
     return [];
   }
-  return runtime.phase === "proposed"
-    ? confirmForm(node, detail, state, handlers)
-    : proposeForm(node, runtime, detail, state, handlers);
+  const authority = authorityOf(detail);
+  if (authority.permits === "nothing") {
+    return [nothingPermitted(authority.mode)];
+  }
+  if (runtime.phase === "proposed") {
+    return authority.permits === "confirmations"
+      ? confirmForm(node, detail, state, handlers)
+      : [proposalsOnly(authority.mode)];
+  }
+  return proposeForm(node, runtime, detail, state, handlers, authority);
 }

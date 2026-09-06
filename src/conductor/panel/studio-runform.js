@@ -26,9 +26,11 @@ import {CONTROL_MODES} from "./studio-model.js";
 //: left unexplained rather than described by a guess.
 export const MODE_MEANINGS = Object.freeze({
   observe: "Nothing is proposed and nothing runs. The run watches.",
-  propose: "Steps may be proposed. Nothing is carried out.",
+  propose: "Steps may be proposed, and nothing can confirm one here. Nothing "
+    + "is carried out.",
   confirm: "Every effecting step waits for a person before it is carried out.",
-  policy: "A written policy decides what may be carried out without a person.",
+  policy: "Reserved: this build ships no policy executor. A policy run behaves "
+    + "as a propose run: steps may be proposed and nothing is carried out.",
 });
 const NOT_STATED = "not stated";
 const ID_PATTERN = "[A-Za-z0-9][A-Za-z0-9._\\-]{0,127}";

@@ -30,13 +30,20 @@ import re
 from pathlib import Path
 
 from conductor.command.api_contracts import _CONFIRM_FIELDS, _PROPOSAL_REQUIRED
+from conductor.command.contract_values import ControlMode
 
 from tests.test_graph_source import _code
+from tests.test_studio_runs import _balanced
 
 PANEL = Path(__file__).resolve().parents[1] / "src" / "conductor" / "panel"
 STEP = PANEL / "studio-runstep.js"
 BOOT = PANEL / "studio.js"
 RUNS = PANEL / "studio-runs.js"
+#: The two places a person reads the authority ladder in words: the run form's
+#: meanings, chosen from before a run is opened, and the Runs screen's notes,
+#: read beside `Authority (mode)` once it is.
+FORM = PANEL / "studio-runform.js"
+WORDS = PANEL / "studio-runwords.js"
 #: What a press on a step control MEANS, split off the boot module when that
 #: file reached the line cap. The wire stayed behind: this file is handed a
 #: `write` and reaches no socket, which is why the door counts next door are
@@ -448,3 +455,88 @@ def test_the_screen_hands_the_step_control_the_row_and_decides_nothing():
     # And the screen types no binding of its own either.
     assert 'element("input"' not in runs
     assert 'element("form"' not in runs
+
+
+def test_the_controls_offer_only_what_the_runs_frozen_authority_permits():
+    """R06 of the review of `8dec0e4`: the mode is read before a write is drawn.
+
+    The controls read the schedule and never the run's `mode`, so an observe
+    run offered a Propose the server refused (`service.propose`, 409) and a
+    propose run offered a Confirm it refused (`runtime.authorize` admits
+    `confirm` alone, 409) -- each under a sentence sending a person to a plan
+    that had not moved. The rule is a closed table over the server's own
+    ladder, and a word the table does not carry permits nothing.
+    """
+    step = _code(STEP)
+    offer = re.search(
+        r"export function stepControls\([^)]*\) \{(.*?)\n\}", step, re.DOTALL)
+    assert offer is not None, "studio-runstep.js exports no stepControls"
+    body = offer.group(1)
+    # The schedule's word still comes FIRST: a blocked row of an observe run is
+    # told why it is blocked by the sentence next door, not that it is
+    # unwritable -- the authority sentence stands where a control would have.
+    assert body.index('standing.state !== "runnable"') < body.index(
+        "authorityOf(detail)"), body
+    assert ('if (authority.permits === "nothing") {\n'
+            "    return [nothingPermitted(authority.mode)];") in body, body
+    assert re.search(r'authority\.permits === "confirmations"\s*\n\s*'
+                     r"\? confirmForm\(", body), body
+    assert ": [proposalsOnly(authority.mode)]" in body, body
+    assert body.count("confirmForm(") == 1 and body.count("proposeForm(") == 1
+    # The table is the server's whole ladder, and what each rung permits is
+    # the server's two refusals restated: observe proposes nothing, confirm
+    # alone confirms, and policy -- a word nothing serves -- is propose.
+    table = re.search(r"const PERMITS = Object\.freeze\(\{(.*?)\}\);", step,
+                      re.DOTALL)
+    assert table is not None, "studio-runstep.js declares no PERMITS"
+    permits = dict(re.findall(r'([a-z]+): "([a-z]+)"', table.group(1)))
+    assert set(permits) == {mode.value for mode in ControlMode}, permits
+    assert permits == {"observe": "nothing", "propose": "proposals",
+                       "policy": "proposals", "confirm": "confirmations"}
+    assert 'permits: PERMITS[mode] || "nothing"' in step
+    assert "(object(detail.run) || {}).mode" in step
+    # Every sentence that withholds a control names where the authority is
+    # granted, and the propose form under a lesser authority says what its
+    # record will and will not do.
+    assert step.count("${CONFIRM_ROAD}") == 2, step.count("${CONFIRM_ROAD}")
+    assert "Open a run form on the Workflow screen" in step
+    assert "nothing can confirm it here" in step
+    assert ('...(authority.permits === "proposals"\n'
+            "      ? [proposedUnder(authority.mode)] : [])") in step
+
+
+def _sentences(path: Path, name: str) -> dict[str, str]:
+    """The string values of ``const NAME = Object.freeze({...})``, whole.
+
+    `tests.test_studio_runs.frozen_pairs` reads one quoted fragment per key;
+    a sentence too long for one line is spelled as fragments joined by `+`,
+    and this reader joins them back, so what is judged is what a person reads.
+    """
+    text = _code(path)
+    marker = re.search(rf"const {name} = Object\.freeze\(\s*\{{", text)
+    assert marker is not None, f"{path.name} declares no object {name}"
+    body = _balanced(text, marker.end() - 1, "{", "}")
+    return {key: "".join(re.findall(r'"([^"]*)"', value)) for key, value in
+            re.findall(r'([A-Za-z_][A-Za-z0-9_]*):((?:\s*"[^"]*"\s*\+?)+)',
+                       body)}
+
+
+def test_no_rung_of_the_ladder_claims_an_executor_this_build_does_not_ship():
+    """`policy` is a word the vocabulary carries and nothing serves.
+
+    Both places the ladder is read in words said a policy decides or
+    authorizes -- an unsupported label described as an implementation. Each
+    now says the executor is not shipped and that the run behaves as propose;
+    and the propose rung says nothing can confirm in it, which is
+    `runtime.authorize`'s own rule (`confirm` alone).
+    """
+    meanings = _sentences(FORM, "MODE_MEANINGS")
+    # The reader calibrated on a sentence spelled in two fragments.
+    assert meanings["propose"] == ("Steps may be proposed, and nothing can "
+                                   "confirm one here. Nothing is carried out.")
+    notes = _sentences(WORDS, "CONTROL_MODES")
+    for name, said in (("MODE_MEANINGS", meanings), ("CONTROL_MODES", notes)):
+        assert set(said) == {mode.value for mode in ControlMode}, (name, said)
+        assert "no policy executor" in said["policy"], (name, said["policy"])
+        assert "as a propose run" in said["policy"], (name, said["policy"])
+    assert "Nothing can be authorized in this run" in notes["propose"], notes

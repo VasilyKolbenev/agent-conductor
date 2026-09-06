@@ -64,9 +64,11 @@ export const RECORD_KINDS = Object.freeze({
 //: rung PERMITS. There is no hidden autonomous rung.
 export const CONTROL_MODES = Object.freeze({
   observe: "Reads and reports. Nothing is proposed and nothing runs.",
-  propose: "May propose work. Nothing runs without a Human authorizing it.",
+  propose: "May propose work. Nothing can be authorized in this run, so "
+    + "nothing runs.",
   confirm: "A Human confirms each proposal, and only then may it run.",
-  policy: "A written policy authorizes requests instead of a Human.",
+  policy: "Reserved: this build ships no policy executor. A policy run behaves "
+    + "as a propose run: nothing can be authorized in it, so nothing runs.",
 });
 //: The five steps of the real progression, in the one order they can happen.
 //: The first, second and fifth are record kinds; the third and fourth are the

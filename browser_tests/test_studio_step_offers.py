@@ -29,10 +29,11 @@ from playwright.sync_api import Browser
 from conductor.command.run_store import RunStore
 
 from browser_tests.test_studio_demo import demo_url  # noqa: F401
-from browser_tests.test_studio_lifecycle import _Window, _settle
+from browser_tests.test_studio_lifecycle import STUDIO_CONFIG, _Window, _settle
 from browser_tests.test_studio_step import (  # noqa: F401
     ACTOR,
     CLOSED_RUN,
+    DIGEST,
     DONE_RUN,
     FLIGHT_RUN,
     HALTED_RUN,
@@ -54,6 +55,7 @@ from browser_tests.test_studio_step import (  # noqa: F401
     _two_steps,
     bench,
 )
+from tests.test_command_run_store import a_run
 
 
 def test_a_step_the_plan_does_not_call_runnable_is_offered_no_control_and_says_why(
@@ -330,3 +332,95 @@ def test_the_demo_offers_the_step_but_says_this_build_serves_no_adapter(
     finally:
         assert window.problems == []
         context.close()
+
+
+# -- 7. the run's authority ----------------------------------------------------
+
+#: One plan of one step, opened under each word of the authority ladder. R06 of
+#: the review of `8dec0e4`: the controls read the schedule and never the run's
+#: `mode`, so an observe run offered a Propose the server refused and a propose
+#: run offered a Confirm it refused, each under a sentence sending a person to
+#: a plan that had not moved.
+MODE_RUNS = {mode: f"run-mode-{mode}"
+             for mode in ("observe", "propose", "policy", "confirm")}
+
+
+def _open_run_under(store: RunStore, run_id: str, mode: str) -> None:
+    """`_open_run`, with the authority chosen rather than always `confirm`."""
+    store.create_run(
+        a_run(run_id=run_id, mode=mode, config_digest=DIGEST), STUDIO_CONFIG)
+    store.append(_two_steps(run_id, (_review(LONE),)))
+
+
+def _propose(page, step: str) -> int:
+    """Type the two facts, press Propose, and answer with the wire's status."""
+    _type_into(page, step, "proposed_by", ACTOR)
+    _type_into(page, step, "rationale", WHY)
+    with page.expect_response(
+            lambda answer: answer.url.endswith("/proposals")) as waited:
+        page.locator(f'[data-focus-key="propose:{step}"]').click()
+    return waited.value.status
+
+
+def _row_says(page, node: str, sentence: str) -> None:
+    """Wait until this step's row carries the sentence.
+
+    The read that follows a write is what draws it, so it is waited for as a
+    signal rather than read off the screen the press left behind.
+    """
+    page.wait_for_function(
+        "([id, said]) => [...document.querySelectorAll('li.studio-position')]"
+        ".some(item => item.innerText.includes(id + ' \\u00b7 ') "
+        "&& item.innerText.includes(said))", arg=[node, sentence])
+
+
+def test_the_controls_offer_only_what_the_runs_frozen_authority_permits(
+        chromium: Browser, bench: _Bench) -> None:
+    """Observe is offered nothing; propose and policy a proposal and no
+    Confirm; confirm both -- and every withheld control says where the
+    authority is granted.
+
+    The confirm run is the positive control: a rule that read the mode and
+    shut too much would pass the three rows above it and fail here. What the
+    two lesser authorities write is checked in the journal, because the
+    server admits their proposals (201): the record is real and what the
+    screen says about it -- durable, carried out by nothing here -- is true.
+    """
+    store = RunStore(bench.root)
+    for mode, run_id in MODE_RUNS.items():
+        _open_run_under(store, run_id, mode)
+    page, window = _open(chromium, bench)
+    try:
+        # observe: no control at all, one sentence, and nothing on the wire.
+        _read(page, MODE_RUNS["observe"])
+        assert _offered(page) == [], _offered(page)
+        row = _row(page, LONE)
+        assert "This run's authority is observe: nothing may be proposed" in row
+        assert "Open a run form on the Workflow screen" in row, row
+        assert window.writes("/proposals") == 0
+        # propose and policy: a proposal the server admits, then no Confirm.
+        for mode in ("propose", "policy"):
+            _read(page, MODE_RUNS[mode])
+            assert _offered(page) == [f"propose:{LONE}"], (mode, _offered(page))
+            form = page.locator(f'[data-step="propose:{LONE}"]').inner_text()
+            assert f"In a {mode} run a proposal is a durable record" in form
+            assert _propose(page, LONE) == 201, mode
+            _row_says(page, LONE, "nothing can confirm it here")
+            assert _offered(page) == [], (mode, _offered(page))
+            row = _row(page, LONE)
+            assert f"this run's authority is {mode}" in row, row
+            assert "Open a run form on the Workflow screen" in row, row
+            assert bench.kinds(MODE_RUNS[mode]) == [
+                "graph_definition", "action_proposal"], mode
+        # confirm: the whole road stays open, and the lesser-authority
+        # sentence is not on its form.
+        _read(page, MODE_RUNS["confirm"])
+        assert _offered(page) == [f"propose:{LONE}"], _offered(page)
+        form = page.locator(f'[data-step="propose:{LONE}"]').inner_text()
+        assert "a proposal is a durable record and nothing carries" not in form
+        assert _propose(page, LONE) == 201
+        page.wait_for_selector(f'[data-focus-key="confirm:{LONE}"]')
+        assert window.writes("/proposals") == 3
+    finally:
+        assert window.problems == []
+        page.context.close()
