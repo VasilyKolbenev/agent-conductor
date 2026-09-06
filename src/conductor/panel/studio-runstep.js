@@ -429,10 +429,34 @@ function wireFor(name, key, edit, submit, live, writing) {
     writing};
 }
 
-//: Whether a write for THIS row's draft is in flight. A draft addressing
-//: another row shuts nothing here: one press must not grey every step.
-function writingOf(draft) {
-  return draft !== null && draft.writing === true;
+//: Whether a write for THIS step of THIS run is in flight: membership in the
+//: run screen's `writes`, keyed by run and step. No read, no change of run and
+//: no change of draft alters that record -- only the write's own end does --
+//: so a second press is impossible whatever else happened (R07A of the review
+//: of `8dec0e4`; the owner's control across navigation), and a press on
+//: ANOTHER step is not shut by it: one press must not grey every step.
+function writingOf(state, detail, node) {
+  const writes = object((object(state.runs) || {}).writes) || {};
+  return Object.hasOwn(writes, `${runOf(detail)}/${node.node_id}`);
+}
+
+//: What the person SEES in the control being replaced, carried into the one
+//: drawn in its place. A render lands whenever a frame does, and a frame can
+//: land in the middle of a word: the draft holds only what `change` has
+//: committed, so a control drawn from the draft alone dropped the letters
+//: typed since the last blur -- measured on the propose road, `release-owner`
+//: reached the wire as `er`, `r` and `ner`. The predecessor is the focused
+//: control of the SAME form, found while it is still on the page.
+function liveValue(step, name, fallback) {
+  const active = document.activeElement;
+  if (!active || !active.getAttribute
+      || active.getAttribute("name") !== name
+      || typeof active.value !== "string") {
+    return fallback;
+  }
+  const form = active.closest("[data-step]");
+  return form !== null && form.getAttribute("data-step") === step
+    ? active.value : fallback;
 }
 
 // -- propose ------------------------------------------------------------------
@@ -478,31 +502,31 @@ function proposalBody(node, runtime, draft) {
 
 function proposeForm(node, runtime, detail, state, handlers, authority) {
   const draft = draftFor(state, node);
+  const step = `propose:${show(node.node_id)}`;
   const submit = handlerOf(handlers, "proposeStep");
   const wire = wireFor("proposeStep", `propose:${node.node_id}`,
     editorFor(node, draft !== null, handlers), submit,
-    state.connection === "open", writingOf(draft));
+    state.connection === "open", writingOf(state, detail, node));
   const shut = whyNoAdapter(detail, node);
   const stops = shut === null ? whyNotProposable(draft) : shut;
-  const form = element("form", {className: "studio-step",
-    "data-step": `propose:${show(node.node_id)}`},
-  [element("h4", {text: "Propose this step"}), note(PROPOSED_NOTE),
-    ...(authority.permits === "proposals"
-      ? [proposedUnder(authority.mode)] : []),
-    ...planFacts(node, runtime),
-    textControl("proposed_by", "proposedBy",
-      draft === null ? "" : text(draft.proposedBy), wire.edit, "Proposed by",
-      {maxlength: "128", pattern: ID_PATTERN, required: ""}),
-    textControl("rationale", "rationale",
-      draft === null ? "" : text(draft.rationale), wire.edit,
+  const form = element("form", {className: "studio-step", "data-step": step},
+    [element("h4", {text: "Propose this step"}), note(PROPOSED_NOTE),
+      ...(authority.permits === "proposals"
+        ? [proposedUnder(authority.mode)] : []),
+      ...planFacts(node, runtime),
+      textControl("proposed_by", "proposedBy", liveValue(step, "proposed_by",
+        draft === null ? "" : text(draft.proposedBy)), wire.edit,
+      "Proposed by", {maxlength: "128", pattern: ID_PATTERN, required: ""}),
+      textControl("rationale", "rationale", liveValue(step, "rationale",
+        draft === null ? "" : text(draft.rationale)), wire.edit,
       `Why (up to ${RATIONALE_LIMIT} characters)`,
       {maxlength: String(RATIONALE_LIMIT)}),
-    ...submitControl("Propose this step", stops, wire)]);
+      ...submitControl("Propose this step", stops, wire)]);
   form.addEventListener("submit", (event) => {
     event.preventDefault();
     if (stops !== null || submit === null || wire.shut) return;
     submit({runId: runOf(detail), nodeId: node.node_id,
-      body: proposalBody(node, runtime, draft)});
+      generation: draft.generation, body: proposalBody(node, runtime, draft)});
   });
   return [form];
 }
@@ -588,25 +612,25 @@ function confirmForm(node, detail, state, handlers) {
       + "against a record that is not there.")];
   }
   const draft = draftFor(state, node);
+  const step = `confirm:${show(node.node_id)}`;
   const submit = handlerOf(handlers, "confirmStep");
   const wire = wireFor("confirmStep", `confirm:${node.node_id}`,
     editorFor(node, draft !== null, handlers), submit,
-    state.connection === "open", writingOf(draft));
+    state.connection === "open", writingOf(state, detail, node));
   const shut = whyNoAdapter(detail, node);
   const stops = shut === null ? whyNotConfirmable(draft) : shut;
-  const form = element("form", {className: "studio-step",
-    "data-step": `confirm:${show(node.node_id)}`},
-  [element("h4", {text: "Confirm this proposal"}), note(REQUESTED_NOTE),
-    ...proposalFacts(proposal),
-    textControl("confirmed_by", "confirmedBy",
-      draft === null ? "" : text(draft.confirmedBy), wire.edit, "Confirmed by",
-      {maxlength: "128", pattern: ID_PATTERN, required: ""}),
-    ...submitControl("Confirm and authorize", stops, wire)]);
+  const form = element("form", {className: "studio-step", "data-step": step},
+    [element("h4", {text: "Confirm this proposal"}), note(REQUESTED_NOTE),
+      ...proposalFacts(proposal),
+      textControl("confirmed_by", "confirmedBy", liveValue(step, "confirmed_by",
+        draft === null ? "" : text(draft.confirmedBy)), wire.edit,
+      "Confirmed by", {maxlength: "128", pattern: ID_PATTERN, required: ""}),
+      ...submitControl("Confirm and authorize", stops, wire)]);
   form.addEventListener("submit", (event) => {
     event.preventDefault();
     if (stops !== null || submit === null || wire.shut) return;
     submit({runId: runOf(detail), nodeId: node.node_id,
-      body: confirmBody(proposal, draft)});
+      generation: draft.generation, body: confirmBody(proposal, draft)});
   });
   return [form];
 }

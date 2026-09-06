@@ -428,9 +428,21 @@ def _offered(page: Page) -> list[str]:
 
 
 def _type(page: Page, key: str, value: str) -> None:
-    """Fill one field and blur it, which is what commits it to the draft."""
-    page.locator(f'[data-focus-key="{key}"]').fill(value)
-    page.locator(f'[data-focus-key="{key}"]').press("Tab")
+    """Type into one field the way a person does, and commit it.
+
+    By KEYSTROKE rather than `fill`, and the difference is measured: a read
+    landing between a fill and its blur -- the `run` frame that follows every
+    accepted write -- replaced the control and discarded the filled value,
+    which is the disabled-Confirm stall the review's `studio_modes` probe met
+    (3 of 6 runs) and this module met on its own confirm road. Typed
+    characters survive that re-render: Chromium commits a focused control's
+    value when the control is removed, and the window restores focus to the
+    control drawn in its place.
+    """
+    control = page.locator(f'[data-focus-key="{key}"]')
+    control.click()
+    page.keyboard.type(value)
+    page.keyboard.press("Tab")
 
 
 # -- 1. the whole road --------------------------------------------------------

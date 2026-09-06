@@ -49,6 +49,9 @@ WORDS = PANEL / "studio-runwords.js"
 #: `write` and reaches no socket, which is why the door counts next door are
 #: unchanged by the split.
 WRITER = PANEL / "studio-runwrite.js"
+#: Where the draft and the writes in flight live, and the rule that keeps them
+#: apart.
+STORE = PANEL / "studio-store.js"
 #: The nine keys a proposal from this window carries: everything the frozen API
 #: requires, plus the one optional field that binds the action to the plan. Read
 #: off the contract, never spelled a second time.
@@ -422,15 +425,16 @@ def test_a_refusal_gives_the_control_back_with_what_was_typed_still_in_it():
     # Marked BEFORE the request goes out: that ordering is the whole of the
     # double-press guard, and reversing it makes a second press a second
     # durable proposal.
-    marked = door.index('door.dispatch({type: "step-writing", writing: true});')
+    marked = door.index(
+        'door.dispatch({type: "step-writing", ...spent, writing: true});')
     assert marked < door.index("door.write(target, asked, row.body,"), door
     # …and cleared from the ONE exit every road shares. It used to be cleared
     # on the refusal arm alone, which left the flag set on the two roads that
     # reach neither arm: a write retired by another write's generation bump,
     # and one never sent because the line was down.
     assert door.rstrip().endswith(
-        '}).finally(() => door.dispatch({type: "step-writing", '
-        "writing: false}));"), door
+        '}).finally(() => door.dispatch({type: "step-writing", ...spent,\n'
+        "      writing: false}));"), door
     assert door.count('writing: false') == 1, door
     # Both arms end in the read that is what really says what happened.
     assert door.count("door.refreshRun(asked);") == 2, door
@@ -502,7 +506,83 @@ def test_the_controls_offer_only_what_the_runs_frozen_authority_permits():
     assert "Open a run form on the Workflow screen" in step
     assert "nothing can confirm it here" in step
     assert ('...(authority.permits === "proposals"\n'
-            "      ? [proposedUnder(authority.mode)] : [])") in step
+            "        ? [proposedUnder(authority.mode)] : [])") in step
+
+
+def test_a_write_in_flight_is_its_run_and_steps_own_and_spends_only_its_draft():
+    """R07 of the review of `8dec0e4`, A and B, and the owner's control C.
+
+    The write flag lived on the ONE draft, so a landed read turned it off
+    under a pending POST (A: two proposals from one press and a Read), the
+    accepted road cleared the whole draft (B: alpha's answer emptied omega's
+    fields), and a map cleared on a change of run would have handed the
+    control back on the way back to run A (C). Now a write in flight is a
+    fact about one step of one run, kept in `runs.writes` apart from the
+    draft; the control reads membership there; and the accepted road spends
+    only the draft it was minted from, by run, step and generation.
+    """
+    step = _code(STEP)
+    writing = re.search(r"function writingOf\((.*?)\) \{(.*?)\n\}", step,
+                        re.DOTALL)
+    assert writing is not None, "studio-runstep.js reads no write in flight"
+    assert writing.group(1) == "state, detail, node", writing.group(1)
+    assert ("Object.hasOwn(writes, `${runOf(detail)}/${node.node_id}`)"
+            in writing.group(2)), writing.group(2)
+    # Both roads read it there, and only there.
+    assert step.count(", writingOf(state, detail, node));") == 2, step
+    assert "writingOf(draft)" not in step, step
+    # Both roads hand the door what their draft's generation was.
+    assert step.count("generation: draft.generation") == 2, step
+    store = _code(STORE)
+    assert "writes: Object.freeze({})" in store, "the run screen holds no writes"
+    assert '"step-spent": stepSpent,' in store, store
+    spent = re.search(r"function stepSpent\(state, event\) \{(.*?)\n\}", store,
+                      re.DOTALL)
+    assert spent is not None, "the reducer spends no draft"
+    for held in ("state.runs.selectedId !== event.runId",
+                 "step.nodeId !== event.nodeId",
+                 "step.generation !== event.generation"):
+        assert held in spent.group(1), (held, spent.group(1))
+    assert "step: cleared(step)" in spent.group(1), spent.group(1)
+    # Every road that resets the draft moves it one generation on, so a write
+    # minted from the old draft can never mistake the new one for its own.
+    cleared = re.search(r"function cleared\(step\) \{(.*?)\n\}", store,
+                        re.DOTALL)
+    assert cleared is not None, "the reducer clears no draft by generation"
+    assert "generation: step.generation + 1" in cleared.group(1)
+    chosen = re.search(r"function stepChosen\(state, event\) \{(.*?)\n\}",
+                       store, re.DOTALL)
+    assert chosen is not None
+    assert "generation: state.runs.step.generation + 1" in chosen.group(1)
+
+
+def test_what_a_person_is_typing_is_carried_across_a_render():
+    """A frame in the middle of a word must not cost the letters before it.
+
+    Measured on the propose road, six drained runs: `release-owner` reached
+    the wire as `er`, `r` and `ner` three times in six. A render replaces the
+    control and draws the new one from the draft, which holds only what
+    `change` has committed; and the control drawn first, on its own change,
+    chose the step again and reset what a later control had committed. So
+    the control drawn in a focused control's place inherits its live value --
+    of the SAME form, so three runnable steps never share one person's word --
+    and choosing the step already chosen moves nothing.
+    """
+    step = _code(STEP)
+    carry = re.search(r"function liveValue\(step, name, fallback\) \{(.*?)\n\}",
+                      step, re.DOTALL)
+    assert carry is not None, "studio-runstep.js carries no live value"
+    assert "document.activeElement" in carry.group(1)
+    assert 'active.getAttribute("name") !== name' in carry.group(1)
+    assert 'form.getAttribute("data-step") === step' in carry.group(1)
+    assert step.count('liveValue(step, "') == 3, step.count('liveValue(step, "')
+    for name in ("proposed_by", "rationale", "confirmed_by"):
+        assert f'liveValue(step, "{name}",' in step, name
+    chosen = re.search(r"function stepChosen\(state, event\) \{(.*?)\n\}",
+                       _code(STORE), re.DOTALL)
+    assert chosen is not None
+    assert ("if (nodeId !== null && state.runs.step.nodeId === nodeId) "
+            "return state;") in chosen.group(1), chosen.group(1)
 
 
 def _sentences(path: Path, name: str) -> dict[str, str]:

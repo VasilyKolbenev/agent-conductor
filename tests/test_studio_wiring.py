@@ -542,17 +542,20 @@ def test_the_step_draft_takes_three_typed_keys_and_no_fourth():
     assert keys is not None, body.group(1)
     assert re.findall(r'"(\w+)"', keys.group(1)) == [
         "proposedBy", "rationale", "confirmedBy"]
-    for forbidden in ("nodeId", "writing"):
+    for forbidden in ("nodeId", "writing", "generation"):
         assert f'"{forbidden}"' not in keys.group(1), forbidden
-    # And the write flag moves ALONE: the arm that sets it spreads the standing
-    # draft rather than rebuilding one, so a refusal that turns it off leaves
-    # every typed word exactly where it was. Rebuilding from `NO_STEP` here is
-    # the defect this replaced, wearing a different name.
+    # And a write in flight is not a fact about the draft at all: the arm that
+    # records one touches `runs.writes`, keyed by run and step, and leaves
+    # every typed word exactly where it was. A flag on the draft was the
+    # defect this replaced -- a read of the run turned it off under a pending
+    # POST (R07A of the review of `8dec0e4`).
     writing = re.search(r"function stepWriting\(state, event\) \{(.*?)\n\}",
                         source, re.DOTALL)
     assert writing is not None, "the reducer records no write in flight"
-    assert "...state.runs.step," in writing.group(1), writing.group(1)
-    assert "writing: event.writing === true" in writing.group(1)
+    assert "const key = `${event.runId}/${event.nodeId}`;" in writing.group(1)
+    assert "writes[key] = event.generation" in writing.group(1)
+    assert "delete writes[key]" in writing.group(1), writing.group(1)
+    assert "runs.step" not in writing.group(1), writing.group(1)
     assert "NO_STEP" not in writing.group(1), writing.group(1)
 
 
@@ -577,9 +580,11 @@ def test_a_landed_read_of_the_same_run_leaves_what_a_person_is_typing_alone():
     assert kept is not None, "the reducer decides nothing about a kept draft"
     said = kept.group(1)
     assert "detail.run.run_id === state.runs.selectedId" in said, said
-    assert "same ? state.runs.step : NO_STEP" in said, said
+    assert "same ? state.runs.step : cleared(state.runs.step)" in said, said
     assert "same ? state.decisions.draft : NO_DRAFT" in said, said
-    assert "writing: false" in said, said
+    # A read says NOTHING about a write in flight: that fact left the draft
+    # for `runs.writes` (R07A), so there is no flag here to turn off.
+    assert "writing" not in said, said
     moved = re.search(r"function runMoved\(state, phase, detail, said\) \{(.*?)"
                       r"\n\}", source, re.DOTALL)
     assert moved is not None
@@ -587,12 +592,15 @@ def test_a_landed_read_of_the_same_run_leaves_what_a_person_is_typing_alone():
     assert "step: kept.step" in moved.group(1), moved.group(1)
     assert "draft: kept.draft" in moved.group(1), moved.group(1)
     # The unconditional reset is gone from that arm, and the one road a draft
-    # may not cross still resets outright: choosing ANOTHER run.
+    # may not cross still resets outright: choosing ANOTHER run -- one
+    # generation on, so a write minted from the old draft cannot spend the
+    # new one; and the writes in flight are not that road's to touch.
     assert "step: NO_STEP" not in moved.group(1), moved.group(1)
     chosen = re.search(r"function runChosen\(state, runId\) \{(.*?)\n\}",
                        source, re.DOTALL)
     assert chosen is not None
-    assert "step: NO_STEP" in chosen.group(1), chosen.group(1)
+    assert "step: cleared(state.runs.step)" in chosen.group(1), chosen.group(1)
+    assert "writes" not in chosen.group(1), chosen.group(1)
 
 
 def test_the_two_write_roads_spend_their_own_draft_before_the_read():
@@ -617,11 +625,18 @@ def test_the_two_write_roads_spend_their_own_draft_before_the_read():
                 '      dispatch({type: "decision-chosen", key: null});\n'
                 "      refreshRun(asked);"):
         assert arm in boot, arm
-    # The step road: the accepted arm only. A refusal there keeps the words,
-    # which is the promise the shut control makes.
-    assert ('door.dispatch({type: "step-chosen", nodeId: null});\n'
+    # The step road: the accepted arm only, and it spends ONLY the draft this
+    # write was minted from -- run, step and generation fixed before the
+    # request left -- so another step's unsent words survive its answer
+    # (R07B). A refusal there keeps the words, which is the promise the shut
+    # control makes.
+    assert ('door.dispatch({type: "step-spent", ...spent});\n'
             "      door.refreshRun(asked);") in writer, writer
-    assert writer.count('{type: "step-chosen", nodeId: null}') == 1, writer
+    assert writer.count('{type: "step-spent"') == 1, writer
+    assert "const spent = {runId: asked, nodeId: row.nodeId," in writer, writer
+    assert writer.index("const spent = ") < writer.index(
+        '{type: "step-writing", ...spent, writing: true}'), writer
+    assert '"step-chosen", nodeId: null' not in writer, writer
 
 
 def test_the_reducer_never_grants_write_readiness_by_writing_it_down():

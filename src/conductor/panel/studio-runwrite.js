@@ -29,20 +29,26 @@ import {PROPOSED_NOTE, READ_AGAIN, REQUESTED_NOTE, STEP_MOVED}
  * @returns {object} `chooseStep`, `editStep`, `proposeStep`, `confirmStep`.
  */
 export function stepWriters(door) {
-  //: Both halves of driving one step, which are one shape. The draft is MARKED
-  //: before the request goes out and never destroyed: a proposal's identity is
+  //: Both halves of driving one step, which are one shape. The write is
+  //: RECORDED before the request goes out, against the run and the step it
+  //: is for, and the draft is never destroyed: a proposal's identity is
   //: minted by the server, so a second press is a second proposal -- and a
   //: refusal that brings no read must still give the person their words back.
-  //: The accepted road SPENDS it, because that is the one road that knows they
-  //: are finished with.
+  //: The accepted road SPENDS the draft, because that is the one road that
+  //: knows they are finished with -- and only the draft this write was
+  //: minted from, so another step's unsent words survive its answer.
   function onStepWrite(target, row, notice) {
     if (!row || !door.isId(row.runId) || !row.body) return;
     const asked = row.runId;
-    door.dispatch({type: "step-writing", writing: true});
+    //: What this write OWNS, fixed before the request leaves: the run, the
+    //: step, and the generation of the draft it carries.
+    const spent = {runId: asked, nodeId: row.nodeId,
+      generation: row.generation};
+    door.dispatch({type: "step-writing", ...spent, writing: true});
     door.write(target, asked, row.body, () => {
       if (asked !== door.chosenRun()) return;
       door.dispatch({type: "status", notice});
-      door.dispatch({type: "step-chosen", nodeId: null});
+      door.dispatch({type: "step-spent", ...spent});
       door.refreshRun(asked);
     }, (result) => {
       if (!STEP_MOVED.includes(result.code)
@@ -54,7 +60,8 @@ export function stepWriters(door) {
     // never sent because the line was down -- this write is over and the
     // control comes back. `write` resolves on every one of those roads, so
     // this is the one exit all of them share.
-    }).finally(() => door.dispatch({type: "step-writing", writing: false}));
+    }).finally(() => door.dispatch({type: "step-writing", ...spent,
+      writing: false}));
   }
 
   return Object.freeze({
