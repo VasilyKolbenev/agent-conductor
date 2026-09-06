@@ -64,8 +64,10 @@ PEOPLE_FILE = PANEL / "studio-people.js"
 #: carries no state vocabulary of its own, so the guards below that are about
 #: a MOUNT read `MOUNTED` and the guards that are about a file read `OWNED`.
 STEP_FILE = PANEL / "studio-runstep.js"
+#: The other write on the Runs screen, a document into the run; a fragment too.
+DOCS_FILE = PANEL / "studio-rundocs.js"
 #: Every file this slice owns, and the only files it may write.
-OWNED = (RUNS_FILE, STEP_FILE, PEOPLE_FILE)
+OWNED = (RUNS_FILE, STEP_FILE, PEOPLE_FILE, DOCS_FILE)
 #: The two of them that own a screen container: one mount, one focus pass, one
 #: set of state words each.
 MOUNTED = (RUNS_FILE, PEOPLE_FILE)
@@ -94,11 +96,12 @@ HANDLER_NAMES = {
     STEP_FILE: {"chooseStep", "editStep", "proposeStep", "confirmStep"},
     PEOPLE_FILE: {"selectDecision", "editDecision", "submitDecision",
                   "refreshAgents"},
+    DOCS_FILE: {"editDocument", "publishDocument"},
 }
 #: How many controls in each file answer a missing handler by disabling
 #: themselves. Pinned exactly rather than "at least one": presence alone let a
 #: deleted disable through, because a sibling still carried the phrase.
-DISABLED_CONTROLS = {RUNS_FILE: 2, STEP_FILE: 2, PEOPLE_FILE: 5}
+DISABLED_CONTROLS = {RUNS_FILE: 2, STEP_FILE: 2, PEOPLE_FILE: 5, DOCS_FILE: 4}
 #: Nothing in a pure DOM writer may reach the network, the clock, storage, the
 #: console, a parser of markup, or a dynamic module. Matched case-insensitively
 #: against the whole source, comments included: a banned call written in a
@@ -122,14 +125,17 @@ BANNED_APIS = (
 #: permission the other way is what would close the pair into a ring.
 ALLOWED_IMPORTS = {
     RUNS_FILE: frozenset({"./command-view.js", "./studio-runwords.js",
-                          "./studio-runread.js", "./studio-runstep.js"}),
+                          "./studio-runread.js", "./studio-runstep.js",
+                          "./studio-rundocs.js"}),
     STEP_FILE: frozenset({"./command-view.js", "./command-projection.js",
-                          "./studio-runwords.js"}),
+                          "./studio-runwords.js", "./studio-runread.js"}),
     PEOPLE_FILE: frozenset({"./command-view.js", "./studio-runwords.js"}),
+    DOCS_FILE: frozenset({"./command-view.js", "./command-projection.js",
+                          "./studio-runwords.js", "./studio-runread.js"}),
 }
 #: The tags a listener may be attached to. A click on a `div` is not operable
 #: by a keyboard, and no amount of `tabindex` makes it a control.
-LISTENABLE_TAGS = frozenset({"button", "form", "input"})
+LISTENABLE_TAGS = frozenset({"button", "form", "input", "select", "textarea"})
 LINE_CAP = 800
 
 

@@ -606,12 +606,17 @@ def test_the_step_control_says_what_a_proposal_will_carry_and_offers_no_edit(
         assert "900s" in said, said
         assert "Scope is a declaration this run's records carry" in said, said
         # TWO text controls on this form -- who is proposing and why -- and
-        # nothing else on the screen: no select, no argument box, no way to
-        # name another step. The third of the three a person ever types,
+        # nothing else on the screen that could touch a step: no select, no
+        # argument box, no way to name another step. The only other controls
+        # on the screen are the document form's, and every one of them sits
+        # inside it. The third of the three a person ever types,
         # `confirmed_by`, belongs to the form that replaces this one.
         assert form.locator("input").count() == 2
-        assert page.locator("#bodyRuns select").count() == 0
-        assert page.locator("#bodyRuns textarea").count() == 0
+        assert form.locator("select").count() == 0
+        assert form.locator("textarea").count() == 0
+        for tag in ("select", "textarea"):
+            assert page.locator(f"#bodyRuns {tag}").count() == page.locator(
+                f'#bodyRuns [data-step="document"] {tag}').count(), tag
         assert sorted(form.locator("input").evaluate_all(
             "items => items.map(item => item.name)")) == [
                 "proposed_by", "rationale"]

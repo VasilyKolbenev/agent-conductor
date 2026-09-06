@@ -441,7 +441,8 @@ def test_a_refusal_gives_the_control_back_with_what_was_typed_still_in_it():
     step = _code(STEP)
     assert "shut: submit === null || edit === null || !live || writing" in step
     assert "if (wire.writing) said.push(note(WRITING_NOTE));" in step
-    assert "What you have typed here is kept." in step
+    # The sentence is declared once, with the words two fragments say.
+    assert "What you have typed here is kept." in _code(WORDS)
 
 
 def test_the_screen_hands_the_step_control_the_row_and_decides_nothing():

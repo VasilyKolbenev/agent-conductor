@@ -190,6 +190,39 @@ export function attemptInFlight(detail, nodeId) {
     && !answered.has(row.record.action_id));
 }
 
+//: The document a reference resolves to, as the transport resolves it
+//: (`ArtifactHandoff.instruction`, `.bound`): the latest artifact under the
+//: ref among the records standing BEFORE the named proposal -- or, for a
+//: proposal a person is about to write, among all of them. Null when none
+//: stands, which is the file road's answer and not a refusal; and null when
+//: the proposal is not in these records, because what a proposal the journal
+//: does not hold bound is not a question this read can answer.
+export function latestDocument(records, artifactRef) {
+  let found = null;
+  for (const wrapper of rows(records)) {
+    if (wrapper.record_type === "artifact" && isObject(wrapper.record)
+        && wrapper.record.artifact_ref === artifactRef) {
+      found = wrapper.record;
+    }
+  }
+  return found;
+}
+
+export function boundDocument(records, proposalId, artifactRef) {
+  let found = null;
+  for (const wrapper of rows(records)) {
+    if (wrapper.record_type === "action_proposal" && isObject(wrapper.record)
+        && wrapper.record.proposal_id === proposalId) {
+      return found;
+    }
+    if (wrapper.record_type === "artifact" && isObject(wrapper.record)
+        && wrapper.record.artifact_ref === artifactRef) {
+      found = wrapper.record;
+    }
+  }
+  return null;
+}
+
 //: Whether this run is OVER, by either of the two facts that say so.
 //
 // The plan's own word for a run nothing can be added to, or the durable

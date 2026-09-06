@@ -429,12 +429,6 @@ by any of the above.
 Product gaps rather than gaps in this procedure, each with what it costs a person. A gap named
 here is one somebody will meet; a gap nobody named is one they meet alone.
 
-- **No screen can publish an artifact.** The Studio's write targets are `draft`, `revisions`,
-  `runs`, `decisions`, `proposals` and `actions` — artifacts are not among them, so the window
-  reads durable documents and cannot create one. **What it costs:** a step whose missing-artifact behaviour is `block` and
-  whose input nobody has produced can only be unblocked by calling the artifacts route directly.
-  `docs/owner-acceptance.md` step 12 shows that call, and says there that needing it is the
-  finding. A run seeded this way is otherwise entirely normal.
 - **A run cannot name the roles it was opened with.** Materialization substitutes instances for
   roles and only the result becomes durable; the run envelope carries no assignments. **What it
   costs:** on the Agents screen a participant shows its instance, provider and availability, and
@@ -466,8 +460,8 @@ here is one somebody will meet; a gap nobody named is one they meet alone.
   behaviour is `block` keeps its run `open` until the document is published, a standing
   decision is superseded, or a halt lands; this build has no cancel or abandon door. **What it
   costs:** a run seeded against a document nobody will ever publish stays open in the Runs
-  list, saying what it waits for, until somebody publishes it through the artifacts route or
-  removes the project by hand.
+  list, saying what it waits for, until somebody publishes it on the Runs screen under
+  **Publish a document** or removes the project by hand.
 - **An attempt that dies unreconciled keeps its run open and its step blocked.** An
   `action_request` with no `action_result` is an attempt in flight: the run stays `open`, the
   step is not offered again, and the Runs screen says so beside the attempt's phase. **What it

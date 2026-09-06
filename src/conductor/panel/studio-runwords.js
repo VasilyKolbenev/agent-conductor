@@ -60,6 +60,22 @@ export const RECORD_KINDS = Object.freeze({
   graph_definition: "The run was given its plan",
   run_terminal: "The plan has nothing left to open",
 });
+//: `artifacts.ARTIFACT_MEDIA_TYPES` and `artifacts.ARTIFACT_CONTENT_LIMIT`:
+//: the two closed facts a document a person publishes is held to at the
+//: boundary, copied here so the form can refuse beside the person.
+export const ARTIFACT_MEDIA_TYPES = Object.freeze(["text/markdown", "text/plain"]);
+export const ARTIFACT_CONTENT_LIMIT = 49152;
+//: What a control says while its own write is in flight. Said by two
+//: fragments -- the step controls and the document form -- so it is declared
+//: once here, as every sentence two files say is.
+//
+// The draft is NOT destroyed at the door. A refusal that does not re-read --
+// the line down, a body the boundary refuses, a session that rotated -- must
+// give the control back with what was typed still in it. So the shut state is
+// a fact about the WRITE, and it is what makes a second press impossible.
+export const WRITING_NOTE = "Writing… this control is shut until the server "
+  + "answers and this run has been read again. What you have typed here is "
+  + "kept.";
 //: contract_values.ControlMode -- the whole authority ladder, and what each
 //: rung PERMITS. There is no hidden autonomous rung.
 export const CONTROL_MODES = Object.freeze({

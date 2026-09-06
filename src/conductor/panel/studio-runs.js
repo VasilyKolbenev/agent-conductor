@@ -70,6 +70,10 @@ import {attemptInFlight} from "./studio-runread.js";
 //: that the part a reader has to audit is a whole file rather than a region of
 //: this one. Nothing about the offer rule is decided here.
 import {stepControls} from "./studio-runstep.js";
+//: The form that publishes a document into a run, and the instruction a
+//: step's proposal bound: the other write on this screen, in its own file for
+//: the step control's reason.
+import {boundInstruction, documentSection} from "./studio-rundocs.js";
 
 //: The one sentence, handed to whichever container is showing the word. Every
 //: container carrying `verification_failed` needs its OWN copy -- one written
@@ -513,6 +517,7 @@ function positionRow(node, runtime, standing, detail, state, handlers) {
   // does not name arrives here with an empty node, and an absent id would then
   // match every unbound request in the journal.
   planStanding(item, plan, attemptInFlight(detail, runtime.node_id));
+  item.append(...boundInstruction(detail, node));
   item.append(...alsoSay(runtime.outcome));
   // …and last, the one thing on this screen a person can DO to the run. It is
   // offered on the SCHEDULE's word and nothing else; the sentences above have
@@ -721,6 +726,7 @@ function detailColumn(runs, state, handlers) {
     assignmentSection(detail),
     planSection(detail),
     positionSection(detail, state, handlers),
+    documentSection(detail, state, handlers),
     outcomeSection(records),
     artifactSection(records),
     timelineSection(records),

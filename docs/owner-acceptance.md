@@ -269,39 +269,38 @@ naming `artifact-brief`, and a sentence saying it is not offered until that arti
 It must **not** say it is waiting on a predecessor step, and it must not show an empty "Waiting
 on" line. Nothing has been attempted for it, and nothing has failed.
 
-Now publish the artifact. **The Studio cannot do this** — that is a real gap and it is recorded
-as a residual in `docs/release-smoke.md`; the product's own screens can read artifacts but not
-create one. So this step calls the product's own API:
+Now publish the artifact, from the same screen. Under **Publish a document**, below the
+positions, choose `artifact-brief` as the reference — the list offers only the references this
+run's plan reads, and nothing there is typed but the document itself. **You must see** the
+document id minted from the reference (`artifact-brief-0`, then `-1` for the next one), the kind
+of text as a closed choice, and the size counted in bytes as you type, against the bound the
+server holds it to. Write a brief and press **Publish this document**.
 
-```powershell
-$BASE = "http://127.0.0.1:7801"
-$RUN  = "<the run id from step 10>"
-$S = Invoke-RestMethod "$BASE/command/session"
-$body = @{
-  artifact_id  = "artifact-brief-1"
-  artifact_ref = "artifact-brief"
-  media_type   = "text/markdown"
-  content      = "# Brief`n`nWhat this cycle is for."
-} | ConvertTo-Json
-Invoke-RestMethod -Method Post -Uri "$BASE/command/runs/$RUN/artifacts" `
-  -Headers @{ "X-Conduct-CSRF" = $S.csrf_token; "Origin" = $BASE } `
-  -ContentType "application/json" -Body $body
-```
-
-**You must then see**, without reloading anything by hand, the waiting sentence disappear and the
-step become available. If you have to reload to see it, record that.
+**You must then see**, without reloading anything by hand, the waiting sentence disappear, the
+step become available, and the document listed under **Artifacts**. If you have to reload to see
+it, record that. A document is immutable: publishing another under the same reference stands it
+beside the first, and whatever is proposed afterwards binds the newest one standing.
 
 ## 13. Drive the cycle and read the plan's own word
 
 Use the routed starter (`dalio-v3`) for this step, because its roads carry conditions.
 
 **First pass, approve.** Answer the confirm gate `approve`. Then go to **Runs** and open the
-run: the `do` row now reads `plan: runnable` and offers **Propose this step**. Press it. **You
-must see** the facts the proposal will carry — instance, capability, arguments, timeout,
-attempt id — drawn from the frozen plan and not from anything you can type; the only fields
-you fill are who proposes and why. Send it, and **you must see** the row read `proposed` and
-offer **Confirm this proposal**, with the proposal's own id and digest beside it. Give your
-name and confirm. **You must then see**, without reloading, the timeline grow on its own —
+run: the `do` row now reads `plan: runnable` and offers **Propose this step**. Before you press
+it, publish the instruction this step runs: under **Publish a document**, choose
+`instruction-plan` — the starter's own reference, for which `conduct init` writes no file — and
+write what the step is to do. **You must see** the Propose form say which instruction a proposal
+made now would bind: *durable document `instruction-plan-0`*, its size and when it was written;
+before you published it, the same row must have said *no durable document* and named the file
+the machine would read instead. Press **Propose this step**. **You must see** the facts the
+proposal will carry — instance, capability, arguments, timeout, attempt id — drawn from the
+frozen plan and not from anything you can type; the only fields you fill are who proposes and
+why. Send it, and **you must see** the row read `proposed` and offer **Confirm this proposal**,
+with the proposal's own id and digest beside it — and the instruction it bound, *the one
+standing when this proposal was written*. Publish a second `instruction-plan` now: **you must
+see** the Confirm form keep naming `instruction-plan-0`, because a source is bound when it is
+confirmed and never chosen again at execution; a Confirm form that switched to the newer
+document is a finding. Give your name and confirm. **You must then see**, without reloading, the timeline grow on its own —
 `action_request → effect_lease → execution_observed → action_result` — and, while the attempt
 runs, the row say *An attempt on this step is still in flight; the plan offers it again only
 after that attempt answers.* with no second control. Nothing runs by itself: a step that is

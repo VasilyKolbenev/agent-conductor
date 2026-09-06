@@ -83,7 +83,8 @@ LINE_CAP = 800
 #: a fault, and one reaching for a neighbour it was never granted is.
 PERMITTED = {
     "studio-store.js": frozenset({"./studio-model.js", "./studio-runread.js",
-                                  "./studio-review.js", "./studio-edits.js"}),
+                                  "./studio-review.js", "./studio-edits.js",
+                                  "./studio-rundraft.js"}),
     "studio-view.js": frozenset({"./command-view.js", "./command-projection.js",
                                  "./studio-model.js", "./studio-runform.js"}),
     #: The run form sits BELOW the view and never reaches back up: the view
@@ -99,8 +100,10 @@ PERMITTED = {
         "./studio-store.js", "./studio-view.js", "./studio-canvas.js",
         "./studio-inspector.js", "./studio-runs.js", "./studio-runwrite.js",
         "./studio-people.js"}),
-    #: What a press MEANS, and the whole of what it may reach.
-    "studio-runwrite.js": frozenset({"./studio-runstep.js"}),
+    #: What a press MEANS, and the whole of what it may reach: the two
+    #: fragments' own sentences and keys, nothing else.
+    "studio-runwrite.js": frozenset({"./studio-runstep.js",
+                                     "./studio-rundocs.js"}),
 }
 IMPORTS = r'from "(\./[a-z-]+\.js)";'
 
@@ -121,17 +124,18 @@ TRANSPORT = ("fetch(", "eventsource", "navigator.", "settimeout(",
 #: permitted: a second `fetch(` is a second door, and one nobody counted is one
 #: nobody reviewed.
 DOOR_COUNTS = (("fetch(", 2), ("new EventSource(", 1), ('method: "POST"', 1))
-#: The six targets the one mutation door may name. `proposals` and `actions`
-#: joined when a planned run became drivable from the Runs screen, and they
-#: joined the DOOR rather than opening one of their own: the counts above are
-#: unchanged, so both roads go through the same `fetch(`, the same token header
-#: and the same refusal vocabulary as the four before them.
+#: The seven targets the one mutation door may name. `proposals` and `actions`
+#: joined when a planned run became drivable from the Runs screen, and
+#: `artifacts` when a document could be published from it; each joined the
+#: DOOR rather than opening one of its own: the counts above are unchanged, so
+#: every road goes through the same `fetch(`, the same token header and the
+#: same refusal vocabulary as the four before them.
 WRITE_TARGETS = frozenset({"draft", "revisions", "runs", "decisions",
-                           "proposals", "actions"})
+                           "proposals", "actions", "artifacts"})
 #: Which of them are about a RUN and are therefore gated on the STREAM rather
 #: than on a workflow's readiness. Held as a subset of the targets above, so a
 #: word can never be gated by a list that does not name it.
-RUN_SCOPED = frozenset({"decisions", "proposals", "actions"})
+RUN_SCOPED = frozenset({"decisions", "proposals", "actions", "artifacts"})
 #: Ids `studio.html` declares that nothing mounts into BY NAME, and why. Each
 #: is a container the stylesheet owns; a new id that mounts nothing must be
 #: argued for here rather than left unnoticed. The five nav buttons are not on
@@ -396,7 +400,7 @@ def test_the_boot_module_names_one_mount_per_screen_and_per_state_line():
     assert set(re.findall(r'data-state="([a-z]+)"', html)) <= SCREEN_STATES
 
 
-def test_the_mutation_door_names_exactly_six_write_targets():
+def test_the_mutation_door_names_exactly_seven_write_targets():
     """One door, one closed list, and every name on it a real path.
 
     The list is what makes a write to anything else unrepresentable rather
@@ -404,10 +408,11 @@ def test_the_mutation_door_names_exactly_six_write_targets():
     it: a target with no path could never have been reachable, and a path the
     list forgot is a door with no name.
 
-    Four became six when the Runs screen learned to drive a planned step. What
-    did NOT change is the door: the counts above still say two `fetch(` and one
-    `method: "POST"`, so the two new roads are two NAMES on one door rather
-    than a second door nobody counted.
+    Four became six when the Runs screen learned to drive a planned step, and
+    seven when it learned to publish a document (R04). What did NOT change is
+    the door: the counts above still say two `fetch(` and one `method: "POST"`,
+    so the three new roads are three NAMES on one door rather than a second
+    door nobody counted.
     """
     boot = _code(BOOT)
     named = set(_frozen_list(boot, "WRITE_TARGETS"))

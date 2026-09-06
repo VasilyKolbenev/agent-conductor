@@ -304,8 +304,9 @@ function handoffMapping(box, form) {
       element("span", {className: "mono", text: ref}),
       element("span", {text: producers.length
         ? ` — produced by ${producers.map((row) => row.title).join(", ")}`
-        : " — no step in this workflow produces it. A run must receive it "
-          + "through the artifacts route before this step can run."}),
+        : " — no step in this workflow produces it. A run is handed it on "
+          + "the Runs screen, under Publish a document, before this step "
+          + "can run."}),
     ]));
   }
   box.append(list);

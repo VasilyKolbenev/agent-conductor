@@ -22,7 +22,7 @@ import {mountAgents, mountDecisions} from "./studio-people.js";
 import {mountRuns} from "./studio-runs.js";
 //: What a Human's press on a step control MEANS. The wire stays HERE: that
 //: module is handed this one's `write` and reaches no socket of its own.
-import {stepWriters} from "./studio-runwrite.js";
+import {documentWriters, stepWriters} from "./studio-runwrite.js";
 import {EMPTY, SCREENS, draftFrom, reduce, saveProblems} from "./studio-store.js";
 import {isId, mountDiagnostics, mountOverview, mountShell, mountToolbar}
   from "./studio-view.js";
@@ -194,15 +194,17 @@ const REOPENED = Object.freeze(["draft_changed", "draft_conflict"]);
     decisions: (id) => `/command/runs/${encodeURIComponent(id)}/decisions`,
     proposals: (id) => `/command/runs/${encodeURIComponent(id)}/proposals`,
     actions: (id) => `/command/runs/${encodeURIComponent(id)}/actions`,
+    artifacts: (id) => `/command/runs/${encodeURIComponent(id)}/artifacts`,
   });
-  //: The six targets the one mutation door may name. A write to anything else
-  //: is unrepresentable rather than screened out afterwards.
-  const WRITE_TARGETS = Object.freeze(
-    ["draft", "revisions", "runs", "decisions", "proposals", "actions"]);
+  //: The seven targets the one mutation door may name. A write to anything
+  //: else is unrepresentable rather than screened out afterwards.
+  const WRITE_TARGETS = Object.freeze(["draft", "revisions", "runs",
+    "decisions", "proposals", "actions", "artifacts"]);
   //: Which of them are about a RUN. They are gated on the STREAM being open
   //: rather than on a workflow's readiness, because none of them is about a
   //: workflow at all.
-  const RUN_SCOPED = Object.freeze(["decisions", "proposals", "actions"]);
+  const RUN_SCOPED = Object.freeze(
+    ["decisions", "proposals", "actions", "artifacts"]);
 
   function said(code) {
     return ERROR_LABELS[code] || ERROR_LABELS.store_error;
@@ -664,6 +666,8 @@ const REOPENED = Object.freeze(["draft_changed", "draft_conflict"]);
   //: others. `chosenRun` is a getter because the answer moves.
   const step = stepWriters({chosenRun: () => chosenRun, dispatch, isId,
     refreshRun, said, write});
+  const docs = documentWriters({chosenRun: () => chosenRun, dispatch, isId,
+    refreshRun, said, write});
 
   const handlers = Object.freeze({
     onScreen: (screen) => {
@@ -697,6 +701,8 @@ const REOPENED = Object.freeze(["draft_changed", "draft_conflict"]);
     editStep: step.editStep,
     proposeStep: step.proposeStep,
     confirmStep: step.confirmStep,
+    editDocument: docs.editDocument,
+    publishDocument: docs.publishDocument,
     selectDecision: (key) => dispatch({type: "decision-chosen", key}),
     editDecision: (patch) => dispatch({type: "decision-edit", patch}),
     submitDecision: onSubmitDecision,

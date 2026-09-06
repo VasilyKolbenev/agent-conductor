@@ -28,7 +28,8 @@
 // audit, and it is now the whole of one file.
 import {canonicalJson} from "./command-projection.js";
 import {element} from "./command-view.js";
-import {STREAM_DOWN_REASON} from "./studio-runwords.js";
+import {boundDocument, latestDocument} from "./studio-runread.js";
+import {STREAM_DOWN_REASON, WRITING_NOTE} from "./studio-runwords.js";
 
 //: `contract_values._id`'s grammar, twice: once as a value this window judges
 //: with, once as the pattern a control spells for the platform. Both are copies
@@ -114,17 +115,12 @@ export const STEP_MOVED = Object.freeze(
 export const READ_AGAIN = "Read again: this step is offered only while the "
   + "run's plan calls it runnable and the request fits what the run allows; "
   + "the run was read again.";
-//: What a control says while its own write is in flight.
-//
-// The draft is NOT destroyed at the door. A refusal that does not re-read --
-// the line down, a body the boundary refuses, a session that rotated -- must
-// give the control back with what was typed still in it, which is what
-// `STREAM_DOWN_REASON` has always promised. So the shut state here is a fact
-// about the WRITE, and it is what makes a second press impossible: it is
-// dispatched before the request goes out, and only the accepting read takes it
-// away, along with the whole draft.
-const WRITING_NOTE = "Writing… this control is shut until the server answers "
-  + "and this run has been read again. What you have typed here is kept.";
+//: What a control says while its own write is in flight is `WRITING_NOTE`,
+//: declared with the other sentences two fragments say. The draft is NOT
+//: destroyed at the door: a refusal that does not re-read must give the
+//: control back with what was typed still in it, so the shut state is a fact
+//: about the WRITE (`writingOf`), recorded before the request goes out and
+//: taken away only by the write's own end.
 //: What the window ASKS FOR, said beside the number so a reader can check it.
 const TIMEOUT_NOTE = "The window asks for this step's own ceiling or "
   + `${DEFAULT_TIMEOUT}s, whichever is smaller. A plan may name a ceiling `
@@ -340,10 +336,52 @@ function attemptId(node, runtime) {
   return minted;
 }
 
+//: WHICH DOCUMENT A DISPATCH RUNS, said where the person decides (R04 of the
+//: review of `8dec0e4`, under the owner's correction: a source is bound when
+//: it is confirmed, never chosen again at execution). The Propose form states
+//: what a proposal written NOW would bind -- the latest document under the
+//: step's instruction reference -- and the Confirm form states what the
+//: STANDING proposal bound: the document standing when it was written, which
+//: nothing published since can replace. No document means the file road, and
+//: that is named too.
+const INSTRUCTION_FIELD = "instruction_ref";
+
+function instructionRef(held) {
+  const found = (object(held) || {})[INSTRUCTION_FIELD];
+  return typeof found === "string" ? found : null;
+}
+
+function byteLength(value) {
+  return new TextEncoder().encode(value).length;
+}
+
+function instructionFacts(ref, bound, standing) {
+  if (ref === null) return [];
+  const label = `Instruction ${ref}`;
+  if (bound === null) {
+    return [fact(label, "no durable document"), note(standing
+      ? `No document stood under ${ref} when this proposal was written, so `
+        + `the machine's instructions/${ref}.md is read if it exists and the `
+        + "attempt is refused before anything is spawned if not."
+      : `No document stands under ${ref} in this run, so a proposal made now `
+        + `binds the machine's instructions/${ref}.md if it exists -- or is `
+        + "refused before anything is spawned. Publish a document under "
+        + `${ref} below, and a proposal made after that binds it.`)];
+  }
+  return [fact(label, `durable document ${show(bound.artifact_id)} · `
+    + `${byteLength(text(bound.content))} bytes · written `
+    + `${show(bound.created_at)}`), note(standing
+    ? "The one standing when this proposal was written. A document published "
+      + "since is durable and is not what runs; to run it, propose again."
+    : "The one standing now: a proposal made now binds it, and a document "
+      + "published after that proposal is not what runs.")];
+}
+
 //: What the PLAN decided about this step, drawn read-only. Every one of these
 //: travels into the body exactly as it is shown: there is no control here that
 //: could make the screen and the wire disagree.
-function planFacts(node, runtime) {
+function planFacts(node, runtime, detail) {
+  const ref = instructionRef(node.arguments);
   return [
     fact("Step", `${show(node.title)} · ${show(node.node_id)}`),
     fact("Instance", node.instance_id),
@@ -352,6 +390,8 @@ function planFacts(node, runtime) {
     note("The arguments are the plan's own bytes. The server refuses a "
       + "proposal that does not repeat them, so they are shown rather than "
       + "offered."),
+    ...instructionFacts(ref, ref === null ? null
+      : latestDocument(rows(detail.records), ref), false),
     fact("Longest this may run", `${timeoutOf(node)}s`),
     note(TIMEOUT_NOTE),
     fact("Attempt id", attemptId(node, runtime)),
@@ -513,7 +553,7 @@ function proposeForm(node, runtime, detail, state, handlers, authority) {
     [element("h4", {text: "Propose this step"}), note(PROPOSED_NOTE),
       ...(authority.permits === "proposals"
         ? [proposedUnder(authority.mode)] : []),
-      ...planFacts(node, runtime),
+      ...planFacts(node, runtime, detail),
       textControl("proposed_by", "proposedBy", liveValue(step, "proposed_by",
         draft === null ? "" : text(draft.proposedBy)), wire.edit,
       "Proposed by", {maxlength: "128", pattern: ID_PATTERN, required: ""}),
@@ -582,7 +622,8 @@ function confirmBody(proposal, draft) {
 // confirmed exactly as one written a second ago. A sentence saying otherwise
 // would have sent a person to propose again over a control that works.
 // `Proposed at` stays: it is history, and history is what it is drawn as.
-function proposalFacts(proposal) {
+function proposalFacts(proposal, detail) {
+  const ref = instructionRef(proposal.arguments);
   return [
     fact("Proposal", proposal.proposal_id),
     fact("Proposed at", proposal.proposed_at),
@@ -590,6 +631,8 @@ function proposalFacts(proposal) {
     fact("Why", proposal.rationale),
     fact("Capability", proposal.capability),
     fact("Arguments", canonicalJson(proposal.arguments)),
+    ...instructionFacts(ref, ref === null ? null : boundDocument(
+      rows(detail.records), proposal.proposal_id, ref), true),
     fact("Scope", proposal.scope),
     fact("Preview digest", proposal.preview_digest),
     fact("Against configuration", proposal.config_digest),
@@ -621,7 +664,7 @@ function confirmForm(node, detail, state, handlers) {
   const stops = shut === null ? whyNotConfirmable(draft) : shut;
   const form = element("form", {className: "studio-step", "data-step": step},
     [element("h4", {text: "Confirm this proposal"}), note(REQUESTED_NOTE),
-      ...proposalFacts(proposal),
+      ...proposalFacts(proposal, detail),
       textControl("confirmed_by", "confirmedBy", liveValue(step, "confirmed_by",
         draft === null ? "" : text(draft.confirmedBy)), wire.edit,
       "Confirmed by", {maxlength: "128", pattern: ID_PATTERN, required: ""}),

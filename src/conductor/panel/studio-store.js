@@ -18,6 +18,8 @@ import {EDIT_TYPES, MAX_EDGES, MAX_NODES, MAX_RESOURCES, NODE_KINDS,
   applyEdit, nodeIds} from "./studio-edits.js";
 import {projectControls, projectProviders, projectRunRead, projectRuns,
   projectStarters, projectWorkflow, projectWorkflows} from "./studio-model.js";
+import {NO_DOCUMENT, documentCleared, documentEdited, documentSpent}
+  from "./studio-rundraft.js";
 import {decisionRows, participantsOf} from "./studio-runread.js";
 import {changeSummary} from "./studio-review.js";
 
@@ -151,7 +153,7 @@ export const EMPTY = Object.freeze({
   canvas: Object.freeze({pan: Object.freeze({x: 0, y: 0}), zoom: 1,
     selection: Object.freeze({kind: null, id: null})}),
   runs: Object.freeze({phase: "empty", list: Object.freeze([]),
-    selectedId: null, detail: null, step: NO_STEP,
+    selectedId: null, detail: null, step: NO_STEP, document: NO_DOCUMENT,
     writes: Object.freeze({})}),
   decisions: Object.freeze({phase: "empty", list: Object.freeze([]),
     draft: NO_DRAFT}),
@@ -525,6 +527,7 @@ function keptDrafts(state, detail) {
   return {
     draft: same ? state.decisions.draft : NO_DRAFT,
     step: same ? state.runs.step : cleared(state.runs.step),
+    document: same ? state.runs.document : documentCleared(state.runs.document),
   };
 }
 
@@ -537,6 +540,7 @@ function runMoved(state, phase, detail, said) {
     project: Object.freeze({name: state.project.name,
       warnings: detail === null ? Object.freeze([]) : detail.warnings}),
     runs: Object.freeze({...state.runs, phase, detail, step: kept.step,
+      document: kept.document,
       selectedId: detail === null ? state.runs.selectedId : detail.run.run_id}),
     decisions: Object.freeze({...state.decisions, phase, draft: kept.draft,
       list: detail === null ? Object.freeze([]) : decisionRows(detail)}),
@@ -567,7 +571,8 @@ function runChosen(state, runId) {
   return Object.freeze({...runMoved(state, "loading", null,
       {notice: state.notice, noticeFrom: state.noticeFrom}),
     runs: Object.freeze({...state.runs, phase: "loading", selectedId: runId,
-      detail: null, step: cleared(state.runs.step)})});
+      detail: null, step: cleared(state.runs.step),
+      document: documentCleared(state.runs.document)})});
 }
 
 function seeded(state, event) {
@@ -751,6 +756,8 @@ const ARMS = Object.freeze({
     ? Object.freeze({...state, screen: event.screen}) : state,
   seed: seeded,
   status: (state, event) => spoken(state, text(event.notice)),
+  "document-edit": (state, event) => documentEdited(state, event.patch),
+  "document-spent": documentSpent,
   "step-chosen": stepChosen,
   "step-edit": (state, event) => stepDrafted(state, event.patch),
   "step-spent": stepSpent,

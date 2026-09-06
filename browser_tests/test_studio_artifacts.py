@@ -233,6 +233,15 @@ def _seed_run(root: Path) -> None:
     store.append(definition)
     node = next(row for row in definition.nodes
                 if row.node_id == PRODUCING_NODE)
+    # The input stands BEFORE the proposal that reads it, as it must in any
+    # journal the product writes: a review's inputs are bound at its proposal
+    # (R04), and the store now judges a produced artifact's inputs against
+    # the records standing when that proposal was written.
+    given = ArtifactDocument(
+        artifact_id="artifact-brief-1", artifact_ref=EXTERNAL_REF,
+        run_id=RUN_ID, created_at=NOW, media_type="text/markdown",
+        content="# Brief\n\nWhat this cycle is for.")
+    store.append(given)
     proposal = a_proposal(node_id=PRODUCING_NODE, index=1,
                           arguments=node.arguments,
                           instance_id=node.instance_id,
@@ -244,11 +253,6 @@ def _seed_run(root: Path) -> None:
     store.append(an_event(request, "effect_lease", index=1))
     store.append(an_event(request, "execution_observed", index=1,
                           outcome="succeeded", exit_code=0))
-    given = ArtifactDocument(
-        artifact_id="artifact-brief-1", artifact_ref=EXTERNAL_REF,
-        run_id=RUN_ID, created_at=NOW, media_type="text/markdown",
-        content="# Brief\n\nWhat this cycle is for.")
-    store.append(given)
     store.append(ArtifactDocument(
         artifact_id=PRODUCED_ID, artifact_ref=HANDOFF_REF, run_id=RUN_ID,
         created_at=NOW, media_type="text/markdown",
@@ -548,7 +552,8 @@ def test_the_handoff_mapping_names_the_producer_or_says_nobody_produces_it(
     unmet = bench.handoffs()
     assert list(unmet) == [EXTERNAL_REF], unmet
     assert "no step in this workflow produces it" in unmet[EXTERNAL_REF]
-    assert "artifacts route" in unmet[EXTERNAL_REF]
+    # …and where it is handed over: the Runs screen's own form, not a route.
+    assert "under Publish a document" in unmet[EXTERNAL_REF]
     assert "0 of 1 met" in bench.page.locator(HANDOFF_LINE).inner_text()
     assert bench.problems == []
 

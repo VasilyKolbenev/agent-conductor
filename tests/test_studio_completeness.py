@@ -630,7 +630,7 @@ def test_the_handoff_mapping_is_derived_from_the_document_and_names_producers():
     assert "producersOf(form.nodes, ref)" in body, body
     assert "produced by" in body, body
     assert "no step in this workflow produces it" in body, body
-    assert "through the artifacts route" in body, body
+    assert "under Publish a document" in body, body
     # The empty case is a third answer and not the external sentence: a step
     # that requires nothing is not a step whose requirement is unmet.
     assert 'context(box, "Handoff mapping"' in body, body

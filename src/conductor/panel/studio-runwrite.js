@@ -14,6 +14,7 @@
 // It composes no body either. The CONTROL builds those, out of the plan node
 // the schedule chose and the two facts a person typed; everything here is
 // about what happens AROUND the request.
+import {DOCUMENT_KEY, PUBLISHED_NOTE} from "./studio-rundocs.js";
 import {PROPOSED_NOTE, READ_AGAIN, REQUESTED_NOTE, STEP_MOVED}
   from "./studio-runstep.js";
 
@@ -69,5 +70,46 @@ export function stepWriters(door) {
     editStep: (patch) => door.dispatch({type: "step-edit", patch}),
     proposeStep: (row) => onStepWrite("proposals", row, PROPOSED_NOTE),
     confirmStep: (row) => onStepWrite("actions", row, REQUESTED_NOTE),
+  });
+}
+
+/**
+ * The two callbacks the Runs screen's document form is handed.
+ *
+ * The same shape as a step write and the same door: the write is recorded
+ * under the run and the document key before the request leaves, the accepted
+ * road spends only the draft it was minted from and re-reads the run, a
+ * refusal that says the screen is stale re-reads it too, and the write's own
+ * end is the one thing that gives the control back.
+ *
+ * @param {object} door What `stepWriters` is handed, and the whole of it.
+ * @returns {object} `editDocument`, `publishDocument`.
+ */
+export function documentWriters(door) {
+  function onDocumentWrite(row) {
+    if (!row || !door.isId(row.runId) || !row.body) return;
+    const asked = row.runId;
+    const spent = {runId: asked, nodeId: DOCUMENT_KEY,
+      generation: row.generation};
+    door.dispatch({type: "step-writing", ...spent, writing: true});
+    door.write("artifacts", asked, row.body, () => {
+      if (asked !== door.chosenRun()) return;
+      door.dispatch({type: "status", notice: PUBLISHED_NOTE});
+      door.dispatch({type: "document-spent", runId: asked,
+        generation: row.generation});
+      door.refreshRun(asked);
+    }, (result) => {
+      if (!STEP_MOVED.includes(result.code)
+          || asked !== door.chosenRun()) return;
+      door.dispatch({type: "status",
+        notice: `${door.said(result.code)} ${READ_AGAIN}`});
+      door.refreshRun(asked);
+    }).finally(() => door.dispatch({type: "step-writing", ...spent,
+      writing: false}));
+  }
+
+  return Object.freeze({
+    editDocument: (patch) => door.dispatch({type: "document-edit", patch}),
+    publishDocument: onDocumentWrite,
   });
 }
