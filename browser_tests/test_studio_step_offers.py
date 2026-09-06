@@ -26,9 +26,12 @@ from __future__ import annotations
 
 from playwright.sync_api import Browser
 
+from conductor.command.run_store import RunStore
+
 from browser_tests.test_studio_demo import demo_url  # noqa: F401
 from browser_tests.test_studio_lifecycle import _Window, _settle
 from browser_tests.test_studio_step import (  # noqa: F401
+    ACTOR,
     CLOSED_RUN,
     DONE_RUN,
     FLIGHT_RUN,
@@ -38,11 +41,17 @@ from browser_tests.test_studio_step import (  # noqa: F401
     RESTALE_RUN,
     RUN_ID,
     STEP,
+    WHY,
     _Bench,
+    _fact,
     _offered,
+    _one_attempt,
     _open,
+    _open_run,
     _read,
+    _review,
     _row,
+    _two_steps,
     bench,
 )
 
@@ -163,6 +172,132 @@ def test_an_unanswered_attempt_is_read_from_the_records_and_not_from_the_phase(
     finally:
         assert window.problems == []
         page.context.close()
+
+
+# -- 5. an attempt id that fits, whatever the step is called -------------------
+
+
+def fnv64(text: str) -> str:
+    """FNV-1a, 64 bits, over UTF-8 -- the reference the window's digest is held to.
+
+    Spelled here independently of `studio-runstep.js`: a window that changed
+    its hash would mint a different DIGEST form and this test would name a
+    twin that is no longer a twin, so the two implementations pin each other.
+    """
+    digest = 0xcbf29ce484222325
+    for byte in text.encode("utf-8"):
+        digest ^= byte
+        digest = (digest * 0x100000001b3) & 0xFFFFFFFFFFFFFFFF
+    return f"{digest:016x}"
+
+
+#: A step whose name fits the named form with room for one digit, one that
+#: fills the whole budget, and a step literally NAMED as the second one's
+#: digest -- the collision the revision-1 design admitted and this one refuses
+#: by construction.
+FITS = "m" * 118
+FULL = "n" * 128
+TWIN = fnv64(FULL)
+LONG_RUN = "run-long-ids"
+COUNTED_RUN = "run-digest-counted"
+
+
+def _type_into(page, step: str, field: str, value: str) -> None:
+    """Type into ONE step form's field the way a person does, and commit it.
+
+    Scoped to the form, because three runnable steps draw three `proposed_by`
+    fields; and typed by KEYSTROKE rather than filled, because a read landing
+    between a fill and its blur discards the filled value (measured: the
+    studio_modes stall), while typed characters survive the re-render.
+    """
+    control = page.locator(f'[data-step="propose:{step}"] [name="{field}"]')
+    control.click()
+    page.keyboard.type(value)
+    page.keyboard.press("Tab")
+
+
+def test_a_step_whose_name_fills_the_id_budget_is_proposed_beside_its_digest_twin(
+        chromium: Browser, bench: _Bench) -> None:
+    """R09 of the review of `8dec0e4`, made a test, and its collision closed.
+
+    `attempt-<node>-<n>` spent the node's own name inside the 128 the contract
+    allows, so a node of 119 characters was refused `contract_invalid` at the
+    boundary while `GraphNode` and the plan both admitted the name. The window
+    now mints a DIGEST form for a name that does not fit -- and the digest form
+    begins `attempt.` where the named form begins `attempt-`, so a step
+    literally named as another step's digest (the revision-1 collision) mints
+    a different id. Three steps, three proposals, three distinct ids, all 201.
+    """
+    store = RunStore(bench.root)
+    _open_run(store, LONG_RUN)
+    store.append(_two_steps(
+        LONG_RUN, (_review(FITS), _review(FULL), _review(TWIN))))
+    expected = {FITS: f"attempt-{FITS}-0", FULL: f"attempt.{TWIN}-0",
+                TWIN: f"attempt-{TWIN}-0"}
+    page, window = _open(chromium, bench)
+    try:
+        _read(page, LONG_RUN)
+        for step in (FITS, FULL, TWIN):
+            records = len(RunStore(bench.root).read(LONG_RUN).records)
+            page.wait_for_function(
+                "n => document.querySelectorAll('ol.studio-timeline > li')"
+                ".length === n", arg=records)
+            assert _fact(page, f"propose:{step}", "Attempt id") == expected[step]
+            _type_into(page, step, "proposed_by", ACTOR)
+            _type_into(page, step, "rationale", WHY)
+            with page.expect_response(
+                    lambda answer: answer.url.endswith("/proposals")) as waited:
+                page.locator(f'[data-focus-key="propose:{step}"]').click()
+            assert waited.value.status == 201, (len(step), waited.value.json())
+            page.wait_for_selector(f'[data-focus-key="confirm:{step}"]')
+
+        posted = [row["attempt_id"] for row in window.posted("/proposals")]
+        assert posted == [expected[FITS], expected[FULL], expected[TWIN]], posted
+        assert len(set(posted)) == 3
+        assert all(len(name) <= 128 for name in posted), posted
+        durable = [row.attempt_id for row in
+                   bench.records(LONG_RUN, "action_proposal")]
+        assert durable == posted, durable
+    finally:
+        assert window.problems == []
+        page.context.close()
+
+
+def test_the_counter_is_read_under_both_forms_of_one_step(
+        chromium: Browser, bench: _Bench) -> None:
+    """An attempt already spent under the DIGEST form is counted PAST, not filled in.
+
+    The step that fills the budget already carries `attempt.<digest>-1` -- with
+    no `-0` before it, the gap shape `run-lap` seeds for the named form --
+    answered `unknown` so it stays runnable. The next id must be `-2`: the
+    greatest counter already spelled under this form plus one. A scan that read
+    only the named form would find nothing, start at 0, and hand out the FIRST
+    FREE id instead -- `-0`, which no earlier attempt holds -- so a free-id
+    check alone cannot tell the two rules apart; the seeded gap can.
+    """
+    store = RunStore(bench.root)
+    _open_run(store, COUNTED_RUN)
+    store.append(_two_steps(COUNTED_RUN, (_review(FULL),)))
+    _one_attempt(store, COUNTED_RUN, FULL, index=91,
+                 attempt_id=f"attempt.{TWIN}-1", outcome="unknown")
+    page, window = _open(chromium, bench)
+    try:
+        _read(page, COUNTED_RUN)
+        assert _fact(page, f"propose:{FULL}", "Attempt id") == f"attempt.{TWIN}-2"
+        _type_into(page, FULL, "proposed_by", ACTOR)
+        _type_into(page, FULL, "rationale", WHY)
+        with page.expect_response(
+                lambda answer: answer.url.endswith("/proposals")) as waited:
+            page.locator(f'[data-focus-key="propose:{FULL}"]').click()
+        assert waited.value.status == 201, waited.value.json()
+
+        assert window.posted("/proposals")[0]["attempt_id"] == f"attempt.{TWIN}-2"
+    finally:
+        assert window.problems == []
+        page.context.close()
+
+
+# -- 6. the front door ---------------------------------------------------------
 
 
 def test_the_demo_offers_the_step_but_says_this_build_serves_no_adapter(

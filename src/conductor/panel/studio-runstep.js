@@ -213,30 +213,84 @@ function timeoutOf(node) {
     ? Math.min(node.timeout_seconds, DEFAULT_TIMEOUT) : DEFAULT_TIMEOUT;
 }
 
+//: The id budget the contract grants (`contract_values._id`), and the two
+//: spellings an attempt of one step may take within it. Every NAMED id begins
+//: `attempt-` and every DIGEST id begins `attempt.`: the character after the
+//: word is the namespace, so no string of one form equals any string of the
+//: other, by construction. A step literally named as another step's digest --
+//: the collision the first design of this fallback admitted -- therefore mints
+//: `attempt-<hex>-0` while the long step mints `attempt.<hex>-0`.
+const ID_LIMIT = 128;
+const NAMED = "attempt-";
+const DIGESTED = "attempt.";
+
+//: FNV-1a, 64 bits, over the UTF-8 bytes of a name. A fixed, documented
+//: function rather than a platform digest, because the id must be derivable on
+//: every read of every window, synchronously: `crypto.subtle` answers a promise
+//: and this render does not wait. Sixteen hex digits, zero-padded, so two names
+//: never differ only in a dropped leading digit. `browser_tests` holds a Python
+//: spelling of the same function against this one.
+function fnv64(text) {
+  let hash = 0xcbf29ce484222325n;
+  for (const byte of new TextEncoder().encode(text)) {
+    hash ^= BigInt(byte);
+    hash = (hash * 0x100000001b3n) & 0xffffffffffffffffn;
+  }
+  return hash.toString(16).padStart(16, "0");
+}
+
+//: The two prefixes under which THIS step's attempts may already stand.
+function attemptForms(nodeId) {
+  return Object.freeze({
+    named: `${NAMED}${nodeId}-`,
+    digested: `${DIGESTED}${fnv64(nodeId)}-`,
+  });
+}
+
+//: Every counter already spelled under one prefix. A foreign id in another
+//: grammar is skipped rather than counted.
+function countersUnder(prefix, ids) {
+  return ids
+    .filter((id) => typeof id === "string" && id.startsWith(prefix))
+    .map((id) => id.slice(prefix.length))
+    .filter((tail) => /^[0-9]+$/.test(tail))
+    .map((tail) => Number(tail));
+}
+
 //: This attempt's identity, minted from the step and the attempts already
 //: AUTHORIZED on it. It must be derivable, so a lost reply re-sends the same
 //: one, and it must not collide with an id this run already holds --
 //: `_hold_attempt_is_not_taken` refuses a repeat, and a refusal there is
 //: permanent, because the same journal mints the same id every time.
 //
-// So it is the greatest number already spelled in THIS grammar plus one, never
-// the count of the set. Counting is wrong the moment a number is skipped: one
-// `attempt-goal-1` in a journal of one attempt made the next mint
-// `attempt-goal-1` as well, and that step could never be proposed again.
+// So it is the greatest number already spelled under EITHER of this step's two
+// forms plus one, never the count of the set. Counting is wrong the moment a
+// number is skipped: one `attempt-goal-1` in a journal of one attempt made the
+// next mint `attempt-goal-1` as well, and that step could never be proposed
+// again.
 //
-// RESIDUAL, stated rather than guarded: `attempt-` and the counter spend ten
-// characters of the 128 an id may have, so a node id past about 118 mints one
-// the contract refuses, and the boundary answers `contract_invalid` without
-// naming the length. A plan naming a step that long needs bytes written around
-// this product before it needs a branch here.
+// BOUNDED, whatever the step is called (R09 of the review of `8dec0e4`). The
+// named form spends the step's own name, so a name of 119 characters minted
+// an id the contract refuses and the boundary answered `contract_invalid`
+// without naming the length -- although `GraphNode` and the plan both admit
+// the name. The form is chosen per counter: the named spelling while it fits
+// the budget, the digest spelling once it does not. No plan id is truncated;
+// the digest is a projection of the name and never an edit of it. Last, the
+// minted id is checked against the run's WHOLE set and bumped until free --
+// the server's refusal stays the authority for what one window cannot see.
 function attemptId(node, runtime) {
-  const prefix = `attempt-${node.node_id}-`;
-  const taken = rows(runtime.attempt_ids)
-    .filter((id) => typeof id === "string" && id.startsWith(prefix))
-    .map((id) => id.slice(prefix.length))
-    .filter((tail) => /^[0-9]+$/.test(tail))
-    .map((tail) => Number(tail));
-  return `${prefix}${taken.length ? Math.max(...taken) + 1 : 0}`;
+  const forms = attemptForms(node.node_id);
+  const ids = rows(runtime.attempt_ids);
+  const taken = [...countersUnder(forms.named, ids),
+    ...countersUnder(forms.digested, ids)];
+  const spell = (counter) => {
+    const named = `${forms.named}${counter}`;
+    return named.length <= ID_LIMIT ? named : `${forms.digested}${counter}`;
+  };
+  let counter = taken.length ? Math.max(...taken) + 1 : 0;
+  let minted = spell(counter);
+  while (ids.includes(minted)) minted = spell(++counter);
+  return minted;
 }
 
 //: What the PLAN decided about this step, drawn read-only. Every one of these

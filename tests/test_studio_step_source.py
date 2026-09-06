@@ -283,7 +283,7 @@ def test_only_a_human_press_reaches_the_two_new_write_targets():
 
 
 def test_the_attempt_id_counts_up_from_what_the_run_already_holds():
-    """A derivable identity that cannot collide with one already spent.
+    """A derivable, BOUNDED identity that cannot collide with one already spent.
 
     Both halves were unwitnessed while the only seeded run had zero attempts:
     `attempt-<node>-0` came out right whatever the body did. The body is pinned
@@ -295,19 +295,39 @@ def test_the_attempt_id_counts_up_from_what_the_run_already_holds():
     a journal of one attempt made the next mint collide with it forever. The
     greatest number already spelled plus one cannot, and a foreign id in
     another grammar is skipped rather than counted.
+
+    And it is BOUNDED (R09 of the review of `8dec0e4`): the named form spends
+    the node's own name, so a node of 119 characters minted an id the contract
+    refuses. Two forms now, and they cannot meet -- every named id begins
+    `attempt-`, every digest id begins `attempt.` -- so a node literally named
+    like another node's digest never shares an id with it. The counter is read
+    under BOTH of this node's forms, and the minted id is checked against the
+    run's whole set before it is offered.
     """
+    step = _code(STEP)
     body = re.search(r"function attemptId\(node, runtime\) \{(.*?)\n\}",
-                     _code(STEP), re.DOTALL)
+                     step, re.DOTALL)
     assert body is not None, "studio-runstep.js mints no attempt id"
     said = body.group(1)
-    assert "const prefix = `attempt-${node.node_id}-`;" in said, said
-    assert "id.startsWith(prefix)" in said, said
-    assert "/^[0-9]+$/.test(tail)" in said, said
+    assert 'const NAMED = "attempt-";' in step, step
+    assert 'const DIGESTED = "attempt.";' in step, step
+    assert "const ID_LIMIT = 128;" in step, step
+    # Both forms are scanned for the counter, and the counter is max + 1.
+    assert "countersUnder(forms.named, ids)" in said, said
+    assert "countersUnder(forms.digested, ids)" in said, said
     assert "Math.max(...taken) + 1" in said, said
-    assert "${prefix}${taken.length ? Math.max(...taken) + 1 : 0}" in said, said
+    # The fit rule chooses the form per counter, never truncating the name.
+    assert "named.length <= ID_LIMIT ? named" in said, said
+    # The free-id check against the whole run, not only this node's forms.
+    assert "while (ids.includes(minted))" in said, said
+    # The digest is a fixed, documented function over the UTF-8 bytes.
+    assert "function fnv64(text)" in step, step
+    assert "0xcbf29ce484222325n" in step and "0x100000001b3n" in step, step
     # The count is what this replaced, in either spelling.
     assert ".length}`" not in said, said
     assert "attempt_ids).length" not in said, said
+    # No truncation of a plan id anywhere in the minting road.
+    assert "slice(0" not in said and "substring(" not in said, said
 
 
 def test_the_window_asks_for_the_smaller_of_the_two_ceilings():

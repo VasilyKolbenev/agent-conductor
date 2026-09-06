@@ -49,6 +49,9 @@ GLOBALS = frozenset({
     "Object", "Promise", "RegExp", "Set", "String", "Symbol", "WeakMap",
     # the DOM the panel is allowed to touch
     "document", "window", "EventSource", "URL", "URLSearchParams",
+    # the two the attempt-id digest needs: bytes of a name, and 64-bit
+    # arithmetic that does not lose its top bits
+    "TextEncoder", "BigInt",
     # standard functions
     "isNaN", "parseFloat", "parseInt", "structuredClone", "fetch",
     "encodeURIComponent", "decodeURIComponent",
