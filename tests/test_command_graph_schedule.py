@@ -425,7 +425,8 @@ def test_the_schedule_never_sorts_and_never_answers_with_a_set():
     destroyed it outright.
     """
     for module in (graph_schedule, __import__(
-            "conductor.command.graph_schedule_values", fromlist=["x"])):
+            "conductor.command.graph_schedule_values", fromlist=["x"]),
+            __import__("conductor.command.graph_roads", fromlist=["x"])):
         source = Path(module.__file__).read_text(encoding="utf-8")
         called = {node.func.id for node in ast.walk(ast.parse(source))
                   if isinstance(node, ast.Call)

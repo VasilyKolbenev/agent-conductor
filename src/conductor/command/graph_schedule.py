@@ -52,6 +52,9 @@ from .contracts import (
 )
 from .artifacts import unresolved_input_refs
 from .graph_definition import GraphDefinition, GraphEdge, GraphNode
+# `loop_body` is re-exported: `workflow_draft` reads it from this namespace, and
+# the topology it answers from moved next door when this module reached its cap.
+from .graph_roads import _roads, _walk_order, loop_body  # noqa: F401
 from .graph_schedule_values import (  # noqa: F401 -- this module's own words
     GATE_ROUTES,
     NODE_SCHEDULE_STATES,
@@ -199,51 +202,30 @@ class _Frame:
     ceiling: int
 
 
-def _roads(nodes, edges) -> tuple[dict, dict]:
-    """Each step's in-edges and out-edges, both in document order.
+def lap_is_current(definition: GraphDefinition, values: tuple[Any, ...],
+                   node_id: str, index: int) -> bool:
+    """Whether the record at `index` belongs to the lap this step is on NOW.
 
-    Takes the two sequences rather than the document that carries them, so
-    a TEMPLATE can be asked the same questions a plan can -- which is what
-    the publish-time warning needs, one revision before a plan exists.
+    The decision door's question about a superseding receipt. Taking back what
+    was just said is a CORRECTION while no loop has begun another lap since it
+    was said; afterwards the same receipt is the reopened lap's answer, which
+    the door admits only once the plan has reached the gate again. Read off the
+    very lap frame the schedule charges this step in, so the door and the
+    schedule cannot disagree about which lap an answer fell in -- the second
+    copy of that arithmetic is what R02 of the review of `8dec0e4` grew out of.
+
+    `marks[-1]` is the lap of the last record, and it is the lap a record
+    appended now would get: laps only open and never close, and a journal
+    asked this question holds at least its plan. A step in no loop body is
+    always on its one lap, so every correction on it is admitted.
     """
-    incoming: dict[str, list[GraphEdge]] = {
-        node.node_id: [] for node in nodes}
-    outgoing: dict[str, list[GraphEdge]] = {
-        node.node_id: [] for node in nodes}
-    for edge in edges:
-        incoming[edge.to_node].append(edge)
-        outgoing[edge.from_node].append(edge)
-    return ({key: tuple(rows) for key, rows in incoming.items()},
-            {key: tuple(rows) for key, rows in outgoing.items()})
-
-
-def _walk_order(definition: GraphDefinition,
-                incoming: Mapping[str, tuple[GraphEdge, ...]]) -> tuple[str, ...]:
-    """Every step once, predecessors first, ties broken by document order.
-
-    An explicit stack rather than recursion, for `_acyclic`'s reason one module
-    over: a plan's depth is the caller's, and a walk that can exhaust the
-    interpreter's stack is a refusal this contract never wrote. The edge set is
-    already proved a DAG before this runs, so the walk terminates by
-    construction and there is no cycle arm here to be dead code.
-    """
-    placed: list[str] = []
-    seen: set[str] = set()
-    for node in definition.nodes:
-        if node.node_id in seen:
-            continue
-        seen.add(node.node_id)
-        stack = [(node.node_id, iter(incoming[node.node_id]))]
-        while stack:
-            node_id, roads = stack[-1]
-            edge = next(roads, None)
-            if edge is None:
-                placed.append(node_id)
-                stack.pop()
-            elif edge.from_node not in seen:
-                seen.add(edge.from_node)
-                stack.append((edge.from_node, iter(incoming[edge.from_node])))
-    return tuple(placed)
+    incoming, _outgoing = _roads(definition.nodes, definition.edges)
+    plan = _Plan(run_id=definition.run_id, values=values,
+                 by_id={node.node_id: node for node in definition.nodes},
+                 incoming=incoming)
+    _owed, frames = _lap_demands(definition, plan)
+    marks = frames[node_id].marks
+    return marks[index] == marks[-1]
 
 
 def _auto_settling(node: GraphNode) -> bool:
@@ -346,15 +328,32 @@ def _routed_count(plan: _Plan, node: GraphNode, condition: str | None,
     routed to its word, which is what makes a retraction inside a lap a
     correction rather than a trip.
 
-    A step that settles by arriving is answered by its own arrivals, whatever
-    the road says: it produces one word per lap and could not have delivered a
-    different number of them on a conditional road than on a plain one. That
-    also covers every loop node, so there is deliberately no fourth arm here for
-    one -- a branch nothing can reach is a branch nothing can prove.
+    A step that settles by arriving is answered by its own arrivals -- and a
+    LOOP by which of its two words each arrival produced. A loop at arrival `k`
+    says `on_bound_remaining` while `k < bound` and `on_bound_reached` once
+    `k >= bound`, so the first road is delivered `min(arrivals, bound - 1)` laps
+    and the second exactly once, when the bound is reached (design §5.2). This
+    arm was missing on `8dec0e4`: every road out of a loop was answered with the
+    loop's arrivals, the three roads out of an exhausted inner loop read alike,
+    and an outer loop asking for `on_bound_remaining` reopened the body the
+    inner loop had just spent. A task carrying no capability produces no word
+    at all and the contract refuses a condition on its roads, so it has no such
+    arm and is answered by its arrivals alone.
     """
     if _auto_settling(node):
-        return _arrivals(plan, node, frame) if plan.incoming[node.node_id] \
-            else frame.ceiling
+        if node.loop is None or condition is None:
+            return (_arrivals(plan, node, frame) if plan.incoming[node.node_id]
+                    else frame.ceiling)
+        # A loop no road reaches has arrived NOWHERE: §5.2 defines both of its
+        # words over arrivals(p), and a step nobody reaches has none. The
+        # demanding loop's ceiling stands in only on the unconditional road
+        # above, where its one job is never to bind the `min`; read as
+        # arrivals it made such a loop deliver laps it never had.
+        arrived = (_arrivals(plan, node, frame) if plan.incoming[node.node_id]
+                   else 0)
+        if condition == "on_bound_remaining":
+            return min(arrived, node.loop.bound - 1)
+        return 1 if arrived >= node.loop.bound else 0
     if condition is None:
         return _settled_laps(plan, node, frame)
     return len(_lapsed_words(plan, node, frame, condition))
@@ -411,37 +410,6 @@ def _arrivals(plan: _Plan, node: GraphNode, frame: _Frame) -> int:
     return min((_routed_count(plan, plan.by_id[edge.from_node],
                               edge.condition, frame)
                 for edge in plan.incoming[node.node_id]), default=0)
-
-
-def loop_body(nodes, edges, loop) -> frozenset[str]:
-    """The steps one loop reopens: forward from `back_to`, backward from the loop.
-
-    Both ends inclusive, and over the drawing alone -- no record is read, so
-    which steps a loop owns cannot change while a run is in flight.
-
-    Public, and asked of a template as well as of a plan: the publish-time
-    warning has to know which steps a loop reopens BEFORE any run exists, and
-    a second implementation of "what a loop owns" would be a second answer to
-    the question the schedule decides laps by.
-    """
-    incoming, outgoing = _roads(nodes, edges)
-    forward = _reachable(loop.loop.back_to, outgoing, "to_node")
-    backward = _reachable(loop.node_id, incoming, "from_node")
-    return forward & backward
-
-
-def _reachable(start: str, roads: Mapping[str, tuple[GraphEdge, ...]],
-               following: str) -> frozenset[str]:
-    """Every step reachable from one, along whichever end of the road is named."""
-    found = {start}
-    stack = [start]
-    while stack:
-        for edge in roads[stack.pop()]:
-            beyond = getattr(edge, following)
-            if beyond not in found:
-                found.add(beyond)
-                stack.append(beyond)
-    return frozenset(found)
 
 
 def _lap_demands(definition: GraphDefinition,
