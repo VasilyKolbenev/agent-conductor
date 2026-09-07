@@ -502,7 +502,41 @@ class HeadlessCliTransport(ReceiptWriting, ModelRouting):
                 f"the pinned {profile.tool_noun} build is not the reviewed "
                 f"{profile.reviewed_version} this adapter was written against, "
                 f"so no task was spawned")
-        return None
+        return self._login_preflight(request)
+
+    def _login_preflight(
+            self, request: ActionRequest) -> ActionResultReceipt | None:
+        """Prove the pinned SUBSCRIPTION login answers, or refuse before a task.
+
+        Only on the subscription road: the API-key road has no login to ask
+        about, and a build that ran this there would be inventing a second thing
+        that can fail. The vendor's own status command is asked, and only its
+        EXIT CODE is read -- the answer is a fact about an account, and a
+        product that parsed and reported it would be repeating somebody's
+        account state into a durable receipt.
+
+        Measured on the reviewed builds: with no login, Claude Code's
+        ``auth status --json`` exits 1 and Codex's ``login status`` exits 1, and
+        neither needs a credential to answer. The refusal below therefore says
+        what is missing and how a PERSON fixes it, and quotes no child output at
+        all -- what the operator has to know is the variable, the command and
+        that this build never runs it for them.
+        """
+        profile = self.profile
+        auth, _auth_home = self._login()
+        if auth != "subscription" or not profile.login_argv:
+            return None
+        outcome = self._attempt(
+            profile.login_argv, WORK_DIR,
+            timeout=min(profile.version_timeout_seconds, request.timeout_seconds))
+        if outcome.status == "completed" and outcome.exit_code == 0:
+            return None
+        return self._receipt(
+            request, "failed", None,
+            f"the pinned {profile.tool_noun} build has no usable subscription "
+            f"login in the directory this provider pins, so no task was "
+            f"spawned; sign in yourself with {profile.home_env} set to that "
+            f"directory -- this build never runs a login")
 
     def _attempt(
             self, argv: ArgvSource, cwd: str, *,

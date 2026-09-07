@@ -279,6 +279,13 @@ class HarnessProfile:
     capability: str = DISPATCH_CAPABILITY
     output_limit: int = OUTPUT_LIMIT
     version_timeout_seconds: int = VERSION_TIMEOUT_SECONDS
+    #: The code-owned argv that asks this vendor whether its own login answers,
+    #: or empty for a provider whose transport drives no login. Read for its EXIT
+    #: CODE alone: the answer describes somebody's account, and a build that
+    #: parsed and reported it would put account state into a durable receipt.
+    #: It is asked only on the subscription road, where there is a login to ask
+    #: about, and it is never a substitute for a real run.
+    login_argv: tuple[str, ...] = ()
     #: WHERE this vendor's one-shot mode takes the task. A closed choice of two,
     #: and it is structural rather than advisory: the transport calls a
     #: DIFFERENT argv builder for each, and the one it calls for `stdin` takes

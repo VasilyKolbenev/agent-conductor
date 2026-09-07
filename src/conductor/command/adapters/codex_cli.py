@@ -339,6 +339,9 @@ STDIN_PROMPT = "-"
 #: bare form beside `--with-api-key`, which reads a key from stdin and is the
 #: road this build does not take when an operator pinned a subscription.
 LOGIN_ARGV = ("login",)
+#: MEASURED on the reviewed binary with an empty `CODEX_HOME`: `login status`
+#: exits 1 and writes "Not logged in" to stderr, which this build never reads.
+LOGIN_STATUS_ARGV = ("login", "status")
 MODEL_FLAG = "--model"
 VERSION_ARGV = ("--version",)
 #: Capture ceiling for either spawn; the pump drains past it and drops the rest.
@@ -436,7 +439,8 @@ CODEX_PROFILE = HarnessProfile(
     reviewed_version=REVIEWED_CODEX_VERSION,
     home_dir=HOME_DIR, marker_dir=MARKER_DIR,
     home_env=CODEX_HOME_ENV, forced_env=CODEX_FORCED_ENV,
-    version_argv=VERSION_ARGV, exit_codes_published=False,
+    version_argv=VERSION_ARGV, login_argv=LOGIN_STATUS_ARGV,
+    exit_codes_published=False,
     capability=DISPATCH_CAPABILITY, output_limit=CODEX_OUTPUT_LIMIT,
     version_timeout_seconds=VERSION_TIMEOUT_SECONDS,
     home_id_kind="codex-home",

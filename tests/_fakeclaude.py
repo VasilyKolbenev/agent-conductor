@@ -90,6 +90,11 @@ SPAWN_LOG = "FAKECLAUDE_SPAWN_LOG"
 VERSION = "FAKECLAUDE_VERSION"
 #: Non-empty makes `--version` itself fail, so the preflight refusal is testable.
 VERSION_FAILS = "FAKECLAUDE_VERSION_FAILS"
+#: Non-empty makes the LOGIN STATUS spawn answer "not signed in", the way the
+#: reviewed binary does with an empty config directory: exit 1. Default is the
+#: signed-in answer, so a subscription test that is about something else is not
+#: forced to arrange a login first.
+LOGIN_FAILS = "FAKECLAUDE_LOGIN_FAILS"
 #: Exit code for a prompt spawn; `--version` always exits 0 unless it is failed.
 EXIT = "FAKECLAUDE_EXIT"
 #: Emit this on stdout during a prompt spawn, to stand for a model's answer.
@@ -140,11 +145,18 @@ SWITCH_NAMES = ("DISABLE_AUTOUPDATER", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC
 #: after the reviewed constant moved; the DRESSING is spelled here, because that
 #: is this fake's own subject.
 try:  # pragma: no cover -- the child runs with the package importable
-    from conductor.command.adapters.claude_code import REVIEWED_CLAUDE_VERSION
+    from conductor.command.adapters.claude_code import (
+        LOGIN_STATUS_ARGV,
+        REVIEWED_CLAUDE_VERSION,
+    )
 
     DEFAULT_VERSION = f"{REVIEWED_CLAUDE_VERSION} (Claude Code)"
+    #: Read from the adapter for the same reason the semver is: a fake carrying
+    #: its own copy would answer a login question the transport stopped asking.
+    LOGIN_STATUS = list(LOGIN_STATUS_ARGV)
 except ImportError:  # pragma: no cover -- never on a configured tree
     DEFAULT_VERSION = ""
+    LOGIN_STATUS = []
 
 
 def build_executable(directory: str | os.PathLike[str]) -> Path | None:
@@ -162,8 +174,10 @@ def spawns(log_path: str | os.PathLike[str]) -> list[dict]:
 
 
 def prompt_spawns(log_path: str | os.PathLike[str]) -> list[dict]:
-    """Only the spawns that really ran a prompt, never the version preflights."""
-    return [row for row in spawns(log_path) if row["argv"][:1] != ["--version"]]
+    """Only the spawns that really ran a prompt, never a preflight of either kind."""
+    return [row for row in spawns(log_path)
+            if row["argv"][:1] != ["--version"]
+            and not (LOGIN_STATUS and row["argv"][:len(LOGIN_STATUS)] == LOGIN_STATUS)]
 
 
 # --- the child body ----------------------------------------------------------
@@ -326,6 +340,16 @@ def main() -> int:
             os.environ.get(VERSION, DEFAULT_VERSION).encode("utf-8") + b"\n")
         sys.stdout.buffer.flush()
         return 0
+    if LOGIN_STATUS and argv[:len(LOGIN_STATUS)] == LOGIN_STATUS:
+        # The vendor's status command reads no stdin either, and this fake
+        # answers it the way the reviewed binary does: a JSON line and an exit
+        # code, with the code carrying the whole answer.
+        _record(argv, None, None)
+        signed = not os.environ.get(LOGIN_FAILS)
+        sys.stdout.buffer.write(
+            b'{"loggedIn": true}\n' if signed else b'{"loggedIn": false}\n')
+        sys.stdout.buffer.flush()
+        return 0 if signed else 1
     # The task is read BEFORE anything is emitted: a child that answered first
     # and read afterwards would pass a test that only counts bytes back.
     task, task_text = _read_task()

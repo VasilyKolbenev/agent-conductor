@@ -268,6 +268,13 @@ SAFE_MODE_ARGV = ("--safe-mode",)
 #: --help` declares `--claudeai` as "Use Claude subscription (default)" and
 #: `--console` as API billing, which this build never asks for.
 LOGIN_ARGV = ("auth", "login", "--claudeai")
+#: What this build asks INSTEAD, on the subscription road, before a task: the
+#: vendor's own status command, read for its exit code. MEASURED on the reviewed
+#: binary with an empty config directory: it exits 1 and prints
+#: `{"loggedIn": false, ...}`. It is not silent -- it sends one HEAD request to
+#: the configured base URL -- and that is stated rather than hidden, because a
+#: preflight that reaches the network is a fact an operator should know.
+LOGIN_STATUS_ARGV = ("auth", "status", "--json")
 MODEL_FLAG = "--model"
 #: The four names DOCS (cli-reference) defines as "an alias for the latest
 #: model", quoted in the module docstring above. Each resolves to whatever this
@@ -326,7 +333,8 @@ CLAUDE_PROFILE = HarnessProfile(
     reviewed_version=REVIEWED_CLAUDE_VERSION,
     home_dir=HOME_DIR, marker_dir=MARKER_DIR,
     home_env=CLAUDE_HOME_ENV, forced_env=CLAUDE_FORCED_ENV,
-    version_argv=VERSION_ARGV, exit_codes_published=True,
+    version_argv=VERSION_ARGV, login_argv=LOGIN_STATUS_ARGV,
+    exit_codes_published=True,
     capability=DISPATCH_CAPABILITY, output_limit=CLAUDE_OUTPUT_LIMIT,
     version_timeout_seconds=VERSION_TIMEOUT_SECONDS,
     home_id_kind="claude-home",

@@ -30,6 +30,7 @@ from conductor.command.adapters.claude_code import (
     CLAUDE_HOME_ENV,
     CLAUDE_PROTOCOL,
     CLAUDE_PROVIDER_ID,
+    LOGIN_STATUS_ARGV,
     SAFE_MODE_ARGV,
     ClaudeCodeError,
 )
@@ -54,7 +55,8 @@ from tests.test_command_claude_transport import (
 AUTH_HOME = "/var/lib/conduct/auth/claude-code"
 
 
-def a_harness(tmp_path: Path, *, auth: str = "api_key", auth_home: str = ""):
+def a_harness(tmp_path: Path, *, auth: str = "api_key", auth_home: str = "",
+              **knobs: str):
     """One Claude harness pinned to a login, driven through the real factory."""
     from conductor.command.adapters.harness_workspace import INSTRUCTION_DIR
 
@@ -66,7 +68,7 @@ def a_harness(tmp_path: Path, *, auth: str = "api_key", auth_home: str = ""):
     (instructions / "instr-001.md").write_text(
         "Add the missing guard.", encoding="utf-8", newline="\n")
     log = tmp_path / "spawns.log"
-    environ = {_fakeclaude.SPAWN_LOG: str(log)}
+    environ = {_fakeclaude.SPAWN_LOG: str(log), **knobs}
     config = ProviderConfig(
         provider_id=CLAUDE_PROVIDER_ID, executable=str(exe),
         protocol=CLAUDE_PROTOCOL, env_allow=tuple(sorted(environ)),
@@ -191,6 +193,69 @@ def _codex(pin, tmp_path: Path):
     return CodexCliTransport(
         pin, ProcessRunner(root), root=root, clock=lambda: NOW, ids=_Ids(),
         adapter_id=CODEX_PROVIDER_ID)
+
+
+def test_a_missing_login_refuses_before_any_task_is_spawned(tmp_path):
+    """The refusal a person can act on, and the one this build owes them.
+
+    It names the variable and says who signs in; it quotes no byte of what the
+    vendor's status command printed, because that answer describes an account.
+    """
+    adapter, _root, log = a_harness(
+        tmp_path, auth="subscription", auth_home=AUTH_HOME,
+        **{_fakeclaude.LOGIN_FAILS: "1"})
+
+    receipt = run_once(adapter, a_request())
+
+    assert receipt.outcome == "failed"
+    assert "no usable subscription login" in receipt.detail
+    assert "no task was spawned" in receipt.detail
+    assert CLAUDE_HOME_ENV in receipt.detail
+    assert "never runs a login" in receipt.detail
+    assert "loggedIn" not in receipt.detail, "the child's answer was repeated"
+    assert _fakeclaude.prompt_spawns(log) == [], "a task ran without a login"
+
+
+def test_a_login_that_answers_lets_the_task_run(tmp_path):
+    """The positive control, so the refusal above is not passing for a second
+    reason: the same road with a login that answers spawns the task."""
+    adapter, _root, log = a_harness(
+        tmp_path, auth="subscription", auth_home=AUTH_HOME)
+
+    assert run_once(adapter, a_request()).outcome == "succeeded"
+
+    assert len(_fakeclaude.prompt_spawns(log)) == 1
+
+
+def test_the_api_key_road_is_never_asked_about_a_login(tmp_path):
+    """A build that asked would be inventing a second thing that can fail for
+    an operator who pinned no login at all."""
+    adapter, _root, log = a_harness(tmp_path, **{_fakeclaude.LOGIN_FAILS: "1"})
+
+    assert run_once(adapter, a_request()).outcome == "succeeded"
+
+    argvs = [row["argv"] for row in _fakeclaude.spawns(log)]
+    assert not [row for row in argvs if row[:1] == ["auth"]], argvs
+
+
+def test_the_status_command_this_build_asks_is_the_vendors_own(tmp_path):
+    """Read for its EXIT CODE, and asked with the login directory in place."""
+    adapter, _root, log = a_harness(
+        tmp_path, auth="subscription", auth_home=AUTH_HOME)
+
+    run_once(adapter, a_request())
+
+    asked = [row for row in _fakeclaude.spawns(log)
+             if row["argv"][:1] == ["auth"]]
+    assert len(asked) == 1, asked
+    # Spelled out rather than read from the adapter: the constant, the fake that
+    # answers it and this test would otherwise move together, and a question the
+    # vendor does not implement would look exactly like one it does. These three
+    # tokens are a claim about `claude auth status --json` on 2.1.239, which a
+    # person can check against the binary's own help.
+    assert asked[0]["argv"] == ["auth", "status", "--json"]
+    assert list(LOGIN_STATUS_ARGV) == ["auth", "status", "--json"]
+    assert asked[0]["claude_home"] == AUTH_HOME
 
 
 def test_both_harnesses_read_their_login_from_the_variable_they_already_owned():
