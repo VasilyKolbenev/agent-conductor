@@ -201,7 +201,7 @@ def test_both_login_protocols_admit_the_subscription_mode(protocol):
                     auth_home=AUTH_HOME).auth == SUBSCRIPTION_AUTH
 
 
-def test_the_login_vocabulary_shares_no_value_with_the_other_two(tmp_path):
+def test_the_login_vocabulary_shares_no_value_with_the_other_two():
     assert CONTRACT_AUTH_STATES == frozenset(
         {"api_key", "subscription", "unpinned"})
     assert not CONTRACT_AUTH_STATES & set(AVAILABILITY_STATES)

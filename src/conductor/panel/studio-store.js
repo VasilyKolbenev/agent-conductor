@@ -172,7 +172,7 @@ function wireProviders(value) {
   return Object.freeze(projectProviders(value).map((row) => Object.freeze({
     provider_id: row.providerId, display_name: row.displayName,
     availability: row.availability, implementation: row.implementation,
-    controls: row.controls,
+    auth: row.auth, controls: row.controls,
   })));
 }
 

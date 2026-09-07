@@ -173,14 +173,22 @@ def _place(index: int, total: int) -> str:
     return "what you typed" if total == 1 else f"entry {index} of {total}"
 
 
-def _refuse_name(token: str, index: int, total: int) -> str | None:
+def _refuse_name(token: str, index: int, total: int,
+                 subscription: bool = False) -> str | None:
     """Why this token is not a name this build will allow, or None if it is.
 
     Every branch is careful about what it repeats: the head of a `NAME=value`
     is quoted only when the head is itself a name, because `sk-live-x=y` has a
     left half too and it is not one.
+
+    The API-billing refusal is applied HERE, while somebody is choosing the
+    name, and not only at the config door: a dialogue that took every answer and
+    then refused the finished row would cost a person the whole conversation to
+    learn one word, which is the same defect ADR 0007 records about a refused
+    name surfacing at the spawn door.
     """
     from conductor.command.adapters.process import injecting_env_reason
+    from conductor.command.adapters.provider import API_BILLING_ENV
 
     where = _place(index, total)
     if "=" in token:
@@ -196,10 +204,15 @@ def _refuse_name(token: str, index: int, total: int) -> str | None:
     reason = injecting_env_reason(token)
     if reason is not None:
         return f"{token!r} may not be allowed: {reason}"
+    if subscription and token in API_BILLING_ENV:
+        return (f"{token!r} pays for model access through an API account, and "
+                "you pinned the subscription login. Passing both would bill the "
+                "API account without saying so, so this build refuses the pair.")
     return None
 
 
-def _ask_env_names(ask: Callable[[str], str]) -> list[str]:
+def _ask_env_names(ask: Callable[[str], str],
+                   subscription: bool = False) -> list[str]:
     """Read environment variable NAMES, refusing a value and an injector alike.
 
     A refusal says WHY, because "invalid" sends a person hunting for a typo in
@@ -212,7 +225,7 @@ def _ask_env_names(ask: Callable[[str], str]) -> list[str]:
         if not answer:
             return []
         names = answer.replace(",", " ").split()
-        refusals = [_refuse_name(name, place, len(names))
+        refusals = [_refuse_name(name, place, len(names), subscription)
                     for place, name in enumerate(names, 1)]
         stated = next((why for why in refusals if why is not None), None)
         if stated is not None:
@@ -231,6 +244,8 @@ def _summarise(config, path: Path, existing: Iterable[str]) -> None:
     _say(f"  protocol    {config.protocol}   (chosen by this build, not by you)")
     _say(f"  executable  {config.executable}")
     _say(f"  entrypoint  {config.entrypoint or '(none)'}")
+    _say(f"  login       {config.auth}")
+    _say(f"  login dir   {config.auth_home or '(none)'}")
     _say(f"  env_allow   {' '.join(config.env_allow) or '(none)'}")
     kept = [name for name in existing if name != config.provider_id]
     if kept:
@@ -280,10 +295,53 @@ def _ask_entrypoint(ask: Callable[[str], str], provider_id: str,
         optional=True)
 
 
+def _ask_login(ask: Callable[[str], str], provider_id: str,
+               protocol: str) -> tuple[str, str]:
+    """Ask which login this provider uses, or state the only one there is.
+
+    Asked exactly where there is a choice, on the same rule as the entrypoint
+    question: `login_hint` names the protocols whose transport really drives a
+    vendor login, and it is the same set the config door admits `subscription`
+    for. A provider with no such transport is TOLD which login it will use
+    rather than offered a menu of one.
+
+    The subscription road asks for a DIRECTORY, never a credential: the vendor's
+    own command writes the login there, this build only points the harness at
+    it, and the command is printed so a person can run it in their own shell.
+    """
+    from conductor.command.adapters.provider import (
+        DEFAULT_AUTH_MODE, SUBSCRIPTION_AUTH)
+    from conductor.command.providers import login_hint
+
+    hint = login_hint(protocol)
+    if hint is None:
+        _say(f"\nThis build drives no vendor login for {provider_id}, so it "
+             "reads its credential from the environment by one of the names "
+             "you allow below.")
+        return DEFAULT_AUTH_MODE, ""
+    _say(f"\nHow does {provider_id} sign in?")
+    _say("  1  its own subscription login, kept in a directory you name")
+    _say("  2  a credential this build reads from the environment")
+    while True:
+        answer = ask("> ").strip()
+        if answer == "2":
+            return DEFAULT_AUTH_MODE, ""
+        if answer == "1":
+            break
+        _say("  type 1 or 2.")
+    home = _ask_absolute(
+        ask, "Absolute path of the directory to keep that login in: ",
+        optional=False, noun="login directory")
+    _say(f"\n  Sign in yourself, once, in your own shell -- this build never "
+         f"runs a login:\n    {hint[0]}={home}\n    <executable> "
+         f"{' '.join(hint[1])}")
+    return SUBSCRIPTION_AUTH, home
+
+
 def _collect(ask: Callable[[str], str]):
     """Ask the questions this provider's pin shape needs, and build the config."""
     from conductor.command.adapters.provider import (
-        ProviderConfig, ProviderConfigError)
+        SUBSCRIPTION_AUTH, ProviderConfig, ProviderConfigError)
     from conductor.command.providers import entrypoint_rule
 
     provider_id, protocol, display = _choose_provider(ask)
@@ -291,11 +349,13 @@ def _collect(ask: Callable[[str], str]):
     executable = _ask_absolute(
         ask, f"Absolute path to the {provider_id} executable: ", optional=False)
     entrypoint = _ask_entrypoint(ask, provider_id, entrypoint_rule(protocol))
-    env_allow = _ask_env_names(ask)
+    auth, auth_home = _ask_login(ask, provider_id, protocol)
+    env_allow = _ask_env_names(ask, auth == SUBSCRIPTION_AUTH)
     try:
         return ProviderConfig(
             provider_id=provider_id, executable=executable, protocol=protocol,
-            entrypoint=entrypoint, env_allow=env_allow)
+            entrypoint=entrypoint, env_allow=env_allow, auth=auth,
+            auth_home=auth_home)
     except ProviderConfigError as error:
         raise SetupError(f"this build refuses that provider: {error}") from None
 

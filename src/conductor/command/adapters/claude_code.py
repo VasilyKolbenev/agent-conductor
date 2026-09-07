@@ -238,6 +238,14 @@ NO_SESSION_ARGV = ("--no-session-persistence",)
 #: The flag this vendor names a model with. A FULL NAME is what this build
 #: ever sends through it; see the module docstring for why an alias is not
 #: a thing a durable record can be read against.
+#: The vendor's own subscription login, as a PERSON runs it. This build never
+#: runs it: a login is an interactive, account-holding act, and a product that
+#: performed one on somebody's behalf would be holding their credentials. It is
+#: printed, with the config directory the operator pinned, so the command can be
+#: pasted into their own shell. OBSERVED on the reviewed binary: `auth login
+#: --help` declares `--claudeai` as "Use Claude subscription (default)" and
+#: `--console` as API billing, which this build never asks for.
+LOGIN_ARGV = ("auth", "login", "--claudeai")
 MODEL_FLAG = "--model"
 #: The four names DOCS (cli-reference) defines as "an alias for the latest
 #: model", quoted in the module docstring above. Each resolves to whatever this

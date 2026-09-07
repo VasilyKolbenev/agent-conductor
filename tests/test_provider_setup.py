@@ -51,6 +51,23 @@ ENTRYPOINT = "/opt/harness/lib/agent.py"
 #: is a second absolute path. `forbidden` — the pinned executable is the whole
 #: harness, so there is no second file and offering to pin one produces a config
 #: this build will not honour.
+#: The answer that picks the environment-credential road at the login question,
+#: which is the road every row in this module was configured with before that
+#: question existed. Named rather than typed as a bare "2" beside a path, so a
+#: reader of a script can see which question it answers.
+ENV_LOGIN = "2"
+#: Which providers this dialogue asks a LOGIN question of, stated here for the
+#: same reason `PIN_SHAPES` is: a table derived from `providers.login_hint`
+#: would move with a mutation of that rule and call the result a pass. Only the
+#: two harnesses whose transport really drives a vendor login are asked; the
+#: other three are TOLD they read a credential from the environment.
+LOGIN_ASKED = {
+    "claude-code": True,
+    "codex": True,
+    "deepseek-harness": False,
+    "grok-build": False,
+    "kimi-code": False,
+}
 PIN_SHAPES = {
     "claude-code": "forbidden",
     "codex": "forbidden",
@@ -79,11 +96,17 @@ def pin_answers(provider_id: str, executable, entrypoint) -> list[str]:
 
     A `forbidden` row is given NO entrypoint answer, so a dialogue that asked
     for one would consume the env-name answer here and the test would fail on
-    the shifted script rather than on a hidden default.
+    the shifted script rather than on a hidden default. The login question
+    follows the same rule: it is asked only of a provider whose transport really
+    drives a vendor login, and the answer below picks the environment road --
+    the one every one of these rows was configured with before the question
+    existed.
     """
     answers = [menu_choice(provider_id), str(executable)]
     if PIN_SHAPES[provider_id] == "required":
         answers.append(str(entrypoint))
+    if LOGIN_ASKED[provider_id]:
+        answers.append("2")
     return answers
 
 
@@ -129,7 +152,7 @@ def test_the_owner_path_after_init_reaches_an_available_provider(
     executable = tmp_path / "harness-executable"
     executable.write_text("", encoding="utf-8", newline="\n")
 
-    assert configure(project, "1", str(executable), "MY_TOKEN_NAME", "y") == 0
+    assert configure(project, "1", str(executable), ENV_LOGIN, "MY_TOKEN_NAME", "y") == 0
 
     pinned = operator_config.load_provider_configs(
         operator_config.provider_config_path(project / "conductor"))
@@ -162,7 +185,7 @@ def test_the_wizard_writes_what_the_reader_admits(project, tmp_path):
     executable = tmp_path / "harness-executable"
     executable.write_text("", encoding="utf-8", newline="\n")
 
-    assert configure(project, "1", str(executable), "MY_TOKEN_NAME", "y") == 0
+    assert configure(project, "1", str(executable), ENV_LOGIN, "MY_TOKEN_NAME", "y") == 0
 
     configs = operator_config.load_provider_configs(
         operator_config.provider_config_path(project / "conductor"))
@@ -179,7 +202,7 @@ def test_the_protocol_is_derived_and_never_asked_for(project):
     """
     from conductor.command.providers import PROVIDER_CATALOG
 
-    assert configure(project, "1", EXECUTABLE, "", "y") == 0
+    assert configure(project, "1", EXECUTABLE, ENV_LOGIN, "", "y") == 0
 
     row = written(project)["providers"][0]
     assert row["protocol"] == PROVIDER_CATALOG[row["provider_id"]].protocol
@@ -195,8 +218,8 @@ def test_a_pasted_credential_is_refused_and_never_written(project):
     the refusal is a re-ask rather than a failure: a person is corrected, not
     thrown out of the flow.
     """
-    assert configure(project, "1", EXECUTABLE,
-                     "ANTHROPIC_API_KEY=sk-live-secret", "MY_TOKEN_NAME",
+    assert configure(project, "1", EXECUTABLE, ENV_LOGIN,
+"ANTHROPIC_API_KEY=sk-live-secret", "MY_TOKEN_NAME",
                      "y") == 0
 
     document = written(project)
@@ -214,7 +237,7 @@ def test_the_refusal_says_the_value_is_read_from_the_environment(
     it deletes is the only sentence that tells somebody WHY, and a flow that
     answers "that is not a name" to a pasted key is one they will fight.
     """
-    configure(project, "1", EXECUTABLE, "TOKEN=abc", "MY_TOKEN_NAME", "y")
+    configure(project, "1", EXECUTABLE, ENV_LOGIN, "TOKEN=abc", "MY_TOKEN_NAME", "y")
 
     said = capsys.readouterr().err
     assert "looks like NAME=value" in said, said
@@ -231,7 +254,7 @@ def test_a_name_that_would_inject_code_is_refused_while_it_is_typed(
     harness that will not start, naming neither the variable nor the file, long
     after the person who typed it has moved on.
     """
-    assert configure(project, "1", EXECUTABLE, name, "MY_TOKEN_NAME",
+    assert configure(project, "1", EXECUTABLE, ENV_LOGIN, name, "MY_TOKEN_NAME",
                      "y") == 0
 
     said = capsys.readouterr().err
@@ -245,8 +268,8 @@ def test_an_allowed_name_is_still_allowed(project):
     `env_allow` is how a credential reaches a harness at all. A flow that
     refused every name would be secure and useless.
     """
-    assert configure(project, "1", EXECUTABLE,
-                     "ANTHROPIC_API_KEY OPENAI_API_KEY", "y") == 0
+    assert configure(project, "1", EXECUTABLE, ENV_LOGIN,
+"ANTHROPIC_API_KEY OPENAI_API_KEY", "y") == 0
 
     assert written(project)["providers"][0]["env_allow"] == [
         "ANTHROPIC_API_KEY", "OPENAI_API_KEY"]
@@ -293,7 +316,7 @@ def test_a_non_terminal_is_refused_rather_than_defaulted(project, capsys):
 
 def test_declining_the_confirmation_writes_nothing(project):
     """The last question is a real question."""
-    assert configure(project, "1", EXECUTABLE, "", "n") == 1
+    assert configure(project, "1", EXECUTABLE, ENV_LOGIN, "", "n") == 1
 
     assert not operator_config.provider_config_path(
         project / "conductor").exists()
@@ -301,8 +324,9 @@ def test_declining_the_confirmation_writes_nothing(project):
 
 def test_configuring_a_second_provider_keeps_the_first(project):
     """Adding is adding. A wizard that replaced the file would silently unconfigure."""
-    assert configure(project, "1", EXECUTABLE, "", "y") == 0
-    assert configure(project, "2", "/opt/other/bin/agent", "", "y") == 0
+    assert configure(project, "1", EXECUTABLE, ENV_LOGIN, "", "y") == 0
+    assert configure(
+        project, "2", "/opt/other/bin/agent", ENV_LOGIN, "", "y") == 0
 
     ids = [row.provider_id for row in operator_config.load_provider_configs(
         operator_config.provider_config_path(project / "conductor"))]
@@ -315,8 +339,9 @@ def test_configuring_the_same_provider_twice_corrects_it(project):
     So the second pass replaces by identity rather than appending, which is
     also what a person means the second time: they are correcting the path.
     """
-    assert configure(project, "1", EXECUTABLE, "", "y") == 0
-    assert configure(project, "1", "/opt/corrected/bin/agent", "", "y") == 0
+    assert configure(project, "1", EXECUTABLE, ENV_LOGIN, "", "y") == 0
+    assert configure(
+        project, "1", "/opt/corrected/bin/agent", ENV_LOGIN, "", "y") == 0
 
     configs = operator_config.load_provider_configs(
         operator_config.provider_config_path(project / "conductor"))
@@ -336,7 +361,7 @@ def test_a_file_this_build_cannot_read_is_not_overwritten(project, capsys):
                     encoding="utf-8", newline="\n")
     before = path.read_bytes()
 
-    assert configure(project, "1", EXECUTABLE, "", "y") == 1
+    assert configure(project, "1", EXECUTABLE, ENV_LOGIN, "", "y") == 1
 
     assert path.read_bytes() == before
     assert "will not overwrite what it cannot read" in capsys.readouterr().err
@@ -344,7 +369,8 @@ def test_a_file_this_build_cannot_read_is_not_overwritten(project, capsys):
 
 def test_a_relative_path_is_refused_and_re_asked(project):
     """The contract wants an absolute pin; the wizard says so in those words."""
-    assert configure(project, "1", "bin/agent", EXECUTABLE, "", "y") == 0
+    assert configure(
+        project, "1", "bin/agent", EXECUTABLE, ENV_LOGIN, "", "y") == 0
 
     assert written(project)["providers"][0]["executable"] == EXECUTABLE
 
@@ -520,7 +546,7 @@ def test_a_single_executable_provider_is_never_asked_for_an_entrypoint(
     """
     executable, _ = pinned_files(tmp_path, provider_id)
     asked, answers, ask = recording()
-    answers.extend([menu_choice(provider_id), str(executable),
+    answers.extend([menu_choice(provider_id), str(executable), ENV_LOGIN,
                     "MY_TOKEN_NAME", "y"])
 
     assert provider_setup.run(
@@ -542,12 +568,13 @@ def test_the_wizard_states_the_availability_the_server_will_report(
     """
     executable, _ = pinned_files(tmp_path, "claude-code")
 
-    assert configure(project, "1", str(executable), "MY_TOKEN_NAME", "y") == 0
+    assert configure(project, "1", str(executable), ENV_LOGIN, "MY_TOKEN_NAME", "y") == 0
     said = capsys.readouterr().err
     assert "availability available" in said, said
 
     missing = tmp_path / "not-installed-yet"
-    assert configure(project, "1", str(missing), "MY_TOKEN_NAME", "y") == 0
+    assert configure(
+        project, "1", str(missing), ENV_LOGIN, "MY_TOKEN_NAME", "y") == 0
     said = capsys.readouterr().err
     assert "availability executable_absent" in said, said
     # The NOTE, not the summary. `executable  <path>` prints the same path one
@@ -602,7 +629,7 @@ def test_a_pasted_credential_is_never_repeated_back(project, capsys, typed):
     right, and it is here so a redaction that swallowed everything would be
     caught by the test below rather than by nobody.
     """
-    assert configure(project, "1", EXECUTABLE, typed,
+    assert configure(project, "1", EXECUTABLE, ENV_LOGIN, typed,
                      "MY_TOKEN_NAME", "y") == 0
 
     said = capsys.readouterr().err
@@ -619,7 +646,7 @@ def test_a_refusal_still_quotes_a_head_that_is_itself_a_name(project, capsys):
     with a position and no name would make the good case as opaque as the bad
     one, and the value half still may not appear.
     """
-    configure(project, "1", EXECUTABLE, "MY_TOKEN=abc", "MY_TOKEN", "y")
+    configure(project, "1", EXECUTABLE, ENV_LOGIN, "MY_TOKEN=abc", "MY_TOKEN", "y")
 
     said = capsys.readouterr().err
     assert "'MY_TOKEN' looks like NAME=value" in said, said
@@ -633,8 +660,8 @@ def test_a_refusal_names_which_entry_it_means_when_several_were_typed(
     Somebody who typed three names needs to know which one is wrong. That is the
     only thing the echoed token was doing that a person needed.
     """
-    assert configure(project, "1", EXECUTABLE,
-                     f"ONE TWO {SYNTHETIC_KEY}", "ONE TWO", "y") == 0
+    assert configure(project, "1", EXECUTABLE, ENV_LOGIN,
+f"ONE TWO {SYNTHETIC_KEY}", "ONE TWO", "y") == 0
 
     said = capsys.readouterr().err
     assert "entry 3 of 3" in said, said
@@ -650,7 +677,7 @@ def test_the_preamble_says_the_terminal_echoes_what_you_type(project, capsys):
     it. What this command controls is whether IT repeats it, and that is what it
     promises.
     """
-    configure(project, "1", EXECUTABLE, "", "n")
+    configure(project, "1", EXECUTABLE, ENV_LOGIN, "", "n")
 
     said = capsys.readouterr().err
     assert "TERMINAL echoes what you type" in said, said
@@ -702,3 +729,70 @@ def test_an_input_that_ends_says_so_in_the_products_own_words(
     assert "EOF when reading a line" not in said, said
     path = operator_config.provider_config_path(project / "conductor")
     assert not path.exists(), "a refused dialogue wrote a file"
+
+
+# -- which login, asked exactly where there is a choice -----------------------
+
+
+@pytest.mark.parametrize("provider_id", sorted(LOGIN_ASKED))
+def test_the_login_question_is_put_only_where_a_login_is_driven(
+        project, tmp_path, capsys, provider_id):
+    """A question with one acceptable answer is a way to get it wrong.
+
+    So a provider whose transport drives no vendor login is TOLD which login it
+    uses, and the two that do are asked. Measured on the dialogue rather than on
+    the row, because both roads write the same `api_key` and only one of them
+    put a choice to a person.
+    """
+    executable, entrypoint = pinned_files(tmp_path, provider_id)
+    assert configure(project, *pin_answers(provider_id, executable, entrypoint),
+                     "MY_TOKEN_NAME", "y") == 0
+
+    said = capsys.readouterr().err
+    if LOGIN_ASKED[provider_id]:
+        assert f"How does {provider_id} sign in?" in said, said
+    else:
+        assert "sign in?" not in said, said
+        assert "drives no vendor login" in said, said
+    assert written(project)["providers"][0].get("auth", "api_key") == "api_key"
+
+
+def test_the_vendor_login_writes_a_directory_and_prints_the_command_to_run(
+        project, tmp_path, capsys):
+    """The dialogue asks WHERE the login is kept and never for the login itself.
+
+    A relative answer is re-asked, as every other path is. What the person is
+    given back is the exact command to run in their own shell: this build never
+    performs a login, and a product that did would be holding an account.
+    """
+    executable, _ = pinned_files(tmp_path, "claude-code")
+    home = tmp_path / "auth" / "claude-code"
+
+    assert configure(project, menu_choice("claude-code"), str(executable),
+                     "1", "auth/claude-code", str(home), "", "y") == 0
+
+    row = written(project)["providers"][0]
+    assert row["auth"] == "subscription"
+    assert row["auth_home"] == str(home)
+    said = capsys.readouterr().err
+    assert f"CLAUDE_CONFIG_DIR={home}" in said, said
+    assert "auth login --claudeai" in said, said
+    assert "this build never runs a login" in said, said
+    assert "login       subscription" in said, said
+    assert f"login dir   {home}" in said, said
+
+
+def test_a_subscription_row_refuses_an_api_billing_name_while_it_is_typed(
+        project, tmp_path, capsys):
+    """Refused at the question, not at the finished row: a dialogue that took
+    every answer and then refused would cost a person the whole conversation."""
+    executable, _ = pinned_files(tmp_path, "claude-code")
+    home = tmp_path / "auth" / "claude-code"
+
+    assert configure(project, menu_choice("claude-code"), str(executable),
+                     "1", str(home), "ANTHROPIC_API_KEY", "HTTPS_PROXY",
+                     "y") == 0
+
+    said = capsys.readouterr().err
+    assert "pays for model access through an API account" in said, said
+    assert written(project)["providers"][0]["env_allow"] == ["HTTPS_PROXY"]

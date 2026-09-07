@@ -219,6 +219,22 @@ def test_a_starter_offer_is_what_the_window_admits(tmp_path):
         assert set(row) == _js_array(_model_source(), "STARTER_KEYS")
 
 
+def test_the_store_hands_every_admitted_provider_key_back_to_the_screen():
+    """A row the boundary admitted and the store rebuilt must lose nothing.
+
+    The window reads a wire row, keeps a camel-cased copy, and then writes a
+    wire-worded row back for the screen. That rebuild is a second, silent key
+    set: a field the boundary admits and the rebuild forgets reaches the screen
+    as "not stated", and every guard on either side of it stays green -- which
+    is exactly what happened to the login a provider row pins.
+    """
+    store = (MODEL.parent / "studio-store.js").read_text(encoding="utf-8")
+    body = store[store.index("function wireProviders("):]
+    body = body[:body.index("\n}")]
+    rebuilt = set(re.findall(r"([a-z_]+):", body))
+    assert rebuilt == _js_array(_model_source(), "PROVIDER_KEYS")
+
+
 def test_every_key_set_the_window_judges_by_is_checked_by_this_module():
     """The census, so a new exactKeys set cannot be added unwatched.
 

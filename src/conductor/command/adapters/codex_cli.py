@@ -334,6 +334,11 @@ STDIN_PROMPT = "-"
 #: agent should use". The LONG spelling is sent for the same reason `exec`
 #: is spelled out rather than aliased to `e`: a reader of an argv should not
 #: have to know a vendor's short forms to see what was asked for.
+#: The vendor's own subscription login, as a PERSON runs it, and never as this
+#: build runs it. OBSERVED on the reviewed binary: `login --help` declares the
+#: bare form beside `--with-api-key`, which reads a key from stdin and is the
+#: road this build does not take when an operator pinned a subscription.
+LOGIN_ARGV = ("login",)
 MODEL_FLAG = "--model"
 VERSION_ARGV = ("--version",)
 #: Capture ceiling for either spawn; the pump drains past it and drops the rest.

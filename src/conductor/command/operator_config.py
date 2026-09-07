@@ -47,7 +47,7 @@ PROVIDER_CONFIG_FILENAME = "providers.json"
 #: refused rather than partly understood.
 SCHEMA_VERSION = 1
 _TOP_LEVEL = frozenset({"schema_version", "providers"})
-#: The keys an operator MUST write, and the two they may leave out. Together they
+#: The keys an operator MUST write, and the four they may leave out. Together they
 #: are exactly the durable config's own fields, so this surface cannot drift into
 #: carrying something the config does not, or into hiding something it does.
 _REQUIRED_KEYS = frozenset({"provider_id", "executable", "protocol"})
@@ -102,10 +102,13 @@ def save_provider_configs(
 
     What is written is the document `load_provider_configs` reads and nothing
     else: the two top-level keys, then one row per config carrying only the
-    fields that config holds. The two optional halves are OMITTED when the
-    operator pinned none, so a file written by this function is the file a
-    person would have written by hand, and no reader has to tell an absent
-    entrypoint from an empty one.
+    fields that config holds. An optional half is OMITTED when the config
+    carries what an absent key already means -- no entrypoint, no environment
+    name, the login that shipped -- so a file written by this function is the
+    file a person would have written by hand, and no reader has to tell an
+    absent entrypoint from an empty one. A row that spelled such a default out
+    loud is therefore written back WITHOUT it: the document means the same
+    thing, and this surface has one spelling for one fact.
 
     Staged and replaced rather than truncated and rewritten. A crash midway
     through a rewrite would leave `conduct up` reading half a document and

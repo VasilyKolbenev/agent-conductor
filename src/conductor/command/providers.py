@@ -30,21 +30,25 @@ from .adapters import AdapterContractError, AdapterRegistry
 from .adapters.claude_code import (
     CLAUDE_CAPABILITIES,
     CLAUDE_DISPLAY_NAME,
+    CLAUDE_HOME_ENV,
     CLAUDE_LIFECYCLE,
     CLAUDE_PROTOCOL,
     CLAUDE_PROVIDER_ID,
     CLAUDE_SCHEMA_PAIRS,
     ClaudeCodeTransport,
 )
+from .adapters.claude_code import LOGIN_ARGV as CLAUDE_LOGIN_ARGV
 from .adapters.codex_cli import (
     CODEX_CAPABILITIES,
     CODEX_DISPLAY_NAME,
+    CODEX_HOME_ENV,
     CODEX_LIFECYCLE,
     CODEX_PROTOCOL,
     CODEX_PROVIDER_ID,
     CODEX_SCHEMA_PAIRS,
     CodexCliTransport,
 )
+from .adapters.codex_cli import LOGIN_ARGV as CODEX_LOGIN_ARGV
 from .adapters.deep_contracts import DeepAdapterConfig
 from .adapters.dsh_harness import DSH_PROTOCOL, DshHarnessAdapter, DshPin
 from .adapters.grok_build import (
@@ -69,6 +73,7 @@ from .adapters.process import ProcessRunner
 from .adapters.headless_cli import ExecutablePin
 from .adapters.provider import (
     SCHEMALESS_CAPABILITIES,
+    UNPINNED_AUTH,
     ProviderCatalogEntry,
     ProviderConfig,
     ProviderConfigError,
@@ -228,6 +233,31 @@ def entrypoint_rule(protocol: str) -> str:
     return ENTRYPOINT_OPTIONAL
 
 
+def login_hint(protocol: str) -> tuple[str, tuple[str, ...]] | None:
+    """How a PERSON signs this protocol's harness in, or None if none is driven.
+
+    The two halves are vendor facts and are read from the transport module that
+    owns them rather than retyped here: the environment variable that names a
+    login directory, and the vendor's own login command. This build never runs
+    that command -- a login is an account-holding act, and a product performing
+    one would be handling somebody's credentials -- so the only thing done with
+    this pair is printing it beside the directory the operator pinned.
+
+    Args:
+        protocol: A reviewed protocol token, as carried by a catalogue entry.
+
+    Returns:
+        `(home_env, login_argv)` for a protocol whose transport drives a vendor
+        login, and None for every other, which is the same set the config door
+        admits `subscription` for.
+    """
+    if protocol == CLAUDE_PROTOCOL:
+        return CLAUDE_HOME_ENV, CLAUDE_LOGIN_ARGV
+    if protocol == CODEX_PROTOCOL:
+        return CODEX_HOME_ENV, CODEX_LOGIN_ARGV
+    return None
+
+
 def availability_of(config: ProviderConfig, *,
                     catalog: object = PROVIDER_CATALOG) -> str:
     """What `resolve_providers` will call this config, without building anything.
@@ -351,8 +381,12 @@ def resolve_providers(
         config = configured.get(provider_id)
         if config is None:
             # No row named it, so it carries no login at all -- not the login
-            # that a row leaving the field out would have meant.
-            providers.register(entry, availability="unconfigured", adapter=None)
+            # that a row leaving the field out would have meant. Said out loud
+            # rather than left to the parameter's default: this is the one road
+            # that means it, and a default is not a decision.
+            providers.register(
+                entry, availability="unconfigured", auth=UNPINNED_AUTH,
+                adapter=None)
             continue
         availability = _resolve_availability(config, entry)
         adapter: object = None

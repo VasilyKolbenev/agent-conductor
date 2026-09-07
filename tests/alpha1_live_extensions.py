@@ -26,6 +26,21 @@ LOGINS = {
     "codex-preview": "api_key",
     "codex-unpinned": "unpinned",
 }
+#: The third closed provider vocabulary, added to the frozen vocabulary document
+#: the UI lane reads: a set the lane must not widen or narrow either.
+LOGIN_STATES = ["api_key", "subscription", "unpinned"]
+#: The projection document's own prose. It described the two questions a row
+#: answered; a row answers three now, and a note that still said two would hand
+#: the lane a document whose words contradict its data.
+TWO_QUESTIONS = "A row answers two separate questions"
+THREE_QUESTIONS = (
+    "A row answers three separate questions and keeps them apart: "
+    "`availability` is about the operator's machine, `implementation` is about "
+    "this build's transport, `auth` is the login the operator's own row pinned "
+    "and is no proof that it works, and the three vocabularies share no value. "
+    "Rows are joined by `provider_id`; `display_name` is a label to render and "
+    "never a fact to parse. Everything else the operator config and the "
+    "reviewed contract carry is withheld.")
 
 
 def current_form(value):
@@ -44,6 +59,15 @@ def current_form(value):
     if "refusal_codes" in result and "attempt_states" in result:
         assert not set(REFUSALS) & result["refusal_codes"].keys()
         result["refusal_codes"].update(REFUSALS)
+    # Anchored on the key only the vocabulary document's TOP level carries: the
+    # observed sub-document inside it repeats two of the state lists, and a
+    # looser test would have written the whole closed set into the record of
+    # what two runs happened to reach.
+    if "observed_in_the_derived_runs" in result:
+        assert "auth_states" not in result, "historical fixture was rewritten"
+        result["auth_states"] = LOGIN_STATES
+    if "note" in result and result["note"].startswith(TWO_QUESTIONS):
+        result["note"] = THREE_QUESTIONS
     if {"row_fields", "withheld_from_rows", "rows"} <= result.keys():
         assert "auth" not in result["row_fields"], "historical fixture was rewritten"
         result["row_fields"] = sorted([*result["row_fields"], "auth"])

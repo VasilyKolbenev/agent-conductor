@@ -26,6 +26,7 @@ from pathlib import Path
 from conductor import server
 from conductor.command.adapters.provider import (
     AVAILABILITY_STATES,
+    CONTRACT_AUTH_STATES,
     IMPLEMENTATION_STATES,
     ProviderConfig,
     ProviderContract,
@@ -275,10 +276,12 @@ def _projection_document(resolution) -> dict:
         "row_fields": row_fields,
         "rows": rows,
         "withheld_from_rows": sorted(carried - set(row_fields)),
-        "note": ("A row answers two separate questions and keeps them apart: "
+        "note": ("A row answers three separate questions and keeps them apart: "
                  "`availability` is about the operator's machine, "
-                 "`implementation` is about this build's transport, and the two "
-                 "vocabularies share no value. Rows are joined by `provider_id`; "
+                 "`implementation` is about this build's transport, `auth` is "
+                 "the login the operator's own row pinned and is no proof that "
+                 "it works, and the three vocabularies share no value. "
+                 "Rows are joined by `provider_id`; "
                  "`display_name` is a label to render and never a fact to parse. "
                  "Everything else the operator config and the reviewed contract "
                  "carry is withheld."),
@@ -441,6 +444,7 @@ def _vocabulary_document(observed: dict) -> dict:
         "attempt_event_phases": sorted(ATTEMPT_PHASES),
         "availability_states": sorted(AVAILABILITY_STATES),
         "implementation_states": sorted(IMPLEMENTATION_STATES),
+        "auth_states": sorted(CONTRACT_AUTH_STATES),
         "observed_in_the_derived_runs": observed,
         "note": ("`rejected` is an outcome an adapter may report and a durable "
                  "receipt will hold, but it is never an attempt state: the "

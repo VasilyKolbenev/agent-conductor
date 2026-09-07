@@ -437,15 +437,20 @@ def test_the_boundary_vocabularies_are_copies_of_the_layers_that_own_them():
     assert _js_list(source, "PROVIDER_AVAILABILITY") == provider.AVAILABILITY_STATES
     assert _js_list(source, "PROVIDER_IMPLEMENTATION") == \
         provider.IMPLEMENTATION_STATES
+    assert _js_list(source, "PROVIDER_AUTH") == provider.CONTRACT_AUTH_STATES
     assert _js_list(source, "DIAGNOSTIC_CODES") == workflow_draft.DIAGNOSTIC_CODES
     assert _js_list(source, "RUN_STATES") == contracts._RUN_STATES
     assert _js_list(source, "RESULT_OUTCOMES") == contracts._RESULT_OUTCOMES
     assert _js_list(source, "RECORD_KINDS") == set(run_store._RECORDS)
     assert _js_list(source, "ENVELOPE_KEYS") == contracts.RunEnvelope._FIELDS
-    # The two availability vocabularies answer different questions and share no
-    # value, so neither can ever be read as the other. Asserted on the COPIES,
+    # The three provider vocabularies answer different questions and share no
+    # value, so none can ever be read as another. Asserted on the COPIES,
     # because that is where a reader of this window would confuse them.
     assert not (_js_list(source, "PROVIDER_AVAILABILITY")
+                & _js_list(source, "PROVIDER_IMPLEMENTATION"))
+    assert not (_js_list(source, "PROVIDER_AUTH")
+                & _js_list(source, "PROVIDER_AVAILABILITY"))
+    assert not (_js_list(source, "PROVIDER_AUTH")
                 & _js_list(source, "PROVIDER_IMPLEMENTATION"))
     # `verification_failed` is an outcome and it is not a success: a process
     # that exits 0 has finished, which is not the same as verified.
