@@ -95,6 +95,11 @@ SPAWN_LOG = "FAKECODEX_SPAWN_LOG"
 VERSION = "FAKECODEX_VERSION"
 #: Non-empty makes `--version` itself fail, so the preflight refusal is testable.
 VERSION_FAILS = "FAKECODEX_VERSION_FAILS"
+#: Non-empty makes the LOGIN STATUS spawn answer "not signed in", the way the
+#: reviewed binary does with an empty `CODEX_HOME`: exit 1. Default is the
+#: signed-in answer, so a subscription test about something else is not forced
+#: to arrange a login first.
+LOGIN_FAILS = "FAKECODEX_LOGIN_FAILS"
 #: Exit code for a task spawn; `--version` always exits 0 unless it is failed.
 EXIT = "FAKECODEX_EXIT"
 #: Emit this on stdout during a task spawn, to stand for a model's answer.
@@ -165,11 +170,18 @@ DEFAULT_LAST_MESSAGE = "the fake Codex CLI reports a final message"
 #: the reviewed constant moved; the DRESSING is spelled here, because that is
 #: this fake's own subject.
 try:  # pragma: no cover -- the child runs with the package importable
-    from conductor.command.adapters.codex_cli import REVIEWED_CODEX_VERSION
+    from conductor.command.adapters.codex_cli import (
+        LOGIN_STATUS_ARGV,
+        REVIEWED_CODEX_VERSION,
+    )
 
     DEFAULT_VERSION = f"codex-cli {REVIEWED_CODEX_VERSION}"
+    #: Read from the adapter for the same reason the semver is: a fake carrying
+    #: its own copy would answer a login question the transport stopped asking.
+    LOGIN_STATUS = list(LOGIN_STATUS_ARGV)
 except ImportError:  # pragma: no cover -- never on a configured tree
     DEFAULT_VERSION = ""
+    LOGIN_STATUS = []
 
 
 def build_executable(directory: str | os.PathLike[str]) -> Path | None:
@@ -186,9 +198,15 @@ def spawns(log_path: str | os.PathLike[str]) -> list[dict]:
     return [json.loads(line) for line in text.splitlines() if line.strip()]
 
 
+def login_question(argv: list[str]) -> bool:
+    """Whether this spawn is the login-status question, behind any flag."""
+    return bool(LOGIN_STATUS) and argv[-len(LOGIN_STATUS):] == LOGIN_STATUS
+
+
 def task_spawns(log_path: str | os.PathLike[str]) -> list[dict]:
-    """Only the spawns that really ran a task, never the version preflights."""
-    return [row for row in spawns(log_path) if row["argv"][:1] != ["--version"]]
+    """Only the spawns that really ran a task, never a preflight of either kind."""
+    return [row for row in spawns(log_path)
+            if row["argv"][:1] != ["--version"] and not login_question(row["argv"])]
 
 
 # --- the child body ----------------------------------------------------------
@@ -366,6 +384,11 @@ def main() -> int:
             os.environ.get(VERSION, DEFAULT_VERSION).encode("utf-8") + b"\n")
         sys.stdout.buffer.flush()
         return 0
+    if login_question(argv):
+        # The vendor's status command reads no stdin and writes no final
+        # message; the exit code carries the whole answer.
+        _record(argv, None, None, None)
+        return 1 if os.environ.get(LOGIN_FAILS) else 0
     # The task is read BEFORE anything is emitted: a child that answered first
     # and read afterwards would pass a test that only counts bytes back.
     task, task_text = _read_task()

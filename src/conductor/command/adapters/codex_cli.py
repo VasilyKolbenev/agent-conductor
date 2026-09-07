@@ -437,7 +437,9 @@ __all__ = [
     "ANSWER_WRITTEN", "CODEX_CAPABILITIES", "CODEX_DISPLAY_NAME",
     "CODEX_FORCED_ENV", "CODEX_HOME_ENV", "CODEX_LIFECYCLE", "CODEX_PROTOCOL",
     "CODEX_PROVIDER_ID", "CODEX_SCHEMA_PAIRS", "HOME_DIR", "INSTRUCTION_DIR",
-    "LAST_MESSAGE_NAME", "MARKER_DIR", "MODEL_FLAG", "REVIEWED_CODEX_VERSION",
+    "LAST_MESSAGE_NAME", "LOGIN_ARGV", "LOGIN_EXPECTED", "LOGIN_SCRATCH",
+    "LOGIN_STATUS_ARGV",
+    "MARKER_DIR", "MODEL_FLAG", "REVIEWED_CODEX_VERSION",
     "REVIEW_SANDBOX_ARGV", "STDIN_PROMPT", "WORK_DIR",
     "CodexAdapter", "CodexCliError", "CodexCliTransport", "codex_pin",
 ]
@@ -451,6 +453,7 @@ CODEX_PROFILE = HarnessProfile(
     home_dir=HOME_DIR, marker_dir=MARKER_DIR,
     home_env=CODEX_HOME_ENV, forced_env=CODEX_FORCED_ENV,
     version_argv=VERSION_ARGV, login_argv=LOGIN_STATUS_ARGV,
+    login_command=LOGIN_ARGV,
     login_scratch=LOGIN_SCRATCH, login_expected=LOGIN_EXPECTED,
     exit_codes_published=False,
     capability=DISPATCH_CAPABILITY, output_limit=CODEX_OUTPUT_LIMIT,
@@ -464,8 +467,13 @@ class CodexCliError(HeadlessCliError):
     """Codex CLI cannot be driven without breaking one of this adapter's rules."""
 
 
-def codex_pin(executable: str, env_allow: tuple[str, ...] = ()) -> ExecutablePin:
+def codex_pin(executable: str, env_allow: tuple[str, ...] = (), *,
+              auth: str = "api_key", auth_home: str = "") -> ExecutablePin:
     """Codex CLI's pin: ONE absolute path, and Codex CLI's own refusal type.
+
+    The login pair is carried here as well as by the factory next door, so the
+    two ways of building this provider's pin cannot disagree about which login
+    it was given.
 
     One, not two. The npm package installs a Node shim that spawns a vendored
     native `codex.exe`, and an operator may pin either that binary or one from a
@@ -475,7 +483,8 @@ def codex_pin(executable: str, env_allow: tuple[str, ...] = ()) -> ExecutablePin
     the binary the shim would have run.
     """
     return ExecutablePin(
-        executable=executable, error=CodexCliError, env_allow=env_allow)
+        executable=executable, error=CodexCliError, env_allow=env_allow,
+        auth=auth, auth_home=auth_home)
 
 
 class CodexCliTransport(ArtifactAwareTransport):

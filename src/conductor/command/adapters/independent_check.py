@@ -20,7 +20,7 @@ VERDICT_REJECT = "VERDICT: reject"
 REASONS = frozenset({
     "verified", "homes_refused", "preflight_refused", "marker_standing",
     "no_verdict", "tree_changed", "rejected", "frame_over_limit", "frame_env_echo",
-    "material_unavailable",
+    "material_unavailable", "login_residue",
 })
 FRAME_LIMIT = 64 * 1024
 

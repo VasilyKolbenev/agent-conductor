@@ -88,7 +88,7 @@ class LoginRoad:
         if not self._signed_in_road() or not profile.login_argv:
             return None
         outcome = self._attempt(
-            profile.login_argv, WORK_DIR,
+            self._login_status_argv(), WORK_DIR,
             timeout=min(profile.version_timeout_seconds, request.timeout_seconds))
         if outcome.status == "completed" and outcome.exit_code == 0:
             return None
@@ -97,24 +97,45 @@ class LoginRoad:
             f"the pinned {profile.tool_noun} build has no usable subscription "
             f"login in the directory this provider pins, so no task was "
             f"spawned; sign in yourself with {profile.home_env} set to that "
-            f"directory -- this build never runs a login")
+            f"directory and run {' '.join(profile.login_command)} -- this build "
+            "never runs a login")
 
-    def _take_back_login(self, auth_home: str, before: frozenset[str]) -> None:
+    def _login_status_argv(self) -> tuple[str, ...]:
+        """The status question as it is really asked, with this road's own bounds.
+
+        A provider whose isolation is a FLAG has to send it here too. Asking the
+        vendor's status question is a full startup of that CLI -- it opens a
+        connection and writes its own profile -- and a startup standing in the
+        run's work root would read whatever settings a previous task left there.
+        The version probe is the one spawn that needs no flag, because printing
+        a version is not a startup.
+        """
+        return self.profile.login_argv
+
+    def _take_back_login(
+            self, auth_home: str, before: frozenset[str] | None) -> None:
         """Take back what this spawn left in the login directory, and COUNT the rest.
 
         The mirror of ``_discard`` for the road that cannot delete its
         directory. It runs in the same ``finally``, for the same reason: a spawn
-        that raised left state behind exactly as one that returned did.
+        that raised left state behind exactly as one that returned did -- and,
+        for the same reason, it may not raise: an exception here would skip the
+        attempt home's own discard and replace the outcome of the spawn.
 
-        Only what APPEARED is judged. Whatever the operator's own login put
-        there before this build ever ran is theirs, and a product that refused
-        over it would be refusing over the credential it was pointed at.
+        Only what APPEARED is judged, and only what appeared is taken back.
+        Whatever the operator's own login put there before this build ever ran
+        is theirs, and a product that refused over it -- or deleted it -- would
+        be acting on the credential it was pointed at.
+
+        A measurement this build could not take counts as residue rather than as
+        a clean directory: a promise that could not be checked was not kept.
         """
         profile = self.profile
         declared = (*profile.login_scratch, *profile.login_expected)
-        if login_home.unexpected(before, login_home.entries(auth_home), declared):
+        added = login_home.appeared(before, login_home.entries(auth_home))
+        if added is None or login_home.unexpected(added, declared):
             # The NAMES are not carried onward: this counter is read by the
             # receipt builder, which says that the promise did not hold and
             # never what was found.
             self._login_residue += 1
-        login_home.take_back(auth_home, profile.login_scratch)
+        login_home.take_back(auth_home, profile.login_scratch, added)

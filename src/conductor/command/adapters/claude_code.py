@@ -330,8 +330,9 @@ __all__ = [
     "CLAUDE_PROTOCOL", "CLAUDE_PROVIDER_ID", "CLAUDE_SCHEMA_PAIRS",
     "CONSTANT_PROMPT", "HOME_DIR", "INSTRUCTION_DIR", "MARKER_DIR",
     "CLAUDE_UNSTABLE_MODELS", "MODEL_FLAG",
+    "LOGIN_ARGV", "LOGIN_EXPECTED", "LOGIN_SCRATCH", "LOGIN_STATUS_ARGV",
     "REVIEWED_CLAUDE_VERSION", "REVIEW_PERMISSION_MODE_ARGV",
-    "REVIEW_PROMPT", "WORK_DIR",
+    "REVIEW_PROMPT", "SAFE_MODE_ARGV", "WORK_DIR",
     "ClaudeCodeAdapter", "ClaudeCodeError", "ClaudeCodeTransport", "claude_pin",
 ]
 
@@ -344,6 +345,7 @@ CLAUDE_PROFILE = HarnessProfile(
     home_dir=HOME_DIR, marker_dir=MARKER_DIR,
     home_env=CLAUDE_HOME_ENV, forced_env=CLAUDE_FORCED_ENV,
     version_argv=VERSION_ARGV, login_argv=LOGIN_STATUS_ARGV,
+    login_command=LOGIN_ARGV,
     login_scratch=LOGIN_SCRATCH, login_expected=LOGIN_EXPECTED,
     exit_codes_published=True,
     capability=DISPATCH_CAPABILITY, output_limit=CLAUDE_OUTPUT_LIMIT,
@@ -357,14 +359,21 @@ class ClaudeCodeError(HeadlessCliError):
     """Claude Code cannot be driven without breaking one of this adapter's rules."""
 
 
-def claude_pin(executable: str, env_allow: tuple[str, ...] = ()) -> ExecutablePin:
+def claude_pin(executable: str, env_allow: tuple[str, ...] = (), *,
+               auth: str = "api_key", auth_home: str = "") -> ExecutablePin:
     """Claude Code's pin: ONE absolute path, and Claude Code's own refusal type.
 
     One, not two: Claude Code installs as a native binary and runs no
     interpreter, so there is no second half for this build to guess at.
+
+    The login pair is carried here as well as by the factory next door, so the
+    two ways of building this provider's pin cannot disagree about which login
+    it was given -- a helper that always minted the shipped road would be a
+    quiet second answer to a question the operator already answered.
     """
     return ExecutablePin(
-        executable=executable, error=ClaudeCodeError, env_allow=env_allow)
+        executable=executable, error=ClaudeCodeError, env_allow=env_allow,
+        auth=auth, auth_home=auth_home)
 
 
 class ClaudeCodeTransport(ArtifactAwareTransport):
@@ -393,6 +402,19 @@ class ClaudeCodeTransport(ArtifactAwareTransport):
     def _login(self) -> tuple[str, str]:
         """The login this operator pinned, read from the pin that carries it."""
         return self._pin.auth, self._pin.auth_home
+
+    def _login_status_argv(self) -> tuple[str, ...]:
+        """The status question, behind this road's own isolation flag.
+
+        Asking it is a full startup of the vendor's CLI -- it opens a connection
+        and writes its own profile -- and this build stands that startup in the
+        run's work root. Without the flag it would read whatever a previous task
+        left under `.claude/` there, which is the exact road `--bare` exists to
+        close and `--safe-mode` closes on the subscription side. MEASURED: the
+        reviewed binary answers `--safe-mode auth status --json` with the same
+        JSON and the same exit code as the bare question.
+        """
+        return (*self._isolation_argv(), *self.profile.login_argv)
 
     def _isolation_argv(self) -> tuple[str, ...]:
         """`--bare` or `--safe-mode`: the ONE token the pinned login decides.

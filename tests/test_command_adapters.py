@@ -40,8 +40,12 @@ SDK_EXECUTION_DOOR = frozenset({"process.py", "_procgroup.py"})
 # markers and work-tree digests. ``artifact_transport`` joins those snapshots to
 # the run's immutable artifact/evidence store. Neither owns execution: the
 # subprocess/network/exec ban still applies to both without exemption.
+# ``login_home`` is the third: it owns the one directory this build points a
+# child at and may NOT delete -- an operator's own login -- so it reads names
+# there and takes back the per-run ones. It holds no execution door either, and
+# it opens no file: its whole vocabulary is names and kinds.
 SDK_WORKSPACE_DOOR = frozenset({
-    "artifact_transport.py", "harness_workspace.py"})
+    "artifact_transport.py", "harness_workspace.py", "login_home.py"})
 # Names that would let a value module reach an executable, the filesystem, or the
 # import system on its own.
 BANNED_SDK_CALLS = frozenset({

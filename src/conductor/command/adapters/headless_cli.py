@@ -70,7 +70,9 @@ from pathlib import Path
 from ..contracts import ActionRequest, ActionResultReceipt
 from .harness_profile import (
     DISPATCH_CAPABILITY,
+    LOGIN_RESIDUE_DETAIL,
     OUTPUT_LIMIT,
+    PREFLIGHT_LOGIN_RESIDUE_DETAIL,
     PREFLIGHT_RESIDUE_DETAIL,
     TASK_CHANNEL_STDIN,
     VERSION_TIMEOUT_SECONDS,
@@ -424,16 +426,9 @@ class HeadlessCliTransport(ReceiptWriting, ModelRouting, LoginRoad):
         if self._workspace.sweep_homes():
             return self._receipt(
                 request, "failed", None, residue_detail(self.profile.tool_noun))
-        preflight = self._preflight(request)
-        if preflight is not None:
-            return preflight
-        if self._retained:
-            # The version answered, and then its own home would not go. Counting
-            # that in the receipt was never enough: the promise is broken NOW,
-            # inside this dispatch, and the task is the one thing that must not
-            # be built on top of it. Nothing is claimed and nothing is spawned.
-            return self._receipt(
-                request, "failed", None, PREFLIGHT_RESIDUE_DETAIL)
+        refused = self._preflight(request) or self._preflight_residue(request)
+        if refused is not None:
+            return refused
         task_text = self._dispatch_task(request, args, instruction)
         work = self._workspace.work_dir(args.work_item_id)
         before = self._workspace.digest_work_tree()
@@ -445,7 +440,33 @@ class HeadlessCliTransport(ReceiptWriting, ModelRouting, LoginRoad):
             output_limit=OUTPUT_LIMIT_BYTES[args.output_limit_profile])
         self._attempts[attempt_relation(request)] = _Attempt(
             work_dir=work, before=before, after=self._evidence())
+        if self._login_residue:
+            # A task that ran and left state nobody declared in a directory this
+            # build cannot clean has not met the promise it makes about that
+            # directory. Reporting it as succeeded with a sentence appended
+            # would leave the run's own record saying the opposite of the
+            # sentence; the outcome is the answer, and this is not a success.
+            return self._receipt(
+                request, "failed", outcome.exit_code, LOGIN_RESIDUE_DETAIL)
         return self._observed(request, outcome)
+
+    def _preflight_residue(
+            self, request: ActionRequest) -> ActionResultReceipt | None:
+        """What a preflight left behind in either directory, before a task runs.
+
+        Counting it in the receipt was never enough. The promise is broken NOW,
+        inside this dispatch, and the task is the one thing that must not be
+        built on top of it: nothing is claimed and nothing is spawned. Two
+        directories, two sentences, because a reader has to know which promise
+        this dispatch could not keep.
+        """
+        if self._retained:
+            return self._receipt(
+                request, "failed", None, PREFLIGHT_RESIDUE_DETAIL)
+        if self._login_residue:
+            return self._receipt(
+                request, "failed", None, PREFLIGHT_LOGIN_RESIDUE_DETAIL)
+        return None
 
     def _task_command(self, task_text: str) -> tuple[ArgvSource, bytes | None]:
         """The argv SOURCE and the payload for this provider's channel, and only those.

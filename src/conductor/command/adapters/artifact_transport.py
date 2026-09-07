@@ -250,6 +250,11 @@ class ArtifactAwareTransport(HeadlessCliTransport):
             self, request: ActionRequest, args: DeepReviewArgs,
             model: str | None = None) -> ActionResultReceipt:
         self._retained = 0
+        # Both cleanup counters are re-derived per road, for one reason: an
+        # adapter instance serves every action of its provider, so a count left
+        # standing by a dispatch would be reported on a review whose own spawns
+        # left nothing.
+        self._login_residue = 0
         if args.result_artifact_ref is OMITTED:
             # The contract admits a review with no result reference so the
             # frozen revision-1 artefacts stay readable. RUNNING one is a
@@ -583,6 +588,7 @@ class ArtifactAwareTransport(HeadlessCliTransport):
         return self._verification(request, state, (), reason)
 
     def _check_owned(self, request, verifier, material) -> AdapterVerification:
+        self._login_residue = 0
         if self._workspace.sweep_homes() or self._retained:
             return self._checker_answer(request, "homes_refused")
         if self._workspace.is_verification_claimed(request.run_id, request.action_id):
@@ -610,6 +616,11 @@ class ArtifactAwareTransport(HeadlessCliTransport):
             return self._checker_answer(request, "tree_changed")
         if self._retained:
             return self._checker_answer(request, "homes_refused")
+        if self._login_residue:
+            # Its own word rather than the home one: two directories, two
+            # promises, and a reader of the journal must be able to tell which
+            # of them this verification could not keep.
+            return self._checker_answer(request, "login_residue")
         reason = verdict(outcome)
         if reason != "verified":
             return self._checker_answer(request, reason)

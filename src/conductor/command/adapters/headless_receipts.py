@@ -25,6 +25,11 @@ from __future__ import annotations
 from ..contracts import ActionRequest, ActionResultReceipt
 from .base import AdapterVerification
 from .harness_profile import login_residue_detail, retained_detail
+#: What this mixin needs from the class it is mixed into, stated rather than
+#: assumed: `profile`, `_ids`, `_clock`, `manifest`, and the two cleanup
+#: counters -- `_retained` for an attempt home that would not go, and
+#: `_login_residue` for a pinned login directory that gained state nobody
+#: declared. Both are read HERE and nowhere a provider could forget them.
 from .process import STDIN_INCOMPLETE, ProcessOutcome
 
 

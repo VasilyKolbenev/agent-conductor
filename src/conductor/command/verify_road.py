@@ -23,6 +23,7 @@ CHECK_REASONS = MappingProxyType({
     ("error", "frame_over_limit"): words.FRAME_OVER_LIMIT,
     ("error", "frame_env_echo"): words.FRAME_ENV_ECHO,
     ("error", "homes_refused"): words.CHECKER_HOMES_REFUSED,
+    ("error", "login_residue"): words.CHECKER_LOGIN_RESIDUE,
     ("error", "preflight_refused"): words.CHECKER_PREFLIGHT_REFUSED,
     ("error", "marker_standing"): words.CHECKER_MARKER_STANDING,
     ("error", "no_verdict"): words.CHECKER_NO_VERDICT,

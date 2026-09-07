@@ -63,6 +63,11 @@ DOER_ENV_ECHO = "the doer output contains an allowed environment value and was n
 FRAME_OVER_LIMIT = "the independent verification materials exceed their input ceiling"
 FRAME_ENV_ECHO = "the independent verification materials contain an allowed environment value"
 CHECKER_HOMES_REFUSED = "the checker's isolated home could not be prepared safely"
+#: The checker's spawn left state nobody declared in the login directory its
+#: provider pins. It carries no name: that directory holds an operator's own
+#: credential, and this sentence reaches the journal and the API.
+CHECKER_LOGIN_RESIDUE = (
+    "the checker left state this build does not declare in its login directory")
 CHECKER_PREFLIGHT_REFUSED = "the checker's installed build did not pass preflight"
 CHECKER_MARKER_STANDING = "this action already claimed its independent checker; no second check was started"
 CHECKER_NO_VERDICT = "the checker returned no complete accepted verdict for this result"

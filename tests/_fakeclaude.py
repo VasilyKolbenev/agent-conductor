@@ -178,11 +178,22 @@ def spawns(log_path: str | os.PathLike[str]) -> list[dict]:
     return [json.loads(line) for line in text.splitlines() if line.strip()]
 
 
+def _login_question(argv: list[str]) -> bool:
+    """Whether this spawn is the login-status question, behind any isolation flag.
+
+    The transport sends that question with the same flag it sends a task with,
+    so the fake recognises it by its TAIL rather than by its head -- a fake that
+    matched only the bare form would read a flagged question as a prompt spawn
+    and answer it by reading a stdin nobody will write.
+    """
+    return bool(LOGIN_STATUS) and argv[-len(LOGIN_STATUS):] == LOGIN_STATUS
+
+
 def prompt_spawns(log_path: str | os.PathLike[str]) -> list[dict]:
     """Only the spawns that really ran a prompt, never a preflight of either kind."""
     return [row for row in spawns(log_path)
             if row["argv"][:1] != ["--version"]
-            and not (LOGIN_STATUS and row["argv"][:len(LOGIN_STATUS)] == LOGIN_STATUS)]
+            and not _login_question(row["argv"])]
 
 
 # --- the child body ----------------------------------------------------------
@@ -347,7 +358,7 @@ def main() -> int:
             os.environ.get(VERSION, DEFAULT_VERSION).encode("utf-8") + b"\n")
         sys.stdout.buffer.flush()
         return 0
-    if LOGIN_STATUS and argv[:len(LOGIN_STATUS)] == LOGIN_STATUS:
+    if LOGIN_STATUS and _login_question(argv):
         # The vendor's status command reads no stdin either, and this fake
         # answers it the way the reviewed binary does: a JSON line and an exit
         # code, with the code carrying the whole answer.

@@ -71,12 +71,43 @@ def residue_detail(tool: str) -> str:
             "dispatch runs again once an operator has cleared it")
 
 
+#: A preflight left state nobody declared in the operator's LOGIN directory, so
+#: the task never starts on top of a promise that is already broken. Carries no
+#: name, for the same reason `login_residue_detail` carries none.
+PREFLIGHT_LOGIN_RESIDUE_DETAIL = (
+    "a preflight left state this build does not declare in the login directory "
+    "this provider pins, so this dispatch stopped before claiming or spawning "
+    "the task")
+#: The TASK's own spawn did. It ran, and what it left behind is not accounted
+#: for, so the attempt is reported as the failure it is rather than as a success
+#: with a sentence after it.
+LOGIN_RESIDUE_DETAIL = (
+    "the task ran and left state this build does not declare in the login "
+    "directory this provider pins, so what it left behind is not accounted for")
 #: The PREFLIGHT's own home outlived the version spawn. The version answered,
 #: but the retention promise is already broken inside this dispatch, so the task
 #: never starts on top of it. Product-neutral as written, so it stays a constant.
 PREFLIGHT_RESIDUE_DETAIL = (
     "the version preflight could not take back the home it minted, so this "
     "dispatch stopped before claiming or spawning the task")
+
+
+def reviewed_login_name(name: object, field: str) -> str:
+    """One NAME a login directory may hold: a single component, and nothing else.
+
+    The lists this proves are joined to an operator's pinned directory and one
+    of them is then DELETED, so a name carrying a separator, a parent segment or
+    a drive would reach outside the directory the operator pointed at. A profile
+    is code and every fault here is a programming fault, but this particular
+    fault would be a delete somewhere else on the machine, so it is refused at
+    construction rather than trusted to review.
+    """
+    if type(name) is not str or not name or name in (".", ".."):
+        raise HeadlessCliError(f"{field} holds one non-empty route component")
+    if is_absolute(name) or set(name) & set("/\\") or "\x00" in name:
+        raise HeadlessCliError(
+            f"{field} holds a bare name, never a path: {name!r}")
+    return name
 
 
 def login_residue_detail(tool: str) -> str:
@@ -299,6 +330,9 @@ class HarnessProfile:
     #: It is asked only on the subscription road, where there is a login to ask
     #: about, and it is never a substitute for a real run.
     login_argv: tuple[str, ...] = ()
+    #: The vendor's own login command, as a PERSON runs it. Printed in a refusal
+    #: so the operator can paste it; never spawned by this build.
+    login_command: tuple[str, ...] = ()
     #: What a spawn may leave in a PERSISTENT login directory, measured at the
     #: pinned version. `login_scratch` is per-run state this build takes back
     #: after every spawn; `login_expected` is state the vendor keeps and this
@@ -390,6 +424,7 @@ class HarnessProfile:
         ``home_env`` would relocate the child's home away from the one this
         dispatch minted and discards, which is the whole retention promise.
         """
+        self._reviewed_login_names()
         seen: set[str] = set()
         for row in self.forced_env:
             if type(row) is not tuple or len(row) != 2:
@@ -419,6 +454,22 @@ class HarnessProfile:
                 f"a task travels by one of {TASK_CHANNELS}, not "
                 f"{self.task_channel!r}")
         self._hold_model_routing()
+
+    def _reviewed_login_names(self) -> None:
+        """Prove the login lists before either can be joined to a directory."""
+        for field in ("login_scratch", "login_expected"):
+            names = getattr(self, field)
+            if type(names) is not tuple:
+                raise HeadlessCliError(f"{field} is a tuple of bare names")
+            for name in names:
+                reviewed_login_name(name, field)
+        if set(self.login_scratch) & set(self.login_expected):
+            raise HeadlessCliError(
+                "a name is either taken back or left alone, never both")
+        if bool(self.login_argv) is not bool(self.login_command):
+            raise HeadlessCliError(
+                "a provider that can be ASKED about a login must also say how "
+                "a person performs one")
 
     def _hold_model_routing(self) -> None:
         """Prove the two model-routing declarations, at construction like the rest.
