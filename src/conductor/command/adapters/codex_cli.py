@@ -342,6 +342,17 @@ LOGIN_ARGV = ("login",)
 #: MEASURED on the reviewed binary with an empty `CODEX_HOME`: `login status`
 #: exits 1 and writes "Not logged in" to stderr, which this build never reads.
 LOGIN_STATUS_ARGV = ("login", "status")
+#: MEASURED at 0.112.0 with a fresh `CODEX_HOME` and one real `exec`: a `tmp`
+#: directory holding a lock and two batch files per spawn. Per-run, so it is
+#: taken back after every spawn.
+LOGIN_SCRATCH = ("tmp",)
+#: The same measurement: a `skills` tree unpacked on the first real `exec`. It
+#: is a cache the vendor rebuilds when it is absent, so removing it after every
+#: spawn would be paying to unpack it again; it is left alone instead.
+#: `auth.json` is the file the vendor's own login writes and is DECLARED rather
+#: than measured -- no login has been performed on this machine -- so the first
+#: real login is where that half of this list is confirmed.
+LOGIN_EXPECTED = ("skills", "auth.json", "config.toml", "version.json")
 MODEL_FLAG = "--model"
 VERSION_ARGV = ("--version",)
 #: Capture ceiling for either spawn; the pump drains past it and drops the rest.
@@ -440,6 +451,7 @@ CODEX_PROFILE = HarnessProfile(
     home_dir=HOME_DIR, marker_dir=MARKER_DIR,
     home_env=CODEX_HOME_ENV, forced_env=CODEX_FORCED_ENV,
     version_argv=VERSION_ARGV, login_argv=LOGIN_STATUS_ARGV,
+    login_scratch=LOGIN_SCRATCH, login_expected=LOGIN_EXPECTED,
     exit_codes_published=False,
     capability=DISPATCH_CAPABILITY, output_limit=CODEX_OUTPUT_LIMIT,
     version_timeout_seconds=VERSION_TIMEOUT_SECONDS,

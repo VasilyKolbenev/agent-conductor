@@ -79,6 +79,19 @@ PREFLIGHT_RESIDUE_DETAIL = (
     "dispatch stopped before claiming or spawning the task")
 
 
+def login_residue_detail(tool: str) -> str:
+    """Appended when a spawn left a name in the login directory nothing declared.
+
+    It carries no NAME and no count. The directory holds an operator's own
+    credential, its contents are read by this build only as names, and a receipt
+    is not the place to publish either. What the operator needs from it is that
+    the retention promise for that directory did not hold for this attempt, and
+    which directory to go and look at -- which their own configuration says.
+    """
+    return (f" the {tool} login directory gained state this build does not "
+            "declare, so what this attempt left behind is not accounted for")
+
+
 def retained_detail(tool: str) -> str:
     """Appended to whatever a receipt already says when a home outlived its spawn.
 
@@ -286,6 +299,15 @@ class HarnessProfile:
     #: It is asked only on the subscription road, where there is a login to ask
     #: about, and it is never a substitute for a real run.
     login_argv: tuple[str, ...] = ()
+    #: What a spawn may leave in a PERSISTENT login directory, measured at the
+    #: pinned version. `login_scratch` is per-run state this build takes back
+    #: after every spawn; `login_expected` is state the vendor keeps and this
+    #: build leaves alone. A name outside both, appearing during a spawn, is
+    #: reported: on this road the directory cannot be deleted to keep the
+    #: retention promise, so the promise is kept by naming what may appear.
+    #: See adapters/login_home.py for the measurements behind each list.
+    login_scratch: tuple[str, ...] = ()
+    login_expected: tuple[str, ...] = ()
     #: WHERE this vendor's one-shot mode takes the task. A closed choice of two,
     #: and it is structural rather than advisory: the transport calls a
     #: DIFFERENT argv builder for each, and the one it calls for `stdin` takes

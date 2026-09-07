@@ -258,6 +258,136 @@ def test_the_status_command_this_build_asks_is_the_vendors_own(tmp_path):
     assert asked[0]["claude_home"] == AUTH_HOME
 
 
+# -- what a spawn may leave in a directory this build cannot delete ------------
+
+
+def a_login_home(tmp_path: Path) -> Path:
+    """A login directory as the vendor's own command would leave it."""
+    home = tmp_path / "auth" / "claude-code"
+    home.mkdir(parents=True)
+    (home / ".credentials.json").write_text(
+        '{"token": "SYNTHETIC"}', encoding="utf-8", newline="\n")
+    return home
+
+
+def test_per_run_state_a_spawn_leaves_in_the_login_directory_is_taken_back(
+        tmp_path):
+    """The API-key road keeps its promise by deleting the whole directory. This
+    one cannot, so it takes back exactly the names measured as per-run."""
+    home = a_login_home(tmp_path)
+    (home / "sessions").mkdir()
+    (home / "sessions" / "1234.json").write_text(
+        '{"cwd": "work/work-001"}', encoding="utf-8", newline="\n")
+    (home / ".last-cleanup").write_text("stamp", encoding="utf-8", newline="\n")
+    adapter, _root, _log = a_harness(
+        tmp_path, auth="subscription", auth_home=str(home))
+
+    assert run_once(adapter, a_request()).outcome == "succeeded"
+
+    assert not (home / "sessions").exists(), "a run's own session state survived"
+    assert not (home / ".last-cleanup").exists()
+    assert (home / ".credentials.json").exists(), "the login itself was deleted"
+
+
+def test_a_name_no_declaration_accounts_for_is_reported_on_every_receipt(
+        tmp_path):
+    """Not deleted, not ignored, and not named: the directory holds an
+    operator's credential, and a receipt is the wrong place to list it."""
+    home = a_login_home(tmp_path)
+    adapter, _root, _log = a_harness(
+        tmp_path, auth="subscription", auth_home=str(home),
+        **{_fakeclaude.HOME_FILE: "stowaway.txt:PROBE"})
+
+    receipt = run_once(adapter, a_request())
+
+    assert (home / "stowaway.txt").exists(), "the fixture wrote nothing to find"
+    assert "login directory gained state this build does not declare" in receipt.detail
+    assert "stowaway" not in receipt.detail, "a receipt named operator state"
+
+
+def test_declared_state_a_spawn_leaves_is_taken_back_and_never_reported(tmp_path):
+    """The other half of the rule, and the one a list that excused nothing would
+    break: a name this build DECLARES is per-run is taken back in silence."""
+    home = a_login_home(tmp_path)
+    adapter, _root, _log = a_harness(
+        tmp_path, auth="subscription", auth_home=str(home),
+        **{_fakeclaude.HOME_FILE: "sessions:{}"})
+
+    receipt = run_once(adapter, a_request())
+
+    assert receipt.outcome == "succeeded"
+    assert "login directory gained state" not in receipt.detail
+    assert not (home / "sessions").exists(), "declared per-run state survived"
+
+
+def test_a_directory_no_operator_pinned_is_never_read_or_pruned(
+        tmp_path, monkeypatch):
+    """Closure rather than a check, and measured where it would BITE.
+
+    An empty value resolves to the process's own working directory and a
+    relative one to whatever the child was standing in, so a prune that took
+    either at face value would delete a directory of that name wherever the
+    server happened to be running. The test stands in such a place, with such a
+    directory, and both survive.
+    """
+    from conductor.command.adapters import login_home
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "sessions").mkdir()
+    (tmp_path / "sessions" / "mine.json").write_text(
+        "{}", encoding="utf-8", newline="\n")
+
+    assert login_home.entries("") == frozenset()
+    assert login_home.entries("sessions") == frozenset()
+    login_home.take_back("", ("sessions",))
+    login_home.take_back(".", ("sessions",))
+    assert (tmp_path / "sessions" / "mine.json").exists(), (
+        "a prune reached a directory no operator pinned")
+    absent = tmp_path / "never-created"
+    login_home.take_back(str(absent), ("sessions",))
+    assert not absent.exists()
+
+
+def test_state_that_stood_before_the_spawn_is_nobodys_business(tmp_path):
+    """Only what APPEARED is judged. A build that refused over whatever the
+    operator's own login had put there would refuse over the credential."""
+    home = a_login_home(tmp_path)
+    (home / "notes-from-elsewhere.txt").write_text(
+        "mine", encoding="utf-8", newline="\n")
+    adapter, _root, _log = a_harness(
+        tmp_path, auth="subscription", auth_home=str(home))
+
+    receipt = run_once(adapter, a_request())
+
+    assert receipt.outcome == "succeeded"
+    assert "login directory gained state" not in receipt.detail
+    assert (home / "notes-from-elsewhere.txt").exists()
+
+
+def test_the_api_key_road_never_looks_at_a_login_directory(tmp_path):
+    """There is none to look at, and a build that read one anyway would be
+    reading a directory no configuration pointed it at."""
+    home = a_login_home(tmp_path)
+    (home / "sessions").mkdir()
+    adapter, _root, _log = a_harness(tmp_path)
+
+    assert run_once(adapter, a_request()).outcome == "succeeded"
+
+    assert (home / "sessions").exists(), "an unpinned directory was pruned"
+
+
+def test_the_two_declared_lists_are_the_measured_ones():
+    """Spelled out as an independent claim about each pinned build, because the
+    profile, the pruning and the refusal all read the same constants."""
+    from conductor.command.adapters.claude_code import CLAUDE_PROFILE
+    from conductor.command.adapters.codex_cli import CODEX_PROFILE
+
+    assert CLAUDE_PROFILE.login_scratch == ("sessions", ".last-cleanup")
+    assert ".claude.json" in CLAUDE_PROFILE.login_expected
+    assert CODEX_PROFILE.login_scratch == ("tmp",)
+    assert "skills" in CODEX_PROFILE.login_expected
+
+
 def test_both_harnesses_read_their_login_from_the_variable_they_already_owned():
     """No new environment name is invented for a login: the directory a login
     lives in is the same one the API-key road minted."""

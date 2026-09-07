@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from ..contracts import ActionRequest, ActionResultReceipt
 from .base import AdapterVerification
-from .harness_profile import retained_detail
+from .harness_profile import login_residue_detail, retained_detail
 from .process import STDIN_INCOMPLETE, ProcessOutcome
 
 
@@ -100,9 +100,22 @@ class ReceiptWriting:
             run_id=request.run_id, attempt_id=request.attempt_id,
             instance_id=request.instance_id, outcome=observed,
             observed_at=self._clock(),
-            detail=(detail + retained_detail(self.profile.tool_noun)
-                    if self._retained else detail),
+            detail=self._with_residue(detail),
             exit_code=exit_code)
+
+    def _with_residue(self, detail: str) -> str:
+        """Whatever the receipt says, plus every cleanup fact about this attempt.
+
+        Two facts, two sentences, and neither replaces the outcome: a home that
+        could not be discarded and a login directory that gained state nothing
+        declares are different failures of the same promise, and an attempt can
+        have both.
+        """
+        if self._retained:
+            detail += retained_detail(self.profile.tool_noun)
+        if self._login_residue:
+            detail += login_residue_detail(self.profile.tool_noun)
+        return detail
 
     def _verification(
             self, request: ActionRequest, state: str, refs: tuple[str, ...],

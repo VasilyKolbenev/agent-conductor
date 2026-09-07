@@ -98,6 +98,8 @@ from .harness_workspace import (
     HarnessWorkspace,
     WorkspaceNotContained,
 )
+from . import login_home
+from .headless_login import LoginRoad
 from .headless_receipts import ReceiptWriting
 from .headless_routing import ModelRouting
 from .headless_values import (
@@ -117,7 +119,7 @@ from .process import (
 )
 
 
-class HeadlessCliTransport(ReceiptWriting, ModelRouting):
+class HeadlessCliTransport(ReceiptWriting, ModelRouting, LoginRoad):
     """Run one headless task per authorized action, and prove nothing more.
 
     A concrete provider subclasses this in its OWN module, sets ``profile``, and
@@ -184,6 +186,10 @@ class HeadlessCliTransport(ReceiptWriting, ModelRouting):
         #: state. It is re-derived per dispatch, because the standing residue
         #: itself is what the next sweep reads.
         self._retained = 0
+        #: How many spawns left a name in a PERSISTENT login directory that no
+        #: declaration accounts for. A count for the same reason: the names are
+        #: an operator's own state, and one of them is a credential.
+        self._login_residue = 0
 
     # -- what a provider brings ------------------------------------------------
 
@@ -404,6 +410,7 @@ class HeadlessCliTransport(ReceiptWriting, ModelRouting):
         else left it or the version probe did.
         """
         self._retained = 0
+        self._login_residue = 0
         claimed = self._already_claimed(request)
         if claimed is not None:
             return claimed
@@ -504,40 +511,6 @@ class HeadlessCliTransport(ReceiptWriting, ModelRouting):
                 f"so no task was spawned")
         return self._login_preflight(request)
 
-    def _login_preflight(
-            self, request: ActionRequest) -> ActionResultReceipt | None:
-        """Prove the pinned SUBSCRIPTION login answers, or refuse before a task.
-
-        Only on the subscription road: the API-key road has no login to ask
-        about, and a build that ran this there would be inventing a second thing
-        that can fail. The vendor's own status command is asked, and only its
-        EXIT CODE is read -- the answer is a fact about an account, and a
-        product that parsed and reported it would be repeating somebody's
-        account state into a durable receipt.
-
-        Measured on the reviewed builds: with no login, Claude Code's
-        ``auth status --json`` exits 1 and Codex's ``login status`` exits 1, and
-        neither needs a credential to answer. The refusal below therefore says
-        what is missing and how a PERSON fixes it, and quotes no child output at
-        all -- what the operator has to know is the variable, the command and
-        that this build never runs it for them.
-        """
-        profile = self.profile
-        auth, _auth_home = self._login()
-        if auth != "subscription" or not profile.login_argv:
-            return None
-        outcome = self._attempt(
-            profile.login_argv, WORK_DIR,
-            timeout=min(profile.version_timeout_seconds, request.timeout_seconds))
-        if outcome.status == "completed" and outcome.exit_code == 0:
-            return None
-        return self._receipt(
-            request, "failed", None,
-            f"the pinned {profile.tool_noun} build has no usable subscription "
-            f"login in the directory this provider pins, so no task was "
-            f"spawned; sign in yourself with {profile.home_env} set to that "
-            f"directory -- this build never runs a login")
-
     def _attempt(
             self, argv: ArgvSource, cwd: str, *,
             timeout: int | float,
@@ -560,6 +533,10 @@ class HeadlessCliTransport(ReceiptWriting, ModelRouting):
         and the discard, because after the discard there is nothing to read.
         """
         home = self._mint_home()
+        # ONE source for "is there a login directory in play", so the before and
+        # after measurements and the cleanup can never disagree about it.
+        auth_home = self._signed_in_road()
+        before = login_home.entries(auth_home)
         try:
             outcome = self._spawn(
                 argv, home, cwd, timeout=timeout, stdin_bytes=stdin_bytes,
@@ -568,6 +545,8 @@ class HeadlessCliTransport(ReceiptWriting, ModelRouting):
             self._read_attempt_home(home)
             return outcome
         finally:
+            if auth_home:
+                self._take_back_login(auth_home, before)
             self._discard(home)
 
     def _discard(self, home: Path) -> None:
@@ -648,38 +627,6 @@ class HeadlessCliTransport(ReceiptWriting, ModelRouting):
     def _env_allow(self) -> tuple[str, ...]:
         """The operator's environment allowlist, from this provider's own pin."""
         raise NotImplementedError
-
-    def _login(self) -> tuple[str, str]:
-        """The login this provider was pinned to, and where it is kept.
-
-        The base answers with the road that shipped, so a provider that has
-        never been given a vendor login behaves exactly as it did: a fresh home
-        per attempt, and a credential read from the environment by an allowed
-        name. A provider whose transport drives a real login overrides this from
-        its own pin.
-        """
-        return "api_key", ""
-
-    def _home_value(self, home: Path) -> str:
-        """What the child's home environment variable is set to for this spawn.
-
-        Two roads, and the difference is the whole subscription contract.
-
-        On the API-key road it is the home this attempt minted: the vendor may
-        write prompt, session and model text under it, nothing here reads a byte
-        of that, and it is destroyed when the spawn returns. That is the
-        retention promise, and it is kept by DELETING the directory.
-
-        On the subscription road it is the directory the OPERATOR pinned, which
-        is where the vendor's own login command wrote its credential. It must
-        survive the attempt -- a login copied into a fresh directory could not
-        be refreshed, and one deleted afterwards would have to be performed
-        again before every run -- so the retention promise there is kept by
-        naming what may change inside it, never by deletion. The attempt home is
-        still minted, read and discarded for everything else it carries.
-        """
-        auth, auth_home = self._login()
-        return auth_home if auth == "subscription" else str(home)
 
     def _version_matches(self, output: bytes) -> bool:
         """Whether the pinned build's version print IS the reviewed version.

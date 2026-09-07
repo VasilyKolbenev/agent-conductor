@@ -275,6 +275,16 @@ LOGIN_ARGV = ("auth", "login", "--claudeai")
 #: the configured base URL -- and that is stated rather than hidden, because a
 #: preflight that reaches the network is a fact an operator should know.
 LOGIN_STATUS_ARGV = ("auth", "status", "--json")
+#: What a spawn leaves in a PERSISTENT login directory, MEASURED at 2.1.239 with
+#: a fresh directory: a `sessions` directory holding one JSON file per process --
+#: which carries that process's own working directory, and is written even under
+#: `--no-session-persistence` -- and a `.last-cleanup` stamp. Both are per-run,
+#: so both are taken back after every spawn.
+LOGIN_SCRATCH = ("sessions", ".last-cleanup")
+#: What the same measurement showed the vendor KEEPS beside the login: its
+#: profile and the backups it rotates. Left alone, because deleting them would
+#: be deleting the operator's own state, and reported by neither list.
+LOGIN_EXPECTED = (".claude.json", "backups", ".credentials.json")
 MODEL_FLAG = "--model"
 #: The four names DOCS (cli-reference) defines as "an alias for the latest
 #: model", quoted in the module docstring above. Each resolves to whatever this
@@ -334,6 +344,7 @@ CLAUDE_PROFILE = HarnessProfile(
     home_dir=HOME_DIR, marker_dir=MARKER_DIR,
     home_env=CLAUDE_HOME_ENV, forced_env=CLAUDE_FORCED_ENV,
     version_argv=VERSION_ARGV, login_argv=LOGIN_STATUS_ARGV,
+    login_scratch=LOGIN_SCRATCH, login_expected=LOGIN_EXPECTED,
     exit_codes_published=True,
     capability=DISPATCH_CAPABILITY, output_limit=CLAUDE_OUTPUT_LIMIT,
     version_timeout_seconds=VERSION_TIMEOUT_SECONDS,

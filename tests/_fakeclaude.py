@@ -115,6 +115,11 @@ SLEEP = "FAKECLAUDE_SLEEP"
 #: `relative/path:text` written inside the child's cwd, so a test can prove the
 #: workspace evidence a real coding run would leave behind.
 WRITE_FILE = "FAKECLAUDE_WRITE_FILE"
+#: `name:text` written inside the child's own CONFIG DIRECTORY, which is what a
+#: real harness does with its profile and what a persistent login directory has
+#: to be judged about. Relative to that directory by construction: the whole
+#: point is state left where the login lives.
+HOME_FILE = "FAKECLAUDE_HOME_FILE"
 #: Do NOT read stdin at all -- the deaf child, for the delivery relation.
 DEAF = "FAKECLAUDE_DEAF"
 #: Turn the leak scan ON. A BOOLEAN, and the distinction matters: this knob
@@ -306,6 +311,8 @@ def _run_prompt(checker=False) -> int:
         return _run_verdict(env)
     if env.get(WRITE_FILE):
         _write_pair(Path.cwd(), env[WRITE_FILE])
+    if env.get(HOME_FILE) and env.get(CLAUDE_HOME_NAME):
+        _write_pair(Path(env[CLAUDE_HOME_NAME]), env[HOME_FILE])
     if env.get(EMIT_STDOUT):
         sys.stdout.buffer.write(env[EMIT_STDOUT].encode("utf-8") + b"\n")
         sys.stdout.buffer.flush()
