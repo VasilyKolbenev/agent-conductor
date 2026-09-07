@@ -230,7 +230,7 @@ export function boundDocument(records, proposalId, artifactRef) {
 // because it is a fact about the RUN and not about any one gate -- and because
 // a screen that did not say it would go on offering an answer the door is
 // bound to refuse, or explain a gate as though its turn were still coming.
-function endingOf(detail, schedule) {
+export function endingOf(detail, schedule) {
   const word = isObject(schedule) && typeof schedule.run_state === "string"
     ? schedule.run_state : null;
   const recorded = rows(detail.records)

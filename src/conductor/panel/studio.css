@@ -40,7 +40,11 @@ h3{font-size:11px;letter-spacing:.08em;text-transform:uppercase}
 p{margin:0}
 button{font:inherit;cursor:pointer;background:none;border:none;color:inherit}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.studio-mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+/* An id may be 128 characters long (`contract_values._id`) and a step's row
+   prints its id whole: unbroken, one such name pushed the Runs screen 847px
+   past a 1280px window. It wraps anywhere rather than stretching the page. */
+.studio-mono{font-family:var(--mono);font-variant-numeric:tabular-nums;
+             overflow-wrap:anywhere}
 
 /* Every control the shell or a screen module builds clears the 44px minimum
    target height, and it is declared over the ELEMENT TYPES rather than over a
@@ -164,6 +168,22 @@ button{font:inherit;cursor:pointer;background:none;border:none;color:inherit}
    control 1379px wide and the page 1399 in a 1280px window. The labels are
    short now (`starterLabel`); this bounds the intrinsic width as well. */
 .studio-field select{max-width:100%}
+/* The toolbar's other fields -- the workflow picker and the run form's --
+   are `command-field` labels the rule above did not reach: a legal id of 128
+   characters, chosen, made the picker 1386px wide in a 1280px window. Each
+   is a column that may shrink, and its control never exceeds it. */
+.studio-toolbar .command-field{display:flex;flex-direction:column;gap:2px;
+                               min-width:0}
+.studio-toolbar .command-field input,.studio-toolbar .command-field select{
+  max-width:100%;min-width:0}
+/* The run form's fields lie in rows: stacked in one column, three ids and
+   four role pickers stood 687px tall in the published state and the canvas
+   began at 945 of 800. A heading and a sentence take a whole row each; the
+   fields and the button fill the rows between (measured 649 with the button
+   on its own row, 1280×800). */
+.studio-runform{flex-direction:row;flex-wrap:wrap;align-items:flex-end;
+                gap:8px}
+.studio-runform h3,.studio-runform p{flex-basis:100%}
 /* Under 900 the rail follows the canvas as one reading column; the min-width
    0 track is what keeps a wide drawing from pushing the page sideways. */
 .studio-workflow{display:grid;gap:12px;grid-template-columns:minmax(0,1fr)}

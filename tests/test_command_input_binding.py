@@ -417,6 +417,156 @@ def test_the_handoff_binds_by_journal_position_and_refuses_a_proposal_it_cannot_
     assert [row.artifact_id for row in handoff.resolve(RUN_ID, ["artifact-x"])] == ["x-3"]
 
 
+def _ghost_keyed(key: str, **changes) -> ActionRequest:
+    """A hand-made request under one idempotency key, for this run."""
+    return ActionRequest.from_dict({
+        **a_request(**changes).as_dict(), "run_id": RUN_ID, "idempotency_key": key})
+
+
+def test_a_request_naming_a_proposal_the_run_does_not_hold_is_refused_by_name(
+        tmp_path):
+    """The slice-3 review's #1, the transport half.
+
+    A key that begins `dispatch-` and names a proposal this run does not hold
+    can only be hand-made -- the runtime mints the link from a proposal it
+    just read -- and it was refused under "a durable dispatch input was
+    unavailable", a sentence about the wrong cause. The refusal names the
+    proposal now, spawns nothing, and the empty suffix still names nobody:
+    `dispatch-` alone is the file road, byte-for-byte as before.
+    """
+    adapter, root, log = a_harness(
+        tmp_path, instruction=INSTRUCTION,
+        **{_fakeclaude.WRITE_FILE: "implemented.py:verified change"})
+    store = RunStore(root)
+    store.create_run(
+        RunEnvelope(
+            run_id=RUN_ID, cycle_id="artifact-cycle", created_at=NOW,
+            config_digest=snapshot_digest(CONFIG), mode="confirm"),
+        CONFIG)
+    receipt = run_once(adapter, _ghost_keyed("dispatch-ghost"))
+    assert receipt.outcome == "failed"
+    assert receipt.detail == (
+        f"the request names proposal 'ghost', which run {RUN_ID!r} does not "
+        "hold, so no task was spawned")
+    assert _fakeclaude.prompt_spawns(log) == []
+    assert [row.kind for row in store.read(RUN_ID).records] == []
+    # The same shape on the review road, refused by the same name.
+    review = _ghost_keyed("dispatch-ghost", action_id="act-2",
+                          capability="review", arguments=REVIEW_ARGUMENTS)
+    receipt = run_once(adapter, review)
+    assert receipt.outcome == "failed"
+    assert receipt.detail.startswith("the request names proposal 'ghost'")
+    assert _fakeclaude.prompt_spawns(log) == []
+    # An empty suffix names nobody: the file road runs, one child spawned.
+    receipt = run_once(adapter, _ghost_keyed("dispatch-", action_id="act-3"))
+    assert "proposal" not in (receipt.detail or "")
+    assert len(_fakeclaude.prompt_spawns(log)) == 1
+
+
+def _review_request(key: str) -> ActionRequest:
+    return _ghost_keyed(key, capability="review", arguments=REVIEW_ARGUMENTS)
+
+
+def _reviewed(request: ActionRequest, *inputs: str) -> ArtifactDocument:
+    """The artifact a review request published, claiming these inputs."""
+    return ArtifactDocument(
+        artifact_id="artifact-reviewed-1", artifact_ref=OUTPUT_REF,
+        run_id=RUN_ID, created_at=NOW, media_type="text/markdown",
+        content="# Reviewed", source_action_id=request.action_id,
+        input_artifact_ids=tuple(inputs))
+
+
+def test_the_replay_judge_refuses_the_same_ghost_the_transport_refuses():
+    """The slice-3 review's #1, the judge half: two readers, one answer.
+
+    `_the_request_saw` answered "everything before the artifact" for a
+    request naming a proposal the run does not hold, so the replay admitted a
+    review artifact the transport would have refused to produce. It refuses
+    now, naming the proposal; a request naming no proposal at all keeps the
+    road every journal written before the binding took.
+    """
+    from conductor.command.artifacts import validate_artifact_source
+    from tests.test_command_graph_projection import an_event
+
+    seed = _document("artifact-source-1", INPUT_REF, "# Candidate")
+    ghost = _review_request("dispatch-ghost")
+    prior = (seed, ghost, an_event(ghost, "execution_observed", outcome="succeeded", exit_code=0))
+    try:
+        validate_artifact_source(_reviewed(ghost, "artifact-source-1"), prior)
+    except ContractError as error:
+        assert "names proposal 'ghost', which this run does not hold" in str(error)
+    else:
+        raise AssertionError("a ghost proposal was admitted on replay")
+    unnamed = _review_request("idem-act-1")
+    validate_artifact_source(
+        _reviewed(unnamed, "artifact-source-1"),
+        (seed, unnamed, an_event(unnamed, "execution_observed", outcome="succeeded", exit_code=0)))
+
+
+def test_a_review_recorded_over_a_document_its_proposal_never_saw_is_refused_on_replay():
+    """The slice-3 review's #13, ruled: the binding holds on replay too.
+
+    A journal where a document under the target reference was published
+    between the proposal and the review's execution, and the review recorded
+    THAT document as its input, is a journal the transport can no longer
+    write. On replay it is refused -- correctness of the binding over
+    compatibility with a server no deployment holds -- while a hand-made
+    request naming no proposal keeps the older answer.
+    """
+    from conductor.command.artifacts import validate_artifact_source
+    from tests.test_command_graph_projection import an_event
+
+    earlier = _document("artifact-source-1", INPUT_REF, "# Candidate, first")
+    proposal = _proposal_for({**REVIEW_ARGUMENTS})
+    later = _document("artifact-source-2", INPUT_REF, "# Candidate, after the proposal")
+    minted = _review_request(f"dispatch-{proposal.proposal_id}")
+    prior = (earlier, proposal, later, minted, an_event(minted, "execution_observed", outcome="succeeded", exit_code=0))
+    try:
+        validate_artifact_source(_reviewed(minted, "artifact-source-2"), prior)
+    except ContractError as error:
+        assert "input ids do not match" in str(error)
+    else:
+        raise AssertionError("a review over the later document replayed")
+    validate_artifact_source(_reviewed(minted, "artifact-source-1"), prior)
+    unnamed = _review_request("idem-act-1")
+    validate_artifact_source(
+        _reviewed(unnamed, "artifact-source-2"),
+        (earlier, proposal, later, unnamed, an_event(unnamed, "execution_observed", outcome="succeeded", exit_code=0)))
+
+
+def test_the_two_readers_of_the_proposal_link_are_one(tmp_path):
+    """The slice-3 review's #3: one prefix, one parser.
+
+    The store's relation pass and the replay's binding each parsed
+    `dispatch-<proposal_id>` with a constant of their own; nothing pinned
+    them equal. The store's now IS the replay's, and the store's lookup is
+    the replay's parse followed by a search of the run, so the same key
+    names the same proposal -- or nobody -- on both roads.
+    """
+    from conductor.command import graph_causality
+    from conductor.command.attempt_replay import PROPOSAL_KEY, proposal_named_by
+
+    assert graph_causality.DISPATCH_KEY_PREFIX is PROPOSAL_KEY
+    store = RunStore(tmp_path)
+    store.create_run(
+        RunEnvelope(
+            run_id=RUN_ID, cycle_id="artifact-cycle", created_at=NOW,
+            config_digest=snapshot_digest(CONFIG), mode="confirm"),
+        CONFIG)
+    proposal = _proposal_for({**ARGUMENTS, "artifact_refs": []})
+    store.append(proposal)
+    recovered = store.read(RUN_ID)
+    for key, named in ((f"dispatch-{proposal.proposal_id}", proposal.proposal_id),
+                       ("dispatch-ghost", "ghost"), ("dispatch-", None),
+                       ("idem-x", None)):
+        request = _ghost_keyed(key)
+        assert proposal_named_by(request) == named, key
+        held = graph_causality._proposal_named_by(recovered, request)
+        assert (held is None) == (named != proposal.proposal_id), key
+        if held is not None:
+            assert held.proposal_id == named
+
+
 def test_a_request_names_the_proposal_it_was_minted_from_or_nobody():
     """`dispatch-<proposal_id>` is the runtime's own link, read back here.
 

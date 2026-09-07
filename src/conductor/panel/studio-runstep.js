@@ -28,6 +28,10 @@
 // audit, and it is now the whole of one file.
 import {canonicalJson} from "./command-projection.js";
 import {element} from "./command-view.js";
+//: Which of a step's arguments name the documents it READS, as the reviewed
+//: schema marks them: the one rule, declared beside the form that publishes
+//: under those references.
+import {inputRefs} from "./studio-rundocs.js";
 import {boundDocument, latestDocument} from "./studio-runread.js";
 import {STREAM_DOWN_REASON, WRITING_NOTE} from "./studio-runwords.js";
 
@@ -220,10 +224,13 @@ const PERMITS = Object.freeze({
 });
 //: Where a person gets the authority this run withholds. Named in every
 //: sentence that withholds it: a shut door without the open one beside it
-//: teaches that the product cannot do the thing.
-const CONFIRM_ROAD = "To carry a step out, open a new run of this revision "
-  + "with authority confirm: the Open a run form on the Workflow screen grants "
-  + "it explicitly.";
+//: teaches that the product cannot do the thing. It names what that form
+//: really opens -- a run of the workflow's PUBLISHED revision -- and not
+//: "this revision", which the form offers no way to choose once a newer one
+//: is published, and which a run that follows no workflow does not have.
+const CONFIRM_ROAD = "To carry a step out, open a new run of this workflow's "
+  + "published revision with authority confirm: "
+  + "the Open a run form on the Workflow screen grants it explicitly.";
 
 function authorityOf(detail) {
   const mode = (object(detail.run) || {}).mode;
@@ -371,10 +378,35 @@ function instructionFacts(ref, bound, standing) {
   return [fact(label, `durable document ${show(bound.artifact_id)} · `
     + `${byteLength(text(bound.content))} bytes · written `
     + `${show(bound.created_at)}`), note(standing
-    ? "The one standing when this proposal was written. A document published "
-      + "since is durable and is not what runs; to run it, propose again."
+    ? "The one standing when this proposal was written: confirming this "
+      + "proposal runs it. A document published since is durable and is not "
+      + "what runs; the newest one standing is bound by the next proposal "
+      + "made on this step, once this attempt has answered."
     : "The one standing now: a proposal made now binds it, and a document "
       + "published after that proposal is not what runs.")];
+}
+
+//: WHICH DOCUMENTS A STEP READS, one fact per input reference, bound at the
+//: same journal position as the instruction (`ArtifactHandoff.bound`): the
+//: Propose form names the newest under each reference now, the Confirm form
+//: the one standing when the proposal was written. A reference under which
+//: nothing stands is said so: the attempt is refused before anything is
+//: spawned rather than run on nothing.
+function inputFacts(refs, lookup, standing) {
+  if (!refs.length) return [];
+  return [...refs.map((ref) => {
+    const bound = lookup(ref);
+    return fact(`Input ${ref}`, bound === null
+      ? "no durable document -- the attempt is refused before anything is spawned"
+      : `durable document ${show(bound.artifact_id)} · `
+        + `${byteLength(text(bound.content))} bytes · written `
+        + `${show(bound.created_at)}`);
+  }), note(standing
+    ? "Each input is the document standing when this proposal was written; "
+      + "the child reads exactly these, whatever is published since."
+    : "Each input is the newest document standing under its reference now: "
+      + "a proposal made now binds these, and one published after it is not "
+      + "what the child reads.")];
 }
 
 //: What the PLAN decided about this step, drawn read-only. Every one of these
@@ -392,6 +424,8 @@ function planFacts(node, runtime, detail) {
       + "offered."),
     ...instructionFacts(ref, ref === null ? null
       : latestDocument(rows(detail.records), ref), false),
+    ...inputFacts(inputRefs(node.capability, node.arguments),
+      (input) => latestDocument(rows(detail.records), input), false),
     fact("Longest this may run", `${timeoutOf(node)}s`),
     note(TIMEOUT_NOTE),
     fact("Attempt id", attemptId(node, runtime)),
@@ -633,6 +667,9 @@ function proposalFacts(proposal, detail) {
     fact("Arguments", canonicalJson(proposal.arguments)),
     ...instructionFacts(ref, ref === null ? null : boundDocument(
       rows(detail.records), proposal.proposal_id, ref), true),
+    ...inputFacts(inputRefs(proposal.capability, proposal.arguments),
+      (input) => boundDocument(rows(detail.records), proposal.proposal_id,
+        input), true),
     fact("Scope", proposal.scope),
     fact("Preview digest", proposal.preview_digest),
     fact("Against configuration", proposal.config_digest),

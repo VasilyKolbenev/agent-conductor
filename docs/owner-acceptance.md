@@ -80,12 +80,16 @@ the effecting step and asking for changes at the result gate sends the run round
 rows read identically you cannot choose between them, and that is a finding — they are not
 equal choices.
 
-**The screen fits an ordinary window.** At 1280 px wide nothing scrolls sideways and the canvas
-begins within the first screen. *Start a new workflow* and *Open a run* each sit behind a fold
-whose heading says what it holds and where that stands (*Open a run — publish a revision
-first*); the start box is open while no workflow is chosen, the run box while a revision is
-published and you are not editing a draft, and either opens with a click or with Tab and Enter.
-A page that scrolls sideways, or a fold whose heading does not say what is inside, is a finding.
+**The screen fits an ordinary window.** At 1280 px wide nothing scrolls sideways — not even with
+a workflow id of 128 characters chosen — and the canvas begins within the first screen. *Start
+a new workflow* and *Open a run* each sit behind a fold whose heading says what it holds and
+where that stands (*Open a run — choose or start a workflow first*, *— publish a revision first*,
+*— revision 1 is published*); the start box is open while no workflow is chosen, the run box
+while a revision is published and you are not editing a draft, and either opens with a click or
+with Tab and Enter. The open run box costs height (the canvas begins lower while it is open; fold
+it to get the height back), and a fold you opened or closed by hand stays that way through the
+frames that arrive, as does anything typed into it. A page that scrolls sideways, a fold whose
+heading does not say what is inside, or a fold that closes by itself, is a finding.
 
 **The workflow you just named must be the one the picker says is chosen**, immediately, without
 a save and without a reload. A picker that falls back to "choose a workflow" while you are
@@ -229,7 +233,10 @@ a silent second revision.
 
 ## 10. Start a run against that exact revision
 
-Start a run from the workflow you just published, binding each role to a participant.
+Start a run from the workflow you just published, choosing the authority **confirm** and
+binding each role to a participant. The form starts at *observe*, which proposes nothing and
+runs nothing; every step of this script from 13 on needs *confirm*, and a run opened at the
+default meets the sentence *This run's authority is observe* on every row instead of a control.
 
 **You must be able to see** which revision the run is following. A run freezes the plan it
 starts with: editing the workflow afterwards must not change what that run is doing.

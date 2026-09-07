@@ -432,10 +432,16 @@ const REOPENED = Object.freeze(["draft_changed", "draft_conflict"]);
       say(target, "refused", STREAM_DOWN);
       return;
     }
-    const mine = ++writeGeneration;
+    // A RUN-SCOPED write is retired by nothing but its own answer. Its
+    // ownership is per run and step (`runs.writes`), a sibling write is
+    // permitted while it is in flight, and a dropped stream reaches it
+    // through the session it was authorized under (`submit`). The counter is
+    // the workflow doors' rule -- one workflow write at a time -- and over
+    // both it retired alpha's refusal the moment omega's write began.
+    const mine = RUN_SCOPED.includes(target) ? null : ++writeGeneration;
     say(target, "submitting", "Writing…");
     const result = await submit(target, subject, body);
-    if (mine !== writeGeneration) return;
+    if (mine !== null && mine !== writeGeneration) return;
     if (result.status !== "accepted") {
       const refusal = refusalOf(result);
       say(target, refusal.phase, refusal.notice);
@@ -545,6 +551,7 @@ const REOPENED = Object.freeze(["draft_changed", "draft_conflict"]);
       assignments: request.assignments};
     write("runs", null, body, () => {
       dispatch({type: "save", phase: "saved", notice: RUN_OPENED});
+      dispatch({type: "opening-cleared"});
       loadRuns();
       refreshRun(request.runId);
     });
@@ -680,6 +687,9 @@ const REOPENED = Object.freeze(["draft_changed", "draft_conflict"]);
     },
     onStartWorkflow, onValidate, onSaveDraft, onPublish, onPublishConfirm,
     onPublishCancel, onEditPublished, onOpenRun,
+    onFold: (name, open) => dispatch({type: "fold", name, open}),
+    editStarter: (patch) => dispatch({type: "starter-edit", patch}),
+    editOpening: (patch) => dispatch({type: "opening-edit", patch}),
     onRefreshRuns: () => loadRuns(),
     onRefreshRun: () => { if (chosenRun) refreshRun(chosenRun); },
     onRefreshAgents: () => loadWorkflows(),

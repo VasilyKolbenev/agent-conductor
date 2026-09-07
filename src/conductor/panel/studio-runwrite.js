@@ -47,6 +47,10 @@ export function stepWriters(door) {
       generation: row.generation};
     door.dispatch({type: "step-writing", ...spent, writing: true});
     door.write(target, asked, row.body, () => {
+      // The run was written to whether or not the person is still looking at
+      // it, and its next read is what gives the control back: an answered
+      // write's control is shut until then, said first and unconditionally.
+      door.dispatch({type: "step-answered", runId: asked, nodeId: row.nodeId});
       if (asked !== door.chosenRun()) return;
       door.dispatch({type: "status", notice});
       door.dispatch({type: "step-spent", ...spent});
@@ -57,10 +61,11 @@ export function stepWriters(door) {
       door.dispatch({type: "status",
         notice: `${door.said(result.code)} ${READ_AGAIN}`});
       door.refreshRun(asked);
-    // Whatever became of it -- accepted, refused, retired by another write, or
-    // never sent because the line was down -- this write is over and the
-    // control comes back. `write` resolves on every one of those roads, so
-    // this is the one exit all of them share.
+    // Whatever became of it -- accepted, refused, retired by a dropped stream,
+    // or never sent because the line was down -- this write is over. `write`
+    // resolves on every one of those roads, so this is the one exit all of
+    // them share; on every road but the accepted one it is also what gives
+    // the control back, and on that one the run's next read is.
     }).finally(() => door.dispatch({type: "step-writing", ...spent,
       writing: false}));
   }
@@ -93,6 +98,7 @@ export function documentWriters(door) {
       generation: row.generation};
     door.dispatch({type: "step-writing", ...spent, writing: true});
     door.write("artifacts", asked, row.body, () => {
+      door.dispatch({type: "step-answered", runId: asked, nodeId: DOCUMENT_KEY});
       if (asked !== door.chosenRun()) return;
       door.dispatch({type: "status", notice: PUBLISHED_NOTE});
       door.dispatch({type: "document-spent", runId: asked,

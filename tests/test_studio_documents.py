@@ -85,10 +85,10 @@ def test_the_body_is_the_apis_four_fields_and_only_the_document_is_typed():
 def test_the_reference_is_chosen_from_what_the_plan_reads():
     """Every input list the reviewed schema marks, plus every instruction ref."""
     refs = _function(_code(DOCS), "consumableRefs")
-    assert "CAPABILITY_FIELDS[node.capability]" in refs
-    assert "INPUT_KINDS.includes(kind)" in refs
-    assert "name === INSTRUCTION_FIELD" in refs
+    assert "inputRefs(node.capability, node.arguments).forEach(take);" in refs
+    assert "take((object(node.arguments) || {})[INSTRUCTION_FIELD]);" in refs
     docs = _code(DOCS)
+    assert "rows(CAPABILITY_FIELDS[capability])" in _function(docs, "inputRefs")
     assert 'const INPUT_KINDS = Object.freeze(["artifact-ids", "artifact-ids-required"]);' in docs
     assert 'const INSTRUCTION_FIELD = "instruction_ref";' in docs
     # A plan that reads no document is told so rather than offered a form.
@@ -142,6 +142,9 @@ def test_the_draft_lives_in_the_reducer_and_is_spent_only_by_its_own_write():
     assert "held.runId !== event.runId || held.generation !== event.generation" in spent
     assert "document: documentCleared(held)" in spent
     assert "generation: document.generation + 1" in _function(draft, "documentCleared")
+    # Every typed word moves the generation too, so a write spends exactly
+    # what it sent and nothing typed after the press (the slice-3 review).
+    assert "next.generation = held.generation + 1;" in edited, edited
     store = _code(STORE)
     kept = re.search(r"function keptDrafts\(state, detail\) \{(.*?)\n\}", store,
                      re.DOTALL).group(1)
@@ -164,6 +167,7 @@ def test_the_document_write_is_owned_like_a_step_write_and_reads_the_same_map():
     assert body.index('{type: "step-writing", ...spent, writing: true}') < body.index(
         'door.write("artifacts", asked, row.body,')
     assert 'door.dispatch({type: "document-spent", runId: asked,' in body
+    assert 'door.dispatch({type: "step-answered", runId: asked, nodeId: DOCUMENT_KEY});' in body
     assert body.rstrip().endswith(
         '}).finally(() => door.dispatch({type: "step-writing", ...spent,\n'
         "      writing: false}));")
@@ -186,9 +190,15 @@ def test_the_step_forms_name_the_document_a_proposal_binds():
     facts = _function(step, "instructionFacts")
     assert "no durable document" in facts
     assert "durable document ${show(bound.artifact_id)}" in facts
-    assert "The one standing when this proposal was written." in facts
+    assert "The one standing when this proposal was written: confirming this " in facts
     assert "The one standing now: a proposal made now binds it" in facts
     assert "instructions/${ref}.md" in facts
+    # The road the sentence names is one the screen offers: at `proposed`
+    # only the Confirm form is drawn and nothing retracts, so "propose again"
+    # was a door that did not exist (the slice-3 review's #21).
+    assert "propose again" not in facts, facts
+    assert "is bound by the next proposal" in facts
+    assert "once this attempt has answered" in facts
     # The Propose form asks for the latest; the Confirm form for the bound.
     assert ": latestDocument(rows(detail.records), ref), false)" in _function(
         step, "planFacts")
@@ -201,15 +211,66 @@ def test_the_step_forms_name_the_document_a_proposal_binds():
     assert bound.strip().endswith("return null;")
     # And the position row names what the latest proposal bound.
     runs = _code(RUNS)
-    assert "item.append(...boundInstruction(detail, node));" in runs
+    assert "item.append(...boundSources(detail, node));" in runs
     assert "documentSection(detail, state, handlers)," in runs
+
+
+def test_the_step_forms_name_every_input_document_a_proposal_binds():
+    """The inputs are bound at the same position as the instruction, and said.
+
+    A dispatch's `artifact_refs` and a review's `target_artifact_refs` are
+    bound by `ArtifactHandoff.bound` at the proposal, and the person
+    confirming could not see which `artifact-<ref>-N` the child would read
+    (the slice-3 review's #2/#19). One fact per input reference now, on both
+    forms and on the position row, through the one rule that says which
+    arguments are inputs -- the schema's own kinds, read by `inputRefs`.
+    """
+    docs = _code(DOCS)
+    refs = _function(docs, "inputRefs")
+    assert "rows(CAPABILITY_FIELDS[capability])" in refs
+    assert "if (!INPUT_KINDS.includes(kind)) continue;" in refs
+    assert 'const INPUT_KINDS = Object.freeze(["artifact-ids", "artifact-ids-required"]);' in docs
+    assert "inputRefs(node.capability, node.arguments).forEach(take);" in _function(
+        docs, "consumableRefs")
+    step = _code(STEP)
+    assert 'import {inputRefs} from "./studio-rundocs.js";' in step
+    facts = _function(step, "inputFacts")
+    assert "fact(`Input ${ref}`, bound === null" in facts
+    assert "the attempt is refused before anything is spawned" in facts
+    assert ("...inputFacts(inputRefs(node.capability, node.arguments),\n"
+            "      (input) => latestDocument(rows(detail.records), input), false),"
+            ) in _function(step, "planFacts")
+    assert ("...inputFacts(inputRefs(proposal.capability, proposal.arguments),\n"
+            "      (input) => boundDocument(rows(detail.records), proposal.proposal_id,\n"
+            "        input), true),") in _function(step, "proposalFacts")
+    sources = _function(docs, "boundSources")
+    assert "const inputs = inputRefs(node.capability, held);" in sources
+    assert "fact(`Input ${input} bound by ${show(latest.proposal_id)}`," in sources
+
+
+def test_a_run_that_is_over_is_offered_no_document_form():
+    """A complete plan or a recorded ending: no step will read what is published.
+
+    The form drew on such a run and the server accepted the document (201),
+    a durable record nothing will ever consume (the slice-3 review's #18);
+    on a recorded terminal the same enabled control met `run_terminal`. The
+    section reads the run's ending the way the Decisions screen does and
+    says what is over instead of drawing the control.
+    """
+    docs = _code(DOCS)
+    section = _function(docs, "documentSection")
+    assert "const ending = endingOf(detail, graph === null ? null : graph.schedule);" in section
+    assert "ending.ended\n    ? [note(`This run is over: " in section
+    assert section.index("ending.ended") < section.index("documentForm(detail")
+    assert 'import {boundDocument, endingOf} from "./studio-runread.js";' in docs
+    assert "export function endingOf(detail, schedule)" in _code(READ)
 
 
 def test_the_document_fragment_exports_its_two_builders_and_mounts_nothing():
     """The fragment's shape, which is the step control's and not a mount's."""
     docs = _code(DOCS)
     assert set(re.findall(r"export function (\w+)\(", docs)) == {
-        "documentSection", "boundInstruction"}
+        "documentSection", "boundSources", "inputRefs"}
     assert "export default" not in docs
     assert "mount.replaceChildren(" not in docs
     assert "chip(" not in docs

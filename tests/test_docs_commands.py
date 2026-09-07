@@ -257,6 +257,27 @@ def test_every_document_that_counts_the_subcommands_counts_them_correctly():
             f"{sorted(real)}")
 
 
+def test_the_acceptance_script_names_the_authority_a_driven_run_needs():
+    """Step 10 chooses `confirm`, and says what the form starts at.
+
+    The run form defaults to the most restrictive authority, and a person who
+    followed steps 10-13 as they were written met the observe sentence where
+    step 13 requires a Propose control (the slice-3 review's #15). The default
+    is read off the form rather than restated, so the doc reds the day the
+    form's default moves.
+    """
+    text = ACCEPTANCE.read_text(encoding="utf-8")
+    step_ten = re.search(r"## 10\. (.*?)\n## 11\.", text, re.DOTALL)
+    assert step_ten is not None, "the acceptance script has no step 10"
+    form = (ROOT / "src" / "conductor" / "panel" / "studio-runform.js").read_text(
+        encoding="utf-8")
+    default = re.search(r'\? opening\.mode : "(\w+)";', form)
+    assert default is not None, "the run form names no default authority"
+    assert "the authority **confirm**" in step_ten.group(1), step_ten.group(1)
+    assert f"The form starts at *{default.group(1)}*" in step_ten.group(1)
+    assert text.index("## 10.") < text.index("offers **Propose this step**")
+
+
 def test_a_dated_record_is_not_held_to_todays_count():
     """The other half of the ruling, so nobody later "fixes" the evidence.
 

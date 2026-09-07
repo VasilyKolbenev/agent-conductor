@@ -23,7 +23,7 @@
 // row for the instruction a step's proposal bound.
 import {element} from "./command-view.js";
 import {CAPABILITY_FIELDS} from "./command-projection.js";
-import {boundDocument} from "./studio-runread.js";
+import {boundDocument, endingOf} from "./studio-runread.js";
 import {
   ARTIFACT_CONTENT_LIMIT,
   ARTIFACT_MEDIA_TYPES,
@@ -99,6 +99,29 @@ function byteLength(value) {
 
 // -- what the plan reads --------------------------------------------------------
 
+/**
+ * The references one step READS, as the reviewed schema marks its arguments.
+ *
+ * In argument order and once each; a dispatch's `artifact_refs`, a review's
+ * `target_artifact_refs`. The instruction reference is not among them: it is
+ * read under its own field and said under its own fact.
+ *
+ * @param {string} capability The step's capability, a key of the schema.
+ * @param {object} held The step's arguments, the plan's or a proposal's.
+ * @returns {Array<string>} The references, possibly none.
+ */
+export function inputRefs(capability, held) {
+  const found = [];
+  const arguments_ = object(held) || {};
+  for (const [name, kind] of rows(CAPABILITY_FIELDS[capability])) {
+    if (!INPUT_KINDS.includes(kind)) continue;
+    for (const ref of rows(arguments_[name])) {
+      if (typeof ref === "string" && !found.includes(ref)) found.push(ref);
+    }
+  }
+  return found;
+}
+
 //: Every reference this run's plan can consume, in plan order and once each:
 //: the input lists the reviewed schema marks on every step, and every
 //: dispatch's instruction reference. Read off the frozen definition, so a
@@ -111,11 +134,8 @@ function consumableRefs(detail) {
     if (typeof ref === "string" && !found.includes(ref)) found.push(ref);
   };
   for (const node of rows(definition === null ? null : definition.nodes)) {
-    const held = object(node.arguments) || {};
-    for (const [name, kind] of rows(CAPABILITY_FIELDS[node.capability])) {
-      if (INPUT_KINDS.includes(kind)) rows(held[name]).forEach(take);
-      else if (name === INSTRUCTION_FIELD) take(held[name]);
-    }
+    inputRefs(node.capability, node.arguments).forEach(take);
+    take((object(node.arguments) || {})[INSTRUCTION_FIELD]);
   }
   return found;
 }
@@ -354,38 +374,62 @@ function documentForm(detail, state, handlers, refs) {
  */
 export function documentSection(detail, state, handlers) {
   const refs = consumableRefs(detail);
-  const body = refs.length
-    ? [documentForm(detail, state, handlers, refs)]
-    : [note("This run's plan names no document reference: no step reads "
-      + "one, so there is nothing a document published here could be for.")];
+  const graph = object(detail.graph);
+  const ending = endingOf(detail, graph === null ? null : graph.schedule);
+  // A run that is over -- its plan's own word, or the ending it recorded --
+  // offers no step a document any more, so the form is not drawn: the
+  // server refuses a recorded terminal (`run_terminal`) and a complete plan
+  // would keep a document nothing reads. What is over is said.
+  const body = ending.ended
+    ? [note(`This run is over: ${ending.plan_word === null
+      ? "its ending is recorded" : `the plan is ${ending.plan_word}`}. No `
+      + "step of it will read a document published now, so none is offered.")]
+    : refs.length
+      ? [documentForm(detail, state, handlers, refs)]
+      : [note("This run's plan names no document reference: no step reads "
+        + "one, so there is nothing a document published here could be for.")];
   return element("section", {className: "studio-section",
     "data-section": "documents"},
   [element("h3", {text: "Publish a document"}), ...body]);
 }
 
 /**
- * The instruction a step's LATEST proposal bound, said beside the step.
+ * The sources a step's LATEST proposal bound, said beside the step.
  *
- * Only for a step whose arguments name an instruction reference and on which
- * a proposal stands or stood; what it bound is what ran or will run, and a
- * document published since is not it.
+ * The instruction, for a step whose arguments name an instruction reference,
+ * and every input the reviewed schema marks; only on a step on which a
+ * proposal stands or stood. What it bound is what that proposal runs when
+ * confirmed, and a document published since is not it.
  *
  * @param {object} detail The whole run read.
  * @param {object} node The plan's frozen node.
- * @returns {Array<Element>} One fact, or none.
+ * @returns {Array<Element>} One fact per bound source, or none.
  */
-export function boundInstruction(detail, node) {
+export function boundSources(detail, node) {
   const held = object(node.arguments) || {};
   const ref = held[INSTRUCTION_FIELD];
-  if (typeof ref !== "string") return [];
+  const inputs = inputRefs(node.capability, held);
+  if (typeof ref !== "string" && !inputs.length) return [];
   const proposals = rows(detail.records)
     .filter((row) => row.record_type === "action_proposal")
     .map((row) => object(row.record) || {})
     .filter((record) => record.node_id === node.node_id);
   if (!proposals.length) return [];
   const latest = proposals[proposals.length - 1];
-  const bound = boundDocument(rows(detail.records), latest.proposal_id, ref);
-  return [fact(`Instruction ${ref} bound by ${show(latest.proposal_id)}`,
-    bound === null ? `the machine's instructions/${ref}.md, if it exists`
-      : `durable document ${show(bound.artifact_id)}`)];
+  const bound = (source) => boundDocument(
+    rows(detail.records), latest.proposal_id, source);
+  const said = [];
+  if (typeof ref === "string") {
+    const found = bound(ref);
+    said.push(fact(`Instruction ${ref} bound by ${show(latest.proposal_id)}`,
+      found === null ? `the machine's instructions/${ref}.md, if it exists`
+        : `durable document ${show(found.artifact_id)}`));
+  }
+  for (const input of inputs) {
+    const found = bound(input);
+    said.push(fact(`Input ${input} bound by ${show(latest.proposal_id)}`,
+      found === null ? "no durable document"
+        : `durable document ${show(found.artifact_id)}`));
+  }
+  return said;
 }

@@ -501,22 +501,34 @@ function starterNote(row) {
 
 //: Starting a workflow is TWO facts: the id it will live under, and the
 //: document it starts from. Neither is guessed: a blank start is an empty
-//: drawing, and every other offer is a document this BUILD ships.
+//: drawing, and every other offer is a document this BUILD ships. Both are
+//: drawn from the reducer's own copy and committed back on every keystroke
+//: (`studio-toolbardraft.js`): a frame lands on every write of any run, and
+//: a control drawn from nothing lost the id a person was typing.
 function starterControls(state, handlers) {
   const box = element("div", {className: "studio-field studio-field--row"});
+  const held = object(state.workflows.starter) || {};
+  const edit = handlerOf(handlers, "editStarter");
   const name = element("input", {autocomplete: "off",
     "data-focus": "new-workflow", maxlength: "128", name: "new-workflow",
     pattern: ID_PATTERN, spellcheck: "false", type: "text"});
+  name.value = typeof held.workflowId === "string" ? held.workflowId : "";
   const starters = rows(state.workflows.starters);
   const from = element("select", {"data-focus": "new-from", name: "new-from"},
     [option("", "start blank")].concat(starters.map(
       (row) => option(row.starter_id, starterLabel(row)))));
+  from.value = typeof held.starterId === "string" ? held.starterId : "";
+  const chosen = starters.find((row) => row.starter_id === from.value) || null;
   const said = element("p", {className: "studio-hint",
-    "data-starter-note": "", text: starterNote(null)});
-  from.addEventListener("change", () => {
-    said.textContent = starterNote(
-      starters.find((row) => row.starter_id === from.value) || null);
-  });
+    "data-starter-note": "", text: starterNote(chosen)});
+  if (edit === null) {
+    name.disabled = true;
+    from.disabled = true;
+    name.title = "This screen was mounted without an editStarter handler.";
+  } else {
+    name.addEventListener("input", () => edit({workflowId: name.value}));
+    from.addEventListener("change", () => edit({starterId: from.value}));
+  }
   const start = handlerOf(handlers, "onStartWorkflow");
   const go = element("button", {className: "studio-btn",
     "data-focus": "action:onStartWorkflow", text: "Start a workflow",
@@ -655,15 +667,37 @@ function saveLine(state) {
 //: box while no workflow is chosen, the run box while a revision is published
 //: and no drawing is being edited. The summary says what the fold holds and
 //: where that stands, so a closed one is a sentence and not a blank.
-function disclosure(name, summary, open, body) {
-  return element("details", Object.assign({className: "studio-fold",
+//:
+//: A fold a person TOUCHED is theirs (`studio-toolbardraft.js`): the toggle
+//: is recorded and drawn back on every render, where the state-decided one
+//: used to close the box on the next frame. The one drawn from state is not
+//: a choice, so a toggle that reports what was drawn records nothing.
+function disclosure(name, summary, open, body, handlers) {
+  const box = element("details", Object.assign({className: "studio-fold",
     "data-fold": name}, open ? {open: ""} : {}),
   [element("summary", {text: summary}), body]);
+  const fold = handlerOf(handlers, "onFold");
+  if (fold !== null) {
+    box.addEventListener("toggle", () => {
+      if (box.open !== open) fold(name, box.open);
+    });
+  }
+  return box;
 }
 
+//: Which way a fold stands: the person's own choice while they have made
+//: one, and otherwise as the state decides.
+function foldOpen(held, name, byState) {
+  const chosen = (object(held.folds) || {})[name];
+  return typeof chosen === "boolean" ? chosen : byState;
+}
+
+//: What the run fold holds and where that stands, in the order a person
+//: meets the states: no workflow yet, one chosen and unpublished, published.
 function runSummary(held) {
   const detail = object(held.detail);
-  const published = detail === null ? null : object(detail.published);
+  if (detail === null) return "Open a run — choose or start a workflow first";
+  const published = object(detail.published);
   return published === null
     ? "Open a run — publish a revision first"
     : `Open a run — revision ${published.revision} is published`;
@@ -689,11 +723,12 @@ export function mountToolbar(mount, state, handlers) {
   const detail = object(held.detail);
   const published = detail !== null && object(detail.published) !== null;
   mount.replaceChildren(workflowPicker(state, handlers),
-    disclosure("start", "Start a new workflow", !chosen,
-      starterControls(state, handlers)),
+    disclosure("start", "Start a new workflow", foldOpen(held, "start", !chosen),
+      starterControls(state, handlers), handlers),
     saveControls(state, handlers), saveLine(state),
-    disclosure("run", runSummary(held), published && held.draft === null,
-      runForm(state, handlers)));
+    disclosure("run", runSummary(held),
+      foldOpen(held, "run", published && held.draft === null),
+      runForm(state, handlers), handlers));
 }
 
 // -- the diagnostics panel ------------------------------------------------

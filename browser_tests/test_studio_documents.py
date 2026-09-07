@@ -217,6 +217,52 @@ def test_starting_from_an_existing_document_copies_its_bytes_into_the_editor(
         page.context.close()
 
 
+def test_words_typed_while_the_document_write_is_in_flight_are_not_spent_by_it(
+        chromium: Browser, project: _Project) -> None:
+    """The publish is held on the wire; the person keeps composing.
+
+    The accepted write spent what it posted and nothing typed since: the
+    editor holds the later words once the run has been read again, and the
+    posted bytes are the earlier ones.
+    """
+    page, window = _open(chromium, project)
+    try:
+        _read(page, RUN_ID)
+        _publish_form(page)
+        _choose_ref(page, LONE_AWAITED_REF)
+        _type_document(page, "first document")
+        held: list = []
+        page.route(f"**/command/runs/{RUN_ID}/artifacts",
+                   lambda route: held.append(route))
+        with page.expect_request(lambda request: request.method == "POST"
+                                 and request.url.endswith("/artifacts")):
+            page.locator('[data-focus-key="document:publish"]').click()
+        for _ in range(40):
+            if held:
+                break
+            page.wait_for_timeout(25)
+        assert len(held) == 1, held
+        control = page.locator('[data-focus-key="field:content"]')
+        control.click()
+        page.keyboard.press("End")
+        page.keyboard.type(" and the next thing")
+        page.keyboard.press("Tab")
+        held[0].continue_()
+        page.unroute(f"**/command/runs/{RUN_ID}/artifacts")
+        page.wait_for_function(
+            "id => (document.querySelector('ul.studio-artifacts')?.innerText || '')"
+            ".includes(id)", arg=f"{LONE_AWAITED_REF}-0")
+        page.wait_for_function(
+            "() => { const b = document.querySelector("
+            "'[data-focus-key=\"document:publish\"]'); return b && !b.disabled; }")
+        assert window.posted("/artifacts")[0]["content"] == "first document"
+        assert control.input_value() == "first document and the next thing"
+        assert _fact(page, "document", "Document id") == f"{LONE_AWAITED_REF}-1"
+    finally:
+        assert window.problems == []
+        page.context.close()
+
+
 def test_what_is_typed_into_the_document_survives_a_read_of_the_run(
         chromium: Browser, project: _Project) -> None:
     """The draft is the reducer's, kept across a read of the same run."""
@@ -306,6 +352,23 @@ def _confirm_do(page: Page) -> None:
         arg=results_before, timeout=20000)
 
 
+def _a_newer_document_moves_nothing(page: Page) -> None:
+    """A newer document under either reference: durable, listed, and not what
+    the standing proposal bound -- the instruction and the input alike, on
+    the Confirm form and on the position row."""
+    _publish_under(page, INSTRUCTION_REF, "A later revision that must not run.",
+                   f"{INSTRUCTION_REF}-1")
+    _publish_under(page, "artifact-plan", "# Plan, revised after the proposal.",
+                   "artifact-plan-1")
+    assert _instruction_fact(page, f"confirm:{DO}").startswith(
+        f"durable document {INSTRUCTION_REF}-0")
+    assert _fact(page, f"confirm:{DO}", "Input artifact-plan").startswith(
+        "durable document artifact-plan-0")
+    assert "bound by" in _row(page, DO) and f"{INSTRUCTION_REF}-0" in _row(page, DO)
+    assert "Input artifact-plan bound by" in _row(page, DO)
+    assert "artifact-plan-0" in _row(page, DO) and "artifact-plan-1" not in _row(page, DO)
+
+
 def test_the_step_forms_name_the_document_a_proposal_binds_and_keep_naming_it(
         chromium: Browser, bench: _Bench) -> None:
     """The Propose form: what a proposal made now would bind. The Confirm
@@ -323,8 +386,14 @@ def test_the_step_forms_name_the_document_a_proposal_binds_and_keep_naming_it(
         said = page.locator(f'[data-step="propose:{DO}"]').inner_text()
         assert f"instructions/{INSTRUCTION_REF}.md" in said, said
 
+        # The step's one INPUT is said beside its instruction, from nothing to
+        # the newest document standing.
+        assert _fact(page, f"propose:{DO}", "Input artifact-plan").startswith(
+            "no durable document")
         _publish_under(page, "artifact-plan", "# Plan\n\nThe plan to carry out.",
                        "artifact-plan-0")
+        assert _fact(page, f"propose:{DO}", "Input artifact-plan").startswith(
+            "durable document artifact-plan-0")
         _publish_under(page, INSTRUCTION_REF, "Implement the reviewed plan.",
                        f"{INSTRUCTION_REF}-0")
         assert _instruction_fact(page, f"propose:{DO}").startswith(
@@ -332,23 +401,42 @@ def test_the_step_forms_name_the_document_a_proposal_binds_and_keep_naming_it(
         _propose_do(page)
         assert _instruction_fact(page, f"confirm:{DO}").startswith(
             f"durable document {INSTRUCTION_REF}-0")
+        assert _fact(page, f"confirm:{DO}", "Input artifact-plan").startswith(
+            "durable document artifact-plan-0")
         assert "standing when this proposal was written" in page.locator(
             f'[data-step="confirm:{DO}"]').inner_text()
 
-        # A newer document under the same reference: durable, listed, and
-        # not what this proposal bound.
-        _publish_under(page, INSTRUCTION_REF, "A later revision that must not run.",
-                       f"{INSTRUCTION_REF}-1")
-        assert _instruction_fact(page, f"confirm:{DO}").startswith(
-            f"durable document {INSTRUCTION_REF}-0")
-        assert "bound by" in _row(page, DO) and f"{INSTRUCTION_REF}-0" in _row(page, DO)
-
+        _a_newer_document_moves_nothing(page)
         _confirm_do(page)
         results = [row for row in bench.records(BOUND_RUN, "action_result")
                    if row.attempt_id.startswith(f"attempt-{DO}-")]
         assert len(results) == 1, [row.attempt_id for row in results]
-        assert bench.kinds(BOUND_RUN).count("artifact") == 3
+        assert bench.kinds(BOUND_RUN).count("artifact") == 4
         assert f"{INSTRUCTION_REF}-0" in _row(page, DO)
+    finally:
+        assert window.problems == []
+        page.context.close()
+
+
+def test_a_run_that_is_over_is_offered_no_document_form(
+        chromium: Browser, bench: _Bench) -> None:
+    """The routed plan, its gate rejected: the plan is complete.
+
+    The section says the run is over and draws no control; a document
+    published now would be a durable record no step ever reads, and the
+    form used to offer exactly that (the slice-3 review's #18).
+    """
+    from browser_tests.test_studio_step import CLOSED_RUN
+    page, window = _open_bench(chromium, bench)
+    try:
+        _read(page, CLOSED_RUN)
+        section = page.locator('[data-section="documents"]')
+        said = section.inner_text()
+        assert "This run is over: the plan is complete" in said, said
+        assert "none is offered" in said, said
+        assert page.locator('[data-step="document"]').count() == 0
+        assert page.locator('[data-focus-key="document:publish"]').count() == 0
+        assert window.writes("/artifacts") == 0
     finally:
         assert window.problems == []
         page.context.close()

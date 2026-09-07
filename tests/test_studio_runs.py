@@ -29,24 +29,15 @@ from conductor.command.adapters.provider import (
     AVAILABILITY_STATES,
     IMPLEMENTATION_STATES,
 )
-from conductor.command.attempts import ATTEMPT_PHASES
-from conductor.command.contract_values import (
-    _DECISION_ACTIONS,
-    _RESULT_OUTCOMES,
-    _RUN_STATES,
-    _VERIFICATION_STATES,
-    ContractError,
-    ControlMode,
-)
+from conductor.command.contract_values import _DECISION_ACTIONS, ContractError
 from conductor.command.contracts import DecisionReceipt, gate_decision
-from conductor.command.graph_projection import GATE_STATES, NODE_PHASES
+from conductor.command.graph_projection import GATE_STATES
 from conductor.command.operator_config import (
     _OPTIONAL_KEYS,
     _REQUIRED_KEYS,
     PROVIDER_CONFIG_FILENAME,
 )
 from conductor.command.providers import PROVIDER_CATALOG
-from conductor.command.run_store import _RECORDS
 
 PANEL = Path(__file__).resolve().parents[1] / "src" / "conductor" / "panel"
 RUNS_FILE = PANEL / "studio-runs.js"
@@ -128,7 +119,8 @@ ALLOWED_IMPORTS = {
                           "./studio-runread.js", "./studio-runstep.js",
                           "./studio-rundocs.js"}),
     STEP_FILE: frozenset({"./command-view.js", "./command-projection.js",
-                          "./studio-runwords.js", "./studio-runread.js"}),
+                          "./studio-runwords.js", "./studio-runread.js",
+                          "./studio-rundocs.js"}),
     PEOPLE_FILE: frozenset({"./command-view.js", "./studio-runwords.js"}),
     DOCS_FILE: frozenset({"./command-view.js", "./command-projection.js",
                           "./studio-runwords.js", "./studio-runread.js"}),
@@ -320,7 +312,17 @@ def test_a_mount_captures_focus_before_the_pass_and_restores_it_after(
     restored = re.findall(r"(?m)^  restoreFocus\(mount, key\);$", text)
     assert len(captured) == len(mounts), captured
     assert len(restored) == len(mounts), restored
-    assert 'querySelector(`[data-focus-key="${key}"]`)' in text
+    # The Runs screen draws one `field:proposed_by` per runnable step, so it
+    # restores WITHIN the form focus stood in; the Decisions screen draws
+    # one form and restores by key alone.
+    assert FOCUS_SELECTOR[path] in text, path.name
+
+
+#: How each mount finds the control drawn in a focused one's place.
+FOCUS_SELECTOR = {
+    RUNS_FILE: '`${within}[data-focus-key="${key.key}"]`',
+    PEOPLE_FILE: 'querySelector(`[data-focus-key="${key}"]`)',
+}
 
 
 @pytest.mark.parametrize("path", OWNED, ids=lambda path: path.name)
@@ -375,81 +377,10 @@ def test_every_listener_is_attached_to_a_real_form_control(path: Path) -> None:
         assert built <= LISTENABLE_TAGS, f"{path.name}: {receiver} is {built}"
 
 
-# -- the closed vocabularies, each derived from its Python owner --------------
-
-
-def test_the_runs_screen_spells_the_projections_node_phases() -> None:
-    assert frozen_list(WORDS_FILE, "NODE_PHASES") == list(NODE_PHASES)
-
-
-@pytest.mark.parametrize("path", MOUNTED, ids=lambda path: path.name)
-def test_both_screens_spell_the_projections_gate_states(path: Path) -> None:
-    assert sorted(frozen_list(WORDS_OF[path], "GATE_STATES")) == sorted(
-        GATE_STATES)
-
-
-def test_the_runs_screen_spells_the_contracts_result_outcomes() -> None:
-    assert frozen_list(WORDS_FILE, "RESULT_OUTCOMES") == sorted(_RESULT_OUTCOMES)
-
-
-def test_the_runs_screen_spells_the_contracts_verification_states() -> None:
-    assert frozen_list(WORDS_FILE, "VERIFICATION_STATES") == sorted(
-        _VERIFICATION_STATES)
-
-
-def test_the_runs_screen_spells_the_contracts_run_states() -> None:
-    assert frozen_list(WORDS_FILE, "RUN_STATES") == sorted(_RUN_STATES)
-
-
-def test_the_runs_screen_spells_both_durable_attempt_phases() -> None:
-    assert frozen_list(WORDS_FILE, "ATTEMPT_PHASES") == sorted(ATTEMPT_PHASES)
-
-
-def test_the_runs_screen_names_every_record_kind_the_store_can_hold() -> None:
-    """The timeline renders the journal, so it must know every kind of it."""
-    assert frozen_keys(WORDS_FILE, "RECORD_KINDS") == sorted(_RECORDS)
-
-
-@pytest.mark.parametrize("name", ["INSTANT_FIELDS", "ROW_FACTS"])
-def test_every_timeline_table_is_keyed_by_real_record_kinds(name: str) -> None:
-    assert frozen_keys(WORDS_FILE, name) == sorted(_RECORDS)
-
-
-def test_every_field_a_timeline_row_shows_is_one_the_record_really_has() -> None:
-    """A misspelled field renders nothing and looks like an empty record. The
-    names are held against each contract's own exact field set."""
-    facts = frozen_arrays(WORDS_FILE, "ROW_FACTS")
-    assert set(facts) == set(_RECORDS)
-    for kind, names in sorted(facts.items()):
-        contract, _ = _RECORDS[kind]
-        unknown = sorted(set(names) - set(contract._FIELDS))
-        assert not unknown, f"{kind} has no field {unknown}"
-        assert names, f"{kind} shows no field at all"
-
-
-def test_every_instant_a_timeline_row_stamps_is_the_records_own() -> None:
-    stamps = frozen_pairs(WORDS_FILE, "INSTANT_FIELDS")
-    assert set(stamps) == set(_RECORDS)
-    for kind, stamp in sorted(stamps.items()):
-        contract, _ = _RECORDS[kind]
-        assert stamp in contract._FIELDS, f"{kind} has no field {stamp!r}"
-
-
-def test_the_runs_screen_spells_the_whole_authority_ladder_in_order() -> None:
-    """A mode a run can hold and this screen cannot describe is a silent gap,
-    and the ladder's own order is the enum's declaration order."""
-    assert frozen_keys(WORDS_FILE, "CONTROL_MODES") == [
-        mode.value for mode in ControlMode]
-
-
-def test_the_five_progression_steps_are_records_and_attempt_phases() -> None:
-    """The progression is not a story this screen tells: three of its five
-    names are record kinds and two are the attempt event's own phases."""
-    steps = frozen_list(WORDS_FILE, "TIMELINE_STEPS")
-    assert steps == ["action_proposal", "action_request", "effect_lease",
-                     "execution_observed", "action_result"]
-    assert {steps[0], steps[1], steps[4]} <= set(_RECORDS)
-    assert {steps[2], steps[3]} == set(ATTEMPT_PHASES)
+# -- the closed vocabularies -------------------------------------------------
+#
+# Each derived from its Python owner, in `tests/test_studio_runwords.py` since
+# this module reached the line cap; the readers above are what it spends.
 
 
 def _effect_of(action: str) -> str:

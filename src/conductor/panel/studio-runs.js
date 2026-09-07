@@ -73,7 +73,7 @@ import {stepControls} from "./studio-runstep.js";
 //: The form that publishes a document into a run, and the instruction a
 //: step's proposal bound: the other write on this screen, in its own file for
 //: the step control's reason.
-import {boundInstruction, documentSection} from "./studio-rundocs.js";
+import {boundSources, documentSection} from "./studio-rundocs.js";
 
 //: The one sentence, handed to whichever container is showing the word. Every
 //: container carrying `verification_failed` needs its OWN copy -- one written
@@ -517,7 +517,7 @@ function positionRow(node, runtime, standing, detail, state, handlers) {
   // does not name arrives here with an empty node, and an absent id would then
   // match every unbound request in the journal.
   planStanding(item, plan, attemptInFlight(detail, runtime.node_id));
-  item.append(...boundInstruction(detail, node));
+  item.append(...boundSources(detail, node));
   item.append(...alsoSay(runtime.outcome));
   // …and last, the one thing on this screen a person can DO to the run. It is
   // offered on the SCHEDULE's word and nothing else; the sentences above have
@@ -735,16 +735,27 @@ function detailColumn(runs, state, handlers) {
 
 // -- the mount ----------------------------------------------------------------
 
+//: Where focus stood: the control's key, and the FORM it stood in. Three
+//: runnable steps draw three `field:proposed_by` controls under one key, so
+//: a restore by key alone landed on the first of them -- alpha's -- and the
+//: tail of a word typed into omega went to alpha, whose change re-chose the
+//: draft and emptied omega (the slice-3 review's P3). The successor is
+//: sought within the same form when there was one.
 function focusKey(mount) {
   const active = document.activeElement;
   if (!active || active === document.body) return null;
   if (!mount.contains(active) || !active.getAttribute) return null;
-  return active.getAttribute("data-focus-key");
+  const key = active.getAttribute("data-focus-key");
+  if (key === null) return null;
+  const form = active.closest("[data-step]");
+  return {key, step: form === null ? null : form.getAttribute("data-step")};
 }
 
 function restoreFocus(mount, key) {
-  if (!key) return;
-  const successor = mount.querySelector(`[data-focus-key="${key}"]`);
+  if (key === null) return;
+  const within = key.step === null ? "" : `[data-step="${key.step}"] `;
+  const successor = mount.querySelector(
+    `${within}[data-focus-key="${key.key}"]`);
   if (successor) successor.focus();
 }
 

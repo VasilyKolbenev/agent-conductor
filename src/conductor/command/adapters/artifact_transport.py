@@ -5,7 +5,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..artifact_handoff import ArtifactHandoff
+from ..artifact_handoff import ArtifactHandoff, UnknownProposal
 from ..artifacts import ArtifactDocument
 from ..contracts import ActionRequest, ActionResultReceipt, _content_digest
 from ..run_store import RunStore
@@ -29,6 +29,10 @@ REVIEW_CAPABILITY = "review"
 
 class _HandoffUnavailable(RuntimeError):
     """A logical artifact reference resolved to no durable document."""
+
+
+class _ProposalUnknown(_HandoffUnavailable):
+    """The request names a proposal its run does not hold; said by name."""
 
 
 @dataclass(frozen=True)
@@ -110,6 +114,10 @@ class ArtifactAwareTransport(HeadlessCliTransport):
         if prepared.request.capability != REVIEW_CAPABILITY:
             try:
                 result = super().execute(prepared)
+            except _ProposalUnknown as error:
+                return self._receipt(
+                    prepared.request, "failed", None,
+                    f"{error}, so no task was spawned")
             except _HandoffUnavailable:
                 return self._receipt(
                     prepared.request, "failed", None,
@@ -151,6 +159,8 @@ class ArtifactAwareTransport(HeadlessCliTransport):
             if proposal_id is None:
                 return self._handoff.resolve(request.run_id, artifact_refs)
             return self._handoff.bound(request.run_id, proposal_id, artifact_refs)
+        except UnknownProposal as error:
+            raise _ProposalUnknown(str(error)) from error
         except Exception as error:
             raise _HandoffUnavailable from error
 
@@ -170,6 +180,8 @@ class ArtifactAwareTransport(HeadlessCliTransport):
             try:
                 document = self._handoff.instruction(
                     request.run_id, proposal_id, args.instruction_ref)
+            except UnknownProposal as error:
+                raise _ProposalUnknown(str(error)) from error
             except Exception as error:
                 raise _HandoffUnavailable from error
             if document is not None:
@@ -231,6 +243,9 @@ class ArtifactAwareTransport(HeadlessCliTransport):
             inputs = self._inputs(request, args.target_artifact_refs)
             task = self._review_task(args, inputs)
             payload = self._task_stdin(task)
+        except _ProposalUnknown as error:
+            return self._receipt(
+                request, "failed", None, f"{error}, so no task was spawned")
         except Exception:
             return self._receipt(
                 request, "failed", None,

@@ -84,49 +84,82 @@ function roleNames(held) {
   return [...found].sort();
 }
 
+//: Every control of the form committed back to the reducer as it moves: the
+//: two ids on every keystroke, the authority and each role on its change. A
+//: form mounted without the door is shut, field by field, and says so.
+function wireTheEdits(edit, controls) {
+  const {runId, cycleId, mode, meaning, pickers} = controls;
+  const typed = [runId, cycleId, mode, ...pickers.values()];
+  if (edit === null) {
+    for (const control of typed) {
+      control.disabled = true;
+      control.title = "This screen was mounted without an editOpening handler.";
+    }
+    return;
+  }
+  runId.addEventListener("input", () => edit({runId: runId.value}));
+  cycleId.addEventListener("input", () => edit({cycleId: cycleId.value}));
+  mode.addEventListener("change", () => {
+    meaning.textContent = MODE_MEANINGS[mode.value]
+      || "This build does not describe that mode.";
+    edit({mode: mode.value});
+  });
+  for (const pick of pickers.values()) {
+    pick.addEventListener("change", () => edit({roles: Object.fromEntries(
+      [...pickers].map(([role, each]) => [role, each.value]))}));
+  }
+}
+
 //: The roles of the revision a run would follow. They come from the PUBLISHED
 //: document and never from the drawing: a run materializes a revision, so a
 //: role only this window has drawn is a role no run could bind.
 export function runForm(state, handlers) {
   const detail = object(state.workflows.detail);
   const published = detail === null ? null : object(detail.published);
-  const box = element("form", {className: "studio-card"});
+  const box = element("form", {className: "studio-card studio-runform"});
   box.append(element("h3", {text: "Open a run"}));
   if (published === null) {
     box.append(note("A run follows a PUBLISHED revision, and this workflow has "
       + "none yet. Publishing the draft is what makes one."));
     return box;
   }
+  //: What this form already holds, from the reducer's own copy
+  //: (`studio-toolbardraft.js`), and the door every keystroke goes back
+  //: through. Drawn from nothing, the fields emptied on every frame.
+  const opening = object(state.workflows.opening) || {};
+  const edit = handlerOf(handlers, "editOpening");
   const runId = element("input", {autocomplete: "off", "data-focus": "run-id",
     maxlength: "128", name: "run-id", pattern: ID_PATTERN, required: "",
     spellcheck: "false", type: "text"});
+  runId.value = typeof opening.runId === "string" ? opening.runId : "";
   const cycleId = element("input", {autocomplete: "off",
     "data-focus": "cycle-id", maxlength: "128", name: "cycle-id",
     pattern: ID_PATTERN, required: "", spellcheck: "false", type: "text"});
+  cycleId.value = typeof opening.cycleId === "string" ? opening.cycleId : "";
   const mode = element("select", {"data-focus": "run-mode", name: "run-mode"},
     CONTROL_MODES.map((word) => option(word)));
   // The most restrictive mode that still lets a person proceed is what is
-  // offered: authority is granted deliberately, never inherited from a default.
-  mode.value = "observe";
+  // first offered: authority is granted deliberately, never inherited from a
+  // default -- and once chosen it is kept, like every other typed fact here.
+  mode.value = CONTROL_MODES.includes(opening.mode) ? opening.mode : "observe";
   const meaning = element("p", {className: "studio-hint",
-    text: MODE_MEANINGS.observe});
-  mode.addEventListener("change", () => {
-    meaning.textContent = MODE_MEANINGS[mode.value]
-      || "This build does not describe that mode.";
-  });
+    text: MODE_MEANINGS[mode.value]});
   box.append(field("Run id", runId), field("Cycle id", cycleId),
     field("Authority (mode)", mode), meaning);
   const roles = roleNames(published);
   const pickers = new Map();
   const available = reachable(state);
+  const bound = object(opening.roles) || {};
   for (const role of roles) {
     const pick = element("select", {"data-focus": `role-${role}`,
       name: `role-${role}`}, [option("", "no participant")].concat(
       available.map((row) => option(row.provider_id,
         `${row.display_name} (${row.provider_id})`))));
+    pick.value = typeof bound[role] === "string" ? bound[role] : "";
     pickers.set(role, pick);
     box.append(field(`Role ${role}`, pick));
   }
+  wireTheEdits(edit, {runId, cycleId, mode, meaning, pickers});
   if (!roles.length) {
     box.append(note("Revision " + show(published.revision) + " names no role, "
       + "so a run of it binds nobody."));

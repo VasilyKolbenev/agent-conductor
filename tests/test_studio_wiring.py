@@ -84,7 +84,9 @@ LINE_CAP = 800
 PERMITTED = {
     "studio-store.js": frozenset({"./studio-model.js", "./studio-runread.js",
                                   "./studio-review.js", "./studio-edits.js",
-                                  "./studio-rundraft.js"}),
+                                  "./studio-rundraft.js",
+                                  "./studio-runwrites.js",
+                                  "./studio-toolbardraft.js"}),
     "studio-view.js": frozenset({"./command-view.js", "./command-projection.js",
                                  "./studio-model.js", "./studio-runform.js"}),
     #: The run form sits BELOW the view and never reaches back up: the view
@@ -438,9 +440,21 @@ def test_a_run_scoped_write_is_gated_on_the_stream_and_never_on_a_workflow():
     scoped = set(_frozen_list(boot, "RUN_SCOPED"))
     assert scoped == RUN_SCOPED, sorted(scoped ^ RUN_SCOPED)
     assert scoped < set(_frozen_list(boot, "WRITE_TARGETS"))
-    assert boot.count("RUN_SCOPED.includes(") == 2
+    assert boot.count("RUN_SCOPED.includes(") == 3
     assert ("const ready = RUN_SCOPED.includes(target)\n"
             "      ? streamOpen : state.workflows.writeReady;") in boot, boot
+    # And a run-scoped write is RETIRED by nothing but its own answer. The
+    # workflow counter retires one workflow write with the next, which is
+    # that door's rule; a run write's ownership is per run and step in
+    # `runs.writes`, a sibling write is permitted while it is in flight, and
+    # a dropped stream reaches it through the session it was authorized
+    # under. One counter over both retired alpha's refusal when omega's
+    # write began, and the refusal that should have re-read the run said
+    # nothing at all (the slice-3 review's F).
+    assert ("const mine = RUN_SCOPED.includes(target) ? null : ++writeGeneration;"
+            in boot), boot
+    assert "if (mine !== null && mine !== writeGeneration) return;" in boot, boot
+    assert boot.count("++writeGeneration") == 1, boot
 
 
 def test_a_decision_names_the_receipt_it_replaces_and_never_hard_codes_none():
@@ -530,118 +544,12 @@ def test_the_session_token_is_read_in_one_place_and_meets_no_sink():
     assert "csrf" not in HTML.read_text(encoding="utf-8").lower()
 
 
-def test_the_step_draft_takes_three_typed_keys_and_no_fourth():
-    """A control may fill in a person's words and nothing else.
-
-    The plan owns the binding -- instance, capability, arguments, the step's own
-    id -- and `writing` is the window's own bookkeeping. A patch loop that
-    admitted either would let a control reach past what it is for, so the list
-    is closed and pinned. Held in both directions: the three that may move, and
-    the two names that may not appear in the loop at all.
-    """
-    source = _code(STORE)
-    body = re.search(r"function stepDrafted\(state, patch\) \{(.*?)\n\}",
-                     source, re.DOTALL)
-    assert body is not None, "the reducer holds no step draft"
-    keys = re.search(r"for \(const key of \[(.*?)\]\)", body.group(1))
-    assert keys is not None, body.group(1)
-    assert re.findall(r'"(\w+)"', keys.group(1)) == [
-        "proposedBy", "rationale", "confirmedBy"]
-    for forbidden in ("nodeId", "writing", "generation"):
-        assert f'"{forbidden}"' not in keys.group(1), forbidden
-    # And a write in flight is not a fact about the draft at all: the arm that
-    # records one touches `runs.writes`, keyed by run and step, and leaves
-    # every typed word exactly where it was. A flag on the draft was the
-    # defect this replaced -- a read of the run turned it off under a pending
-    # POST (R07A of the review of `8dec0e4`).
-    writing = re.search(r"function stepWriting\(state, event\) \{(.*?)\n\}",
-                        source, re.DOTALL)
-    assert writing is not None, "the reducer records no write in flight"
-    assert "const key = `${event.runId}/${event.nodeId}`;" in writing.group(1)
-    assert "writes[key] = event.generation" in writing.group(1)
-    assert "delete writes[key]" in writing.group(1), writing.group(1)
-    assert "runs.step" not in writing.group(1), writing.group(1)
-    assert "NO_STEP" not in writing.group(1), writing.group(1)
-
-
-def test_a_landed_read_of_the_same_run_leaves_what_a_person_is_typing_alone():
-    """The rule that replaced an unconditional reset, and why it had to.
-
-    Every road into `runMoved` is a READ: a `run` frame for an attempt event on
-    another branch, a `state` frame, the reconnect's own re-read. Resetting both
-    drafts there emptied the form under a person's hands while the control
-    beside it promised that what they typed is kept -- and owner acceptance
-    step 16 asks for the opposite in so many words.
-
-    Held in BOTH directions, because either alone is a defect: a read of the
-    same run keeps both drafts, and a read of another run or of none resets
-    them. `writing` goes off whatever else is kept -- it is a fact about a
-    request that is over once its answer has been read.
-    """
-    source = _code(STORE)
-    assert "const NO_STEP = Object.freeze({" in source
-    kept = re.search(r"function keptDrafts\(state, detail\) \{(.*?)\n\}",
-                     source, re.DOTALL)
-    assert kept is not None, "the reducer decides nothing about a kept draft"
-    said = kept.group(1)
-    assert "detail.run.run_id === state.runs.selectedId" in said, said
-    assert "same ? state.runs.step : cleared(state.runs.step)" in said, said
-    assert "same ? state.decisions.draft : NO_DRAFT" in said, said
-    # A read says NOTHING about a write in flight: that fact left the draft
-    # for `runs.writes` (R07A), so there is no flag here to turn off.
-    assert "writing" not in said, said
-    moved = re.search(r"function runMoved\(state, phase, detail, said\) \{(.*?)"
-                      r"\n\}", source, re.DOTALL)
-    assert moved is not None
-    assert "const kept = keptDrafts(state, detail);" in moved.group(1)
-    assert "step: kept.step" in moved.group(1), moved.group(1)
-    assert "draft: kept.draft" in moved.group(1), moved.group(1)
-    # The unconditional reset is gone from that arm, and the one road a draft
-    # may not cross still resets outright: choosing ANOTHER run -- one
-    # generation on, so a write minted from the old draft cannot spend the
-    # new one; and the writes in flight are not that road's to touch.
-    assert "step: NO_STEP" not in moved.group(1), moved.group(1)
-    chosen = re.search(r"function runChosen\(state, runId\) \{(.*?)\n\}",
-                       source, re.DOTALL)
-    assert chosen is not None
-    assert "step: cleared(state.runs.step)" in chosen.group(1), chosen.group(1)
-    assert "writes" not in chosen.group(1), chosen.group(1)
-
-
-def test_the_two_write_roads_spend_their_own_draft_before_the_read():
-    """A read cannot know the words are finished with; a write does.
-
-    That is the whole seam. Once a landed read of the same run keeps a draft,
-    something has to take it away when it really is spent -- and it is the two
-    handlers that know: an accepted decision, an accepted step write, and the
-    one refusal that says the screen is stale enough to re-read. Each clears
-    BEFORE the read it provokes, so the form a person comes back to is the one
-    the answer drew rather than the one they left.
-    """
-    boot = _code(BOOT)
-    writer = _code(RUNWRITE)
-    # The decision road: the accepted arm and the `gate_unreached` recovery.
-    assert boot.count('dispatch({type: "decision-chosen", key: null});') == 2
-    for arm in ('dispatch({type: "status", notice: DECIDED});\n'
-                '      dispatch({type: "decision-chosen", key: null});\n'
-                "      refreshRun(asked);",
-                'if (result.code !== "gate_unreached" || asked !== chosenRun)'
-                " return;\n"
-                '      dispatch({type: "decision-chosen", key: null});\n'
-                "      refreshRun(asked);"):
-        assert arm in boot, arm
-    # The step road: the accepted arm only, and it spends ONLY the draft this
-    # write was minted from -- run, step and generation fixed before the
-    # request left -- so another step's unsent words survive its answer
-    # (R07B). A refusal there keeps the words, which is the promise the shut
-    # control makes.
-    assert ('door.dispatch({type: "step-spent", ...spent});\n'
-            "      door.refreshRun(asked);") in writer, writer
-    assert writer.count('{type: "step-spent"') == 1, writer
-    assert "const spent = {runId: asked, nodeId: row.nodeId," in writer, writer
-    assert writer.index("const spent = ") < writer.index(
-        '{type: "step-writing", ...spent, writing: true}'), writer
-    assert '"step-chosen", nodeId: null' not in writer, writer
+# -- the drafts ---------------------------------------------------------------
+#
+# What a person has typed survives everything but its own spend: the step's
+# three words, the document, the decision, the toolbar's folds and fields.
+# That circuit is `tests/test_studio_drafts.py`'s since this module reached
+# the line cap; it imports the paths above.
 
 
 def test_the_reducer_never_grants_write_readiness_by_writing_it_down():

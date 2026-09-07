@@ -57,7 +57,7 @@ MODULES = ("studio.js", "studio-store.js", "studio-view.js", "studio-model.js",
            "studio-layout.js", "studio-edits.js",
            "studio-sections.js", "studio-artifacts.js", "studio-runform.js",
            "studio-transitions.js", "studio-fields.js", "studio-rundocs.js",
-           "studio-rundraft.js")
+           "studio-rundraft.js", "studio-runwrites.js", "studio-toolbardraft.js")
 #: The one transport module: every `fetch(`, the one stream, the session token
 #: and the screen router. `graph.js` holds the same position in its window, and
 #: the sealed-API guard below pins this one the same way.
@@ -86,11 +86,22 @@ PERMITTED_IMPORTS = {
     "studio-review.js": frozenset(),
     "studio-store.js": frozenset({"./studio-model.js", "./studio-runread.js",
                                   "./studio-review.js", "./studio-edits.js",
-                                  "./studio-rundraft.js"}),
+                                  "./studio-rundraft.js",
+                                  "./studio-runwrites.js",
+                                  "./studio-toolbardraft.js"}),
+    #: The Workflow toolbar's own facts -- the folds a person touched, the
+    #: start box and the run form as typed -- split off the reducer along the
+    #: same seam as the run drafts. Pure state movement, importing nothing.
+    "studio-toolbardraft.js": frozenset(),
     #: The document draft's arms, split off the reducer at the line cap along
     #: the step draft's seam. Pure state movement importing nothing, so the
     #: grant adds a leaf and cannot add a ring.
     "studio-rundraft.js": frozenset(),
+    #: The writes in flight -- which, and until when -- split off the reducer
+    #: at the same cap along the seam the step draft's own comment drew: a
+    #: write in flight is not a fact about the draft. Pure state movement,
+    #: importing nothing.
+    "studio-runwrites.js": frozenset(),
     "studio-view.js": frozenset({"./command-view.js", "./command-projection.js",
                                  "./studio-model.js", "./studio-runform.js"}),
     #: The form that opens a run, split off the shell view at the line cap. It
@@ -157,10 +168,15 @@ PERMITTED_IMPORTS = {
     #: screens say -- and nothing else. It is granted no model and no transport,
     #: and it may not import `studio-runs.js`: the screen imports IT, and a
     #: permission the other way is what would close the pair into a ring.
+    #: The step control reads which arguments are INPUTS from the document
+    #: form's one rule (`inputRefs`), so the two cannot disagree about what a
+    #: step reads. The form imports nothing of the step control's, which is
+    #: what keeps the pair out of a ring.
     "studio-runstep.js": frozenset({"./command-view.js",
                                     "./command-projection.js",
                                     "./studio-runwords.js",
-                                    "./studio-runread.js"}),
+                                    "./studio-runread.js",
+                                    "./studio-rundocs.js"}),
     #: What a press on one of those controls MEANS, split off the boot module
     #: when it reached the line cap. It reaches the two fragments' own
     #: sentences and NOTHING else: no DOM builder, no model, and above all no

@@ -10,6 +10,22 @@ from .contracts import ActionRequest, EvidenceRef
 from .run_store import RecordConflict, RecoveredRun, RunStore, StoreError
 
 
+class UnknownProposal(StoreError):
+    """A request names a proposal its run does not hold.
+
+    Its own class, so the transport can refuse it BY NAME: the same refusal
+    read as "a durable input was unavailable" sent a reader to the wrong cause
+    (the slice-3 review's #1). Only a hand-made request can carry such a key
+    -- the runtime mints the link from a proposal it just read -- and both
+    readers of the link, this seam and the replay judge, refuse it alike.
+    """
+
+    def __init__(self, proposal_id: str, run_id: str) -> None:
+        super().__init__(
+            f"the request names proposal {proposal_id!r}, which run "
+            f"{run_id!r} does not hold")
+
+
 class ArtifactHandoff:
     """One store-backed handoff seam shared by provider-neutral role execution."""
 
@@ -95,7 +111,7 @@ class ArtifactHandoff:
         seen = values_the_proposal_saw(
             tuple(row.value for row in recovered.records), proposal_id)
         if seen is None:
-            raise StoreError(f"proposal {proposal_id!r} is not in run {run_id!r}")
+            raise UnknownProposal(proposal_id, run_id)
         return tuple(value for value in seen if isinstance(value, ArtifactDocument))
 
     def record_review(

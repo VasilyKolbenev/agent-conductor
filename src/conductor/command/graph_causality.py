@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from .attempt_replay import PROPOSAL_KEY, proposal_named_by
 from .contracts import (
     ActionProposal,
     ActionRequest,
@@ -50,7 +51,9 @@ def _one_graph_per_run(recovered: "RecoveredRun", value: GraphDefinition) -> Non
 #: The one relation that names which proposal a request was minted from. The
 #: runtime spells the key this way and the frozen ALPHA-1 artifacts read it back
 #: the same way, so it is the link the journal already carries -- not a guess.
-DISPATCH_KEY_PREFIX = "dispatch-"
+#: ONE spelling and one parser: the replay's (`attempt_replay`), so what the
+#: store holds a request to and what the transport binds it to cannot drift.
+DISPATCH_KEY_PREFIX = PROPOSAL_KEY
 
 
 def _matches_its_node(
@@ -126,9 +129,9 @@ def _proposal_matches_its_node(
 def _proposal_named_by(
         recovered: "RecoveredRun", value: ActionRequest) -> ActionProposal | None:
     """The proposal this request's idempotency key NAMES, if the run holds it."""
-    if not value.idempotency_key.startswith(DISPATCH_KEY_PREFIX):
+    named = proposal_named_by(value)
+    if named is None:
         return None
-    named = value.idempotency_key[len(DISPATCH_KEY_PREFIX):]
     return next((row.value for row in recovered.records
                  if row.kind == "action_proposal"
                  and row.value.proposal_id == named), None)

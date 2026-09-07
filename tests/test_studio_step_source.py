@@ -52,6 +52,10 @@ WRITER = PANEL / "studio-runwrite.js"
 #: Where the draft and the writes in flight live, and the rule that keeps them
 #: apart.
 STORE = PANEL / "studio-store.js"
+#: Which writes are in flight and until when: the ownership map's own rules,
+#: split off the reducer at the line cap when an accepted write learned to
+#: stay shut until the run it wrote to has been read again.
+WRITES = PANEL / "studio-runwrites.js"
 #: The nine keys a proposal from this window carries: everything the frozen API
 #: requires, plus the one optional field that binds the action to the plan. Read
 #: off the contract, never spelled a second time.
@@ -510,6 +514,19 @@ def test_the_controls_offer_only_what_the_runs_frozen_authority_permits():
             "        ? [proposedUnder(authority.mode)] : [])") in step
 
 
+def test_the_confirm_road_names_what_the_run_form_really_opens():
+    """A run of the workflow's PUBLISHED revision, and not "this revision".
+
+    The Open a run form offers no way to choose a revision once a newer one
+    is published, and a run that follows no workflow has none to reopen (the
+    slice-3 review's #22): the road names the thing the form really does.
+    """
+    step = _code(STEP)
+    assert "open a new run of this workflow's " in step
+    assert "published revision with authority confirm" in step
+    assert "new run of this revision" not in step
+
+
 def test_a_write_in_flight_is_its_run_and_steps_own_and_spends_only_its_draft():
     """R07 of the review of `8dec0e4`, A and B, and the owner's control C.
 
@@ -584,6 +601,95 @@ def test_what_a_person_is_typing_is_carried_across_a_render():
     assert chosen is not None
     assert ("if (nodeId !== null && state.runs.step.nodeId === nodeId) "
             "return state;") in chosen.group(1), chosen.group(1)
+
+
+def test_every_typed_word_moves_the_generation_so_an_answer_spends_only_what_it_sent():
+    """The slice-3 review's D: words typed UNDER a pending write were spent.
+
+    The generation moved only on a choice or a clearing, so a name typed into
+    the Confirm form the proposal's own frame drew -- while that proposal's
+    answer was still on the wire -- was spent by the answer as "the draft this
+    write was minted from" (studio-store.js:694 at `ff04172`). Every typed
+    word now moves the generation, on both drafts, so a write spends exactly
+    the draft it sent and nothing typed since; a patch that moves nothing
+    moves the generation nothing either.
+    """
+    store = _code(STORE)
+    drafted = re.search(r"function stepDrafted\(state, patch\) \{(.*?)\n\}",
+                        store, re.DOTALL)
+    assert drafted is not None, "the reducer holds no step draft"
+    body = drafted.group(1)
+    assert "next.generation = state.runs.step.generation + 1;" in body, body
+    assert "if (!moved) return state;" in body, body
+    assert body.index("if (!moved) return state;") < body.index(
+        "next.generation = "), body
+    draft = _code(PANEL / "studio-rundraft.js")
+    edited = re.search(r"export function documentEdited\(state, patch\) \{(.*?)\n\}",
+                       draft, re.DOTALL)
+    assert edited is not None, "the document draft has no edit arm"
+    assert "next.generation = held.generation + 1;" in edited.group(1), edited.group(1)
+    assert "if (!moved) return state;" in edited.group(1), edited.group(1)
+
+
+def test_an_accepted_write_keeps_its_control_shut_until_the_run_is_read_again():
+    """The slice-3 review's E, and the map's value given its consumer.
+
+    The accepted write's entry left `runs.writes` the moment the server
+    answered, so the control was redrawn over the stale screen and stayed
+    shut only because the spent draft left a required field empty -- a draft
+    NOT spent would have opened it to a second press. Now the accepted road
+    marks the entry answered and only a landed read of THAT run removes it;
+    every other end removes it at once. The map's value is what says which,
+    so it is no longer a generation nothing read.
+    """
+    writes = _code(WRITES)
+    assert 'export const ON_THE_WIRE = "writing";' in writes
+    assert 'export const ANSWERED = "answered";' in writes
+    writing = re.search(r"export function stepWriting\(state, event\) \{(.*?)\n\}",
+                        writes, re.DOTALL)
+    assert writing is not None, "the map records no write in flight"
+    assert "writes[held] = ON_THE_WIRE" in writing.group(1), writing.group(1)
+    assert "else if (writes[held] === ON_THE_WIRE) delete writes[held]" in writing.group(1)
+    assert "generation" not in writing.group(1), writing.group(1)
+    answered = re.search(r"export function stepAnswered\(state, event\) \{(.*?)\n\}",
+                         writes, re.DOTALL)
+    assert answered is not None, "the map has no answered arm"
+    assert "if (state.runs.writes[held] !== ON_THE_WIRE) return state;" in answered.group(1)
+    assert "[held]: ANSWERED" in answered.group(1), answered.group(1)
+    read = re.search(r"export function readWrites\(writes, runId\) \{(.*?)\n\}",
+                     writes, re.DOTALL)
+    assert read is not None, "a landed read removes no answered write"
+    assert ("if (value !== ANSWERED || !held.startsWith(`${runId}/`)) "
+            "kept[held] = value;") in read.group(1), read.group(1)
+
+
+def test_the_reducer_and_both_write_roads_wire_the_answered_entry():
+    """The map's three arms reach the reducer, and the two roads mark first.
+
+    The reducer wires the two arms by name and removes answered entries on
+    the ready road of `runLoaded`, for the run just read; both write roads
+    mark the entry answered BEFORE asking whether the person is still looking
+    at that run -- the run was written to whether or not they are, and its
+    next read is what gives the control back.
+    """
+    store = _code(STORE)
+    assert '"step-answered": stepAnswered,' in store
+    assert '"step-writing": stepWriting,' in store
+    assert "function stepWriting(" not in store, "the map's rule is spelled twice"
+    loaded = re.search(r"function runLoaded\(state, event\) \{(.*?)\n\}", store,
+                       re.DOTALL)
+    assert loaded is not None
+    assert ("writes: readWrites(moved.runs.writes, detail.run.run_id)"
+            in loaded.group(1)), loaded.group(1)
+    writer = _code(WRITER)
+    for road, owner in (("onStepWrite", "row.nodeId"),
+                        ("onDocumentWrite", "DOCUMENT_KEY")):
+        body = re.search(rf"function {road}\((.*?)\n  \}}", writer, re.DOTALL)
+        assert body is not None, road
+        mark = f'{{type: "step-answered", runId: asked, nodeId: {owner}}}'
+        assert body.group(1).count(mark) == 1, (road, body.group(1))
+        assert body.group(1).index(mark) < body.group(1).index(
+            "if (asked !== door.chosenRun()) return;"), road
 
 
 def _sentences(path: Path, name: str) -> dict[str, str]:

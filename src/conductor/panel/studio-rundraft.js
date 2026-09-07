@@ -9,11 +9,11 @@
 // what may be published: the boundary (`api_contracts.parse_artifact`) judges
 // the body, and the form beside it says why a press is shut.
 //
-// `generation` is not typed by anybody and moves on every clearing, for the
-// reason the step draft carries one: a write minted from an earlier draft
-// must be able to tell that the words on screen are no longer the ones it
-// spent, so a document published while a person is already composing the
-// next one does not empty the editor under their hands.
+// `generation` is not typed by anybody and moves on every clearing and on
+// every typed word, for the reason the step draft carries one: a write minted
+// from an earlier draft must be able to tell that the words on screen are no
+// longer the ones it spent, so a document published while a person is already
+// composing the next one does not empty the editor under their hands.
 
 //: A draft addressed to no run. `mediaType` starts on the kind every shipped
 //: document is; the other two are the person's.
@@ -36,18 +36,23 @@ export function documentCleared(document) {
 //: One typed field of the draft, addressed to the run on screen. A draft
 //: standing for another run is not edited but REPLACED: what was typed against
 //: one run is not a document for another. A patch naming any key but the three
-//: moves nothing, which keeps the id and the run out of a control's reach.
+//: moves nothing, which keeps the id and the run out of a control's reach; a
+//: word that did move takes the generation with it.
 export function documentEdited(state, patch) {
   const runId = state.runs.selectedId;
   if (typeof runId !== "string" || !isObject(patch)) return state;
   const held = state.runs.document;
   const next = {...(held.runId === runId ? held : {...NO_DOCUMENT,
     generation: held.generation}), runId};
+  let moved = false;
   for (const key of TYPED) {
     if (Object.hasOwn(patch, key) && typeof patch[key] === "string") {
       next[key] = patch[key];
+      moved = true;
     }
   }
+  if (!moved) return state;
+  next.generation = held.generation + 1;
   return Object.freeze({...state, runs: Object.freeze({...state.runs,
     document: Object.freeze(next)})});
 }

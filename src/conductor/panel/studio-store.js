@@ -21,6 +21,9 @@ import {projectControls, projectProviders, projectRunRead, projectRuns,
 import {NO_DOCUMENT, documentCleared, documentEdited, documentSpent}
   from "./studio-rundraft.js";
 import {decisionRows, participantsOf} from "./studio-runread.js";
+import {readWrites, stepAnswered, stepWriting} from "./studio-runwrites.js";
+import {NO_FOLDS, NO_OPENING, NO_STARTER, foldMoved, openingCleared,
+  openingEdited, starterEdited} from "./studio-toolbardraft.js";
 import {changeSummary} from "./studio-review.js";
 
 //: The seven words a screen container may stand in; the plain sentence beside
@@ -66,11 +69,11 @@ const NO_DRAFT = Object.freeze({key: null, action: "approve", actor: "",
 //: not a draft against this one.
 //:
 //: `generation` is the fifth field and is not typed by anybody: it counts
-//: every choice of step and every clearing of the draft, so a write minted
-//: from an earlier draft can tell that the words on screen are no longer the
-//: ones it spent. A write IN FLIGHT is not a fact about the draft at all --
-//: it is `runs.writes`' (see `stepWriting`) -- so nothing that moves the draft,
-//: and no read, can give a shut control back.
+//: every choice of step, every clearing of the draft and every typed word,
+//: so a write minted from an earlier draft can tell that the words on screen
+//: are no longer the ones it spent. A write IN FLIGHT is not a fact about the
+//: draft at all -- it is `runs.writes`' (`studio-runwrites.js`) -- so nothing
+//: that moves the draft, and no read, can give a shut control back.
 const NO_STEP = Object.freeze({nodeId: null, proposedBy: "", rationale: "",
   confirmedBy: "", generation: 0});
 
@@ -128,6 +131,10 @@ const WORKFLOWS = Object.freeze({
   writeReady: false,
   savePhase: "idle",   // idle | submitting | refused | outcome-unknown | saved
   saveNotice: "",
+  //: The toolbar's own facts (`studio-toolbardraft.js`): the folds a person
+  //: touched, the start box and the run form as typed. Kept across every
+  //: read; cleared with the rest of this slice when another workflow is chosen.
+  folds: NO_FOLDS, starter: NO_STARTER, opening: NO_OPENING,
 });
 
 export const EMPTY = Object.freeze({
@@ -553,16 +560,28 @@ function runMoved(state, phase, detail, said) {
 
 function runLoaded(state, event) {
   if (projectRunRead(event.read) === null) {
-    return runMoved(state, "failed", null, {noticeFrom: "read",
+    // A read of the SAME run -- the epoch guard admits no other -- that this
+    // build cannot project is still a read of the same run: what a person
+    // typed against it is kept, and only the writes in flight are not this
+    // road's to touch either. An error road is not a change of run.
+    const failed = runMoved(state, "failed", null, {noticeFrom: "read",
       notice: "This run answered with a payload this build cannot read. "
         + "Nothing about it is inferred from a document nobody can read."});
+    return Object.freeze({...failed,
+      runs: Object.freeze({...failed.runs, step: state.runs.step,
+        document: state.runs.document}),
+      decisions: Object.freeze({...failed.decisions,
+        draft: state.decisions.draft})});
   }
   const controls = isObject(event.controls)
     ? projectControls(event.controls) : null;
   const detail = frozenCopy({...event.read,
     controls: controls === null ? null : {instances: wireInstances(controls)}});
   const moved = runMoved(state, "ready", detail, afterRead(state));
-  return controls === null ? moved : Object.freeze({...moved,
+  // The one read that gives an ANSWERED write's control back: this run's.
+  const read = Object.freeze({...moved, runs: Object.freeze({...moved.runs,
+    writes: readWrites(moved.runs.writes, detail.run.run_id)})});
+  return controls === null ? read : Object.freeze({...read,
     providers: wireProviders(event.controls.providers)});
 }
 
@@ -659,38 +678,29 @@ function stepChosen(state, event) {
 //: One typed field of that draft. The three keys are closed: a patch naming
 //: anything else -- a node id, a capability, an argument, `writing` -- moves
 //: nothing, which is what keeps the plan's own facts out of a person's reach
-//: and keeps the write flag out of a control's.
+//: and keeps the write flag out of a control's. A word that DID move takes
+//: the generation with it: a write minted before it spends nothing of it.
 function stepDrafted(state, patch) {
   const next = {...state.runs.step};
+  let moved = false;
   for (const key of ["proposedBy", "rationale", "confirmedBy"]) {
-    if (isObject(patch) && Object.hasOwn(patch, key)) next[key] = patch[key];
+    if (isObject(patch) && Object.hasOwn(patch, key)) {
+      next[key] = patch[key];
+      moved = true;
+    }
   }
+  if (!moved) return state;
+  next.generation = state.runs.step.generation + 1;
   return Object.freeze({...state, runs: Object.freeze({...state.runs,
     step: Object.freeze(next)})});
 }
 
-//: A write in flight for ONE step of ONE run, keyed by both and kept apart
-//: from the draft. A read, a change of run and a change of draft leave it
-//: exactly where it is; only the write's own end -- answered, refused, retired
-//: or never sent -- removes it. What was typed SURVIVES either way: a refusal
-//: that brings no read leaves the person their words and gives the control
-//: back, which is what the shut-door sentence beside it has always promised.
-function stepWriting(state, event) {
-  if (typeof event.runId !== "string" || typeof event.nodeId !== "string") {
-    return state;
-  }
-  const writes = {...state.runs.writes};
-  const key = `${event.runId}/${event.nodeId}`;
-  if (event.writing === true) writes[key] = event.generation;
-  else delete writes[key];
-  return Object.freeze({...state, runs: Object.freeze({...state.runs,
-    writes: Object.freeze(writes)})});
-}
-
 //: The accepted road spends the draft -- and only the draft it was minted
 //: from: this run, this step, this generation. One that has since moved to
-//: another step, or been cleared and re-chosen, is somebody's unsent words and
-//: is left alone; alpha's answer used to empty omega's fields (R07B).
+//: another step, been cleared and re-chosen, or had a word typed into it --
+//: the name typed into the Confirm form the proposal's own frame drew, while
+//: that proposal's answer was still on the wire -- is somebody's unsent words
+//: and is left alone; alpha's answer used to empty omega's fields (R07B).
 function stepSpent(state, event) {
   const step = state.runs.step;
   if (state.runs.selectedId !== event.runId || step.nodeId !== event.nodeId
@@ -739,6 +749,9 @@ const ARMS = Object.freeze({
   "decision-edit": (state, event) => decisionDrafted(state, event.patch),
   "decisions-phase": (state, event) => phaseMoved(state, "decisions", event),
   edit: (state, event) => edited(state, event.edit || {}),
+  fold: foldMoved,
+  "opening-cleared": openingCleared,
+  "opening-edit": (state, event) => openingEdited(state, event.patch),
   "run-chosen": (state, event) => runChosen(state, event.runId),
   "run-loaded": runLoaded,
   "runs-loaded": runsLoaded,
@@ -755,9 +768,11 @@ const ARMS = Object.freeze({
   screen: (state, event) => SCREENS.includes(event.screen)
     ? Object.freeze({...state, screen: event.screen}) : state,
   seed: seeded,
+  "starter-edit": (state, event) => starterEdited(state, event.patch),
   status: (state, event) => spoken(state, text(event.notice)),
   "document-edit": (state, event) => documentEdited(state, event.patch),
   "document-spent": documentSpent,
+  "step-answered": stepAnswered,
   "step-chosen": stepChosen,
   "step-edit": (state, event) => stepDrafted(state, event.patch),
   "step-spent": stepSpent,

@@ -330,14 +330,23 @@ def _the_request_saw(
 
     Those standing when the request's proposal was written, for a request the
     runtime minted; everything standing before the artifact, for one that
-    names no proposal -- so every journal written before the binding existed
-    replays exactly as it did. The transport binds with the same two answers
+    names no proposal -- so a hand-made journal written before the binding
+    existed replays exactly as it did. A request that names a proposal this
+    run does not hold is refused, by name: the transport refuses the same
+    request the same way (`UnknownProposal`), and two readers of one journal
+    may not disagree. The transport binds with the same two answers
     (`ArtifactHandoff.bound`, `.resolve`), which is what makes a review's
     recorded inputs and this judgement agree on every journal.
     """
     named = proposal_named_by(source)
-    seen = None if named is None else values_the_proposal_saw(prior_values, named)
-    return prior_values if seen is None else tuple(seen)
+    if named is None:
+        return prior_values
+    seen = values_the_proposal_saw(prior_values, named)
+    if seen is None:
+        raise ContractError(
+            f"action {source.action_id!r} names proposal {named!r}, which this "
+            "run does not hold")
+    return tuple(seen)
 
 
 #: What each rule calls itself when it refuses a record naming no action. The

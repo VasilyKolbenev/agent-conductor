@@ -265,6 +265,34 @@ def test_a_step_whose_name_fills_the_id_budget_is_proposed_beside_its_digest_twi
         page.context.close()
 
 
+def test_a_step_named_to_the_id_budget_does_not_stretch_the_runs_screen(
+        chromium: Browser, bench: _Bench) -> None:
+    """The row whose attempt id R09 made mintable can be read without scrolling.
+
+    A 128-character step id printed whole and unbroken pushed the Runs
+    screen 847px past a 1280px window (the slice-3 review's #20): the id
+    wraps rather than stretching the page, at the ordinary laptop width.
+    """
+    store = RunStore(bench.root)
+    _open_run(store, LONG_RUN)
+    store.append(_two_steps(LONG_RUN, (_review(FULL),)))
+    context = chromium.new_context(viewport={"width": 1280, "height": 800})
+    page = context.new_page()
+    window = _Window(page)
+    try:
+        page.goto(bench.url, wait_until="load")
+        _settle(page)
+        _read(page, LONG_RUN)
+        assert FULL in _row(page, FULL)
+        overflow = page.evaluate(
+            "() => document.documentElement.scrollWidth"
+            " - document.documentElement.clientWidth")
+        assert overflow == 0, overflow
+    finally:
+        assert window.problems == []
+        page.context.close()
+
+
 def test_the_counter_is_read_under_both_forms_of_one_step(
         chromium: Browser, bench: _Bench) -> None:
     """An attempt already spent under the DIGEST form is counted PAST, not filled in.
