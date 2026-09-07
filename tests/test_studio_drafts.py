@@ -270,3 +270,26 @@ def test_the_focus_net_carries_the_words_and_the_caret_and_never_guesses():
     runs = _code(PANEL / "studio-runs.js")
     assert "start: typed ? active.selectionStart : null," in runs
     assert "successor.setSelectionRange(key.start, key.end);" in runs
+
+
+def test_a_model_is_a_roles_optional_harness_bound_draft_not_a_catalogue():
+    """The existing nullable participant field is filled from a typed control.
+
+    These source change detectors hold the intended seam; the layout browser
+    module measures model POSTs, frozen read-back, resets and syntax refusal.
+    Provider-specific availability is deliberately not guessed by this form.
+    """
+    form = _code(RUNFORM)
+    assert '"data-focus": `model-${role}`, maxlength: "128"' in form
+    assert 'pattern: ID_PATTERN, placeholder: "Harness default (unpinned)"' in form
+    assert 'model: models.get(role).value.trim() || null' in form
+    assert 'model.addEventListener("change", () => edit({models:' in form
+    assert 'model.disabled = !pick.value;' in form
+    assert 'if (open === null || !box.reportValidity()) return;' in form
+    draft = _code(TOOLBAR)
+    assert 'models: Object.freeze({})' in draft
+    assert 'const models = typedMap(patch, "models");' in draft
+    assert 'bindings[role] && bindings[role] === held.roles[role]' in draft
+    assert 'models: Object.freeze(pinned)' in draft
+    boot = _code(BOOT)
+    assert '&& !Object.hasOwn(patch, "models")' in boot

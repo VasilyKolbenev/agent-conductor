@@ -661,7 +661,8 @@ const REOPENED = Object.freeze(["draft_changed", "draft_conflict"]);
     editStarter: (patch) => dispatch({type: "starter-edit", patch},
       !Object.hasOwn(patch, "workflowId")),
     editOpening: (patch) => dispatch({type: "opening-edit", patch},
-      !Object.hasOwn(patch, "runId") && !Object.hasOwn(patch, "cycleId")),
+      !Object.hasOwn(patch, "runId") && !Object.hasOwn(patch, "cycleId")
+      && !Object.hasOwn(patch, "models")),
     onRefreshRuns: () => loadRuns(),
     onRefreshRun: () => { if (chosenRun) refreshRun(chosenRun); },
     onRefreshAgents: () => loadWorkflows(),

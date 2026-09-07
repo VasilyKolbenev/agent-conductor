@@ -89,8 +89,8 @@ function roleNames(held) {
 //: to carry across a render. A form mounted without the door is shut, field
 //: by field, and says so.
 function wireTheEdits(edit, controls) {
-  const {runId, cycleId, mode, meaning, pickers} = controls;
-  const typed = [runId, cycleId, mode, ...pickers.values()];
+  const {runId, cycleId, mode, meaning, pickers, models} = controls;
+  const typed = [runId, cycleId, mode, ...pickers.values(), ...models.values()];
   if (edit === null) {
     for (const control of typed) {
       control.disabled = true;
@@ -108,6 +108,10 @@ function wireTheEdits(edit, controls) {
   for (const pick of pickers.values()) {
     pick.addEventListener("change", () => edit({roles: Object.fromEntries(
       [...pickers].map(([role, each]) => [role, each.value]))}));
+  }
+  for (const model of models.values()) {
+    model.addEventListener("change", () => edit({models: Object.fromEntries(
+      [...models].map(([role, each]) => [role, each.value]))}));
   }
 }
 
@@ -149,8 +153,10 @@ export function runForm(state, handlers) {
     field("Authority (mode)", mode), meaning);
   const roles = roleNames(published);
   const pickers = new Map();
+  const models = new Map();
   const available = reachable(state);
   const bound = object(opening.roles) || {};
+  const pinned = object(opening.models) || {};
   for (const role of roles) {
     const pick = element("select", {"data-focus": `role-${role}`,
       name: `role-${role}`}, [option("", "no participant")].concat(
@@ -158,9 +164,18 @@ export function runForm(state, handlers) {
         `${row.display_name} (${row.provider_id})`))));
     pick.value = typeof bound[role] === "string" ? bound[role] : "";
     pickers.set(role, pick);
-    box.append(field(`Role ${role}`, pick));
+    const model = element("input", {autocomplete: "off",
+      "data-focus": `model-${role}`, maxlength: "128", name: `model-${role}`,
+      pattern: ID_PATTERN, placeholder: "Harness default (unpinned)",
+      spellcheck: "false", type: "text"});
+    model.disabled = !pick.value;
+    model.value = pick.value && typeof pinned[role] === "string" ? pinned[role] : "";
+    model.title = "Optional full model ID. This form checks identifier syntax, "
+      + "not model availability or whether the harness supports model routing.";
+    models.set(role, model);
+    box.append(field(`Role ${role}`, pick), field(`Model: ${role}`, model));
   }
-  wireTheEdits(edit, {runId, cycleId, mode, meaning, pickers});
+  wireTheEdits(edit, {runId, cycleId, mode, meaning, pickers, models});
   if (!roles.length) {
     box.append(note("Revision " + show(published.revision) + " names no role, "
       + "so a run of it binds nobody."));
@@ -169,9 +184,10 @@ export function runForm(state, handlers) {
     box.append(note("No provider on this machine is available, so no role can "
       + "be bound. The Agents screen names the file to write."));
   }
-  box.append(note("A participant names one CONFIGURED provider. This window "
-    + "never sends a path, an argv, a credential or an adapter binding: the "
-    + "server builds the frozen configuration from the provider ids alone."));
+  box.append(note("Each role binds a configured harness and an optional full "
+    + "model ID. Blank means the harness default (unpinned); changing harness "
+    + "clears its model. Model availability is not checked here. The server "
+    + "freezes these choices; no paths, argv or credentials are sent."));
   const open = handlerOf(handlers, "onOpenRun");
   const go = element("button", {className: "studio-btn",
     "data-focus": "action:onOpenRun", text: "Open the run", type: "submit"});
@@ -182,14 +198,14 @@ export function runForm(state, handlers) {
   box.append(go);
   box.addEventListener("submit", (event) => {
     event.preventDefault();
-    if (open === null) return;
+    if (open === null || !box.reportValidity()) return;
     const participants = [];
     const assignments = {};
     for (const [role, pick] of pickers) {
       if (!pick.value) continue;
       const instanceId = `instance-${role}`;
       participants.push({instance_id: instanceId, provider_id: pick.value,
-        model: null});
+        model: models.get(role).value.trim() || null});
       assignments[role] = instanceId;
     }
     open({runId: runId.value.trim(), cycleId: cycleId.value.trim(),

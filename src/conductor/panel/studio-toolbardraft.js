@@ -32,6 +32,7 @@ export const NO_STARTER = Object.freeze({workflowId: "", starterId: ""});
 //: still lets a person proceed, granted deliberately and never by default.
 export const NO_OPENING = Object.freeze({
   runId: "", cycleId: "", mode: "observe", roles: Object.freeze({}),
+  models: Object.freeze({}),
 });
 const FOLDS = Object.freeze(["start", "run"]);
 const STARTER_KEYS = Object.freeze(["workflowId", "starterId"]);
@@ -58,6 +59,12 @@ function typedInto(held, keys, patch) {
     }
   }
   return moved ? next : null;
+}
+
+function typedMap(patch, key) {
+  return isObject(patch) && isObject(patch[key]) ? Object.freeze(
+    Object.fromEntries(Object.entries(patch[key]).filter(
+      ([, value]) => typeof value === "string"))) : null;
 }
 
 /**
@@ -92,22 +99,27 @@ export function starterEdited(state, patch) {
  * One typed field of the run form, or its whole role binding.
  *
  * `roles` replaces the map rather than merging into it: the form sends every
- * picker's value at once, so a role unbound again is not left bound.
+ * picker's value at once, so a role unbound again is not left bound. A model
+ * belongs to that harness binding: changing it clears the model, even when a
+ * caller sends a model in the same patch. A later model edit belongs to the
+ * new binding. Frames never edit either map.
  *
  * @param {object} state The reducer's frozen value.
- * @param {object} patch `{runId}`, `{cycleId}`, `{mode}` or `{roles}`.
+ * @param {object} patch `{runId}`, `{cycleId}`, `{mode}`, `{roles}` or `{models}`.
  * @returns {object} The next state, or the same one when nothing moved.
  */
 export function openingEdited(state, patch) {
   const held = state.workflows.opening;
   const typed = typedInto(held, OPENING_KEYS, patch);
-  const roles = isObject(patch) && isObject(patch.roles) ? Object.freeze(
-    Object.fromEntries(Object.entries(patch.roles).filter(
-      ([, value]) => typeof value === "string"))) : null;
-  if (typed === null && roles === null) return state;
+  const roles = typedMap(patch, "roles");
+  const models = typedMap(patch, "models");
+  if (typed === null && roles === null && models === null) return state;
+  const bindings = roles === null ? held.roles : roles;
+  const pinned = Object.fromEntries(Object.entries(models || held.models).filter(
+    ([role]) => bindings[role] && bindings[role] === held.roles[role]));
   return workflowsMoved(state, {opening: Object.freeze({
     ...(typed === null ? held : typed),
-    roles: roles === null ? held.roles : roles})});
+    roles: bindings, models: Object.freeze(pinned)})});
 }
 
 /**

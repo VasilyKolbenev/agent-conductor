@@ -50,6 +50,7 @@ from browser_tests.test_studio_lifecycle import (  # noqa: F401
 from conductor import server
 from conductor.command.adapters.claude_code import CLAUDE_PROTOCOL
 from conductor.command.operator_config import ProviderConfig
+from conductor.command.run_store import RunStore
 from tests import _fakeclaude
 
 #: An ordinary laptop, a common desktop, and a window narrower than either.
@@ -515,6 +516,110 @@ def test_every_fold_is_reached_by_tab_and_toggled_by_enter(
             "() => document.querySelector('[data-fold=\"run\"]').open") is True
         assert "A run follows a PUBLISHED revision" in page.locator(
             "#workflowToolbar [data-fold='run']").inner_text()
+    finally:
+        assert window.problems == []
+        page.context.close()
+
+
+def _model_form(page: Page, workflow_id: str) -> list[str]:
+    _start_from_starter(page, workflow_id)
+    _save_draft(page)
+    _publish(page)
+    page.wait_for_selector('[data-focus="run-mode"]', state="attached")
+    roles = page.locator('[data-focus^="role-"]').evaluate_all(
+        "items => items.map(item => item.dataset.focus.slice(5))")
+    assert roles and page.locator('[data-focus^="model-"]').count() == len(roles)
+    for role in roles:
+        page.locator(f'[data-focus="role-{role}"]').select_option("claude-code")
+    return roles
+
+
+def test_each_roles_model_reaches_the_open_request_and_frozen_read_back(
+        chromium: Browser, configured_project: _Project) -> None:
+    """A chosen full id is frozen; a sibling blank means unpinned, not a guess."""
+    page, window = _open(chromium, configured_project, double=True)
+    try:
+        roles = _model_form(page, "model-pins")
+        assert len(roles) >= 2
+        page.locator('[data-focus="run-id"]').fill("run-model-pins")
+        page.locator('[data-focus="cycle-id"]').fill("cycle-model-pins")
+        model = "claude-reviewed-20260907"
+        page.locator(f'[data-focus="model-{roles[0]}"]').fill(model)
+        # A single click from the still-focused model field must submit.
+        with page.expect_response(lambda response: response.request.method == "POST"
+                                  and response.url.endswith("/command/runs")) as opened:
+            page.locator('[data-focus="action:onOpenRun"]').click()
+        assert opened.value.status == 201, opened.value.json()
+        posted = window.posted("/command/runs")[-1]["participants"]
+        assert {row["instance_id"]: row["model"] for row in posted} == {
+            f"instance-{role}": model if role == roles[0] else None for role in roles}
+        recovered = RunStore(configured_project.root).read("run-model-pins")
+        assert {row["id"]: row.get("model") for row in recovered.config["instances"]} == {
+            f"instance-{role}": model if role == roles[0] else None for role in roles}
+        assert all("model" not in row for row in recovered.config["instances"]
+                   if row["id"] != f"instance-{roles[0]}")
+        page.reload(wait_until="load")
+        _settle(page)
+        page.locator("#navRuns").click()
+        page.locator('[data-focus-key="run:run-model-pins"]').click()
+        page.wait_for_function("model => document.querySelector('#screenRuns')"
+                               ".innerText.includes(model)", arg=model)
+    finally:
+        assert window.problems == []
+        page.context.close()
+
+
+def test_a_roles_model_keeps_its_caret_but_not_a_replaced_harness_binding(
+        chromium: Browser, configured_project: _Project) -> None:
+    """Frames/reconnect retain words; changing the harness discards its pin."""
+    page, window = _open(chromium, configured_project, double=True)
+    try:
+        roles = _model_form(page, "model-draft")
+        key = f"model-{roles[0]}"
+        model = page.locator(f'[data-focus="{key}"]')
+        assert "unpinned" in model.get_attribute("placeholder")
+        model.fill("model-ab")
+        model.press("ArrowLeft")
+        _the_frame_lands(page)
+        page.keyboard.type("X")
+        assert model.input_value() == "model-aXb"
+        assert page.evaluate("() => document.activeElement.selectionStart") == 8
+        model.fill("")
+        assert _compose(page, key) == "run"
+        page.keyboard.press("Tab")
+        page.evaluate("() => { window.__stream.fire('error'); window.__stream.fire('open'); }")
+        _the_frame_lands(page)
+        assert model.input_value() == "run"
+        pick = page.locator(f'[data-focus="role-{roles[0]}"]')
+        pick.select_option("")
+        _the_frame_lands(page)
+        assert model.input_value() == "" and model.is_disabled()
+        pick.select_option("claude-code")
+        assert model.input_value() == "" and model.is_enabled()
+        assert window.writes("/command/runs") == 0
+    finally:
+        assert window.problems == []
+        page.context.close()
+
+
+def test_a_model_outside_the_existing_identifier_contract_cannot_be_submitted(
+        chromium: Browser, configured_project: _Project) -> None:
+    """The UI checks syntax, not whether a vendor offers a model today."""
+    page, window = _open(chromium, configured_project, double=True)
+    try:
+        roles = _model_form(page, "model-syntax")
+        page.locator('[data-focus="run-id"]').fill("run-model-syntax")
+        page.locator('[data-focus="cycle-id"]').fill("cycle-model-syntax")
+        model = page.locator(f'[data-focus="model-{roles[0]}"]')
+        for invalid in ("--flag", "vendor/model", "a b", "x" * 129):
+            model.evaluate("(field, value) => { field.value = value; }", invalid)
+            if len(invalid) <= 128:
+                assert model.evaluate("field => field.validity.patternMismatch")
+            assert not model.evaluate("field => field.checkValidity()")
+            page.locator('[data-focus="action:onOpenRun"]').click()
+            assert window.writes("/command/runs") == 0
+        model.fill("Model.7_2026-09")
+        assert model.evaluate("field => field.checkValidity()")
     finally:
         assert window.problems == []
         page.context.close()
