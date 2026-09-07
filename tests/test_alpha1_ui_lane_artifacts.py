@@ -68,7 +68,9 @@ def test_the_frozen_artifacts_on_disk_are_exactly_the_five_this_lane_promised():
 
 
 def test_a_projection_row_carries_the_row_fields_and_none_of_the_withheld_names():
-    document = load("alpha1_provider_projection")
+    # Read through the pinned additive delta: the login a row may pin was added
+    # after these bytes were frozen, and the historical file is never rewritten.
+    document = current_form(load("alpha1_provider_projection"))
     row_fields = set(document["row_fields"])
     withheld = set(document["withheld_from_rows"])
     assert withheld and row_fields.isdisjoint(withheld)

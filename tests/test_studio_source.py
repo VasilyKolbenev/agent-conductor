@@ -577,7 +577,10 @@ def test_the_boundary_refuses_rather_than_repairs_and_says_which_it_does():
     # offer this window cannot read is one it declines to make -- it does not
     # take the workflows payload down with it, which is what REFUSE would mean
     # and what would leave a person with no picker at all.
-    assert source.count("continue;") == 13
+    # 14 with the login a provider row pins: a roster row whose login state this
+    # window does not know is decoration it drops, exactly as it already drops a
+    # row whose availability or implementation it cannot read.
+    assert source.count("continue;") == 14
     # The draft's third answer, so "no draft" and "unreadable draft" can never
     # be the same value -- and now the workflow reference's third answer too,
     # for the same reason: a run that froze none and a run whose reference is

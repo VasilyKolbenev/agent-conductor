@@ -71,6 +71,17 @@ export const AVAILABILITY_MEANINGS = Object.freeze({
   version_mismatch: "The executable is there and is not the pinned version.",
   unconfigured: "No provider configuration names it, so nothing was looked at.",
 });
+//: adapters.provider.CONTRACT_AUTH_STATES -- which login the operator's own row
+//: pinned. A third question, sharing no value with the two above.
+export const AUTH_STATES = Object.freeze(
+  ["api_key", "subscription", "unpinned"]);
+//: What each login state means, in the user's words. Each one says CONFIGURED,
+//: because that is all a config file can say.
+export const AUTH_MEANINGS = Object.freeze({
+  api_key: "Configured to read a credential from the environment.",
+  subscription: "Configured to use the vendor's own login, kept in its own directory.",
+  unpinned: "No provider configuration names it, so no login was pinned.",
+});
 //: What each build state means, in the user's words.
 export const IMPLEMENTATION_MEANINGS = Object.freeze({
   real_experimental: "This build talks to the real product, experimentally.",
@@ -109,6 +120,11 @@ const AVAILABILITY_CHANNEL = Object.freeze({
 });
 const IMPLEMENTATION_CHANNEL = Object.freeze({
   real_experimental: "wait", fixture_only: "none", unproven: "none",
+});
+//: Which login a row PINNED. Every state is neutral on purpose: a configured
+//: login is not a working one, and a green chip here would say it was.
+const AUTH_CHANNEL = Object.freeze({
+  api_key: "none", subscription: "none", unpinned: "none",
 });
 const GATE_CHANNEL = Object.freeze({
   idle: "wait", satisfied: "pass", failed: "fail",
@@ -615,6 +631,7 @@ function noProviders(handlers) {
 function providerRow(row) {
   const availability = show(row.availability);
   const implementation = show(row.implementation);
+  const auth = show(row.auth);
   return element("li", {className: "studio-provider"}, [
     element("span", {className: "studio-provider__n",
       text: show(row.display_name)}),
@@ -627,6 +644,9 @@ function providerRow(row) {
     element("span", {className: "studio-why",
       text: IMPLEMENTATION_MEANINGS[implementation]
         || "This build does not describe that transport state."}),
+    chip(AUTH_CHANNEL[auth] || "none", auth),
+    element("span", {className: "studio-why",
+      text: AUTH_MEANINGS[auth] || "This build does not describe that login state."}),
     fact("Capabilities it is proven to serve", row.controls),
   ]);
 }
@@ -636,10 +656,12 @@ function providerSection(providers, handlers) {
   const list = element("ul", {className: "studio-providers"},
     providers.map(providerRow));
   return section("Harnesses this build and this machine can reach", [
-    note("Two facts per row, and they answer different questions. What the "
+    note("Three facts per row, and they answer different questions. What the "
       + "MACHINE resolved is whether the pinned executable is there; what the "
       + "BUILD claims is whether this version talks to the real product or "
-      + "answers from a fixture. Neither is read off the other."),
+      + "answers from a fixture; what the CONFIG pinned is which login it would "
+      + "use. None is read off another, and none of them is evidence that a real "
+      + "authenticated run ever happened."),
     list,
     actionButton(handlers, "refreshAgents", "Read the roster again", null),
   ]);

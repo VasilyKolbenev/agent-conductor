@@ -139,15 +139,15 @@ def test_projection_exposes_only_names_availability_and_proven_controls():
     assert rows == [
         {"provider_id": "claude-code", "display_name": "Claude Code",
          "availability": "available", "implementation": "unproven",
-         "controls": sorted(CONTROLS)},
+         "auth": "unpinned", "controls": sorted(CONTROLS)},
         {"provider_id": "codex", "display_name": "Codex",
          "availability": "executable_absent", "implementation": "unproven",
-         "controls": sorted(CONTROLS)},
+         "auth": "unpinned", "controls": sorted(CONTROLS)},
     ]
     for row in rows:
         assert set(row) == {
             "provider_id", "display_name", "availability", "implementation",
-            "controls"}
+            "auth", "controls"}
         assert "observe" not in row["controls"]
 
 
@@ -175,7 +175,7 @@ def test_provider_config_stores_only_the_operator_pin_and_env_names():
     assert config.as_dict()["auth_home"] == ""
     # A row that says nothing about its login is the road that shipped, so this
     # config means today exactly what it meant before the field existed.
-    assert config.as_dict()["auth"] == "api-key"
+    assert config.as_dict()["auth"] == "api_key"
     with pytest.raises(ProviderConfigError, match="env_allow"):
         ProviderConfig(
             provider_id="claude-code", executable=ABS_EXECUTABLE,

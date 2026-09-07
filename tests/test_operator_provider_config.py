@@ -84,7 +84,7 @@ def test_an_absent_file_configures_nothing_and_refuses_nothing(tmp_path):
 def test_the_optional_halves_default_to_the_empty_pin_the_door_reads_as_none(tmp_path):
     config = load_provider_configs(write_config(tmp_path, a_document()))[0]
     assert (config.entrypoint, config.env_allow) == ("", ())
-    assert (config.auth, config.auth_home) == ("api-key", "")
+    assert (config.auth, config.auth_home) == ("api_key", "")
 
 
 def test_the_operator_surface_is_exactly_the_durable_config_fields(tmp_path):

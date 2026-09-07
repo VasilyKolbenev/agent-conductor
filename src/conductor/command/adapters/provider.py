@@ -64,15 +64,17 @@ IMPLEMENTATION_STATES = frozenset({"real_experimental", "fixture_only", "unprove
 #: What a provider that declares no implementation claims: the weakest of the
 #: three. A stronger claim has to be written down to be made.
 WEAKEST_IMPLEMENTATION = "unproven"
-#: The two logins a provider row may be pinned to. ``api-key`` is the road that
+#: The two logins a provider row may be pinned to. ``api_key`` is the road that
 #: shipped -- the harness reads a credential out of the environment by a name the
 #: row allows -- and ``subscription`` is the vendor's own login, kept in a
-#: directory the row names. A row that says neither means ``api-key``, so every
+#: directory the row names. A row that says neither means ``api_key``, so every
 #: configuration written before this field existed still means what it meant.
-AUTH_MODES = frozenset({"api-key", "subscription"})
+#: Both are spelled like the availability and implementation words beside them,
+#: so one screen never mixes two token styles for three parallel facts.
+AUTH_MODES = frozenset({"api_key", "subscription"})
 #: What an unsaid mode is. Named rather than spelled inline, because two places
 #: (this door and the operator file's row writer) have to agree on it.
-DEFAULT_AUTH_MODE = "api-key"
+DEFAULT_AUTH_MODE = "api_key"
 SUBSCRIPTION_AUTH = "subscription"
 #: Environment NAMES that buy model access billed to an API account. In
 #: subscription mode a row may not forward one: the reviewed Claude build was
@@ -87,6 +89,21 @@ SUBSCRIPTION_AUTH = "subscription"
 #: and nothing in this build can see the value.
 API_BILLING_ENV = frozenset({
     "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "OPENAI_API_KEY", "CODEX_API_KEY"})
+#: The reviewed protocols whose transport really drives a vendor login. A mode is
+#: not a label: pinning ``subscription`` where no transport implements it would
+#: leave an operator reading a login this build never performs, so it is refused
+#: at this door -- in the same breath as an unreviewed protocol token, and for
+#: the same reason.
+SUBSCRIPTION_PROTOCOLS = frozenset({"claude-code-headless-v1", "codex-headless-v1"})
+#: What a provider carries on the wire when NO operator row names it at all. It is
+#: a third word rather than the default mode, because "nobody pinned a login" and
+#: "a row pinned the login that shipped" are different facts, and a screen that
+#: showed the second for the first would be reporting a configuration that does
+#: not exist. It shares no value with the availability or implementation
+#: vocabularies, so no consumer can read one answer as another.
+UNPINNED_AUTH = "unpinned"
+#: Every value the wire may carry for the login question.
+CONTRACT_AUTH_STATES = frozenset(AUTH_MODES | {UNPINNED_AUTH})
 #: The one lifecycle capability that carries no argument schema: an observation is
 #: an adapter-authored fact, never a browser-submitted argument body.
 SCHEMALESS_CAPABILITIES = frozenset({"observe"})
@@ -260,6 +277,11 @@ class ProviderConfig:
         if type(self.auth_home) is not str or "\x00" in self.auth_home:
             raise ProviderConfigError("auth_home must be a NUL-free absolute path string")
         if self.auth == SUBSCRIPTION_AUTH:
+            if self.protocol not in SUBSCRIPTION_PROTOCOLS:
+                raise ProviderConfigError(
+                    f"protocol {self.protocol!r} has no transport that drives a "
+                    f"vendor login; {SUBSCRIPTION_AUTH} is implemented for "
+                    f"{sorted(SUBSCRIPTION_PROTOCOLS)}")
             if not self.auth_home:
                 raise ProviderConfigError(
                     "subscription authentication needs auth_home, "
@@ -399,9 +421,11 @@ class ProviderContract:
     availability: str
     available: bool
     implementation: str = WEAKEST_IMPLEMENTATION
+    auth: str = UNPINNED_AUTH
     _FIELDS: ClassVar[frozenset[str]] = frozenset({
         "provider_id", "display_name", "vendor", "version", "capabilities",
-        "schema_pairs", "lifecycle", "availability", "available", "implementation"})
+        "schema_pairs", "lifecycle", "availability", "available", "implementation",
+        "auth"})
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "provider_id", _provider_id(self.provider_id))
@@ -419,6 +443,16 @@ class ProviderContract:
             raise ProviderConfigError("available must be a boolean")
         if self.available is not (self.availability == "available"):
             raise ProviderConfigError("available must equal the resolved availability state")
+        if self.auth not in CONTRACT_AUTH_STATES:
+            raise ProviderConfigError("auth must name a reviewed login state")
+        if self.availability == "unconfigured" and self.auth != UNPINNED_AUTH:
+            # The dangerous direction, and the only one refused here: a provider
+            # NO row named cannot carry a login somebody pinned. The mirror case
+            # under-claims -- it says no login was pinned when one was -- and the
+            # resolver that reads the config is where that is proved, because it
+            # is the only place that holds both facts.
+            raise ProviderConfigError(
+                "a provider no row configured carries an unpinned login")
 
     def as_dict(self) -> dict[str, Any]:
         if type(self) is not ProviderContract:
@@ -430,7 +464,7 @@ class ProviderContract:
             "schema_pairs": [list(pair) for pair in self.schema_pairs],
             "lifecycle": list(self.lifecycle),
             "availability": self.availability, "available": self.available,
-            "implementation": self.implementation}
+            "implementation": self.implementation, "auth": self.auth}
 
 
 def reconstruct_contract(value: object) -> ProviderContract:
@@ -502,12 +536,14 @@ class ProviderRegistry:
             reconstruct_contract(self._contracts[key]) for key in sorted(self._contracts))
 
     def register(
-            self, entry: object, *, availability: str,
+            self, entry: object, *, availability: str, auth: str = UNPINNED_AUTH,
             adapter: object = None) -> ProviderContract:
         """Admit one provider, or refuse it and change nothing."""
         canonical = reconstruct_entry(entry)
         if type(availability) is not str or availability not in AVAILABILITY_STATES:
             raise ProviderConfigError("availability must name a reviewed state")
+        if type(auth) is not str or auth not in CONTRACT_AUTH_STATES:
+            raise ProviderConfigError("auth must name a reviewed login state")
         if canonical.provider_id in self._contracts:
             raise ProviderConfigError(
                 f"provider {canonical.provider_id!r} is already registered")
@@ -519,7 +555,7 @@ class ProviderRegistry:
             capabilities=canonical.capabilities, schema_pairs=canonical.schema_pairs,
             lifecycle=canonical.lifecycle, availability=availability,
             available=(availability == "available"),
-            implementation=canonical.implementation)
+            implementation=canonical.implementation, auth=auth)
         self._admit_adapter(canonical, adapter, contract.available)
         self._contracts[canonical.provider_id] = contract
         return contract
@@ -547,9 +583,13 @@ class ProviderRegistry:
 def provider_projection(contracts: Iterable[ProviderContract]) -> list[dict[str, Any]]:
     """Project reviewed provider contracts onto the closed Cockpit surface.
 
-    Each row carries exactly the five names the UI may see -- provider id,
-    display name, availability, implementation, and the PROVEN controls -- and
-    nothing a provider did not declare. A control is proven when the contract
+    Each row carries exactly the six names the UI may see -- provider id,
+    display name, availability, implementation, the pinned login, and the PROVEN
+    controls -- and nothing a provider did not declare. ``auth`` is the mode an
+    operator WROTE, never a proof that the login works: what a machine can start,
+    which build answers, which login was pinned, and whether a real authenticated
+    run ever happened are four different claims, and this row carries the first
+    three of them side by side. A control is proven when the contract
     binds it to an argument schema, which ``ProviderRegistry.register`` admits
     only after matching the whole relation against the adapter class's own
     schemas. No executable, argv, cwd, env value, protocol token, secret, PID,
@@ -570,6 +610,7 @@ def provider_projection(contracts: Iterable[ProviderContract]) -> list[dict[str,
             "display_name": contract.display_name,
             "availability": contract.availability,
             "implementation": contract.implementation,
+            "auth": contract.auth,
             "controls": sorted(capability for capability, _ in contract.schema_pairs),
         }
         for contract in (reconstruct_contract(row) for row in contracts)

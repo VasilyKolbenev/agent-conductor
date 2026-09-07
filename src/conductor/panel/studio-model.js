@@ -60,8 +60,7 @@ export function withCeiling(node, name, value) {
   return {node: {...node, [name]: number}, notice: ""};
 }
 
-export const CONTROL_MODES = Object.freeze(
-  ["observe", "propose", "confirm", "policy"]);
+export const CONTROL_MODES = Object.freeze(["observe", "propose", "confirm", "policy"]);
 //: command/adapters/provider.py AVAILABILITY_STATES -- whether THIS BUILD on
 //: THIS MACHINE can reach a provider at all.
 export const PROVIDER_AVAILABILITY = Object.freeze(
@@ -71,6 +70,9 @@ export const PROVIDER_AVAILABILITY = Object.freeze(
 //: the two share no value, so neither can be read as the other.
 export const PROVIDER_IMPLEMENTATION = Object.freeze(
   ["real_experimental", "fixture_only", "unproven"]);
+//: command/adapters/provider.py CONTRACT_AUTH_STATES -- which login a row
+//: PINNED, or that no row named it. Never a proof that the login works.
+export const PROVIDER_AUTH = Object.freeze(["api_key", "subscription", "unpinned"]);
 //: command/workflow_draft.py DIAGNOSTIC_CODES. A diagnostic is coded by the
 //: exception TYPE the real constructor raised; the prose is never parsed.
 export const DIAGNOSTIC_CODES = Object.freeze(
@@ -207,7 +209,7 @@ function frozenList(rows) {
 
 // ── the roster and the offers: decoration, so a bad row is DROPPED ────────
 const PROVIDER_KEYS = ["provider_id", "display_name", "availability",
-  "implementation", "controls"];
+  "implementation", "auth", "controls"];
 
 //: One provider as this build resolved it. Two rows for one provider id are
 //: two answers to one question and NEITHER survives -- the rule
@@ -223,6 +225,7 @@ export function projectProviders(rows) {
     if (!isId(row.provider_id) || !isText(row.display_name)) continue;
     if (!PROVIDER_AVAILABILITY.includes(row.availability)) continue;
     if (!PROVIDER_IMPLEMENTATION.includes(row.implementation)) continue;
+    if (!PROVIDER_AUTH.includes(row.auth)) continue;
     if (!Array.isArray(row.controls) || !row.controls.every(isId)) continue;
     if (out.some((kept) => kept.providerId === row.provider_id)) {
       conflicted.add(row.provider_id);
@@ -233,6 +236,7 @@ export function projectProviders(rows) {
       displayName: row.display_name,
       availability: row.availability,
       implementation: row.implementation,
+      auth: row.auth,
       controls: frozenList(row.controls.slice()),
     }));
   }

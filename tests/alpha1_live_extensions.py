@@ -16,6 +16,16 @@ DIGESTS = {
         "sha256:4768bec1d42475683e836c11c14bdae859ce0b73615553935de572d023145128",
 }
 REFUSALS = {"proposal_rebind_required": 409}
+#: The login each frozen provider row carries now that a row can pin one. Three
+#: of them were configured before the field existed, so they carry the login that
+#: shipped; the fourth is named by no row at all and carries none. These are
+#: LITERAL per-row pins, not a rule recomputed from the row beside them.
+LOGINS = {
+    "claude-code": "api_key",
+    "codex": "api_key",
+    "codex-preview": "api_key",
+    "codex-unpinned": "unpinned",
+}
 
 
 def current_form(value):
@@ -34,4 +44,13 @@ def current_form(value):
     if "refusal_codes" in result and "attempt_states" in result:
         assert not set(REFUSALS) & result["refusal_codes"].keys()
         result["refusal_codes"].update(REFUSALS)
+    if {"row_fields", "withheld_from_rows", "rows"} <= result.keys():
+        assert "auth" not in result["row_fields"], "historical fixture was rewritten"
+        result["row_fields"] = sorted([*result["row_fields"], "auth"])
+        # The login DIRECTORY is withheld from every row: the wire carries which
+        # login was pinned and never where its credential is kept.
+        result["withheld_from_rows"] = sorted(
+            [*result["withheld_from_rows"], "auth_home"])
+        for row in result["rows"]:
+            row["auth"] = LOGINS[row["provider_id"]]
     return result

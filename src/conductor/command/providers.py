@@ -350,6 +350,8 @@ def resolve_providers(
         entry = _catalogued(catalog, provider_id)
         config = configured.get(provider_id)
         if config is None:
+            # No row named it, so it carries no login at all -- not the login
+            # that a row leaving the field out would have meant.
             providers.register(entry, availability="unconfigured", adapter=None)
             continue
         availability = _resolve_availability(config, entry)
@@ -359,7 +361,8 @@ def resolve_providers(
                 runner = ProcessRunner(Path(root), environ=environ)
             adapter = _build_adapter(
                 entry, config, runner, root=root, clock=clock, ids=ids)
-        providers.register(entry, availability=availability, adapter=adapter)
+        providers.register(
+            entry, availability=availability, auth=config.auth, adapter=adapter)
     return ProviderResolution(
         registry=providers.adapters, contracts=providers.contracts())
 

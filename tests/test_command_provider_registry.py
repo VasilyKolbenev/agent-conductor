@@ -75,7 +75,7 @@ def test_the_door_admits_a_plugin_that_binds_a_schema_to_every_declared_control(
     assert provider_projection(door.contracts()) == [
         {"provider_id": "plugin", "display_name": "Plugin",
          "availability": "available", "implementation": "unproven",
-         "controls": ["dispatch", "stop"]}]
+         "auth": "unpinned", "controls": ["dispatch", "stop"]}]
 
 
 def test_a_plugin_missing_a_schema_for_a_declared_control_is_refused_at_registration():

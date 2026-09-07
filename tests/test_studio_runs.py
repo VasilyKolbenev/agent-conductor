@@ -27,6 +27,7 @@ import pytest
 
 from conductor.command.adapters.provider import (
     AVAILABILITY_STATES,
+    CONTRACT_AUTH_STATES,
     IMPLEMENTATION_STATES,
 )
 from conductor.command.contract_values import _DECISION_ACTIONS, ContractError
@@ -446,12 +447,24 @@ def test_the_agents_screen_spells_the_builds_implementation_states() -> None:
         IMPLEMENTATION_STATES)
 
 
-def test_the_machine_and_the_build_never_share_a_word() -> None:
-    """Two questions, two vocabularies. A shared value would let a reader take
-    one answer for the other."""
+def test_the_agents_screen_spells_the_login_a_row_pinned() -> None:
+    assert frozen_list(PEOPLE_FILE, "AUTH_STATES") == sorted(CONTRACT_AUTH_STATES)
+    assert sorted(frozen_keys(PEOPLE_FILE, "AUTH_MEANINGS")) == sorted(
+        CONTRACT_AUTH_STATES)
+    assert frozen_list(PANEL / "studio-model.js", "PROVIDER_AUTH") == sorted(
+        CONTRACT_AUTH_STATES)
+
+
+def test_the_machine_the_build_and_the_login_never_share_a_word() -> None:
+    """Three questions, three vocabularies. A shared value would let a reader
+    take one answer for another."""
     assert not set(AVAILABILITY_STATES) & set(IMPLEMENTATION_STATES)
+    assert not set(CONTRACT_AUTH_STATES) & set(AVAILABILITY_STATES)
+    assert not set(CONTRACT_AUTH_STATES) & set(IMPLEMENTATION_STATES)
     assert not (set(frozen_list(PEOPLE_FILE, "AVAILABILITY_STATES"))
                 & set(frozen_list(PEOPLE_FILE, "IMPLEMENTATION_STATES")))
+    assert not (set(frozen_list(PEOPLE_FILE, "AUTH_STATES"))
+                & set(frozen_list(PEOPLE_FILE, "AVAILABILITY_STATES")))
 
 
 def test_the_no_participant_state_names_the_real_file_keys_and_command() -> None:
