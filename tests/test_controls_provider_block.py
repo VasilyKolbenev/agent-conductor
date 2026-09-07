@@ -21,6 +21,8 @@ showing the rows stay distinct and correctly attributed.
 """
 from __future__ import annotations
 
+import json
+
 from conductor.command.adapters import (
     AdapterManifest,
     AdapterObservation,
@@ -195,12 +197,22 @@ def test_the_provider_roster_rides_the_controls_route_and_adds_none_of_its_own(
     assert payload["instances"] and payload["providers"]
 
 
-def test_every_provider_row_carries_exactly_the_five_agreed_names(tmp_path):
+def test_every_provider_row_carries_exactly_the_six_agreed_names(tmp_path):
     rows = controls(tmp_path)["providers"]
     assert [set(row) for row in rows] == [{
         "provider_id", "display_name", "availability", "implementation",
-        "controls"}] * len(rows)
+        "auth", "controls"}] * len(rows)
     assert [row["provider_id"] for row in rows] == sorted(ROSTER)
+
+
+def test_a_row_says_which_login_was_pinned_and_never_where_it_is_kept(tmp_path):
+    """The mode is a fact about the CONFIG; the directory holding a credential
+    is not a fact this answer carries at all."""
+    payload = controls(tmp_path)
+    rows = {row["provider_id"]: row for row in payload["providers"]}
+    assert rows["never-pinned"]["auth"] == "unpinned"
+    assert rows["here-and-real"]["auth"] == "api_key"
+    assert "auth_home" not in json.dumps(payload)
 
 
 def test_a_provider_the_operator_never_pinned_is_unconfigured(tmp_path):
