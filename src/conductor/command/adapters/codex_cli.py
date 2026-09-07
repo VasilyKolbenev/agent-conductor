@@ -490,6 +490,18 @@ class CodexCliTransport(ArtifactAwareTransport):
         """One native binary, and nothing in front of it."""
         return (self._pin.executable,)
 
+    def _login(self) -> tuple[str, str]:
+        """The login this operator pinned, read from the pin that carries it.
+
+        Codex needs no second argv for it. Its whole login lives in `CODEX_HOME`
+        -- the same variable the API-key road points at a minted, doomed
+        directory -- so pinning a subscription moves that one value and leaves
+        every token of `codex exec` exactly where it was. The attempt home is
+        still minted: it is where `-o` writes the agent's last message, which is
+        model text and must not land in a directory that survives the spawn.
+        """
+        return self._pin.auth, self._pin.auth_home
+
     def _last_message_path(self, home: Path) -> Path:
         """Where THIS attempt asks the CLI to write the agent's last message.
 

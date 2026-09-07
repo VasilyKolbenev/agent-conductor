@@ -345,7 +345,8 @@ def _build_adapter(
         return entry.adapter_class(
             ExecutablePin(
                 executable=config.executable, env_allow=config.env_allow,
-                error=entry.adapter_class.error),
+                error=entry.adapter_class.error, auth=config.auth,
+                auth_home=config.auth_home),
             runner, root=root, clock=clock, ids=ids,
             adapter_id=entry.provider_id)
     deep_config = DeepAdapterConfig(

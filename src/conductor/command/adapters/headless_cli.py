@@ -598,7 +598,7 @@ class HeadlessCliTransport(ReceiptWriting, ModelRouting):
                 # refuses that collision at construction, and this
                 # ordering means the promise holds even if it did not.
                 env={**dict(profile.forced_env),
-                     profile.home_env: str(home)},
+                     profile.home_env: self._home_value(home)},
                 output_limit=bounded_output(profile, output_limit),
                 timeout_seconds=timeout,
                 stdin_bytes=stdin_bytes, separate_stderr=separate_stderr)
@@ -614,6 +614,38 @@ class HeadlessCliTransport(ReceiptWriting, ModelRouting):
     def _env_allow(self) -> tuple[str, ...]:
         """The operator's environment allowlist, from this provider's own pin."""
         raise NotImplementedError
+
+    def _login(self) -> tuple[str, str]:
+        """The login this provider was pinned to, and where it is kept.
+
+        The base answers with the road that shipped, so a provider that has
+        never been given a vendor login behaves exactly as it did: a fresh home
+        per attempt, and a credential read from the environment by an allowed
+        name. A provider whose transport drives a real login overrides this from
+        its own pin.
+        """
+        return "api_key", ""
+
+    def _home_value(self, home: Path) -> str:
+        """What the child's home environment variable is set to for this spawn.
+
+        Two roads, and the difference is the whole subscription contract.
+
+        On the API-key road it is the home this attempt minted: the vendor may
+        write prompt, session and model text under it, nothing here reads a byte
+        of that, and it is destroyed when the spawn returns. That is the
+        retention promise, and it is kept by DELETING the directory.
+
+        On the subscription road it is the directory the OPERATOR pinned, which
+        is where the vendor's own login command wrote its credential. It must
+        survive the attempt -- a login copied into a fresh directory could not
+        be refreshed, and one deleted afterwards would have to be performed
+        again before every run -- so the retention promise there is kept by
+        naming what may change inside it, never by deletion. The attempt home is
+        still minted, read and discarded for everything else it carries.
+        """
+        auth, auth_home = self._login()
+        return auth_home if auth == "subscription" else str(home)
 
     def _version_matches(self, output: bytes) -> bool:
         """Whether the pinned build's version print IS the reviewed version.

@@ -151,6 +151,37 @@ def reviewed_env_allow(
     return names
 
 
+def reviewed_login(
+        auth: object, auth_home: object,
+        error: type[HeadlessCliError]) -> tuple[str, str]:
+    """The pinned login, re-proved here as the executable path already is.
+
+    The config door admits this pair first, and it is proved AGAIN on the way
+    into a pin for the same reason a path is: a transport can be built directly,
+    and a login the transport would act on may not depend on somebody else
+    having checked it. The refusals are the provider's own type, so a bad pin
+    still refuses as that provider.
+
+    A directory is required exactly where the mode reads one and refused where
+    it does not, so the pair can never say "a subscription with nowhere to keep
+    it" or "a login directory nothing will open".
+    """
+    from .provider import AUTH_MODES, SUBSCRIPTION_AUTH
+
+    if type(auth) is not str or auth not in AUTH_MODES:
+        raise error(f"auth must name a reviewed login mode: {sorted(AUTH_MODES)}")
+    if type(auth_home) is not str or "\x00" in auth_home:
+        raise error("auth_home must be a NUL-free path")
+    if auth == SUBSCRIPTION_AUTH:
+        if not auth_home:
+            raise error("a subscription login needs the directory it is kept in")
+        if not is_absolute(auth_home):
+            raise error("auth_home must be an absolute operator pin")
+    elif auth_home:
+        raise error("auth_home is read only by the subscription login")
+    return auth, auth_home
+
+
 @dataclass(frozen=True)
 class ExecutablePin:
     """One operator pin, re-proved absolute before it reaches an argv.
@@ -174,6 +205,12 @@ class ExecutablePin:
     #: and nothing checked that a caller passed a class at all.
     error: type[HeadlessCliError]
     env_allow: tuple[str, ...] = ()
+    #: Which login this provider was pinned to, and -- for the vendor's own
+    #: login -- the directory that login is kept in. A pin that says neither is
+    #: the road that shipped, so every transport built before this pair existed
+    #: is built the same way now.
+    auth: str = "api_key"
+    auth_home: str = ""
 
     def __post_init__(self) -> None:
         if not (isinstance(self.error, type)
@@ -183,6 +220,9 @@ class ExecutablePin:
         reviewed_pin_path(self.executable, "executable", self.error)
         object.__setattr__(
             self, "env_allow", reviewed_env_allow(self.env_allow, self.error))
+        auth, auth_home = reviewed_login(self.auth, self.auth_home, self.error)
+        object.__setattr__(self, "auth", auth)
+        object.__setattr__(self, "auth_home", auth_home)
 
 
 #: The two channels a one-shot task may travel by, and there is no third.

@@ -187,6 +187,7 @@ from .headless_cli import (
     _version_token,
 )
 from .process import ProcessRunner
+from .provider import SUBSCRIPTION_AUTH
 
 #: The graph node this provider binds to; ``conductor.harnesses`` registers it.
 CLAUDE_PROVIDER_ID = "claude-code"
@@ -238,6 +239,27 @@ NO_SESSION_ARGV = ("--no-session-persistence",)
 #: The flag this vendor names a model with. A FULL NAME is what this build
 #: ever sends through it; see the module docstring for why an alias is not
 #: a thing a durable record can be read against.
+#: The isolation flag for the SUBSCRIPTION road, and the one token that differs
+#: between the two argvs this module builds.
+#:
+#: `--bare` cannot carry a subscription: the installed 2.1.239 help says of it
+#: that "OAuth and keychain are never read", which is exactly the containment
+#: the API-key road wants and exactly what a subscription needs. `--safe-mode`
+#: is the vendor's own answer to that pair -- its help says every customization
+#: (CLAUDE.md, skills, plugins, hooks, MCP servers, custom commands and agents,
+#: output styles) is disabled while "Auth, model selection, built-in tools, and
+#: permissions work normally".
+#:
+#: MEASURED on the reviewed binary rather than believed: with a fresh config
+#: directory and no login, `--safe-mode` and `--bare` refuse identically in
+#: under a second, and a startup fixture found every execution canary (user,
+#: project and local hooks, and an MCP server) and both memory canaries
+#: suppressed under `--safe-mode`. What it does NOT do is ignore an API
+#: credential: with `ANTHROPIC_API_KEY` in the environment the same flag went
+#: straight to `POST /v1/messages` with an `x-api-key` header, which is why the
+#: config door refuses that name beside a subscription rather than trusting the
+#: flag to prefer the login.
+SAFE_MODE_ARGV = ("--safe-mode",)
 #: The vendor's own subscription login, as a PERSON runs it. This build never
 #: runs it: a login is an interactive, account-holding act, and a product that
 #: performed one on somebody's behalf would be holding their credentials. It is
@@ -349,6 +371,20 @@ class ClaudeCodeTransport(ArtifactAwareTransport):
         """One native binary, and nothing in front of it."""
         return (self._pin.executable,)
 
+    def _login(self) -> tuple[str, str]:
+        """The login this operator pinned, read from the pin that carries it."""
+        return self._pin.auth, self._pin.auth_home
+
+    def _isolation_argv(self) -> tuple[str, ...]:
+        """`--bare` or `--safe-mode`: the ONE token the pinned login decides.
+
+        Every other token in all three argvs is the same either way, which is
+        the point: the login changes where the child reads a credential from and
+        changes nothing about what it is asked to do, what it may do, where the
+        task arrives, or what it may write.
+        """
+        return SAFE_MODE_ARGV if self._pin.auth == SUBSCRIPTION_AUTH else BARE_ARGV
+
     def _stdin_argv(self, home: Path, model: str | None) -> tuple[str, ...]:
         """The code-owned flags and the CONSTANT prompt. It receives no task.
 
@@ -379,7 +415,7 @@ class ClaudeCodeTransport(ArtifactAwareTransport):
         See ``_task_stdin``.
         """
         return (
-            *BARE_ARGV, PRINT_FLAG, CONSTANT_PROMPT,
+            *self._isolation_argv(), PRINT_FLAG, CONSTANT_PROMPT,
             *INPUT_FORMAT_ARGV, *OUTPUT_FORMAT_ARGV,
             *NO_SESSION_ARGV, *self._model_argv(model),
             *PERMISSION_MODE_ARGV)
@@ -405,7 +441,7 @@ class ClaudeCodeTransport(ArtifactAwareTransport):
         while one configuration described both.
         """
         return (
-            *BARE_ARGV, PRINT_FLAG, REVIEW_PROMPT,
+            *self._isolation_argv(), PRINT_FLAG, REVIEW_PROMPT,
             *INPUT_FORMAT_ARGV, *OUTPUT_FORMAT_ARGV,
             *NO_SESSION_ARGV, *self._model_argv(model),
             *REVIEW_PERMISSION_MODE_ARGV)
@@ -416,7 +452,7 @@ class ClaudeCodeTransport(ArtifactAwareTransport):
     def _verdict_argv(self, home: Path, model: str | None) -> tuple[str, ...]:
         """The same read-only boundary, with a code-owned verdict instruction."""
         return (
-            *BARE_ARGV, PRINT_FLAG, VERDICT_PROMPT,
+            *self._isolation_argv(), PRINT_FLAG, VERDICT_PROMPT,
             *INPUT_FORMAT_ARGV, *OUTPUT_FORMAT_ARGV,
             *NO_SESSION_ARGV, *self._model_argv(model), *REVIEW_PERMISSION_MODE_ARGV)
 
