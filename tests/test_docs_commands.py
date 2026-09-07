@@ -276,6 +276,11 @@ def test_the_acceptance_script_names_the_authority_a_driven_run_needs():
     assert "the authority **confirm**" in step_ten.group(1), step_ten.group(1)
     assert f"The form starts at *{default.group(1)}*" in step_ten.group(1)
     assert text.index("## 10.") < text.index("offers **Propose this step**")
+    # The sentence is drawn only on a row the plan calls runnable, and step 15
+    # opens no run: neither "every row" nor "every step" may be claimed.
+    assert "on every row" not in step_ten.group(1)
+    assert "every step of this script" not in step_ten.group(1)
+    assert "on the row the plan offers" in step_ten.group(1)
 
 
 def test_a_dated_record_is_not_held_to_todays_count():

@@ -209,11 +209,13 @@ def test_controls_are_frozen_binding_manifest_schema_intersection(tmp_path):
         "adapter_id": "claude-code",
         "model": None,
         "controls": ["dispatch"],
+        "argument_schemas": {},
     }, {
         "instance_id": "codex-review",
         "adapter_id": "codex",
         "model": None,
         "controls": [],
+        "argument_schemas": {},
     }], "providers": []}
 
 

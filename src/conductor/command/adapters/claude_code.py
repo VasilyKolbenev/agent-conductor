@@ -231,6 +231,7 @@ PRINT_FLAG = "-p"
 #: to do arrives on stdin; this sentence only tells the child to go and read it.
 CONSTANT_PROMPT = "Execute the complete task supplied on standard input."
 REVIEW_PROMPT = "Produce the complete review artifact supplied on standard input."
+VERDICT_PROMPT = "Independently judge the supplied result and return the requested verdict."
 INPUT_FORMAT_ARGV = ("--input-format", "text")
 OUTPUT_FORMAT_ARGV = ("--output-format", "text")
 NO_SESSION_ARGV = ("--no-session-persistence",)
@@ -403,6 +404,13 @@ class ClaudeCodeTransport(ArtifactAwareTransport):
 
     def _env_allow(self) -> tuple[str, ...]:
         return self._pin.env_allow
+
+    def _verdict_argv(self, home: Path, model: str | None) -> tuple[str, ...]:
+        """The same read-only boundary, with a code-owned verdict instruction."""
+        return (
+            *BARE_ARGV, PRINT_FLAG, VERDICT_PROMPT,
+            *INPUT_FORMAT_ARGV, *OUTPUT_FORMAT_ARGV,
+            *NO_SESSION_ARGV, *self._model_argv(model), *REVIEW_PERMISSION_MODE_ARGV)
 
     def _parsed_version(self, output: bytes) -> str | None:
         r"""The semver this parser reads out of a version print, or ``None``.

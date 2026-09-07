@@ -44,6 +44,8 @@ export const CAPABILITY_FIELDS = Object.freeze({
 });
 export const ERROR_LABELS = Object.freeze({
   authorization_refused: "Authorization refused.",
+  proposal_rebind_required: "This proposal predates material binding. Create "
+    + "a new proposal on this step, review its materials, and confirm that one.",
   capability_unsupported: "This capability is unavailable.",
   contract_invalid: "The request shape is invalid.",
   csrf_denied: "The local session expired. Submit again.",

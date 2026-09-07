@@ -76,6 +76,33 @@ export const ARTIFACT_CONTENT_LIMIT = 49152;
 export const WRITING_NOTE = "Writing… this control is shut until the server "
   + "answers and this run has been read again. What you have typed here is "
   + "kept.";
+//: contracts.PROPOSAL_INPUT_BINDING: only this revision promises that a
+//: proposal, rather than the later authorization, selected its materials.
+export const MATERIAL_BINDING = "proposal-v1";
+export const UNVERSIONED_MATERIALS = "This proposal has no material-binding "
+  + "revision. Its history is readable, but this window cannot claim that "
+  + "the proposal bound the documents shown now.";
+export const REBIND_MATERIALS = "This proposal predates material binding. "
+  + "Create a new proposal below, review its materials, and confirm that one. "
+  + "The earlier proposal stays in the history.";
+// The independent-check frame is bounded by the transport's 64 KiB stdin
+// ceiling, including its JSON encoding, not just the source text it carries.
+export const VERIFICATION_MATERIALS = Object.freeze({
+  dispatch: "The instruction, input documents, the work item's file listing "
+    + "with digests, and bounded contents of changed files. Larger files are "
+    + "listed by digest and available to the checker in its read-only work area.",
+  review: "The result document this attempt produced and the input documents "
+    + "it was given.",
+});
+export const VERIFICATION_FRAME_NOTE = "The complete encoded verification "
+  + "frame must fit 64 KiB. JSON expansion counts; an oversized frame refuses "
+  + "the check before it starts.";
+export const VERIFICATION_OUTPUT_NOTE = "The checker's capture is bounded by "
+  + "its provider. Only the first non-empty "
+  + "verdict line is judged; none of the checker's prose becomes durable.";
+export const SAME_ADAPTER_VERIFICATION = "Verified by the same participant's "
+  + "adapter over its own post-observation evidence; no independent checker "
+  + "is named by this step.";
 //: contract_values.ControlMode -- the whole authority ladder, and what each
 //: rung PERMITS. There is no hidden autonomous rung.
 export const CONTROL_MODES = Object.freeze({
@@ -121,7 +148,7 @@ export const ROW_FACTS = Object.freeze({
   decision: ["receipt_id", "gate_id", "action", "actor", "reason",
     "supersedes"],
   evidence: ["evidence_id", "kind", "label", "uri", "verification",
-    "verified_by", "verified_at"],
+    "verified_by", "verified_at", "verifier_instance_id"],
   graph_definition: ["graph_id", "schema_version"],
   run_terminal: ["terminal_id", "graph_id", "state", "settled_nodes",
     "unreachable_nodes"],

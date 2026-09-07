@@ -37,6 +37,7 @@ from .run_store import (
 )
 from .template_store import RouteNotOwned
 from .runtime import AuthorizationError, Confirmation, RunAlreadyTerminal
+from .runtime_values import ProposalNeedsRebinding
 from .service import ServiceError
 from .workflow_draft import parse_document
 
@@ -468,6 +469,8 @@ def refusal_from_exception(error: Exception) -> ApiRefusal:
     # by reading the message this exception happens to carry.
     if isinstance(error, RunAlreadyTerminal):
         return ApiRefusal.fixed("run_terminal")
+    if isinstance(error, ProposalNeedsRebinding):
+        return ApiRefusal.fixed("proposal_rebind_required")
     if isinstance(error, AuthorizationError):
         return ApiRefusal.fixed("authorization_refused")
     if isinstance(error, ContractError):

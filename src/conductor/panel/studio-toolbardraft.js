@@ -14,10 +14,12 @@
 // So the toolbar's own facts live here, in the reducer's `workflows` slice,
 // exactly as the Runs screen's drafts live in its: a fold a person touched is
 // theirs until they touch it again (`null` is "as the state decides"), and a
-// typed word is committed on every keystroke rather than on blur, because the
-// view surface may not read the DOM back and a control drawn from a draft
-// committed on blur loses the letters typed since. Choosing another workflow
-// clears all three, which is the one road the whole slice is rebuilt on.
+// typed word is committed on change. The letters typed since the last change,
+// and the caret, are carried across a render by the boot module's focus net
+// -- the view surface may not read the DOM back, and committing on every
+// keystroke re-rendered the toolbar under the caret, moving it to the end and
+// doubling an IME's composition. Choosing another workflow clears all three,
+// which is the one road the whole slice is rebuilt on.
 //
 // It touches no DOM and imports nothing.
 

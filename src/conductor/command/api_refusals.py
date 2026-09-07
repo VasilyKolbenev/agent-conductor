@@ -49,6 +49,7 @@ ERROR_STATUS = MappingProxyType({
     "service_refused": 409,
     "capability_unsupported": 409,
     "authorization_refused": 409,
+    "proposal_rebind_required": 409,
     "record_conflict": 409,
     "draft_changed": 409,
     "draft_conflict": 409,
@@ -69,6 +70,8 @@ _FIXED_MESSAGES = MappingProxyType({
     "service_refused": "command service refused the request",
     "capability_unsupported": "adapter does not support this capability",
     "authorization_refused": "confirmation did not authorize the request",
+    "proposal_rebind_required": "this proposal predates material binding; "
+                                "create a new proposal and review it before confirming",
     "record_conflict": "durable record identity conflicts",
     #: Its own code rather than one more `contract_invalid`, because the caller
     #: did nothing wrong and there is something specific to DO about it: the

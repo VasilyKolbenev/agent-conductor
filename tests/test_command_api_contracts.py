@@ -340,6 +340,8 @@ def test_every_fixed_code_has_one_test_owned_exact_message_and_empty_detail():
         "service_refused": "command service refused the request",
         "capability_unsupported": "adapter does not support this capability",
         "authorization_refused": "confirmation did not authorize the request",
+        "proposal_rebind_required": "this proposal predates material binding; "
+                                    "create a new proposal and review it before confirming",
         "record_conflict": "durable record identity conflicts",
         "draft_changed": "the draft changed since it was reviewed; read it again",
         "draft_conflict": "the stored draft is not the one this request was "

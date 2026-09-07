@@ -29,6 +29,7 @@ from ..dispatch import validate_dispatch_arguments
 
 
 _ARGUMENT_SCHEMAS = frozenset({"structured-process-v1", "deep-arguments-v1"})
+_INDEPENDENT_SEAMS = ("publish", "release", "verify_for")
 
 
 class AdapterContractError(ValueError):
@@ -37,6 +38,115 @@ class AdapterContractError(ValueError):
 
 class UnsupportedCapability(AdapterContractError):
     """A caller requested a control the manifest does not declare."""
+
+
+class IndependentVerifierUnavailable(AdapterContractError):
+    """The registered adapter cannot independently judge another participant."""
+
+
+PUBLISH_REFUSALS = frozenset({
+    "outside_subtree", "nothing_changed", "uncontained", "tree_changed", "env_echo",
+})
+
+
+@dataclass(frozen=True)
+class VerifierBinding:
+    """The participant, adapter and model selected by the frozen configuration."""
+
+    instance_id: str
+    adapter_id: str
+    model: str | None = None
+
+    def __post_init__(self) -> None:
+        for name in ("instance_id", "adapter_id"):
+            object.__setattr__(self, name, _contract(_id, name, getattr(self, name)))
+        if self.model is not None:
+            object.__setattr__(self, "model", _contract(_id, "model", self.model))
+
+
+def _material_names(name: str, values: object, *, paths: bool = False,
+                    unique: bool = True) -> tuple[str, ...]:
+    if type(values) is not tuple:
+        raise AdapterContractError(f"{name} must be a tuple")
+    for value in values:
+        if paths:
+            if (type(value) is not str or not value
+                    or any(part in ("", ".", "..") for part in value.split("/"))
+                    or any(mark in value for mark in ("\\", ":"))
+                    or any(ord(character) < 32 for character in value)):
+                raise AdapterContractError(f"{name} must contain relative work-tree paths")
+        else:
+            _contract(_id, name, value)
+    if unique and len(set(values)) != len(values):
+        raise AdapterContractError(f"{name} must not contain duplicates")
+    return values
+
+
+@dataclass(frozen=True)
+class Published:
+    """One transient, immutable doer handoff, never a durable text surface.
+
+    Documents retain the exact bound bytes the doer consumed. They cross this
+    value-only seam as frozen JSON objects; the artifact door validates their
+    document schema. No checker is allowed to replace them by a later lookup.
+    """
+
+    refusal: str | None
+    changed: tuple[str, ...]
+    after: Mapping[str, str] | None
+    input_artifact_ids: tuple[str, ...]
+    sensitive: tuple[bytes, ...] = field(repr=False)
+    instruction: str | None = field(default=None, repr=False)
+    input_documents: tuple[Mapping[str, Any], ...] = field(default=(), repr=False)
+    result_document: Mapping[str, Any] | None = field(default=None, repr=False)
+    instruction_document: Mapping[str, Any] | None = field(default=None, repr=False)
+
+    def __post_init__(self) -> None:
+        if self.refusal is not None and (
+                type(self.refusal) is not str or self.refusal not in PUBLISH_REFUSALS):
+            raise AdapterContractError("publish refusal must be a closed reason key")
+        _material_names("changed", self.changed, paths=True)
+        # One document may be consumed as instruction AND explicit input. This
+        # transient ordered relation preserves both uses, rather than changing
+        # the digest by deduplicating them. Durable document contracts stay put.
+        _material_names("input_artifact_ids", self.input_artifact_ids, unique=False)
+        if type(self.sensitive) is not tuple or any(
+                type(value) is not bytes for value in self.sensitive):
+            raise AdapterContractError("sensitive must be a tuple of bytes")
+        self._freeze_material()
+
+    def _freeze_material(self) -> None:
+        if self.after is not None:
+            if not isinstance(self.after, Mapping):
+                raise AdapterContractError("after must be a mapping of work-tree facts")
+            _material_names("after", tuple(self.after), paths=True)
+            after = {key: _contract(_text, "tree fact", value)
+                     for key, value in self.after.items()}
+            object.__setattr__(self, "after", MappingProxyType(after))
+        if self.instruction is not None:
+            _contract(_text, "instruction", self.instruction, empty=True)
+        if type(self.input_documents) is not tuple:
+            raise AdapterContractError("input_documents must be a tuple")
+        documents = tuple(_contract(_object, "input document", value)
+                          for value in self.input_documents)
+        object.__setattr__(self, "input_documents", documents)
+        if self.result_document is not None:
+            object.__setattr__(self, "result_document", _contract(
+                _object, "result document", self.result_document))
+        if self.instruction_document is not None:
+            object.__setattr__(self, "instruction_document", _contract(
+                _object, "instruction document", self.instruction_document))
+
+
+def _published(value: object) -> Published:
+    if not isinstance(value, Published):
+        raise AdapterContractError("publish must return Published")
+    return Published(
+        refusal=value.refusal, changed=value.changed, after=value.after,
+        input_artifact_ids=value.input_artifact_ids, sensitive=value.sensitive,
+        instruction=value.instruction, input_documents=value.input_documents,
+        result_document=value.result_document,
+        instruction_document=value.instruction_document)
 
 
 CAPABILITIES = frozenset({
@@ -244,6 +354,7 @@ class AdapterRegistry:
         self._adapters: dict[str, Adapter] = {}
         self._manifests: dict[str, AdapterManifest] = {}
         self._argument_schemas: dict[str, Mapping[str, str]] = {}
+        self._independent_seams: dict[str, Mapping[str, Any]] = {}
         for adapter in adapters:
             self.register(adapter)
 
@@ -272,10 +383,14 @@ class AdapterRegistry:
                 raise AdapterContractError(
                     f"adapter declares unknown argument schema {schema!r}")
             reviewed_schemas[capability] = schema
+        independent = {
+            name: seam for name in (*_INDEPENDENT_SEAMS, "verification_started")
+            if callable(seam := getattr(adapter, name, None))}
         # Publish the registration only after every supplied claim validated.
         self._adapters[reviewed.adapter_id] = adapter
         self._manifests[reviewed.adapter_id] = reviewed
         self._argument_schemas[reviewed.adapter_id] = MappingProxyType(reviewed_schemas)
+        self._independent_seams[reviewed.adapter_id] = MappingProxyType(independent)
 
     def resolve(self, adapter_id: str) -> Adapter:
         safe = _contract(_id, "adapter_id", adapter_id)
@@ -385,12 +500,18 @@ class AdapterRegistry:
 
     def verify(
             self, adapter_id: str, request: ActionRequest,
-            result: ActionResultReceipt) -> AdapterVerification:
+            result: ActionResultReceipt, *, verifier: VerifierBinding | None = None,
+            material: Published | None = None) -> AdapterVerification:
         """Call verify with reconstructed facts and return a reconstructed value."""
         adapter = self._require(adapter_id, request.capability)
-        verification = adapter.verify(
-            ActionRequest.from_dict(request.as_dict()),
-            ActionResultReceipt.from_dict(result.as_dict()))
+        handed = ActionRequest.from_dict(request.as_dict())
+        reported = ActionResultReceipt.from_dict(result.as_dict())
+        if verifier is None:
+            if material is not None:
+                raise AdapterContractError("verification material requires a verifier")
+            verification = adapter.verify(handed, reported)
+        else:
+            verification = self._verify_for(adapter_id, handed, reported, verifier, material)
         if not isinstance(verification, AdapterVerification):
             raise AdapterContractError("verify must return AdapterVerification")
         return AdapterVerification(
@@ -400,6 +521,53 @@ class AdapterRegistry:
             observed_at=verification.observed_at,
             detail=verification.detail,
             evidence_refs=verification.evidence_refs)
+
+    def verifies_independently(self, adapter_id: str, capability: str) -> bool:
+        """A registration fact, not a late claim made by a mutable adapter."""
+        manifest = self._registered_manifest(adapter_id)
+        return (manifest.supports(capability)
+                and all(name in self._independent_seams[manifest.adapter_id]
+                        for name in _INDEPENDENT_SEAMS))
+
+    def verification_started(self, adapter_id: str, request: ActionRequest) -> bool | None:
+        """Read a checker's durable claim; absent knowledge is not a negative fact."""
+        self.resolve(adapter_id)
+        seam = self._independent_seams[adapter_id].get("verification_started")
+        if seam is None:
+            return None
+        started = seam(ActionRequest.from_dict(request.as_dict()))
+        if type(started) is not bool:
+            raise AdapterContractError("verification_started must return a bool")
+        return started
+
+    def publish(
+            self, adapter_id: str, request: ActionRequest,
+            result: ActionResultReceipt) -> Published | None:
+        self._require(adapter_id, request.capability)
+        seam = self._independent_seams[adapter_id].get("publish")
+        if seam is None:
+            return None
+        return _published(seam(
+            ActionRequest.from_dict(request.as_dict()),
+            ActionResultReceipt.from_dict(result.as_dict())))
+
+    def release(self, adapter_id: str, request: ActionRequest) -> None:
+        self.resolve(adapter_id)
+        seam = self._independent_seams[adapter_id].get("release")
+        if seam is not None:
+            seam(ActionRequest.from_dict(request.as_dict()))
+
+    def _verify_for(self, adapter_id, request, result, verifier, material):
+        if not isinstance(verifier, VerifierBinding):
+            raise AdapterContractError("verifier must be a VerifierBinding")
+        binding = VerifierBinding(verifier.instance_id, verifier.adapter_id, verifier.model)
+        if binding.adapter_id != adapter_id or binding.instance_id == request.instance_id:
+            raise AdapterContractError("verifier must name this adapter and another participant")
+        if not self.verifies_independently(adapter_id, request.capability):
+            raise IndependentVerifierUnavailable(
+                f"adapter {adapter_id!r} cannot verify another participant's result")
+        return self._independent_seams[adapter_id]["verify_for"](
+            request, result, binding, _published(material))
 
     def argument_schema(self, adapter_id: str, capability: str) -> str | None:
         """The reviewed schema id this adapter registered for one capability.

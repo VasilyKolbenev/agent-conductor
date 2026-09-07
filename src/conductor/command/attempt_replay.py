@@ -31,8 +31,11 @@ def proposal_named_by(request: object) -> str | None:
 
     A request the runtime authorized always names one. A request composed by
     hand -- a transport test's, an older fixture's -- carries whatever key its
-    author wrote and names no proposal; every reader of this answer keeps the
-    road it took before the binding existed for such a request.
+    author wrote: a key that names NO proposal (`idem-…`, or the bare prefix)
+    answers None, and every reader keeps the road it took before the binding
+    existed for it; a key that names a proposal the run does not hold is
+    refused by name by every reader that binds (`ArtifactHandoff`, the replay
+    judge), never answered from a later document.
     """
     key = getattr(request, "idempotency_key", None)
     if not isinstance(key, str) or not key.startswith(PROPOSAL_KEY):
@@ -53,6 +56,13 @@ def values_the_proposal_saw(
         if isinstance(value, ActionProposal) and value.proposal_id == proposal_id:
             return values[:index]
     return None
+
+
+def proposal_by_id(values: Sequence[object], proposal_id: str) -> ActionProposal | None:
+    """The actual proposal carrying the version of its input-binding contract."""
+    return next((value for value in values
+                 if isinstance(value, ActionProposal)
+                 and value.proposal_id == proposal_id), None)
 
 
 def action_request_for(values: Sequence[object], action_id: str) -> ActionRequest | None:
@@ -192,8 +202,10 @@ _OBSERVED_FINALS = {
 
 def _validate_result_evidence(
         values: Sequence[object], result: ActionResultReceipt,
-        observed: AttemptEvent, signer: str | None = None,
+        observed: AttemptEvent, signer: tuple[str, str] | None = None,
         demanded: str | None = None) -> None:
+    if signer is not None and result.outcome == "succeeded" and not result.evidence_refs:
+        raise AttemptRelationError("a named checker's success requires verification evidence")
     if len(set(result.evidence_refs)) != len(result.evidence_refs):
         raise AttemptRelationError("event-bearing result evidence_refs must be unique")
     if result.evidence_refs and result.outcome != "succeeded":
@@ -211,14 +223,12 @@ def _validate_result_evidence(
 def _validate_evidence(
         evidence: EvidenceRef | None, evidence_id: str,
         result: ActionResultReceipt, observed: AttemptEvent,
-        signer: str | None = None, demanded: str | None = None) -> None:
-    """Exactly ONE adapter identity may sign this action's verification.
+        signer: tuple[str, str] | None = None, demanded: str | None = None) -> None:
+    """Exactly one permitted signer may verify this action.
 
-    `signer` is that identity when the run's own frozen plan named a verifier
-    other than the doer, and `None` when it did not -- in which case the
-    identity is the adapter observed executing, which is what this rule has
-    always required and what every journal written before a plan could name a
-    verifier still answers.
+    `signer` is the (adapter, participant) pair when the frozen plan names an
+    independent verifier. With no named verifier it is `None`: only the
+    observed adapter may sign, without an independent participant field.
 
     The CARDINALITY is the invariant and it is untouched: one permitted
     signer, derived from frozen bytes, never from anything a caller supplies.
@@ -235,11 +245,13 @@ def _validate_evidence(
         raise AttemptRelationError(
             f"result evidence {evidence_id!r} must follow its observed attempt event")
     expected_uri = f"verification/{result.action_id}"
-    permitted = observed.adapter_id if signer is None else signer
+    permitted = observed.adapter_id if signer is None else signer[0]
+    participant = None if signer is None else signer[1]
     if (evidence.run_id != result.run_id
             or evidence.kind != "verification" or evidence.uri != expected_uri
             or evidence.created_by != permitted
             or evidence.verified_by != permitted
+            or evidence.verifier_instance_id != participant
             or evidence.verification != "verified"):
         raise AttemptRelationError(
             f"result evidence {evidence_id!r} is not verified by "
@@ -253,7 +265,7 @@ def _validate_evidence(
 
 def validate_event_result(
         values: Sequence[object], result: ActionResultReceipt,
-        events: Sequence[AttemptEvent], signer: str | None = None, *,
+        events: Sequence[AttemptEvent], signer: tuple[str, str] | None = None, *,
         demanded: str | None = None) -> None:
     """Everything a terminal receipt must agree with, plus what its plan asked.
 

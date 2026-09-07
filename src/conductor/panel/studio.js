@@ -22,7 +22,8 @@ import {mountAgents, mountDecisions} from "./studio-people.js";
 import {mountRuns} from "./studio-runs.js";
 //: What a Human's press on a step control MEANS. The wire stays HERE: that
 //: module is handed this one's `write` and reaches no socket of its own.
-import {documentWriters, stepWriters} from "./studio-runwrite.js";
+import {decisionWriters, documentWriters, stepWriters}
+  from "./studio-runwrite.js";
 import {EMPTY, SCREENS, draftFrom, reduce, saveProblems} from "./studio-store.js";
 import {isId, mountDiagnostics, mountOverview, mountShell, mountToolbar}
   from "./studio-view.js";
@@ -40,8 +41,6 @@ const PUBLISHED = "The revision is published and read back. A published "
   + "exactly as it is.";
 const RUN_OPENED = "The run is open and its plan is materialized from that "
   + "exact revision. Nothing about the workflow changed.";
-const DECIDED = "The decision is a durable receipt in this run's journal. "
-  + "Nothing was executed by answering.";
 //: The refusals a PUBLISH can meet that this window recovers from instead of
 //: only reporting: both say the reviewed draft is not what the server holds --
 //: one because its content moved, one because it is gone -- and both are
@@ -105,11 +104,11 @@ const REOPENED = Object.freeze(["draft_changed", "draft_conflict"]);
   // because only a read showing that same thing confirms anything about it.
   let pendingCarry = null;
 
-  function dispatch(event) {
+  function dispatch(event, redraw = true) {
     const next = reduce(state, event);
     if (next === state) return;
     state = next;
-    render();
+    if (redraw) render();
   }
 
   // -- focus, kept across a render pass ------------------------------------
@@ -117,20 +116,41 @@ const REOPENED = Object.freeze(["draft_changed", "draft_conflict"]);
   // Every mounting module restores focus inside its own subtree. This is the
   // net under all of them: it acts only when the pass ended with focus on the
   // body, so it can never fight a module that already put focus back.
+  //
+  // It carries the person's WORDS and CARET as well as the key. A pass
+  // replaces the control, and the successor is drawn from the reducer, which
+  // holds what `change` committed: the letters typed since, and where the
+  // caret stood among them, would be lost or moved to the end (the fold
+  // review's R1/R5). A step field belongs to its original form: if that form
+  // vanished, even a now-unique sibling key must not take its caret (R4).
   function focusTarget() {
     const active = document.activeElement;
     if (!active || active === document.body || !active.getAttribute) return null;
     const key = active.getAttribute("data-focus")
       || active.getAttribute("data-focus-key");
-    return key ? key : null;
+    if (!key) return null;
+    const form = active.closest("[data-step]");
+    const typed = typeof active.setSelectionRange === "function"
+      && typeof active.value === "string";
+    return {key, step: form === null ? null : form.getAttribute("data-step"),
+      value: typed ? active.value : null,
+      start: typed ? active.selectionStart : null,
+      end: typed ? active.selectionEnd : null};
   }
 
-  function restoreFocus(key) {
+  function restoreFocus(held) {
     const active = document.activeElement;
-    if (!key || (active && active !== document.body)) return;
-    const successor = shell.querySelector(`[data-focus="${key}"]`)
-      || shell.querySelector(`[data-focus-key="${key}"]`);
-    if (successor) successor.focus();
+    if (held === null || (active && active !== document.body)) return;
+    const within = held.step === null ? "" : `[data-step="${held.step}"] `;
+    const found = shell.querySelectorAll(
+      `${within}[data-focus="${held.key}"], ${within}[data-focus-key="${held.key}"]`);
+    if (found.length !== 1) return;
+    const successor = found[0];
+    successor.focus();
+    if (held.value === null
+        || typeof successor.setSelectionRange !== "function") return;
+    if (successor.value !== held.value) successor.value = held.value;
+    successor.setSelectionRange(held.start, held.end);
   }
 
   function render() {
@@ -557,60 +577,6 @@ const REOPENED = Object.freeze(["draft_changed", "draft_conflict"]);
     });
   }
 
-  //: A decision is a receipt, and its identity is the caller's. The window
-  //: mints one from the gate and the deciding person so a lost reply re-sends
-  //: the same identity and the route answers idempotently instead of writing
-  //: a second receipt for one answer.
-  function onSubmitDecision(row) {
-    const draft = state.decisions.draft;
-    if (!row || !isId(row.run_id) || !isId(row.gate_id) || !isId(draft.actor)) {
-      dispatch({type: "status",
-        notice: "Name the deciding person before recording a decision."});
-      return;
-    }
-    // WHICH receipt this answer replaces, or none. A gate askable again while
-    // a receipt still stands is a reopened lap, and a window that always sent
-    // `null` there wrote a SECOND standing answer: the projection then refuses
-    // to choose between them and the gate reads `unknown` -- which is how the
-    // result gate became unreadable the moment a person answered it twice.
-    const supersedes = typeof row.standing === "string" ? row.standing : null;
-    // The identity this answer carries. It must be DERIVABLE, so a lost reply
-    // re-sends the same one and the route answers idempotently -- but the gate
-    // and the person alone can be spelled once, so a second answer on a
-    // reopened gate collided with the first and was refused as a conflict.
-    //
-    // The count of answers already durable is the third fact, and it is always
-    // present and stands BEFORE the actor. A suffix would collide across
-    // people: `bob-1` answering first writes the same id as `bob` answering
-    // second. Nothing may follow the actor, because an actor is the one part
-    // of this id a person chooses.
-    const answered = Number.isInteger(row.answers) ? row.answers : 0;
-    const body = {
-      receipt_id: `receipt-${row.gate_id}-${answered}-${draft.actor}`,
-      gate_id: row.gate_id, action: draft.action, actor: draft.actor,
-      reason: typeof draft.reason === "string" ? draft.reason.trim() : "",
-      scope_refs: [], evidence_refs: [], supersedes};
-    const asked = row.run_id;
-    // Both roads below SPEND the draft before the read they provoke. A landed
-    // read of the same run keeps what is typed -- it has no way to know the
-    // words are finished with -- so the two places that do know say so.
-    write("decisions", asked, body, () => {
-      if (asked !== chosenRun) return;
-      dispatch({type: "status", notice: DECIDED});
-      dispatch({type: "decision-chosen", key: null});
-      refreshRun(asked);
-    }, (result) => {
-      // The one refusal a decision can meet that this window acts on rather
-      // than only reports, and the recovery is `draft_conflict`'s shape for
-      // `draft_conflict`'s reason: the screen is offering an answer for a gate
-      // the server says the run has not reached, so what is on screen is out
-      // of date. The read is what makes it current again.
-      if (result.code !== "gate_unreached" || asked !== chosenRun) return;
-      dispatch({type: "decision-chosen", key: null});
-      refreshRun(asked);
-    });
-  }
-
   function onStartWorkflow(request) {
     if (!isId(request.workflowId)) {
       dispatch({type: "status",
@@ -675,6 +641,8 @@ const REOPENED = Object.freeze(["draft_changed", "draft_conflict"]);
     refreshRun, said, write});
   const docs = documentWriters({chosenRun: () => chosenRun, dispatch, isId,
     refreshRun, said, write});
+  const decisions = decisionWriters({chosenRun: () => chosenRun, dispatch,
+    draft: () => state.decisions.draft, isId, refreshRun, write});
 
   const handlers = Object.freeze({
     onScreen: (screen) => {
@@ -688,8 +656,12 @@ const REOPENED = Object.freeze(["draft_changed", "draft_conflict"]);
     onStartWorkflow, onValidate, onSaveDraft, onPublish, onPublishConfirm,
     onPublishCancel, onEditPublished, onOpenRun,
     onFold: (name, open) => dispatch({type: "fold", name, open}),
-    editStarter: (patch) => dispatch({type: "starter-edit", patch}),
-    editOpening: (patch) => dispatch({type: "opening-edit", patch}),
+    // Text commits on blur must not replace the next click's target. Their
+    // live controls already show the edit; a later frame reads the held value.
+    editStarter: (patch) => dispatch({type: "starter-edit", patch},
+      !Object.hasOwn(patch, "workflowId")),
+    editOpening: (patch) => dispatch({type: "opening-edit", patch},
+      !Object.hasOwn(patch, "runId") && !Object.hasOwn(patch, "cycleId")),
     onRefreshRuns: () => loadRuns(),
     onRefreshRun: () => { if (chosenRun) refreshRun(chosenRun); },
     onRefreshAgents: () => loadWorkflows(),
@@ -715,7 +687,7 @@ const REOPENED = Object.freeze(["draft_changed", "draft_conflict"]);
     publishDocument: docs.publishDocument,
     selectDecision: (key) => dispatch({type: "decision-chosen", key}),
     editDecision: (patch) => dispatch({type: "decision-edit", patch}),
-    submitDecision: onSubmitDecision,
+    submitDecision: decisions.submitDecision,
     refreshAgents: () => {
       loadWorkflows();
       if (chosenRun) refreshRun(chosenRun);

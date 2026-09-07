@@ -161,7 +161,7 @@ def _act(store: RunStore, adapter, ids: _Ids, *, name: str, instance: str,
         capability=capability, arguments=arguments, scope=("work",),
         proposed_by="lane", proposed_at=NOW, timeout_seconds=60,
         rationale=f"the {name} half of one durable handoff",
-        config_digest=snapshot_digest(CONFIG))
+        config_digest=snapshot_digest(CONFIG), input_binding="proposal-v1")
     store.append(proposal)
     confirmation = Confirmation(
         confirmation_id=f"confirmation-{name}", run_id=RUN_ID,

@@ -89,14 +89,14 @@ def _ids():
 
 
 def _dispatched(store, srv):
-    """Propose, confirm and execute one dispatch through the real runtime."""
+    """Drive a current bound dispatch, not an old pending proposal's refusal."""
     proposal = ActionProposal(
         proposal_id="proposal-codex", run_id=RUN_ID,
         attempt_id="attempt-codex", instance_id=INSTANCE,
         capability="dispatch", arguments=ARGUMENTS, scope=("work",),
         proposed_by="lane", proposed_at=NOW, timeout_seconds=60,
         rationale="drive Codex CLI through the real Confirm runtime",
-        config_digest=snapshot_digest(CONFIG))
+        config_digest=snapshot_digest(CONFIG), input_binding="proposal-v1")
     store.append(proposal)
     confirmation = Confirmation(
         confirmation_id="confirmation-codex", run_id=RUN_ID,

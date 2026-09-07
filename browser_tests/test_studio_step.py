@@ -195,7 +195,7 @@ def _a_proposal(run_id: str, node_id: str, *, index: int, attempt_id: str):
         instance_id="claude-dev", capability="review", arguments=ARGUMENTS,
         scope=("src",), proposed_by="seed", proposed_at=NOW,
         timeout_seconds=900, rationale=f"Carry out {node_id}.",
-        config_digest=DIGEST, node_id=node_id)
+        config_digest=DIGEST, node_id=node_id, input_binding="proposal-v1")
 
 
 def _unanswered(store: RunStore, run_id: str, node_id: str, *, index: int,

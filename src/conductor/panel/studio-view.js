@@ -502,9 +502,12 @@ function starterNote(row) {
 //: Starting a workflow is TWO facts: the id it will live under, and the
 //: document it starts from. Neither is guessed: a blank start is an empty
 //: drawing, and every other offer is a document this BUILD ships. Both are
-//: drawn from the reducer's own copy and committed back on every keystroke
+//: drawn from the reducer's own copy and committed back on change
 //: (`studio-toolbardraft.js`): a frame lands on every write of any run, and
-//: a control drawn from nothing lost the id a person was typing.
+//: a control drawn from nothing lost the id a person was typing. The letters
+//: typed since the last change, and the caret, are the boot module's focus
+//: net's to carry across the render; committing on every keystroke moved the
+//: caret to the end and doubled an IME's composition (the fold review).
 function starterControls(state, handlers) {
   const box = element("div", {className: "studio-field studio-field--row"});
   const held = object(state.workflows.starter) || {};
@@ -526,7 +529,7 @@ function starterControls(state, handlers) {
     from.disabled = true;
     name.title = "This screen was mounted without an editStarter handler.";
   } else {
-    name.addEventListener("input", () => edit({workflowId: name.value}));
+    name.addEventListener("change", () => edit({workflowId: name.value}));
     from.addEventListener("change", () => edit({starterId: from.value}));
   }
   const start = handlerOf(handlers, "onStartWorkflow");
@@ -671,11 +674,13 @@ function saveLine(state) {
 //: A fold a person TOUCHED is theirs (`studio-toolbardraft.js`): the toggle
 //: is recorded and drawn back on every render, where the state-decided one
 //: used to close the box on the next frame. The one drawn from state is not
-//: a choice, so a toggle that reports what was drawn records nothing.
+//: a choice, so a toggle that reports what was drawn records nothing. The
+//: summary carries a focus key, so the render the toggle provokes gives the
+//: keyboard back the summary it was standing on.
 function disclosure(name, summary, open, body, handlers) {
   const box = element("details", Object.assign({className: "studio-fold",
     "data-fold": name}, open ? {open: ""} : {}),
-  [element("summary", {text: summary}), body]);
+  [element("summary", {"data-focus": `fold:${name}`, text: summary}), body]);
   const fold = handlerOf(handlers, "onFold");
   if (fold !== null) {
     box.addEventListener("toggle", () => {
@@ -693,10 +698,13 @@ function foldOpen(held, name, byState) {
 }
 
 //: What the run fold holds and where that stands, in the order a person
-//: meets the states: no workflow yet, one chosen and unpublished, published.
+//: meets the states: no workflow chosen, one chosen and not yet read (or
+//: refused), one chosen and unpublished, published.
 function runSummary(held) {
+  const chosen = typeof held.selectedId === "string" && held.selectedId !== "";
+  if (!chosen) return "Open a run — choose or start a workflow first";
   const detail = object(held.detail);
-  if (detail === null) return "Open a run — choose or start a workflow first";
+  if (detail === null) return "Open a run — this workflow has not been read";
   const published = object(detail.published);
   return published === null
     ? "Open a run — publish a revision first"

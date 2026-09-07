@@ -84,9 +84,10 @@ function roleNames(held) {
   return [...found].sort();
 }
 
-//: Every control of the form committed back to the reducer as it moves: the
-//: two ids on every keystroke, the authority and each role on its change. A
-//: form mounted without the door is shut, field by field, and says so.
+//: Every control of the form committed back to the reducer on its change --
+//: the letters typed since, and the caret, are the boot module's focus net's
+//: to carry across a render. A form mounted without the door is shut, field
+//: by field, and says so.
 function wireTheEdits(edit, controls) {
   const {runId, cycleId, mode, meaning, pickers} = controls;
   const typed = [runId, cycleId, mode, ...pickers.values()];
@@ -97,8 +98,8 @@ function wireTheEdits(edit, controls) {
     }
     return;
   }
-  runId.addEventListener("input", () => edit({runId: runId.value}));
-  cycleId.addEventListener("input", () => edit({cycleId: cycleId.value}));
+  runId.addEventListener("change", () => edit({runId: runId.value}));
+  cycleId.addEventListener("change", () => edit({cycleId: cycleId.value}));
   mode.addEventListener("change", () => {
     meaning.textContent = MODE_MEANINGS[mode.value]
       || "This build does not describe that mode.";
@@ -124,7 +125,7 @@ export function runForm(state, handlers) {
     return box;
   }
   //: What this form already holds, from the reducer's own copy
-  //: (`studio-toolbardraft.js`), and the door every keystroke goes back
+  //: (`studio-toolbardraft.js`), and the door every committed change goes back
   //: through. Drawn from nothing, the fields emptied on every frame.
   const opening = object(state.workflows.opening) || {};
   const edit = handlerOf(handlers, "editOpening");

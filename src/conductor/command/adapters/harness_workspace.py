@@ -99,6 +99,7 @@ _RESERVED_DIRS = frozenset({WORK_DIR, INSTRUCTION_DIR})
 #: task is a task, not a payload, and an unbounded read is an unbounded prompt.
 INSTRUCTION_SUFFIX = ".md"
 INSTRUCTION_LIMIT = 64 * 1024
+FILE_BUDGET = 16 * 1024
 #: Windows marks a reparse DIRECTORY here; removing its own entry needs rmdir.
 _DIRECTORY_ATTRIBUTE = getattr(stat, "FILE_ATTRIBUTE_DIRECTORY", 0x10)
 #: What ONE name inside an attempt home turned out to be. A CLOSED vocabulary,
@@ -183,6 +184,37 @@ def _leaf(path: Path) -> os.stat_result | None:
     except OSError as error:
         raise _refuse(
             RouteViolation(RouteViolationCode.UNREADABLE, path)) from error
+
+
+def _same_file(found: os.stat_result, opened: os.stat_result) -> bool:
+    return (stat.S_ISREG(opened.st_mode) and opened.st_nlink == 1
+            and (found.st_dev, found.st_ino, found.st_size)
+            == (opened.st_dev, opened.st_ino, opened.st_size))
+
+
+def _read_work_file(
+        path: Path, found: os.stat_result, include: bool,
+        budget: int) -> tuple[str, bytes | None]:
+    """Hash a regular leaf; retain at most the explicitly requested byte bound.
+
+    fstat precedes the first byte read and is repeated after it. A substituted
+    identity refuses the whole read rather than assigning foreign bytes to the
+    name we inspected. This remains a single-writer, best-effort route boundary,
+    like the rest of this module, not protection against a concurrent attacker.
+    """
+    try:
+        with path.open("rb") as source:
+            if not _same_file(found, os.fstat(source.fileno())):
+                raise _refuse(RouteViolation(RouteViolationCode.UNREADABLE, path))
+            content = source.read(budget + 1) if include else b""
+            digest = hashlib.sha256(content)
+            while block := source.read(FILE_BUDGET):
+                digest.update(block)
+            if not _same_file(found, os.fstat(source.fileno())):
+                raise _refuse(RouteViolation(RouteViolationCode.UNREADABLE, path))
+    except OSError as error:
+        raise _refuse(RouteViolation(RouteViolationCode.UNREADABLE, path)) from error
+    return digest.hexdigest(), (content if include and len(content) <= budget else None)
 
 
 def _remove_portal(path: Path, found: os.stat_result) -> None:
@@ -576,6 +608,26 @@ class HarnessWorkspace:
         marker.parent.mkdir(parents=True, exist_ok=True)
         marker.write_text(action_id, encoding="utf-8", newline="\n")
 
+    def _verification_parts(self, run_id: str, action_id: str) -> tuple[str, ...]:
+        return (self.marker_dir, run_id, "verification", f"{_component(action_id)}.marker")
+
+    def is_verification_claimed(self, run_id: str, action_id: str) -> bool:
+        """A checker claim, never a doer claim or an unattributed legacy marker."""
+        _path, found = self._file_route(*self._verification_parts(run_id, action_id))
+        return found is not None
+
+    def claim_verification(self, run_id: str, action_id: str) -> None:
+        """Reserve one checker spawn before it starts; never overwrite a claim."""
+        marker, found = self._file_route(*self._verification_parts(run_id, action_id))
+        if found is not None:
+            raise WorkspaceNotContained("verification was already claimed")
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            with marker.open("x", encoding="utf-8", newline="\n") as target:
+                target.write(action_id)
+        except FileExistsError as error:
+            raise WorkspaceNotContained("verification was already claimed") from error
+
     # -- the instruction the task is actually asked to do ----------------------
 
     def read_instruction(self, instruction_ref: str) -> str:
@@ -649,3 +701,44 @@ class HarnessWorkspace:
                 else:
                     rows[relative] = hashlib.sha256(path.read_bytes()).hexdigest()
         return rows
+
+    def read_work_tree(
+            self, work_item_id: str, changed: tuple[str, ...],
+            budget: int = FILE_BUDGET) -> tuple[dict[str, str], dict[str, bytes]]:
+        """List one work item and inline only bounded changed regular leaves.
+
+        Keys have the same work-item prefix as ``digest_work_tree``. Every
+        regular file is hashed, including larger and unchanged files; a portal,
+        hard link or irregular leaf is listed by kind and never opened. The
+        consumer owns the separate bound on the fully composed checker frame.
+        """
+        if type(budget) is not int or not 0 <= budget <= FILE_BUDGET:
+            raise ValueError(f"budget must be an integer from 0 through {FILE_BUDGET}")
+        if type(changed) is not tuple or any(type(path) is not str for path in changed):
+            raise TypeError("changed must be a tuple of work-tree paths")
+        base = self._directory_route(WORK_DIR, work_item_id)
+        tree, contents = {}, {}
+        if _leaf(base) is None:
+            return tree, contents
+        stack = [base]
+        while stack:
+            for path in sorted(stack.pop().iterdir()):
+                relative = path.relative_to(self.root / WORK_DIR).as_posix()
+                entry = _leaf(path)
+                if entry is None:
+                    continue
+                violation = portal_violation(path, entry)
+                if violation is not None:
+                    tree[relative] = violation.code.value
+                elif stat.S_ISDIR(entry.st_mode):
+                    stack.append(path)
+                elif not stat.S_ISREG(entry.st_mode):
+                    tree[relative] = RouteViolationCode.IRREGULAR_FILE.value
+                elif entry.st_nlink != 1:
+                    tree[relative] = RouteViolationCode.HARD_LINK.value
+                else:
+                    digest, content = _read_work_file(path, entry, relative in changed, budget)
+                    tree[relative] = digest
+                    if content is not None:
+                        contents[relative] = content
+        return tree, contents

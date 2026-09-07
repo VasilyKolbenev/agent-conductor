@@ -83,12 +83,13 @@ def _driven(tmp_path: Path, **knobs: str):
             run_id=RUN_ID, cycle_id="dsh-orbit", created_at=NOW,
             config_digest=snapshot_digest(CONFIG), mode="confirm"),
         CONFIG)
+    # The trust witness executes today's task; it is not a saved legacy request.
     proposal = ActionProposal(
         proposal_id="proposal-dsh", run_id=RUN_ID, attempt_id="attempt-dsh",
         instance_id=INSTANCE, capability="dispatch", arguments=ARGUMENTS,
         scope=("work",), proposed_by="lane", proposed_at=NOW, timeout_seconds=60,
         rationale="drive the dsh harness through the real Confirm runtime",
-        config_digest=snapshot_digest(CONFIG))
+        config_digest=snapshot_digest(CONFIG), input_binding="proposal-v1")
     store.append(proposal)
     runtime = ControlRuntime(
         store, AdapterRegistry([adapter]), clock=lambda: NOW, ids=_ids())

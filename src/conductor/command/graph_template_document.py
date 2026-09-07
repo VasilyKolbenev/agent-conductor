@@ -218,6 +218,8 @@ class TemplateNode:
                     "nothing to verify")
             object.__setattr__(self, "verifier_role_id",
                                _id("verifier_role_id", self.verifier_role_id))
+            if self.verifier_role_id == self.role_id:
+                raise TemplateError("a step's verifier must be another participant")
         self._settle_verification_demands()
         self._settle_missing_artifact_policy()
         self._settle_success_requires()
@@ -531,7 +533,8 @@ class GraphTemplate:
 
     def _probe(self) -> None:
         try:
-            _build(self, {role: _PROBE_INSTANCE for role in self.roles},
+            _build(self, {role: f"{_PROBE_INSTANCE}-{index}"
+                          for index, role in enumerate(self.roles)},
                    graph_id=_PROBE_GRAPH, run_id=_PROBE_RUN, created_at=_PROBE_AT)
         except ContractError as error:
             raise TemplateError(

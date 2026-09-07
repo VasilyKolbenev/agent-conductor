@@ -26,7 +26,6 @@ from urllib.parse import urlsplit
 from .adapters import AdapterContractError, AdapterRegistry, UnsupportedCapability
 from .adapters.provider import ProviderContract, provider_projection
 from .api_contracts import (
-    ARGUMENT_SCHEMAS,
     COMMAND_ARGUMENT_SCHEMA,
     ApiRefusal,
     GraphInput,
@@ -56,9 +55,9 @@ from .contracts import (
     RunEnvelope,
     _id,
     frozen_config_bindings,
-    frozen_config_models,
 )
 from .coordinator import ExecutionCoordinator
+from .instance_controls import instance_controls
 from .graph_definition import GraphDefinition, GraphNode
 from .graph_projection import graph_payload
 from .graph_template import (
@@ -69,15 +68,14 @@ from .graph_template import (
     materialize,
 )
 from .graph_causality import standing_terminal
-#: The five holds this boundary answers from records alone. They live next
-#: door because a method that never touches `self` is a function, and this
-#: module reached its line cap carrying three of them.
+#: Pure admission holds live next door; registry authority is passed as a fact.
 from .http_holds import (
     _hold_gate_admits,
     _hold_gate_is_reached,
     _hold_not_terminal,
     _hold_plan_pre_answers_no_gate,
     _sandboxes_are_provided,
+    _verifiers_are_servable,
 )
 from .run_closing import close_if_terminal
 from .plan_admission import (  # noqa: F401 -- re-exported under their old names
@@ -743,6 +741,9 @@ class CommandApi:
         """
         self._bindings_are_reachable(snapshot, run_id, nodes)
         self._bindings_are_servable(snapshot, run_id, nodes)
+        _verifiers_are_servable(
+            snapshot, run_id, nodes, self._bound_adapter,
+            self._registry.verifies_independently, reachable=self._reachable())
         _sandboxes_are_provided(run_id, nodes)
 
     def _hold_route(self, run_id: str) -> None:
@@ -758,33 +759,10 @@ class CommandApi:
         return bound
 
     def _controls(self, config: Mapping[str, Any]) -> dict[str, object]:
-        """Answer the run's instance controls, plus the reviewed provider roster.
-
-        The two arrays answer two different questions and are kept apart. An
-        ``instances`` row is about THIS RUN's frozen binding; a ``providers`` row
-        is about the build and the machine, and carries only what
-        ``provider_projection`` admits. A consumer joins them by identity, never
-        by a displayed label.
-
-        ``model`` is on the instance row for the same reason ``adapter_id`` is:
-        both are what this run's frozen configuration says about a DEPLOYMENT,
-        and neither appears in a graph document, where a plan names roles. It is
-        ``null`` when the instance pins none, and null is not a default -- it
-        says this build chose no model and whatever the provider's own
-        configuration decides is what will run. A reader that showed a name
-        there would be inventing the one fact this row exists to report.
-        """
-        models = frozen_config_models(config)
-        rows = []
-        for instance_id, adapter_id in sorted(_bindings(config).items()):
-            try:
-                declared = self._registry.controls(adapter_id)
-            except AdapterContractError:
-                declared = ()
-            rows.append({
-                "instance_id": instance_id,
-                "adapter_id": adapter_id,
-                "model": models.get(instance_id),
-                "controls": sorted(set(declared) & set(ARGUMENT_SCHEMAS)),
-            })
-        return {"instances": rows, "providers": provider_projection(self._providers)}
+        """Join neither deployment facts nor build facts by a display label."""
+        try:
+            instances = instance_controls(config, self._registry)
+        except ContractError as error:
+            # These are already-frozen bytes, not a malformed caller payload.
+            raise ApiRefusal.fixed("run_corrupt") from error
+        return {"instances": instances, "providers": provider_projection(self._providers)}

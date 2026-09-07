@@ -31,9 +31,12 @@ import {element} from "./command-view.js";
 //: Which of a step's arguments name the documents it READS, as the reviewed
 //: schema marks them: the one rule, declared beside the form that publishes
 //: under those references.
-import {inputRefs} from "./studio-rundocs.js";
+import {inputRefs, needsMaterialReproposal} from "./studio-rundocs.js";
 import {boundDocument, latestDocument} from "./studio-runread.js";
-import {STREAM_DOWN_REASON, WRITING_NOTE} from "./studio-runwords.js";
+import {MATERIAL_BINDING, REBIND_MATERIALS, STREAM_DOWN_REASON,
+  SAME_ADAPTER_VERIFICATION, UNVERSIONED_MATERIALS, VERIFICATION_FRAME_NOTE,
+  VERIFICATION_MATERIALS, VERIFICATION_OUTPUT_NOTE, WRITING_NOTE}
+  from "./studio-runwords.js";
 
 //: `contract_values._id`'s grammar, twice: once as a value this window judges
 //: with, once as the pattern a control spells for the platform. Both are copies
@@ -50,8 +53,8 @@ const RATIONALE_LIMIT = 200;
 // more than its step allows -- and `runtime._hold_budget` refuses a proposal
 // past the RUN's `max_action_seconds` at AUTHORIZE rather than at propose. So a
 // plan naming 7200s proposed cleanly and made every Confirm 409, under a
-// sentence blaming a plan that had not moved. This number is below every budget
-// this product ships, so asking for at most this can never meet that refusal.
+// sentence blaming a plan that had not moved. This cap fits the shipped budget
+// even when doubled for a checker; a custom lower budget may still refuse it.
 const DEFAULT_TIMEOUT = 900;
 //: WHAT A PROPOSAL DECLARES IT MAY TOUCH, and why it is stated rather than
 //: typed.
@@ -108,7 +111,8 @@ export const REQUESTED_NOTE = "The request is a durable record. Whatever runs, "
 // `_hold_route` on the way in. Promising a read that cannot happen is worse
 // than saying nothing, so the refusal is reported and nothing is reopened.
 export const STEP_MOVED = Object.freeze(
-  ["authorization_refused", "service_refused", "run_terminal"]);
+  ["authorization_refused", "service_refused", "run_terminal",
+    "proposal_rebind_required"]);
 //: …and the sentence appended to them. It names the plan AND the run's own
 //: allowance, because one refusal class covers both: a step the plan no longer
 //: calls runnable, and a request the run refuses on its budget, its changed
@@ -231,20 +235,26 @@ const PERMITS = Object.freeze({
 const CONFIRM_ROAD = "To carry a step out, open a new run of this workflow's "
   + "published revision with authority confirm: "
   + "the Open a run form on the Workflow screen grants it explicitly.";
+//: …and for a run that follows no workflow (the API admits one), the road
+//: that exists for it: there is no revision of "this workflow" to reopen.
+const NO_WORKFLOW_ROAD = "This run follows no workflow. To carry a step out, "
+  + "publish a workflow and open a run of it with authority confirm: "
+  + "the Open a run form on the Workflow screen grants it explicitly.";
 
 function authorityOf(detail) {
-  const mode = (object(detail.run) || {}).mode;
-  return {mode: show(mode), permits: PERMITS[mode] || "nothing"};
+  const run = object(detail.run) || {};
+  return {mode: show(run.mode), permits: PERMITS[run.mode] || "nothing",
+    road: typeof run.workflow_id === "string" ? CONFIRM_ROAD : NO_WORKFLOW_ROAD};
 }
 
-function nothingPermitted(mode) {
-  return note(`This run's authority is ${mode}: nothing may be proposed on it `
-    + `and nothing runs. ${CONFIRM_ROAD}`);
+function nothingPermitted(authority) {
+  return note(`This run's authority is ${authority.mode}: nothing may be `
+    + `proposed on it and nothing runs. ${authority.road}`);
 }
 
-function proposalsOnly(mode) {
+function proposalsOnly(authority) {
   return note(`A proposal stands on this step and this run's authority is `
-    + `${mode}: nothing can confirm it here. ${CONFIRM_ROAD}`);
+    + `${authority.mode}: nothing can confirm it here. ${authority.road}`);
 }
 
 function proposedUnder(mode) {
@@ -428,10 +438,33 @@ function planFacts(node, runtime, detail) {
       (input) => latestDocument(rows(detail.records), input), false),
     fact("Longest this may run", `${timeoutOf(node)}s`),
     note(TIMEOUT_NOTE),
+    ...verificationFacts(node, detail, timeoutOf(node)),
     fact("Attempt id", attemptId(node, runtime)),
     fact("Scope", SCOPE),
     note(SCOPE_NOTE),
   ];
+}
+
+// Identity and frozen model come from this run's controls, never the roster
+// of another workflow. Both Propose and Confirm state the extra paid action.
+function verificationFacts(node, detail, ceiling) {
+  if (typeof node.verifier_instance_id !== "string") {
+    return [note(SAME_ADAPTER_VERIFICATION)];
+  }
+  const controls = object(detail.controls) || {};
+  const binding = rows(controls.instances).find(
+    (row) => row.instance_id === node.verifier_instance_id);
+  const who = binding ? `${binding.instance_id} · ${binding.adapter_id} · `
+    + (binding.model === null ? "provider default" : show(binding.model))
+    : `${node.verifier_instance_id} · binding not available in this read`;
+  return [fact("Independent verifier", who),
+    fact("Verification materials", VERIFICATION_MATERIALS[node.capability]),
+    note(VERIFICATION_FRAME_NOTE),
+    fact("Task time ceilings", `${ceiling}s for the attempt + ${ceiling}s `
+      + `for one check (2 × ${ceiling}s = ${2 * ceiling}s combined task time). `
+      + "Bounded version preflights and setup add wall-clock time. "
+      + "This run's budget must cover both task ceilings."),
+    note(VERIFICATION_OUTPUT_NOTE)];
 }
 
 // -- the controls -------------------------------------------------------------
@@ -649,15 +682,12 @@ function confirmBody(proposal, draft) {
 
 //: The stored proposal, drawn as the facts a person is confirming.
 //
-// There is deliberately NO sentence about a proposal going stale, and the
-// missing sentence is the point. `runtime._hold_freshness` judges the
-// CONFIRMATION, which the server mints at the moment of the press
-// (`confirmed_at=self._clock()`), so a proposal standing since last year is
-// confirmed exactly as one written a second ago. A sentence saying otherwise
-// would have sent a person to propose again over a control that works.
-// `Proposed at` stays: it is history, and history is what it is drawn as.
+// Age alone does not stale a proposal: freshness judges the confirmation.
+// Material binding is separate, explicitly revisioned, and cannot be claimed
+// for an older record. `Proposed at` stays as history, not an expiry verdict.
 function proposalFacts(proposal, detail) {
   const ref = instructionRef(proposal.arguments);
+  const bound = proposal.input_binding === MATERIAL_BINDING;
   return [
     fact("Proposal", proposal.proposal_id),
     fact("Proposed at", proposal.proposed_at),
@@ -665,11 +695,11 @@ function proposalFacts(proposal, detail) {
     fact("Why", proposal.rationale),
     fact("Capability", proposal.capability),
     fact("Arguments", canonicalJson(proposal.arguments)),
-    ...instructionFacts(ref, ref === null ? null : boundDocument(
-      rows(detail.records), proposal.proposal_id, ref), true),
-    ...inputFacts(inputRefs(proposal.capability, proposal.arguments),
+    ...(bound ? instructionFacts(ref, ref === null ? null : boundDocument(
+      rows(detail.records), proposal.proposal_id, ref), true) : []),
+    ...(bound ? inputFacts(inputRefs(proposal.capability, proposal.arguments),
       (input) => boundDocument(rows(detail.records), proposal.proposal_id,
-        input), true),
+        input), true) : [note(UNVERSIONED_MATERIALS)]),
     fact("Scope", proposal.scope),
     fact("Preview digest", proposal.preview_digest),
     fact("Against configuration", proposal.config_digest),
@@ -702,6 +732,7 @@ function confirmForm(node, detail, state, handlers) {
   const form = element("form", {className: "studio-step", "data-step": step},
     [element("h4", {text: "Confirm this proposal"}), note(REQUESTED_NOTE),
       ...proposalFacts(proposal, detail),
+      ...verificationFacts(node, detail, proposal.timeout_seconds),
       textControl("confirmed_by", "confirmedBy", liveValue(step, "confirmed_by",
         draft === null ? "" : text(draft.confirmedBy)), wire.edit,
       "Confirmed by", {maxlength: "128", pattern: ID_PATTERN, required: ""}),
@@ -748,12 +779,16 @@ export function stepControls(node, runtime, standing, detail, state, handlers) {
   }
   const authority = authorityOf(detail);
   if (authority.permits === "nothing") {
-    return [nothingPermitted(authority.mode)];
+    return [nothingPermitted(authority)];
   }
   if (runtime.phase === "proposed") {
+    if (needsMaterialReproposal(standingProposal(detail, node.node_id), detail)) {
+      return [note(REBIND_MATERIALS),
+        ...proposeForm(node, runtime, detail, state, handlers, authority)];
+    }
     return authority.permits === "confirmations"
       ? confirmForm(node, detail, state, handlers)
-      : [proposalsOnly(authority.mode)];
+      : [proposalsOnly(authority)];
   }
   return proposeForm(node, runtime, detail, state, handlers, authority);
 }

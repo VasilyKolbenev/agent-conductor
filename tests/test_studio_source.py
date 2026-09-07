@@ -566,7 +566,9 @@ def test_the_boundary_refuses_rather_than_repairs_and_says_which_it_does():
     # ROW's provenance, a project name this build could not have written, a
     # workflow read whose `unchanged` is not a boolean, and one whose warnings
     # are not sentences.
-    assert source.count("return null;") == 87
+    # 88 adds the registered argument-schema map: malformed authority metadata
+    # refuses the whole controls read instead of guessing a proposal's road.
+    assert source.count("return null;") == 88
     assert source.count("return false;") == 6
     # Decoration DROPS: the provider roster, the starter offers, and the one
     # duplicate-identity arm the controls answer shares with them.

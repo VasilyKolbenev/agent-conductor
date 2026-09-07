@@ -367,6 +367,7 @@ choose a code.
   { "code": "service_refused",       "status": 409, "source": "service" },
   { "code": "capability_unsupported", "status": 409, "source": "capability" },
   { "code": "authorization_refused", "status": 409, "source": "authorization" },
+  { "code": "proposal_rebind_required", "status": 409, "source": "authorization" },
   { "code": "record_conflict",       "status": 409, "source": "store" },
   { "code": "draft_changed",         "status": 409, "source": "concurrency" },
   { "code": "draft_conflict",        "status": 409, "source": "concurrency" },
@@ -388,6 +389,13 @@ choose a code.
 - `authorization_refused` is one `AuthorizationError`: absent proposal,
   mismatched facts, changed digest, and temporal expiry are not falsely split
   into codes the current gate cannot type-distinguish.
+- `proposal_rebind_required` is the typed `ProposalNeedsRebinding` branch. A
+  pending legacy deep proposal has no material-binding version in its preview.
+  Create a new proposal, review its materials, and confirm that new digest.
+  This does not rewrite historical records or prevent exact retries of an
+  already recorded request. New deep dispatch/review proposals carry optional
+  `input_binding: "proposal-v1"` in their canonical, digest-covered content;
+  absence retains legacy replay semantics, never fresh execution authority.
 - `draft_changed` is the one refusal that is about TIMING rather than about the
   request: the workflow draft was replaced between the read a client reviewed
   and the publish it confirmed. It is deliberately not `contract_invalid` --
@@ -1463,6 +1471,40 @@ frozen so the UI does not invent them:
 }
 ```
 
+Independent verification adds optional `verifier_instance_id` to a verified
+evidence record. It is a validated participant id, omitted when absent; explicit
+`null` and an instance on an unverified record are refused. The example above
+and older evidence bytes remain unchanged. This field is runtime-owned, never
+a browser-supplied claim.
+
+For a step naming a verifier, replay requires both the adapter identity
+(`created_by == verified_by`) and this instance to match the immutable plan and
+frozen configuration. Two different instances of the same harness are valid;
+the doer instance cannot check itself. A missing declared instance is refused,
+not interpreted as "no verifier". Model identity is read from that participant's
+frozen configuration, not guessed from its label or copied into evidence.
+
+Before Confirm, the screen states who checks, which model is configured, what
+material they receive, and both task budgets. Each task child has timeout N;
+the action budget must admit 2 × N. This is not a 2 × N end-to-end wall-clock
+deadline: bounded version preflights and setup are additional. Verification is
+spent under a live grant only. Recovery may reuse standing matching evidence,
+but never starts another checker to recover an uncertain attempt. The optional
+`verification_started` adapter observation distinguishes yes/no/unknown;
+an absent observation is unknown, not proof that no checker started.
+
+Checker material contains the exact instruction and input documents consumed
+by the doer, plus its bounded result. Sensitive values are scanned in the raw
+material before JSON escaping could conceal them. The journal receives the
+verification outcome, attribution and digest, not the checker's explanatory
+stdout. Attribution is not a cryptographic signature.
+
+For current `input_binding: "proposal-v1"` proposals, a failed producer's
+artifact is not a new input. Selection is at the proposal cut; if a selected
+producer fails before consumption, execution refuses and requires a new
+proposal rather than substituting an older revision. Historical unmarked
+replay retains its original input semantics and bytes.
+
 #### 6.1.1 `graph` — the plan, its digest, and what the run did with it
 
 `graph` carries exactly five keys and is present on every run read. Three of them
@@ -1618,6 +1660,13 @@ inventing the one fact the field exists to report. A consumer MUST NOT parse the
 id for a vendor, a family or a size — it is an identifier to display and to join
 on, exactly like `adapter_id`.
 
+Each instance also carries `argument_schemas`: a map from its declared controls
+to the non-null argument-family names frozen by the adapter registry. Controls
+whose registry schema is absent are omitted from this map; an unregistered
+adapter has an empty map. This is a current build fact, not durable proposal
+data. In particular, a client may identify the `deep-arguments-v1` road from
+this field, but MUST NOT infer it from provider labels or proposal argument keys.
+
 The example below exercises every value of both vocabularies, which is why its
 last row is **illustrative and names no shipped product**: the alpha execution
 roster carries no `unproven` row, because a catalogued row means this build can
@@ -1634,12 +1683,14 @@ states of `model` for the same reason.
     {
       "instance_id": "claude-dev", "adapter_id": "claude-code",
       "model": "claude-opus-5",
-      "controls": ["dispatch", "retry", "review", "stop"]
+      "controls": ["dispatch", "retry", "review", "stop"],
+      "argument_schemas": {"dispatch": "deep-arguments-v1", "retry": "deep-arguments-v1", "review": "deep-arguments-v1", "stop": "deep-arguments-v1"}
     },
     {
       "instance_id": "codex-review", "adapter_id": "codex",
       "model": null,
-      "controls": ["dispatch", "retry", "review", "stop"]
+      "controls": ["dispatch", "retry", "review", "stop"],
+      "argument_schemas": {"dispatch": "deep-arguments-v1", "retry": "deep-arguments-v1", "review": "deep-arguments-v1", "stop": "deep-arguments-v1"}
     }
   ],
   "providers": [

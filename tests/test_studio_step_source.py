@@ -397,7 +397,8 @@ def test_the_stale_screen_sentence_names_the_run_as_well_as_the_plan():
                       re.DOTALL)
     assert named is not None
     assert set(re.findall(r'"(\w+)"', named.group(1))) == {
-        "authorization_refused", "service_refused", "run_terminal"}
+        "authorization_refused", "service_refused", "run_terminal",
+        "proposal_rebind_required"}
     # `route_unsafe` is refused: the sentence promises a read, and `_hold_route`
     # refuses that read on the way in too. A promise this window cannot keep is
     # worse than reporting the refusal and reopening nothing.
@@ -487,11 +488,13 @@ def test_the_controls_offer_only_what_the_runs_frozen_authority_permits():
     assert body.index('standing.state !== "runnable"') < body.index(
         "authorityOf(detail)"), body
     assert ('if (authority.permits === "nothing") {\n'
-            "    return [nothingPermitted(authority.mode)];") in body, body
+            "    return [nothingPermitted(authority)];") in body, body
     assert re.search(r'authority\.permits === "confirmations"\s*\n\s*'
                      r"\? confirmForm\(", body), body
-    assert ": [proposalsOnly(authority.mode)]" in body, body
-    assert body.count("confirmForm(") == 1 and body.count("proposeForm(") == 1
+    assert ": [proposalsOnly(authority)]" in body, body
+    assert body.count("confirmForm(") == 1 and body.count("proposeForm(") == 2
+    assert body.index('authority.permits === "nothing"') < body.index(
+        "needsMaterialReproposal(standingProposal(detail, node.node_id), detail)")
     # The table is the server's whole ladder, and what each rung permits is
     # the server's two refusals restated: observe proposes nothing, confirm
     # alone confirms, and policy -- a word nothing serves -- is propose.
@@ -502,12 +505,12 @@ def test_the_controls_offer_only_what_the_runs_frozen_authority_permits():
     assert set(permits) == {mode.value for mode in ControlMode}, permits
     assert permits == {"observe": "nothing", "propose": "proposals",
                        "policy": "proposals", "confirm": "confirmations"}
-    assert 'permits: PERMITS[mode] || "nothing"' in step
-    assert "(object(detail.run) || {}).mode" in step
+    assert 'permits: PERMITS[run.mode] || "nothing"' in step
+    assert "const run = object(detail.run) || {};" in step
     # Every sentence that withholds a control names where the authority is
     # granted, and the propose form under a lesser authority says what its
     # record will and will not do.
-    assert step.count("${CONFIRM_ROAD}") == 2, step.count("${CONFIRM_ROAD}")
+    assert step.count("${authority.road}") == 2, step.count("${authority.road}")
     assert "Open a run form on the Workflow screen" in step
     assert "nothing can confirm it here" in step
     assert ('...(authority.permits === "proposals"\n'
@@ -518,13 +521,19 @@ def test_the_confirm_road_names_what_the_run_form_really_opens():
     """A run of the workflow's PUBLISHED revision, and not "this revision".
 
     The Open a run form offers no way to choose a revision once a newer one
-    is published, and a run that follows no workflow has none to reopen (the
-    slice-3 review's #22): the road names the thing the form really does.
+    is published (the slice-3 review's #22), and a run that follows no
+    workflow -- which the API admits -- has no workflow to reopen at all: it
+    is told to publish one and open a run of it (the fold review's H4). Both
+    sentences name the one form that grants authority.
     """
     step = _code(STEP)
     assert "open a new run of this workflow's " in step
     assert "published revision with authority confirm" in step
     assert "new run of this revision" not in step
+    assert 'const NO_WORKFLOW_ROAD = "This run follows no workflow. ' in step
+    assert step.count("the Open a run form on the Workflow screen grants it explicitly.") == 2
+    assert ('road: typeof run.workflow_id === "string" ? CONFIRM_ROAD : NO_WORKFLOW_ROAD'
+            in step)
 
 
 def test_a_write_in_flight_is_its_run_and_steps_own_and_spends_only_its_draft():

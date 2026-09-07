@@ -3,10 +3,10 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable
 
-from .artifacts import ArtifactDocument, latest_artifacts
-from .attempt_replay import proposal_named_by, values_the_proposal_saw
+from .artifacts import ArtifactDocument, latest_artifacts, settled_products
+from .attempt_replay import proposal_by_id, proposal_named_by, values_the_proposal_saw
 from .contract_values import _unique_ids
-from .contracts import ActionRequest, EvidenceRef
+from .contracts import ABSENT, ActionRequest, EvidenceRef
 from .run_store import RecordConflict, RecoveredRun, RunStore, StoreError
 
 
@@ -17,13 +17,28 @@ class UnknownProposal(StoreError):
     read as "a durable input was unavailable" sent a reader to the wrong cause
     (the slice-3 review's #1). Only a hand-made request can carry such a key
     -- the runtime mints the link from a proposal it just read -- and both
-    readers of the link, this seam and the replay judge, refuse it alike.
+    readers that BIND, this seam and the replay judge, refuse it alike. The
+    store is a third reader and admits such a request durably, as it admits a
+    request naming a reference nothing has published: a record it will never
+    execute is still a record (`test_command_graph_binding`'s ruling on
+    actions written before proposals carried graphs). And the run must exist
+    for a proposal to be judged absent from it: a missing run is the store's
+    own refusal, before this one.
     """
 
     def __init__(self, proposal_id: str, run_id: str) -> None:
         super().__init__(
             f"the request names proposal {proposal_id!r}, which run "
             f"{run_id!r} does not hold")
+
+
+class UnboundProposal(UnknownProposal):
+    """Historical bytes remain readable, but cannot buy a newly bound execution."""
+
+    def __init__(self, proposal_id: str, run_id: str) -> None:
+        StoreError.__init__(self,
+            f"proposal {proposal_id!r} in run {run_id!r} predates input binding; "
+            "create a new proposal, review its inputs, and confirm that proposal")
 
 
 class ArtifactHandoff:
@@ -46,8 +61,7 @@ class ArtifactHandoff:
         recovered = self._store.read(run_id)
         if recovered.warnings:
             raise StoreError("artifact resolution refuses unjudged durable bytes")
-        documents = (
-            row.value for row in recovered.records if row.kind == "artifact")
+        documents = settled_products(row.value for row in recovered.records)
         return tuple(ArtifactDocument.from_dict(row.as_dict()) for row in (
             latest_artifacts(documents, asked)))
 
@@ -82,8 +96,8 @@ class ArtifactHandoff:
         asked = _unique_ids("artifact_refs", artifact_refs)
         if not asked:
             return ()
-        return tuple(ArtifactDocument.from_dict(row.as_dict()) for row in (
-            latest_artifacts(self._before(run_id, proposal_id), asked)))
+        return self._hold_still_available(run_id, latest_artifacts(
+            self._before(run_id, proposal_id), asked))
 
     def instruction(
             self, run_id: str, proposal_id: str,
@@ -96,35 +110,78 @@ class ArtifactHandoff:
         """
         standing = [row for row in self._before(run_id, proposal_id)
                     if row.artifact_ref == instruction_ref]
-        return ArtifactDocument.from_dict(standing[-1].as_dict()) if standing else None
+        return (self._hold_still_available(run_id, (standing[-1],))[0]
+                if standing else None)
+
+    def _hold_still_available(self, run_id, documents):
+        """Do not hand on a rejected source, or substitute older material for its preview."""
+        recovered = self._store.read(run_id)
+        available = {row.artifact_id for row in settled_products(
+            row.value for row in recovered.records)}
+        selected = tuple(documents)
+        if any(row.artifact_id not in available for row in selected):
+            raise StoreError(
+                "a bound input's producing action failed after this proposal; "
+                "create a new proposal and review its inputs")
+        return tuple(ArtifactDocument.from_dict(row.as_dict()) for row in selected)
 
     def _before(self, run_id: str, proposal_id: str) -> tuple[ArtifactDocument, ...]:
         """Every document appended before the named proposal, in journal order.
 
-        Cut where the replay cuts (`attempt_replay.values_the_proposal_saw`),
-        so what the transport hands a child and what `artifacts` later judges
-        a review's inputs against are one answer.
+        Marked proposals cut where the replay cuts. Historical unmarked ones
+        remain readable by the replay judge but cannot start a fresh transport:
+        the operator must create and confirm a proposal with explicit binding.
         """
         recovered = self._store.read(run_id)
         if recovered.warnings:
             raise StoreError("artifact resolution refuses unjudged durable bytes")
-        seen = values_the_proposal_saw(
-            tuple(row.value for row in recovered.records), proposal_id)
+        values = tuple(row.value for row in recovered.records)
+        proposal = proposal_by_id(values, proposal_id)
+        if proposal is not None and proposal.input_binding is ABSENT:
+            raise UnboundProposal(proposal_id, run_id)
+        seen = values_the_proposal_saw(values, proposal_id)
         if seen is None:
             raise UnknownProposal(proposal_id, run_id)
-        return tuple(value for value in seen if isinstance(value, ArtifactDocument))
+        return settled_products(seen)
+
+    def record_review_artifact(
+            self, request: ActionRequest, artifact_ref: str, *,
+            input_artifact_ids: Iterable[str], content: str) -> ArtifactDocument | None:
+        """Publish the doer's result, without claiming the checker has accepted it."""
+        with self._store.transaction():
+            artifact = self._review_artifact(
+                self._store.read(request.run_id), request, artifact_ref,
+                input_artifact_ids, content)
+            return (None if artifact is None
+                    else ArtifactDocument.from_dict(artifact.as_dict()))
+
+    def standing_verification(
+            self, request: ActionRequest, *, adapter_id: str,
+            verifier_instance_id: str | None = None) -> EvidenceRef | None:
+        """Read an existing signature; neither invent one nor accept another party's."""
+        evidence = self._standing_evidence(
+            self._store.read(request.run_id), request.action_id)
+        if evidence is not None:
+            self._hold_evidence(evidence, request, adapter_id, None,
+                                verifier_instance_id=verifier_instance_id)
+            return EvidenceRef.from_dict(evidence.as_dict())
+        return None
 
     def record_review(
             self, request: ActionRequest, artifact_ref: str, *,
             input_artifact_ids: Iterable[str] | None,
-            content: str | None, adapter_id: str) -> EvidenceRef | None:
+            content: str | None, adapter_id: str,
+            verifier_instance_id: str | None = None,
+            expected_digest: str | None = None) -> EvidenceRef | None:
         """Publish one review output and its evidence, or recover either half.
 
-        The inputs arrive as IDS. This seam only ever recorded their identity,
-        so taking documents gave a caller a reason to hold an operator's whole
-        durable material in memory between `execute` and `verify` -- and one
-        did. Narrowing the parameter removes the reason rather than asking the
-        caller to remember.
+        This writer needs input IDs, not whole documents. Ordinary verification
+        therefore keeps no input content merely for this write. The independent
+        checker has a different consumer: it temporarily retains the exact
+        consumed documents until its bounded check finishes and release clears
+        them; it must not resolve newer documents instead. Its checked digest
+        must match BEFORE a signature is appended, since recovery trusts that
+        durable signature even if the process stops before returning it.
         """
         with self._store.transaction():
             recovered = self._store.read(request.run_id)
@@ -132,17 +189,22 @@ class ArtifactHandoff:
                 recovered, request, artifact_ref, input_artifact_ids, content)
             if artifact is None:
                 return None
+            if expected_digest is not None and artifact.digest() != expected_digest:
+                raise RecordConflict("review artifact differs from the checked digest")
             evidence = self._standing_evidence(recovered, request.action_id)
             if evidence is None:
                 evidence = self._verified_evidence(
-                    request, adapter_id, artifact.digest())
+                    request, adapter_id, artifact.digest(),
+                    verifier_instance_id=verifier_instance_id)
                 self._store.append(evidence)
-            self._hold_evidence(evidence, request, adapter_id, artifact.digest())
+            self._hold_evidence(evidence, request, adapter_id, artifact.digest(),
+                                verifier_instance_id=verifier_instance_id)
             return EvidenceRef.from_dict(evidence.as_dict())
 
     def record_dispatch(
             self, request: ActionRequest, *, adapter_id: str,
-            digest: str | None) -> EvidenceRef | None:
+            digest: str | None,
+            verifier_instance_id: str | None = None) -> EvidenceRef | None:
         """Publish bounded tree-change evidence, or recover its durable row."""
         with self._store.transaction():
             recovered = self._store.read(request.run_id)
@@ -150,9 +212,12 @@ class ArtifactHandoff:
             if evidence is None:
                 if digest is None:
                     return None
-                evidence = self._verified_evidence(request, adapter_id, digest)
+                evidence = self._verified_evidence(
+                    request, adapter_id, digest,
+                    verifier_instance_id=verifier_instance_id)
                 self._store.append(evidence)
-            self._hold_evidence(evidence, request, adapter_id, digest)
+            self._hold_evidence(evidence, request, adapter_id, digest,
+                                verifier_instance_id=verifier_instance_id)
             return EvidenceRef.from_dict(evidence.as_dict())
 
     def _review_artifact(
@@ -198,25 +263,31 @@ class ArtifactHandoff:
         return rows[0] if rows else None
 
     def _verified_evidence(
-            self, request: ActionRequest, adapter_id: str, digest: str) -> EvidenceRef:
+            self, request: ActionRequest, adapter_id: str, digest: str, *,
+            verifier_instance_id: str | None = None) -> EvidenceRef:
         now = self._clock()
         return EvidenceRef(
             evidence_id=self._ids("evidence"), run_id=request.run_id,
             kind="verification", uri=f"verification/{request.action_id}",
-            label="Bound adapter verification", created_by=adapter_id,
+            label=("Bound adapter verification" if verifier_instance_id is None
+                   else f"independent verification by {verifier_instance_id}"),
+            created_by=adapter_id,
             observed_at=now, digest=digest, verification="verified",
-            verified_by=adapter_id, verified_at=now)
+            verified_by=adapter_id, verified_at=now,
+            verifier_instance_id=verifier_instance_id)
 
     @staticmethod
     def _hold_evidence(
             evidence: EvidenceRef, request: ActionRequest,
-            adapter_id: str, digest: str | None) -> None:
+            adapter_id: str, digest: str | None, *,
+            verifier_instance_id: str | None = None) -> None:
         if (evidence.run_id != request.run_id
                 or evidence.uri != f"verification/{request.action_id}"
                 or evidence.kind != "verification"
                 or evidence.created_by != adapter_id
                 or evidence.verification != "verified"
                 or evidence.verified_by != adapter_id
+                or evidence.verifier_instance_id != verifier_instance_id
                 or evidence.digest is None
                 or digest is not None and evidence.digest != digest):
             raise RecordConflict("action verification evidence records different facts")

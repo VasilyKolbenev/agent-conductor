@@ -27,6 +27,7 @@ from __future__ import annotations
 import pytest
 
 from conductor.command.adapters import AdapterRegistry, AdapterVerification
+from conductor.command.adapters.base import Published
 from conductor.command.contracts import EvidenceRef
 from conductor.command.graph_definition import GraphDefinition, GraphEdge, GraphNode
 from conductor.command.run_store import RunStore, snapshot_digest
@@ -61,12 +62,40 @@ class _Signing(ScriptedAdapter):
     """
 
     def __init__(self, store, *, sign_as=None, **knobs):
-        super().__init__(verify_state="verified", **knobs)
+        super().__init__(verify_state=knobs.pop("verify_state", "verified"), **knobs)
         self._store = store
         self._sign_as = sign_as
+        self.independent_calls = []
+        self.publish_calls = 0
+        self.release_calls = 0
+        self.started = False
 
     def verify(self, request, result):
         self.verify_calls += 1
+        return self._sign(request)
+
+    def publish(self, request, result):
+        self.publish_calls += 1
+        return Published(None, ("work/item/result.txt",), {}, (), ())
+
+    def release(self, request):
+        self.release_calls += 1
+
+    def verification_started(self, request):
+        return self.started
+
+    def verify_for(self, request, result, verifier, material):
+        self.independent_calls.append((verifier, material))
+        self.started = True
+        if self._verify_raises:
+            raise RuntimeError("checker private output must not become durable")
+        if self._verify_state != "verified":
+            return AdapterVerification(
+                adapter_id=self.manifest.adapter_id, action_id=request.action_id,
+                state=self._verify_state, observed_at=NOW, detail="rejected")
+        return self._sign(request, verifier.instance_id)
+
+    def _sign(self, request, verifier_instance_id=None):
         signature = self._sign_as or self.manifest.adapter_id
         evidence_id = f"evidence-{signature}"
         self._store.append(EvidenceRef(
@@ -74,7 +103,7 @@ class _Signing(ScriptedAdapter):
             uri=f"verification/{request.action_id}",
             label="durable verification fact", created_by=signature,
             observed_at=NOW, verification="verified", verified_by=signature,
-            verified_at=NOW))
+            verified_at=NOW, verifier_instance_id=verifier_instance_id))
         return AdapterVerification(
             adapter_id=self.manifest.adapter_id, action_id=request.action_id,
             state="verified", observed_at=NOW, detail="scripted verification",
@@ -144,12 +173,16 @@ def test_a_plan_named_verifier_is_the_adapter_that_confirms(tmp_path):
         runtime.authorize(a_confirmation(proposal), budget=a_budget()))
 
     assert attempt.state is AttemptState.SUCCEEDED, attempt.receipt.detail
-    assert checker.verify_calls == 1, "the plan's verifier was not asked"
+    assert len(checker.independent_calls) == 1, "the independent seam was not asked"
+    assert checker.verify_calls == 0, "the old self-verification seam was used"
     assert doer.verify_calls == 0, "the doer verified its own work anyway"
     assert doer.execute_calls == 1 and checker.execute_calls == 0
     signed = {row.value.verified_by for row in store.read(RUN_ID).records
               if row.kind == "evidence"}
     assert signed == {"codex"}, signed
+    rows = [row.value for row in store.read(RUN_ID).records if row.kind == "evidence"]
+    assert [row.verifier_instance_id for row in rows] == [CHECKER]
+    assert doer.publish_calls == doer.release_calls == 1
 
 
 def test_the_doers_own_word_no_longer_satisfies_a_plan_that_named_somebody_else(
@@ -197,10 +230,13 @@ def test_a_verifier_the_frozen_configuration_never_declared_is_refused(tmp_path)
     proposal = a_proposal(
         store, instance_id=DOER, capability="dispatch",
         arguments={"handoff": "packet-001"}, node_id=NODE)
-    authorization = runtime.authorize(a_confirmation(proposal), budget=a_budget())
+    from conductor.command.runtime import AuthorizationError
 
+    with pytest.raises(AuthorizationError, match="not declared"):
+        runtime.authorize(a_confirmation(proposal), budget=a_budget())
+    assert doer.execute_calls == doer.publish_calls == 0
     with pytest.raises(ExecutionError, match="declares no instance"):
-        runtime.execute(authorization)
+        runtime._verifier_for(store.read(RUN_ID), proposal)
 
 
 def test_a_step_that_carries_nothing_out_may_not_name_a_verifier():

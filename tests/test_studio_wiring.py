@@ -471,13 +471,13 @@ def test_a_decision_names_the_receipt_it_replaces_and_never_hard_codes_none():
     is the defect, and a body that sent the row's field without checking its
     type would put whatever the payload happened to hold on the wire.
     """
-    boot = _code(BOOT)
-    assert "supersedes: null" not in boot, (
+    writer = _code(RUNWRITE)
+    assert "supersedes: null" not in writer, (
         "a decision that always supersedes nothing writes a second standing "
         "answer on a reopened gate")
     assert ('const supersedes = typeof row.standing === "string" '
-            "? row.standing : null;") in boot, boot
-    assert boot.count("evidence_refs: [], supersedes};") == 1, boot
+            "? row.standing : null;") in writer, writer
+    assert writer.count("evidence_refs: [], supersedes};") == 1, writer
 
 
 def test_a_decision_id_counts_the_answers_before_it_and_ends_with_the_person():
@@ -488,13 +488,13 @@ def test_a_decision_id_counts_the_answers_before_it_and_ends_with_the_person():
     the same id as `bob` answering it second -- and nothing may follow the
     actor, because the actor is the one part of this id a person chooses.
     """
-    boot = _code(BOOT)
+    writer = _code(RUNWRITE)
     assert ("receipt_id: `receipt-${row.gate_id}-${answered}-${draft.actor}`"
-            in boot), boot
-    assert "${draft.actor}`\n" not in boot.replace(
+            in writer), writer
+    assert "${draft.actor}`\n" not in writer.replace(
         "receipt_id: `receipt-${row.gate_id}-${answered}-${draft.actor}`", "")
     assert ('const answered = Number.isInteger(row.answers) ? row.answers : 0;'
-            in boot), boot
+            in writer), writer
 
 
 def test_a_gate_unreached_refusal_buys_a_re_read_of_the_run_it_named():
@@ -512,14 +512,19 @@ def test_a_gate_unreached_refusal_buys_a_re_read_of_the_run_it_named():
     because a landed read of the same run no longer clears one -- and the
     re-read is still the last word.
     """
-    boot = _code(BOOT)
+    writer = _code(RUNWRITE)
     recover = re.search(
-        r'if \(result\.code !== "gate_unreached" \|\| asked !== chosenRun\)'
-        r" return;\n(.*?)\n    \}\);", boot, re.DOTALL)
+        r'if \(result\.code !== "gate_unreached" \|\| asked !== door\.chosenRun\(\)\)'
+        r" return;\n(.*?)\n    \}\);", writer, re.DOTALL)
     assert recover is not None, "the gate_unreached recovery is gone"
     assert recover.group(1).split("\n") == [
-        '      dispatch({type: "decision-chosen", key: null});',
-        "      refreshRun(asked);"], recover.group(1)
+        '      door.dispatch({type: "decision-chosen", key: null});',
+        "      door.refreshRun(asked);"], recover.group(1)
+    # The road left the boot module at its line cap; the boot module hands it
+    # the door and looks nothing up itself.
+    boot = _code(BOOT)
+    assert "submitDecision: decisions.submitDecision," in boot
+    assert "gate_unreached" not in boot and "receipt_id" not in boot
 
 
 def test_the_session_token_is_read_in_one_place_and_meets_no_sink():

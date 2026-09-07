@@ -187,6 +187,7 @@ function wireInstances(settled) {
   return Object.freeze(settled.instances.map((row) => Object.freeze({
     instance_id: row.instanceId, adapter_id: row.adapterId,
     model: row.model, controls: row.controls,
+    argument_schemas: row.argumentSchemas,
   })));
 }
 

@@ -5,6 +5,7 @@ already had rather than one invented for the split: everything here is a pure
 refusal over a replayed run and a standing proposal. No store is written, no
 clock is read, no adapter is prepared, no lock is taken, and nothing here
 decides anything -- each function either raises or returns None.
+A registry fact may be supplied as a callable; no registry is imported here.
 
 That is also WHERE they belong in the road. ``ControlRuntime._authorize_locked``
 calls them after the exact-retry answer and before ``admit``, so a run that
@@ -16,7 +17,7 @@ here is what makes it true early.
 from __future__ import annotations
 
 from .containment import unprovidable_sandboxes
-from .contracts import ActionProposal, ActionRequest
+from .contracts import ActionProposal, ActionRequest, frozen_config_bindings
 from .graph_causality import _standing_graph, standing_terminal
 from .graph_schedule import attempt_in_flight, authorized_attempts, schedule
 from .run_store import RecoveredRun
@@ -184,7 +185,8 @@ def _hold_node_sandbox_is_provided(
 
 
 def _hold_plan_admits(
-        proposal: ActionProposal, recovered: RecoveredRun) -> None:
+        proposal: ActionProposal, recovered: RecoveredRun, *,
+        verifies_independently=None) -> None:
     """Everything the PLAN says about this authorization, asked in one place.
 
     Ended first, then eligible: a run that has recorded its ending has no
@@ -195,6 +197,28 @@ def _hold_plan_admits(
     _hold_run_not_terminal(recovered)
     _hold_node_is_eligible(proposal, recovered)
     _hold_node_sandbox_is_provided(proposal, recovered)
+    _hold_verifier_is_servable(proposal, recovered, verifies_independently)
+
+
+def _hold_verifier_is_servable(proposal, recovered, verifies_independently) -> None:
+    """A named checker must be a declared, independently capable participant."""
+    node = _planned_node(recovered, proposal.node_id)
+    if node is None or node.verifier_instance_id is None:
+        return
+    instance = node.verifier_instance_id
+    bound = frozen_config_bindings(recovered.config).get(instance)
+    if bound is None:
+        raise AuthorizationError(
+            f"plan: verifier instance {instance!r} is not declared by this run's configuration")
+    try:
+        supported = callable(verifies_independently) and verifies_independently(
+            bound, node.capability) is True
+    except Exception:
+        supported = False
+    if not supported:
+        raise AuthorizationError(
+            f"plan: verifier instance {instance!r} is bound to adapter {bound!r}, "
+            "which cannot verify another participant's result")
 
 
 def _hold_run_not_terminal(recovered: RecoveredRun) -> None:

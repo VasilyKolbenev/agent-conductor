@@ -36,6 +36,10 @@ class AuthorizationError(RuntimeError):
     """A confirmation fact is changed or stale; the action is refused before preparation."""
 
 
+class ProposalNeedsRebinding(AuthorizationError):
+    """An old proposal needs a new material-bound preview before fresh effects."""
+
+
 class RunAlreadyTerminal(AuthorizationError):
     """The run recorded that its plan ended; nothing further may be authorized.
 
@@ -124,7 +128,9 @@ class Budget:
     """The action and time budgets an authorization is held within.
 
     ``max_actions`` caps how many action requests one run may authorize;
-    ``max_action_seconds`` caps a single action's declared timeout; and
+    ``max_action_seconds`` caps the declared task time: N for ordinary execution,
+    or 2N when the plan requires a separate checker. It is not a wall-clock
+    deadline: bounded version preflights and local preparation are additional; and
     ``max_confirmation_age_seconds`` is the freshness window a confirmation must
     fall inside. All three refuse before preparation when exceeded.
     """

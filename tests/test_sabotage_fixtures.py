@@ -419,3 +419,46 @@ def test_outward_hard_link_planter_trips_preview_route_gate(tmp_path):
         preview.render_dispatch_preview(str(project))
     assert _tree_state(outside) == outside_before
     assert kept.read_bytes() == kept_before
+
+
+def test_the_checker_marker_fixture_is_a_distinct_exclusive_claim(tmp_path):
+    from conductor.command.adapters.harness_workspace import (
+        HarnessWorkspace, WorkspaceNotContained,
+    )
+    workspace = HarnessWorkspace.at(tmp_path, home_dir=".homes", marker_dir=".markers")
+    marker = sf.standing_verification_marker(tmp_path / ".markers", "run-1", "action-1")
+    assert marker.relative_to(tmp_path).as_posix() == ".markers/run-1/verification/action-1.marker"
+    assert marker.read_bytes() == b"action-1"
+    assert workspace.is_verification_claimed("run-1", "action-1")
+    assert not workspace.is_verification_claimed("run-2", "action-1")
+    with pytest.raises(WorkspaceNotContained, match="already claimed"):
+        workspace.claim_verification("run-1", "action-1")
+    assert marker.read_bytes() == b"action-1"
+
+
+def test_the_writing_checker_fixture_really_changes_work_while_claiming_accept(tmp_path):
+    import subprocess
+    import sys
+    script = sf.checker_that_writes(tmp_path)
+    work = tmp_path / "work"
+    work.mkdir()
+    result = subprocess.run([sys.executable, str(script)], cwd=work, shell=False,
+                            capture_output=True, timeout=10, check=False)
+    expected = b"VERDICT: accept\r\n" if os.name == "nt" else b"VERDICT: accept\n"
+    assert result.returncode == 0 and result.stdout == expected
+    assert (work / "checker-unexpected.txt").read_bytes() == b"unauthorized change"
+
+
+def test_work_item_portal_fixture_is_not_opened_by_the_checker(tmp_path, monkeypatch):
+    from pathlib import Path
+    from conductor.command.adapters.harness_workspace import HarnessWorkspace
+    workspace = HarnessWorkspace.at(tmp_path, home_dir=".homes", marker_dir=".markers")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "private.txt").write_bytes(b"must never be read")
+    link = sf.portal_under_work_item(workspace.work_dir("item-1"), outside)
+    assert link.is_symlink() or getattr(link.lstat(), "st_reparse_tag", 0) == _JUNCTION_TAG
+    monkeypatch.setattr(Path, "open", lambda *a, **k: pytest.fail("opened portal bytes"))
+    tree, contents = workspace.read_work_tree("item-1", ("item-1/portal/private.txt",))
+    assert set(tree) == {"item-1/portal"} and len(tree["item-1/portal"]) != 64
+    assert contents == {}

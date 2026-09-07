@@ -322,6 +322,7 @@ def test_fake_end_to_end_reaches_only_post_observation_verified_evidence(
         store, adapter,
         proposal_changes={
             "instance_id": instance, "arguments": ARGUMENTS["dispatch"],
+            "input_binding": "proposal-v1",
             "rationale": "Run one closed fake deep dispatch."})
 
     attempt = runtime.execute(authorization)

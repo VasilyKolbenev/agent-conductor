@@ -55,6 +55,7 @@ from typing import Any
 from weakref import WeakValueDictionary
 
 from .adapters import AdapterRegistry, PreparedAction
+from .adapters.base import VerifierBinding
 from .attempt_replay import action_request_for, attempt_events_for, terminal_result_for
 from .attempts import AttemptEvent, OBSERVED_OUTCOMES, action_request_digest
 from .authorize_holds import (
@@ -66,6 +67,7 @@ from .authorize_holds import (
 from .run_closing import close_if_terminal
 from .containment import render_legacy_run_route_violations, run_route_violations
 from .contracts import (
+    ABSENT,
     ActionProposal,
     ActionRequest,
     ActionResultReceipt,
@@ -92,13 +94,16 @@ from .runtime_values import (
     Confirmation,
     ExecutionError,
     RunAlreadyTerminal,  # noqa: F401 -- re-exported at its original home
+    ProposalNeedsRebinding,
 )
 from .verify_holds import (
     VERIFIED,
+    VERIFIED_INDEPENDENTLY,
     VERIFY_RAISED,
     refused_verification,
     standing_evidence,
 )
+from .verify_road import verify_independently
 
 
 #: A raw execute-reported outcome that is not ``succeeded`` maps here without ever
@@ -234,22 +239,21 @@ class ControlRuntime:
                     "different durable facts")
             # An identical retry is not a new budget action and writes nothing.
             return Authorization(request=prior, record_created=False)
+        self._hold_input_binding(proposal, recovered)
         self._hold_freshness(confirmation, budget)
         # Below the exact-retry road above, so a client whose reply was lost is
         # answered by its own standing request rather than refused for holding
         # the attempt id that request already carries.
         _hold_attempt_identity(proposal, recovered)
         self._hold_budget(proposal, recovered, budget)
-        _hold_plan_admits(proposal, recovered)
+        _hold_plan_admits(proposal, recovered,
+                          verifies_independently=self._registry.verifies_independently)
         request = self._mint_request(confirmation, proposal)
         self._hold_route(confirmation.run_id, AuthorizationError)
         if admit is not None:
-            # The last gate before the request becomes durable, and the only one
-            # a retry never reaches: an admission refused here leaves the journal
-            # exactly as it was.
+            # Refused admission leaves the journal unchanged; a retry never gets here.
             admit()
-        # The store appends the request as its own record, refuses a fresh id that
-        # reuses the idempotency key (RecordConflict), and no-ops an identical retry.
+        # Store identity makes an exact retry a no-op, not another effect.
         appended = self._store.append(request)
         canonical = ActionRequest.from_dict(request.as_dict())
         if appended:
@@ -260,6 +264,18 @@ class ControlRuntime:
 
     def _lock_key(self, operation: str, *parts: str) -> tuple[Any, ...]:
         return (operation, self._store.project_root, *parts)
+
+    def _hold_input_binding(self, proposal, recovered) -> None:
+        """Legacy history is readable, but cannot authorize newly interpreted inputs."""
+        bound = frozen_config_bindings(recovered.config).get(proposal.instance_id)
+        if (proposal.input_binding is ABSENT
+                and proposal.capability in ("dispatch", "review")
+                and any(row.adapter_id == bound for row in self._registry.manifests())
+                and self._registry.argument_schema(
+                    bound, proposal.capability) == "deep-arguments-v1"):
+            raise ProposalNeedsRebinding(
+                "This older proposal did not bind its inputs at preview. "
+                "Create a new proposal, review its inputs, and confirm that proposal.")
 
     @staticmethod
     def _stored_proposal(recovered: RecoveredRun, proposal_id: str) -> ActionProposal:
@@ -311,9 +327,13 @@ class ControlRuntime:
             raise AuthorizationError(
                 f"budget: the run already holds {prior} authorized action(s), at the "
                 f"{budget.max_actions} action budget")
-        if proposal.timeout_seconds > budget.max_action_seconds:
+        node = _planned_node(recovered, proposal.node_id)
+        independent = node is not None and node.verifier_instance_id is not None
+        seconds = proposal.timeout_seconds * (2 if independent else 1)
+        if seconds > budget.max_action_seconds:
+            check = " (attempt plus independent check: 2 × timeout)" if independent else ""
             raise AuthorizationError(
-                f"budget: the proposal asks for {proposal.timeout_seconds}s, past the "
+                f"budget: the proposal asks for {seconds}s{check}, past the "
                 f"{budget.max_action_seconds}s time budget")
         _hold_plan_bounds(proposal, recovered)
 
@@ -430,10 +450,11 @@ class ControlRuntime:
             outcome=report.outcome if report is not None else "unknown",
             exit_code=report.exit_code if report is not None else None)
         if report is None:
+            self._release_independent(recovered, canonical)
             return self._finish(canonical, AttemptState.UNKNOWN, history, detail=note)
         canonical_report = self._observed_report(canonical, observed)
         return self._resolve(canonical, self._verifier_for(recovered, canonical),
-                             canonical_report, observed, history)
+                             canonical_report, observed, history, live=True)
 
     @staticmethod
     def _replayed_attempt(request: ActionRequest, recovered: RecoveredRun) -> Attempt | None:
@@ -548,7 +569,7 @@ class ControlRuntime:
         report = self._observed_report(request, observed)
         history = (AttemptState.ACCEPTED, AttemptState.STARTED)
         return self._resolve(request, self._verifier_for(recovered, request),
-                             report, observed, history)
+                             report, observed, history, live=False)
 
     @staticmethod
     def _observed_report(
@@ -597,41 +618,37 @@ class ControlRuntime:
             return report.exit_code is None or report.exit_code != 0
         return report.exit_code is None
 
-    def _verifier_for(self, recovered: RecoveredRun, request) -> str:
-        """WHICH adapter must confirm this action, out of the run's own config.
-
-        The plan may name a verifier other than the instance that does the work.
-        It names an INSTANCE, and this resolves it through `_bound_adapter` --
-        the same door, reading the same frozen configuration, refusing an
-        instance that configuration does not declare. So the ruling this
-        runtime has always held is untouched: a plan still cannot name an
-        adapter, a provider or a model, and which adapter drives an instance is
-        still a fact of the run and of nothing else. What a plan may now say is
-        WHO checks, in the vocabulary of the run's own bindings.
-
-        A step that names none is verified by the instance that did the work,
-        which is what this method returns and what every plan written before
-        this field existed says.
-        """
+    def _verifier_for(self, recovered: RecoveredRun, request) -> str | VerifierBinding:
+        """The exact participant and its frozen model, or the unchanged plain adapter."""
         node = _planned_node(recovered, request.node_id)
         named = None if node is None else node.verifier_instance_id
         instance = request.instance_id if named is None else named
-        return self._bound_adapter(recovered, instance)[1]
+        bound = self._bound_adapter(recovered, instance)[1]
+        return (bound if named is None else VerifierBinding(
+            instance, bound, frozen_config_models(recovered.config).get(instance)))
+
+    def _release_independent(self, recovered, request) -> None:
+        """A failed observation leaves no checker turn to release the doer's state."""
+        node = _planned_node(recovered, request.node_id)
+        if node is not None and node.verifier_instance_id is not None:
+            bound = frozen_config_bindings(recovered.config)[request.instance_id]
+            self._registry.release(bound, request)
 
     def _resolve(
-            self, request: ActionRequest, verifier: str,
+            self, request: ActionRequest, verifier: str | VerifierBinding,
             report: ActionResultReceipt, observed: AttemptEvent,
-            history: tuple[AttemptState, ...]) -> Attempt:
+            history: tuple[AttemptState, ...], *, live: bool) -> Attempt:
         if report.outcome != "succeeded":
+            self._release_independent(self._store.read(request.run_id), request)
             return self._finish(
                 request, _NON_SUCCESS[report.outcome], history,
                 detail=f"adapter reported {report.outcome}", exit_code=report.exit_code)
-        return self._verify(request, verifier, report, observed, history)
+        return self._verify(request, verifier, report, observed, history, live=live)
 
     def _verify(
-            self, request: ActionRequest, verifier: str,
+            self, request: ActionRequest, verifier: str | VerifierBinding,
             report: ActionResultReceipt, observed: AttemptEvent,
-            history: tuple[AttemptState, ...]) -> Attempt:
+            history: tuple[AttemptState, ...], *, live: bool) -> Attempt:
         """A reported success is not the terminal word until verify confirms it.
 
         The three verdicts this arm reaches for are `verify_holds`': whether the
@@ -640,6 +657,8 @@ class ControlRuntime:
         registry seam, the route gate, the store read, and the one durable
         receipt `_finish` appends.
         """
+        if isinstance(verifier, VerifierBinding):
+            return self._verify_independent(request, verifier, report, observed, history, live)
         try:
             verification = self._registry.verify(verifier, request, report)
         except Exception:  # noqa: BLE001 -- a broken verifier cannot confirm success
@@ -658,6 +677,20 @@ class ControlRuntime:
         return self._finish(
             request, AttemptState.VERIFICATION_FAILED, history,
             detail=refused, exit_code=report.exit_code)
+
+    def _verify_independent(self, request, verifier, report, observed, history, live):
+        """No independent success without a matching durable participant signature."""
+        self._hold_route(request.run_id, ExecutionError)
+        try:
+            evidence, refused = verify_independently(
+                self._registry, self._store, request, report, verifier, observed, live=live)
+        except Exception:  # includes a release seam that failed after a checker answered
+            evidence, refused = None, VERIFY_RAISED
+        return self._finish(
+            request, (AttemptState.SUCCEEDED if evidence is not None
+                      else AttemptState.VERIFICATION_FAILED), history,
+            detail=VERIFIED_INDEPENDENTLY if evidence is not None else refused,
+            exit_code=report.exit_code, evidence=evidence or ())
 
     def _causal_evidence(
             self, request: ActionRequest, verifier: str, observed: AttemptEvent,

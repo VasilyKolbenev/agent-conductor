@@ -154,7 +154,8 @@ def _review(provider_id: str, driver: _Driver, tmp_path):
         attempt_id="attempt-review", instance_id=INSTANCE_ID,
         capability=REVIEW, arguments=ARGUMENTS, scope=("work",),
         proposed_by="lane", proposed_at=driver.now, timeout_seconds=60,
-        rationale="review the durable role handoff", config_digest=digest)
+        rationale="review the durable role handoff", config_digest=digest,
+        input_binding="proposal-v1")
     store.append(proposal)
     confirmation = Confirmation(
         confirmation_id="confirmation-review", run_id=RUN_ID,

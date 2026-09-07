@@ -129,7 +129,7 @@ def test_observed_restart_is_verify_only_and_events_are_exactly_once(
     runtime, authorization = authorized(store, adapter)
     monkeypatch.setattr(
         runtime, "_resolve",
-        lambda *args: (_ for _ in ()).throw(RuntimeError("crash after observed")))
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("crash after observed")))
     with pytest.raises(RuntimeError, match="crash after observed"):
         runtime.execute(authorization)
     assert adapter.execute_calls == 1
@@ -199,7 +199,7 @@ def test_live_and_restart_verify_receive_the_same_observed_event_receipt(
     initial, restart_authorization = authorized(restart_store, initial_adapter)
     monkeypatch.setattr(
         initial, "_resolve",
-        lambda *args: (_ for _ in ()).throw(RuntimeError("crash after observed")))
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("crash after observed")))
     with pytest.raises(RuntimeError, match="crash after observed"):
         initial.execute(restart_authorization)
     restart_adapter = ReceiptSensitive(restart_store)

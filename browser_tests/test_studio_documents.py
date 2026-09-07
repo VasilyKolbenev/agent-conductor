@@ -13,11 +13,15 @@ screen is asked last.
 """
 from __future__ import annotations
 
+from dataclasses import replace
+
+import pytest
 from playwright.sync_api import Browser, Page
 
 from conductor.command.artifacts import ArtifactDocument
+from conductor.command.contracts import ABSENT
 from conductor.command.graph_definition import GraphDefinition
-from conductor.command.run_store import RunStore
+from conductor.command.run_store import RunStore, snapshot_digest
 
 from browser_tests.test_studio_artifacts import (  # noqa: F401
     EXTERNAL_REF,
@@ -35,16 +39,21 @@ from browser_tests.test_studio_step import (  # noqa: F401
     NOW,
     WHY,
     _Bench,
+    _a_proposal,
     _fact,
     _open_run,
     _read,
+    _review,
+    _two_steps,
     _type,
     bench,
 )
 from browser_tests.test_studio_step import _open as _open_bench
 from browser_tests.test_studio_step_offers import _type_into
+from browser_tests.test_studio_step_offers import _open_run_under, _propose, _row_says
 from tests.schedule_journal import routed_dalio
 from tests.test_command_graph_projection import a_decision, settle_to_the_confirm_gate
+from tests.test_command_run_store import a_run
 
 BRIEF = "# Brief\n\nWhat this cycle is for."
 LIMIT = 49152
@@ -245,8 +254,11 @@ def test_words_typed_while_the_document_write_is_in_flight_are_not_spent_by_it(
         control = page.locator('[data-focus-key="field:content"]')
         control.click()
         page.keyboard.press("End")
+        # No Tab: the words are uncommitted when the answer lands. The render
+        # the answer provokes removes the focused textarea, whose `change`
+        # moves the generation BEFORE the spend compares it (the fold
+        # review's R6) -- the order inside the carry is what holds this.
         page.keyboard.type(" and the next thing")
-        page.keyboard.press("Tab")
         held[0].continue_()
         page.unroute(f"**/command/runs/{RUN_ID}/artifacts")
         page.wait_for_function(
@@ -418,25 +430,224 @@ def test_the_step_forms_name_the_document_a_proposal_binds_and_keep_naming_it(
         page.context.close()
 
 
+@pytest.mark.parametrize("run_id,word", [
+    ("run-closed", "complete"), ("run-halted", "stalled")])
 def test_a_run_that_is_over_is_offered_no_document_form(
-        chromium: Browser, bench: _Bench) -> None:
-    """The routed plan, its gate rejected: the plan is complete.
+        chromium: Browser, bench: _Bench, run_id: str, word: str) -> None:
+    """Both a complete plan and a stopped run offer no useless publication.
 
     The section says the run is over and draws no control; a document
     published now would be a durable record no step ever reads, and the
     form used to offer exactly that (the slice-3 review's #18).
     """
-    from browser_tests.test_studio_step import CLOSED_RUN
     page, window = _open_bench(chromium, bench)
     try:
-        _read(page, CLOSED_RUN)
+        _read(page, run_id)
         section = page.locator('[data-section="documents"]')
         said = section.inner_text()
-        assert "This run is over: the plan is complete" in said, said
+        assert f"This run is over: the plan is {word}" in said, said
         assert "none is offered" in said, said
         assert page.locator('[data-step="document"]').count() == 0
         assert page.locator('[data-focus-key="document:publish"]').count() == 0
         assert window.writes("/artifacts") == 0
+    finally:
+        assert window.problems == []
+        page.context.close()
+
+
+def test_a_review_row_names_every_input_bound_by_its_latest_proposal(
+        chromium: Browser, bench: _Bench) -> None:
+    """Review has no instruction ref, but its complete input list is visible.
+
+    Two proposals surround two document generations; a third generation is
+    newer than either proposal. The row must name generation two, for BOTH
+    references, not the first proposal or whatever document is latest now.
+    """
+    run_id, node_id = "run-review-bindings", "review-inputs"
+    refs = ("artifact-first", "artifact-second")
+    node = _review(node_id)
+    arguments = dict(node.arguments)
+    arguments["target_artifact_refs"] = list(refs)
+    store = RunStore(bench.root)
+    _open_run(store, run_id)
+    store.append(_two_steps(run_id, (replace(node, arguments=arguments),)))
+    for generation in (1, 2, 3):
+        for ref in refs:
+            store.append(ArtifactDocument(
+                artifact_id=f"{ref}-{generation}", artifact_ref=ref,
+                run_id=run_id, created_at=NOW, media_type="text/plain",
+                content=f"{ref} generation {generation}"))
+        if generation < 3:
+            proposal = _a_proposal(run_id, node_id, index=generation,
+                                   attempt_id=f"attempt-review-{generation}")
+            store.append(replace(proposal, arguments=arguments,
+                                 input_binding="proposal-v1", preview_digest=""))
+    page, window = _open_bench(chromium, bench)
+    try:
+        _read(page, run_id)
+        row = _row(page, node_id)
+        for ref in refs:
+            assert f"Input {ref} bound by proposal-2" in row, row
+            assert f"durable document {ref}-2" in row, row
+            assert f"durable document {ref}-1" not in row, row
+            assert f"durable document {ref}-3" not in row, row
+        assert "Instruction " not in row
+    finally:
+        assert window.problems == []
+        page.context.close()
+
+
+@pytest.mark.parametrize("mode", ["observe", "propose", "policy", "confirm"])
+def test_a_legacy_material_proposal_has_a_truthful_replacement_road(
+        chromium: Browser, bench: _Bench, mode: str) -> None:
+    """An old proposal stays readable; an authorized new preview binds inputs.
+
+    The server's registered schema, not argument spellings, selects this road.
+    No old digest is confirmed; the replacement is made by the real API, and
+    lesser modes never inherit authority to confirm from this repair.
+    """
+    run_id, node_id = f"run-legacy-{mode}", "alpha"
+    store = RunStore(bench.root)
+    _open_run_under(store, run_id, mode)
+    legacy = replace(_a_proposal(run_id, node_id, index=1,
+                                 attempt_id="attempt-legacy-0"),
+                     input_binding=ABSENT, preview_digest="")
+    store.append(legacy)
+    page, window = _open_bench(chromium, bench)
+    try:
+        _read(page, run_id)
+        said = _row(page, node_id)
+        assert "no material-binding revision" in said, said
+        assert "bound by proposal-1" not in said, said
+        assert page.locator(f'[data-step="confirm:{node_id}"]').count() == 0
+        if mode == "observe":
+            assert page.locator(f'[data-step="propose:{node_id}"]').count() == 0
+            assert "nothing may be proposed" in said
+            assert window.writes("/proposals") == 0
+            return
+        assert "Create a new proposal below" in said
+        assert _propose(page, node_id) == 201
+        proposals = bench.records(run_id, "action_proposal")
+        assert len(proposals) == 2 and proposals[0] == legacy
+        assert proposals[1].input_binding == "proposal-v1"
+        assert proposals[1].preview_digest != legacy.preview_digest
+        if mode == "confirm":
+            page.wait_for_selector(f'[data-step="confirm:{node_id}"]')
+            form = page.locator(f'[data-step="confirm:{node_id}"]').inner_text()
+            assert proposals[1].proposal_id in form
+            assert "no material-binding revision" not in form
+        else:
+            _row_says(page, node_id, "nothing can confirm it here")
+            assert page.locator(f'[data-step="confirm:{node_id}"]').count() == 0
+        assert window.writes("/actions") == 0
+    finally:
+        assert window.problems == []
+        page.context.close()
+
+
+def test_material_reproposal_uses_registered_schema_not_argument_names(
+        chromium: Browser, bench: _Bench) -> None:
+    """Native/other capabilities are not blocked by a deep-provider rule."""
+    page, window = _open_bench(chromium, bench)
+    try:
+        actual = page.evaluate("""async () => {
+          const {needsMaterialReproposal: held} = await import('/panel/studio-rundocs.js');
+          const p = {instance_id:'same-instance', capability:'dispatch',
+            node_id:'native',arguments:{instruction_ref:'looks-deep'}};
+          const detail = schema => ({controls:{instances:[{instance_id:p.instance_id,
+            controls:['dispatch','evidence'],
+            argument_schemas:{dispatch:schema, evidence:'deep-arguments-v1'}}]}});
+          const rule = [held(p,detail('deep-arguments-v1')),
+            held(p,detail('structured-process-v1')), held(p,{controls:{instances:[]}}),
+            held({...p,capability:'evidence'},detail('deep-arguments-v1')),
+            held({...p,input_binding:'proposal-v1'},detail('deep-arguments-v1'))];
+          const {stepControls} = await import('/panel/studio-runstep.js');
+          const native = {...detail('structured-process-v1'),run:{run_id:'native',mode:'confirm'},
+            records:[{record_type:'action_proposal',record:p}]};
+          const shown = stepControls(p,{phase:'proposed'},{state:'runnable'},native,
+            {connection:'open',runs:{step:{nodeId:'native',confirmedBy:'owner',generation:1}}},
+            {chooseStep(){},editStep(){},confirmStep(){}});
+          const form = shown.find(node => node.tagName === 'FORM');
+          const {projectControls} = await import('/panel/studio-model.js');
+          const schema = value => projectControls({providers:[],instances:[{
+            instance_id:'native',adapter_id:'native',model:null,controls:['dispatch'],
+            argument_schemas:value}]});
+          return {rule,form:shown.map(node => node.textContent).join(' '),
+            disabled:form?.querySelector('button')?.disabled ?? true,
+            schemas:[schema({}) !== null,schema({dispatch:'deep-arguments-v1'}) !== null,
+              schema(null) === null,schema({dispatch:false}) === null,
+              schema({review:'deep-arguments-v1'}) === null]};
+        }""")
+        assert actual["rule"] == [True, False, False, False, False]
+        assert "Confirm this proposal" in actual["form"] and not actual["disabled"]
+        assert "no material-binding revision" in actual["form"]
+        assert actual["schemas"] == [True] * 5
+    finally:
+        assert window.problems == []
+        page.context.close()
+
+
+CHECKER_HISTORY_PROJECTION = """async () => {
+  const {mountRuns} = await import('/panel/studio-runs.js');
+  const mount = document.createElement('section'); document.body.append(mount);
+  const record = (record_type, record) => ({record_type, record});
+  const detail = {run:{run_id:'render-only'}, config:{}, graph:null, records:[
+    record('artifact', {artifact_id:'rejected-product', artifact_ref:'result',
+      source_action_id:'action-rejected', content:'kept only as history'}),
+    record('action_result', {action_id:'action-rejected',outcome:'verification_failed'}),
+    record('action_result', {action_id:'unrelated',outcome:'succeeded'}),
+    record('evidence', {evidence_id:'evidence-signed',kind:'verification',
+      verification:'verified',verified_by:'claude-code',verifier_instance_id:'checker'})]};
+  mountRuns(mount, {runs:{selectedId:'render-only',list:[],detail}}, {});
+  const result = {artifact:mount.querySelector('.studio-artifact').innerText,
+    evidence:mount.querySelector('.studio-evidence').innerText,
+    timeline:mount.querySelector('ol.studio-timeline').innerText};
+  mount.remove(); return result;
+}"""
+
+
+def test_independent_verification_is_visible_before_authority_and_in_history(
+        chromium: Browser, bench: _Bench) -> None:
+    """Frozen facts come from a real run read; history rendering is a labeled
+    projection fixture, not a claim that a paid checker has been executed.
+    """
+    run_id = "run-checker-preview"
+    config = {"cycle": {"id": "default-orbit"}, "instances": [
+        {"id": "claude-dev", "adapter": "claude-code", "model": "doer-model"},
+        {"id": "checker", "adapter": "claude-code", "model": "checker-model"}]}
+    store = RunStore(bench.root)
+    store.create_run(a_run(run_id=run_id, mode="confirm",
+                           config_digest=snapshot_digest(config)), config)
+    store.append(_two_steps(run_id, (_review("checked", timeout_seconds=120,
+        verifier_instance_id="checker"),)))
+    page, window = _open_bench(chromium, bench)
+    try:
+        _read(page, run_id)
+        form = page.locator('[data-step="propose:checked"]').inner_text()
+        assert "checker · claude-code · checker-model" in form
+        assert "result document this attempt produced" in form
+        assert "64 KiB" in form and "JSON expansion counts" in form
+        assert "2 × 120s = 240s" in form and "budget must cover both" in form
+        assert "preflights and setup add wall-clock time" in form
+        assert "none of the checker's prose becomes durable" in form
+        assert "no independent checker" not in form
+        assert _propose(page, "checked") == 201
+        page.wait_for_selector('[data-step="confirm:checked"]')
+        confirm = page.locator('[data-step="confirm:checked"]').inner_text()
+        assert "checker · claude-code · checker-model" in confirm
+        assert "2 × 120s = 240s" in confirm
+        _read(page, "run-001")
+        plain = page.locator('[data-step="propose:goal"]').inner_text()
+        assert "same participant's adapter" in plain
+        assert "no independent checker is named" in plain
+        assert "Task time ceilings" not in plain
+        shown = page.evaluate(CHECKER_HISTORY_PROJECTION)
+        assert "checker" in shown["evidence"] and "claude-code" in shown["evidence"]
+        assert "verifier_instance_idchecker" in shown["timeline"]
+        assert "verification_failed" in shown["artifact"]
+        assert "not used as input by later steps" in shown["artifact"]
+        assert "not that the work was verified" in shown["artifact"]
+        assert window.writes("/proposals") == 1 and window.writes("/actions") == 0
     finally:
         assert window.problems == []
         page.context.close()

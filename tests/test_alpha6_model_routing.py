@@ -120,12 +120,13 @@ def _dispatch(tmp_path, config=CONFIG, **knobs: str):
             run_id=RUN_ID, cycle_id="default-orbit", created_at=NOW,
             config_digest=snapshot_digest(config), mode="confirm"),
         config)
+    # A newly confirmed transport task, not a historical unbound proposal.
     proposal = ActionProposal(
         proposal_id="proposal-do", run_id=RUN_ID, attempt_id="attempt-do",
         instance_id=INSTANCE_ID, capability="dispatch", arguments=ARGUMENTS,
         scope=("work",), proposed_by="lane", proposed_at=NOW,
         timeout_seconds=60, rationale="carry out the plan",
-        config_digest=snapshot_digest(config))
+        config_digest=snapshot_digest(config), input_binding="proposal-v1")
     store.append(proposal)
     runtime = ControlRuntime(
         store, AdapterRegistry([adapter]), clock=lambda: NOW, ids=_Ids())
@@ -425,7 +426,8 @@ def test_a_routed_model_reaches_the_review_road_as_well(tmp_path):
         attempt_id="attempt-review", instance_id=INSTANCE_ID,
         capability="review", arguments=review_arguments, scope=("work",),
         proposed_by="lane", proposed_at=NOW, timeout_seconds=60,
-        rationale="review the brief", config_digest=snapshot_digest(CONFIG))
+        rationale="review the brief", config_digest=snapshot_digest(CONFIG),
+        input_binding="proposal-v1")
     store.append(proposal)
     runtime = ControlRuntime(
         store, AdapterRegistry([adapter]), clock=lambda: NOW, ids=_Ids())

@@ -180,6 +180,9 @@ class ActionRequest:
                    schema_version=known.pop("schema_version", 2), extra=data)
 
 
+PROPOSAL_INPUT_BINDING = "proposal-v1"
+
+
 @dataclass(frozen=True)
 class ActionProposal:
     """One proposed action; it executes nothing and prepares nothing.
@@ -210,12 +213,15 @@ class ActionProposal:
     node_id: str | None = None
     schema_version: int = 2
     extra: Mapping[str, Any] = field(default_factory=dict, repr=False)
+    #: Omitted historical proposals retain their original bytes and semantics.
+    #: A present marker binds material at proposal time and participates in its digest.
+    input_binding: str | object = ABSENT
 
     _FIELDS = frozenset({
         "schema_version", "proposal_id", "run_id", "attempt_id", "instance_id",
         "capability", "arguments", "scope", "proposed_by", "proposed_at",
         "timeout_seconds", "rationale", "config_digest", "preview_digest",
-        "node_id",
+        "node_id", "input_binding",
     })
 
     def __post_init__(self) -> None:
@@ -233,6 +239,10 @@ class ActionProposal:
         object.__setattr__(self, "config_digest", _digest("config_digest", self.config_digest))
         if self.node_id is not None:
             object.__setattr__(self, "node_id", _id("node_id", self.node_id))
+        if self.input_binding is not ABSENT and (
+                type(self.input_binding) is not str
+                or self.input_binding != PROPOSAL_INPUT_BINDING):
+            raise ContractError("input_binding must be proposal-v1 when present")
         object.__setattr__(self, "schema_version", _schema(self.schema_version))
         object.__setattr__(self, "extra", _extra(self.extra, self._FIELDS))
         computed = _content_digest(self._body())
@@ -260,6 +270,8 @@ class ActionProposal:
         # digests exactly as it always did and no frozen example moves.
         if self.node_id is not None:
             out["node_id"] = self.node_id
+        if self.input_binding is not ABSENT:
+            out["input_binding"] = self.input_binding
         return out
 
     def as_dict(self) -> dict[str, Any]:
@@ -272,10 +284,12 @@ class ActionProposal:
         data = _raw(value)
         known = {name: data.pop(name) for name in list(data) if name in cls._FIELDS}
         required = {name: _take(known, name) for name in cls._FIELDS
-                    if name not in ("schema_version", "preview_digest", "node_id")}
+                    if name not in (
+                        "schema_version", "preview_digest", "node_id", "input_binding")}
         return cls(
             **required, preview_digest=known.pop("preview_digest", ""),
             node_id=_bound_id("node_id", known.pop("node_id", ABSENT)),
+            input_binding=known.pop("input_binding", ABSENT),
             schema_version=known.pop("schema_version", 2), extra=data)
 
 
@@ -423,12 +437,14 @@ class EvidenceRef:
     verification: str = "unverified"
     verified_by: str | None = None
     verified_at: str | None = None
+    verifier_instance_id: str | None = None
     schema_version: int = 2
     extra: Mapping[str, Any] = field(default_factory=dict, repr=False)
 
     _FIELDS = frozenset({
         "schema_version", "evidence_id", "run_id", "kind", "uri", "label", "created_by",
         "observed_at", "digest", "verification", "verified_by", "verified_at",
+        "verifier_instance_id",
     })
 
     def __post_init__(self) -> None:
@@ -442,8 +458,9 @@ class EvidenceRef:
         object.__setattr__(self, "verification",
                            _enum("verification", self.verification, _VERIFICATION_STATES))
         if self.verification == "unverified":
-            if self.verified_by is not None or self.verified_at is not None:
-                raise ContractError("unverified evidence cannot name verified_by or verified_at")
+            if any(value is not None for value in (
+                    self.verified_by, self.verified_at, self.verifier_instance_id)):
+                raise ContractError("unverified evidence cannot name a verification signer")
         else:
             if self.verified_by is None:
                 raise ContractError("verified_by is required for an observed verification result")
@@ -451,6 +468,9 @@ class EvidenceRef:
                 raise ContractError("verified_at is required for an observed verification result")
             object.__setattr__(self, "verified_by", _id("verified_by", self.verified_by))
             object.__setattr__(self, "verified_at", _timestamp("verified_at", self.verified_at))
+        if self.verifier_instance_id is not None:
+            object.__setattr__(self, "verifier_instance_id",
+                               _id("verifier_instance_id", self.verifier_instance_id))
         object.__setattr__(self, "schema_version", _schema(self.schema_version))
         object.__setattr__(self, "extra", _extra(self.extra, self._FIELDS))
 
@@ -463,6 +483,8 @@ class EvidenceRef:
             "digest": self.digest, "verification": self.verification,
             "verified_by": self.verified_by, "verified_at": self.verified_at,
         })
+        if self.verifier_instance_id is not None:
+            out["verifier_instance_id"] = self.verifier_instance_id
         return out
 
     @classmethod
@@ -479,6 +501,8 @@ class EvidenceRef:
             verification=known.pop("verification", "unverified"),
             verified_by=known.pop("verified_by", None),
             verified_at=known.pop("verified_at", None),
+            verifier_instance_id=_bound_id(
+                "verifier_instance_id", known.pop("verifier_instance_id", ABSENT)),
             schema_version=known.pop("schema_version", 2), extra=data)
 
 

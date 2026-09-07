@@ -139,18 +139,17 @@ def test_the_two_write_roads_spend_their_own_draft_before_the_read():
     BEFORE the read it provokes, so the form a person comes back to is the one
     the answer drew rather than the one they left.
     """
-    boot = _code(BOOT)
     writer = _code(RUNWRITE)
     # The decision road: the accepted arm and the `gate_unreached` recovery.
-    assert boot.count('dispatch({type: "decision-chosen", key: null});') == 2
-    for arm in ('dispatch({type: "status", notice: DECIDED});\n'
-                '      dispatch({type: "decision-chosen", key: null});\n'
-                "      refreshRun(asked);",
-                'if (result.code !== "gate_unreached" || asked !== chosenRun)'
+    assert writer.count('door.dispatch({type: "decision-chosen", key: null});') == 2
+    for arm in ('door.dispatch({type: "status", notice: DECIDED});\n'
+                '      door.dispatch({type: "decision-chosen", key: null});\n'
+                "      door.refreshRun(asked);",
+                'if (result.code !== "gate_unreached" || asked !== door.chosenRun())'
                 " return;\n"
-                '      dispatch({type: "decision-chosen", key: null});\n'
-                "      refreshRun(asked);"):
-        assert arm in boot, arm
+                '      door.dispatch({type: "decision-chosen", key: null});\n'
+                "      door.refreshRun(asked);"):
+        assert arm in writer, arm
     # The step road: the accepted arm only, and it spends ONLY the draft this
     # write was minted from -- run, step and generation fixed before the
     # request left -- so another step's unsent words survive its answer
@@ -163,6 +162,16 @@ def test_the_two_write_roads_spend_their_own_draft_before_the_read():
     assert writer.index("const spent = ") < writer.index(
         '{type: "step-writing", ...spent, writing: true}'), writer
     assert '"step-chosen", nodeId: null' not in writer, writer
+    # The ORDER inside the accepted carry is load-bearing (the fold review's
+    # R6): `step-answered` renders first, and that render removes the focused
+    # control -- whose `change` moves the generation -- BEFORE the spend
+    # compares it, so words typed after the press without a blur survive.
+    for road, spend in (("onStepWrite", '{type: "step-spent"'),
+                        ("onDocumentWrite", '{type: "document-spent"')):
+        body = re.search(rf"function {road}\((.*?)\n  \}}", writer, re.DOTALL)
+        assert body is not None, road
+        assert body.group(1).index('{type: "step-answered"') < body.group(1).index(
+            spend), road
 
 
 # -- the toolbar's own facts ---------------------------------------------------
@@ -173,7 +182,7 @@ def test_the_two_write_roads_spend_their_own_draft_before_the_read():
 # always been drawn from nothing (the slice-3 review's P4). Now: a touched
 # fold is recorded and drawn back, the state deciding only while nobody has
 # touched it; the start box and the run form draw their fields from the slice
-# and commit every keystroke; choosing another workflow is the one road that
+# and commit on change; choosing another workflow is the one road that
 # clears all three; and an opened run empties the form that opened it.
 
 
@@ -191,35 +200,73 @@ def test_the_toolbars_folds_and_fields_are_the_reducers():
     assert "mode: \"observe\"" in draft
     boot = _code(BOOT)
     for wire in ('onFold: (name, open) => dispatch({type: "fold", name, open}),',
-                 'editStarter: (patch) => dispatch({type: "starter-edit", patch}),',
-                 'editOpening: (patch) => dispatch({type: "opening-edit", patch}),',
+                 'editStarter: (patch) => dispatch({type: "starter-edit", patch},',
+                 'editOpening: (patch) => dispatch({type: "opening-edit", patch},',
                  'dispatch({type: "opening-cleared"});'):
         assert wire in boot, wire
 
 
 def test_the_toolbar_draws_its_folds_and_fields_from_the_slice_and_commits_back():
-    """A touched fold is a person's; every field is drawn from, and typed into,
-    the reducer's copy; and the run fold's summary names the state a person is
-    in, in all three."""
+    """A touched fold is a person's; every field is drawn from, and committed
+    into, the reducer's copy on its change; the summary carries a focus key so
+    the render a toggle provokes gives the keyboard the summary back; and the
+    run fold's summary names the state a person is in, in all four."""
     view = _code(VIEW)
     fold = re.search(r"function disclosure\(name, summary, open, body, handlers\) "
                      r"\{(.*?)\n\}", view, re.DOTALL)
     assert fold is not None, "the view's disclosure takes no handlers"
     assert ('box.addEventListener("toggle", () => {\n'
             "      if (box.open !== open) fold(name, box.open);") in fold.group(1)
+    assert 'element("summary", {"data-focus": `fold:${name}`, text: summary})' in fold.group(1)
     assert 'const chosen = (object(held.folds) || {})[name];' in view
     assert view.count('foldOpen(held, "') == 2, view.count('foldOpen(held, "')
-    assert 'name.addEventListener("input", () => edit({workflowId: name.value}));' in view
+    # Committed on CHANGE, never on every keystroke: a render per keystroke
+    # moved the caret to the end and doubled an IME's composition (the fold
+    # review's R1/R2); the letters typed since are the boot net's to carry.
+    assert 'name.addEventListener("change", () => edit({workflowId: name.value}));' in view
+    assert 'addEventListener("input"' not in view
     assert "name.value = typeof held.workflowId === \"string\" ? held.workflowId : \"\";" in view
     form = _code(RUNFORM)
-    assert 'runId.addEventListener("input", () => edit({runId: runId.value}));' in form
-    assert 'cycleId.addEventListener("input", () => edit({cycleId: cycleId.value}));' in form
+    assert 'runId.addEventListener("change", () => edit({runId: runId.value}));' in form
+    assert 'cycleId.addEventListener("change", () => edit({cycleId: cycleId.value}));' in form
+    assert 'addEventListener("input"' not in form
     assert "runId.value = typeof opening.runId === \"string\" ? opening.runId : \"\";" in form
     assert 'mode.value = CONTROL_MODES.includes(opening.mode) ? opening.mode : "observe";' in form
     assert "edit({roles: Object.fromEntries(" in form
     summary = re.search(r"function runSummary\(held\) \{(.*?)\n\}", view, re.DOTALL)
     assert summary is not None
+    assert 'const chosen = typeof held.selectedId === "string" && held.selectedId !== "";' in summary.group(1)
     for said in ("Open a run — choose or start a workflow first",
+                 "Open a run — this workflow has not been read",
                  "Open a run — publish a revision first",
                  "Open a run — revision ${published.revision} is published"):
         assert said in summary.group(1), said
+
+
+def test_the_focus_net_carries_the_words_and_the_caret_and_never_guesses():
+    """The boot module's net under every mount, and what it carries.
+
+    A pass replaces the focused control; the successor is drawn from the
+    reducer, which holds what `change` committed. So the net carries the
+    live value and the caret of a text control into its successor (the fold
+    review's R1/R5). A step field stays scoped to the form it came from;
+    shell-wide uniqueness cannot establish ownership after that form has
+    vanished and left a sibling as the sole holder of the same key (R4).
+    """
+    boot = _code(BOOT)
+    target = re.search(r"function focusTarget\(\) \{(.*?)\n  \}", boot, re.DOTALL)
+    assert target is not None
+    assert "start: typed ? active.selectionStart : null," in target.group(1)
+    assert "value: typed ? active.value : null" in target.group(1)
+    assert 'const form = active.closest("[data-step]");' in target.group(1)
+    assert 'step: form === null ? null : form.getAttribute("data-step")' in target.group(1)
+    restore = re.search(r"function restoreFocus\(held\) \{(.*?)\n  \}", boot, re.DOTALL)
+    assert restore is not None
+    assert "if (found.length !== 1) return;" in restore.group(1)
+    assert 'const within = held.step === null ? "" : `[data-step="${held.step}"] `;' in restore.group(1)
+    assert "if (successor.value !== held.value) successor.value = held.value;" in restore.group(1)
+    assert "successor.setSelectionRange(held.start, held.end);" in restore.group(1)
+    # The Runs screen's own restore carries the caret too.
+    runs = _code(PANEL / "studio-runs.js")
+    assert "start: typed ? active.selectionStart : null," in runs
+    assert "successor.setSelectionRange(key.start, key.end);" in runs

@@ -2,7 +2,7 @@
 
 Each document under ``tests/fixtures/alpha1_*.json`` was derived by executing two
 real runs through the coordinator path -- never hand-written -- and is re-derived
-here on every run. Equality against the frozen bytes is the drift alarm: a
+here on every run. Equality, with the explicit additive binding delta, is the drift alarm: a
 production change that alters a projected field, a durable record order, a
 refusal code, a state vocabulary or an SSE frame reds instead of quietly handing
 the UI lane a shape the backend no longer produces.
@@ -13,6 +13,10 @@ config and contract carry, a state is durable exactly when it adds a record, the
 frozen frames are the bytes the production mailbox builds -- and those relations
 are asserted against production doors, not against the derivation that wrote the
 document.
+
+The historical files are never regenerated for a new feature. The only current
+extensions are pinned independently in alpha1_live_extensions; the old terminal
+journal is also replayed unchanged below.
 """
 from __future__ import annotations
 
@@ -32,6 +36,7 @@ from conductor.command.attempts import ATTEMPT_PHASES, OBSERVED_OUTCOMES
 from conductor.command.runtime import AttemptState
 
 from tests.alpha1_artifacts import ARTIFACTS, FIXTURES, derive_all, load
+from tests.alpha1_live_extensions import REFUSALS, current_form
 from tests.test_command_execution_fanout import WAIT, an_api, confirm, records
 from tests.test_command_http_api import RUN_ID
 
@@ -51,7 +56,7 @@ def derived(tmp_path_factory):
 
 @pytest.mark.parametrize("name", ARTIFACTS)
 def test_a_frozen_artifact_still_equals_what_a_real_run_produces(derived, name):
-    assert derived[name] == load(name)
+    assert derived[name] == current_form(load(name))
 
 
 def test_the_frozen_artifacts_on_disk_are_exactly_the_five_this_lane_promised():
@@ -165,7 +170,7 @@ def test_every_frozen_record_is_the_record_type_its_snapshot_names():
 
 def test_the_frozen_vocabulary_is_exactly_the_closed_sets_production_holds():
     document = load("alpha1_vocabulary")
-    assert document["refusal_codes"] == dict(ERROR_STATUS)
+    assert {**document["refusal_codes"], **REFUSALS} == dict(ERROR_STATUS)
     assert document["attempt_states"] == [state.value for state in AttemptState]
     assert set(document["observed_outcomes"]) == set(OBSERVED_OUTCOMES)
     assert set(document["attempt_event_phases"]) == set(ATTEMPT_PHASES)

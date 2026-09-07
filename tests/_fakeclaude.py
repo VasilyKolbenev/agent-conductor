@@ -96,6 +96,10 @@ EXIT = "FAKECLAUDE_EXIT"
 EMIT_STDOUT = "FAKECLAUDE_EMIT_STDOUT"
 EMIT_HEX = "FAKECLAUDE_EMIT_HEX"
 EMIT_REVIEW = "FAKECLAUDE_EMIT_REVIEW"
+EMIT_VERDICT = "FAKECLAUDE_EMIT_VERDICT"
+VERDICT_WRITE_FILE = "FAKECLAUDE_VERDICT_WRITE_FILE"
+VERDICT_EXIT = "FAKECLAUDE_VERDICT_EXIT"
+VERDICT_SLEEP = "FAKECLAUDE_VERDICT_SLEEP"
 REVIEW_OUTPUT = "# Review\n\nThe contract is ready after its causal tests."
 #: Emit this on stderr, which the runner merges into the same bounded capture.
 EMIT_STDERR = "FAKECLAUDE_EMIT_STDERR"
@@ -269,8 +273,23 @@ def _write_pair(base: Path, spec: str) -> None:
     target.write_text(text, encoding="utf-8", newline="\n")
 
 
-def _run_prompt() -> int:
+def _run_verdict(env) -> int:
+    if env.get(VERDICT_WRITE_FILE):
+        _write_pair(Path.cwd(), env[VERDICT_WRITE_FILE])
+    if env.get(VERDICT_SLEEP):
+        time.sleep(float(env[VERDICT_SLEEP]))
+    answer = {"enabled-verdict-accept": "VERDICT: accept",
+              "enabled-verdict-reject": "VERDICT: reject"}.get(
+                  env[EMIT_VERDICT], "No valid verdict was emitted.")
+    sys.stdout.buffer.write((answer + "\n").encode("utf-8"))
+    sys.stdout.buffer.flush()
+    return int(env.get(VERDICT_EXIT, "0"))
+
+
+def _run_prompt(checker=False) -> int:
     env = os.environ
+    if checker and env.get(EMIT_VERDICT):
+        return _run_verdict(env)
     if env.get(WRITE_FILE):
         _write_pair(Path.cwd(), env[WRITE_FILE])
     if env.get(EMIT_STDOUT):
@@ -310,15 +329,18 @@ def main() -> int:
     # The task is read BEFORE anything is emitted: a child that answered first
     # and read afterwards would pass a test that only counts bytes back.
     task, task_text = _read_task()
+    checker = (task_text.startswith("conduct independent verification")
+               and any(argv[index:index + 2] == ["--permission-mode", "plan"]
+                       for index in range(len(argv))))
     if not task["read"]:
         _record(argv, task, None)
-        return _run_prompt()
+        return _run_prompt(checker)
     if not os.environ.get(LEAK_CHECK):
         # An ordinary run: the task was read and measured, and no leak scan was
         # asked for. `marker: null` records that honestly rather than implying
         # a scan that passed.
         _record(argv, task, None)
-        return _run_prompt()
+        return _run_prompt(checker)
     try:
         report, frame = _probe_report(argv, task_text)
     except _ProbeMissing as missing:
@@ -327,7 +349,7 @@ def main() -> int:
         sys.stderr.buffer.flush()
         return PROBE_MISSING_EXIT
     _record(argv, task, report, frame)
-    return _run_prompt()
+    return _run_prompt(checker)
 
 
 if __name__ == "__main__":

@@ -544,9 +544,9 @@ def test_verification_failed_never_appears_without_its_explanation() -> None:
     assert "note(VERIFICATION_FAILED_NOTE)" in emitter.group(1)
     # And it is SPENT by every container that can show an outcome word: the run
     # row, the plan section, the position row, the outcome section and the
-    # timeline row. One declaration called once would be the same defect
-    # wearing a new shape, so the call sites are counted too.
-    assert text.count("alsoSay(") == 6, text.count("alsoSay(")
+    # timeline row, and now an artifact's source outcome. A declaration with
+    # missing consumers is the same defect, so the call sites are counted too.
+    assert text.count("alsoSay(") == 7, text.count("alsoSay(")
 
 
 def test_a_loop_reads_its_position_and_its_ceiling_from_two_documents() -> None:

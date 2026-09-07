@@ -9,8 +9,8 @@ from ..artifact_handoff import ArtifactHandoff, UnknownProposal
 from ..artifacts import ArtifactDocument
 from ..contracts import ActionRequest, ActionResultReceipt, _content_digest
 from ..run_store import RunStore
-from .base import AdapterManifest, AdapterVerification, PreparedAction
-from .deep_commands import DeepDispatchArgs, DeepReviewArgs
+from .base import AdapterManifest, AdapterVerification, PreparedAction, Published
+from .deep_commands import OUTPUT_LIMIT_BYTES, DeepDispatchArgs, DeepReviewArgs
 from .deep_contracts import OMITTED
 from .harness_profile import PREFLIGHT_RESIDUE_DETAIL, TASK_CHANNEL_STDIN
 from .harness_workspace import INSTRUCTION_LIMIT, WORK_DIR, WorkspaceNotContained
@@ -22,6 +22,7 @@ from .headless_values import (
     flagless,
     purpose_clause,
 )
+from .independent_check import CheckFrameError, build_frame, scan_frame, verdict
 
 
 REVIEW_CAPABILITY = "review"
@@ -39,11 +40,9 @@ class _ProposalUnknown(_HandoffUnavailable):
 class _ReviewAttempt:
     """What one review leaves for its verification, and nothing more.
 
-    The inputs are IDS, not documents. Verification needs only their identity --
-    it records which artifacts a review consumed -- so holding the documents
-    would keep an operator's whole durable material resident between `execute`
-    and `verify` for no purpose at all. The capability is removed rather than
-    left unused: a field that cannot hold content cannot leak it.
+    This record holds input IDS. A separate, short-lived material cache retains
+    the exact documents for a plan-named checker; both are released on every
+    verification road. A checker never resolves those inputs a second time.
 
     The OUTPUT stays, because it is the product: the review's own text becomes
     the durable artifact. It is the one thing here that must survive the spawn,
@@ -70,6 +69,16 @@ class ArtifactAwareTransport(HeadlessCliTransport):
                 profile.capability: "deep-arguments-v1",
                 REVIEW_CAPABILITY: "deep-arguments-v1",
             }
+        if not cls.review_enabled:
+            # A dispatch-only transport owes no read-only argv. Inheriting a
+            # method is not evidence it can serve a checker. It can still be a
+            # doer, publish its dispatch result, and release retained material.
+            for name in ("verify_for", "verification_started"):
+                setattr(cls, name, None)
+        else:
+            for name in ("verify_for", "verification_started"):
+                if getattr(cls, name) is None:
+                    setattr(cls, name, ArtifactAwareTransport.__dict__[name])
 
     def __init__(self, runner, *, root, clock, ids, adapter_id) -> None:
         super().__init__(
@@ -94,11 +103,19 @@ class ArtifactAwareTransport(HeadlessCliTransport):
         #: one run whatever another run left. Both hold IDS, never documents.
         self._dispatch_inputs: dict[tuple[str, str, str, str], tuple[str, ...]] = {}
         self._review_attempts: dict[tuple[str, str, str, str], _ReviewAttempt] = {}
-        #: The id of the durable document a dispatch's instruction was read
-        #: from, between `_instruction_text` and `_dispatch_task`, which folds
-        #: it into `_dispatch_inputs` so the evidence digest names it. An id,
-        #: never the document.
-        self._bound_instruction: dict[tuple[str, str, str, str], str] = {}
+        #: What a dispatch READS, resolved in `_instruction_text` -- before the
+        #: version preflight -- and spent by `_dispatch_task`: the exact
+        #: durable document the instruction came from (None on the file road)
+        #: and the bound input documents. Held between the two calls of one
+        #: attempt only; every road out of the attempt forgets it.
+        self._materials: dict[
+            tuple[str, str, str, str],
+            tuple[ArtifactDocument | None, tuple[ArtifactDocument, ...]]] = {}
+        # Independent checks consume these EXACT bytes, never a new lookup or
+        # a reread of the file instruction. Both verify roads release them.
+        self._check_materials: dict[
+            tuple[str, str, str, str],
+            tuple[str | None, tuple[ArtifactDocument, ...], ArtifactDocument | None]] = {}
 
     def prepare(self, request: ActionRequest) -> PreparedAction:
         if request.capability != REVIEW_CAPABILITY:
@@ -115,10 +132,15 @@ class ArtifactAwareTransport(HeadlessCliTransport):
             try:
                 result = super().execute(prepared)
             except _ProposalUnknown as error:
+                self._forget(prepared.request)
                 return self._receipt(
                     prepared.request, "failed", None,
                     f"{error}, so no task was spawned")
             except _HandoffUnavailable:
+                # A refused attempt leaves nothing resident either: the
+                # materials `_instruction_text` may already have resolved go
+                # with it, as on every other road out.
+                self._forget(prepared.request)
                 return self._receipt(
                     prepared.request, "failed", None,
                     "a durable dispatch input was unavailable, so no task was spawned")
@@ -151,8 +173,10 @@ class ArtifactAwareTransport(HeadlessCliTransport):
 
         A request the runtime minted names the proposal it came from, and the
         documents it reads are the ones standing when that proposal was
-        written -- never one published afterwards. A hand-made request names
-        no proposal and is answered as before, with the latest under each ref.
+        written -- never one published afterwards. A hand-made key that names
+        NO proposal is answered as before, with the latest under each ref; a
+        hand-made key that names a proposal this run does not hold is refused
+        by name (`UnknownProposal`), as the replay judge refuses it.
         """
         proposal_id = ArtifactHandoff.named_proposal(request)
         try:
@@ -176,6 +200,7 @@ class ArtifactAwareTransport(HeadlessCliTransport):
         neither is the refusal it always was, before any preflight.
         """
         proposal_id = ArtifactHandoff.named_proposal(request)
+        document = None
         if proposal_id is not None:
             try:
                 document = self._handoff.instruction(
@@ -184,21 +209,29 @@ class ArtifactAwareTransport(HeadlessCliTransport):
                 raise _ProposalUnknown(str(error)) from error
             except Exception as error:
                 raise _HandoffUnavailable from error
-            if document is not None:
-                self._bound_instruction[attempt_relation(request)] = (
-                    document.artifact_id)
-                return document.content
-        return super()._instruction_text(request, args)
+        instruction = (super()._instruction_text(request, args)
+                       if document is None else document.content)
+        # The inputs are read HERE as well, on the road's first step and before
+        # the version preflight (`HeadlessCliTransport._dispatch`: instruction,
+        # sweep, preflight, task): a request whose inputs cannot be resolved is
+        # refused before ANY process is spawned, which is what the Studio's
+        # input fact promises a person. `_dispatch_task` spends them.
+        inputs = self._inputs(request, args.artifact_refs)
+        self._materials[attempt_relation(request)] = (
+            document, inputs)
+        return instruction
 
     def _dispatch_task(
             self, request: ActionRequest, args: DeepDispatchArgs,
             instruction: str) -> str:
-        inputs = self._inputs(request, args.artifact_refs)
         relation = attempt_relation(request)
-        bound = self._bound_instruction.pop(relation, None)
+        bound, inputs = self._materials.pop(relation, (None, None))
+        if inputs is None:
+            inputs = self._inputs(request, args.artifact_refs)
         self._dispatch_inputs[relation] = (
-            (() if bound is None else (bound,))
+            (() if bound is None else (bound.artifact_id,))
             + tuple(document.artifact_id for document in inputs))
+        self._check_materials[relation] = (instruction, inputs, bound)
         task = super()._dispatch_task(request, args, instruction)
         return task + self._render_inputs(inputs)
 
@@ -234,11 +267,9 @@ class ArtifactAwareTransport(HeadlessCliTransport):
         if self._workspace.sweep_homes():
             return self._receipt(
                 request, "failed", None, residue_detail(self.profile.tool_noun))
-        preflight = self._preflight(request)
-        if preflight is not None:
-            return preflight
-        if self._retained:
-            return self._receipt(request, "failed", None, PREFLIGHT_RESIDUE_DETAIL)
+        # The material is resolved BEFORE the version preflight, as on the
+        # dispatch road: a review whose inputs this run cannot hand it is
+        # refused before any process is spawned.
         try:
             inputs = self._inputs(request, args.target_artifact_refs)
             task = self._review_task(args, inputs)
@@ -254,6 +285,11 @@ class ArtifactAwareTransport(HeadlessCliTransport):
             return self._receipt(
                 request, "failed", None,
                 "the materialized review exceeds the bounded task channel")
+        preflight = self._preflight(request)
+        if preflight is not None:
+            return preflight
+        if self._retained:
+            return self._receipt(request, "failed", None, PREFLIGHT_RESIDUE_DETAIL)
         return self._run_review(request, args, inputs, payload, model)
 
     def _run_review(
@@ -263,7 +299,7 @@ class ArtifactAwareTransport(HeadlessCliTransport):
         work = self._workspace.work_dir(args.work_item_id)
         before = self._workspace.digest_work_tree()
         self._workspace.claim(request.run_id, request.action_id)
-        # This is the ONE road that asks for separated stderr, and the reason is
+        # Like the independent checker, this road separates stderr: here
         # the next four lines: `outcome.output` becomes durable artifact
         # content, so a vendor's diagnostics riding the same stream would be
         # published as part of the review. Separated here means DISCARDED, not
@@ -286,6 +322,7 @@ class ArtifactAwareTransport(HeadlessCliTransport):
             output=outcome.output,
             output_contains_env_value=outcome.output_contains_env_value,
             evidence=evidence)
+        self._check_materials[relation] = (None, inputs, None)
         result = self._observed(request, outcome)
         if result.outcome != "succeeded":
             self._forget(request)
@@ -374,7 +411,8 @@ class ArtifactAwareTransport(HeadlessCliTransport):
         """
         relation = attempt_relation(request)
         self._dispatch_inputs.pop(relation, None)
-        self._bound_instruction.pop(relation, None)
+        self._materials.pop(relation, None)
+        self._check_materials.pop(relation, None)
         self._review_attempts.pop(relation, None)
         self._attempts.pop(relation, None)
 
@@ -459,3 +497,167 @@ class ArtifactAwareTransport(HeadlessCliTransport):
         return self._verification(
             request, "verified", (evidence_id,),
             "the bound adapter recorded post-observation durable evidence")
+
+    def _sensitive_values(self) -> tuple[bytes, ...]:
+        # The profile home is code-owned, displaced the operator's value, and
+        # never enters the frame. Other overrides match the runner's own read.
+        return self._runner.allowed_environment_values(
+            self._env_allow(), overrides={**dict(self.profile.forced_env), self.profile.home_env: ""})
+
+    def _published(self, request, refusal, changed=(), result_document=None) -> Published:
+        relation = attempt_relation(request)
+        snapshot = self._attempts.get(relation)
+        instruction, inputs, bound = self._check_materials.get(relation, (None, (), None))
+        ids = self._dispatch_inputs.get(relation, tuple(row.artifact_id for row in inputs))
+        return Published(
+            refusal, changed, None if snapshot is None else snapshot.after,
+            ids, self._sensitive_values(), instruction,
+            tuple(row.as_dict() for row in inputs),
+            None if result_document is None else result_document.as_dict(),
+            None if bound is None else bound.as_dict())
+
+    def publish(self, request, result) -> Published:
+        """The doer's own holds and exact live material; never a self-verdict."""
+        self._hold_result(request, result)
+        snapshot = self._attempts.get(attempt_relation(request))
+        if (result.outcome != "succeeded" or result.exit_code not in (None, 0)
+                or snapshot is None or snapshot.after is None):
+            return self._published(request, "uncontained")
+        if request.capability == REVIEW_CAPABILITY:
+            return self._publish_review(request, snapshot)
+        changed = self._changed(snapshot)
+        if not changed:
+            return self._published(request, "nothing_changed")
+        if any(not name.startswith(f"{snapshot.work_dir.name}/") for name in changed):
+            return self._published(request, "outside_subtree")
+        if attempt_relation(request) not in self._check_materials:
+            return self._published(request, "uncontained")
+        return self._published(request, None, changed)
+
+    def _publish_review(self, request, snapshot) -> Published:
+        attempt = self._review_attempts.get(attempt_relation(request))
+        if attempt is None:
+            return self._published(request, "uncontained")
+        if self._changed(snapshot):
+            return self._published(request, "tree_changed")
+        if attempt.output_contains_env_value:
+            return self._published(request, "env_echo")
+        try:
+            document = self._handoff.record_review_artifact(
+                request, attempt.result_artifact_ref,
+                input_artifact_ids=attempt.input_artifact_ids,
+                content=attempt.output.decode("utf-8"))
+        except Exception:
+            document = None
+        if document is None:
+            return self._published(request, "uncontained")
+        return self._published(request, None, result_document=document)
+
+    def release(self, request) -> None:
+        self._forget(request)
+
+    def verification_started(self, request) -> bool:
+        return self._workspace.is_verification_claimed(request.run_id, request.action_id)
+
+    def _verdict_argv(self, home: Path, model: str | None) -> tuple[str, ...]:
+        return self._review_argv(home, model)
+
+    def verify_for(self, request, result, verifier, material) -> AdapterVerification:
+        """Run one read-only checker, under this checker's pin and model."""
+        self._hold_result(request, result)
+        try:
+            standing = self._handoff.standing_verification(
+                request, adapter_id=self.manifest.adapter_id,
+                verifier_instance_id=verifier.instance_id)
+            if standing is not None:
+                return self._verification(request, "verified", (standing.evidence_id,), "verified")
+            with self._workspace.owned():
+                return self._check_owned(request, verifier, material)
+        except CheckFrameError as error:
+            return self._checker_answer(request, error.reason)
+        except Exception:
+            return self._checker_answer(request, "material_unavailable")
+
+    def _checker_answer(self, request, reason) -> AdapterVerification:
+        state = "mismatch" if reason in ("tree_changed", "rejected") else "error"
+        return self._verification(request, state, (), reason)
+
+    def _check_owned(self, request, verifier, material) -> AdapterVerification:
+        if self._workspace.sweep_homes() or self._retained:
+            return self._checker_answer(request, "homes_refused")
+        if self._workspace.is_verification_claimed(request.run_id, request.action_id):
+            return self._checker_answer(request, "marker_standing")
+        before = self._workspace.digest_work_tree()
+        if material.after is None or dict(material.after) != before:
+            return self._checker_answer(request, "tree_changed")
+        args = (self._review_args(request.arguments) if request.capability == REVIEW_CAPABILITY
+                else self._dispatch_args(request.arguments))
+        frame = self._check_frame(request, args, material)
+        scan_frame(frame, (*material.sensitive, *self._sensitive_values()))
+        if self._preflight(request) is not None or self._retained:
+            return self._checker_answer(request, "preflight_refused")
+        # The preflight has no authority to alter the tree it is about to judge.
+        if self._evidence() != before:
+            return self._checker_answer(request, "tree_changed")
+        self._workspace.claim_verification(request.run_id, request.action_id)
+        outcome = self._attempt(
+            self._verdict_argv, f"{WORK_DIR}/{args.work_item_id}",
+            timeout=request.timeout_seconds, stdin_bytes=frame.payload,
+            separate_stderr=True, model=verifier.model,
+            output_limit=(None if request.capability == REVIEW_CAPABILITY
+                          else OUTPUT_LIMIT_BYTES[args.output_limit_profile]))
+        if self._evidence() != before:
+            return self._checker_answer(request, "tree_changed")
+        if self._retained:
+            return self._checker_answer(request, "homes_refused")
+        reason = verdict(outcome)
+        if reason != "verified":
+            return self._checker_answer(request, reason)
+        return self._record_check(request, args, verifier, frame.digest)
+
+    def _check_frame(self, request, args, material):
+        inputs = tuple(ArtifactDocument.from_dict(row) for row in material.input_documents)
+        self._hold_check_inputs(request, args, material, inputs)
+        digest = None
+        if request.capability == REVIEW_CAPABILITY:
+            document = ArtifactDocument.from_dict(material.result_document)
+            if (document.source_action_id != request.action_id or document.run_id != request.run_id
+                    or document.artifact_ref != args.result_artifact_ref
+                    or document.input_artifact_ids != material.input_artifact_ids):
+                raise CheckFrameError("material_unavailable")
+            digest, tree, contents = document.digest(), {}, {}
+        else:
+            tree, contents = self._workspace.read_work_tree(args.work_item_id, material.changed)
+        return build_frame(request, material, tree, contents, result_digest=digest,
+                           sensitive=(*material.sensitive, *self._sensitive_values()))
+
+    @staticmethod
+    def _hold_check_inputs(request, args, material, inputs) -> None:
+        refs = (args.target_artifact_refs if request.capability == REVIEW_CAPABILITY
+                else args.artifact_refs)
+        ids = tuple(row.artifact_id for row in inputs)
+        invalid = (any(row.run_id != request.run_id for row in inputs)
+                   or tuple(row.artifact_ref for row in inputs) != refs)
+        bound = material.instruction_document
+        if bound is not None:
+            document = ArtifactDocument.from_dict(bound)
+            invalid |= (request.capability != "dispatch" or document.run_id != request.run_id
+                        or document.artifact_ref != args.instruction_ref
+                        or document.content != material.instruction)
+            ids = (document.artifact_id, *ids)
+        if invalid or ids != material.input_artifact_ids:
+            raise CheckFrameError("material_unavailable")
+
+    def _record_check(self, request, args, verifier, digest) -> AdapterVerification:
+        if request.capability == REVIEW_CAPABILITY:
+            evidence = self._handoff.record_review(
+                request, args.result_artifact_ref, input_artifact_ids=None,
+                content=None, adapter_id=self.manifest.adapter_id,
+                verifier_instance_id=verifier.instance_id, expected_digest=digest)
+        else:
+            evidence = self._handoff.record_dispatch(
+                request, adapter_id=self.manifest.adapter_id, digest=digest,
+                verifier_instance_id=verifier.instance_id)
+        if evidence is None or evidence.digest != digest:
+            return self._checker_answer(request, "material_unavailable")
+        return self._verification(request, "verified", (evidence.evidence_id,), "verified")

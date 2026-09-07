@@ -268,12 +268,18 @@ def _hold_terminal_result(
     if terminal_result_for(prior_values, value.action_id) is not None:
         raise StoreError(
             f"action {value.action_id!r} already has a terminal result")
+    try:
+        signer = permitted_verifier(recovered, value.action_id)
+    except AttemptRelationError as error:
+        raise StoreError(str(error)) from error
     events = attempt_events_for(prior_values, value.action_id)
-    if events:
+    # Omitting every event cannot turn a named checker's success into a legacy
+    # result. Its evidence must follow a real lease and execution observation.
+    if events or (signer is not None and value.outcome == "succeeded"):
         try:
             validate_event_result(
                 prior_values, value, events,
-                permitted_verifier(recovered, value.action_id),
+                signer,
                 # WHO may sign, and what the signature must be over. Both are
                 # read from the run's own frozen plan and neither from the
                 # receipt being judged, which is what makes them hold against

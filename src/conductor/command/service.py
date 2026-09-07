@@ -16,9 +16,11 @@ from typing import Any
 
 from .adapters import AdapterRegistry, UnsupportedCapability
 from .contracts import (
+    ABSENT,
     ActionProposal,
     ControlMode,
     ObservationRecord,
+    PROPOSAL_INPUT_BINDING,
     frozen_config_bindings,
 )
 from .dispatch import DispatchArgumentError
@@ -155,6 +157,10 @@ class CommandService:
             rationale=rationale,
             config_digest=envelope.config_digest,
             node_id=node_id,
+            input_binding=(
+                PROPOSAL_INPUT_BINDING
+                if capability in ("dispatch", "review") and self._registry.argument_schema(
+                    bound, capability) == "deep-arguments-v1" else ABSENT),
         )
         self._store.append(proposal)
         return proposal

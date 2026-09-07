@@ -200,8 +200,11 @@ def test_a_second_answer_on_one_gate_carries_an_identity_of_its_own():
     assert "answers: answered.length," in _body(
         RUNREAD_FILE.read_text(encoding="utf-8"), "planWords(planned, answered)")
 
-    boot = (PANEL / "studio.js").read_text(encoding="utf-8")
+    # The decision road left the boot module at its line cap for the module
+    # that holds what a press MEANS (`studio-runwrite.js`); the rule is read
+    # there.
+    writer = (PANEL / "studio-runwrite.js").read_text(encoding="utf-8")
     assert ('const answered = Number.isInteger(row.answers) ? row.answers : 0;'
-            in boot), boot
+            in writer), writer
     assert ("receipt_id: `receipt-${row.gate_id}-${answered}-${draft.actor}`"
-            in boot), boot
+            in writer), writer

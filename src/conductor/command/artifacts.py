@@ -9,9 +9,11 @@ from typing import Any
 from .attempt_replay import (
     action_request_for,
     proposal_named_by,
+    proposal_by_id,
     values_the_proposal_saw,
 )
 from .attempts import AttemptEvent
+from .contracts import ActionResultReceipt
 from .contract_values import (
     ABSENT,
     ContractError,
@@ -136,6 +138,21 @@ def latest_artifacts(
     return tuple(latest[artifact_ref] for artifact_ref in asked)
 
 
+def settled_products(values: Iterable[object]) -> tuple[ArtifactDocument, ...]:
+    """Keep inputs whose producing action has not ended unsuccessfully.
+
+    Human-published documents have no source action and remain available.
+    A not-yet-terminal action is held by workflow eligibility, not this filter.
+    Callers choose their journal cut first; a bound preview is never silently
+    switched to another document because a later record changed its standing.
+    """
+    rows = tuple(values)
+    rejected = {row.action_id for row in rows
+                if type(row) is ActionResultReceipt and row.outcome != "succeeded"}
+    return tuple(row for row in rows if type(row) is ArtifactDocument
+                 and row.source_action_id not in rejected)
+
+
 def validate_artifact_source(
         document: ArtifactDocument, prior_values: tuple[object, ...]) -> None:
     """A produced artifact follows the observed action that produced it."""
@@ -242,7 +259,7 @@ def required_input_refs(capability: object,
 
 
 def unresolved_input_refs(
-        documents: Iterable[ArtifactDocument], capability: object,
+        documents: Iterable[object], capability: object,
         arguments: Mapping[str, Any]) -> tuple[str, ...]:
     """Which of this step's required inputs no document stands for yet.
 
@@ -264,8 +281,7 @@ def unresolved_input_refs(
     asked = required_input_refs(capability, arguments)
     if not isinstance(asked, (list, tuple)):
         return ()
-    standing = {document.artifact_ref for document in documents
-                if type(document) is ArtifactDocument}
+    standing = {document.artifact_ref for document in settled_products(documents)}
     missing: list[str] = []
     for ref in asked:
         if type(ref) is str and ref not in standing and ref not in missing:
@@ -293,9 +309,9 @@ def _artifact_answers_its_request(
     - the inputs are exactly the documents the request's own references resolve
       to, IN THE ORDER the request named them. Resolution is `latest_artifacts`
       -- the same function the transport resolves with -- against the records
-      standing when the request's PROPOSAL was written (`_the_request_saw`):
-      "latest" means what it meant when a person confirmed it, and a document
-      published after that proposal was never this review's material.
+      standing at the cut named by the proposal's input-binding version
+      (`_the_request_saw`). Current proposals bind at preview; historical,
+      unmarked proposals keep their original pre-artifact cut on replay.
     """
     if source.capability != REVIEW_CAPABILITY:
         raise ContractError(
@@ -306,40 +322,66 @@ def _artifact_answers_its_request(
         raise ContractError(
             f"artifact {document.artifact_ref!r} is not the result reference "
             f"action {document.source_action_id!r} asked for")
-    prior_artifacts = [
-        prior for prior in _the_request_saw(source, prior_values)
-        if isinstance(prior, ArtifactDocument)]
     try:
         resolved = latest_artifacts(
-            prior_artifacts,
+            _products_the_request_saw(source, prior_values),
             required_input_refs(source.capability, arguments))
     except ContractError as error:
         raise ContractError(
             f"action {document.source_action_id!r} names inputs this run cannot "
             f"resolve: {error}") from None
     expected = tuple(row.artifact_id for row in resolved)
+    _hold_selected_products(source, expected, prior_values)
     if document.input_artifact_ids != expected:
         raise ContractError(
             f"artifact input ids do not match what action "
             f"{document.source_action_id!r} asked for")
 
 
+def _has_bound_inputs(source: Any, values: tuple[object, ...]) -> bool:
+    named = proposal_named_by(source)
+    proposal = None if named is None else proposal_by_id(values, named)
+    return proposal is not None and proposal.input_binding is not ABSENT
+
+
+def _products_the_request_saw(source: Any, prior: tuple[object, ...]):
+    """Only current marked inputs gain the settled-product judgement."""
+    seen = _the_request_saw(source, prior)
+    return (settled_products(seen) if _has_bound_inputs(source, prior)
+            else tuple(row for row in seen if isinstance(row, ArtifactDocument)))
+
+
+def _hold_selected_products(
+        source: Any, expected: tuple[str, ...], prior: tuple[object, ...]) -> None:
+    """Refuse a subsequently rejected bound input; never substitute another id."""
+    if not _has_bound_inputs(source, prior):
+        return
+    available = {row.artifact_id for row in settled_products(prior)}
+    if any(artifact_id not in available for artifact_id in expected):
+        raise ContractError(
+            f"action {source.action_id!r} names an input whose producing action "
+            "failed after its proposal; create a new proposal")
+
+
 def _the_request_saw(
         source: Any, prior_values: tuple[object, ...]) -> tuple[object, ...]:
     """The records a request's inputs are resolved over.
 
-    Those standing when the request's proposal was written, for a request the
-    runtime minted; everything standing before the artifact, for one that
-    names no proposal -- so a hand-made journal written before the binding
-    existed replays exactly as it did. A request that names a proposal this
+    A marked proposal binds inputs at its journal position. An unmarked
+    historical proposal keeps the old pre-artifact reading; its recorded bytes
+    are not reinterpreted by an input-binding rule introduced afterwards.
+    The marker participates in the proposal digest, so removing it cannot
+    preserve the preview a human confirmed. A request that names a proposal this
     run does not hold is refused, by name: the transport refuses the same
-    request the same way (`UnknownProposal`), and two readers of one journal
-    may not disagree. The transport binds with the same two answers
-    (`ArtifactHandoff.bound`, `.resolve`), which is what makes a review's
-    recorded inputs and this judgement agree on every journal.
+    request the same way (`UnknownProposal`). A historical record can be read
+    without granting it new authority: the live runtime and transport require
+    a new marked proposal before a legacy pending action can be executed.
     """
     named = proposal_named_by(source)
     if named is None:
+        return prior_values
+    proposal = proposal_by_id(prior_values, named)
+    if proposal is not None and proposal.input_binding is ABSENT:
         return prior_values
     seen = values_the_proposal_saw(prior_values, named)
     if seen is None:

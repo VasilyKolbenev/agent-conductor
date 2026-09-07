@@ -1,7 +1,7 @@
 """What the command boundary refuses from the records alone.
 
-Five holds, and what makes them one circuit is what they do NOT need: no
-registry, no clock, no session, nothing this process happens to be holding.
+These holds import no registry, clock or session. A registry's reviewed
+capability fact may be supplied as a callable for independent verification.
 Each is a pure question about a run's own durable records and the caller's own
 body, which is why each was a `@staticmethod` on ``CommandApi`` -- a method
 that never touches ``self`` is a function that has not been moved yet, and
@@ -171,3 +171,22 @@ def _sandboxes_are_provided(
         for route in unprovidable_sandboxes(node.resources)[:1]:
             raise ApiRefusal.plan_sandbox_unprovidable(
                 run_id, node.node_id, route)
+
+
+def _verifiers_are_servable(
+        config, run_id: str, nodes, bound_adapter, verifies_independently, *,
+        reachable=None) -> None:
+    """Refuse an immutable plan whose named checker this build cannot provide."""
+    for node in nodes:
+        instance = node.verifier_instance_id
+        if instance is None:
+            continue
+        bound = bound_adapter(config, run_id, instance)
+        if reachable is not None and bound not in reachable:
+            raise ApiRefusal.service_unreachable_adapter(run_id, instance)
+        try:
+            supported = verifies_independently(bound, node.capability) is True
+        except Exception:
+            supported = False
+        if not supported:
+            raise ApiRefusal.fixed("capability_unsupported")

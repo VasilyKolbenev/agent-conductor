@@ -107,12 +107,14 @@ def _honest_run(tmp_path: Path):
             artifact_id=f"artifact-seed-{index}", artifact_ref=ref,
             run_id=RUN_ID, created_at=NOW, media_type="text/markdown",
             content=f"# {ref}\n\nmaterial number {index}."))
+    # Build today's live review first; the tests then tamper with its real history.
     proposal = ActionProposal(
         proposal_id="proposal-causality", run_id=RUN_ID,
         attempt_id="attempt-causality", instance_id=INSTANCE_ID,
         capability="review", arguments=ARGUMENTS, scope=("work",),
         proposed_by="lane", proposed_at=NOW, timeout_seconds=60,
-        rationale="review two durable inputs", config_digest=snapshot_digest(CONFIG))
+        rationale="review two durable inputs", config_digest=snapshot_digest(CONFIG),
+        input_binding="proposal-v1")
     store.append(proposal)
     runtime = ControlRuntime(
         store, AdapterRegistry([adapter]), clock=lambda: NOW, ids=_Ids())

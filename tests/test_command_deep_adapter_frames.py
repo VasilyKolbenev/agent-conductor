@@ -276,12 +276,14 @@ class RaisingExecutable:
 
 
 def a_deep_run(root, runner, *, evidence_source=None):
+    """Drive current deep frames without changing the generic native fixture."""
     root.mkdir(parents=True, exist_ok=True)
     store = a_store(root)
     adapter = configured(
         ClaudeCodeAdapter, runner, root, evidence_source=evidence_source)
     runtime, authorization = authorized(
         store, adapter, proposal_changes={
+            "input_binding": "proposal-v1",
             "arguments": ARGUMENTS["dispatch"],
             "rationale": "Run one closed fake deep dispatch."})
     return store, runtime, authorization
@@ -369,6 +371,7 @@ def test_the_effect_fires_only_after_its_lease_is_already_durable(tmp_path):
     adapter = configured(ClaudeCodeAdapter, runner, root)
     runtime, authorization = authorized(
         store, adapter, proposal_changes={
+            "input_binding": "proposal-v1",
             "arguments": ARGUMENTS["dispatch"],
             "rationale": "Run one closed fake deep dispatch."})
 
@@ -406,6 +409,7 @@ def test_a_restart_resolves_a_lease_only_attempt_without_repeating_the_effect(tm
     adapter = configured(ClaudeCodeAdapter, crashed, root)
     runtime, authorization = authorized(
         store, adapter, proposal_changes={
+            "input_binding": "proposal-v1",
             "arguments": ARGUMENTS["dispatch"],
             "rationale": "Run one closed fake deep dispatch."})
 

@@ -84,13 +84,14 @@ def _driven(tmp_path: Path, **knobs: str):
             run_id=RUN_ID, cycle_id="grok-orbit", created_at=NOW,
             config_digest=snapshot_digest(CONFIG), mode="confirm"),
         CONFIG)
+    # This probe must reach a current live task, not the legacy preview refusal.
     proposal = ActionProposal(
         proposal_id="proposal-grok", run_id=RUN_ID, attempt_id="attempt-grok",
         instance_id=INSTANCE, capability="dispatch", arguments=ARGUMENTS,
         scope=("work",), proposed_by="lane", proposed_at=NOW,
         timeout_seconds=60,
         rationale="drive Grok Build through the real Confirm runtime",
-        config_digest=snapshot_digest(CONFIG))
+        config_digest=snapshot_digest(CONFIG), input_binding="proposal-v1")
     store.append(proposal)
     registry = AdapterRegistry([adapter])
     runtime = ControlRuntime(store, registry, clock=lambda: NOW, ids=_ids())

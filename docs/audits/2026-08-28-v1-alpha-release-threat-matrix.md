@@ -1,9 +1,10 @@
 # December Command v1 public alpha — release threat matrix
 
 - **Recorded:** 2026-08-28
+- **Extended:** 2026-09-07 — independent checker authority and material containment
 - **Production base:** `ade6a7f`
 - **Supersedes:** `docs/audits/2026-08-13-v2-threat-matrix.md` (a historical snapshot of `63d261a`)
-- **Scope:** every threat the v2 early matrix named, judged against the shipped product
+- **Scope:** the eighteen early-matrix threats plus three independent-checker threats
 
 This is the release posture. The v2 matrix asked a different question — which Day-1
 and Day-2 seams had been built yet — and answered it correctly for its own base. It was
@@ -194,6 +195,33 @@ itself failing on synthetic rows before it is trusted on these.
 - Witness:
   `tests/test_command_http_transport.py::test_structured_csrf_fixtures_drive_the_real_transport`
 
+### CHECKER-ONCE — recovery spends a second checker call
+
+- Status: `HELD`
+- Door: `src/conductor/command/verify_road.py::verify_independently`
+- Fixture: `standing_verification_marker`
+- Expected invariant: Without a live grant, reuse standing matching evidence or refuse; never start another checker, even if its start status is unknown.
+- Witness:
+  `tests/test_command_independent_runtime.py::test_restart_with_no_checker_evidence_never_spends_a_second_grant`
+
+### CHECKER-WRITES — a checker changes the work and claims acceptance
+
+- Status: `HELD`
+- Door: `src/conductor/command/adapters/artifact_transport.py::ArtifactAwareTransport._check_owned`
+- Fixture: `checker_that_writes`
+- Expected invariant: A changed work tree defeats an accept verdict and produces no verified evidence.
+- Witness:
+  `tests/test_independent_checker_transport.py::test_checker_refusal_no_verdict_or_write_never_becomes_success`
+
+### WORKTREE-CONTENT — a result path escapes through a directory portal
+
+- Status: `HELD`
+- Door: `src/conductor/command/adapters/harness_workspace.py::HarnessWorkspace.read_work_tree`
+- Fixture: `portal_under_work_item`
+- Expected invariant: List the portal's kind; never walk it or read target bytes into the checker material.
+- Witness:
+  `tests/test_sabotage_fixtures.py::test_work_item_portal_fixture_is_not_opened_by_the_checker`
+
 <!-- THREAT-MATRIX:END -->
 
 ## What this document does not claim
@@ -203,10 +231,13 @@ path; the witness proves the behaviour, the door tells a reader where to look. T
 resolves both in the syntax tree and pins the pair, so a door that is renamed or deleted
 and a witness that is swapped for another both surface as a decision rather than a drift.
 
-Coverage of a threat is not coverage of its neighbourhood. Two limits are recorded in the
-2026-08-27 block-B audit and remain open: leak-surface parity is thinner for Kimi and dsh
-than for Claude, Codex and Grok; and what an operator may put in `env_allow` is not
-bounded by anything in this tree. Neither is a row here, because neither has a door.
+Coverage of a threat is not coverage of its neighbourhood. The 2026-08-27 audit's two
+specific gaps are no longer accurate descriptions of this tree: Kimi and dsh now have
+`test_command_kimi_leak_surfaces.py` / `test_command_dsh_leak_surfaces.py`, and
+`harness_profile.reviewed_env_allow` plus the process environment contract reject reviewed
+code-loading overrides. These do not imply an operating-system sandbox or an audit of
+every possible provider input. The final candidate's actual gates remain separate from
+this document's structural door/witness inventory.
 
 ## Exit rule
 

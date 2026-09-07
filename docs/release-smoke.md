@@ -9,7 +9,8 @@ real browser request on a real socket, and that it answers on loopback and nowhe
 **This procedure is a server check, not a product check.** It fetches documents and reads
 what came back; it never operates the Workflow Studio, because nothing scriptable can. What a
 person must do by hand — open the Studio, publish a workflow, confirm a gate, watch a run — is
-`docs/owner-acceptance.md`, and a release needs both.
+`docs/owner-acceptance.md`, and a release needs both, including its real-result exercise.
+The current scope and the deferred next-version work are in [V1/V2 scope](v1-v2-scope.md).
 
 Twelve steps, in order. Every one of them names what you must see. A step whose output does not
 match is a release blocker, not a note for later.
@@ -33,9 +34,8 @@ Never smoke-test in the environment you develop in: an editable install of the w
 will answer every command and prove nothing about what you are about to publish.
 
 ```powershell
-$SMOKE = "$env:TEMP\conduct-smoke"
-Remove-Item -Recurse -Force $SMOKE -ErrorAction SilentlyContinue
-New-Item -ItemType Directory -Force -Path $SMOKE | Out-Null
+$SMOKE = Join-Path ([System.IO.Path]::GetTempPath()) ("conduct-smoke-" + [guid]::NewGuid().ToString("N"))
+New-Item -ItemType Directory -Path $SMOKE | Out-Null
 python -m venv "$SMOKE\venv"
 $env:PYTHONPATH = ""          # nothing on the path but the installed package
 $PY = "$SMOKE\venv\Scripts\python.exe"
@@ -44,9 +44,9 @@ $CONDUCT = "$SMOKE\venv\Scripts\conduct.exe"
 ```
 
 For a candidate already published, `<the release candidate>` is the install line from the
-README's quickstart. For one that is not published yet, it is the path to the source tree you
-are about to build from — the point of the step is that the artifact under test is installed,
-not imported from a checkout.
+README's quickstart. For one that is not published yet, use the wheel built from the exact
+candidate SHA, record its filename and hash, and install that wheel — not an editable source
+tree or a separately rebuilt revision whose bytes differ from the proposed release.
 
 Expect: the install succeeds, and `& $PY -m pip list` shows the distribution at the version
 you are shipping.
@@ -82,7 +82,7 @@ here, before you publish.
 
 ```powershell
 $demo = Start-Process -FilePath $CONDUCT -ArgumentList "demo","--port","7801" `
-    -PassThru -NoNewWindow `
+    -PassThru -WindowStyle Hidden `
     -RedirectStandardOutput "$SMOKE\demo-out.txt" -RedirectStandardError "$SMOKE\demo-err.txt"
 Start-Sleep -Seconds 3
 Get-Content "$SMOKE\demo-out.txt"
@@ -305,7 +305,7 @@ You hold the "scout" role in this project's Conduct cycle; you review findings f
 
 ```powershell
 $up = Start-Process -FilePath $CONDUCT -ArgumentList "up","--dir",$PROJ,"--port","7802" `
-    -PassThru -NoNewWindow `
+    -PassThru -WindowStyle Hidden `
     -RedirectStandardOutput "$SMOKE\up-out.txt" -RedirectStandardError "$SMOKE\up-err.txt"
 Start-Sleep -Seconds 3
 Get-Content "$SMOKE\up-out.txt"
@@ -416,9 +416,10 @@ holds, and a person retyping it could only get it wrong.
 
 ## Teardown
 
-```powershell
-Remove-Item -Recurse -Force $SMOKE
-```
+Retain the uniquely named `$SMOKE` directory until the evidence has been reviewed. Stop only
+the process ids returned above. Then inspect and delete that exact temporary directory with
+the file manager if it is no longer needed; never remove another acceptance project or a
+repository directory by matching a broad name.
 
 The demo's own fixture is a copy in the system temp directory, printed on stderr in step 4;
 it is thrown away with the rest of the temp directory and nothing in the package is touched
@@ -437,12 +438,13 @@ here is one somebody will meet; a gap nobody named is one they meet alone.
   step→role, because the frozen configuration names the workflow and revision; this build does
   not perform that join.
 - **Four of the six declared capabilities have no provider.** `evidence`, `stop`, `retry` and
-  `switch` are part of the deep protocol and every provider in the catalogue declares only
-  `observe`, `dispatch` and `review`. **What it costs:** a workflow cannot use those capabilities
+  `switch` are part of the deep protocol, but no current catalogue transport supplies them.
+  Some transports supply dispatch only; compatible Claude Code/Codex transports also supply
+  review and independent verification. **What it costs:** a workflow cannot use those capabilities
   at all, and their argument vocabularies are exercised only by the contract tests and the fake
   harness. `adapters/deep_commands.py` says so at the vocabularies themselves.
 - **A plan naming a sandbox route this build cannot provide no longer opens a run.** This is the
-  one backward-incompatible change in the release, and it is deliberate. `project-root` is the
+  deliberate live-authority tightening. `project-root` is the
   only route this build provides; a step attaching any other `sandbox` row is now refused twice —
   when a run is opened, naming the step and the route (*step 'X' demands sandbox route 'Y' that
   this build does not provide*), and again when an attempt is authorized, for runs that were
@@ -476,11 +478,81 @@ here is one somebody will meet; a gap nobody named is one they meet alone.
   live route refuses that decision; the scheduler, by design, settles a gate from its receipts
   alone, so a journal written around the route keeps its meaning — the shipped demo journal is
   one. **What it costs:** nothing through the screens; a forged journal is a forged journal.
+- **Legacy deep proposals need a new preview before a new execution.** Older proposals lack
+  the digest-covered `input_binding: "proposal-v1"` marker. Completed journals retain their
+  original replay semantics, and exact confirmation retries remain idempotent, but a pending
+  unbound proposal cannot start another task. **What it costs:** use Studio's re-propose road,
+  inspect the current instruction/input bindings, then explicitly confirm the new proposal.
+  Native/process proposals are not reclassified by their argument spelling.
+- **Independent verification is bounded, not a hidden unlimited second agent.** Its exact
+  first non-empty answer must be `VERDICT: accept` or `VERDICT: reject`; malformed output,
+  rejection, timeout or changed work cannot yield success. The frame limit is 64 KiB; changed
+  file content is inlined up to 16 KiB per file and larger files are listed by digest. A review
+  whose combined input/result does not fit is refused rather than truncated. **What it costs:**
+  divide oversized work deliberately, and preserve the failed attempt instead of treating a
+  human decision as verification. Each task child gets its own timeout N; 2 × N is the combined
+  task allowance, not a total wall-clock deadline including preflights and setup. Restart
+  reuses matching evidence if it exists but never spends another checker call automatically.
 - **The browser gate is sensitive to socket exhaustion on Windows.** Consecutive full-gate runs
   can fail with `ERR_NO_BUFFER_SPACE` or a setup stall while sockets sit in `TIME_WAIT`.
-  **What it costs:** whoever runs the gate must let the host drain between runs and re-run a
-  failed module in isolation before calling it a defect. Every failure of this class seen in this
-  session passed in isolation.
+  **What it costs:** record the failed command, socket state and exact timeout, then let the
+  host drain before an isolated repeat. A green repeat alone proves neither a host diagnosis
+  nor that the original failure was harmless; final normal and reverse gates must still pass.
+
+## Additional release gates — not filled by the twelve checks above
+
+- Record one exact candidate SHA for complete fast, complete Python 3.11 floor, browser normal
+  and reverse, applicable mutation batteries, structural limits, frozen bytes and payload parity.
+  Keep full output and exit codes outside the deliverable; a prior SHA's pass is not this SHA's pass.
+- Rehearse the real-result exercise in [owner acceptance](owner-acceptance.md), then have the
+  owner repeat it. Include a real checker rejecting a known wrong result and accepting the
+  corrected one. Record the bounded verdict and artifact/digest, never credentials or raw
+  private checker prose. Fake executables and the synthetic `integration-smoke` do not prove
+  vendor behavior or useful work.
+- Use only explicitly authorized credentials and reviewed installation versions. Missing
+  credentials, an installation version mismatch, and an unrun paid check stay separate named
+  blockers. Do not extract an unrelated CLI login, weaken a version pin, or substitute a
+  final-message file for the required working-tree result.
+- After authorized integration/push, require actual green jobs for Linux, Windows and macOS
+  on the final candidate. Local workflow structure and a previous run are not remote evidence.
+  Publication/tagging and the owner's acceptance remain separate decisions.
+
+### Opt-in real checker probe — a narrower developer gate
+
+`tests/test_command_independent_real_smoke.py` can check a real Claude Code or Codex
+installation against both a correct and an incorrect one-file result. Run it from the exact
+candidate checkout with that candidate's prepared test interpreter. It creates a synthetic
+doer observation and calls the real checker; **it does not run a real doer or the complete
+Studio workflow**, and cannot replace the real-result owner exercise.
+
+Only after explicitly authorizing the two checker calls, configure one provider. This example
+names an already-set credential; it neither sets nor prints the secret value:
+
+```powershell
+$env:CONDUCT_CLAUDE_EXECUTABLE = "C:\absolute\path\to\reviewed\claude.exe"
+$env:CONDUCT_CLAUDE_KEY_NAME = "ANTHROPIC_API_KEY"
+$env:CONDUCT_CLAUDE_REAL_CHECKER = "1"
+try {
+    python -m pytest tests/test_command_independent_real_smoke.py -k CLAUDE -q
+} finally {
+    Remove-Item Env:CONDUCT_CLAUDE_REAL_CHECKER
+}
+```
+
+For Codex, use `CONDUCT_CODEX_EXECUTABLE`, `CONDUCT_CODEX_KEY_NAME` (normally naming
+`OPENAI_API_KEY`), `CONDUCT_CODEX_REAL_CHECKER`, and `-k CODEX`. The executable is the
+reviewed native binary, not a shell shim. `CONDUCT_CHECKER_MODEL` optionally selects the
+configured model; `CONDUCT_CHECKER_ENV_NAMES` optionally lists additional allowed environment
+**names**, comma-separated, such as a deployment endpoint or required Windows bootstrap name.
+Do not discover credentials from another CLI login or weaken a failed version pin.
+
+Each selected provider has two cases, each allowing one checker task with a 60-second task
+ceiling and 4 KiB capture profile; version preflights and setup add wall time. Expect literal
+`VERDICT: accept` for the correct file and `VERDICT: reject` for the wrong one, with the work
+tree unchanged and no retained attempt home. Missing opt-in, installation or credential is an
+explicit skip, not evidence of vendor behavior. Reports retain only the allowed verdict word,
+not arbitrary checker output. Clear the opt-in flag after the probe as above so a later test
+run cannot silently repeat these calls.
 
 ## What this procedure does not check
 

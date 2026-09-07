@@ -30,6 +30,9 @@ a frame built from that document alone.
 from __future__ import annotations
 
 import hashlib
+from dataclasses import replace
+
+import pytest
 
 from conductor.command.adapters import AdapterRegistry
 from conductor.command.adapters.deep_commands import (
@@ -41,7 +44,7 @@ from conductor.command.adapters.harness_workspace import INSTRUCTION_DIR, WORK_D
 from conductor.command.artifact_handoff import ArtifactHandoff
 from conductor.command.artifacts import ArtifactDocument
 from conductor.command.contract_values import ContractError
-from conductor.command.contracts import ActionProposal, ActionRequest, RunEnvelope
+from conductor.command.contracts import ABSENT, ActionProposal, ActionRequest, RunEnvelope
 from conductor.command.run_store import RunStore, StoreError, snapshot_digest
 from conductor.command.runtime import (
     AttemptState,
@@ -64,7 +67,7 @@ from tests.test_command_claude_review import (
     INPUT_REF,
     OUTPUT_REF,
     _confirmation,
-    _proposal,
+    _proposal as _review_proposal,
 )
 from tests.test_command_claude_review import ARGUMENTS as REVIEW_ARGUMENTS
 from tests.test_command_claude_review import CONFIG as REVIEW_CONFIG
@@ -77,6 +80,17 @@ from tests.test_command_claude_transport import NOW, a_harness, a_request, run_o
 DOC_REF = "instruction-plan"
 PROBE = _fakeclaude.PROBE_PREFIX + "feed0123" * 8
 UNAVAILABLE = "a durable dispatch input was unavailable, so no task was spawned"
+
+
+def _proposal():
+    """This module's live binding witnesses use the current proposal contract."""
+    return replace(_review_proposal(), input_binding="proposal-v1",
+                   preview_digest="")
+
+
+def _legacy_review_proposal():
+    """Historical compatibility witnesses intentionally retain the old shape."""
+    return replace(_review_proposal(), input_binding=ABSENT, preview_digest="")
 
 
 def _document(artifact_id: str, artifact_ref: str, content: str,
@@ -93,7 +107,7 @@ def _proposal_for(body: dict) -> ActionProposal:
         capability="dispatch", arguments=body, scope=("work",),
         proposed_by="lane", proposed_at=NOW, timeout_seconds=60,
         rationale="carry out the bound sources",
-        config_digest=snapshot_digest(CONFIG))
+        config_digest=snapshot_digest(CONFIG), input_binding="proposal-v1")
 
 
 def _authorized(tmp_path, *, before=(), after=(), arguments=None, probe=True,
@@ -290,7 +304,14 @@ def test_a_dispatch_input_published_after_the_proposal_is_not_what_the_child_rea
 
 
 def test_an_input_published_only_after_the_proposal_is_unavailable(tmp_path):
-    """A ref no document precedes is the refusal it always was: no spawn."""
+    """A ref no document precedes is the refusal it always was: no spawn.
+
+    Not even the version preflight (the fold review's C5/H1): the inputs are
+    resolved on the road's first step, so the Studio's sentence "the attempt
+    is refused before anything is spawned" is what happens. And a refused
+    attempt leaves nothing resident: the materials the first step resolved
+    go with it (the fold review's C1).
+    """
     late = _document("artifact-late-1", "artifact-late", "# Late\n\nToo late.")
     receipt, store, adapter, log, root = _refused(
         tmp_path, after=(late,), arguments={"artifact_refs": ["artifact-late"]},
@@ -298,7 +319,49 @@ def test_an_input_published_only_after_the_proposal_is_unavailable(tmp_path):
 
     assert receipt.outcome == "failed", receipt.detail
     assert receipt.detail == UNAVAILABLE
-    assert _fakeclaude.prompt_spawns(log) == []
+    assert _fakeclaude.spawns(log) == []
+    assert adapter._materials == {} and adapter._dispatch_inputs == {}
+
+
+@pytest.mark.parametrize("preflight_outcome", ("success", "refused", "raised"))
+def test_materials_survive_only_until_the_dispatch_consumes_or_refuses_them(
+        tmp_path, monkeypatch, preflight_outcome):
+    """A populated cache, not an empty one, is forgotten on every early exit.
+
+    The missing-input witness above refuses before `_materials` is assigned.
+    Here both documents are resolved and observed at preflight, after which a
+    version refusal or exception must discard them just as a task consumes them.
+    """
+    instruction = _document("instruction-first", DOC_REF, "Do the reviewed work.")
+    material = _document("input-first", "artifact-plan", "The reviewed source.")
+    _, authorization, _, adapter, log, _, _ = _authorized(
+        tmp_path, before=(instruction, material), probe=False,
+        arguments={"instruction_ref": DOC_REF, "artifact_refs": ["artifact-plan"]})
+    original_preflight = adapter._preflight
+    reached = []
+
+    def preflight(request):
+        assert tuple(adapter._materials.values()) == (
+            (instruction, (material,)),)
+        reached.append(True)
+        if preflight_outcome == "raised":
+            raise RuntimeError("preflight witness")
+        if preflight_outcome == "refused":
+            return adapter._receipt(request, "failed", None, "preflight refused")
+        return original_preflight(request)
+
+    monkeypatch.setattr(adapter, "_preflight", preflight)
+    prepared = adapter.prepare(authorization.request)
+    if preflight_outcome == "raised":
+        with pytest.raises(RuntimeError, match="preflight witness"):
+            adapter.execute(prepared)
+    else:
+        receipt = adapter.execute(prepared)
+        assert receipt.outcome == (
+            "succeeded" if preflight_outcome == "success" else "failed")
+    assert reached == [True]
+    assert adapter._materials == {}
+    assert len(_fakeclaude.prompt_spawns(log)) == (preflight_outcome == "success")
 
 
 def test_the_bound_instruction_names_itself_in_the_evidence_digest(tmp_path):
@@ -448,15 +511,17 @@ def test_a_request_naming_a_proposal_the_run_does_not_hold_is_refused_by_name(
     assert receipt.detail == (
         f"the request names proposal 'ghost', which run {RUN_ID!r} does not "
         "hold, so no task was spawned")
-    assert _fakeclaude.prompt_spawns(log) == []
+    assert _fakeclaude.spawns(log) == []
+    assert adapter._materials == {}
     assert [row.kind for row in store.read(RUN_ID).records] == []
-    # The same shape on the review road, refused by the same name.
+    # The same shape on the review road, refused by the same name -- and
+    # before the version preflight there too: no process at all.
     review = _ghost_keyed("dispatch-ghost", action_id="act-2",
                           capability="review", arguments=REVIEW_ARGUMENTS)
     receipt = run_once(adapter, review)
     assert receipt.outcome == "failed"
     assert receipt.detail.startswith("the request names proposal 'ghost'")
-    assert _fakeclaude.prompt_spawns(log) == []
+    assert _fakeclaude.spawns(log) == []
     # An empty suffix names nobody: the file road runs, one child spawned.
     receipt = run_once(adapter, _ghost_keyed("dispatch-", action_id="act-3"))
     assert "proposal" not in (receipt.detail or "")
@@ -534,6 +599,80 @@ def test_a_review_recorded_over_a_document_its_proposal_never_saw_is_refused_on_
         (earlier, proposal, later, unnamed, an_event(unnamed, "execution_observed", outcome="succeeded", exit_code=0)))
 
 
+def _a_review_run_with_a_later_candidate(tmp_path, *, marked=False):
+    """A review harness, its run, the seed, the proposal and a later candidate."""
+    adapter, root, log = a_harness(tmp_path, **{
+        _fakeclaude.EMIT_REVIEW: "enabled-review-output",
+        _fakeclaude.LEAK_CHECK: "enabled-review-leak-check",
+        "ANTHROPIC_API_KEY": API_KEY})
+    store = RunStore(root)
+    store.create_run(
+        RunEnvelope(
+            run_id=REVIEW_RUN, cycle_id="review-cycle", created_at=NOW,
+            config_digest=snapshot_digest(REVIEW_CONFIG), mode="confirm"),
+        REVIEW_CONFIG)
+    store.append(_document("artifact-source-1", INPUT_REF, "# Candidate, first",
+                           run_id=REVIEW_RUN))
+    proposal = _proposal() if marked else _legacy_review_proposal()
+    store.append(proposal)
+    store.append(_document(
+        "artifact-source-2", INPUT_REF,
+        f"# Candidate, after the proposal. {REVIEW_PROBE}", run_id=REVIEW_RUN))
+    return adapter, root, store, proposal
+
+
+def _record_a_later_candidate(tmp_path, monkeypatch, *, marked=False):
+    """Simulate the old transport and writer, then restore every real reader."""
+    from conductor.command import artifacts as artifacts_module
+    from conductor.command.adapters.artifact_transport import ArtifactAwareTransport
+
+    adapter, root, store, proposal = _a_review_run_with_a_later_candidate(
+        tmp_path, marked=marked)
+    monkeypatch.setattr(
+        ArtifactAwareTransport, "_inputs",
+        lambda self, request, refs: self._handoff.resolve(request.run_id, refs))
+    monkeypatch.setattr(
+        artifacts_module, "_artifact_answers_its_request", lambda *_: None)
+    runtime = ControlRuntime(
+        store, AdapterRegistry([adapter]), clock=lambda: NOW, ids=_Ids())
+    # The older server had neither the live re-propose guard nor bound inputs.
+    monkeypatch.setattr(runtime._registry, "argument_schema", lambda *_: None)
+    budget = Budget(
+        max_actions=8, max_action_seconds=3600,
+        max_confirmation_age_seconds=3600)
+    attempt = runtime.execute(runtime.authorize(
+        _confirmation(proposal), budget=budget))
+    assert attempt.state is AttemptState.SUCCEEDED, attempt.receipt.detail
+    journal = store.run_path(REVIEW_RUN) / "records.jsonl"
+    before = journal.read_bytes()
+    monkeypatch.undo()
+    return root, attempt, journal, before
+
+
+def test_a_journal_an_older_server_wrote_keeps_its_original_input_semantics(
+        tmp_path, monkeypatch):
+    """Old unmarked proposals replay unchanged; new marked ones bind at preview."""
+    root, attempt, journal, before = _record_a_later_candidate(tmp_path, monkeypatch)
+    recovered = RunStore(root).read(REVIEW_RUN)
+    produced = [row.value for row in recovered.records if row.kind == "artifact"
+                and row.value.source_action_id == attempt.request.action_id]
+    assert len(produced) == 1
+    assert produced[0].input_artifact_ids == ("artifact-source-2",)
+    assert recovered.warnings == ()
+    assert journal.read_bytes() == before
+
+
+def test_a_marked_journal_cannot_claim_the_later_document_on_read(tmp_path, monkeypatch):
+    """The same bad consumption is not grandfathered on the marked contract."""
+    from conductor.command.run_store import CorruptRun
+
+    root, _, journal, before = _record_a_later_candidate(
+        tmp_path, monkeypatch, marked=True)
+    with pytest.raises(CorruptRun, match="input ids do not match"):
+        RunStore(root).read(REVIEW_RUN)
+    assert journal.read_bytes() == before
+
+
 def test_the_two_readers_of_the_proposal_link_are_one(tmp_path):
     """The slice-3 review's #3: one prefix, one parser.
 
@@ -571,8 +710,9 @@ def test_a_request_names_the_proposal_it_was_minted_from_or_nobody():
     """`dispatch-<proposal_id>` is the runtime's own link, read back here.
 
     A request the runtime authorized carries it; a hand-made request carries
-    whatever its author wrote, and names no proposal -- so the transport takes
-    the file road for it, byte-for-byte as before this rule existed.
+    whatever its author wrote. One that names NO proposal takes the file road,
+    byte-for-byte as before this rule existed; one naming a proposal the run
+    does not hold is refused by name (the two tests above).
     """
     # Imported here rather than at the top, so that every behavioural witness
     # above still collects -- and reds on its own behaviour -- on a tree that

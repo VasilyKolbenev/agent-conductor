@@ -14,13 +14,10 @@ nothing never reaches a terminal success. The run store asks the evidence
 relation again as a causal rule, which is what makes it true of bytes this
 process did not write; asking it here is what makes it true early.
 
-WHAT STAYED in ``runtime`` and why, because the line is the whole point of the
-split: ``_verify`` is an arm of the execute state machine -- it calls the
-registry's verify seam, it appends the one durable receipt through ``_finish``,
-and the release matrix names it as the VERIFY-FAIL door. A module holding it
-would have to be handed the runtime, which is a method spelled differently
-rather than a seam. So the TOUCHING stayed there and the JUDGING came here, and
-nothing in this file imports ``runtime`` or reaches back into it.
+``runtime`` owns the execute state machine and its durable terminal receipt.
+Its independent-checker arm delegates the live calls and release to
+``verify_road``; both arms use these pure evidence judgments. This file imports
+neither caller and never calls an adapter or writes a record itself.
 
 The sentences are here for a second reason. Five refusals and one success used
 to be written inline at the five places that produced them, which is five
@@ -55,6 +52,24 @@ EVIDENCE_UNNAMED = ("this run's plan requires this step's verification "
                     "to name what it checked, and it names no digest")
 #: The one sentence on the other side of all of them.
 VERIFIED = "post-effect evidence was verified by the bound adapter"
+NOT_INDEPENDENT = "the configured checker cannot independently verify this result"
+NOT_RESUMABLE_LOST = "no standing checker evidence survives; verification was not repeated"
+NOT_RESUMABLE_NEVER = "the checker never started under live authority; verification was not started on recovery"
+DOER_OUTSIDE_SUBTREE = "the doer changed files outside its authorized work item"
+DOER_NOTHING_CHANGED = "the doer left no changed file for the checker to verify"
+DOER_UNCONTAINED = "the doer left no contained work tree for independent verification"
+DOER_TREE_CHANGED = "the review doer changed the work tree instead of only reviewing"
+DOER_ENV_ECHO = "the doer output contains an allowed environment value and was not published"
+FRAME_OVER_LIMIT = "the independent verification materials exceed their input ceiling"
+FRAME_ENV_ECHO = "the independent verification materials contain an allowed environment value"
+CHECKER_HOMES_REFUSED = "the checker's isolated home could not be prepared safely"
+CHECKER_PREFLIGHT_REFUSED = "the checker's installed build did not pass preflight"
+CHECKER_MARKER_STANDING = "this action already claimed its independent checker; no second check was started"
+CHECKER_NO_VERDICT = "the checker returned no complete accepted verdict for this result"
+CHECKER_MATERIAL_UNAVAILABLE = "the checker could not read the exact result materials safely"
+CHECKER_TREE_CHANGED = "the checker changed the work tree; its verdict was not accepted"
+CHECKER_REJECTED = "the independent checker rejected the doer's result"
+VERIFIED_INDEPENDENTLY = "the plan's independent participant verified the observed result"
 
 
 def refused_verification(
@@ -93,7 +108,8 @@ def refused_verification(
 def _bound_rows(
         recovered: RecoveredRun, request: ActionRequest, verifier: str,
         observed: AttemptEvent,
-        refs: tuple[str, ...]) -> tuple[EvidenceRef, ...] | None:
+        refs: tuple[str, ...], *,
+        verifier_instance_id: str | None = None) -> tuple[EvidenceRef, ...] | None:
     """The rows this result may rest on, or None when one of them does not stand.
 
     Every field of a verification is pinned here and pinned to the run's own
@@ -132,6 +148,7 @@ def _bound_rows(
             row.run_id != request.run_id or row.kind != "verification"
             or row.uri != expected_uri or row.created_by != verifier
             or row.verification != "verified" or row.verified_by != verifier
+            or row.verifier_instance_id != verifier_instance_id
             for row in evidence):
         return None
     return evidence
@@ -140,7 +157,8 @@ def _bound_rows(
 def standing_evidence(
         recovered: RecoveredRun, request: ActionRequest, verifier: str,
         observed: AttemptEvent,
-        refs: tuple[str, ...]) -> tuple[tuple[EvidenceRef, ...] | None, str]:
+        refs: tuple[str, ...], *, verifier_instance_id: str | None = None,
+) -> tuple[tuple[EvidenceRef, ...] | None, str]:
     """Resolve only bound verification evidence recorded after observation.
 
     Answers the evidence and no complaint, or `None` and the sentence saying
@@ -163,7 +181,8 @@ def standing_evidence(
     Returns:
         The evidence and an empty sentence, or None and the refusal.
     """
-    evidence = _bound_rows(recovered, request, verifier, observed, refs)
+    evidence = _bound_rows(recovered, request, verifier, observed, refs,
+                          verifier_instance_id=verifier_instance_id)
     if evidence is None:
         return None, EVIDENCE_UNSOUND
     if (demanded_evidence(recovered, request.action_id) == "digest"

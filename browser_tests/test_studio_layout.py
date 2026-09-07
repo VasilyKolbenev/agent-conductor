@@ -37,6 +37,7 @@ from playwright.sync_api import Browser, Page
 
 from browser_tests.test_studio_lifecycle import (  # noqa: F401
     RUN_ID,
+    STARTER,
     _Project,
     _Window,
     _open,
@@ -46,6 +47,10 @@ from browser_tests.test_studio_lifecycle import (  # noqa: F401
     _start_from_starter,
     project,
 )
+from conductor import server
+from conductor.command.adapters.claude_code import CLAUDE_PROTOCOL
+from conductor.command.operator_config import ProviderConfig
+from tests import _fakeclaude
 
 #: An ordinary laptop, a common desktop, and a window narrower than either.
 SIZES = [(1280, 800), (1440, 900), (900, 700)]
@@ -155,6 +160,9 @@ def test_the_canvas_begins_within_the_first_screen_once_a_workflow_is_chosen(
         page.wait_for_function(
             "() => document.querySelector(\"#workflowToolbar select[name='workflow']\")"
             ".value === 'laid-out'")
+        page.wait_for_function(
+            "() => document.querySelector('[data-fold=run] > summary').innerText"
+            " === 'Open a run — publish a revision first'")
         editing = page.evaluate(MEASURE)
         assert editing["folds"] == [["start", False], ["run", False]], editing
         assert editing["canvas_top"] <= 400, editing
@@ -169,22 +177,23 @@ def test_the_canvas_begins_within_the_first_screen_once_a_workflow_is_chosen(
         page.context.close()
 
 
+@pytest.mark.parametrize("workflow_id", ["laid-out", LONG_ID], ids=["short", "128"])
 def test_the_canvas_begins_within_the_first_screen_once_a_revision_is_published(
-        chromium: Browser, project: _Project) -> None:
+        chromium: Browser, project: _Project, workflow_id: str) -> None:
     """The state a person meets right after publishing, at 1280×800.
 
     The run box opens by state there -- the next thing to do is to open a run
     -- and the slice-3 review measured the canvas beginning at 945 of 800
     under it: the form's fields stood in one column, four role pickers and
     three sentences tall. In rows the same form leaves the canvas beginning
-    within the first screen (measured 649 with the button on its own row,
-    lower with the button beside the pickers); the bound below is that
-    measurement with a margin, so a return towards 945 reds, and the doc
-    says the run box costs height while it is open.
+    within the first screen: measured 649 with a short id and 701 with a
+    128-character one, which takes a row of its own in the picker. The
+    doc's own claim is the bound -- within the first screen -- and a margin
+    under it holds a return towards 945 red.
     """
     page, window = _workflow_screen(chromium, project, 1280, 800)
     try:
-        _start_from_starter(page, "laid-out")
+        _start_from_starter(page, workflow_id)
         _save_draft(page)
         _publish(page)
         page.wait_for_selector('.studio-canvas__banner[data-document="published"]')
@@ -194,7 +203,32 @@ def test_the_canvas_begins_within_the_first_screen_once_a_revision_is_published(
         assert published["summaries"][1] == (
             "Open a run — revision 1 is published"), published
         assert published["overflow"] == 0, published
-        assert published["canvas_top"] <= 700, published
+        assert published["canvas_top"] < 800, published
+        assert published["canvas_top"] <= 760, published
+    finally:
+        assert window.problems == []
+        page.context.close()
+
+
+def test_in_a_narrow_window_folding_the_run_box_gives_the_canvas_back(
+        chromium: Browser, project: _Project) -> None:
+    """At 900×700 the open run box pushes the canvas below the first screen
+    (measured 734 of 700 by the fold review), which the doc now says; the
+    fold is the road back, and one click on it is what this holds."""
+    page, window = _workflow_screen(chromium, project, 900, 700)
+    try:
+        _start_from_starter(page, "narrow")
+        _save_draft(page)
+        _publish(page)
+        page.wait_for_selector('.studio-canvas__banner[data-document="published"]')
+        page.wait_for_selector('[data-focus="run-mode"]', state="attached")
+        opened = page.evaluate(MEASURE)
+        assert opened["folds"] == [["start", False], ["run", True]], opened
+        assert opened["overflow"] == 0, opened
+        page.locator('details[data-fold="run"] > summary').click()
+        folded = page.evaluate(MEASURE)
+        assert folded["folds"] == [["start", False], ["run", False]], folded
+        assert folded["canvas_top"] < 700, folded
     finally:
         assert window.problems == []
         page.context.close()
@@ -237,18 +271,71 @@ def test_a_fold_opened_by_hand_and_the_id_typed_into_it_survive_a_frame(
         assert _folds(page) == {"start": False, "run": False}
         page.locator('details[data-fold="start"] > summary').click()
         assert _folds(page)["start"] is True
+        page.locator('[data-focus="new-from"]').select_option(STARTER)
         name = page.locator('[data-focus="new-workflow"]')
         name.click()
         page.keyboard.type("my-next-flow")
         _the_frame_lands(page)
         assert _folds(page)["start"] is True
         assert page.locator('[data-focus="new-workflow"]').input_value() == "my-next-flow"
+        assert page.locator('[data-focus="new-from"]').input_value() == STARTER
         assert page.evaluate("() => document.activeElement.dataset.focus") == "new-workflow"
+        # The caret travels with the words: left mid-word, a frame lands, and
+        # the next letters go where the caret stood (the fold review's R1).
+        page.keyboard.press("ArrowLeft")
+        page.keyboard.press("ArrowLeft")
+        page.keyboard.press("ArrowLeft")
+        page.keyboard.press("ArrowLeft")
+        page.keyboard.press("ArrowLeft")
+        _the_frame_lands(page)
+        page.keyboard.type("X")
+        assert page.locator('[data-focus="new-workflow"]').input_value() == "my-nextX-flow"
+        assert page.evaluate("() => document.activeElement.selectionStart") == 8
         # And the fold closed by hand stays closed through the next frame.
         page.locator('details[data-fold="start"] > summary').click()
         assert _folds(page)["start"] is False
         _the_frame_lands(page)
         assert _folds(page)["start"] is False
+    finally:
+        assert window.problems == []
+        page.context.close()
+
+
+def _compose(page: Page, key: str) -> str:
+    """Type `run` through an IME -- three composition updates, then the
+    commit -- into one control, the way a Japanese, Chinese or Korean
+    keyboard delivers ASCII, and answer what the control holds."""
+    page.locator(f'[data-focus="{key}"]').click()
+    cdp = page.context.new_cdp_session(page)
+    for text in ("r", "ru", "run"):
+        cdp.send("Input.imeSetComposition",
+                 {"text": text, "selectionStart": len(text),
+                  "selectionEnd": len(text)})
+    cdp.send("Input.insertText", {"text": "run"})
+    cdp.detach()
+    return page.locator(f'[data-focus="{key}"]').input_value()
+
+
+def test_an_ime_composition_lands_once_in_the_toolbars_fields(
+        chromium: Browser, project: _Project) -> None:
+    """A render per keystroke doubled every composition update (the fold
+    review's R2: `rrurunrun` for `run`). Committed on change, the field holds
+    exactly what was composed, and a frame carries it whole."""
+    page, window = _open(chromium, project, double=True)
+    try:
+        page.locator("#navWorkflow").click()
+        page.wait_for_selector('[data-focus="new-workflow"]')
+        assert _compose(page, "new-workflow") == "run"
+        _the_frame_lands(page)
+        assert page.locator('[data-focus="new-workflow"]').input_value() == "run"
+        _start_from_starter(page, "composed")
+        _save_draft(page)
+        _publish(page)
+        page.wait_for_selector('[data-focus="run-id"]', state="attached")
+        assert _compose(page, "run-id") == "run"
+        page.keyboard.press("Tab")
+        _the_frame_lands(page)
+        assert page.locator('[data-focus="run-id"]').input_value() == "run"
     finally:
         assert window.problems == []
         page.context.close()
@@ -272,17 +359,79 @@ def test_the_run_forms_typed_facts_survive_a_frame(
         page.locator('[data-focus="run-mode"]').select_option("confirm")
         page.locator('[data-focus="cycle-id"]').fill("cycle-typed")
         page.locator('[data-focus="run-id"]').click()
-        page.keyboard.type("run-typed")
+        page.keyboard.type("runtyped")
+        for _ in range(5):
+            page.keyboard.press("ArrowLeft")
         _the_frame_lands(page)
-        assert page.locator('[data-focus="run-id"]').input_value() == "run-typed"
+        page.keyboard.type("-x")
+        assert page.locator('[data-focus="run-id"]').input_value() == "run-xtyped"
+        assert page.evaluate("() => document.activeElement.selectionStart") == 5
         assert page.locator('[data-focus="cycle-id"]').input_value() == "cycle-typed"
         assert page.locator('[data-focus="run-mode"]').input_value() == "confirm"
         assert "Every effecting step waits for a person" in page.locator(
             "#workflowToolbar [data-fold='run']").inner_text()
-        page.locator('details[data-fold="run"] > summary').click()
+        # A toggle by keyboard keeps the keyboard on the summary it pressed
+        # (the fold review's R3), and one Tab from the opened box lands on
+        # its first field rather than at the top of the toolbar.
+        page.locator('details[data-fold="run"] > summary').focus()
+        page.keyboard.press("Enter")
         assert _folds(page)["run"] is False
+        assert page.evaluate("() => document.activeElement.dataset.focus") == "fold:run"
         _the_frame_lands(page)
         assert _folds(page)["run"] is False
+        page.keyboard.press("Enter")
+        assert _folds(page)["run"] is True
+        assert page.evaluate("() => document.activeElement.dataset.focus") == "fold:run"
+        page.keyboard.press("Tab")
+        assert page.evaluate("() => document.activeElement.dataset.focus") == "run-id"
+    finally:
+        assert window.problems == []
+        page.context.close()
+
+
+@pytest.fixture
+def configured_project(monkeypatch, tmp_path, request) -> _Project:
+    """One available deterministic provider, configured through the real door.
+
+    It is never executed here: the subject is a participant selection, not a
+    real vendor installation or a smoke run.
+    """
+    executable = _fakeclaude.build_executable(tmp_path)
+    assert executable is not None, "the native fake executable is required"
+    configured = ProviderConfig(provider_id="claude-code",
+        executable=str(executable), protocol=CLAUDE_PROTOCOL, env_allow=())
+    build = server.build
+
+    def configured_build(root, port, **kwargs):
+        kwargs.pop("registry", None)
+        return build(root, port, providers=[configured], **kwargs)
+
+    monkeypatch.setattr(server, "build", configured_build)
+    return request.getfixturevalue("project")
+
+
+def test_a_role_unbound_by_the_person_stays_unbound_after_a_frame(
+        chromium: Browser, configured_project: _Project) -> None:
+    """Binding and then clearing a role replaces, rather than merges, facts.
+
+    The read is real; the stream double only delivers its notification. No
+    run is opened: silently resurrecting a participant already fails here.
+    """
+    page, window = _open(chromium, configured_project, double=True)
+    try:
+        _start_from_starter(page, "roles-again")
+        _save_draft(page)
+        _publish(page)
+        pick = page.locator('[data-focus^="role-"]').first
+        pick.wait_for(state="visible")
+        key = pick.get_attribute("data-focus")
+        pick.select_option("claude-code")
+        _the_frame_lands(page)
+        assert page.locator(f'[data-focus="{key}"]').input_value() == "claude-code"
+        page.locator(f'[data-focus="{key}"]').select_option("")
+        _the_frame_lands(page)
+        assert page.locator(f'[data-focus="{key}"]').input_value() == ""
+        assert window.writes("/open") == 0
     finally:
         assert window.problems == []
         page.context.close()
@@ -348,6 +497,8 @@ def test_every_fold_is_reached_by_tab_and_toggled_by_enter(
         page.keyboard.press("Enter")
         assert page.evaluate(
             "() => document.querySelector('[data-fold=\"start\"]').open") is False
+        # The render the toggle provokes gives the keyboard its summary back.
+        assert _active(page) == {"tag": "SUMMARY", "text": "Start a new workflow"}
         stops = []
         for _ in range(12):
             page.keyboard.press("Tab")

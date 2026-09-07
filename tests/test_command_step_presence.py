@@ -19,9 +19,9 @@ The circuit, in the order a reader meets it:
   is spent at a different door -- so a body honouring the plan alone was
   accepted at propose and refused at every Confirm;
 - and what does NOT age: the freshness budget judges the confirmation the
-  server mints at the moment of the press, so a proposal standing since the
-  year 2000 is authorized exactly as one written a second ago. The window used
-  to say otherwise, and this is the fact that sentence's absence rests on.
+  server mints at the moment of the press. An old proposal with current material
+  binding is still confirmable; an unbound legacy one requires a new preview
+  because of its missing binding, not its age.
 
 The ending, the eligibility rules and the four write doors stay next door.
 """
@@ -32,7 +32,7 @@ from pathlib import Path
 import pytest
 
 from conductor.command.api_contracts import ERROR_STATUS
-from conductor.command.contracts import ActionProposal
+from conductor.command.contracts import ABSENT, ActionProposal
 from conductor.command.graph_definition import GraphDefinition, GraphNode
 from conductor.command.service import ServiceError
 from tests.test_command_graph_binding import RUN_ID, a_runtime, a_store
@@ -235,19 +235,15 @@ def test_the_windows_own_ceiling_is_what_makes_a_confirm_land_on_a_wide_plan(
     assert answer.status == confirmed, answer.payload
 
 
-def test_a_proposal_written_long_ago_is_confirmed_exactly_as_a_fresh_one(
-        tmp_path):
-    """The freshness budget measures the CONFIRMATION, and nothing else.
+@pytest.mark.parametrize("bound", [True, False], ids=["bound-old", "legacy-old"])
+def test_a_proposal_written_long_ago_is_judged_by_binding_not_its_age(
+        tmp_path, bound):
+    """Freshness judges CONFIRMATION time, separately from material binding.
 
-    `runtime._hold_freshness` compares `confirmed_at` to the clock, and the
-    server mints `confirmed_at` itself at the moment of the press -- so the age
-    it judges is always zero and a proposal's own date is never read. The
-    window said the opposite, in a sentence sending a person to propose again
-    over a control that works, and this is the fact that sentence's absence
-    rests on.
-
-    A quarter of a century, against a 3600-second budget: nothing about the
-    proposal's age can be said to have been rounded away.
+    Both proposals are a quarter century old against a 3600-second budget.
+    Current binding is accepted; omitting it gives the specific new-preview
+    refusal and changes no journal bytes. Merely rewording the old assertion
+    or marking every old fixture current would lose that distinction.
     """
     subject, store, _ = api(tmp_path, adapters=[DeepPlanAdapter()])
     from tests.alpha3_graph_artifacts import dalio_definition
@@ -261,8 +257,10 @@ def test_a_proposal_written_long_ago_is_confirmed_exactly_as_a_fresh_one(
         proposed_by="release-owner", proposed_at=LONG_AGO,
         timeout_seconds=WINDOW_CEILING,
         rationale="Written long before anybody confirmed it.",
-        config_digest=store.read(RUN_ID).envelope.config_digest, node_id="goal")
+        config_digest=store.read(RUN_ID).envelope.config_digest, node_id="goal",
+        input_binding="proposal-v1" if bound else ABSENT)
     store.append(stale)
+    before = journal_bytes(store)
 
     answer = post(subject, f"/command/runs/{RUN_ID}/actions", {
         "proposal_id": stale.proposal_id,
@@ -270,9 +268,12 @@ def test_a_proposal_written_long_ago_is_confirmed_exactly_as_a_fresh_one(
         "capability": stale.capability, "scope": list(stale.scope),
         "config_digest": stale.config_digest, "confirmed_by": "release-owner"})
 
-    assert answer.status == 201, answer.payload
-    assert kinds(store) == [
-        "graph_definition", "action_proposal", "action_request"]
+    assert answer.status == (201 if bound else 409), answer.payload
+    assert kinds(store) == ["graph_definition", "action_proposal"] + (
+        ["action_request"] if bound else [])
+    if not bound:
+        assert answer.payload["error"]["code"] == "proposal_rebind_required"
+        assert journal_bytes(store) == before
     # And the window DRAWS nothing about a proposal aging. Read as code, so the
     # comment recording why the sentence went does not satisfy its own absence;
     # `tests/test_studio_step_source.py` holds the same relation from the other

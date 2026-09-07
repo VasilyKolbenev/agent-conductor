@@ -104,6 +104,10 @@ EMIT_STDOUT = "FAKECODEX_EMIT_STDOUT"
 #: with a credential and a review test must be able to ask for an ordinary
 #: answer without borrowing the channel a leak probe is using.
 EMIT_REVIEW = "FAKECODEX_EMIT_REVIEW"
+EMIT_VERDICT = "FAKECODEX_EMIT_VERDICT"
+VERDICT_WRITE_FILE = "FAKECODEX_VERDICT_WRITE_FILE"
+VERDICT_EXIT = "FAKECODEX_VERDICT_EXIT"
+VERDICT_SLEEP = "FAKECODEX_VERDICT_SLEEP"
 #: What a review spawn answers with. Fixed, so a test asserts the exact bytes
 #: that became the durable artifact rather than a shape.
 REVIEW_OUTPUT = "# Review\n\nThe durable material holds; publish it."
@@ -313,8 +317,23 @@ def _write_pair(base: Path, spec: str) -> None:
     target.write_text(text, encoding="utf-8", newline="\n")
 
 
-def _run_task() -> int:
+def _run_verdict(env) -> int:
+    if env.get(VERDICT_WRITE_FILE):
+        _write_pair(Path.cwd(), env[VERDICT_WRITE_FILE])
+    if env.get(VERDICT_SLEEP):
+        time.sleep(float(env[VERDICT_SLEEP]))
+    answer = {"enabled-verdict-accept": "VERDICT: accept",
+              "enabled-verdict-reject": "VERDICT: reject"}.get(
+                  env[EMIT_VERDICT], "No valid verdict was emitted.")
+    sys.stdout.buffer.write((answer + "\n").encode("utf-8"))
+    sys.stdout.buffer.flush()
+    return int(env.get(VERDICT_EXIT, "0"))
+
+
+def _run_task(checker=False) -> int:
     env = os.environ
+    if checker and env.get(EMIT_VERDICT):
+        return _run_verdict(env)
     if env.get(WRITE_FILE):
         _write_pair(Path.cwd(), env[WRITE_FILE])
     if env.get(EMIT_STDOUT):
@@ -350,16 +369,19 @@ def main() -> int:
     # The task is read BEFORE anything is emitted: a child that answered first
     # and read afterwards would pass a test that only counts bytes back.
     task, task_text = _read_task()
+    checker = (task_text.startswith("conduct independent verification")
+               and any(argv[index:index + 2] == ["--sandbox", "read-only"]
+                       for index in range(len(argv))))
     written = _write_last_message(argv)
     if not task["read"]:
         _record(argv, task, None, written)
-        return _run_task()
+        return _run_task(checker)
     if not os.environ.get(LEAK_CHECK):
         # An ordinary run: the task was read and measured, and no leak scan was
         # asked for. `marker: null` records that honestly rather than implying
         # a scan that passed.
         _record(argv, task, None, written)
-        return _run_task()
+        return _run_task(checker)
     try:
         report = _probe_report(argv, task_text)
     except _ProbeMissing as missing:
@@ -368,7 +390,7 @@ def main() -> int:
         sys.stderr.buffer.flush()
         return PROBE_MISSING_EXIT
     _record(argv, task, report, written)
-    return _run_task()
+    return _run_task(checker)
 
 
 if __name__ == "__main__":

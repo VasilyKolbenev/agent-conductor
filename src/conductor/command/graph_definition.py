@@ -304,6 +304,8 @@ class GraphNode:
                 "step that carries nothing out has nothing to verify")
         object.__setattr__(self, "verifier_instance_id",
                            _id("verifier_instance_id", self.verifier_instance_id))
+        if self.verifier_instance_id == self.instance_id:
+            raise ContractError("a step's verifier must be another participant")
 
     def _settle_evidence_demand(self) -> None:
         """A demand on a verification belongs to a step that produces one.

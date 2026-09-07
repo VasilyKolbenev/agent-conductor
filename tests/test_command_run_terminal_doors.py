@@ -502,11 +502,13 @@ def test_a_second_attempt_while_the_first_runs_is_refused_and_nothing_bricks(
     lands with no terminal in front of it, and the run reads clean afterwards.
     """
     subject, store = _a_bounded_api_run(tmp_path, bound=2)
-    first = a_proposal()
+    # This API binds a real deep schema; generic replay fixtures above do not.
+    first = a_proposal(input_binding="proposal-v1")
     store.append(first)
     authorized = subject.runtime.authorize(
         a_confirmation(first), budget=a_budget())
-    second = a_proposal(proposal_id="proposal-2", attempt_id="attempt-002")
+    second = a_proposal(proposal_id="proposal-2", attempt_id="attempt-002",
+                        input_binding="proposal-v1")
     store.append(second)
     before = journal_bytes(store)
 
@@ -598,7 +600,7 @@ def test_a_decision_landing_while_an_attempt_is_in_flight_does_not_end_the_run(
     from conductor.command.runtime import AttemptState
 
     subject, store = _a_two_gate_run(tmp_path)
-    proposal = a_proposal()
+    proposal = a_proposal(input_binding="proposal-v1")
     store.append(proposal)
     authorization = subject.runtime.authorize(
         a_confirmation(proposal), budget=a_budget())
@@ -653,7 +655,13 @@ def _a_stalling_run(tmp_path):
 # -- a frozen configuration nobody can read is corruption, not caller input ----
 
 
-def test_a_run_whose_frozen_bindings_are_malformed_answers_run_corrupt(tmp_path):
+@pytest.mark.parametrize("instances", [
+    [{"id": "claude-dev", "adapter": 5}],
+    [{"id": "claude-dev", "adapter": "claude-code", "model": 5}],
+    [{"id": "claude-dev", "adapter": "claude-code"},
+     {"id": "claude-dev", "adapter": "codex"}],
+])
+def test_a_run_whose_frozen_bindings_are_malformed_answers_run_corrupt(tmp_path, instances):
     """The translation that had no witness anywhere in this suite.
 
     A frozen snapshot declaring one instance twice cannot be read into a
@@ -662,10 +670,9 @@ def test_a_run_whose_frozen_bindings_are_malformed_answers_run_corrupt(tmp_path)
     what -- so the answer is `run_corrupt`, and a bare `ContractError` escaping
     here would surface as `contract_invalid` and blame the caller.
     """
-    # An `adapter` that is not an id. Chosen over a duplicated instance
-    # deliberately: a duplicate breaks `frozen_config_models` first, which is a
-    # DIFFERENT untranslated road, and this witness is about the binding one.
-    doubled = {"instances": [{"id": "claude-dev", "adapter": 5}]}
+    # All three originate in frozen bytes: adapter, model, or duplicate identity.
+    # Extracting instance_controls must not lose this HTTP translation boundary.
+    doubled = {"instances": instances}
     subject, store, _ = api(tmp_path)
     store.create_run(
         a_run(run_id="run-doubled", mode="confirm",

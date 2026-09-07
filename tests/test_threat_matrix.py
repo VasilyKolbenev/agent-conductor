@@ -150,10 +150,30 @@ EXPECTED_ROWS = {
         "src/conductor/command/http_transport.py::validate_command_mutation",
         "tests/test_command_http_transport.py"
         "::test_structured_csrf_fixtures_drive_the_real_transport"),
+    "CHECKER-ONCE": (
+        "HELD", "src/conductor/command/verify_road.py::verify_independently",
+        "tests/test_command_independent_runtime.py"
+        "::test_restart_with_no_checker_evidence_never_spends_a_second_grant"),
+    "CHECKER-WRITES": (
+        "HELD", "src/conductor/command/adapters/artifact_transport.py"
+        "::ArtifactAwareTransport._check_owned",
+        "tests/test_independent_checker_transport.py"
+        "::test_checker_refusal_no_verdict_or_write_never_becomes_success"),
+    "WORKTREE-CONTENT": (
+        "HELD", "src/conductor/command/adapters/harness_workspace.py"
+        "::HarnessWorkspace.read_work_tree",
+        "tests/test_sabotage_fixtures.py"
+        "::test_work_item_portal_fixture_is_not_opened_by_the_checker"),
 }
 EXPECTED_IDS = frozenset(EXPECTED_ROWS)
 
 #: What the v2 snapshot said at its own base, which is what it must go on saying.
+HISTORICAL_IDS = frozenset({
+    "CONF-STALE", "CONF-DIGEST", "PATH-SCOPE", "PATH-CWD", "SHELL-INJECT",
+    "TIMEOUT", "OUTPUT-BOMB", "DUPLICATE-IDEMPOTENCY", "FOREIGN-PID",
+    "PORTAL-PREVIEW", "HARDLINK-PREVIEW", "PORTAL-CONFIRM", "HARDLINK-CONFIRM",
+    "RECEIPT-TAMPER", "RESTART", "DISCONNECT", "VERIFY-FAIL", "CSRF-ORIGIN",
+})
 HISTORICAL_HELD = frozenset({
     "PATH-SCOPE", "PORTAL-PREVIEW", "HARDLINK-PREVIEW", "RECEIPT-TAMPER"})
 
@@ -392,7 +412,7 @@ def test_the_v2_matrix_stays_a_historical_snapshot_and_never_the_release_posture
     assert RELEASE_MATRIX.name in historical, "the snapshot must name what superseded it"
     statuses = {threat_id: _code_span(row["Status"])
                 for threat_id, row in parse_records(historical).items()}
-    assert set(statuses) == EXPECTED_IDS
+    assert set(statuses) == HISTORICAL_IDS
     assert {name for name, held in statuses.items() if held == "HELD"} == HISTORICAL_HELD
     assert set(statuses.values()) == {"HELD", "PENDING"}
 

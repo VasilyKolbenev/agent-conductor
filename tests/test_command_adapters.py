@@ -336,7 +336,8 @@ def test_registry_public_surface_names_the_two_explicit_effect_wrappers():
         if isinstance(node, ast.FunctionDef) and not node.name.startswith("_"))
     assert public == [
         "argument_schema", "controls", "execute", "manifests", "observe",
-        "prepare", "register", "resolve", "validate_arguments", "verify"]
+        "prepare", "publish", "register", "release", "resolve",
+        "validate_arguments", "verification_started", "verifies_independently", "verify"]
 
 
 def test_observe_calls_only_an_explicit_adapter_and_validates_its_claims():

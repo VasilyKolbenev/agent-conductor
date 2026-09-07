@@ -119,6 +119,7 @@ EXPECTED_ERRORS = {
     "service_refused": (409, "service"),
     "capability_unsupported": (409, "capability"),
     "authorization_refused": (409, "authorization"),
+    "proposal_rebind_required": (409, "authorization"),
     "record_conflict": (409, "store"),
     "draft_changed": (409, "concurrency"),
     "draft_conflict": (409, "concurrency"),
@@ -559,9 +560,12 @@ def test_controls_are_only_schema_backed_values_and_have_no_disabled_state():
     rows = CANON["controls_response"]["instances"]
     assert rows == sorted(rows, key=lambda row: row["instance_id"])
     for row in rows:
-        assert set(row) == {"instance_id", "adapter_id", "model", "controls"}
+        assert set(row) == {"instance_id", "adapter_id", "model", "controls",
+                            "argument_schemas"}
         assert row["controls"] == sorted(row["controls"])
         assert set(row["controls"]) <= set(EXPECTED_ARGUMENT_SCHEMAS)
+        assert row["argument_schemas"] == {
+            key: "deep-arguments-v1" for key in row["controls"]}
 
 
 def test_an_instance_row_says_which_model_is_pinned_or_says_none_was():

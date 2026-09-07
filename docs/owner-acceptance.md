@@ -13,9 +13,10 @@ used to send you to `conductor/providers.json` and called that deliberate, which
 description of a gap rather than a design. If you find yourself reaching for an editor, stop and
 write down which step sent you there — that is the finding this line exists to catch.
 
-**Where this script types at a shell, it is running a `conduct` command or calling the product's
-own HTTP API** — never editing a file, never reading a log to find out what happened. Step 12 is
-the one place it calls the API directly, and it says why that is itself a finding.
+**Shell commands below only install/start the product and run its own CLI.** Briefs,
+instructions, documents, proposals and decisions are entered through Studio; none needs a
+hand-written HTTP request or an internal-file editor. The current release boundary and the
+preserved next-version ideas are indexed in [V1/V2 scope](v1-v2-scope.md).
 
 **Shell.** Windows PowerShell below, because that is where this was written. The `conduct`
 commands are identical on every platform.
@@ -25,9 +26,8 @@ commands are identical on every platform.
 ## 1. Install a clean wheel
 
 ```powershell
-$ACC = "$env:TEMP\conduct-acceptance"
-Remove-Item -Recurse -Force $ACC -ErrorAction SilentlyContinue
-New-Item -ItemType Directory -Force -Path $ACC | Out-Null
+$ACC = Join-Path ([System.IO.Path]::GetTempPath()) ("conduct-acceptance-" + [guid]::NewGuid().ToString("N"))
+New-Item -ItemType Directory -Path $ACC | Out-Null
 python -m venv "$ACC\venv"
 $env:PYTHONPATH = ""
 $PY = "$ACC\venv\Scripts\python.exe"
@@ -53,7 +53,7 @@ only step that writes a file for you, and the last time you touch the filesystem
 ## 3. Open the application
 
 ```powershell
-Start-Process -FilePath $CONDUCT -ArgumentList @("up","--dir",$PROJ,"--port","7801")
+$APP = Start-Process -FilePath $CONDUCT -ArgumentList @("up","--dir",$PROJ,"--port","7801") -PassThru -WindowStyle Hidden
 Start-Sleep -Seconds 2
 Start-Process "http://127.0.0.1:7801/"
 ```
@@ -86,10 +86,11 @@ a new workflow* and *Open a run* each sit behind a fold whose heading says what 
 where that stands (*Open a run — choose or start a workflow first*, *— publish a revision first*,
 *— revision 1 is published*); the start box is open while no workflow is chosen, the run box
 while a revision is published and you are not editing a draft, and either opens with a click or
-with Tab and Enter. The open run box costs height (the canvas begins lower while it is open; fold
-it to get the height back), and a fold you opened or closed by hand stays that way through the
-frames that arrive, as does anything typed into it. A page that scrolls sideways, a fold whose
-heading does not say what is inside, or a fold that closes by itself, is a finding.
+with Tab and Enter. The open run box costs height (the canvas begins lower while it is open, and
+in a narrow window of 900 px it begins below the first screen; fold the box to get the height
+back), and a fold you opened or closed by hand stays that way through the frames that arrive, as
+does anything typed into it — with the caret where you left it. A page that scrolls sideways, a
+fold whose heading does not say what is inside, or a fold that closes by itself, is a finding.
 
 **The workflow you just named must be the one the picker says is chosen**, immediately, without
 a save and without a reload. A picker that falls back to "choose a workflow" while you are
@@ -126,6 +127,11 @@ step a reviewing role.
 provider, a model or a run — those are bound when a run starts, which is what lets the same
 workflow run against different harnesses. The inspector shows the deployment facts as read-only
 context and says where each one comes from.
+
+Also give the implementing step a **Verifier** role, distinct from its own role.
+This is not merely a later review node: Confirm for the implementing step now authorizes
+both that task and its independent check. Two participants may use the same compatible
+harness, but binding both roles to the same participant must be refused.
 
 ## 7. Choose the harness, provider and model
 
@@ -173,7 +179,11 @@ position stops costing you a text editor.
 Restart `conduct up`, and the same Agents screen must now show that provider as **available** —
 providers are read once at startup, and the command says so when it finishes.
 
-If you have no harness installed, stop here and record that. Steps 8-15 need one.
+Without a compatible reviewed installation and explicitly authorized credentials, continue
+the editing checks but record the real-execution steps as blocked, never passed. Each user
+supplies their own credentials; the product distributes neither the owner's key nor its value.
+Configure names in the wizard, keep values in the environment of the launched server, and
+never paste a real key into the document form, terminal command history or a report.
 
 ## 8. Walk every field of the inspector
 
@@ -201,7 +211,7 @@ the third column names a consumption, that is what you must also be able to see 
 | **Produced artifacts** | Inputs and outputs | The reference this step publishes, editable where the schema declares one, and the cost of clearing it stated. |
 | **Handoff mapping** | Inputs and outputs | Derived from the document: for each required reference, which step produces it — or that nobody does. Both arms must appear on one document. |
 | **Missing-artifact behaviour** | Inputs and outputs | A choice of two, both fail-closed. **fail** (which is also what saying nothing means): the step is offered, reached, and refused when the input cannot be resolved — no task spawned. **block**: the step is never offered while the artifact is absent. Step 12 makes you watch a `block` wait and end it. |
-| **Verifier** | Verification | A role. Naming one means evidence from the doer is refused; naming none means the doer answers. |
+| **Verifier** | Verification | A distinct role, bound to another participant when opening the run. That participant must actually check the result; its instance and configured model must be visible before Confirm. Naming none preserves the ordinary doer-adapter verification road. |
 | **Evidence requirements** | Verification | `digest`, and only ever a tightening — the control offers no word that would ask for less. |
 | **Success criteria** | Verification | **Read-only, and there is no field to edit.** Sentences the server derived from the rules that really operate, each beside the layer that enforces it: the result must be verified; who may answer for it, named out of the plan; for a review, the result artifact that must stand and answer its request; and the digest when the step demands one. **No sentence may say "signed" or "signature"** — there is no cryptographic signature anywhere in this product, and a screen implying one is a finding. |
 | **Verification failure policy** | Verification | `halt the run`. It is a tightening and not routing: it says nothing further may be authorized in this run at all, including branches no road from the failing step could reach. |
@@ -235,11 +245,17 @@ a silent second revision.
 
 Start a run from the workflow you just published, choosing the authority **confirm** and
 binding each role to a participant. The form starts at *observe*, which proposes nothing and
-runs nothing; every step of this script from 13 on needs *confirm*, and a run opened at the
-default meets the sentence *This run's authority is observe* on every row instead of a control.
+runs nothing; every run this script drives from 13 on needs *confirm*, and a run opened at the
+default meets the sentence *This run's authority is observe* on the row the plan offers (the
+first step, here) instead of a control.
 
 **You must be able to see** which revision the run is following. A run freezes the plan it
 starts with: editing the workflow afterwards must not change what that run is doing.
+
+For an independent check, bind the verifier to another participant with an available,
+compatible harness. The same harness with two different participants is legal; one participant
+in both roles is not. An undeclared participant or a transport without independent-check
+support must refuse the run rather than become an unavailable checker after a paid task.
 
 **If you are opening a run against a workflow drawn on an earlier build, this is where it can
 be refused.** A step attaching a `sandbox` route other than `project-root` is refused here,
@@ -305,9 +321,15 @@ frozen plan and not from anything you can type; the only fields you fill are who
 why. Send it, and **you must see** the row read `proposed` and offer **Confirm this proposal**,
 with the proposal's own id and digest beside it — and the instruction it bound, *the one
 standing when this proposal was written*. Publish a second `instruction-plan` now: **you must
-see** the Confirm form keep naming `instruction-plan-0`, because a source is bound when it is
-confirmed and never chosen again at execution; a Confirm form that switched to the newer
-document is a finding. Give your name and confirm. **You must then see**, without reloading, the timeline grow on its own —
+see** the Confirm form keep naming `instruction-plan-0`, because a source is bound when the
+proposal is written and never chosen again at execution; a Confirm form that switched to the newer
+document is a finding. For an independent step, **you must also see before confirming**:
+the checker participant, adapter and configured model; the exact bound instruction and inputs;
+the result material the checker will receive; the bounded output; and two task time ceilings.
+Each task child gets N seconds and the action budget must cover 2 × N. Version preflights and
+setup take additional time: this number is not a whole-action wall-clock deadline. If any
+paid check is invisible here, stop and record a finding. Give your name and confirm.
+**You must then see**, without reloading, the timeline grow on its own —
 `action_request → effect_lease → execution_observed → action_result` — and, while the attempt
 runs, the row say *An attempt on this step is still in flight; the plan offers it again only
 after that attempt answers.* with no second control. Nothing runs by itself: a step that is
@@ -378,8 +400,11 @@ returns, the controls must come back without throwing you out of the field you w
 and without moving your cursor to the end of what you had typed.
 
 ```powershell
-Get-Process conduct -ErrorAction SilentlyContinue | Stop-Process -Force
+Stop-Process -Id $APP.Id
 ```
+
+Restart with the same step-3 command, retaining the new `$APP` id. Do not stop other
+`conduct` processes by name: they may belong to another project.
 
 ## 17. Understand every failure without opening a terminal log
 
@@ -396,9 +421,48 @@ You are answering one question: **could you have done all of this without the pe
 it?** Write down every step where the answer was no, and what you had to do instead. Those are
 the alpha's real findings; everything else is polish.
 
+### Required real-result acceptance before promotion
+
+The seventeen UI checks are necessary, not a substitute for a useful result. Record the
+candidate SHA/wheel, reviewed harness versions, participant/model choices and authorized
+budgets before this exercise. An unavailable credential or a version refusal is a blocker for
+this exercise, not permission to loosen a pin or borrow a CLI's stored login silently.
+
+Use a fresh project, not the V2 branch or the user's original repository. A suitable small V2
+spike is a one-file `count_succeeded(rows)` utility: count only records whose `outcome` is
+exactly `succeeded`; `failed`, `unknown`, `verification_failed`, a missing field, and a run
+whose plan is merely `complete` must not count. Empty input must yield zero.
+
+- In Studio, publish a short brief and the initial source as documents. A tiny source such as
+  `def count_succeeded(rows): return len(rows)` is an explicitly identified defect to fix,
+  not a hidden test-factory file. Publish a dispatch instruction asking for the corrected
+  module and its small tests only inside that step's `work/<work_item_id>` working copy.
+- Choose an independent verifier role and bind it to a different participant. Keep the source
+  documents small enough for the stated verification frame. Read the preview, then Propose
+  and Confirm. No paid operation is implied by merely opening the project.
+- Inspect the actual changed module/tests or patch, not just a final-message file or `exit 0`.
+  The independent check must inspect that exact result and the documents the doer consumed;
+  its evidence must name the checker instance and the checked digest. Explanatory checker
+  stdout is not a durable review report in V1.
+- If the real check finds a defect, record its real finding, take the result gate's
+  `request_changes` path, correct it and obtain a fresh independent check. If the first result
+  is clean, the developer must separately demonstrate rejection of a plainly wrong result
+  in an explicitly labelled isolated negative control with the real checker. Do not invent a
+  finding or weaken the frozen requirement to manufacture this branch.
+- A rejected/uncheckable result must not become `succeeded` after Human approve. Its document
+  remains visible with its source outcome, but a downstream `block` step cannot consume it.
+  A failure after a proposal selected its input requires a new proposal; silently falling back
+  to an older document is a finding.
+- Reload and restart. The prior revision, decisions, checker attribution and evidence must
+  remain. Recovery must not spend a second checker call. Only explicitly accept/apply the
+  result to the original repository after review; creating it and verifying it do not apply it.
+
+Record the developer's rehearsal and the owner's own acceptance separately. A synthetic demo,
+fake transport, successful wheel installation or green local suite cannot fill either result.
+
 ## What this script deliberately does not cover
 
-- Anything a credential would be needed for beyond step 7 — that is the operator's own machine.
-- Cross-platform behaviour. This is one machine; CI covers Linux, Windows and macOS.
-- Whether a real harness does good work. This checks that you can *drive* it, see what it did,
-  and decide — not that the model was any good.
+- Cross-platform behaviour. This is one machine; the final candidate still needs actual green
+  Linux, Windows and macOS CI jobs, not just their workflow configuration.
+- General model quality. The real-result exercise proves one bounded task and its independent
+  check, not that a harness is correct on every project or task.

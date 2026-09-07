@@ -76,13 +76,14 @@ class _Ids:
 
 
 def _proposal(arguments=ARGUMENTS) -> ActionProposal:
+    # A newly authorized real transport request, not a frozen historical proposal.
     return ActionProposal(
         proposal_id="proposal-review", run_id=RUN_ID,
         attempt_id="attempt-review", instance_id=INSTANCE_ID,
         capability="review", arguments=arguments, scope=("work",),
         proposed_by="lane", proposed_at=NOW, timeout_seconds=60,
         rationale="review the durable role handoff",
-        config_digest=snapshot_digest(CONFIG))
+        config_digest=snapshot_digest(CONFIG), input_binding="proposal-v1")
 
 
 def _confirmation(proposal: ActionProposal) -> Confirmation:

@@ -489,13 +489,7 @@ class _Owned:
 
 
 class ProcessRunner:
-    """Starts, bounds, times out, and stops only the children it started.
-
-    A runner is bound to one project root at construction; every cwd it accepts
-    is validated strictly beneath that resolved root. The parent variables it
-    may reference come from ``environ`` (the live process environment by
-    default), never from an implicit inheritance of it into the child.
-    """
+    """Own children beneath one root, with an explicit environment snapshot."""
 
     def __init__(self, project_root: str | os.PathLike[str], *,
                  environ: Mapping[str, str] | None = None) -> None:
@@ -567,9 +561,7 @@ class ProcessRunner:
     def _spawn(self, spec: CommandSpec) -> _Owned:
         cwd = self._resolve_cwd(spec.cwd)  # refuses before any child exists
         env = self._child_env(spec)
-        sensitive_values = tuple(
-            env[name].encode("utf-8") for name in spec.env_allow
-            if name in env and env[name])
+        sensitive_values = self.allowed_environment_values(spec.env_allow, overrides=spec.env)
         # No payload means DEVNULL, byte for byte the spawn every provider got
         # before this field existed. A payload means a pipe, and nothing else
         # about the spawn changes.
@@ -649,13 +641,16 @@ class ProcessRunner:
         return walked
 
     def _child_env(self, spec: CommandSpec) -> dict[str, str]:
-        env: dict[str, str] = {}
-        for name in spec.env_allow:
-            if name in self._environ:
-                env[name] = self._environ[name]
-        for name, value in spec.env.items():
-            env[name] = value
-        return env
+        return self._environment(spec.env_allow, spec.env)
+
+    def _environment(self, names, overrides) -> dict[str, str]:
+        return {**{name: self._environ[name] for name in names if name in self._environ},
+                **overrides}
+
+    def allowed_environment_values(self, names, *, overrides=None) -> tuple[bytes, ...]:
+        """The nonempty allowed values the child receives, after explicit extras."""
+        env = self._environment(names, {} if overrides is None else overrides)
+        return tuple(env[name].encode("utf-8") for name in names if name in env and env[name])
 
 
 def _spec_from_arguments(

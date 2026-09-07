@@ -570,29 +570,18 @@ def demanded_evidence(recovered: "RecoveredRun", action_id: str) -> str | None:
     return None if node is None else node.required_evidence
 
 
-def permitted_verifier(recovered: "RecoveredRun", action_id: str) -> str | None:
-    """The adapter the PLAN says may sign this action's verification, if any.
+def permitted_verifier(
+        recovered: "RecoveredRun", action_id: str) -> tuple[str, str] | None:
+    """The plan's (adapter, participant) signer, or no independent signer.
 
-    `attempt_replay` requires a terminal success to carry verification evidence
-    signed by exactly ONE adapter identity, and until a plan could name a
-    verifier that identity could only be the one observed executing. A plan that
-    names a `verifier_instance_id` says somebody else checks, and evidence
-    signed by the doer is then precisely what must NOT be accepted -- so the
-    rule has to learn which identity the plan meant.
-
-    What does not change is the shape of the rule. Exactly one adapter may sign,
-    it is derived from FROZEN bytes and from nothing a caller supplies -- the
-    run's own graph record and its own frozen configuration, both already part
-    of the durable set this validation is a pure function of -- and an instance
-    the configuration does not declare resolves to nothing, which refuses.
-
-    `None` means the plan named no verifier, and every journal written before
-    this field existed answers `None`: their verdicts are byte-identical to
-    what they always were.
+    A named participant absent from the frozen configuration is an invalid
+    relation, never the same answer as a plan naming nobody. Both append and
+    raw replay use this function, so neither can fall back to the doer's word.
     """
     node = _planned_node_of(recovered, action_id)
     if node is None or node.verifier_instance_id is None:
         return None
-    from .contracts import frozen_config_bindings
+    from .attempt_replay import _bound_adapter
 
-    return frozen_config_bindings(recovered.config).get(node.verifier_instance_id)
+    return (_bound_adapter(recovered.config, node.verifier_instance_id),
+            node.verifier_instance_id)

@@ -747,7 +747,8 @@ export function projectRunRead(payload) {
 
 // ── controls ─────────────────────────────────────────────────────────────
 const CONTROLS_KEYS = ["instances", "providers"];
-const CONTROL_ROW_KEYS = ["instance_id", "adapter_id", "model", "controls"];
+const CONTROL_ROW_KEYS = ["instance_id", "adapter_id", "model", "controls",
+  "argument_schemas"];
 
 //: `GET /command/runs/<id>/controls`. `model` is nullable and the null is
 //: load-bearing: it says the frozen configuration pinned none, so whatever the
@@ -772,6 +773,9 @@ export function projectControls(payload) {
     if (!isId(row.instance_id) || !isId(row.adapter_id)) return null;
     if (row.model !== null && !isId(row.model)) return null;
     if (!Array.isArray(row.controls) || !row.controls.every(isId)) return null;
+    if (!isPlainObject(row.argument_schemas) || !Object.entries(row.argument_schemas)
+      .every(([capability, schema]) => row.controls.includes(capability)
+        && isId(schema))) return null;
     if (rows.some((kept) => kept.instanceId === row.instance_id)) {
       conflicted.add(row.instance_id);
       continue;
@@ -781,6 +785,7 @@ export function projectControls(payload) {
       adapterId: row.adapter_id,
       model: row.model,
       controls: frozenList(row.controls.slice()),
+      argumentSchemas: frozenJson(row.argument_schemas),
     }));
   }
   return Object.freeze({

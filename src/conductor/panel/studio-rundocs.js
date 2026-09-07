@@ -27,7 +27,9 @@ import {boundDocument, endingOf} from "./studio-runread.js";
 import {
   ARTIFACT_CONTENT_LIMIT,
   ARTIFACT_MEDIA_TYPES,
+  MATERIAL_BINDING,
   STREAM_DOWN_REASON,
+  UNVERSIONED_MATERIALS,
   WRITING_NOTE,
 } from "./studio-runwords.js";
 
@@ -416,6 +418,9 @@ export function boundSources(detail, node) {
     .filter((record) => record.node_id === node.node_id);
   if (!proposals.length) return [];
   const latest = proposals[proposals.length - 1];
+  if (latest.input_binding !== MATERIAL_BINDING) {
+    return [note(UNVERSIONED_MATERIALS)];
+  }
   const bound = (source) => boundDocument(
     rows(detail.records), latest.proposal_id, source);
   const said = [];
@@ -432,4 +437,16 @@ export function boundSources(detail, node) {
         : `durable document ${show(found.artifact_id)}`));
   }
   return said;
+}
+
+// Only the server's declared argument schema establishes this legacy hold.
+// A native or other capability is not classified by its argument spellings.
+export function needsMaterialReproposal(proposal, detail) {
+  if (proposal === null || proposal.input_binding === MATERIAL_BINDING
+      || !["dispatch", "review"].includes(proposal.capability)) return false;
+  const controls = object(detail.controls) || {};
+  const instance = rows(controls.instances).find(
+    (row) => row.instance_id === proposal.instance_id) || {};
+  const schemas = object(instance.argument_schemas) || {};
+  return schemas[proposal.capability] === "deep-arguments-v1";
 }

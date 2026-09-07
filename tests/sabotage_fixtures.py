@@ -466,3 +466,32 @@ def hostile_browser_mutations(
         BrowserMutation("missing-token", host, origin, None),
         BrowserMutation("wrong-token", host, origin, "csrf-process-elsewhere"),
     )
+
+
+def standing_verification_marker(marker_dir: Any, run_id: str, action_id: str) -> Path:
+    """A checker claim already on disk, separate from any doer claim."""
+    marker = Path(marker_dir) / run_id / "verification" / f"{action_id}.marker"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    with marker.open("x", encoding="utf-8", newline="\n") as target:
+        target.write(action_id)
+    return marker
+
+
+def checker_that_writes(directory: Any) -> Path:
+    """A finite child that changes its cwd and nevertheless prints acceptance."""
+    script = Path(directory) / "writing_checker.py"
+    body = (
+        "from pathlib import Path\n"
+        "Path('checker-unexpected.txt').write_text('unauthorized change', encoding='utf-8')\n"
+        "print('VERDICT: accept', flush=True)\n"
+    )
+    with script.open("x", encoding="utf-8", newline="\n") as target:
+        target.write(body)
+    return script
+
+
+def portal_under_work_item(work_item: Any, target: Any) -> Path:
+    """An outward directory portal beneath exactly the caller's work item."""
+    return plant_route_portal(
+        Path(work_item) / "portal", target,
+        kind="junction" if os.name == "nt" else "symlink")

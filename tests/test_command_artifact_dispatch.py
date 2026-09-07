@@ -75,7 +75,7 @@ def _drive(tmp_path, *, artifact_refs=("artifact-plan",)):
         capability="dispatch", arguments=arguments, scope=("work",),
         proposed_by="lane", proposed_at=NOW, timeout_seconds=60,
         rationale="implement the latest durable role handoff",
-        config_digest=snapshot_digest(CONFIG))
+        config_digest=snapshot_digest(CONFIG), input_binding="proposal-v1")
     store.append(proposal)
     confirmation = Confirmation(
         confirmation_id="confirmation-dispatch", run_id=RUN_ID,

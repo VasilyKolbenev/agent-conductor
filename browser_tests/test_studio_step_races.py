@@ -46,7 +46,7 @@ from __future__ import annotations
 
 import json
 
-from playwright.sync_api import Browser, Page
+from playwright.sync_api import Browser, Page, TimeoutError as BrowserTimeout
 
 from conductor.command.run_store import RunStore
 
@@ -60,6 +60,7 @@ from browser_tests.test_studio_step import (  # noqa: F401
     STEP,
     WHY,
     _Bench,
+    _a_proposal,
     _open,
     _open_run,
     _read,
@@ -326,9 +327,15 @@ def _release_parked(page: Page, run_id: str, target: str, parked: list) -> None:
 
 
 def _wait_until_open(page: Page, key: str) -> None:
-    page.wait_for_function(
-        "key => { const b = document.querySelector(`[data-focus-key='${key}']`);"
-        " return b !== null && !b.disabled; }", arg=key, timeout=15000)
+    try:
+        page.wait_for_function(
+            "key => { const b = document.querySelector(`[data-focus-key='${key}']`);"
+            " return b !== null && !b.disabled; }", arg=key, timeout=15000)
+    except BrowserTimeout as error:
+        observed = page.locator(f'[data-step="{key}"]').evaluate_all(
+            "forms => forms.map(f => ({text:f.innerText, fields:"
+            "[...f.elements].map(x => [x.name,x.value,x.disabled])}))")
+        raise AssertionError(f"{key} stayed shut: {observed!r}") from error
 
 
 def test_words_typed_under_a_pending_write_survive_its_answer(
@@ -385,38 +392,62 @@ def _release_reads(page: Page, run_id: str, held: list) -> None:
     page.unroute(f"**/command/runs/{run_id}")
 
 
+def _an_answer_lands_before_its_read(page: Page, window, *, key: str,
+                                     target: str) -> list:
+    """Press, let the POST be answered, and hold the read it provokes.
+
+    Between the two the screen is stale. The control is STILL shut and says
+    so, and a forced press reaches no wire; the held reads are handed back
+    for the caller to release.
+    """
+    held = _press_and_hold(page, key, RUN_ID, target)
+    reads = _hold_reads(page, RUN_ID)
+    _release(held)
+    _unhold(page, RUN_ID, target)
+    for _ in range(200):
+        if reads:
+            break
+        page.wait_for_timeout(25)
+    assert reads, "the answer provoked no read"
+    page.wait_for_timeout(300)
+    assert _state_of(page, key) == "shut"
+    assert WRITING in page.locator(f'[data-step="{key}"]').inner_text()
+    _press_anyway(page, key)
+    assert window.writes(f"/{target}") == 1
+    return reads
+
+
 def test_an_accepted_write_keeps_its_control_shut_until_the_run_is_read_again(
         chromium: Browser, bench: _Bench) -> None:
-    """E: the POST is answered, the read it provokes is held.
+    """E: the POST is answered, the read it provokes is held -- both halves.
 
     Between the two the screen is stale: the step still reads runnable and
     the words are still typed. The control is shut and says so, a forced
     press reaches no wire, and the read's landing is what opens the road on
-    -- which is the sentence the shut control has always made.
+    -- which is the sentence the shut control has always made. The confirm
+    half is the same shape over an accepted request.
     """
     page, window = _open(chromium, bench)
     try:
         _read(page, RUN_ID)
         _type(page, "field:proposed_by", ACTOR)
         _type(page, "field:rationale", WHY)
-        held = _press_and_hold(page, f"propose:{STEP}", RUN_ID, "proposals")
-        reads = _hold_reads(page, RUN_ID)
-        _release(held)
-        _unhold(page, RUN_ID, "proposals")
-        for _ in range(200):
-            if reads:
-                break
-            page.wait_for_timeout(25)
-        assert reads, "the answer provoked no read"
-        page.wait_for_timeout(300)
-        assert _state_of(page, f"propose:{STEP}") == "shut"
-        assert WRITING in page.locator(f'[data-step="propose:{STEP}"]').inner_text()
-        _press_anyway(page, f"propose:{STEP}")
-        assert window.writes("/proposals") == 1
-
+        reads = _an_answer_lands_before_its_read(
+            page, window, key=f"propose:{STEP}", target="proposals")
         _release_reads(page, RUN_ID, reads)
         page.wait_for_selector(f'[data-step="confirm:{STEP}"]')
         assert _durable_on(bench, RUN_ID, "action_proposal", STEP) == 1
+
+        _type(page, "field:confirmed_by", ACTOR)
+        _wait_until_open(page, f"confirm:{STEP}")
+        reads = _an_answer_lands_before_its_read(
+            page, window, key=f"confirm:{STEP}", target="actions")
+        _release_reads(page, RUN_ID, reads)
+        page.wait_for_function(
+            "() => [...document.querySelectorAll('ol.studio-timeline > li')]"
+            ".some(item => item.innerText.includes('action_result'))",
+            timeout=20000)
+        assert _durable_on(bench, RUN_ID, "action_request", STEP) == 1
     finally:
         assert window.problems == []
         page.context.close()
@@ -539,16 +570,92 @@ def test_a_frame_leaves_the_caret_in_the_form_it_was_in(
         omega = page.locator(f'[data-step="propose:{HALTING}"] [name="proposed_by"]')
         alpha = page.locator(f'[data-step="propose:{LONE}"] [name="proposed_by"]')
         omega.click()
-        page.keyboard.type("bo")
+        page.keyboard.type("bb")
+        page.keyboard.press("ArrowLeft")
         assert page.evaluate(THE_FORM_IN_FOCUS) == f"propose:{HALTING}"
         _a_frame_from_elsewhere(page, "artifact-brief-from-elsewhere")
         assert page.evaluate(THE_FORM_IN_FOCUS) == f"propose:{HALTING}"
-        assert omega.input_value() == "bo"
-        page.keyboard.type("b")
+        assert omega.input_value() == "bb"
+        # …and the caret where it stood: the next letter goes between (the
+        # fold review's R5), not to the end.
+        page.keyboard.type("o")
         page.keyboard.press("Tab")
         assert omega.input_value() == "bob"
         assert alpha.input_value() == ""
         assert window.writes("/proposals") == 0
+    finally:
+        assert window.problems == []
+        page.context.close()
+
+
+def test_a_form_that_vanished_under_the_frame_hands_the_caret_to_nobody(
+        chromium: Browser, bench: _Bench) -> None:
+    """The fold review's R4: omega is proposed from elsewhere while the caret
+    is in omega's Propose form.
+
+    The frame's read redraws omega as a Confirm form, so the field the caret
+    stood in has no successor within the form -- and the shell's net, which
+    used to land on the first control carrying the shared key (alpha's), now
+    searches only the original form. Alpha's key becomes unique after omega
+    vanishes, but that does not make it omega's field. The next letters
+    land in no field; alpha stays empty and no write is made.
+    """
+    store = RunStore(bench.root)
+    _open_run(store, TWO_LIVE)
+    store.append(_two_steps(TWO_LIVE, (_review(LONE), _review(HALTING))))
+    page, window = _open(chromium, bench)
+    try:
+        _read(page, TWO_LIVE)
+        omega = page.locator(f'[data-step="propose:{HALTING}"] [name="proposed_by"]')
+        omega.click()
+        page.keyboard.type("bo")
+        # Omega proposed from elsewhere: a durable record, then a frame on
+        # THIS run so the window reads it again.
+        store.append(_a_proposal(TWO_LIVE, HALTING, index=7,
+                                 attempt_id=f"attempt-{HALTING}-0"))
+        before = page.evaluate(READS_OF_THE_LIST)
+        assert page.evaluate(A_DOCUMENT_FROM_ELSEWHERE,
+                             [TWO_LIVE, "artifact-brief-vanished"]) == 201
+        page.wait_for_function(f"n => ({READS_OF_THE_LIST})() > n", arg=before)
+        page.wait_for_selector(f'[data-step="confirm:{HALTING}"]')
+        page.wait_for_timeout(300)
+        assert page.evaluate(THE_FORM_IN_FOCUS) != f"propose:{LONE}"
+        page.keyboard.type("b")
+        page.keyboard.press("Tab")
+        alpha = page.locator(f'[data-step="propose:{LONE}"] [name="proposed_by"]')
+        assert alpha.input_value() == ""
+        assert window.writes("/proposals") == 0
+    finally:
+        assert window.problems == []
+        page.context.close()
+
+
+def test_an_answered_write_stays_its_runs_own_across_navigation(
+        chromium: Browser, bench: _Bench) -> None:
+    """The ANSWERED entry across A → B → A (the fold review's coverage note).
+
+    A's proposal reaches the server, the person opens B while its answer is
+    parked, the answer lands while they are on B, and they come back to A:
+    the read of A is what gives the control back, A holds exactly one
+    proposal, and no second write was made on the way.
+    """
+    page, window = _open(chromium, bench)
+    try:
+        _read(page, RUN_ID)
+        _type(page, "field:proposed_by", ACTOR)
+        _type(page, "field:rationale", WHY)
+        parked = _park_the_answer(page, RUN_ID, "proposals")
+        page.locator(f'[data-focus-key="propose:{STEP}"]').click()
+        page.wait_for_selector(f'[data-step="confirm:{STEP}"]', timeout=15000)
+        assert _state_of(page, f"confirm:{STEP}") == "shut"
+        _read(page, DONE_RUN)
+        _release_parked(page, RUN_ID, "proposals", parked)
+        page.wait_for_timeout(300)
+        _read(page, RUN_ID)
+        _type(page, "field:confirmed_by", ACTOR)
+        _wait_until_open(page, f"confirm:{STEP}")
+        assert window.writes("/proposals") == 1
+        assert _durable_on(bench, RUN_ID, "action_proposal", STEP) == 1
     finally:
         assert window.problems == []
         page.context.close()

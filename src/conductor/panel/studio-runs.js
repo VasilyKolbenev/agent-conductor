@@ -3,30 +3,19 @@
 // journal that run actually wrote. Every node here is built from text; no
 // markup string is ever parsed, nothing is fetched, and no clock is read.
 //
-// Three honesty rules govern this file, and each of them exists because the
-// backend already refuses to pretend:
+// Three honesty rules:
+//  1. `envelope_status` is a CREATION-TIME word: the immutable RunEnvelope
+//     says what the run was "opened as", not its current position. Current
+//     progress is read from the journal and the server's projections.
+//  2. An `unreadable: true` run is drawn with its marker and recovery road;
+//     its null derived facts are not converted into a guessed outcome.
+//  3. `pass` counts attempts on the ONE node a loop reopens; `bound` is the
+//     greatest pass. The position and ceiling come from separate owners,
+//     so "pass N of B" compares facts on the same scale, not guesses.
 //
-//  1. `envelope_status` is a CREATION-TIME word. A `RunEnvelope` is immutable,
-//     so its status says what the run was OPENED as and never where it now
-//     stands -- which is why the wire spells it with `envelope_` in front. It
-//     is rendered as "opened as", never as a live position, and nothing on
-//     this screen derives a run-wide phase word: the journal does not carry
-//     one, and a word invented here is a guess a reader would trust.
-//  2. A run whose journal does not replay arrives with `unreadable: true` and
-//     every derived field null. It is DRAWN, with the marker and with what the
-//     operator can do about it -- a run you cannot see is worse than one you
-//     cannot read.
-//  3. `pass` counts attempts on the ONE node a loop reopens and `bound` is the
-//     greatest pass, so "pass N of B" is two facts about the same scale. The
-//     position comes from the runtime projection and the ceiling from the
-//     definition; neither is computed from the other.
-//
-// The timeline is the journal in append order and nothing else. It never
-// invents a step and never skips one: it walks `records`, names the durable
-// `record_type` every row came from, and a kind this build does not know is
-// shown BY NAME rather than dropped.
+// The timeline walks every `records` row in append order. Unknown durable
+// kinds are shown by name, never dropped or replaced with invented steps.
 import {element} from "./command-view.js";
-
 //: The closed vocabularies and the one-voice sentence, re-exported under the
 //: names they have always had. See `studio-runwords.js` for why they moved and
 //: why that module imports nothing.
@@ -560,6 +549,8 @@ function evidenceItem(record) {
     chip(VERIFICATION_CHANNEL[record.verification] || "none",
       show(record.verification)),
     fact("Where", record.uri),
+    fact("Verified by", record.verified_by),
+    fact("Verifier instance", record.verifier_instance_id),
   ]);
 }
 
@@ -596,12 +587,21 @@ function artifactSection(records) {
   const list = element("ul", {className: "studio-artifacts"});
   for (const row of written) {
     const record = object(row.record) || {};
+    const source = records.filter((item) => item.record_type === "action_result")
+      .map((item) => object(item.record) || {})
+      .filter((item) => item.action_id === record.source_action_id).at(-1);
     list.append(element("li", {className: "studio-artifact"}, [
       element("span", {className: "studio-mono", text: show(record.artifact_id)}),
       fact("Handoff name", record.artifact_ref),
       fact("Media type", record.media_type),
       fact("Written at", record.created_at),
       fact("From action", record.source_action_id),
+      fact("Source outcome", source ? source.outcome : record.source_action_id
+        ? "awaiting result" : "not action-produced"),
+      ...(source ? alsoSay(source.outcome) : []),
+      ...(source && source.outcome !== "succeeded" ? [note("The source action "
+        + "did not succeed. This product stays in history and is not used "
+        + "as input by later steps.")] : []),
       fact("Built on", record.input_artifact_ids),
       fact("Characters", typeof record.content === "string"
         ? record.content.length : null),
@@ -740,7 +740,7 @@ function detailColumn(runs, state, handlers) {
 //: a restore by key alone landed on the first of them -- alpha's -- and the
 //: tail of a word typed into omega went to alpha, whose change re-chose the
 //: draft and emptied omega (the slice-3 review's P3). The successor is
-//: sought within the same form when there was one.
+//: sought within the same form, and the caret travels with the words.
 function focusKey(mount) {
   const active = document.activeElement;
   if (!active || active === document.body) return null;
@@ -748,7 +748,10 @@ function focusKey(mount) {
   const key = active.getAttribute("data-focus-key");
   if (key === null) return null;
   const form = active.closest("[data-step]");
-  return {key, step: form === null ? null : form.getAttribute("data-step")};
+  const typed = typeof active.setSelectionRange === "function";
+  return {key, step: form === null ? null : form.getAttribute("data-step"),
+    start: typed ? active.selectionStart : null,
+    end: typed ? active.selectionEnd : null};
 }
 
 function restoreFocus(mount, key) {
@@ -756,7 +759,11 @@ function restoreFocus(mount, key) {
   const within = key.step === null ? "" : `[data-step="${key.step}"] `;
   const successor = mount.querySelector(
     `${within}[data-focus-key="${key.key}"]`);
-  if (successor) successor.focus();
+  if (!successor) return;
+  successor.focus();
+  if (key.start !== null && typeof successor.setSelectionRange === "function") {
+    successor.setSelectionRange(key.start, key.end);
+  }
 }
 
 /**

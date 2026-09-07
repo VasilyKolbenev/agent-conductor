@@ -233,16 +233,16 @@ def test_the_step_forms_name_every_input_document_a_proposal_binds():
     assert "inputRefs(node.capability, node.arguments).forEach(take);" in _function(
         docs, "consumableRefs")
     step = _code(STEP)
-    assert 'import {inputRefs} from "./studio-rundocs.js";' in step
+    assert 'import {inputRefs, needsMaterialReproposal} from "./studio-rundocs.js";' in step
     facts = _function(step, "inputFacts")
     assert "fact(`Input ${ref}`, bound === null" in facts
     assert "the attempt is refused before anything is spawned" in facts
     assert ("...inputFacts(inputRefs(node.capability, node.arguments),\n"
             "      (input) => latestDocument(rows(detail.records), input), false),"
             ) in _function(step, "planFacts")
-    assert ("...inputFacts(inputRefs(proposal.capability, proposal.arguments),\n"
+    assert ("...(bound ? inputFacts(inputRefs(proposal.capability, proposal.arguments),\n"
             "      (input) => boundDocument(rows(detail.records), proposal.proposal_id,\n"
-            "        input), true),") in _function(step, "proposalFacts")
+            "        input), true) : [note(UNVERSIONED_MATERIALS)]),") in _function(step, "proposalFacts")
     sources = _function(docs, "boundSources")
     assert "const inputs = inputRefs(node.capability, held);" in sources
     assert "fact(`Input ${input} bound by ${show(latest.proposal_id)}`," in sources
@@ -270,7 +270,7 @@ def test_the_document_fragment_exports_its_two_builders_and_mounts_nothing():
     """The fragment's shape, which is the step control's and not a mount's."""
     docs = _code(DOCS)
     assert set(re.findall(r"export function (\w+)\(", docs)) == {
-        "documentSection", "boundSources", "inputRefs"}
+        "documentSection", "boundSources", "inputRefs", "needsMaterialReproposal"}
     assert "export default" not in docs
     assert "mount.replaceChildren(" not in docs
     assert "chip(" not in docs
@@ -283,3 +283,19 @@ def test_the_document_fragment_exports_its_two_builders_and_mounts_nothing():
     # that hands it over, no longer a route a person has to call.
     assert "under Publish a document" in _code(ARTIFACTS)
     assert "artifacts route" not in _code(ARTIFACTS)
+
+
+def test_material_binding_is_revisioned_and_legacy_authority_comes_from_controls():
+    from conductor.command.contracts import PROPOSAL_INPUT_BINDING
+
+    words = _code(PANEL / "studio-runwords.js")
+    assert f'export const MATERIAL_BINDING = "{PROPOSAL_INPUT_BINDING}";' in words
+    docs = _code(DOCS)
+    predicate = _function(docs, "needsMaterialReproposal")
+    assert 'proposal.input_binding === MATERIAL_BINDING' in predicate
+    assert 'schemas[proposal.capability] === "deep-arguments-v1"' in predicate
+    assert 'row.instance_id === proposal.instance_id' in predicate
+    assert 'proposal.arguments' not in predicate
+    assert 'latest.input_binding !== MATERIAL_BINDING' in _function(docs, "boundSources")
+    assert 'const bound = proposal.input_binding === MATERIAL_BINDING;' in _function(
+        _code(STEP), "proposalFacts")
