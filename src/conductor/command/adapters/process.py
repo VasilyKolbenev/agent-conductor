@@ -295,6 +295,10 @@ class CommandSpec:
     #: ``DEVNULL`` exactly as every provider was before this field existed;
     #: ``b""`` means it is handed an open pipe that is immediately at EOF.
     stdin_bytes: bytes | None = field(default=None, repr=False)
+    #: VALUES to scan this child's output for, beyond the allowed environment
+    #: ones: the road a vendor login takes, since it lives in a file rather than
+    #: the environment (``adapters/login_home.py``). CODE-OWNED like ``env``.
+    sensitive_extra: tuple[bytes, ...] = field(default=(), repr=False)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "argv", _argv(self.argv))
@@ -313,6 +317,10 @@ class CommandSpec:
         if type(self.separate_stderr) is not bool:
             raise CommandSpecError("separate_stderr must be a boolean")
         object.__setattr__(self, "stdin_bytes", _stdin(self.stdin_bytes))
+        extra = self.sensitive_extra
+        if type(extra) not in (tuple, list) or any(type(r) is not bytes for r in extra):
+            raise CommandSpecError("sensitive_extra carries VALUES as bytes")
+        object.__setattr__(self, "sensitive_extra", tuple(dict.fromkeys(filter(None, extra))))
 
 
 @dataclass(frozen=True)
@@ -561,7 +569,8 @@ class ProcessRunner:
     def _spawn(self, spec: CommandSpec) -> _Owned:
         cwd = self._resolve_cwd(spec.cwd)  # refuses before any child exists
         env = self._child_env(spec)
-        sensitive_values = self.allowed_environment_values(spec.env_allow, overrides=spec.env)
+        sensitive_values = self.allowed_environment_values(
+            spec.env_allow, overrides=spec.env) + spec.sensitive_extra
         # No payload means DEVNULL, byte for byte the spawn every provider got
         # before this field existed. A payload means a pipe, and nothing else
         # about the spawn changes.

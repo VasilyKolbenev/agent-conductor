@@ -635,7 +635,12 @@ class HeadlessCliTransport(ReceiptWriting, ModelRouting, LoginRoad):
                      profile.home_env: self._home_value(home)},
                 output_limit=bounded_output(profile, output_limit),
                 timeout_seconds=timeout,
-                stdin_bytes=stdin_bytes, separate_stderr=separate_stderr)
+                stdin_bytes=stdin_bytes, separate_stderr=separate_stderr,
+                # The one road a value -- never a name -- crosses this seam: a
+                # vendor login lives in a file, so the runner cannot derive it
+                # from the environment the way it derives every other credential
+                # this build hands a child.
+                sensitive_extra=self._login_secrets())
             return self._runner.run(spec)
         except ProcessRunnerError:  # noqa: BLE001 -- carry no child detail onward
             failed = True

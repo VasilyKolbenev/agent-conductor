@@ -100,6 +100,20 @@ class LoginRoad:
             f"directory and run {' '.join(profile.login_command)} -- this build "
             "never runs a login")
 
+    def _login_secrets(self) -> tuple[bytes, ...]:
+        """The values a child of THIS spawn must never be seen echoing back.
+
+        Empty on the API-key road, where the credential arrives by an allowed
+        environment name and the runner already scans for it. On the
+        subscription road it is the vendor's own login file, read bounded and
+        held only as bytes to compare the child's output against.
+        """
+        auth_home = self._signed_in_road()
+        if not auth_home:
+            return ()
+        return login_home.credential_values(
+            auth_home, self.profile.login_credentials)
+
     def _login_status_argv(self) -> tuple[str, ...]:
         """The status question as it is really asked, with this road's own bounds.
 

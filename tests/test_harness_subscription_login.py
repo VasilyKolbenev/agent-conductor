@@ -39,6 +39,7 @@ from conductor.command.adapters.codex_cli import (
     CODEX_PROVIDER_ID,
     LAST_MESSAGE_NAME,
 )
+from conductor.command.adapters.harness_workspace import WORK_DIR
 from conductor.command.adapters.headless_cli import ExecutablePin
 from conductor.command.adapters.provider import ProviderConfig
 from conductor.command.providers import resolve_providers
@@ -458,6 +459,14 @@ def test_a_directory_no_operator_pinned_is_never_read_or_pruned(
     absent = tmp_path / "never-created"
     login_home.take_back(str(absent), ("sessions",), added)
     assert not absent.exists()
+    # The reading road is closed the same way and for a sharper reason: an
+    # unpinned value would make this build open a file of that name wherever the
+    # server happened to be standing, and call whatever it found a credential.
+    (tmp_path / ".credentials.json").write_text(
+        '{"token": "NOT-THIS-BUILDS-BUSINESS-AT-ALL"}',
+        encoding="utf-8", newline="\n")
+    assert login_home.credential_values("", (".credentials.json",)) == ()
+    assert login_home.credential_values(".", (".credentials.json",)) == ()
 
 
 def test_state_that_stood_before_the_spawn_is_nobodys_business(tmp_path):
@@ -553,6 +562,125 @@ def test_absolute_is_the_same_word_here_as_at_the_door():
 
     for path in ("/var/lib/conduct/auth", "C:\\conduct\\auth", "auth/x", ""):
         assert login_home._pinned(path) == (bool(path) and is_absolute(path))
+
+
+# -- the login joins the leak scan it was never in --------------------------
+
+
+SECRET = "sk-ant-oat01-SYNTHETIC-LOGIN-VALUE-NOT-A-REAL-CREDENTIAL"
+
+
+def a_signed_in_home(tmp_path: Path) -> Path:
+    """A login directory holding a credential file the vendor's login wrote."""
+    home = tmp_path / "auth" / "claude-code"
+    home.mkdir(parents=True)
+    (home / ".credentials.json").write_text(
+        '{"claudeAiOauth": {"accessToken": "' + SECRET + '", "scopes": ["a"]}}',
+        encoding="utf-8", newline="\n")
+    return home
+
+
+def test_a_child_that_echoes_its_own_login_is_seen_doing_it(tmp_path):
+    """The gap this closes: every credential the scan knew about arrived through
+    an allowed environment name, and a vendor login arrives in a file.
+
+    Measured at the flag the publication road reads. A review output becomes
+    durable artifact content unless that flag is set, so a login the scan had
+    never heard of would have been written into the run's own record.
+    """
+    home = a_signed_in_home(tmp_path)
+    adapter = a_harness(
+        tmp_path, auth="subscription", auth_home=str(home),
+        **{_fakeclaude.EMIT_HEX: SECRET.encode("utf-8").hex()})[0]
+
+    adapter._workspace.work_root()
+    outcome = adapter._attempt(
+        adapter._stdin_argv, WORK_DIR, timeout=30, stdin_bytes=b"probe")
+
+    assert outcome.output_contains_env_value is True
+
+
+def test_the_same_output_is_unremarkable_when_no_login_was_pinned(tmp_path):
+    """The positive control: the flag above is the LOGIN being scanned for, not
+    this build flagging every output that looks like a token."""
+    # The child is told what to emit as HEX, so the value the knob carries
+    # through the allowed environment is not the value it writes: without that,
+    # the control would be flagged for the ENVIRONMENT reason and would prove
+    # nothing about a login at all.
+    adapter = a_harness(
+        tmp_path, **{_fakeclaude.EMIT_HEX: SECRET.encode("utf-8").hex()})[0]
+
+    adapter._workspace.work_root()
+    outcome = adapter._attempt(
+        adapter._stdin_argv, WORK_DIR, timeout=30, stdin_bytes=b"probe")
+
+    assert outcome.output_contains_env_value is False
+
+
+def test_a_login_value_reaches_the_scan_and_nothing_else(tmp_path):
+    """Read to protect, never to report: the values are bytes for one substring
+    test, and no receipt, journal row or exception carries them."""
+    from conductor.command.adapters import login_home
+
+    home = a_signed_in_home(tmp_path)
+    adapter = a_harness(
+        tmp_path, auth="subscription", auth_home=str(home))[0]
+
+    assert SECRET.encode("utf-8") in adapter._login_secrets()
+    assert SECRET.encode("utf-8") in adapter._sensitive_values()
+    # The scopes entry is a real string in that file and far too short to scan
+    # for: a two-character value would flag every output containing it.
+    assert b"a" not in adapter._login_secrets()
+    assert login_home.credential_values(str(home), ()) == ()
+
+
+def test_only_the_declared_login_file_is_ever_read(tmp_path):
+    """Read from the DECLARED names, never by looking at what a directory
+    happens to hold: a build that scanned every file it found would be reading
+    an operator's unrelated documents in order to protect them."""
+    home = a_signed_in_home(tmp_path)
+    (home / "notes-of-my-own.txt").write_text(
+        '{"diary": "SOMETHING-ELSE-ENTIRELY-AND-QUITE-LONG"}',
+        encoding="utf-8", newline="\n")
+    adapter = a_harness(
+        tmp_path, auth="subscription", auth_home=str(home))[0]
+
+    values = adapter._login_secrets()
+
+    assert SECRET.encode("utf-8") in values
+    assert b"SOMETHING-ELSE-ENTIRELY-AND-QUITE-LONG" not in values
+
+
+def test_the_value_channel_carries_bytes_and_refuses_anything_else():
+    """The one field of a command spec that holds a VALUE. A string here would
+    be a text credential compared against a byte stream and never matching."""
+    from conductor.command.adapters.process import CommandSpec, CommandSpecError
+
+    with pytest.raises(CommandSpecError, match="VALUES as bytes"):
+        CommandSpec(argv=("/bin/true",), cwd="work",
+                    sensitive_extra=("a string",))
+    spec = CommandSpec(argv=("/bin/true",), cwd="work",
+                       sensitive_extra=(b"kept", b"", b"kept"))
+    assert spec.sensitive_extra == (b"kept",)
+    assert "kept" not in repr(spec)
+
+
+def test_a_login_this_build_cannot_read_widens_nothing_and_refuses_nothing(
+        tmp_path):
+    """A login that cannot be read is a scan that cannot be widened, not a
+    reason to refuse a run the login preflight already admitted."""
+    from conductor.command.adapters import login_home
+
+    home = a_login_home(tmp_path)
+    (home / ".credentials.json").write_text(
+        "not json at all", encoding="utf-8", newline="\n")
+    adapter, _root, _log = a_harness(
+        tmp_path, auth="subscription", auth_home=str(home))
+
+    assert adapter._login_secrets() == ()
+    assert run_once(adapter, a_request()).outcome == "succeeded"
+    assert login_home.credential_values(
+        str(home), (".credentials.json",)) == ()
 
 
 def test_the_two_declared_lists_are_the_measured_ones():

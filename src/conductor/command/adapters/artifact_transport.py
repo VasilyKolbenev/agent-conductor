@@ -506,8 +506,16 @@ class ArtifactAwareTransport(HeadlessCliTransport):
     def _sensitive_values(self) -> tuple[bytes, ...]:
         # The profile home is code-owned, displaced the operator's value, and
         # never enters the frame. Other overrides match the runner's own read.
-        return self._runner.allowed_environment_values(
-            self._env_allow(), overrides={**dict(self.profile.forced_env), self.profile.home_env: ""})
+        #
+        # The vendor's own login is added on top, and it has to be: it is the
+        # one credential this build hands a child that never came through the
+        # environment, so a frame carrying it would be a frame nothing scanned.
+        return (
+            self._runner.allowed_environment_values(
+                self._env_allow(),
+                overrides={**dict(self.profile.forced_env),
+                           self.profile.home_env: ""})
+            + self._login_secrets())
 
     def _published(self, request, refusal, changed=(), result_document=None) -> Published:
         relation = attempt_relation(request)

@@ -285,6 +285,12 @@ LOGIN_SCRATCH = ("sessions", ".last-cleanup")
 #: profile and the backups it rotates. Left alone, because deleting them would
 #: be deleting the operator's own state, and reported by neither list.
 LOGIN_EXPECTED = (".claude.json", "backups", ".credentials.json")
+#: Where this vendor's own login command writes the credential itself. DECLARED
+#: from the vendor's documented layout rather than measured -- no login has been
+#: performed on this machine -- and read for one purpose only: so a child that
+#: echoed its own login back cannot publish it. The first real login is where
+#: this name is confirmed.
+LOGIN_CREDENTIALS = (".credentials.json",)
 MODEL_FLAG = "--model"
 #: The four names DOCS (cli-reference) defines as "an alias for the latest
 #: model", quoted in the module docstring above. Each resolves to whatever this
@@ -347,7 +353,7 @@ CLAUDE_PROFILE = HarnessProfile(
     version_argv=VERSION_ARGV, login_argv=LOGIN_STATUS_ARGV,
     login_command=LOGIN_ARGV,
     login_scratch=LOGIN_SCRATCH, login_expected=LOGIN_EXPECTED,
-    exit_codes_published=True,
+    login_credentials=LOGIN_CREDENTIALS, exit_codes_published=True,
     capability=DISPATCH_CAPABILITY, output_limit=CLAUDE_OUTPUT_LIMIT,
     version_timeout_seconds=VERSION_TIMEOUT_SECONDS,
     home_id_kind="claude-home",

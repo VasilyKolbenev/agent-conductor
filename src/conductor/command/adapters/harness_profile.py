@@ -342,6 +342,12 @@ class HarnessProfile:
     #: See adapters/login_home.py for the measurements behind each list.
     login_scratch: tuple[str, ...] = ()
     login_expected: tuple[str, ...] = ()
+    #: The file names in that directory the vendor's own login writes its
+    #: credential into. Read ONLY to widen the leak scan, so a child that echoed
+    #: its own login back cannot publish it. Declared rather than discovered: a
+    #: build that scanned every file it found would be reading an operator's
+    #: unrelated documents in order to protect them.
+    login_credentials: tuple[str, ...] = ()
     #: WHERE this vendor's one-shot mode takes the task. A closed choice of two,
     #: and it is structural rather than advisory: the transport calls a
     #: DIFFERENT argv builder for each, and the one it calls for `stdin` takes
@@ -457,7 +463,7 @@ class HarnessProfile:
 
     def _reviewed_login_names(self) -> None:
         """Prove the login lists before either can be joined to a directory."""
-        for field in ("login_scratch", "login_expected"):
+        for field in ("login_scratch", "login_expected", "login_credentials"):
             names = getattr(self, field)
             if type(names) is not tuple:
                 raise HeadlessCliError(f"{field} is a tuple of bare names")

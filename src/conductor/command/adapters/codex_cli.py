@@ -353,6 +353,9 @@ LOGIN_SCRATCH = ("tmp",)
 #: than measured -- no login has been performed on this machine -- so the first
 #: real login is where that half of this list is confirmed.
 LOGIN_EXPECTED = ("skills", "auth.json", "config.toml", "version.json")
+#: Where this vendor's own login writes the credential. DECLARED, like the name
+#: above it, and read only to widen the leak scan.
+LOGIN_CREDENTIALS = ("auth.json",)
 MODEL_FLAG = "--model"
 VERSION_ARGV = ("--version",)
 #: Capture ceiling for either spawn; the pump drains past it and drops the rest.
@@ -455,7 +458,7 @@ CODEX_PROFILE = HarnessProfile(
     version_argv=VERSION_ARGV, login_argv=LOGIN_STATUS_ARGV,
     login_command=LOGIN_ARGV,
     login_scratch=LOGIN_SCRATCH, login_expected=LOGIN_EXPECTED,
-    exit_codes_published=False,
+    login_credentials=LOGIN_CREDENTIALS, exit_codes_published=False,
     capability=DISPATCH_CAPABILITY, output_limit=CODEX_OUTPUT_LIMIT,
     version_timeout_seconds=VERSION_TIMEOUT_SECONDS,
     home_id_kind="codex-home",

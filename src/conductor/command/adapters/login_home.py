@@ -13,17 +13,26 @@ leave behind are declared per provider and MEASURED at the pinned version, the
 per-run ones are taken back after every spawn, and a name outside both lists is
 reported rather than deleted or ignored.
 
-Nothing here opens a file. The whole judgement is names and kinds, so a
-credential is never read in order to protect it, and a file this build does not
-recognise is not inspected to find out what it is.
+The RESIDUE half of this module opens no file. That judgement is names and
+kinds, so a file this build does not recognise is not inspected to find out what
+it is, and the credential is not read in order to decide whether it moved.
 
-That is a decision about THIS module and not the whole contract. The leak scan
-one seam away still derives its sensitive values from the environment alone, so
-a credential that lives in a file is not among the values a child's output is
-scanned against -- the coverage gap the owner recorded on 2026-09-07, and the
-one thing the login contract's D8 asks for that no slice has built yet. Reading
-the credential file INTO that scan set is the open work; reading it here, where
-the question is which names appeared, would answer a question nobody asked.
+``credential_values`` is the one road that does read, and it reads for the
+opposite reason: to protect the credential rather than to judge it. The leak
+scan was built from the values of allowlisted environment names, because that is
+where every credential this build ever handed a child came from. A vendor's own
+login does not arrive that way -- it lives in a file -- so a child that echoed it
+back would be publishing a secret the scan had never heard of. That was the
+coverage gap the owner recorded on 2026-09-07 and what the login contract's D8
+asks for.
+
+What the reading road promises: it opens ONE declared name, bounded, and keeps
+what it finds only as bytes to compare a child's output against. Nothing read
+here is decoded into a message, returned to a caller, written to a receipt, put
+in an exception or kept after the spawn it guarded. A file that is absent,
+oversized, unreadable or not the shape expected contributes nothing at all,
+because a login that cannot be read is a leak scan that cannot be widened, not a
+reason to refuse a run the login preflight already admitted.
 
 MEASURED at the pinned versions, with a fresh directory and one real spawn:
 
@@ -39,6 +48,7 @@ MEASURED at the pinned versions, with a fresh directory and one real spawn:
 """
 from __future__ import annotations
 
+import json
 import os
 import stat
 from pathlib import Path
@@ -66,6 +76,55 @@ def entries(home: str) -> frozenset[str] | None:
         return frozenset()
     except OSError:  # noqa: BLE001 -- unreadable is its own answer
         return None
+
+
+#: The most a credential file may be read as. A login file is small -- a token,
+#: an expiry, an account id -- and a bound is what stops a name in that
+#: directory being read as a file at all.
+CREDENTIAL_LIMIT = 64 * 1024
+
+
+def credential_values(home: str, names: tuple[str, ...]) -> tuple[bytes, ...]:
+    """Every string a provider's declared login file holds, as bytes to scan for.
+
+    Read from the DECLARED names only, never by looking for what a directory
+    happens to contain: a build that scanned every file it found would be
+    reading an operator's unrelated documents to protect them.
+
+    Values shorter than a plausible secret are dropped. A leak scan matches by
+    substring, and a two-character value out of a JSON document would flag every
+    output that happened to contain those characters, which would turn the whole
+    scan into noise nobody could act on.
+    """
+    found: list[bytes] = []
+    for name in names:
+        for value in _strings(_read_json(Path(home) / name)):
+            if len(value) >= 12:
+                found.append(value.encode("utf-8"))
+    return tuple(dict.fromkeys(found))
+
+
+def _read_json(target: Path) -> object:
+    """One bounded read of one named file; anything unreadable answers None."""
+    if not _pinned(str(target.parent)):
+        return None
+    try:
+        if target.is_symlink() or target.stat().st_size > CREDENTIAL_LIMIT:
+            return None
+        return json.loads(target.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001 -- a widening, never a road
+        return None
+
+
+def _strings(value: object) -> list[str]:
+    """Every string inside a JSON value, in no particular order."""
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, dict):
+        return [row for item in value.values() for row in _strings(item)]
+    if isinstance(value, list):
+        return [row for item in value for row in _strings(item)]
+    return []
 
 
 def _pinned(home: str) -> bool:
