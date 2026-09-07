@@ -64,6 +64,29 @@ IMPLEMENTATION_STATES = frozenset({"real_experimental", "fixture_only", "unprove
 #: What a provider that declares no implementation claims: the weakest of the
 #: three. A stronger claim has to be written down to be made.
 WEAKEST_IMPLEMENTATION = "unproven"
+#: The two logins a provider row may be pinned to. ``api-key`` is the road that
+#: shipped -- the harness reads a credential out of the environment by a name the
+#: row allows -- and ``subscription`` is the vendor's own login, kept in a
+#: directory the row names. A row that says neither means ``api-key``, so every
+#: configuration written before this field existed still means what it meant.
+AUTH_MODES = frozenset({"api-key", "subscription"})
+#: What an unsaid mode is. Named rather than spelled inline, because two places
+#: (this door and the operator file's row writer) have to agree on it.
+DEFAULT_AUTH_MODE = "api-key"
+SUBSCRIPTION_AUTH = "subscription"
+#: Environment NAMES that buy model access billed to an API account. In
+#: subscription mode a row may not forward one: the reviewed Claude build was
+#: measured going straight to ``POST /v1/messages`` with an ``x-api-key`` header
+#: when ``ANTHROPIC_API_KEY`` stood in its environment, under the very flag the
+#: subscription road needs. A row that pinned both would bill an API account
+#: while its operator believed a subscription was in use, and no later refusal
+#: could see that it had happened.
+#:
+#: Like :data:`INJECTING_ENV` in the process door, this is a NAMED defence and
+#: not a proof: a credential forwarded under some other name is not caught here,
+#: and nothing in this build can see the value.
+API_BILLING_ENV = frozenset({
+    "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "OPENAI_API_KEY", "CODEX_API_KEY"})
 #: The one lifecycle capability that carries no argument schema: an observation is
 #: an adapter-authored fact, never a browser-submitted argument body.
 SCHEMALESS_CAPABILITIES = frozenset({"observe"})
@@ -203,8 +226,11 @@ class ProviderConfig:
     protocol: str
     env_allow: tuple[str, ...] | list[str] = ()
     entrypoint: str = ""
+    auth: str = DEFAULT_AUTH_MODE
+    auth_home: str = ""
     _FIELDS: ClassVar[frozenset[str]] = frozenset({
-        "provider_id", "executable", "protocol", "env_allow", "entrypoint"})
+        "provider_id", "executable", "protocol", "env_allow", "entrypoint",
+        "auth", "auth_home"})
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "provider_id", _provider_id(self.provider_id))
@@ -219,6 +245,35 @@ class ProviderConfig:
             raise ProviderConfigError("entrypoint must be a NUL-free absolute path string")
         if self.entrypoint and not _is_absolute(self.entrypoint):
             raise ProviderConfigError("entrypoint must be an absolute operator-pinned path")
+        self._reviewed_login()
+
+    def _reviewed_login(self) -> None:
+        """Close the login half: a named mode, a directory only where one is read.
+
+        The directory is refused unless the mode reads it, and required where the
+        mode does. A path a build would never open is not a harmless spare
+        field: an operator who wrote one would believe a login was configured.
+        """
+        if type(self.auth) is not str or self.auth not in AUTH_MODES:
+            raise ProviderConfigError(
+                f"auth must name a reviewed authentication mode: {sorted(AUTH_MODES)}")
+        if type(self.auth_home) is not str or "\x00" in self.auth_home:
+            raise ProviderConfigError("auth_home must be a NUL-free absolute path string")
+        if self.auth == SUBSCRIPTION_AUTH:
+            if not self.auth_home:
+                raise ProviderConfigError(
+                    "subscription authentication needs auth_home, "
+                    "the directory this provider's login is kept in")
+            forwarded = sorted(set(self.env_allow) & API_BILLING_ENV)
+            if forwarded:
+                raise ProviderConfigError(
+                    f"subscription authentication may not forward {forwarded}: "
+                    "the harness would bill an API account instead of the subscription")
+        elif self.auth_home:
+            raise ProviderConfigError(
+                f"auth_home is read only in {SUBSCRIPTION_AUTH} authentication")
+        if self.auth_home and not _is_absolute(self.auth_home):
+            raise ProviderConfigError("auth_home must be an absolute operator-pinned path")
 
     def as_dict(self) -> dict[str, Any]:
         if type(self) is not ProviderConfig:
@@ -227,7 +282,8 @@ class ProviderConfig:
         return {
             "provider_id": canonical.provider_id, "executable": canonical.executable,
             "protocol": canonical.protocol, "env_allow": list(canonical.env_allow),
-            "entrypoint": canonical.entrypoint}
+            "entrypoint": canonical.entrypoint, "auth": canonical.auth,
+            "auth_home": canonical.auth_home}
 
     @classmethod
     def from_dict(cls, value: object) -> "ProviderConfig":
@@ -242,7 +298,7 @@ def _rebuilt_config(config: ProviderConfig) -> ProviderConfig:
     try:
         rebuilt = ProviderConfig(
             config.provider_id, config.executable, config.protocol, config.env_allow,
-            config.entrypoint)
+            config.entrypoint, config.auth, config.auth_home)
     except Exception:  # noqa: BLE001 -- a mutated value retains no hostile graph
         failed = True
         rebuilt = None

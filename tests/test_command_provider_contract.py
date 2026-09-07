@@ -165,11 +165,17 @@ def test_provider_config_stores_only_the_operator_pin_and_env_names():
         provider_id="claude-code", executable=ABS_EXECUTABLE,
         protocol="fake-claude-jsonl-v1", env_allow=("ANTHROPIC_API_KEY",))
     assert set(config.as_dict()) == {
-        "provider_id", "executable", "protocol", "env_allow", "entrypoint"}
+        "provider_id", "executable", "protocol", "env_allow", "entrypoint",
+        "auth", "auth_home"}
     assert config.as_dict()["env_allow"] == ["ANTHROPIC_API_KEY"]
     # An unpinned entrypoint is empty, never a guess: a provider that is its own
-    # executable carries no second path at all.
+    # executable carries no second path at all. The same rule holds for the login
+    # directory, which only the vendor's own login road reads.
     assert config.as_dict()["entrypoint"] == ""
+    assert config.as_dict()["auth_home"] == ""
+    # A row that says nothing about its login is the road that shipped, so this
+    # config means today exactly what it meant before the field existed.
+    assert config.as_dict()["auth"] == "api-key"
     with pytest.raises(ProviderConfigError, match="env_allow"):
         ProviderConfig(
             provider_id="claude-code", executable=ABS_EXECUTABLE,

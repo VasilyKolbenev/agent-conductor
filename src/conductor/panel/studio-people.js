@@ -78,13 +78,14 @@ export const IMPLEMENTATION_MEANINGS = Object.freeze({
   unproven: "This build claims nothing about how it would talk to it.",
 });
 //: operator_config -- the one file a person writes, and exactly the keys it
-//: may carry. Three are required and two are optional; there is nowhere in it
-//: for an argv, a cwd, a timeout, a URL or a secret VALUE.
+//: may carry. Three are required and four are optional; there is nowhere in it
+//: for an argv, a cwd, a timeout, a URL or a secret VALUE. `auth_home` is a
+//: DIRECTORY the vendor's own login command wrote, never a credential.
 export const PROVIDER_CONFIG_FILE = "conductor/providers.json";
 export const PROVIDER_CONFIG_REQUIRED = Object.freeze(
   ["executable", "protocol", "provider_id"]);
 export const PROVIDER_CONFIG_OPTIONAL = Object.freeze(
-  ["entrypoint", "env_allow"]);
+  ["auth", "auth_home", "entrypoint", "env_allow"]);
 export const PROVIDER_CONFIG_COMMAND = "conduct up";
 //: The command that WRITES that file, so nobody has to. It is named before the
 //: file below it: the file is what gets written, not what a person has to sit

@@ -1,4 +1,4 @@
-"""The one operator-writable surface that configures a provider, and its five keys.
+"""The one operator-writable surface that configures a provider, and its seven keys.
 
 Everything else in this package is reachable only from code. This module is the
 door a PERSON uses: one JSON file, read once at startup, holding a list of pinned
@@ -8,13 +8,15 @@ providers. It exists so the provider vertical is reachable from the real
 What the file may say is deliberately tiny, and it is exactly what
 :class:`~conductor.command.adapters.provider.ProviderConfig` already carries: a
 provider id, one ABSOLUTE executable path, an optional ABSOLUTE entrypoint path,
-a reviewed protocol token, and environment NAMES. There is no argv, no shell, no
-cwd, no working directory, no timeout, no installer, no registry URL and no
-credential: a secret is named here and read from the live environment at spawn
-time, so no value one names ever lands in this file.
+a reviewed protocol token, environment NAMES, which login the harness is pinned
+to, and -- where that login is the vendor's own -- the ABSOLUTE directory it is
+kept in. There is no argv, no shell, no cwd, no working directory, no timeout,
+no installer, no registry URL and no credential: a secret is named here and read
+from the live environment at spawn time, or lives in the login directory the
+vendor's own command wrote, so no value one names ever lands in this file.
 
 This module PROVES almost nothing itself, on purpose. It reads the document,
-refuses any key outside the five, fills in the two optional halves, and hands
+refuses any key outside the seven, fills in the four optional halves, and hands
 each row to the ProviderConfig door -- which is where a relative path, an
 unreviewed protocol, a NUL byte, or an env VALUE masquerading as a name is
 refused. What this module adds is that every refusal, wherever it came from,
@@ -36,7 +38,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from .adapters.provider import ProviderConfig, ProviderConfigError
+from .adapters.provider import DEFAULT_AUTH_MODE, ProviderConfig, ProviderConfigError
 from .run_store import _replace_bytes
 
 #: The file `conduct up` reads out of a project's `conductor/` directory.
@@ -49,7 +51,7 @@ _TOP_LEVEL = frozenset({"schema_version", "providers"})
 #: are exactly the durable config's own fields, so this surface cannot drift into
 #: carrying something the config does not, or into hiding something it does.
 _REQUIRED_KEYS = frozenset({"provider_id", "executable", "protocol"})
-_OPTIONAL_KEYS = frozenset({"entrypoint", "env_allow"})
+_OPTIONAL_KEYS = frozenset({"entrypoint", "env_allow", "auth", "auth_home"})
 
 
 class OperatorConfigError(RuntimeError):
@@ -73,7 +75,7 @@ def load_provider_configs(path: Path | str) -> tuple[ProviderConfig, ...]:
 
     Raises:
         OperatorConfigError: The file could not be read, is not the one reviewed
-            document shape, carries a key outside the five, names one provider
+            document shape, carries a key outside the seven, names one provider
             twice, or holds a row the ProviderConfig door refuses. Every message
             names `path`.
     """
@@ -162,10 +164,10 @@ def _rows_document(target: Path, configs) -> list[dict[str, object]]:
 def _row_document(config: ProviderConfig) -> dict[str, object]:
     """One provider row: the three required keys, and the optional ones it uses.
 
-    `ProviderConfig.as_dict` answers with all five, spelling "pinned none" as an
-    empty string and an empty list. Those are the defaults `_reviewed_row` fills
-    in, so writing them back would put two spellings of the same fact into every
-    file this ever produces.
+    `ProviderConfig.as_dict` answers with all seven, spelling "pinned none" as an
+    empty string, an empty list, and the login that shipped. Those are the
+    defaults `_reviewed_row` fills in, so writing them back would put two
+    spellings of the same fact into every file this ever produces.
     """
     row = {key: value for key, value in config.as_dict().items()
            if key in _REQUIRED_KEYS}
@@ -173,6 +175,10 @@ def _row_document(config: ProviderConfig) -> dict[str, object]:
         row["entrypoint"] = config.entrypoint
     if config.env_allow:
         row["env_allow"] = list(config.env_allow)
+    if config.auth != DEFAULT_AUTH_MODE:
+        row["auth"] = config.auth
+    if config.auth_home:
+        row["auth_home"] = config.auth_home
     return row
 
 
@@ -224,9 +230,12 @@ def _reviewed_row(target: Path, index: int, row: object) -> ProviderConfig:
     if missing:
         raise OperatorConfigError(f"{where} is missing required keys: {missing}")
     try:
-        # The two optional halves default to "the operator pinned none", which is
-        # the whole shape for a provider that is its own executable and needs no
-        # environment name. Nothing else is filled in for them.
-        return ProviderConfig.from_dict({"entrypoint": "", "env_allow": [], **row})
+        # The optional halves default to "the operator pinned none", which is the
+        # whole shape for a provider that is its own executable, needs no
+        # environment name, and takes the login this build shipped with. Nothing
+        # else is filled in for them.
+        return ProviderConfig.from_dict({
+            "entrypoint": "", "env_allow": [], "auth": DEFAULT_AUTH_MODE,
+            "auth_home": "", **row})
     except ProviderConfigError as error:
         raise OperatorConfigError(f"{where} was refused: {error}") from None

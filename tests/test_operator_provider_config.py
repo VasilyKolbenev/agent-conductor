@@ -6,8 +6,10 @@ all. The seam closed here is deliberately tiny -- a provider id, one absolute
 executable, an optional absolute entrypoint, a reviewed protocol token, and
 environment NAMES -- and it proves nothing itself. Every dangerous shape is
 handed to the session-1 ``ProviderConfig`` door and refused there; this module's
-job is to accept exactly five names, refuse everything else, and name the exact
-file in every refusal so an operator can find what they wrote.
+job is to accept exactly the names that door carries, refuse everything else, and
+name the exact file in every refusal so an operator can find what they wrote.
+The login half of that key set has its own circuit in
+``tests/test_provider_auth_mode.py``; what is proved here is the file surface.
 
 The accepted key set is DERIVED from ``ProviderConfig._FIELDS`` rather than
 retyped, so a field added to the durable config cannot silently become an
@@ -82,12 +84,14 @@ def test_an_absent_file_configures_nothing_and_refuses_nothing(tmp_path):
 def test_the_optional_halves_default_to_the_empty_pin_the_door_reads_as_none(tmp_path):
     config = load_provider_configs(write_config(tmp_path, a_document()))[0]
     assert (config.entrypoint, config.env_allow) == ("", ())
+    assert (config.auth, config.auth_home) == ("api-key", "")
 
 
 def test_the_operator_surface_is_exactly_the_durable_config_fields(tmp_path):
     """The accepted names are the config's own; nothing extra, nothing missing."""
     path = write_config(tmp_path, a_document(
-        entrypoint="/opt/claude/lib/main.js", env_allow=["CLAUDE_API_KEY"]))
+        entrypoint="/opt/claude/lib/main.js", env_allow=["CLAUDE_API_KEY"],
+        auth="subscription", auth_home="/var/lib/conduct/auth/claude-code"))
     accepted = set(json.loads(path.read_text(encoding="utf-8"))["providers"][0])
     assert accepted == set(ProviderConfig._FIELDS)
     assert set(FORBIDDEN_KEYS).isdisjoint(ProviderConfig._FIELDS)
