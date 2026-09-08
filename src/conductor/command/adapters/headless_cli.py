@@ -192,6 +192,10 @@ class HeadlessCliTransport(ReceiptWriting, ModelRouting, LoginRoad):
         #: declaration accounts for. A count for the same reason: the names are
         #: an operator's own state, and one of them is a credential.
         self._login_residue = 0
+        #: Whether the LAST spawn's output carried a login value read after that
+        #: spawn returned. A per-attempt fact, not a per-dispatch count: it is
+        #: the one leak question whose answer can change while a child runs.
+        self._login_echo = False
 
     # -- what a provider brings ------------------------------------------------
 
@@ -557,13 +561,20 @@ class HeadlessCliTransport(ReceiptWriting, ModelRouting, LoginRoad):
         # ONE source for "is there a login directory in play", so the before and
         # after measurements and the cleanup can never disagree about it.
         auth_home = self._signed_in_road()
-        before = login_home.entries(auth_home)
+        before = login_home.measure(auth_home, self.profile.login_scratch)
+        self._login_echo = False
         try:
             outcome = self._spawn(
                 argv, home, cwd, timeout=timeout, stdin_bytes=stdin_bytes,
                 separate_stderr=separate_stderr, model=model,
                 output_limit=output_limit)
             self._read_attempt_home(home)
+            # AFTER the spawn, and that is the whole point: a vendor refreshes
+            # its own credential while it runs, so the values this build scanned
+            # for before the spawn are not necessarily the ones the child could
+            # have echoed. The runner's own flag answers for the first set; this
+            # answers for the set the spawn left behind.
+            self._login_echo = self._echoed_login(outcome.output)
             return outcome
         finally:
             if auth_home:

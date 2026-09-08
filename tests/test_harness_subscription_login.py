@@ -265,9 +265,9 @@ def test_codex_refuses_a_run_whose_login_is_missing(tmp_path):
     receipt = run_once(adapter, a_request())
 
     assert receipt.outcome == "failed"
-    assert "no usable subscription login" in receipt.detail
+    assert "reports no subscription login" in receipt.detail
     assert "CODEX_HOME" in receipt.detail
-    assert "run login --" in receipt.detail, receipt.detail
+    assert "run login" in receipt.detail, receipt.detail
     assert _fakecodex.task_spawns(log) == []
 
 
@@ -284,7 +284,7 @@ def test_a_missing_login_refuses_before_any_task_is_spawned(tmp_path):
     receipt = run_once(adapter, a_request())
 
     assert receipt.outcome == "failed"
-    assert "no usable subscription login" in receipt.detail
+    assert "reports no subscription login" in receipt.detail
     assert "no task was spawned" in receipt.detail
     assert CLAUDE_HOME_ENV in receipt.detail
     # The COMMAND, not just the variable. A refusal that says "sign in" without
@@ -394,6 +394,54 @@ def test_per_run_state_that_was_already_there_is_a_persons_own_and_survives(
     assert (home / "sessions" / "mine.json").exists(), "a person's own work went"
     assert (home / ".last-cleanup").exists()
     assert (home / "backups").exists(), "vendor state this build declares was taken"
+
+
+def test_a_file_a_spawn_writes_into_an_existing_scratch_directory_is_seen(
+        tmp_path):
+    """Top-level names alone hid the thing that matters most.
+
+    A `sessions` directory that already stood there did not change when a spawn
+    wrote a new file into it, so an attempt could leave its own session state --
+    which carries the working directory it ran in -- behind an unchanged name.
+    What is compared has to be as fine as what a spawn can add.
+    """
+    home = a_login_home(tmp_path)
+    (home / "sessions").mkdir()
+    (home / "sessions" / "mine.json").write_text(
+        '{"transcript": "a person\'s own"}', encoding="utf-8", newline="\n")
+    adapter, _root, _log = a_harness(
+        tmp_path, auth="subscription", auth_home=str(home),
+        **{_fakeclaude.HOME_FILE: "sessions/new.json:{}"})
+
+    assert run_once(adapter, a_request()).outcome == "succeeded"
+
+    assert not (home / "sessions" / "new.json").exists(), (
+        "state this spawn wrote inside an existing directory stayed behind")
+    assert (home / "sessions" / "mine.json").exists(), "a person's own work went"
+
+
+def test_a_cleanup_that_could_not_finish_is_not_reported_as_a_kept_promise(
+        tmp_path, monkeypatch):
+    """A removal that failed and was swallowed left the run saying the opposite
+    of what the directory holds."""
+    from conductor.command.adapters import login_home
+
+    home = a_login_home(tmp_path)
+    adapter, _root, _log = a_harness(
+        tmp_path, auth="subscription", auth_home=str(home),
+        **{_fakeclaude.HOME_FILE: "sessions:{}"})
+    real = login_home.take_back
+
+    def refuse(where, scratch, added):
+        real(where, (), added)
+        return tuple(sorted(added or ()))
+
+    monkeypatch.setattr(login_home, "take_back", refuse)
+    receipt = run_once(adapter, a_request())
+
+    assert receipt.outcome == "failed"
+    assert "does not declare" in receipt.detail
+    assert (home / "sessions").exists(), "the fixture removed what it blocked"
 
 
 def test_a_name_no_declaration_accounts_for_is_reported_on_every_receipt(
@@ -564,181 +612,105 @@ def test_absolute_is_the_same_word_here_as_at_the_door():
         assert login_home._pinned(path) == (bool(path) and is_absolute(path))
 
 
-# -- the login joins the leak scan it was never in --------------------------
+# -- which login it is, not merely that there is one -------------------------
 
 
-SECRET = "sk-ant-oat01-SYNTHETIC-LOGIN-VALUE-NOT-A-REAL-CREDENTIAL"
+@pytest.mark.parametrize("method", [
+    "api_key", "quiet_key", "key_source", "vertex", "none", "stale", "garbage"])
+def test_a_login_that_is_not_a_subscription_refuses_the_run(tmp_path, method):
+    """An exit code says a credential was found, never which kind.
 
-
-def a_signed_in_home(tmp_path: Path) -> Path:
-    """A login directory holding a credential file the vendor's login wrote."""
-    home = tmp_path / "auth" / "claude-code"
-    home.mkdir(parents=True)
-    (home / ".credentials.json").write_text(
-        '{"claudeAiOauth": {"accessToken": "' + SECRET + '", "scopes": ["a"]}}',
-        encoding="utf-8", newline="\n")
-    return home
-
-
-def test_a_child_that_echoes_its_own_login_is_seen_doing_it(tmp_path):
-    """The gap this closes: every credential the scan knew about arrived through
-    an allowed environment name, and a vendor login arrives in a file.
-
-    Measured at the flag the publication road reads. A review output becomes
-    durable artifact content unless that flag is set, so a login the scan had
-    never heard of would have been written into the run's own record.
+    MEASURED on both reviewed binaries: a directory holding nothing but an API
+    key answers the status question with exit 0. The first version of this seam
+    read only that code, so a subscription pin ran on API billing -- the silent
+    fallback the pin exists to refuse. `vertex` and `garbage` are here because a
+    billing plane this build does not know, and an answer it cannot read, are
+    refusals for the same reason: neither is a subscription this build can
+    vouch for.
     """
-    home = a_signed_in_home(tmp_path)
-    adapter = a_harness(
-        tmp_path, auth="subscription", auth_home=str(home),
-        **{_fakeclaude.EMIT_HEX: SECRET.encode("utf-8").hex()})[0]
-
-    adapter._workspace.work_root()
-    outcome = adapter._attempt(
-        adapter._stdin_argv, WORK_DIR, timeout=30, stdin_bytes=b"probe")
-
-    assert outcome.output_contains_env_value is True
-
-
-def test_the_same_output_is_unremarkable_when_no_login_was_pinned(tmp_path):
-    """The positive control: the flag above is the LOGIN being scanned for, not
-    this build flagging every output that looks like a token."""
-    # The child is told what to emit as HEX, so the value the knob carries
-    # through the allowed environment is not the value it writes: without that,
-    # the control would be flagged for the ENVIRONMENT reason and would prove
-    # nothing about a login at all.
-    adapter = a_harness(
-        tmp_path, **{_fakeclaude.EMIT_HEX: SECRET.encode("utf-8").hex()})[0]
-
-    adapter._workspace.work_root()
-    outcome = adapter._attempt(
-        adapter._stdin_argv, WORK_DIR, timeout=30, stdin_bytes=b"probe")
-
-    assert outcome.output_contains_env_value is False
-
-
-def test_a_login_value_reaches_the_scan_and_nothing_else(tmp_path):
-    """Read to protect, never to report: the values are bytes for one substring
-    test, and no receipt, journal row or exception carries them."""
-    from conductor.command.adapters import login_home
-
-    home = a_signed_in_home(tmp_path)
-    adapter = a_harness(
-        tmp_path, auth="subscription", auth_home=str(home))[0]
-
-    assert SECRET.encode("utf-8") in adapter._login_secrets()
-    assert SECRET.encode("utf-8") in adapter._sensitive_values()
-    # The scopes entry is a real string in that file and far too short to scan
-    # for: a two-character value would flag every output containing it.
-    assert b"a" not in adapter._login_secrets()
-    assert login_home.credential_values(str(home), ()) == ()
-
-
-def test_only_the_declared_login_file_is_ever_read(tmp_path):
-    """Read from the DECLARED names, never by looking at what a directory
-    happens to hold: a build that scanned every file it found would be reading
-    an operator's unrelated documents in order to protect them."""
-    home = a_signed_in_home(tmp_path)
-    (home / "notes-of-my-own.txt").write_text(
-        '{"diary": "SOMETHING-ELSE-ENTIRELY-AND-QUITE-LONG"}',
-        encoding="utf-8", newline="\n")
-    adapter = a_harness(
-        tmp_path, auth="subscription", auth_home=str(home))[0]
-
-    values = adapter._login_secrets()
-
-    assert SECRET.encode("utf-8") in values
-    assert b"SOMETHING-ELSE-ENTIRELY-AND-QUITE-LONG" not in values
-
-
-def test_the_value_channel_carries_bytes_and_refuses_anything_else():
-    """The one field of a command spec that holds a VALUE. A string here would
-    be a text credential compared against a byte stream and never matching."""
-    from conductor.command.adapters.process import CommandSpec, CommandSpecError
-
-    with pytest.raises(CommandSpecError, match="VALUES as bytes"):
-        CommandSpec(argv=("/bin/true",), cwd="work",
-                    sensitive_extra=("a string",))
-    spec = CommandSpec(argv=("/bin/true",), cwd="work",
-                       sensitive_extra=(b"kept", b"", b"kept"))
-    assert spec.sensitive_extra == (b"kept",)
-    assert "kept" not in repr(spec)
-
-
-def test_a_login_this_build_cannot_read_widens_nothing_and_refuses_nothing(
-        tmp_path):
-    """A login that cannot be read is a scan that cannot be widened, not a
-    reason to refuse a run the login preflight already admitted."""
-    from conductor.command.adapters import login_home
-
     home = a_login_home(tmp_path)
-    (home / ".credentials.json").write_text(
-        "not json at all", encoding="utf-8", newline="\n")
-    adapter, _root, _log = a_harness(
+    adapter, _root, log = a_harness(
+        tmp_path, auth="subscription", auth_home=str(home),
+        **{_fakeclaude.LOGIN_METHOD: method})
+
+    receipt = run_once(adapter, a_request())
+
+    assert receipt.outcome == "failed"
+    assert "reports no subscription login" in receipt.detail
+    assert "api" not in receipt.detail.lower().replace("api key", "")
+    assert _fakeclaude.prompt_spawns(log) == [], "a task ran on the wrong login"
+
+
+def test_the_subscription_answer_the_vendor_really_gives_is_admitted(tmp_path):
+    """The positive control: the refusals above are the METHOD being read, not
+    this build refusing every login."""
+    home = a_login_home(tmp_path)
+    adapter, _root, log = a_harness(
+        tmp_path, auth="subscription", auth_home=str(home),
+        **{_fakeclaude.LOGIN_METHOD: "subscription"})
+
+    assert run_once(adapter, a_request()).outcome == "succeeded"
+
+    assert len(_fakeclaude.prompt_spawns(log)) == 1
+
+
+@pytest.mark.parametrize("method,admitted", [
+    ("subscription", True), ("api_key", False), ("none", False)])
+def test_codex_reads_its_own_sentence_about_which_login_it_found(
+        tmp_path, method, admitted):
+    """The same rule on the other harness, in that vendor's own words -- and its
+    words are the only thing that separates the two, since both exit 0."""
+    from tests import _fakecodex
+
+    home = tmp_path / "auth" / "codex"
+    home.mkdir(parents=True)
+    adapter, _root, log = a_codex_harness(
+        tmp_path, auth="subscription", auth_home=str(home),
+        **{_fakecodex.LOGIN_METHOD: method})
+
+    receipt = run_once(adapter, a_request())
+
+    assert (receipt.outcome == "succeeded") is admitted, receipt.detail
+    assert bool(_fakecodex.task_spawns(log)) is admitted
+
+
+def test_a_login_directory_that_also_holds_configuration_refuses_first(tmp_path):
+    """MEASURED on Codex 0.112.0: a `config.toml` in the login directory naming
+    the work tree as a trusted project made the vendor read that tree's own
+    `.codex/config.toml` -- the very layer an empty per-attempt home excluded,
+    and this transport's stated isolation basis.
+
+    Refused BEFORE the status spawn, because asking the status question is
+    itself a full startup pointed at that directory.
+    """
+    from tests import _fakecodex
+
+    home = tmp_path / "auth" / "codex"
+    home.mkdir(parents=True)
+    (home / "config.toml").write_text(
+        '[projects."C:\\\\work"]\ntrust_level = "trusted"\n',
+        encoding="utf-8", newline="\n")
+    adapter, _root, log = a_codex_harness(
         tmp_path, auth="subscription", auth_home=str(home))
 
-    assert adapter._login_secrets() == ()
+    receipt = run_once(adapter, a_request())
+
+    assert receipt.outcome == "failed"
+    assert "also holds" in receipt.detail and "configuration" in receipt.detail
+    assert _fakecodex.spawns(log) == [] or not [
+        row for row in _fakecodex.spawns(log)
+        if _fakecodex.login_question(row["argv"])], (
+        "the status question was asked of a directory this build refuses")
+
+
+def test_a_login_directory_holding_only_its_login_is_not_refused(tmp_path):
+    """The positive control for the refusal above."""
+    from tests import _fakecodex
+
+    home = tmp_path / "auth" / "codex"
+    home.mkdir(parents=True)
+    (home / "auth.json").write_text("{}", encoding="utf-8", newline="\n")
+    adapter, _root, _log = a_codex_harness(
+        tmp_path, auth="subscription", auth_home=str(home))
+
     assert run_once(adapter, a_request()).outcome == "succeeded"
-    assert login_home.credential_values(
-        str(home), (".credentials.json",)) == ()
-
-
-def test_the_two_declared_lists_are_the_measured_ones():
-    """Spelled out WHOLE as an independent claim about each pinned build.
-
-    Both halves matter and a spot check covers neither: dropping a name from
-    `login_scratch` leaves per-run state standing in an operator's directory,
-    and dropping one from `login_expected` turns ordinary vendor state into a
-    reported residue that fails every run.
-    """
-    from conductor.command.adapters.claude_code import CLAUDE_PROFILE
-    from conductor.command.adapters.codex_cli import CODEX_PROFILE
-
-    assert CLAUDE_PROFILE.login_scratch == ("sessions", ".last-cleanup")
-    assert CLAUDE_PROFILE.login_expected == (
-        ".claude.json", "backups", ".credentials.json")
-    assert CODEX_PROFILE.login_scratch == ("tmp",)
-    assert CODEX_PROFILE.login_expected == (
-        "skills", "auth.json", "config.toml", "version.json")
-
-
-@pytest.mark.parametrize("bad", [
-    "/etc", "C:\\Windows", "..", ".", "", "sessions/inner", "a\\b", 7])
-def test_a_declared_login_name_is_one_component_and_never_a_path(bad):
-    """These lists are joined to a directory an operator pinned and one of them
-    is then DELETED, so a name carrying a separator, a parent segment or a drive
-    would reach outside the directory they pointed at."""
-    from conductor.command.adapters.claude_code import CLAUDE_PROFILE
-    from conductor.command.adapters.harness_profile import HeadlessCliError
-    from dataclasses import replace
-
-    with pytest.raises(HeadlessCliError):
-        replace(CLAUDE_PROFILE, login_scratch=(bad,))
-
-
-def test_a_name_cannot_be_both_taken_back_and_left_alone():
-    from conductor.command.adapters.claude_code import CLAUDE_PROFILE
-    from conductor.command.adapters.harness_profile import HeadlessCliError
-    from dataclasses import replace
-
-    with pytest.raises(HeadlessCliError, match="never both"):
-        replace(CLAUDE_PROFILE, login_scratch=("sessions",),
-                login_expected=("sessions",))
-
-
-def test_a_provider_that_can_be_asked_about_a_login_says_how_to_perform_one():
-    """The refusal has to print a command, so a profile that could be asked and
-    could not answer would leave a person told to sign in and not told how."""
-    from conductor.command.adapters.claude_code import CLAUDE_PROFILE
-    from conductor.command.adapters.harness_profile import HeadlessCliError
-    from dataclasses import replace
-
-    with pytest.raises(HeadlessCliError, match="how"):
-        replace(CLAUDE_PROFILE, login_command=())
-
-
-def test_both_harnesses_read_their_login_from_the_variable_they_already_owned():
-    """No new environment name is invented for a login: the directory a login
-    lives in is the same one the API-key road minted."""
-    assert CLAUDE_HOME_ENV == "CLAUDE_CONFIG_DIR"
-    assert CODEX_HOME_ENV == "CODEX_HOME"

@@ -352,10 +352,24 @@ LOGIN_SCRATCH = ("tmp",)
 #: `auth.json` is the file the vendor's own login writes and is DECLARED rather
 #: than measured -- no login has been performed on this machine -- so the first
 #: real login is where that half of this list is confirmed.
-LOGIN_EXPECTED = ("skills", "auth.json", "config.toml", "version.json")
+LOGIN_EXPECTED = ("skills", "auth.json", "version.json")
 #: Where this vendor's own login writes the credential. DECLARED, like the name
 #: above it, and read only to widen the leak scan.
 LOGIN_CREDENTIALS = ("auth.json",)
+#: What this vendor says when it is signed in, and what it says when the login
+#: it found is an API key. MEASURED on 0.112.0 with synthetic credential files:
+#: a ChatGPT-shaped `auth.json` answers "Logged in using ChatGPT" and exits 0;
+#: one holding only `OPENAI_API_KEY` answers "Logged in using an API key - sk-…"
+#: and ALSO exits 0. A file holding BOTH answers with the API key -- the key
+#: wins where nobody asked it to, which is why the marker below is what refuses
+#: rather than the presence of a subscription token deciding.
+LOGGED_IN_MARKER = "Logged in"
+API_KEY_MARKER = "using an API key"
+#: The name that carries this vendor's configuration AND its project trust map.
+#: MEASURED: a `config.toml` here naming the work tree as a trusted project made
+#: the vendor read that tree's own `.codex/config.toml`, which an empty home had
+#: excluded. That exclusion is this transport's stated isolation basis.
+LOGIN_FORBIDDEN = ("config.toml",)
 MODEL_FLAG = "--model"
 VERSION_ARGV = ("--version",)
 #: Capture ceiling for either spawn; the pump drains past it and drops the rest.
@@ -458,7 +472,8 @@ CODEX_PROFILE = HarnessProfile(
     version_argv=VERSION_ARGV, login_argv=LOGIN_STATUS_ARGV,
     login_command=LOGIN_ARGV,
     login_scratch=LOGIN_SCRATCH, login_expected=LOGIN_EXPECTED,
-    login_credentials=LOGIN_CREDENTIALS, exit_codes_published=False,
+    login_credentials=LOGIN_CREDENTIALS, login_forbidden=LOGIN_FORBIDDEN,
+    exit_codes_published=False,
     capability=DISPATCH_CAPABILITY, output_limit=CODEX_OUTPUT_LIMIT,
     version_timeout_seconds=VERSION_TIMEOUT_SECONDS,
     home_id_kind="codex-home",
@@ -517,6 +532,21 @@ class CodexCliTransport(ArtifactAwareTransport):
     def _argv_prefix(self) -> tuple[str, ...]:
         """One native binary, and nothing in front of it."""
         return (self._pin.executable,)
+
+    def _login_method_admitted(self, output: bytes) -> bool:
+        """Read this vendor's own sentence about how it is signed in.
+
+        It writes that sentence to stderr, which this build's runner merges into
+        the captured output, and it says one of two things. The API-key form is
+        what refuses -- and it refuses even when a subscription token sits in the
+        same file, because MEASURED on 0.112.0 the key wins that tie and the run
+        would have been billed to an API account nobody pinned.
+
+        Nothing is reported onward: the key fragment this sentence carries is
+        read here and never quoted into a receipt.
+        """
+        said = output.decode("utf-8", "replace")
+        return LOGGED_IN_MARKER in said and API_KEY_MARKER not in said
 
     def _login(self) -> tuple[str, str]:
         """The login this operator pinned, read from the pin that carries it.

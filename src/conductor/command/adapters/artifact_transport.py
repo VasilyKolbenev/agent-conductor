@@ -12,7 +12,11 @@ from ..run_store import RunStore
 from .base import AdapterManifest, AdapterVerification, PreparedAction, Published
 from .deep_commands import OUTPUT_LIMIT_BYTES, DeepDispatchArgs, DeepReviewArgs
 from .deep_contracts import OMITTED
-from .harness_profile import PREFLIGHT_RESIDUE_DETAIL, TASK_CHANNEL_STDIN
+from .harness_profile import (
+    LOGIN_RESIDUE_DETAIL,
+    PREFLIGHT_RESIDUE_DETAIL,
+    TASK_CHANNEL_STDIN,
+)
 from .harness_workspace import INSTRUCTION_LIMIT, WORK_DIR, WorkspaceNotContained
 from .headless_cli import HeadlessCliTransport, residue_detail
 from .headless_values import (
@@ -290,11 +294,9 @@ class ArtifactAwareTransport(HeadlessCliTransport):
             return self._receipt(
                 request, "failed", None,
                 "the materialized review exceeds the bounded task channel")
-        preflight = self._preflight(request)
-        if preflight is not None:
-            return preflight
-        if self._retained:
-            return self._receipt(request, "failed", None, PREFLIGHT_RESIDUE_DETAIL)
+        refused = self._preflight(request) or self._preflight_residue(request)
+        if refused is not None:
+            return refused
         return self._run_review(request, args, inputs, payload, model)
 
     def _run_review(
@@ -325,10 +327,17 @@ class ArtifactAwareTransport(HeadlessCliTransport):
             input_artifact_ids=tuple(row.artifact_id for row in inputs),
             result_artifact_ref=args.result_artifact_ref,
             output=outcome.output,
-            output_contains_env_value=outcome.output_contains_env_value,
+            output_contains_env_value=self._review_attempt_carries(outcome),
             evidence=evidence)
         self._check_materials[relation] = (None, inputs, None)
-        result = self._observed(request, outcome)
+        # The same rule the dispatch road keeps, on the road where the child's
+        # own output becomes durable content: a review that left state nobody
+        # declared in a directory this build cannot clean has not met the
+        # promise it makes about that directory, and its output must not be
+        # published on the strength of a sentence appended to a success.
+        result = (self._receipt(request, "failed", outcome.exit_code,
+                                LOGIN_RESIDUE_DETAIL) if self._login_residue
+                  else self._observed(request, outcome))
         if result.outcome != "succeeded":
             self._forget(request)
         return result
@@ -503,6 +512,18 @@ class ArtifactAwareTransport(HeadlessCliTransport):
             request, "verified", (evidence_id,),
             "the bound adapter recorded post-observation durable evidence")
 
+    def _review_attempt_carries(self, outcome) -> bool:
+        """Whether this review's output carries a credential, by BOTH answers.
+
+        They answer different questions. The runner scanned for the values that
+        stood before the spawn -- the only ones it could have -- and
+        `_login_echo` for the ones the spawn itself left behind. A vendor that
+        refreshes its own credential while it runs makes the second the only one
+        that can see what this output really carries, and this road is where the
+        output becomes durable content.
+        """
+        return bool(outcome.output_contains_env_value or self._login_echo)
+
     def _sensitive_values(self) -> tuple[bytes, ...]:
         # The profile home is code-owned, displaced the operator's value, and
         # never enters the frame. Other overrides match the runner's own read.
@@ -610,6 +631,11 @@ class ArtifactAwareTransport(HeadlessCliTransport):
         scan_frame(frame, (*material.sensitive, *self._sensitive_values()))
         if self._preflight(request) is not None or self._retained:
             return self._checker_answer(request, "preflight_refused")
+        if self._login_residue:
+            # A preflight that already left undeclared state in the login
+            # directory is not a preflight this verification may build on: the
+            # task must not run after a promise this build has already broken.
+            return self._checker_answer(request, "login_residue")
         # The preflight has no authority to alter the tree it is about to judge.
         if self._evidence() != before:
             return self._checker_answer(request, "tree_changed")

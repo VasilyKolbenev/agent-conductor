@@ -169,6 +169,7 @@ carrying that id belongs in this file or in none.
 """
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Callable
 from pathlib import Path
@@ -291,6 +292,18 @@ LOGIN_EXPECTED = (".claude.json", "backups", ".credentials.json")
 #: echoed its own login back cannot publish it. The first real login is where
 #: this name is confirmed.
 LOGIN_CREDENTIALS = (".credentials.json",)
+#: The two `authMethod` values this build knows mean "not a subscription", and
+#: the billing plane it accepts. MEASURED on 2.1.239 (see
+#: `_login_method_admitted`). The token a real subscription answers with is NOT
+#: named here on purpose: nobody has signed in on this machine, and a rule that
+#: had to guess it would refuse every real subscription.
+REFUSED_LOGIN_METHODS = ("none", "api_key")
+FIRST_PARTY = "firstParty"
+#: What a login directory may not also hold. `--safe-mode` was measured to
+#: suppress both of these, and they are refused anyway: the flag is one line of
+#: argv, and this is the directory that would carry the customization if it ever
+#: stopped being sent. The startup fixture proved both are read without it.
+LOGIN_FORBIDDEN = ("settings.json", "CLAUDE.md")
 MODEL_FLAG = "--model"
 #: The four names DOCS (cli-reference) defines as "an alias for the latest
 #: model", quoted in the module docstring above. Each resolves to whatever this
@@ -353,7 +366,8 @@ CLAUDE_PROFILE = HarnessProfile(
     version_argv=VERSION_ARGV, login_argv=LOGIN_STATUS_ARGV,
     login_command=LOGIN_ARGV,
     login_scratch=LOGIN_SCRATCH, login_expected=LOGIN_EXPECTED,
-    login_credentials=LOGIN_CREDENTIALS, exit_codes_published=True,
+    login_credentials=LOGIN_CREDENTIALS, login_forbidden=LOGIN_FORBIDDEN,
+    exit_codes_published=True,
     capability=DISPATCH_CAPABILITY, output_limit=CLAUDE_OUTPUT_LIMIT,
     version_timeout_seconds=VERSION_TIMEOUT_SECONDS,
     home_id_kind="claude-home",
@@ -408,6 +422,36 @@ class ClaudeCodeTransport(ArtifactAwareTransport):
     def _login(self) -> tuple[str, str]:
         """The login this operator pinned, read from the pin that carries it."""
         return self._pin.auth, self._pin.auth_home
+
+    def _login_method_admitted(self, output: bytes) -> bool:
+        """Read this vendor's own JSON answer about how it is signed in.
+
+        MEASURED on 2.1.239 with a fresh config directory: signed out it answers
+        `{"loggedIn": false, "authMethod": "none", "apiProvider": "firstParty"}`
+        and exits 1; with `ANTHROPIC_API_KEY` in the environment it answers
+        `{"loggedIn": true, "authMethod": "api_key", "apiProvider":
+        "firstParty", "apiKeySource": "ANTHROPIC_API_KEY"}` and exits 0. The
+        second is what an exit-code test admitted as a subscription.
+
+        Four clauses, each grounded in that measurement: it must say it is
+        signed in; the billing plane must be the vendor's own first party, so a
+        cloud reseller's plane is refused rather than assumed; the method may
+        not be one of the two that mean "no login" or "an API key"; and it may
+        not name a key SOURCE at all, because a login that can name one is a
+        login being paid for by an API account.
+
+        Unparseable output is refused. This runs before a task, so refusing what
+        it cannot read costs a run and admitting it would cost an account.
+        """
+        try:
+            said = json.loads(output.decode("utf-8", "strict"))
+        except (UnicodeDecodeError, ValueError):
+            return False
+        return (isinstance(said, dict) and said.get("loggedIn") is True
+                and said.get("apiProvider") == FIRST_PARTY
+                and said.get("authMethod") not in REFUSED_LOGIN_METHODS
+                and isinstance(said.get("authMethod"), str)
+                and "apiKeySource" not in said)
 
     def _login_status_argv(self) -> tuple[str, ...]:
         """The status question, behind this road's own isolation flag.

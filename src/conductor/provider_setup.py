@@ -295,8 +295,30 @@ def _ask_entrypoint(ask: Callable[[str], str], provider_id: str,
         optional=True)
 
 
-def _ask_login(ask: Callable[[str], str], provider_id: str,
-               protocol: str) -> tuple[str, str]:
+def _quoted(value: str) -> str:
+    """One PowerShell single-quoted literal, apostrophes doubled.
+
+    Printed for a person to paste, so it has to survive the two things a real
+    machine path does: a space, which an unquoted argument splits on, and an
+    apostrophe, which ends the quoting a naive printer opened.
+    """
+    return "'" + value.replace("'", "''") + "'"
+
+
+def _login_lines(home: str, executable: str, hint) -> list[str]:
+    """The exact two lines a person runs, for the shell this command runs in.
+
+    It used to print `NAME=value` and a literal `<executable>`, which is neither
+    a PowerShell assignment nor a command: the operator had already told this
+    dialogue where the binary is, and was handed a placeholder back. What is
+    printed now is what they can select, paste and run.
+    """
+    return [f"$env:{hint[0]} = {_quoted(home)}",
+            f"& {_quoted(executable)} " + " ".join(hint[1])]
+
+
+def _ask_login(ask: Callable[[str], str], provider_id: str, protocol: str,
+               executable: str) -> tuple[str, str]:
     """Ask which login this provider uses, or state the only one there is.
 
     Asked exactly where there is a choice, on the same rule as the entrypoint
@@ -332,9 +354,10 @@ def _ask_login(ask: Callable[[str], str], provider_id: str,
     home = _ask_absolute(
         ask, "Absolute path of the directory to keep that login in: ",
         optional=False, noun="login directory")
-    _say(f"\n  Sign in yourself, once, in your own shell -- this build never "
-         f"runs a login:\n    {hint[0]}={home}\n    <executable> "
-         f"{' '.join(hint[1])}")
+    _say("\n  Sign in yourself, once, in your own shell -- this build never "
+         "runs a login. Paste these two lines:")
+    for line in _login_lines(home, executable, hint):
+        _say(f"    {line}")
     return SUBSCRIPTION_AUTH, home
 
 
@@ -349,7 +372,7 @@ def _collect(ask: Callable[[str], str]):
     executable = _ask_absolute(
         ask, f"Absolute path to the {provider_id} executable: ", optional=False)
     entrypoint = _ask_entrypoint(ask, provider_id, entrypoint_rule(protocol))
-    auth, auth_home = _ask_login(ask, provider_id, protocol)
+    auth, auth_home = _ask_login(ask, provider_id, protocol, executable)
     env_allow = _ask_env_names(ask, auth == SUBSCRIPTION_AUTH)
     try:
         return ProviderConfig(

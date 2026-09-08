@@ -100,6 +100,20 @@ VERSION_FAILS = "FAKECODEX_VERSION_FAILS"
 #: signed-in answer, so a subscription test about something else is not forced
 #: to arrange a login first.
 LOGIN_FAILS = "FAKECODEX_LOGIN_FAILS"
+#: Which login the STATUS spawn reports, in this vendor's own words. MEASURED on
+#: 0.112.0: both of the first two exit 0, and a file holding a subscription AND
+#: a key answers with the key.
+LOGIN_METHOD = "FAKECODEX_LOGIN_METHOD"
+#: `name:text` written into this child's own `CODEX_HOME` during the LOGIN
+#: STATUS spawn -- the preflight, not the task. It exists so a road can be shown
+#: refusing state a PREFLIGHT left, which is a different rule from refusing what
+#: a task left: one stops before the task runs, the other after it has.
+PREFLIGHT_HOME_FILE = "FAKECODEX_PREFLIGHT_HOME_FILE"
+LOGIN_ANSWERS = {
+    "subscription": "Logged in using ChatGPT",
+    "api_key": "Logged in using an API key - sk-synth***key",
+    "none": "Not logged in",
+}
 #: Exit code for a task spawn; `--version` always exits 0 unless it is failed.
 EXIT = "FAKECODEX_EXIT"
 #: Emit this on stdout during a task spawn, to stand for a model's answer.
@@ -386,9 +400,17 @@ def main() -> int:
         return 0
     if login_question(argv):
         # The vendor's status command reads no stdin and writes no final
-        # message; the exit code carries the whole answer.
+        # message. It says WHICH login it found, on stderr, and exits 0 for an
+        # API key exactly as it does for a subscription.
         _record(argv, None, None, None)
-        return 1 if os.environ.get(LOGIN_FAILS) else 0
+        if os.environ.get(PREFLIGHT_HOME_FILE) and os.environ.get(CODEX_HOME_NAME):
+            _write_pair(Path(os.environ[CODEX_HOME_NAME]),
+                        os.environ[PREFLIGHT_HOME_FILE])
+        method = os.environ.get(LOGIN_METHOD) or (
+            "none" if os.environ.get(LOGIN_FAILS) else "subscription")
+        sys.stderr.buffer.write(LOGIN_ANSWERS[method].encode("utf-8") + b"\n")
+        sys.stderr.buffer.flush()
+        return 1 if method == "none" else 0
     # The task is read BEFORE anything is emitted: a child that answered first
     # and read afterwards would pass a test that only counts bytes back.
     task, task_text = _read_task()

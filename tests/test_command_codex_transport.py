@@ -106,7 +106,7 @@ def _executable(tmp_path: Path) -> Path:
 
 
 def a_harness(tmp_path: Path, *, instruction: str = INSTRUCTION_BODY,
-              ambient=None,
+              ambient=None, auth: str = "api_key", auth_home: str = "",
               root: Path | None = None, **knobs: str):
     """A registered, available Codex provider over the fake, its root and its log.
 
@@ -127,7 +127,8 @@ def a_harness(tmp_path: Path, *, instruction: str = INSTRUCTION_BODY,
     environ = {_fakecodex.SPAWN_LOG: str(log), **knobs}
     config = ProviderConfig(
         provider_id=CODEX_PROVIDER_ID, executable=str(exe),
-        protocol=CODEX_PROTOCOL, env_allow=tuple(sorted(environ)))
+        protocol=CODEX_PROTOCOL, env_allow=tuple(sorted(environ)),
+        auth=auth, auth_home=auth_home)
     # `ambient` is a monkeypatch fixture. When it is given, the knobs are planted
     # in the REAL process environment and the runner is left to read that, so the
     # allowlist is exercised against an environment that can actually carry a

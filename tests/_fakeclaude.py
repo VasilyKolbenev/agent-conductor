@@ -95,6 +95,34 @@ VERSION_FAILS = "FAKECLAUDE_VERSION_FAILS"
 #: signed-in answer, so a subscription test that is about something else is not
 #: forced to arrange a login first.
 LOGIN_FAILS = "FAKECLAUDE_LOGIN_FAILS"
+#: Which login the STATUS spawn reports. The default is a subscription, spelled
+#: the way the reviewed binary spells its answer; `api_key` is the shape it
+#: really returns when a key is in the environment, and that shape exits 0 --
+#: which is why an exit-code test admitted it as a subscription.
+LOGIN_METHOD = "FAKECLAUDE_LOGIN_METHOD"
+LOGIN_ANSWERS = {
+    "subscription": {"loggedIn": True, "authMethod": "claudeai",
+                     "apiProvider": "firstParty"},
+    "api_key": {"loggedIn": True, "authMethod": "api_key",
+                "apiProvider": "firstParty",
+                "apiKeySource": "ANTHROPIC_API_KEY"},
+    "vertex": {"loggedIn": True, "authMethod": "claudeai",
+               "apiProvider": "vertex"},
+    #: A key with no source named, and a source named beside a subscription
+    #: method. Each isolates ONE clause of the reader: without them the two
+    #: clauses cover for each other and either could be deleted unnoticed.
+    "quiet_key": {"loggedIn": True, "authMethod": "api_key",
+                  "apiProvider": "firstParty"},
+    "key_source": {"loggedIn": True, "authMethod": "claudeai",
+                   "apiProvider": "firstParty",
+                   "apiKeySource": "ANTHROPIC_API_KEY"},
+    #: Signed OUT while still naming the method it last used.
+    "stale": {"loggedIn": False, "authMethod": "claudeai",
+              "apiProvider": "firstParty"},
+    "none": {"loggedIn": False, "authMethod": "none",
+             "apiProvider": "firstParty"},
+    "garbage": None,
+}
 #: Exit code for a prompt spawn; `--version` always exits 0 unless it is failed.
 EXIT = "FAKECLAUDE_EXIT"
 #: Emit this on stdout during a prompt spawn, to stand for a model's answer.
@@ -120,6 +148,18 @@ WRITE_FILE = "FAKECLAUDE_WRITE_FILE"
 #: to be judged about. Relative to that directory by construction: the whole
 #: point is state left where the login lives.
 HOME_FILE = "FAKECLAUDE_HOME_FILE"
+#: REFRESH the login while this spawn runs: rewrite the credential file in this
+#: child's own config directory with the given value, and print that value.
+#:
+#: This is what a real vendor does with a token that is about to expire, and it
+#: is the case a scan built before the spawn cannot see: the value this child
+#: echoes did not exist when the parent read the file.
+#:
+#: The value is carried as HEX, and that is not decoration. Every knob reaches
+#: this child through the allowed environment, so a knob holding the token
+#: itself would put that token in the runner's own scan set -- and a test would
+#: watch the OLD scan catch it and conclude that nothing was missing.
+REFRESH_LOGIN = "FAKECLAUDE_REFRESH_LOGIN"
 #: Do NOT read stdin at all -- the deaf child, for the delivery relation.
 DEAF = "FAKECLAUDE_DEAF"
 #: Turn the leak scan ON. A BOOLEAN, and the distinction matters: this knob
@@ -176,6 +216,24 @@ def spawns(log_path: str | os.PathLike[str]) -> list[dict]:
     except OSError:
         return []
     return [json.loads(line) for line in text.splitlines() if line.strip()]
+
+
+def _login_answer() -> int:
+    """Answer the status question the way the reviewed binary answers it.
+
+    It reads no stdin and writes no final message. The exit code follows the
+    vendor's own: an API key IS a login as far as the binary is concerned, so
+    this fake exits 0 for it too -- a fake that only ever exited 1 here could
+    not have caught a product that read the code and called it a subscription.
+    """
+    method = os.environ.get(LOGIN_METHOD) or (
+        "none" if os.environ.get(LOGIN_FAILS) else "subscription")
+    answer = LOGIN_ANSWERS[method]
+    sys.stdout.buffer.write(
+        b"not json at all\n" if answer is None
+        else json.dumps(answer).encode("utf-8") + b"\n")
+    sys.stdout.buffer.flush()
+    return 1 if method == "none" else 0
 
 
 def _login_question(argv: list[str]) -> bool:
@@ -324,6 +382,13 @@ def _run_prompt(checker=False) -> int:
         _write_pair(Path.cwd(), env[WRITE_FILE])
     if env.get(HOME_FILE) and env.get(CLAUDE_HOME_NAME):
         _write_pair(Path(env[CLAUDE_HOME_NAME]), env[HOME_FILE])
+    if env.get(REFRESH_LOGIN) and env.get(CLAUDE_HOME_NAME):
+        fresh = bytes.fromhex(env[REFRESH_LOGIN]).decode("utf-8")
+        (Path(env[CLAUDE_HOME_NAME]) / ".credentials.json").write_text(
+            json.dumps({"claudeAiOauth": {"accessToken": fresh}}),
+            encoding="utf-8", newline="\n")
+        sys.stdout.buffer.write(fresh.encode("utf-8") + b"\n")
+        sys.stdout.buffer.flush()
     if env.get(EMIT_STDOUT):
         sys.stdout.buffer.write(env[EMIT_STDOUT].encode("utf-8") + b"\n")
         sys.stdout.buffer.flush()
@@ -359,15 +424,8 @@ def main() -> int:
         sys.stdout.buffer.flush()
         return 0
     if LOGIN_STATUS and _login_question(argv):
-        # The vendor's status command reads no stdin either, and this fake
-        # answers it the way the reviewed binary does: a JSON line and an exit
-        # code, with the code carrying the whole answer.
         _record(argv, None, None)
-        signed = not os.environ.get(LOGIN_FAILS)
-        sys.stdout.buffer.write(
-            b'{"loggedIn": true}\n' if signed else b'{"loggedIn": false}\n')
-        sys.stdout.buffer.flush()
-        return 0 if signed else 1
+        return _login_answer()
     # The task is read BEFORE anything is emitted: a child that answered first
     # and read afterwards would pass a test that only counts bytes back.
     task, task_text = _read_task()

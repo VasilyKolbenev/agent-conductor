@@ -145,6 +145,53 @@ def _pinned(home: str) -> bool:
     return bool(home) and is_absolute(home)
 
 
+#: The most names a login directory may be measured as holding. A directory
+#: this build cannot finish reading is one it cannot vouch for, which is the
+#: same answer it gives for a directory it cannot read at all.
+MEASURE_LIMIT = 5000
+
+
+def measure(home: str, scratch: tuple[str, ...]) -> frozenset[str] | None:
+    """What stands in a login directory: its top-level names AND, inside each
+    declared per-run directory, the paths beneath it.
+
+    Top-level names alone were not enough, and the gap was not theoretical: a
+    `sessions` directory that already existed hid every file a spawn wrote into
+    it, so an attempt could leave its own session state -- carrying the work
+    directory it ran in -- behind a name that had not changed. What is compared
+    has to be as fine as what a spawn can add.
+
+    Only the DECLARED per-run directories are walked. The rest of the directory
+    is the operator's, and reading it name by name is neither this build's
+    business nor bounded by anything it controls.
+    """
+    top = entries(home)
+    if top is None:
+        return None
+    found = set(top)
+    for name in scratch:
+        if name not in top:
+            continue
+        for row in _walk(Path(home) / name, name):
+            if row is None or len(found) > MEASURE_LIMIT:
+                return None
+            found.add(row)
+    return frozenset(found)
+
+
+def _walk(target: Path, prefix: str) -> "list[str | None]":
+    """Every path beneath one declared directory, as `name/rest`, or [None]."""
+    try:
+        if target.is_symlink() or not target.is_dir():
+            return []
+        rows: list[str | None] = []
+        for row in target.rglob("*"):
+            rows.append(f"{prefix}/{row.relative_to(target).as_posix()}")
+        return rows
+    except OSError:  # noqa: BLE001 -- unreadable is its own answer
+        return [None]
+
+
 def appeared(
         before: frozenset[str] | None,
         after: frozenset[str] | None) -> frozenset[str] | None:
@@ -167,11 +214,14 @@ def unexpected(
     before this build ever ran is theirs, and a product that refused over it
     would be refusing over the credential it was pointed at.
     """
-    return tuple(sorted((added or frozenset()) - frozenset(declared)))
+    kept = frozenset(declared)
+    return tuple(sorted(
+        row for row in (added or frozenset())
+        if row not in kept and row.split("/", 1)[0] not in kept))
 
 
 def take_back(home: str, scratch: tuple[str, ...],
-              added: frozenset[str] | None) -> None:
+              added: frozenset[str] | None) -> tuple[str, ...]:
     """Remove the per-run names THIS SPAWN added, and follow nothing.
 
     Bounded to what appeared, and that bound is the whole safety of it. A login
@@ -190,23 +240,41 @@ def take_back(home: str, scratch: tuple[str, ...],
     exception would skip the attempt home's own discard and replace the outcome
     of a spawn that already happened -- and the workspace door it borrows
     refuses an unreadable name with a RuntimeError, not an OSError.
+
+    What it could not remove is RETURNED rather than swallowed. A cleanup that
+    failed silently is a promise reported as kept because nothing checked it,
+    and the caller has to be able to say so.
     """
+    if not _pinned(home) or not added:
+        return ()
+    wanted = [name for name in sorted(added)
+              if name.split("/", 1)[0] in scratch]
+    return tuple(name for name in wanted if _take_one(Path(home) / name))
+
+
+def _take_one(target: Path) -> bool:
+    """Remove one name, following nothing; True if it is still standing after."""
     from ..containment import portal_violation
     from .harness_workspace import _leaf, _remove_portal, _remove_tree
 
-    if not _pinned(home) or not added:
-        return
-    for name in sorted(added.intersection(scratch)):
-        target = Path(home) / name
-        try:
-            found = _leaf(target)
-            if found is None:
-                continue
-            if portal_violation(target, found) is not None:
-                _remove_portal(target, found)
-            elif stat.S_ISDIR(found.st_mode):
-                _remove_tree(target)
-            else:
-                target.unlink()
-        except Exception:  # noqa: BLE001 -- a cleanup may not become the outcome
-            continue
+    try:
+        found = _leaf(target)
+        if found is None:
+            return False
+        if portal_violation(target, found) is not None:
+            _remove_portal(target, found)
+        elif stat.S_ISDIR(found.st_mode):
+            _remove_tree(target)
+        else:
+            target.unlink()
+    except Exception:  # noqa: BLE001 -- a cleanup may not become the outcome
+        return True
+    return _leaf_stands(target)
+
+
+def _leaf_stands(target: Path) -> bool:
+    """Whether something is still there after this build tried to remove it."""
+    try:
+        return target.is_symlink() or target.exists()
+    except OSError:  # noqa: BLE001 -- unreadable is still standing
+        return True

@@ -348,6 +348,12 @@ class HarnessProfile:
     #: build that scanned every file it found would be reading an operator's
     #: unrelated documents in order to protect them.
     login_credentials: tuple[str, ...] = ()
+    #: Names in a login directory that can carry CONFIGURATION or trust for this
+    #: vendor. A spawn pointed at a directory holding one of them would read
+    #: settings from a directory this build cannot vouch for -- including, on
+    #: Codex, a trust entry that re-admits the work tree's own configuration --
+    #: so the run refuses before the spawn that would read it.
+    login_forbidden: tuple[str, ...] = ()
     #: WHERE this vendor's one-shot mode takes the task. A closed choice of two,
     #: and it is structural rather than advisory: the transport calls a
     #: DIFFERENT argv builder for each, and the one it calls for `stdin` takes
@@ -463,7 +469,8 @@ class HarnessProfile:
 
     def _reviewed_login_names(self) -> None:
         """Prove the login lists before either can be joined to a directory."""
-        for field in ("login_scratch", "login_expected", "login_credentials"):
+        for field in ("login_scratch", "login_expected", "login_credentials",
+                      "login_forbidden"):
             names = getattr(self, field)
             if type(names) is not tuple:
                 raise HeadlessCliError(f"{field} is a tuple of bare names")
@@ -472,6 +479,12 @@ class HarnessProfile:
         if set(self.login_scratch) & set(self.login_expected):
             raise HeadlessCliError(
                 "a name is either taken back or left alone, never both")
+        if set(self.login_forbidden) & (
+                set(self.login_scratch) | set(self.login_expected)
+                | set(self.login_credentials)):
+            raise HeadlessCliError(
+                "a name this build refuses a login directory FOR cannot also be "
+                "one it tolerates or reads")
         if bool(self.login_argv) is not bool(self.login_command):
             raise HeadlessCliError(
                 "a provider that can be ASKED about a login must also say how "
