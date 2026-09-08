@@ -113,6 +113,11 @@ LOGIN_ANSWERS = {
     "subscription": "Logged in using ChatGPT",
     "api_key": "Logged in using an API key - sk-synth***key",
     "none": "Not logged in",
+    #: Exits 0 and says nothing this build recognises -- a localized build, a
+    #: future wording, a banner where the verdict should be. It is the only
+    #: answer that makes the "says it is logged in" half of the reader decide,
+    #: and without it that half could be deleted unnoticed.
+    "unrecognised": "estado: sesion iniciada",
 }
 #: Exit code for a task spawn; `--version` always exits 0 unless it is failed.
 EXIT = "FAKECODEX_EXIT"
@@ -210,6 +215,22 @@ def spawns(log_path: str | os.PathLike[str]) -> list[dict]:
     except OSError:
         return []
     return [json.loads(line) for line in text.splitlines() if line.strip()]
+
+
+def _login_answer() -> int:
+    """Say WHICH login was found, on stderr, the way the reviewed binary does.
+
+    An API key exits 0 exactly as a subscription does -- that is the whole
+    reason the sentence matters and the code does not.
+    """
+    if os.environ.get(PREFLIGHT_HOME_FILE) and os.environ.get(CODEX_HOME_NAME):
+        _write_pair(Path(os.environ[CODEX_HOME_NAME]),
+                    os.environ[PREFLIGHT_HOME_FILE])
+    method = os.environ.get(LOGIN_METHOD) or (
+        "none" if os.environ.get(LOGIN_FAILS) else "subscription")
+    sys.stderr.buffer.write(LOGIN_ANSWERS[method].encode("utf-8") + b"\n")
+    sys.stderr.buffer.flush()
+    return 1 if method == "none" else 0
 
 
 def login_question(argv: list[str]) -> bool:
@@ -403,14 +424,7 @@ def main() -> int:
         # message. It says WHICH login it found, on stderr, and exits 0 for an
         # API key exactly as it does for a subscription.
         _record(argv, None, None, None)
-        if os.environ.get(PREFLIGHT_HOME_FILE) and os.environ.get(CODEX_HOME_NAME):
-            _write_pair(Path(os.environ[CODEX_HOME_NAME]),
-                        os.environ[PREFLIGHT_HOME_FILE])
-        method = os.environ.get(LOGIN_METHOD) or (
-            "none" if os.environ.get(LOGIN_FAILS) else "subscription")
-        sys.stderr.buffer.write(LOGIN_ANSWERS[method].encode("utf-8") + b"\n")
-        sys.stderr.buffer.flush()
-        return 1 if method == "none" else 0
+        return _login_answer()
     # The task is read BEFORE anything is emitted: a child that answered first
     # and read afterwards would pass a test that only counts bytes back.
     task, task_text = _read_task()

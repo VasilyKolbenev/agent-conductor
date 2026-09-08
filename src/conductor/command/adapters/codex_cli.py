@@ -365,11 +365,17 @@ LOGIN_CREDENTIALS = ("auth.json",)
 #: rather than the presence of a subscription token deciding.
 LOGGED_IN_MARKER = "Logged in"
 API_KEY_MARKER = "using an API key"
-#: The name that carries this vendor's configuration AND its project trust map.
-#: MEASURED: a `config.toml` here naming the work tree as a trusted project made
-#: the vendor read that tree's own `.codex/config.toml`, which an empty home had
-#: excluded. That exclusion is this transport's stated isolation basis.
+#: The name that carries this vendor's configuration AND its project trust map,
+#: and the two top-level keys in it that give the isolation away. MEASURED: a
+#: `config.toml` here naming the work tree as a trusted project made the vendor
+#: read that tree's own `.codex/config.toml`, which an empty home had excluded.
+#: That exclusion is this transport's stated isolation basis.
+#:
+#: The KEYS and not the name, because the vendor writes its own configuration
+#: file beside its own login: refusing the name would refuse the directory this
+#: build had just told a person to create, and would do it permanently.
 LOGIN_FORBIDDEN = ("config.toml",)
+LOGIN_CONFIG_KEYS = ("projects", "model_provider")
 MODEL_FLAG = "--model"
 VERSION_ARGV = ("--version",)
 #: Capture ceiling for either spawn; the pump drains past it and drops the rest.
@@ -532,6 +538,12 @@ class CodexCliTransport(ArtifactAwareTransport):
     def _argv_prefix(self) -> tuple[str, ...]:
         """One native binary, and nothing in front of it."""
         return (self._pin.executable,)
+
+    def _login_home_grants(self, home: str) -> tuple[str, ...]:
+        """What this login directory gives away, read from the file itself."""
+        from . import login_home
+
+        return login_home.config_grants(home, "config.toml", LOGIN_CONFIG_KEYS)
 
     def _login_method_admitted(self, output: bytes) -> bool:
         """Read this vendor's own sentence about how it is signed in.

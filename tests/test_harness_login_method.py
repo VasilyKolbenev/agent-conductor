@@ -1,0 +1,273 @@
+"""WHICH login a subscription run is really using, and what its directory holds.
+
+Split out of `test_harness_subscription_login` when that module crossed the
+800-line cap. The seam is a subject: next door proves where a child is pointed
+and what a spawn may leave behind it; this proves the two questions asked BEFORE
+a task is allowed to start.
+
+Both were defects a review found, and both are measured facts about the pinned
+binaries rather than design preferences. An exit code says a credential was
+found and never which kind: a directory holding only an API key answers the
+status question with success on both harnesses, and a Codex file holding a
+subscription AND a key answers with the key. A login directory that also holds
+configuration gives back the isolation a per-attempt empty directory provided:
+a trusted-project entry there made the vendor read the work tree's own config.
+"""
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from conductor.command.adapters.claude_code import LOGIN_STATUS_ARGV
+
+from tests import _fakeclaude
+from tests.test_command_claude_transport import a_request, run_once
+from tests.test_harness_subscription_login import (
+    AUTH_HOME,
+    a_codex_harness,
+    a_harness,
+    a_login_home,
+)
+
+
+@pytest.mark.parametrize("method", [
+    "api_key", "quiet_key", "key_source", "vertex", "none", "stale",
+    "methodless", "scalar", "garbage"])
+def test_a_login_that_is_not_a_subscription_refuses_the_run(tmp_path, method):
+    """An exit code says a credential was found, never which kind.
+
+    MEASURED on both reviewed binaries: a directory holding nothing but an API
+    key answers the status question with exit 0. The first version of this seam
+    read only that code, so a subscription pin ran on API billing -- the silent
+    fallback the pin exists to refuse. `vertex` and `garbage` are here because a
+    billing plane this build does not know, and an answer it cannot read, are
+    refusals for the same reason: neither is a subscription this build can
+    vouch for.
+    """
+    home = a_login_home(tmp_path)
+    adapter, _root, log = a_harness(
+        tmp_path, auth="subscription", auth_home=str(home),
+        **{_fakeclaude.LOGIN_METHOD: method})
+
+    receipt = run_once(adapter, a_request())
+
+    assert receipt.outcome == "failed"
+    assert "reports no subscription login" in receipt.detail
+    assert "api" not in receipt.detail.lower().replace("api key", "")
+    assert _fakeclaude.prompt_spawns(log) == [], "a task ran on the wrong login"
+
+
+def test_the_subscription_answer_the_vendor_really_gives_is_admitted(tmp_path):
+    """The positive control: the refusals above are the METHOD being read, not
+    this build refusing every login."""
+    home = a_login_home(tmp_path)
+    adapter, _root, log = a_harness(
+        tmp_path, auth="subscription", auth_home=str(home),
+        **{_fakeclaude.LOGIN_METHOD: "subscription"})
+
+    assert run_once(adapter, a_request()).outcome == "succeeded"
+
+    assert len(_fakeclaude.prompt_spawns(log)) == 1
+
+
+@pytest.mark.parametrize("method,admitted", [
+    ("subscription", True), ("api_key", False), ("none", False),
+    # Exits 0 and says nothing this build knows. It is the only case in which
+    # "it says it is logged in" is the clause that decides, and a reader that
+    # only looked for the API-key phrase would admit it.
+    ("unrecognised", False)])
+def test_codex_reads_its_own_sentence_about_which_login_it_found(
+        tmp_path, method, admitted):
+    """The same rule on the other harness, in that vendor's own words -- and its
+    words are the only thing that separates the two, since both exit 0."""
+    from tests import _fakecodex
+
+    home = tmp_path / "auth" / "codex"
+    home.mkdir(parents=True)
+    adapter, _root, log = a_codex_harness(
+        tmp_path, auth="subscription", auth_home=str(home),
+        **{_fakecodex.LOGIN_METHOD: method})
+
+    receipt = run_once(adapter, a_request())
+
+    assert (receipt.outcome == "succeeded") is admitted, receipt.detail
+    assert bool(_fakecodex.task_spawns(log)) is admitted
+
+
+def test_a_status_answer_this_build_could_not_read_whole_is_refused(tmp_path):
+    """The refusing phrase is a suffix of the admitting one on Codex, so a
+    capture cut inside it would turn an API key into a subscription. Every other
+    reader of child output in this build refuses a truncated capture; so does
+    this one."""
+    from conductor.command.adapters import headless_login
+
+    home = a_login_home(tmp_path)
+    adapter, _root, log = a_harness(
+        tmp_path, auth="subscription", auth_home=str(home))
+    real = headless_login.LoginRoad._attempt_login_status
+
+    def cut(self, request):
+        from dataclasses import replace
+
+        return replace(real(self, request), output_truncated=True)
+
+    headless_login.LoginRoad._attempt_login_status = cut
+    try:
+        receipt = run_once(adapter, a_request())
+    finally:
+        headless_login.LoginRoad._attempt_login_status = real
+
+    assert receipt.outcome == "failed"
+    assert "reports no subscription login" in receipt.detail
+    assert _fakeclaude.prompt_spawns(log) == []
+
+
+def test_a_claude_login_directory_holding_customization_refuses(tmp_path):
+    """The same rule on the other harness, whose forbidden names are pure
+    customization: anything at all in them is settings this build cannot vouch
+    for, so the NAME is the grant."""
+    home = a_login_home(tmp_path)
+    (home / "settings.json").write_text(
+        '{"hooks": {}}', encoding="utf-8", newline="\n")
+    adapter, _root, log = a_harness(
+        tmp_path, auth="subscription", auth_home=str(home))
+
+    receipt = run_once(adapter, a_request())
+
+    assert receipt.outcome == "failed"
+    assert "also holds" in receipt.detail
+    assert _fakeclaude.spawns(log) == [], (
+        "a spawn was pointed at a directory this build refuses")
+
+
+def test_a_login_directory_that_also_holds_configuration_refuses_first(tmp_path):
+    """MEASURED on Codex 0.112.0: a `config.toml` in the login directory naming
+    the work tree as a trusted project made the vendor read that tree's own
+    `.codex/config.toml` -- the very layer an empty per-attempt home excluded,
+    and this transport's stated isolation basis.
+
+    Refused BEFORE the status spawn, because asking the status question is
+    itself a full startup pointed at that directory.
+    """
+    from tests import _fakecodex
+
+    home = tmp_path / "auth" / "codex"
+    home.mkdir(parents=True)
+    (home / "config.toml").write_text(
+        '[projects."C:\\\\work"]\ntrust_level = "trusted"\n',
+        encoding="utf-8", newline="\n")
+    adapter, _root, log = a_codex_harness(
+        tmp_path, auth="subscription", auth_home=str(home))
+
+    receipt = run_once(adapter, a_request())
+
+    assert receipt.outcome == "failed"
+    assert "also holds" in receipt.detail and "configuration" in receipt.detail
+    assert _fakecodex.spawns(log) == [] or not [
+        row for row in _fakecodex.spawns(log)
+        if _fakecodex.login_question(row["argv"])], (
+        "the status question was asked of a directory this build refuses")
+
+
+def test_a_configuration_this_build_cannot_read_is_refused_not_admitted(tmp_path):
+    """A configuration whose contents cannot be established is not one this
+    build can say is harmless -- and the whole point of reading the file rather
+    than the name is that unreadable must not become 'no keys found'."""
+    from tests import _fakecodex
+
+    home = tmp_path / "auth" / "codex"
+    home.mkdir(parents=True)
+    (home / "config.toml").write_text(
+        "this is not TOML at all [[[", encoding="utf-8", newline="\n")
+    adapter, _root, log = a_codex_harness(
+        tmp_path, auth="subscription", auth_home=str(home))
+
+    receipt = run_once(adapter, a_request())
+
+    assert receipt.outcome == "failed"
+    assert "also holds" in receipt.detail
+    assert _fakecodex.spawns(log) == []
+
+
+def test_a_configuration_naming_nothing_dangerous_is_left_alone(tmp_path):
+    """The positive control, and the reason the KEYS are read rather than the
+    name: the vendor writes its own configuration beside its own login, and
+    refusing that name would refuse the directory this build asked for."""
+    from tests import _fakecodex
+
+    home = tmp_path / "auth" / "codex"
+    home.mkdir(parents=True)
+    (home / "config.toml").write_text(
+        'model = "gpt-5.3-codex"\nhide_agent_reasoning = true\n',
+        encoding="utf-8", newline="\n")
+    adapter, _root, log = a_codex_harness(
+        tmp_path, auth="subscription", auth_home=str(home))
+
+    assert run_once(adapter, a_request()).outcome == "succeeded"
+
+    assert len(_fakecodex.task_spawns(log)) == 1
+
+
+def test_a_directory_this_build_cannot_read_is_not_called_free_of_configuration(
+        tmp_path, monkeypatch):
+    """"I could not establish what is there" is not "there is nothing there",
+    and this is the door where believing the second starts a vendor inside a
+    directory whose contents were never established."""
+    from conductor.command.adapters import login_home
+
+    home = a_login_home(tmp_path)
+    adapter, _root, log = a_harness(
+        tmp_path, auth="subscription", auth_home=str(home))
+    monkeypatch.setattr(login_home, "entries", lambda _home: None)
+
+    receipt = run_once(adapter, a_request())
+
+    assert receipt.outcome == "failed"
+    assert "also holds" in receipt.detail
+    assert _fakeclaude.spawns(log) == []
+
+
+def test_a_provider_that_declared_no_reader_admits_no_answer():
+    """A programming fault reported as a refusal, not as an exception: a
+    provider that asked the question and never said how to read the answer must
+    not have its runs reported as unknown attempts."""
+    from conductor.command.adapters.headless_login import LoginRoad
+
+    assert LoginRoad._login_method_admitted(object(), b'{"loggedIn": true}') is False
+
+
+def test_a_directory_too_large_to_finish_reading_is_unknown(tmp_path, monkeypatch):
+    """The bound is the answer to "what if this never ends", so it has to BE a
+    bound: a walk that listed everything and trimmed afterwards would have
+    already done the unbounded thing."""
+    from conductor.command.adapters import login_home
+
+    home = a_login_home(tmp_path)
+    (home / "sessions").mkdir()
+    for index in range(6):
+        (home / "sessions" / f"{index}.json").write_text(
+            "{}", encoding="utf-8", newline="\n")
+    monkeypatch.setattr(login_home, "MEASURE_LIMIT", 3)
+
+    # The WALK's own answer, not the caller's. A walk that listed everything
+    # and let the caller trim afterwards would give the same measurement and
+    # would already have done the unbounded thing.
+    assert login_home._walk(home / "sessions", "sessions") == [None]
+    assert login_home.measure(str(home), ("sessions",)) is None
+    monkeypatch.setattr(login_home, "MEASURE_LIMIT", 5000)
+    assert len(login_home._walk(home / "sessions", "sessions")) == 6
+    assert login_home.measure(str(home), ("sessions",)) is not None
+
+
+def test_a_login_directory_holding_only_its_login_is_not_refused(tmp_path):
+    """The positive control for the refusal above."""
+    from tests import _fakecodex
+
+    home = tmp_path / "auth" / "codex"
+    home.mkdir(parents=True)
+    (home / "auth.json").write_text("{}", encoding="utf-8", newline="\n")
+    adapter, _root, _log = a_codex_harness(
+        tmp_path, auth="subscription", auth_home=str(home))
+
+    assert run_once(adapter, a_request()).outcome == "succeeded"

@@ -37,6 +37,7 @@ the file.
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from collections.abc import Callable, Iterable
 from pathlib import Path
@@ -295,26 +296,38 @@ def _ask_entrypoint(ask: Callable[[str], str], provider_id: str,
         optional=True)
 
 
-def _quoted(value: str) -> str:
-    """One PowerShell single-quoted literal, apostrophes doubled.
+def _quoted(value: str, windows: bool) -> str:
+    """One single-quoted literal for the shell this command is running in.
 
     Printed for a person to paste, so it has to survive the two things a real
     machine path does: a space, which an unquoted argument splits on, and an
-    apostrophe, which ends the quoting a naive printer opened.
+    apostrophe, which ends the quoting a naive printer opened. PowerShell
+    doubles an apostrophe inside single quotes; a POSIX shell closes, escapes
+    and reopens.
     """
-    return "'" + value.replace("'", "''") + "'"
+    if windows:
+        return "'" + value.replace("'", "''") + "'"
+    return "'" + value.replace("'", "'\\''") + "'"
 
 
-def _login_lines(home: str, executable: str, hint) -> list[str]:
-    """The exact two lines a person runs, for the shell this command runs in.
+def _login_lines(home: str, executable: str, hint,
+                 windows: bool | None = None) -> list[str]:
+    """The exact two lines a person runs, in the shell they are running in.
 
     It used to print `NAME=value` and a literal `<executable>`, which is neither
     a PowerShell assignment nor a command: the operator had already told this
-    dialogue where the binary is, and was handed a placeholder back. What is
-    printed now is what they can select, paste and run.
+    dialogue where the binary is, and was handed a placeholder back.
+
+    Which shell is not a preference. This command runs on the operator's own
+    machine, so the platform it is running on IS the answer, and printing the
+    other one would repeat the same defect in the other direction.
     """
-    return [f"$env:{hint[0]} = {_quoted(home)}",
-            f"& {_quoted(executable)} " + " ".join(hint[1])]
+    windows = os.name == "nt" if windows is None else windows
+    if windows:
+        return [f"$env:{hint[0]} = {_quoted(home, True)}",
+                f"& {_quoted(executable, True)} " + " ".join(hint[1])]
+    return [f"export {hint[0]}={_quoted(home, False)}",
+            f"{_quoted(executable, False)} " + " ".join(hint[1])]
 
 
 def _ask_login(ask: Callable[[str], str], provider_id: str, protocol: str,

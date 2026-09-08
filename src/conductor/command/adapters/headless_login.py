@@ -21,7 +21,8 @@ refreshed, and one deleted afterwards would have to be performed again before
 every run -- so the retention promise is kept by NAMING what may appear there,
 taking back the per-run names, and reporting anything else. And because a login
 can be absent or expired, it is proved before a task is spawned, by the vendor's
-own status command, read for its exit code alone.
+own status command -- read for the METHOD it names, because both vendors answer
+an API key with the same exit code they answer a subscription with.
 
 What a mixin needs from the class it is mixed into is stated rather than
 assumed: ``profile``, ``_attempt``, ``_receipt`` and ``_login_residue``, all of
@@ -100,13 +101,9 @@ class LoginRoad:
         profile = self.profile
         if not self._signed_in_road() or not profile.login_argv:
             return None
-        carried = self._login_home_refusal(request)
-        if carried is not None:
-            return carried
-        outcome = self._attempt(
-            self._login_status_argv(), WORK_DIR,
-            timeout=min(profile.version_timeout_seconds, request.timeout_seconds))
-        answered = outcome.status == "completed" and outcome.exit_code == 0
+        outcome = self._attempt_login_status(request)
+        answered = (outcome.status == "completed" and outcome.exit_code == 0
+                    and not outcome.output_truncated)
         if answered and self._login_method_admitted(outcome.output):
             return None
         return self._receipt(
@@ -118,6 +115,13 @@ class LoginRoad:
             f"directory and run {self._login_command_line()} -- this build "
             "never runs a login")
 
+    def _attempt_login_status(self, request: ActionRequest):
+        """Ask the vendor's status question, bounded like every other preflight."""
+        profile = self.profile
+        return self._attempt(
+            self._login_status_argv(), WORK_DIR,
+            timeout=min(profile.version_timeout_seconds, request.timeout_seconds))
+
     def _login_method_admitted(self, output: bytes) -> bool:
         """Whether the vendor's status answer names a login this road may use.
 
@@ -126,8 +130,13 @@ class LoginRoad:
         token a real subscription answers with is not -- nobody has signed in on
         this machine. A rule written the other way round would have to guess
         that token, and a wrong guess refuses every real subscription.
+
+        The base REFUSES rather than raising. A provider that declared a status
+        question and no reader for its answer is a programming fault, and the
+        two ways of reporting one are not equal: an exception out of a preflight
+        becomes an unknown attempt, while a refusal is a run that did not start.
         """
-        raise NotImplementedError
+        return False
 
     def _login_home_refusal(
             self, request: ActionRequest) -> ActionResultReceipt | None:
@@ -144,10 +153,9 @@ class LoginRoad:
         would read them.
         """
         profile = self.profile
-        if not profile.login_forbidden:
+        if not self._signed_in_road() or not profile.login_forbidden:
             return None
-        held = login_home.entries(self._signed_in_road())
-        if held is None or not held.intersection(profile.login_forbidden):
+        if not self._login_home_grants(self._signed_in_road()):
             return None
         return self._receipt(
             request, "failed", None,
@@ -155,6 +163,25 @@ class LoginRoad:
             "configuration, which a spawn would read from a directory this build "
             "cannot vouch for, so no task was spawned; point this provider at a "
             "directory used for its login and nothing else")
+
+    def _login_home_grants(self, home: str) -> tuple[str, ...]:
+        """What a login directory gives away, by NAME unless a provider says more.
+
+        The default is the strict reading: a declared name standing there is a
+        grant, because for most of these files anything at all in them is
+        customization this build cannot vouch for. A provider whose vendor
+        writes its own file beside its own login overrides this and reads the
+        file, so a directory the vendor itself produced is not refused for
+        existing.
+
+        A directory this build could not read answers with the whole list: a
+        directory whose contents cannot be established is not one it can say is
+        harmless.
+        """
+        held = login_home.entries(home)
+        if held is None:
+            return self.profile.login_forbidden
+        return tuple(name for name in self.profile.login_forbidden if name in held)
 
     def _login_command_line(self) -> str:
         """The vendor's own login command, as a person would type it."""

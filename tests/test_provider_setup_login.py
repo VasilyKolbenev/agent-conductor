@@ -14,7 +14,6 @@ from __future__ import annotations
 import pytest
 
 from tests.test_provider_setup import (
-    ENV_LOGIN,
     LOGIN_ASKED,
     configure,
     menu_choice,
@@ -97,6 +96,24 @@ def test_the_printed_login_command_survives_a_real_machine_path(
     quoted = where.replace("'", "''")
     assert f"$env:CLAUDE_CONFIG_DIR = '{quoted}'" in said, said
     assert written(project)["providers"][0]["auth_home"] == where
+
+
+def test_the_printed_command_is_for_the_shell_the_operator_is_in():
+    """This command runs on the operator's own machine, so the platform IS the
+    answer. Printing PowerShell on a POSIX shell would repeat the defect this
+    fixed, in the other direction."""
+    from conductor.provider_setup import _login_lines
+
+    hint = ("CLAUDE_CONFIG_DIR", ("auth", "login", "--claudeai"))
+    windows = _login_lines("C:\\Log In", "C:\\bin\\claude.exe", hint, True)
+    posix = _login_lines("/var/log in", "/opt/bin/claude", hint, False)
+
+    assert windows == ["$env:CLAUDE_CONFIG_DIR = 'C:\\Log In'",
+                       "& 'C:\\bin\\claude.exe' auth login --claudeai"]
+    assert posix == ["export CLAUDE_CONFIG_DIR='/var/log in'",
+                     "'/opt/bin/claude' auth login --claudeai"]
+    assert _login_lines("/o'brien", "/bin/x", hint, False)[0] == (
+        "export CLAUDE_CONFIG_DIR='/o'\\''brien'")
 
 
 def test_a_subscription_row_refuses_an_api_billing_name_while_it_is_typed(

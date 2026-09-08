@@ -12,9 +12,13 @@ ran, which is the case a scan built before the spawn cannot see. A login this
 build cannot read widens nothing and refuses nothing. And the value channel that
 carries those bytes to the runner takes bytes and nothing else.
 
-The refresh and publication claims are driven through a REAL store and runtime,
-not through the transport alone: what has to be proved is what a run's durable
-record ends up holding, and a check on an intermediate flag cannot say that.
+The PUBLICATION claims are driven through a REAL store and runtime, not through
+the transport alone: what has to be proved is what a run's durable record ends
+up holding, and a check on an intermediate flag cannot say that. The REFRESH
+claim is measured at the seam instead, and its name says so: the two answers it
+compares -- the scan the runner took before the spawn and the one taken after --
+are not separable in a finished run, because a run that refuses for the right
+reason and one that fails for another end the same way from outside.
 """
 from __future__ import annotations
 
@@ -85,7 +89,8 @@ def documents_holding(store, needle: str) -> list:
             if row.kind == "artifact" and needle in str(row.value.content)]
 
 
-def test_a_login_refreshed_mid_run_is_seen_before_anything_is_published(tmp_path):
+def test_a_login_refreshed_mid_run_is_caught_by_the_scan_taken_after_the_spawn(
+        tmp_path):
     """The scan the runner performs is built from the values that stood BEFORE
     the child started, because those are the only ones it can have. A vendor
     that refreshes its own credential while it runs leaves a different secret

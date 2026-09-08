@@ -421,27 +421,42 @@ def test_a_file_a_spawn_writes_into_an_existing_scratch_directory_is_seen(
 
 
 def test_a_cleanup_that_could_not_finish_is_not_reported_as_a_kept_promise(
-        tmp_path, monkeypatch):
+        tmp_path):
     """A removal that failed and was swallowed left the run saying the opposite
-    of what the directory holds."""
-    from conductor.command.adapters import login_home
+    of what the directory holds.
 
+    The removal really fails here: the file this build is about to take back is
+    held open, which Windows refuses to unlink, so the production cleanup meets
+    a real refusal rather than a substitute for itself.
+    """
     home = a_login_home(tmp_path)
     adapter, _root, _log = a_harness(
         tmp_path, auth="subscription", auth_home=str(home),
-        **{_fakeclaude.HOME_FILE: "sessions:{}"})
-    real = login_home.take_back
+        **{_fakeclaude.HOME_FILE_LOCKED: "sessions:{}"})
 
-    def refuse(where, scratch, added):
-        real(where, (), added)
-        return tuple(sorted(added or ()))
+    receipt = run_once(adapter, a_request())
 
-    monkeypatch.setattr(login_home, "take_back", refuse)
+    assert (home / "sessions").exists(), (
+        "the fixture did not block the removal it meant to")
+    assert receipt.outcome == "failed"
+    assert "does not declare" in receipt.detail
+
+
+def test_state_a_preflight_leaves_stops_the_task_before_it_runs(tmp_path):
+    """Two rules, and only the absent spawn tells them apart: a task that never
+    started because a preflight had already broken the promise, and a task that
+    ran and is refused afterwards."""
+    home = a_login_home(tmp_path)
+    adapter, _root, log = a_harness(
+        tmp_path, auth="subscription", auth_home=str(home),
+        **{_fakeclaude.PREFLIGHT_HOME_FILE: "stowaway.txt:PROBE"})
+
     receipt = run_once(adapter, a_request())
 
     assert receipt.outcome == "failed"
-    assert "does not declare" in receipt.detail
-    assert (home / "sessions").exists(), "the fixture removed what it blocked"
+    assert "stopped before claiming or spawning the task" in receipt.detail
+    assert _fakeclaude.prompt_spawns(log) == [], (
+        "the task ran on top of a promise this build had already broken")
 
 
 def test_a_name_no_declaration_accounts_for_is_reported_on_every_receipt(
@@ -478,6 +493,76 @@ def test_declared_state_a_spawn_leaves_is_taken_back_and_never_reported(tmp_path
     assert receipt.outcome == "succeeded"
     assert "login directory gained state" not in receipt.detail
     assert not (home / "sessions").exists(), "declared per-run state survived"
+
+
+def test_a_portal_standing_where_a_per_run_directory_belongs_is_not_walked(
+        tmp_path):
+    """A junction is not a symlink to `pathlib`, so a walk that asked only that
+    question would descend a reparse point -- and the cleanup that follows would
+    remove files inside whatever it points at, outside the directory an operator
+    pinned. Measured on a real junction, and the elsewhere it points at is left
+    whole.
+    """
+    import subprocess
+
+    home = a_login_home(tmp_path)
+    elsewhere = tmp_path / "documents-of-my-own"
+    elsewhere.mkdir()
+    (elsewhere / "notes.txt").write_text(
+        "mine", encoding="utf-8", newline="\n")
+    made = subprocess.run(
+        ["cmd", "/c", "mklink", "/J", str(home / "sessions"), str(elsewhere)],
+        capture_output=True, text=True)
+    if made.returncode != 0:  # pragma: no cover -- no junction, no claim
+        pytest.skip(f"this machine made no junction: {made.stderr.strip()}")
+    adapter, _root, log = a_harness(
+        tmp_path, auth="subscription", auth_home=str(home),
+        # The child writes THROUGH the portal, so what appears there during the
+        # spawn is exactly what a walk would have called this attempt's own.
+        **{_fakeclaude.HOME_FILE: "sessions/written-through.txt:PROBE"})
+
+    receipt = run_once(adapter, a_request())
+
+    assert (elsewhere / "notes.txt").read_text(encoding="utf-8") == "mine", (
+        "a cleanup reached through a portal and deleted somebody else's file")
+    assert sorted(p.name for p in elsewhere.iterdir()) == ["notes.txt"], (
+        "something reached through the portal and left a file behind it")
+    # And the run says so rather than passing quietly. A directory whose per-run
+    # name is a door somewhere else is one this build can neither measure nor
+    # clean, so it refuses -- before the task, which never spawns.
+    assert receipt.outcome == "failed"
+    assert "does not declare" in receipt.detail
+    assert _fakeclaude.prompt_spawns(log) == []
+
+
+def test_a_portal_deeper_inside_a_per_run_directory_is_not_walked_either(
+        tmp_path):
+    """The root of a declared directory is not the only door. A junction one
+    level down is walked by the same loop, and the cleanup that follows removes
+    what it finds -- so every step of the walk is judged, not only its start."""
+    import subprocess
+
+    from conductor.command.adapters import login_home
+
+    home = a_login_home(tmp_path)
+    (home / "sessions").mkdir()
+    elsewhere = tmp_path / "documents-of-my-own"
+    elsewhere.mkdir()
+    (elsewhere / "notes.txt").write_text("mine", encoding="utf-8", newline="\n")
+    made = subprocess.run(
+        ["cmd", "/c", "mklink", "/J", str(home / "sessions" / "inner"),
+         str(elsewhere)], capture_output=True, text=True)
+    if made.returncode != 0:  # pragma: no cover -- no junction, no claim
+        pytest.skip(f"this machine made no junction: {made.stderr.strip()}")
+
+    held = login_home.measure(str(home), ("sessions",))
+
+    assert held is not None, "a portal one level down was not measurable at all"
+    assert "sessions/inner" in held, "the door itself was not seen"
+    assert "sessions/inner/notes.txt" not in held, (
+        "the walk went through a portal and measured somebody else's file")
+    login_home.take_back(str(home), ("sessions",), held)
+    assert (elsewhere / "notes.txt").exists(), "a cleanup went through a portal"
 
 
 def test_a_directory_no_operator_pinned_is_never_read_or_pruned(
@@ -574,7 +659,9 @@ def test_an_unreadable_login_directory_counts_as_residue(monkeypatch, tmp_path):
     home = a_login_home(tmp_path)
     adapter, _root, _log = a_harness(
         tmp_path, auth="subscription", auth_home=str(home))
-    monkeypatch.setattr(login_home, "entries", lambda _home: None)
+    # The MEASUREMENT alone. `entries` is also how the configuration door reads
+    # that directory, and blinding both would prove the wrong refusal.
+    monkeypatch.setattr(login_home, "measure", lambda _home, _scratch: None)
 
     receipt = run_once(adapter, a_request())
 
@@ -610,107 +697,3 @@ def test_absolute_is_the_same_word_here_as_at_the_door():
 
     for path in ("/var/lib/conduct/auth", "C:\\conduct\\auth", "auth/x", ""):
         assert login_home._pinned(path) == (bool(path) and is_absolute(path))
-
-
-# -- which login it is, not merely that there is one -------------------------
-
-
-@pytest.mark.parametrize("method", [
-    "api_key", "quiet_key", "key_source", "vertex", "none", "stale", "garbage"])
-def test_a_login_that_is_not_a_subscription_refuses_the_run(tmp_path, method):
-    """An exit code says a credential was found, never which kind.
-
-    MEASURED on both reviewed binaries: a directory holding nothing but an API
-    key answers the status question with exit 0. The first version of this seam
-    read only that code, so a subscription pin ran on API billing -- the silent
-    fallback the pin exists to refuse. `vertex` and `garbage` are here because a
-    billing plane this build does not know, and an answer it cannot read, are
-    refusals for the same reason: neither is a subscription this build can
-    vouch for.
-    """
-    home = a_login_home(tmp_path)
-    adapter, _root, log = a_harness(
-        tmp_path, auth="subscription", auth_home=str(home),
-        **{_fakeclaude.LOGIN_METHOD: method})
-
-    receipt = run_once(adapter, a_request())
-
-    assert receipt.outcome == "failed"
-    assert "reports no subscription login" in receipt.detail
-    assert "api" not in receipt.detail.lower().replace("api key", "")
-    assert _fakeclaude.prompt_spawns(log) == [], "a task ran on the wrong login"
-
-
-def test_the_subscription_answer_the_vendor_really_gives_is_admitted(tmp_path):
-    """The positive control: the refusals above are the METHOD being read, not
-    this build refusing every login."""
-    home = a_login_home(tmp_path)
-    adapter, _root, log = a_harness(
-        tmp_path, auth="subscription", auth_home=str(home),
-        **{_fakeclaude.LOGIN_METHOD: "subscription"})
-
-    assert run_once(adapter, a_request()).outcome == "succeeded"
-
-    assert len(_fakeclaude.prompt_spawns(log)) == 1
-
-
-@pytest.mark.parametrize("method,admitted", [
-    ("subscription", True), ("api_key", False), ("none", False)])
-def test_codex_reads_its_own_sentence_about_which_login_it_found(
-        tmp_path, method, admitted):
-    """The same rule on the other harness, in that vendor's own words -- and its
-    words are the only thing that separates the two, since both exit 0."""
-    from tests import _fakecodex
-
-    home = tmp_path / "auth" / "codex"
-    home.mkdir(parents=True)
-    adapter, _root, log = a_codex_harness(
-        tmp_path, auth="subscription", auth_home=str(home),
-        **{_fakecodex.LOGIN_METHOD: method})
-
-    receipt = run_once(adapter, a_request())
-
-    assert (receipt.outcome == "succeeded") is admitted, receipt.detail
-    assert bool(_fakecodex.task_spawns(log)) is admitted
-
-
-def test_a_login_directory_that_also_holds_configuration_refuses_first(tmp_path):
-    """MEASURED on Codex 0.112.0: a `config.toml` in the login directory naming
-    the work tree as a trusted project made the vendor read that tree's own
-    `.codex/config.toml` -- the very layer an empty per-attempt home excluded,
-    and this transport's stated isolation basis.
-
-    Refused BEFORE the status spawn, because asking the status question is
-    itself a full startup pointed at that directory.
-    """
-    from tests import _fakecodex
-
-    home = tmp_path / "auth" / "codex"
-    home.mkdir(parents=True)
-    (home / "config.toml").write_text(
-        '[projects."C:\\\\work"]\ntrust_level = "trusted"\n',
-        encoding="utf-8", newline="\n")
-    adapter, _root, log = a_codex_harness(
-        tmp_path, auth="subscription", auth_home=str(home))
-
-    receipt = run_once(adapter, a_request())
-
-    assert receipt.outcome == "failed"
-    assert "also holds" in receipt.detail and "configuration" in receipt.detail
-    assert _fakecodex.spawns(log) == [] or not [
-        row for row in _fakecodex.spawns(log)
-        if _fakecodex.login_question(row["argv"])], (
-        "the status question was asked of a directory this build refuses")
-
-
-def test_a_login_directory_holding_only_its_login_is_not_refused(tmp_path):
-    """The positive control for the refusal above."""
-    from tests import _fakecodex
-
-    home = tmp_path / "auth" / "codex"
-    home.mkdir(parents=True)
-    (home / "auth.json").write_text("{}", encoding="utf-8", newline="\n")
-    adapter, _root, _log = a_codex_harness(
-        tmp_path, auth="subscription", auth_home=str(home))
-
-    assert run_once(adapter, a_request()).outcome == "succeeded"

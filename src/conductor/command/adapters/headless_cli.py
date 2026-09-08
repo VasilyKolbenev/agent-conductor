@@ -518,6 +518,14 @@ class HeadlessCliTransport(ReceiptWriting, ModelRouting, LoginRoad):
         """Prove the pinned build's EXACT version, or refuse before any task runs."""
         profile = self.profile
         self._workspace.work_root()
+        # BEFORE the version probe, not after it. Every spawn on this road --
+        # the probe included -- is pointed at the login directory, and the
+        # reviewed Codex writes into its home on every run, so a check that ran
+        # after the probe would already have started a vendor inside a directory
+        # this build had decided it may not point a spawn at.
+        carried = self._login_home_refusal(request)
+        if carried is not None:
+            return carried
         outcome = self._attempt(
             profile.version_argv, WORK_DIR,
             timeout=min(profile.version_timeout_seconds, request.timeout_seconds))

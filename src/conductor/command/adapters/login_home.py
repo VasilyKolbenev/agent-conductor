@@ -84,6 +84,39 @@ def entries(home: str) -> frozenset[str] | None:
 CREDENTIAL_LIMIT = 64 * 1024
 
 
+def config_grants(home: str, name: str, keys: tuple[str, ...]) -> tuple[str, ...]:
+    """Which configuration KEYS a named file in a login directory declares.
+
+    Read rather than merely named, because the name alone is the wrong question.
+    A vendor writes its own configuration file beside its own login, and a build
+    that refused the NAME would refuse the directory its own login command had
+    just produced -- permanently, with a sentence blaming the operator for a file
+    the vendor wrote.
+
+    What is refused is the CONTENT that gives something away: the trust map that
+    re-admits a work tree's own configuration, and a provider override. Anything
+    else in that file is the operator's business.
+
+    A file this build cannot read or parse answers with every key it was asked
+    about: a configuration whose contents cannot be established is not one this
+    build can say is harmless.
+    """
+    import tomllib
+
+    target = Path(home) / name
+    if not _pinned(home) or _is_portal(target):
+        return keys
+    try:
+        if target.stat().st_size > CREDENTIAL_LIMIT:
+            return keys
+        held = tomllib.loads(target.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return ()
+    except Exception:  # noqa: BLE001 -- unreadable is refused, never admitted
+        return keys
+    return tuple(key for key in keys if key in held)
+
+
 def credential_values(home: str, names: tuple[str, ...]) -> tuple[bytes, ...]:
     """Every string a provider's declared login file holds, as bytes to scan for.
 
@@ -172,24 +205,76 @@ def measure(home: str, scratch: tuple[str, ...]) -> frozenset[str] | None:
     for name in scratch:
         if name not in top:
             continue
-        for row in _walk(Path(home) / name, name):
+        target = Path(home) / name
+        if _is_portal(target):
+            # A portal standing where a per-run directory belongs is not a
+            # directory this build can account for. Walking it would measure --
+            # and then remove -- whatever it points at, and NOT walking it would
+            # leave a spawn writing through it unseen. So the measurement is
+            # unknown, which is the answer that refuses the run.
+            return None
+        for row in _walk(target, name):
             if row is None or len(found) > MEASURE_LIMIT:
                 return None
             found.add(row)
     return frozenset(found)
 
 
-def _walk(target: Path, prefix: str) -> "list[str | None]":
-    """Every path beneath one declared directory, as `name/rest`, or [None]."""
+def _is_portal(target: Path) -> bool:
+    """Whether this name is a door to somewhere else rather than a directory."""
+    from ..containment import portal_violation
+    from .harness_workspace import _leaf
+
     try:
-        if target.is_symlink() or not target.is_dir():
-            return []
-        rows: list[str | None] = []
-        for row in target.rglob("*"):
-            rows.append(f"{prefix}/{row.relative_to(target).as_posix()}")
-        return rows
-    except OSError:  # noqa: BLE001 -- unreadable is its own answer
-        return [None]
+        found = _leaf(target)
+    except Exception:  # noqa: BLE001 -- unreadable is treated as a door
+        return True
+    return found is not None and portal_violation(target, found) is not None
+
+
+def _walk(target: Path, prefix: str) -> "list[str | None]":
+    """Every path beneath one declared directory, as `name/rest`, or [None].
+
+    It descends nothing this build would refuse to delete. A junction is not a
+    symlink to `pathlib` -- `is_symlink()` answers False for one -- so a walk
+    that asked only that question would descend a reparse point, and the caller
+    would then remove files inside whatever it points at, which is precisely the
+    road `containment.portal_violation` exists to close. Every step is judged by
+    that same function, and a portal is reported as a name without being opened.
+
+    Bounded as it goes, not after: a directory this build cannot finish reading
+    is one it cannot vouch for, and materialising the listing first would make
+    the bound a description of a walk that had already happened.
+    """
+    from ..containment import portal_violation
+    from .harness_workspace import _leaf
+
+    rows: list[str | None] = []
+    stack = [(target, prefix)]
+    while stack:
+        here, said = stack.pop()
+        try:
+            if not here.is_dir():
+                # A declared per-run NAME can be an ordinary file, and a file
+                # has no paths beneath it. Its own name was already measured.
+                continue
+            children = sorted(here.iterdir())
+        except OSError:  # noqa: BLE001 -- unreadable is its own answer
+            return [None]
+        for row in children:
+            name = f"{said}/{row.name}"
+            rows.append(name)
+            if len(rows) > MEASURE_LIMIT:
+                return [None]
+            try:
+                found = _leaf(row)
+            except Exception:  # noqa: BLE001 -- unreadable is its own answer
+                return [None]
+            if found is None or portal_violation(row, found) is not None:
+                continue
+            if stat.S_ISDIR(found.st_mode):
+                stack.append((row, name))
+    return rows
 
 
 def appeared(

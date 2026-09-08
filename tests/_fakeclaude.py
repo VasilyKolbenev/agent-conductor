@@ -121,6 +121,10 @@ LOGIN_ANSWERS = {
               "apiProvider": "firstParty"},
     "none": {"loggedIn": False, "authMethod": "none",
              "apiProvider": "firstParty"},
+    #: Valid JSON that names no method at all, and JSON that is not an object.
+    #: Each isolates one guard of the reader that no other answer reaches.
+    "methodless": {"loggedIn": True, "apiProvider": "firstParty"},
+    "scalar": 7,
     "garbage": None,
 }
 #: Exit code for a prompt spawn; `--version` always exits 0 unless it is failed.
@@ -160,6 +164,16 @@ HOME_FILE = "FAKECLAUDE_HOME_FILE"
 #: itself would put that token in the runner's own scan set -- and a test would
 #: watch the OLD scan catch it and conclude that nothing was missing.
 REFRESH_LOGIN = "FAKECLAUDE_REFRESH_LOGIN"
+#: `name:text` written into this child's own config directory during the LOGIN
+#: STATUS spawn -- the preflight, not the task. A rule that stops a task running
+#: and a rule that refuses one that has already run are different rules, and
+#: only a preflight that leaves something can tell them apart.
+PREFLIGHT_HOME_FILE = "FAKECLAUDE_PREFLIGHT_HOME_FILE"
+#: `name:text` written into the config directory and then made READ-ONLY, which
+#: Windows refuses to unlink. It stands for the ordinary case of a file the
+#: vendor left that this build cannot take back, so the production cleanup meets
+#: a real refusal rather than a substitute for itself.
+HOME_FILE_LOCKED = "FAKECLAUDE_HOME_FILE_LOCKED"
 #: Do NOT read stdin at all -- the deaf child, for the delivery relation.
 DEAF = "FAKECLAUDE_DEAF"
 #: Turn the leak scan ON. A BOOLEAN, and the distinction matters: this knob
@@ -226,6 +240,9 @@ def _login_answer() -> int:
     this fake exits 0 for it too -- a fake that only ever exited 1 here could
     not have caught a product that read the code and called it a subscription.
     """
+    if os.environ.get(PREFLIGHT_HOME_FILE) and os.environ.get(CLAUDE_HOME_NAME):
+        _write_pair(Path(os.environ[CLAUDE_HOME_NAME]),
+                    os.environ[PREFLIGHT_HOME_FILE])
     method = os.environ.get(LOGIN_METHOD) or (
         "none" if os.environ.get(LOGIN_FAILS) else "subscription")
     answer = LOGIN_ANSWERS[method]
@@ -382,6 +399,10 @@ def _run_prompt(checker=False) -> int:
         _write_pair(Path.cwd(), env[WRITE_FILE])
     if env.get(HOME_FILE) and env.get(CLAUDE_HOME_NAME):
         _write_pair(Path(env[CLAUDE_HOME_NAME]), env[HOME_FILE])
+    if env.get(HOME_FILE_LOCKED) and env.get(CLAUDE_HOME_NAME):
+        base = Path(env[CLAUDE_HOME_NAME])
+        _write_pair(base, env[HOME_FILE_LOCKED])
+        os.chmod(base / env[HOME_FILE_LOCKED].split(":", 1)[0], 0o444)
     if env.get(REFRESH_LOGIN) and env.get(CLAUDE_HOME_NAME):
         fresh = bytes.fromhex(env[REFRESH_LOGIN]).decode("utf-8")
         (Path(env[CLAUDE_HOME_NAME]) / ".credentials.json").write_text(
