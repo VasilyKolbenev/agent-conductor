@@ -386,6 +386,11 @@ class HeadlessCliTransport(ReceiptWriting, ModelRouting, LoginRoad):
                 return self._dispatch(request, args, prepared.model)
             except WorkspaceNotContained:  # noqa: BLE001 -- carry no path onward
                 failed = True
+            finally:
+                # Inside the turn, so a sibling road's own sample is never the
+                # one dropped. What an attempt was given it keeps: this releases
+                # the road's working set, not the attempt's.
+                self._forget_login_sample()
             if failed:
                 return self._receipt(
                     request, "failed", None,

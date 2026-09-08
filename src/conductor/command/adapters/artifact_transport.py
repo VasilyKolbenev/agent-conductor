@@ -169,6 +169,8 @@ class ArtifactAwareTransport(HeadlessCliTransport):
                 return self._receipt(
                     prepared.request, "failed", None,
                     "the review workspace is not locally contained, so no task was spawned")
+            finally:
+                self._forget_login_sample()
 
     def _inputs(
             self, request: ActionRequest,
@@ -399,6 +401,16 @@ class ArtifactAwareTransport(HeadlessCliTransport):
         `_hold_result` stands INSIDE the try for the same reason. A result that
         does not belong to its request is a programming fault and must raise --
         and raising is not a licence to keep what the attempt left behind.
+
+        The retention question is asked HERE, above the capability branch, and
+        for the same reason the discard is one `finally`: below this line the
+        roads are two and each of them publishes -- a review records a durable
+        artifact, a dispatch records evidence -- so a guard living on either
+        would be a guard the other never gets. The independent road asks the
+        same question at `publish`; a plan that names no independent verifier
+        never reaches that door, and until this line an ordinary Confirm and an
+        approved graph node both published a success over a home this build had
+        promised to take back and could not.
         """
         relation = attempt_relation(request)
         try:
@@ -407,11 +419,38 @@ class ArtifactAwareTransport(HeadlessCliTransport):
                 return self._verification(
                     request, "error", (),
                     "only a successfully observed action can publish verification")
+            refused = self._retention_refusal(request, relation)
+            if refused is not None:
+                return refused
             if request.capability == REVIEW_CAPABILITY and self.review_enabled:
                 return self._verify_review(request, result)
             return self._verify_dispatch(request, result)
         finally:
             self._forget(request)
+
+    def _retention_refusal(
+            self, request: ActionRequest,
+            relation: tuple[str, str, str, str]) -> AdapterVerification | None:
+        """Refuse to verify an attempt whose own home this build could not take back.
+
+        Read from the ATTEMPT, never from `_retained`. This runs after the
+        workspace turn has been released, and that count is instance-wide: by
+        now it answers for whatever ran last or for a sibling action running
+        this moment. The attempt recorded its own fact inside its own turn, and
+        that is the only reading this road may make.
+
+        The refusal is `error` and says nothing about the child. The execution
+        was observed and the observation stands in the record exactly as it was
+        written; what is refused is the step after it -- that a run whose home
+        outlived its spawn may publish and be called verified.
+        """
+        attempt = self._attempts.get(relation)
+        if attempt is None or not attempt.retained:
+            return None
+        return self._verification(
+            request, "error", (),
+            "the attempt left a home this build could not take back, so nothing "
+            "it produced was published")
 
     def _forget(self, request: ActionRequest) -> None:
         """Drop everything ONE attempt left in memory, by its full relation.
@@ -638,7 +677,14 @@ class ArtifactAwareTransport(HeadlessCliTransport):
             if standing is not None:
                 return self._verification(request, "verified", (standing.evidence_id,), "verified")
             with self._workspace.owned():
-                return self._check_owned(request, verifier, material)
+                try:
+                    return self._check_owned(request, verifier, material)
+                finally:
+                    # The one road with nobody to hand its sample to: a checker
+                    # samples around its own spawn and gives nothing to an
+                    # attempt. Inside the turn, and on the exception road too --
+                    # the answers below are built after the turn is gone.
+                    self._forget_login_sample()
         except CheckFrameError as error:
             return self._checker_answer(request, error.reason)
         except Exception:

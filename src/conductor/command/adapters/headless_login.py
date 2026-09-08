@@ -235,6 +235,30 @@ class LoginRoad:
         self._login_seen = tuple(dict.fromkeys(
             (*self._login_seen, *self._login_secrets())))
 
+    def _forget_login_sample(self) -> None:
+        """Stop holding what THIS road sampled, on every exit that road has.
+
+        The set is handed to an attempt when there is one to hand it to, and
+        that road then holds nothing. Two roads have no attempt to hand it to
+        and used to keep it until something else happened to reset the field: a
+        checker, which samples around its own spawn and hands nothing to
+        anybody, and a login preflight that refused before any task was spawned.
+        A finished road holding a live reference to a credential is not a leak
+        anybody was shown -- nothing published it, nothing wrote it down -- but
+        it is holding, and the contract this build makes about that directory is
+        a contract about lifetime.
+
+        ONE field, deliberately. `_retained` and `_login_residue` are read by
+        receipts this road has not finished building yet, and clearing them
+        here would erase what those receipts have to say. This is not the
+        symmetric opposite of `_begin_road` and must not be made into one.
+
+        Python is not asked to zero memory, and nothing here claims it does. The
+        promise is narrower and it is the one that can be kept: the adapter
+        stops holding the reference when the road that took it is over.
+        """
+        self._login_seen = ()
+
     def _keep_login_values(self, relation: tuple[str, str, str, str]) -> None:
         """Hand what this road has seen to the attempt it belongs to.
 
