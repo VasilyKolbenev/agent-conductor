@@ -11,8 +11,14 @@ what to observe.
 
 Exit zero is an observation of the process and never a success -- every
 sentence below says so, and the vendor's own exit-code contract decides only
-how weakly. The receipt is ONE funnel, so an undiscarded home cannot escape
-unsaid: ``_retained`` is read here and nowhere a provider could forget it.
+how weakly. Every receipt an attempt produces goes through ONE funnel, so an
+undiscarded home cannot escape unsaid: ``_retained`` is read there and nowhere
+a provider could forget it. There is a SECOND form beside it, and the two are
+told apart by whether the workspace turn was ever taken: a refusal built before
+it has minted nothing, so the counts standing on the transport are a sibling's,
+and that form deliberately reads neither -- it may not report another action's
+directory as this one's, and clearing them first would erase that sibling's own
+refusal. See ``_bare_receipt``.
 
 What a mixin needs from the class it is mixed into is stated rather than
 assumed: ``profile``, ``manifest``, ``_clock``, ``_ids`` and ``_retained``, all
@@ -29,7 +35,9 @@ from .harness_profile import login_residue_detail, retained_detail
 #: assumed: `profile`, `_ids`, `_clock`, `manifest`, and the two cleanup
 #: counters -- `_retained` for an attempt home that would not go, and
 #: `_login_residue` for a pinned login directory that gained state nobody
-#: declared. Both are read HERE and nowhere a provider could forget them.
+#: declared. Both are read HERE and nowhere a provider could forget them --
+#: in the funnel an attempt's receipt goes through, never in the pre-turn form
+#: beside it, which speaks only for what its own action can answer for.
 from .process import STDIN_INCOMPLETE, ProcessOutcome
 
 

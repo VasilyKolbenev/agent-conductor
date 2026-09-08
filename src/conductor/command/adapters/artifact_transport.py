@@ -315,7 +315,8 @@ class ArtifactAwareTransport(HeadlessCliTransport):
             timeout=request.timeout_seconds, stdin_bytes=payload,
             separate_stderr=True, model=model)
         evidence = AttemptEvidence(
-            work_dir=work, before=before, after=self._evidence())
+            work_dir=work, before=before, after=self._evidence(),
+            retained=bool(self._retained))
         relation = attempt_relation(request)
         self._attempts[relation] = evidence
         self._keep_login_values(relation)

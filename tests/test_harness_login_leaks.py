@@ -26,6 +26,7 @@ from pathlib import Path
 
 import pytest
 
+from conductor.command import verify_holds
 from conductor.command.adapters.harness_workspace import WORK_DIR
 
 from tests import _fakeclaude
@@ -201,10 +202,13 @@ def test_the_checker_is_never_spawned_on_material_carrying_that_token(tmp_path):
 
 def test_a_verification_still_refuses_a_home_the_doer_could_not_discard(
         tmp_path, monkeypatch):
-    """The check's FIRST guard reads a count the DOER left behind, so a road
-    that re-derived every count on the way in would answer that question before
-    it was asked -- and a verification would then be built on a retention
-    promise already broken. This is the one road whose count is inherited.
+    """A verification may not be built on a retention promise already broken.
+
+    The check itself no longer reads a count the doer left behind -- that
+    reading was somebody else's on a cross-provider run and unreachable on a
+    same-instance one. The refusal stands at PUBLICATION instead, from the fact
+    the attempt recorded in its own turn, so this asks the OUTCOME and not the
+    mechanism: nothing is verified and no checker runs.
 
     Driven through the real verification road with a discard that really fails.
     """
@@ -236,10 +240,10 @@ def test_a_verification_still_refuses_a_home_the_doer_could_not_discard(
 
 
 def test_a_doer_that_could_not_discard_publishes_nothing_to_any_checker(tmp_path):
-    """The verification road's guard reads a count on the DOER's transport, and
-    a cross-provider check runs on a different instance that cannot see it. So
-    the refusal also stands where the fact is: a doer that could not take its
-    own home back has nothing to hand a checker, whoever the checker is.
+    """A cross-provider check runs on a DIFFERENT instance, which can see no
+    count the doer's transport holds. So the refusal stands where the fact is:
+    a doer that could not take its own home back has nothing to hand a checker,
+    whoever the checker is.
     """
     from conductor.command.adapters import harness_workspace
     from conductor.command.runtime import AttemptState
@@ -268,12 +272,81 @@ def test_a_doer_that_could_not_discard_publishes_nothing_to_any_checker(tmp_path
     assert _fakecodex.task_spawns(clog) == [], (
         "a checker on another provider ran on work the doer could not account for")
     assert [row for row in store.read(RUN).records if row.kind == "evidence"] == []
+    # The record has to name WHICH promise broke. A refusal key the publication
+    # may return but the verify road has no sentence for raises on the way out
+    # and lands on the sentence a BROKEN VERIFIER produces -- the run then says
+    # the checker failed, about a checker that was right not to run.
+    assert attempt.receipt.detail == verify_holds.DOER_HOME_RETAINED, (
+        attempt.receipt.detail)
+
+
+def test_a_review_that_could_not_discard_publishes_nothing_either(tmp_path):
+    """The same promise, the other capability.
+
+    The review road builds its own attempt record, and this fact carried a
+    DEFAULT once: the road did not fill it, so a review published as though it
+    had taken its home back and a checker really read the material. A default is
+    the safe-looking answer to a question a road forgot to ask, which is why the
+    field has none now -- but the guard is a fact about PUBLICATION, so it is
+    asked here on the road that forgot.
+    """
+    from conductor.command.adapters import harness_workspace
+    from conductor.command.runtime import AttemptState
+    from tests.test_independent_checker_transport import RUN, setup
+
+    runtime, authorization, store, _doer, _checker, log, _clog, _root = setup(
+        tmp_path, review=True)
+    real = harness_workspace.HarnessWorkspace.discard_home
+    seen: list[int] = []
+
+    def refuse(self, home):
+        real(self, home)
+        seen.append(1)
+        if len(seen) == 2:
+            raise OSError("this machine would not take the home back")
+
+    original = harness_workspace.HarnessWorkspace.discard_home
+    harness_workspace.HarnessWorkspace.discard_home = refuse
+    try:
+        attempt = runtime.execute(authorization)
+    finally:
+        harness_workspace.HarnessWorkspace.discard_home = original
+
+    assert attempt.state is not AttemptState.SUCCEEDED, attempt.receipt.detail
+    assert attempt.receipt.detail == verify_holds.DOER_HOME_RETAINED, (
+        attempt.receipt.detail)
+    assert len(_fakeclaude.prompt_spawns(log)) == 1, (
+        "a checker read a review whose home the doer could not take back")
+    assert [row for row in store.read(RUN).records if row.kind == "evidence"] == []
+
+
+def test_a_checker_does_not_refuse_a_verification_for_a_count_it_did_not_take(
+        tmp_path):
+    """A check reads its OWN view of the home root, and nothing it inherited.
+
+    An earlier version read the count standing on the transport on the way in.
+    On one instance that answered the question before it was asked -- an adapter
+    that only verifies would refuse every later verification because of a single
+    earlier failure of its own -- and across two instances the count it read
+    belonged to somebody else entirely. Here the checker carries a count from
+    its own earlier road, and the verification it is asked for is unrelated.
+    """
+    from conductor.command.runtime import AttemptState
+    from tests.test_independent_checker_transport import RUN, setup
+
+    runtime, authorization, store, _doer, checker, _log, _clog, _root = setup(
+        tmp_path, cross=True)
+    checker._retained = 1
+
+    attempt = runtime.execute(authorization)
+
+    assert attempt.state is AttemptState.SUCCEEDED, attempt.receipt.detail
+    assert [row for row in store.read(RUN).records if row.kind == "evidence"]
 
 
 def test_a_dispatch_re_derives_the_retention_count_it_inherited(tmp_path):
-    """The verification road is the ONE exception. A dispatch that kept a count
-    from whatever ran before it would report another action's broken promise as
-    its own."""
+    """No road inherits one now. A dispatch that kept a count from whatever ran
+    before it would report another action's broken promise as its own."""
     from tests.test_command_claude_transport import a_harness as plain
 
     adapter = plain(tmp_path)[0]
@@ -338,13 +411,13 @@ def test_the_retention_fact_a_publication_reads_belongs_to_its_own_attempt(
     not erase what this attempt recorded, and a sibling's own failure must not
     refuse this attempt's publication.
     """
+    from conductor.command.adapters.headless_values import attempt_relation
+
     adapter, _root, _log = a_harness(tmp_path)
     request = a_request()
 
     receipt = run_once(adapter, request)
-    snapshot = adapter._attempts[
-        __import__("conductor.command.adapters.headless_values", fromlist=["x"])
-        .attempt_relation(request)]
+    snapshot = adapter._attempts[attempt_relation(request)]
     assert snapshot.retained is False
 
     adapter._begin_road()          # a sibling action starts its road

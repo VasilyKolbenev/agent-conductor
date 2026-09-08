@@ -484,12 +484,17 @@ class ClaudeCodeTransport(ArtifactAwareTransport):
         except (UnicodeDecodeError, ValueError):
             return False
         plan = said.get("subscriptionType") if isinstance(said, dict) else None
-        return (isinstance(said, dict) and said.get("loggedIn") is True
-                and said.get("apiProvider") == FIRST_PARTY
-                and said.get("authMethod") in ADMITTED_LOGIN_METHODS
-                and "apiKeySource" not in said
-                and isinstance(plan, str) and plan.strip()
-                and plan.strip().casefold() != API_BILLING_PLAN)
+        # bool(), because one clause is a string test: an empty plan makes the
+        # chain answer '' -- falsy, and every caller reads it as a refusal, but
+        # this says it answers `bool` and a predicate about spending a
+        # subscription may not hand back the vendor's own value instead.
+        return bool(
+            isinstance(said, dict) and said.get("loggedIn") is True
+            and said.get("apiProvider") == FIRST_PARTY
+            and said.get("authMethod") in ADMITTED_LOGIN_METHODS
+            and "apiKeySource" not in said
+            and isinstance(plan, str) and plan.strip()
+            and plan.strip().casefold() != API_BILLING_PLAN)
 
     def _login_status_argv(self) -> tuple[str, ...]:
         """The status question, behind this road's own isolation flag.

@@ -105,7 +105,12 @@ class _Attempt:
     #: sibling action beginning its road between this attempt's spawn and its
     #: publication would zero that count, and a sibling's own failure would
     #: refuse this attempt's publication. What is judged must be what was read.
-    retained: bool = False
+    #:
+    #: It carries NO default. A default is the safe-looking answer to a question
+    #: a road forgot to ask: the review road built its evidence without this
+    #: field and published as though it had taken its home back, which a review
+    #: found. Required, that road could not have been written.
+    retained: bool
 
 
 #: What ``_attempt`` is handed to build the child's OWN tokens with. A provider

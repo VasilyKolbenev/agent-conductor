@@ -318,7 +318,8 @@ def _stand_an_attempt(transport, request) -> None:
     """Put one snapshot pair in the base's cache, the way a dispatch does."""
     work = transport._workspace.work_dir("work-001")
     transport._attempts[attempt_relation(request)] = AttemptEvidence(
-        work_dir=work, before={}, after={"work-001/out.py": "digest"})
+        work_dir=work, before={}, after={"work-001/out.py": "digest"},
+        retained=False)
 
 
 def test_the_base_forgets_its_snapshot_on_the_ordinary_road(tmp_path):

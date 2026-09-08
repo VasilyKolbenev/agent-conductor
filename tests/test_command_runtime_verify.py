@@ -108,6 +108,29 @@ def test_each_road_out_of_the_verify_circuit_carries_its_own_sentence(
     assert (attempt.receipt.detail == verify_holds.VERIFIED) is succeeded
 
 
+def test_every_refusal_a_publication_may_carry_is_legal_and_has_its_own_sentence():
+    """Two modules hold one vocabulary, and neither can be changed alone.
+
+    A publication refuses with a key from a CLOSED set the adapter door owns,
+    and this road turns that key into the sentence a run's record keeps. A key
+    in only one of the two is not a small inconsistency: added to the door
+    alone, the lookup raises and the blanket guard below reports it as a broken
+    VERIFIER -- so a run whose doer failed a promise says its checker failed
+    instead. Added here alone, the door refuses to build the refusal at all and
+    the sentence is prose nobody can reach.
+
+    A review found exactly the first of those in a shipped fold: the new
+    retention refusal was legal here and illegal at the door. Held over the
+    constants, because it is a fact about the vocabulary and not about a run --
+    and because either half alone stays green in every end-to-end suite.
+    """
+    from conductor.command.adapters.base import PUBLISH_REFUSALS
+    from conductor.command.verify_road import PUBLISH_REASONS
+
+    assert set(PUBLISH_REASONS) == set(PUBLISH_REFUSALS)
+    assert len(set(PUBLISH_REASONS.values())) == len(PUBLISH_REASONS)
+
+
 def test_no_two_roads_out_of_the_verify_circuit_say_the_same_thing():
     """Six roads, six sentences. Two that matched would be one road to a reader.
 

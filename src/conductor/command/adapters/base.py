@@ -44,8 +44,15 @@ class IndependentVerifierUnavailable(AdapterContractError):
     """The registered adapter cannot independently judge another participant."""
 
 
+#: The closed set of reasons a publication may refuse with. It is closed so a
+#: provider cannot invent a word the run's record has no sentence for -- and
+#: that is exactly why adding a refusal here is half a change: `verify_road`
+#: keeps the sentence each of these turns into, and a key present in only one of
+#: the two either raises on the way out (no sentence, no legal key) or is dead
+#: prose. The two are held equal by a test, in the module that owns the words.
 PUBLISH_REFUSALS = frozenset({
-    "outside_subtree", "nothing_changed", "uncontained", "tree_changed", "env_echo",
+    "outside_subtree", "nothing_changed", "uncontained", "home_retained",
+    "tree_changed", "env_echo",
 })
 
 
