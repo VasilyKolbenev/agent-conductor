@@ -108,6 +108,28 @@ class ReceiptWriting:
             detail=self._with_residue(detail),
             exit_code=exit_code)
 
+    def _bare_receipt(
+            self, request: ActionRequest, observed: str, exit_code: int | None,
+            detail: str) -> ActionResultReceipt:
+        """A receipt for a refusal built BEFORE this road minted anything.
+
+        The cleanup sentences describe what an attempt left behind, and an
+        action refused before it took the workspace turn has left nothing: the
+        counts standing on the transport belong to whatever ran last, or to a
+        sibling action running now. Saying them here would report another
+        action's directory as this one's.
+
+        The alternative -- clearing those counts first -- is what a previous
+        version did, and it is worse than a wrong sentence: an adapter serves
+        every action of its provider, so clearing before the turn erases a
+        sibling's real refusal and its sampled credential values.
+        """
+        return ActionResultReceipt(
+            receipt_id=self._ids("receipt"), action_id=request.action_id,
+            run_id=request.run_id, attempt_id=request.attempt_id,
+            instance_id=request.instance_id, outcome=observed,
+            observed_at=self._clock(), detail=detail, exit_code=exit_code)
+
     def _with_residue(self, detail: str) -> str:
         """Whatever the receipt says, plus every cleanup fact about this attempt.
 

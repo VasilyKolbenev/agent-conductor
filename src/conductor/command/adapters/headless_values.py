@@ -99,6 +99,13 @@ class _Attempt:
     work_dir: Path
     before: Mapping[str, str]
     after: Mapping[str, str] | None
+    #: Whether THIS attempt left a home standing, recorded inside the same turn
+    #: as the snapshots and for the same reason. The transport's own count is
+    #: instance-wide, and one adapter serves every action of its provider: a
+    #: sibling action beginning its road between this attempt's spawn and its
+    #: publication would zero that count, and a sibling's own failure would
+    #: refuse this attempt's publication. What is judged must be what was read.
+    retained: bool = False
 
 
 #: What ``_attempt`` is handed to build the child's OWN tokens with. A provider

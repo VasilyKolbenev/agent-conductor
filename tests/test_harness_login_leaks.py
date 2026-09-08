@@ -329,17 +329,30 @@ def test_the_base_road_is_where_the_release_lives(tmp_path):
         "the base road kept credential bytes an attempt was finished with")
 
 
-def test_a_verify_only_adapter_does_not_refuse_for_ever(tmp_path):
-    """The count is read BEFORE this road re-derives anything, and cleared once
-    read. An adapter that only ever verifies would otherwise refuse for the rest
-    of the process over one transient failure of its own."""
-    adapter = a_harness(tmp_path)[0]
-    adapter._retained = 1
+def test_the_retention_fact_a_publication_reads_belongs_to_its_own_attempt(
+        tmp_path):
+    """One adapter serves every action of its provider, so a count standing on
+    the transport is not this attempt's to read.
 
-    answer = adapter._check_owned(a_request(capability="check"), None, None)
+    Both halves of the race are driven: a sibling beginning its own road must
+    not erase what this attempt recorded, and a sibling's own failure must not
+    refuse this attempt's publication.
+    """
+    adapter, _root, _log = a_harness(tmp_path)
+    request = a_request()
 
-    assert answer.state == "error", answer.detail
-    assert adapter._retained == 0, "the count stuck to a verify-only adapter"
+    receipt = run_once(adapter, request)
+    snapshot = adapter._attempts[
+        __import__("conductor.command.adapters.headless_values", fromlist=["x"])
+        .attempt_relation(request)]
+    assert snapshot.retained is False
+
+    adapter._begin_road()          # a sibling action starts its road
+    adapter._retained = 1          # and fails to discard its own home
+    published = adapter.publish(request, receipt)
+
+    assert published.refusal != "home_retained", (
+        "a sibling's failure refused this attempt's publication")
 
 
 def test_a_second_handoff_keeps_what_the_first_one_saw(tmp_path):
@@ -358,12 +371,18 @@ def test_a_second_handoff_keeps_what_the_first_one_saw(tmp_path):
         b"FIRST-SYNTHETIC", b"SECOND-SYNTHETIC")
 
 
-def test_an_unroutable_refusal_carries_no_other_roads_residue(tmp_path):
-    """Every count one road may report is re-derived, not the retention one
-    alone: a refusal built before any spawn must not describe a directory
-    another action left."""
+def test_a_refusal_built_before_the_turn_neither_says_nor_erases(tmp_path):
+    """It is built before this road has minted anything, so the counts standing
+    on the transport are a sibling's or the last road's.
+
+    Two claims, and the second is the one a previous version got wrong: the
+    refusal must not REPORT them as this action's, and it must not CLEAR them
+    either -- clearing before the turn erases a sibling's real refusal and the
+    credential values it had sampled.
+    """
     adapter = a_harness(tmp_path)[0]
     adapter._login_residue = 1
+    adapter._login_seen = (b"A-SIBLINGS-SYNTHETIC-VALUE",)
 
     # A model the vendor publishes as an alias for whatever it ships this week,
     # refused before anything is minted, claimed or spawned.
@@ -371,7 +390,9 @@ def test_an_unroutable_refusal_carries_no_other_roads_residue(tmp_path):
 
     assert receipt is not None and receipt.outcome == "failed"
     assert "login directory" not in receipt.detail, receipt.detail
-    assert adapter._login_residue == 0
+    assert adapter._login_residue == 1, "a sibling's refusal was erased"
+    assert adapter._login_seen == (b"A-SIBLINGS-SYNTHETIC-VALUE",), (
+        "a sibling's sampled credential values were erased")
 
     # And the other refusal of the same seam: a provider that cannot be told a
     # model at all. Two branches, and a reset written into one of them is a
@@ -380,13 +401,13 @@ def test_an_unroutable_refusal_carries_no_other_roads_residue(tmp_path):
 
     from conductor.command.adapters.claude_code import CLAUDE_PROFILE
 
-    adapter._login_residue = 1
     adapter.profile = replace(
         CLAUDE_PROFILE, model_flag="", unstable_models=())
     flagless = adapter._unroutable(a_request(), "any-model-at-all")
 
     assert flagless is not None and flagless.outcome == "failed"
     assert "login directory" not in flagless.detail, flagless.detail
+    assert adapter._login_residue == 1
 
 
 def test_one_attempt_never_borrows_another_attempts_login_values(tmp_path):

@@ -213,11 +213,11 @@ class LoginRoad:
         from another action would have this one scanning new material against a
         secret that was never in it.
 
-        The verification road reads the retention count BEFORE calling this,
-        because that count is the doer's and its first guard is about the doer.
-        It is cleared here all the same: a count that only accumulated would
-        make an adapter that only ever verifies refuse for the rest of the
-        process over one transient failure of its own.
+        Called once a road has taken the workspace turn, never before it. An
+        adapter serves every action of its provider, so clearing these on a road
+        that has not taken the turn would erase a sibling action's real refusal
+        and the credential values it had sampled -- which is why a refusal built
+        before the turn uses `_bare_receipt` instead of clearing anything.
         """
         self._retained = 0
         self._login_residue = 0

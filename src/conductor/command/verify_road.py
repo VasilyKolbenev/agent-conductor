@@ -16,6 +16,7 @@ PUBLISH_REASONS = MappingProxyType({
     "outside_subtree": words.DOER_OUTSIDE_SUBTREE,
     "nothing_changed": words.DOER_NOTHING_CHANGED,
     "uncontained": words.DOER_UNCONTAINED,
+    "home_retained": words.DOER_HOME_RETAINED,
     "tree_changed": words.DOER_TREE_CHANGED,
     "env_echo": words.DOER_ENV_ECHO,
 })

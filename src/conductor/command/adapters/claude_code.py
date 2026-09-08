@@ -488,7 +488,7 @@ class ClaudeCodeTransport(ArtifactAwareTransport):
                 and said.get("apiProvider") == FIRST_PARTY
                 and said.get("authMethod") in ADMITTED_LOGIN_METHODS
                 and "apiKeySource" not in said
-                and isinstance(plan, str)
+                and isinstance(plan, str) and plan.strip()
                 and plan.strip().casefold() != API_BILLING_PLAN)
 
     def _login_status_argv(self) -> tuple[str, ...]:

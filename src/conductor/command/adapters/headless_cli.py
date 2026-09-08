@@ -442,7 +442,8 @@ class HeadlessCliTransport(ReceiptWriting, ModelRouting, LoginRoad):
             timeout=request.timeout_seconds, stdin_bytes=payload, model=model,
             output_limit=OUTPUT_LIMIT_BYTES[args.output_limit_profile])
         self._attempts[attempt_relation(request)] = _Attempt(
-            work_dir=work, before=before, after=self._evidence())
+            work_dir=work, before=before, after=self._evidence(),
+            retained=bool(self._retained))
         self._keep_login_values(attempt_relation(request))
         if self._login_residue:
             # A task that ran and left state nobody declared in a directory this

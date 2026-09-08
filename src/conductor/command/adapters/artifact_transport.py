@@ -577,15 +577,17 @@ class ArtifactAwareTransport(HeadlessCliTransport):
         self._hold_result(request, result)
         snapshot = self._attempts.get(attempt_relation(request))
         if (result.outcome != "succeeded" or result.exit_code not in (None, 0)
-                or snapshot is None or snapshot.after is None
-                or self._retained):
-            # `_retained` closes the half the verification road cannot reach.
-            # That road refuses to verify over a home the doer could not
-            # discard, but the count lives on the DOER's transport, and a
-            # cross-provider check runs on a different instance that cannot see
-            # it. Refusing here refuses at the source, where the fact is, so the
-            # shape of the pair stops mattering.
+                or snapshot is None or snapshot.after is None):
             return self._published(request, "uncontained")
+        if snapshot.retained:
+            # Read from the ATTEMPT and not from the transport. This closes the
+            # half the verification road cannot reach -- that road's count lives
+            # on the doer's instance, and a cross-provider checker is a
+            # different instance that cannot see it -- and it reads a fact
+            # recorded inside the attempt's own turn, so a sibling action
+            # beginning its road cannot zero it and a sibling's own failure
+            # cannot refuse this publication.
+            return self._published(request, "home_retained")
         if request.capability == REVIEW_CAPABILITY:
             return self._publish_review(request, snapshot)
         changed = self._changed(snapshot)
@@ -646,15 +648,14 @@ class ArtifactAwareTransport(HeadlessCliTransport):
         return self._verification(request, state, (), reason)
 
     def _check_owned(self, request, verifier, material) -> AdapterVerification:
-        # The count as the DOER left it, read before this road re-derives
-        # anything: the first thing a verification asks is whether the work it
-        # is about to judge was done over a retention promise already broken.
-        # Read and then cleared, because a count that only ever accumulated
-        # would make a verify-only adapter refuse for the rest of the process
-        # over one transient failure.
-        inherited = self._retained
+        # No inherited count is read here any more. A doer that could not take
+        # its own home back is refused at PUBLICATION now, from a fact recorded
+        # inside that attempt's own turn -- which is the only reading that works
+        # when the checker is a different instance, and the only one a sibling
+        # action cannot corrupt. What is left here is this checker's own view of
+        # the home root, which is its own to judge.
         self._begin_road()
-        if self._workspace.sweep_homes() or inherited:
+        if self._workspace.sweep_homes():
             return self._checker_answer(request, "homes_refused")
         if self._workspace.is_verification_claimed(request.run_id, request.action_id):
             return self._checker_answer(request, "marker_standing")

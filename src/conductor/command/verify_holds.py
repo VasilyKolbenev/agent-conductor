@@ -58,6 +58,12 @@ NOT_RESUMABLE_NEVER = "the checker never started under live authority; verificat
 DOER_OUTSIDE_SUBTREE = "the doer changed files outside its authorized work item"
 DOER_NOTHING_CHANGED = "the doer left no changed file for the checker to verify"
 DOER_UNCONTAINED = "the doer left no contained work tree for independent verification"
+#: A DIFFERENT fact from the one above, and it needs its own word: the tree was
+#: readable, and what broke was the promise to take the attempt's own home back.
+#: A reader of the run's record has to be able to tell which promise failed.
+DOER_HOME_RETAINED = (
+    "the doer could not take back the home it minted, so its work was not "
+    "offered for independent verification")
 DOER_TREE_CHANGED = "the review doer changed the work tree instead of only reviewing"
 DOER_ENV_ECHO = "the doer output contains an allowed environment value and was not published"
 FRAME_OVER_LIMIT = "the independent verification materials exceed their input ceiling"

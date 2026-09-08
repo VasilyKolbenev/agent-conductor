@@ -36,7 +36,7 @@ from tests.test_harness_subscription_login import (
     # only in the plan it names -- which is the road the vendor's own login
     # command offers as the alternative to one. And an answer that names no
     # plan: it cannot say it is not that road.
-    "console_plan", "planless"])
+    "console_plan", "planless", "empty_plan", "loud_console"])
 def test_a_login_that_is_not_a_subscription_refuses_the_run(tmp_path, method):
     """An exit code says a credential was found, never which kind.
 

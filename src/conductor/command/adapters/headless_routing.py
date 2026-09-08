@@ -65,19 +65,11 @@ class ModelRouting:
         if model is None:
             return None
         if not self.profile.model_flag:
-            # Everything one road may report, not the retention count alone: a
-            # refusal carrying a login-residue sentence from whatever ran before
-            # it would report another action's directory as this one's.
-            self._begin_road()
-            return self._receipt(
+            return self._bare_receipt(
                 request, "failed", None,
                 unroutable_model_detail(self.profile.tool_noun))
         if model in self.profile.unstable_models:
-            # Everything one road may report, not the retention count alone: a
-            # refusal carrying a login-residue sentence from whatever ran before
-            # it would report another action's directory as this one's.
-            self._begin_road()
-            return self._receipt(
+            return self._bare_receipt(
                 request, "failed", None,
                 moving_model_detail(self.profile.tool_noun))
         return None

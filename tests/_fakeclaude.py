@@ -115,6 +115,15 @@ LOGIN_ANSWERS = {
                      "subscriptionType": "console"},
     "planless": {"loggedIn": True, "authMethod": "claude.ai",
                  "apiProvider": "firstParty"},
+    #: A plan that is present and says nothing, and one that says the refused
+    #: word in another case with room around it. The first is the same hole an
+    #: empty method was; the second is what a compare without normalization
+    #: admits.
+    "empty_plan": {"loggedIn": True, "authMethod": "claude.ai",
+                   "apiProvider": "firstParty", "subscriptionType": "   "},
+    "loud_console": {"loggedIn": True, "authMethod": "claude.ai",
+                     "apiProvider": "firstParty",
+                     "subscriptionType": " Console "},
     #: Exit 0, first party, no key source -- and a method this build has never
     #: seen. It is the case a rule written as "not one of the two bad ones"
     #: admitted, and the reason the admitting set is positive.
@@ -132,8 +141,9 @@ LOGIN_ANSWERS = {
     "vertex": {"loggedIn": True, "authMethod": "claude.ai",
                "apiProvider": "vertex", "subscriptionType": "max"},
     #: A key with no source named, and a source named beside a subscription
-    #: method. Each isolates ONE clause of the reader: without them the two
-    #: clauses cover for each other and either could be deleted unnoticed.
+    #: method. The second isolates the key-source clause, which no other row
+    #: reaches; the first is refused by the method set, like several rows below,
+    #: and is kept because the vendor really can answer that way.
     "quiet_key": {"loggedIn": True, "authMethod": "api_key",
                   "apiProvider": "firstParty", "subscriptionType": "max"},
     "key_source": {"loggedIn": True, "authMethod": "claude.ai",
