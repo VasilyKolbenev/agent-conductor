@@ -340,7 +340,8 @@ STDIN_PROMPT = "-"
 #: road this build does not take when an operator pinned a subscription.
 LOGIN_ARGV = ("login",)
 #: MEASURED on the reviewed binary with an empty `CODEX_HOME`: `login status`
-#: exits 1 and writes "Not logged in" to stderr, which this build never reads.
+#: exits 1 and writes "Not logged in" to stderr. That sentence IS read -- it is
+#: the only thing separating a subscription from an API key, since both exit 0.
 LOGIN_STATUS_ARGV = ("login", "status")
 #: MEASURED at 0.112.0 with a fresh `CODEX_HOME` and one real `exec`: a `tmp`
 #: directory holding a lock and two batch files per spawn. Per-run, so it is
@@ -540,10 +541,17 @@ class CodexCliTransport(ArtifactAwareTransport):
         return (self._pin.executable,)
 
     def _login_home_grants(self, home: str) -> tuple[str, ...]:
-        """What this login directory gives away, read from the file itself."""
+        """What this login directory gives away, read from the files themselves.
+
+        Every name the profile declares is read, not one this method spells: a
+        second name added to that list would otherwise have no reader at all and
+        be silently inert.
+        """
         from . import login_home
 
-        return login_home.config_grants(home, "config.toml", LOGIN_CONFIG_KEYS)
+        return tuple(
+            grant for name in self.profile.login_forbidden
+            for grant in login_home.config_grants(home, name, LOGIN_CONFIG_KEYS))
 
     def _login_method_admitted(self, output: bytes) -> bool:
         """Read this vendor's own sentence about how it is signed in.

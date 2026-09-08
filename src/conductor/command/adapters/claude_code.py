@@ -270,7 +270,8 @@ SAFE_MODE_ARGV = ("--safe-mode",)
 #: `--console` as API billing, which this build never asks for.
 LOGIN_ARGV = ("auth", "login", "--claudeai")
 #: What this build asks INSTEAD, on the subscription road, before a task: the
-#: vendor's own status command, read for its exit code. MEASURED on the reviewed
+#: vendor's own status command, read for the METHOD its answer names -- an exit
+#: code alone admits an API key as a subscription. MEASURED on the reviewed
 #: binary with an empty config directory: it exits 1 and prints
 #: `{"loggedIn": false, ...}`. It is not silent -- it sends one HEAD request to
 #: the configured base URL -- and that is stated rather than hidden, because a

@@ -15,16 +15,11 @@ a trusted-project entry there made the vendor read the work tree's own config.
 """
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
-
-from conductor.command.adapters.claude_code import LOGIN_STATUS_ARGV
 
 from tests import _fakeclaude
 from tests.test_command_claude_transport import a_request, run_once
 from tests.test_harness_subscription_login import (
-    AUTH_HOME,
     a_codex_harness,
     a_harness,
     a_login_home,
@@ -188,6 +183,91 @@ def test_a_configuration_this_build_cannot_read_is_refused_not_admitted(tmp_path
     assert receipt.outcome == "failed"
     assert "also holds" in receipt.detail
     assert _fakecodex.spawns(log) == []
+
+
+@pytest.mark.parametrize("body,refused", [
+    ('profile = "x"\n[profiles.x]\nmodel_provider = "elsewhere"\n', True),
+    ('[projects."C:\\\\work"]\ntrust_level = "trusted"\n', True),
+    ('[tui]\nnotifications = true\n[history]\npersistence = "none"\n', False),
+])
+def test_a_configuration_is_judged_at_every_depth_it_can_hide_in(
+        tmp_path, body, refused):
+    """The top level is not where a format that nests keeps its authority.
+
+    This vendor's own documentation puts a provider override inside a profile
+    table, so a rule that read only the top level would call the same authority
+    harmless one line lower -- while refusing an ordinary `[tui]` block would
+    refuse a directory nobody should have to explain.
+    """
+    from tests import _fakecodex
+
+    home = tmp_path / "auth" / "codex"
+    home.mkdir(parents=True)
+    (home / "config.toml").write_text(body, encoding="utf-8", newline="\n")
+    adapter, _root, log = a_codex_harness(
+        tmp_path, auth="subscription", auth_home=str(home))
+
+    receipt = run_once(adapter, a_request())
+
+    assert (receipt.outcome == "failed") is refused, receipt.detail
+    assert (_fakecodex.task_spawns(log) == []) is refused
+
+
+def test_every_name_a_profile_declares_is_really_read(tmp_path):
+    """A second name added to the list would otherwise have no reader at all and
+    be silently inert -- the defect this build calls a field with no consumer."""
+    from dataclasses import replace
+
+    from conductor.command.adapters.codex_cli import CODEX_PROFILE
+
+    home = tmp_path / "auth" / "codex"
+    home.mkdir(parents=True)
+    (home / "other.toml").write_text(
+        '[projects."C:\\\\work"]\ntrust_level = "trusted"\n',
+        encoding="utf-8", newline="\n")
+    adapter = a_codex_harness(
+        tmp_path, auth="subscription", auth_home=str(home))[0]
+
+    assert adapter._login_home_grants(str(home)) == ()
+    adapter.profile = replace(
+        CODEX_PROFILE, login_forbidden=("config.toml", "other.toml"))
+    assert adapter._login_home_grants(str(home)) == ("projects",)
+
+
+def test_a_subscription_protocol_that_cannot_be_asked_refuses(tmp_path):
+    """The config door admits `subscription` for a protocol whose transport
+    drives a login. A profile that declares no status question cannot establish
+    one, and skipping the check quietly would be the loudest of the defects this
+    seam exists to close, in silence."""
+    from dataclasses import replace
+
+    from conductor.command.adapters.claude_code import CLAUDE_PROFILE
+
+    home = a_login_home(tmp_path)
+    adapter, _root, log = a_harness(
+        tmp_path, auth="subscription", auth_home=str(home))
+    adapter.profile = replace(CLAUDE_PROFILE, login_argv=(), login_command=())
+
+    receipt = run_once(adapter, a_request())
+
+    assert receipt.outcome == "failed"
+    assert "cannot establish a subscription login" in receipt.detail
+    assert _fakeclaude.prompt_spawns(log) == []
+
+
+def test_a_top_level_listing_too_large_to_finish_is_unknown(tmp_path, monkeypatch):
+    """The walk is not the only place a directory can be too big to read: the
+    top level is listed first, and a bound applied to one and not the other
+    bounds nothing."""
+    from conductor.command.adapters import login_home
+
+    home = a_login_home(tmp_path)
+    for index in range(6):
+        (home / f"row-{index}").write_text("", encoding="utf-8", newline="\n")
+    monkeypatch.setattr(login_home, "MEASURE_LIMIT", 3)
+
+    assert login_home.entries(str(home)) is None
+    assert login_home.measure(str(home), ("sessions",)) is None
 
 
 def test_a_configuration_naming_nothing_dangerous_is_left_alone(tmp_path):

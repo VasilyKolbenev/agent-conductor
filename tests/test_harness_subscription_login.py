@@ -21,6 +21,7 @@ and which flag it is given, both of which are facts about this build.
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -77,6 +78,22 @@ def a_harness(tmp_path: Path, *, auth: str = "api_key", auth_home: str = "",
     resolution = resolve_providers(
         [config], root=root, clock=lambda: NOW, ids=_Ids(), environ=environ)
     return resolution.registry.resolve(CLAUDE_PROVIDER_ID), root, log
+
+
+def a_portal(link: Path, target: Path) -> Path:
+    """One outward directory door, in whatever form this platform makes them.
+
+    A junction on Windows and a symlink elsewhere -- the same helper the
+    sabotage fixtures use, because a test that spelled `mklink` itself would
+    raise before its own skip on the two platforms the release CI also runs.
+    """
+    from tests.sabotage_fixtures import SabotageUnavailable, plant_route_portal
+
+    try:
+        return plant_route_portal(
+            link, target, kind="junction" if os.name == "nt" else "symlink")
+    except (SabotageUnavailable, OSError) as why:  # pragma: no cover
+        pytest.skip(f"this machine plants no directory portal: {why}")
 
 
 def prompt_row(log: Path) -> dict:
@@ -425,21 +442,26 @@ def test_a_cleanup_that_could_not_finish_is_not_reported_as_a_kept_promise(
     """A removal that failed and was swallowed left the run saying the opposite
     of what the directory holds.
 
-    The removal really fails here: the file this build is about to take back is
-    held open, which Windows refuses to unlink, so the production cleanup meets
-    a real refusal rather than a substitute for itself.
+    The removal really fails here: the child leaves a file this build must take
+    back and locks it the way this platform locks one -- read-only on Windows,
+    an unwritable parent on POSIX -- so the production cleanup meets a real
+    refusal rather than a substitute for the function under test.
     """
     home = a_login_home(tmp_path)
     adapter, _root, _log = a_harness(
         tmp_path, auth="subscription", auth_home=str(home),
-        **{_fakeclaude.HOME_FILE_LOCKED: "sessions:{}"})
+        **{_fakeclaude.HOME_FILE_LOCKED: "sessions/locked.json:{}"})
 
-    receipt = run_once(adapter, a_request())
+    try:
+        receipt = run_once(adapter, a_request())
 
-    assert (home / "sessions").exists(), (
-        "the fixture did not block the removal it meant to")
-    assert receipt.outcome == "failed"
-    assert "does not declare" in receipt.detail
+        assert (home / "sessions" / "locked.json").exists(), (
+            "the fixture did not block the removal it meant to")
+        assert receipt.outcome == "failed"
+        assert "does not declare" in receipt.detail
+    finally:
+        os.chmod(home / "sessions", 0o755)
+        os.chmod(home / "sessions" / "locked.json", 0o644)
 
 
 def test_state_a_preflight_leaves_stops_the_task_before_it_runs(tmp_path):
@@ -503,18 +525,12 @@ def test_a_portal_standing_where_a_per_run_directory_belongs_is_not_walked(
     pinned. Measured on a real junction, and the elsewhere it points at is left
     whole.
     """
-    import subprocess
-
     home = a_login_home(tmp_path)
     elsewhere = tmp_path / "documents-of-my-own"
     elsewhere.mkdir()
     (elsewhere / "notes.txt").write_text(
         "mine", encoding="utf-8", newline="\n")
-    made = subprocess.run(
-        ["cmd", "/c", "mklink", "/J", str(home / "sessions"), str(elsewhere)],
-        capture_output=True, text=True)
-    if made.returncode != 0:  # pragma: no cover -- no junction, no claim
-        pytest.skip(f"this machine made no junction: {made.stderr.strip()}")
+    a_portal(home / "sessions", elsewhere)
     adapter, _root, log = a_harness(
         tmp_path, auth="subscription", auth_home=str(home),
         # The child writes THROUGH the portal, so what appears there during the
@@ -540,8 +556,6 @@ def test_a_portal_deeper_inside_a_per_run_directory_is_not_walked_either(
     """The root of a declared directory is not the only door. A junction one
     level down is walked by the same loop, and the cleanup that follows removes
     what it finds -- so every step of the walk is judged, not only its start."""
-    import subprocess
-
     from conductor.command.adapters import login_home
 
     home = a_login_home(tmp_path)
@@ -549,11 +563,7 @@ def test_a_portal_deeper_inside_a_per_run_directory_is_not_walked_either(
     elsewhere = tmp_path / "documents-of-my-own"
     elsewhere.mkdir()
     (elsewhere / "notes.txt").write_text("mine", encoding="utf-8", newline="\n")
-    made = subprocess.run(
-        ["cmd", "/c", "mklink", "/J", str(home / "sessions" / "inner"),
-         str(elsewhere)], capture_output=True, text=True)
-    if made.returncode != 0:  # pragma: no cover -- no junction, no claim
-        pytest.skip(f"this machine made no junction: {made.stderr.strip()}")
+    a_portal(home / "sessions" / "inner", elsewhere)
 
     held = login_home.measure(str(home), ("sessions",))
 

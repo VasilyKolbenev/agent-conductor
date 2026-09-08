@@ -324,11 +324,12 @@ class HarnessProfile:
     output_limit: int = OUTPUT_LIMIT
     version_timeout_seconds: int = VERSION_TIMEOUT_SECONDS
     #: The code-owned argv that asks this vendor whether its own login answers,
-    #: or empty for a provider whose transport drives no login. Read for its EXIT
-    #: CODE alone: the answer describes somebody's account, and a build that
-    #: parsed and reported it would put account state into a durable receipt.
-    #: It is asked only on the subscription road, where there is a login to ask
-    #: about, and it is never a substitute for a real run.
+    #: or empty for a provider whose transport drives no login. Its answer is
+    #: read for the METHOD it names -- both reviewed binaries answer an API key
+    #: with the same exit code they answer a subscription with -- and NOTHING
+    #: read from it is reported: no account, plan, key fragment or raw byte
+    #: reaches a receipt. It is asked only on the subscription road, where there
+    #: is a login to ask about, and it is never a substitute for a real run.
     login_argv: tuple[str, ...] = ()
     #: The vendor's own login command, as a PERSON runs it. Printed in a refusal
     #: so the operator can paste it; never spawned by this build.

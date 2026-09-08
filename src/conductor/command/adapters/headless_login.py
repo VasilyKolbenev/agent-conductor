@@ -81,26 +81,29 @@ class LoginRoad:
         it was. MEASURED on the reviewed builds: a directory holding nothing but
         an API key answers `codex login status` with "Logged in using an API
         key" and exit 0, and `claude auth status --json` answers an API key in
-        the environment with `authMethod: "api_key"` and exit 0. Both would have
-        passed an exit-code test, and both bill an API account -- the exact
-        silent fallback a subscription pin exists to refuse. Worse: a Codex
-        directory holding a subscription AND a key answers "using an API key",
-        so the key wins where nobody asked it to.
+        the environment with `authMethod: "api_key"` and exit 0. Both bill an
+        API account -- the exact silent fallback a subscription pin exists to
+        refuse -- and a Codex directory holding a subscription AND a key answers
+        with the key, so the key wins where nobody asked it to.
 
         So the METHOD is established positively, by the provider's own reader of
-        its own status answer, and anything else -- no login, an API key, a
-        method or billing plane this build does not know -- refuses. What is
-        read is a closed vocabulary; no account name, plan, key fragment or raw
-        status byte reaches the receipt.
-
-        The vault is judged BEFORE this question is even asked: asking it is a
-        full startup of the vendor's CLI pointed at that directory, so a
-        directory carrying configuration must be refused before the spawn that
-        would read it.
+        its own status answer, and anything else refuses. What is read is a
+        closed vocabulary; no account name, plan, key fragment or raw status
+        byte reaches the receipt.
         """
         profile = self.profile
-        if not self._signed_in_road() or not profile.login_argv:
+        if not self._signed_in_road():
             return None
+        if not profile.login_argv:
+            # The config door admits `subscription` for a protocol whose
+            # transport drives a login; a profile that declares no status
+            # question has no way to establish one, and a road that quietly
+            # skipped the check would be the loudest of the defects this seam
+            # exists to close, in silence.
+            return self._receipt(
+                request, "failed", None,
+                f"this build cannot establish a subscription login for the "
+                f"pinned {profile.tool_noun} build, so no task was spawned")
         outcome = self._attempt_login_status(request)
         answered = (outcome.status == "completed" and outcome.exit_code == 0
                     and not outcome.output_truncated)

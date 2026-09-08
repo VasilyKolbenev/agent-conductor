@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import pytest
 
+from conductor.provider_setup import _login_lines
+
 from tests.test_provider_setup import (
     LOGIN_ASKED,
     configure,
@@ -70,8 +72,10 @@ def test_the_vendor_login_writes_a_directory_and_prints_the_command_to_run(
     # The two lines a person really runs, in the shell this command runs in:
     # an assignment PowerShell performs, and a call to the binary they already
     # named. A `NAME=value` line and a literal `<executable>` were neither.
-    assert f"$env:CLAUDE_CONFIG_DIR = '{home}'" in said, said
-    assert f"& '{executable}' auth login --claudeai" in said, said
+    for line in _login_lines(
+            str(home), str(executable),
+            ("CLAUDE_CONFIG_DIR", ("auth", "login", "--claudeai"))):
+        assert line in said, said
     assert "<executable>" not in said, said
     assert "this build never runs a login" in said, said
     assert "login       subscription" in said, said
@@ -93,18 +97,29 @@ def test_the_printed_login_command_survives_a_real_machine_path(
                      "1", where, "", "y") == 0
 
     said = capsys.readouterr().err
-    quoted = where.replace("'", "''")
-    assert f"$env:CLAUDE_CONFIG_DIR = '{quoted}'" in said, said
+    # Asked of the platform this is running on, because that is what the wizard
+    # asks: a fixed expectation here would red on the two other operating
+    # systems the release CI runs, which is the same defect in a test.
+    expected = _login_lines(
+        where, str(executable),
+        ("CLAUDE_CONFIG_DIR", ("auth", "login", "--claudeai")))
+    for line in expected:
+        assert line in said, said
     assert written(project)["providers"][0]["auth_home"] == where
 
 
-def test_the_printed_command_is_for_the_shell_the_operator_is_in():
+def test_the_printed_command_is_for_the_shell_the_operator_is_in(monkeypatch):
     """This command runs on the operator's own machine, so the platform IS the
     answer. Printing PowerShell on a POSIX shell would repeat the defect this
-    fixed, in the other direction."""
-    from conductor.provider_setup import _login_lines
+    fixed, in the other direction -- and the DEFAULT is the half that decides
+    that, so it is driven here on both platforms rather than assumed."""
+    import conductor.provider_setup as setup
 
     hint = ("CLAUDE_CONFIG_DIR", ("auth", "login", "--claudeai"))
+    monkeypatch.setattr(setup.os, "name", "posix")
+    assert _login_lines("/var/auth", "/opt/claude", hint)[0].startswith("export ")
+    monkeypatch.setattr(setup.os, "name", "nt")
+    assert _login_lines("C:\\auth", "C:\\claude.exe", hint)[0].startswith("$env:")
     windows = _login_lines("C:\\Log In", "C:\\bin\\claude.exe", hint, True)
     posix = _login_lines("/var/log in", "/opt/bin/claude", hint, False)
 

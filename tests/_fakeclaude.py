@@ -169,10 +169,11 @@ REFRESH_LOGIN = "FAKECLAUDE_REFRESH_LOGIN"
 #: and a rule that refuses one that has already run are different rules, and
 #: only a preflight that leaves something can tell them apart.
 PREFLIGHT_HOME_FILE = "FAKECLAUDE_PREFLIGHT_HOME_FILE"
-#: `name:text` written into the config directory and then made READ-ONLY, which
-#: Windows refuses to unlink. It stands for the ordinary case of a file the
-#: vendor left that this build cannot take back, so the production cleanup meets
-#: a real refusal rather than a substitute for itself.
+#: `dir/name:text` written into the config directory and then LOCKED against
+#: removal, in whatever way this platform locks one: Windows refuses to unlink a
+#: read-only file, and POSIX refuses to unlink a child of a directory it may not
+#: write. Both are set, so the production cleanup meets a real refusal on either
+#: platform rather than a substitute for the function under test.
 HOME_FILE_LOCKED = "FAKECLAUDE_HOME_FILE_LOCKED"
 #: Do NOT read stdin at all -- the deaf child, for the delivery relation.
 DEAF = "FAKECLAUDE_DEAF"
@@ -401,8 +402,11 @@ def _run_prompt(checker=False) -> int:
         _write_pair(Path(env[CLAUDE_HOME_NAME]), env[HOME_FILE])
     if env.get(HOME_FILE_LOCKED) and env.get(CLAUDE_HOME_NAME):
         base = Path(env[CLAUDE_HOME_NAME])
+        where = env[HOME_FILE_LOCKED].split(":", 1)[0]
+        (base / where).parent.mkdir(parents=True, exist_ok=True)
         _write_pair(base, env[HOME_FILE_LOCKED])
-        os.chmod(base / env[HOME_FILE_LOCKED].split(":", 1)[0], 0o444)
+        os.chmod(base / where, 0o444)
+        os.chmod((base / where).parent, 0o555)
     if env.get(REFRESH_LOGIN) and env.get(CLAUDE_HOME_NAME):
         fresh = bytes.fromhex(env[REFRESH_LOGIN]).decode("utf-8")
         (Path(env[CLAUDE_HOME_NAME]) / ".credentials.json").write_text(

@@ -17,8 +17,12 @@ The RESIDUE half of this module opens no file. That judgement is names and
 kinds, so a file this build does not recognise is not inspected to find out what
 it is, and the credential is not read in order to decide whether it moved.
 
-``credential_values`` is the one road that does read, and it reads for the
-opposite reason: to protect the credential rather than to judge it. The leak
+Two roads DO read, and both read for a reason the residue half does not have.
+``config_grants`` reads a vendor's own configuration file to find out whether it
+gives the isolation away, because refusing that file by NAME would refuse the
+directory the vendor's own login command produced. ``credential_values`` reads
+the credential itself for the opposite reason again: to protect it rather than
+to judge it. The leak
 scan was built from the values of allowlisted environment names, because that is
 where every credential this build ever handed a child came from. A vendor's own
 login does not arrive that way -- it lives in a file -- so a child that echoed it
@@ -69,13 +73,21 @@ def entries(home: str) -> frozenset[str] | None:
     """
     if not _pinned(home):
         return frozenset()
+    found: set[str] = set()
     try:
         with os.scandir(home) as rows:
-            return frozenset(row.name for row in rows)
+            for row in rows:
+                found.add(row.name)
+                if len(found) > MEASURE_LIMIT:
+                    # Bounded HERE too, and for the same reason as the walk: a
+                    # directory this build cannot finish reading is one it
+                    # cannot vouch for.
+                    return None
     except FileNotFoundError:
         return frozenset()
     except OSError:  # noqa: BLE001 -- unreadable is its own answer
         return None
+    return frozenset(found)
 
 
 #: The most a credential file may be read as. A login file is small -- a token,
@@ -114,7 +126,23 @@ def config_grants(home: str, name: str, keys: tuple[str, ...]) -> tuple[str, ...
         return ()
     except Exception:  # noqa: BLE001 -- unreadable is refused, never admitted
         return keys
-    return tuple(key for key in keys if key in held)
+    return tuple(key for key in keys if _declares(held, key))
+
+
+def _declares(held: object, key: str) -> bool:
+    """Whether a parsed configuration names this key at ANY depth.
+
+    The top level is not where a format that nests keeps its authority. This
+    vendor's own documentation puts a provider override inside a profile table,
+    so a rule that read only the top level would call
+    `profile = "x"` with `[profiles.x] model_provider = ...` harmless -- and it
+    is the same authority, one line lower.
+    """
+    if isinstance(held, dict):
+        return key in held or any(_declares(row, key) for row in held.values())
+    if isinstance(held, list):
+        return any(_declares(row, key) for row in held)
+    return False
 
 
 def credential_values(home: str, names: tuple[str, ...]) -> tuple[bytes, ...]:
@@ -319,7 +347,11 @@ def take_back(home: str, scratch: tuple[str, ...],
     A portal standing where a scratch name is expected is removed BY ITS OWN
     ENTRY and never walked through: deleting through a junction would reach
     whatever it points at, which is exactly the road every other delete in this
-    build refuses.
+    build refuses. What this does NOT close is a name that changes KIND between
+    the measurement and the removal -- a directory that becomes a portal in
+    between. `containment` states that component swaps are out of scope for this
+    build's route judgements, and this inherits that boundary rather than
+    claiming to have closed it.
 
     It cannot raise. It runs in the ``finally`` of an attempt, where an escaping
     exception would skip the attempt home's own discard and replace the outcome
