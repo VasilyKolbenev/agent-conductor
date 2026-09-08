@@ -344,6 +344,29 @@ def test_a_provider_that_declared_no_reader_admits_no_answer():
     assert LoginRoad._login_method_admitted(object(), b'{"loggedIn": true}') is False
 
 
+def test_the_admission_answers_with_its_own_verdict_and_not_the_vendors_value(
+        tmp_path):
+    """A predicate about spending a subscription may not hand back the vendor's
+    own string.
+
+    One clause of the chain is a string test, so an answer naming a blank plan
+    made it return `''` rather than `False`. Every caller reads it for truth, so
+    nothing behaved differently -- which is exactly why this needs saying out
+    loud: the next caller to store the answer, log it, or compare it with `is
+    False` inherits a vendor-controlled value from a build that promised a
+    verdict.
+    """
+    from conductor.command.adapters.claude_code import ClaudeCodeTransport
+
+    blank = (b'{"loggedIn": true, "apiProvider": "firstParty", '
+             b'"authMethod": "claude.ai", "subscriptionType": "   "}')
+
+    said = ClaudeCodeTransport._login_method_admitted(object(), blank)
+
+    assert said is False, said
+    assert type(said) is bool
+
+
 def test_the_bound_counts_the_whole_walk_and_not_each_directory(
         tmp_path, monkeypatch):
     """A limit applied afresh to every directory bounds nothing: a tree of a

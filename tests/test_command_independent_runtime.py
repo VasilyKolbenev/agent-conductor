@@ -8,6 +8,7 @@ from conductor.command.adapters.base import Published
 from conductor.command.contracts import ActionResultReceipt, DecisionReceipt, canonical_json
 from conductor.command.run_store import CorruptRun, RunStore, StoreError
 from conductor.command.runtime import AuthorizationError, AttemptState, ControlRuntime
+from conductor.command.verify_road import PUBLISH_REASONS
 from conductor.command import verify_holds as words
 
 from tests.test_command_plan_verifier import (
@@ -44,14 +45,17 @@ def test_checker_refusal_and_raise_release_the_doer_without_promoting_it(
     assert "private output" not in canonical_json(attempt.receipt.as_dict())
 
 
-@pytest.mark.parametrize("refusal,detail", [
-    ("outside_subtree", words.DOER_OUTSIDE_SUBTREE),
-    ("nothing_changed", words.DOER_NOTHING_CHANGED),
-    ("uncontained", words.DOER_UNCONTAINED),
-    ("tree_changed", words.DOER_TREE_CHANGED),
-    ("env_echo", words.DOER_ENV_ECHO),
-])
+@pytest.mark.parametrize("refusal,detail", sorted(PUBLISH_REASONS.items()))
 def test_the_doers_publish_hold_runs_before_any_checker(tmp_path, refusal, detail):
+    """Every refusal a publication may carry, DERIVED and not listed.
+
+    This was five hand-written rows while the closed set held six: a fold added
+    a refusal, the enumeration that reads as exhaustive stayed as it was, and
+    nothing said the road for the new key had never been driven. Taking the
+    rows from the map itself makes the next widening arrive here on its own --
+    and a sibling witness holds that map equal to the door's closed set, so a
+    key legal anywhere is a key driven here.
+    """
     store, doer, checker, _, _, proposal = circuit(tmp_path)
     doer.publish = lambda request, result: Published(refusal, (), None, (), ())
     # Registry snapshots optional seams at registration, not at the later call.

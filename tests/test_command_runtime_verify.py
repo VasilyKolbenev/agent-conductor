@@ -131,6 +131,40 @@ def test_every_refusal_a_publication_may_carry_is_legal_and_has_its_own_sentence
     assert len(set(PUBLISH_REASONS.values())) == len(PUBLISH_REASONS)
 
 
+def test_no_refusal_is_legal_that_no_road_returns_and_none_returned_is_illegal():
+    """The other half: a word may not be legal in both places and spoken in none.
+
+    The equality above closes "legal on one side only" -- the defect a review
+    found. It cannot close the reverse: a key added to BOTH the door and the
+    sentence map is green while no road ever returns it, which is a refusal
+    nobody can reach dressed as a promise the product makes. So the keys are
+    read out of the SOURCE that returns them, and the three sets are held
+    together.
+
+    Read by parsing rather than by running, because a road is reachable only
+    under conditions no unit test creates on demand, and a runtime probe would
+    prove the conditions and not the vocabulary. The comparison is against a
+    non-empty closed set, so a parse that found nothing fails rather than
+    passing vacuously.
+    """
+    import ast
+    from pathlib import Path
+
+    from conductor.command.adapters import base
+    from conductor.command.adapters.base import PUBLISH_REFUSALS
+
+    spoken: set[str] = set()
+    for source in sorted(Path(base.__file__).parent.glob("*.py")):
+        for node in ast.walk(ast.parse(source.read_text(encoding="utf-8"))):
+            if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                    and node.func.attr == "_published" and len(node.args) >= 2
+                    and isinstance(node.args[1], ast.Constant)
+                    and isinstance(node.args[1].value, str)):
+                spoken.add(node.args[1].value)
+
+    assert spoken == set(PUBLISH_REFUSALS)
+
+
 def test_no_two_roads_out_of_the_verify_circuit_say_the_same_thing():
     """Six roads, six sentences. Two that matched would be one road to a reader.
 

@@ -296,6 +296,11 @@ def test_a_review_that_could_not_discard_publishes_nothing_either(tmp_path):
 
     runtime, authorization, store, _doer, _checker, log, _clog, _root = setup(
         tmp_path, review=True)
+    # The guard stands BEFORE the review branch, and that branch writes the
+    # review's own text into the run's record. Position is the whole protection
+    # here: the same refusal one call later would leave the material published
+    # and refuse afterwards.
+    seeded = sum(1 for row in store.read(RUN).records if row.kind == "artifact")
     real = harness_workspace.HarnessWorkspace.discard_home
     seen: list[int] = []
 
@@ -318,6 +323,9 @@ def test_a_review_that_could_not_discard_publishes_nothing_either(tmp_path):
     assert len(_fakeclaude.prompt_spawns(log)) == 1, (
         "a checker read a review whose home the doer could not take back")
     assert [row for row in store.read(RUN).records if row.kind == "evidence"] == []
+    assert sum(1 for row in store.read(RUN).records
+               if row.kind == "artifact") == seeded, (
+        "the review's own text reached the record of a run that refused it")
 
 
 def test_a_checker_does_not_refuse_a_verification_for_a_count_it_did_not_take(
