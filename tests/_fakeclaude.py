@@ -100,24 +100,34 @@ LOGIN_FAILS = "FAKECLAUDE_LOGIN_FAILS"
 #: really returns when a key is in the environment, and that shape exits 0 --
 #: which is why an exit-code test admitted it as a subscription.
 LOGIN_METHOD = "FAKECLAUDE_LOGIN_METHOD"
+#: The answers the reviewed binary really gives, and the answers this build must
+#: refuse. `subscription` is MEASURED: a subscription-shaped credential file
+#: makes 2.1.239 answer `claude.ai` on the first-party plane and exit 0.
 LOGIN_ANSWERS = {
-    "subscription": {"loggedIn": True, "authMethod": "claudeai",
+    "subscription": {"loggedIn": True, "authMethod": "claude.ai",
+                     "apiProvider": "firstParty"},
+    #: Exit 0, first party, no key source -- and a method this build has never
+    #: seen. It is the case a rule written as "not one of the two bad ones"
+    #: admitted, and the reason the admitting set is positive.
+    "unknown_method": {"loggedIn": True, "authMethod": "UNKNOWN_BILLING_METHOD",
+                       "apiProvider": "firstParty"},
+    "empty_method": {"loggedIn": True, "authMethod": "",
                      "apiProvider": "firstParty"},
     "api_key": {"loggedIn": True, "authMethod": "api_key",
                 "apiProvider": "firstParty",
                 "apiKeySource": "ANTHROPIC_API_KEY"},
-    "vertex": {"loggedIn": True, "authMethod": "claudeai",
+    "vertex": {"loggedIn": True, "authMethod": "claude.ai",
                "apiProvider": "vertex"},
     #: A key with no source named, and a source named beside a subscription
     #: method. Each isolates ONE clause of the reader: without them the two
     #: clauses cover for each other and either could be deleted unnoticed.
     "quiet_key": {"loggedIn": True, "authMethod": "api_key",
                   "apiProvider": "firstParty"},
-    "key_source": {"loggedIn": True, "authMethod": "claudeai",
+    "key_source": {"loggedIn": True, "authMethod": "claude.ai",
                    "apiProvider": "firstParty",
                    "apiKeySource": "ANTHROPIC_API_KEY"},
     #: Signed OUT while still naming the method it last used.
-    "stale": {"loggedIn": False, "authMethod": "claudeai",
+    "stale": {"loggedIn": False, "authMethod": "claude.ai",
               "apiProvider": "firstParty"},
     "none": {"loggedIn": False, "authMethod": "none",
              "apiProvider": "firstParty"},

@@ -253,12 +253,7 @@ class ArtifactAwareTransport(HeadlessCliTransport):
     def _review(
             self, request: ActionRequest, args: DeepReviewArgs,
             model: str | None = None) -> ActionResultReceipt:
-        self._retained = 0
-        # Both cleanup counters are re-derived per road, for one reason: an
-        # adapter instance serves every action of its provider, so a count left
-        # standing by a dispatch would be reported on a review whose own spawns
-        # left nothing.
-        self._login_residue = 0
+        self._begin_road()
         if args.result_artifact_ref is OMITTED:
             # The contract admits a review with no result reference so the
             # frozen revision-1 artefacts stay readable. RUNNING one is a
@@ -323,6 +318,7 @@ class ArtifactAwareTransport(HeadlessCliTransport):
             work_dir=work, before=before, after=self._evidence())
         relation = attempt_relation(request)
         self._attempts[relation] = evidence
+        self._keep_login_values(relation)
         self._review_attempts[relation] = _ReviewAttempt(
             input_artifact_ids=tuple(row.artifact_id for row in inputs),
             result_artifact_ref=args.result_artifact_ref,
@@ -429,6 +425,10 @@ class ArtifactAwareTransport(HeadlessCliTransport):
         self._check_materials.pop(relation, None)
         self._review_attempts.pop(relation, None)
         self._attempts.pop(relation, None)
+        # Including the login values this attempt saw. They are held to scan
+        # this attempt's own material and for nothing else, so they go when it
+        # does -- and they were never written anywhere that outlives memory.
+        self._login_history.pop(relation, None)
 
     def _verify_review(
             self, request: ActionRequest,
@@ -524,19 +524,34 @@ class ArtifactAwareTransport(HeadlessCliTransport):
         """
         return bool(outcome.output_contains_env_value or self._login_echo)
 
-    def _sensitive_values(self) -> tuple[bytes, ...]:
-        # The profile home is code-owned, displaced the operator's value, and
-        # never enters the frame. Other overrides match the runner's own read.
-        #
-        # The vendor's own login is added on top, and it has to be: it is the
-        # one credential this build hands a child that never came through the
-        # environment, so a frame carrying it would be a frame nothing scanned.
-        return (
+    def _sensitive_values(self, relation=None) -> tuple[bytes, ...]:
+        """Every value a surface of this attempt must not be seen carrying.
+
+        The profile home is code-owned, displaced the operator's value, and
+        never enters the frame. Other overrides match the runner's own read.
+
+        The vendor's own login is added on top, and it has to be: it is the one
+        credential this build hands a child that never came through the
+        environment, so a frame carrying it would be a frame nothing scanned.
+
+        And when an ATTEMPT is named, every login value that stood during that
+        attempt is added -- not only the one standing now. A vendor refreshes
+        its own credential while it runs, and the file the doer wrote in the
+        meantime can hold the value from before the refresh. Reading the file
+        again at publication time asks about the wrong secret: the scan would be
+        looking for the new token in material that carries the old one, and the
+        independent checker would then be handed it.
+        """
+        current = (
             self._runner.allowed_environment_values(
                 self._env_allow(),
                 overrides={**dict(self.profile.forced_env),
                            self.profile.home_env: ""})
             + self._login_secrets())
+        if relation is None:
+            return current
+        return tuple(dict.fromkeys(
+            (*current, *self._login_history.get(relation, ()))))
 
     def _published(self, request, refusal, changed=(), result_document=None) -> Published:
         relation = attempt_relation(request)
@@ -545,7 +560,7 @@ class ArtifactAwareTransport(HeadlessCliTransport):
         ids = self._dispatch_inputs.get(relation, tuple(row.artifact_id for row in inputs))
         return Published(
             refusal, changed, None if snapshot is None else snapshot.after,
-            ids, self._sensitive_values(), instruction,
+            ids, self._sensitive_values(relation), instruction,
             tuple(row.as_dict() for row in inputs),
             None if result_document is None else result_document.as_dict(),
             None if bound is None else bound.as_dict())
@@ -617,7 +632,7 @@ class ArtifactAwareTransport(HeadlessCliTransport):
         return self._verification(request, state, (), reason)
 
     def _check_owned(self, request, verifier, material) -> AdapterVerification:
-        self._login_residue = 0
+        self._begin_road()
         if self._workspace.sweep_homes() or self._retained:
             return self._checker_answer(request, "homes_refused")
         if self._workspace.is_verification_claimed(request.run_id, request.action_id):

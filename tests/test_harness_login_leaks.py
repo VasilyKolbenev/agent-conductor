@@ -118,6 +118,107 @@ def test_a_login_refreshed_mid_run_is_caught_by_the_scan_taken_after_the_spawn(
     assert adapter._review_attempt_carries(outcome) is True
 
 
+def test_the_token_a_doer_wrote_before_a_refresh_never_reaches_the_checker(
+        tmp_path):
+    """The scan that guards the checker's material was built from the credential
+    file as it stands AT PUBLICATION, which is the wrong secret.
+
+    A doer that writes its login into a work-tree file and then refreshes that
+    login leaves the OLD value in the file and the NEW one on disk. The material
+    handed to the independent checker carries the old one, and a scan that read
+    the file again was looking for the new one -- so the old token travelled in
+    the checker's own stdin and the run succeeded.
+
+    Measured on what is HANDED ONWARD, not on a flag: the published sensitive
+    set is what the frame is scanned against, and the frame is what the checker
+    reads.
+    """
+    home = a_signed_in_home(tmp_path)
+    adapter, _root, _log = a_harness(
+        tmp_path, auth="subscription", auth_home=str(home),
+        **{_fakeclaude.WRITE_FILE: f"result.txt:{SECRET}",
+           _fakeclaude.REFRESH_LOGIN: REFRESHED.encode("utf-8").hex()})
+
+    request = a_request()
+    receipt = run_once(adapter, request)
+    published = adapter.publish(request, receipt)
+
+    assert (home / ".credentials.json").read_text(
+        encoding="utf-8").count(REFRESHED) == 1, "the fixture refreshed nothing"
+    values = set(published.sensitive)
+    assert REFRESHED.encode("utf-8") in values, "the login standing now is unscanned"
+    assert SECRET.encode("utf-8") in values, (
+        "the login that stood while the doer wrote is not scanned for")
+    adapter.release(request)
+    assert adapter._login_history == {}, (
+        "an attempt's login values outlived the attempt")
+
+
+def test_both_sides_of_one_spawn_are_remembered(tmp_path):
+    """Measured at the seam, because a preflight hides the answer end to end.
+
+    A version probe runs before every task, and the value standing at ITS end is
+    the value standing at the task's beginning -- so a build that only looked
+    after each spawn would still hold both, by accident, for as long as a
+    preflight precedes a task. This drives ONE spawn and asks what it saw.
+    """
+    home = a_signed_in_home(tmp_path)
+    adapter = a_harness(
+        tmp_path, auth="subscription", auth_home=str(home),
+        **{_fakeclaude.REFRESH_LOGIN: REFRESHED.encode("utf-8").hex()})[0]
+
+    adapter._workspace.work_root()
+    adapter._login_seen = ()
+    adapter._attempt(
+        adapter._stdin_argv, WORK_DIR, timeout=30, stdin_bytes=b"probe")
+
+    assert set(adapter._login_seen) == {
+        SECRET.encode("utf-8"), REFRESHED.encode("utf-8")}
+
+
+def test_the_checker_is_never_spawned_on_material_carrying_that_token(tmp_path):
+    """The frame the independent checker reads is what has to be clean, and the
+    published set is only the means. Driven through the real verification road:
+    the doer writes its login into the work tree and refreshes it, and the
+    checker's own spawn never happens."""
+    from conductor.command.runtime import AttemptState
+    from tests import _fakeclaude as fake
+    from tests.test_independent_checker_transport import RUN, setup
+
+    home = a_signed_in_home(tmp_path)
+    runtime, authorization, store, _doer, _checker, log, clog, _root = setup(
+        tmp_path, doer_auth="subscription", doer_auth_home=str(home),
+        doer_extra={fake.REFRESH_LOGIN: REFRESHED.encode("utf-8").hex()},
+        secret=SECRET, secret_place="file")
+
+    attempt = runtime.execute(authorization)
+
+    assert attempt.state is not AttemptState.SUCCEEDED, attempt.receipt.detail
+    assert len(_fakeclaude.prompt_spawns(clog)) == 1, (
+        "the checker was spawned on material carrying a login")
+    assert [row for row in store.read(RUN).records if row.kind == "evidence"] == []
+
+
+def test_one_attempt_never_borrows_another_attempts_login_values(tmp_path):
+    """Per attempt, by its own relation. A road that inherited the last one
+    would be scanning new material against a secret from another action."""
+    home = a_signed_in_home(tmp_path)
+    adapter, _root, _log = a_harness(
+        tmp_path, auth="subscription", auth_home=str(home),
+        **{_fakeclaude.REFRESH_LOGIN: REFRESHED.encode("utf-8").hex()})
+
+    first = a_request(action_id="act-first")
+    adapter.publish(first, run_once(adapter, first))
+    adapter.release(first)
+    second = a_request(action_id="act-second")
+
+    kept = adapter.publish(second, run_once(adapter, second)).sensitive
+
+    assert REFRESHED.encode("utf-8") in set(kept)
+    assert SECRET.encode("utf-8") not in set(kept), (
+        "a later attempt inherited a login value from an earlier one")
+
+
 def test_a_review_that_echoes_nothing_still_publishes(tmp_path):
     """The positive control for the two refusals above: the same road, the same
     subscription, an output that carries no login, and a document is written."""

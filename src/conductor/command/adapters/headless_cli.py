@@ -192,10 +192,10 @@ class HeadlessCliTransport(ReceiptWriting, ModelRouting, LoginRoad):
         #: declaration accounts for. A count for the same reason: the names are
         #: an operator's own state, and one of them is a credential.
         self._login_residue = 0
-        #: Whether the LAST spawn's output carried a login value read after that
-        #: spawn returned. A per-attempt fact, not a per-dispatch count: it is
-        #: the one leak question whose answer can change while a child runs.
+        #: The three login facts one road carries; see `LoginRoad` for each.
         self._login_echo = False
+        self._login_history: dict[tuple[str, str, str, str], tuple[bytes, ...]] = {}
+        self._login_seen: tuple[bytes, ...] = ()
 
     # -- what a provider brings ------------------------------------------------
 
@@ -415,8 +415,7 @@ class HeadlessCliTransport(ReceiptWriting, ModelRouting, LoginRoad):
         a task never runs over a home that outlived its spawn, whether somebody
         else left it or the version probe did.
         """
-        self._retained = 0
-        self._login_residue = 0
+        self._begin_road()
         claimed = self._already_claimed(request)
         if claimed is not None:
             return claimed
@@ -444,6 +443,7 @@ class HeadlessCliTransport(ReceiptWriting, ModelRouting, LoginRoad):
             output_limit=OUTPUT_LIMIT_BYTES[args.output_limit_profile])
         self._attempts[attempt_relation(request)] = _Attempt(
             work_dir=work, before=before, after=self._evidence())
+        self._keep_login_values(attempt_relation(request))
         if self._login_residue:
             # A task that ran and left state nobody declared in a directory this
             # build cannot clean has not met the promise it makes about that
@@ -571,6 +571,7 @@ class HeadlessCliTransport(ReceiptWriting, ModelRouting, LoginRoad):
         auth_home = self._signed_in_road()
         before = login_home.measure(auth_home, self.profile.login_scratch)
         self._login_echo = False
+        self._remember_login_values()
         try:
             outcome = self._spawn(
                 argv, home, cwd, timeout=timeout, stdin_bytes=stdin_bytes,
@@ -583,6 +584,10 @@ class HeadlessCliTransport(ReceiptWriting, ModelRouting, LoginRoad):
             # have echoed. The runner's own flag answers for the first set; this
             # answers for the set the spawn left behind.
             self._login_echo = self._echoed_login(outcome.output)
+            # AFTER as well as before: what the spawn left in the credential
+            # file is what the NEXT reader would scan for, and what stood before
+            # it is what this spawn could have written into a file.
+            self._remember_login_values()
             return outcome
         finally:
             if auth_home:

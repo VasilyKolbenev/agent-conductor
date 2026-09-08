@@ -118,6 +118,10 @@ LOGIN_ANSWERS = {
     #: answer that makes the "says it is logged in" half of the reader decide,
     #: and without it that half could be deleted unnoticed.
     "unrecognised": "estado: sesion iniciada",
+    #: Says it is logged in, does not say "API key", and names a method this
+    #: build has never seen. A reader written as two exclusions admitted it.
+    "unknown_method": "Logged in using UNKNOWN_BILLING_METHOD",
+    "almost": "NOT REALLY Logged in AT ALL",
 }
 #: Exit code for a task spawn; `--version` always exits 0 unless it is failed.
 EXIT = "FAKECODEX_EXIT"

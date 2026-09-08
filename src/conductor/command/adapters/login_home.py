@@ -274,9 +274,6 @@ def _walk(target: Path, prefix: str) -> "list[str | None]":
     is one it cannot vouch for, and materialising the listing first would make
     the bound a description of a walk that had already happened.
     """
-    from ..containment import portal_violation
-    from .harness_workspace import _leaf
-
     rows: list[str | None] = []
     stack = [(target, prefix)]
     while stack:
@@ -286,23 +283,63 @@ def _walk(target: Path, prefix: str) -> "list[str | None]":
                 # A declared per-run NAME can be an ordinary file, and a file
                 # has no paths beneath it. Its own name was already measured.
                 continue
-            children = sorted(here.iterdir())
+            children = _children(here, MEASURE_LIMIT - len(rows))
         except OSError:  # noqa: BLE001 -- unreadable is its own answer
+            return [None]
+        if children is None:
             return [None]
         for row in children:
             name = f"{said}/{row.name}"
             rows.append(name)
-            if len(rows) > MEASURE_LIMIT:
+            deeper = _descend(row)
+            if deeper is None:
                 return [None]
-            try:
-                found = _leaf(row)
-            except Exception:  # noqa: BLE001 -- unreadable is its own answer
-                return [None]
-            if found is None or portal_violation(row, found) is not None:
-                continue
-            if stat.S_ISDIR(found.st_mode):
+            if deeper:
                 stack.append((row, name))
     return rows
+
+
+def _descend(row: Path) -> "bool | None":
+    """Whether the walk should go into this name; None if it must not judge it.
+
+    A door one level down is still a door. Not walking it would leave whatever
+    a spawn wrote THROUGH it unmeasured, and this build would then report a
+    retention promise it had not checked; walking it would measure -- and later
+    remove -- somebody else's files. So it answers None, and unknown refuses.
+    """
+    from ..containment import portal_violation
+    from .harness_workspace import _leaf
+
+    try:
+        found = _leaf(row)
+    except Exception:  # noqa: BLE001 -- unreadable is its own answer
+        return None
+    if found is None:
+        return False
+    if portal_violation(row, found) is not None:
+        return None
+    return bool(stat.S_ISDIR(found.st_mode))
+
+
+def _children(here: Path, room: int) -> "list[Path] | None":
+    """This directory's entries, consuming AT MOST ``room`` of them.
+
+    The bound is on the reading, not on the answer. An earlier version sorted
+    the whole listing first and checked the count afterwards, which is a
+    description of an unbounded read rather than a limit on one: a directory
+    with a million entries was fully enumerated before anything said stop.
+
+    Sorted only after the bound, so the order a caller sees is still stable.
+    """
+    if room <= 0:
+        return None
+    found: list[Path] = []
+    with os.scandir(here) as rows:
+        for row in rows:
+            found.append(Path(row.path))
+            if len(found) > room:
+                return None
+    return sorted(found)
 
 
 def appeared(

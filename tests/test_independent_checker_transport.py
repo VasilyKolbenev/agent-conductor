@@ -23,7 +23,9 @@ CHECKER = "codex-review"
 
 def setup(tmp_path, *, cross=False, review=False, verdict="enabled-verdict-accept",
           checker_write=False, secret=None, secret_place=None, instruction_document=None,
-          checker_auth="api_key", checker_auth_home="", **checker_extra):
+          checker_auth="api_key", checker_auth_home="",
+          doer_auth="api_key", doer_auth_home="", doer_extra=None,
+          **checker_extra):
     fake = _fakecodex if cross else _fakeclaude
     checker_knobs = {fake.EMIT_VERDICT: verdict}
     if checker_write:
@@ -34,7 +36,9 @@ def setup(tmp_path, *, cross=False, review=False, verdict="enabled-verdict-accep
         knobs["PRIVATE_CREDENTIAL"] = secret
     if not cross:
         knobs.update(checker_knobs)
-    doer, root, log = a_harness(tmp_path / "doer", **knobs)
+    doer, root, log = a_harness(
+        tmp_path / "doer", auth=doer_auth, auth_home=doer_auth_home,
+        **knobs, **(doer_extra or {}))
     checker, check_log = doer, log
     if cross:
         checker, _, check_log = codex_harness(

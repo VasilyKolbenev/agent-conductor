@@ -28,7 +28,10 @@ from tests.test_harness_subscription_login import (
 
 @pytest.mark.parametrize("method", [
     "api_key", "quiet_key", "key_source", "vertex", "none", "stale",
-    "methodless", "scalar", "garbage"])
+    "methodless", "scalar", "garbage",
+    # A method this build has never seen, and an empty one. Neither is a known
+    # refusal, and a rule written as exclusions admitted both.
+    "unknown_method", "empty_method"])
 def test_a_login_that_is_not_a_subscription_refuses_the_run(tmp_path, method):
     """An exit code says a credential was found, never which kind.
 
@@ -68,10 +71,10 @@ def test_the_subscription_answer_the_vendor_really_gives_is_admitted(tmp_path):
 
 @pytest.mark.parametrize("method,admitted", [
     ("subscription", True), ("api_key", False), ("none", False),
-    # Exits 0 and says nothing this build knows. It is the only case in which
-    # "it says it is logged in" is the clause that decides, and a reader that
-    # only looked for the API-key phrase would admit it.
-    ("unrecognised", False)])
+    # Three answers that exit 0 and are not the sentence this build knows: a
+    # wording it has never seen, a method it has never seen, and one that
+    # contains the admitting words inside a sentence saying the opposite.
+    ("unrecognised", False), ("unknown_method", False), ("almost", False)])
 def test_codex_reads_its_own_sentence_about_which_login_it_found(
         tmp_path, method, admitted):
     """The same rule on the other harness, in that vendor's own words -- and its
@@ -315,6 +318,29 @@ def test_a_provider_that_declared_no_reader_admits_no_answer():
     from conductor.command.adapters.headless_login import LoginRoad
 
     assert LoginRoad._login_method_admitted(object(), b'{"loggedIn": true}') is False
+
+
+def test_the_bound_counts_the_whole_walk_and_not_each_directory(
+        tmp_path, monkeypatch):
+    """A limit applied afresh to every directory bounds nothing: a tree of a
+    thousand small directories passes it a thousand times. What must be bounded
+    is the walk."""
+    from conductor.command.adapters import login_home
+
+    home = a_login_home(tmp_path)
+    (home / "sessions").mkdir()
+    for branch in ("a", "b"):
+        (home / "sessions" / branch).mkdir()
+        for index in range(2):
+            (home / "sessions" / branch / f"{index}.json").write_text(
+                "{}", encoding="utf-8", newline="\n")
+    monkeypatch.setattr(login_home, "MEASURE_LIMIT", 4)
+
+    # Six paths in all, and no single directory holds more than two: only a
+    # bound that carries across directories can see it.
+    assert login_home._walk(home / "sessions", "sessions") == [None]
+    monkeypatch.setattr(login_home, "MEASURE_LIMIT", 5000)
+    assert len(login_home._walk(home / "sessions", "sessions")) == 6
 
 
 def test_a_directory_too_large_to_finish_reading_is_unknown(tmp_path, monkeypatch):

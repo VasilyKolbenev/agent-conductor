@@ -293,12 +293,19 @@ LOGIN_EXPECTED = (".claude.json", "backups", ".credentials.json")
 #: echoed its own login back cannot publish it. The first real login is where
 #: this name is confirmed.
 LOGIN_CREDENTIALS = (".credentials.json",)
-#: The two `authMethod` values this build knows mean "not a subscription", and
-#: the billing plane it accepts. MEASURED on 2.1.239 (see
-#: `_login_method_admitted`). The token a real subscription answers with is NOT
-#: named here on purpose: nobody has signed in on this machine, and a rule that
-#: had to guess it would refuse every real subscription.
-REFUSED_LOGIN_METHODS = ("none", "api_key")
+#: The methods this build ADMITS as a subscription, and the billing plane it
+#: accepts. A closed positive set, which is only possible because the token was
+#: MEASURED rather than guessed: a subscription-shaped credential file makes
+#: 2.1.239 answer `authMethod: "claude.ai"`, `apiProvider: "firstParty"`, exit 0,
+#: while a console-shaped one answers `none` and exits 1.
+#:
+#: Positive and not merely "not one of the two bad ones", because an unknown
+#: answer -- an empty string, a method a future build invents, a localized
+#: word -- would otherwise inherit the right to spend a subscription from the
+#: mere absence of a known refusal. What this measures is the local STATUS
+#: FORMAT: not the authenticity of a credential, not that a plan is live, and
+#: not that any model call would succeed.
+ADMITTED_LOGIN_METHODS = ("claude.ai",)
 FIRST_PARTY = "firstParty"
 #: What a login directory may not also hold. `--safe-mode` was measured to
 #: suppress both of these, and they are refused anyway: the flag is one line of
@@ -434,12 +441,18 @@ class ClaudeCodeTransport(ArtifactAwareTransport):
         "firstParty", "apiKeySource": "ANTHROPIC_API_KEY"}` and exits 0. The
         second is what an exit-code test admitted as a subscription.
 
-        Four clauses, each grounded in that measurement: it must say it is
-        signed in; the billing plane must be the vendor's own first party, so a
-        cloud reseller's plane is refused rather than assumed; the method may
-        not be one of the two that mean "no login" or "an API key"; and it may
-        not name a key SOURCE at all, because a login that can name one is a
-        login being paid for by an API account.
+        Four clauses, each grounded in measurement: it must say it is signed in;
+        the billing plane must be the vendor's own first party, so a cloud
+        reseller's plane is refused rather than assumed; the method must be one
+        this build has SEEN a subscription answer with; and it may not name a
+        key SOURCE at all, because a login that can name one is a login being
+        paid for by an API account.
+
+        The third clause is a positive set and not a pair of exclusions. An
+        earlier version refused `none` and `api_key` and admitted everything
+        else, which let an empty string, an invented word or a localized answer
+        inherit the right to spend a subscription from the mere absence of a
+        known refusal.
 
         Unparseable output is refused. This runs before a task, so refusing what
         it cannot read costs a run and admitting it would cost an account.
@@ -450,8 +463,7 @@ class ClaudeCodeTransport(ArtifactAwareTransport):
             return False
         return (isinstance(said, dict) and said.get("loggedIn") is True
                 and said.get("apiProvider") == FIRST_PARTY
-                and said.get("authMethod") not in REFUSED_LOGIN_METHODS
-                and isinstance(said.get("authMethod"), str)
+                and said.get("authMethod") in ADMITTED_LOGIN_METHODS
                 and "apiKeySource" not in said)
 
     def _login_status_argv(self) -> tuple[str, ...]:

@@ -364,7 +364,13 @@ LOGIN_CREDENTIALS = ("auth.json",)
 #: and ALSO exits 0. A file holding BOTH answers with the API key -- the key
 #: wins where nobody asked it to, which is why the marker below is what refuses
 #: rather than the presence of a subscription token deciding.
-LOGGED_IN_MARKER = "Logged in"
+#: The whole sentence a subscription answers with, and the phrase that names the
+#: road this build refuses. MEASURED on 0.112.0 with synthetic credential files.
+#: The admitting form is a CLOSED sentence rather than "says logged in and does
+#: not say API key", because an answer this build has never seen -- a localized
+#: build, a future wording, a banner -- would otherwise be admitted by the mere
+#: absence of the phrase it knows to refuse.
+SUBSCRIPTION_SENTENCE = "Logged in using ChatGPT"
 API_KEY_MARKER = "using an API key"
 #: The name that carries this vendor's configuration AND its project trust map,
 #: and the two top-level keys in it that give the isolation away. MEASURED: a
@@ -566,7 +572,7 @@ class CodexCliTransport(ArtifactAwareTransport):
         read here and never quoted into a receipt.
         """
         said = output.decode("utf-8", "replace")
-        return LOGGED_IN_MARKER in said and API_KEY_MARKER not in said
+        return SUBSCRIPTION_SENTENCE in said and API_KEY_MARKER not in said
 
     def _login(self) -> tuple[str, str]:
         """The login this operator pinned, read from the pin that carries it.

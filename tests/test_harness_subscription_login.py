@@ -551,11 +551,17 @@ def test_a_portal_standing_where_a_per_run_directory_belongs_is_not_walked(
     assert _fakeclaude.prompt_spawns(log) == []
 
 
-def test_a_portal_deeper_inside_a_per_run_directory_is_not_walked_either(
+def test_a_portal_deeper_inside_a_per_run_directory_makes_the_measure_unknown(
         tmp_path):
-    """The root of a declared directory is not the only door. A junction one
-    level down is walked by the same loop, and the cleanup that follows removes
-    what it finds -- so every step of the walk is judged, not only its start."""
+    """The root of a declared directory is not the only door.
+
+    Skipping a deeper one and calling the measurement a success was the worse
+    half of the two mistakes available here: a child writing THROUGH that door
+    leaves state this build then reports as accounted for, which is a retention
+    promise nobody checked. Walking it would be the other mistake -- measuring,
+    and later removing, somebody else's files. So it is unknown, and unknown
+    refuses the run.
+    """
     from conductor.command.adapters import login_home
 
     home = a_login_home(tmp_path)
@@ -564,15 +570,19 @@ def test_a_portal_deeper_inside_a_per_run_directory_is_not_walked_either(
     elsewhere.mkdir()
     (elsewhere / "notes.txt").write_text("mine", encoding="utf-8", newline="\n")
     a_portal(home / "sessions" / "inner", elsewhere)
+    adapter, _root, log = a_harness(
+        tmp_path, auth="subscription", auth_home=str(home),
+        **{_fakeclaude.HOME_FILE: "sessions/inner/new.json:{}"})
 
-    held = login_home.measure(str(home), ("sessions",))
+    assert login_home.measure(str(home), ("sessions",)) is None
+    receipt = run_once(adapter, a_request())
 
-    assert held is not None, "a portal one level down was not measurable at all"
-    assert "sessions/inner" in held, "the door itself was not seen"
-    assert "sessions/inner/notes.txt" not in held, (
-        "the walk went through a portal and measured somebody else's file")
-    login_home.take_back(str(home), ("sessions",), held)
+    assert receipt.outcome == "failed"
+    assert "does not declare" in receipt.detail
+    assert _fakeclaude.prompt_spawns(log) == [], (
+        "a task ran while this build could not account for the directory")
     assert (elsewhere / "notes.txt").exists(), "a cleanup went through a portal"
+    assert sorted(p.name for p in elsewhere.iterdir()) == ["notes.txt"]
 
 
 def test_a_directory_no_operator_pinned_is_never_read_or_pruned(

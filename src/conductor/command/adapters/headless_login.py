@@ -204,6 +204,36 @@ class LoginRoad:
         return login_home.credential_values(
             auth_home, self.profile.login_credentials)
 
+    def _begin_road(self) -> None:
+        """Re-derive everything one ROAD may report, before it reports any of it.
+
+        An adapter instance serves every action of its provider. A count or a
+        credential value left standing by a dispatch would be reported on a
+        review whose own spawns produced neither -- and a login value borrowed
+        from another action would have this one scanning new material against a
+        secret that was never in it.
+        """
+        self._retained = 0
+        self._login_residue = 0
+        self._login_seen = ()
+
+    def _remember_login_values(self) -> None:
+        """Add the login as it stands NOW to what this road has seen.
+
+        Called on both sides of every spawn. A credential refreshed mid-run
+        leaves two values in play: the one a child could have written into a
+        file before the refresh, and the one standing after it. A scan built
+        from either alone looks for the wrong secret in material that carries
+        the other.
+        """
+        self._login_seen = tuple(dict.fromkeys(
+            (*self._login_seen, *self._login_secrets())))
+
+    def _keep_login_values(self, relation) -> None:
+        """Hand what this road has seen to the attempt it belongs to."""
+        if self._login_seen:
+            self._login_history[relation] = self._login_seen
+
     def _echoed_login(self, output: bytes) -> bool:
         """Whether this output carries a login value as it stands AFTER the spawn.
 

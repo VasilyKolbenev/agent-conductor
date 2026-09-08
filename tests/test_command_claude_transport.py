@@ -89,6 +89,7 @@ def _executable(tmp_path: Path) -> Path:
 
 
 def a_harness(tmp_path: Path, *, instruction: str = INSTRUCTION_BODY,
+              auth: str = "api_key", auth_home: str = "",
               root: Path | None = None, **knobs: str):
     """A registered, available Claude provider over the fake, its root and its log.
 
@@ -109,7 +110,8 @@ def a_harness(tmp_path: Path, *, instruction: str = INSTRUCTION_BODY,
     environ = {_fakeclaude.SPAWN_LOG: str(log), **knobs}
     config = ProviderConfig(
         provider_id=CLAUDE_PROVIDER_ID, executable=str(exe),
-        protocol=CLAUDE_PROTOCOL, env_allow=tuple(sorted(environ)))
+        protocol=CLAUDE_PROTOCOL, env_allow=tuple(sorted(environ)),
+        auth=auth, auth_home=auth_home)
     resolution = resolve_providers(
         [config], root=root, clock=lambda: NOW, ids=_Ids(), environ=environ)
     return resolution.registry.resolve(CLAUDE_PROVIDER_ID), root, log
