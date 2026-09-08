@@ -296,8 +296,9 @@ LOGIN_CREDENTIALS = (".credentials.json",)
 #: The methods this build ADMITS as a subscription, and the billing plane it
 #: accepts. A closed positive set, which is only possible because the token was
 #: MEASURED rather than guessed: a subscription-shaped credential file makes
-#: 2.1.239 answer `authMethod: "claude.ai"`, `apiProvider: "firstParty"`, exit 0,
-#: while a console-shaped one answers `none` and exits 1.
+#: 2.1.239 answer `authMethod: "claude.ai"`, `apiProvider: "firstParty"`, exit 0.
+#: A CONSOLE-shaped file answers with exactly those three as well, which is why
+#: the method is not the whole rule -- see `API_BILLING_PLAN` below.
 #:
 #: Positive and not merely "not one of the two bad ones", because an unknown
 #: answer -- an empty string, a method a future build invents, a localized
@@ -487,7 +488,8 @@ class ClaudeCodeTransport(ArtifactAwareTransport):
                 and said.get("apiProvider") == FIRST_PARTY
                 and said.get("authMethod") in ADMITTED_LOGIN_METHODS
                 and "apiKeySource" not in said
-                and isinstance(plan, str) and plan != API_BILLING_PLAN)
+                and isinstance(plan, str)
+                and plan.strip().casefold() != API_BILLING_PLAN)
 
     def _login_status_argv(self) -> tuple[str, ...]:
         """The status question, behind this road's own isolation flag.

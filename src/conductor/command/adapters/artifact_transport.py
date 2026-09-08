@@ -424,11 +424,10 @@ class ArtifactAwareTransport(HeadlessCliTransport):
         self._materials.pop(relation, None)
         self._check_materials.pop(relation, None)
         self._review_attempts.pop(relation, None)
-        self._attempts.pop(relation, None)
-        # Including the login values this attempt saw. They are held to scan
-        # this attempt's own material and for nothing else, so they go when it
-        # does -- and they were never written anywhere that outlives memory.
-        self._login_history.pop(relation, None)
+        # The snapshot and the login values this attempt saw are the BASE's to
+        # release, and it is asked rather than copied: two bodies dropping the
+        # same two fields is exactly how one of them comes to miss a road.
+        self._release_attempt(relation)
 
     def _verify_review(
             self, request: ActionRequest,
@@ -578,7 +577,14 @@ class ArtifactAwareTransport(HeadlessCliTransport):
         self._hold_result(request, result)
         snapshot = self._attempts.get(attempt_relation(request))
         if (result.outcome != "succeeded" or result.exit_code not in (None, 0)
-                or snapshot is None or snapshot.after is None):
+                or snapshot is None or snapshot.after is None
+                or self._retained):
+            # `_retained` closes the half the verification road cannot reach.
+            # That road refuses to verify over a home the doer could not
+            # discard, but the count lives on the DOER's transport, and a
+            # cross-provider check runs on a different instance that cannot see
+            # it. Refusing here refuses at the source, where the fact is, so the
+            # shape of the pair stops mattering.
             return self._published(request, "uncontained")
         if request.capability == REVIEW_CAPABILITY:
             return self._publish_review(request, snapshot)
@@ -640,8 +646,15 @@ class ArtifactAwareTransport(HeadlessCliTransport):
         return self._verification(request, state, (), reason)
 
     def _check_owned(self, request, verifier, material) -> AdapterVerification:
-        self._begin_road(keep_retained=True)
-        if self._workspace.sweep_homes() or self._retained:
+        # The count as the DOER left it, read before this road re-derives
+        # anything: the first thing a verification asks is whether the work it
+        # is about to judge was done over a retention promise already broken.
+        # Read and then cleared, because a count that only ever accumulated
+        # would make a verify-only adapter refuse for the rest of the process
+        # over one transient failure.
+        inherited = self._retained
+        self._begin_road()
+        if self._workspace.sweep_homes() or inherited:
             return self._checker_answer(request, "homes_refused")
         if self._workspace.is_verification_claimed(request.run_id, request.action_id):
             return self._checker_answer(request, "marker_standing")

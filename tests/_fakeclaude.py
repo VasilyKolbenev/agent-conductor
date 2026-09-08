@@ -119,30 +119,35 @@ LOGIN_ANSWERS = {
     #: seen. It is the case a rule written as "not one of the two bad ones"
     #: admitted, and the reason the admitting set is positive.
     "unknown_method": {"loggedIn": True, "authMethod": "UNKNOWN_BILLING_METHOD",
-                       "apiProvider": "firstParty"},
+                       "apiProvider": "firstParty", "subscriptionType": "max"},
     "empty_method": {"loggedIn": True, "authMethod": "",
-                     "apiProvider": "firstParty"},
+                     "apiProvider": "firstParty", "subscriptionType": "max"},
+    #: Every answer below that is NOT about the plan carries a valid one, so it
+    #: is refused by the clause it was written to isolate. Without that, one new
+    #: clause silently took over every refusal in this table and four older
+    #: clauses could each be deleted unnoticed.
     "api_key": {"loggedIn": True, "authMethod": "api_key",
-                "apiProvider": "firstParty",
+                "apiProvider": "firstParty", "subscriptionType": "max",
                 "apiKeySource": "ANTHROPIC_API_KEY"},
     "vertex": {"loggedIn": True, "authMethod": "claude.ai",
-               "apiProvider": "vertex"},
+               "apiProvider": "vertex", "subscriptionType": "max"},
     #: A key with no source named, and a source named beside a subscription
     #: method. Each isolates ONE clause of the reader: without them the two
     #: clauses cover for each other and either could be deleted unnoticed.
     "quiet_key": {"loggedIn": True, "authMethod": "api_key",
-                  "apiProvider": "firstParty"},
+                  "apiProvider": "firstParty", "subscriptionType": "max"},
     "key_source": {"loggedIn": True, "authMethod": "claude.ai",
-                   "apiProvider": "firstParty",
+                   "apiProvider": "firstParty", "subscriptionType": "max",
                    "apiKeySource": "ANTHROPIC_API_KEY"},
     #: Signed OUT while still naming the method it last used.
     "stale": {"loggedIn": False, "authMethod": "claude.ai",
-              "apiProvider": "firstParty"},
+              "apiProvider": "firstParty", "subscriptionType": "max"},
     "none": {"loggedIn": False, "authMethod": "none",
              "apiProvider": "firstParty"},
     #: Valid JSON that names no method at all, and JSON that is not an object.
     #: Each isolates one guard of the reader that no other answer reaches.
-    "methodless": {"loggedIn": True, "apiProvider": "firstParty"},
+    "methodless": {"loggedIn": True, "apiProvider": "firstParty",
+                   "subscriptionType": "max"},
     "scalar": 7,
     "garbage": None,
 }

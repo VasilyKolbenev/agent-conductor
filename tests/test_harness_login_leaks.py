@@ -235,6 +235,41 @@ def test_a_verification_still_refuses_a_home_the_doer_could_not_discard(
         "a checker ran on top of a home the doer could not discard")
 
 
+def test_a_doer_that_could_not_discard_publishes_nothing_to_any_checker(tmp_path):
+    """The verification road's guard reads a count on the DOER's transport, and
+    a cross-provider check runs on a different instance that cannot see it. So
+    the refusal also stands where the fact is: a doer that could not take its
+    own home back has nothing to hand a checker, whoever the checker is.
+    """
+    from conductor.command.adapters import harness_workspace
+    from conductor.command.runtime import AttemptState
+    from tests import _fakecodex
+    from tests.test_independent_checker_transport import RUN, setup
+
+    runtime, authorization, store, _doer, _checker, _log, clog, _root = setup(
+        tmp_path, cross=True)
+    real = harness_workspace.HarnessWorkspace.discard_home
+    seen: list[int] = []
+
+    def refuse(self, home):
+        real(self, home)
+        seen.append(1)
+        if len(seen) == 2:
+            raise OSError("this machine would not take the home back")
+
+    original = harness_workspace.HarnessWorkspace.discard_home
+    harness_workspace.HarnessWorkspace.discard_home = refuse
+    try:
+        attempt = runtime.execute(authorization)
+    finally:
+        harness_workspace.HarnessWorkspace.discard_home = original
+
+    assert attempt.state is not AttemptState.SUCCEEDED, attempt.receipt.detail
+    assert _fakecodex.task_spawns(clog) == [], (
+        "a checker on another provider ran on work the doer could not account for")
+    assert [row for row in store.read(RUN).records if row.kind == "evidence"] == []
+
+
 def test_a_dispatch_re_derives_the_retention_count_it_inherited(tmp_path):
     """The verification road is the ONE exception. A dispatch that kept a count
     from whatever ran before it would report another action's broken promise as
@@ -270,26 +305,88 @@ def test_a_finished_attempt_leaves_no_login_values_on_the_transport(tmp_path):
 
 
 def test_the_base_road_is_where_the_release_lives(tmp_path):
-    """Asked of the BASE seam, not of the road that happens to reach it today.
+    """Asked of a transport that inherits NOTHING but the base.
 
     Every catalogued provider subclasses the artifact-aware transport, whose own
-    forget also drops this -- so an end-to-end run cannot tell whether the base
-    kept its promise or merely inherited somebody else's. The promise is the
-    base's, and this is where it is asked.
+    forget also drops this -- so an end-to-end run on one of them cannot tell a
+    base that kept its promise from one that inherited somebody else's. This
+    drives the bare transport the ownership suite already keeps for exactly that
+    question, through its real verify road.
     """
-    from conductor.command.adapters.headless_cli import HeadlessCliTransport
+    from conductor.command.adapters.headless_values import attempt_relation
+    from tests.test_command_attempt_ownership import (
+        _bare, _stand_an_attempt, a_receipt, a_request as bare_request)
 
-    home = a_signed_in_home(tmp_path)
-    adapter = a_harness(
-        tmp_path, auth="subscription", auth_home=str(home))[0]
+    transport = _bare(tmp_path)
+    request = bare_request("run-a", capability="dispatch")
+    _stand_an_attempt(transport, request)
+    transport._login_history[attempt_relation(request)] = (
+        b"SYNTHETIC-NOT-A-CREDENTIAL",)
+
+    transport.verify(request, a_receipt(request))
+
+    assert transport._login_history == {}, (
+        "the base road kept credential bytes an attempt was finished with")
+
+
+def test_a_verify_only_adapter_does_not_refuse_for_ever(tmp_path):
+    """The count is read BEFORE this road re-derives anything, and cleared once
+    read. An adapter that only ever verifies would otherwise refuse for the rest
+    of the process over one transient failure of its own."""
+    adapter = a_harness(tmp_path)[0]
+    adapter._retained = 1
+
+    answer = adapter._check_owned(a_request(capability="check"), None, None)
+
+    assert answer.state == "error", answer.detail
+    assert adapter._retained == 0, "the count stuck to a verify-only adapter"
+
+
+def test_a_second_handoff_keeps_what_the_first_one_saw(tmp_path):
+    """A road that hands off and spawns again for the same attempt must not
+    drop what the earlier spawn sampled -- that is the pre-refresh value this
+    whole mechanism exists to keep."""
+    adapter = a_harness(tmp_path)[0]
     relation = ("run-1", "act-1", "att-1", "inst-1")
-    adapter._login_history[relation] = (b"SYNTHETIC",)
-    adapter._attempts[relation] = object()
 
-    HeadlessCliTransport._release_attempt(adapter, relation)
+    adapter._login_seen = (b"FIRST-SYNTHETIC",)
+    adapter._keep_login_values(relation)
+    adapter._login_seen = (b"SECOND-SYNTHETIC",)
+    adapter._keep_login_values(relation)
 
-    assert relation not in adapter._login_history
-    assert relation not in adapter._attempts
+    assert adapter._login_history[relation] == (
+        b"FIRST-SYNTHETIC", b"SECOND-SYNTHETIC")
+
+
+def test_an_unroutable_refusal_carries_no_other_roads_residue(tmp_path):
+    """Every count one road may report is re-derived, not the retention one
+    alone: a refusal built before any spawn must not describe a directory
+    another action left."""
+    adapter = a_harness(tmp_path)[0]
+    adapter._login_residue = 1
+
+    # A model the vendor publishes as an alias for whatever it ships this week,
+    # refused before anything is minted, claimed or spawned.
+    receipt = adapter._unroutable(a_request(), "sonnet")
+
+    assert receipt is not None and receipt.outcome == "failed"
+    assert "login directory" not in receipt.detail, receipt.detail
+    assert adapter._login_residue == 0
+
+    # And the other refusal of the same seam: a provider that cannot be told a
+    # model at all. Two branches, and a reset written into one of them is a
+    # reset the other does not have.
+    from dataclasses import replace
+
+    from conductor.command.adapters.claude_code import CLAUDE_PROFILE
+
+    adapter._login_residue = 1
+    adapter.profile = replace(
+        CLAUDE_PROFILE, model_flag="", unstable_models=())
+    flagless = adapter._unroutable(a_request(), "any-model-at-all")
+
+    assert flagless is not None and flagless.outcome == "failed"
+    assert "login directory" not in flagless.detail, flagless.detail
 
 
 def test_one_attempt_never_borrows_another_attempts_login_values(tmp_path):
