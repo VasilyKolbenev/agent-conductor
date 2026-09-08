@@ -233,6 +233,11 @@ def measure(home: str, scratch: tuple[str, ...]) -> frozenset[str] | None:
     for name in scratch:
         if name not in top:
             continue
+        if len(found) > MEASURE_LIMIT:
+            # Counted ACROSS the declared names, not afresh for each: two names
+            # with a budget apiece is two budgets, and the bound is meant to be
+            # what this build will read of one directory in all.
+            return None
         target = Path(home) / name
         if _is_portal(target):
             # A portal standing where a per-run directory belongs is not a
@@ -241,7 +246,7 @@ def measure(home: str, scratch: tuple[str, ...]) -> frozenset[str] | None:
             # leave a spawn writing through it unseen. So the measurement is
             # unknown, which is the answer that refuses the run.
             return None
-        for row in _walk(target, name):
+        for row in _walk(target, name, MEASURE_LIMIT - len(found)):
             if row is None or len(found) > MEASURE_LIMIT:
                 return None
             found.add(row)
@@ -260,7 +265,7 @@ def _is_portal(target: Path) -> bool:
     return found is not None and portal_violation(target, found) is not None
 
 
-def _walk(target: Path, prefix: str) -> "list[str | None]":
+def _walk(target: Path, prefix: str, room: "int | None" = None) -> "list[str | None]":
     """Every path beneath one declared directory, as `name/rest`, or [None].
 
     It descends nothing this build would refuse to delete. A junction is not a
@@ -274,6 +279,10 @@ def _walk(target: Path, prefix: str) -> "list[str | None]":
     is one it cannot vouch for, and materialising the listing first would make
     the bound a description of a walk that had already happened.
     """
+    # Read at call time, never bound as a default: the limit is a module value a
+    # caller may change, and a default captured at import would answer with the
+    # one that stood when this file was read.
+    room = MEASURE_LIMIT if room is None else room
     rows: list[str | None] = []
     stack = [(target, prefix)]
     while stack:
@@ -283,7 +292,7 @@ def _walk(target: Path, prefix: str) -> "list[str | None]":
                 # A declared per-run NAME can be an ordinary file, and a file
                 # has no paths beneath it. Its own name was already measured.
                 continue
-            children = _children(here, MEASURE_LIMIT - len(rows))
+            children = _children(here, room - len(rows))
         except OSError:  # noqa: BLE001 -- unreadable is its own answer
             return [None]
         if children is None:

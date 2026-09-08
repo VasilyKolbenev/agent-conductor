@@ -105,7 +105,16 @@ LOGIN_METHOD = "FAKECLAUDE_LOGIN_METHOD"
 #: makes 2.1.239 answer `claude.ai` on the first-party plane and exit 0.
 LOGIN_ANSWERS = {
     "subscription": {"loggedIn": True, "authMethod": "claude.ai",
-                     "apiProvider": "firstParty"},
+                     "apiProvider": "firstParty", "subscriptionType": "max"},
+    #: The SAME method, plane and exit code, and an API-billing plan. MEASURED:
+    #: a console-shaped credential file is indistinguishable from a
+    #: subscription except in this one field, and the vendor's own login command
+    #: offers that road as the alternative to a subscription.
+    "console_plan": {"loggedIn": True, "authMethod": "claude.ai",
+                     "apiProvider": "firstParty",
+                     "subscriptionType": "console"},
+    "planless": {"loggedIn": True, "authMethod": "claude.ai",
+                 "apiProvider": "firstParty"},
     #: Exit 0, first party, no key source -- and a method this build has never
     #: seen. It is the case a rule written as "not one of the two bad ones"
     #: admitted, and the reason the admitting set is positive.

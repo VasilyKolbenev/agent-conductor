@@ -199,6 +199,99 @@ def test_the_checker_is_never_spawned_on_material_carrying_that_token(tmp_path):
     assert [row for row in store.read(RUN).records if row.kind == "evidence"] == []
 
 
+def test_a_verification_still_refuses_a_home_the_doer_could_not_discard(
+        tmp_path, monkeypatch):
+    """The check's FIRST guard reads a count the DOER left behind, so a road
+    that re-derived every count on the way in would answer that question before
+    it was asked -- and a verification would then be built on a retention
+    promise already broken. This is the one road whose count is inherited.
+
+    Driven through the real verification road with a discard that really fails.
+    """
+    from conductor.command.adapters import harness_workspace
+    from conductor.command.runtime import AttemptState
+    from tests.test_independent_checker_transport import RUN, setup
+
+    runtime, authorization, store, _doer, _checker, log, _clog, _root = setup(
+        tmp_path)
+    real = harness_workspace.HarnessWorkspace.discard_home
+    seen: list[int] = []
+
+    def refuse(self, home):
+        real(self, home)
+        seen.append(1)
+        # The TASK's own home, not the version probe's: a probe that could not
+        # discard stops the dispatch before any task, which is a different rule.
+        if len(seen) == 2:
+            raise OSError("this machine would not take the home back")
+
+    monkeypatch.setattr(
+        harness_workspace.HarnessWorkspace, "discard_home", refuse)
+    attempt = runtime.execute(authorization)
+
+    assert attempt.state is not AttemptState.SUCCEEDED, attempt.receipt.detail
+    assert [row for row in store.read(RUN).records if row.kind == "evidence"] == []
+    assert len(_fakeclaude.prompt_spawns(log)) == 1, (
+        "a checker ran on top of a home the doer could not discard")
+
+
+def test_a_dispatch_re_derives_the_retention_count_it_inherited(tmp_path):
+    """The verification road is the ONE exception. A dispatch that kept a count
+    from whatever ran before it would report another action's broken promise as
+    its own."""
+    from tests.test_command_claude_transport import a_harness as plain
+
+    adapter = plain(tmp_path)[0]
+    adapter._retained = 1
+
+    receipt = run_once(adapter, a_request())
+
+    assert receipt.outcome == "succeeded", receipt.detail
+    assert "could not be discarded" not in receipt.detail
+    assert adapter._retained == 0
+
+
+def test_a_finished_attempt_leaves_no_login_values_on_the_transport(tmp_path):
+    """Two places let go, and both are needed: the road stops holding what it
+    handed over, and the attempt's own entry goes when the attempt is judged --
+    on the BASE road, so the promise is not a property of who inherits."""
+    home = a_signed_in_home(tmp_path)
+    adapter, _root, _log = a_harness(
+        tmp_path, auth="subscription", auth_home=str(home))
+
+    request = a_request()
+    receipt = run_once(adapter, request)
+
+    assert adapter._login_seen == (), "the road kept its own copy"
+    assert adapter._login_history, "the attempt was handed nothing to keep"
+    adapter.verify(request, receipt)
+    assert adapter._login_history == {}, (
+        "credential bytes outlived the attempt that saw them")
+
+
+def test_the_base_road_is_where_the_release_lives(tmp_path):
+    """Asked of the BASE seam, not of the road that happens to reach it today.
+
+    Every catalogued provider subclasses the artifact-aware transport, whose own
+    forget also drops this -- so an end-to-end run cannot tell whether the base
+    kept its promise or merely inherited somebody else's. The promise is the
+    base's, and this is where it is asked.
+    """
+    from conductor.command.adapters.headless_cli import HeadlessCliTransport
+
+    home = a_signed_in_home(tmp_path)
+    adapter = a_harness(
+        tmp_path, auth="subscription", auth_home=str(home))[0]
+    relation = ("run-1", "act-1", "att-1", "inst-1")
+    adapter._login_history[relation] = (b"SYNTHETIC",)
+    adapter._attempts[relation] = object()
+
+    HeadlessCliTransport._release_attempt(adapter, relation)
+
+    assert relation not in adapter._login_history
+    assert relation not in adapter._attempts
+
+
 def test_one_attempt_never_borrows_another_attempts_login_values(tmp_path):
     """Per attempt, by its own relation. A road that inherited the last one
     would be scanning new material against a secret from another action."""

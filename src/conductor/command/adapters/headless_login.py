@@ -204,7 +204,7 @@ class LoginRoad:
         return login_home.credential_values(
             auth_home, self.profile.login_credentials)
 
-    def _begin_road(self) -> None:
+    def _begin_road(self, *, keep_retained: bool = False) -> None:
         """Re-derive everything one ROAD may report, before it reports any of it.
 
         An adapter instance serves every action of its provider. A count or a
@@ -212,8 +212,16 @@ class LoginRoad:
         review whose own spawns produced neither -- and a login value borrowed
         from another action would have this one scanning new material against a
         secret that was never in it.
+
+        ``keep_retained`` is the verification road's own exception, and it is
+        load-bearing. A check runs on a doer's work, on the same adapter
+        instance, and an undiscarded home from THAT doer is exactly what its
+        first guard refuses to verify on top of. Clearing the count there would
+        answer the guard's question before it was asked -- which is what a first
+        version of this helper did, silently, by treating all three roads alike.
         """
-        self._retained = 0
+        if not keep_retained:
+            self._retained = 0
         self._login_residue = 0
         self._login_seen = ()
 
@@ -229,10 +237,16 @@ class LoginRoad:
         self._login_seen = tuple(dict.fromkeys(
             (*self._login_seen, *self._login_secrets())))
 
-    def _keep_login_values(self, relation) -> None:
-        """Hand what this road has seen to the attempt it belongs to."""
+    def _keep_login_values(self, relation: tuple[str, str, str, str]) -> None:
+        """Hand what this road has seen to the attempt it belongs to.
+
+        And stop holding it here. What the road gathered belongs to one attempt
+        from this point on, and a copy left on the transport would outlive the
+        attempt without anything releasing it.
+        """
         if self._login_seen:
             self._login_history[relation] = self._login_seen
+            self._login_seen = ()
 
     def _echoed_login(self, output: bytes) -> bool:
         """Whether this output carries a login value as it stands AFTER the spawn.

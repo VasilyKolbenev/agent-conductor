@@ -594,6 +594,11 @@ class HeadlessCliTransport(ReceiptWriting, ModelRouting, LoginRoad):
                 self._take_back_login(auth_home, before)
             self._discard(home)
 
+    def _release_attempt(self, relation: tuple[str, str, str, str]) -> None:
+        """Drop what ONE finished attempt left on this transport."""
+        self._attempts.pop(relation, None)
+        self._login_history.pop(relation, None)
+
     def _discard(self, home: Path) -> None:
         """Discard one attempt home, or COUNT the failure; never raise, never hide.
 
@@ -732,20 +737,13 @@ class HeadlessCliTransport(ReceiptWriting, ModelRouting, LoginRoad):
                     "so no independent evidence could be read from it")
             return self._read_change(request, attempt, attempt.after)
         finally:
-            # EVERY road out, the raise included. An attempt this adapter has
-            # finished judging is one it may no longer hold: a snapshot pair is
-            # small, but it is per action and an adapter instance lives as long
-            # as the server does, so "small" is a rate rather than a bound.
-            #
-            # It belongs HERE rather than only in the artifact-aware subclass,
-            # where it was. Every catalogued provider happens to subclass that
-            # one today, so nothing leaks in the shipped roster -- and that is
-            # precisely the reason to put it here: the guarantee would otherwise
-            # be a property of who inherits from whom, which the next provider
-            # is free to change, and this base is documented as usable on its
-            # own. A promise that holds by inheritance is a promise that holds
-            # until someone declines the inheritance.
-            self._attempts.pop(relation, None)
+            # EVERY road out, the raise included, and HERE rather than only in
+            # the artifact-aware subclass: an adapter instance lives as long as
+            # the server, so what one attempt leaves is a rate and not a bound,
+            # and a promise that holds by inheritance holds until somebody
+            # declines the inheritance. The login values go the same way for a
+            # sharper reason -- they are credential bytes.
+            self._release_attempt(relation)
 
     def _read_change(
             self, request: ActionRequest, attempt: "_Attempt",

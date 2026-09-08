@@ -524,7 +524,9 @@ class ArtifactAwareTransport(HeadlessCliTransport):
         """
         return bool(outcome.output_contains_env_value or self._login_echo)
 
-    def _sensitive_values(self, relation=None) -> tuple[bytes, ...]:
+    def _sensitive_values(
+            self, relation: "tuple[str, str, str, str] | None" = None
+    ) -> tuple[bytes, ...]:
         """Every value a surface of this attempt must not be seen carrying.
 
         The profile home is code-owned, displaced the operator's value, and
@@ -534,13 +536,19 @@ class ArtifactAwareTransport(HeadlessCliTransport):
         credential this build hands a child that never came through the
         environment, so a frame carrying it would be a frame nothing scanned.
 
-        And when an ATTEMPT is named, every login value that stood during that
-        attempt is added -- not only the one standing now. A vendor refreshes
+        And when an ATTEMPT is named, the login values SAMPLED during that
+        attempt are added -- not only the one standing now. A vendor refreshes
         its own credential while it runs, and the file the doer wrote in the
         meantime can hold the value from before the refresh. Reading the file
         again at publication time asks about the wrong secret: the scan would be
         looking for the new token in material that carries the old one, and the
         independent checker would then be handed it.
+
+        SAMPLED, and the word is the honest one: the file is read on both sides
+        of every spawn, so a credential that changed twice inside one spawn
+        leaves a middle value nothing here saw. Catching that would mean
+        watching the file while a child runs, which is a different mechanism
+        from this one and is not claimed.
         """
         current = (
             self._runner.allowed_environment_values(
@@ -632,7 +640,7 @@ class ArtifactAwareTransport(HeadlessCliTransport):
         return self._verification(request, state, (), reason)
 
     def _check_owned(self, request, verifier, material) -> AdapterVerification:
-        self._begin_road()
+        self._begin_road(keep_retained=True)
         if self._workspace.sweep_homes() or self._retained:
             return self._checker_answer(request, "homes_refused")
         if self._workspace.is_verification_claimed(request.run_id, request.action_id):

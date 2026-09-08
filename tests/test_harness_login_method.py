@@ -31,7 +31,12 @@ from tests.test_harness_subscription_login import (
     "methodless", "scalar", "garbage",
     # A method this build has never seen, and an empty one. Neither is a known
     # refusal, and a rule written as exclusions admitted both.
-    "unknown_method", "empty_method"])
+    "unknown_method", "empty_method",
+    # The same method, plane and exit code as a real subscription, differing
+    # only in the plan it names -- which is the road the vendor's own login
+    # command offers as the alternative to one. And an answer that names no
+    # plan: it cannot say it is not that road.
+    "console_plan", "planless"])
 def test_a_login_that_is_not_a_subscription_refuses_the_run(tmp_path, method):
     """An exit code says a credential was found, never which kind.
 
@@ -258,6 +263,25 @@ def test_a_subscription_protocol_that_cannot_be_asked_refuses(tmp_path):
     assert _fakeclaude.prompt_spawns(log) == []
 
 
+def test_the_bound_is_shared_by_every_declared_name(tmp_path, monkeypatch):
+    """Two per-run names with a budget apiece is two budgets. What the limit is
+    meant to bound is what this build will read of one directory in all."""
+    from conductor.command.adapters import login_home
+
+    home = a_login_home(tmp_path)
+    for name in ("sessions", ".last-cleanup"):
+        (home / name).mkdir()
+        for index in range(3):
+            (home / name / f"{index}.json").write_text(
+                "{}", encoding="utf-8", newline="\n")
+    monkeypatch.setattr(login_home, "MEASURE_LIMIT", 8)
+
+    # Three entries under each name, four top-level names: over the bound only
+    # when the two are counted together.
+    assert login_home._walk(home / "sessions", "sessions", 8) != [None]
+    assert login_home.measure(str(home), ("sessions", ".last-cleanup")) is None
+
+
 def test_a_top_level_listing_too_large_to_finish_is_unknown(tmp_path, monkeypatch):
     """The walk is not the only place a directory can be too big to read: the
     top level is listed first, and a bound applied to one and not the other
@@ -341,6 +365,46 @@ def test_the_bound_counts_the_whole_walk_and_not_each_directory(
     assert login_home._walk(home / "sessions", "sessions") == [None]
     monkeypatch.setattr(login_home, "MEASURE_LIMIT", 5000)
     assert len(login_home._walk(home / "sessions", "sessions")) == 6
+
+
+def test_the_read_itself_stops_and_not_only_the_answer(tmp_path, monkeypatch):
+    """The bound has to be on the READING. A limit applied to a listing that has
+    already been made describes an unbounded read and then trims its result --
+    which gives exactly the same answer, so only counting what was consumed can
+    tell the two apart.
+    """
+    from conductor.command.adapters import login_home
+
+    home = a_login_home(tmp_path)
+    (home / "sessions").mkdir()
+    for index in range(40):
+        (home / "sessions" / f"{index}.json").write_text(
+            "{}", encoding="utf-8", newline="\n")
+    seen = []
+    real = login_home.os.scandir
+
+    class Counting:
+        def __init__(self, where):
+            self._rows = real(where)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_leaving):
+            self._rows.close()
+            return False
+
+        def __iter__(self):
+            for row in self._rows:
+                seen.append(row.name)
+                yield row
+
+    monkeypatch.setattr(login_home.os, "scandir", Counting)
+    monkeypatch.setattr(login_home, "MEASURE_LIMIT", 5)
+
+    assert login_home._walk(home / "sessions", "sessions") == [None]
+    assert len(seen) <= 6, (
+        f"the whole directory was consumed before the bound applied: {len(seen)}")
 
 
 def test_a_directory_too_large_to_finish_reading_is_unknown(tmp_path, monkeypatch):

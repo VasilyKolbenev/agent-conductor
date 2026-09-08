@@ -307,6 +307,20 @@ LOGIN_CREDENTIALS = (".credentials.json",)
 #: not that any model call would succeed.
 ADMITTED_LOGIN_METHODS = ("claude.ai",)
 FIRST_PARTY = "firstParty"
+#: The plan value that means the vendor's own login is paid for as API usage.
+#: MEASURED on 2.1.239 with two synthetic credential files of the SAME shape:
+#: one carrying `subscriptionType: "max"` and one carrying `"console"` both
+#: answer `authMethod: "claude.ai"`, `apiProvider: "firstParty"` and exit 0, and
+#: the plan is the only field that separates them. The vendor's own login
+#: command offers exactly this pair -- `--claudeai` and `--console` -- so
+#: admitting the method alone would have taken the road the owner forbade.
+#:
+#: Refused by knowledge, like the method used to be, and for a reason that does
+#: not apply to the method: the plan names a subscription can carry are an open
+#: set nobody here has enumerated, while the one that means API billing is
+#: measured. A missing plan refuses too -- an answer that does not say cannot
+#: say it is not this one.
+API_BILLING_PLAN = "console"
 #: What a login directory may not also hold. `--safe-mode` was measured to
 #: suppress both of these, and they are refused anyway: the flag is one line of
 #: argv, and this is the directory that would carry the customization if it ever
@@ -441,12 +455,19 @@ class ClaudeCodeTransport(ArtifactAwareTransport):
         "firstParty", "apiKeySource": "ANTHROPIC_API_KEY"}` and exits 0. The
         second is what an exit-code test admitted as a subscription.
 
-        Four clauses, each grounded in measurement: it must say it is signed in;
+        Five clauses, each grounded in measurement: it must say it is signed in;
         the billing plane must be the vendor's own first party, so a cloud
         reseller's plane is refused rather than assumed; the method must be one
-        this build has SEEN a subscription answer with; and it may not name a
-        key SOURCE at all, because a login that can name one is a login being
-        paid for by an API account.
+        this build has SEEN a subscription answer with; it may not name a key
+        SOURCE at all, because a login that can name one is a login being paid
+        for by an API account; and the PLAN must be present and must not be the
+        one that means API usage.
+
+        The plan clause is not redundant with the method. Measured: a
+        console-shaped credential answers with the same method, the same plane
+        and exit 0, and differs only in the plan it names -- so a rule that
+        stopped at the method would admit the very road the vendor's own login
+        command offers as the alternative to a subscription.
 
         The third clause is a positive set and not a pair of exclusions. An
         earlier version refused `none` and `api_key` and admitted everything
@@ -461,10 +482,12 @@ class ClaudeCodeTransport(ArtifactAwareTransport):
             said = json.loads(output.decode("utf-8", "strict"))
         except (UnicodeDecodeError, ValueError):
             return False
+        plan = said.get("subscriptionType") if isinstance(said, dict) else None
         return (isinstance(said, dict) and said.get("loggedIn") is True
                 and said.get("apiProvider") == FIRST_PARTY
                 and said.get("authMethod") in ADMITTED_LOGIN_METHODS
-                and "apiKeySource" not in said)
+                and "apiKeySource" not in said
+                and isinstance(plan, str) and plan != API_BILLING_PLAN)
 
     def _login_status_argv(self) -> tuple[str, ...]:
         """The status question, behind this road's own isolation flag.
