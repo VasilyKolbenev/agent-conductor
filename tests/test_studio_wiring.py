@@ -83,6 +83,7 @@ LINE_CAP = 800
 #: a fault, and one reaching for a neighbour it was never granted is.
 PERMITTED = {
     "studio-store.js": frozenset({"./studio-model.js", "./studio-runread.js",
+                                  "./studio-controls.js",
                                   "./studio-review.js", "./studio-edits.js",
                                   "./studio-rundraft.js",
                                   "./studio-runwrites.js",

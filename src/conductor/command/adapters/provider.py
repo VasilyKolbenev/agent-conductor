@@ -186,6 +186,41 @@ def _reviewed_capabilities(value: object) -> tuple[str, ...]:
     return rows
 
 
+def _reviewed_vendor_sandbox(
+        pairs: object) -> tuple[tuple[str, str], ...] | None:
+    """Close the vendor's own sandbox declaration, keeping its three answers.
+
+    ``None`` survives as ``None``: it says this integration declares nothing,
+    which is not the same claim as ``()`` -- "we looked and this vendor ships
+    none" -- and a normalizer that folded either into the other would hand a
+    screen an absence nobody measured. A road named twice is two answers to one
+    question and is refused, because a reader would have to pick one.
+    """
+    if pairs is None:
+        return None
+    if type(pairs) not in (list, tuple):
+        raise ProviderConfigError(
+            "vendor sandbox is a list of road/tokens pairs, or is not declared")
+    rows: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for pair in pairs:
+        if type(pair) not in (list, tuple) or len(pair) != 2:
+            raise ProviderConfigError(
+                "each vendor sandbox row must be one road/tokens pair")
+        road, tokens = pair
+        if type(road) is not str or type(tokens) is not str:
+            raise ProviderConfigError("a vendor sandbox row is two strings")
+        if not road.strip() or not tokens.strip():
+            raise ProviderConfigError(
+                "a vendor sandbox row names a road and the tokens it pins")
+        if road in seen:
+            raise ProviderConfigError(
+                f"vendor sandbox names road {road!r} twice")
+        seen.add(road)
+        rows.append((road, tokens))
+    return tuple(rows)
+
+
 def _reviewed_schema_relation(
         capabilities: tuple[str, ...],
         pairs: object) -> tuple[tuple[str, str], ...]:
@@ -422,10 +457,16 @@ class ProviderContract:
     available: bool
     implementation: str = WEAKEST_IMPLEMENTATION
     auth: str = UNPINNED_AUTH
+    #: The VENDOR's own sandbox, per road, read off this provider's profile:
+    #: ``None`` where the integration declares nothing, ``()`` where it declares
+    #: the vendor ships none, pairs where it names the tokens each road pins.
+    #: A fact about somebody else's product, and never a claim about what THIS
+    #: build protects -- the isolation table answers that separately.
+    vendor_sandbox: tuple[tuple[str, str], ...] | None = None
     _FIELDS: ClassVar[frozenset[str]] = frozenset({
         "provider_id", "display_name", "vendor", "version", "capabilities",
         "schema_pairs", "lifecycle", "availability", "available", "implementation",
-        "auth"})
+        "auth", "vendor_sandbox"})
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "provider_id", _provider_id(self.provider_id))
@@ -453,6 +494,8 @@ class ProviderContract:
             # is the only place that holds both facts.
             raise ProviderConfigError(
                 "a provider no row configured carries an unpinned login")
+        object.__setattr__(self, "vendor_sandbox", _reviewed_vendor_sandbox(
+            self.vendor_sandbox))
 
     def as_dict(self) -> dict[str, Any]:
         if type(self) is not ProviderContract:
@@ -464,7 +507,9 @@ class ProviderContract:
             "schema_pairs": [list(pair) for pair in self.schema_pairs],
             "lifecycle": list(self.lifecycle),
             "availability": self.availability, "available": self.available,
-            "implementation": self.implementation, "auth": self.auth}
+            "implementation": self.implementation, "auth": self.auth,
+            "vendor_sandbox": (None if self.vendor_sandbox is None
+                               else [list(pair) for pair in self.vendor_sandbox])}
 
 
 def reconstruct_contract(value: object) -> ProviderContract:
@@ -555,7 +600,15 @@ class ProviderRegistry:
             capabilities=canonical.capabilities, schema_pairs=canonical.schema_pairs,
             lifecycle=canonical.lifecycle, availability=availability,
             available=(availability == "available"),
-            implementation=canonical.implementation, auth=auth)
+            implementation=canonical.implementation, auth=auth,
+            # Read off the adapter CLASS's profile: no instance is built, no
+            # version probe runs and no login is asked, because a person opening
+            # Confirm may not set a vendor process going. An adapter with no
+            # profile -- every plugin in the test roster -- declares nothing,
+            # and nothing is not an absence.
+            vendor_sandbox=getattr(
+                getattr(canonical.adapter_class, "profile", None),
+                "vendor_sandbox", None))
         self._admit_adapter(canonical, adapter, contract.available)
         self._contracts[canonical.provider_id] = contract
         return contract
@@ -612,6 +665,12 @@ def provider_projection(contracts: Iterable[ProviderContract]) -> list[dict[str,
             "implementation": contract.implementation,
             "auth": contract.auth,
             "controls": sorted(capability for capability, _ in contract.schema_pairs),
+            # The vendor's own mechanism, per road, carried rather than derived:
+            # the request path may not know which provider has what. `null` is
+            # an integration that declares nothing and is not an absence.
+            "vendor_sandbox": (
+                None if contract.vendor_sandbox is None
+                else [list(pair) for pair in contract.vendor_sandbox]),
         }
         for contract in (reconstruct_contract(row) for row in contracts)
     ]

@@ -121,7 +121,7 @@ ALLOWED_IMPORTS = {
                           "./studio-rundocs.js"}),
     STEP_FILE: frozenset({"./command-view.js", "./command-projection.js",
                           "./studio-runwords.js", "./studio-runread.js",
-                          "./studio-rundocs.js"}),
+                          "./studio-rundocs.js", "./studio-isolation.js"}),
     PEOPLE_FILE: frozenset({"./command-view.js", "./studio-runwords.js"}),
     DOCS_FILE: frozenset({"./command-view.js", "./command-projection.js",
                           "./studio-runwords.js", "./studio-runread.js"}),

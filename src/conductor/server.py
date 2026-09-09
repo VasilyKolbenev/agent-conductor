@@ -73,14 +73,13 @@ HARNESSES_JSON = json.dumps(harnesses.as_payload(),
 #: two. A module that is packaged and missing here fails the packaged-resource
 #: partition test in tests/test_server_panel_assets.py.
 _STUDIO_FILES = (
-    "studio.css", "studio.js", "studio-model.js", "studio-layout.js",
-    "studio-review.js", "studio-runread.js", "studio-edits.js",
-    "studio-sections.js", "studio-artifacts.js", "studio-fields.js",
-    "studio-transitions.js", "studio-store.js", "studio-view.js",
-    "studio-runform.js", "studio-canvas.js", "studio-inspector.js",
-    "studio-runs.js", "studio-runwords.js", "studio-runstep.js",
-    "studio-runwrite.js", "studio-people.js", "studio-rundocs.js", "studio-rundraft.js",
-    "studio-runwrites.js", "studio-toolbardraft.js")
+    "studio.css", "studio.js", "studio-model.js", "studio-layout.js", "studio-review.js",
+    "studio-runread.js", "studio-edits.js", "studio-sections.js", "studio-artifacts.js",
+    "studio-fields.js", "studio-transitions.js", "studio-store.js", "studio-view.js",
+    "studio-runform.js", "studio-canvas.js", "studio-inspector.js", "studio-runs.js",
+    "studio-runwords.js", "studio-runstep.js", "studio-runwrite.js", "studio-people.js",
+    "studio-rundocs.js", "studio-rundraft.js", "studio-runwrites.js", "studio-toolbardraft.js",
+    "studio-controls.js", "studio-isolation.js")
 _STUDIO_TYPES = {"css": "text/css; charset=utf-8",
                  "js": "text/javascript; charset=utf-8"}
 

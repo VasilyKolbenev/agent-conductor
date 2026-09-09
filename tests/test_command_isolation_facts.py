@@ -24,7 +24,7 @@ from __future__ import annotations
 import importlib
 from pathlib import Path
 
-import pytest
+import pytest  # noqa: F401 -- parametrized cases below
 
 from conductor.command.isolation_facts import (
     BY_CATEGORY,

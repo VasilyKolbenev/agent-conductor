@@ -16,8 +16,9 @@
 // on `graph-store.js:186-267` and carried here unchanged.
 import {EDIT_TYPES, MAX_EDGES, MAX_NODES, MAX_RESOURCES, NODE_KINDS,
   applyEdit, nodeIds} from "./studio-edits.js";
-import {projectControls, projectProviders, projectRunRead, projectRuns,
+import {projectProviders, projectRunRead, projectRuns,
   projectStarters, projectWorkflow, projectWorkflows} from "./studio-model.js";
+import {projectControls, wireControls} from "./studio-controls.js";
 import {NO_DOCUMENT, documentCleared, documentEdited, documentSpent}
   from "./studio-rundraft.js";
 import {decisionRows, participantsOf} from "./studio-runread.js";
@@ -183,13 +184,8 @@ function wireStarters(value) {
   })));
 }
 
-function wireInstances(settled) {
-  return Object.freeze(settled.instances.map((row) => Object.freeze({
-    instance_id: row.instanceId, adapter_id: row.adapterId,
-    model: row.model, controls: row.controls,
-    argument_schemas: row.argumentSchemas,
-  })));
-}
+// `wireControls` lives in `studio-controls`, beside the projection that settled
+// these values: one module owns the controls answer from the wire to the screen.
 
 // -- the drawing ----------------------------------------------------------
 //: A draft document is exactly `{schema_version, title, nodes, edges}`, and
@@ -577,7 +573,7 @@ function runLoaded(state, event) {
   const controls = isObject(event.controls)
     ? projectControls(event.controls) : null;
   const detail = frozenCopy({...event.read,
-    controls: controls === null ? null : {instances: wireInstances(controls)}});
+    controls: controls === null ? null : wireControls(controls)});
   const moved = runMoved(state, "ready", detail, afterRead(state));
   // The one read that gives an ANSWERED write's control back: this run's.
   const read = Object.freeze({...moved, runs: Object.freeze({...moved.runs,

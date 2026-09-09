@@ -58,6 +58,7 @@ from .contracts import (
 )
 from .coordinator import ExecutionCoordinator
 from .instance_controls import instance_controls
+from .isolation_facts import reference_block
 from .graph_definition import GraphDefinition, GraphNode
 from .graph_projection import graph_payload
 from .graph_template import (
@@ -760,9 +761,17 @@ class CommandApi:
 
     def _controls(self, config: Mapping[str, Any]) -> dict[str, object]:
         """Join neither deployment facts nor build facts by a display label."""
+        providers = provider_projection(self._providers)
+        # The login mode and the vendor's own sandbox are MACHINE facts and live
+        # on the provider row; a binding is a RUN fact. Joined here, once, so the
+        # browser is never the place two projections become a promise.
+        facts = {row["provider_id"]: {
+            "auth": row.get("auth"), "vendor_sandbox": row.get("vendor_sandbox")}
+            for row in providers}
         try:
-            instances = instance_controls(config, self._registry)
+            instances = instance_controls(config, self._registry, facts)
         except ContractError as error:
             # These are already-frozen bytes, not a malformed caller payload.
             raise ApiRefusal.fixed("run_corrupt") from error
-        return {"instances": instances, "providers": provider_projection(self._providers)}
+        return {"instances": instances, "providers": providers,
+                "isolation_facts": list(reference_block())}

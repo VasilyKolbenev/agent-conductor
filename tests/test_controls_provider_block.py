@@ -22,6 +22,7 @@ showing the rows stay distinct and correctly attributed.
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 
 from conductor.command.adapters import (
     AdapterManifest,
@@ -30,6 +31,7 @@ from conductor.command.adapters import (
     PreparedAction,
 )
 from conductor.command.adapters.deep_adapters import DEEP_CAPABILITIES, DEEP_CONTROLS
+from conductor.command.adapters.dsh_harness import DSH_PROFILE
 from conductor.command.adapters.provider import (
     AVAILABILITY_STATES,
     IMPLEMENTATION_STATES,
@@ -117,16 +119,37 @@ class RosterAdapter:
             detail="the roster fixture checks nothing", evidence_refs=())
 
 
-def catalog(*, display_names=None):
-    """The reviewed roster; `display_names` overrides one or more display names."""
+#: One roster adapter whose profile really declares a vendor sandbox. Every
+#: other adapter class in this build's own roster declares nothing, so a join
+#: that had stopped carrying the declaration would answer `null` everywhere and
+#: every other expectation here would still pass.
+DECLARED_SANDBOX = (("dispatch", "--sandbox workspace-write"),)
+
+
+class SandboxedRosterAdapter(RosterAdapter):
+    """The same fixture, carrying a real profile that declares one road."""
+
+    profile = replace(DSH_PROFILE, vendor_sandbox=DECLARED_SANDBOX)
+
+
+def catalog(*, display_names=None, adapter_classes=None):
+    """The reviewed roster; `display_names` overrides one or more display names.
+
+    `adapter_classes` overrides the CLASS behind one or more providers, which is
+    where a harness profile -- and therefore a declared vendor sandbox -- is read
+    from. Per provider rather than for the roster, so one row can declare while
+    the rows beside it declare nothing.
+    """
     names = {} if display_names is None else display_names
+    classes = {} if adapter_classes is None else adapter_classes
     return {
         provider_id: ProviderCatalogEntry(
             provider_id=provider_id,
             display_name=names.get(provider_id, SHARED_DISPLAY),
             vendor="variant-A fixture", protocol=protocol,
             capabilities=DEEP_CONTROLS, schema_pairs=SCHEMA_PAIRS,
-            lifecycle=LIFECYCLE, adapter_class=RosterAdapter,
+            lifecycle=LIFECYCLE,
+            adapter_class=classes.get(provider_id, RosterAdapter),
             implementation=implementation)
         for provider_id, (protocol, implementation, _pin) in ROSTER.items()
     }
@@ -142,9 +165,9 @@ def ids():
     return mint
 
 
-def resolve(tmp_path, *, display_names=None):
+def resolve(tmp_path, *, display_names=None, adapter_classes=None):
     """Resolve the roster so all four availability states stand at once."""
-    entries = catalog(display_names=display_names)
+    entries = catalog(display_names=display_names, adapter_classes=adapter_classes)
     configs = []
     for provider_id, (protocol, _implementation, pin) in sorted(ROSTER.items()):
         if pin == "unpinned":
@@ -160,10 +183,11 @@ def resolve(tmp_path, *, display_names=None):
         configs, root=tmp_path, clock=lambda: NOW, ids=ids(), catalog=entries)
 
 
-def an_api(tmp_path, resolution):
+def an_api(tmp_path, resolution, *, config=None):
     store = RunStore(tmp_path)
+    config = CONFIG if config is None else config
     store.create_run(a_run(
-        run_id=RUN_ID, mode="confirm", config_digest=snapshot_digest(CONFIG)), CONFIG)
+        run_id=RUN_ID, mode="confirm", config_digest=snapshot_digest(config)), config)
     return CommandApi(
         store, resolution.registry, session=CommandSession(PORT, TOKEN),
         budget=PRODUCT_COMMAND_BUDGET, clock=lambda: NOW, ids=ids(),
@@ -193,15 +217,26 @@ def test_the_provider_roster_rides_the_controls_route_and_adds_none_of_its_own(
     payload = controls(tmp_path)
     assert ("GET", "/command/runs/<run_id>/controls") in COMMAND_ROUTES
     assert not [path for _method, path in COMMAND_ROUTES if "provider" in path]
-    assert set(payload) == {"instances", "providers"}
+    # Three blocks now, and the third is the same shape of claim: the isolation
+    # WORDS ride this route once, joined to a binding's standings by name rather
+    # than repeated under every instance.
+    assert set(payload) == {"instances", "providers", "isolation_facts"}
     assert payload["instances"] and payload["providers"]
+    assert payload["isolation_facts"]
 
 
-def test_every_provider_row_carries_exactly_the_six_agreed_names(tmp_path):
+def test_every_provider_row_carries_exactly_the_seven_agreed_names(tmp_path):
+    """Seven now: what the VENDOR's own sandbox is, per road, joined the row.
+
+    It is a fact about somebody else's product and it sits beside the other
+    per-provider facts for that reason -- the request path may not know which
+    provider has what, so the answer is carried here and never derived
+    downstream.
+    """
     rows = controls(tmp_path)["providers"]
     assert [set(row) for row in rows] == [{
         "provider_id", "display_name", "availability", "implementation",
-        "auth", "controls"}] * len(rows)
+        "auth", "controls", "vendor_sandbox"}] * len(rows)
     assert [row["provider_id"] for row in rows] == sorted(ROSTER)
 
 
@@ -306,6 +341,52 @@ def test_a_projection_row_is_built_from_contracts_alone(tmp_path):
     resolution = resolve(tmp_path)
     assert provider_projection(resolution.contracts) == controls(
         tmp_path)["providers"]
+
+
+#: Two bindings on one run: one runs under the provider whose class declares a
+#: vendor sandbox, the other under a provider whose class declares nothing.
+BOUND_CONFIG = {
+    "cycle": {"id": "sandbox-orbit", "phases": ["goal"]},
+    "instances": [
+        {"id": "declared", "adapter": AVAILABLE_ID},
+        {"id": "silent", "adapter": "here-and-fake"},
+    ],
+}
+
+
+def test_a_declared_vendor_sandbox_reaches_the_binding_that_runs_under_it(tmp_path):
+    """The whole server-side road, on a value that is not `null`.
+
+    The declaration lives on an adapter CLASS, the registry reads it into the
+    contract, the projection puts it on the provider row, and `/controls` joins
+    that row to the bindings this run froze -- by `adapter_id`, once, so the
+    browser is never where two projections become a promise.
+
+    Both answers ride the same response. The binding whose provider declares
+    reads `active` and carries the vendor's own words; the binding beside it,
+    whose provider declares nothing, reads `unknown` and carries none -- and a
+    join that had lost the declaration, or had handed one binding's answer to
+    the other, fails on one of those two halves.
+    """
+    resolution = resolve(
+        tmp_path, adapter_classes={AVAILABLE_ID: SandboxedRosterAdapter})
+    api = an_api(tmp_path, resolution, config=BOUND_CONFIG)
+
+    payload = api.handle(
+        "GET", f"/command/runs/{RUN_ID}/controls", get_headers()).payload
+
+    rows = {row["provider_id"]: row["vendor_sandbox"] for row in payload["providers"]}
+    assert rows[AVAILABLE_ID] == [["dispatch", "--sandbox workspace-write"]]
+    assert rows["here-and-fake"] is None
+    standings = {row["instance_id"]: {
+        fact["name"]: fact for fact in row["isolation"]}
+        for row in payload["instances"]}
+    vendor = "vendor_sandbox_is_the_vendors"
+    assert standings["declared"][vendor]["standing"] == "active"
+    assert standings["declared"][vendor]["vendor_detail"] == [
+        ["dispatch", "--sandbox workspace-write"]]
+    assert standings["silent"][vendor]["standing"] == "unknown"
+    assert standings["silent"][vendor].get("vendor_detail") is None
 
 
 # -- the frozen spec example says the same thing the production payload does --

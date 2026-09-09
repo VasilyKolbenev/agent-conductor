@@ -246,7 +246,13 @@ def test_every_key_set_the_window_judges_by_is_checked_by_this_module():
     Sets deliberately not driven here are named with the reason, so the list is
     a decision rather than an oversight.
     """
-    source = _model_source()
+    # BOTH boundary modules, because the census is about the window and not
+    # about one file: the controls route's key sets moved to `studio-controls`
+    # when the model reached its line cap, and a census that still read only the
+    # model would have quietly stopped watching them -- which is the exact
+    # failure this test exists to prevent, one refactor later.
+    source = _model_source() + (
+        MODEL.parent / "studio-controls.js").read_text(encoding="utf-8")
     judged = set(__import__("re").findall(r"exactKeys\([a-z]+, ([A-Z_]+)\)",
                                           source))
     checked = {"WORKFLOWS_KEYS", "WORKFLOW_KEYS", "REVISION_KEYS", "RUNS_KEYS",
@@ -257,9 +263,13 @@ def test_every_key_set_the_window_judges_by_is_checked_by_this_module():
     #: CONTROL_ROW_KEYS by the controls route's, RUN_READ_KEYS and
     #: RECORD_ROW_KEYS and DIAGNOSTIC_KEYS and RUN_WORKFLOW_KEYS by the run
     #: read's and the run-identity module's.
+    #: FACT_KEYS, STANDING_KEYS and STANDING_WITH_VENDOR belong to the isolation
+    #: answer and are driven by the controls route's own suites and the browser
+    #: witness, against real payloads.
     elsewhere = {"PROVIDER_KEYS", "CONTROLS_KEYS", "CONTROL_ROW_KEYS",
                  "RUN_READ_KEYS", "RECORD_ROW_KEYS", "DIAGNOSTIC_KEYS",
-                 "RUN_WORKFLOW_KEYS"}
+                 "RUN_WORKFLOW_KEYS", "FACT_KEYS", "STANDING_KEYS",
+                 "STANDING_WITH_VENDOR"}
 
     assert judged == checked | elsewhere, (
         "a key set the window judges by is neither checked here nor named as "

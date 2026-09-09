@@ -262,7 +262,7 @@ def test_the_wire_row_never_carries_the_login_directory(tmp_path):
     assert AUTH_HOME not in blob
     assert set(provider_projection(resolution.contracts)[0]) == {
         "provider_id", "display_name", "availability", "implementation", "auth",
-        "controls"}
+        "controls", "vendor_sandbox"}
 
 
 @pytest.mark.parametrize("row", [

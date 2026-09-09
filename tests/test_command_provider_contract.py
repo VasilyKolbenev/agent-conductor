@@ -137,17 +137,23 @@ def test_projection_exposes_only_names_availability_and_proven_controls():
         version="fake-codex-jsonl-v1", availability="executable_absent", available=False)
     rows = provider_projection([available, unavailable])
     assert rows == [
+        # `vendor_sandbox: None` on both, and the null is the point: these
+        # contracts are built here from values, with no adapter class behind
+        # them, so this integration declares NOTHING about a vendor sandbox.
+        # That is not the same answer as "this vendor ships none".
         {"provider_id": "claude-code", "display_name": "Claude Code",
          "availability": "available", "implementation": "unproven",
-         "auth": "unpinned", "controls": sorted(CONTROLS)},
+         "auth": "unpinned", "controls": sorted(CONTROLS),
+         "vendor_sandbox": None},
         {"provider_id": "codex", "display_name": "Codex",
          "availability": "executable_absent", "implementation": "unproven",
-         "auth": "unpinned", "controls": sorted(CONTROLS)},
+         "auth": "unpinned", "controls": sorted(CONTROLS),
+         "vendor_sandbox": None},
     ]
     for row in rows:
         assert set(row) == {
             "provider_id", "display_name", "availability", "implementation",
-            "auth", "controls"}
+            "auth", "controls", "vendor_sandbox"}
         assert "observe" not in row["controls"]
 
 

@@ -57,7 +57,8 @@ MODULES = ("studio.js", "studio-store.js", "studio-view.js", "studio-model.js",
            "studio-layout.js", "studio-edits.js",
            "studio-sections.js", "studio-artifacts.js", "studio-runform.js",
            "studio-transitions.js", "studio-fields.js", "studio-rundocs.js",
-           "studio-rundraft.js", "studio-runwrites.js", "studio-toolbardraft.js")
+           "studio-rundraft.js", "studio-runwrites.js", "studio-toolbardraft.js",
+           "studio-controls.js", "studio-isolation.js")
 #: The one transport module: every `fetch(`, the one stream, the session token
 #: and the screen router. `graph.js` holds the same position in its window, and
 #: the sealed-API guard below pins this one the same way.
@@ -70,6 +71,14 @@ IMPORTS = r'from "(\./[a-z-]+\.js)";'
 #: reaching for one it was never granted is.
 PERMITTED_IMPORTS = {
     "studio-model.js": frozenset(),
+    #: The controls route's whole answer: declared capabilities and what is
+    #: protecting the run. It reads the boundary's helpers and nothing else, and
+    #: `studio-model` does NOT re-export it -- that would be a cycle.
+    "studio-controls.js": frozenset({"./studio-model.js"}),
+    #: What is protecting the step in front of a person, drawn from the words
+    #: the server sent. It builds elements, so it reaches the view's element
+    #: helper and nothing else -- no store, no model, no copy of any sentence.
+    "studio-isolation.js": frozenset({"./command-view.js"}),
     "studio-edits.js": frozenset({"./studio-model.js"}),
     #: Projections over one run read, and nothing else. It imports nothing for
     #: the reason `studio-model.js` imports nothing: a pure computation that
@@ -85,6 +94,7 @@ PERMITTED_IMPORTS = {
     #: two documents it was handed.
     "studio-review.js": frozenset(),
     "studio-store.js": frozenset({"./studio-model.js", "./studio-runread.js",
+                                  "./studio-controls.js",
                                   "./studio-review.js", "./studio-edits.js",
                                   "./studio-rundraft.js",
                                   "./studio-runwrites.js",
@@ -176,6 +186,7 @@ PERMITTED_IMPORTS = {
                                     "./command-projection.js",
                                     "./studio-runwords.js",
                                     "./studio-runread.js",
+                                    "./studio-isolation.js",
                                     "./studio-rundocs.js"}),
     #: What a press on one of those controls MEANS, split off the boot module
     #: when it reached the line cap. It reaches the two fragments' own
@@ -573,7 +584,10 @@ def test_the_boundary_refuses_rather_than_repairs_and_says_which_it_does():
     # are not sentences.
     # 88 adds the registered argument-schema map: malformed authority metadata
     # refuses the whole controls read instead of guessing a proposal's road.
-    assert source.count("return null;") == 88
+    # 81 after the controls route's seven refusals moved to `studio-controls`
+    # with the projection they belong to; the census in the payload-parity
+    # module follows them there rather than losing sight of them.
+    assert source.count("return null;") == 81
     assert source.count("return false;") == 6
     # Decoration DROPS: the provider roster, the starter offers, and the one
     # duplicate-identity arm the controls answer shares with them.
@@ -585,7 +599,10 @@ def test_the_boundary_refuses_rather_than_repairs_and_says_which_it_does():
     # 14 with the login a provider row pins: a roster row whose login state this
     # window does not know is decoration it drops, exactly as it already drops a
     # row whose availability or implementation it cannot read.
-    assert source.count("continue;") == 14
+    # 13 after the controls route's duplicate-instance arm moved to
+    # `studio-controls` with its projection: the arm still exists and is still
+    # driven, one module along.
+    assert source.count("continue;") == 13
     # The draft's third answer, so "no draft" and "unreadable draft" can never
     # be the same value -- and now the workflow reference's third answer too,
     # for the same reason: a run that froze none and a run whose reference is

@@ -355,6 +355,29 @@ class HarnessProfile:
     #: Codex, a trust entry that re-admits the work tree's own configuration --
     #: so the run refuses before the spawn that would read it.
     login_forbidden: tuple[str, ...] = ()
+    #: The vendor's OWN sandbox, per road, in the vendor's own flag words.
+    #:
+    #: Three answers, not two, and the difference is the whole point:
+    #:   ``None``  -- this integration declares nothing. Not a finding.
+    #:   ``()``    -- declared, and this vendor ships none.
+    #:   pairs     -- declared, and these are the tokens each road pins.
+    #: A provider with no profile at all lands on the first, which is why the
+    #: field is nullable rather than merely empty: "we did not look" and "we
+    #: looked and there is none" are different sentences to show a person, and
+    #: an integration that had not looked would otherwise advertise an absence
+    #: it never measured.
+    #:
+    #: A fact about somebody else's product, which is why it lives here beside
+    #: the other published vendor facts rather than in the module that describes
+    #: what THIS build protects: the request path may not know a provider's
+    #: name, and a table of vendors kept there would be a table to edit whenever
+    #: the roster moved.
+    #:
+    #: Declaring it buys NOTHING on its own. The tokens are held against the
+    #: argv each road really builds, by witnesses that read the argv rather than
+    #: the constant this pair was written from -- a declaration nobody spends is
+    #: prose, and prose about a protection is what this surface exists to stop.
+    vendor_sandbox: tuple[tuple[str, str], ...] | None = None
     #: WHERE this vendor's one-shot mode takes the task. A closed choice of two,
     #: and it is structural rather than advisory: the transport calls a
     #: DIFFERENT argv builder for each, and the one it calls for `stdin` takes

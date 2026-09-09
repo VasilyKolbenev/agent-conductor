@@ -72,10 +72,15 @@ def test_the_door_admits_a_plugin_that_binds_a_schema_to_every_declared_control(
     assert contract.available is True
     assert [row.provider_id for row in door.contracts()] == ["plugin"]
     assert door.adapters.resolve("plugin") is adapter
+    # A plugin adapter carries no harness profile, so it declares nothing about
+    # a vendor sandbox -- `null`, never `[]`. Extensibility is the reason the
+    # field is nullable: an integration that has not looked may not be read as
+    # having found nothing.
     assert provider_projection(door.contracts()) == [
         {"provider_id": "plugin", "display_name": "Plugin",
          "availability": "available", "implementation": "unproven",
-         "auth": "unpinned", "controls": ["dispatch", "stop"]}]
+         "auth": "unpinned", "controls": ["dispatch", "stop"],
+         "vendor_sandbox": None}]
 
 
 def test_a_plugin_missing_a_schema_for_a_declared_control_is_refused_at_registration():

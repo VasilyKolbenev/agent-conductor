@@ -204,19 +204,48 @@ def test_controls_are_frozen_binding_manifest_schema_intersection(tmp_path):
     # is spelled rather than omitted: a consumer must be able to tell "no model
     # was chosen" from "this server is too old to say", and an absent key says
     # the second.
-    assert response.payload == {"instances": [{
-        "instance_id": "claude-dev",
-        "adapter_id": "claude-code",
-        "model": None,
-        "controls": ["dispatch"],
-        "argument_schemas": {},
-    }, {
-        "instance_id": "codex-review",
-        "adapter_id": "codex",
-        "model": None,
-        "controls": [],
-        "argument_schemas": {},
-    }], "providers": []}
+    # The isolation projection is lifted out of this equality and asked its own
+    # question below: it is a different fact, and folding it in here would make
+    # one assertion answer for two and stop saying which one moved.
+    stripped = [{k: v for k, v in row.items() if k != "isolation"}
+                for row in response.payload["instances"]]
+    assert {"instances": stripped, "providers": response.payload["providers"]} == {
+        "instances": [{
+            "instance_id": "claude-dev",
+            "adapter_id": "claude-code",
+            "model": None,
+            "controls": ["dispatch"],
+            "argument_schemas": {},
+        }, {
+            "instance_id": "codex-review",
+            "adapter_id": "codex",
+            "model": None,
+            "controls": [],
+            "argument_schemas": {},
+        }], "providers": []}
+
+
+def test_the_controls_answer_says_what_stands_for_each_selected_binding(tmp_path):
+    """The facts a person is owed BEFORE confirming, per binding.
+
+    This server registers no provider configuration at all, so it knows neither
+    a login mode nor any vendor's sandbox -- and every row that depends on one
+    reads `unknown` rather than promising a protection this run may not have.
+    The words ride the same answer once and every standing joins one of them.
+    """
+    subject, _, _ = api(tmp_path)
+
+    response = subject.handle(
+        "GET", f"/command/runs/{RUN_ID}/controls", get_headers())
+
+    words = {row["name"] for row in response.payload["isolation_facts"]}
+    assert words
+    for row in response.payload["instances"]:
+        standing = {fact["name"]: fact["standing"] for fact in row["isolation"]}
+        assert set(standing) == words, "a standing has no words to render with"
+        assert standing["vendor_sandbox_is_the_vendors"] == "unknown"
+        assert standing["login_directory_gained_state"] == "unknown"
+        assert standing["uncontained_route"] == "active"
 
 
 def test_empty_registry_keeps_reads_and_decisions_but_refuses_proposals(tmp_path):

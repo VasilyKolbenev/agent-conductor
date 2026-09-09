@@ -395,6 +395,10 @@ CLAUDE_PROFILE = HarnessProfile(
     version_timeout_seconds=VERSION_TIMEOUT_SECONDS,
     home_id_kind="claude-home",
     task_channel=TASK_CHANNEL_STDIN,
+    # DECLARED and empty, which is the measured answer and not a blank: the
+    # reviewed build ships no sandbox flag, so this integration says there is
+    # none rather than saying nothing. `None` would mean nobody looked.
+    vendor_sandbox=(),
     model_flag=MODEL_FLAG, unstable_models=CLAUDE_UNSTABLE_MODELS)
 
 

@@ -153,7 +153,7 @@ function isRevision(value) {
   return Number.isInteger(value) && value >= 1;
 }
 
-function isPlainObject(value) {
+export function isPlainObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
@@ -164,7 +164,7 @@ function has(row, key) {
 // A closed shape: exactly its own keys, no more and no fewer. JSON.parse makes
 // "__proto__" and "constructor" OWN properties, so Object.keys sees them and
 // they are refused as any other unknown key is.
-function exactKeys(row, keys) {
+export function exactKeys(row, keys) {
   const own = Object.keys(row);
   return own.length === keys.length && keys.every((key) => has(row, key));
 }
@@ -191,7 +191,7 @@ function isJson(value, depth) {
 // The copy matters as much as the freeze: the caller keeps a reference to the
 // payload it parsed, and a value this module answered with must not change
 // under a reader because somebody still holding that reference wrote to it.
-function frozenJson(value) {
+export function frozenJson(value) {
   if (Array.isArray(value)) {
     return Object.freeze(value.map(frozenJson));
   }
@@ -203,7 +203,7 @@ function frozenJson(value) {
   return value;
 }
 
-function frozenList(rows) {
+export function frozenList(rows) {
   return Object.freeze(rows);
 }
 
@@ -750,51 +750,9 @@ export function projectRunRead(payload) {
 }
 
 // ── controls ─────────────────────────────────────────────────────────────
-const CONTROLS_KEYS = ["instances", "providers"];
-const CONTROL_ROW_KEYS = ["instance_id", "adapter_id", "model", "controls",
-  "argument_schemas"];
-
-//: `GET /command/runs/<id>/controls`. `model` is nullable and the null is
-//: load-bearing: it says the frozen configuration pinned none, so whatever the
-//: provider's own configuration decides is what will run. A row that OMITTED
-//: the key would be a server too old to answer the question, and this window
-//: must be able to tell the two apart -- so the key is required and its value
-//: may be null.
-//:
-//: Two rows for one instance are two answers to one question and neither
-//: survives, identical rows included: what is wrong is that the server answered
-//: twice about one instance, and rows that happen to agree today are not
-//: evidence about the pair that does not.
-export function projectControls(payload) {
-  if (!isPlainObject(payload) || !exactKeys(payload, CONTROLS_KEYS)) {
-    return null;
-  }
-  if (!Array.isArray(payload.instances)) return null;
-  const rows = [];
-  const conflicted = new Set();
-  for (const row of payload.instances) {
-    if (!isPlainObject(row) || !exactKeys(row, CONTROL_ROW_KEYS)) return null;
-    if (!isId(row.instance_id) || !isId(row.adapter_id)) return null;
-    if (row.model !== null && !isId(row.model)) return null;
-    if (!Array.isArray(row.controls) || !row.controls.every(isId)) return null;
-    if (!isPlainObject(row.argument_schemas) || !Object.entries(row.argument_schemas)
-      .every(([capability, schema]) => row.controls.includes(capability)
-        && isId(schema))) return null;
-    if (rows.some((kept) => kept.instanceId === row.instance_id)) {
-      conflicted.add(row.instance_id);
-      continue;
-    }
-    rows.push(Object.freeze({
-      instanceId: row.instance_id,
-      adapterId: row.adapter_id,
-      model: row.model,
-      controls: frozenList(row.controls.slice()),
-      argumentSchemas: frozenJson(row.argument_schemas),
-    }));
-  }
-  return Object.freeze({
-    instances: frozenList(rows.filter(
-      (row) => !conflicted.has(row.instanceId))),
-    providers: projectProviders(payload.providers),
-  });
-}
+//: `GET /command/runs/<id>/controls` is projected in `studio-controls`, which
+//: owns that route's whole answer: which capabilities a binding declares, and
+//: what is actually protecting the run a person is about to confirm. It moved
+//: there when this module reached its line cap with that seam owed, and it is
+//: NOT re-exported from here -- a re-export would make this module import that
+//: one, and the two would then import each other.

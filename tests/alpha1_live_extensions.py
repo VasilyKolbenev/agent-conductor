@@ -26,6 +26,23 @@ LOGINS = {
     "codex-preview": "api_key",
     "codex-unpinned": "unpinned",
 }
+#: The VENDOR's own sandbox each frozen row now carries, per road. LITERAL
+#: per-row pins, not a rule recomputed from the profile beside them -- the point
+#: of a frozen artifact is that the expectation is written down, not derived by
+#: the code under test.
+#:
+#: Every row is `null`, and measured to be: this lane's rows are GATED FIXTURE
+#: adapters carrying no harness profile, so the integration declares nothing
+#: about a vendor sandbox for them. `null` is not `[]`. Writing `[]` here would
+#: have put a measured absence into an artifact that measured no such thing --
+#: which is the confusion the nullable field exists to prevent, and which this
+#: file's first draft made.
+SANDBOXES = {
+    "claude-code": None,
+    "codex": None,
+    "codex-preview": None,
+    "codex-unpinned": None,
+}
 #: The third closed provider vocabulary, added to the frozen vocabulary document
 #: the UI lane reads: a set the lane must not widen or narrow either.
 LOGIN_STATES = ["api_key", "subscription", "unpinned"]
@@ -70,11 +87,15 @@ def current_form(value):
         result["note"] = THREE_QUESTIONS
     if {"row_fields", "withheld_from_rows", "rows"} <= result.keys():
         assert "auth" not in result["row_fields"], "historical fixture was rewritten"
-        result["row_fields"] = sorted([*result["row_fields"], "auth"])
+        assert "vendor_sandbox" not in result["row_fields"], (
+            "historical fixture was rewritten")
+        result["row_fields"] = sorted(
+            [*result["row_fields"], "auth", "vendor_sandbox"])
         # The login DIRECTORY is withheld from every row: the wire carries which
         # login was pinned and never where its credential is kept.
         result["withheld_from_rows"] = sorted(
             [*result["withheld_from_rows"], "auth_home"])
         for row in result["rows"]:
             row["auth"] = LOGINS[row["provider_id"]]
+            row["vendor_sandbox"] = SANDBOXES[row["provider_id"]]
     return result

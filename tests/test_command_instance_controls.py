@@ -32,6 +32,31 @@ def test_schema_follows_the_registered_transport_not_the_adapter_name():
 
 def test_empty_registry_reports_no_controls_and_no_schema_guess():
     config = {"instances": [{"id": "plain", "adapter": "unknown-provider"}]}
-    assert instance_controls(config, AdapterRegistry([])) == [{
+    rows = instance_controls(config, AdapterRegistry([]))
+    # The closed guard stays closed on the keys it always held; the isolation
+    # projection is a different question and is held literally next door rather
+    # than folded into an equality this one would then stop checking.
+    assert [{k: v for k, v in row.items() if k != "isolation"} for row in rows] == [{
         "instance_id": "plain", "adapter_id": "unknown-provider", "model": None,
         "controls": [], "argument_schemas": {}}]
+    assert set(rows[0]) == {"instance_id", "adapter_id", "model", "controls",
+                            "argument_schemas", "isolation"}
+
+
+def test_an_unasked_provider_reads_unknown_and_never_a_protection():
+    """No provider facts were supplied, so the rows that need them say so.
+
+    A screen may render only `active` as a protection. An integration that was
+    told nothing about a login mode or a vendor sandbox must not have that read
+    as a finding either way -- which is the whole reason the projection carries
+    four words rather than a boolean.
+    """
+    config = {"instances": [{"id": "plain", "adapter": "unknown-provider"}]}
+
+    rows = instance_controls(config, AdapterRegistry([]))[0]["isolation"]
+    standing = {row["name"]: row["standing"] for row in rows}
+
+    assert standing["vendor_sandbox_is_the_vendors"] == "unknown"
+    assert standing["login_directory_carries_configuration"] == "unknown"
+    assert standing["uncontained_route"] == "active"
+    assert standing["no_operating_system_boundary"] == "stated_absence"

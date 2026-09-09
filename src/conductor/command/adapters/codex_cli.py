@@ -491,6 +491,11 @@ CODEX_PROFILE = HarnessProfile(
     version_timeout_seconds=VERSION_TIMEOUT_SECONDS,
     home_id_kind="codex-home",
     task_channel=TASK_CHANNEL_STDIN,
+    # Written from the SAME constants the two roads spend, so the declaration
+    # cannot drift from the argv by editing one of them. That is not what makes
+    # it true: witnesses read the argv each road really builds.
+    vendor_sandbox=((DISPATCH_CAPABILITY, " ".join(SANDBOX_ARGV)),
+                    (REVIEW_CAPABILITY, " ".join(REVIEW_SANDBOX_ARGV))),
     model_flag=MODEL_FLAG)
 
 

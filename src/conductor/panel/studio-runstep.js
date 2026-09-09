@@ -32,6 +32,7 @@ import {element} from "./command-view.js";
 //: schema marks them: the one rule, declared beside the form that publishes
 //: under those references.
 import {inputRefs, needsMaterialReproposal} from "./studio-rundocs.js";
+import {isolationFacts} from "./studio-isolation.js";
 import {boundDocument, latestDocument} from "./studio-runread.js";
 import {MATERIAL_BINDING, REBIND_MATERIALS, STREAM_DOWN_REASON,
   SAME_ADAPTER_VERIFICATION, UNVERSIONED_MATERIALS, VERIFICATION_FRAME_NOTE,
@@ -733,6 +734,9 @@ function confirmForm(node, detail, state, handlers) {
     [element("h4", {text: "Confirm this proposal"}), note(REQUESTED_NOTE),
       ...proposalFacts(proposal, detail),
       ...verificationFacts(node, detail, proposal.timeout_seconds),
+      // Before the control that authorizes it, never after: the point of the
+      // section is to be read while the decision is still open.
+      ...isolationFacts(detail, node),
       textControl("confirmed_by", "confirmedBy", liveValue(step, "confirmed_by",
         draft === null ? "" : text(draft.confirmedBy)), wire.edit,
       "Confirmed by", {maxlength: "128", pattern: ID_PATTERN, required: ""}),
