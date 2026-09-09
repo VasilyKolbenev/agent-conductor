@@ -27,11 +27,19 @@ funnel -- the one place an undiscarded home cannot escape unsaid.
 from __future__ import annotations
 
 from ..contracts import ActionRequest, ActionResultReceipt
-from .harness_profile import moving_model_detail, unroutable_model_detail
+from .harness_profile import (
+    DISPATCH_CAPABILITY, REVIEW_CAPABILITY, moving_model_detail,
+    unroutable_model_detail)
 
 
 class ModelRouting:
     """The routed model's two seams: the refusal, and the tokens."""
+
+    #: The one guard THIS mixin implements, on both roads that call it.
+    #: Declared beside the refusal rather than in a table somewhere else: a
+    #: screen may say a check stands only where the code that applies it lives,
+    #: and deleting `_unroutable` must take the claim down with it.
+    isolation_guards = {"unroutable_model": (DISPATCH_CAPABILITY, REVIEW_CAPABILITY)}
 
     def _unroutable(
             self, request: ActionRequest,

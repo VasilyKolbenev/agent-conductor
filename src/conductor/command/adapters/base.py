@@ -30,6 +30,17 @@ from ..dispatch import validate_dispatch_arguments
 
 _ARGUMENT_SCHEMAS = frozenset({"structured-process-v1", "deep-arguments-v1"})
 _INDEPENDENT_SEAMS = ("publish", "release", "verify_for")
+#: Guards that exist only where the registration carries the seam that makes
+#: them. Named ONE BY ONE, guard and seam both, rather than as a rule about a
+#: kind of guard: a rule would excuse every claim that ever lands under it, and
+#: this is the list of claims a class can inherit and be unable to keep.
+#:
+#: `login_directory_gained_state` is the CHECKER's own measurement. A transport
+#: that serves no review road has `verify_for` set to None by its base's
+#: `__init_subclass__`, so it inherits the method name and none of the road --
+#: and a screen that read the inherited name would tell a person a measurement
+#: was standing that nothing here can take.
+_GUARD_SEAMS = {"login_directory_gained_state": "verify_for"}
 
 
 class AdapterContractError(ValueError):
@@ -354,6 +365,39 @@ class Adapter(Protocol):
     ) -> AdapterVerification: ...
 
 
+def _declared_guards(owner_class: type) -> dict[str, tuple[str, ...]] | None:
+    """The union of every class in the MRO that declares which guards it runs.
+
+    A guard belongs to the class that IMPLEMENTS it, so a mixin carrying one
+    road and a subclass adding another are two declarations of two pieces of
+    code; merging them here is what makes deleting either one take its claim
+    down with it. ``None`` when nobody declared anything at all, which is a
+    different answer from an empty declaration.
+    """
+    declared: dict[str, tuple[str, ...]] = {}
+    found = False
+    for owner in reversed(owner_class.__mro__):
+        # `vars`, never `getattr`: an inherited map read once per class would
+        # let one base's declaration answer for every subclass.
+        claimed = vars(owner).get("isolation_guards")
+        if claimed is None:
+            continue
+        if not isinstance(claimed, Mapping):
+            raise AdapterContractError(
+                "isolation_guards must map a guard name to its capabilities")
+        found = True
+        for guard, roads in claimed.items():
+            if not isinstance(guard, str) or isinstance(roads, (str, bytes)):
+                raise AdapterContractError(
+                    "an isolation guard names a string and a capability tuple")
+            merged = {*declared.get(guard, ()), *roads}
+            if not all(isinstance(road, str) for road in merged):
+                raise AdapterContractError(
+                    "an isolation guard's capabilities must be strings")
+            declared[guard] = tuple(sorted(merged))
+    return declared if found else None
+
+
 class AdapterRegistry:
     """Adapters explicitly supplied by configuration; no discovery or global state."""
 
@@ -417,6 +461,49 @@ class AdapterRegistry:
     def controls(self, adapter_id: str) -> tuple[str, ...]:
         self.resolve(adapter_id)
         return self._registered_manifest(adapter_id).capabilities
+
+    def isolation_guards(
+            self, adapter_id: str) -> Mapping[str, tuple[str, ...]] | None:
+        """Which named guards this adapter's own code runs, and on which roads.
+
+        Read off the registered adapter's CLASS and its bases, so a screen can
+        ask what protects a step without constructing anything, probing a
+        version or asking a login. Nothing is inferred from the adapter's
+        identity: what a class does not declare, this does not claim for it.
+
+        ``None`` is the third answer and it is not an absence. An adapter that
+        declares no map at all -- every plugin, and every transport written
+        before this question existed -- has told this build nothing about which
+        guards its code applies, and "nobody stated it" may not be shown as
+        "there are none" any more than it may be shown as a protection.
+
+        The union is taken over the MRO because a guard belongs to the class
+        that IMPLEMENTS it: a mixin carrying one road and a subclass adding
+        another are two separate declarations of two separate pieces of code,
+        and merging them here is what makes deleting either one take its claim
+        down with it.
+        """
+        adapter = self.resolve(adapter_id)
+        declared = _declared_guards(type(adapter))
+        if declared is None:
+            return None
+        # What the REGISTRATION cannot carry is struck, whatever a class body
+        # says. Two ways a declaration inherited from a base outruns the class
+        # that inherited it, and both are real in this tree: a subclass serving
+        # no review road would carry every review mark of its base, and a
+        # dispatch-only transport nulls the checker seam it inherited -- so the
+        # measurement that seam makes is not one it can make.
+        serves = set(self._registered_manifest(adapter_id).capabilities)
+        seams = self._independent_seams[_contract(_id, "adapter_id", adapter_id)]
+        kept: dict[str, tuple[str, ...]] = {}
+        for guard, roads in declared.items():
+            needed = _GUARD_SEAMS.get(guard)
+            if needed is not None and not callable(seams.get(needed)):
+                continue
+            served = tuple(road for road in roads if road in serves)
+            if served:
+                kept[guard] = served
+        return MappingProxyType(kept)
 
     def observe(self, adapter_id: str, instance_id: str, run_id: str) -> AdapterObservation:
         adapter = self._require(adapter_id, "observe")

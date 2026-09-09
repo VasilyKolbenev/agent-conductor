@@ -16,6 +16,7 @@
 // against the guards.
 import {
   exactKeys, frozenJson, frozenList, isId, isPlainObject, projectProviders,
+  projectVendorDetail,
 } from "./studio-model.js";
 
 const CONTROLS_KEYS = ["instances", "providers", "isolation_facts"];
@@ -50,21 +51,25 @@ function projectFacts(rows) {
   return frozenList(out);
 }
 
-function projectVendorDetail(value) {
-  // Road/tokens pairs in the vendor's own words, or `null` where the provider
-  // declared nothing. `[]` is a declared absence and is NOT null: this window
-  // keeps the three answers the server keeps.
-  if (value === null || value === undefined) return null;
-  if (!Array.isArray(value)) return undefined;
-  const out = [];
-  for (const pair of value) {
-    if (!Array.isArray(pair) || pair.length !== 2) return undefined;
-    const [road, tokens] = pair;
-    if (typeof road !== "string" || typeof tokens !== "string") return undefined;
-    if (!road.trim() || !tokens.trim()) return undefined;
-    out.push(frozenList([road, tokens]));
+//: The standings arrive keyed by ROAD, because what protects a step is a fact
+//: about the transport bound to it AND the capability that step takes: a review
+//: and a dispatch on one binding do not run the same checks. A single list for
+//: both would have to be their union or their intersection, and each of those
+//: is wrong for one of the two.
+function projectRoads(value, controls, known) {
+  if (!isPlainObject(value)) return null;
+  const out = {};
+  for (const [capability, rows] of Object.entries(value)) {
+    // Never a road this binding does not declare: a standing under a
+    // capability the row does not offer is an answer about a step that cannot
+    // be proposed, and rendering it would put a protection on a screen for
+    // work this binding refuses to do.
+    if (!isId(capability) || !controls.includes(capability)) return null;
+    const settled = projectStandings(rows, known);
+    if (settled === null) return null;
+    out[capability] = settled;
   }
-  return frozenList(out);
+  return Object.freeze(out);
 }
 
 function projectStandings(rows, known) {
@@ -80,15 +85,20 @@ function projectStandings(rows, known) {
     // The join has to close, or a standing renders with no words -- and a
     // protection with no words is the shape of an assurance nobody wrote.
     if (!known.has(row.name)) return null;
-    let vendorDetail = null;
+    // The KEY says this row is about the vendor's own mechanism; its VALUE says
+    // which of the three answers the integration gave. Carrying the key on every
+    // row -- null where there is no vendor question at all -- would collapse
+    // "this is not a vendor row" into "nothing was declared", and the screen
+    // could then only tell them apart by which sentence it happened to be
+    // rendering. So the key is carried exactly where the server sent it.
+    const settled = {name: row.name, category: row.category,
+      standing: row.standing};
     if (Object.hasOwn(row, "vendor_detail")) {
-      vendorDetail = projectVendorDetail(row.vendor_detail);
+      const vendorDetail = projectVendorDetail(row.vendor_detail);
       if (vendorDetail === undefined) return null;
+      settled.vendorDetail = vendorDetail;
     }
-    out.push(Object.freeze({
-      name: row.name, category: row.category, standing: row.standing,
-      vendorDetail,
-    }));
+    out.push(Object.freeze(settled));
   }
   return frozenList(out);
 }
@@ -107,10 +117,14 @@ export function wireControls(settled) {
       // reads one convention for a whole row; handing it a camelCase island
       // inside a snake_case row is how a renderer comes to read a key that is
       // never there and draw nothing, silently.
-      isolation: Object.freeze(row.isolation.map((fact) => Object.freeze({
-        name: fact.name, category: fact.category, standing: fact.standing,
-        vendor_detail: fact.vendorDetail,
-      }))),
+      isolation: Object.freeze(Object.fromEntries(
+        Object.entries(row.isolation).map(([capability, facts]) => [
+          capability, Object.freeze(facts.map((fact) => Object.freeze(
+            Object.hasOwn(fact, "vendorDetail")
+              ? {name: fact.name, category: fact.category,
+                standing: fact.standing, vendor_detail: fact.vendorDetail}
+              : {name: fact.name, category: fact.category,
+                standing: fact.standing})))]))),
     }))),
     isolation_facts: settled.isolationFacts,
   });
@@ -134,7 +148,7 @@ export function projectControls(payload) {
     if (!isPlainObject(row.argument_schemas) || !Object.entries(row.argument_schemas)
       .every(([capability, schema]) => row.controls.includes(capability)
         && isId(schema))) return null;
-    const isolation = projectStandings(row.isolation, known);
+    const isolation = projectRoads(row.isolation, row.controls, known);
     if (isolation === null) return null;
     // Two rows for one instance are two answers to one question and neither
     // survives, identical rows included.

@@ -226,12 +226,18 @@ def test_controls_are_frozen_binding_manifest_schema_intersection(tmp_path):
 
 
 def test_the_controls_answer_says_what_stands_for_each_selected_binding(tmp_path):
-    """The facts a person is owed BEFORE confirming, per binding.
+    """The facts a person is owed BEFORE confirming, per binding and per road.
 
-    This server registers no provider configuration at all, so it knows neither
-    a login mode nor any vendor's sandbox -- and every row that depends on one
-    reads `unknown` rather than promising a protection this run may not have.
-    The words ride the same answer once and every standing joins one of them.
+    This server registers no provider configuration at all and its adapters
+    declare no guards, so it knows neither a login mode, nor any vendor's
+    sandbox, nor which checks the bound code applies -- and every row that
+    depends on one reads `unknown` rather than promising a protection this run
+    may not have. The words ride the same answer once and every standing joins
+    one of them.
+
+    The standings are keyed by CAPABILITY, and only by capabilities the binding
+    declares: an answer about a road a step cannot take is an answer about work
+    that will not happen.
     """
     subject, _, _ = api(tmp_path)
 
@@ -241,11 +247,15 @@ def test_the_controls_answer_says_what_stands_for_each_selected_binding(tmp_path
     words = {row["name"] for row in response.payload["isolation_facts"]}
     assert words
     for row in response.payload["instances"]:
-        standing = {fact["name"]: fact["standing"] for fact in row["isolation"]}
-        assert set(standing) == words, "a standing has no words to render with"
-        assert standing["vendor_sandbox_is_the_vendors"] == "unknown"
-        assert standing["login_directory_gained_state"] == "unknown"
-        assert standing["uncontained_route"] == "active"
+        assert set(row["isolation"]) == set(row["controls"])
+        for facts in row["isolation"].values():
+            standing = {fact["name"]: fact["standing"] for fact in facts}
+            assert set(standing) == words, "a standing has no words to render with"
+            assert standing["vendor_sandbox_is_the_vendors"] == "unknown"
+            assert standing["login_directory_gained_state"] == "unknown"
+            # Not `active`: nothing here declared that its code applies this,
+            # and "this build can do it elsewhere" is not this step's protection.
+            assert standing["uncontained_route"] == "unknown"
 
 
 def test_empty_registry_keeps_reads_and_decisions_but_refuses_proposals(tmp_path):

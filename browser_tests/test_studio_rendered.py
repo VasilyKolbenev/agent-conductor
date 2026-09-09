@@ -183,6 +183,11 @@ def test_the_studio_boots_from_the_entry_route_with_no_error_at_all(
             "studio-sections.js": 200, "studio-artifacts.js": 200,
             "studio-transitions.js": 200,
             "studio-fields.js": 200,
+            # The controls route's own answer and the section it draws before
+            # a person confirms. Both are real modules on the boot graph, so
+            # both must be on the allowlist -- a module the server does not
+            # serve answers 404, and the window would come up half-built.
+            "studio-controls.js": 200, "studio-isolation.js": 200,
             "command-projection.js": 200, "command-view.js": 200,
         }
         # The reads the window opens with, both landed and both real.

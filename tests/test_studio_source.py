@@ -587,8 +587,23 @@ def test_the_boundary_refuses_rather_than_repairs_and_says_which_it_does():
     # 81 after the controls route's seven refusals moved to `studio-controls`
     # with the projection they belong to; the census in the payload-parity
     # module follows them there rather than losing sight of them.
-    assert source.count("return null;") == 81
+    # 82, 14 and 9 with the vendor sandbox's reader: one REFUSE arm for the
+    # absent answer, one DROP arm for a row whose declaration will not read, and
+    # four "I cannot read this" arms -- `[]` is a declared absence and FALSY, so
+    # one answer for it and for a bad shape would read as "ships none".
+    assert source.count("return null;") == 82
     assert source.count("return false;") == 6
+
+
+def test_the_arms_that_drop_a_row_are_counted_apart_from_the_ones_that_refuse():
+    """The other side of the same ledger, counted where it cannot be confused.
+
+    Split from the refusal count when the two histories together outgrew one
+    body. It is the same rule -- decoration DROPS, navigation REFUSES -- and the
+    counts stay separate so an arm cannot cross sides while both numbers still
+    add up.
+    """
+    source = _code(MODEL)
     # Decoration DROPS: the provider roster, the starter offers, and the one
     # duplicate-identity arm the controls answer shares with them.
     # 11 before a starter carried its revision and its caveats. Both are DROP
@@ -602,11 +617,11 @@ def test_the_boundary_refuses_rather_than_repairs_and_says_which_it_does():
     # 13 after the controls route's duplicate-instance arm moved to
     # `studio-controls` with its projection: the arm still exists and is still
     # driven, one module along.
-    assert source.count("continue;") == 13
+    assert source.count("continue;") == 14
     # The draft's third answer, so "no draft" and "unreadable draft" can never
     # be the same value -- and now the workflow reference's third answer too,
     # for the same reason: a run that froze none and a run whose reference is
     # malformed must not arrive at this window as the same value.
-    assert source.count("return undefined;") == 5
+    assert source.count("return undefined;") == 9
     text = MODEL.read_text(encoding="utf-8")
     assert "never dropped" in text and "is dropped" in text

@@ -209,7 +209,35 @@ export function frozenList(rows) {
 
 // ── the roster and the offers: decoration, so a bad row is DROPPED ────────
 const PROVIDER_KEYS = ["provider_id", "display_name", "availability",
-  "implementation", "auth", "controls"];
+  "implementation", "auth", "controls", "vendor_sandbox"];
+
+/**
+ * The vendor's own sandbox, per road, or `null` where nothing was declared.
+ *
+ * Three answers and they stay three: `null` is an integration that declares
+ * nothing, `[]` is a declared absence, and pairs are the tokens each road pins.
+ * `undefined` is this function's own word for "malformed", so a caller can tell
+ * a declared absence from a value it must refuse -- `[]` and a bad shape are
+ * both falsy and collapsing them would admit either as the other.
+ *
+ * It lives HERE, beside the roster's own key list, because two seams read this
+ * field: the roster on three routes, and the controls route's standings. One
+ * of them keeping its own copy of the rule is how the two come to disagree
+ * about what `null` means.
+ */
+export function projectVendorDetail(value) {
+  if (value === null || value === undefined) return null;
+  if (!Array.isArray(value)) return undefined;
+  const out = [];
+  for (const pair of value) {
+    if (!Array.isArray(pair) || pair.length !== 2) return undefined;
+    const [road, tokens] = pair;
+    if (typeof road !== "string" || typeof tokens !== "string") return undefined;
+    if (!road.trim() || !tokens.trim()) return undefined;
+    out.push(frozenList([road, tokens]));
+  }
+  return frozenList(out);
+}
 
 //: One provider as this build resolved it. Two rows for one provider id are
 //: two answers to one question and NEITHER survives -- the rule
@@ -227,6 +255,11 @@ export function projectProviders(rows) {
     if (!PROVIDER_IMPLEMENTATION.includes(row.implementation)) continue;
     if (!PROVIDER_AUTH.includes(row.auth)) continue;
     if (!Array.isArray(row.controls) || !row.controls.every(isId)) continue;
+    // A malformed declaration is DROPPED like any other bad row rather than
+    // read as an absence: "we did not look" is the one answer this field exists
+    // to keep separate, and a shape nobody can read is not it.
+    const vendorSandbox = projectVendorDetail(row.vendor_sandbox);
+    if (vendorSandbox === undefined) continue;
     if (out.some((kept) => kept.providerId === row.provider_id)) {
       conflicted.add(row.provider_id);
       continue;
@@ -238,6 +271,7 @@ export function projectProviders(rows) {
       implementation: row.implementation,
       auth: row.auth,
       controls: frozenList(row.controls.slice()),
+      vendorSandbox,
     }));
   }
   return frozenList(out.filter((row) => !conflicted.has(row.providerId)));

@@ -378,15 +378,19 @@ def test_a_declared_vendor_sandbox_reaches_the_binding_that_runs_under_it(tmp_pa
     rows = {row["provider_id"]: row["vendor_sandbox"] for row in payload["providers"]}
     assert rows[AVAILABLE_ID] == [["dispatch", "--sandbox workspace-write"]]
     assert rows["here-and-fake"] is None
-    standings = {row["instance_id"]: {
-        fact["name"]: fact for fact in row["isolation"]}
-        for row in payload["instances"]}
+    rows_by_instance = {row["instance_id"]: row for row in payload["instances"]}
     vendor = "vendor_sandbox_is_the_vendors"
-    assert standings["declared"][vendor]["standing"] == "active"
-    assert standings["declared"][vendor]["vendor_detail"] == [
+    declared = {fact["name"]: fact
+                for fact in rows_by_instance["declared"]["isolation"]["dispatch"]}
+    assert declared[vendor]["standing"] == "active"
+    assert declared[vendor]["vendor_detail"] == [
         ["dispatch", "--sandbox workspace-write"]]
-    assert standings["silent"][vendor]["standing"] == "unknown"
-    assert standings["silent"][vendor].get("vendor_detail") is None
+    # The binding beside it runs under a provider whose executable is absent, so
+    # nothing was registered to answer for it and it carries no road at all --
+    # which is the other half of the same rule: a standing lives on a road, and
+    # an unregistered binding has none.
+    assert rows_by_instance["silent"]["controls"] == []
+    assert rows_by_instance["silent"]["isolation"] == {}
 
 
 # -- the frozen spec example says the same thing the production payload does --

@@ -33,6 +33,7 @@ import hashlib
 
 from .deep_commands import DeepDispatchArgs
 from .deep_contracts import OMITTED
+from .harness_profile import DISPATCH_CAPABILITY
 from .headless_values import flagless, purpose_clause
 
 
@@ -113,6 +114,11 @@ class InstructionBinding:
     assumed: ``_instruction_text``, which every transport already has and which
     the durable road overrides.
     """
+
+    #: The one guard this mixin implements. Dispatch only, because dispatch is
+    #: the only road that resolves an instruction at all -- there is no question
+    #: to ask on the others, which is different from asking it and passing.
+    isolation_guards = {"instruction_bytes_moved": (DISPATCH_CAPABILITY,)}
 
     def _bound_instruction(self, request, args: DeepDispatchArgs) -> str:
         """The instruction to run, or a refusal if it is not the previewed one.

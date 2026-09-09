@@ -734,9 +734,10 @@ function confirmForm(node, detail, state, handlers) {
     [element("h4", {text: "Confirm this proposal"}), note(REQUESTED_NOTE),
       ...proposalFacts(proposal, detail),
       ...verificationFacts(node, detail, proposal.timeout_seconds),
-      // Before the control that authorizes it, never after: the point of the
-      // section is to be read while the decision is still open.
-      ...isolationFacts(detail, node),
+      // Before the control that authorizes it, never after, and keyed to the
+      // capability THIS PROPOSAL carries: what protects a step is a fact about
+      // its road as much as its binding, and the road is the proposal's own.
+      ...isolationFacts(detail, node, proposal.capability),
       textControl("confirmed_by", "confirmedBy", liveValue(step, "confirmed_by",
         draft === null ? "" : text(draft.confirmedBy)), wire.edit,
       "Confirmed by", {maxlength: "128", pattern: ID_PATTERN, required: ""}),

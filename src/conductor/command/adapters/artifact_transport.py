@@ -13,6 +13,8 @@ from .base import AdapterManifest, AdapterVerification, PreparedAction, Publishe
 from .deep_commands import OUTPUT_LIMIT_BYTES, DeepDispatchArgs, DeepReviewArgs
 from .deep_contracts import OMITTED
 from .harness_profile import (
+    DISPATCH_CAPABILITY,
+    REVIEW_CAPABILITY,
     LOGIN_RESIDUE_DETAIL,
     PREFLIGHT_RESIDUE_DETAIL,
     TASK_CHANNEL_STDIN,
@@ -27,9 +29,6 @@ from .headless_values import (
     purpose_clause,
 )
 from .independent_check import CheckFrameError, build_frame, scan_frame, verdict
-
-
-REVIEW_CAPABILITY = "review"
 
 
 class _HandoffUnavailable(RuntimeError):
@@ -64,6 +63,15 @@ class ArtifactAwareTransport(HeadlessCliTransport):
     """Add immutable role handoffs and durable verification to one-shot CLIs."""
 
     review_enabled = False
+
+    #: The four guards THIS class's own code applies, merged with the base's
+    #: by the registry, which strikes what a registration cannot carry.
+    isolation_guards = {
+        "profile_home_retained": (DISPATCH_CAPABILITY, REVIEW_CAPABILITY),
+        "login_directory_gained_state": (DISPATCH_CAPABILITY, REVIEW_CAPABILITY),
+        "review_changed_the_tree": (REVIEW_CAPABILITY,),
+        "environment_value_echoed": (REVIEW_CAPABILITY,),
+    }
 
     def __init_subclass__(cls, **kwargs: object) -> None:
         super().__init_subclass__(**kwargs)

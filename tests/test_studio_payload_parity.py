@@ -219,6 +219,42 @@ def test_a_starter_offer_is_what_the_window_admits(tmp_path):
         assert set(row) == _js_array(_model_source(), "STARTER_KEYS")
 
 
+def test_every_route_that_carries_a_provider_row_sends_what_the_window_admits(
+        tmp_path):
+    """The producer's own row, against the array the window judges it by.
+
+    This is the witness that was missing, and its absence cost the whole roster.
+    `provider_projection` gained a seventh name; the window's array still held
+    six; `exactKeys` therefore dropped EVERY row on all three routes, the Agents
+    screen said no provider was configured, and a published workflow could not
+    bind the installed harness. Nothing red: the pair below compares one JS list
+    with another JS rebuild, and neither side of that comparison can see a key
+    added on the SERVER.
+
+    So the comparison is made against the real payload, on every route that
+    carries the array -- one of them passing is not the class, because the three
+    are separate call sites and only their shared projection makes them agree.
+    """
+    from conductor.command.adapters.provider import provider_projection
+
+    from tests.test_command_provider_contract import _contract
+
+    admitted = _js_array(_model_source(), "PROVIDER_KEYS")
+    roster = (_contract(),)
+    payloads = [
+        studio_routes.list_workflows(_published(tmp_path), roster, None)[1],
+        studio_routes.list_runs(_run(tmp_path), roster)[1],
+        # The controls route reaches the same projection by its own road, and
+        # its rows land beside the isolation standings.
+        {"providers": provider_projection(roster)},
+    ]
+
+    for payload in payloads:
+        assert payload["providers"], "a provider-bearing route sent no rows"
+        for row in payload["providers"]:
+            assert set(row) == admitted
+
+
 def test_the_store_hands_every_admitted_provider_key_back_to_the_screen():
     """A row the boundary admitted and the store rebuilt must lose nothing.
 
@@ -257,19 +293,24 @@ def test_every_key_set_the_window_judges_by_is_checked_by_this_module():
                                           source))
     checked = {"WORKFLOWS_KEYS", "WORKFLOW_KEYS", "REVISION_KEYS", "RUNS_KEYS",
                "RUN_ROW_KEYS", "DRAFT_KEYS", "WORKFLOW_ROW_KEYS",
-               "STARTER_KEYS"}
+               "STARTER_KEYS", "PROVIDER_KEYS"}
     #: Driven by their own suites against real payloads, not skipped:
-    #: PROVIDER_KEYS by the provider projection's tests, CONTROLS_KEYS and
+    #: CONTROLS_KEYS and
     #: CONTROL_ROW_KEYS by the controls route's, RUN_READ_KEYS and
     #: RECORD_ROW_KEYS and DIAGNOSTIC_KEYS and RUN_WORKFLOW_KEYS by the run
     #: read's and the run-identity module's.
     #: FACT_KEYS, STANDING_KEYS and STANDING_WITH_VENDOR belong to the isolation
     #: answer and are driven by the controls route's own suites and the browser
     #: witness, against real payloads.
-    elsewhere = {"PROVIDER_KEYS", "CONTROLS_KEYS", "CONTROL_ROW_KEYS",
+    elsewhere = {"CONTROLS_KEYS", "CONTROL_ROW_KEYS",
                  "RUN_READ_KEYS", "RECORD_ROW_KEYS", "DIAGNOSTIC_KEYS",
                  "RUN_WORKFLOW_KEYS", "FACT_KEYS", "STANDING_KEYS",
                  "STANDING_WITH_VENDOR"}
+    #: PROVIDER_KEYS is no longer named here. It was, and the exemption was the
+    #: defect: "driven by the provider projection's tests" meant one JS list
+    #: compared with another JS rebuild, which cannot see a key the SERVER
+    #: added. It is driven above, against the real payload of every route that
+    #: carries the row.
 
     assert judged == checked | elsewhere, (
         "a key set the window judges by is neither checked here nor named as "

@@ -74,6 +74,7 @@ from .harness_profile import (
     OUTPUT_LIMIT,
     PREFLIGHT_LOGIN_RESIDUE_DETAIL,
     PREFLIGHT_RESIDUE_DETAIL,
+    REVIEW_CAPABILITY,
     TASK_CHANNEL_STDIN,
     VERSION_TIMEOUT_SECONDS,
     ExecutablePin,
@@ -129,6 +130,15 @@ class HeadlessCliTransport(
     implements the two methods that carry its vendor's argv shape. Everything
     below is the part that must not differ between providers.
     """
+
+    #: The guards this class's code applies, on the roads its methods are
+    #: reached on -- `work_outside_the_item` is `verify`'s own tree comparison.
+    isolation_guards = {
+        "uncontained_route": (DISPATCH_CAPABILITY,),
+        "work_outside_the_item": (DISPATCH_CAPABILITY,),
+        "inherited_home_residue": (DISPATCH_CAPABILITY, REVIEW_CAPABILITY),
+        "login_directory_carries_configuration": (DISPATCH_CAPABILITY,
+                                                  REVIEW_CAPABILITY)}
 
     #: Set by each concrete provider module.
     profile: HarnessProfile

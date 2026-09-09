@@ -174,6 +174,7 @@ function wireProviders(value) {
     provider_id: row.providerId, display_name: row.displayName,
     availability: row.availability, implementation: row.implementation,
     auth: row.auth, controls: row.controls,
+    vendor_sandbox: row.vendorSandbox,
   })));
 }
 

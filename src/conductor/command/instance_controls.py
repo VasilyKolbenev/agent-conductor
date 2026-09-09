@@ -25,30 +25,53 @@ def instance_controls(config: Mapping[str, Any],
     The browser can therefore distinguish an old deep-argument proposal from
     a native/process proposal without reinterpreting either one's arguments.
 
-    ``isolation`` is the same read: what stands for THIS binding, not what this
-    build can do somewhere. It is projected here rather than in the browser so
-    one source answers, and the provider facts arrive as an argument because
-    they belong to the machine's provider configuration rather than to this
-    run's frozen bindings -- absent, every row that depends on one reads
-    `unknown`, which is what an unasked question deserves.
+    ``isolation`` is the same read, and it is answered PER CONTROL. What
+    protects a step is a fact about the transport bound to it and about the road
+    that step takes -- a review and a dispatch on one binding do not run the same
+    checks, and one list for both would have to be the union or the intersection,
+    each of which is wrong for one of them.
+
+    It is projected here rather than in the browser so one source answers. The
+    provider facts arrive as an argument because they belong to the machine's
+    provider configuration rather than to this run's frozen bindings; the guard
+    declaration is asked of the registry, which reads it off the bound adapter's
+    CLASS without constructing anything or probing a vendor. Absent either, every
+    row that depends on one reads `unknown`, which is what an unasked question
+    deserves -- and an adapter that declares no guards is one this build knows
+    nothing about, never one it can report as unprotected.
     """
     provider_facts = dict(provider_facts or {})
     models = frozen_config_models(config)
     rows = []
     for instance_id, adapter_id in sorted(frozen_config_bindings(config).items()):
-        try:
-            controls = sorted(set(registry.controls(adapter_id)) & set(ARGUMENT_SCHEMAS))
-            schemas = {capability: schema for capability in controls
-                       if (schema := registry.argument_schema(adapter_id, capability))
-                       is not None}
-        except AdapterContractError:
-            controls, schemas = [], {}
+        controls, schemas, guards = _registered(registry, adapter_id)
         facts = provider_facts.get(adapter_id, {})
         rows.append({
             "instance_id": instance_id, "adapter_id": adapter_id,
             "model": models.get(instance_id), "controls": controls,
             "argument_schemas": schemas,
-            "isolation": list(facts_for(
-                facts.get("auth"), facts.get("vendor_sandbox"))),
+            "isolation": {
+                capability: list(facts_for(
+                    facts.get("auth"), facts.get("vendor_sandbox"), guards,
+                    capability))
+                for capability in controls},
         })
     return rows
+
+
+def _registered(registry: AdapterRegistry, adapter_id: str):
+    """What the registry knows about one adapter, or nothing where it knows none.
+
+    One `try`, because the three answers come from one registration: a binding
+    the registry cannot resolve has no controls, no schemas and no declared
+    guards, and answering two of the three from a half-read registration is how
+    a screen comes to describe an adapter that is not there.
+    """
+    try:
+        controls = sorted(set(registry.controls(adapter_id)) & set(ARGUMENT_SCHEMAS))
+        schemas = {capability: schema for capability in controls
+                   if (schema := registry.argument_schema(adapter_id, capability))
+                   is not None}
+        return controls, schemas, registry.isolation_guards(adapter_id)
+    except AdapterContractError:
+        return [], {}, None

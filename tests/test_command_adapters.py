@@ -342,10 +342,14 @@ def test_registry_public_surface_names_the_two_explicit_effect_wrappers():
     public = sorted(
         node.name for node in registry.body
         if isinstance(node, ast.FunctionDef) and not node.name.startswith("_"))
+    # `isolation_guards` joins the read-only half of this surface, beside
+    # `controls` and `argument_schema`: it answers a question ABOUT a
+    # registration and reaches no adapter method, so it starts nothing.
     assert public == [
-        "argument_schema", "controls", "execute", "manifests", "observe",
-        "prepare", "publish", "register", "release", "resolve",
-        "validate_arguments", "verification_started", "verifies_independently", "verify"]
+        "argument_schema", "controls", "execute", "isolation_guards",
+        "manifests", "observe", "prepare", "publish", "register", "release",
+        "resolve", "validate_arguments", "verification_started",
+        "verifies_independently", "verify"]
 
 
 def test_observe_calls_only_an_explicit_adapter_and_validates_its_claims():

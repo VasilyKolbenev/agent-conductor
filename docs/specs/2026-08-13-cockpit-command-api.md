@@ -1631,6 +1631,13 @@ around.
 
 ### 6.2 `GET /command/runs/<run_id>/controls` — capability-derived controls
 
+> **This section is the C/API-0 freeze and is deliberately not rewritten.** The
+> route has grown additively since: a pinned login, the vendor's own sandbox,
+> and per-road isolation standings. The answer this build sends TODAY is
+> described in `docs/specs/2026-09-09-controls-current-contract.md`, whose
+> example is driven against a real response. What follows is the record of what
+> was frozen, and remains true of every field it names.
+
 The response carries two arrays that answer two different questions.
 
 `instances` is derived from the frozen instance-to-adapter binding, the

@@ -21,6 +21,7 @@ in its own module; this asks only which side of the spawn it falls on.
 """
 from __future__ import annotations
 
+import ast
 import importlib
 from pathlib import Path
 
@@ -257,3 +258,98 @@ def test_the_vendors_own_sandbox_is_a_per_provider_fact_this_module_will_not_nam
     source = Path(isolation_facts.__file__).read_text(encoding="utf-8").lower()
     for token in _identity_tokens():
         assert token not in source, f"the request path learned {token!r}"
+
+
+# -- the declared set, held equal to the implemented one, in both directions --
+
+
+def _declaring_classes():
+    """Every class in the adapters package that claims to run a named guard."""
+    from conductor.command import adapters as package
+
+    found = []
+    for path in sorted(Path(package.__file__).resolve().parent.glob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ClassDef):
+                continue
+            for statement in node.body:
+                if not isinstance(statement, ast.Assign):
+                    continue
+                names = [target.id for target in statement.targets
+                         if isinstance(target, ast.Name)]
+                if "isolation_guards" not in names:
+                    continue
+                found.append((path.name, node.name, statement.value))
+    return found
+
+
+def _claimed_names(value):
+    return [key.value for key in value.keys if isinstance(key, ast.Constant)]
+
+
+def test_no_transport_claims_a_guard_this_table_does_not_hold():
+    """A misspelling must not become "not a protection this configuration has".
+
+    The standings turn an undeclared name into `not_applicable`, which is a
+    MEASURED absence -- so a guard claimed under a name this table never held
+    would quietly move every other row's meaning: the reader is told the
+    integration looked and found nothing, when the integration named something
+    that does not exist.
+    """
+    known = {fact.name for fact in ISOLATION_FACTS}
+
+    for module, owner, value in _declaring_classes():
+        for name in _claimed_names(value):
+            assert name in known, f"{module}:{owner} claims unknown guard {name!r}"
+
+
+def test_every_guard_this_table_states_is_claimed_by_some_transport():
+    """The other direction, and it is the one that keeps `not_applicable` honest.
+
+    `not_applicable` means "this build implements it, and not on this road". A
+    row nothing in the tree claims cannot mean that: it is either a guard whose
+    code was deleted, leaving the sentence behind, or a claim no transport was
+    ever wired to make -- and both reach a person as a protection some OTHER
+    configuration supposedly has.
+
+    The two absences and the vendor's own row are excluded by name, not by
+    filtering on a category: they are statements about what this build does NOT
+    do, and no transport implements an absence.
+    """
+    claimed = {name for _module, _owner, value in _declaring_classes()
+               for name in _claimed_names(value)}
+    stated = {fact.name for fact in ISOLATION_FACTS
+              if fact.category != NOT_ISOLATED}
+
+    assert stated == claimed, (
+        "declared and implemented have drifted: "
+        f"unclaimed={sorted(stated - claimed)} unstated={sorted(claimed - stated)}")
+
+
+def test_a_dispatch_only_transport_does_not_inherit_the_checkers_measurement(
+        tmp_path):
+    """Inheriting a method's NAME is not carrying its road.
+
+    `ArtifactAwareTransport.__init_subclass__` sets `verify_for` to None for a
+    transport that serves no review road. The class still has the attribute, and
+    a declaration read off the class body alone would hand that transport the
+    checker's own login measurement -- a claim it cannot keep. The registration
+    is what answers, because the registration is what knows which seams this
+    adapter really registered.
+    """
+    from conductor.command.adapters import AdapterRegistry
+    from tests.test_command_dsh_harness import a_harness
+
+    adapter, _root, _log = a_harness(tmp_path)
+    registry = AdapterRegistry([adapter])
+    adapter_id = adapter.manifest.adapter_id
+
+    guards = registry.isolation_guards(adapter_id)
+
+    assert adapter.verify_for is None, "this fixture is no longer dispatch-only"
+    assert "login_directory_gained_state" not in guards
+    # And it keeps every guard it CAN make, so this is a strike and not a mute.
+    assert "uncontained_route" in guards
+    # A road it does not serve is struck too: `review` is not in its manifest.
+    assert all("review" not in roads for roads in guards.values()), guards

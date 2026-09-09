@@ -31,6 +31,9 @@ from .base import AdapterContractError
 #: ABSENT rather than present and empty, because none is implemented and the
 #: provider door refuses a control an adapter cannot back.
 DISPATCH_CAPABILITY = "dispatch"
+#: The read-only road, beside the road it is not. Spelled ONCE, here, because
+#: three modules name it and two of them cannot import the third.
+REVIEW_CAPABILITY = "review"
 #: The preflight is a version print, not work: it gets its own small budget.
 VERSION_TIMEOUT_SECONDS = 30
 #: Capture ceiling for either spawn; the pump drains past it and drops the rest.

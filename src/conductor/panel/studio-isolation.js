@@ -53,16 +53,48 @@ function wordsFrom(detail) {
   return new Map(rows.map((row) => [row.name, row]));
 }
 
+//: What each unsettled standing MEANS, in words a person reads. A standing that
+//: lived only in `data-standing` was a distinction for a developer with an
+//: inspector open: on the screen, "nobody measured this" and "this build openly
+//: does not do it" were the same paragraph, which is the confusion the four
+//: words exist to end.
+const STANDING_WORDS = {
+  unknown: "Not established for this configuration — nothing here says it "
+    + "does or does not stand.",
+  not_applicable: "Not a protection this configuration has: it needs "
+    + "something this run did not ask for.",
+};
+
+//: The vendor's own mechanism has THREE answers and each is a different
+//: sentence. The absence of a CLI flag is never written as "this vendor has no
+//: sandbox": what this build can say is what it ASKED for.
+const VENDOR_UNKNOWN =
+  "This integration carries no reviewed declaration for this provider, so "
+  + "nothing is stated here either way — neither that a vendor sandbox mode is "
+  + "requested nor that none is.";
+const VENDOR_NONE =
+  "This integration reviewed this provider and requests NO vendor sandbox "
+  + "mode on any road. That is a statement about what this build asks for, not "
+  + "a finding that the vendor ships none.";
+
 function vendorLine(row) {
   // The vendor's own words, per road, marked as a mode that was REQUESTED. A
   // platform may or may not enforce it, and this build never presents it as
   // proof that the operating system confined anything.
-  if (!Array.isArray(row.vendor_detail) || !row.vendor_detail.length) return null;
-  const pairs = row.vendor_detail
-    .map(([road, tokens]) => `${road}: ${tokens}`).join("; ");
-  return element("p", {className: "studio-isolation-vendor",
-    text: `Requested of the vendor — ${pairs}. Whether the platform enforces `
-      + "it is the vendor's business, not a boundary this build imposes."});
+  //
+  // The KEY is what makes this row the vendor's; a row without it gets no line
+  // at all, and is a different question entirely.
+  if (!Object.hasOwn(row, "vendor_detail")) return null;
+  const detail = row.vendor_detail;
+  let text = VENDOR_UNKNOWN;
+  if (Array.isArray(detail)) {
+    text = detail.length === 0 ? VENDOR_NONE
+      : `Requested of the vendor — ${detail
+        .map(([road, tokens]) => `${road}: ${tokens}`).join("; ")}. Whether the `
+        + "platform enforces it is the vendor's business, not a boundary this "
+        + "build imposes.";
+  }
+  return element("p", {className: "studio-isolation-vendor", text});
 }
 
 function rowItem(row, words) {
@@ -72,7 +104,14 @@ function rowItem(row, words) {
     "data-fact": row.name, "data-standing": row.standing},
   [element("span", {text: said.sentence})]);
   const vendor = vendorLine(row);
+  // A row speaks for itself where it can: the vendor's own line already says
+  // which of its three answers this is, so a second sentence saying "not
+  // established" beside it would be the same fact twice.
   if (vendor !== null) item.append(vendor);
+  else if (Object.hasOwn(STANDING_WORDS, row.standing)) {
+    item.append(element("p", {className: "studio-isolation-standing",
+      text: STANDING_WORDS[row.standing]}));
+  }
   return item;
 }
 
@@ -86,35 +125,43 @@ function group(rows, words, title) {
 /**
  * The isolation summary for one step, or nothing when the server said nothing.
  *
- * Drawn from the SELECTED binding only. A step bound to another instance gets
- * that instance's answer, and a step whose binding the server did not describe
- * gets no section at all -- an absent answer is never drawn as a reassuring one.
+ * Drawn from the SELECTED binding and the SELECTED road. A step bound to
+ * another instance gets that instance's answer; a step taking another
+ * capability gets that road's, because a review and a dispatch on one binding
+ * do not run the same checks. A step whose binding or road the server did not
+ * describe gets no section at all -- an absent answer is never drawn as a
+ * reassuring one.
  */
-export function isolationFacts(detail, node) {
+export function isolationFacts(detail, node, capability) {
   const binding = bindingFor(detail, node);
   const words = wordsFrom(detail);
-  if (binding === null || !Array.isArray(binding.isolation)
-    || !binding.isolation.length || !words.size) return [];
-  const active = binding.isolation.filter(
+  if (binding === null || !words.size) return [];
+  const roads = binding.isolation;
+  if (roads === null || typeof roads !== "object"
+    || typeof capability !== "string"
+    || !Object.hasOwn(roads, capability)) return [];
+  const standings = roads[capability];
+  if (!Array.isArray(standings) || !standings.length) return [];
+  const active = standings.filter(
     (row) => row.standing === ACTIVE && row.category !== NOT_ISOLATED);
   const groups = GROUPS
     .map(([category, title]) => group(
       active.filter((row) => row.category === category), words, title))
     .filter(Boolean);
-  const absences = binding.isolation.filter(
-    (row) => row.category === NOT_ISOLATED);
+  const absences = standings.filter((row) => row.category === NOT_ISOLATED);
   const notIsolated = group(absences, words, NOT_ISOLATED_TITLE);
   if (notIsolated !== null) groups.push(notIsolated);
   // Everything the server could not answer for, said OUT LOUD rather than left
   // out. Silence about a check reads as "nothing to say here", which is itself
   // a reassurance -- and these are the rows where this build knows least.
-  const unsettled = binding.isolation.filter(
+  const unsettled = standings.filter(
     (row) => row.category !== NOT_ISOLATED && row.standing !== ACTIVE);
   const open = group(unsettled, words, UNSETTLED_TITLE);
   if (open !== null) groups.push(open);
   if (!groups.length) return [];
   const summary = `${active.length} check${active.length === 1 ? "" : "s"} `
-    + `stand for ${binding.instance_id} · ${binding.adapter_id}. `
+    + `stand for ${binding.instance_id} · ${binding.adapter_id} on the `
+    + `${capability} road. `
     + "This build starts an ordinary process with your own rights.";
   return [element("section", {className: "studio-isolation",
     "data-instance": binding.instance_id},

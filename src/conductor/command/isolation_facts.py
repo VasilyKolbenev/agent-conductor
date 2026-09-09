@@ -185,9 +185,16 @@ BY_CATEGORY = MappingProxyType({
 })
 
 
-def _standing(fact: IsolationFact, auth: str | None,
-              vendor_sandbox: object) -> str:
-    """What this row IS for one configuration, which is not what it could be."""
+def _standing(fact: IsolationFact, auth: str | None, vendor_sandbox: object,
+              guards: object, capability: str | None) -> str:
+    """What this row IS for one binding and one road, not what it could be.
+
+    "This build can do it somewhere" is not "this step is protected by it", and
+    the difference is the whole reason this function takes the guards at all. A
+    check belongs to the code that applies it; a binding whose transport does
+    not carry that code is not protected by it, however true the sentence is of
+    the build as a whole.
+    """
     if fact.applies_when == FROM_THE_VENDOR:
         # Three answers arrive as data and stay three: nothing declared is not
         # an absence, and an absence is not a protection.
@@ -195,7 +202,19 @@ def _standing(fact: IsolationFact, auth: str | None,
             return UNKNOWN
         return ACTIVE if tuple(vendor_sandbox) else STATED_ABSENCE
     if fact.category == NOT_ISOLATED:
+        # These say what this build does NOT do. They hold for every transport
+        # and every road, because they are the absence of a mechanism rather
+        # than the presence of one.
         return STATED_ABSENCE
+    if guards is None or capability is None:
+        # Nothing was stated about which guards this transport's code applies,
+        # or no road was named. Either way this is a question nobody answered.
+        return UNKNOWN
+    roads = guards.get(fact.name)
+    if roads is None or capability not in roads:
+        # It WAS stated, and this guard is not among what that code does on this
+        # road. A measured absence, and a different sentence from "unknown".
+        return NOT_APPLICABLE
     if fact.applies_when == WITH_PINNED_LOGIN:
         if auth is None:
             return UNKNOWN
@@ -203,21 +222,30 @@ def _standing(fact: IsolationFact, auth: str | None,
     return ACTIVE
 
 
-def facts_for(auth: str | None = None,
-              vendor_sandbox: object = None) -> tuple[dict[str, object], ...]:
-    """The table AS IT STANDS for one selected binding.
+def facts_for(auth: str | None = None, vendor_sandbox: object = None,
+              guards: object = None,
+              capability: str | None = None) -> tuple[dict[str, object], ...]:
+    """The table AS IT STANDS for one selected binding on one road.
 
     A reference list of everything this build can do is not an answer to "what
     is protecting the run I am about to confirm". A configuration that pins no
-    login directory HAS no login-directory protections, and showing them because
+    login directory HAS no login-directory protections, a transport that carries
+    no home-minting code HAS no home-residue refusal, and showing either because
     the table holds them would advertise somebody else's guarantees as this
     run's.
 
-    Neither argument is an identity. The login mode is a word from a closed
-    vocabulary and the vendor's sandbox arrives as the provider's own declared
-    data -- this module never learns which provider is in front of it, which is
-    the rule that keeps a request from being treated differently because of who
-    is behind it.
+    No argument is an identity. The login mode is a word from a closed
+    vocabulary; the vendor's sandbox and the guard declaration both arrive as
+    the integration's own declared DATA, keyed by the names in this table -- this
+    module never learns which provider or which class is in front of it, which
+    is the rule that keeps a request from being treated differently because of
+    who is behind it.
+
+    ``guards`` absent is the third answer again, and it is the one every plugin
+    lands on: an integration that stated nothing about which checks its code
+    applies has not told this build there are none. ``capability`` absent means
+    no road was named, and a guard that runs on one road and not another cannot
+    be answered for without one.
 
     The rows carry NO sentence. The words live once, in the reference block a
     reader gets beside these, joined by name: repeating every paragraph under
@@ -229,7 +257,8 @@ def facts_for(auth: str | None = None,
     for fact in ISOLATION_FACTS:
         row: dict[str, object] = {
             "name": fact.name, "category": fact.category,
-            "standing": _standing(fact, auth, vendor_sandbox)}
+            "standing": _standing(
+                fact, auth, vendor_sandbox, guards, capability)}
         if fact.applies_when == FROM_THE_VENDOR:
             # The vendor's own words, per road, exactly as the provider declared
             # them -- and never rewritten here into a claim about confinement.

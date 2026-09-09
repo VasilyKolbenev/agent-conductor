@@ -572,7 +572,7 @@ def test_material_reproposal_uses_registered_schema_not_argument_names(
           const schema = value => projectControls({providers:[],isolation_facts:[],
             instances:[{
             instance_id:'native',adapter_id:'native',model:null,controls:['dispatch'],
-            argument_schemas:value,isolation:[]}]});
+            argument_schemas:value,isolation:{}}]});
           return {rule,form:shown.map(node => node.textContent).join(' '),
             disabled:form?.querySelector('button')?.disabled ?? true,
             schemas:[schema({}) !== null,schema({dispatch:'deep-arguments-v1'}) !== null,
