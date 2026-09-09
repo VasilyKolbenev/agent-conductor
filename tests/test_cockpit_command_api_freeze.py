@@ -160,10 +160,13 @@ EXPECTED_ROUTES = (
 #: against `UNRESTRICTED_KEYS` below like every other field: it names no
 #: executable, no path, no argv and no environment, and the transport puts it
 #: inside a code-owned frame rather than on a command line.
+#: `instruction_digest` is the dispatch road's promise about the instruction's
+#: bytes, and stands last because it is omittable: a payload written before the
+#: field existed still reads and promises nothing about them.
 EXPECTED_ARGUMENT_SCHEMAS = {
     "dispatch": (
         "work_item_id", "instruction_ref", "profile", "artifact_refs",
-        "output_limit_profile", "step_purpose"),
+        "output_limit_profile", "step_purpose", "instruction_digest"),
     "review": (
         "work_item_id", "target_artifact_refs", "result_artifact_ref",
         "review_profile", "step_purpose"),

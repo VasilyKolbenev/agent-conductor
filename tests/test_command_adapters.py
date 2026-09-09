@@ -25,9 +25,13 @@ NOW = "2026-08-11T10:00:00Z"
 DIGEST = "sha256:" + "a" * 64
 # An allowlist fails closed: a new stdlib door or a new outside dependency is a
 # failure until it is reviewed and named here.
+#: `hashlib` is here for the same reason `json` and `re` are: it computes over
+#: values it is handed and reaches nothing. It opens no file, resolves no name
+#: and starts no process, so it cannot be the road this guard exists to close --
+#: and the call ban below still applies to every module that imports it.
 ALLOWED_SDK_IMPORTS = frozenset({
-    "__future__", "collections.abc", "dataclasses", "enum", "json", "math",
-    "pathlib", "re", "types", "typing",
+    "__future__", "collections.abc", "dataclasses", "enum", "hashlib", "json",
+    "math", "pathlib", "re", "types", "typing",
 })
 ALLOWED_SDK_RELATIVE_IMPORTS = frozenset({(2, "contracts"), (2, "dispatch")})
 # The owned-process runner (B/RUN-1) is the one reviewed execution door in the

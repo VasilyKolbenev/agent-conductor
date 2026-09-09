@@ -448,7 +448,7 @@ the service. Every listed key is required and no other key is accepted:
 ```json
 {
   "dispatch": ["work_item_id", "instruction_ref", "profile", "artifact_refs",
-    "output_limit_profile", "step_purpose"],
+    "output_limit_profile", "step_purpose", "instruction_digest"],
   "review": ["work_item_id", "target_artifact_refs", "result_artifact_ref",
     "review_profile", "step_purpose"],
   "evidence": ["target_action_id", "kinds"],
@@ -461,8 +461,19 @@ the service. Every listed key is required and no other key is accepted:
 This registry is derived from the six exact public types in
 `DEEP_ARGUMENT_TYPES`; their `from_dict`/`as_dict` round trip is the authority,
 including exact JSON-list fields and closed enum values. It is the field SET,
-not the required set: `result_artifact_ref` and `step_purpose` are OMITTABLE, so
-a payload written before either existed still reads and no frozen revision moves.
+not the required set: `result_artifact_ref`, `step_purpose` and
+`instruction_digest` are OMITTABLE, so a payload written before any of them
+existed still reads and no frozen revision moves.
+
+`instruction_digest` is the dispatch road's only promise about CONTENT: the
+`sha256:<64 hex>` digest of the exact UTF-8 bytes of the instruction the
+proposal was previewed with. A dispatch that carries one is refused before any
+task is spawned when the instruction resolved at spawn time does not hash to it;
+one that carries none promises nothing about those bytes and runs exactly as it
+did before the field existed. It is carried by the caller and never computed by
+the endpoint -- a digest this build derived itself would be checking its own
+reading against itself. A malformed value is `contract_invalid` at the argument
+door and is NOT read as an absent promise.
 
 `step_purpose` is not composed by a caller. It is the plan's own sentence about
 a step, materialized into that node's payload by `graph_template`, and
