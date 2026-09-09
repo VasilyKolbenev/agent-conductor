@@ -22,6 +22,7 @@ in its own module; this asks only which side of the spawn it falls on.
 from __future__ import annotations
 
 import importlib
+from pathlib import Path
 
 import pytest
 
@@ -234,15 +235,25 @@ def test_the_absences_are_stated_as_absences(name):
                ("does not", "no ", "not ", "cannot")), fact.sentence
 
 
-def test_the_vendors_own_sandbox_is_named_per_provider_and_not_generalized():
-    """One provider ships a sandbox flag and one does not.
+def test_the_vendors_own_sandbox_is_a_per_provider_fact_this_module_will_not_name():
+    """Whose mechanism it is, and whose question WHICH provider is.
 
-    Saying "sandboxed" for the pair would be false for half of it, and saying
-    nothing would hide a real protection Codex runs under. The row names both
-    sides and whose mechanism it is.
+    Saying "sandboxed" for a roster would be false for whichever member ships
+    nothing, and saying nothing would hide a real protection another member runs
+    under. So the row states the kind of promise and defers the roster -- which
+    it must: this module is on the request path, where nothing may know a
+    provider's name, and a table that hard-coded two vendors would also be a
+    table to edit whenever the roster moved.
     """
+    from conductor.command import isolation_facts
+    from tests.test_alpha1_gate_g_provider_breadth import _identity_tokens
+
     sentence = _fact("vendor_sandbox_is_the_vendors").sentence
 
-    assert "Codex" in sentence and "Claude Code" in sentence
-    assert "workspace-write" in sentence and "read-only" in sentence
-    assert "vendor's, not this build's" in sentence
+    assert "vendor's" in sentence and "not this build's" in sentence
+    assert "none, nothing is claimed" in sentence
+    # And the rule itself, held over the whole module rather than this one row:
+    # a provider identity anywhere here is the request path learning a name.
+    source = Path(isolation_facts.__file__).read_text(encoding="utf-8").lower()
+    for token in _identity_tokens():
+        assert token not in source, f"the request path learned {token!r}"

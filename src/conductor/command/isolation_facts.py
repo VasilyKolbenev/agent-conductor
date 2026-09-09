@@ -26,11 +26,17 @@ a guard drifts from the guard, and a table nobody can check against the source
 becomes marketing within two refactors. A guard resolves every one of these
 names, so a protection that is renamed or deleted takes its claim down with it.
 
-A vendor's OWN sandbox is recorded per provider and never generalized. Codex is
-pinned to `--sandbox workspace-write` (read-only on the review road), which is
-the VENDOR's mechanism doing the VENDOR's job; Claude Code has no equivalent
-flag and none is claimed for it. Neither is this build isolating anything, and a
-reader who wants that distinction gets it here rather than from a screenshot.
+A vendor's OWN sandbox is a different kind of promise and is stated as one, but
+WHICH vendor ships what is not said here. This module sits on the request path,
+where nothing may know a provider's name -- the rule that keeps a request from
+being routed, sized or trusted differently because of who is behind it. So the
+row below says that such a mechanism exists, belongs to the vendor, and is
+recorded per provider; the provider seam is where the actual flag and the
+providers that have none are named, and a reader is joined to it there.
+
+That constraint is not a workaround. A table that hard-coded two vendors would
+be a table to edit every time the roster moves, in the one module whose whole
+job is to be true.
 """
 from __future__ import annotations
 
@@ -131,11 +137,12 @@ ISOLATION_FACTS = (
         "conductor.command.isolation_facts.CATEGORIES"),
     IsolationFact(
         "vendor_sandbox_is_the_vendors", NOT_ISOLATED,
-        "Where a vendor ships its own sandbox this build pins it and says so "
-        "per provider -- Codex runs under `--sandbox workspace-write`, and its "
-        "review road under `read-only`. Claude Code has no such flag and none "
-        "is claimed for it. That mechanism is the vendor's, not this build's.",
-        "conductor.command.adapters.codex_cli.CodexCliTransport"),
+        "Where a vendor ships a sandbox of its own, this build pins it and "
+        "records it on that provider's own row -- and where a vendor ships "
+        "none, nothing is claimed. Either way the mechanism is the vendor's, "
+        "not this build's, and which providers have one is answered beside "
+        "this table rather than inside it.",
+        "conductor.command.adapters.provider.CONTRACT_AUTH_STATES"),
 )
 
 #: The same facts by category, for a reader that shows them grouped. Built once
