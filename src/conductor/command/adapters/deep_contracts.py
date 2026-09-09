@@ -453,3 +453,20 @@ def settle_step_purpose(args) -> None:
             f"step_purpose is at most {MAX_STEP_PURPOSE} characters; this one "
             f"is {len(settled)}")
     object.__setattr__(args, "step_purpose", settled)
+
+
+def settle_instruction_digest(args) -> None:
+    """Judge a carried instruction digest at the door, or leave it uncarried.
+
+    A promise about bytes is either a digest in this build's own grammar or it
+    is not a promise. Unlike a purpose, a blank value does NOT settle to
+    OMITTED: an empty string here would be a proposal that meant to promise
+    something and said nothing, and reading that as "promised nothing" would
+    turn a malformed promise into a silent pass through the very door it was
+    written to hold shut.
+    """
+    said = args.instruction_digest
+    if said is OMITTED:
+        return
+    object.__setattr__(
+        args, "instruction_digest", _closed_digest("instruction_digest", said))

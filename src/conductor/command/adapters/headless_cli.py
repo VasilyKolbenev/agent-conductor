@@ -104,14 +104,14 @@ from . import login_home
 from .headless_login import LoginRoad
 from .headless_receipts import ReceiptWriting
 from .headless_routing import ModelRouting
+from .task_binding import (
+    InstructionBinding, InstructionChanged, composed_task_text)
 from .headless_values import (
     ArgvSource,
     _Attempt,
     _changed,
     _version_token,
     attempt_relation,
-    flagless,
-    purpose_clause,
 )
 from .process import (
     CommandSpec,
@@ -121,7 +121,8 @@ from .process import (
 )
 
 
-class HeadlessCliTransport(ReceiptWriting, ModelRouting, LoginRoad):
+class HeadlessCliTransport(
+        ReceiptWriting, ModelRouting, LoginRoad, InstructionBinding):
     """Run one headless task per authorized action, and prove nothing more.
 
     A concrete provider subclasses this in its OWN module, sets ``profile``, and
@@ -321,23 +322,9 @@ class HeadlessCliTransport(ReceiptWriting, ModelRouting, LoginRoad):
         return args
 
     def _task_text(self, args: DeepDispatchArgs, instruction: str) -> str:
-        """A code-owned frame, then the MATERIALIZED instruction the user asked for.
-
-        The frame is written here from identifiers the request validated, and it
-        stands FIRST so that no byte of the instruction can occupy a launcher's
-        flag position; ``flagless`` proves that at the argv boundary anyway. The
-        instruction itself is the task, read by the workspace door from one
-        contained file -- a dispatch that could not read it never reaches this
-        method, because a sentence built from the reference alone is not the
-        user's task and dispatching it would be a lie about what the child was
-        asked to do.
-        """
-        refs = " ".join(args.artifact_refs) or "none"
-        return flagless(
-            f"conduct work item {args.work_item_id} under the {args.profile} "
-            f"profile over artifacts {refs}.{purpose_clause(args)} instruction "
-            f"{args.instruction_ref} reads:\n{instruction}",
-            "task text", f"{self.profile.tool_noun} launcher", self.error)
+        """The composed task: `task_binding` owns how those bytes are made."""
+        return composed_task_text(
+            args, instruction, self.profile.tool_noun, self.error)
 
     def _dispatch_task(
             self, request: ActionRequest, args: DeepDispatchArgs,
@@ -384,6 +371,8 @@ class HeadlessCliTransport(ReceiptWriting, ModelRouting, LoginRoad):
             failed = False
             try:
                 return self._dispatch(request, args, prepared.model)
+            except InstructionChanged as changed:
+                return self._receipt(request, "failed", None, str(changed))
             except WorkspaceNotContained:  # noqa: BLE001 -- carry no path onward
                 failed = True
             finally:
@@ -424,7 +413,7 @@ class HeadlessCliTransport(ReceiptWriting, ModelRouting, LoginRoad):
         claimed = self._already_claimed(request)
         if claimed is not None:
             return claimed
-        instruction = self._instruction_text(request, args)
+        instruction = self._bound_instruction(request, args)
         # A home a crashed attempt left behind is model text this build promised
         # not to retain, so it goes before this attempt mints its own. What the
         # sweep could NOT take is the whole reason this dispatch stops: state of

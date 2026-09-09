@@ -304,9 +304,14 @@ def test_public_deep_schema_authority_names_each_exact_argument_base_type():
         # the four that do not: the plan's own words about a step are context
         # for work being carried out, and a stop, a retry, a switch or an
         # evidence request carries out nothing.
+        # `instruction_digest` is on the dispatch road ALONE, and that is the
+        # whole of its scope: it is a promise about the bytes of one step's
+        # instruction, and the road that reads an instruction from a file is
+        # the only road whose source can be rewritten between the preview a
+        # person read and the spawn.
         "dispatch": {
             "work_item_id", "instruction_ref", "profile", "artifact_refs",
-            "output_limit_profile", "step_purpose"},
+            "output_limit_profile", "step_purpose", "instruction_digest"},
         "review": {
             "work_item_id", "target_artifact_refs", "result_artifact_ref",
             "review_profile", "step_purpose"},

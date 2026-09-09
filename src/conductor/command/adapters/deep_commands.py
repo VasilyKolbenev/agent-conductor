@@ -17,6 +17,7 @@ from .deep_contracts import (
     _exact,
     _ids,
     _Omitted,
+    settle_instruction_digest,
     settle_step_purpose,
 )
 
@@ -134,10 +135,20 @@ class DeepDispatchArgs(_StrictArguments):
     #: composed by hand, because `graph_causality` refuses any request whose
     #: arguments are not byte-identical to the plan node's.
     step_purpose: "str | _Omitted" = OMITTED
+    #: The digest of the instruction BYTES this step was previewed with, when
+    #: the proposal promised them. A reference names a place and a place can be
+    #: rewritten -- the file road reads the instruction from disk at dispatch --
+    #: so only the bytes can say the child is being asked what the person
+    #: approved. Omittable, and its absence is the road exactly as it was: a
+    #: proposal written before this field promised nothing about these bytes,
+    #: and a door added today may not re-judge what passed before it existed.
+    #: Carried, never computed here: a value this build derived itself would be
+    #: checking its own reading against itself.
+    instruction_digest: "str | _Omitted" = OMITTED
     _FIELDS = frozenset({
         "work_item_id", "instruction_ref", "profile", "artifact_refs",
-        "output_limit_profile", "step_purpose"})
-    _OPTIONAL_FIELDS = frozenset({"step_purpose"})
+        "output_limit_profile", "step_purpose", "instruction_digest"})
+    _OPTIONAL_FIELDS = frozenset({"step_purpose", "instruction_digest"})
     _ARRAY_FIELDS = frozenset({"artifact_refs"})
 
     def __post_init__(self) -> None:
@@ -153,6 +164,7 @@ class DeepDispatchArgs(_StrictArguments):
             "output_limit_profile", self.output_limit_profile,
             OUTPUT_LIMIT_PROFILES))
         settle_step_purpose(self)
+        settle_instruction_digest(self)
 
 
 @dataclass(frozen=True)
