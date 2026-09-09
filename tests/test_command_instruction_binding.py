@@ -167,32 +167,48 @@ def test_a_line_ending_is_a_byte_and_the_promise_is_about_bytes(
     assert len(_fakeclaude.prompt_spawns(log)) == (1 if runs else 0)
 
 
-def test_the_child_receives_the_verified_bytes_and_not_a_tidied_copy(tmp_path):
+#: The frame this build writes around a task, spelled out LITERALLY for the one
+#: fixed synthetic dispatch below. It is not built by `composed_task_text` and
+#: not encoded by `_task_stdin` on purpose: an oracle computed with the code it
+#: is checking moves whenever that code moves, and then agrees with a build that
+#: normalized the bytes after verifying them. A review found exactly that, by
+#: making the encoder fold CRLF and watching this witness stay green.
+#:
+#: The cost is that a deliberate change to the frame reds this line and has to
+#: be retyped here. That is the point: the frame reaching a vendor's model is
+#: worth one line of maintenance a person has to look at.
+WIRE_FRAME = (b"conduct work item work-001 under the implement profile over "
+              b"artifacts none. instruction instr-001 reads:\n")
+
+
+@pytest.mark.parametrize("ending", [b"\r\n", b"\r"])
+@pytest.mark.parametrize("promised", [True, False])
+def test_the_child_receives_the_verified_bytes_and_not_a_tidied_copy(
+        tmp_path, ending, promised):
     """Checking one string and sending another would be a guard about nothing.
 
-    The payload is composed here from the same door the transport composes it
-    with, and its digest is compared with the digest the child computed over
-    what actually arrived on its stdin. A build that verified exact bytes and
-    then handed the model a normalized copy would pass every test above.
+    The digest the CHILD computed over what actually arrived on its stdin is
+    compared with a digest taken here over bytes this module spelled out itself.
+    Both roads are driven: with a promise the exact line endings must survive to
+    the wire, and without one the historical normalization must survive too --
+    the old road is not collateral damage of the new one.
     """
-    from conductor.command.adapters.deep_commands import DeepDispatchArgs
-    from conductor.command.adapters.task_binding import composed_task_text
     import hashlib
 
-    crlf = b"Add the missing guard.\r\nAnd keep the receipt honest.\r\n"
+    raw = b"Add the missing guard." + ending + b"Keep the receipt." + ending
     adapter, root, log = a_harness(tmp_path)
-    _write_bytes(root, crlf)
-    arguments = _arguments(instruction_digest=content_digest(
-        crlf.decode("utf-8")))
+    _write_bytes(root, raw)
+    arguments = _arguments()
+    if promised:
+        arguments["instruction_digest"] = content_digest(raw.decode("utf-8"))
 
     receipt = run_once(adapter, a_request(arguments=arguments))
 
     assert receipt.outcome == "succeeded", receipt.detail
-    args = DeepDispatchArgs.from_dict(arguments)
-    expected = adapter._task_stdin(composed_task_text(
-        args, crlf.decode("utf-8"), adapter.profile.tool_noun, adapter.error))
-    assert _fakeclaude.prompt_spawns(log)[0]["stdin"]["sha256"] == (
-        hashlib.sha256(expected).hexdigest())
+    expected = WIRE_FRAME + (raw if promised else raw.replace(ending, b"\n"))
+    row = _fakeclaude.prompt_spawns(log)[0]["stdin"]
+    assert row["sha256"] == hashlib.sha256(expected).hexdigest()
+    assert row["bytes"] == len(expected)
 
 
 def _a_run_holding_the_instruction(root):
