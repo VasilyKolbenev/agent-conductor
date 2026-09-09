@@ -217,8 +217,10 @@ const PROVIDER_KEYS = ["provider_id", "display_name", "availability",
  * Three answers and they stay three: `null` is an integration that declares
  * nothing, `[]` is a declared absence, and pairs are the tokens each road pins.
  * `undefined` is this function's own word for "malformed", so a caller can tell
- * a declared absence from a value it must refuse -- `[]` and a bad shape are
- * both falsy and collapsing them would admit either as the other.
+ * a declared absence from a value it must refuse. There is no spare answer to
+ * fold it into: `null` would report an unreadable declaration as "this
+ * integration declares nothing", and `[]` would publish it as "this vendor
+ * ships none" -- each of them a claim, made out of a value nobody could read.
  *
  * It lives HERE, beside the roster's own key list, because two seams read this
  * field: the roster on three routes, and the controls route's standings. One

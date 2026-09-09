@@ -35,11 +35,25 @@ _INDEPENDENT_SEAMS = ("publish", "release", "verify_for")
 #: kind of guard: a rule would excuse every claim that ever lands under it, and
 #: this is the list of claims a class can inherit and be unable to keep.
 #:
-#: `login_directory_gained_state` is the CHECKER's own measurement. A transport
-#: that serves no review road has `verify_for` set to None by its base's
-#: `__init_subclass__`, so it inherits the method name and none of the road --
-#: and a screen that read the inherited name would tell a person a measurement
-#: was standing that nothing here can take.
+#: `login_directory_gained_state` names the CHECKER's constant
+#: (`verify_holds.CHECKER_LOGIN_RESIDUE`), and a transport serving no review
+#: road has `verify_for` set to None by its base's `__init_subclass__` -- it
+#: inherits the method name and none of the road, so the checker's measurement
+#: is struck for it.
+#:
+#: WHAT THIS DOES NOT SAY, and an earlier version of this comment did: that the
+#: checker is the only thing that measures that directory. It is not. `LoginRoad`
+#: measures it after every spawn and `HeadlessCliTransport._dispatch` refuses on
+#: what it found (`LOGIN_RESIDUE_DETAIL`), as does the review road. Those are the
+#: DOER's own refusals, and the table carries no row of its own for them -- so
+#: for a dispatch-only transport with a pinned subscription login this filter
+#: under-reports a guard that really runs. It under-reports rather than
+#: over-claims, and no shipped provider reaches the case: subscription login is
+#: admitted only for the two protocols whose transports both serve review.
+#: Closing it means giving the doer's refusal its own row, which changes the
+#: table and the wire; it is recorded as a follow-up in
+#: `handoff-v1-studio/ISOLATION-C1-DOER-LOGIN-RESIDUE-2026-09-09.md` and is not
+#: to be closed by widening this filter into a rule.
 _GUARD_SEAMS = {"login_directory_gained_state": "verify_for"}
 
 

@@ -589,8 +589,8 @@ def test_the_boundary_refuses_rather_than_repairs_and_says_which_it_does():
     # module follows them there rather than losing sight of them.
     # 82, 14 and 9 with the vendor sandbox's reader: one REFUSE arm for the
     # absent answer, one DROP arm for a row whose declaration will not read, and
-    # four "I cannot read this" arms -- `[]` is a declared absence and FALSY, so
-    # one answer for it and for a bad shape would read as "ships none".
+    # four "I cannot read this" arms, which need a word of their own: neither
+    # `null` nor `[]` is free, and both are claims about a vendor.
     assert source.count("return null;") == 82
     assert source.count("return false;") == 6
 

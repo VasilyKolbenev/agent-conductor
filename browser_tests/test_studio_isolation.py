@@ -234,9 +234,10 @@ def test_the_roster_keeps_the_three_answers_and_drops_what_it_cannot_read(
 
     The roster is DECORATION: a row it cannot read is dropped rather than taking
     the payload down. That rule and this field meet badly if the reader is
-    careless -- `[]` is falsy and so is a shape nobody can read, so a projection
-    answering `null` for both would turn a malformed declaration into "this
-    vendor ships none" and hand it to the Agents screen as a measured fact.
+    careless, because there is no spare answer for "malformed" to fold into --
+    `null` would report an unreadable declaration as "this integration declares
+    nothing", and `[]` would hand the Agents screen "this vendor ships none" as
+    a measured fact. So the row is dropped, and the three real answers survive.
 
     Driven through the real `projectProviders`, which is the function that
     dropped every row in this build when the server grew this seventh field.

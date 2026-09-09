@@ -12,11 +12,18 @@ canonical dump, with a response a real `CommandApi.handle` really produced. A
 document nobody drives is prose, and prose about a wire format is the thing that
 is wrong first.
 
-The scenario is chosen to exercise what the addendum claims rather than to be
-small: one binding whose transport declares two guards on its one road, and one
-binding nothing is registered for at all. Between them the four standings all
-appear, the three answers of the vendor's sandbox are all reachable, and the
-per-road keying is visible.
+There are TWO examples, and the second exists because the first cannot show what
+the document claims. The first is a transport that declares two guards on its
+one road, beside a binding nothing is registered for; it reaches `active`,
+`not_applicable` and `stated_absence`, and shows an empty road map -- which is
+the absence of a road and not a standing at all. The second is the commoner
+case, transports declaring no guards: that is where `unknown` lives, and where
+the vendor's other two answers are, one provider requesting no sandbox mode and
+one carrying no reviewed declaration.
+
+Between them, and only between them, all four standings and all three sandbox
+answers appear. A claim about coverage is worth nothing unless something checks
+it, so the coverage test below reads the DOCUMENT rather than the responses.
 """
 from __future__ import annotations
 
@@ -63,6 +70,23 @@ CONFIG = {
         {"id": "unregistered", "adapter": "nothing-registered"},
     ],
 }
+#: The second example's provider: a transport that declares NO guards and whose
+#: profile declares no vendor sandbox mode. It is the other half of what the
+#: addendum describes -- `unknown` is what an undeclared transport gets, and it
+#: is the standing a reader meets most often, so an example without one would
+#: document the rare case and omit the common one.
+SILENT = "silent-transport"
+#: And beside it, the provider that carries no harness profile at all -- the
+#: third answer of the vendor's sandbox, `null`, which neither of the other two
+#: examples can show: one declares modes and the other declares none.
+UNMEASURED = "unmeasured-transport"
+SILENT_CONFIG = {
+    "cycle": {"id": "addendum-orbit"},
+    "instances": [
+        {"id": "worker", "adapter": SILENT},
+        {"id": "unmeasured", "adapter": UNMEASURED},
+    ],
+}
 
 
 class ExampleTransport:
@@ -107,6 +131,38 @@ class ExampleTransport:
             detail="the example checks nothing", evidence_refs=())
 
 
+class SilentTransport(ExampleTransport):
+    """The same shape, declaring nothing about the guards its code applies.
+
+    Its profile DOES declare a vendor sandbox -- an empty one, the measured
+    absence -- so the two examples together carry all three of that field's
+    answers rather than two of them.
+    """
+
+    isolation_guards = None
+    profile = replace(DSH_PROFILE, vendor_sandbox=())
+
+    def __init__(self, config, runner, *, clock, ids) -> None:
+        super().__init__(config, runner, clock=clock, ids=ids)
+        self.manifest = AdapterManifest(
+            adapter_id=SILENT, display_name="Silent Transport",
+            vendor="example", version=PROTOCOL,
+            capabilities=("observe", "dispatch"), docs_url="")
+
+
+class UnmeasuredTransport(SilentTransport):
+    """No harness profile at all: nothing was looked at, and nothing is claimed."""
+
+    profile = None
+
+    def __init__(self, config, runner, *, clock, ids) -> None:
+        super().__init__(config, runner, clock=clock, ids=ids)
+        self.manifest = AdapterManifest(
+            adapter_id=UNMEASURED, display_name="Unmeasured Transport",
+            vendor="example", version=PROTOCOL,
+            capabilities=("observe", "dispatch"), docs_url="")
+
+
 def _ids():
     counters: dict[str, int] = {}
 
@@ -117,26 +173,33 @@ def _ids():
     return mint
 
 
-def current_answer(tmp_path) -> dict:
-    """The real route's real answer for the addendum's scenario."""
-    executable = tmp_path / "example.exe"
-    executable.write_text("", encoding="utf-8")
+def _entry(provider_id, display, adapter_class) -> ProviderCatalogEntry:
+    return ProviderCatalogEntry(
+        provider_id=provider_id, display_name=display,
+        vendor="example", protocol=PROTOCOL,
+        capabilities=("observe", "dispatch"),
+        schema_pairs=[("dispatch", "deep-arguments-v1")],
+        lifecycle=("observe", "prepare", "execute", "verify"),
+        adapter_class=adapter_class, implementation="real_experimental")
+
+
+def _answer(tmp_path, roster, config) -> dict:
+    """One real route answer, for whichever transports an example is about."""
+    configs = []
+    for provider_id, _display, _adapter_class in roster:
+        executable = tmp_path / f"{provider_id}.exe"
+        executable.write_text("", encoding="utf-8")
+        configs.append(ProviderConfig(
+            provider_id=provider_id, executable=str(executable),
+            protocol=PROTOCOL, env_allow=()))
     resolution = resolve_providers(
-        [ProviderConfig(provider_id=PROVIDER, executable=str(executable),
-                        protocol=PROTOCOL, env_allow=())],
-        root=tmp_path, clock=lambda: NOW, ids=_ids(),
-        catalog={PROVIDER: ProviderCatalogEntry(
-            provider_id=PROVIDER, display_name="Example Transport",
-            vendor="example", protocol=PROTOCOL,
-            capabilities=("observe", "dispatch"),
-            schema_pairs=[("dispatch", "deep-arguments-v1")],
-            lifecycle=("observe", "prepare", "execute", "verify"),
-            adapter_class=ExampleTransport,
-            implementation="real_experimental")})
+        configs, root=tmp_path, clock=lambda: NOW, ids=_ids(),
+        catalog={provider_id: _entry(provider_id, display, adapter_class)
+                 for provider_id, display, adapter_class in roster})
     store = RunStore(tmp_path)
     store.create_run(
-        a_run(run_id=RUN_ID, mode="confirm", config_digest=snapshot_digest(CONFIG)),
-        CONFIG)
+        a_run(run_id=RUN_ID, mode="confirm", config_digest=snapshot_digest(config)),
+        config)
     api = CommandApi(
         store, resolution.registry, session=CommandSession(PORT, TOKEN),
         budget=PRODUCT_COMMAND_BUDGET, clock=lambda: NOW, ids=_ids(),
@@ -146,14 +209,29 @@ def current_answer(tmp_path) -> dict:
     return answer.payload
 
 
-def documented() -> dict:
-    marker = "<!-- CANONICAL:controls_current -->\n```json\n"
+def current_answer(tmp_path) -> dict:
+    """A transport that declares two guards, beside a binding nothing serves."""
+    return _answer(
+        tmp_path, [(PROVIDER, "Example Transport", ExampleTransport)], CONFIG)
+
+
+def silent_answer(tmp_path) -> dict:
+    """Two transports that declare no guards: one measured none, one unmeasured."""
+    return _answer(
+        tmp_path,
+        [(SILENT, "Silent Transport", SilentTransport),
+         (UNMEASURED, "Unmeasured Transport", UnmeasuredTransport)],
+        SILENT_CONFIG)
+
+
+def documented(name: str = "controls_current") -> dict:
+    marker = f"<!-- CANONICAL:{name} -->\n```json\n"
     text = _SPEC.read_text(encoding="utf-8")
     return json.loads(text.split(marker, 1)[1].split("\n```", 1)[0])
 
 
 def test_the_addendum_carries_the_answer_this_build_really_sends(tmp_path):
-    """One example, produced by the route, compared with the document.
+    """The declaring example, produced by the route, compared with the document.
 
     Canonicalized on both sides so key order in the document is not a second
     thing to maintain -- what is pinned is the ANSWER, not its typography.
@@ -161,32 +239,59 @@ def test_the_addendum_carries_the_answer_this_build_really_sends(tmp_path):
     assert canonical_json(documented()) == canonical_json(current_answer(tmp_path))
 
 
-def test_the_documented_answer_shows_every_state_it_claims_to_describe(tmp_path):
-    """An example that reached only one standing would document one third of it.
+def test_the_second_example_is_the_answer_for_a_transport_that_declares_nothing(
+        tmp_path):
+    """And it is driven the same way, because it is the commoner case.
 
-    The addendum says the standings are four words and the vendor's sandbox has
-    three answers. An example is worth having only if a reader can see those
-    distinctions in it, so this asserts the example really exercises them --
-    and it reads the DOCUMENT, so an example edited down to something tidier
-    fails here rather than quietly teaching a consumer less than the truth.
+    Every adapter written before the guard declaration existed lands here, and
+    so does every plugin. An addendum whose only example was a declaring
+    transport would document the rarer half of its own contract.
     """
-    payload = documented()
-    rows = {row["instance_id"]: row for row in payload["instances"]}
+    assert canonical_json(documented("controls_current_silent")) == canonical_json(
+        silent_answer(tmp_path))
 
-    standings = {fact["standing"]
-                 for road in rows["worker"]["isolation"].values()
-                 for fact in road}
-    assert standings == {"active", "not_applicable", "stated_absence"}
-    # The unregistered binding is the fourth word's home, and the reason the
-    # example carries a second instance at all.
-    assert rows["unregistered"]["isolation"] == {}
-    assert rows["unregistered"]["controls"] == []
-    vendor = [fact for fact in rows["worker"]["isolation"]["dispatch"]
-              if fact["name"] == "vendor_sandbox_is_the_vendors"]
-    assert vendor and vendor[0]["vendor_detail"] == [
+
+def test_the_documented_examples_show_every_state_they_claim_to_describe():
+    """Claimed coverage, held to the two examples rather than asserted in prose.
+
+    The addendum describes four standings and three answers for the vendor's
+    sandbox, and a document may only claim what its examples let a reader see.
+    An earlier version of this test said the pair covered all four standings
+    when the first example reached three and an empty road map is not a row
+    whose standing is `unknown`; the second example is what makes the claim
+    true, and this reads the DOCUMENT so that trimming either one fails here.
+    """
+    declaring = {row["instance_id"]: row for row in documented()["instances"]}
+    silent = {row["instance_id"]: row
+              for row in documented("controls_current_silent")["instances"]}
+
+    seen = {fact["standing"]
+            for row in (*declaring.values(), *silent.values())
+            for road in row["isolation"].values() for fact in road}
+    assert seen == {"active", "not_applicable", "stated_absence", "unknown"}
+    # An empty road map is a different thing from any standing, and the
+    # addendum describes it separately -- so it is asserted separately.
+    assert declaring["unregistered"]["isolation"] == {}
+    assert declaring["unregistered"]["controls"] == []
+
+    def vendor_of(row):
+        return [fact for fact in row["isolation"]["dispatch"]
+                if fact["name"] == "vendor_sandbox_is_the_vendors"][0]
+
+    # All three answers of the field, each on the binding that really carries it.
+    assert vendor_of(declaring["worker"])["vendor_detail"] == [
         ["dispatch", "--sandbox workspace-write"]]
-    assert [row["vendor_sandbox"] for row in payload["providers"]] == [
-        [["dispatch", "--sandbox workspace-write"]]]
+    assert vendor_of(silent["worker"])["vendor_detail"] == []
+    assert vendor_of(silent["worker"])["standing"] == "stated_absence"
+    assert vendor_of(silent["unmeasured"])["vendor_detail"] is None
+    assert vendor_of(silent["unmeasured"])["standing"] == "unknown"
+    assert sorted(
+        json.dumps(row["vendor_sandbox"]) for row in documented()["providers"]
+    ) == ['[["dispatch", "--sandbox workspace-write"]]']
+    assert sorted(
+        json.dumps(row["vendor_sandbox"])
+        for row in documented("controls_current_silent")["providers"]
+    ) == ["[]", "null"]
 
 
 def test_the_addendum_names_the_frozen_document_it_extends_and_rewrites_none_of_it():

@@ -90,12 +90,19 @@ The vendor's row additionally carries **`vendor_detail`**, whose three answers
 are the provider row's three. The KEY marks the row as the vendor's question;
 rows without it are not about a vendor mechanism at all.
 
-## The current example
+## The current examples
 
-Produced by the route, not written by hand. One binding whose transport declares
-two guards on its one road — so `active`, `not_applicable` and `stated_absence`
-all appear — and one binding nothing is registered for, which is where `unknown`
-and the empty road map are seen.
+Two, produced by the route and not written by hand, because one cannot show what
+this document claims. Together they carry all four standings and all three
+answers of the vendor's sandbox; separately, each is the answer for a kind of
+transport a consumer will really meet.
+
+**The first** has one binding whose transport declares two guards on its one
+road — so `active` for those, `not_applicable` for everything else this build
+implements, and `stated_absence` for the two things it openly does not do — and
+beside it one binding nothing is registered for, which is where the empty road
+map is seen. An empty road map is not a standing: it is the absence of any road
+to carry one.
 
 <!-- CANONICAL:controls_current -->
 ```json
@@ -212,6 +219,278 @@ and the empty road map are seen.
           "--sandbox workspace-write"
         ]
       ]
+    }
+  ],
+  "isolation_facts": [
+    {
+      "name": "uncontained_route",
+      "category": "refused_before_spawn",
+      "sentence": "A work route that leaves the project root -- through a portal, a junction or a link planted at a name this build owns -- stops the dispatch. No task is spawned and nothing outside the root is written."
+    },
+    {
+      "name": "inherited_home_residue",
+      "category": "refused_before_spawn",
+      "sentence": "State of unknown ownership left under the profile home root by an earlier attempt stops the next dispatch before it mints its own."
+    },
+    {
+      "name": "login_directory_carries_configuration",
+      "category": "refused_before_spawn",
+      "sentence": "A pinned login directory that also carries configuration is refused before any task: configuration there could redirect the provider."
+    },
+    {
+      "name": "unroutable_model",
+      "category": "refused_before_spawn",
+      "sentence": "A model this provider has no road for is refused before the workspace turn is taken, so nothing is minted for a run that cannot happen."
+    },
+    {
+      "name": "instruction_bytes_moved",
+      "category": "refused_before_spawn",
+      "sentence": "When a proposal promised the digest of the instruction it previewed and the bytes no longer match, the dispatch stops before the spawn."
+    },
+    {
+      "name": "work_outside_the_item",
+      "category": "detected_after_spawn",
+      "sentence": "Files changed elsewhere INSIDE the observed work tree -- another work item beside this one -- are found by comparing that tree before and after the child ran. The comparison covers `work/` and nothing above it: a write the child makes outside that tree is not observed here and may not be detected at all. What a detected change costs is publication and independent verification; it is not undone."
+    },
+    {
+      "name": "environment_value_echoed",
+      "category": "detected_after_spawn",
+      "sentence": "A child that repeated an allowed environment value into its output is caught by scanning what it produced, after it produced it."
+    },
+    {
+      "name": "profile_home_retained",
+      "category": "detected_after_spawn",
+      "sentence": "A profile home this build could not take back is discovered when the attempt ends. The work is not published and not verified."
+    },
+    {
+      "name": "login_directory_gained_state",
+      "category": "detected_after_spawn",
+      "sentence": "Undeclared state appearing in the pinned login directory is measured after the spawn, by comparing it with what was declared."
+    },
+    {
+      "name": "review_changed_the_tree",
+      "category": "detected_after_spawn",
+      "sentence": "A read-only review that wrote to the work tree is found by reading the tree afterwards, and its result is refused."
+    },
+    {
+      "name": "scope_is_declarative",
+      "category": "not_isolated",
+      "sentence": "`scope` says what a step is FOR. It is recorded, shown and judged against what was touched -- it does not stop the child reading or writing anywhere this user's own account may."
+    },
+    {
+      "name": "no_operating_system_boundary",
+      "category": "not_isolated",
+      "sentence": "This build starts an ordinary process with this user's rights. It creates no container, no jail and no separate account, and it cannot confine what that process does outside the routes it watches."
+    },
+    {
+      "name": "vendor_sandbox_is_the_vendors",
+      "category": "not_isolated",
+      "sentence": "Where a vendor ships a sandbox of its own, this build pins it and records it on that provider's own row -- and where a vendor ships none, nothing is claimed. Either way the mechanism is the vendor's, not this build's: a mode it was ASKED for, which its own platform may or may not enforce, and never proof that the operating system confined anything. Which providers have one is answered beside this table rather than inside it."
+    }
+  ]
+}
+```
+
+**The second** is the commoner case: transports that declare no guards at
+all. Every adapter written before the declaration existed lands here, and so
+does every plugin. All of their guard rows read `unknown` — the standing
+that says nobody established it, which is not the same as this build having
+looked and found nothing.
+
+Their two vendor answers differ, and that is the pair the first example
+cannot show: `worker` runs under a provider whose integration reviewed it and
+requests no sandbox mode (`[]`, `stated_absence`), and `unmeasured` under one
+carrying no reviewed declaration at all (`null`, `unknown`).
+
+<!-- CANONICAL:controls_current_silent -->
+```json
+{
+  "instances": [
+    {
+      "instance_id": "unmeasured",
+      "adapter_id": "unmeasured-transport",
+      "model": null,
+      "controls": [
+        "dispatch"
+      ],
+      "argument_schemas": {
+        "dispatch": "deep-arguments-v1"
+      },
+      "isolation": {
+        "dispatch": [
+          {
+            "name": "uncontained_route",
+            "category": "refused_before_spawn",
+            "standing": "active"
+          },
+          {
+            "name": "inherited_home_residue",
+            "category": "refused_before_spawn",
+            "standing": "not_applicable"
+          },
+          {
+            "name": "login_directory_carries_configuration",
+            "category": "refused_before_spawn",
+            "standing": "not_applicable"
+          },
+          {
+            "name": "unroutable_model",
+            "category": "refused_before_spawn",
+            "standing": "not_applicable"
+          },
+          {
+            "name": "instruction_bytes_moved",
+            "category": "refused_before_spawn",
+            "standing": "not_applicable"
+          },
+          {
+            "name": "work_outside_the_item",
+            "category": "detected_after_spawn",
+            "standing": "active"
+          },
+          {
+            "name": "environment_value_echoed",
+            "category": "detected_after_spawn",
+            "standing": "not_applicable"
+          },
+          {
+            "name": "profile_home_retained",
+            "category": "detected_after_spawn",
+            "standing": "not_applicable"
+          },
+          {
+            "name": "login_directory_gained_state",
+            "category": "detected_after_spawn",
+            "standing": "not_applicable"
+          },
+          {
+            "name": "review_changed_the_tree",
+            "category": "detected_after_spawn",
+            "standing": "not_applicable"
+          },
+          {
+            "name": "scope_is_declarative",
+            "category": "not_isolated",
+            "standing": "stated_absence"
+          },
+          {
+            "name": "no_operating_system_boundary",
+            "category": "not_isolated",
+            "standing": "stated_absence"
+          },
+          {
+            "name": "vendor_sandbox_is_the_vendors",
+            "category": "not_isolated",
+            "standing": "unknown",
+            "vendor_detail": null
+          }
+        ]
+      }
+    },
+    {
+      "instance_id": "worker",
+      "adapter_id": "silent-transport",
+      "model": null,
+      "controls": [
+        "dispatch"
+      ],
+      "argument_schemas": {
+        "dispatch": "deep-arguments-v1"
+      },
+      "isolation": {
+        "dispatch": [
+          {
+            "name": "uncontained_route",
+            "category": "refused_before_spawn",
+            "standing": "active"
+          },
+          {
+            "name": "inherited_home_residue",
+            "category": "refused_before_spawn",
+            "standing": "not_applicable"
+          },
+          {
+            "name": "login_directory_carries_configuration",
+            "category": "refused_before_spawn",
+            "standing": "not_applicable"
+          },
+          {
+            "name": "unroutable_model",
+            "category": "refused_before_spawn",
+            "standing": "not_applicable"
+          },
+          {
+            "name": "instruction_bytes_moved",
+            "category": "refused_before_spawn",
+            "standing": "not_applicable"
+          },
+          {
+            "name": "work_outside_the_item",
+            "category": "detected_after_spawn",
+            "standing": "active"
+          },
+          {
+            "name": "environment_value_echoed",
+            "category": "detected_after_spawn",
+            "standing": "not_applicable"
+          },
+          {
+            "name": "profile_home_retained",
+            "category": "detected_after_spawn",
+            "standing": "not_applicable"
+          },
+          {
+            "name": "login_directory_gained_state",
+            "category": "detected_after_spawn",
+            "standing": "not_applicable"
+          },
+          {
+            "name": "review_changed_the_tree",
+            "category": "detected_after_spawn",
+            "standing": "not_applicable"
+          },
+          {
+            "name": "scope_is_declarative",
+            "category": "not_isolated",
+            "standing": "stated_absence"
+          },
+          {
+            "name": "no_operating_system_boundary",
+            "category": "not_isolated",
+            "standing": "stated_absence"
+          },
+          {
+            "name": "vendor_sandbox_is_the_vendors",
+            "category": "not_isolated",
+            "standing": "stated_absence",
+            "vendor_detail": []
+          }
+        ]
+      }
+    }
+  ],
+  "providers": [
+    {
+      "provider_id": "silent-transport",
+      "display_name": "Silent Transport",
+      "availability": "available",
+      "implementation": "real_experimental",
+      "auth": "api_key",
+      "controls": [
+        "dispatch"
+      ],
+      "vendor_sandbox": []
+    },
+    {
+      "provider_id": "unmeasured-transport",
+      "display_name": "Unmeasured Transport",
+      "availability": "available",
+      "implementation": "real_experimental",
+      "auth": "api_key",
+      "controls": [
+        "dispatch"
+      ],
+      "vendor_sandbox": null
     }
   ],
   "isolation_facts": [
