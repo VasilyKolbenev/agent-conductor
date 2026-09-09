@@ -630,12 +630,27 @@ class HarnessWorkspace:
 
     # -- the instruction the task is actually asked to do ----------------------
 
-    def read_instruction(self, instruction_ref: str) -> str:
+    def read_instruction(self, instruction_ref: str, *,
+                         exact: bool = False) -> str:
         """The instruction TEXT, read from ONE contained name, or refuse.
 
         A dispatch that cannot read the instruction is refused by the caller
         rather than sent a sentence built from the reference alone: a prompt that
         is not the task is worse than no prompt at all.
+
+        ``exact`` reads the bytes as they stand. The default road decodes
+        through universal newlines, which silently folds CRLF and CR into LF --
+        harmless while nobody promised anything about the bytes, and fatal to a
+        caller that did: it makes a rewritten file hash equal to the previewed
+        one, and a Windows file that never changed hash different from itself.
+        A review measured both, in both directions.
+
+        It is a parameter and not the new default because the historical road is
+        historical: every dispatch written before a proposal could promise these
+        bytes reads exactly as it always did, and a fix to a new branch may not
+        be paid for by rewriting the old one. Every other check here -- the
+        contained route, the size bound, UTF-8, NUL, and the blank refusal -- is
+        the same on both roads, because none of them is what changed.
         """
         path, found = self._file_route(
             INSTRUCTION_DIR, f"{_component(instruction_ref)}{INSTRUCTION_SUFFIX}")
@@ -647,7 +662,11 @@ class HarnessWorkspace:
                 f"{INSTRUCTION_LIMIT} byte bound this door reads")
         failed = False
         try:
-            text = path.read_text(encoding="utf-8")
+            # `read_bytes().decode` rather than a newline argument to
+            # `read_text`: that argument arrived in 3.13 and this build's floor
+            # is 3.11, so the version-portable spelling is the only honest one.
+            text = (path.read_bytes().decode("utf-8") if exact
+                    else path.read_text(encoding="utf-8"))
         except (OSError, ValueError):  # noqa: BLE001 -- keep no decoder graph
             failed = True
             text = ""

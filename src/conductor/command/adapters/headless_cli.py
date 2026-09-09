@@ -105,7 +105,7 @@ from .headless_login import LoginRoad
 from .headless_receipts import ReceiptWriting
 from .headless_routing import ModelRouting
 from .task_binding import (
-    InstructionBinding, InstructionChanged, composed_task_text)
+    InstructionBinding, InstructionChanged, composed_task_text, promised_bytes)
 from .headless_values import (
     ArgvSource,
     _Attempt,
@@ -339,9 +339,14 @@ class HeadlessCliTransport(
         One contained name under the workspace's instruction directory, or the
         refusal that reaches no child. A subclass with a durable road answers
         from the run's own journal first and falls back to exactly this.
+
+        A proposal that promised these bytes gets them read as they stand; one
+        that promised nothing gets the reading it has always had. The promise is
+        what makes the difference, so the promise is what asks for it.
         """
         del request
-        return self._workspace.read_instruction(args.instruction_ref)
+        return self._workspace.read_instruction(
+            args.instruction_ref, exact=promised_bytes(args))
 
     # -- execution: preflight, mark, spawn once ---------------------------------
 

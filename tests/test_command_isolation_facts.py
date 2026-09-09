@@ -162,6 +162,60 @@ def test_a_detected_after_spawn_fact_really_needed_the_child_to_run(
         receipt.detail)
 
 
+def _snapshot_after_writing(tmp_path, relative: str):
+    """Run one dispatch whose child writes to `relative`, and hand back the pair.
+
+    The child's working directory is its own work item, so the path is written
+    from there -- which is how a test says "beside me, inside the tree" and
+    "above the tree" with the same knob.
+    """
+    from conductor.command.adapters.headless_values import attempt_relation
+
+    adapter, root, log = a_harness(
+        tmp_path, **{_fakeclaude.WRITE_FILE: f"{relative}:written-by-child"})
+    request = a_request()
+
+    run_once(adapter, request)
+
+    assert len(_fakeclaude.prompt_spawns(log)) == 1, "the child never ran"
+    snapshot = adapter._attempts[attempt_relation(request)]
+    return snapshot, root
+
+
+def test_a_change_beside_the_work_item_inside_the_tree_is_observed(tmp_path):
+    """The protection the table claims, driven where it holds.
+
+    A neighbouring work item is inside `work/`, so the before/after comparison
+    sees it. This is the positive control for the limit below: without it, the
+    limit would read as "this build notices nothing".
+    """
+    snapshot, root = _snapshot_after_writing(tmp_path, "../work-002/beside.txt")
+
+    assert (root / "work" / "work-002" / "beside.txt").is_file()
+    assert snapshot.before != snapshot.after, (
+        "a write inside the observed tree went unseen")
+
+
+def test_a_change_above_the_work_tree_is_NOT_observed_and_the_table_says_so(
+        tmp_path):
+    """The limit, held as a fact rather than left to a reader's optimism.
+
+    The child writes into the project root, above `work/`. The file really
+    appears and the comparison does not move, because the walk starts at the
+    work tree. A review found the table promising more than this, which is the
+    kind of sentence that gets read as confinement -- so the claim now names the
+    boundary and this holds it to that.
+    """
+    snapshot, root = _snapshot_after_writing(tmp_path, "../../above.txt")
+
+    assert (root / "above.txt").is_file(), "the fixture proved nothing"
+    assert snapshot.before == snapshot.after, (
+        "the observation boundary moved; the table's sentence is now wrong")
+    sentence = _fact("work_outside_the_item").sentence
+    assert "`work/` and nothing above it" in sentence
+    assert "may not be detected" in sentence
+
+
 @pytest.mark.parametrize("name", [
     "scope_is_declarative", "no_operating_system_boundary",
     "vendor_sandbox_is_the_vendors"])

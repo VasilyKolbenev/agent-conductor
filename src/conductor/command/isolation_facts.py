@@ -90,9 +90,12 @@ ISOLATION_FACTS = (
         "conductor.command.adapters.task_binding.CHANGED_DETAIL"),
     IsolationFact(
         "work_outside_the_item", DETECTED_AFTER_SPAWN,
-        "Files changed outside the authorized work item are found by comparing "
-        "the tree AFTER the child ran. The change is not undone; it is refused "
-        "publication and independent verification.",
+        "Files changed elsewhere INSIDE the observed work tree -- another work "
+        "item beside this one -- are found by comparing that tree before and "
+        "after the child ran. The comparison covers `work/` and nothing above "
+        "it: a write the child makes outside that tree is not observed here and "
+        "may not be detected at all. What a detected change costs is "
+        "publication and independent verification; it is not undone.",
         "conductor.command.verify_holds.DOER_OUTSIDE_SUBTREE"),
     IsolationFact(
         "environment_value_echoed", DETECTED_AFTER_SPAWN,

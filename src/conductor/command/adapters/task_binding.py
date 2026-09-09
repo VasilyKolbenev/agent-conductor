@@ -48,6 +48,17 @@ CHANGED_DETAIL = (
     "standing now, so no task was spawned; propose the step again")
 
 
+def promised_bytes(args: DeepDispatchArgs) -> bool:
+    """Whether this dispatch promised the bytes of its instruction.
+
+    One question, asked in two places for one reason: the door that READS the
+    instruction has to know whether to read it exactly, and the door that JUDGES
+    it has to know whether to judge at all. Two spellings of the same test is
+    how one of them comes to answer differently from the other.
+    """
+    return getattr(args, "instruction_digest", OMITTED) is not OMITTED
+
+
 def content_digest(text: str) -> str:
     """SHA-256 of the EXACT UTF-8 bytes of this text.
 
@@ -117,9 +128,8 @@ class InstructionBinding:
         promised these bytes, and it runs exactly as it did before this door.
         """
         instruction = self._instruction_text(request, args)
-        promised = getattr(args, "instruction_digest", OMITTED)
-        if promised is OMITTED:
+        if not promised_bytes(args):
             return instruction
-        if content_digest(instruction) != promised:
+        if content_digest(instruction) != args.instruction_digest:
             raise InstructionChanged(CHANGED_DETAIL)
         return instruction
