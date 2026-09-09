@@ -207,6 +207,18 @@ def test_the_read_arm_spends_the_same_two_host_values_the_command_session_minted
             assert MARKER.encode("ascii") not in body, host
 
 
+def _status_code(response: bytes) -> int:
+    """The code off a raw status line, without pinning the HTTP version here.
+
+    The version is a real decision -- this server answers HTTP/1.1 and keeps
+    the connection, which is what stopped one page boot costing 34 of them --
+    and it is pinned once, in `tests/test_server_http_framing.py`, beside the
+    framing obligations that come with it. These rows are about a REFUSAL, so
+    they read the refusal and let that module own the version.
+    """
+    return int(response.split(b"\r\n", 1)[0].split(b" ")[1])
+
+
 def test_a_read_needs_exactly_one_host_header_neither_two_nor_none(tmp_path):
     """Cardinality is the rule, not similarity: two agreeing Hosts still refuse.
 
@@ -220,13 +232,13 @@ def test_a_read_needs_exactly_one_host_header_neither_two_nor_none(tmp_path):
         allowed = f"127.0.0.1:{port}"
         doubled = _raw_get(
             port, "/state.json", (("Host", allowed), ("Host", allowed)))
-        assert doubled.startswith(b"HTTP/1.0 403"), doubled[:64]
+        assert _status_code(doubled) == 403, doubled[:64]
         assert MARKER.encode("ascii") not in doubled
         absent = _raw_get(port, "/state.json", ())
-        assert absent.startswith(b"HTTP/1.0 403"), absent[:64]
+        assert _status_code(absent) == 403, absent[:64]
         assert MARKER.encode("ascii") not in absent
         single = _raw_get(port, "/state.json", (("Host", allowed),))
-        assert single.startswith(b"HTTP/1.0 200"), single[:64]
+        assert _status_code(single) == 200, single[:64]
         assert MARKER.encode("ascii") in single
 
 
@@ -241,7 +253,7 @@ def test_the_events_stream_refuses_a_foreign_host_before_it_commits_a_200(tmp_pa
         port = subject.server_address[1]
         answer = _raw_get(
             port, "/events", (("Host", f"evil.example.com:{port}"),))
-        assert answer.startswith(b"HTTP/1.0 403"), answer[:64]
+        assert _status_code(answer) == 403, answer[:64]
         assert b"text/event-stream" not in answer
         assert GREETING not in answer
         assert MARKER.encode("ascii") not in answer
@@ -253,7 +265,7 @@ def test_the_events_stream_still_opens_and_greets_an_allowed_host(tmp_path):
         port = subject.server_address[1]
         for host in (f"127.0.0.1:{port}", f"localhost:{port}"):
             answer = _raw_get(port, "/events", (("Host", host),), stop=GREETING)
-            assert answer.startswith(b"HTTP/1.0 200"), (host, answer[:64])
+            assert _status_code(answer) == 200, (host, answer[:64])
             assert b"Content-Type: text/event-stream" in answer, host
             assert GREETING in answer, host
 

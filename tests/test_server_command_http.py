@@ -274,6 +274,18 @@ def test_default_empty_registry_keeps_reads_but_refuses_proposals(tmp_path):
         subject.server_close()
 
 
+def _status_code(response: bytes) -> int:
+    """The code off a raw status line, without pinning the HTTP version here.
+
+    The version is a real decision -- this server answers HTTP/1.1 and keeps
+    the connection, which is what stopped one page boot costing 34 of them --
+    and it is pinned once, in `tests/test_server_http_framing.py`, beside the
+    framing obligations that come with it. These rows are about a REFUSAL, so
+    they read the refusal and let that module own the version.
+    """
+    return int(response.split(b"\r\n", 1)[0].split(b" ")[1])
+
+
 def test_invalid_framing_refuses_without_waiting_for_or_reading_a_body(tmp_path):
     subject, store = _start(tmp_path)
     try:
@@ -286,7 +298,7 @@ def test_invalid_framing_refuses_without_waiting_for_or_reading_a_body(tmp_path)
         )
         for headers in cases:
             response = _raw(subject, headers)
-            assert response.startswith(b"HTTP/1.0 400")
+            assert _status_code(response) == 400
             assert b'"code":"malformed_request"' in response
         assert (store.run_path(RUN_ID) / "records.jsonl").read_bytes() == before
     finally:
@@ -299,7 +311,7 @@ def test_short_body_is_fixed_malformed_and_connection_is_retired(tmp_path):
     try:
         before = (store.run_path(RUN_ID) / "records.jsonl").read_bytes()
         response = _raw(subject, (("Content-Length", "10"),), b"{}")
-        assert response.startswith(b"HTTP/1.0 400")
+        assert _status_code(response) == 400
         assert b'"code":"malformed_request"' in response
         assert b"Traceback" not in response
         assert (store.run_path(RUN_ID) / "records.jsonl").read_bytes() == before

@@ -56,7 +56,11 @@ from conductor.command.http_api import (
     CommandApi,
 )
 from conductor.command.http_transport import (
-    CommandSession, HttpRefusal, command_content_length, validate_command_host)
+    CommandSession, HttpRefusal, validate_command_host)
+#: Re-exported deliberately: `IDLE_CONNECTION_SECONDS` is a fact about THIS
+#: server that callers and guards read off it, and moving where it is
+#: written did not move what it is about.
+from conductor.http_framing import IDLE_CONNECTION_SECONDS, KeptConnection
 from conductor.command.providers import ProviderResolution, resolve_providers
 from conductor.command.run_store import RunStore
 from conductor.command.runtime import Budget
@@ -390,7 +394,7 @@ class Watcher(threading.Thread):
                 self._clients.publish_state()
 
 
-class Handler(BaseHTTPRequestHandler):
+class Handler(KeptConnection, BaseHTTPRequestHandler):
     """Legacy read routes plus the exact seven frozen command routes."""
 
     server: ConductServer                  # narrowed for type checkers
@@ -465,37 +469,6 @@ class Handler(BaseHTTPRequestHandler):
             self._drain_refused_body()
             self._send_404()
 
-    def _drain_refused_body(self) -> None:
-        """Consume a refused POST body before answering it with a 404.
-
-        A route this server does not own still owes an ANSWER, and answering
-        over a body still sitting unread leaves what the client reads to the
-        platform rather than to this code. Draining first removes that from
-        chance. It is deliberately not claimed to fix an observed reset: on the
-        machine this landed on, the 404 arrived either way at every size the
-        ceiling admits.
-
-        The framing is the SAME bounded door the command route trusts -- one
-        Content-Length, no Transfer-Encoding, under the fixed ceiling -- so
-        there is no second dialect here, and nothing parses, retains or serves a
-        byte of what it drains. A body that door cannot measure is not consumed
-        on the client's word at all, and neither is one the client never
-        finishes: both close the connection, which is the only honest end for a
-        request whose length this server does not know.
-        """
-        try:
-            length = command_content_length(self.headers.raw_items())
-        except HttpRefusal:
-            self.close_connection = True
-            return
-        try:
-            drained = self.rfile.read(length)
-        except OSError:
-            self.close_connection = True
-            return
-        if len(drained) != length:
-            self.close_connection = True
-
     def do_HEAD(self) -> None:             # required BaseHTTPRequestHandler name
         self._serve_wrong_method("HEAD", head=True)
 
@@ -530,22 +503,14 @@ class Handler(BaseHTTPRequestHandler):
             return
         super().send_error(code, message, explain)
 
-    def _send_body(
-            self, status: int, content_type: str, body: bytes, *,
-            write_body: bool = True) -> None:
-        self.send_response(status)
-        self.send_header("Content-Type", content_type)
-        self.send_header("Cache-Control", "no-store")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        if write_body:
-            self.wfile.write(body)
-
     def _serve_wrong_method(self, method: str, *, head: bool = False) -> None:
+        # None of these roads reads a body, so whatever was sent is still on the
+        # connection. On a kept connection those bytes become the next request.
+        self._drain_unread_body()
         if urlsplit(self.path).path.startswith("/command"):
             self._serve_command(method, head=head)
         else:
-            self._send_404()
+            self._send_404(head=head)
 
     def _serve_command(
             self, method: str, *, read_body: bool = False,
@@ -570,9 +535,6 @@ class Handler(BaseHTTPRequestHandler):
         self._send_body(
             response.status, "application/json; charset=utf-8", encoded,
             write_body=not head)
-
-    def _send_404(self) -> None:
-        self._send_body(404, "text/plain; charset=utf-8", b"not found\n")
 
     def _serve_panel(self) -> None:
         """Answer `GET /` with the Workflow Studio's shell.
@@ -642,6 +604,12 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
         self.send_header("Cache-Control", "no-store")
+        # A stream has no length and never will, so the CLOSE is its frame and
+        # this says so. Without it a client on a kept connection is entitled to
+        # look for a second answer after this one, and there is no second
+        # answer -- there is more of the first, until one side goes away.
+        self.send_header("Connection", "close")
+        self.close_connection = True
         self.end_headers()
         mailbox = self.server.clients.register()
         try:

@@ -458,11 +458,11 @@ def _drive(page: Page, window: _Window, node: str = STEP) -> None:
     tell which one a person meant.
 
     The MECHANISM is asserted as well as its effect, because the effect alone
-    could not fail. Two back-to-back `click()` calls measured one proposal
-    whatever the window did -- the second synthesized press does not survive
-    the subtree being replaced under it -- so this reads the control's own
-    state first, and then forces a press through anyway: a disabled button
-    fires no click and no submit, and the count says so.
+    could not fail. Two back-to-back Playwright `click()` calls measured one
+    proposal whatever the window did -- the second synthesized press does not
+    survive the subtree being replaced under it -- so the control's own state
+    and a real press of it are taken in ONE page task: a disabled button fires
+    no click and no submit, and the count below says so.
 
     The Confirm control is WAITED for rather than assumed: it exists only once
     the read that follows the write shows the proposal, which is what makes the
@@ -472,17 +472,20 @@ def _drive(page: Page, window: _Window, node: str = STEP) -> None:
     _type(page, "field:rationale", WHY)
     press = page.locator(f'[data-focus-key="propose:{node}"]')
     press.click()
+    # The state and the second press in ONE task, because they are one claim.
+    # Asking across two round trips let the read that follows the write land
+    # between them: the answer came back "shut", the form was replaced, and the
+    # press then met a control that was no longer on the screen. That is a race
+    # in the asking, not a second proposal -- and it got likelier the day the
+    # server stopped opening a new connection for every read, which is exactly
+    # the kind of speed-up a test must not be measuring.
     shut = page.evaluate(
         "key => { const button = document.querySelector("
-        "`[data-focus-key='${key}']`); return button === null ? \"gone\" "
-        ": (button.disabled ? \"shut\" : \"open\"); }", f"propose:{node}")
+        "`[data-focus-key='${key}']`); if (button === null) return \"gone\"; "
+        "const state = button.disabled ? \"shut\" : \"open\"; "
+        "button.click(); return state; }", f"propose:{node}")
     assert shut in ("gone", "shut"), (
         "the control stayed pressable while its own write was in flight")
-    # Forced only while the button is still THERE. On a fast host the read has
-    # already landed and replaced the form, and a forced click on a locator
-    # that resolves to nothing waits out its own timeout for no reason.
-    if shut == "shut":
-        press.click(force=True, no_wait_after=True, timeout=3000)
     page.wait_for_selector(f'[data-focus-key="confirm:{node}"]')
     assert len(window.posted("/proposals")) == 1, window.posted("/proposals")
     _type(page, "field:confirmed_by", ACTOR)

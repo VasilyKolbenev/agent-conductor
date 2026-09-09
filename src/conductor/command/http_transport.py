@@ -144,6 +144,24 @@ def validate_command_host(
     return _host(_header_pairs(raw_header_pairs), allowed_hosts)
 
 
+def announces_a_body(raw_header_pairs: Iterable[tuple[str, str]]) -> bool:
+    """Whether this request SAYS it carries a body at all.
+
+    Asked before the length door rather than inside it, because the two are
+    different questions and only one of them is about trust. A request naming
+    neither `Content-Length` nor `Transfer-Encoding` carries no body: there is
+    nothing to measure, nothing to refuse, and nothing left on the connection
+    for the next request to run into.
+
+    It exists so a road that answers WITHOUT reading can tell "no body" from "a
+    body I will not measure on your word" -- the first keeps the connection, the
+    second ends it -- while both keep asking the one bounded door below.
+    """
+    pairs = _header_pairs(raw_header_pairs)
+    return bool(_values(pairs, "Content-Length")
+                or _values(pairs, "Transfer-Encoding"))
+
+
 def command_content_length(
         raw_header_pairs: Iterable[tuple[str, str]]) -> int:
     """Return one bounded command body length or a fixed malformed refusal."""
