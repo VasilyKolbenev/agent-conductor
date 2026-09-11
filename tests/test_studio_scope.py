@@ -55,6 +55,10 @@ GLOBALS = frozenset({
     # standard functions
     "isNaN", "parseFloat", "parseInt", "structuredClone", "fetch",
     "encodeURIComponent", "decodeURIComponent",
+    # the read door's deadline (studio.js `readJson`): one timer per GET, the
+    # abort it fires, and clearing that timer once the read settles. Admitted
+    # for the boot module alone -- `DEADLINE` below holds every other module out
+    "AbortController", "setTimeout", "clearTimeout",
     # words a call-shaped regex sees that are not calls at all
     "if", "for", "while", "switch", "catch", "return", "typeof", "function",
     "await", "new", "else", "do", "of", "in", "case", "throw",
@@ -218,3 +222,27 @@ def test_the_roster_of_globals_is_one_this_suite_agreed_to():
     """
     assert len(GLOBALS) < 50, sorted(GLOBALS)
     assert "eval" not in GLOBALS and "Function" not in GLOBALS
+
+
+#: The three names only the boot module's read door may reach. A roster entry
+#: forgives a name in EVERY module, so this holds these three back to one.
+DEADLINE = re.compile(r"(?<![.\w$])(AbortController|setTimeout|clearTimeout)\b")
+
+
+def test_the_deadline_globals_are_reached_by_the_boot_module_alone():
+    """The roster admits a timer, its abort and its clearing for one door.
+
+    Only the boot module owns a socket to bound. A second module reaching for
+    a timer would be a second clock nobody reviewed, and the shared roster
+    would let it past the resolver silently -- so the admission is held to the
+    module it was made for, in both directions, and calibrated on a planted
+    timer first so an empty scan cannot pass for a clean one.
+    """
+    planted = _scannable("function stall() { return setTimeout(() => 0, 5); }")
+    assert DEADLINE.findall(planted) == ["setTimeout"]
+    for name in MODULES:
+        reached = sorted(set(DEADLINE.findall(_scannable(_code(PANEL / name)))))
+        if name == "studio.js":
+            assert reached == ["AbortController", "clearTimeout", "setTimeout"]
+        else:
+            assert reached == [], (name, reached)

@@ -33,6 +33,13 @@ const UNKNOWN = "Outcome unknown. Read this workflow again to see what stands.";
 const STREAM_DOWN = "Connection lost. The last read facts are still on screen, "
   + "and nothing may be written until the stream is back and what you are "
   + "writing to has been read again.";
+//: A GET is aborted at READ_DEADLINE, its body included -- wide, as a healthy
+//: read can queue behind a write. LATE is this window's word for it.
+const READ_DEADLINE = 20000;
+const LATE = "read_late";
+const LATE_SAID = "The server did not answer a read in time, so this window "
+  + "stopped waiting. It proves nothing about any write; read again to retry.";
+const UNSENT = "The server did not answer in time; this press wrote nothing.";
 const DRAFT_REFUSED = "The drawing was refused before it was offered to the "
   + "server: what stops it is listed beside the canvas.";
 const SAVED = "The draft is stored on the server. It is not a revision: "
@@ -100,6 +107,11 @@ const REOPENED = Object.freeze(["draft_changed", "draft_conflict"]);
   let chosenWorkflow = "", chosenRun = "";
   let workflowEpoch = 0, workflowDirty = false, workflowBusy = false;
   let runEpoch = 0, runDirty = false, runBusy = false;
+  // What each queue has on the wire, for a press or a new subject to abort, and
+  // the newest read of each list that has landed.
+  let workflowReading = new AbortController();
+  let runReading = new AbortController();
+  let listReads = 0, workflowsLanded = 0, runsLanded = 0;
   // A write outcome waiting for the read that will make it true. It names what
   // the write ASKED FOR -- a document's canonical text, or a revision number --
   // because only a read showing that same thing confirms anything about it.
@@ -134,14 +146,17 @@ const REOPENED = Object.freeze(["draft_changed", "draft_conflict"]);
   //
   // The one read door. Every GET on this surface goes through it, so a refusal
   // is translated in one place and no caller invents a second vocabulary for
-  // what went wrong.
-  async function readJson(target) {
-    const response = await fetch(target, {cache: "no-store"});
-    let payload;
+  // what went wrong -- and every GET is bounded in one place, body and all.
+  async function readJson(target, stop = new AbortController()) {
+    const timer = setTimeout(() => stop.abort(LATE), READ_DEADLINE);
+    let response, payload;
     try {
+      response = await fetch(target, {cache: "no-store", signal: stop.signal});
       payload = await response.json();
     } catch (_error) {
-      throw new Error("store_error");
+      throw new Error(stop.signal.aborted ? LATE : "store_error");
+    } finally {
+      clearTimeout(timer);
     }
     if (!response.ok) throw new Error(refusalCode(payload));
     return payload;
@@ -190,27 +205,57 @@ const REOPENED = Object.freeze(["draft_changed", "draft_conflict"]);
     ["decisions", "proposals", "actions", "artifacts"]);
 
   function said(code) {
+    if (code === LATE) return LATE_SAID;
     return ERROR_LABELS[code] || ERROR_LABELS.store_error;
   }
 
+  //: A read abandoned at its deadline FAILED. That is said once however many
+  //: screens it fails, beside a person's own sentence rather than over it.
+  function unread(error) {
+    const code = error instanceof Error ? error.message : "store_error";
+    if (code !== LATE) return {phase: "refused", notice: said(code)};
+    const {notice, noticeFrom} = state;
+    if (notice.includes(LATE_SAID)) return {phase: "failed", notice};
+    return {phase: "failed", notice: noticeFrom === "human" && notice
+      ? `${notice} ${LATE_SAID}` : LATE_SAID};
+  }
+
+  //: A deadline that passed while a frame's read of the SAME subject queued
+  //: behind it, stream open. Nothing newer is out -- the queue waits on this
+  //: read -- so the failure is still news, however steadily frames arrive.
+  function stillNews(same, stop) {
+    return same && streamOpen && stop.signal.reason === LATE;
+  }
+
+  //: Frames read the lists unserialized, so two reads of one list can be out
+  //: at once. An outcome lands unless a NEWER read of that list already has:
+  //: a dead read never paints over the recovery that replaced it.
   async function loadWorkflows() {
+    const asked = ++listReads;
     dispatch({type: "workflows-phase", phase: "loading"});
+    let heard;
     try {
-      dispatch({type: "workflows-loaded", payload: await readJson(path.workflows())});
+      heard = {type: "workflows-loaded", payload: await readJson(path.workflows())};
     } catch (error) {
-      dispatch({type: "workflows-phase", phase: "refused",
-        notice: said(error instanceof Error ? error.message : "store_error")});
+      heard = {type: "workflows-phase", ...unread(error)};
     }
+    if (asked < workflowsLanded) return;
+    workflowsLanded = asked;
+    dispatch(heard);
   }
 
   async function loadRuns() {
+    const asked = ++listReads;
     dispatch({type: "runs-phase", phase: "loading"});
+    let heard;
     try {
-      dispatch({type: "runs-loaded", payload: await readJson(path.runs())});
+      heard = {type: "runs-loaded", payload: await readJson(path.runs())};
     } catch (error) {
-      dispatch({type: "runs-phase", phase: "refused",
-        notice: said(error instanceof Error ? error.message : "store_error")});
+      heard = {type: "runs-phase", ...unread(error)};
     }
+    if (asked < runsLanded) return;
+    runsLanded = asked;
+    dispatch(heard);
   }
 
   // A held outcome is consumed only by the read that ANNOUNCES it. Consuming
@@ -252,29 +297,35 @@ const REOPENED = Object.freeze(["draft_changed", "draft_conflict"]);
 
   async function loadWorkflow(workflowId) {
     const asked = workflowEpoch;
+    const stop = workflowReading = new AbortController();
     const wants = pendingCarry && pendingCarry.kind === "publish"
       ? pendingCarry.revision : null;
     try {
       const [payload, revision] = await Promise.all([
-        readJson(path.workflow(workflowId)),
+        readJson(path.workflow(workflowId), stop),
         wants === null ? Promise.resolve(null)
-          : readJson(path.revision(workflowId, wants)).catch(() => null),
+          : readJson(path.revision(workflowId, wants), stop).catch(() => null),
       ]);
       if (asked !== workflowEpoch) return;
       dispatch({type: "workflow-loaded", payload,
         ...confirmedBy(payload, revision), ready: streamOpen});
     } catch (error) {
-      if (asked !== workflowEpoch) return;
-      const code = error instanceof Error ? error.message : "store_error";
-      dispatch({type: "workflow-unread", phase: "refused", ...unconfirmed(),
-        notice: said(code)});
+      // Only the current read settles a held write outcome. A late failure
+      // under a queued frame says where it got to and leaves that to the next.
+      if (asked === workflowEpoch) {
+        dispatch({type: "workflow-unread", ...unconfirmed(), ...unread(error)});
+      } else if (stillNews(workflowId === chosenWorkflow, stop)) {
+        dispatch({type: "workflows-phase", ...unread(error)});
+      }
     }
   }
 
   // Serialized like the Cockpit's: a burst of frames collapses into one more
   // read after the one in flight, so a stream cannot stack reads on a window.
-  async function refreshWorkflow(workflowId, carry = null) {
+  // A press or a change of subject aborts that read instead of queueing.
+  async function refreshWorkflow(workflowId, carry = null, fresh = false) {
     if (!isId(workflowId)) return;
+    if (fresh || workflowId !== chosenWorkflow) workflowReading.abort();
     if (workflowId !== chosenWorkflow) {
       // Choosing a workflow shuts the write door THIS INSTANT, before any
       // request goes out: until the new read lands the drawing on screen is
@@ -289,44 +340,53 @@ const REOPENED = Object.freeze(["draft_changed", "draft_conflict"]);
     if (carry) pendingCarry = carry;
     if (workflowBusy) return;
     workflowBusy = true;
-    while (workflowDirty) {
-      workflowDirty = false;
-      await loadWorkflow(chosenWorkflow);
+    try {
+      while (workflowDirty) {
+        workflowDirty = false;
+        await loadWorkflow(chosenWorkflow);
+      }
+    } finally {
+      workflowBusy = false;
     }
-    workflowBusy = false;
   }
 
   async function loadRun(runId) {
     const asked = runEpoch;
+    const stop = runReading = new AbortController();
     try {
       const [read, controls] = await Promise.all([
-        readJson(path.run(runId)),
-        readJson(path.controls(runId)).catch(() => null),
+        readJson(path.run(runId), stop),
+        readJson(path.controls(runId), stop).catch(() => null),
       ]);
       if (asked !== runEpoch) return;
       dispatch({type: "run-loaded", read, controls});
     } catch (error) {
-      if (asked !== runEpoch) return;
-      const code = error instanceof Error ? error.message : "store_error";
-      dispatch({type: "runs-phase", phase: "refused", notice: said(code)});
-      dispatch({type: "decisions-phase", phase: "refused"});
-      dispatch({type: "agents-phase", phase: "refused"});
+      if (asked !== runEpoch && !stillNews(runId === chosenRun, stop)) return;
+      const heard = unread(error);
+      dispatch({type: "runs-phase", ...heard});
+      dispatch({type: "decisions-phase", phase: heard.phase});
+      dispatch({type: "agents-phase", phase: heard.phase});
     }
   }
 
-  async function refreshRun(runId) {
+  // Serialized the same way, and a press or a change of run aborts likewise.
+  async function refreshRun(runId, fresh = false) {
     if (!isId(runId)) return;
+    if (fresh || runId !== chosenRun) runReading.abort();
     if (runId !== chosenRun) dispatch({type: "run-chosen", runId});
     chosenRun = runId;
     runEpoch += 1;
     runDirty = true;
     if (runBusy) return;
     runBusy = true;
-    while (runDirty) {
-      runDirty = false;
-      await loadRun(chosenRun);
+    try {
+      while (runDirty) {
+        runDirty = false;
+        await loadRun(chosenRun);
+      }
+    } finally {
+      runBusy = false;
     }
-    runBusy = false;
   }
 
   // -- the one mutation door -----------------------------------------------
@@ -380,6 +440,7 @@ const REOPENED = Object.freeze(["draft_changed", "draft_conflict"]);
     if (result.status !== "refused") {
       return {phase: "outcome-unknown", notice: UNKNOWN};
     }
+    if (result.code === LATE) return {phase: "refused", notice: UNSENT};
     const rows = result.payload && Array.isArray(result.payload.diagnostics)
       ? result.payload.diagnostics.map((row) => row.message).join(" · ") : "";
     return {phase: "refused",
@@ -592,7 +653,7 @@ const REOPENED = Object.freeze(["draft_changed", "draft_conflict"]);
 
   function onValidate() {
     if (!isId(chosenWorkflow)) return;
-    refreshWorkflow(chosenWorkflow);
+    refreshWorkflow(chosenWorkflow, null, true);
     dispatch({type: "status", notice: "Read again. The server's diagnostics "
       + "describe the SAVED draft; the list beside them is what this window "
       + "already sees about the drawing, which has not been sent."});
@@ -627,21 +688,21 @@ const REOPENED = Object.freeze(["draft_changed", "draft_conflict"]);
       !Object.hasOwn(patch, "runId") && !Object.hasOwn(patch, "cycleId")
       && !Object.hasOwn(patch, "models")),
     onRefreshRuns: () => loadRuns(),
-    onRefreshRun: () => { if (chosenRun) refreshRun(chosenRun); },
+    onRefreshRun: () => { if (chosenRun) refreshRun(chosenRun, true); },
     onRefreshAgents: () => loadWorkflows(),
     onSelectRun: (runId) => {
       dispatch({type: "screen", screen: "runs"});
-      refreshRun(runId);
+      refreshRun(runId, true);
     },
     onSelect: (selection) => dispatch({type: "canvas-select", selection}),
     onView: (view) => dispatch({type: "canvas-view", ...view}),
     onEdit: (edit) => dispatch({type: "edit", edit}),
     onStatus: (notice) => dispatch({type: "status", notice}),
-    selectRun: (runId) => refreshRun(runId),
+    selectRun: (runId) => refreshRun(runId, true),
     refreshRuns: () => loadRuns(),
     showDecisions: (runId) => {
       dispatch({type: "screen", screen: "decisions"});
-      if (isId(runId)) refreshRun(runId);
+      if (isId(runId)) refreshRun(runId, true);
     },
     chooseStep: step.chooseStep,
     editStep: step.editStep,
@@ -654,7 +715,7 @@ const REOPENED = Object.freeze(["draft_changed", "draft_conflict"]);
     submitDecision: decisions.submitDecision,
     refreshAgents: () => {
       loadWorkflows();
-      if (chosenRun) refreshRun(chosenRun);
+      if (chosenRun) refreshRun(chosenRun, true);
     },
   });
 
