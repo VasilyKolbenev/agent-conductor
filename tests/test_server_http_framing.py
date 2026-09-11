@@ -1,12 +1,13 @@
 """Every response road, read off a live socket, one request after another.
 
-The reverse browser gate goes red because a Studio module fails to load with
-`net::ERR_NO_BUFFER_SPACE` -- Chromium's name for WSAENOBUFS -- and the socket
-pressure behind it is this server's own: answering HTTP/1.0 closes the
-connection after every response, so one page boot costs 34 accepted TCP
-connections instead of 6.
+A browser gate went red when a Studio module failed to load with
+`net::ERR_NO_BUFFER_SPACE` -- Chromium's name for WSAENOBUFS. Part of the socket
+churn under it was this server's own: answering HTTP/1.0 closes the connection
+after every response, so one page boot cost 34 accepted TCP connections instead
+of 6. Keeping connections cut that churn. It did not end the error, and which
+resource runs out is still unassigned.
 
-Keeping the connection open is the repair, and it is NOT a one-line switch.
+Keeping the connection open is NOT a one-line switch.
 HTTP/1.0 forgives a badly framed response because the close IS the frame: a
 body nobody asked for, a stream with no length, a request body left unread --
 each of them is invisible while every answer ends by hanging up. Persistent

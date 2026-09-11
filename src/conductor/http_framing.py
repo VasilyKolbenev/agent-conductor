@@ -8,13 +8,14 @@ It earned its own file the day this server stopped closing the connection after
 every response. Under HTTP/1.0 the close WAS the frame, so a badly framed answer
 could not be observed: a HEAD that wrote a body, a stream with no length, a
 request body nobody read -- each ended at the same hang-up as a correct one. One
-page boot cost 34 accepted TCP connections that way; the browser gate runs
-hundreds of pages; Windows ran out of socket buffer space, a Studio module
-failed to load with WSAENOBUFS, and the reverse gate went red.
+page boot cost 34 accepted TCP connections that way against 6 kept, measured,
+and the browser gate runs hundreds of pages. Keeping them was done to cut that
+churn under a gate that had failed a Studio module with WSAENOBUFS. It did not
+settle the failure: the same error met a later gate, and which resource runs out
+is still unassigned.
 
-Keeping the connection is the repair, and it moves those three from invisible to
-fatal: whatever is left on the connection is read as the start of the next
-request. So the obligations live together, in front of the routes that spend
+Keeping the connection moves those three from invisible to fatal: whatever is
+left on the connection is read as the start of the next request. So the obligations live together, in front of the routes that spend
 them, and `tests/test_server_http_framing.py` reads each one off a real socket.
 """
 from __future__ import annotations
@@ -47,8 +48,9 @@ class KeptConnection:
 
     #: Answer HTTP/1.1 and keep the connection. Under HTTP/1.0 every response
     #: ended by hanging up, so one Studio boot cost 34 accepted TCP connections
-    #: instead of 6 -- measured -- and that churn is what exhausts Windows
-    #: socket buffers and fails a JS module with WSAENOBUFS mid-gate.
+    #: instead of 6 -- measured. Fewer connections is the whole claim: a later
+    #: gate still met WSAENOBUFS, and what exhausts the buffer space is not
+    #: established.
     #:
     #: Keeping it is not free of obligations, and they are why this is more than
     #: one line: a HEAD may write no body, a stream with no length must say the
