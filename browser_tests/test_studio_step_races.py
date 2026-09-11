@@ -113,9 +113,33 @@ def _release(held: list) -> None:
         route.continue_()
 
 
+def _let_through(page: Page, pattern: str) -> None:
+    """Stop holding one route WITHOUT turning request interception off.
+
+    The obvious road, `page.unroute`, removes the page's last route, and that
+    switches Chromium's interception off. A request paused across that switch
+    is continued by neither Playwright nor Chromium: it never settles, and no
+    event for it need ever reach the client. A release is exactly when the
+    window starts requests -- a handed-over answer starts the run's confirming
+    reads within milliseconds -- and one stranded read holds Studio's run
+    refresh, so an answered write's control stays shut for good. The reverse
+    gate went red on D that way.
+
+    Measured on a bare page with this module's calls in this order (fulfil,
+    then un-route, while the answer's two reads start): 71 of 400 and 62 of
+    300 releases stranded a read on HTTP/1.1, 67 of 400 on HTTP/1.0, and none
+    of the first three stranded reads settled in 24 seconds; 0 of 300 when the
+    reads began 20ms later, and 0 of 400 when the route stayed. So a route that
+    passes every request on takes the holding one's place, and interception
+    stays on -- which is how every request before the release already ran.
+    `test_parked_answer_release.py` is the witness.
+    """
+    page.route(pattern, lambda route: route.continue_())
+
+
 def _unhold(page: Page, run_id: str, target: str) -> None:
     """Stop holding that route: a later POST to it must reach the server."""
-    page.unroute(f"**/command/runs/{run_id}/{target}")
+    _let_through(page, f"**/command/runs/{run_id}/{target}")
 
 
 def _state_of(page: Page, key: str) -> str:
@@ -318,12 +342,15 @@ def _park_the_answer(page: Page, run_id: str, target: str) -> list:
 def _release_parked(page: Page, run_id: str, target: str, parked: list) -> None:
     """Hand the parked answers over, then stop holding the route.
 
-    In that order: a route un-routed while its request is still parked is
-    handled by the un-routing, and a fulfil after that is refused.
+    In that order: a parked request is answered by this test, never by
+    whatever stops the holding. And the holding stops through `_let_through`,
+    not an un-routing: the answer handed over here is what starts the run's
+    confirming reads, at the very moment an un-routing would turn
+    interception off under them.
     """
     for route, answer in parked:
         route.fulfill(response=answer)
-    page.unroute(f"**/command/runs/{run_id}/{target}")
+    _let_through(page, f"**/command/runs/{run_id}/{target}")
 
 
 def _wait_until_open(page: Page, key: str) -> None:
@@ -389,7 +416,7 @@ def _hold_reads(page: Page, run_id: str) -> list:
 def _release_reads(page: Page, run_id: str, held: list) -> None:
     for route in held:
         route.continue_()
-    page.unroute(f"**/command/runs/{run_id}")
+    _let_through(page, f"**/command/runs/{run_id}")
 
 
 def _an_answer_lands_before_its_read(page: Page, window, *, key: str,
@@ -682,7 +709,7 @@ def test_a_read_the_projection_refuses_leaves_the_words_alone(
         page.wait_for_function(
             "() => document.body.innerText.includes("
             "'a payload this build cannot read')")
-        page.unroute(f"**/command/runs/{RUN_ID}")
+        _let_through(page, f"**/command/runs/{RUN_ID}")
         page.locator(f'[data-focus-key="run:{RUN_ID}"]').click()
         page.wait_for_selector(f'[data-step="propose:{STEP}"]')
         form = page.locator(f'[data-step="propose:{STEP}"]')

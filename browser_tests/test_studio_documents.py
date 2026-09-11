@@ -51,6 +51,7 @@ from browser_tests.test_studio_step import (  # noqa: F401
 from browser_tests.test_studio_step import _open as _open_bench
 from browser_tests.test_studio_step_offers import _type_into
 from browser_tests.test_studio_step_offers import _open_run_under, _propose, _row_says
+from browser_tests.test_studio_step_races import _let_through
 from tests.schedule_journal import routed_dalio
 from tests.test_command_graph_projection import a_decision, settle_to_the_confirm_gate
 from tests.test_command_run_store import a_run
@@ -260,7 +261,7 @@ def test_words_typed_while_the_document_write_is_in_flight_are_not_spent_by_it(
         # review's R6) -- the order inside the carry is what holds this.
         page.keyboard.type(" and the next thing")
         held[0].continue_()
-        page.unroute(f"**/command/runs/{RUN_ID}/artifacts")
+        _let_through(page, f"**/command/runs/{RUN_ID}/artifacts")
         page.wait_for_function(
             "id => (document.querySelector('ul.studio-artifacts')?.innerText || '')"
             ".includes(id)", arg=f"{LONE_AWAITED_REF}-0")
