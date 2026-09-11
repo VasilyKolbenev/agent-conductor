@@ -75,7 +75,11 @@ PEOPLE = PANEL / "studio-people.js"
 #: it too, and the transport ban is the one that pays: a module that could
 #: reach the socket itself would be a second door nobody counted.
 RUNWRITE = PANEL / "studio-runwrite.js"
-MINE = (STORE, VIEW, RUNFORM, RUNWRITE, BOOT)
+#: The focus net under every render pass, split off the boot module at the same
+#: cap. It is render machinery and reaches no socket, and it stays on this list
+#: so the transport ban keeps reading code that left the boot module.
+FOCUS = PANEL / "studio-focus.js"
+MINE = (STORE, VIEW, RUNFORM, RUNWRITE, FOCUS, BOOT)
 LINE_CAP = 800
 
 #: The frontend contract's "May import" column for these rows, verbatim. It is
@@ -102,11 +106,14 @@ PERMITTED = {
         "./command-view.js", "./command-projection.js", "./studio-model.js",
         "./studio-store.js", "./studio-view.js", "./studio-canvas.js",
         "./studio-inspector.js", "./studio-runs.js", "./studio-runwrite.js",
-        "./studio-people.js"}),
+        "./studio-people.js", "./studio-focus.js"}),
     #: What a press MEANS, and the whole of what it may reach: the two
     #: fragments' own sentences and keys, nothing else.
     "studio-runwrite.js": frozenset({"./studio-runstep.js",
                                      "./studio-rundocs.js"}),
+    #: The focus net imports nothing: it reads the focused control and puts
+    #: focus back, and a neighbour it could reach would be a second opinion.
+    "studio-focus.js": frozenset(),
 }
 IMPORTS = r'from "(\./[a-z-]+\.js)";'
 

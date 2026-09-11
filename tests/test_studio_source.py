@@ -58,7 +58,7 @@ MODULES = ("studio.js", "studio-store.js", "studio-view.js", "studio-model.js",
            "studio-sections.js", "studio-artifacts.js", "studio-runform.js",
            "studio-transitions.js", "studio-fields.js", "studio-rundocs.js",
            "studio-rundraft.js", "studio-runwrites.js", "studio-toolbardraft.js",
-           "studio-controls.js", "studio-isolation.js")
+           "studio-controls.js", "studio-isolation.js", "studio-focus.js")
 #: The one transport module: every `fetch(`, the one stream, the session token
 #: and the screen router. `graph.js` holds the same position in its window, and
 #: the sealed-API guard below pins this one the same way.
@@ -79,6 +79,9 @@ PERMITTED_IMPORTS = {
     #: the server sent. It builds elements, so it reaches the view's element
     #: helper and nothing else -- no store, no model, no copy of any sentence.
     "studio-isolation.js": frozenset({"./command-view.js"}),
+    #: The focus net under the boot module's render pass, split off it at the
+    #: line cap. It reads the focused control and imports nothing.
+    "studio-focus.js": frozenset(),
     "studio-edits.js": frozenset({"./studio-model.js"}),
     #: Projections over one run read, and nothing else. It imports nothing for
     #: the reason `studio-model.js` imports nothing: a pure computation that

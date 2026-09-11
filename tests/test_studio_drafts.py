@@ -244,7 +244,7 @@ def test_the_toolbar_draws_its_folds_and_fields_from_the_slice_and_commits_back(
 
 
 def test_the_focus_net_carries_the_words_and_the_caret_and_never_guesses():
-    """The boot module's net under every mount, and what it carries.
+    """The net under every mount, and what it carries.
 
     A pass replaces the focused control; the successor is drawn from the
     reducer, which holds what `change` committed. So the net carries the
@@ -252,15 +252,22 @@ def test_the_focus_net_carries_the_words_and_the_caret_and_never_guesses():
     review's R1/R5). A step field stays scoped to the form it came from;
     shell-wide uniqueness cannot establish ownership after that form has
     vanished and left a sibling as the sole holder of the same key (R4).
+
+    The two functions left the boot module at its line cap, and the claim
+    moved with them. The boot still takes the key before every pass and hands
+    it back after, inside the shell -- that half is held on the boot.
     """
-    boot = _code(BOOT)
-    target = re.search(r"function focusTarget\(\) \{(.*?)\n  \}", boot, re.DOTALL)
+    boot, net = _code(BOOT), _code(PANEL / "studio-focus.js")
+    assert "const key = focusTarget();" in boot
+    assert "restoreFocus(shell, key);" in boot
+    target = re.search(r"export function focusTarget\(\) \{(.*?)\n\}", net, re.DOTALL)
     assert target is not None
     assert "start: typed ? active.selectionStart : null," in target.group(1)
     assert "value: typed ? active.value : null" in target.group(1)
     assert 'const form = active.closest("[data-step]");' in target.group(1)
     assert 'step: form === null ? null : form.getAttribute("data-step")' in target.group(1)
-    restore = re.search(r"function restoreFocus\(held\) \{(.*?)\n  \}", boot, re.DOTALL)
+    restore = re.search(r"export function restoreFocus\(shell, held\) \{(.*?)\n\}",
+                        net, re.DOTALL)
     assert restore is not None
     assert "if (found.length !== 1) return;" in restore.group(1)
     assert 'const within = held.step === null ? "" : `[data-step="${held.step}"] `;' in restore.group(1)
