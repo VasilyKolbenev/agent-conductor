@@ -57,6 +57,67 @@ class KeptConnection:
     #: `tests/test_server_http_framing.py` reads each of those off a socket.
     protocol_version = "HTTP/1.1"
     timeout = IDLE_CONNECTION_SECONDS
+    #: The ONE method whose handlers own their request body. Every other body
+    #: is settled at the entrance below, before any route runs -- so a GET that
+    #: carries one, a method no handler exists for, and whatever method is added
+    #: next are covered BECAUSE they are not named. What this replaces was a
+    #: list of the requests that must drain, and it missed two entrances by
+    #: construction: GET on both surfaces, and the road `send_error(501)` takes.
+    #:
+    #: POST keeps its body because both of its roads decide about it before a
+    #: byte is read. The command route checks Host, Origin, CSRF, content type
+    #: and framing and refuses WITHOUT reading on any failure; the refused-POST
+    #: road consumes through the bounded door or closes. Settling a POST body at
+    #: the entrance would read it before those checks had spoken.
+    BODY_READING_METHODS = frozenset({"POST"})
+
+    def parse_request(self) -> bool:
+        """Parse as the standard library does, then settle the body before any route.
+
+        Every request crosses this, and crosses it before dispatch -- including
+        the ones no handler exists for, which go on to `send_error(501)` and
+        from there to the command refusal. That is what makes it the entrance: a
+        route chosen afterwards cannot answer over bytes still on the
+        connection, because by then there are none, or the connection is
+        already ending and says so.
+
+        Nothing is loosened by moving it here. The body goes through the same
+        bounded door as before -- one `Content-Length`, no `Transfer-Encoding`,
+        under the ceiling -- and a framing that door will not trust is never
+        read on the client's word: the connection ends instead. A request that
+        announces no body at all is untouched, so a browser's ordinary GET
+        keeps its connection.
+
+        Two more ways in were found by an adversarial sweep after this entrance
+        landed, and both are about what the standard library READ before any
+        code here runs -- which is why they are settled here and not per route.
+        """
+        if not super().parse_request():
+            return False
+        if self.request_version == "HTTP/0.9":
+            # No status line, no headers, no length: the close is the only frame
+            # such an answer can have, and no route here serves without headers.
+            # On the newer standard library these arrive with `headers = {}` and
+            # the first route to read one raised; on the older one a 0.9 request
+            # carrying `Connection: keep-alive` was answered unframed on a
+            # connection this server KEPT. `send_error` says `Connection: close`,
+            # which is what ends it on both.
+            self.send_error(505, "HTTP/0.9 is not served")
+            return False
+        if self.headers.get_payload():
+            # The header block did not parse whole. The parser stops at the
+            # first line it cannot read as a header -- a space before the colon
+            # is enough -- and keeps every line after it as payload: those bytes
+            # are already off the socket, but `Content-Length` among them never
+            # reached `self.headers`, so the body would read as "none" and be
+            # parsed as the next request. A length this server does not know is
+            # not one it guesses at: the route still answers -- a command
+            # refusal keeps its JSON envelope -- and the connection ends.
+            self.close_connection = True
+            return True
+        if self.command not in self.BODY_READING_METHODS:
+            self._drain_unread_body()
+        return True
 
     def _drain_refused_body(self) -> None:
         """Consume a refused POST body before answering it with a 404.

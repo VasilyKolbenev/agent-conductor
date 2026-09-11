@@ -504,9 +504,9 @@ class Handler(KeptConnection, BaseHTTPRequestHandler):
         super().send_error(code, message, explain)
 
     def _serve_wrong_method(self, method: str, *, head: bool = False) -> None:
-        # None of these roads reads a body, so whatever was sent is still on the
-        # connection. On a kept connection those bytes become the next request.
-        self._drain_unread_body()
+        # Any body was already settled at the entrance (`parse_request`). Do not
+        # drain again here: the headers still announce it, so a second drain
+        # would read the NEXT request's bytes, or wait for bytes never sent.
         if urlsplit(self.path).path.startswith("/command"):
             self._serve_command(method, head=head)
         else:

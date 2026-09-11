@@ -38,6 +38,12 @@ ARTIFACTS_ENV = "CONDUCT_GATE_ARTIFACTS"
 #: console list "was not preserved" and why the failed URL was never written
 #: down: there was nowhere for it to live. Now there is, and it is keyed by the
 #: page object so a module that opens three windows keeps them apart.
+#:
+#: And it is kept for exactly ONE test: emptied when a test's protocol ends,
+#: after its last report (`pytest_runtest_protocol`). The first version of this
+#: file never emptied it, so every failure record in a process carried the
+#: words of every earlier test -- while its handoff said the events were scoped
+#: to one test, from an edit that had never landed.
 _SAID: "dict[object, list[str]]" = {}
 
 
@@ -63,7 +69,22 @@ def _reap_contexts() -> None:
 
 
 def _remember(page: object) -> list[str]:
-    """Attach the three channels to a page the moment it exists.
+    """Attach the channels to a page when it is born.
+
+    ONE road registers every page: the context's own `page` event, which
+    Playwright delivers for a page the context opens on request and for one
+    the page opens itself -- a popup, `window.open` -- alike, and delivers
+    before `new_page` returns. The first version ALSO wrapped `new_page`, so an
+    ordinary page was registered twice and every event written twice: a count
+    in a record was a count of listeners. Measured, the wrapper registered
+    nothing the event had not already registered, so it is gone rather than
+    guarded against.
+
+    The store is reached through `setdefault` on purpose. Were a second road
+    ever added back, a doubled registration doubles every record -- loud, and
+    caught by `test_one_console_error_is_one_record` -- instead of quietly
+    leaking listeners into a list nobody reads. Identical words said twice are
+    still two records: nothing here filters text.
 
     `requestfailed` is the one that was never connected anywhere, and it is the
     one that mattered: a JS module that fails to load stops `mountShell`, the
@@ -103,15 +124,8 @@ def _instrumented(browser: Browser) -> Browser:
     def new_context(**options):
         context = minting(**options)
         _OPEN_CONTEXTS.append(context)
-        opening = context.new_page
-
-        def new_page(*args, **kwargs):
-            page = opening(*args, **kwargs)
-            _remember(page)
-            return page
-
-        context.new_page = new_page
-        context.on("page", _remember)              # popups and window.open
+        # Every page this context will ever hold, however it was opened.
+        context.on("page", _remember)
         return context
 
     browser.new_context = new_context
@@ -183,9 +197,10 @@ def _write_failure_evidence(item: pytest.Item, report: pytest.TestReport) -> Non
     directory.mkdir(parents=True, exist_ok=True)
     stem = _evidence_stem(directory, report.nodeid, report.when)
     pages = _live_pages(item)
-    # What the pages SAID -- including the pages of a fixture that never
-    # yielded, which is the case this record was missing. A resource that
-    # failed to load names itself here and in no other channel this gate has.
+    # What THIS test's pages said -- including the pages of a fixture that
+    # never yielded, and pages already closed by the time the report is made.
+    # Everything the store holds is this test's: it is emptied only when a
+    # test's whole protocol is over, and one protocol runs at a time.
     said = [(page, list(lines)) for page, lines in _SAID.items() if lines]
     events = sum(len(lines) for _page, lines in said)
     with open(f"{stem}.failure.txt", "w", encoding="utf-8") as record:
@@ -229,3 +244,26 @@ def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo):
         except Exception as error:  # noqa: BLE001 — see the docstring
             report.sections.append(
                 ("gate evidence", f"evidence writing failed: {error!r}"))
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_protocol(item: pytest.Item):
+    """Give the page store to one test, from its setup until after its last report.
+
+    All three reports -- setup, call, teardown -- are made while this wraps the
+    test, so a page that spoke during a teardown that raised is still held when
+    that teardown's record is written. Only once the whole protocol is over is
+    the store emptied: not at the test's teardown, which comes BEFORE the
+    teardown's own report, and not never, which is how one test's words reached
+    the next test's failure.
+
+    The window IS the ownership, and it is exact here: pytest runs one protocol
+    at a time in this process, and the reaper closes every context a test
+    opened before that test's protocol ends. A separate owner map was tried and
+    removed -- with the store emptied here, no mutation of it could be made to
+    fail, and a guard nobody can show failing is not one to ship.
+    """
+    try:
+        yield
+    finally:
+        _SAID.clear()

@@ -55,12 +55,15 @@ def test_the_one_browser_fixture_is_session_scoped_beside_the_evidence_hook():
     assert "@pytest.fixture(autouse=True)" in source
     assert "def test_" not in source
     # The conftest's whole surface, by name: the one browser fixture, the
-    # per-test reaper, the page-evidence channels, and the machinery the
-    # release gate arms — nothing else may grow here.
+    # per-test reaper, the page-evidence channels, the machinery the release
+    # gate arms, and the protocol wrapper that says which test a page belongs
+    # to -- without it every failure record carried every earlier test's words.
+    # Nothing else may grow here.
     assert re.findall(r"^def (\w+)", source, re.MULTILINE) == [
         "_reap_contexts", "_remember", "_instrumented", "chromium",
         "_close_what_a_failed_setup_left", "_evidence_stem", "_live_pages",
-        "_write_failure_evidence", "pytest_runtest_makereport"]
+        "_write_failure_evidence", "pytest_runtest_makereport",
+        "pytest_runtest_protocol"]
     for path in sorted(BROWSER_TESTS.glob("*.py")):
         if path != CONFTEST:
             assert "def chromium(" not in path.read_text(encoding="utf-8")
