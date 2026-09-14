@@ -77,6 +77,35 @@ PHASES = ("empty", "loading", "ready", "stale", "refused", "failed",
 #: one product rather than one statement made twice.
 NEW_DRAFT = "Edit as new draft"
 NEW_DRAFT_CONTROL = '#workflowToolbar [data-focus="action:onEditPublished"]'
+#: Every file the entry route's module graph fetches, with the answer each one
+#: owes. Frozen here beside the other facts about what ``studio.html`` ships,
+#: and spelled out rather than derived: a census built from the server's own
+#: allowlist would only agree with itself, while a name the allowlist does not
+#: carry answers 404 and would be invisible in a test that read the markup.
+BOOT_ASSETS = {
+    "studio.css": 200, "studio.js": 200, "studio-store.js": 200,
+    "studio-model.js": 200, "studio-view.js": 200,
+    "studio-runform.js": 200,
+    "studio-canvas.js": 200, "studio-inspector.js": 200,
+    "studio-runs.js": 200, "studio-runwords.js": 200,
+    "studio-runstep.js": 200, "studio-runwrite.js": 200,
+    "studio-people.js": 200, "studio-rundocs.js": 200,
+    "studio-rundraft.js": 200, "studio-runwrites.js": 200,
+    "studio-toolbardraft.js": 200,
+    "studio-runread.js": 200, "studio-review.js": 200,
+    "studio-layout.js": 200, "studio-edits.js": 200,
+    "studio-sections.js": 200, "studio-artifacts.js": 200,
+    "studio-transitions.js": 200,
+    "studio-fields.js": 200,
+    # The controls route's own answer and the section it draws before a person
+    # confirms. Both are real modules on the boot graph, so both must be on the
+    # allowlist -- a module the server does not serve answers 404, and the
+    # window would come up half-built.
+    "studio-controls.js": 200, "studio-isolation.js": 200,
+    # The focus net the boot module carries across every render pass.
+    "studio-focus.js": 200,
+    "command-projection.js": 200, "command-view.js": 200,
+}
 
 
 @pytest.fixture(scope="session")
@@ -168,30 +197,7 @@ def test_the_studio_boots_from_the_entry_route_with_no_error_at_all(
         _connected(page)
         names = {url.rsplit("/", 1)[1]: status for url, status in served
                  if "/panel/" in url}
-        assert names == {
-            "studio.css": 200, "studio.js": 200, "studio-store.js": 200,
-            "studio-model.js": 200, "studio-view.js": 200,
-            "studio-runform.js": 200,
-            "studio-canvas.js": 200, "studio-inspector.js": 200,
-            "studio-runs.js": 200, "studio-runwords.js": 200,
-            "studio-runstep.js": 200, "studio-runwrite.js": 200,
-            "studio-people.js": 200, "studio-rundocs.js": 200,
-            "studio-rundraft.js": 200, "studio-runwrites.js": 200,
-            "studio-toolbardraft.js": 200,
-            "studio-runread.js": 200, "studio-review.js": 200,
-            "studio-layout.js": 200, "studio-edits.js": 200,
-            "studio-sections.js": 200, "studio-artifacts.js": 200,
-            "studio-transitions.js": 200,
-            "studio-fields.js": 200,
-            # The controls route's own answer and the section it draws before
-            # a person confirms. Both are real modules on the boot graph, so
-            # both must be on the allowlist -- a module the server does not
-            # serve answers 404, and the window would come up half-built.
-            "studio-controls.js": 200, "studio-isolation.js": 200,
-            # The focus net the boot module carries across every render pass.
-            "studio-focus.js": 200,
-            "command-projection.js": 200, "command-view.js": 200,
-        }
+        assert names == BOOT_ASSETS
         # The reads the window opens with, both landed and both real.
         assert page.locator("#workflowToolbar select[name='workflow'] option"
                             ).count() == 2
