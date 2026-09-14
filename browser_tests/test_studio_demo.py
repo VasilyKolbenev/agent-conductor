@@ -367,9 +367,11 @@ def test_overview_run_link_opens_its_history_and_scopes_attention_to_that_run(
     assert problems == []
 
 
+# Independent literal pins for Studio's owner-approved command-deck palette,
+# not the unchanged classic panel/Graph palette or a value read back from CSS.
 @pytest.mark.parametrize("theme,background,ink", [
-    ("dark", "rgb(11, 14, 20)", "rgb(243, 246, 248)"),
-    ("light", "rgb(233, 237, 241)", "rgb(17, 22, 29)"),
+    ("dark", "rgb(11, 15, 13)", "rgb(239, 244, 233)"),
+    ("light", "rgb(230, 236, 230)", "rgb(24, 36, 28)"),
 ])
 def test_demo_decision_choices_keep_native_keyboard_state_and_themed_surfaces(
         front_door, theme, background, ink) -> None:
