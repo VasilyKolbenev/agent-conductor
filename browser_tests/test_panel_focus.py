@@ -177,6 +177,28 @@ def test_a_refresh_takes_no_focus_into_a_form_nobody_was_working_in(
         page.context.close()
 
 
+#: Drop the line and read what THAT render left, inside a single task.
+#:
+#: `dispatchEvent` is synchronous, and so is the listener up to its first
+#: `await`, so the three values below are the disconnect's own render and
+#: nothing else's. Read them across separate round trips instead -- which is
+#: what this witness used to do -- and the proposal's own run signal, arriving
+#: on the REAL stream in between, starts a read that legitimately sets
+#: `refreshing` (`command.js:290-292`, listener at `:366-370`). That is how the
+#: normal gate went red on `2a1d8cc`, and no amount of quiescence beforehand
+#: closes the window: the frame may arrive after the dispatch. What a read
+#: landing behind a disconnect must NOT do is the last test in this module.
+_DROP_THE_LINE = """() => {
+  window.dispatchEvent(new Event("conduct:disconnected"));
+  const actor = document.getElementById("commandConfirmedBy");
+  const rationale = document.querySelector(
+    '.command-proposal-form [name="rationale"]');
+  return {phase: document.getElementById("commandCockpit").dataset.phase,
+          confirm: actor ? actor.disabled : "gone",
+          composer: rationale ? rationale.disabled : "gone"};
+}"""
+
+
 def test_a_lost_connection_still_shuts_both_forms_and_says_so(
         chromium: Browser, cockpit_url: str) -> None:
     """What a background read may take away, and what a DEAD LINE still must.
@@ -185,29 +207,22 @@ def test_a_lost_connection_still_shuts_both_forms_and_says_so(
     if the reasons that remain still shut it, so the other side is asserted
     here on the phase that has always meant "nothing may be written": the
     connection is down, and neither form is workable until it is back.
+
+    The phase and both doors are read in the disconnect's OWN task. `_settled`
+    still runs first, for the reason it documents -- a dispatch into an
+    in-flight read only marks the work dirty and re-renders nothing -- not
+    because waiting could make a later frame impossible.
     """
     page, _recorder = _open(chromium, cockpit_url)
     try:
         _load_run(page)
         _create_proposal(page)
         assert not page.locator("#commandConfirmedBy").is_disabled()
-        # The proposal's own run signal arrives on the REAL stream, and a read
-        # that STARTS after the disconnect legitimately sets `refreshing`
-        # (command.js:290-292 with the listener at :366-370). This test used to
-        # read the phase inside that window, which is how the normal gate went
-        # red on `2a1d8cc`. Waiting for the panel to be quiescent first makes
-        # the phase asserted below the disconnect's own. What a read landing
-        # behind a disconnect must NOT do is the next test's subject.
-        page.locator('#commandCockpit[data-phase="ready"]').wait_for()
+        _settled(page)
 
-        page.evaluate(
-            "() => window.dispatchEvent(new Event('conduct:disconnected'))")
+        seen = page.evaluate(_DROP_THE_LINE)
 
-        assert page.locator("#commandCockpit").get_attribute(
-            "data-phase") == "stale"
-        assert page.locator("#commandConfirmedBy").is_disabled()
-        assert page.locator(
-            '.command-proposal-form [name="rationale"]').is_disabled()
+        assert seen == {"phase": "stale", "confirm": True, "composer": True}
     finally:
         page.context.close()
 
