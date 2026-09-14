@@ -29,6 +29,7 @@ out, so every witness that moves the clock after a frame waits for it first.
 """
 from __future__ import annotations
 
+import time
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -102,6 +103,26 @@ def _state_frame(page: Page) -> None:
 def _list_landed(page: Page) -> None:
     """Wait out the run LIST read a frame issued beside its run read."""
     page.wait_for_selector('#screenRuns[data-state="ready"]', state="attached")
+
+
+def _quiet(stall, path: str, settle: float = 0.4) -> int:
+    """Wait until no new GET of `path` has reached the server for `settle`.
+
+    The boot reads both lists and the stream's `open` reads them again, so a
+    list read can still be in flight when a witness arms the stall -- and then
+    the arm holds THAT read rather than the press's. Measured: 1 run in 8 of
+    this module recorded `loading` then `failed` from the RECOVERY read, which
+    is the opposite of what the witness below claims to hold. Every list
+    witness therefore quiets the road first and then proves, by the server's
+    own count, that the read it holds is the one its press issued.
+    """
+    last, steady = stall.count(path), time.monotonic()
+    while time.monotonic() - steady < settle:
+        time.sleep(0.05)
+        now = stall.count(path)
+        if now != last:
+            last, steady = now, time.monotonic()
+    return last
 
 
 def _nodes(page: Page, count: int) -> None:
@@ -258,10 +279,13 @@ def test_a_dead_list_read_that_fails_late_never_paints_over_the_recovery(
     screen, control, drawn = RECOVERY[which]
     try:
         page.locator(screen).click()
-        asked = stall.count(LISTS[which])
+        page.wait_for_selector(f'{drawn}[data-state="ready"]', state="attached")
+        asked = _quiet(stall, LISTS[which])
         stall.arm(LISTS[which], "headers")
         page.locator(control).click()
         assert stall.entered.wait(10), "the press provoked no list read"
+        assert stall.count(LISTS[which]) == asked + 1, (
+            "the stall holds a read this press did not issue")
         page.evaluate(WATCH, drawn)
         page.locator(control).click()
         _until(lambda: stall.count(LISTS[which]) == asked + 2,
@@ -283,13 +307,14 @@ def test_a_dead_list_read_that_answers_late_never_paints_over_the_recovery(
     """The same race with an ANSWER: the held read comes back after the
     recovery landed, carrying an older list with no runs in it. The page takes
     that body and draws nothing from it -- every run row stays."""
-    bench, _stall = stalled
+    bench, stall = stalled
     page, window = _open(chromium, bench)
     screen, control, drawn = RECOVERY["runs"]
     rows = '[data-focus-key^="run:"]'
     try:
         page.locator(screen).click()
         page.wait_for_selector(f'{drawn}[data-state="ready"]', state="attached")
+        _quiet(stall, LISTS["runs"])
         page.evaluate(HOLD_AN_OLDER_LIST, LISTS["runs"])
         page.locator(control).click()
         page.wait_for_function("() => window.late.ready")
@@ -318,9 +343,13 @@ def test_a_dead_run_list_read_fails_at_the_deadline_in_the_windows_words(
     screen, control, drawn = RECOVERY["runs"]
     try:
         page.locator(screen).click()
+        page.wait_for_selector(f'{drawn}[data-state="ready"]', state="attached")
+        asked = _quiet(stall, LISTS["runs"])
         stall.arm(LISTS["runs"], "headers")
         page.locator(control).click()
         assert stall.entered.wait(10), "the press provoked no list read"
+        assert stall.count(LISTS["runs"]) == asked + 1, (
+            "the stall holds a read this press did not issue")
         _expire(page)
         assert stall.aborted.wait(10), "the deadline left the socket open"
         page.wait_for_selector(f'{drawn}[data-state="failed"]', state="attached")

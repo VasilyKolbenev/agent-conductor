@@ -149,15 +149,71 @@ def _state_of(page: Page, key: str) -> str:
         " return b === null ? 'gone' : (b.disabled ? 'shut' : 'open'); }", key)
 
 
+#: Press one control from INSIDE the page, in a single task.
+#:
+#: This was a Playwright `click(force=True)`. That resolves the element, scrolls
+#: to it and then clicks -- and the Runs screen re-renders on every `run` frame
+#: the worker sends after an accepted write, so the resolved button can be
+#: replaced between the scroll and the click. Playwright then reports "Element
+#: is not visible" and the module is red for a reason that is not about the
+#: product: that is how the reverse gate went red on `2a1d8cc`.
+#:
+#: Querying and pressing in one task cannot be raced by a render, and it reaches
+#: the control MORE directly than a trusted click: no hit test, no visibility
+#: requirement, no scrolling. `test_the_forced_press_reaches_a_control_left_open`
+#: is the calibration that it still catches a door left open.
+PRESS_ANYWAY = """key => {
+  const button = document.querySelector(`[data-focus-key='${key}']`);
+  if (button === null) return 'gone';
+  const stood = button.disabled ? 'shut' : 'open';
+  button.click();
+  return stood;
+}"""
+
+
 def _press_anyway(page: Page, key: str) -> None:
     """Force a press on a control that reads shut.
 
     A disabled button fires no click and no submit, so what this proves is
     on the wire afterwards: a synthesized press that reached the handler would
-    be a second POST.
+    be a second POST. The press is asserted to have met a SHUT control, so a
+    control that vanished cannot pass for one that refused.
     """
-    page.locator(f'[data-focus-key="{key}"]').click(
-        force=True, no_wait_after=True, timeout=3000)
+    stood = page.evaluate(PRESS_ANYWAY, key)
+    assert stood == "shut", f"the forced press met a control that was {stood}"
+
+
+def test_the_forced_press_reaches_a_control_the_product_leaves_open(
+        chromium: Browser, bench: _Bench) -> None:
+    """The instrument's own witness: the forced press IS a press.
+
+    Every "a forced press wrote nothing" above is worth exactly what the press
+    is worth, so the same press is made here on a control the product leaves
+    OPEN, with the same words typed, and it must reach the wire.
+
+    Re-enabling a shut control in the page would NOT be that witness: this
+    product shuts a spent control in two places, and the step's own submit
+    handler still refuses after the button is enabled by hand (measured: the
+    press produced no request). What this presses is therefore a control the
+    product itself left open. The POST is held by the route, so nothing durable
+    is written; what is asserted is that the handler was reached at all.
+    """
+    page, window = _open(chromium, bench)
+    try:
+        _read(page, RUN_ID)
+        _type(page, "field:proposed_by", ACTOR)
+        _type(page, "field:rationale", WHY)
+        key = f"propose:{STEP}"
+        _hold(page, RUN_ID, "proposals")
+        assert _state_of(page, key) == "open"
+        with page.expect_request(lambda request: request.method == "POST"
+                                 and request.url.endswith("/proposals")):
+            assert page.evaluate(PRESS_ANYWAY, key) == "open"
+        assert window.writes("/proposals") == 1
+        assert _durable_on(bench, RUN_ID, "action_proposal", STEP) == 0
+    finally:
+        assert window.problems == []
+        page.context.close()
 
 
 def _a_read_lands(page: Page, bench: _Bench, run_id: str, index: int) -> None:

@@ -191,6 +191,14 @@ def test_a_lost_connection_still_shuts_both_forms_and_says_so(
         _load_run(page)
         _create_proposal(page)
         assert not page.locator("#commandConfirmedBy").is_disabled()
+        # The proposal's own run signal arrives on the REAL stream, and a read
+        # that STARTS after the disconnect legitimately sets `refreshing`
+        # (command.js:290-292 with the listener at :366-370). This test used to
+        # read the phase inside that window, which is how the normal gate went
+        # red on `2a1d8cc`. Waiting for the panel to be quiescent first makes
+        # the phase asserted below the disconnect's own. What a read landing
+        # behind a disconnect must NOT do is the next test's subject.
+        page.locator('#commandCockpit[data-phase="ready"]').wait_for()
 
         page.evaluate(
             "() => window.dispatchEvent(new Event('conduct:disconnected'))")
