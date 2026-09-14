@@ -603,7 +603,11 @@ CHECKER_HISTORY_PROJECTION = """async () => {
   mountRuns(mount, {runs:{selectedId:'render-only',list:[],detail}}, {});
   const result = {artifact:mount.querySelector('.studio-artifact').innerText,
     evidence:mount.querySelector('.studio-evidence').innerText,
-    timeline:mount.querySelector('ol.studio-timeline').innerText};
+    timeline:[...mount.querySelectorAll('ol.studio-timeline > li')].map(row => [
+      row.querySelector('.studio-row__head > .studio-mono').innerText,
+      [...row.querySelectorAll('.studio-row__facts > .studio-fact')].map(fact => [
+        fact.querySelector('.studio-fact__k').innerText,
+        fact.querySelector('.studio-fact__v').innerText])])};
   mount.remove(); return result;
 }"""
 
@@ -645,7 +649,10 @@ def test_independent_verification_is_visible_before_authority_and_in_history(
         assert "Task time ceilings" not in plain
         shown = page.evaluate(CHECKER_HISTORY_PROJECTION)
         assert "checker" in shown["evidence"] and "claude-code" in shown["evidence"]
-        assert "verifier_instance_idchecker" in shown["timeline"]
+        assert [row for row in shown["timeline"] if row[0] == "evidence"] == [["evidence", [
+            ["evidence_id", "evidence-signed"], ["kind", "verification"],
+            ["verification", "verified"], ["verified_by", "claude-code"],
+            ["verifier_instance_id", "checker"]]]]
         assert "verification_failed" in shown["artifact"]
         assert "not used as input by later steps" in shown["artifact"]
         assert "not that the work was verified" in shown["artifact"]
