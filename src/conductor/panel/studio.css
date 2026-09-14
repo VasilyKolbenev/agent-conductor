@@ -59,11 +59,11 @@ button{font:inherit;cursor:pointer;background:none;border:none;color:inherit}
 /* ── shell ────────────────────────────────────────────────────────────── */
 /* 1600px is the wide end of an ordinary laptop; every column below it is
    fluid, and the whole layout collapses to one reading column under 900. */
-.studio-shell{max-width:1600px;margin:0 auto;padding:16px 20px 48px;
-              display:flex;flex-direction:column;gap:14px;min-width:0}
+.studio-shell{max-width:1600px;margin:0 auto;padding:12px 20px 48px;
+              display:flex;flex-direction:column;gap:10px;min-width:0}
 
 .studio-header{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;
-               border-bottom:1px solid var(--line);padding-bottom:10px}
+               border-bottom:1px solid var(--line);padding-bottom:6px}
 .studio-project{font-weight:660;min-width:0;overflow-wrap:anywhere}
 /* The connection state is a SENTENCE, not a dot: "Connected", "Reconnecting",
    "Not connected" are three words a reader can act on, and a coloured dot
@@ -94,7 +94,7 @@ button{font:inherit;cursor:pointer;background:none;border:none;color:inherit}
                                   border-bottom-color:var(--accent)}
 
 .studio-main{display:flex;flex-direction:column;min-width:0}
-.studio-screen{display:flex;flex-direction:column;gap:10px;min-width:0}
+.studio-screen{display:flex;flex-direction:column;gap:8px;min-width:0}
 .studio-body{display:flex;flex-direction:column;gap:10px;min-width:0}
 /* The plain-language half of the seven state words. The machine half is
    `data-state` on the screen container, so a test asserts the attribute and a
@@ -173,10 +173,13 @@ button{font:inherit;cursor:pointer;background:none;border:none;color:inherit}
 .studio-primary .studio-btn:hover{border-color:var(--accent)}
 
 /* ── the workflow screen ──────────────────────────────────────────────── */
-.studio-toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;
+.studio-toolbar{display:flex;gap:6px 8px;flex-wrap:wrap;align-items:flex-end;
                 min-width:0}
 .studio-toolbar .studio-hint{font-size:12px}
-.studio-toolbar .studio-card{padding:12px 14px;gap:8px}
+/* A published run form remains open and complete. Tighten its vertical
+   rhythm, not its type or targets: the maximum-length workflow id already
+   spends another toolbar row, so the drawing needs room below both. */
+.studio-toolbar .studio-card{padding:8px 14px;gap:4px 8px}
 /* The two folded boxes of the toolbar: a native disclosure, keyboard-toggled,
    whose summary is sized like every other target and names the state it
    folds. Nothing here paints -- the word runs on the toolbar's own ink. */
@@ -211,7 +214,7 @@ button{font:inherit;cursor:pointer;background:none;border:none;color:inherit}
    fields and the button fill the rows between (measured 649 with the button
    on its own row, 1280×800). */
 .studio-runform{flex-direction:row;flex-wrap:wrap;align-items:flex-end;
-                gap:8px}
+                gap:4px 8px}
 .studio-runform h3,.studio-runform p{flex-basis:100%}
 /* Under 900 the rail follows the canvas as one reading column; the min-width
    0 track is what keeps a wide drawing from pushing the page sideways. */

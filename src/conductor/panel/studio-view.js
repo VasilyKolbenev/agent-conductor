@@ -35,6 +35,7 @@ const PHASE_ORDER = Object.freeze(
 export const VERIFICATION_NOTE = "Process exit 0 proves the process finished, "
   + "not that the work was verified.";
 const NOT_STATED = "not stated";
+const NEW_DRAFT = "Edit as new draft";
 const ID_PATTERN = "[A-Za-z0-9][A-Za-z0-9._\\-]{0,127}";
 const ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 
@@ -136,10 +137,10 @@ const PRIMARY = Object.freeze({
 function primaryAction(state, handlers) {
   const named = PRIMARY[state.screen] || PRIMARY.overview;
   const control = button(handlers, named[0], named[1], named[2]);
-  if (state.screen === "workflow" && !state.workflows.writeReady) {
+  const refusal = state.screen === "workflow" ? saveRefusal(state.workflows) : null;
+  if (refusal !== null) {
     control.disabled = true;
-    control.title = "This workflow has not been read since the connection "
-      + "came back, so nothing may be written to it yet.";
+    control.title = refusal;
   }
   return control;
 }
@@ -432,13 +433,8 @@ function latestRunCard(state, handlers) {
   return card("The most recent run", body);
 }
 
-/**
- * Draw the Overview: what this is, whether it can run, what is blocked, what
- * needs a person, and the most recent run -- each derived from a payload.
- *
- * @param {Element} mount the Overview body (`#bodyOverview`)
- * @param {object} state the reducer's frozen value
- * @param {object} handlers `onScreen`, `onSelectRun`
+/** Draw source-derived Overview facts, latest run and attention first.
+ * `mount` is #bodyOverview; `state` is frozen; `handlers` own navigation.
  */
 export function mountOverview(mount, state, handlers) {
   const sections = [
@@ -553,6 +549,19 @@ function starterControls(state, handlers) {
   return box;
 }
 
+function saveRefusal(held) {
+  if (held.draft === null) {
+    return object(held.detail) && object(held.detail.published)
+      ? `There is no drawing to save. ${NEW_DRAFT} copies the published `
+        + "revision into one you can change."
+      : "There is no drawing to save.";
+  }
+  if (!held.writeReady) return "This workflow has not been read since the connection "
+    + "came back, so nothing may be written to it yet.";
+  return held.savePhase === "submitting"
+    ? "This draft is being saved. Wait for its answer before saving again." : null;
+}
+
 function saveControls(state, handlers) {
   const held = state.workflows;
   const box = element("div", {className: "studio-field studio-field--row"});
@@ -561,10 +570,7 @@ function saveControls(state, handlers) {
     held.nextRevision === null ? "Publish revision"
       : `Publish revision ${held.nextRevision}`, null);
   const check = button(handlers, "onValidate", "Validate", null);
-  //: The road out of a published revision, named once so the control and the
-  //: sentence beside it cannot drift apart, and shut with a reason -- never a
-  //: bare grey button -- whenever pressing it would do nothing.
-  const NEW_DRAFT = "Edit as new draft";
+  // The copy road is shut with a reason whenever pressing it would do nothing.
   const shut = held.draft !== null
     ? "There is already a drawing on screen; edit it and save the draft."
     : (object(held.detail) === null || object(held.detail.published) === null
@@ -573,14 +579,10 @@ function saveControls(state, handlers) {
         : "This workflow has not been read since the connection came back."));
   const fresh = button(handlers, "onEditPublished", NEW_DRAFT, null,
     {disabled: shut === null ? null : "", title: shut});
-  if (!held.writeReady || held.draft === null
-      || held.savePhase === "submitting") {
+  const refusal = saveRefusal(held);
+  if (refusal !== null) {
     save.disabled = true;
-    save.title = held.draft !== null
-      ? "This workflow has not been read since the connection came back."
-      : shut !== null ? "There is no drawing to save."
-        : `There is no drawing to save. ${NEW_DRAFT} copies the published `
-          + "revision into one you can change.";
+    save.title = refusal;
   }
   if (!held.writeReady || !held.publishable) {
     publish.disabled = true;

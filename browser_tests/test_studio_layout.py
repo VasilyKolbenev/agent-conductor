@@ -698,3 +698,44 @@ def test_a_real_step_not_just_the_canvas_container_is_above_the_fold(
     finally:
         assert window.problems == []
         page.context.close()
+
+
+def test_header_and_toolbar_save_share_the_drafts_real_availability(
+        chromium: Browser, project: _Project) -> None:
+    """A prominent save must not offer a known refusal or a duplicate write."""
+    page, window = _workflow_screen(chromium, project, 1280, 800)
+    try:
+        _start_from_starter(page, "primary-save")
+        _save_draft(page)
+        _publish(page)
+        page.wait_for_selector('.studio-canvas__banner[data-document="published"]')
+        header = page.locator('#studioPrimary [data-focus="action:onSaveDraft"]')
+        toolbar = page.locator('#workflowToolbar [data-focus="action:onSaveDraft"]')
+        assert header.is_disabled() and toolbar.is_disabled(), "no draft exists to save"
+        assert header.get_attribute("title") == toolbar.get_attribute("title")
+        assert "Edit as new draft" in header.get_attribute("title")
+        page.locator('[data-focus="action:onEditPublished"]').click()
+        page.wait_for_selector('.studio-canvas__banner[data-document="draft"]')
+        assert header.is_enabled() and toolbar.is_enabled(), "a drawing can be saved"
+        parked = []
+        page.route("**/command/workflows/primary-save/draft",
+                   lambda route: parked.append(route) if route.request.method == "POST"
+                   else route.continue_())
+        with page.expect_request(lambda request: request.method == "POST"
+                                 and request.url.endswith("/primary-save/draft")):
+            header.click()
+        # The route callback follows the request event, not the local disabled UI.
+        for _ in range(40):
+            if parked:
+                break
+            page.wait_for_timeout(25)
+        assert len(parked) == 1, "the draft POST never reached the held route"
+        assert header.is_disabled() and toolbar.is_disabled()
+        assert "being saved" in header.get_attribute("title")
+        assert header.get_attribute("title") == toolbar.get_attribute("title")
+        parked.pop().continue_()
+        page.wait_for_selector('#workflowToolbar [data-save="saved"]')
+        assert header.is_enabled() and toolbar.is_enabled()
+    finally:
+        assert window.problems == []
+        page.context.close()
