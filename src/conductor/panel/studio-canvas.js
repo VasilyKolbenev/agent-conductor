@@ -758,15 +758,20 @@ export function mountCanvas(mount, svg, state, handlers) {
   for (const each of drawn) stage.append(each.node, each.port);
   bindKeys(stage, nodes, context);
   bindPan(stage, view, handlers);
-  const chrome = element("div", {className: "studio-canvas__chrome"}, [
-    banner(shown, state, runtime), palette(context.editable, handlers,
-      context.selection), viewControls(view, handlers),
+  const help = element("details", {className: "studio-canvas__help"}, [
+    element("summary", {"data-focus": "canvas-help",
+      text: "Canvas controls and keyboard"}),
     element("p", {className: "mono studio-canvas__keys", text: KEY_LEGEND}),
     element("p", {className: "studio-canvas__positions", text:
       "Drag a step to place it, or hold Alt and press an arrow. Where you put "
       + "it is stored in the workflow document and comes back on reload. A "
       + "step nobody has placed is laid out by its connections; order is "
       + "edited in the inspector, and it is a different fact from position."}),
+  ]);
+  help.open = mount.querySelector(".studio-canvas__help")?.open === true;
+  const chrome = element("div", {className: "studio-canvas__chrome"}, [
+    banner(shown, state, runtime), palette(context.editable, handlers,
+      context.selection), viewControls(view, handlers), help,
   ]);
   // Chrome first, drawing after, both in normal flow: the well scrolls one
   // column and no control is stacked over a step.

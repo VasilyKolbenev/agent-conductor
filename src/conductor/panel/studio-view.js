@@ -371,8 +371,7 @@ function needsYouCard(state, handlers) {
   if (!rows(state.decisions.list).length) {
     return card("What needs you", [
       note(state.runs.selectedId === null
-        ? "No run is open here, so nothing is waiting on a person. Gates "
-          + "appear once a run reaches one."
+        ? "No run is selected. Open a run to see which decisions need you."
         : "This run's plan names no gate, so nothing in it waits for a person."),
     ]);
   }
@@ -442,10 +441,16 @@ function latestRunCard(state, handlers) {
  * @param {object} handlers `onScreen`, `onSelectRun`
  */
 export function mountOverview(mount, state, handlers) {
-  mount.replaceChildren(
-    whatThisIs(state, handlers), readyCard(state),
-    blockedCard(state, handlers), needsYouCard(state, handlers),
-    latestRunCard(state, handlers));
+  const sections = [
+    ["latest", latestRunCard(state, handlers)],
+    ["attention", needsYouCard(state, handlers)],
+    ["blocked", blockedCard(state, handlers)],
+    ["ready", readyCard(state)], ["context", whatThisIs(state, handlers)],
+  ];
+  mount.classList.add("studio-overview");
+  mount.replaceChildren(...sections.map(([name, node]) => {
+    node.classList.add(`studio-overview__${name}`); return node;
+  }));
 }
 
 // -- the workflow toolbar -------------------------------------------------

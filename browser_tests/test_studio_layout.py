@@ -623,3 +623,78 @@ def test_a_model_outside_the_existing_identifier_contract_cannot_be_submitted(
     finally:
         assert window.problems == []
         page.context.close()
+
+
+@pytest.mark.parametrize("theme", ["dark", "light"])
+def test_real_toolbar_fields_share_the_inspector_surface(
+        chromium: Browser, project: _Project, theme: str) -> None:
+    """Read computed paint on real controls, not a list of CSS selectors."""
+    page, window = _workflow_screen(chromium, project, 1280, 800)
+    try:
+        page.emulate_media(color_scheme=theme)
+        controls = page.locator("#workflowToolbar .command-field input, "
+                                "#workflowToolbar .command-field select")
+        painted = controls.evaluate_all("""fields => fields.map(field => {
+          const style = getComputedStyle(field);
+          const well = getComputedStyle(document.querySelector('#workflowCanvas'));
+          return {background: style.backgroundColor, surface: well.backgroundColor,
+            size: parseFloat(style.fontSize), height: field.getBoundingClientRect().height,
+            visible: field.getClientRects().length > 0};
+        })""")
+        shown = [row for row in painted if row["visible"]]
+        assert len(shown) >= 3, "the real picker and new-workflow fields disappeared"
+        assert all(row["background"] == row["surface"] for row in shown), shown
+        assert all(row["size"] >= 13 and row["height"] >= 44 for row in shown), shown
+    finally:
+        assert window.problems == []
+        page.context.close()
+
+
+def test_canvas_help_is_keyboard_accessible_and_keeps_its_fold_over_frames(
+        chromium: Browser, project: _Project) -> None:
+    """Disclosure is local UI state; opening it must not write or reset focus."""
+    page, window = _open(chromium, project, double=True)
+    page.set_viewport_size({"width": 1280, "height": 800})
+    try:
+        _start_from_starter(page, "help-fold")
+        help_box = page.locator(".studio-canvas__help")
+        assert help_box.count() == 1, "canvas instructions need a native disclosure"
+        summary = help_box.locator("summary")
+        assert not help_box.evaluate("node => node.open")
+        before = window.posted("/command/")
+        summary.focus()
+        page.keyboard.press("Enter")
+        assert help_box.evaluate("node => node.open")
+        assert page.locator(".studio-canvas__keys").is_visible()
+        assert "Drag a step to place it" in help_box.inner_text()
+        _the_frame_lands(page)
+        assert help_box.evaluate("node => node.open")
+        assert summary.evaluate("node => node === document.activeElement")
+        page.keyboard.press("Enter")
+        _the_frame_lands(page)
+        assert not help_box.evaluate("node => node.open")
+        assert summary.evaluate("node => node === document.activeElement")
+        assert window.posted("/command/") == before, "a help gesture crossed a write door"
+    finally:
+        assert window.problems == []
+        page.context.close()
+
+
+def test_a_real_step_not_just_the_canvas_container_is_above_the_fold(
+        chromium: Browser, project: _Project) -> None:
+    """At laptop size the editor shows a whole step without scrolling first."""
+    page, window = _workflow_screen(chromium, project, 1280, 800)
+    try:
+        _start_from_starter(page, "visible-step")
+        drawn = page.locator(".studio-node").evaluate_all("""nodes => {
+          const well = document.querySelector('#workflowCanvas').getBoundingClientRect();
+          return nodes.map(node => {
+            const r = node.getBoundingClientRect();
+            return r.top >= 0 && r.bottom <= innerHeight && r.left >= well.left
+              && r.right <= well.right;
+          });
+        }""")
+        assert drawn and any(drawn), "toolbar chrome pushed every real step off-screen"
+    finally:
+        assert window.problems == []
+        page.context.close()

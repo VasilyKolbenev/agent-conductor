@@ -46,6 +46,10 @@ CARD = SCREEN + [E("div", "studio-card")]
 CANVAS = SCREEN + [E("div", "studio-canvas")]
 NODES = CANVAS + [E("div", "studio-nodes")]
 NODE = NODES + [E("button", "studio-node")]
+CHROME = NODES + [E("div", "studio-canvas__chrome")]
+PALETTE = CHROME + [E("div", "studio-palette")]
+VIEW = CHROME + [E("div", "studio-view")]
+PRIMARY = HEADER + [E("div", "studio-primary")]
 FOCUSED = ("focus-visible",)
 SELECTED = {"aria-selected": "true"}
 PRESSED = {"aria-pressed": "true"}
@@ -70,7 +74,9 @@ MEASURED = {
     ":focus-visible": [
         (BODY + [E("button", states=FOCUSED)], "outline", NONTEXT_MIN, "--ground"),
         (CARD + [E("button", states=FOCUSED)], "outline", NONTEXT_MIN, "--panel"),
-        (CARD + [E("input", states=FOCUSED)], "outline", NONTEXT_MIN, "--sunk")],
+        (CARD + [E("input", states=FOCUSED)], "outline", NONTEXT_MIN, "--sunk"),
+        (PRIMARY + [E("button", "studio-btn", states=FOCUSED)],
+         "outline", NONTEXT_MIN, "--ink")],
     ".studio-conn": [_rows_on(HEADER, E("p", "studio-conn"))],
     ".studio-elsewhere": [_rows_on(HEADER, E("a", "studio-elsewhere"))],
     ".studio-tab": [_rows_on(TAB)],
@@ -118,7 +124,41 @@ MEASURED = {
     ".studio-node__meta": [_rows_on(NODE, E("span", "studio-node__meta"))],
     ".studio-diag__code": [_rows_on(CARD, E("div", "studio-diag"),
                                     E("span", "studio-diag__code"))],
+    ".studio-primary .studio-btn": [
+        _rows_on(PRIMARY, E("button", "studio-btn")),
+        _rows_on(PRIMARY, E("button", "studio-btn"), prop="border-color",
+                 floor=NONTEXT_MIN, bg="--ground")],
+    ".studio-primary .studio-btn:hover": [
+        _rows_on(PRIMARY, E("button", "studio-btn", states=("hover",)),
+                 prop="border-color", floor=NONTEXT_MIN, bg=surface)
+        for surface in ("--ground", "--ink")],
+    ".studio-view__level": [_rows_on(VIEW, E("p", "studio-view__level"))],
 }
+# Actual shared field() labels, schema arguments, and bare form controls all
+# belong to this shell. Measure the controls on the page and inside a card so
+# a missing class cannot restore a browser-default white field in dark mode.
+for _field in ("command-field", "command-arg"):
+    MEASURED[f".studio-shell .{_field}"] = [
+        _rows_on(base, E("label", _field)) for base in (SCREEN, CARD)]
+for _control in ("input", "select", "textarea"):
+    MEASURED[f".studio-shell {_control}"] = [
+        _rows_on(base, E(_control)) for base in (SCREEN, CARD)]
+for _class, _base in (("studio-action", CARD), ("studio-palette__add", PALETTE),
+                       ("studio-view__button", VIEW)):
+    MEASURED[f".{_class}"] = [_rows_on(_base, E("button", _class))]
+    MEASURED[f".{_class}:hover"] = [
+        _rows_on(_base, E("button", _class, states=("hover",)),
+                 prop="border-color", floor=NONTEXT_MIN)]
+MEASURED[".studio-btn:hover"] = [
+    _rows_on(CARD, E("button", "studio-btn", states=("hover",)),
+             prop="border-color", floor=NONTEXT_MIN)]
+for _class in ("studio-canvas__phase", "studio-canvas__diagnostics",
+               "studio-canvas__runnote", "studio-palette__note",
+               "studio-canvas__keys", "studio-canvas__positions"):
+    MEASURED[f".{_class}"] = [_rows_on(CHROME, E("p", _class))]
+for _class in ("studio-note", "studio-context", "studio-unsupported",
+               "studio-inspector__empty"):
+    MEASURED[f".{_class}"] = [_rows_on(CARD, E("p", _class))]
 for _status in ("pass", "wait", "fail"):
     MEASURED[f".studio-chip--{_status}"] = [
         _rows_on(CARD, _chip(f"studio-chip--{_status}"),
@@ -339,3 +379,44 @@ def test_the_step_wins_its_own_height_against_the_shell_wide_target_floor():
     day somebody re-spells either rule this says which one won.
     """
     assert computed(NODE, STUDIO).get("min-height") == "112px"
+
+
+@pytest.mark.parametrize("control", ["input", "select", "textarea"])
+@pytest.mark.parametrize("classes", [(), ("command-field",), ("command-arg",),
+                                     ("studio-field", "command-field")])
+def test_every_studio_form_control_declares_a_themed_bounded_surface(control, classes):
+    chain = CARD + ([E("label", *classes)] if classes else []) + [E(control)]
+    for _, env in environments("dark", STUDIO) + environments("light", STUDIO):
+        win = computed(chain, STUDIO, env)
+        assert win.get("color") == "var(--ink)"
+        assert win.get("background") == "var(--sunk)"
+        assert win.get("max-width") == "100%"
+        assert win.get("min-width") == "0"
+        assert win.get("min-height") == "44px"
+
+
+def test_primary_action_and_canvas_controls_have_explicit_visual_hierarchy():
+    primary = computed(PRIMARY + [E("button", "studio-btn")], STUDIO)
+    assert primary.get("background") == "var(--ink)"
+    assert primary.get("color") == "var(--ground)"
+    for base, classname in ((PALETTE, "studio-palette__add"),
+                            (VIEW, "studio-view__button")):
+        win = computed(base + [E("button", classname)], STUDIO)
+        assert win.get("min-height") == "44px"
+        assert win.get("min-width") == "44px"
+        assert win.get("background") == "var(--panel)"
+        assert win.get("border") == "1px solid var(--line)"
+    help_summary = CHROME + [E("details", "studio-canvas__help"), E("summary")]
+    assert computed(help_summary, STUDIO).get("min-height") == "44px"
+
+
+def test_overview_layout_preserves_reading_order_without_hiding_cards():
+    overview = SCREEN + [E("div", "studio-body", "studio-overview")]
+    assert computed(overview, STUDIO).get("display") == "grid"
+    assert computed(overview, STUDIO).get("grid-template-columns") == "minmax(0,1fr)"
+    for _, env in environments("dark", STUDIO):
+        for name in ("latest", "attention", "blocked", "ready", "context"):
+            chain = overview + [E("section", "studio-card", f"studio-overview__{name}")]
+            win = computed(chain, STUDIO, env)
+            assert win.get("display") != "none"
+            assert "order" not in win and "grid-row" not in win

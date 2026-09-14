@@ -23,7 +23,7 @@ import threading
 from collections.abc import Iterator
 
 import pytest
-from playwright.sync_api import Browser, Page
+from playwright.sync_api import Browser, Locator, Page, expect
 
 from conductor import demo, server
 from conductor.command import demo_scenario
@@ -243,3 +243,170 @@ def test_the_demo_front_door_does_not_open_on_five_blockers(front_door) -> None:
     # five rows here too.
     assert moved.count("no available provider serves") <= 2, moved
     assert problems == []
+
+
+# The expected order is a reading order, not a census of the CSS classes that
+# happen to implement it. Geometry below must agree with these visible headings.
+OVERVIEW_HEADINGS = (
+    "The most recent run", "What needs you", "What is blocked",
+    "Ready to run?", "What this is",
+)
+
+
+def _overview_card(page: Page, title: str) -> Locator:
+    return page.locator("#bodyOverview > section").filter(
+        has=page.get_by_role("heading", name=title, exact=True))
+
+
+def _overview_geometry(page: Page) -> list[dict]:
+    page.wait_for_selector('#screenOverview[data-state="ready"]:not([hidden])')
+    expect(page.locator("#bodyOverview").get_by_role(
+        "button", name="Read this run", exact=True)).to_be_visible()
+    return page.locator("#bodyOverview > section").evaluate_all(
+        """cards => cards.map(card => {
+          const box = card.getBoundingClientRect();
+          const style = getComputedStyle(card);
+          return {title: card.querySelector('h3').textContent,
+            left: box.left, right: box.right, top: box.top, bottom: box.bottom,
+            width: box.width, height: box.height,
+            visible: style.display !== 'none' && style.visibility !== 'hidden'
+              && box.width > 0 && box.height > 0};
+        })""")
+
+
+def test_overview_shows_latest_run_and_attention_together_on_a_laptop(
+        front_door) -> None:
+    """The useful first row fits the first screen, without changing its facts."""
+    page, problems = front_door
+    page.set_viewport_size({"width": 1280, "height": 800})
+    cards = _overview_geometry(page)
+    assert tuple(card["title"] for card in cards) == OVERVIEW_HEADINGS
+    latest, attention, *secondary = cards
+    for card in (latest, attention):
+        assert card["visible"] and 0 <= card["top"] < card["bottom"] <= 800, card
+    assert abs(latest["top"] - attention["top"]) <= 1, cards
+    assert latest["right"] < attention["left"], cards
+    assert all(card["top"] >= latest["bottom"] for card in secondary), cards
+    said = _overview_card(page, "The most recent run").inner_text()
+    assert demo_scenario.RUN_ID in said and "last outcome: succeeded" in said
+    assert problems == []
+
+
+def test_overview_keeps_every_card_readable_in_one_narrow_column(
+        front_door) -> None:
+    """No clipped card or horizontal page scroll hides the secondary facts."""
+    page, problems = front_door
+    page.set_viewport_size({"width": 500, "height": 800})
+    cards = _overview_geometry(page)
+    assert tuple(card["title"] for card in cards) == OVERVIEW_HEADINGS
+    assert all(card["visible"] for card in cards), cards
+    for earlier, later in zip(cards, cards[1:]):
+        assert later["top"] >= earlier["bottom"], cards
+        assert abs(later["left"] - earlier["left"]) <= 1, cards
+        assert abs(later["width"] - earlier["width"]) <= 1, cards
+    for title in OVERVIEW_HEADINGS:
+        card = _overview_card(page, title)
+        card.scroll_into_view_if_needed()
+        expect(card.get_by_role("heading", name=title, exact=True)).to_be_visible()
+        box = card.bounding_box()
+        assert box is not None and box["x"] >= 0, box
+        assert box["x"] + box["width"] <= 500, box
+    assert page.evaluate(
+        "() => Math.max(document.documentElement.scrollWidth, "
+        "document.body.scrollWidth) - document.documentElement.clientWidth") == 0
+    assert problems == []
+
+
+def _assert_overview_keyboard_order(page: Page) -> None:
+    expected = ["Read this run", "Open the decisions", "Choose a workflow"]
+    controls = page.locator("#bodyOverview").get_by_role("button")
+    assert controls.all_text_contents() == expected
+    controls.first.focus()
+    for index, label in enumerate(expected):
+        if index:
+            page.keyboard.press("Tab")
+        assert page.evaluate("() => document.activeElement.textContent") == label
+
+
+def test_overview_run_link_opens_its_history_and_scopes_attention_to_that_run(
+        front_door) -> None:
+    """No selection is unknown attention, not proof that nobody is waiting."""
+    page, problems = front_door
+    _overview_geometry(page)
+    attention = _overview_card(page, "What needs you")
+    expect(attention).to_contain_text(
+        "No run is selected. Open a run to see which decisions need you.")
+    assert "nothing is waiting on a person" not in attention.inner_text()
+    count = _overview_card(page, "The most recent run").locator(
+        "p.studio-row").filter(has_text="Gates waiting:").locator("span").last
+    expect(count).to_have_text("1")
+    opener = page.locator("#bodyOverview").get_by_role(
+        "button", name="Read this run", exact=True)
+    opener.focus()
+    page.keyboard.press("Enter")
+    page.wait_for_selector("#screenRuns:not([hidden]) ol.studio-timeline")
+    detail = page.locator(".studio-runs__detail")
+    expect(detail.get_by_role("heading", level=2)).to_have_text(demo_scenario.RUN_ID)
+    expect(detail.locator("p").filter(has_text="Workflow").first).to_have_text(
+        f"Workflow{demo_scenario.WORKFLOW_ID}")
+    expect(detail.locator("p").filter(has_text="Revision").first).to_have_text(
+        f"Revisionrevision {demo_scenario.REVISION}")
+    kinds = page.locator("ol.studio-timeline > li").evaluate_all(
+        "rows => rows.map(row => row.querySelector('.studio-row__head "
+        ".studio-mono').textContent)")
+    assert kinds == ["graph_definition", "decision", "action_proposal",
+                     "action_request", "attempt_event", "attempt_event",
+                     "evidence", "action_result"]
+    page.locator("#navOverview").click()
+    expect(attention).to_contain_text("1 waiting for a decision")
+    assert demo_scenario.WAITING_GATE in attention.inner_text()
+    assert demo_scenario.RUN_ID in attention.inner_text()
+    assert demo_scenario.ANSWERED_GATE not in attention.inner_text()
+    assert "No run is selected" not in attention.inner_text()
+    _assert_overview_keyboard_order(page)
+    assert problems == []
+
+
+@pytest.mark.parametrize("theme,background,ink", [
+    ("dark", "rgb(11, 14, 20)", "rgb(243, 246, 248)"),
+    ("light", "rgb(233, 237, 241)", "rgb(17, 22, 29)"),
+])
+def test_demo_decision_choices_keep_native_keyboard_state_and_themed_surfaces(
+        front_door, theme, background, ink) -> None:
+    """Selection is local; no incomplete answer is submitted by this exercise."""
+    page, problems = front_door
+    page.emulate_media(color_scheme=theme)
+    writes = []
+    page.on("request", lambda request: writes.append(request.url)
+            if request.method == "POST" and "/decisions" in request.url else None)
+    _read_the_demo_run(page)
+    page.locator("#navDecisions").click()
+    page.locator(f'[data-focus-key="decision:{demo_scenario.RUN_ID}/'
+                 f'{demo_scenario.WAITING_GATE}"]').click()
+    approve = page.locator('input[type="radio"][value="approve"]')
+    reject = page.locator('input[type="radio"][value="reject"]')
+    expect(approve).to_be_checked()
+    expect(approve).to_be_enabled()
+    expect(reject).not_to_be_checked()
+    approve.focus()
+    approve.press("ArrowRight")
+    expect(reject).to_be_checked()
+    expect(approve).not_to_be_checked()
+    expect(reject).to_be_focused()
+    paint = reject.evaluate("""node => {
+      const style = getComputedStyle(node), box = node.getBoundingClientRect();
+      return {background: style.backgroundColor, color: style.color,
+        height: box.height, appearance: style.appearance};
+    }""")
+    assert paint["background"] == background and paint["color"] == ink, paint
+    assert paint["height"] >= 44 and paint["appearance"] != "none", paint
+    submit = page.get_by_role("button", name="Record this decision", exact=True)
+    expect(submit).to_be_disabled()
+    reject.press("Tab")
+    expect(page.locator('[data-focus-key="field:actor"]')).to_be_focused()
+    page.keyboard.press("Tab")
+    expect(page.locator('[data-focus-key="field:reason"]')).to_be_focused()
+    page.keyboard.press("Tab")
+    expect(submit).not_to_be_focused()
+    assert page.locator('input[type="radio"]:checked').input_value() == "reject"
+    assert writes == [] and problems == []

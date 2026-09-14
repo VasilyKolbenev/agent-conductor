@@ -32,11 +32,13 @@
 *{box-sizing:border-box}
 [hidden]{display:none!important}
 body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--sans);
-     font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+     font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased;
+     color-scheme:dark light}
 h1,h2,h3{margin:0}
-h1{font-size:15px;letter-spacing:-.015em}
-h2{font-size:13px;letter-spacing:.02em}
-h3{font-size:11px;letter-spacing:.08em;text-transform:uppercase}
+h1{font-size:19px;letter-spacing:-.025em}
+h2{font-size:20px;letter-spacing:-.025em;font-weight:650}
+h3{font-size:12px;letter-spacing:.06em;text-transform:uppercase}
+h4{margin:0;font-size:14px;font-weight:620}
 p{margin:0}
 button{font:inherit;cursor:pointer;background:none;border:none;color:inherit}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
@@ -66,14 +68,14 @@ button{font:inherit;cursor:pointer;background:none;border:none;color:inherit}
 /* The connection state is a SENTENCE, not a dot: "Connected", "Reconnecting",
    "Not connected" are three words a reader can act on, and a coloured dot
    beside them would be the same fact told a second time in colour alone. */
-.studio-conn{font-size:11.5px;color:var(--muted)}
+.studio-conn{font-size:12px;color:var(--muted)}
 /* The route to the Protocol v1 surfaces this application does not hold. Sized
    and coloured as the connection sentence beside it, because it is chrome
    rather than the screen's own action -- and underlined, so it is a link by
    two carriers and not by colour alone. It clears the shell's 44px target
    floor here rather than through the element-type rule above, which names the
    four control types the shell builds and not the one anchor it declares. */
-.studio-elsewhere{font-size:11.5px;color:var(--muted);text-decoration:underline;
+.studio-elsewhere{font-size:12px;color:var(--muted);text-decoration:underline;
                   min-height:44px;display:inline-flex;align-items:center}
 /* The one primary action of the screen now showing. Empty in the static
    document: which verb belongs here is a fact only a read can supply. */
@@ -85,7 +87,7 @@ button{font:inherit;cursor:pointer;background:none;border:none;color:inherit}
    and aria-selected carries the same fact to a reader who sees none of them. */
 .studio-nav{display:flex;gap:2px;flex-wrap:wrap;
             border-bottom:1px solid var(--line)}
-.studio-tab{padding:6px 12px;font-size:13px;color:var(--muted);
+.studio-tab{padding:6px 16px;font-size:14px;color:var(--muted);
             border-bottom:2px solid transparent;margin-bottom:-1px}
 .studio-tab:hover{color:var(--ink)}
 .studio-tab[aria-selected="true"]{color:var(--ink);font-weight:660;
@@ -100,7 +102,7 @@ button{font:inherit;cursor:pointer;background:none;border:none;color:inherit}
 .studio-state{font-size:12.5px;color:var(--muted)}
 /* One sentence of explanation where an unfamiliar concept appears, rather
    than a link to a document the reader has to leave the screen for. */
-.studio-hint{font-size:12px;color:var(--muted);max-width:68ch}
+.studio-hint{font-size:13px;color:var(--muted);max-width:76ch}
 .studio-empty{font-size:12.5px;color:var(--muted);margin:4px 2px}
 /* The one transient sentence, announced once. It sits on the page ground
    rather than in a card so that no screen owns it. */
@@ -108,21 +110,26 @@ button{font:inherit;cursor:pointer;background:none;border:none;color:inherit}
 
 /* ── cards, rows, chips ───────────────────────────────────────────────── */
 .studio-card{background:var(--panel);border:1px solid var(--line);
-             border-radius:10px;padding:12px 14px;display:flex;
-             flex-direction:column;gap:8px;min-width:0}
-.studio-card h3{color:var(--faint)}
+             border-radius:12px;padding:16px;display:flex;
+             flex-direction:column;gap:10px;min-width:0}
+.studio-card h3{color:var(--ink)}
+.studio-body.studio-overview{display:grid;grid-template-columns:minmax(0,1fr);
+                            gap:14px;align-items:start}
+.studio-overview .studio-card{height:100%;gap:12px;padding:20px}
+.studio-overview__latest .studio-mono{font-size:15px}
+.studio-overview__context .studio-row{gap:4px 10px}
 .studio-list{list-style:none;margin:0;padding:0;display:flex;
              flex-direction:column;gap:6px;min-width:0}
 .studio-row{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;
             min-width:0}
 /* Plain language first, the protocol's own word second and visually
    secondary: same line, smaller, monospace. */
-.studio-protocol{font-family:var(--mono);font-size:10.5px;color:var(--muted);
+.studio-protocol{font-family:var(--mono);font-size:11px;color:var(--muted);
                  overflow-wrap:anywhere}
 
 /* Status chips carry three marks -- a glyph, a word and a contour -- because
    any one of them alone would be a state told in colour. */
-.studio-chip{font-family:var(--mono);font-size:10px;padding:1px 6px;
+.studio-chip{font-family:var(--mono);font-size:11px;padding:2px 7px;
              border-radius:4px;border:1px solid var(--line);color:var(--ink);
              white-space:nowrap}
 .studio-chip .studio-glyph{font-style:normal}
@@ -137,24 +144,46 @@ button{font:inherit;cursor:pointer;background:none;border:none;color:inherit}
 .studio-chip--none .studio-glyph{color:var(--faint)}
 
 /* ── forms ────────────────────────────────────────────────────────────── */
-.studio-field{display:flex;flex-direction:column;gap:2px;font-size:11px;
+.studio-field{display:flex;flex-direction:column;gap:4px;font-size:12px;
               color:var(--muted);min-width:0}
+.studio-shell .command-field,.studio-shell .command-arg{
+  display:flex;flex-direction:column;gap:4px;font-size:12px;
+  color:var(--muted);min-width:0;max-width:100%}
+/* Shared field() labels and schema-generated arguments must use the same
+   surfaces as inspector fields. Element coverage also catches future fields
+   before a browser-default white input can appear in the dark theme. */
+.studio-shell input,.studio-shell select,.studio-shell textarea,
 .studio-field input,.studio-field select,.studio-field textarea{
-  font:inherit;font-family:var(--mono);font-size:12px;color:var(--ink);
+  font:inherit;font-family:var(--mono);font-size:13px;color:var(--ink);
   background:var(--sunk);border:1px solid var(--line);border-radius:6px;
-  padding:5px 7px;min-height:44px;min-width:0}
+  padding:7px 9px;min-height:44px;min-width:0;max-width:100%}
+.studio-shell textarea{resize:vertical;line-height:1.5}
 .studio-btn{border:1px solid var(--line);border-radius:6px;padding:5px 12px;
             background:var(--sunk);min-height:44px;align-self:flex-start}
+.studio-btn,.studio-action{font-size:13px;font-weight:580}
+.studio-action{color:var(--ink);background:var(--sunk);
+               border:1px solid var(--line);border-radius:6px;
+               padding:7px 12px;align-self:flex-start}
+/* The primary action keeps its existing label and handler. An inverse
+   surface gives it hierarchy without spending the status accent as text. */
+.studio-primary .studio-btn{color:var(--ground);background:var(--ink);
+                            border-color:var(--ink);font-weight:650;
+                            padding:7px 16px}
+.studio-btn:hover,.studio-action:hover{border-color:var(--muted)}
+.studio-primary .studio-btn:hover{border-color:var(--accent)}
 
 /* ── the workflow screen ──────────────────────────────────────────────── */
 .studio-toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;
                 min-width:0}
+.studio-toolbar .studio-hint{font-size:12px}
+.studio-toolbar .studio-card{padding:12px 14px;gap:8px}
 /* The two folded boxes of the toolbar: a native disclosure, keyboard-toggled,
    whose summary is sized like every other target and names the state it
    folds. Nothing here paints -- the word runs on the toolbar's own ink. */
 .studio-fold{min-width:0}
 .studio-fold summary{cursor:pointer;min-height:44px;display:flex;
-                     align-items:center;font-size:11px}
+                     align-items:center;font-size:12px;font-weight:580;
+                     padding:4px 8px;gap:6px}
 /* The start box and the write doors lie in a ROW: stacked, the two columns
    stood 200px and 182px tall and the canvas began at 458 of 800 even with the
    run form folded. A sentence or a panel in either box takes the whole row
@@ -192,9 +221,29 @@ button{font:inherit;cursor:pointer;background:none;border:none;color:inherit}
    horizontally however wide the drawing gets. */
 .studio-canvas{position:relative;background:var(--sunk);
                border:1px solid var(--line);border-radius:10px;
-               overflow:auto;min-height:220px;padding:12px}
+               overflow:auto;min-height:320px;padding:16px}
 .studio-canvas svg{display:block}
 .studio-nodes{position:relative;min-height:40px}
+.studio-canvas__chrome{display:flex;flex-direction:column;gap:10px;
+                       margin-bottom:24px;min-width:0}
+.studio-canvas__help{min-width:0}
+.studio-canvas__help summary{min-height:44px;cursor:pointer;
+                            font-size:12px;font-weight:580;padding:12px 0}
+.studio-canvas__help p{margin-top:6px}
+.studio-canvas__banner{display:flex;flex-direction:column;gap:3px;min-width:0}
+.studio-canvas__document{font-size:13px;font-weight:600;overflow-wrap:anywhere}
+.studio-canvas__phase,.studio-canvas__diagnostics,.studio-canvas__runnote,
+.studio-palette__note,.studio-canvas__keys,.studio-canvas__positions{
+  font-size:12px;line-height:1.5;color:var(--muted);overflow-wrap:anywhere}
+.studio-palette,.studio-view{display:flex;align-items:center;flex-wrap:wrap;
+                             gap:6px;min-width:0}
+.studio-palette__note{flex-basis:100%}
+.studio-palette__add,.studio-view__button{font-size:12px;font-weight:580;
+  color:var(--ink);background:var(--panel);border:1px solid var(--line);
+  border-radius:6px;padding:7px 10px;min-width:44px}
+.studio-palette__add:hover,.studio-view__button:hover{border-color:var(--muted)}
+.studio-view__level{font-family:var(--mono);font-size:11px;color:var(--muted);
+                    overflow-wrap:anywhere}
 /* The drawing itself, and the positioned ancestor every step and port is
    placed against: `studio-canvas.restack` writes --x and --y in this box's
    coordinates, so the box has to be the one they mean. */
@@ -231,11 +280,16 @@ button{font:inherit;cursor:pointer;background:none;border:none;color:inherit}
 .studio-port{position:absolute;left:var(--x);top:var(--y);
              transform:translateY(-50%);width:20px;padding:0;
              display:flex;align-items:center;justify-content:center}
-.studio-node__title{font-size:12.5px;font-weight:640;overflow-wrap:anywhere}
-.studio-node__meta{font-size:10.5px;color:var(--muted);overflow-wrap:anywhere}
+.studio-node__title{font-size:14px;font-weight:640;overflow-wrap:anywhere}
+.studio-node__meta{font-size:12px;color:var(--muted);overflow-wrap:anywhere}
 .studio-node__chips{display:flex;gap:4px;flex-wrap:wrap}
 /* The inspector's six sections, each a stack under its own heading. */
-.studio-section{display:flex;flex-direction:column;gap:5px;min-width:0}
+.studio-section{display:flex;flex-direction:column;gap:8px;min-width:0}
+.studio-note,.studio-context,.studio-unsupported,.studio-inspector__empty{
+  font-size:12px;line-height:1.5;color:var(--muted);overflow-wrap:anywhere}
+.studio-section h4{margin-top:6px}
+.studio-panel{display:flex;flex-direction:column;gap:8px;min-width:0}
+.studio-inspector__head{display:flex;flex-direction:column;gap:6px;min-width:0}
 .studio-diag{display:flex;flex-direction:column;gap:2px;font-size:11.5px;
              min-width:0}
 .studio-diag__code{font-family:var(--mono);font-size:10.5px;
@@ -247,9 +301,21 @@ button{font:inherit;cursor:pointer;background:none;border:none;color:inherit}
    layout: nothing is hidden, nothing moves to another container. */
 @media(min-width:900px){
   .studio-workflow{grid-template-columns:minmax(0,1fr) 360px}
+  .studio-body.studio-overview{grid-template-columns:repeat(6,minmax(0,1fr))}
+  .studio-overview__latest,.studio-overview__attention{grid-column:span 3}
+  .studio-overview__blocked,.studio-overview__ready,
+  .studio-overview__context{grid-column:span 2}
 }
 @media(min-width:1280px){
   .studio-workflow{grid-template-columns:minmax(0,1fr) 400px}
+}
+@media(max-width:600px){
+  .studio-shell{padding:12px 12px 32px;gap:10px}
+  .studio-header{gap:6px 10px}
+  .studio-primary{margin-left:0}
+  .studio-tab{padding:6px 10px;font-size:13px}
+  .studio-overview .studio-card{padding:16px}
+  .studio-canvas{padding:12px}
 }
 
 /* ── motion ───────────────────────────────────────────────────────────── */
