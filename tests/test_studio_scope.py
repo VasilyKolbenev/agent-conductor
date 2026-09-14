@@ -63,6 +63,10 @@ GLOBALS = frozenset({
     "if", "for", "while", "switch", "catch", "return", "typeof", "function",
     "await", "new", "else", "do", "of", "in", "case", "throw",
 })
+# Native layout observation is needed only by the orbit. Keep this narrower
+# than GLOBALS: allowing its use there must not forgive it in every module.
+# Browser witnesses exercise construction, redraw, resizing and teardown.
+MODULE_GLOBALS = {"studio-orbit.js": frozenset({"ResizeObserver"})}
 #: A call is `name(`, with the name not preceded by a dot -- `a.map(` is a
 #: method on a value and says nothing about this module's scope.
 _CALL = re.compile(r"(?<![.\w$])([A-Za-z_$][\w$]*)\s*\(")
@@ -140,15 +144,28 @@ def _called(source: str) -> set[str]:
     return set(_CALL.findall(source))
 
 
+def _unreachable(source: str, module: str) -> list[str]:
+    source = _scannable(source)
+    return sorted(_called(source) - _names_in_scope(source) - GLOBALS
+                  - MODULE_GLOBALS.get(module, frozenset()))
+
+
 @pytest.mark.parametrize("name", MODULES)
 def test_every_name_a_module_calls_is_one_it_can_reach(name):
     """The guard the inspector split needed and did not have."""
-    source = _scannable(_code(PANEL / name))
-    unreachable = sorted(_called(source) - _names_in_scope(source) - GLOBALS)
+    unreachable = _unreachable(_code(PANEL / name), name)
 
     assert not unreachable, (
         f"{name} calls {unreachable}, which it neither declares nor imports; "
         "a move left them behind")
+
+
+def test_resize_observer_is_admitted_only_here_and_no_unknown_name_is_forgiven():
+    source = "function watch() { new ResizeObserver(() => 0); missingHelper(); }"
+    assert _unreachable(source, "studio-orbit.js") == ["missingHelper"]
+    assert _unreachable(source, "studio-model.js") == ["ResizeObserver", "missingHelper"]
+    assert _unreachable(source.replace("ResizeObserver", "ResizeObserverTypo"),
+                        "studio-orbit.js") == ["ResizeObserverTypo", "missingHelper"]
 
 
 def test_this_guard_catches_the_break_that_produced_it():
