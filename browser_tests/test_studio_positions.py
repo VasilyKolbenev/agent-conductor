@@ -56,8 +56,13 @@ def test_dragging_a_step_moves_it_on_the_canvas_and_leaves_the_order_alone(
     measured here: the step really moved on both axes, and the document's order
     -- a different fact, edited in the inspector -- did not change with it.
     """
+    # Read the instructions through their native disclosure; measure the drag
+    # only after folding it again, in the editor's normal compact layout.
+    help_summary = bench.page.locator(".studio-canvas__help summary")
+    help_summary.click()
     assert "Drag a step to place it" in bench.page.locator(
         ".studio-canvas__positions").inner_text()
+    help_summary.click()
     before_order = bench.node_ids()
     before_x, before_y = _placed_at(bench.page, "alpha")
     x, y = _centre(bench.page, '[data-node-id="alpha"]')
