@@ -63,6 +63,7 @@ import {stepControls} from "./studio-runstep.js";
 //: step's proposal bound: the other write on this screen, in its own file for
 //: the step control's reason.
 import {boundSources, documentSection} from "./studio-rundocs.js";
+import {participantDeck, participantSelection} from "./studio-participants.js";
 
 //: The one sentence, handed to whichever container is showing the word. Every
 //: container carrying `verification_failed` needs its OWN copy -- one written
@@ -296,38 +297,6 @@ function identitySection(detail, handlers) {
 //: The frozen binding, joined to what this build can serve. The binding comes
 //: from the run's own configuration snapshot; the capability list comes from
 //: the controls read and is joined BY IDENTITY, never by a displayed label.
-function assignmentSection(detail) {
-  const config = object(detail.config) || {};
-  const bound = rows(config.instances);
-  const controls = object(detail.controls);
-  const declared = new Map(rows(controls && controls.instances)
-    .map((row) => [row.instance_id, row]));
-  if (!bound.length) {
-    return section("Assigned to", [note("This run's frozen configuration "
-      + "binds no instance, so no adapter carries any step of it.")]);
-  }
-  const list = element("ul", {className: "studio-bindings"});
-  for (const row of bound) {
-    const joined = declared.get(row.id);
-    const item = element("li", {className: "studio-binding"}, [
-      element("span", {className: "studio-mono", text: show(row.id)}),
-      fact("Harness (adapter)", row.adapter),
-      fact("Model", Object.prototype.hasOwnProperty.call(row, "model")
-        ? row.model : null),
-    ]);
-    if (!Object.prototype.hasOwnProperty.call(row, "model")) {
-      item.append(note("This build pinned no model for this instance, so "
-        + "whatever the provider's own configuration decides is what runs."));
-    }
-    item.append(joined
-      ? fact("Capabilities this build can serve", joined.controls)
-      : note("This run's controls read has not landed here, so what this "
-        + "binding can be asked to do is not stated."));
-    list.append(item);
-  }
-  return section("Assigned to", [list]);
-}
-
 function planSection(detail) {
   const graph = object(detail.graph);
   if (graph === null || graph.definition === null
@@ -709,7 +678,7 @@ function selectedRow(state) {
   return rows(state.list).find((row) => row.run_id === state.selectedId) || null;
 }
 
-function detailColumn(runs, state, handlers) {
+function detailColumn(runs, state, handlers, participant) {
   const row = selectedRow(runs);
   if (row !== null && row.unreadable === true) return unreadableDetail(row);
   const detail = object(runs.detail);
@@ -722,8 +691,8 @@ function detailColumn(runs, state, handlers) {
   const records = rows(detail.records);
   return element("div", {className: "studio-runs__detail"}, [
     element("h2", {text: show((object(detail.run) || {}).run_id)}),
+    participantDeck(detail, participant),
     identitySection(detail, handlers),
-    assignmentSection(detail),
     planSection(detail),
     positionSection(detail, state, handlers),
     documentSection(detail, state, handlers),
@@ -782,19 +751,15 @@ function restoreFocus(mount, key) {
  */
 export function mountRuns(mount, state, handlers) {
   const key = focusKey(mount);
+  const participant = participantSelection(mount);
   // The WHOLE state travels into the detail column: a step control is gated on
   // the stream being open, which is a fact about the window and not about this
   // screen's own slice.
   const whole = object(state) || {};
   const runs = object(whole.runs) || {};
   mount.replaceChildren(element("div", {className: "studio-runs"}, [
-    element("h2", {text: "Runs"}),
-    element("p", {className: "studio-lede", text:
-      "A run is one execution: an immutable envelope, the configuration it "
-      + "was frozen against, and the journal it wrote. Everything below is "
-      + "read out of that journal and nothing is stored twice."}),
     runList(runs, handlers),
-    detailColumn(runs, whole, handlers),
+    detailColumn(runs, whole, handlers, participant),
   ]));
   restoreFocus(mount, key);
 }

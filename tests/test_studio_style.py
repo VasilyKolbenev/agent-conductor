@@ -9,10 +9,9 @@ stands on, and held to its WCAG floor in both themes -- or in EXEMPT with the
 reason written beside it. A new colour declaration fails the completeness test
 until it arrives with a row or a reason.
 
-The token values are the panel's. There is no third palette here and the copy
-is held value for value below, so the panel, the Graph window and the Studio
-move together or a test reds. The arithmetic is tests/test_panel_colour.py's,
-which knows nothing about any of them.
+The owner approved a distinct command-deck palette for Studio. Its own tokens
+are measured; the classic panel and Graph are unchanged. The arithmetic is
+tests/test_panel_colour.py's, which knows nothing about any of them.
 
 What this module is and is not: it is a model of SOURCE TEXT, built by parsing
 characters. It renders nothing and samples nothing. Every claim here is a claim
@@ -25,7 +24,7 @@ import pytest
 
 from tests.test_panel_cascade import E, _COMPOUND, _TOKEN, computed, environments, rules
 from tests.test_panel_colour import contrast
-from tests.test_panel_contrast import NONTEXT_MIN, TEXT_MIN, _hex_to_rgb, tokens
+from tests.test_panel_contrast import NONTEXT_MIN, TEXT_MIN, _hex_to_rgb
 
 PANEL = Path(__file__).resolve().parents[1] / "src" / "conductor" / "panel"
 #: studio.css wrapped the way the cascade module reads a panel: one style
@@ -53,6 +52,8 @@ PRIMARY = HEADER + [E("div", "studio-primary")]
 FOCUSED = ("focus-visible",)
 SELECTED = {"aria-selected": "true"}
 PRESSED = {"aria-pressed": "true"}
+DECK = SCREEN + [E("section", "studio-section", "studio-deck")]
+PLANET = DECK + [E("button", "studio-planet")]
 
 
 def _chip(*variant: str) -> object:
@@ -134,6 +135,24 @@ MEASURED = {
         for surface in ("--ground", "--ink")],
     ".studio-view__level": [_rows_on(VIEW, E("p", "studio-view__level"))],
 }
+MEASURED[".studio-planet__orb"] = [
+    _rows_on(PLANET, E("span", "studio-planet__orb")),
+    _rows_on(PLANET, E("span", "studio-planet__orb"),
+             prop="border", floor=NONTEXT_MIN)]
+MEASURED['.studio-planet[aria-pressed="true"] .studio-planet__orb'] = [
+    _rows_on(DECK, E("button", "studio-planet", **PRESSED),
+             E("span", "studio-planet__orb"), prop=prop, floor=floor)
+    for prop, floor in (("color", TEXT_MIN), ("border", NONTEXT_MIN))]
+MEASURED[".studio-planet__selection"] = [
+    _rows_on(PLANET, E("span", "studio-planet__selection"))]
+MEASURED['.studio-planet[aria-pressed="true"] .studio-planet__selection'] = [
+    _rows_on(DECK, E("button", "studio-planet", **PRESSED),
+             E("span", "studio-planet__selection"))]
+MEASURED[".studio-run__meta"] = [_rows_on(SCREEN, E("span", "studio-run__meta"))]
+MEASURED[".studio-fact__k"] = [_rows_on(SCREEN, E("span", "studio-fact__k"))]
+MEASURED['.studio-run[aria-pressed="true"]'] = [
+    _rows_on(SCREEN, E("button", "studio-run", **PRESSED),
+             prop="border-bottom", floor=NONTEXT_MIN)]
 # Actual shared field() labels, schema arguments, and bare form controls all
 # belong to this shell. Measure the controls on the page and inside a card so
 # a missing class cannot restore a browser-default white field in dark mode.
@@ -174,6 +193,8 @@ for _status in ("pass", "wait", "fail"):
 #: Colour-bearing selectors that are deliberately not contrast rows, each with
 #: its reason on the record.
 EXEMPT = {
+    ".studio-run": "neutral run-list separator; selection is independently measured",
+    ".studio-deck": "neutral separators; participant selection has its own measured ring",
     ".studio-header": "the rule under the header is a neutral separator; it "
                       "identifies no state and carries no word",
     ".studio-nav": "the same neutral separator under the tablist; which tab is "
@@ -274,25 +295,25 @@ def _root_blocks(css: str) -> list[dict[str, str]]:
             for block in blocks]
 
 
-def test_the_studio_palette_is_a_value_for_value_copy_of_the_december_palette():
-    """One palette, three files. A drift in any of them reds a test.
+def tokens(theme: str) -> dict[str, tuple[int, int, int]]:
+    """Read Studio itself; measuring the classic palette could bless invisible UI."""
+    dark, light = _root_blocks(STUDIO)
+    assert theme in THEMES
+    values = dark if theme == "dark" else dict(dark, **light)
+    return {key: _hex_to_rgb(value.strip()) for key, value in values.items()
+            if value.strip().startswith("#")}
 
-    The Graph window's copy is held to the panel's by
-    tests/test_graph_source.py; this holds the Studio's to the same source, so
-    all three move together. A third override block would drift the effective
-    palette while a first-two check stayed green, so the count is pinned too.
-    """
-    panel_blocks = _root_blocks((PANEL / "index.html").read_text("utf-8"))
-    studio_blocks = _root_blocks((PANEL / "studio.css").read_text("utf-8"))
-    assert len(panel_blocks) == 2 and len(studio_blocks) == 2
-    panel_dark, panel_light = panel_blocks
-    studio_dark, studio_light = studio_blocks
-    assert REQUIRED_TOKENS <= set(studio_dark)
-    assert REQUIRED_TOKENS <= set(studio_light)
-    for name, value in studio_dark.items():
-        assert value == panel_dark[name], name
-    for name, value in studio_light.items():
-        assert value == panel_light[name], name
+
+def test_the_command_deck_palette_is_complete_in_both_declared_themes():
+    blocks = _root_blocks(STUDIO)
+    assert len(blocks) == 2
+    for block in blocks:
+        assert REQUIRED_TOKENS | {"--ion"} <= set(block)
+    for theme in THEMES:
+        assert REQUIRED_TOKENS | {"--ion"} <= set(tokens(theme))
+    # The accent is an outline, the ion colour is content/selection. Measuring
+    # them as one token would lose contrast on the inverse primary button.
+    assert tokens("dark")["--ion"] != tokens("dark")["--accent"]
 
 
 def test_every_motion_the_studio_declares_sits_behind_the_reduced_motion_door():

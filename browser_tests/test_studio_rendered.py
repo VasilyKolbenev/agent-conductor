@@ -104,6 +104,7 @@ BOOT_ASSETS = {
     "studio-controls.js": 200, "studio-isolation.js": 200,
     # The focus net the boot module carries across every render pass.
     "studio-focus.js": 200,
+    "studio-participants.js": 200,
     "command-projection.js": 200, "command-view.js": 200,
 }
 

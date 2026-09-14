@@ -117,6 +117,7 @@ BANNED_APIS = (
 #: permission the other way is what would close the pair into a ring.
 ALLOWED_IMPORTS = {
     RUNS_FILE: frozenset({"./command-view.js", "./studio-runwords.js",
+                          "./studio-participants.js",
                           "./studio-runread.js", "./studio-runstep.js",
                           "./studio-rundocs.js"}),
     STEP_FILE: frozenset({"./command-view.js", "./command-projection.js",
