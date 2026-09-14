@@ -16,6 +16,7 @@ import {element} from "./command-view.js";
 // so the surface both other slices code against did not move with it.
 import {CELL, MOVE_NUDGE, canvasLayout, cellMid, cellX, cellY, droppedAt,
   edgeEnds, edgeId} from "./studio-layout.js";
+import {workflowOrbit} from "./studio-orbit.js";
 export {CELL, canvasLayout, edgeEnds, edgeId};
 
 // -- vocabularies this module consumes -------------------------------------
@@ -769,13 +770,17 @@ export function mountCanvas(mount, svg, state, handlers) {
       + "edited in the inspector, and it is a different fact from position."}),
   ]);
   help.open = mount.querySelector(".studio-canvas__help")?.open === true;
+  const tools = element("div", {className: "studio-canvas__tools"}, [
+    palette(context.editable, handlers, context.selection), viewControls(view, handlers), help]);
+  const reflow = () => { if (restack(stage, drawn, context) && svg) drawEdges(svg, nodes, edges, context); };
+  const scope = JSON.stringify([state.workflows?.selectedId, shown.kind, shown.revision]);
+  const orbit = workflowOrbit(mount, scope, nodes, context.selection, handlers, stage, tools, reflow);
   const chrome = element("div", {className: "studio-canvas__chrome"}, [
-    banner(shown, state, runtime), palette(context.editable, handlers,
-      context.selection), viewControls(view, handlers), help,
-  ]);
+    element("div", {className: "studio-canvas__heading"}, [banner(shown, state, runtime), orbit.switches]), tools]);
   // Chrome first, drawing after, both in normal flow: the well scrolls one
   // column and no control is stacked over a step.
-  mount.replaceChildren(chrome, stage);
+  mount.replaceChildren(chrome, orbit.panel, stage);
+  orbit.refresh();
   if (restack(stage, drawn, context) && svg) drawEdges(svg, nodes, edges, context);
   if (!nodes.length) chrome.append(emptyNote(shown));
   restoreFocus(mount, key);

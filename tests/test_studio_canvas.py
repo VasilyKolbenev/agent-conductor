@@ -147,7 +147,7 @@ def test_both_studio_files_sit_in_the_panel_under_the_line_cap():
 #: is the load-bearing one: a primitive that could import a section would close
 #: the ring both of these splits were drawn to open.
 _ALLOWED_IMPORTS = {
-    "studio-canvas.js": ["./command-view.js", "./studio-layout.js"],
+    "studio-canvas.js": ["./command-view.js", "./studio-layout.js", "./studio-orbit.js"],
     "studio-inspector.js": ["./command-view.js", "./studio-artifacts.js",
                             "./studio-fields.js", "./studio-sections.js",
                             "./studio-transitions.js"],

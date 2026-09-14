@@ -228,6 +228,48 @@ button{font:inherit;cursor:pointer;background:none;border:none;color:inherit}
 .studio-nodes{position:relative;min-height:40px}
 .studio-canvas__chrome{display:flex;flex-direction:column;gap:10px;
                        margin-bottom:24px;min-width:0}
+.studio-canvas__tools{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:start}
+.studio-canvas__heading{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:start;
+  justify-content:space-between;min-width:0}
+.studio-canvas__heading .studio-canvas__banner{flex:1 1 300px}
+.studio-canvas__tools .studio-palette{flex:1 1 300px}
+.studio-canvas__tools .studio-canvas__help{flex-basis:100%}
+.studio-lenses{display:flex;gap:16px;flex-wrap:wrap}
+.studio-lens{min-height:44px;font-size:14px;padding:6px 2px}
+.studio-lens[aria-pressed="true"]{border-bottom:2px solid var(--ion);font-weight:700}
+.studio-orbit{display:flex;flex-direction:column;gap:16px;min-width:0}
+.studio-orbit__fleet{position:relative;min-height:480px;min-width:0}
+/* This ring groups roles; it is deliberately not an arrow, progress meter or
+   status signal. Actual routes are drawn only in the Connections lens. */
+.studio-orbit__fleet::before{content:"";position:absolute;inset:72px 18%;
+  border:1px dashed var(--line);border-radius:50%;pointer-events:none}
+.studio-orbit__centre{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+  display:flex;flex-direction:column;gap:6px;text-align:center;max-width:30%}
+.studio-planet.studio-orbit__role{position:absolute;left:var(--orb-x);top:var(--orb-y);
+  transform:translate(-50%,-50%);width:128px;max-width:30%;padding:8px 4px;
+  font-size:14px;line-height:1.35}
+.studio-orbit__role .studio-planet__orb{width:72px;height:72px}
+.studio-orbit__role span{max-width:100%}
+.studio-orbit__detail{font-size:14px;overflow-wrap:anywhere}
+.studio-orbit__duties{display:flex;flex-direction:column;gap:10px;min-width:0}
+.studio-orbit__duties h3{overflow-wrap:anywhere}
+.studio-orbit__steps{display:flex;flex-wrap:wrap;gap:10px;min-width:0}
+.studio-orbit__step{display:flex;flex-direction:column;gap:6px;text-align:left;
+  padding:10px 12px;border-radius:12px;font-size:16px;min-width:0;
+  max-width:100%;overflow-wrap:anywhere;background:var(--panel)}
+.studio-orbit__step[aria-pressed="true"]{outline:2px solid var(--ion)}
+.studio-orbit__fleet--compact{display:flex;flex-wrap:wrap;gap:12px;min-height:0}
+.studio-orbit__fleet--compact::before{display:none}
+.studio-orbit__fleet--compact .studio-orbit__centre{
+  position:static;transform:none;max-width:100%;flex-basis:100%}
+.studio-orbit__fleet--compact .studio-orbit__role{
+  position:static;transform:none;width:128px;max-width:100%}
+@media(max-width:1100px){
+  .studio-orbit__fleet{display:flex;flex-wrap:wrap;gap:12px;min-height:0}
+  .studio-orbit__fleet::before{display:none}
+  .studio-orbit__centre{position:static;transform:none;max-width:100%;flex-basis:100%}
+  .studio-planet.studio-orbit__role{position:static;transform:none;width:128px;max-width:100%}
+}
 .studio-canvas__help{min-width:0}
 .studio-canvas__help summary{min-height:44px;cursor:pointer;
                             font-size:12px;font-weight:580;padding:12px 0}

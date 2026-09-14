@@ -54,6 +54,9 @@ SELECTED = {"aria-selected": "true"}
 PRESSED = {"aria-pressed": "true"}
 DECK = SCREEN + [E("section", "studio-section", "studio-deck")]
 PLANET = DECK + [E("button", "studio-planet")]
+ORBIT = NODES + [E("section", "studio-orbit")]
+ROLE_ORB = ORBIT + [E("div", "studio-orbit__fleet"),
+                    E("button", "studio-planet", "studio-orbit__role", **PRESSED)]
 
 
 def _chip(*variant: str) -> object:
@@ -149,6 +152,17 @@ MEASURED['.studio-planet[aria-pressed="true"] .studio-planet__selection'] = [
     _rows_on(DECK, E("button", "studio-planet", **PRESSED),
              E("span", "studio-planet__selection"))]
 MEASURED[".studio-run__meta"] = [_rows_on(SCREEN, E("span", "studio-run__meta"))]
+MEASURED['.studio-lens[aria-pressed="true"]'] = [
+    _rows_on(CHROME, E("div", "studio-lenses"), E("button", "studio-lens", **PRESSED),
+             prop="border-bottom", floor=NONTEXT_MIN)]
+MEASURED['.studio-orbit__step[aria-pressed="true"]'] = [
+    _rows_on(ORBIT, E("section", "studio-orbit__duties"), E("div", "studio-orbit__steps"),
+             E("button", "studio-orbit__step", **PRESSED), prop="outline", floor=NONTEXT_MIN)]
+MEASURED['.studio-planet[aria-pressed="true"] .studio-planet__orb'].extend([
+    _rows_on(ROLE_ORB, E("span", "studio-planet__orb"), prop=prop, floor=floor)
+    for prop, floor in (("color", TEXT_MIN), ("border", NONTEXT_MIN))])
+MEASURED['.studio-planet[aria-pressed="true"] .studio-planet__selection'].append(
+    _rows_on(ROLE_ORB, E("span", "studio-planet__selection")))
 MEASURED[".studio-fact__k"] = [_rows_on(SCREEN, E("span", "studio-fact__k"))]
 MEASURED['.studio-run[aria-pressed="true"]'] = [
     _rows_on(SCREEN, E("button", "studio-run", **PRESSED),
@@ -193,6 +207,7 @@ for _status in ("pass", "wait", "fail"):
 #: Colour-bearing selectors that are deliberately not contrast rows, each with
 #: its reason on the record.
 EXEMPT = {
+    ".studio-orbit__fleet::before": "decorative role-group ring, not a route or state carrier",
     ".studio-run": "neutral run-list separator; selection is independently measured",
     ".studio-deck": "neutral separators; participant selection has its own measured ring",
     ".studio-header": "the rule under the header is a neutral separator; it "

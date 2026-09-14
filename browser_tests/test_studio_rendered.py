@@ -87,6 +87,7 @@ BOOT_ASSETS = {
     "studio-model.js": 200, "studio-view.js": 200,
     "studio-runform.js": 200,
     "studio-canvas.js": 200, "studio-inspector.js": 200,
+    "studio-orbit.js": 200,
     "studio-runs.js": 200, "studio-runwords.js": 200,
     "studio-runstep.js": 200, "studio-runwrite.js": 200,
     "studio-people.js": 200, "studio-rundocs.js": 200,
