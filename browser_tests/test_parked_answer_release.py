@@ -27,6 +27,7 @@ same calls on the same kind of page stranded a read in 71 of 400 and 62 of
 """
 from __future__ import annotations
 
+import sys
 import threading
 from collections.abc import Iterator
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -111,13 +112,33 @@ class _Answering(BaseHTTPRequestHandler):
             pass
 
 
+class _Quiet(ThreadingHTTPServer):
+    """A reset connection is this module's SUBJECT, not a fault to report.
+
+    Releasing a parked answer makes the page abandon its reads, and the stdlib
+    prints that `ConnectionResetError` from a request thread. Those threads are
+    daemons, so one was still writing to stderr while the interpreter finalized
+    and Python aborted the process: "could not acquire lock for
+    <_io.BufferedWriter name='<stderr>'> at interpreter shutdown". Both tests
+    had passed and the module still exited 0xC0000409, which is how the normal
+    browser gate went red at its 16th module on `582ac31`.
+
+    The product's own server silences connection errors in exactly this place,
+    and so does this one. Anything else is still reported.
+    """
+
+    def handle_error(self, request, client_address) -> None:      # stdlib name
+        if not isinstance(sys.exc_info()[1], (ConnectionError, TimeoutError)):
+            super().handle_error(request, client_address)
+
+
 @pytest.fixture()
 def answering() -> Iterator[tuple[str, list]]:
     """A server of its own, and the list of every write it answered."""
     posts: list = []
     stopping = threading.Event()
     handler = type("Answering", (_Answering,), {"posts": posts, "stopping": stopping})
-    httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    httpd = _Quiet(("127.0.0.1", 0), handler)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
     try:
