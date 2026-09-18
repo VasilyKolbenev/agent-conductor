@@ -589,10 +589,11 @@ const REOPENED = Object.freeze(["draft_changed", "draft_conflict"]);
           + "or hyphen."});
       return;
     }
+    // No task picker yet: a run opened from this form binds no task.
     const body = {run_id: request.runId, cycle_id: request.cycleId,
       mode: request.mode, participants: request.participants,
       workflow_id: chosenWorkflow, revision: request.revision,
-      assignments: request.assignments};
+      assignments: request.assignments, task_id: null};
     write("runs", null, body, () => {
       dispatch({type: "save", phase: "saved", notice: RUN_OPENED});
       dispatch({type: "opening-cleared"});

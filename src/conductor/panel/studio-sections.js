@@ -49,7 +49,7 @@ import {
   unsupported,
   withArgument,
 } from "./studio-fields.js";
-import {CEILINGS} from "./studio-model.js";
+import {CEILINGS} from "./studio-ceilings.js";
 
 // -- vocabularies this module consumes -------------------------------------
 //

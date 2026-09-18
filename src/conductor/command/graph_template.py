@@ -75,6 +75,7 @@ from .contracts import (
 )
 from .graph_definition import GraphDefinition
 from .graph_values import _json_object
+from .task_contracts import frozen_config_task
 #: The document half, re-exported under the names it has always had. Every
 #: caller of this module -- five in `conductor.command`, nine in the suite --
 #: was importing a template contract and a deployment road from one place, and
@@ -193,6 +194,34 @@ def _declared(binding: RunBinding, bound: Mapping[str, str]) -> None:
                 "the run's frozen configuration does not declare")
 
 
+def _work_scope(config: Mapping[str, Any]) -> str | None:
+    """The namespace this run files its work items under, or ``None`` for none.
+
+    Read off the frozen configuration through the same kind of strict reader
+    the instance bindings go through. ``None`` is a real answer: a task-less
+    run keeps the template's own work item byte for byte.
+
+    What this does NOT do is judge whether a plan's steps agree with the
+    binding. That is an admission rule -- a fact about whether this run may be
+    GIVEN this plan -- and it lives at the create doors
+    (`plan_admission.work_scope_admits`). Asked here, a rule of that kind also
+    fired on the comparison road, where a standing plan is re-materialized only
+    to compare bytes: a journal frozen before the rule existed was re-judged by
+    it, and an honest retry became a refusal of something nobody was writing.
+
+    Args:
+        config: The run's frozen configuration snapshot.
+
+    Returns:
+        The frozen task's work scope, or ``None`` when this run binds no task.
+
+    Raises:
+        ContractError: The frozen task binding is malformed.
+    """
+    task = frozen_config_task(config)
+    return None if task is None else task.work_scope
+
+
 def materialize(template: GraphTemplate, binding: RunBinding,
                 config: Mapping[str, Any], *,
                 graph_id: str, run_id: str, created_at: str) -> GraphDefinition:
@@ -204,7 +233,9 @@ def materialize(template: GraphTemplate, binding: RunBinding,
     1. the binding covers exactly the template's roles;
     2. every assigned instance is one the run's FROZEN configuration declares,
        which is the only authority on which adapter drives it;
-    3. only then is the definition built -- and it is built by the existing,
+    3. only then is the definition built -- every dispatching step's work item
+       filed under the task the configuration binds, or, binding none, held off
+       the task shape (`_work_scope`) -- and it is built by the existing,
        unchanged ``GraphDefinition``, which judges the topology as it always has.
 
     Whether an adapter can DO the work is not decided here, and used to be;
@@ -222,8 +253,10 @@ def materialize(template: GraphTemplate, binding: RunBinding,
         The immutable ``GraphDefinition`` this run follows.
 
     Raises:
-        TemplateError: The binding or an instance was refused.
-        ContractError: The materialized graph is not one this product can build.
+        TemplateError: The binding or an assigned instance was refused.
+        ContractError: The materialized graph is not one this product can
+            build, or the frozen task binding is malformed or pushes a work
+            item out of the id grammar.
     """
     if type(template) is not GraphTemplate:
         raise TemplateError("materialize takes exactly a GraphTemplate")
@@ -231,8 +264,12 @@ def materialize(template: GraphTemplate, binding: RunBinding,
         raise TemplateError("materialize takes exactly a RunBinding")
     binding.covers(template)
     _declared(binding, frozen_config_bindings(config))
+    # The run's task, off the same frozen configuration and through the same
+    # kind of strict reader: absent is a task-less run whose plan is byte for
+    # byte what it always was; present, its scope files every work item.
     return _build(template, binding.bound(), graph_id=graph_id,
-                  run_id=run_id, created_at=created_at)
+                  run_id=run_id, created_at=created_at,
+                  work_scope=_work_scope(config))
 
 
 #: Where the shipped templates live. Data, not code: correcting the default

@@ -111,6 +111,12 @@ class _StrictArguments:
             if (value := getattr(canonical, name)) is not OMITTED
         }
 
+    @property
+    def task_scope(self) -> str | None:
+        """The task whose directory this work lives in, or None for a task-less run."""
+        scope = getattr(self, "work_scope", OMITTED)
+        return None if scope is OMITTED else scope
+
     @classmethod
     def from_dict(cls, value: object):
         if cls not in DEEP_ARGUMENT_TYPES.values():
@@ -145,10 +151,17 @@ class DeepDispatchArgs(_StrictArguments):
     #: Carried, never computed here: a value this build derived itself would be
     #: checking its own reading against itself.
     instruction_digest: "str | _Omitted" = OMITTED
+    #: The run's TASK, when it has one: which task directory the work item lives
+    #: in (`harness_workspace.work_parts`). Materialized from the run's frozen
+    #: task binding, never composed by hand, and judged against that binding at
+    #: every door that admits a plan (`plan_admission.work_scope_admits`).
+    #: Omittable, and its absence is the task-less road exactly as it was, so no
+    #: standing plan's directory moves.
+    work_scope: "str | _Omitted" = OMITTED
     _FIELDS = frozenset({
         "work_item_id", "instruction_ref", "profile", "artifact_refs",
-        "output_limit_profile", "step_purpose", "instruction_digest"})
-    _OPTIONAL_FIELDS = frozenset({"step_purpose", "instruction_digest"})
+        "output_limit_profile", "step_purpose", "instruction_digest", "work_scope"})
+    _OPTIONAL_FIELDS = frozenset({"step_purpose", "instruction_digest", "work_scope"})
     _ARRAY_FIELDS = frozenset({"artifact_refs"})
 
     def __post_init__(self) -> None:
@@ -165,6 +178,13 @@ class DeepDispatchArgs(_StrictArguments):
             OUTPUT_LIMIT_PROFILES))
         settle_step_purpose(self)
         settle_instruction_digest(self)
+        _settle_work_scope(self)
+
+
+def _settle_work_scope(args) -> None:
+    """A carried task scope is an id of the contract's grammar, or it is refused."""
+    if args.work_scope is not OMITTED:
+        object.__setattr__(args, "work_scope", _closed_id("work_scope", args.work_scope))
 
 
 @dataclass(frozen=True)
@@ -190,10 +210,13 @@ class DeepReviewArgs(_StrictArguments):
     review_profile: str
     #: The same plan-authored context a dispatch carries; see `DeepDispatchArgs`.
     step_purpose: "str | _Omitted" = OMITTED
+    #: The run's task, exactly as on `DeepDispatchArgs`: a review stands in the
+    #: same directory the work it reviews was written to.
+    work_scope: "str | _Omitted" = OMITTED
     _FIELDS = frozenset({
         "work_item_id", "target_artifact_refs", "result_artifact_ref",
-        "review_profile", "step_purpose"})
-    _OPTIONAL_FIELDS = frozenset({"result_artifact_ref", "step_purpose"})
+        "review_profile", "step_purpose", "work_scope"})
+    _OPTIONAL_FIELDS = frozenset({"result_artifact_ref", "step_purpose", "work_scope"})
     _ARRAY_FIELDS = frozenset({"target_artifact_refs"})
 
     def __post_init__(self) -> None:
@@ -208,6 +231,7 @@ class DeepReviewArgs(_StrictArguments):
             "review_profile", self.review_profile,
             REVIEW_PROFILES))
         settle_step_purpose(self)
+        _settle_work_scope(self)
 
 
 @dataclass(frozen=True)

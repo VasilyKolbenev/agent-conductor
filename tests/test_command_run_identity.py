@@ -274,3 +274,107 @@ def test_an_unreadable_run_reports_the_reference_as_unknown_not_as_absent(tmp_pa
     assert row["unreadable"] is True
     assert "workflow_id" in row and row["workflow_id"] is None
     assert "revision" in row and row["revision"] is None
+
+
+# -- the task binding: absent is task-less, malformed is corrupt ---------------
+
+
+def _project(tmp_path):
+    root = tmp_path / "project"
+    (root / "conductor").mkdir(parents=True)
+    return root
+
+
+def test_a_run_that_binds_a_task_freezes_its_id_and_scope_inside_the_digest():
+    """Writer and reader held together, and the binding moves the digest.
+
+    Mutation: M10, the snapshot omits the task -> red.
+    """
+    from conductor.command.run_store import snapshot_digest
+    from conductor.command.task_contracts import TaskBinding, frozen_config_task
+
+    bound = an_input().snapshot(TaskBinding(task_id="t1", work_scope="t1"))
+    free = an_input().snapshot()
+
+    assert bound["task"] == {"id": "t1", "work_scope": "t1"}
+    assert frozen_config_task(bound) == TaskBinding(task_id="t1", work_scope="t1")
+    assert "task" not in free and snapshot_digest(bound) != snapshot_digest(free)
+
+
+def test_a_run_frozen_without_a_task_reads_as_task_none_everywhere(tmp_path):
+    """Old runs carry no ``task`` key and are task-less: the row says null, the
+    read says null, the reader says None -- and nothing derives one.
+
+    Mutation: M2, derive the task from ``cycle_id`` when the key is absent ->
+    the row says ``cycle-a`` -> red.
+    """
+    from conductor.command.run_store import RunStore
+    from conductor.command.studio_routes import recovered_payload, run_row
+    from conductor.command.task_contracts import frozen_config_task
+
+    asked = an_input()
+    snapshot = asked.snapshot()
+    store = RunStore(_project(tmp_path))
+    store.create_run(asked.build(snapshot, "2026-01-01T00:00:00Z"), snapshot)
+
+    assert "task" not in snapshot
+    assert run_row(store, "run-a")["task_id"] is None
+    assert recovered_payload(store.read("run-a"))["task"] is None
+    assert frozen_config_task(store.read("run-a").config) is None
+
+
+def test_a_legacy_runs_cycle_id_is_never_read_as_its_task(tmp_path):
+    """A task whose id EQUALS the legacy run's cycle id changes nothing: the run
+    froze no binding, so it belongs to no task, however tempting the name.
+
+    Mutation: derive the task from ``cycle_id`` when the key is absent -> red.
+    """
+    from conductor.command.run_store import RunStore
+    from conductor.command.studio_routes import recovered_payload, run_row
+    from conductor.command.task_contracts import TaskRecord
+    from conductor.command.task_routes import read_task
+    from conductor.command.task_store import TaskStore
+
+    root = _project(tmp_path)
+    tasks = TaskStore(root)
+    tasks.create_task(TaskRecord(
+        task_id="cycle-a", title="Named like a cycle", work_scope="cycle-a",
+        created_at="2026-01-01T00:00:00Z"))
+    asked = an_input()
+    assert asked.cycle_id == "cycle-a"
+    snapshot = asked.snapshot()
+    store = RunStore(root)
+    store.create_run(asked.build(snapshot, "2026-01-01T00:00:00Z"), snapshot)
+
+    assert run_row(store, "run-a")["task_id"] is None
+    assert recovered_payload(store.read("run-a"), tasks)["task"] is None
+    assert read_task(tasks, store, "cycle-a") == (
+        200, {"task": tasks.read("cycle-a").as_dict(), "runs": []})
+
+
+def test_a_malformed_task_binding_is_corrupt_and_never_legacy(tmp_path):
+    """Half a binding is worse than none: a reader would file work under a
+    scope nobody froze. Written through the store's own door so the digest
+    agrees with the bytes and the REPLAY succeeds; what refuses it is the
+    binding reader, and every projection reports that refusal as corruption.
+
+    Mutation: treat a malformed ``task`` as absent -> red.
+    """
+    from conductor.command.api_contracts import ApiRefusal
+    from conductor.command.run_store import RunStore
+    from conductor.command.studio_routes import recovered_payload, run_row
+    from conductor.command.task_contracts import frozen_config_task
+
+    asked = an_input()
+    snapshot = {**asked.snapshot(), "task": {"id": "t1"}}
+    store = RunStore(_project(tmp_path))
+    store.create_run(asked.build(snapshot, "2026-01-01T00:00:00Z"), snapshot)
+    recovered = store.read("run-a")
+
+    with pytest.raises(ContractError):
+        frozen_config_task(recovered.config)
+    row = run_row(store, "run-a")
+    assert row["unreadable"] is True and row["task_id"] is None
+    with pytest.raises(ApiRefusal) as refused:
+        recovered_payload(recovered)
+    assert refused.value.code == "run_corrupt"

@@ -139,6 +139,9 @@ def test_exact_route_allowlist_and_wrong_method_or_path_are_closed(tmp_path):
         ("POST", "/command/workflows/<workflow_id>/revisions"),
         ("GET", "/command/runs"),
         ("POST", "/command/runs"),
+        ("GET", "/command/tasks"),
+        ("POST", "/command/tasks"),
+        ("GET", "/command/tasks/<task_id>"),
     )
     subject, _, _ = api(tmp_path)
     wrong = subject.handle("POST", "/command/session", (), b"")

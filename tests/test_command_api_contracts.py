@@ -63,10 +63,10 @@ _SPEC = (_ROOT / "docs" / "specs" / "2026-08-13-cockpit-command-api.md")
 EXPECTED_DEEP_ARGUMENTS = {
     "dispatch": (DeepDispatchArgs, (
         "work_item_id", "instruction_ref", "profile", "artifact_refs",
-        "output_limit_profile", "step_purpose", "instruction_digest")),
+        "output_limit_profile", "step_purpose", "instruction_digest", "work_scope")),
     "review": (DeepReviewArgs, (
         "work_item_id", "target_artifact_refs", "result_artifact_ref",
-        "review_profile", "step_purpose")),
+        "review_profile", "step_purpose", "work_scope")),
     "evidence": (DeepEvidenceArgs, ("target_action_id", "kinds")),
     "stop": (DeepStopArgs, ("target_attempt_id", "reason")),
     "retry": (DeepRetryArgs, ("prior_action_id", "reason")),

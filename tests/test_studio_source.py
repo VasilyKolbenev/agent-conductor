@@ -59,7 +59,7 @@ MODULES = ("studio.js", "studio-store.js", "studio-view.js", "studio-model.js",
            "studio-transitions.js", "studio-fields.js", "studio-rundocs.js",
            "studio-rundraft.js", "studio-runwrites.js", "studio-toolbardraft.js",
            "studio-controls.js", "studio-isolation.js", "studio-focus.js",
-           "studio-participants.js", "studio-orbit.js")
+           "studio-participants.js", "studio-orbit.js", "studio-ceilings.js")
 #: The one transport module: every `fetch(`, the one stream, the session token
 #: and the screen router. `graph.js` holds the same position in its window, and
 #: the sealed-API guard below pins this one the same way.
@@ -72,6 +72,11 @@ IMPORTS = r'from "(\./[a-z-]+\.js)";'
 #: reaching for one it was never granted is.
 PERMITTED_IMPORTS = {
     "studio-model.js": frozenset(),
+    #: The two ceilings and the judge of a typed ceiling field, split off the
+    #: boundary at its line cap when the task binding arrived. It imports
+    #: nothing for the boundary's own reason, and the boundary does NOT
+    #: re-export it -- that would be an import, and the boundary has none.
+    "studio-ceilings.js": frozenset(),
     #: The controls route's whole answer: declared capabilities and what is
     #: protecting the run. It reads the boundary's helpers and nothing else, and
     #: `studio-model` does NOT re-export it -- that would be a cycle.
@@ -86,7 +91,7 @@ PERMITTED_IMPORTS = {
     "studio-participants.js": frozenset({"./command-view.js",
                                          "./studio-runread.js", "./studio-runwords.js"}),
     "studio-orbit.js": frozenset({"./command-view.js"}),
-    "studio-edits.js": frozenset({"./studio-model.js"}),
+    "studio-edits.js": frozenset({"./studio-ceilings.js"}),
     #: Projections over one run read, and nothing else. It imports nothing for
     #: the reason `studio-model.js` imports nothing: a pure computation that
     #: reached for a neighbour would be able to answer from something other
@@ -135,7 +140,7 @@ PERMITTED_IMPORTS = {
     "studio-fields.js": frozenset({"./command-view.js"}),
     "studio-sections.js": frozenset({"./command-view.js",
                                      "./command-projection.js",
-                                     "./studio-model.js",
+                                     "./studio-ceilings.js",
                                      "./studio-fields.js"}),
     #: The fourth section, on its own. It sits BESIDE the sections rather than
     #: above or below them: neither may import the other, so the two cannot
@@ -599,7 +604,13 @@ def test_the_boundary_refuses_rather_than_repairs_and_says_which_it_does():
     # absent answer, one DROP arm for a row whose declaration will not read, and
     # four "I cannot read this" arms, which need a word of their own: neither
     # `null` nor `[]` is free, and both are claims about a vendor.
-    assert source.count("return null;") == 82
+    # 85 with the task a run was opened under: the binding frozen in a run's
+    # configuration, the `task_id` on a run row and the `task` beside a run
+    # read. All three are navigation -- a binding this window cannot read is
+    # corrupt and never "no task" -- and each is judged in place by a predicate
+    # with no arm of its own, so this count grows by three and the third-answer
+    # count next door by none.
+    assert source.count("return null;") == 85
     assert source.count("return false;") == 6
 
 

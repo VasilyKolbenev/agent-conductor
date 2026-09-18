@@ -309,12 +309,15 @@ def test_public_deep_schema_authority_names_each_exact_argument_base_type():
         # instruction, and the road that reads an instruction from a file is
         # the only road whose source can be rewritten between the preview a
         # person read and the spawn.
+        # `work_scope` is on the two roads that STAND in a work directory, and
+        # on none of the four that do not: it names which task's directory.
         "dispatch": {
             "work_item_id", "instruction_ref", "profile", "artifact_refs",
-            "output_limit_profile", "step_purpose", "instruction_digest"},
+            "output_limit_profile", "step_purpose", "instruction_digest",
+            "work_scope"},
         "review": {
             "work_item_id", "target_artifact_refs", "result_artifact_ref",
-            "review_profile", "step_purpose"},
+            "review_profile", "step_purpose", "work_scope"},
         "evidence": {"target_action_id", "kinds"},
         "stop": {"target_attempt_id", "reason"},
         "retry": {"prior_action_id", "reason"},

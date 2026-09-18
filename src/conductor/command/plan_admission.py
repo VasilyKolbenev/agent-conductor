@@ -9,7 +9,7 @@ and ``verify_holds`` already have one layer down, and for the same reason: a
 refusal that needs nothing but its arguments does not belong inside the class
 that happens to ask it.
 
-They are four answers to four different questions, and keeping them apart is
+They are five answers to five different questions, and keeping them apart is
 what stopped two write roads answering one question two ways:
 
 - ``_plan`` BUILDS, through the one production constructor and never field by
@@ -20,6 +20,7 @@ what stopped two write roads answering one question two ways:
   one order that is also the taxonomy of its two refusals.
 - ``_bindings`` says which adapter a run's FROZEN configuration names, and
   treats an invalid one as corruption rather than as caller input.
+- ``_task`` says which task that configuration froze, by the same rule.
 """
 from __future__ import annotations
 
@@ -35,8 +36,9 @@ from .api_contracts import (
 )
 from .contracts import ContractError, frozen_config_bindings
 from .graph_definition import GraphDefinition
-from .graph_template import GraphTemplate, materialize
+from .graph_template import GraphTemplate, TemplateError, materialize
 from .store_errors import CorruptRun
+from .task_contracts import TaskBinding, frozen_config_task
 
 
 def _plan(template: GraphTemplate, config: Mapping[str, Any], run_id: str,
@@ -114,3 +116,55 @@ def _bindings(config: Mapping[str, Any]) -> dict[str, str]:
         return frozen_config_bindings(config)
     except ContractError:
         raise CorruptRun("frozen configuration has invalid instance bindings") from None
+
+
+def _task(config: Mapping[str, Any]) -> TaskBinding | None:
+    """Treat an invalid durable task binding as corruption, never caller input.
+
+    `_bindings`' rule for the other key a frozen configuration carries.
+    `materialize` reads it through the same strict reader and would refuse it
+    a moment later -- as a CONTRACT fault, which is the wrong word for bytes
+    the caller never sent. A composite work item the scope pushes out of the
+    grammar is not judged here: that is the request's revision meeting this
+    run's scope, and it keeps `materialize`'s own answer.
+    """
+    try:
+        return frozen_config_task(config)
+    except ContractError:
+        raise CorruptRun("frozen configuration has an invalid task binding") from None
+
+
+def work_scope_admits(nodes, task: TaskBinding | None) -> None:
+    """Refuse a plan whose steps would write outside this run's own task.
+
+    A step's ``work_scope`` places its work at ``work/_tasks/<scope>/<item>``
+    (`harness_workspace.work_parts`). So a step naming a scope this run is not
+    bound to would write into ANOTHER task's directory, a task-less plan naming
+    one would too, and a task-bound plan naming none would file its work among
+    task-less history. The run's frozen task binding is the one authority on
+    which task it belongs to; a plan agrees with it exactly or is not admitted.
+
+    Asked of the plan that is about to be WRITTEN -- a materialized probe, or a
+    submitted graph -- because that is what reaches a child, and never of a plan
+    that already stands: a comparison road re-materializes only to compare bytes,
+    and an admission rule there would re-judge a journal frozen before it existed.
+
+    Args:
+        nodes: The steps of the plan this run is about to be given.
+        task: The task this run binds, or ``None`` when it binds none.
+
+    Raises:
+        TemplateError: A step's scope disagrees with the binding; the refusal
+            names the step, what it said and what the run is bound to. It is a
+            `ContractError`, so the wire word is ``contract_invalid``.
+    """
+    bound = None if task is None else task.work_scope
+    for node in nodes:
+        payload = node.payload()
+        if "work_item_id" not in payload:
+            continue
+        said = payload.get("work_scope")
+        if said != bound:
+            raise TemplateError(
+                f"step {node.node_id!r} files its work under task scope {said!r} "
+                f"and this run is bound to {bound!r}")

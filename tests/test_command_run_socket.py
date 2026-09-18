@@ -143,7 +143,7 @@ def test_a_browser_can_draw_a_workflow_and_open_a_run_from_it_over_a_socket(
             "participants": [{"instance_id": INSTANCE, "provider_id": "codex",
                               "model": None}],
             "workflow_id": WORKFLOW, "revision": 1,
-            "assignments": {ROLE: INSTANCE}})
+            "assignments": {ROLE: INSTANCE}, "task_id": None})
         assert status == 201, opened
         assert opened["graph"]["run_id"] == "run-over-the-socket"
         assert [row.provider_id for row in srv.command_providers

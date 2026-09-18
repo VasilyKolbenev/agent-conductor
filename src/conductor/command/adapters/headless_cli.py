@@ -442,12 +442,12 @@ class HeadlessCliTransport(
         if refused is not None:
             return refused
         task_text = self._dispatch_task(request, args, instruction)
-        work = self._workspace.work_dir(args.work_item_id)
+        work = self._workspace.work_dir(args.work_item_id, args.task_scope)
         before = self._workspace.digest_work_tree()
         self._workspace.claim(request.run_id, request.action_id)
         argv, payload = self._task_command(task_text)
         outcome = self._attempt(
-            argv, f"{WORK_DIR}/{args.work_item_id}",
+            argv, work.relative_to(self._workspace.root).as_posix(),
             timeout=request.timeout_seconds, stdin_bytes=payload, model=model,
             output_limit=OUTPUT_LIMIT_BYTES[args.output_limit_profile])
         self._attempts[attempt_relation(request)] = _Attempt(
@@ -772,7 +772,7 @@ class HeadlessCliTransport(
                 f"the {self.profile.task_noun} changed nothing under the "
                 "authorized work tree, so there is no independent evidence that "
                 "it did the work")
-        scope = f"{attempt.work_dir.name}/"
+        scope = self._workspace.subtree(attempt.work_dir)
         outside = [name for name in changed if not name.startswith(scope)]
         if outside:
             return self._verification(

@@ -19,7 +19,7 @@ from .harness_profile import (
     PREFLIGHT_RESIDUE_DETAIL,
     TASK_CHANNEL_STDIN,
 )
-from .harness_workspace import INSTRUCTION_LIMIT, WORK_DIR, WorkspaceNotContained
+from .harness_workspace import INSTRUCTION_LIMIT, WorkspaceNotContained, work_route
 from .headless_cli import HeadlessCliTransport, residue_detail
 from .headless_values import (
     AttemptEvidence,
@@ -308,7 +308,7 @@ class ArtifactAwareTransport(HeadlessCliTransport):
             self, request: ActionRequest, args: DeepReviewArgs,
             inputs: tuple[ArtifactDocument, ...], payload: bytes,
             model: str | None = None) -> ActionResultReceipt:
-        work = self._workspace.work_dir(args.work_item_id)
+        work = self._workspace.work_dir(args.work_item_id, args.task_scope)
         before = self._workspace.digest_work_tree()
         self._workspace.claim(request.run_id, request.action_id)
         # Like the independent checker, this road separates stderr: here
@@ -321,7 +321,7 @@ class ArtifactAwareTransport(HeadlessCliTransport):
         # the whole of what can be published, so it is the whole of what a
         # redaction gate has to cover.
         outcome = self._attempt(
-            self._review_argv, f"{WORK_DIR}/{args.work_item_id}",
+            self._review_argv, work_route(args.work_item_id, args.task_scope),
             timeout=request.timeout_seconds, stdin_bytes=payload,
             separate_stderr=True, model=model)
         evidence = AttemptEvidence(
@@ -514,7 +514,7 @@ class ArtifactAwareTransport(HeadlessCliTransport):
             changed = self._changed(attempt)
             if not changed or attempt.after is None:
                 return super().verify(request, result)
-            scope = f"{attempt.work_dir.name}/"
+            scope = self._workspace.subtree(attempt.work_dir)
             if any(not name.startswith(scope) for name in changed):
                 return super().verify(request, result)
             digest = self._change_digest(request, attempt, changed)
@@ -641,7 +641,7 @@ class ArtifactAwareTransport(HeadlessCliTransport):
         changed = self._changed(snapshot)
         if not changed:
             return self._published(request, "nothing_changed")
-        if any(not name.startswith(f"{snapshot.work_dir.name}/") for name in changed):
+        if any(not name.startswith(self._workspace.subtree(snapshot.work_dir)) for name in changed):
             return self._published(request, "outside_subtree")
         if attempt_relation(request) not in self._check_materials:
             return self._published(request, "uncontained")
@@ -733,7 +733,7 @@ class ArtifactAwareTransport(HeadlessCliTransport):
             return self._checker_answer(request, "tree_changed")
         self._workspace.claim_verification(request.run_id, request.action_id)
         outcome = self._attempt(
-            self._verdict_argv, f"{WORK_DIR}/{args.work_item_id}",
+            self._verdict_argv, work_route(args.work_item_id, args.task_scope),
             timeout=request.timeout_seconds, stdin_bytes=frame.payload,
             separate_stderr=True, model=verifier.model,
             output_limit=(None if request.capability == REVIEW_CAPABILITY
@@ -755,7 +755,6 @@ class ArtifactAwareTransport(HeadlessCliTransport):
     def _check_frame(self, request, args, material):
         inputs = tuple(ArtifactDocument.from_dict(row) for row in material.input_documents)
         self._hold_check_inputs(request, args, material, inputs)
-        digest = None
         if request.capability == REVIEW_CAPABILITY:
             document = ArtifactDocument.from_dict(material.result_document)
             if (document.source_action_id != request.action_id or document.run_id != request.run_id
@@ -764,7 +763,8 @@ class ArtifactAwareTransport(HeadlessCliTransport):
                 raise CheckFrameError("material_unavailable")
             digest, tree, contents = document.digest(), {}, {}
         else:
-            tree, contents = self._workspace.read_work_tree(args.work_item_id, material.changed)
+            digest, (tree, contents) = None, self._workspace.read_work_tree(
+                args.work_item_id, material.changed, work_scope=args.task_scope)
         return build_frame(request, material, tree, contents, result_digest=digest,
                            sensitive=(*material.sensitive, *self._sensitive_values()))
 

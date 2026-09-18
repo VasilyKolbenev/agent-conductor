@@ -155,8 +155,10 @@ _ALLOWED_IMPORTS = {
     #: budget became editable: the words that control may offer are the ones
     #: that schema declares, and reading them is what stops this window growing
     #: a second copy of a vocabulary somebody else reviews.
+    #: The ceilings left the boundary for `studio-ceilings.js` at the boundary's
+    #: line cap; the sections read them there, and reach the boundary no more.
     "studio-sections.js": ["./command-view.js", "./command-projection.js",
-                           "./studio-fields.js", "./studio-model.js"],
+                           "./studio-fields.js", "./studio-ceilings.js"],
     #: The fourth section, alone. It reads the same REVIEWED projection its
     #: neighbour does, because which argument field carries a step's inputs and
     #: which carries its output is that schema's fact -- and looking it up is

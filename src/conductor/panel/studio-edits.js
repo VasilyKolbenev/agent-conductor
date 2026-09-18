@@ -12,10 +12,10 @@
 //: is the list this module owns. Adding a field grows this file and touches the
 //: reducer not at all, which is the property the split was drawn for.
 //:
-//: It imports the payload boundary for the two ceiling helpers and nothing
+//: It imports `studio-ceilings.js` for the two ceiling helpers and nothing
 //: else, so the dependency runs one way: the reducer knows about the edits, the
 //: edits know nothing about the reducer.
-import {CEILINGS, withCeiling} from "./studio-model.js";
+import {CEILINGS, withCeiling} from "./studio-ceilings.js";
 
 function isObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);

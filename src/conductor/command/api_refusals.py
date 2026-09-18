@@ -183,6 +183,11 @@ _REVIEWED_FACTS = (
     ("service_refused", ("template_id", "revision"),
      lambda facts: (f"no stored template '{facts['template_id']}' at revision "
                     f"{facts['revision']}")),
+    # A task this build does not hold, named by the id the caller sent and by
+    # nothing else: no run, because the task routes belong to no run, and no
+    # path. The one-field set is what keeps it apart from every row above.
+    ("service_refused", ("task_id",),
+     lambda facts: f"no stored task '{facts['task_id']}'"),
     ("service_refused", ("provider_id",),
      lambda facts: (f"provider '{facts['provider_id']}' is not one this build "
                     "resolved as available")),
@@ -299,6 +304,13 @@ class ApiRefusal(Exception):
         """Name a revision this build does not hold, with no run and no path."""
         detail = {"template_id": template_id, "revision": revision}
         message = f"no stored template '{template_id}' at revision {revision}"
+        return cls(_REFUSAL_BUILD, "service_refused", message, detail)
+
+    @classmethod
+    def missing_task(cls, task_id: str) -> "ApiRefusal":
+        """Name a task this build does not hold, with no run and no path."""
+        detail = {"task_id": task_id}
+        message = f"no stored task '{task_id}'"
         return cls(_REFUSAL_BUILD, "service_refused", message, detail)
 
     @classmethod

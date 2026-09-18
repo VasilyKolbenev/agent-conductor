@@ -28,7 +28,8 @@ from typing import TYPE_CHECKING, Any
 
 from .adapters.provider import provider_projection
 from .api_contracts import ApiRefusal
-from .studio_contracts import parse_draft_save, parse_run, parse_workflow_revision
+from .studio_contracts import (
+    RunInput, parse_draft_save, parse_run, parse_workflow_revision)
 from .containment import run_route_violations
 from .contracts import (
     ActionRequest, ActionResultReceipt, ContractError, frozen_config_workflow,
@@ -37,9 +38,20 @@ from .graph_projection import graph_payload
 from .graph_template import TemplateError, materialize
 #: ONE `_gated`, shared with the command API. Two copies of "what was
 #: judged is what is appended" could come to disagree about the one
-#: thing that rule exists to make unrepresentable.
-from .plan_admission import _gated
+#: thing that rule exists to make unrepresentable. ONE `_task` for the
+#: two write roads -- from-template and the open_run retry -- so a frozen
+#: binding is corrupt by one rule wherever a record is about to be
+#: appended; the read projections below carry the same verdict in their
+#: own words (an unreadable row, `run_corrupt` on the read).
+from .plan_admission import _gated, _task, work_scope_admits
 from .store_errors import RecordConflict, StoreError
+#: By MODULE, because `task_routes` imports this module back for `run_ids`;
+#: the name is looked up when `open_run` runs, never while either module is
+#: half built.
+from . import task_routes
+from .task_contracts import TaskBinding, frozen_config_task
+from .task_store import CorruptTask
+from .template_store import RouteNotOwned
 from .workflow_draft import (
     DraftRefused,
     publish_candidate,
@@ -53,6 +65,7 @@ from .workflow_draft import (
 
 if TYPE_CHECKING:  # pragma: no cover - collaborators, never constructed here
     from .run_store import RunStore
+    from .task_store import TaskStore
     from .template_store import TemplateStore
 
 Answer = tuple[int, dict[str, Any]]
@@ -317,29 +330,33 @@ def refused_with(refused: DraftRefused) -> Answer:
 
 def open_run(
         store: "RunStore", templates: "TemplateStore", body: Mapping[str, Any],
-        *, clock, ids, reachable, judge_plan, publish, hold_route) -> Answer:
+        *, tasks: "TaskStore", clock, ids, reachable, judge_plan, publish,
+        hold_route) -> Answer:
     """Open one run, and give it its plan in the same call.
 
-    The standing run is looked for FIRST, before the clock, the provider
-    roster, the template store or the registry is consulted -- the rule every
-    other mutating route follows, and for the same reason: a client whose reply
-    was lost is entitled to the same answer from a process that starts with a
-    different roster, because what it is asking about is already durable.
+    The standing run is looked for FIRST, before the task store, the clock,
+    the roster, the template store or the registry is consulted -- the rule
+    every other mutating route follows: a client whose reply was lost is owed
+    the same answer from a process with a different roster, or over a task
+    store that has since lost or corrupted the record, because what it asks
+    about is already durable. A standing run never touches the task store;
+    its binding is read off its own frozen configuration for the compare.
 
-    Only a run about to be CREATED is judged, and it is judged whole before one
-    durable byte is written: the roster must carry every provider named, the
-    revision must exist, and the plan that revision would materialize against
-    this configuration must be one the bound adapters can serve. The revision is
-    read ONCE and the value that was judged is the value that is appended --
-    ``_gated`` next door exists to make the alternative unrepresentable, and
-    re-reading a durable source between the gate and the write is the defect it
-    was written for.
+    Only a run about to be CREATED resolves its task through the store and is
+    judged, whole, before one durable byte is written: the roster must carry
+    every provider named, the revision must exist, and the plan that revision
+    would materialize against this configuration must be one the bound
+    adapters can serve. The revision is read ONCE and the value judged is the
+    value appended -- ``_gated`` next door makes the alternative
+    unrepresentable; re-reading a durable source between the gate and the
+    write is the defect it was written for.
     """
     asked = parse_run(body)
     hold_route(asked.run_id)
-    snapshot = asked.snapshot()
-    checked = _judged_revision(
-        store, templates, asked, snapshot, reachable, judge_plan)
+    standing = _standing_run(store, asked.run_id)
+    snapshot = _frozen_snapshot(asked, tasks, standing)
+    checked = None if standing is not None else _judged_revision(
+        templates, asked, snapshot, reachable, judge_plan)
     with store.transaction():
         hold_route(asked.run_id)
         standing = _standing_run(store, asked.run_id)
@@ -363,11 +380,49 @@ def open_run(
         "graph": None if graph is None else graph.as_dict()}
 
 
-def _judged_revision(store, templates, asked, snapshot, reachable, judge_plan):
+def _frozen_snapshot(
+        asked: RunInput, tasks: "TaskStore", standing) -> dict[str, Any]:
+    """The configuration this run freezes, or the one it must repeat.
+
+    A run about to be CREATED resolves its task through the store before the
+    snapshot exists, so what is frozen is the record's own scope and never the
+    caller's word for it; a task the store does not hold is refused by the id
+    the caller sent, before the clock, the roster or the template store is
+    consulted. A run that already STANDS at this id does not touch the task
+    store: what it froze is durable, and a client whose reply was lost is owed
+    the same answer whether the record has since vanished, gone corrupt or
+    been replaced. Its binding is read off the standing configuration when
+    that names the task the caller names -- none and none included -- and the
+    retry road then compares the whole snapshot as it does every other field.
+    """
+    if standing is None:
+        return asked.snapshot(
+            task_routes.resolve_task_binding(tasks, asked.task_id))
+    return asked.snapshot(_standing_binding(asked, standing))
+
+
+def _standing_binding(asked: RunInput, standing) -> TaskBinding | None:
+    """The task the standing run froze, when it is the one the caller names.
+
+    Any other task under a standing run id is a conflict before a binding is
+    even spelled: there is no record to resolve, because no run is about to be
+    created, and inventing a scope from the caller's id would freeze the one
+    thing the store exists to keep the caller from choosing. A binding that is
+    present and malformed is `run_corrupt`, by the one rule every road holds.
+    """
+    bound = _task(standing.config)
+    if (None if bound is None else bound.task_id) != asked.task_id:
+        raise RecordConflict(
+            f"run {asked.run_id!r} already records different facts")
+    return bound
+
+
+def _judged_revision(templates, asked, snapshot, reachable, judge_plan):
     """Judge a run about to be created, and hand back the value that was judged.
 
-    Only a run about to be CREATED is judged: a client whose reply was lost is
-    entitled to the same answer from a process that starts with a different
+    Only a run about to be CREATED is judged -- the caller has already looked
+    for a standing one and asks this for none: a client whose reply was lost
+    is entitled to the same answer from a process that starts with a different
     roster, because what it is asking about is already durable.
 
     The revision is read ONCE, here, and it is this VALUE the caller appends.
@@ -375,8 +430,6 @@ def _judged_revision(store, templates, asked, snapshot, reachable, judge_plan):
     gate and the write, which is exactly the defect this shape makes
     unrepresentable.
     """
-    if _standing_run(store, asked.run_id) is not None:
-        return None
     _providers_are_configured(asked, reachable)
     if asked.workflow_id is None:
         return None
@@ -384,6 +437,9 @@ def _judged_revision(store, templates, asked, snapshot, reachable, judge_plan):
     probe = materialize(
         checked, asked.binding, snapshot, graph_id=_PROBE_GRAPH,
         run_id=asked.run_id, created_at=_PROBE_AT)
+    # The task this run is about to freeze is the snapshot's own -- judging the
+    # plan that is about to be written, not a name re-read from anywhere.
+    work_scope_admits(probe.nodes, frozen_config_task(snapshot))
     judge_plan(snapshot, asked.run_id, probe.nodes)
     return checked
 
@@ -465,13 +521,18 @@ def plain_json(value: object) -> object:
     return value
 
 
-def recovered_payload(recovered) -> dict[str, Any]:
-    """One run read whole: its envelope, frozen config, journal and plan.
+def recovered_payload(
+        recovered, tasks: "TaskStore | None" = None) -> dict[str, Any]:
+    """One run read whole: its envelope, frozen config, journal, plan and task.
 
-    Every part but the last is a durable record verbatim. The plan, the digest
-    computed over it and the position computed from the journal are computed
-    here and stored nowhere, so nothing in them can drift from the records they
-    were read out of.
+    Every part but the last two is a durable record verbatim. The plan, the
+    digest computed over it and the position computed from the journal are
+    computed here and stored nowhere, so nothing in them can drift from the
+    records they were read out of. ``task`` is the run's frozen binding joined
+    to the record it names: the boundary hands its store in, and a caller that
+    hands none -- a `RecoveredRun` cannot name its project root, so nothing
+    here could build one -- gets the binding with ``unreadable`` true rather
+    than a title invented for it.
     """
     return {
         "run": recovered.envelope.as_dict(),
@@ -480,7 +541,39 @@ def recovered_payload(recovered) -> dict[str, Any]:
                     for row in recovered.records],
         "warnings": list(recovered.warnings),
         "graph": graph_payload(recovered),
+        "task": _task_payload(recovered.config, tasks),
     }
+
+
+def _task_payload(
+        config: Mapping[str, Any], tasks: "TaskStore | None") -> dict[str, Any] | None:
+    """The task a run froze, its title joined from the record at read time.
+
+    ``null`` when the configuration carries no binding. A binding present and
+    malformed is already-frozen bytes and not a malformed caller payload, so it
+    is ``run_corrupt`` -- the word `_controls` uses for the same class of fact
+    -- and never "no task". The title is ``null`` and ``unreadable`` true when
+    the record is absent, corrupt, reachable by a second name, or no store was
+    handed in: the binding still stands, because it is frozen, and what cannot
+    be had is said rather than spelled as a task called nothing. A record's
+    `RouteNotOwned` is about the TASK's route, never this run's, so it is a
+    fact on the task and not a refusal of the run read.
+    """
+    try:
+        bound = frozen_config_task(config)
+    except ContractError as error:
+        raise ApiRefusal.fixed("run_corrupt") from error
+    if bound is None:
+        return None
+    record = None
+    if tasks is not None:
+        try:
+            record = tasks.standing(bound.task_id)
+        except (CorruptTask, RouteNotOwned):
+            record = None
+    return {"id": bound.task_id, "work_scope": bound.work_scope,
+            "title": None if record is None else record.title,
+            "unreadable": record is None}
 
 
 def list_runs(store: "RunStore", providers) -> Answer:
@@ -544,6 +637,9 @@ def run_row(store: "RunStore", run_id: str) -> dict[str, Any]:
       and the control loop both are. They are read rather than derived: nothing
       here reconstructs a provenance, and a run whose configuration names none
       reports none.
+    - ``task_id`` -- WHICH task this run froze itself to belong to, off the same
+      configuration; ``null`` for a run bound to none. A binding present and
+      malformed makes the row unreadable: corrupt must never read as "no task".
 
     There is deliberately no derived overall phase word. The journal does not
     carry one, and a word invented here would be a guess a reader trusts.
@@ -556,23 +652,26 @@ def run_row(store: "RunStore", run_id: str) -> dict[str, Any]:
         "created_at": None, "mode": None, "envelope_status": None,
         "graph_id": None, "undecided_gates": None, "open_actions": None,
         "last_outcome": None, "workflow_id": None, "revision": None,
+        "task_id": None,
     }
     if run_route_violations(store, run_id):
         return row
     try:
         recovered = store.read(run_id)
+        task = frozen_config_task(recovered.config)
     except (StoreError, ContractError):
         return row
-    row.update(_derived_row(recovered))
+    row.update(_derived_row(recovered, task))
     return row
 
 
-def _derived_row(recovered) -> dict[str, Any]:
+def _derived_row(recovered, task: TaskBinding | None) -> dict[str, Any]:
     """The live half of a run row, computed from the journal it replayed.
 
     Separated from the row above so the row's own shape -- what a reader gets
     when a run CANNOT be read -- is visible on its own. Every key here is
-    derived; none is stored anywhere.
+    derived; none is stored anywhere. ``task`` is the binding the row already
+    read, handed in rather than read twice.
     """
     values = [stored.value for stored in recovered.records]
     results = [value for value in values
@@ -590,6 +689,7 @@ def _derived_row(recovered) -> dict[str, Any]:
         "unreadable": False,
         "workflow_id": None if followed is None else followed[0],
         "revision": None if followed is None else followed[1],
+        "task_id": None if task is None else task.task_id,
         "cycle_id": recovered.envelope.cycle_id,
         "created_at": recovered.envelope.created_at,
         "mode": recovered.envelope.mode.value,

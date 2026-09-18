@@ -90,6 +90,13 @@ from ..containment import (
 #: name a provider may choose.
 WORK_DIR = "work"
 INSTRUCTION_DIR = "instructions"
+#: The container every TASK's work lives in, one level below the work tree. It
+#: can never be a work item's own directory: a work item id begins with a letter
+#: or a digit, so no plan written before tasks existed -- and no task-less plan
+#: written since -- can name it, in any letter case, on any filesystem. A task's
+#: work is kept apart from history by STRUCTURE, not by a spelling that a legal
+#: legacy id could also have used (the 2026-09-18 review's R1 and R2).
+TASKS_DIR = "_tasks"
 #: The two names a PROVIDER brings instead: see ``HarnessWorkspace``. They are
 #: not defaulted anywhere, because a default would let two harnesses share one
 #: home root by saying nothing, and the whole retention promise below is that a
@@ -167,6 +174,34 @@ def _component(name: object) -> str:
     if any(ord(character) <= _LAST_CONTROL for character in name):
         raise WorkspaceNotContained(f"{name!r} is not a single route component")
     return name
+
+
+def work_parts(work_item_id: str, work_scope: str | None = None) -> tuple[str, ...]:
+    """The route below the workspace root where ONE work item's files live.
+
+    The single definition of that place: the directory a child stands in, the
+    tree a checker reads, and the path an argv names are all this answer, so they
+    cannot come to disagree. A task-less item lives at ``work/<item>``, exactly
+    where it always has, so no standing plan's directory moves. A task's item
+    lives at ``work/_tasks/<scope>/<item>``: two tasks are two directories because
+    their scopes are two path COMPONENTS -- there is no encoding to be ambiguous --
+    and nothing a task-less item can be named reaches under ``_tasks``.
+
+    Args:
+        work_item_id: The plan's own work item id.
+        work_scope: The run's task scope, or None for a task-less run.
+
+    Returns:
+        The route parts, the work tree's own name first.
+    """
+    if work_scope is None:
+        return (WORK_DIR, work_item_id)
+    return (WORK_DIR, TASKS_DIR, work_scope, work_item_id)
+
+
+def work_route(work_item_id: str, work_scope: str | None = None) -> str:
+    """`work_parts` spelled as the relative path an argv carries."""
+    return "/".join(work_parts(work_item_id, work_scope))
 
 
 def _leaf(path: Path) -> os.stat_result | None:
@@ -682,11 +717,23 @@ class HarnessWorkspace:
         root.mkdir(parents=True, exist_ok=True)
         return root
 
-    def work_dir(self, work_item_id: str) -> Path:
+    def work_dir(self, work_item_id: str, work_scope: str | None = None) -> Path:
         self.work_root()
-        work = self._directory_route(WORK_DIR, work_item_id)
+        work = self._directory_route(*work_parts(work_item_id, work_scope))
         work.mkdir(parents=True, exist_ok=True)
         return work
+
+    def subtree(self, work_dir: Path) -> str:
+        """A work item's prefix among the work tree's keys: its WHOLE relative path.
+
+        `digest_work_tree` and `read_work_tree` key every file relative to the
+        work tree, so a work item's own files begin with its full route below
+        it -- ``_tasks/<scope>/<item>/`` for a task's work. The last component
+        alone matched only while every item sat directly under the work tree;
+        a name is not a place, which is what the 2026-09-18 review found a
+        location witness comparing.
+        """
+        return work_dir.relative_to(self.root / WORK_DIR).as_posix() + "/"
 
     def digest_work_tree(self) -> dict[str, str]:
         """Content digests of every LOCAL regular file under the work tree.
@@ -723,7 +770,8 @@ class HarnessWorkspace:
 
     def read_work_tree(
             self, work_item_id: str, changed: tuple[str, ...],
-            budget: int = FILE_BUDGET) -> tuple[dict[str, str], dict[str, bytes]]:
+            budget: int = FILE_BUDGET, work_scope: str | None = None,
+    ) -> tuple[dict[str, str], dict[str, bytes]]:
         """List one work item and inline only bounded changed regular leaves.
 
         Keys have the same work-item prefix as ``digest_work_tree``. Every
@@ -735,7 +783,7 @@ class HarnessWorkspace:
             raise ValueError(f"budget must be an integer from 0 through {FILE_BUDGET}")
         if type(changed) is not tuple or any(type(path) is not str for path in changed):
             raise TypeError("changed must be a tuple of work-tree paths")
-        base = self._directory_route(WORK_DIR, work_item_id)
+        base = self._directory_route(*work_parts(work_item_id, work_scope))
         tree, contents = {}, {}
         if _leaf(base) is None:
             return tree, contents

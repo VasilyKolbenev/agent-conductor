@@ -649,7 +649,11 @@ def test_the_run_read_carries_the_plan_its_digest_and_a_computed_runtime(tmp_pat
 
     payload = read_run(subject).payload
 
-    assert set(payload) == {"run", "config", "records", "warnings", "graph"}
+    # Six keys since the task a run binds to joined the read (2026-09-16): a
+    # run opened with no task answers `task: null` rather than omitting the
+    # key, so a reader never has to guess whether the server is old.
+    assert set(payload) == {"run", "config", "records", "warnings", "graph", "task"}
+    assert payload["task"] is None
     graph = payload["graph"]
     assert graph["definition"] == written
     assert graph["definition_digest"] == GraphDefinition.from_dict(written).digest()

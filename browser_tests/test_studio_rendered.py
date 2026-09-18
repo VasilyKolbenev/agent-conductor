@@ -106,6 +106,9 @@ BOOT_ASSETS = {
     # The focus net the boot module carries across every render pass.
     "studio-focus.js": 200,
     "studio-participants.js": 200,
+    # The ceilings, split off the boundary at its line cap; the edits and the
+    # sections import it, so the entry route's module graph fetches it.
+    "studio-ceilings.js": 200,
     "command-projection.js": 200, "command-view.js": 200,
 }
 

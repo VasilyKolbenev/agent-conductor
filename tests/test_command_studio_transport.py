@@ -45,7 +45,7 @@ from tests.test_command_workflow_routes import (
     target,
 )
 
-def test_the_new_routes_are_derived_from_the_live_table_and_are_the_seven(tmp_path):
+def test_the_new_routes_are_derived_from_the_live_table_and_are_the_ten(tmp_path):
     """What this file holds to the contract is what the allowlist actually says."""
     assert NEW_ROUTES == (
         ("GET", "/command/workflows"),
@@ -55,6 +55,9 @@ def test_the_new_routes_are_derived_from_the_live_table_and_are_the_seven(tmp_pa
         ("POST", "/command/workflows/<workflow_id>/revisions"),
         ("GET", "/command/runs"),
         ("POST", "/command/runs"),
+        ("GET", "/command/tasks"),
+        ("POST", "/command/tasks"),
+        ("GET", "/command/tasks/<task_id>"),
     )
     assert set(FROZEN_TEN) < set(COMMAND_ROUTES)
 
@@ -107,15 +110,16 @@ def test_every_new_route_refuses_a_verb_the_table_does_not_name(
 
 
 @pytest.mark.parametrize("method,path", NEW_TARGETS)
-def test_every_new_route_but_the_run_list_refuses_the_other_verb(
+def test_every_new_route_but_the_two_dual_verb_lists_refuses_the_other_verb(
         tmp_path, method, path):
     """A read road is not a write road under another name, and the reverse.
 
-    ``/command/runs`` is the one deliberate exception, named here rather than
-    skipped, so a second dual-verb route would have to be written down.
+    ``/command/runs`` and ``/command/tasks`` are the two deliberate exceptions,
+    named here rather than skipped, so a third dual-verb route would have to
+    be written down.
     """
     subject, _store, _templates, events = api(tmp_path)
-    if path == BOTH_VERBS:
+    if path in BOTH_VERBS:
         assert get(subject, path).status == 200
         assert post(subject, path, {}).status == ERROR_STATUS["contract_invalid"]
         return

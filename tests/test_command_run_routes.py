@@ -37,6 +37,7 @@ from conductor.command.graph_definition import GraphDefinition
 from conductor.command.graph_template import GraphTemplate, RunBinding, materialize
 from conductor.command.run_store import snapshot_digest
 from conductor.command.studio_contracts import CONTROL_MODES, MAX_RUN_PARTICIPANTS
+from conductor.command.task_contracts import MAX_TASK_ID
 from conductor.command.template_store import TemplateStore
 
 from tests.test_command_workflow_draft import INCOMPLETE, WORKFLOW, a_document
@@ -44,6 +45,7 @@ from tests.test_command_workflow_routes import (
     HOST,
     NOW,
     SHIPPED,
+    TASK,
     api,
     code_of,
     contracts,
@@ -66,7 +68,7 @@ PROVIDER = "claude-code"
 
 
 def a_run(**changes):
-    """One request to open a run: exactly the seven caller-owned facts."""
+    """One request to open a run: exactly the eight caller-owned facts."""
     body = {
         "run_id": RUN_ID,
         "cycle_id": "default-orbit",
@@ -76,6 +78,7 @@ def a_run(**changes):
         "workflow_id": WORKFLOW,
         "revision": 1,
         "assignments": {ROLE: INSTANCE},
+        "task_id": None,
     }
     body.update(changes)
     return body
@@ -297,6 +300,8 @@ def test_every_mode_the_contract_names_opens_a_run_that_records_it(tmp_path, mod
     (a_run(participants=[
         {"instance_id": INSTANCE, "provider_id": PROVIDER, "model": ""}]),
      "a model is an id or it is absent"),
+    (a_run(task_id=""), "a task id is an id or it is absent"),
+    (a_run(task_id="t" * (MAX_TASK_ID + 1)), "a task id is bounded"),
 ])
 def test_the_run_document_is_closed_to_what_it_cannot_mean(tmp_path, body, reason):
     subject, store, _templates, events = a_project(tmp_path)
@@ -489,6 +494,8 @@ def test_a_different_configuration_under_one_run_id_is_a_conflict(tmp_path):
     assert events == [RUN_ID]
 
 
+
+
 def test_two_participants_in_either_order_are_one_request(tmp_path):
     """The snapshot is sorted by instance id, so an order is not a change."""
     subject, store, _templates, events = a_project(tmp_path)
@@ -551,7 +558,7 @@ def test_the_listing_names_every_run_and_derives_each_field_from_the_records(
         "envelope_status": recovered.envelope.status,
         "graph_id": definition.graph_id,
         "undecided_gates": 1, "open_actions": 0, "last_outcome": None,
-        "workflow_id": WORKFLOW, "revision": 1}
+        "workflow_id": WORKFLOW, "revision": 1, "task_id": None}
     # A run with no plan has no gates to be undecided about, and says 0 rather
     # than null: null is what an unreadable run answers. It also froze no
     # workflow reference, so both halves of the provenance are null together.
@@ -582,7 +589,7 @@ def test_the_creation_time_word_is_named_so_no_reader_takes_it_for_a_position(
     assert set(row) == {
         "run_id", "unreadable", "cycle_id", "created_at", "mode",
         "envelope_status", "graph_id", "undecided_gates", "open_actions",
-        "last_outcome", "workflow_id", "revision"}
+        "last_outcome", "workflow_id", "revision", "task_id"}
 
 
 def test_a_run_whose_journal_does_not_replay_is_listed_with_its_own_marker(
@@ -609,7 +616,8 @@ def test_a_run_whose_journal_does_not_replay_is_listed_with_its_own_marker(
         "run_id": "run-corrupt", "unreadable": True, "cycle_id": None,
         "created_at": None, "mode": None, "envelope_status": None,
         "graph_id": None, "undecided_gates": None, "open_actions": None,
-        "last_outcome": None, "workflow_id": None, "revision": None}
+        "last_outcome": None, "workflow_id": None, "revision": None,
+        "task_id": None}
     assert rows[RUN_ID]["unreadable"] is False
     assert rows[RUN_ID]["graph_id"] is not None
 

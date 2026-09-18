@@ -81,10 +81,13 @@ FROZEN_TEN = (
 NEW_ROUTES = tuple(row for row in COMMAND_ROUTES if row not in FROZEN_TEN)
 NEW_GETS = tuple(row for row in NEW_ROUTES if row[0] == "GET")
 NEW_POSTS = tuple(row for row in NEW_ROUTES if row[0] == "POST")
-#: The one path the table admits under BOTH verbs, because listing runs and
-#: opening one are the same noun asked two ways. It is excluded from the
-#: verb-swap claim by NAME rather than by silence.
-BOTH_VERBS = "/command/runs"
+#: The two paths the table admits under BOTH verbs, because listing runs and
+#: opening one -- and listing tasks and creating one -- are the same noun asked
+#: two ways. They are excluded from the verb-swap claim by NAME rather than by
+#: silence.
+BOTH_VERBS = frozenset({"/command/runs", "/command/tasks"})
+#: The task every route pattern carrying ``<task_id>`` is filled with.
+TASK = "task-studio-1"
 #: The two shipped files this module publishes documents derived from. Nothing
 #: any test does may move one byte of either.
 SHIPPED = {"dalio-v1": REVISION_ONE_DIGEST, "dalio-v2": REVISION_TWO_DIGEST,
@@ -93,7 +96,8 @@ SHIPPED = {"dalio-v1": REVISION_ONE_DIGEST, "dalio-v2": REVISION_TWO_DIGEST,
 
 def target(path):
     """One route pattern with every identity a path can carry substituted."""
-    filled = path.replace("<workflow_id>", WORKFLOW).replace("<revision>", "1")
+    filled = (path.replace("<workflow_id>", WORKFLOW).replace("<revision>", "1")
+              .replace("<task_id>", TASK))
     assert "<" not in filled, filled
     return filled
 

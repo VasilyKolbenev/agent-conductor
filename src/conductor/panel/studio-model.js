@@ -26,40 +26,6 @@
 // ── closed vocabularies, each a copy of its Python owner ──────────────────
 //: command/contract_values.py ControlMode, through studio_contracts.CONTROL_MODES.
 //: The whole authority ladder; there is no hidden autonomous mode.
-//: The two ceilings a workflow step may place on itself, and the ranges
-//: `graph_definition.settled_bounds` holds them to. A vocabulary rather than a
-//: rule of this window's own: the numbers are the Python contract's, and
-//: `tests/test_studio_canvas.py` pins them to it in both directions.
-//:
-//: The empty field means ABSENT and never zero. "This step has no limit" and
-//: "this step may run for no time at all" are different sentences, and only
-//: one of them is a plan.
-export const CEILINGS = Object.freeze({
-  timeout_seconds: Object.freeze({min: 1, max: 86400,
-    what: "a timeout in seconds"}),
-  attempt_bound: Object.freeze({min: 1, max: 99, what: "an attempt bound"}),
-});
-
-//: What a person may put in a ceiling field, judged by the vocabulary above.
-//: Here rather than in the reducer because it moves no state: given a node and
-//: a typed value it answers the same way forever, which is what everything else
-//: in this module does. The window refuses out of range at the FIELD so a
-//: person is told there rather than at a publish.
-export function withCeiling(node, name, value) {
-  const rule = CEILINGS[name];
-  const raw = typeof value === "string" ? value.trim() : "";
-  if (raw === "") {
-    const {[name]: _dropped, ...rest} = node;
-    return {node: rest, notice: ""};
-  }
-  const number = Number(raw);
-  if (!Number.isInteger(number) || number < rule.min || number > rule.max) {
-    return {node, notice: `${rule.what} is a whole number from ${rule.min} `
-      + `to ${rule.max}, or empty for no limit.`};
-  }
-  return {node: {...node, [name]: number}, notice: ""};
-}
-
 export const CONTROL_MODES = Object.freeze(["observe", "propose", "confirm", "policy"]);
 //: command/adapters/provider.py AVAILABILITY_STATES -- whether THIS BUILD on
 //: THIS MACHINE can reach a provider at all.
@@ -530,14 +496,14 @@ export function projectRevision(payload) {
 const RUNS_KEYS = ["runs", "providers"];
 const RUN_ROW_KEYS = ["run_id", "unreadable", "cycle_id", "created_at", "mode",
   "envelope_status", "graph_id", "undecided_gates", "open_actions",
-  "last_outcome", "workflow_id", "revision"];
+  "last_outcome", "workflow_id", "revision", "task_id"];
 //: What a row whose run did not replay says about everything but its identity.
 //: The provenance is in this list rather than outside it because "this run
 //: cannot be read" and "this run followed no workflow" must not arrive here as
 //: the same row: an unreadable run knows nothing, including that.
 const UNREADABLE_ROW_FIELDS = ["cycle_id", "created_at", "mode",
   "envelope_status", "graph_id", "undecided_gates", "open_actions",
-  "last_outcome", "workflow_id", "revision"];
+  "last_outcome", "workflow_id", "revision", "task_id"];
 
 function projectRunRow(row) {
   if (!isPlainObject(row) || !exactKeys(row, RUN_ROW_KEYS)) return null;
@@ -551,7 +517,7 @@ function projectRunRow(row) {
       ? Object.freeze({
         runId: row.run_id, unreadable: true, cycleId: null, createdAt: null,
         mode: null, envelopeStatus: null, graphId: null, undecidedGates: null,
-        openActions: null, lastOutcome: null, workflow: null,
+        openActions: null, lastOutcome: null, workflow: null, taskId: null,
       })
       : null;
   }
@@ -564,6 +530,7 @@ function projectRunRow(row) {
           || row.revision < 1)) {
     return null;
   }
+  if (row.task_id !== null && !isId(row.task_id)) return null;
   if (!isId(row.cycle_id) || !isInstant(row.created_at)) return null;
   if (!CONTROL_MODES.includes(row.mode)) return null;
   if (!RUN_STATES.includes(row.envelope_status)) return null;
@@ -584,6 +551,7 @@ function projectRunRow(row) {
     lastOutcome: row.last_outcome,
     workflow: row.workflow_id === null ? null
       : Object.freeze({id: row.workflow_id, revision: row.revision}),
+    taskId: row.task_id,
   });
 }
 
@@ -607,7 +575,7 @@ export function projectRuns(payload) {
   });
 }
 
-const RUN_READ_KEYS = ["run", "config", "records", "warnings", "graph"];
+const RUN_READ_KEYS = ["run", "config", "records", "warnings", "graph", "task"];
 const RECORD_ROW_KEYS = ["record_type", "record"];
 //: A frozen configuration as the PRODUCT writes it, in the same closed-set
 //: shape the cycle below already needed. `workflow` is written only by the
@@ -621,7 +589,7 @@ const RECORD_ROW_KEYS = ["record_type", "record"];
 //: same mistake the cycle already made once, when a boundary demanding `{id}`
 //: refused the `{id, phases}` the first run most people ever have.
 const CONFIG_REQUIRED = ["cycle", "instances"];
-const CONFIG_KEYS = ["cycle", "instances", "workflow"];
+const CONFIG_KEYS = ["cycle", "instances", "workflow", "task"];
 //: Both halves or neither: a workflow at no revision names a plan whose shape
 //: nobody can fetch, and a revision of nothing names no plan at all. Named
 //: RUN_ for the reference a RUN froze; `WORKFLOW_KEYS` above is a different
@@ -695,6 +663,17 @@ function projectWorkflowRef(value) {
   return Object.freeze({id: row.id, revision: row.revision});
 }
 
+//: The task a run was opened under, frozen beside `workflow` so the digest
+//: covers it and a retry cannot rebind. OPTIONAL for the reason `workflow`
+//: is -- a run frozen before tasks existed carries none and reads as
+//: task-less -- and VALIDATED even so: a malformed binding is corrupt and
+//: never legacy, so `projectConfig` refuses the read whole rather than
+//: showing "no task". This window reads nothing out of it yet.
+function isTaskRef(row) {
+  return isPlainObject(row) && exactKeys(row, ["id", "work_scope"])
+    && isId(row.id) && isId(row.work_scope);
+}
+
 function projectConfig(value) {
   if (!isPlainObject(value)
       || !Object.keys(value).every((key) => CONFIG_KEYS.includes(key))
@@ -707,6 +686,7 @@ function projectConfig(value) {
   // about, so it refuses the read whole rather than showing half a provenance.
   const workflow = projectWorkflowRef(value);
   if (workflow === undefined) return null;
+  if (has(value, "task") && !isTaskRef(value.task)) return null;
   const cycle = value.cycle;
   if (!isPlainObject(cycle)
       || !Object.keys(cycle).every((key) => CYCLE_KEYS.includes(key))
@@ -733,6 +713,8 @@ function projectConfig(value) {
   return Object.freeze({
     cycleId: value.cycle.id, instances: frozenList(instances),
     workflow,
+    task: has(value, "task") ? Object.freeze(
+      {id: value.task.id, workScope: value.task.work_scope}) : null,
   });
 }
 
@@ -748,6 +730,18 @@ function projectRecords(rows) {
     }));
   }
   return frozenList(out);
+}
+
+//: The task beside a run read: the frozen binding's id and scope, joined by
+//: the server to the record's title. `unreadable` is true and `title` null
+//: when the record is absent or corrupt, so a bound task whose record has
+//: vanished reads as unreadable, never as untitled and never as no task.
+function isRunTask(row) {
+  return isPlainObject(row)
+    && exactKeys(row, ["id", "work_scope", "title", "unreadable"])
+    && isId(row.id) && isId(row.work_scope)
+    && typeof row.unreadable === "boolean"
+    && (row.title === null || isText(row.title));
 }
 
 //: `GET /command/runs/<id>` -- one run read whole.
@@ -776,12 +770,17 @@ export function projectRunRead(payload) {
       && (!isPlainObject(payload.graph) || !isJson(payload.graph, 0))) {
     return null;
   }
+  if (payload.task !== null && !isRunTask(payload.task)) return null;
   return Object.freeze({
     run,
     config,
     records,
     warnings: frozenList(payload.warnings.slice()),
     graph: payload.graph === null ? null : frozenJson(payload.graph),
+    task: payload.task === null ? null : Object.freeze({
+      id: payload.task.id, workScope: payload.task.work_scope,
+      title: payload.task.title, unreadable: payload.task.unreadable,
+    }),
   });
 }
 
@@ -792,3 +791,8 @@ export function projectRunRead(payload) {
 //: there when this module reached its line cap with that seam owed, and it is
 //: NOT re-exported from here -- a re-export would make this module import that
 //: one, and the two would then import each other.
+
+// ── ceilings ─────────────────────────────────────────────────────────────
+//: `CEILINGS` and `withCeiling` are `studio-ceilings` now, split off at this
+//: module's line cap with the task binding owed: they judge a value a person
+//: TYPED rather than a payload the server sent. Not re-exported, as above.

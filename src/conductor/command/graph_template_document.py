@@ -649,8 +649,32 @@ def _dispatch_payload(node) -> dict[str, Any]:
     return {**payload, "step_purpose": node.purpose}
 
 
+def _scoped_payload(node: TemplateNode, work_scope: str | None) -> dict[str, Any]:
+    """The step's payload, carrying the run's task when the run has one.
+
+    Two tasks materialized from one template would otherwise dispatch the same
+    ``work_item_id`` into the same directory. The item is left EXACTLY as the
+    template wrote it and the task travels beside it as ``work_scope``, which
+    `harness_workspace.work_parts` turns into ``work/_tasks/<scope>/<item>`` --
+    a place apart by structure. The first answer to this rewrote the item into
+    one composite id, ``t<len>.<scope>.<item>``, and that id was a LEGAL legacy
+    id: a task-less plan frozen before tasks existed could already carry it, and
+    on a case-insensitive filesystem ``T1.a.b`` could too (the 2026-09-18
+    review's R1 and R2). No spelling inside the id grammar can be apart from
+    every id that grammar admits.
+
+    A run bound to no task gets the payload untouched, byte for byte, so no
+    plan written before tasks existed moves.
+    """
+    payload = _dispatch_payload(node)
+    if work_scope is None or "work_item_id" not in payload:
+        return payload
+    return {**payload, "work_scope": work_scope}
+
+
 def _build(template: GraphTemplate, assignments: Mapping[str, str], *,
-           graph_id: str, run_id: str, created_at: str) -> GraphDefinition:
+           graph_id: str, run_id: str, created_at: str,
+           work_scope: str | None = None) -> GraphDefinition:
     """Substitute roles for instances and hand the result to the base contract."""
     steps, edges = template.settled()
     nodes = tuple(
@@ -658,7 +682,7 @@ def _build(template: GraphTemplate, assignments: Mapping[str, str], *,
             node_id=node.node_id, kind=node.kind, title=node.title,
             stage=node.stage,
             instance_id=None if node.role_id is None else assignments[node.role_id],
-            capability=node.capability, arguments=_dispatch_payload(node),
+            capability=node.capability, arguments=_scoped_payload(node, work_scope),
             resources=node.resources, gate_id=node.gate_id, loop=node.loop,
             # Carried across, or the plan's ceilings would be a template fact
             # the run it materializes never hears about.

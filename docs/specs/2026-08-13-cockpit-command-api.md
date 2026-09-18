@@ -49,6 +49,14 @@ was supposed to constrain has stopped being a freeze. What has since happened:
   before its byte rather than after it, and `RunClosed` is translated by type to
   `run_terminal` rather than reported as a server fault. Replay is unchanged:
   bytes written past every door are still `run_corrupt` on read.
+- **Three task routes were appended on 2026-09-15.** `GET /command/tasks`,
+  `POST /command/tasks` and `GET /command/tasks/<task_id>` joined the end of
+  the canonical table below and of `COMMAND_ROUTES`, in that order, making it
+  twenty entries; a task is the durable record a run binds to inside its frozen
+  configuration, and the three rows meet the same transport gate as every other.
+  With them the run read (`GET /command/runs/<run_id>`) gained a sixth top-level
+  key, `task` (`null` for a run bound to no task), and the run row a `task_id`;
+  the frozen `run_read_response` example below keeps its five keys as written.
 
 Where this document and the tree disagree about anything else, the tree is the
 fact and this file is the history.
@@ -163,6 +171,16 @@ scope, not permission for C/API-1 to invent a generic file-write endpoint.
   },
   {
     "method": "POST", "path": "/command/runs", "mutation": true, "csrf": true
+  },
+  {
+    "method": "GET", "path": "/command/tasks", "mutation": false, "csrf": false
+  },
+  {
+    "method": "POST", "path": "/command/tasks", "mutation": true, "csrf": true
+  },
+  {
+    "method": "GET", "path": "/command/tasks/<task_id>",
+    "mutation": false, "csrf": false
   }
 ]
 ```
@@ -448,9 +466,9 @@ the service. Every listed key is required and no other key is accepted:
 ```json
 {
   "dispatch": ["work_item_id", "instruction_ref", "profile", "artifact_refs",
-    "output_limit_profile", "step_purpose", "instruction_digest"],
+    "output_limit_profile", "step_purpose", "instruction_digest", "work_scope"],
   "review": ["work_item_id", "target_artifact_refs", "result_artifact_ref",
-    "review_profile", "step_purpose"],
+    "review_profile", "step_purpose", "work_scope"],
   "evidence": ["target_action_id", "kinds"],
   "stop": ["target_attempt_id", "reason"],
   "retry": ["prior_action_id", "reason"],
@@ -461,9 +479,16 @@ the service. Every listed key is required and no other key is accepted:
 This registry is derived from the six exact public types in
 `DEEP_ARGUMENT_TYPES`; their `from_dict`/`as_dict` round trip is the authority,
 including exact JSON-list fields and closed enum values. It is the field SET,
-not the required set: `result_artifact_ref`, `step_purpose` and
-`instruction_digest` are OMITTABLE, so a payload written before any of them
-existed still reads and no frozen revision moves.
+not the required set: `result_artifact_ref`, `step_purpose`,
+`instruction_digest` and `work_scope` are OMITTABLE, so a payload written before
+any of them existed still reads and no frozen revision moves.
+
+`work_scope` names the TASK a run is bound to, and so which directory a step's
+work lives in: `work/_tasks/<work_scope>/<work_item_id>` for a task's run, and
+`work/<work_item_id>` -- exactly where it always was -- for a run with no task. It
+is materialized from the run's frozen task binding and never composed by a
+caller; every door that admits a plan refuses one whose steps name any other
+scope, or name one when the run binds none (`contract_invalid`).
 
 `instruction_digest` is the dispatch road's only promise about CONTENT: the
 `sha256:<64 hex>` digest of the exact UTF-8 bytes of the instruction the

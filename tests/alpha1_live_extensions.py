@@ -60,6 +60,15 @@ THREE_QUESTIONS = (
     "reviewed contract carry is withheld.")
 
 
+#: The task the frozen end-to-end run is bound to, now that a run read carries
+#: one beside its frozen configuration (2026-09-16). The historical run was
+#: opened before tasks existed and froze no binding, so the read answers
+#: `null` -- a LITERAL pin of what that run IS, not a rule recomputed from the
+#: configuration beside it. A run opened under a task would carry
+#: `{id, work_scope, title, unreadable}` here, and no frozen run does.
+TASK_BINDING = None
+
+
 def current_form(value):
     """Copy a frozen fixture, applying only the independently pinned extension."""
     if isinstance(value, list):
@@ -73,6 +82,10 @@ def current_form(value):
     if {"proposal_id", "proposed_at", "preview_digest"} <= result.keys():
         assert "input_binding" not in result, "historical fixture was rewritten"
         result["input_binding"] = "proposal-v1"
+    # Anchored on the five keys only a run read carries together.
+    if {"run", "config", "records", "warnings", "graph"} <= result.keys():
+        assert "task" not in result, "historical fixture was rewritten"
+        result["task"] = TASK_BINDING
     if "refusal_codes" in result and "attempt_states" in result:
         assert not set(REFUSALS) & result["refusal_codes"].keys()
         result["refusal_codes"].update(REFUSALS)

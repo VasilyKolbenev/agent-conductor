@@ -24,6 +24,7 @@ from .api_contracts import ApiRefusal, _closed, _contract, _json_array, parse_do
 from .contracts import ControlMode, RunEnvelope, _digest, _id
 from .graph_template import RunBinding
 from .run_store import snapshot_digest
+from .task_contracts import TaskBinding, TaskRecord, _bounded_id, _title
 
 #: What a publish asks for: the revision it expects to create, and OPTIONALLY
 #: the document to create it from. Omitting the document means "publish the
@@ -43,12 +44,17 @@ _REVISION_FIELDS = _REVISION_REQUIRED | {"document", "reviewed_digest"}
 #: destroyed another window's stored work, and it is unrepresentable now.
 _DRAFT_REQUIRED = frozenset({"document"})
 _DRAFT_FIELDS = _DRAFT_REQUIRED | {"expected_digest", "expected_absent"}
-#: What a run-creation request supplies. Every key is REQUIRED and the two that
-#: may be empty are spelled `null`, because a browser that omits a key and a
-#: browser that says "no workflow" must not be the same request.
+#: What a run-creation request supplies. Every key is REQUIRED and the three
+#: that may be empty are spelled `null`, because a browser that omits a key and
+#: a browser that says "no workflow" -- or "no task" -- must not be the same
+#: request.
 _RUN_FIELDS = frozenset({
     "run_id", "cycle_id", "mode", "participants", "workflow_id", "revision",
-    "assignments"})
+    "assignments", "task_id"})
+#: What a task-creation request supplies: the identity and the display title.
+#: The work scope is NOT a caller's word -- it is the server's, equal to the id
+#: at creation -- and the clock is the server's, so neither is admitted here.
+_TASK_FIELDS = frozenset({"task_id", "title"})
 #: One participant: who they are in this run, which configured provider carries
 #: them, and which model if this build pins one.
 _PARTICIPANT_FIELDS = frozenset({"instance_id", "provider_id", "model"})
@@ -116,13 +122,26 @@ class RunInput:
     workflow_id: str | None
     revision: int | None
     binding: RunBinding
+    #: The task this run binds to, or ``None`` for a task-less run. Defaulted
+    #: so a caller building a task-less input by hand says nothing, exactly as
+    #: it did before tasks existed; the wire requires the key regardless
+    #: (`_RUN_FIELDS`), and `parse_run` always passes it.
+    task_id: str | None = None
 
-    def snapshot(self) -> dict[str, Any]:
+    def snapshot(self, task: TaskBinding | None = None) -> dict[str, Any]:
         """The frozen configuration THIS SERVER writes for those participants.
 
         The instances are sorted by id so two requests that name the same
         participants in different orders produce the same bytes, and therefore
         the same digest and the same idempotent answer.
+
+        ``task`` is the same kind of fact as ``workflow`` and is frozen for the
+        same three reasons: inside the digest, so the binding is re-verified on
+        every replay; compared whole on a retry, so a second open naming another
+        task is a conflict and never an adoption; and unreachable afterwards --
+        the owner's "validated, immutable binding". It is OMITTED, never null,
+        when the run binds to none, so every run frozen before tasks existed
+        reads exactly as it did.
 
         ``workflow`` is where this run records WHICH plan it followed, and it is
         in the frozen configuration rather than beside it for three reasons that
@@ -154,6 +173,8 @@ class RunInput:
         if self.workflow_id is not None:
             snapshot["workflow"] = {"id": self.workflow_id,
                                     "revision": self.revision}
+        if task is not None:
+            snapshot["task"] = {"id": task.task_id, "work_scope": task.work_scope}
         return snapshot
 
     def build(self, snapshot: Mapping[str, Any], created_at: str) -> RunEnvelope:
@@ -166,6 +187,37 @@ class RunInput:
         return RunEnvelope(
             run_id=self.run_id, cycle_id=self.cycle_id, created_at=created_at,
             config_digest=snapshot_digest(snapshot), mode=self.mode)
+
+
+@dataclass(frozen=True)
+class TaskInput:
+    """One validated request to create a task; the clock and the scope are the server's."""
+
+    task_id: str
+    title: str
+
+    def build(self, created_at: str) -> TaskRecord:
+        """The record this request creates, its work scope being its own id.
+
+        Recorded explicitly all the same: a display title may change one day, a
+        scope may not, and the stored record is where that difference lives.
+        """
+        return TaskRecord(task_id=self.task_id, title=self.title,
+                          work_scope=self.task_id, created_at=created_at)
+
+
+def parse_task(body: object) -> TaskInput:
+    """Validate exactly the two caller-owned facts of one new task.
+
+    The key set is closed, so there is no spelling of a scope, a clock or a run
+    list a browser can reach. Every contract refusal -- an id past the task
+    bound, a title that is empty, over-long or not one visible line -- is the
+    one ``contract_invalid`` every other route answers a malformed body with.
+    """
+    values = _closed(body, _TASK_FIELDS)
+    return TaskInput(
+        task_id=_contract(_bounded_id, "task_id", values["task_id"]),
+        title=_contract(_title, values["title"]))
 
 
 def _exact_revision(value: object) -> int:
@@ -248,13 +300,15 @@ def _participant(row: object) -> Participant:
 
 
 def parse_run(body: object) -> RunInput:
-    """Validate exactly the seven caller-owned facts of one new run.
+    """Validate exactly the eight caller-owned facts of one new run.
 
     ``mode`` comes from the closed :data:`CONTROL_MODES` vocabulary, so there is
     no spelling of authority a browser can reach that the durable envelope
     cannot hold. ``workflow_id`` and ``revision`` are both present or both
     ``null``: half of a reference names a workflow with no revision or a
     revision of nothing, and either would be a request nothing could serve.
+    ``task_id`` is an id within the task bound or ``null``; whether a task
+    stands under it is a fact about a project, asked of the store by the route.
     """
     values = _closed(body, _RUN_FIELDS)
     mode = values["mode"]
@@ -277,8 +331,11 @@ def parse_run(body: object) -> RunInput:
     # so a non-empty mapping is a binding for a template that was never named.
     if workflow_id is None and binding.bound():
         raise ApiRefusal.fixed("contract_invalid")
+    task_id = values["task_id"]
+    if task_id is not None:
+        task_id = _contract(_bounded_id, "task_id", task_id)
     return RunInput(
         run_id=_contract(_id, "run_id", values["run_id"]),
         cycle_id=_contract(_id, "cycle_id", values["cycle_id"]),
         mode=mode, participants=participants, workflow_id=workflow_id,
-        revision=revision, binding=binding)
+        revision=revision, binding=binding, task_id=task_id)

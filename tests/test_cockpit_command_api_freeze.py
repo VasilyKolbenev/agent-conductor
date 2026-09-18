@@ -153,6 +153,9 @@ EXPECTED_ROUTES = (
     ("POST", "/command/workflows/<workflow_id>/revisions", True, True),
     ("GET", "/command/runs", False, False),
     ("POST", "/command/runs", True, True),
+    ("GET", "/command/tasks", False, False),
+    ("POST", "/command/tasks", True, True),
+    ("GET", "/command/tasks/<task_id>", False, False),
 )
 
 #: `step_purpose` is the plan's own sentence about a step, and it is on exactly
@@ -163,13 +166,15 @@ EXPECTED_ROUTES = (
 #: `instruction_digest` is the dispatch road's promise about the instruction's
 #: bytes, and stands last because it is omittable: a payload written before the
 #: field existed still reads and promises nothing about them.
+#: `work_scope` names the task whose directory a step's work lives in, and stands
+#: last on the two roads that stand in a work directory for the same reason.
 EXPECTED_ARGUMENT_SCHEMAS = {
     "dispatch": (
         "work_item_id", "instruction_ref", "profile", "artifact_refs",
-        "output_limit_profile", "step_purpose", "instruction_digest"),
+        "output_limit_profile", "step_purpose", "instruction_digest", "work_scope"),
     "review": (
         "work_item_id", "target_artifact_refs", "result_artifact_ref",
-        "review_profile", "step_purpose"),
+        "review_profile", "step_purpose", "work_scope"),
     "evidence": ("target_action_id", "kinds"),
     "stop": ("target_attempt_id", "reason"),
     "retry": ("prior_action_id", "reason"),

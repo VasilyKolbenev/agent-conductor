@@ -84,16 +84,19 @@ from .plan_admission import (  # noqa: F401 -- re-exported under their old names
     _gated,
     _plan,
     _servable_pair,
+    _task,
+    work_scope_admits,
 )
 from .http_transport import (
     CommandSession,
     validate_command_host,
 )
 from .run_store import CorruptRun, RecordConflict, RunStore, StoreError
+from .task_store import TaskStore
 from .template_store import TemplateStore
 from .runtime import Budget, ControlRuntime
 from .service import CommandService
-from . import studio_routes
+from . import studio_routes, task_routes
 from .studio_routes import (
     plain_json as _plain_json,
     recovered_payload as _recovered_payload,
@@ -142,11 +145,14 @@ class CommandApi:
             publish_run: Callable[[str], None],
             providers: Iterable[ProviderContract] = (),
             templates: TemplateStore | None = None,
+            tasks: TaskStore | None = None,
             project: Callable[[], str | None] = lambda: None) -> None:
         if not isinstance(store, RunStore) or not isinstance(registry, AdapterRegistry):
             raise TypeError("CommandApi requires a RunStore and AdapterRegistry")
         if templates is not None and not isinstance(templates, TemplateStore):
             raise TypeError("CommandApi templates must be a TemplateStore")
+        if tasks is not None and not isinstance(tasks, TaskStore):
+            raise TypeError("CommandApi tasks must be a TaskStore")
         if not isinstance(session, CommandSession) or type(budget) is not Budget:
             raise TypeError("CommandApi requires a CommandSession and Budget")
         if not all(callable(value)
@@ -163,6 +169,9 @@ class CommandApi:
         # one set of reusable plans; a caller may hand in its own for a test.
         self._templates = (
             TemplateStore(store.project_root) if templates is None else templates)
+        # Rooted at the same project for the same reason, and holding the SAME
+        # process-local gate the run store holds for that root.
+        self._tasks = TaskStore(store.project_root) if tasks is None else tasks
         self._registry = registry
         self._session = session
         self._budget = Budget(
@@ -238,6 +247,12 @@ class CommandApi:
             return self._list_workflows()
         if route.name == "runs":
             return self._list_runs()
+        if route.name == "tasks":
+            return CommandResponse(*task_routes.list_tasks(self._tasks))
+        if route.name == "task":
+            assert route.task_id is not None
+            return CommandResponse(*task_routes.read_task(
+                self._tasks, self._store, route.task_id))
         if route.name in {"workflow", "workflow_revision"}:
             assert route.workflow_id is not None
             if route.name == "workflow":
@@ -248,7 +263,7 @@ class CommandApi:
         self._hold_route(route.run_id)
         recovered = self._store.read(route.run_id)
         if route.name == "run":
-            return CommandResponse(200, _recovered_payload(recovered))
+            return CommandResponse(200, _recovered_payload(recovered, self._tasks))
         return CommandResponse(200, self._controls(recovered.config))
 
     def _post(self, route: _Route, body: Mapping[str, Any]) -> CommandResponse:
@@ -256,6 +271,9 @@ class CommandApi:
             return self._publish_template(body)
         if route.name == "runs":
             return self._open_run(body)
+        if route.name == "tasks":
+            return CommandResponse(*task_routes.create_task(
+                self._tasks, body, clock=self._clock))
         if route.name in {"workflow_draft", "workflow_revisions"}:
             assert route.workflow_id is not None
             if route.name == "workflow_draft":
@@ -381,8 +399,12 @@ class CommandApi:
             # route does: a graph is append-only, so a plan that finds none
             # standing now is the plan this run may still be given.
             self._instances_are_declared(initial.config, run_id, asked)
+            # A malformed task binding is `run_corrupt`, not a contract fault.
+            task = _task(initial.config)
             checked = self._revision(run_id, asked)
             probe = _plan(checked, initial.config, run_id, asked, _PROBE_AT)
+            # Create road only: the comparison road below admits nothing.
+            work_scope_admits(probe.nodes, task)
             self._bindings_are_reachable(initial.config, run_id, probe.nodes)
             self._bindings_are_servable(initial.config, run_id, probe.nodes)
         with self._store.transaction():
@@ -523,6 +545,7 @@ class CommandApi:
             # this run may still be given.
             self._bindings_are_servable(
                 initial.config, run_id, submitted.nodes)
+            work_scope_admits(submitted.nodes, _task(initial.config))
         with self._store.transaction():
             self._hold_route(run_id)
             recovered = self._store.read(run_id)
@@ -719,7 +742,7 @@ class CommandApi:
         question this class exists to answer.
         """
         return CommandResponse(*studio_routes.open_run(
-            self._store, self._templates, body,
+            self._store, self._templates, body, tasks=self._tasks,
             clock=self._clock, ids=self._ids, reachable=self._reachable(),
             judge_plan=self._judge_plan, publish=self._publish_run,
             hold_route=self._hold_route))
