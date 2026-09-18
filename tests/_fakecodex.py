@@ -136,6 +136,13 @@ EMIT_VERDICT = "FAKECODEX_EMIT_VERDICT"
 VERDICT_WRITE_FILE = "FAKECODEX_VERDICT_WRITE_FILE"
 VERDICT_EXIT = "FAKECODEX_VERDICT_EXIT"
 VERDICT_SLEEP = "FAKECODEX_VERDICT_SLEEP"
+#: `relative/path:text` -- the verdict is DERIVED from the work tree the checker
+#: is standing in: accept only if that file exists there and contains the text,
+#: reject otherwise. It overrides `EMIT_VERDICT`'s fixed word, so a scenario's
+#: first attempt can be refused and its fix accepted by one checker whose script
+#: never changes -- the verdict follows the real bytes the doer left, which is
+#: what an independent check is for.
+VERDICT_REQUIRES = "FAKECODEX_VERDICT_REQUIRES"
 #: What a review spawn answers with. Fixed, so a test asserts the exact bytes
 #: that became the durable artifact rather than a shape.
 REVIEW_OUTPUT = "# Review\n\nThe durable material holds; publish it."
@@ -379,9 +386,15 @@ def _run_verdict(env) -> int:
         _write_pair(Path.cwd(), env[VERDICT_WRITE_FILE])
     if env.get(VERDICT_SLEEP):
         time.sleep(float(env[VERDICT_SLEEP]))
+    word = env[EMIT_VERDICT]
+    if env.get(VERDICT_REQUIRES):
+        relative, _, needle = env[VERDICT_REQUIRES].partition(":")
+        target = Path.cwd() / relative
+        found = target.is_file() and needle in target.read_text(encoding="utf-8")
+        word = "enabled-verdict-accept" if found else "enabled-verdict-reject"
     answer = {"enabled-verdict-accept": "VERDICT: accept",
               "enabled-verdict-reject": "VERDICT: reject"}.get(
-                  env[EMIT_VERDICT], "No valid verdict was emitted.")
+                  word, "No valid verdict was emitted.")
     sys.stdout.buffer.write((answer + "\n").encode("utf-8"))
     sys.stdout.buffer.flush()
     return int(env.get(VERDICT_EXIT, "0"))

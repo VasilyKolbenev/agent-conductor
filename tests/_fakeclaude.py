@@ -181,6 +181,17 @@ SLEEP = "FAKECLAUDE_SLEEP"
 #: `relative/path:text` written inside the child's cwd, so a test can prove the
 #: workspace evidence a real coding run would leave behind.
 WRITE_FILE = "FAKECLAUDE_WRITE_FILE"
+#: `text|relative/path:content` -- write that file AFTER `WRITE_FILE`, and only
+#: when the task this child READ contains `text`. So a scenario's fix is caused
+#: by the correction a person wrote reaching the doer, and by nothing beside it:
+#: an instruction that is dropped, truncated or replaced on the way leaves the
+#: first draft standing. The text is compared in this process and never logged.
+FIX_WHEN = "FAKECLAUDE_FIX_WHEN"
+#: A PATH to a JSON list of texts. The spawn log's `stdin` entry gains
+#: `probes`: one boolean per text, whether the task this child read contained
+#: it. An oracle on the exact words delivered that never copies any of them --
+#: the same rule the rest of this log keeps (see the module docstring).
+STDIN_PROBES = "FAKECLAUDE_STDIN_PROBES"
 #: `name:text` written inside the child's own CONFIG DIRECTORY, which is what a
 #: real harness does with its profile and what a persistent login directory has
 #: to be judged about. Relative to that directory by construction: the whole
@@ -323,11 +334,25 @@ def _read_task() -> tuple[dict, str]:
     if os.environ.get(DEAF):
         return {"read": False}, ""
     payload = sys.stdin.buffer.read()
-    return {
+    text = payload.decode("utf-8", errors="replace")
+    measured = {
         "read": True,
         "bytes": len(payload),
         "sha256": hashlib.sha256(payload).hexdigest(),
-    }, payload.decode("utf-8", errors="replace")
+    }
+    if os.environ.get(STDIN_PROBES):
+        wanted = json.loads(Path(os.environ[STDIN_PROBES]).read_text(encoding="utf-8"))
+        measured["probes"] = [needle in text for needle in wanted]
+    return measured, text
+
+
+def _fix_for(task_text: str) -> str | None:
+    """The `FIX_WHEN` spec, when the task read carries its text; else None."""
+    rule = os.environ.get(FIX_WHEN)
+    if not rule:
+        return None
+    needle, _, spec = rule.partition("|")
+    return spec if needle and needle in task_text else None
 
 
 #: The delimiter the review frame draws before each durable input document.
@@ -426,12 +451,14 @@ def _run_verdict(env) -> int:
     return int(env.get(VERDICT_EXIT, "0"))
 
 
-def _run_prompt(checker=False) -> int:
+def _run_prompt(checker=False, fix: str | None = None) -> int:
     env = os.environ
     if checker and env.get(EMIT_VERDICT):
         return _run_verdict(env)
     if env.get(WRITE_FILE):
         _write_pair(Path.cwd(), env[WRITE_FILE])
+    if fix is not None:
+        _write_pair(Path.cwd(), fix)
     if env.get(HOME_FILE) and env.get(CLAUDE_HOME_NAME):
         _write_pair(Path(env[CLAUDE_HOME_NAME]), env[HOME_FILE])
     if env.get(HOME_FILE_LOCKED) and env.get(CLAUDE_HOME_NAME):
@@ -493,13 +520,13 @@ def main() -> int:
                        for index in range(len(argv))))
     if not task["read"]:
         _record(argv, task, None)
-        return _run_prompt(checker)
+        return _run_prompt(checker, _fix_for(task_text))
     if not os.environ.get(LEAK_CHECK):
         # An ordinary run: the task was read and measured, and no leak scan was
         # asked for. `marker: null` records that honestly rather than implying
         # a scan that passed.
         _record(argv, task, None)
-        return _run_prompt(checker)
+        return _run_prompt(checker, _fix_for(task_text))
     try:
         report, frame = _probe_report(argv, task_text)
     except _ProbeMissing as missing:
@@ -508,7 +535,7 @@ def main() -> int:
         sys.stderr.buffer.flush()
         return PROBE_MISSING_EXIT
     _record(argv, task, report, frame)
-    return _run_prompt(checker)
+    return _run_prompt(checker, _fix_for(task_text))
 
 
 if __name__ == "__main__":
