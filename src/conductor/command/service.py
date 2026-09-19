@@ -21,14 +21,39 @@ from .contracts import (
     ControlMode,
     ObservationRecord,
     PROPOSAL_INPUT_BINDING,
+    ContractError,
     frozen_config_bindings,
 )
 from .dispatch import DispatchArgumentError
 from .run_store import RunStore
+from .task_contracts import frozen_config_task, work_scope_disagreement
 
 
 class ServiceError(RuntimeError):
     """The service refuses an operation the authority ladder does not permit."""
+
+
+def _hold_proposal_writes_in_its_task(recovered, run_id: str,
+                                      arguments: Mapping[str, Any]) -> None:
+    """A proposal's work item is filed under its OWN run's task, or under none.
+
+    The plan doors hold a planned run to this already; a run that follows no
+    graph reaches the proposal door with arguments its caller wrote, and a
+    `work_scope` there is a directory path. So the rule the plans answer is
+    asked here too, of every new proposal, graph or no graph -- one predicate,
+    `task_contracts.work_scope_disagreement`, and never a second spelling.
+
+    Raises:
+        ServiceError: The arguments name a scope the run is not bound to, name
+            one when the run binds no task, or name none when it binds one.
+    """
+    try:
+        task = frozen_config_task(recovered.config)
+    except ContractError:
+        raise ServiceError(f"run {run_id!r} froze an invalid task binding") from None
+    refused = work_scope_disagreement(arguments, task)
+    if refused is not None:
+        raise ServiceError(f"a proposal on run {run_id!r} {refused}")
 
 
 def _hold_proposal_names_its_node(recovered, run_id: str,
@@ -143,6 +168,7 @@ class CommandService:
             self._registry.validate_arguments(bound, capability, arguments)
         except DispatchArgumentError as e:
             raise ServiceError(str(e)) from e
+        _hold_proposal_writes_in_its_task(recovered, run_id, arguments)
         proposal = ActionProposal(
             proposal_id=proposal_id or self._ids("proposal"),
             run_id=run_id,

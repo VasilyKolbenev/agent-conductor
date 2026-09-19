@@ -152,9 +152,11 @@ class DeepDispatchArgs(_StrictArguments):
     #: checking its own reading against itself.
     instruction_digest: "str | _Omitted" = OMITTED
     #: The run's TASK, when it has one: which task directory the work item lives
-    #: in (`harness_workspace.work_parts`). Materialized from the run's frozen
-    #: task binding, never composed by hand, and judged against that binding at
-    #: every door that admits a plan (`plan_admission.work_scope_admits`).
+    #: in (`harness_workspace.work_parts`). A plan's steps carry it materialized
+    #: from the run's frozen task binding; a proposal on a run with no plan carries
+    #: what its caller wrote. Either way it is judged against that binding
+    #: (`task_contracts.work_scope_disagreement`) at every door that admits work:
+    #: the plan doors, the proposal door and the authority to execute.
     #: Omittable, and its absence is the task-less road exactly as it was, so no
     #: standing plan's directory moves.
     work_scope: "str | _Omitted" = OMITTED

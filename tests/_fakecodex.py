@@ -157,6 +157,11 @@ SLEEP = "FAKECODEX_SLEEP"
 WRITE_FILE = "FAKECODEX_WRITE_FILE"
 #: Do NOT read stdin at all -- the deaf child, for the delivery relation.
 DEAF = "FAKECODEX_DEAF"
+#: A PATH to a JSON list of texts. The spawn log's `stdin` entry gains `probes`:
+#: one boolean per text, whether the task this child read contained it -- the
+#: same oracle `_fakeclaude.STDIN_PROBES` is, so a test can ask what a checker was
+#: SHOWN without a single word of it reaching the log.
+STDIN_PROBES = "FAKECODEX_STDIN_PROBES"
 #: Turn the leak scan ON. A BOOLEAN: this knob carries `"1"` and never the probe
 #: token, so the environment scan it enables needs no exemption for the variable
 #: that enabled it.
@@ -272,11 +277,16 @@ def _read_task() -> tuple[dict, str]:
     if os.environ.get(DEAF):
         return {"read": False}, ""
     payload = sys.stdin.buffer.read()
-    return {
+    text = payload.decode("utf-8", errors="replace")
+    measured = {
         "read": True,
         "bytes": len(payload),
         "sha256": hashlib.sha256(payload).hexdigest(),
-    }, payload.decode("utf-8", errors="replace")
+    }
+    if os.environ.get(STDIN_PROBES):
+        wanted = json.loads(Path(os.environ[STDIN_PROBES]).read_text(encoding="utf-8"))
+        measured["probes"] = [needle in text for needle in wanted]
+    return measured, text
 
 
 def _probe_report(argv: list[str], task_text: str) -> dict:

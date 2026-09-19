@@ -17,11 +17,12 @@ here is what makes it true early.
 from __future__ import annotations
 
 from .containment import unprovidable_sandboxes
-from .contracts import ActionProposal, ActionRequest, frozen_config_bindings
+from .contracts import ActionProposal, ActionRequest, ContractError, frozen_config_bindings
 from .graph_causality import _standing_graph, standing_terminal
 from .graph_schedule import attempt_in_flight, authorized_attempts, schedule
 from .run_store import RecoveredRun
 from .runtime_values import AuthorizationError, RunAlreadyTerminal
+from .task_contracts import frozen_config_task, work_scope_disagreement
 
 
 def _planned_node(recovered: RecoveredRun, node_id: str | None):
@@ -182,6 +183,30 @@ def _hold_node_sandbox_is_provided(
             f"plan: step {proposal.node_id!r} demands sandbox route(s) "
             f"{list(missing)} that this build does not provide, so no attempt "
             "may be authorized for it")
+
+
+def _hold_work_scope(proposal: ActionProposal, recovered: RecoveredRun) -> None:
+    """The authority to execute: work lands in the run's OWN task, or in none.
+
+    The proposal door asks the same question, but it is not the only way a
+    proposal reaches the journal -- one recorded before the rule existed, or by
+    any other supported entry, is judged HERE, where a grant is minted and
+    without which nothing is ever spawned (`ControlRuntime.execute` refuses an
+    action this process did not grant). Asked below the exact-retry road, so a
+    request already standing is answered by itself and never re-judged; only
+    NEW authority is refused, before any byte of the attempt is written.
+
+    Raises:
+        AuthorizationError: The proposal's arguments name a scope its run is not
+            bound to, name one on a task-less run, or name none on a task run.
+    """
+    try:
+        task = frozen_config_task(recovered.config)
+    except ContractError:
+        raise AuthorizationError("the run froze an invalid task binding") from None
+    refused = work_scope_disagreement(proposal.arguments, task)
+    if refused is not None:
+        raise AuthorizationError(f"proposal {proposal.proposal_id!r} {refused}")
 
 
 def _hold_plan_admits(

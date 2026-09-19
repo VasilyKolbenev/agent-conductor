@@ -62,6 +62,7 @@ from .authorize_holds import (
     _hold_attempt_identity,
     _hold_plan_admits,
     _hold_plan_bounds,
+    _hold_work_scope,
     _planned_node,
 )
 from .run_closing import close_if_terminal
@@ -240,6 +241,7 @@ class ControlRuntime:
             # An identical retry is not a new budget action and writes nothing.
             return Authorization(request=prior, record_created=False)
         self._hold_input_binding(proposal, recovered)
+        _hold_work_scope(proposal, recovered)
         self._hold_freshness(confirmation, budget)
         # Below the exact-retry road above, so a client whose reply was lost is
         # answered by its own standing request rather than refused for holding

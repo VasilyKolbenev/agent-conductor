@@ -107,6 +107,38 @@ def test_a_run_open_naming_another_task_under_one_run_id_is_a_conflict(tmp_path)
     assert journal_of(store) == standing and events == [RUN_ID]
 
 
+def test_the_run_open_door_refuses_a_task_less_run_a_step_that_names_a_task(tmp_path):
+    """A published revision may carry `work_scope` in a step -- the capability
+    schema admits the key -- and `materialize` leaves a task-less run's payload
+    exactly as written, so opening a run with NO task on that revision would file
+    its work in the named task's directory. The run-open door refuses it before
+    any byte of the run exists; the same revision under a task is overridden by
+    that task's own scope and opens.
+
+    Mutation: drop `work_scope_admits` from `_judged_revision` -> the task-less
+    run opens with the borrowed scope -> red.
+    """
+    subject, store, _templates, events = a_project(tmp_path)
+    borrowed = a_document()
+    borrowed["nodes"][1]["arguments"]["work_scope"] = "victim-task"
+    assert post(subject, f"/command/workflows/{WORKFLOW}/revisions",
+                {"revision": 2, "document": borrowed}).status == 201
+    events.clear()
+
+    refused = post(subject, "/command/runs", a_run(run_id="run-studio-002", revision=2))
+    assert (refused.status, code_of(refused)) == (
+        ERROR_STATUS["contract_invalid"], "contract_invalid"), refused.payload
+    assert not store.run_path("run-studio-002").exists() and events == []
+
+    assert post(subject, "/command/tasks",
+                {"task_id": TASK, "title": "A task"}).status == 201
+    opened = post(subject, "/command/runs",
+                  a_run(run_id="run-studio-003", revision=2, task_id=TASK))
+    assert opened.status == 201, opened.payload
+    step = next(node for node in opened.payload["graph"]["nodes"] if node["node_id"] == "do")
+    assert step["arguments"]["work_scope"] == TASK
+
+
 def test_the_widest_scope_and_the_widest_item_open_a_run_as_two_components(tmp_path):
     """The retired encoding summed scope and item into one 128-character id and
     refused a run the sum overflowed -- a refusal about a spelling, not about the

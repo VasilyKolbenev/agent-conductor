@@ -34,7 +34,14 @@ from conductor.command.adapters.harness_workspace import (
     work_route,
 )
 from conductor.command.contracts import ContractError, _id
-from conductor.command.graph_template import GraphTemplate, RunBinding, materialize
+from conductor.command.graph_definition import GraphNode
+from conductor.command.graph_template import (
+    TEMPLATE_DIR,
+    GraphTemplate,
+    RunBinding,
+    load_template,
+    materialize,
+)
 from conductor.command.graph_template_document import TemplateError
 from conductor.command.plan_admission import work_scope_admits
 from conductor.command.task_contracts import TaskBinding
@@ -189,14 +196,20 @@ def test_an_absent_scope_is_absent_in_the_payload_and_a_present_one_round_trips(
     assert scoped.as_dict()["work_scope"] == "task-a" and scoped.task_scope == "task-a"
 
 
+@pytest.mark.parametrize("kind", ["dispatch", "review"])
 @pytest.mark.parametrize("scope", [None, "", "has space", "_tasks", "a/b", 7])
-def test_a_scope_that_is_not_an_id_is_refused_by_the_contract(scope):
-    """An explicit null chose a value and is refused like any other wrong one."""
+def test_a_scope_that_is_not_an_id_is_refused_by_the_contract(scope, kind):
+    """An explicit null chose a value and is refused like any other wrong one --
+    by the review contract as by the dispatch one, since a review's child stands
+    in the directory its scope names too."""
+    base = ({"work_item_id": "work-001", "instruction_ref": "instr-001",
+             "profile": "implement", "artifact_refs": [],
+             "output_limit_profile": "normal"} if kind == "dispatch" else
+            {"work_item_id": "work-001", "target_artifact_refs": ["input-ref"],
+             "review_profile": "quality"})
+    kind_of = DeepDispatchArgs if kind == "dispatch" else DeepReviewArgs
     with pytest.raises(DeepContractError):
-        DeepDispatchArgs.from_dict({
-            "work_item_id": "work-001", "instruction_ref": "instr-001",
-            "profile": "implement", "artifact_refs": [],
-            "output_limit_profile": "normal", "work_scope": scope})
+        kind_of.from_dict({**base, "work_scope": scope})
 
 
 # -- who may write where: the admission rule ---------------------------------------------
@@ -231,6 +244,64 @@ def test_a_task_run_whose_step_names_another_task_or_none_is_refused():
         work_scope_admits(plan(bound_to("b")).nodes, binding)
     with pytest.raises(TemplateError, match="None"):
         work_scope_admits(plan(SOLO).nodes, binding)
+
+
+def _step(node_id: str, capability: str, **scope) -> GraphNode:
+    arguments = ({"work_item_id": "work-001", "instruction_ref": "instr-001",
+                  "profile": "implement", "artifact_refs": [],
+                  "output_limit_profile": "normal"} if capability == "dispatch" else
+                 {"work_item_id": "work-001", "target_artifact_refs": ["input-ref"],
+                  "review_profile": "quality"})
+    return GraphNode(node_id=node_id, kind="task", title=node_id, instance_id="solo",
+                     capability=capability, arguments={**arguments, **scope})
+
+
+@pytest.mark.parametrize("task, own, foreign", [
+    pytest.param(None, {}, {"work_scope": "victim-task"}, id="task-less"),
+    pytest.param(TaskBinding(task_id="a", work_scope="a"), {"work_scope": "a"}, {},
+                 id="task-a")])
+def test_the_plan_door_judges_every_work_bearing_step_not_only_the_first_dispatch(
+        task, own, foreign):
+    """A plan's SECOND work-bearing step, a review, is the one that writes
+    elsewhere; the first, a dispatch, agrees. The door names the review step.
+
+    Mutations: the door judges only the first work-bearing step, or only
+    dispatch steps -> the plan is admitted -> red.
+    """
+    plan_nodes = (_step("first", "dispatch", **own), _step("second", "review", **foreign))
+    with pytest.raises(TemplateError) as refused:
+        work_scope_admits(plan_nodes, task)
+    assert repr("second") in str(refused.value)
+
+
+@pytest.mark.parametrize("shipped", sorted(path.stem for path in TEMPLATE_DIR.glob("*.json")))
+def test_every_work_bearing_step_of_a_shipped_cycle_carries_the_runs_task(shipped):
+    """Every cycle this build ships, opened under a task, files EVERY step that
+    carries a work item -- review steps as well as the dispatch -- under that
+    task, and the plan door admits it. Otherwise a task could not run the
+    product's own cycle at all.
+
+    Mutation: materialize scopes only dispatch steps -> the review steps carry
+    no scope -> red.
+    """
+    template = load_template(shipped)
+    roles = {step.role_id for step in template.steps() if step.role_id}
+    roles |= {step.verifier_role_id for step in template.steps() if step.verifier_role_id}
+    definition = materialize(
+        template, RunBinding.from_dict({"assignments": {role: "solo" for role in roles}}),
+        bound_to("a"), graph_id="graph-shipped", run_id="run-shipped", created_at=NOW)
+    working = [node for node in definition.nodes if "work_item_id" in node.payload()]
+    assert working, shipped
+    assert {node.node_id: node.payload().get("work_scope") for node in working} == {
+        node.node_id: "a" for node in working}
+    work_scope_admits(definition.nodes, TaskBinding(task_id="a", work_scope="a"))
+
+
+def test_the_shipped_cycles_carry_review_steps_the_scope_witness_reaches():
+    """The witness above covers review steps only if some shipped cycle has one."""
+    capabilities = {node.capability for path in TEMPLATE_DIR.glob("*.json")
+                    for node in load_template(path.stem).steps()}
+    assert {"dispatch", "review"} <= capabilities
 
 
 def test_a_task_bound_run_overrides_a_scope_the_template_wrote():

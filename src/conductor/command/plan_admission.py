@@ -38,7 +38,7 @@ from .contracts import ContractError, frozen_config_bindings
 from .graph_definition import GraphDefinition
 from .graph_template import GraphTemplate, TemplateError, materialize
 from .store_errors import CorruptRun
-from .task_contracts import TaskBinding, frozen_config_task
+from .task_contracts import TaskBinding, frozen_config_task, work_scope_disagreement
 
 
 def _plan(template: GraphTemplate, config: Mapping[str, Any], run_id: str,
@@ -124,9 +124,7 @@ def _task(config: Mapping[str, Any]) -> TaskBinding | None:
     `_bindings`' rule for the other key a frozen configuration carries.
     `materialize` reads it through the same strict reader and would refuse it
     a moment later -- as a CONTRACT fault, which is the wrong word for bytes
-    the caller never sent. A composite work item the scope pushes out of the
-    grammar is not judged here: that is the request's revision meeting this
-    run's scope, and it keeps `materialize`'s own answer.
+    the caller never sent.
     """
     try:
         return frozen_config_task(config)
@@ -158,13 +156,7 @@ def work_scope_admits(nodes, task: TaskBinding | None) -> None:
             names the step, what it said and what the run is bound to. It is a
             `ContractError`, so the wire word is ``contract_invalid``.
     """
-    bound = None if task is None else task.work_scope
     for node in nodes:
-        payload = node.payload()
-        if "work_item_id" not in payload:
-            continue
-        said = payload.get("work_scope")
-        if said != bound:
-            raise TemplateError(
-                f"step {node.node_id!r} files its work under task scope {said!r} "
-                f"and this run is bound to {bound!r}")
+        refused = work_scope_disagreement(node.payload(), task)
+        if refused is not None:
+            raise TemplateError(f"step {node.node_id!r} {refused}")

@@ -110,6 +110,28 @@ def test_a_well_formed_frozen_binding_files_the_plans_work_under_its_scope(
     assert events == [RUN_ID]
 
 
+def test_the_from_template_door_refuses_a_task_less_run_a_step_that_names_a_task(
+        tmp_path):
+    """A template may carry `work_scope` in a step -- the capability schema admits
+    the key -- and `materialize` leaves a task-less run's payload exactly as
+    written, so this road would file a task-less run's work in the named task's
+    directory. The door refuses it with the journal untouched.
+
+    Mutation: drop `work_scope_admits` from `_materialize_graph` -> 201 with the
+    borrowed scope in the plan -> red.
+    """
+    document = a_document()
+    document["nodes"][1]["arguments"]["work_scope"] = "victim-task"
+    borrowed = GraphTemplate.from_dict({**document, "template_id": TEMPLATE, "revision": 1})
+    subject, store, events = api_over(tmp_path, CONFIG, borrowed)
+    before = journal_of(store)
+
+    refused = post(subject, FROM_TEMPLATE_PATH, from_template())
+    assert (refused.status, code_of(refused)) == (
+        ERROR_STATUS["contract_invalid"], "contract_invalid"), refused.payload
+    assert journal_of(store) == before and events == []
+
+
 def test_a_task_less_plan_spelled_like_the_retired_task_shape_is_its_own_work(
         tmp_path):
     """No spelling is reserved any more: task work lives under a container no

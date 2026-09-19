@@ -485,10 +485,16 @@ any of them existed still reads and no frozen revision moves.
 
 `work_scope` names the TASK a run is bound to, and so which directory a step's
 work lives in: `work/_tasks/<work_scope>/<work_item_id>` for a task's run, and
-`work/<work_item_id>` -- exactly where it always was -- for a run with no task. It
-is materialized from the run's frozen task binding and never composed by a
-caller; every door that admits a plan refuses one whose steps name any other
-scope, or name one when the run binds none (`contract_invalid`).
+`work/<work_item_id>` -- exactly where it always was -- for a run with no task. A
+plan's steps carry it materialized from the run's frozen task binding; a proposal
+on a run that follows no plan carries what its caller wrote. Either way the rule
+is one: a task's run names exactly its own scope, a run with no task names none.
+Every door that admits a plan refuses a step that breaks it
+(`contract_invalid`); the proposal door refuses such a proposal before it is
+recorded (`service_refused`); and a proposal already in the journal that breaks
+it -- one recorded before the rule existed -- is granted no authority to execute
+(`authorization_refused`), so no task is spawned for it. The server never fills
+in or replaces a caller's scope.
 
 `instruction_digest` is the dispatch road's only promise about CONTENT: the
 `sha256:<64 hex>` digest of the exact UTF-8 bytes of the instruction the

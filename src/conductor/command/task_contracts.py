@@ -187,3 +187,35 @@ def frozen_config_task(config: Mapping[str, Any]) -> TaskBinding | None:
     return TaskBinding(
         task_id=_bounded_id("frozen config task id", reference["id"]),
         work_scope=_bounded_id("frozen config task work_scope", reference["work_scope"]))
+
+
+def work_scope_disagreement(arguments: Mapping[str, Any],
+                            task: TaskBinding | None) -> str | None:
+    """Why these arguments may not write where they would, or None when they may.
+
+    ONE rule, spent at every door that lets work be given to a run: the plan doors
+    (`plan_admission.work_scope_admits`), the proposal door
+    (`service._hold_proposal_writes_in_its_task`) and the authority to execute
+    (`authorize_holds._hold_work_scope`). Arguments that carry a work item write
+    into ``work/_tasks/<work_scope>/<item>``, or into ``work/<item>`` with no
+    scope. So a run bound to no task may name no scope, and a run bound to a task
+    may name exactly its own -- naming none would file its work among task-less
+    history. The scope is judged as the CALLER wrote it: never inferred from a
+    directory and never filled in, because a scope this build supplied after the
+    preview would be work nobody confirmed.
+
+    Args:
+        arguments: A step's or a proposal's capability arguments.
+        task: The task the run froze, or ``None`` when it froze none.
+
+    Returns:
+        The refusal's words, or ``None`` when the arguments carry no work item
+        or name exactly the run's own scope.
+    """
+    if "work_item_id" not in arguments:
+        return None
+    said = arguments.get("work_scope")
+    bound = None if task is None else task.work_scope
+    if said == bound:
+        return None
+    return f"files its work under task scope {said!r} and this run is bound to {bound!r}"
