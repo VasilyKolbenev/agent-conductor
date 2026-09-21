@@ -135,6 +135,36 @@ def test_proposal_composer_has_only_reviewed_closed_fields():
     assert '"failed", "unknown", "verification_failed", "user"' in body
 
 
+def test_the_task_scope_is_attached_from_the_run_and_never_typed():
+    """A CHANGE DETECTOR on the wiring, not the proof. The facts -- the exact
+    frozen scope in the POST, none for a task-less run, a binding that does not
+    read disabling the composer, and no late answer drawn into another run --
+    are held in `browser_tests/test_panel_task_scope.py`, because only a real
+    engine against the real server can answer them. Here: the scope is never
+    one of the typed fields, the view never names it, the capabilities that
+    carry it are derived from the table, and the body's arguments are the
+    scoped ones built from the selected run's own read.
+    """
+    table = re.search(
+        r"const CAPABILITY_FIELDS = Object\.freeze\(\{(.*?)\n\}\);", SOURCE, re.S)
+    assert table and "work_scope" not in table.group(1)
+    assert "work_scope" not in VIEW.read_text(encoding="utf-8")
+    assert "Object.keys(CAPABILITY_FIELDS).filter(" in PROJECTION.read_text(encoding="utf-8")
+    script = SCRIPT.read_text(encoding="utf-8")
+    assert "arguments: scoped," in script
+    assert "state.task = projectTaskBinding(run);" in script
+
+
+def test_the_cockpit_bounds_a_task_binding_exactly_as_the_task_contract_does():
+    """The one number the Cockpit copies from the Python task contract, held equal
+    to it across the language boundary: a bound that drifted on either side would
+    read a binding the server refuses as bound, or the other way round."""
+    from conductor.command.task_contracts import MAX_TASK_ID
+    declared = re.findall(r"^const MAX_TASK_ID = (\d+);$",
+                          PROJECTION.read_text(encoding="utf-8"), re.M)
+    assert declared == [str(MAX_TASK_ID)]
+
+
 def _artifact_marks() -> dict[str, list[tuple[str, str]]]:
     """Every ``artifact-`` marked field of every capability, per capability."""
     body = re.search(
@@ -478,6 +508,11 @@ def test_mutation_controls_are_disabled_while_disconnected_stale_or_uncertain():
     assert gate, "the workable-state helper is gone"
     assert "state.connected !== false" in gate.group(1), gate.group(1)
     assert "WORKABLE_PHASES.includes(state.phase)" in gate.group(1)
+    # And whether the facts are known current: `refreshing` is set when a read
+    # STARTS, so the retry after a failed read looked like an ordinary refresh.
+    assert "state.current === true" in gate.group(1), gate.group(1)
+    for fact in ("state.current = true", "state.current = false"):
+        assert fact in source, fact
     # Both forms are held to it, and both still shut on the uncertain arm.
     assert view.count("!workable(state)") == 2
     # And nothing but the stream's own two signals moves the line.
@@ -517,7 +552,11 @@ def test_the_keyboard_is_given_back_where_the_person_actually_was():
 
     assert view.count("restoreFocus(") == 3, view.count("restoreFocus(")
     assert view.count("focusedPlace(") == 3, view.count("focusedPlace(")
-    assert 'form.querySelector(\n    `[name="${place.name}"], #${place.name}`)' in view
+    # Change detector on the lookup: by comparison, never a selector built from a
+    # name -- that spelling threw on `argument:<field>` names and froze the panel
+    # (the fact is held in browser_tests/test_panel_task_scope.py).
+    assert "[...form.elements].find((row) =>" in view
+    assert "form.querySelector(" not in view
     assert "control.setSelectionRange(place.caret.start, place.caret.end)" in view
     # Read BEFORE the replacement, on both forms: the node is about to stop
     # existing, so nothing about it can be read afterwards.

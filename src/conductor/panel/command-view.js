@@ -35,12 +35,22 @@ export function gateRow(gateState, text) {
 // a durable artifact changes nothing about the control that collects it, so
 // this function never sees the `artifact-` prefix and cannot grow a branch on
 // one.
+//:
+//: What the person enters is kept on the draft AS they enter it, the way every
+//: other composer field always was. These kept it only on submit, so a
+//: background re-render -- any signal while a run executes -- rebuilt the field
+//: empty and erased what was being typed into it.
 function argumentControl(draft, name, kind, choices) {
-  const saved = (draft.arguments[draft.capability] || {})[name];
+  const capability = draft.capability;
+  const saved = (draft.arguments[capability] || {})[name];
+  const keep = (value) => {
+    draft.arguments[capability] = {...(draft.arguments[capability] || {}), [name]: value};
+  };
   if (kind === "enum") {
     const control = element(
       "select", {name: `argument:${name}`}, choices.map(option));
     if (choices.includes(saved)) control.value = saved;
+    control.addEventListener("change", () => keep(control.value));
     return control;
   }
   if (kind === "enum-list") {
@@ -50,6 +60,8 @@ function argumentControl(draft, name, kind, choices) {
     for (const row of control.options) {
       row.selected = Array.isArray(saved) && saved.includes(row.value);
     }
+    control.addEventListener("change", () => keep(
+      [...control.selectedOptions].map((row) => row.value)));
     return control;
   }
   const control = element("input", {
@@ -58,6 +70,7 @@ function argumentControl(draft, name, kind, choices) {
     required: kind === "ids" ? null : "", spellcheck: "false", type: "text",
   });
   control.value = Array.isArray(saved) ? saved.join(", ") : saved || "";
+  control.addEventListener("input", () => keep(control.value));
   return control;
 }
 function fillArguments(argumentFields, draft) {
@@ -103,8 +116,21 @@ const WORKABLE_PHASES = Object.freeze(["ready", "refreshing"]);
 //: refresh stopped disabling the forms, re-opened the write door on a dead
 //: connection. Measured: dispatch a disconnect while a refresh is queued
 //: behind it, and the confirm control came back enabled.
-function workable(state) {
-  return state.connected !== false && WORKABLE_PHASES.includes(state.phase);
+//:
+//: Exported because the submit handlers ask the SAME question: a form a person
+//: may work during a background refresh is a form they may submit then. The
+//: handlers used to demand `ready` on their own, so a click landing while a
+//: signal re-read the run was refused as "complete the fields" -- measured on
+//: the reviewer's own reproducer, 2 runs in 4 during a run's execution signals.
+//:
+//: Three facts, and the phase is only one of them. The LINE first, then whether
+//: the facts are known CURRENT: a read that FAILED leaves them unknown, and the
+//: retry's own start sets `refreshing` again -- so phase alone re-opened both
+//: forms on facts nothing had re-read, and a Confirm went out during that window
+//: (the 2026-09-20 review's R3). An attempt to re-read is not a re-read.
+export function workable(state) {
+  return state.connected !== false && state.current === true
+    && WORKABLE_PHASES.includes(state.phase);
 }
 
 //: WHERE a person is working, answered BEFORE the form is replaced: which
@@ -153,10 +179,17 @@ function caretOf(control) {
 //: refocused, and guessing a neighbour would put a person somewhere they never
 //: chose. A caret is written only where one was read, which by `caretOf` above
 //: means a control whose type really carries one.
+//:
+//: Found by COMPARING names and ids, never through a selector built from one:
+//: the composer's argument fields are named `argument:<field>`, and
+//: `#argument:work_item_id` is not a valid selector. `querySelector` threw inside
+//: the render, the refresh loop died with its in-flight flag still set, and the
+//: Cockpit stayed in "refreshing" for good -- every signal that arrived while a
+//: person was in an argument field froze the panel until a reload.
 function restoreFocus(form, place) {
   if (!place || !place.name) return;
-  const control = form.querySelector(
-    `[name="${place.name}"], #${place.name}`);
+  const control = [...form.elements].find((row) =>
+    row.getAttribute("name") === place.name || row.id === place.name);
   if (!control || control.disabled) return;
   control.focus();
   if (place.caret) {
@@ -164,7 +197,30 @@ function restoreFocus(form, place) {
   }
 }
 
-export function renderComposer(composer, proposalStatus, state, draft, onSubmit) {
+//: The task this run's work is filed under, as fixed context and never a field:
+//: the scope travels from the run's frozen binding, so there is nothing to type
+//: and nothing to get wrong. The id stands beside the title because two tasks
+//: may share a name and never a directory. A binding that does not read offers
+//: the one honest move -- reading the run again -- outside the form it disables.
+function taskContext(task, onReload) {
+  if (task && task.state === "bound") {
+    const name = task.title ? `${task.title} (${task.taskId})`
+      : `${task.taskId} — its record cannot be read`;
+    return element("p", {className: "command-task-context", "data-task-state": "bound",
+      text: `Task: ${name}`});
+  }
+  if (task && task.state === "none") {
+    return element("p", {className: "command-task-context", "data-task-state": "none",
+      text: "No task: this run files its work without one."});
+  }
+  const reload = element("button", {className: "command-task-reload", type: "button",
+    text: "Reload run"});
+  reload.addEventListener("click", onReload);
+  return element("p", {className: "command-task-context", "data-task-state": "unreadable"}, [
+    element("span", {text: "This run's task binding cannot be read, so no work can be "
+      + "proposed on it. "}), reload]);
+}
+export function renderComposer(composer, proposalStatus, state, draft, onSubmit, onReload) {
   // Asked before the replacement, for `focusedName`'s reason.
   const keepFocus = focusedPlace(composer);
   composer.replaceChildren();
@@ -208,8 +264,9 @@ export function renderComposer(composer, proposalStatus, state, draft, onSubmit)
     element("button", {text: "Create proposal", type: "submit"}),
   );
   proposalForm.addEventListener("submit", onSubmit);
-  composer.append(proposalForm);
-  const disabled = !workable(state)
+  composer.append(taskContext(state.task, onReload), proposalForm);
+  const unreadable = !state.task || state.task.state === "unreadable";
+  const disabled = !workable(state) || unreadable
     || ["submitting", "outcome-unknown"].includes(state.proposalPhase);
   for (const control of proposalForm.elements) control.disabled = disabled;
   restoreFocus(proposalForm, keepFocus);

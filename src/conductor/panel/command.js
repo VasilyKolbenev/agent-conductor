@@ -2,11 +2,11 @@
 import {
   ERROR_LABELS, RUN_ID, confirmationBody, exactArguments, isId, projectAction,
   projectControls, projectGates, projectProposal, projectRecords, projectScope,
-  refusalCode, safeMode,
+  projectTaskBinding, refusalCode, safeMode, scopedArguments,
 } from "./command-projection.js";
 import {
   element, gateLabel, gateRow, renderComposer, renderConfirm,
-  renderProposalReview,
+  renderProposalReview, workable,
 } from "./command-view.js";
 (() => {
   const mount = document.getElementById("commandCockpit");
@@ -19,15 +19,31 @@ import {
   //: once a background refresh stopped disabling the forms that re-opened the
   //: write door on a dead connection. The line is moved by the stream's own two
   //: signals and by nothing else, so no read can talk it back up.
+  //: `task` is the selected run's frozen task binding, as the last authoritative
+  //: read of THAT run answered it -- null until one has, and never carried from
+  //: one run to another.
+  //:
+  //: `current` is whether the facts under the forms are KNOWN current: the last
+  //: completed read for this selection succeeded. A phase cannot answer that --
+  //: `refreshing` is set the moment a read STARTS, so the retry after a failed
+  //: read looked exactly like an ordinary refresh and re-opened the write door on
+  //: facts nothing had re-read. Trying to fetch facts does not make them true
+  //: again; only an authoritative read that came back does.
   const state = {action: null, confirmNotice: "", confirmPhase: "idle",
-    connected: true,
+    connected: true, current: false,
     controls: [], gates: {corrupt: false, rows: []}, mode: "unknown",
     phase: "idle", proposal: null, proposalNotice: "", proposalPhase: "idle",
-    records: [], runId: "", warningCount: 0};
+    records: [], runId: "", task: null, warningCount: 0};
   const draft = {arguments: {}, attemptId: "", capability: "", confirmFocus: false,
     confirmedBy: "", instanceId: "", proposedBy: "", rationale: "", scope: "",
     timeout: "900"};
   let epoch = 0, csrfToken = "", sessionEpoch = 0;
+  //: How many times the person has SELECTED a different run. A proposal's answer
+  //: is kept only while this is unchanged: a run id would let an answer sent on
+  //: alpha pass after alpha -> beta -> alpha and replace what was composed since.
+  //: (A confirmation's answer is held to the proposal it confirms, which a switch
+  //: clears too -- see the Confirm handler below.)
+  let selection = 0;
   let refreshDirty = false, refreshExplicit = false, refreshInFlight = false;
   // The escaped hyphen is load-bearing, and this field was the one place the
   // rule had not reached: a browser compiles `pattern` with the RegExp `v` flag
@@ -109,7 +125,8 @@ import {
         }));
       }
     }
-    renderComposer(composer, proposalStatus, state, draft, submitProposal);
+    renderComposer(composer, proposalStatus, state, draft, submitProposal,
+      () => refreshSelectedRun(state.runId, true));
     renderProposalReview(review, state.proposal);
     renderConfirm(confirmMount, confirmStatus, state, draft, confirmProposal);
     if (state.gates.corrupt) {
@@ -156,10 +173,15 @@ import {
     if (!isId(attemptId) || !isId(proposedBy) || !rationale || !scope
         || !Number.isInteger(timeout) || timeout < 1 || timeout > 86400
         || !argumentsValue) return null;
+    // The draft keeps what the person typed and nothing else: the task scope is
+    // attached from the selected run's binding at the moment the body is built,
+    // so no draft can carry one run's task into another.
     draft.arguments[draft.capability] = argumentsValue;
+    const scoped = scopedArguments(draft.capability, argumentsValue, state.task);
+    if (!scoped) return null;
     return {
       instance_id: draft.instanceId, attempt_id: attemptId,
-      capability: draft.capability, arguments: argumentsValue, scope,
+      capability: draft.capability, arguments: scoped, scope,
       proposed_by: proposedBy, rationale, timeout_seconds: timeout,
     };
   }
@@ -225,12 +247,17 @@ import {
   async function submitProposal(event) {
     event.preventDefault();
     const submitted = proposalBody(new FormData(event.currentTarget));
-    if (!submitted || state.phase !== "ready") {
+    if (!submitted || !workable(state)) {
       setProposal("refused", "Complete the closed proposal fields with valid values.");
       return;
     }
     setProposal("submitting", "Creating one durable proposal…");
+    const sentIn = selection;
     const result = await submitJson(runTarget("/proposals"), submitted);
+    // The person may have selected another run while this was in flight -- even
+    // the same run again. The answer belongs to the selection it was sent from,
+    // whose run's history now holds it; it is never drawn into a later one.
+    if (selection !== sentIn) return;
     if (result.status !== "accepted") {
       setProposal(failurePhase(result), failureNotice(result));
       return;
@@ -254,15 +281,20 @@ import {
     const data = new FormData(event.currentTarget);
     const submitted = confirmationBody(
       state.proposal, String(data.get("confirmed_by") || ""));
-    if (!submitted || state.phase !== "ready") {
+    if (!submitted || !workable(state)) {
       setConfirm("refused", "Name the Human confirming this exact snapshot.");
       return;
     }
-    // Held before the await: a run switch in flight clears the snapshot, and
-    // the response must still be checked against the facts it was built from.
-    const binding = state.proposal.binding;
+    // Held before the await: the answer belongs to THIS proposal, and is checked
+    // against the facts it was built from. A run switch clears the snapshot and a
+    // new proposal on the same run replaces it; either way the confirm block now
+    // belongs to something else, and this answer -- accepted, refused or unknown
+    // -- is never drawn into it. Its run's history keeps what it recorded.
+    const confirming = state.proposal;
+    const binding = confirming.binding;
     setConfirm("submitting", "Recording one authorized action request…");
     const result = await submitJson(runTarget("/actions"), submitted);
+    if (state.proposal !== confirming) return;
     if (result.status !== "accepted") {
       setConfirm(failurePhase(result), failureNotice(result));
       return;
@@ -301,11 +333,13 @@ import {
       ]);
       if (requestEpoch !== epoch) return;
       state.controls = projectControls(available);
+      state.current = true;
       state.gates = projectGates(run && run.records, runId);
       state.mode = safeMode(run && run.run && run.run.mode);
       state.phase = "ready";
       state.records = projectRecords(run && run.records);
       state.runId = runId;
+      state.task = projectTaskBinding(run);
       state.warningCount = run && Array.isArray(run.warnings) ? run.warnings.length : 0;
       if (explicit && state.proposalPhase === "outcome-unknown") {
         state.proposalPhase = "idle"; state.proposalNotice = "Authoritative run reloaded."; }
@@ -315,6 +349,15 @@ import {
         ? "Authoritative durable history loaded."
         : "The run has no command records yet.";
     } catch (error) {
+      // A failed read is a fact about the SELECTION it was made for, and it is
+      // kept whatever happened since. The epoch guard belongs to the PAYLOAD a
+      // read brings -- a stale one may not overwrite newer facts -- but a read
+      // that failed brought none. Skipping this line when a later signal had
+      // already queued the next read left the facts marked current while that
+      // retry, which has brought nothing either, re-opened the write door
+      // (the 2026-09-20 review's queued-read case). A read for a run that is no
+      // longer selected says nothing about the one that is.
+      if (runId === state.runId) state.current = false;
       if (requestEpoch !== epoch) return;
       const code = error instanceof Error ? error.message : "store_error";
       state.phase = explicit ? "refused" : "stale";
@@ -325,6 +368,8 @@ import {
   async function refreshSelectedRun(runId, explicit = false) {
     if (!RUN_ID.test(runId)) return;
     if (explicit && runId !== state.runId) {
+      selection += 1;
+      state.current = false;
       state.action = null;
       state.confirmNotice = "";
       state.confirmPhase = "idle";
@@ -335,6 +380,7 @@ import {
       state.proposalNotice = "";
       state.proposalPhase = "idle";
       state.records = [];
+      state.task = null;
       state.warningCount = 0;
     }
     state.runId = runId;
@@ -380,6 +426,7 @@ import {
     sessionEpoch += 1;
     csrfToken = "";
     state.connected = false;
+    state.current = false;
     if (!state.runId) return;
     state.phase = "stale";
     status.textContent = "Connection lost. Showing the last authoritative facts.";

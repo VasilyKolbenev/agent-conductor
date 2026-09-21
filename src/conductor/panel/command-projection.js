@@ -42,6 +42,59 @@ export const CAPABILITY_FIELDS = Object.freeze({
     ["handoff_ref", "id"],
   ]),
 });
+//: The capabilities whose arguments carry a work item, READ out of the table
+//: above rather than listed beside it. A work item names a directory, so these
+//: are exactly the capabilities that must say which task's directory -- and a
+//: second, hand-kept list would be a copy nobody reviews when the table moves.
+export const WORK_BEARING = Object.freeze(Object.keys(CAPABILITY_FIELDS).filter(
+  (name) => CAPABILITY_FIELDS[name].some(([field]) => field === "work_item_id")));
+const NO_TASK = Object.freeze({state: "none"});
+const UNREADABLE_TASK = Object.freeze({state: "unreadable"});
+//: A task's id and work scope are bounded tighter than the id grammar: the scope
+//: is a directory name under `work/_tasks`. The task contract's `MAX_TASK_ID`
+//: (task_contracts.py), held equal to it by tests/test_panel_command_source.py.
+const MAX_TASK_ID = 64;
+function isRecord(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+function isTaskId(value) {
+  return isId(value) && value.length <= MAX_TASK_ID;
+}
+//: The task a run froze, judged the way the server's `frozen_config_task`
+//: judges it. ABSENT is a real answer: a run opened with no task files its work
+//: as task-less history and its proposals carry no scope. PRESENT means exactly
+//: `{id, work_scope}`, both ids no longer than a task's bound, and a run-read
+//: `task` naming the same pair.
+//: Anything else is UNREADABLE, which is never "no task" -- reading half a
+//: binding as none would file a task's work among task-less history. The title
+//: is display only and may be missing when the task's record did not read; the
+//: scope is what a proposal carries.
+export function projectTaskBinding(run) {
+  const config = isRecord(run) ? run.config : null;
+  if (!isRecord(config)) return UNREADABLE_TASK;
+  if (!Object.hasOwn(config, "task")) {
+    return run.task === null || run.task === undefined ? NO_TASK : UNREADABLE_TASK;
+  }
+  const bound = config.task;
+  if (!isRecord(bound) || Object.keys(bound).sort().join(",") !== "id,work_scope"
+      || !isTaskId(bound.id) || !isTaskId(bound.work_scope)) return UNREADABLE_TASK;
+  const joined = run.task;
+  if (!isRecord(joined) || joined.id !== bound.id
+      || joined.work_scope !== bound.work_scope) return UNREADABLE_TASK;
+  const title = joined.unreadable === false && typeof joined.title === "string"
+    && joined.title.trim() ? joined.title : null;
+  return Object.freeze({state: "bound", taskId: bound.id, workScope: bound.work_scope,
+    title});
+}
+//: The arguments a proposal carries, the run's task scope attached where the
+//: capability files work: exactly the frozen scope for a task's run, nothing for
+//: a run with none. Null when the binding is unknown or does not read -- the
+//: composer then has nothing honest to send, and the server would refuse it too.
+export function scopedArguments(capability, argumentsValue, task) {
+  if (!task || task.state === "unreadable") return null;
+  if (!WORK_BEARING.includes(capability) || task.state !== "bound") return argumentsValue;
+  return {...argumentsValue, work_scope: task.workScope};
+}
 export const ERROR_LABELS = Object.freeze({
   authorization_refused: "Authorization refused.",
   proposal_rebind_required: "This proposal predates material binding. Create "
