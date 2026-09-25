@@ -53,6 +53,28 @@ exercise is a test of V1's usefulness, not permission to start the V2 implementa
   platform. None is smuggled into an alpha closeout fix.
 - Export run brief is a useful next candidate, not a new condition of this release.
 
+## Approved V2 directions: memory, measured improvement and human choice
+
+These are planned directions, not shipped V1 features or promises of a particular savings percentage.
+
+- **Qwen** is planned for V2; the V1 execution catalogue remains the five agreed harnesses.
+- **Memory and portable handoffs:** keep the task goal, constraints, confirmed findings,
+  open questions and references to original evidence available across participants and sessions.
+- **Dream-RSI-inspired experiments:** use prior work to propose changes to the strategy
+  around an existing harness. This does not require rewriting a vendor's agent.
+- **SoL-Pi-inspired context handoffs:** first compare a full research handoff with a compact
+  evidence-linked handoff on separate tasks. Preserve source access and initially keep
+  the independent checker's inputs unchanged. Measure missed facts, result quality,
+  corrections, time, resource use and human intervention, including the cost of summarizing.
+  Batching actions, choosing compaction points and processing observations are additional
+  experiments only where the harness exposes the necessary interface; installing one
+  upstream extension does not optimize all five native harnesses automatically.
+- **Human approval:** every strategy change is a proposal for the person to confirm.
+  An experiment passing its checks does not grant permission to apply a new strategy.
+
+Use V1 to help build V2. Establish reliable memory and measurable run history before
+claiming self-improvement or moving a proposed optimization into ordinary work.
+
 ## Why the two older HCP editions disagree
 
 The bundled edition was last updated by commit `47f5f9ffc44a4aab7bf1ebc866b6d508d2fb83b9`;

@@ -1,97 +1,198 @@
-# First run of V1 on Windows
+# Your first real project
 
-Russian original: [first-run-v1.md](first-run-v1.md). Both documents describe the same doors and are kept in step.
+[English](first-run-v1.en.md) · [Русский](first-run-v1.md) · [Documentation](index.md)
 
-You need Python 3.11+, a verifiable December Command build and the supported harnesses already installed. These commands apply to the current V1 candidate: installing an older version from GitHub does not guarantee the new ownership layer, bounded automatic cycles or quota sources.
+**Goal:** open Studio for a new project, connect a coding tool, and understand how to start work deliberately.
+If you only want to see the interface, start with the [account-free demo](../README.md#try-the-demo).
 
-## Install the candidate
+You need Python 3.11+, a V1 candidate build, and the native coding tools you intend to use.
+A **wheel** is a Python installation file ending in `.whl`; a **virtual environment** is a folder that keeps this installation separate.
+For development from source, use [CONTRIBUTING](../CONTRIBUTING.md).
 
-In PowerShell, point at the wheel you were given. For local development you may instead install the exact source tree under review with `pip install -e`.
+## 1. Install the identified build
+
+Use the wheel and SHA256 published for the candidate by the maintainer or its linked CI run.
+Do not assume that a default-branch install or a package named `0.1.0` is the same candidate.
+The [release notes](release-notes-v1-alpha.md) record acceptance evidence; this tutorial is not a platform-certification claim.
+
+<details open>
+<summary><strong>Windows · PowerShell</strong></summary>
+
+Replace the first path with the actual wheel location. Run the blocks below in the same terminal so `$conduct` stays defined.
 
 ```powershell
-$candidate = 'C:\Downloads\agent_conductor-0.1.0-py3-none-any.whl'
+$wheel = 'C:\Downloads\agent_conductor-0.1.0-py3-none-any.whl'
+Get-FileHash -Algorithm SHA256 -LiteralPath $wheel
 $install = Join-Path $env:LOCALAPPDATA 'DecemberCommand\app-v1'
-python -m venv $install
+py -3 -m venv $install
 $python = Join-Path $install 'Scripts\python.exe'
 $conduct = Join-Path $install 'Scripts\conduct.exe'
-& $python -m pip install $candidate
+& $python -m pip install $wheel
 & $conduct --help
 ```
 
-The help must list the `ownership` command. The Python package version is still `0.1.0`: on its own it does not prove that the current V1 candidate is installed. Use the build file you were handed and its checksum.
+</details>
 
-The candidate's package files have been installed into a clean venv and checked on Windows (from a locally rebuilt archive whose package files are byte-equal to the candidate's) and, from the candidate wheel itself, on Linux (WSL Ubuntu): `init` → `ownership activate` → two server lifetimes, each stopped by Ctrl+C (SIGINT on Linux) → `closed`. Neither check configured a vendor account, and macOS has not been verified. The details are in the [release notes](release-notes-v1-alpha.md).
+<details>
+<summary><strong>macOS / Linux · terminal</strong></summary>
 
-## A new project and ownership
+Use a fresh installation directory and the actual wheel path. Compare its hash with the supplied SHA256.
+Keep this terminal open for the next steps.
 
-For a first acquaintance use a new directory with no earlier December Command data. Your own project's code can be attached later; this scenario does not carry live runs over from another session.
+```sh
+wheel="$HOME/Downloads/agent_conductor-0.1.0-py3-none-any.whl"
+python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' "$wheel"
+install_dir="$HOME/.local/share/december-command/app-v1"
+python3 -m venv "$install_dir"
+python_bin="$install_dir/bin/python"
+conduct="$install_dir/bin/conduct"
+"$python_bin" -m pip install "$wheel"
+"$conduct" --help
+```
+
+</details>
+
+**You should see:** CLI help containing `ownership`, `providers`, and `up`.
+If they are missing, check the executable path and build before continuing.
+
+## 2. Create a fresh trial project
+
+Use a new folder for your first run. Choose a different name if `DecemberTrial` already contains project data.
+
+**Windows**
 
 ```powershell
-$project = 'C:\Projects\DecemberTrial'
+$project = Join-Path $env:USERPROFILE 'DecemberTrial'
 New-Item -ItemType Directory -Path $project | Out-Null
 & $conduct init --template default-orbit --dir $project
 & $conduct ownership activate --legacy-writers-stopped --dir $project
 & $conduct ownership status --dir $project
 ```
 
-Right after activation, `status` reports `active`. The `--legacy-writers-stopped` flag confirms that earlier writing processes have been stopped; in a freshly created project there are none yet.
+**macOS / Linux**
 
-Activation moves the fresh `conductor/` directory to `conductor.v3/`, creates the `.conduct/` service records and leaves, under the name `conductor`, a file that fences earlier writers. This is the intended change of names: do not rename or delete these objects by hand. A repeated `init` is not needed for an activated project; the new commands find the current data directory themselves.
+```sh
+project="$HOME/DecemberTrial"
+mkdir "$project"
+"$conduct" init --template default-orbit --dir "$project"
+"$conduct" ownership activate --legacy-writers-stopped --dir "$project"
+"$conduct" ownership status --dir "$project"
+```
 
-If the chosen project already holds working data, do not treat this short scenario as a migration. Activation has its own checks for stopped writers, unfinished actions and journal integrity. For a first acquaintance, pick a new directory.
+**You should see:** a bootstrap instruction after `init`, then ownership state `active` after activation.
+The bootstrap text helps an agent fill out the project map; printing it does not start that agent.
 
-## Connecting tools that are already signed in
+Ownership means that this instance controls writes to the project's records.
+Activation moves `conductor/` data to `conductor.v3/`, creates `.conduct/` service records,
+and leaves a file named `conductor` to refuse older writers. Do not rename or remove these objects manually.
+The flag `--legacy-writers-stopped` confirms that old writing processes have stopped; a fresh trial has none.
+This is a new-project tutorial, not a migration procedure for existing runs.
 
-Before starting the server, run in an interactive terminal:
+## 3. Connect the tools you will use
+
+A **provider** is a configured connection to a harness: its executable, login profile, and allowed environment.
+You do not have to connect all five just to explore; executing a chosen workflow requires all participants it uses to be ready.
+
+Run the interactive wizard, once for each needed connection:
 
 ```powershell
+# Windows
 & $conduct providers --dir $project
 ```
 
-Repeat for every provider you need. The command keeps the other entries and replaces the chosen provider by its ID. The protocol is chosen automatically.
+```sh
+# macOS / Linux
+"$conduct" providers --dir "$project"
+```
 
-| Provider | Pinned version | What to supply |
+| Tool | Version pinned by this candidate | Supply to the wizard |
 | --- | --- | --- |
-| Claude Code | 2.1.239 | Full path to the native executable; `subscription`; the directory of an already completed native login (`CLAUDE_CONFIG_DIR`). |
-| Codex | 0.112.0 | Full path to the native executable; `subscription`; the directory of an already completed native login (`CODEX_HOME`). |
-| Kimi Code | 0.38.0 | Full path to the native executable; `subscription`; the `KIMI_CODE_HOME` directory with the standard managed OAuth profile. |
-| Grok Build | 1.0.5 | Full path to the native executable; `subscription`; the `GROK_HOME` directory with the native cached-token login. |
-| DeepSeek Harness | 0.1.0-rc.7 | Full path to Node and, separately, to the DSH entrypoint; `api_key`; the permitted name `DEEPSEEK_API_KEY`. |
+| Claude Code | 2.1.239 | Native executable, subscription login, dedicated `CLAUDE_CONFIG_DIR`. |
+| Codex | 0.112.0 | Native executable, subscription login, dedicated `CODEX_HOME`. |
+| Kimi Code | 0.38.0 | Native executable, subscription login, dedicated `KIMI_CODE_HOME` with managed OAuth login. |
+| Grok Build | 1.0.5 | Native executable, subscription login, dedicated `GROK_HOME` with native login. |
+| DeepSeek Harness | 0.1.0-rc.7 | Node executable **and** DSH script entrypoint; API-key mode; allowed name `DEEPSEEK_API_KEY`. |
 
-For subscriptions choose the first login option and name **that separate native profile in which the login has already been completed**. The wizard prints the login commands but does not run them. A suitable profile that is already signed in needs no second login. An arbitrary main profile with extra plugins, MCP, hooks or a nonstandard model route may be refused: connecting is not the copying of a token file.
+For the four subscription tools, use the native executable, not a `.cmd` or PowerShell wrapper.
+The wizard checks paths; the native call checks the pinned version. A newer release is not automatically interchangeable.
+The DSH desktop application is not a substitute for the CLI entrypoint in this configuration.
 
-While the server runs, keep that profile to the product: do not start your own session of the same tool in it at the same time. After every step the product takes back the per-run state (sessions, shell snapshots) that appeared in the profile during the step, and it cannot tell a parallel session's state from the step's own.
+For a subscription, choose the dedicated profile in which you have completed the native login.
+The wizard prints the login instructions; it does not sign in for you. A working dedicated login does not need to be repeated.
+Extra hooks, plugins, MCP configuration, or nonstandard routing may make a profile unsuitable.
+While Studio uses it, do not use the same profile for a parallel personal session: per-step session cleanup cannot distinguish that other session's files.
 
-The four native executables need no entrypoint; a `.cmd` or PowerShell wrapper is not a substitute for the native executable. The wizard checks that the paths exist; the match with the pinned version is confirmed at the native call.
+At the environment question, enter **variable names**, never secret values.
+A usual Windows base is `SYSTEMROOT WINDIR PATH TEMP TMP`; add only names your tool requires.
+Do not pass API-key variables to the subscription route: that changes which payment route is used.
 
-At the environment question enter names only. For an ordinary Windows launch the base set is `SYSTEMROOT WINDIR PATH TEMP TMP`; add only the names your tool really needs. On the subscription road do not pass API-key variables: that is a different source of payment. DSH reads the existing value of `DEEPSEEK_API_KEY` from the environment of the process that starts the server. The key's value is never typed into the settings file or into the wizard's answers. For the balance the direct `https://api.deepseek.com` is supported; a nonstandard `DEEPSEEK_BASE_URL` yields no readings from this source.
+### DeepSeek: balance, key, and server restart
 
-Finish the configuration, and any work of your own with the same dedicated login profile, before starting the server. If you need to change the configuration later, first stop `conduct up`, then run the wizard and the server again. Provider settings and the selected environment values are read when the server starts.
+Top up the balance **at DeepSeek**. Configure direct DeepSeek API, with the key available in the environment as `DEEPSEEK_API_KEY`.
+The wizard records the permitted name; it never asks you to paste the key into Studio or a project file.
+On Windows you can set a user environment variable in the system's **Environment Variables** dialog,
+then open a new terminal to pick it up. On other systems, supply the variable to the server process using your local environment setup.
+The balance source supports the direct `https://api.deepseek.com`; a custom base URL does not establish the same balance reading.
 
-## Studio and readings
+Finish provider configuration before starting Studio. If login configuration or environment changes later,
+stop the server with Ctrl+C and start it again from an environment that contains the new values.
+
+## 4. Open Studio
+
+These blocks restore the paths if you opened a new terminal after setting a key.
+Use the installation and project locations you chose above if you changed the examples.
 
 ```powershell
+# Windows
+$conduct = Join-Path $env:LOCALAPPDATA 'DecemberCommand\app-v1\Scripts\conduct.exe'
+$project = Join-Path $env:USERPROFILE 'DecemberTrial'
 & $conduct up --dir $project --port 7777
 ```
 
-Open the printed address, usually `http://127.0.0.1:7777/`. The terminal stays busy with the server; `Ctrl+C` ends it cleanly. Studio's settings offer Russian and English. While the server runs, the ownership state is `opened`; after a clean exit it is `closed`, and the next `up` can open the project again.
+```sh
+# macOS / Linux
+conduct="$HOME/.local/share/december-command/app-v1/bin/conduct"
+project="$HOME/DecemberTrial"
+"$conduct" up --dir "$project" --port 7777
+```
 
-The **Agents** screen holds the configured harnesses and the section on limits, balance and reset. The server reads the sources one after another; the page refreshes its readings once a minute. "Refresh usage" re-reads the server's cache; it starts no model task and no separate request to a provider.
+Open the printed local address. The server occupies this terminal until you press **Ctrl+C**.
+Ownership is `opened` while it serves, then `closed` after a clean stop.
+The next `up` opens it again. Studio provides EN/RU and light/dark switches.
 
-Only Claude's reading has been confirmed live so far. For Claude the product itself reads the subscription's 5-hour and 7-day windows; the observation time shown is the vendor cache's own. While a step of the project is running the reading is not refreshed: it shows "update deferred" with the previous data and its own time. Codex, Grok and Kimi show "The source did not confirm a signed-in account." (the state `not_authenticated`) until a login has been completed in the dedicated login directory named for them; Kimi's usage comes from the vendor's own OAuth usage endpoint and needs that login. DSH shows no data until `DEEPSEEK_API_KEY` is set; its reading is exact monetary amounts, the currency and the availability of funds as the source reports it, and reset does not apply. Missing authorization, an unsupported setting, a source error and a stale observation remain explicit states; none of them becomes a zero spend. "Billing account unknown" means the reading is not merged with the readings of other connections.
+**You should see:** Overview explaining the new project's state, and the Workflow, Runs, Decisions, and Agents screens.
+An empty new project is normal. A permanent spinner or blank page is not.
 
-Opening Studio starts the quota reads, not model work. Create a task, choose or publish a workflow and open a run. A bounded automatic workflow needs the Policy mode, a preview of the concrete bounds and a separate permission to allow the bounded run. Human decisions that stand in the plan keep waiting for a human.
+On **Agents**, inspect the configured tools and their quota readings.
+Opening Studio reads quota sources; it does not start model work. Refreshing the page's readings reads the server cache.
+Read the source, timestamp, and status as well as the number: unavailable is not zero usage,
+and a deferred update keeps the previous observation's age. DeepSeek shows money and currency; reset does not apply.
+For what has actually passed live checks, consult the [candidate notes](release-notes-v1-alpha.md).
 
-## Linux and macOS
+## 5. Understand the first real task
 
-The `conduct` commands are the same; only the virtual environment's paths (`bin/` instead of `Scripts\`) and the shell around them differ. On Linux (WSL Ubuntu) the install road above — clean venv, `init`, `ownership activate`, two server lifetimes each stopped by SIGINT, `closed` — has passed on the candidate wheel, as a non-root user on ext4, with no vendor account configured. macOS has not been verified: there was no Mac to run it on, and the prepared CI job for Linux and macOS has not run yet.
+1. Create a small task with an observable result, for example a short document for the trial project.
+2. In Workflow, start with **Standard cycle** (`dalio-v5`) and assign its participants, including a separate checker.
+3. Publish the workflow revision and open a run bound to the intended task. Check the task identity and working location.
+4. Supply the task instruction and any required input documents. Inspect the proposal and preview before authorizing execution.
+5. Start in **Confirm** mode to decide on each action. For **Policy**, review the concrete budgets and grant a bounded run separately.
+6. Follow Runs and Decisions. Handle human gates yourself; review the checker result before accepting the work.
 
-## If it did not work
+Policy does not bypass human gates. Pause, revoke, and explicit resume are different actions.
+A rejected result can be corrected only within the plan and permission; an uncertain result is not silently retried as success.
+For a guided, observable sequence use [owner acceptance](owner-acceptance.md) or [two-task acceptance](acceptance-two-tasks.md).
 
-- No `ownership` command: a different or older package is installed; check the path to `conduct.exe` and the installed candidate.
-- `owner_busy`: the project is already open in another process; end that process cleanly. Re-reading the page does not release the owner.
-- `recovery_required`: the previous ending was not confirmed. `ownership recover --dir ...` performs the explicit recovery check and starts no work; do not delete the service files to get past the refusal.
-- A provider is unavailable: check the full path and the pinned version. `available` in the list does not yet prove a successful login.
-- Quotas are unavailable: check the login mode and the chosen profile; for DSH, that the permitted variable is present in the environment before the server starts. After changing the environment, restart the server.
+## If something is blocked
 
-This document describes the doors as implemented in the source. It is not evidence of a clean wheel install or of a check against live accounts; those are recorded separately.
+| You see | What to do next |
+| --- | --- |
+| No `ownership` command | Check the executable path and identified build. |
+| `owner_busy` | Stop the other server using this project cleanly. Reloading the browser does not release ownership. |
+| `recovery_required` | Run `conduct ownership recover --dir <project>` for the explicit recovery check; do not delete service records. This does not start model work. |
+| `not_authenticated` | Complete the native login in the configured dedicated profile, then retry the appropriate reading. |
+| DSH has no data | Check that the permitted key name is configured and the server started with that environment variable. |
+| Provider cannot start | Check its native path and pinned version; `available` alone is not proof of login. |
+| Port 7777 is busy | Stop the other server or use another port, such as `--port 8080`. |
+
+Still stuck? Include the command, expected and actual behavior, OS, and candidate identity in a bug report.
+Remove keys and private project content. [Contributor guide](../CONTRIBUTING.md) · [How the pieces fit](architecture.md).

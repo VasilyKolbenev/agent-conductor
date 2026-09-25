@@ -52,7 +52,10 @@ class Road:
         # C.UTF-8 is a Linux locale; macOS ships en_US.UTF-8. UTF-8 mode holds either way.
         locale = "en_US.UTF-8" if sys.platform == "darwin" else "C.UTF-8"
         self.env = {"PATH": "/usr/bin:/bin", "HOME": str(Path.home()), "LANG": locale,
-                    "PYTHONNOUSERSITE": "1", "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"}
+                    "PYTHONNOUSERSITE": "1", "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1",
+                    # A server that never prints its address is asked for every thread's stack
+                    # (SIGABRT, see wait_url): the first macOS run of frozen-19 was silent for 30 s.
+                    "PYTHONFAULTHANDLER": "1"}
         self.report: dict = {"host": platform_facts(), "work": str(work), "commands": [],
                              "servers": [], "success": False}
 
@@ -97,9 +100,14 @@ def control(road: Road) -> None:
         sleeper = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"],
                                    env=road.env, cwd=road.work, stdout=log,
                                    stderr=subprocess.STDOUT, start_new_session=True)
-        time.sleep(1.0)
-        os.killpg(sleeper.pid, signal.SIGINT)
-        code = sleeper.wait(timeout=10)
+        try:
+            time.sleep(1.0)
+            os.killpg(sleeper.pid, signal.SIGINT)
+            code = sleeper.wait(timeout=10)
+        finally:
+            if sleeper.poll() is None:  # a failed delivery must not leave the sleeper behind
+                os.killpg(sleeper.pid, signal.SIGKILL)
+                sleeper.wait(timeout=10)
     road.report["control_sleeper_exit"] = code
     if code not in (-signal.SIGINT, 128 + signal.SIGINT):
         raise RuntimeError(f"SIGINT did not stop a plain sleeper (exit {code}); "
@@ -133,25 +141,43 @@ def http_checks(url: str, provenance: dict) -> int:
     return checks
 
 
-def wait_url(process: subprocess.Popen, log: Path) -> str:
-    deadline = time.monotonic() + 30
+def wait_url(process: subprocess.Popen, log: Path, row: dict, timeout: float) -> str:
+    """The address `conduct up` prints and how long it took; a silence is diagnosed, not waited.
+
+    An exit and a silence are told apart. A server still silent at the deadline gets SIGABRT, and
+    PYTHONFAULTHANDLER writes every thread's stack to its stderr log before it dies.
+    """
+    started = time.monotonic()
     while not (found := re.search(r"http://127\.0\.0\.1:\d+/", log.read_text(errors="replace"))):
-        if process.poll() is not None or time.monotonic() > deadline:
-            raise RuntimeError("conduct up printed no address")
+        if process.poll() is not None:
+            row["exit_before_address"] = process.returncode
+            raise RuntimeError(f"conduct up exited {process.returncode} before printing an address")
+        if time.monotonic() - started > timeout:
+            row["silent_after_seconds"] = timeout
+            os.kill(process.pid, signal.SIGABRT)
+            process.wait(timeout=10)
+            raise RuntimeError(f"conduct up printed no address in {timeout} s; its thread stacks "
+                               "are in its stderr log")
         time.sleep(0.05)
+    row["seconds_to_address"] = round(time.monotonic() - started, 2)
     return found.group(0).rstrip("/")
 
 
-def serve_once(road: Road, conduct: Path, project: Path, number: int) -> None:
-    """One `conduct up` lifetime: HTTP checks, SIGINT to its own group, exit 0, then `closed`."""
+def serve_once(road: Road, conduct: Path, project: Path, number: int, timeout: float) -> None:
+    """One `conduct up` lifetime: HTTP checks, SIGINT to its own group, exit 0, then `closed`.
+
+    The row is kept in the report whatever breaks, so a failure keeps its own facts.
+    """
     out, err = road.work / f"server-{number}.stdout.log", road.work / f"server-{number}.stderr.log"
     row: dict = {"graceful_stop": False}
+    road.report["servers"].append(row)
     with out.open("wb") as stdout, err.open("wb") as stderr:
         process = subprocess.Popen([str(conduct), "up", "--port", "0", "--dir", str(project)],
                                    cwd=project, env=road.env, stdin=subprocess.DEVNULL,
                                    stdout=stdout, stderr=stderr, start_new_session=True)
         try:
-            row["http_checks"] = http_checks(wait_url(process, out), road.report["provenance"])
+            url = wait_url(process, out, row, timeout)
+            row["http_checks"] = http_checks(url, road.report["provenance"])
             os.killpg(process.pid, signal.SIGINT)
             started = time.monotonic()
             row["exit_code"] = process.wait(timeout=30)
@@ -164,7 +190,6 @@ def serve_once(road: Road, conduct: Path, project: Path, number: int) -> None:
                 row["forced_cleanup"] = True
     status = road.run(f"status-after-{number}", [conduct, "ownership", "status", "--dir", project])
     row["status_after"] = json.loads(status)["state"]
-    road.report["servers"].append(row)
     if not row["graceful_stop"] or row["status_after"] != "closed":
         raise RuntimeError(f"server {number} did not stop cleanly: {row}")
 
@@ -211,7 +236,7 @@ def walk(road: Road, args: argparse.Namespace) -> None:
     if road.report["status_active"] != "active":
         raise RuntimeError(f"ownership after activation is {road.report['status_active']}")
     for number in (1, 2):
-        serve_once(road, conduct, project, number)
+        serve_once(road, conduct, project, number, args.up_timeout)
 
 
 def arguments(argv: list[str] | None) -> argparse.Namespace:
@@ -221,6 +246,8 @@ def arguments(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--sha256", required=True, help="its expected sha256, lower-case hex")
     parser.add_argument("--work", type=Path, default=Path.home() / "dc-wheel-road" / stamp,
                         help="a new directory for the venv, project, logs and report.json")
+    parser.add_argument("--up-timeout", type=float, default=120.0,
+                        help="seconds `conduct up` may take to print its address (recorded)")
     parser.add_argument("--require-filesystem", default="",
                         help="refuse unless the work directory is on this mount type (WSL: ext4)")
     return parser.parse_args(argv)

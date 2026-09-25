@@ -638,9 +638,12 @@ def test_real_toolbar_fields_share_the_inspector_surface(
     page, window = _workflow_screen(chromium, project, 1280, 800)
     try:
         page.emulate_media(color_scheme=theme)
-        controls = page.locator("#workflowToolbar .command-field input, "
-                                "#workflowToolbar .command-field select")
-        painted = controls.evaluate_all("""fields => fields.map(field => {
+        # Found and measured in ONE evaluation, as the Overview geometry is: a live render
+        # replaces these fields, and a locator's evaluate_all finds in one round trip and
+        # measures in the next (browser_tests/test_studio_demo.py, _overview_geometry).
+        painted = page.evaluate("""() => [...document.querySelectorAll(
+            '#workflowToolbar .command-field input, #workflowToolbar .command-field select')]
+          .map(field => {
           const style = getComputedStyle(field);
           const well = getComputedStyle(document.querySelector('#workflowCanvas'));
           return {background: style.backgroundColor, surface: well.backgroundColor,
@@ -692,7 +695,11 @@ def test_a_real_step_not_just_the_canvas_container_is_above_the_fold(
     page, window = _workflow_screen(chromium, project, 1280, 800)
     try:
         _start_from_starter(page, "visible-step")
-        drawn = page.locator(".studio-node").evaluate_all("""nodes => {
+        # MEASURED on the first remote run (frozen-19, Ubuntu): every step read off-screen -- the
+        # answer detached nodes give, and the find-then-measure race proven on the Overview. One
+        # evaluation finds and measures, so a red here now is a layout fact, not that race.
+        drawn = page.evaluate("""() => {
+          const nodes = [...document.querySelectorAll('.studio-node')];
           const well = document.querySelector('#workflowCanvas').getBoundingClientRect();
           return nodes.map(node => {
             const r = node.getBoundingClientRect();

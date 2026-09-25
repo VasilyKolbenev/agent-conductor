@@ -2,11 +2,20 @@
 
 Russian version: [release-notes-v1-alpha.ru.md](release-notes-v1-alpha.ru.md).
 
-**Status of this text.** A draft first written on 22 September and brought to the state of candidate frozen-17 on
-25 September 2026, from the implementer's checkpoints and the independent review. Every claim below is either
-"in the candidate and proven by a named check" or "in the candidate, not yet proven", and the difference is
-written out. The owner's own acceptance, a CI run on this candidate and macOS are still outstanding (see Known
-limitations); publishing this text as a release before them would be a claim the product has not earned.
+**Status of this text.** Evidence snapshot for frozen-19, local code commit
+`d4d2580337a48b63c5898cc300dff2372eb48133`, reviewed on 25 September 2026.
+This is a candidate draft, not a completed release. The snapshot below includes local tests and installation
+checks; it does not include a completed remote CI run or the owner's personal acceptance.
+Commit and public push have been authorized. Check the actual candidate run in
+[GitHub Actions](https://github.com/VasilyKolbenev/agent-conductor/actions/workflows/ci.yml)
+before extending the platform claims. Provider acceptance remains as stated below.
+
+**First remote CI, completed 25 September at 17:57:52 UTC:** [run 36161016495](https://github.com/VasilyKolbenev/agent-conductor/actions/runs/36161016495)
+finished with 3 successful jobs (wheel build, installed-wheel road on Ubuntu and browser gate on macOS)
+and 9 failed jobs. Both macOS browser orders passed, taking 44m03s and 44m08s; its installed-wheel startup check failed.
+This is not a passing release gate or complete macOS acceptance.
+Local follow-up fixes address POSIX init, line-ending checks, DOM measurement and Windows artifact paths;
+macOS startup needs the next diagnostic run. These uncommitted fixes are not results of that first CI run.
 
 ## What this is
 
@@ -74,15 +83,14 @@ Named here so nobody has to discover them. Each is recorded with its evidence in
 3. **Correction delivery is visible only indirectly.** The product keeps no record of a child's stdin by design,
    so the live delivery of the correction data into the second attempt shows only in its effect; the exact bytes
    are covered by native tests.
-4. **Platforms.** Windows: a clean-venv install of the package bytes of frozen-17 (a locally rebuilt archive
-   whose METADATA/WHEEL/RECORD differ from the candidate archive; the package files are byte-equal) passed
-   `init`, `ownership activate`, two server lifetimes each stopped by Ctrl+C, and `closed` ownership. Linux (WSL
-   Ubuntu): the same road on the candidate wheel `83dc8d85…` passed, non-root on ext4, two lifetimes stopped by
-   SIGINT. Neither configured any vendor account. **macOS is not verified**: the owner has no Mac, and a CI job
-   for Linux and macOS is prepared locally but has not run (push not authorized). The CI configuration also runs
-   the suite and the browser gate on Linux, Windows and macOS; no CI run exists on the current candidate. The
-   process-group cleanup on POSIX has a named gap in the review (a kill after the reap; a descendant that leaves
-   the group survives).
+4. **Platforms.** Windows and Linux (WSL Ubuntu, non-root on ext4) both installed the selected frozen-19
+   wheel `47b5dc6438e039c0ef0175b7c5423b5c76c6188bd32eb77f347e5227d9d41fd0` into clean virtual environments.
+   Both passed `init`, `ownership activate`, two server lifetimes, graceful Ctrl+C/SIGINT stops, and `closed`.
+   All 256 package files matched the source and the local installed candidate. These checks configured no
+   vendor accounts. **macOS is not verified by this snapshot**; its prepared CI job still needs an actual result.
+   Git normalizes line endings when committing, so a CI wheel must be matched to the committed source, not
+   called byte-identical to the pre-commit local wheel. POSIX process cleanup is not a general OS sandbox:
+   the previously recorded after-reap/escaped-descendant limitation remains open.
 5. **Recovery after a real reboot** has not been exercised.
 6. **Size bounds.** An independent checker reads each changed file whole up to 32 KiB; its whole frame, the
    stdin channel and the instruction are each bounded at 256 KiB; an input document is at most 48 KiB. Claude
@@ -95,9 +103,11 @@ Named here so nobody has to discover them. Each is recorded with its evidence in
    preview and grant.
 8. **Cross-process ownership** covers the doors the implementer listed; shared login-home lifetime, successor
    and descendant lifetime and old-writer transition remain open.
-9. **Tests on frozen-17.** The full `tests/` passed (8449 passed, 24 skipped); the browser gates passed 55/55 in
-   both module orders on the second run. The first run was red once for ERR_NO_BUFFER_SPACE (Windows 10055, cause
-   not measured) and once for four zero-size Overview cards (a test race, since fixed).
+9. **Tests on frozen-19.** The recorded full `tests/` result is 8459 passed, 24 skipped, exit 0.
+   Browser gates passed 55/55 modules in both orders on their first frozen-19 runs. The earlier frozen-17
+   zero-size Overview cards were traced to a test measurement race; the helper now selects and measures
+   in one synchronous operation, without weakening geometry assertions. The separate earlier Windows
+   ERR_NO_BUFFER_SPACE/10055 event has no measured root cause. Intermediate red results remain in the record.
 
 ## How to install and accept
 

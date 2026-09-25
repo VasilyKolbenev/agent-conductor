@@ -591,6 +591,25 @@ def test_init_degrades_gracefully_when_the_root_cannot_be_written(tmp_path, caps
     assert captured.out == "" and "cannot write" in captured.err
 
 
+def test_nothing_stands_beneath_a_file_on_either_platform():
+    """POSIX answers ENOTDIR where Windows answers not-found; both mean the path is absent.
+
+    MEASURED on the first Linux and macOS runs of frozen-19: the test above raised
+    NotADirectoryError out of `init` there, while Windows only ever met FileNotFoundError.
+    """
+    from conductor import ownership_layout
+
+    class Beneath:
+        def __init__(self, error):
+            self.error = error
+
+        def lstat(self):
+            raise self.error
+
+    assert ownership_layout._present(Beneath(NotADirectoryError(20, "Not a directory"))) is False
+    assert ownership_layout._present(Beneath(FileNotFoundError(2, "No such file"))) is False
+
+
 def test_the_one_path_that_leaves_a_directory_says_how_to_get_unstuck(
         tmp_path, capsys, monkeypatch):
     # Unreachable today — every template is pinned to validate — but it is the

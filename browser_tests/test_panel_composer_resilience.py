@@ -633,5 +633,3 @@ def test_a_background_read_that_fails_shuts_both_forms_until_one_succeeds(
         page.locator('[data-confirm-state="accepted"]').wait_for()
     finally:
         page.context.close()
-
-

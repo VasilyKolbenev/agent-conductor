@@ -129,6 +129,10 @@ def _faults_in(name: str, data: bytes) -> list[str]:
     """
     if not data:
         return []
+    # Judged as git commits it: `.gitattributes` normalizes CRLF to LF, so a Windows copy ending
+    # `\r\n\r\n` is the committed `\n\n`. MEASURED on the first remote run of frozen-19: three such
+    # files passed this guard on Windows and failed it on Linux and macOS.
+    data = data.replace(b"\r\n", b"\n")
     lines = data.split(b"\n")
     # Counted into a name rather than spelled inside the f-string below: a
     # backslash inside an f-string expression is a syntax error on Python

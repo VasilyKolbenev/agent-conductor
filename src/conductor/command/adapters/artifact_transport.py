@@ -768,4 +768,3 @@ class ArtifactAwareTransport(IndependentCheckTransport, HeadlessCliTransport):
             return self._checker_answer(request, error.reason)
         except Exception:
             return self._checker_answer(request, "material_unavailable")
-

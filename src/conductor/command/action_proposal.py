@@ -126,5 +126,3 @@ class ActionProposal:
             input_binding=known.pop("input_binding", ABSENT),
             feedback_ids=known.pop("feedback_ids", ABSENT),
             schema_version=known.pop("schema_version", 2), extra=data)
-
-

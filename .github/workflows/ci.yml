@@ -126,8 +126,15 @@ jobs:
       # too; a browser writing beside the checkout would leave engine logs and
       # profiles inside the tree under test, where the next step would read them
       # as part of the product.
+      #
+      # And SHORT: the Windows path budget the product enforces counts the whole
+      # project path, and each module's basetemp lives under this directory. The
+      # first remote run of frozen-19 refused the 128-character workflow id with
+      # `windows_path_too_long` under `browser-gate-reverse` and admitted it under
+      # `browser-gate` -- the product was right both times; the directory name
+      # was spending the budget. `bg` and `bgr` leave it to the test.
       - name: Browser gate
-        run: python browser_tests/gate.py --artifacts "$RUNNER_TEMP/browser-gate"
+        run: python browser_tests/gate.py --artifacts "$RUNNER_TEMP/bg"
 
       # The same modules in the opposite order. The recurring Chromium flake was
       # order-sensitive, and a gate that only ever ran one order could not say
@@ -135,7 +142,7 @@ jobs:
       - name: Browser gate, reversed
         run: >
           python browser_tests/gate.py --reverse
-          --artifacts "$RUNNER_TEMP/browser-gate-reverse"
+          --artifacts "$RUNNER_TEMP/bgr"
 
       # The same fail-closed check, and the browser job needs it MORE: a browser
       # writes profiles, caches and its own engine log wherever it is pointed,
@@ -155,7 +162,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: browser-gate-${{ matrix.os }}
-          path: ${{ runner.temp }}/browser-gate*
+          path: |
+            ${{ runner.temp }}/bg
+            ${{ runner.temp }}/bgr
           if-no-files-found: warn
           retention-days: 14
 

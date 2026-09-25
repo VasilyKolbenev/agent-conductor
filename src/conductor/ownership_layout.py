@@ -5,9 +5,11 @@ from .ownership_errors import OwnerRefused
 
 
 def _present(path):
+    # Nothing can stand beneath a path that is not a directory: Windows answers "not found" and
+    # POSIX answers ENOTDIR (NotADirectoryError), which the first Linux and macOS runs met.
     try:
         path.lstat()
-    except FileNotFoundError:
+    except (FileNotFoundError, NotADirectoryError):
         return False
     return True
 

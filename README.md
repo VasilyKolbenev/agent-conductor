@@ -1,236 +1,160 @@
-# December
+# December Command
+
+![December Command — your coding agents, one clear workflow](docs/assets/december-command.svg)
+
+[English](README.md) · [Русский](README.ru.md) · [Start here](docs/index.md) · [Architecture](docs/architecture.md) · [Contribute](CONTRIBUTING.md)
 
 [![CI](https://github.com/VasilyKolbenev/agent-conductor/actions/workflows/ci.yml/badge.svg)](https://github.com/VasilyKolbenev/agent-conductor/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-78914f)](LICENSE)
 
-**Build your Orbit. Control the cycle.**
+**Give your coding agents a shared workflow, a separate checker, and clear points for your decisions.**
 
-*Your agents write lanes. You conduct.*
+December Command runs locally and brings your AI coding tools into one Studio.
+Create a task, choose a workflow, review what may run, and follow the work through execution and checking.
+You can confirm each action or authorize a bounded sequence with a limit on its work.
+Human decision steps still wait for you.
 
-December Command is a self-hosted control plane for the AI coding harnesses already working on
-your code — Claude Code, Codex, or anything that can write a JSON file. Each agent keeps
-one file — its lane — saying what it is doing, what it found, and what it needs from you. When
-you want to run a process rather than watch one, the Workflow Studio lets you publish a workflow
-and open a run against it. Confirm mode asks for each action; an explicitly bounded
-Policy workflow can run under one reviewed human grant, with independent checking
-and recorded correction findings. Opening a run alone grants no execution authority.
+**December Command v0.1.0 alpha.** The V1 candidate is under acceptance; this is not a completed release announcement.
+The Python package is `agent-conductor`, and its command is `conduct`.
+See the [candidate's evidence and remaining checks](docs/release-notes-v1-alpha.md).
 
-*Alpha — Protocol v1. The distribution is `agent-conductor`; the CLI is `conduct`.*
+## Choose your first step
 
-## 60-second quickstart
+| You want to… | Start with… |
+| --- | --- |
+| See the interface without connecting a paid account | The demo below |
+| Connect your coding tools and try a real task | [First run](docs/first-run-v1.en.md) |
+| Understand what happens after you click Run | [Architecture, with a diagram](docs/architecture.md) |
+| Make your first change, with or without an AI assistant | [Contributor guide](CONTRIBUTING.md) |
 
-For the current V1 candidate, use the supplied build and the
-[first-run guide](docs/first-run-v1.en.md) ([Russian](docs/first-run-v1.md)). The demo below is a separate introduction;
-installing the GitHub default branch does not identify a tested release candidate.
+## Try the demo
 
-Requires Python 3.11+. Not on PyPI yet — install from GitHub:
+You need **Git and Python 3.11+**. A virtual environment keeps this project's packages separate from other Python projects.
+These commands install a source checkout for exploration. Use the [first-run guide](docs/first-run-v1.en.md)
+and the identified build for release-candidate acceptance; the default branch alone does not identify that build.
 
-```sh
-pip install git+https://github.com/VasilyKolbenev/agent-conductor.git
+<details open>
+<summary><strong>Windows · PowerShell</strong></summary>
+
+```powershell
+git clone https://github.com/VasilyKolbenev/agent-conductor.git
+cd agent-conductor
+py -3 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -e .
+.\.venv\Scripts\conduct.exe demo
 ```
 
-or clone and install editable:
+</details>
+
+<details>
+<summary><strong>macOS / Linux · terminal</strong></summary>
 
 ```sh
 git clone https://github.com/VasilyKolbenev/agent-conductor.git
 cd agent-conductor
-pip install -e .
+python3 -m venv .venv
+.venv/bin/python -m pip install -e .
+.venv/bin/conduct demo
 ```
 
-Then run the bundled demo:
+</details>
 
-```sh
-conduct demo
+Open the address printed in the terminal, normally `http://127.0.0.1:7777/`.
+You should see Studio with a sample workflow and run. Try **Runs**, **Decisions**,
+the **Trace / Orbit** views, and the language and theme switches. Stop the server with **Ctrl+C**.
+If the port is busy, add `--port 8080` to the demo command.
+
+The demo uses a temporary copy of sample data. It needs no provider login and starts no paid model task.
+A successful demo shows the interface; it does not prove that your real harness accounts are configured.
+
+## From a task to a checked result
+
+```mermaid
+flowchart LR
+    T[Task and instructions] --> W[Published workflow]
+    W --> P[Preview and permission]
+    P --> D[Agent does the work]
+    D --> C[Separate checker]
+    C -->|Accept| H[Human result decision]
+    C -->|Reject with usable findings| F[Correction within granted limits]
+    F --> C
 ```
 
-Open the printed URL (`http://127.0.0.1:7777/`, or `conduct demo --port 8080` if 7777 is
-taken). The demo materializes both halves of the product into a throwaway temp directory, so
-poking at the served files never touches the packaged copy.
+The workflow decides the actual steps and return paths. The diagram shows the core idea, not every possible workflow.
+A process finishing successfully is not the same as its work being verified.
+An uncertain result stays visible and requires resolution.
 
-**The front door is the Workflow Studio.** It opens on one published workflow revision and one
-run frozen against that exact revision, with one step carried through all five durable timeline
-records, one gate a person already answered, and one gate still waiting for you. Every record
-was written by the production writers — the same code paths your own runs use — so it is a
-demonstration of the product, not a picture of one.
+Studio has five screens: **Overview, Workflow, Runs, Decisions, and Agents**.
+It includes Russian and English, light and dark themes, task-bound runs, and quota/balance readings with their source and age.
 
-**The classic panel is at `/panel/index.html`.** It shows a fictional web project whose release
-smoke gate went red with three blockers: the reviewer confirms two of the findings and partly
-disputes the third — so the panel computes exactly one disagreement — and one real ops decision,
-bake the payment config into the release image or provision it per environment, waits in the
-human queue. Everything on that screen is computed from the fixture's lane files by the merge
-rules; nothing on it is hand-written state.
+## Bring your existing tools
 
-## Use it on your own project
+A **harness** is the coding application that runs the model and its tools.
+December Command coordinates these applications; you keep their accounts and payment methods.
 
-```sh
-cd your-project
-conduct init        # asks three questions in a terminal; --template skips them
-# edit conductor/map.toml: swap in your nodes, roles, and phases
-conduct validate    # prints nothing when the map and lanes are valid
-conduct doctor      # says what is not ready and gives the next command
-conduct prompt --role implementer --author claude
-conduct report      # the merged state as Markdown, on stdout
-conduct preview     # propose one dispatch and print its canonical preview (no execution)
-conduct integration-smoke  # run the synthetic end-to-end gate and print its receipt
-conduct reconcile   # list the actions a crash stranded; close one with --run/--action
-conduct ownership activate --legacy-writers-stopped # only after legacy writers stop
-conduct providers   # configure a harness: paths and env NAMES, never a credential
-conduct up          # Workflow Studio at http://127.0.0.1:7777/
-```
+| V1 harness | Account route | Resource reading |
+| --- | --- | --- |
+| Claude Code | Native subscription login | Subscription windows and reset times |
+| Codex | Native subscription login | Subscription windows and reset times |
+| Kimi Code | Native subscription login | Native usage source |
+| Grok Build | Native subscription login | Native quota source |
+| DeepSeek Harness | Direct DeepSeek API key | Money balance and currency; reset does not apply |
 
-`conduct prompt` prints the working instructions for one agent — paste the output into
-Claude Code, Codex, or whatever harness holds that role. The agent then keeps its lane
-file (`conductor.v3/lanes/claude.json` after activation) up to date, and the panel reflects every write
-live.
+These are the V1 integration targets, not a claim that all five have passed live acceptance.
+Use the [pinned versions and setup instructions](docs/first-run-v1.en.md), then check the
+[release notes](docs/release-notes-v1-alpha.md) for what has actually been verified.
+DeepSeek API credits are purchased from DeepSeek; Studio uses the configured key and displays the reported balance.
 
-`conduct report` renders the same merged state the panel serves, as Markdown on stdout:
-the decision brief, the human queue, the findings, and a section naming what that state
-does not know. Nothing about it is interactive, so it goes in a pull request comment, a
-CI log, or a file.
+## Built to be understandable
 
-`conduct doctor` answers a different question from `validate`: not only whether the files
-parse, but whether the project is set up to work. Each finding names the next command to
-run, and the command exits 0 only when every readiness check is OK. It reads project files
-and the bundled harness registry; it never probes your machine for installed tools.
+- **Local application:** Python 3.11+, no runtime Python dependencies; the interface is plain HTML, CSS, and JavaScript.
+- **Visible authority:** inspect the task and limits before authorizing work; pause and revoke are explicit controls.
+- **Readable history:** workflow revisions, decisions, and results are recorded on disk.
+- **A separate check:** the checker evaluates the result, rather than treating the agent's own success message as proof.
 
-`conduct integration-smoke` runs one fixed, synthetic action end to end — it spawns a packaged
-no-op program, watches it, and writes the immutable receipt to stdout. Read the command's own
-exit status, which is `0` when the gate passed. The receipt's `outcome` will say
-`verification_failed`, and **that is the passing result**: the process finished
-(`"exit_code": 0`), but the owned-process adapter holds no independent check of the work, so it
-exposes no verifier and this product never turns an exit code into a success. Run it twice and
-the line is byte-identical; if a crash left the gate's own journal cut off mid-record, the next
-run repairs that tail itself and prints the same receipt. It is a synthetic gate, not a product
-Human Confirm surface — its actor, time and ids are fixture facts. Run it, and `conduct preview`,
-inside a project `conduct init` made; elsewhere they refuse rather than creating one.
+New to the code? Start with the [repository map and glossary](docs/architecture.md).
+For the agreed V1 boundary and future memory/learning work, see the [V1 / V2 roadmap](docs/v1-v2-scope.md).
 
-In the classic panel at `/panel/index.html`, select an agent lane to see its current harness,
-role, assigned stage, runtime phase, task, findings, and human requests. **Copy handoff packet**
-copies a deterministic
-Markdown packet rendered from that same `state.json`; fields Protocol v1 does not have — model,
-prompt, skills, runtime controls — are not guessed or shown as empty placeholders.
+<details>
+<summary><strong>CLI reference · useful once you leave the demo</strong></summary>
 
-### What `conduct init` writes
+Run `conduct --help`, or add `--help` to a command, for its flags.
+Use the executable inside your virtual environment if it is not activated.
 
-`conduct init` never inspects your machine. It does not look for installed harnesses, and
-the answers it takes only label who does what, in the map and in the panel.
+| Command | Purpose |
+| --- | --- |
+| `conduct demo` | Open the bundled sample in a temporary directory. |
+| `conduct init` | Create project data; interactive terminals ask setup questions. |
+| `conduct validate` | Check the map and lane files. |
+| `conduct doctor` | Explain readiness problems and the next action. |
+| `conduct providers` | Configure executable paths and allowed environment-variable names. |
+| `conduct ownership` | Activate, inspect, or explicitly recover project ownership. |
+| `conduct up` | Start local Studio for the project. |
+| `conduct prompt` | Print working instructions for an agent's reporting role. |
+| `conduct report` | Print the merged lane state as Markdown. |
+| `conduct preview` | Prepare a synthetic dispatch preview without executing it. |
+| `conduct integration-smoke` | Exercise the synthetic execution road; not a live provider task. |
+| `conduct reconcile` | Inspect actions left uncertain after interruption. |
 
-- **In a terminal** it asks three questions — the project name, which harness runs the
-  implementing roles, and which harness reviews their work. Enter takes the default on
-  each. Answering the reviewer question with the `(none)` row writes the `single-harness`
-  map; every other answer writes `default-orbit`.
-- **`--template NAME`** skips the questions and writes one named map, and
-  `conduct init --help` lists them:
-  - `default-orbit` — the recommended five-stage process, goal, detect, diagnose,
-    design, deliver, and what init writes when nothing else is asked for.
-  - `single-harness` — one implementing role plus a human decision, and no reviewer.
-  - `empty` — the minimum that validates: one placeholder node and no cycle.
-  - `minimal` — the protocol spec's own §2 example map, quoted verbatim.
-- **Where there is no terminal** — a pipe, a CI runner — it writes `default-orbit`
-  without waiting for an answer, so it cannot block a script.
+Project-map templates are different from Studio's workflow starters:
 
-Every path writes the same three things: `conductor/map.toml`, `conductor/lanes/` and
-`conductor/events.jsonl`. It then validates what it wrote, and puts on stdout — and on
-stdout alone — a bootstrap prompt for the agent that fills the map in, so
-`conduct init > setup.txt` leaves you that prompt and nothing else. What the prompt says
-about your `[[nodes]]` blocks is read out of the map that was just written: where they are
-placeholders it tells the agent to replace them with your real components, and where they
-already name components — as in `minimal`, which quotes the spec's example — it tells the
-agent to check each one against your project instead. An existing `conductor/`
-is never touched: init says so and exits 1.
+- **`--template NAME`** skips the `conduct init` questions and chooses a project map:
+  - `default-orbit` — the default five-stage map.
+  - `single-harness` — one implementing role and a human decision, without a reviewer.
+  - `empty` — a minimal placeholder map.
+  - `minimal` — the protocol's example map.
 
-## What it is
+The bootstrap prompt follows the map: where nodes are placeholders, it tells the agent to replace them with your real components;
+where nodes already name components, it tells the agent to check each one against your project instead.
+`conduct init` does not overwrite existing project data. Follow [first run](docs/first-run-v1.en.md) for ownership activation.
 
-- **Files are the API.** Project data starts in `conductor/`; explicit ownership
-  activation moves it to `conductor.v3/` and stores ownership records in `.conduct/` inside your
-  project: `map.toml` (the project map), `lanes/<author>.json` (one file per agent),
-  `events.jsonl` (an append-only log), and — once you use the Studio — `templates/`
-  (published workflow revisions and drafts) and `runs/` (each run's append-only journal
-  of proposals, confirmations, decisions and receipts). Any tool that writes JSON can
-  participate.
-- **Silence is not consent.** An agent that stops reporting does not stay green — it goes
-  stale, and the panel says so. Disagreements, staleness, review coverage, and the human
-  queue are all computed from the raw lanes, so no agent can bury a conflict by declining
-  to write it down. Nothing unknown shows green.
-- **The panel is local; execution needs authority.** It binds to 127.0.0.1, answers only
-  the two loopback `Host` names it minted for its own port, and calls no model itself.
-  Quota collectors read the configured native accounts; on the current V1 candidate only
-  Claude's subscription quota has been read live. When a run exists,
-  Studio can append what you authorize — a proposal,
-  an action request, a decision receipt, a workflow draft or a published revision — and each
-  such request must carry that loopback `Host`, an allowed `Origin`, and the per-process CSRF
-  token the page was served with. Run and workflow records live in the active data
-  directory. Authorized native harnesses can change files in the task's work scope;
-  the independent checker determines whether the result is verified.
+</details>
 
-## What it is not
+## Join in
 
-- Not a chat with your agents.
-- No unbounded background authority. The scheduler derives eligible steps from the frozen
-  plan and durable records. The bounded Policy driver needs an owned project, a reviewed
-  grant, eligible steps and remaining budget. Human gates remain human decisions;
-  restarting the server does not automatically resume an earlier grant.
-- Not a trace warehouse.
-- Not a hosted service. Native harnesses and quota readers use the configured provider
-  accounts; direct DeepSeek API uses an environment variable, never a key pasted into Studio.
+Small fixes, clearer explanations, and reproducible bug reports all help.
+[CONTRIBUTING](CONTRIBUTING.md) explains local setup, choosing a focused check, and a first pull request.
+[Browse the documentation](docs/index.md) for tutorials, architecture, reference material, and release procedures.
+In a local checkout, the documentation entry point is `docs/index.md`.
 
-## How it works
-
-There are two halves, and they read different files.
-
-**Reporting — the lanes.** Each agent owns exactly one lane file and rewrites it as it works:
-current task, node statuses, findings, verdicts on other agents' findings, and questions for the
-human. The merge step reads the map and every lane and computes the project state
-deterministically — same inputs, same state, no model in the loop. The classic panel renders
-that state live and hands you a copyable decision brief for each wait. You answer; the agents
-move on.
-
-**Conducting — the runs.** In the Workflow Studio you draft a workflow, publish it as an
-immutable revision, and open a run frozen against that exact revision. From then on nothing is
-overwritten: every proposal, confirmation, decision, receipt and gate answer is appended to that
-run's journal, and the state you see is computed from the records rather than stored beside
-them. The scheduler reads the plan and those records and says which steps may run now; you
-confirm one, or you answer the gate that is waiting. A bounded Policy grant may authorize
-the next eligible step automatically within its reviewed limits. Pause and revocation stop
-further authorization; an uncertain result requires human resolution.
-
-## Documentation
-
-- Current normative protocol: `spec/PROTOCOL.md`
-- Accepted Harness control-plane model: `docs/adr/0001-harness-control-plane-model.md`
-- Product direction and the post-alpha December Command strike:
-  `docs/specs/2026-08-03-hcp-competitive-product-direction.md`
-- The demo scenario: described in the quickstart above; the fixture ships at
-  `src/conductor/_demo/conductor/`
-- The release smoke test, run against a release candidate before publishing:
-  `docs/release-smoke.md`
-- Owner acceptance — can a person operate this without a developer: `docs/owner-acceptance.md`
-- First run of the V1 candidate: `docs/first-run-v1.en.md` (English), `docs/first-run-v1.md` (Russian)
-- V1 alpha release notes, including the known limitations of the current candidate:
-  `docs/release-notes-v1-alpha.md` (Russian: `docs/release-notes-v1-alpha.ru.md`)
-
-## Browser-level panel checks
-
-The regular test suite stays dependency-light and checks the panel's source-level
-contracts. A separate suite opens the live loopback panel in Chromium and checks
-the rendered DOM, computed styles, responsive Orbit, and composited status colours:
-
-```console
-python -m pip install -e ".[browser]"
-python -m playwright install chromium
-python -m pytest -q browser_tests
-```
-
-Playwright and the pixel decoder are optional development/CI dependencies. They are not
-installed with the runtime wheel, and no build step is added: the panel ships as hand-written
-files — the Workflow Studio shell at `/`, the classic panel at `/panel/index.html`, their
-stylesheets and their ES modules — served straight from the package with no bundler and nothing
-transpiled. `server.PANEL_ASSETS` is the exact list of the `/panel/*` routes; the Studio shell
-is not in it, because it is not a `/panel/*` route — it is what `GET /` answers with.
-
-## Status
-
-December Command v0.1.0 alpha. Protocol v1. Python 3.11+, zero runtime dependencies. The CI
-configuration runs the suite on Linux, Windows and macOS, and the browser gate on all three; no
-CI run exists yet on the current V1 candidate, and macOS has not been verified for it (see the
-release notes).
-MIT license.
+Released under the [MIT license](LICENSE).
