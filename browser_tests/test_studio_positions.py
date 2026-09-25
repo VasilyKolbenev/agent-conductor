@@ -80,23 +80,52 @@ def test_dragging_a_step_moves_it_on_the_canvas_and_leaves_the_order_alone(
 
 
 def _reopened_from_the_server(bench: _Bench) -> None:
-    """Reload the whole page and open the workflow again, as a person would.
+    """Reload the whole page and let URL navigation read its workflow again.
 
-    The empty canvas in the middle is what makes the reload mean anything: a
-    window that had cached the drawing would still be showing it here, and
-    every assertion after this would pass on a tab's own memory.
+    Hold that read so an empty canvas proves no drawing came from the tab.
+    Only the real server's released response may restore the saved document.
     """
-    bench.page.reload(wait_until="load")
-    bench.page.wait_for_function(
-        "() => document.getElementById('studioPrimary').children.length > 0")
-    assert bench.node_ids() == [], "a drawing survived a reload without a read"
-    bench.page.locator("#navWorkflow").click()
-    bench.page.locator(
-        "#workflowToolbar select[name='workflow']").select_option(WORKFLOW_ID)
-    bench.page.wait_for_selector(
-        '.studio-canvas__banner[data-document="draft"]')
-    bench.page.wait_for_function(
-        "() => document.querySelectorAll('[data-node-id]').length === 3")
+    from playwright.sync_api import Error
+
+    page = bench.page
+    read_url = next(url for method, url in reversed(bench.recorder.rows)
+                    if method == "GET" and url.endswith(f"/command/workflows/{WORKFLOW_ID}"))
+    posts = [row for row in bench.recorder.rows if row[0] == "POST"]
+    held = []
+    released = False
+
+    def hold_read(route):
+        if route.request.method == "GET" and not released:
+            held.append(route)
+        else:
+            route.continue_()
+
+    page.route(read_url, hold_read)
+    try:
+        with page.expect_request(lambda request: request.method == "GET"
+                                 and request.url == read_url):
+            page.reload(wait_until="load")
+        page.wait_for_function(
+            "() => document.getElementById('studioPrimary').children.length > 0")
+        assert held, "restored navigation must read the selected workflow"
+        assert bench.node_ids() == [], "a drawing appeared before its server read"
+        with page.expect_response(lambda response: response.request.method == "GET"
+                                  and response.url == read_url) as read:
+            released = True
+            while held:
+                held.pop(0).continue_()
+        assert read.value.status == 200
+        page.wait_for_selector('.studio-canvas__banner[data-document="draft"]')
+        page.wait_for_function(
+            "() => document.querySelectorAll('[data-node-id]').length === 3")
+        assert [row for row in bench.recorder.rows if row[0] == "POST"] == posts
+    finally:
+        while held:
+            try:
+                held.pop(0).abort()
+            except Error:
+                pass  # A cancelled request must not mask the original assertion.
+        page.unroute(read_url, hold_read)
 
 
 def test_a_placed_step_is_written_to_the_draft_and_survives_a_reload(
@@ -307,12 +336,13 @@ def test_the_reducer_refuses_a_coordinate_the_document_could_not_store(
     """
     draft = {"nodes": [{"node_id": "alpha", "kind": "task", "title": "A"}],
              "edges": []}
-    answered = _in_page(bench, "studio-edits.js", """[
+    # Each refusal is a catalogue key; the page's own renderer says it as a person reads it.
+    answered = _in_page(bench, "studio-edits.js", """await import("/panel/studio-i18n.js").then((i18n) => [
       m.applyEdit(%s, {type: "move", nodeId: "alpha", x: 100001, y: 0}).notice,
       m.applyEdit(%s, {type: "move", nodeId: "alpha", x: 0, y: -100001}).notice,
       m.applyEdit(%s, {type: "move", nodeId: "alpha", x: "far", y: 0}).notice,
       m.applyEdit(%s, {type: "move", nodeId: "alpha", x: 100000, y: 0}).notice
-    ]""" % ((__import__("json").dumps(draft),) * 4))
+    ].map((notice) => i18n.noticeText({locale: "en"}, notice)))""" % ((__import__("json").dumps(draft),) * 4))
     assert all("within the canvas" in said for said in answered[:3]), answered
     # The boundary itself is a legal placement: an off-by-one here would refuse
     # a coordinate the document is perfectly willing to hold.

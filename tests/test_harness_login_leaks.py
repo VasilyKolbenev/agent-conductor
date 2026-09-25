@@ -532,7 +532,12 @@ def test_a_review_that_leaves_undeclared_state_publishes_nothing(tmp_path):
                            _fakeclaude.HOME_FILE: "stowaway.txt:PROBE"})
 
     assert (home / "stowaway.txt").exists(), "the fixture left nothing behind"
-    assert attempt.state.value != "succeeded", attempt.detail
+    # FAILED with the reason, not `unknown`: a residue receipt carrying the child's exit 0 was
+    # refused by the runtime and recorded as "no recognized effect outcome" on the first real login.
+    # WHY, in the runtime's own closed words (`failure_reasons`), never the adapter's prose.
+    assert attempt.state.value == "failed", attempt.receipt.detail
+    assert attempt.receipt.detail == (
+        "adapter reported failed: it left undeclared state in the pinned login directory")
     assert documents_holding(store, CHILD_ONLY) == [], (
         "a review published over a promise this build had already broken")
 
@@ -667,7 +672,14 @@ def test_the_two_declared_lists_are_the_measured_ones():
     from conductor.command.adapters.claude_code import CLAUDE_PROFILE
     from conductor.command.adapters.codex_cli import CODEX_PROFILE
 
-    assert CLAUDE_PROFILE.login_scratch == ("sessions", ".last-cleanup")
+    # `session-env` and `shell-snapshots`: MEASURED on the first real login (23.09.2026),
+    # written by a spawn that starts a shell; left undeclared they failed every such task.
+    # `plans`: a plan-mode review that presents a plan writes `plans/<slug>.md` (third live run).
+    # `projects` (tool results spilled to disk, fourth live run) and `file-history` (the binary's
+    # per-session edit checkpoints).
+    assert CLAUDE_PROFILE.login_scratch == (
+        "sessions", ".last-cleanup", "session-env", "shell-snapshots", "plans",
+        "projects", "file-history")
     assert CLAUDE_PROFILE.login_expected == (
         ".claude.json", "backups", ".credentials.json")
     assert CODEX_PROFILE.login_scratch == ("tmp",)

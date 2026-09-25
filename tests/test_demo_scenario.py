@@ -19,6 +19,7 @@ read can answer instead. `build` reporting "I wrote a run" is the claim under
 test, not the evidence for it.
 """
 from __future__ import annotations
+from tests.human_situation_samples import READ_AT
 
 from pathlib import Path
 
@@ -136,7 +137,7 @@ def test_the_demo_shows_one_answered_gate_and_one_still_waiting(built):
     """
     root, _named = built
 
-    runtime = graph_payload(_read(root))["runtime"]
+    runtime = graph_payload(_read(root), computed_at=READ_AT)["runtime"]
     gates = {node["node_id"]: node["decision"]
              for node in runtime["nodes"] if "decision" in node}
 
@@ -162,6 +163,42 @@ def test_the_carried_step_ends_verified_with_its_evidence(built):
     assert receipt.evidence_refs, "a succeeded receipt with no evidence"
     for evidence_id in receipt.evidence_refs:
         assert evidence[evidence_id].verification == "verified"
+
+
+def test_the_demo_run_belongs_to_a_named_task_and_a_second_task_is_not_run_yet(built):
+    """The Runs header names a task only when the run froze one, so the demo freezes one.
+
+    Read back through the task store and the frozen binding, the two readers the
+    run route joins: a title written anywhere else would be a screen fixture.
+    """
+    from conductor.command.studio_routes import run_ids
+    from conductor.command.task_contracts import frozen_config_task
+    from conductor.command.task_store import TaskStore
+
+    root, named = built
+    tasks = TaskStore(root)
+    binding = frozen_config_task(_read(root).config)
+    bound = {frozen_config_task(RunStore(root).read(run_id).config).task_id
+             for run_id in run_ids(RunStore(root))}
+
+    assert set(tasks.tasks()) == {demo_scenario.TASK_ID, demo_scenario.SECOND_TASK_ID}
+    assert (binding.task_id, binding.work_scope) == (demo_scenario.TASK_ID,) * 2
+    assert tasks.read(binding.task_id).title == demo_scenario.TASK_TITLE
+    assert named["task_id"] == demo_scenario.TASK_ID
+    assert bound == {demo_scenario.TASK_ID}
+
+
+def test_the_demo_roles_are_carried_by_three_participants_on_three_providers(built):
+    root, _named = built
+    recovered = _read(root)
+    definition = next(row.value for row in recovered.records
+                      if row.kind == "graph_definition")
+    instances = {row["id"]: row["adapter"] for row in recovered.config["instances"]}
+
+    assert set(instances) == set(demo_scenario.PARTICIPANTS)
+    assert len(set(instances.values())) == 3
+    assert {node.instance_id for node in definition.nodes
+            if node.capability} == set(demo_scenario.PARTICIPANTS)
 
 
 #: What the demo's journal holds, in order. Pinned exactly rather than by
@@ -196,7 +233,7 @@ def test_the_demo_journal_still_settles_the_gate_a_receipt_alone_answered(
                       if row.kind == "graph_definition")
     computed = schedule(definition,
                         tuple(row.value for row in recovered.records))
-    runtime = graph_payload(recovered)["runtime"]
+    runtime = graph_payload(recovered, computed_at=READ_AT)["runtime"]
 
     assert recovered.warnings == ()
     assert tuple(row.kind for row in recovered.records) == DEMO_KINDS

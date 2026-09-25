@@ -101,6 +101,10 @@ export const ERROR_LABELS = Object.freeze({
     + "a new proposal on this step, review its materials, and confirm that one.",
   capability_unsupported: "This capability is unavailable.",
   contract_invalid: "The request shape is invalid.",
+  windows_name_unsafe: "Choose an identifier without a trailing dot or space "
+    + "and without a reserved Windows basename such as NUL.",
+  windows_path_too_long: "Shorten the identifier or move the project to a "
+    + "shorter path. The Windows path budget is exceeded.",
   csrf_denied: "The local session expired. Submit again.",
   draft_changed: "The draft changed while you were reviewing it. The newer "
     + "version has been loaded — read it and publish again.",

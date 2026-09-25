@@ -66,7 +66,7 @@ function keysWithin(allowed, value) {
 //: here — the store never sees `idle` and the runtime never sees `pending`.
 const GATE_IDLE = "idle";
 
-const DEFINITION_KEYS = ["schema_version", "graph_id", "run_id", "created_at",
+const DEFINITION_KEYS = ["execution_contract", "schema_version", "graph_id", "run_id", "created_at",
   "nodes", "edges"];
 const RUNTIME_DOCUMENT_KEYS = ["run_id", "graph_id", "nodes"];
 //: `GraphNode.as_dict` and its two nested shapes, spelled out. A mapping that
@@ -189,6 +189,9 @@ function pairState(read, graph) {
       || !keysWithin(DEFINITION_KEYS, definition)
       || !keysWithin(RUNTIME_DOCUMENT_KEYS, runtime)) return GRAPH_REFUSED;
   if (definition.schema_version !== WIRE_SCHEMA) return GRAPH_REFUSED;
+  if (Object.hasOwn(definition, "execution_contract")
+      && (definition.execution_contract !== "bounded-run-v1" || read.run.mode !== "policy"
+        || read.config?.automation_contract !== "bounded-run-v1")) return GRAPH_REFUSED;
   if (typeof graph.definition_digest !== "string") return GRAPH_REFUSED;
   if (definition.run_id !== read.run.run_id
       || runtime.run_id !== read.run.run_id
@@ -234,7 +237,7 @@ export function adaptRunGraph(read, registry, controls) {
   // the Studio is the surface that acts on what the plan permits.
   if (!isObject(graph) || !keysWithin(
     ["definition", "definition_digest", "runtime", "schedule",
-     "success_criteria"],
+     "success_criteria", "situation"],
     graph)) return refused();
   const pair = pairState(read, graph);
   if (pair === GRAPH_ABSENT) {

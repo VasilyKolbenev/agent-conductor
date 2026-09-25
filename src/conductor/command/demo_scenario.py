@@ -26,13 +26,16 @@ events and the receipt describe an execution that this function did not perform,
 which is what a scenario is -- and `conduct demo` says so on stderr, into a
 throwaway directory, over a copy of the fixture that is never written back.
 
-THE SHAPE OF THE STORY. One workflow with one published revision; one run
-frozen against that exact revision; one step carried from proposal to verified
-receipt through all five durable steps the Runs screen draws; one gate a person
-already answered, and one still waiting for them. Both gates are real: the
-approved one is a `DecisionReceipt` in the journal with its own exclusive file,
-and the waiting one is waiting in the only way this product represents waiting
--- a gate node no receipt has answered.
+THE SHAPE OF THE STORY. Two tasks, written by `TaskStore.create_task`: the run
+belongs to the first through the `task` binding frozen inside its configuration,
+and the second has not been run yet. One workflow with one published revision;
+one run frozen against that exact revision, its roles carried by three different
+participants; one step carried from proposal to verified receipt through all
+five durable steps the Runs screen draws; one gate a person already answered,
+and one still waiting for them. Both gates are real: the approved one is a
+`DecisionReceipt` in the journal with its own exclusive file, and the waiting
+one is waiting in the only way this product represents waiting -- a gate node no
+receipt has answered.
 """
 from __future__ import annotations
 
@@ -51,6 +54,8 @@ from .contracts import (
 )
 from .graph_template import RunBinding, load_template, materialize
 from .run_store import RunStore, snapshot_digest
+from .task_contracts import TaskRecord
+from .task_store import TaskStore
 from .template_store import TemplateStore
 
 #: The starter the story is told with. `dalio-v2` and not `dalio-v1`: v1's
@@ -65,9 +70,21 @@ WORKFLOW_ID = "release-review"
 REVISION = 1
 RUN_ID = "demo-run-001"
 CYCLE_ID = "release-cycle"
-#: One instance carrying every role, which is what a small deployment looks
-#: like.
+#: The participant that carries the effecting step.
 INSTANCE_ID = "demo-implementer"
+#: Who carries each of the starter's roles: three different participants, so
+#: the scene draws a crew rather than one planet doing everything. Each is bound
+#: to a different catalogued provider (`_adapter_id`), in this order.
+PARTICIPANTS = (INSTANCE_ID, "demo-analyst", "demo-architect")
+ROLES = {"role-thinker": "demo-analyst", "role-diagnostician": "demo-analyst",
+         "role-designer": "demo-architect", "role-implementer": INSTANCE_ID}
+#: The task this run belongs to, and a second task nobody has run yet. The
+#: binding is the frozen `{"task": {"id", "work_scope"}}` key; the scope is the
+#: id, as the task route creates it.
+TASK_ID = "task-release-1-4"
+TASK_TITLE = "Review the 1.4 release before it ships"
+SECOND_TASK_ID = "task-login-timeout"
+SECOND_TASK_TITLE = "Fix the login timeout on slow networks"
 #: The gate the story shows ANSWERED, and the gate it leaves WAITING. Both ids
 #: come from the shipped starter; a starter that renamed either would fail to
 #: build here rather than silently demonstrate one gate.
@@ -87,8 +104,8 @@ def _ids(prefix: str) -> str:
     return f"{prefix}-demo-0001"
 
 
-def _adapter_id() -> str:
-    """The provider this demo binds its one instance to, ASKED for.
+def _adapter_id(rank: int = 0) -> str:
+    """The provider this demo binds a participant to, ASKED for.
 
     Never spelled here. This module sits on the request path, where naming a
     provider is refused by construction -- `tests/test_alpha1_gate_g_provider
@@ -97,28 +114,31 @@ def _adapter_id() -> str:
     would be the first place a provider id leaked into generic code, and it
     would go on demonstrating a provider long after the roster had moved.
 
-    The first catalogued id in sorted order, so the answer is stable across
+    The catalogued id at `rank` in sorted order, so the answer is stable across
     runs and follows whatever this build actually ships.
     """
     from .providers import PROVIDER_CATALOG
 
-    return sorted(PROVIDER_CATALOG)[0]
+    return sorted(PROVIDER_CATALOG)[rank]
 
 
 def _snapshot() -> dict[str, Any]:
     """The frozen configuration this run replays against.
 
-    Exactly the three keys the Studio's payload boundary admits -- `cycle`,
-    `instances`, `workflow` -- because a fourth would make the whole run
+    Only keys the Studio's payload boundary admits -- `cycle`, `instances`,
+    `workflow`, `task` -- because any other would make the whole run
     unreadable to the window rather than partly readable.
 
-    `workflow` is what makes this run's identity durable: it lives INSIDE the
-    document `config_digest` is taken over, so replay re-verifies it and no
-    later revision can change what this run followed.
+    `workflow` and `task` are what make this run's identity durable: they live
+    INSIDE the document `config_digest` is taken over, so replay re-verifies
+    them and no later revision or retitling can change what this run followed
+    or whose it is.
     """
     return {
         "cycle": {"id": CYCLE_ID},
-        "instances": [{"id": INSTANCE_ID, "adapter": _adapter_id()}],
+        "instances": [{"id": instance, "adapter": _adapter_id(rank)}
+                      for rank, instance in enumerate(PARTICIPANTS)],
+        "task": {"id": TASK_ID, "work_scope": TASK_ID},
         "workflow": {"id": WORKFLOW_ID, "revision": REVISION},
     }
 
@@ -142,7 +162,7 @@ def _plan(templates: TemplateStore, store: RunStore) -> Any:
     """
     template = templates.load(WORKFLOW_ID, REVISION)
     binding = RunBinding.from_dict(
-        {"assignments": {role: INSTANCE_ID for role in template.roles}})
+        {"assignments": {role: ROLES[role] for role in template.roles}})
     definition = materialize(
         template, binding, store.read(RUN_ID).config,
         graph_id=_ids("graph"), run_id=RUN_ID, created_at=NOW)
@@ -247,7 +267,8 @@ def build(project_root: str | Path) -> Mapping[str, Any]:
 
     Returns:
         The identities a caller may want to name in a message: the workflow,
-        its revision, the run, and the gate still waiting for a person.
+        its revision, the run, the task it belongs to, and the gate still
+        waiting for a person.
 
     Raises:
         StoreError: A durable relation refused a record. That is not a demo
@@ -256,6 +277,10 @@ def build(project_root: str | Path) -> Mapping[str, Any]:
     """
     root = Path(project_root)
     templates, store = TemplateStore(root), RunStore(root)
+    tasks = TaskStore(root)
+    for task_id, title in ((TASK_ID, TASK_TITLE), (SECOND_TASK_ID, SECOND_TASK_TITLE)):
+        tasks.create_task(TaskRecord(
+            task_id=task_id, title=title, work_scope=task_id, created_at=NOW))
     _publish(templates)
     snapshot = _snapshot()
     store.create_run(
@@ -269,5 +294,6 @@ def build(project_root: str | Path) -> Mapping[str, Any]:
         store, _node(definition, CARRIED_NODE)))
     return {
         "workflow_id": WORKFLOW_ID, "revision": REVISION, "run_id": RUN_ID,
+        "task_id": TASK_ID,
         "answered_gate": ANSWERED_GATE, "waiting_gate": WAITING_GATE,
     }

@@ -90,7 +90,7 @@ def _detail(rows):
     return {"controls": {"isolation_facts": WORDS, "instances": [
         {"instance_id": name, "adapter_id": f"{name}-adapter", "model": None,
          "controls": [ROAD], "argument_schemas": {},
-         "isolation": {ROAD: standings}}
+         "isolation": {ROAD: standings}, "task_channel": None}
         for name, standings in rows.items()]}}
 
 
@@ -204,7 +204,7 @@ def _wire(rows):
     return {"instances": [
         {"instance_id": "alpha", "adapter_id": "alpha-adapter", "model": None,
          "controls": [ROAD], "argument_schemas": {},
-         "isolation": {ROAD: rows}}],
+         "isolation": {ROAD: rows}, "task_channel": None}],
         "providers": [], "isolation_facts": WORDS}
 
 
@@ -405,7 +405,7 @@ def test_the_road_the_step_takes_is_the_road_that_is_drawn(
     detail = {"controls": {"isolation_facts": WORDS, "instances": [
         {"instance_id": "alpha", "adapter_id": "alpha-adapter", "model": None,
          "controls": ["dispatch", "review"], "argument_schemas": {},
-         "isolation": {"dispatch": ALPHA, "review": BETA}}]}}
+         "isolation": {"dispatch": ALPHA, "review": BETA}, "task_channel": None}]}}
 
     def drawn(road):
         return page.evaluate(

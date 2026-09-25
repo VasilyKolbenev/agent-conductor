@@ -168,11 +168,12 @@ def test_the_pre_terminal_artifact_is_still_read_after_the_refused_post(tmp_path
 
     refused = post(subject, f"/command/runs/{RUN_ID}/artifacts",
                    body(artifact_id="artifact-document-002"))
+    assert len(ticks) == read_by_now  # Refusal occurs before minting a document.
     read = subject.handle("GET", f"/command/runs/{RUN_ID}", get_headers())
 
     assert refused.status == ERROR_STATUS["run_terminal"]
     assert refused.payload["error"]["code"] == "run_terminal"
-    assert len(ticks) == read_by_now
+    assert len(ticks) == read_by_now + 1  # Explicit S2 read projection instant.
     assert read.status == 200
     assert [row["record_type"] for row in read.payload["records"]].count(
         "artifact") == 1

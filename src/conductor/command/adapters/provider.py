@@ -94,7 +94,8 @@ API_BILLING_ENV = frozenset({
 #: leave an operator reading a login this build never performs, so it is refused
 #: at this door -- in the same breath as an unreviewed protocol token, and for
 #: the same reason.
-SUBSCRIPTION_PROTOCOLS = frozenset({"claude-code-headless-v1", "codex-headless-v1"})
+SUBSCRIPTION_PROTOCOLS = frozenset({
+    "claude-code-headless-v1", "codex-headless-v1", "grok-build-headless-v1", "kimi-code-headless-v1"})
 #: What a provider carries on the wire when NO operator row names it at all. It is
 #: a third word rather than the default mode, because "nobody pinned a login" and
 #: "a row pinned the login that shipped" are different facts, and a screen that

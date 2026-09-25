@@ -634,8 +634,8 @@ def test_a_lane_author_argparse_would_refuse_never_reaches_a_printed_command(
     assert store.load(root).lanes[0]["error"] is None      # store took the author
     out = report(capsys, root, 1)
     assert outcomes(out)["lanes"] == doctor.FINDING
-    assert not any("-x" in line for line in out.splitlines()
-                   if line.startswith(doctor.COMMAND_PREFIX))
+    # Inspect argv tokens: a temporary --dir path may itself contain "-x".
+    assert all("-x" not in argv for argv in commands(out))
     assert ["up", "--dir", str(root)] in commands(out)
     for argv in commands(out):
         assert ran(argv) != 2, argv

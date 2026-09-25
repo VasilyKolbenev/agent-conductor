@@ -26,6 +26,7 @@ from __future__ import annotations
 
 from playwright.sync_api import Browser
 
+from conductor.command import demo_scenario
 from conductor.command.run_store import RunStore
 
 from browser_tests.test_studio_demo import demo_url  # noqa: F401
@@ -355,7 +356,7 @@ def test_the_demo_offers_the_step_but_says_this_build_serves_no_adapter(
         assert control.is_disabled()
         said = page.locator(f'[data-step="propose:{STEP}"]').inner_text()
         assert "This build serves no adapter for" in said, said
-        assert "demo-implementer/review" in said, said
+        assert f"{demo_scenario.ROLES['role-thinker']}/review" in said, said
         assert "The step is offered and the control is shut." in said, said
     finally:
         assert window.problems == []
@@ -449,6 +450,51 @@ def test_the_controls_offer_only_what_the_runs_frozen_authority_permits(
         assert _propose(page, LONE) == 201
         page.wait_for_selector(f'[data-focus-key="confirm:{LONE}"]')
         assert window.writes("/proposals") == 3
+    finally:
+        assert window.problems == []
+        page.context.close()
+
+
+HEADER_RUNS = {mode: f"run-head-{mode}" for mode in ("propose", "confirm")}
+#: Where focus stands, as the form it stands in: the header's click must land in a control the row drew.
+FOCUSED_FORM = ("() => { const form = document.activeElement && document.activeElement.closest('[data-step]');"
+                " return form ? form.dataset.step : null; }")
+
+
+def _main_action(page, key: str):
+    control = page.locator(f'#studioPrimary [data-run-action="{key}"]')
+    control.wait_for()
+    return control
+
+
+def test_the_header_main_action_leads_only_to_a_form_the_row_draws(
+        chromium: Browser, bench: _Bench) -> None:
+    """Propose and Confirm both leave a proposal waiting; only Confirm draws a form that confirms it.
+
+    Clicked for real: the header's Propose lands in the row's proposal form, its Confirm in the row's
+    confirmation form, and a Propose run with a proposal waiting gets a sentence and no Confirm door.
+    """
+    store = RunStore(bench.root)
+    for mode, run_id in HEADER_RUNS.items():
+        _open_run_under(store, run_id, mode)
+    page, window = _open(chromium, bench)
+    try:
+        for mode, run_id in HEADER_RUNS.items():
+            _read(page, run_id)
+            _main_action(page, "propose").click()
+            assert page.evaluate(FOCUSED_FORM) == f"propose:{LONE}", mode
+            assert _propose(page, LONE) == 201, mode
+        _read(page, HEADER_RUNS["propose"])
+        _row_says(page, LONE, "nothing can confirm it here")
+        said = _main_action(page, "awaiting").inner_text()
+        assert "Awaiting confirmation" in said and "cannot confirm it here" in said, said
+        assert page.locator('#studioPrimary [data-run-action="confirm"]').count() == 0
+        assert page.locator(f'[data-step="confirm:{LONE}"]').count() == 0
+        _read(page, HEADER_RUNS["confirm"])
+        page.wait_for_selector(f'[data-step="confirm:{LONE}"]')
+        _main_action(page, "confirm").click()
+        assert page.evaluate(FOCUSED_FORM) == f"confirm:{LONE}"
+        assert window.writes("/actions") == 0
     finally:
         assert window.problems == []
         page.context.close()

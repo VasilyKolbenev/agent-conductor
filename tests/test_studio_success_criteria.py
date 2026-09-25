@@ -26,6 +26,7 @@ from __future__ import annotations
 import re
 
 from tests.test_studio_canvas import INSPECTOR, _code
+from tests.studio_source_messages import _code
 
 def test_success_criteria_became_a_derived_reading_and_kept_its_place():
     """The last label to leave the register, and it left by becoming a READING.

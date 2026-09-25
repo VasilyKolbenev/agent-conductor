@@ -45,7 +45,7 @@ itself failing on synthetic rows before it is trusted on these.
 ### CONF-DIGEST — changed preview after confirmation
 
 - Status: `HELD`
-- Door: `src/conductor/command/contracts.py::ActionProposal.__post_init__`
+- Door: `src/conductor/command/action_proposal.py::ActionProposal.__post_init__`
 - Fixture: `changed_digest_confirmation`
 - Expected invariant: A stored proposal edited without its digest fails reconstruction.
 - Witness:
@@ -207,7 +207,7 @@ itself failing on synthetic rows before it is trusted on these.
 ### CHECKER-WRITES — a checker changes the work and claims acceptance
 
 - Status: `HELD`
-- Door: `src/conductor/command/adapters/artifact_transport.py::ArtifactAwareTransport._check_owned`
+- Door: `src/conductor/command/adapters/independent_transport.py::IndependentCheckTransport._check_owned`
 - Fixture: `checker_that_writes`
 - Expected invariant: A changed work tree defeats an accept verdict and produces no verified evidence.
 - Witness:

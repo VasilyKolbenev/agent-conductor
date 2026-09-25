@@ -44,6 +44,8 @@ contract above, the two absolute pins, and where the launcher wants its flags.
 """
 from __future__ import annotations
 
+from .quota_contracts import NativeBalanceAmount, NativeQuotaReading, QuotaError, QuotaPolicy, quota_object
+
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -59,12 +61,20 @@ from .headless_cli import (
     reviewed_pin_path,
 )
 from .process import ProcessRunner
+from .environment_values import EnvironmentSelectionError
+from .quota_connection import NativeQuotaConnection
 
 #: The exact published version this build was reviewed against. A preflight that
 #: reads anything else refuses; the harness is a developer preview whose own
 #: README promises compatibility-breaking changes, so "close enough" is not a
 #: safe reading of a version string.
 REVIEWED_DSH_VERSION = "0.1.0-rc.7"
+#: Fixed direct API policy. A gateway is never silently mapped to this source.
+BALANCE_ENDPOINT = "https://api.deepseek.com/user/balance"
+BALANCE_SOURCE_VERSION = "user-balance-v1"
+PUBLIC_API_ORIGIN = "https://api.deepseek.com"
+DEFAULT_API_KEY_ENV = "DEEPSEEK_API_KEY"
+API_ORIGIN_ENV = "DEEPSEEK_BASE_URL"
 #: The protocol token an operator pins to select this adapter.
 DSH_PROTOCOL = DeepProtocol.DSH_HEADLESS_V1.value
 #: The environment NAMES this adapter owns. Only names live in durable config;
@@ -167,3 +177,57 @@ class DshHarnessAdapter(ArtifactAwareTransport):
 
     def _env_allow(self) -> tuple[str, ...]:
         return self._pin.env_allow
+
+    def quota_connection(self) -> NativeQuotaConnection:
+        """Capture direct API auth only; no native home scan, spawn or network.
+
+        Dispatch creates a fresh home after these literals, so inherited home
+        settings cannot select another credential. File-only keys can still
+        dispatch, but this initial capture does not discover them.
+        """
+        reason = "source_error"
+        try:
+            captured = self._runner.capture_environment(
+                self._env_allow(), overrides=dict(self.profile.forced_env))
+            key = captured.native_value(DEFAULT_API_KEY_ENV)
+            origin = captured.native_value(API_ORIGIN_ENV)
+            # Windows aliases can survive an exact uppercase override. Until
+            # that shape is proved natively, do not claim the fresh-home rule.
+            home_alias = captured.windows and any(
+                name.upper() == DSH_HOME_ENV and name != DSH_HOME_ENV
+                for name in captured.values)
+            if home_alias or (origin is not None and origin != PUBLIC_API_ORIGIN):
+                reason = "not_supported"
+            elif key is None or key == "":
+                reason = "no_data"
+            else:
+                return NativeQuotaConnection(
+                    QUOTA_POLICY, BALANCE_SOURCE_VERSION, BALANCE_ENDPOINT, key)
+        except EnvironmentSelectionError:
+            reason = "not_supported"
+        except Exception:
+            # Native errors may contain credentials. Only this closed reason
+            # crosses to provider resolution; never retain the exception.
+            reason = "source_error"
+        return NativeQuotaConnection(
+            QUOTA_POLICY, BALANCE_SOURCE_VERSION, BALANCE_ENDPOINT, reason=reason)
+
+def _native_quota(payload):
+    """GET /user/balance reports money and a native availability boolean."""
+    body = quota_object(payload)
+    available = body.get("is_available")
+    if type(available) is not bool:
+        raise QuotaError("missing native balance availability")
+    rows = body.get("balance_infos")
+    if type(rows) is not list or not rows or len(rows) > 2:
+        raise QuotaError("missing native balance amounts")
+    amounts = []
+    for raw in rows:
+        row = quota_object(raw)
+        amounts.append(NativeBalanceAmount(row.get("currency"), row.get("total_balance"),
+                                            row.get("granted_balance"), row.get("topped_up_balance")))
+    return NativeQuotaReading(balances=tuple(amounts), is_available=available, policy=QUOTA_POLICY)
+
+
+QUOTA_POLICY = QuotaPolicy("deepseek", "deepseek-account", "deepseek-api",
+                           "balance", "none", _native_quota, ("CNY", "USD"))

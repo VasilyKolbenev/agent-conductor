@@ -129,6 +129,12 @@ twice, and verification that reads only independent workspace evidence.
 """
 from __future__ import annotations
 
+from . import login_home
+from .quota_connection import NativeQuotaReadError
+from .subscription_quota import SubscriptionRpc, native_subscription_connection
+
+from .quota_contracts import NativeQuotaReading, NativeQuotaWindow, QuotaError, QuotaPolicy, quota_object
+
 import re
 from collections.abc import Callable
 from pathlib import Path
@@ -255,6 +261,12 @@ GROK_PROFILE = HarnessProfile(
     home_dir=HOME_DIR, marker_dir=MARKER_DIR,
     home_env=GROK_HOME_ENV, forced_env=GROK_FORCED_ENV,
     version_argv=VERSION_ARGV, exit_codes_published=False,
+    login_argv=("--no-auto-update", "agent", "stdio"), login_command=("login",),
+    login_credentials=("auth.json",),
+    login_scratch=("logs", "sessions", "active_sessions.json", "active_sessions.lock",
+                   ".config-init.lock", "managed_config.lock"),
+    login_expected=("auth.json", "config.toml", ".metadata_version", "agent_id", "docs", "README.md"),
+    login_forbidden=("mcp_credentials.json", "mcp.json", "hooks", "plugins", "skills", "lsp.json"),
     capability=DISPATCH_CAPABILITY, output_limit=GROK_OUTPUT_LIMIT,
     version_timeout_seconds=VERSION_TIMEOUT_SECONDS,
     home_id_kind="grok-home")
@@ -264,14 +276,16 @@ class GrokBuildError(HeadlessCliError):
     """Grok Build cannot be driven without breaking one of this adapter's rules."""
 
 
-def grok_pin(executable: str, env_allow: tuple[str, ...] = ()) -> ExecutablePin:
+def grok_pin(executable: str, env_allow: tuple[str, ...] = (), *,
+             auth: str = "api_key", auth_home: str = "") -> ExecutablePin:
     """Grok Build's pin: ONE absolute path, and Grok Build's own refusal type.
 
     One, not two: Grok Build installs as a native binary and runs no
     interpreter, so there is no second half for this build to guess at.
     """
     return ExecutablePin(
-        executable=executable, error=GrokBuildError, env_allow=env_allow)
+        executable=executable, error=GrokBuildError, env_allow=env_allow,
+        auth=auth, auth_home=auth_home)
 
 
 class GrokBuildAdapter(ArtifactAwareTransport):
@@ -302,6 +316,33 @@ class GrokBuildAdapter(ArtifactAwareTransport):
 
     def _env_allow(self) -> tuple[str, ...]:
         return self._pin.env_allow
+
+    def _login(self) -> tuple[str, str]:
+        return self._pin.auth, self._pin.auth_home
+
+    def _login_home_grants(self, home: str) -> tuple[str, ...]:
+        blocked = tuple(name for name in super()._login_home_grants(home) if name != "config.toml")
+        if not login_home.plain_config(home, "config.toml", ({}, {
+                "marketplace": {"default_skills_installs_purged": True}})):
+            blocked += ("config.toml",)
+        selected = self._runner.capture_environment(self._env_allow())
+        if any(selected.native_value(name) is not None for name in GROK_LOGIN_OVERRIDES):
+            blocked += ("environment",)
+        return blocked
+
+    def _attempt_login_status(self, request):
+        return self._attempt(GROK_AUTH_RPC.argv, WORK_DIR,
+            timeout=min(self.profile.version_timeout_seconds, request.timeout_seconds),
+            stdin_bytes=GROK_AUTH_RPC.payload, separate_stderr=True, stdin_completion_id=2)
+
+    def _login_method_admitted(self, output: bytes) -> bool:
+        try:
+            return GROK_AUTH_RPC.decode(output).get("methodId") == "cached_token"
+        except NativeQuotaReadError:
+            return False
+
+    def quota_connection(self):
+        return native_subscription_connection(self, QUOTA_POLICY, GROK_QUOTA_RPC)
 
     def _parsed_version(self, output: bytes) -> str | None:
         r"""The semver this parser reads out of a version print, or ``None``.
@@ -342,3 +383,50 @@ class GrokBuildAdapter(ArtifactAwareTransport):
         rather than a search.
         """
         return self._parsed_version(output) == self.profile.reviewed_version
+
+
+
+
+def _native_quota(payload):
+    """ACP x.ai/billing percentage schema; legacy monetary budgets stay separate."""
+    body = quota_object(payload)
+    windows = []
+    raw = body.get("config")
+    if raw is not None:
+        config = quota_object(raw)
+        period = config.get("currentPeriod")
+        start = reset = duration = None
+        name = "current"
+        if period is not None:
+            period = quota_object(period)
+            kind = period.get("type")
+            periods = {"USAGE_PERIOD_TYPE_WEEKLY": ("weekly", 10080),
+                       "USAGE_PERIOD_TYPE_MONTHLY": ("monthly", None)}
+            if kind is not None:
+                if type(kind) is not str or kind not in periods:
+                    raise QuotaError("unknown Grok usage period")
+                name, duration = periods[kind]
+            start, reset = period.get("start"), period.get("end")
+        windows.append(NativeQuotaWindow("grok-subscription", name,
+            config.get("creditUsagePercent"), reset, duration, start))
+    return NativeQuotaReading(tuple(windows), policy=QUOTA_POLICY)
+
+
+QUOTA_POLICY = QuotaPolicy("xai", "grok-account", "grok-acp", "quota", "rfc3339", _native_quota)
+
+# Native 1.0.5 ACP calibration: these metadata requests do not create a session
+# or send a model prompt. Billing requires the native xAI session auth gate.
+GROK_LOGIN_OVERRIDES = ("XAI_API_KEY", "GROK_CLI_CHAT_PROXY_BASE_URL", "GROK_AUTH_PROVIDER_COMMAND",
+    "GROK_OIDC_ISSUER", "GROK_OIDC_CLIENT_ID", "GROK_DEPLOYMENT_KEY")
+GROK_LOGIN_ARGV = ("login",)
+_RPC_ARGV = ("--no-auto-update", "agent", "stdio")
+_RPC_INIT = (b'{"jsonrpc":"2.0","id":1,"method":"initialize","params":'
+             b'{"protocolVersion":1,"clientCapabilities":{},'
+             b'"clientInfo":{"name":"conduct-quota","version":"1"}}}\n')
+_RPC_INFO = b'{"jsonrpc":"2.0","id":2,"method":"_x.ai/auth/info","params":{}}\n'
+_RPC_NOTIFICATIONS = ("_x.ai/mcp/servers_updated",)
+GROK_AUTH_RPC = SubscriptionRpc(_RPC_ARGV, _RPC_INIT+_RPC_INFO, (1, 2),
+    ("_meta", "defaultAuthMethodId"), "cached_token", _RPC_NOTIFICATIONS)
+GROK_QUOTA_RPC = SubscriptionRpc(_RPC_ARGV, _RPC_INIT+_RPC_INFO+
+    b'{"jsonrpc":"2.0","id":3,"method":"_x.ai/billing","params":{}}\n',
+    (1, 2, 3), ("methodId",), "cached_token", _RPC_NOTIFICATIONS)

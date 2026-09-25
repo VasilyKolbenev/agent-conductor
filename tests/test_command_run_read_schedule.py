@@ -17,6 +17,7 @@ What is held here:
   whole of what a consumer cannot derive for itself.
 """
 from __future__ import annotations
+from tests.human_situation_samples import READ_AT, empty_situation
 
 from conductor.command.graph_projection import graph_payload
 from conductor.command.graph_schedule import schedule
@@ -53,13 +54,13 @@ def recovered(journal=None, *, plan=True) -> RecoveredRun:
 
 
 def payload_of(journal=None, *, plan=True):
-    return graph_payload(recovered(journal, plan=plan))
+    return graph_payload(recovered(journal, plan=plan), computed_at=READ_AT)
 
 
 # -- the shape ----------------------------------------------------------------
 
 
-def test_the_graph_half_of_a_run_read_now_carries_five_keys():
+def test_the_graph_half_of_a_run_read_now_carries_six_keys():
     """The fifth is `success_criteria`: what counts as success for each
     step, derived from the rules that operate rather than stored. It sits
     BESIDE the definition rather than inside it, because a plan's bytes
@@ -68,7 +69,7 @@ def test_the_graph_half_of_a_run_read_now_carries_five_keys():
 
     assert set(payload) == {
         "definition", "definition_digest", "runtime", "schedule",
-        "success_criteria"}
+        "success_criteria", "situation"}
 
 
 def test_a_run_that_follows_no_plan_answers_nulls_and_no_criteria():
@@ -83,7 +84,7 @@ def test_a_run_that_follows_no_plan_answers_nulls_and_no_criteria():
 
     assert payload == {"definition": None, "definition_digest": None,
                        "runtime": None, "schedule": None,
-                       "success_criteria": {}}
+                       "success_criteria": {}, "situation": empty_situation()}
 
 
 def test_the_schedule_states_the_run_word_and_the_three_subsets():
@@ -196,7 +197,7 @@ def test_the_payload_is_the_schedule_entry_for_entry():
     journal.decide("gate-result", "request_changes")
     replayed = recovered(journal)
 
-    served = graph_payload(replayed)["schedule"]
+    served = graph_payload(replayed, computed_at=READ_AT)["schedule"]
     computed = schedule(routed_dalio(),
                         tuple(row.value for row in replayed.records))
 

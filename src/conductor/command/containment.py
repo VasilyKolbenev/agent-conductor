@@ -272,7 +272,7 @@ def run_route_violations(store: StoreRoute, run_id: str) -> tuple[RouteViolation
     """
     run_path = store.run_path(run_id)
     first = first_directory_violation((
-        store.project_root / "conductor", store.runs_root, run_path,
+        store.runs_root.parent, store.runs_root, run_path,
     ))
     if first is None:
         found, failure = _optional_lstat(run_path)

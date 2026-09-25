@@ -39,11 +39,39 @@ def test_empty_registry_reports_no_controls_and_no_schema_guess():
     # The closed guard stays closed on the keys it always held; the isolation
     # projection is a different question and is held literally next door rather
     # than folded into an equality this one would then stop checking.
+    # An unregistered binding states no task channel either (Codex R2): null, never a guess.
     assert [{k: v for k, v in row.items() if k != "isolation"} for row in rows] == [{
         "instance_id": "plain", "adapter_id": "unknown-provider", "model": None,
-        "controls": [], "argument_schemas": {}}]
+        "controls": [], "argument_schemas": {}, "task_channel": None}]
     assert set(rows[0]) == {"instance_id", "adapter_id", "model", "controls",
-                            "argument_schemas", "isolation"}
+                            "argument_schemas", "isolation", "task_channel"}
+
+
+def test_a_bound_adapter_states_the_task_channel_its_grant_would_freeze():
+    """Codex R2: the controls answer and the grant facts read one function off one profile."""
+    from conductor.command.adapters.kimi_code import KIMI_PROFILE
+    from conductor.command.policy_providers import task_channel_fact
+
+    class ArgvAdapter:
+        profile = KIMI_PROFILE
+
+    class Registry:
+        def resolve(self, adapter_id):
+            return ArgvAdapter()
+
+        def controls(self, adapter_id):
+            return ()
+
+        def argument_schema(self, adapter_id, capability):
+            return None
+
+        def isolation_guards(self, adapter_id):
+            return None
+
+    config = {"instances": [{"id": "doer", "adapter": "kimi-code"}]}
+    row = instance_controls(config, Registry())[0]
+    assert row["task_channel"] == task_channel_fact(KIMI_PROFILE) == {
+        "channel": "argv", "limit": 32767, "unit": "utf16_units", "scope": "command_line"}
 
 
 def test_a_registration_that_is_absent_claims_no_protection_at_all():

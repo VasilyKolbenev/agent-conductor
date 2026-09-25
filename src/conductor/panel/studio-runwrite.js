@@ -14,7 +14,7 @@
 // It composes no body either. The CONTROL builds those, out of the plan node
 // the schedule chose and the two facts a person typed; everything here is
 // about what happens AROUND the request.
-import {DOCUMENT_KEY, PUBLISHED_NOTE} from "./studio-rundocs.js";
+import {DOCUMENT_KEY, PUBLISHED_NOTE, publishedNote} from "./studio-rundocs.js";
 import {PROPOSED_NOTE, READ_AGAIN, REQUESTED_NOTE, STEP_MOVED}
   from "./studio-runstep.js";
 
@@ -59,7 +59,7 @@ export function stepWriters(door) {
       if (!STEP_MOVED.includes(result.code)
           || asked !== door.chosenRun()) return;
       door.dispatch({type: "status",
-        notice: `${door.said(result.code)} ${READ_AGAIN}`});
+        notice: [door.said(result.code), {key: "runstep.read_again"}]});
       door.refreshRun(asked);
     // Whatever became of it -- accepted, refused, retired by a dropped stream,
     // or never sent because the line was down -- this write is over. `write`
@@ -73,14 +73,13 @@ export function stepWriters(door) {
   return Object.freeze({
     chooseStep: (nodeId) => door.dispatch({type: "step-chosen", nodeId}),
     editStep: (patch) => door.dispatch({type: "step-edit", patch}),
-    proposeStep: (row) => onStepWrite("proposals", row, PROPOSED_NOTE),
-    confirmStep: (row) => onStepWrite("actions", row, REQUESTED_NOTE),
+    proposeStep: (row) => onStepWrite("proposals", row, {key: "runstep.proposed_note"}),
+    confirmStep: (row) => onStepWrite("actions", row, {key: "runstep.requested_note"}),
   });
 }
 
 //: What an accepted decision MEANS, said by the window after it lands.
-export const DECIDED = "The decision is a durable receipt in this run's journal. "
-  + "Nothing was executed by answering.";
+export const DECIDED = Object.freeze({key: "notice.decided"});
 
 /**
  * The one callback the Decisions screen's form is handed.
@@ -101,7 +100,7 @@ export function decisionWriters(door) {
     if (!row || !door.isId(row.run_id) || !door.isId(row.gate_id)
         || !door.isId(draft.actor)) {
       door.dispatch({type: "status",
-        notice: "Name the deciding person before recording a decision."});
+        notice: {key: "notice.actor_missing"}});
       return;
     }
     // WHICH receipt this answer replaces, or none. A gate askable again while
@@ -172,7 +171,7 @@ export function documentWriters(door) {
     door.write("artifacts", asked, row.body, () => {
       door.dispatch({type: "step-answered", runId: asked, nodeId: DOCUMENT_KEY});
       if (asked !== door.chosenRun()) return;
-      door.dispatch({type: "status", notice: PUBLISHED_NOTE});
+      door.dispatch({type: "status", notice: publishedNote(door.state ? door.state() : {})});
       door.dispatch({type: "document-spent", runId: asked,
         generation: row.generation});
       door.refreshRun(asked);
@@ -180,7 +179,7 @@ export function documentWriters(door) {
       if (!STEP_MOVED.includes(result.code)
           || asked !== door.chosenRun()) return;
       door.dispatch({type: "status",
-        notice: `${door.said(result.code)} ${READ_AGAIN}`});
+        notice: [door.said(result.code), {key: "runstep.read_again"}]});
       door.refreshRun(asked);
     }).finally(() => door.dispatch({type: "step-writing", ...spent,
       writing: false}));

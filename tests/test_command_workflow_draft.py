@@ -373,7 +373,7 @@ def test_a_foreign_draft_is_refused_and_nothing_at_all_is_stored(tmp_path, reaso
 
 def test_a_draft_missing_one_of_its_own_words_is_refused_as_foreign(tmp_path):
     """The key set is CLOSED in both directions, not merely bounded above."""
-    for absent in sorted(DRAFT_FIELDS):
+    for absent in sorted(DRAFT_FIELDS - {"execution_contract"}):
         document = a_document()
         document.pop(absent)
         with pytest.raises(WorkflowDraftError) as refused:
@@ -565,7 +565,8 @@ def test_the_starters_are_read_off_the_wheel_and_are_nobodys_workflow(tmp_path):
     assert store.workflows() == () and workflow_rows(store) == []
 
     rows = starters()
-    assert [row["starter_id"] for row in rows] == sorted(
+    assert rows[0]["starter_id"] == "dalio-v5"
+    assert sorted(row["starter_id"] for row in rows) == sorted(
         path.stem for path in TEMPLATE_DIR.glob("*.json"))
     for row in rows:
         assert set(row) == {"starter_id", "title", "revision", "caveats",
@@ -597,8 +598,11 @@ def test_a_starter_carries_what_tells_it_apart_from_the_other_one():
     moved to fix a picker.
     """
     rows = {row["starter_id"]: row for row in starters()}
-    assert {row["title"] for row in rows.values()} == {"Dalio five-step cycle"}, (
+    historical = [rows[name] for name in ("dalio-v1", "dalio-v2", "dalio-v3")]
+    assert {row["title"] for row in historical} == {"Dalio five-step cycle"}, (
         "the starters stopped sharing a title; this test's premise is gone")
+    assert rows["dalio-v4"]["title"] == rows["dalio-v5"]["title"] == "Стандартный цикл"
+    assert rows["dalio-v4"]["caveats"] == rows["dalio-v5"]["caveats"] == []
 
     assert rows["dalio-v1"]["revision"] == 1
     assert rows["dalio-v2"]["revision"] == 2

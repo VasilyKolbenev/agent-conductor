@@ -19,6 +19,8 @@ from conductor.command.contracts import (
 )
 from conductor.command.run_store import CorruptRun, RunStore, StoreError
 from conductor.command.run_terminal import RunTerminal
+from conductor.command.run_authorization import RunAuthorization, RunAuthorizationControl
+from conductor.command.correction_feedback import CorrectionFeedback
 
 from tests.test_command_run_store import (
     CONFIG,
@@ -127,6 +129,9 @@ def test_the_record_registry_is_exactly_this_closed_set_of_contract_identity_pai
         "artifact": (ArtifactDocument, "artifact_id"),
         "graph_definition": (GraphDefinition, "graph_id"),
         "run_terminal": (RunTerminal, "terminal_id"),
+        "run_authorization": (RunAuthorization, "authorization_id"),
+        "run_authorization_control": (RunAuthorizationControl, "control_id"),
+        "correction_feedback": (CorrectionFeedback, "feedback_id"),
     }
 
 

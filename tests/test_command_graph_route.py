@@ -12,6 +12,7 @@ a run list are a later slice, so a second plan is a question this product cannot
 answer and is refused rather than stored beside the first.
 """
 from __future__ import annotations
+from tests.human_situation_samples import empty_situation
 
 import json
 import os
@@ -671,7 +672,7 @@ def test_a_run_that_follows_no_plan_still_answers_the_graph_key(tmp_path):
         # An empty MAP rather than a fifth null, and the difference is
         # honest: the four above are one document that is not there, and
         # this is a per-step reading over no steps.
-        "success_criteria": {}}
+        "success_criteria": {}, "situation": empty_situation(NOW)}
 
 
 def test_a_run_whose_journal_does_not_replay_is_given_no_projection_at_all(

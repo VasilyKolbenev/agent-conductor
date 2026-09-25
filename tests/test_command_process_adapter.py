@@ -179,6 +179,21 @@ def test_execute_maps_a_nonzero_exit_to_failed(adapters):
     assert receipt.exit_code == 3
 
 
+def test_an_undelivered_input_that_exited_zero_is_a_failure_the_runtime_admits(adapters):
+    """`failed` carrying exit 0 is refused by the runtime and recorded as `unknown`: the defect
+    the first real subscription login surfaced on the harness road (23.09.2026), in this shape."""
+    from conductor.command.adapters.process import STDIN_INCOMPLETE, ProcessOutcome
+    from conductor.command.runtime import ControlRuntime
+
+    adapter = adapters()
+    prepared = adapter.prepare(_request())
+    adapter._runner.run = lambda spec: ProcessOutcome(
+        "completed", 0, b"", False, spec.output_limit, 0, "synthetic", STDIN_INCOMPLETE)
+    receipt = adapter.execute(prepared)
+    assert receipt.outcome == "failed" and receipt.exit_code is None
+    assert ControlRuntime._valid_observed_result(receipt)
+
+
 def test_execute_maps_a_timeout_to_failed_never_succeeded(adapters):
     """The runner's distinct timeout fact reaches the receipt as failure, not success."""
     adapter = adapters({SLEEP: "5"})

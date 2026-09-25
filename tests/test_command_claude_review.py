@@ -13,6 +13,7 @@ from conductor.command.adapters.claude_code import (
     PRINT_FLAG,
     REVIEW_PERMISSION_MODE_ARGV,
     REVIEW_PROMPT,
+    VERDICT_PROMPT,
 )
 from conductor.command.adapters.deep_commands import DeepReviewArgs
 from conductor.command.artifacts import ArtifactDocument
@@ -231,6 +232,18 @@ def test_review_that_changes_the_tree_is_not_verified_or_published(tmp_path):
     assert [row.kind for row in produced] == ["artifact"]
 
 
+def test_a_review_that_imports_the_projects_python_leaves_no_bytecode_behind(tmp_path):
+    """MEASURED live (live-v5-9): a reviewer imported the task's module, Python wrote
+    `__pycache__/*.pyc` into the work tree, and the review's own check refused the changed tree."""
+    work = tmp_path / "root" / "work" / "work-001"
+    work.mkdir(parents=True)
+    (work / "helper_module.py").write_bytes(b"VALUE = 1\n")
+    attempt, _store, _adapter, _seed, _log, _root = _run(
+        tmp_path, **{_fakeclaude.IMPORT_WORK: "helper_module"})
+    assert not (work / "__pycache__").exists()
+    assert attempt.state is AttemptState.SUCCEEDED, attempt.receipt.detail
+
+
 def test_blank_review_output_cannot_become_an_artifact(tmp_path):
     attempt, store, _adapter, _seed, _log, _root = _run(
         tmp_path, **{_fakeclaude.EMIT_REVIEW: ""})
@@ -252,12 +265,45 @@ def test_invalid_utf8_review_output_cannot_become_an_artifact(tmp_path):
     assert [row.kind for row in produced] == ["artifact"]
 
 
-def test_truncated_review_output_stops_before_artifact_verification(tmp_path):
+def test_a_review_as_long_as_an_artifact_may_be_is_published(tmp_path):
+    """MEASURED live (23.09.2026): `identify` wrote 14.5 KiB and `diagnose` failed at the 16 KiB
+    capture ceiling although an artifact may hold 48 KiB; the review's ceiling is now the artifact's."""
     attempt, store, _adapter, _seed, _log, _root = _run(
         tmp_path,
         **{_fakeclaude.EMIT_REVIEW: "", _fakeclaude.BOMB_BYTES: "20000"})
 
+    assert attempt.state is AttemptState.SUCCEEDED, attempt.receipt.detail
+    published = [row.value for row in _records(store) if row.kind == "artifact"][-1]
+    assert len(published.content.encode("utf-8")) >= 20000
+
+
+def test_the_review_capture_ceiling_is_the_artifact_bound_and_a_dispatch_keeps_its_plan_limit():
+    from conductor.command.adapters.claude_code import CLAUDE_PROFILE
+    from conductor.command.adapters.codex_cli import CODEX_PROFILE
+    from conductor.command.adapters.deep_commands import OUTPUT_LIMIT_BYTES
+    from conductor.command.adapters.harness_profile import bounded_output
+    from conductor.command.artifacts import ARTIFACT_CONTENT_LIMIT
+
+    for profile in (CLAUDE_PROFILE, CODEX_PROFILE):
+        assert profile.output_limit == ARTIFACT_CONTENT_LIMIT
+        assert bounded_output(profile, OUTPUT_LIMIT_BYTES["normal"]) == 16 * 1024
+
+
+def test_both_claude_prompts_name_the_final_reply_not_a_file_or_plan_as_the_deliverable():
+    """MEASURED live (live-v5-4): a plan-mode review answered with a pointer to its plan file."""
+    for prompt in (REVIEW_PROMPT, VERDICT_PROMPT):
+        assert "Your final reply" in prompt and "pointer to a file or plan" in prompt
+        assert "\n" not in prompt and not prompt.startswith("-")
+
+
+def test_truncated_review_output_stops_before_artifact_verification(tmp_path):
+    attempt, store, _adapter, _seed, _log, _root = _run(
+        tmp_path,
+        **{_fakeclaude.EMIT_REVIEW: "", _fakeclaude.BOMB_BYTES: "60000"})
+
     assert attempt.state is AttemptState.FAILED
+    assert attempt.receipt.detail == (
+        "adapter reported failed: its output was longer than the capture bound")
     produced = [row for row in _records(store)
                 if row.kind in ("artifact", "evidence")]
     assert [row.kind for row in produced] == ["artifact"]

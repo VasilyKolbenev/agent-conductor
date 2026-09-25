@@ -27,6 +27,8 @@ from __future__ import annotations
 import re
 
 from tests.test_studio_canvas import INSPECTOR, PANEL, _code
+from tests.studio_source_messages import _code, message_english
+from tests.test_studio_runs import frozen_pairs
 
 
 def test_a_connection_offers_the_words_its_own_source_can_produce():
@@ -97,22 +99,27 @@ def test_a_blocked_join_says_that_ALL_incoming_roads_are_required():
     the step to start as soon as one branch arrived, and would read the plan as
     doing something it never does.
 
-    The sentence is DECLARED in `studio-runwords.js` and spent here. It moved
-    there when a second screen had to say it -- the Decisions screen, about a
-    gate that cannot be answered yet -- and one rule written out in two files
-    is one rule that can be said two ways. What this holds is unchanged: the
-    Runs screen states the AND-only rule where a step is blocked, and states
-    nothing weaker anywhere.
+    The sentence is reached through the catalogue and judged as the Runs
+    screen RENDERS it, on the branch that lists the roads a step waits on:
+    the Runs screen states the AND-only rule where a step is blocked, and
+    states nothing weaker anywhere.
     """
     runs = _code(PANEL / "studio-runs.js")
-    words = _code(PANEL / "studio-runwords.js")
-    sentence = re.search(r'ALL_ROADS = "(.+?)";', words, re.DOTALL)
-    assert sentence, "no module declares the join rule"
-    assert sentence.group(1).replace('"\n  + "', "").startswith(
-        "ALL incoming roads must open")
-    assert "ALL_ROADS," in runs, "the Runs screen no longer reads the join rule"
-    assert "note(ALL_ROADS)" in _plan_standing(runs)
+    assert ('      item.append(fact(state, "Waiting on", roads.join(", ")));\n'
+            '      item.append(note("ALL incoming roads must open before this '
+            'step may run."));') in _plan_standing(runs)
     assert "waiting for a predecessor" not in runs.lower()
+    # One sentence, one owner: every copy of the AND-join rule is the words module's own.
+    owner = _js_constant(PANEL / "studio-runwords.js", "ALL_ROADS")
+    assert message_english("runs.all_roads") == owner
+    assert owner in message_english("agents.waiting")
+
+
+def _js_constant(path, name: str) -> str:
+    """A string constant spelled across `+` continuations, joined back into one."""
+    found = re.search(rf'export const {name} = ((?:"[^"]*"\s*\+?\s*)+);', path.read_text(encoding="utf-8"))
+    assert found is not None, f"no constant {name}"
+    return "".join(re.findall(r'"([^"]*)"', found.group(1)))
 
 
 def _plan_standing(runs: str) -> str:
@@ -130,7 +137,7 @@ def _plan_standing(runs: str) -> str:
     handed in now is the ANSWER, computed from the records next door.
     """
     body = re.search(
-        r"function planStanding\(item, standing, flying\) \{(.*?)\n\}",
+        r"function planStanding\(state, item, standing, flying\) \{(.*?)\n\}",
         runs, re.DOTALL)
     assert body is not None, (
         "studio-runs.js declares no planStanding(item, standing, flying)")
@@ -150,18 +157,18 @@ def test_a_blocked_step_with_nothing_else_to_say_says_which_of_the_two_it_is():
     Both sentences are held, and so is what CHOOSES between them.
     """
     runs = _code(PANEL / "studio-runs.js")
-    owed = re.search(r"function stillOwed\(flying\) \{(.*?)\n\}", runs,
+    owed = re.search(r"function stillOwed\(state, flying\) \{(.*?)\n\}", runs,
                      re.DOTALL)
     assert owed is not None, "studio-runs.js says nothing about a bare blocked"
     said = owed.group(1)
-    assert "An attempt on this step is still in flight; the plan offers it " \
-        "again \"\n      + \"only after that attempt answers." in said, said
-    assert "Nothing further is offered in this run: it was halted." in said
+    assert ('? "An attempt on this step is still in flight; the plan offers it '
+            'again only after that attempt answers."') in said, said
+    assert ': "Nothing further is offered in this run: it was halted."' in said
     # And it is REACHED: a sentence nothing calls is a row that still says
     # nothing. The call sits on the branch where no road and no document is
     # named, which is the branch that used to fall through.
     assert "} else if (!awaited.length) {\n      item.append(note(stillOwed(" \
-        "flying)));" in _plan_standing(runs)
+        "state, flying)));" in _plan_standing(runs)
 
 
 def test_an_attempt_is_in_flight_by_the_records_and_never_by_the_phase():
@@ -202,7 +209,7 @@ def test_an_attempt_is_in_flight_by_the_records_and_never_by_the_phase():
     # The RUNTIME row's id, never the plan node's: a runtime row the definition
     # does not name arrives with an empty node, and an absent id would match
     # every unbound request in the journal.
-    assert "planStanding(item, plan, attemptInFlight(detail, runtime.node_id));" \
+    assert "planStanding(state, item, plan, attemptInFlight(detail, runtime.node_id));" \
         in runs, runs
     # And the phase-based reading is gone from this screen entirely.
     assert "IN_FLIGHT" not in runs, "the phase list survived the correction"
@@ -231,10 +238,16 @@ def test_the_plan_word_is_never_drawn_as_a_success():
     apart are stated beside it.
     """
     runs = _code(PANEL / "studio-runs.js")
-    body = re.search(r"function planWord\(graph\) \{(.*?)\n\}",
+    body = re.search(r"function planWord\(state, graph\) \{(.*?)\n\}",
                      runs, re.DOTALL).group(1)
     assert 'chip("none", word)' in body, body
     assert 'chip("pass"' not in body, body
     assert "bound reached" in body, body
     assert "Last gate answer" in body and "Last outcome" in body, body
-    assert "does NOT mean the run " in runs
+    # The word's meaning is looked up by the schedule's own word, through the
+    # one table that names a message per word; the row that table names for
+    # `complete` is what a person reads, and it says what the word is not.
+    assert "localize(state, PLAN_WORDS[word])" in body, body
+    meanings = frozen_pairs(PANEL / "studio-runs.js", "PLAN_WORDS")
+    assert set(meanings) == {"open", "complete", "stalled"}, meanings
+    assert "does NOT mean the run " in message_english(meanings["complete"])

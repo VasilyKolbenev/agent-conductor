@@ -1,4 +1,5 @@
 "use strict";
+import {localize} from "./studio-i18n.js";
 // The node inspector's FRAME: which document is open, which node is selected,
 // what a run bound to it, and where the six sections go. The sections
 // themselves and the primitives they are built from live in
@@ -202,18 +203,18 @@ export function capabilityRoster(state) {
 
 function edgePanel(mount, form, id) {
   const parts = String(id).split(" ");
-  const box = panelOf("edge", "Connection");
+  const box = panelOf("edge", localize(form.state || {}, "workflow.copy_133"));
   if (parts.length !== 2) {
-    note(box, "This selection does not name two steps.");
+    note(box, localize(form.state || {}, "workflow.copy_134"));
     mount.append(box);
     return;
   }
-  context(box, "From", parts[0], "the workflow document");
-  context(box, "To", parts[1], "the workflow document");
+  context(box, localize(form.state || {}, "workflow.copy_135"), parts[0], localize(form.state || {}, "workflow.copy_136"));
+  context(box, localize(form.state || {}, "workflow.copy_137"), parts[1], localize(form.state || {}, "workflow.copy_138"));
   edgeConditionRow(box, form, parts[0], parts[1]);
   const drop = element("button", {className: "studio-action",
     "data-action": "delete-edge", "data-focus": "action-delete-edge",
-    type: "button"}, [element("span", {text: "Disconnect"})]);
+    type: "button"}, [element("span", {text: localize(form.state || {}, "workflow.copy_139")})]);
   drop.addEventListener("click", () => call(form.handlers, "onEdit", {
     type: "delete-edge", fromId: parts[0], toId: parts[1]}));
   box.append(editable(drop, form));
@@ -222,31 +223,39 @@ function edgePanel(mount, form, id) {
 
 // -- focus, kept across an idempotent re-render ----------------------------
 
+//: A text control's caret belongs to the step it was typed into: the subject this mount was
+//: last drawn for, read before the pass redraws it (`studio-focus.js` says the same shell-wide).
 function focusKey(mount) {
   const active = document.activeElement;
-  if (!active || !mount.contains(active)) return null;
-  return active.getAttribute ? active.getAttribute("data-focus") : null;
+  if (!active || !mount.contains(active) || !active.getAttribute) return null;
+  const key = active.getAttribute("data-focus");
+  return key ? {key, subject: typeof active.selectionStart === "number"
+    ? mount.getAttribute("data-subject") : null} : null;
 }
 
 function restoreFocus(mount, key) {
   if (!key) return;
-  const successor = mount.querySelector(`[data-focus="${key}"]`);
+  if (key.subject !== null && key.subject !== mount.getAttribute("data-subject")) return;
+  const successor = mount.querySelector(`[data-focus="${key.key}"]`);
   if (successor) successor.focus();
 }
 
-function documentHeader(shown) {
+//: Which document, which workflow and which step or connection this pass draws.
+function subjectOf(state, shown, selection) {
+  const workflows = isObject(state) && isObject(state.workflows) ? state.workflows : {};
+  return JSON.stringify([workflows.selectedId ?? null, shown.kind, shown.revision,
+    selection.kind, selection.id ?? null]);
+}
+
+function documentHeader(shown, state) {
   const head = element("div", {className: "studio-inspector__head",
     "data-document": shown.kind});
   head.append(element("p", {className: "studio-inspector__document",
     text: shown.kind === "draft"
-      ? "Editing the DRAFT. Every change below is written to this workflow's "
-        + "draft document, which is stored on the server."
+      ? localize(state, "workflow.copy_140")
       : shown.kind === "published"
-        ? `Showing published revision${shown.revision === null ? ""
-          : ` ${shown.revision}`}. A published revision is immutable, so every `
-          + "control here is disabled. Edit as new draft copies it into a "
-          + "draft you can change; this revision stays exactly as it is."
-        : "No workflow document is open."}));
+        ? localize(state, "workflow.published", {revision: shown.revision === null ? "" : ` ${shown.revision}`})
+        : localize(state, "workflow.copy_142")}));
   return head;
 }
 
@@ -266,9 +275,10 @@ export function mountInspector(mount, state, handlers) {
   const edges = rows(shown.document && shown.document.edges).filter(
     (row) => isObject(row) && typeof row.from_node === "string"
       && typeof row.to_node === "string");
-  const base = {capabilities: capabilityRoster(state), edges,
+  const base = {state, capabilities: capabilityRoster(state), edges,
     editable: shown.kind === "draft", handlers, nodes};
-  mount.replaceChildren(documentHeader(shown));
+  mount.setAttribute("data-subject", subjectOf(state, shown, selection));
+  mount.replaceChildren(documentHeader(shown, state));
   if (selection.kind === "edge") {
     edgePanel(mount, base, selection.id);
     restoreFocus(mount, key);
@@ -277,8 +287,7 @@ export function mountInspector(mount, state, handlers) {
   const node = nodes.find((row) => row.node_id === selection.id);
   if (!node) {
     mount.append(element("p", {className: "studio-inspector__empty", text:
-      "No step is selected. Choose one on the canvas, or press an arrow key "
-      + "with the canvas focused."}));
+      localize(state, "workflow.copy_143")}));
     restoreFocus(mount, key);
     return;
   }

@@ -24,7 +24,7 @@ PRIOR records, and both stay silent on a run that follows no plan.
 Two things it deliberately does NOT do. It never makes a gate easier to pass:
 `reject` and `request_changes` stay legal, and there are positive controls on
 the very same gate below. And it does not quietly change any plan already
-written -- absent means every answer a gate has always had, so all three shipped
+written -- absent means every answer a gate has always had, so all shipped
 starters digest exactly as they did.
 """
 from __future__ import annotations
@@ -63,7 +63,7 @@ from tests.test_command_run_store import CONFIG, a_run
 NOW = "2026-09-02T10:00:00Z"
 RUN_ID = "run-001"
 SOLO = {"instances": [{"id": "solo", "adapter": "claude-code"}]}
-STARTERS = ("dalio-v1", "dalio-v2", "dalio-v3")
+STARTERS = ("dalio-v1", "dalio-v2", "dalio-v3", "dalio-v4", "dalio-v5")
 DEMAND = "human_approval"
 #: Every answer a gate can carry that is NOT the one this field removes. Each
 #: stays legal on a protected gate, and each has a witness saying so.
@@ -226,13 +226,17 @@ def test_a_shipped_starter_demands_nothing_and_digests_as_it_always_did(starter)
     """Asked of the CONTRACT's own rendering rather than the file on disk: the
     file cannot change by adding a field here, but the RENDERER can."""
     from tests.test_alpha6_dalio_revision import (
+        REVISION_FIVE_DIGEST,
+        REVISION_FOUR_DIGEST,
         REVISION_ONE_DIGEST,
         REVISION_THREE_DIGEST,
         REVISION_TWO_DIGEST,
     )
 
     pinned = {"dalio-v1": REVISION_ONE_DIGEST, "dalio-v2": REVISION_TWO_DIGEST,
-              "dalio-v3": REVISION_THREE_DIGEST}[starter]
+              "dalio-v3": REVISION_THREE_DIGEST,
+              "dalio-v4": REVISION_FOUR_DIGEST,
+              "dalio-v5": REVISION_FIVE_DIGEST}[starter]
     template = load_template(starter)
     assert [node.success_requires for node in template.nodes] == (
         [None] * len(template.nodes))
@@ -243,10 +247,11 @@ def test_a_shipped_starter_demands_nothing_and_digests_as_it_always_did(starter)
         f"{starter} no longer renders the document it was reviewed with")
 
 
-def test_the_shipped_starters_really_carry_gates_and_this_is_not_vacuous():
+@pytest.mark.parametrize("starter", STARTERS)
+def test_the_shipped_starters_really_carry_gates_and_this_is_not_vacuous(starter):
     """The control on the measurement above: a starter with no gate would
     satisfy it while proving nothing about gates."""
-    gates = [node.node_id for node in load_template("dalio-v3").nodes
+    gates = [node.node_id for node in load_template(starter).nodes
              if node.kind == "gate"]
 
     assert len(gates) >= 2, gates

@@ -286,10 +286,16 @@ def test_every_work_bearing_step_of_a_shipped_cycle_carries_the_runs_task(shippe
     """
     template = load_template(shipped)
     roles = {step.role_id for step in template.steps() if step.role_id}
-    roles |= {step.verifier_role_id for step in template.steps() if step.verifier_role_id}
+    verifier_roles = {step.verifier_role_id for step in template.steps() if step.verifier_role_id}
+    roles |= verifier_roles
+    config = bound_to("a")
+    if verifier_roles:
+        config = {**config, "instances": [*config["instances"],
+            {**config["instances"][0], "id": "checker"}]}
     definition = materialize(
-        template, RunBinding.from_dict({"assignments": {role: "solo" for role in roles}}),
-        bound_to("a"), graph_id="graph-shipped", run_id="run-shipped", created_at=NOW)
+        template, RunBinding.from_dict({"assignments": {
+            role: "checker" if role in verifier_roles else "solo" for role in roles}}),
+        config, graph_id="graph-shipped", run_id="run-shipped", created_at=NOW)
     working = [node for node in definition.nodes if "work_item_id" in node.payload()]
     assert working, shipped
     assert {node.node_id: node.payload().get("work_scope") for node in working} == {

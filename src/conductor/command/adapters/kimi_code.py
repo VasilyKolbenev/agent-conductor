@@ -66,6 +66,18 @@ the only credential road the vendor documents as reading the shell.
 """
 from __future__ import annotations
 
+import hashlib
+import json
+from . import login_home
+from .jsonl_completion import decode_line
+from .quota_connection import NativeQuotaDeferred, NativeQuotaReader, NativeQuotaReadError
+from .subscription_quota import _Turn, _clean
+
+from .quota_contracts import (
+    NativeQuotaReading, NativeQuotaWindow, QuotaError, QuotaPolicy,
+    quota_object, quota_percentage,
+)
+
 from collections.abc import Callable
 from pathlib import Path
 
@@ -143,6 +155,10 @@ KIMI_PROFILE = HarnessProfile(
     forced_env=((KIMI_TELEMETRY_ENV, TELEMETRY_DISABLED),),
     version_argv=VERSION_ARGV,
     home_id_kind="kimi-home",
+    login_argv=("acp",), login_command=("login",),
+    login_credentials=(), login_expected=("config.toml", "credentials", "server.token", "region"),
+    login_scratch=("logs", "sessions", "server", "cache", "data", "device_id", "migrations-effort.json", "workspaces.json"),
+    login_forbidden=("hooks", "plugins", "skills", "mcp.json", "agents"),
     exit_codes_published=False, capability=DISPATCH_CAPABILITY,
     output_limit=KIMI_OUTPUT_LIMIT,
     version_timeout_seconds=VERSION_TIMEOUT_SECONDS)
@@ -152,7 +168,8 @@ class KimiCodeError(HeadlessCliError):
     """Kimi Code cannot be driven without breaking one of this adapter's rules."""
 
 
-def kimi_pin(executable: str, env_allow: tuple[str, ...] = ()) -> ExecutablePin:
+def kimi_pin(executable: str, env_allow: tuple[str, ...] = (), *,
+             auth: str = "api_key", auth_home: str = "") -> ExecutablePin:
     """Kimi Code's pin: ONE absolute path, and Kimi Code's own refusal type.
 
     One, not two: Kimi Code installs as a native binary and runs no interpreter,
@@ -161,7 +178,8 @@ def kimi_pin(executable: str, env_allow: tuple[str, ...] = ()) -> ExecutablePin:
     inventing one is the discovery this factory exists to refuse.
     """
     return ExecutablePin(
-        executable=executable, error=KimiCodeError, env_allow=env_allow)
+        executable=executable, error=KimiCodeError, env_allow=env_allow,
+        auth=auth, auth_home=auth_home)
 
 
 class KimiCodeAdapter(ArtifactAwareTransport):
@@ -202,3 +220,238 @@ class KimiCodeAdapter(ArtifactAwareTransport):
 
     def _env_allow(self) -> tuple[str, ...]:
         return self._pin.env_allow
+
+    def _login(self):
+        return self._pin.auth, self._pin.auth_home
+
+    def _login_home_grants(self, home):
+        blocked = super()._login_home_grants(home)
+        if not _managed_profile(login_home.profile_document(home, "config.toml")):
+            blocked += ("config.toml",)
+        selected = self._runner.capture_environment(self._env_allow())
+        if any(name.startswith("KIMI_") and name not in (KIMI_HOME_ENV, KIMI_TELEMETRY_ENV)
+               and selected.native_value(name) is not None for name in self._env_allow()):
+            blocked += ("environment",)
+        return blocked
+
+    def _login_secrets(self):
+        home = self._signed_in_road()
+        config = login_home.profile_document(home, "config.toml") if home else None
+        key = _managed_profile(config)
+        if not key:
+            return ()
+        return login_home.nested_credentials(home, "credentials", (key.removeprefix("oauth/")+".json",))
+
+    def _attempt_login_status(self, request):
+        return self._attempt(("acp",), WORK_DIR,
+            timeout=min(self.profile.version_timeout_seconds, request.timeout_seconds),
+            stdin_bytes=KIMI_AUTH_INPUT, separate_stderr=True, stdin_completion_id=2)
+
+    def _login_method_admitted(self, output):
+        try:
+            rows = [decode_line(line) for line in output.splitlines()]
+            if len(rows) != 2 or {row.get("id") for row in rows} != {1, 2}:
+                return False
+            if any(type(row.get("id")) is not int or "method" in row or "error" in row
+                   or type(row.get("result")) is not dict for row in rows):
+                return False
+            replies = {row["id"]: row["result"] for row in rows}
+            return replies[1].get("protocolVersion") == 1 and replies[2] == {}
+        except (ValueError, UnicodeError, RecursionError, TypeError):
+            return False
+
+    def quota_connection(self):
+        if not self._signed_in_road():
+            return NativeQuotaReader(LIVE_QUOTA_POLICY, self.profile.reviewed_version,
+                                     reason="not_supported", transport="loopback")
+        def read(wait, fetch, choose_port):
+            try:
+                return _read_local_usage(self, wait, fetch, choose_port)
+            except (NativeQuotaReadError, NativeQuotaDeferred):
+                raise
+            except Exception:
+                raise NativeQuotaReadError() from None
+        return NativeQuotaReader(LIVE_QUOTA_POLICY, self.profile.reviewed_version,
+                                 read, transport="loopback")
+
+
+
+
+def _native_quota(payload):
+    """The complete local /api/v1/oauth/usage response envelope."""
+    body = quota_object(payload)
+    if type(body.get("code")) is not int:
+        raise QuotaError("missing Kimi response code")
+    if body["code"] != 0:
+        return NativeQuotaReading(error=True, policy=QUOTA_POLICY)
+    data = quota_object(body.get("data"))
+    if data.get("kind") == "error":
+        return NativeQuotaReading(error=True, policy=QUOTA_POLICY)
+    if data.get("kind") != "ok":
+        raise QuotaError("unknown Kimi usage response kind")
+    windows = []
+    quota = data.get("quota")
+    usages = None if quota is None else quota_object(quota).get("usages")
+    if usages is None:
+        return NativeQuotaReading(policy=QUOTA_POLICY)
+    usages = quota_object(usages)
+    for name, duration in (("limit5h", 300), ("limit7d", 10080),
+                           ("monthTotal", None), ("monthCode", None)):
+        raw = usages.get(name)
+        if raw is None:
+            continue
+        row = quota_object(raw)
+        ratio = row.get("usedRatio")
+        if ratio is not None:
+            ratio = quota_percentage(ratio)
+            if ratio > 1:
+                raise QuotaError("invalid Kimi usage ratio")
+        windows.append(NativeQuotaWindow("kimi-subscription", name,
+            None if ratio is None else ratio * 100, row.get("resetAt"), duration))
+    return NativeQuotaReading(tuple(windows), policy=QUOTA_POLICY)
+
+
+QUOTA_POLICY = QuotaPolicy("moonshot", "kimi-oauth-userinfo", "kimi-local-server",
+                           "quota", "rfc3339", _native_quota)
+
+
+KIMI_LOGIN_ARGV = ("login",)
+KIMI_AUTH_INPUT = (b'{"jsonrpc":"2.0","id":1,"method":"initialize","params":'
+    b'{"protocolVersion":1,"clientCapabilities":{}}}\n'
+    b'{"jsonrpc":"2.0","id":2,"method":"authenticate","params":{"methodId":"login"}}\n')
+_KIMI_REGIONS = {"https://api.kimi.com/coding/v1": "https://auth.kimi.com",
+                 "https://api.kimi.ai/coding/v1": "https://auth.kimi.ai"}
+
+
+def _managed_profile(config):
+    """Accept native managed login configuration, not a user API-key provider."""
+    if type(config) is not dict or set(config) - {
+            "providers", "models", "default_model", "default_provider", "thinking", "services"}:
+        return None
+    providers = config.get("providers")
+    if type(providers) is not dict or set(providers) != {"managed:kimi-code"}:
+        return None
+    provider = providers["managed:kimi-code"]
+    if type(provider) is not dict or set(provider) != {"type", "base_url", "api_key", "oauth"}:
+        return None
+    if provider["type"] != "kimi" or provider["api_key"] != "":
+        return None
+    base = provider["base_url"]
+    if type(base) is not str or base not in _KIMI_REGIONS:
+        return None
+    oauth = provider["oauth"]
+    host = _KIMI_REGIONS[base]
+    key = "oauth/kimi-code" if host.endswith(".com") else "oauth/kimi-code-env-" + hashlib.sha256(
+        json.dumps({"oauthHost": host, "baseUrl": base}, separators=(",", ":")).encode()).hexdigest()[:16]
+    allowed = {"storage": "file", "key": key}
+    if type(oauth) is not dict or oauth not in (allowed, {**allowed, "oauth_host": host}):
+        return None
+    models = config.get("models")
+    default = config.get("default_model")
+    if type(models) is not dict or type(default) is not str or default not in models:
+        return None
+    if config.get("default_provider", "managed:kimi-code") != "managed:kimi-code":
+        return None
+    for name, model in models.items():
+        if (type(name) is not str or not name.startswith("kimi-code/") or type(model) is not dict
+                or model.get("provider") != "managed:kimi-code" or set(model) - {
+                    "provider", "model", "max_context_size", "capabilities", "display_name",
+                    "protocol", "beta_api", "adaptive_thinking", "support_efforts", "default_effort"}):
+            return None
+    services = config.get("services", {})
+    if type(services) is not dict or set(services) - {"moonshot_search", "moonshot_fetch"}:
+        return None
+    for name, row in services.items():
+        if row != {"base_url": base + ("/search" if name == "moonshot_search" else "/fetch"),
+                   "api_key": "", "oauth": oauth}:
+            return None
+    return key
+
+
+def _read_local_usage(adapter, wait, fetch, choose_port):
+    with _Turn(adapter):
+        adapter._begin_road()
+        try:
+            home = adapter._signed_in_road()
+            blocked = adapter._login_home_grants(home) if home else ("home",)
+            if blocked == ("config.toml",) and login_home.profile_absent(home, "config.toml"):
+                # The vendor's own login writes config.toml, so its absence is a sign-in still owed,
+                # not an unsupported source (measured 23.09: a signed-out home read `not_supported`).
+                raise NativeQuotaReadError("not_authenticated")
+            if blocked:
+                raise NativeQuotaReadError("not_supported")
+            if adapter._workspace.sweep_homes():
+                raise NativeQuotaReadError()
+            adapter._workspace.work_root()
+            version = adapter._attempt(VERSION_ARGV, WORK_DIR, timeout=10)
+            _clean(adapter, version)
+            if not adapter._version_matches(version.output):
+                raise NativeQuotaReadError("not_supported")
+            port = choose_port()
+            if type(port) is not int or not 1 <= port <= 65535:
+                raise NativeQuotaReadError()
+            result = []
+            def read(pid):
+                auth = []
+                def ready():
+                    bearer = login_home.native_server_token(home, "server.token")
+                    if bearer is None:
+                        return None
+                    try:
+                        value = fetch(port=port, path="/api/v1/auth", bearer=bearer, timeout=.25)
+                    except Exception:
+                        return None
+                    auth.append(value)
+                    return port, bearer
+                _, bearer = wait(ready, timeout=10)
+                value = auth[-1]
+                data = value.get("data") if type(value) is dict and type(value.get("code")) is int and value["code"] == 0 else None
+                if (type(data) is not dict or data.get("ready") is not True
+                        or type(data.get("providers_count")) is not int or data["providers_count"] != 1
+                        or data.get("managed_provider") != {
+                            "name": "managed:kimi-code", "status": "authenticated"}):
+                    raise NativeQuotaReadError("not_authenticated")
+                result.append(fetch(port=port, path="/api/v1/oauth/usage", bearer=bearer, timeout=10))
+            outcome = adapter._attempt(("web", "--no-open", "--host", "127.0.0.1", "--port", str(port)),
+                WORK_DIR, timeout=30, separate_stderr=True, server_read=read)
+            if (outcome.status != "stopped" or outcome.output_truncated or outcome.output_contains_env_value
+                    or adapter._login_echo or adapter._retained or adapter._login_residue or len(result) != 1):
+                raise NativeQuotaReadError()
+            return result[0]
+        finally:
+            adapter._forget_login_sample()
+
+
+def _local_usage(payload):
+    body = quota_object(payload)
+    if type(body.get("code")) is not int:
+        raise QuotaError("missing native response code")
+    data = quota_object(body.get("data"))
+    if body["code"] != 0 or data.get("kind") == "error":
+        return NativeQuotaReading(error=True, policy=LIVE_QUOTA_POLICY)
+    if data.get("kind") != "ok" or type(data.get("limits")) is not list or len(data["limits"]) > 64:
+        raise QuotaError("invalid native usage response")
+    rows = [("summary", data["summary"])] if data.get("summary") is not None else []
+    rows += [("limit-"+str(index), row) for index, row in enumerate(data["limits"])]
+    windows = []
+    for identity, raw in rows:
+        row = quota_object(raw)
+        used, limit = row.get("used"), row.get("limit")
+        if any(type(value) is not int or not 0 <= value <= 2**53-1 for value in (used, limit)):
+            raise QuotaError("invalid native usage counts")
+        minutes = None
+        window = row.get("window")
+        if window is not None:
+            window = quota_object(window)
+            unit, count = window.get("unit"), window.get("duration")
+            factors = {"minute": 1, "hour": 60, "day": 1440, "week": 10080}
+            if type(unit) is not str or unit not in factors or type(count) is not int or count <= 0:
+                raise QuotaError("invalid native usage window")
+            minutes = count * factors[unit]
+        windows.append(NativeQuotaWindow("kimi-subscription", identity,
+            None if limit == 0 else used / limit * 100, row.get("reset_at"), minutes))
+    return NativeQuotaReading(tuple(windows), policy=LIVE_QUOTA_POLICY)
+
+
+LIVE_QUOTA_POLICY = QuotaPolicy("moonshot", "kimi-oauth-userinfo", "kimi-local-server",
+                               "quota", "rfc3339", _local_usage)

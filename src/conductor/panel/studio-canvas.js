@@ -10,6 +10,7 @@
 // where the run's own plan carries the same step id, always inside a container
 // labelled `run`, and the banner says out loud that a step id is the only join
 // this build has: `studio_routes.run_row` states the same from the other side.
+import {localize} from "./studio-i18n.js";
 import {element} from "./command-view.js";
 // The pure half of the canvas: where a step goes, and how an edge is named.
 // It moved next door when this file crossed the line cap, and is re-exported
@@ -205,65 +206,55 @@ function banner(shown, state, runtime) {
   const strip = element("div", {className: "studio-canvas__banner",
     "data-document": shown.kind});
   strip.append(element("p", {className: "studio-canvas__document",
-    text: documentSentence(shown)}));
+    text: documentSentence(shown, state)}));
   strip.append(element("p", {className: "mono studio-canvas__phase",
-    text: `read: ${typeof workflows.phase === "string" ? workflows.phase : "empty"}`}));
+    text: localize(state, "workflow_detail.read_phase", {phase: readPhase(workflows.phase, state)})}));
   const problems = rows(workflows.diagnostics).length;
-  // The plural belongs to the noun AND to the verb the noun governs.
-  const counted = problems === 1
-    ? "1 problem blocks" : `${problems} problems block`;
   if (shown.kind === "draft") {
     strip.append(element("p", {className: "studio-canvas__diagnostics",
-      text: problems ? `${counted} publishing this draft.`
-        : "Nothing blocks publishing this draft."}));
+      text: problems ? localize(state, problems === 1 ? "workflow_detail.publishing_one"
+        : "workflow_detail.publishing_blocked", {count: String(problems)})
+        : localize(state, "workflow_detail.publishing_ready")}));
   }
   if (runtime) strip.append(element("p", {className: "studio-canvas__runnote",
-    text: `Run ${runtime.runId} is a DIFFERENT document. This build cannot `
-      + "prove it followed this workflow revision — a materialized plan "
-      + "records no workflow identity — so a step id is the only join, and "
-      + "run words appear only inside the boxes marked run."}));
+    text: localize(state, "workflow_detail.run_join_note", {run: String(runtime.runId)})}));
   return strip;
 }
 
-function documentSentence(shown) {
+function documentSentence(shown, state) {
   if (shown.kind === "draft") {
-    return "Editing the DRAFT — an unpublished workflow document. "
-      + "Nothing here has run.";
+    return localize(state, "workflow_detail.draft_sentence");
   }
   if (shown.kind === "published") {
     const named = shown.revision === null ? "" : ` ${shown.revision}`;
-    return `Showing published revision${named} — immutable and read-only. `
-      + "Edit as new draft copies it into a draft you can change; this "
-      + "revision stays exactly as it is.";
+    return localize(state, "workflow_detail.revision_sentence", {revision: named});
   }
-  return "No workflow document is open. Choose a workflow, or start one from "
-    + "a bundled starter.";
+  return localize(state, "workflow_detail.no_workflow");
 }
 
-function paletteButton(kind, editable, handlers, selection) {
+function paletteButton(kind, editable, handlers, selection, state) {
   const mark = KIND_MARKS[kind];
   const button = element("button", {
     className: `studio-palette__add studio-palette__add--${kind}`,
     "data-add-kind": kind, "data-focus": `add-${kind}`,
     disabled: editable ? null : "", type: "button",
-    title: `Add a ${mark.label.toLowerCase()} after the selected step`,
-  }, [element("span", {text: `${mark.glyph} Add ${mark.label.toLowerCase()}`})]);
+    title: localize(state, "workflow_detail.add_after", {kind: localize(state, `workflow_detail.kind_${kind}`).toLowerCase()}),
+  }, [element("span", {text: localize(state, "workflow_detail.add_kind", {glyph: mark.glyph, kind: localize(state, `workflow_detail.kind_${kind}`).toLowerCase()})})]);
   button.addEventListener("click", () => call(handlers, "onEdit", {
     type: "add", kind,
     afterId: selection.kind === "node" ? selection.id : null}));
   return button;
 }
 
-function palette(editable, handlers, selection) {
+function palette(editable, handlers, selection, state) {
   const bar = element("div", {className: "studio-palette",
-    role: "group", "aria-label": "Add a step"});
+    role: "group", "aria-label": localize(state, "workflow_detail.add_step")});
   for (const kind of NODE_KINDS) {
-    bar.append(paletteButton(kind, editable, handlers, selection));
+    bar.append(paletteButton(kind, editable, handlers, selection, state));
   }
   bar.append(element("p", {className: "studio-palette__note", text: editable
-    ? "A new step is added after the selected one, unbound and unconnected "
-      + "until you give it a role in the inspector."
-    : "A published revision is immutable, so no step can be added to it."}));
+    ? localize(state, "workflow_detail.new_step_note")
+    : localize(state, "workflow_detail.published_note")}));
   return bar;
 }
 
@@ -275,91 +266,102 @@ function viewButton(label, key, aria, action) {
   return button;
 }
 
-function viewControls(view, handlers) {
+function viewControls(view, handlers, state) {
   const bar = element("div", {className: "studio-view", role: "group",
-    "aria-label": "Pan and zoom"});
+    "aria-label": localize(state, "workflow_detail.pan_zoom")});
   const move = (dx, dy) => call(handlers, "onView", {
     pan: {x: view.x + dx, y: view.y + dy}, zoom: view.zoom});
   bar.append(
-    viewButton("◀", "left", "Pan left", () => move(PAN_STEP, 0)),
-    viewButton("▶", "right", "Pan right", () => move(-PAN_STEP, 0)),
-    viewButton("▲", "up", "Pan up", () => move(0, PAN_STEP)),
-    viewButton("▼", "down", "Pan down", () => move(0, -PAN_STEP)),
-    viewButton("−", "out", "Zoom out", () => call(handlers, "onView", {
+    viewButton("◀", "left", localize(state, "workflow_detail.pan_left"), () => move(PAN_STEP, 0)),
+    viewButton("▶", "right", localize(state, "workflow_detail.pan_right"), () => move(-PAN_STEP, 0)),
+    viewButton("▲", "up", localize(state, "workflow_detail.pan_up"), () => move(0, PAN_STEP)),
+    viewButton("▼", "down", localize(state, "workflow_detail.pan_down"), () => move(0, -PAN_STEP)),
+    viewButton("−", "out", localize(state, "workflow_detail.zoom_out"), () => call(handlers, "onView", {
       pan: {x: view.x, y: view.y},
       zoom: Math.max(ZOOM_MIN, view.zoom / ZOOM_STEP)})),
-    viewButton("+", "in", "Zoom in", () => call(handlers, "onView", {
+    viewButton("+", "in", localize(state, "workflow_detail.zoom_in"), () => call(handlers, "onView", {
       pan: {x: view.x, y: view.y},
       zoom: Math.min(ZOOM_MAX, view.zoom * ZOOM_STEP)})),
-    viewButton("Reset view", "reset", "Reset pan and zoom",
+    viewButton(localize(state, "workflow_detail.reset_view"), "reset", localize(state, "workflow_detail.reset_pan_zoom"),
       () => call(handlers, "onView", {pan: {x: 0, y: 0}, zoom: 1})),
     element("p", {className: "mono studio-view__level",
-      text: `zoom ${Math.round(view.zoom * 100)}% · pan `
-        + `${Math.round(view.x)},${Math.round(view.y)}`}));
+      text: localize(state, "workflow_detail.view_reading", {zoom: String(Math.round(view.zoom * 100)), x: String(Math.round(view.x)), y: String(Math.round(view.y))})}));
   return bar;
 }
 
 //: Every pointer road on this canvas has a key beside it, written down where
 //: the canvas is rather than in a document nobody opens.
-const KEY_LEGEND = "Keyboard: arrows move the selection · Alt+arrows move the "
-  + "selected step on the canvas · Shift+arrows pan · "
-  + "+ and − zoom, 0 resets · t, g, l add a task, a human gate or a "
-  + "loop after the selection · d duplicates · Delete removes · "
-  + "Esc clears. Connecting two steps is a drag from a step's port, or the "
-  + "Transitions section of the inspector.";
 
 // -- the drawn step --------------------------------------------------------
 
-function markOf(node) {
+function markOf(node, state) {
   if (node.kind === "task" && node.capability === REVIEW_CAPABILITY) {
-    return REVIEW_MARK;
+    return {...REVIEW_MARK, label: localize(state, "workflow_detail.kind_review")};
   }
-  return KIND_MARKS[node.kind] || {glyph: "?", label: `unknown: ${node.kind}`};
+  return KIND_MARKS[node.kind] ? {...KIND_MARKS[node.kind], label: localize(state, `workflow_detail.kind_${node.kind}`)}
+    : {glyph: "?", label: localize(state, "workflow_detail.kind_unknown", {kind: String(node.kind)})};
 }
 
-function runStrip(row) {
+
+function readPhase(value, state) {
+  const word = typeof value === "string" ? value : "empty";
+  return ["empty", "loading", "ready", "failed"].includes(word)
+    ? localize(state, `workflow_detail.read_${word}`) : word;
+}
+
+function outcomeLabel(value, state) {
+  const known = ["cancelled", "failed", "rejected", "succeeded", "unknown", "verification_failed"];
+  return known.includes(value) ? localize(state, `scene.outcome_${value}`) : String(value);
+}
+
+function stageLabel(value, state) {
+  return STAGE_NAMES.includes(value) ? localize(state, `workflow_detail.stage_${value}`) : String(value);
+}
+
+function runStrip(row, state) {
   const strip = element("span", {className: "studio-node__run"});
-  strip.append(element("i", {className: "mono studio-node__runlabel", text: "run"}));
+  strip.append(element("i", {className: "mono studio-node__runlabel", text: localize(state, "workflow_detail.run_label")}));
   strip.append(element("span", {className: "mono",
-    text: NODE_PHASES.includes(row.phase) ? row.phase : "unreadable phase"}));
+    text: NODE_PHASES.includes(row.phase) ? localize(state, `workflow_detail.phase_${row.phase}`)
+      : localize(state, "workflow_detail.phase_unreadable")}));
   strip.append(element("span", {className: "mono", text: row.outcome === null
-    || row.outcome === undefined ? "no result recorded" : String(row.outcome)}));
+    || row.outcome === undefined ? localize(state, "workflow_detail.no_result") : outcomeLabel(row.outcome, state)}));
   if (typeof row.decision === "string") {
     strip.append(element("span", {className: "mono",
-      text: `gate: ${GATE_STATES.includes(row.decision) ? row.decision : "unreadable"}`}));
+      text: localize(state, "workflow_detail.gate_reading", {decision: GATE_STATES.includes(row.decision)
+        ? localize(state, `workflow_detail.decision_${row.decision}`)
+        : localize(state, "workflow_detail.phase_unreadable")})}));
   }
   if (typeof row.pass === "number") {
-    strip.append(element("span", {className: "mono", text: `pass ${row.pass}`
-      + (row.bound_reached ? " · bound reached" : "")}));
+    strip.append(element("span", {className: "mono", text: localize(state, "workflow_detail.pass_reading", {pass: String(row.pass), bound: row.bound_reached ? localize(state, "workflow_detail.bound_reached") : ""})}));
   }
   return strip;
 }
 
-function nodeLines(node, parents) {
-  const mark = markOf(node);
+function nodeLines(node, parents, state) {
+  const mark = markOf(node, state);
   const lines = [
     element("span", {className: "studio-node__kind",
       text: `${mark.glyph} ${mark.label}`}),
     element("span", {className: "studio-node__title", text: String(node.title)}),
     element("span", {className: "mono studio-node__id", text: String(node.node_id)}),
     element("span", {className: "mono studio-node__role", text: node.role_id
-      ? `role: ${node.role_id}` : "no role — nothing will run this step"}),
+      ? localize(state, "workflow_detail.role_reading", {role: String(node.role_id)}) : localize(state, "workflow_detail.no_role")}),
   ];
   if (node.stage) {
     lines.push(element("span", {className: "mono studio-node__stage",
-      text: `${STAGE_NAMES.indexOf(node.stage) + 1}/5 · ${node.stage}`}));
+      text: `${STAGE_NAMES.indexOf(node.stage) + 1}/5 · ${stageLabel(node.stage, state)}`}));
   }
   if (node.gate_id) {
     lines.push(element("span", {className: "mono studio-node__gate",
-      text: `gate id: ${node.gate_id}`}));
+      text: localize(state, "workflow_detail.gate_id_reading", {id: String(node.gate_id)})}));
   }
   if (isObject(node.loop)) {
     lines.push(element("span", {className: "mono studio-node__loop",
-      text: `↻ at most ×${node.loop.bound} · reopens `
-        + `${node.loop.back_to}`}));
+      text: localize(state, "workflow_detail.loop_reading", {bound: String(node.loop.bound), step: String(node.loop.back_to)})}));
   }
   lines.push(element("span", {className: "mono studio-node__from",
-    text: parents.length ? `after ${parents.join(", ")}` : "start"}));
+    text: parents.length ? localize(state, "workflow_detail.after", {steps: parents.join(", ")}) : localize(state, "workflow_detail.start")}));
   return lines;
 }
 
@@ -371,9 +373,9 @@ function nodeButton(node, context) {
     className: `studio-node studio-node--${node.kind}`,
     "data-focus": `node-${node.node_id}`, "data-node-id": node.node_id,
     type: "button",
-  }, nodeLines(node, context.parents.get(node.node_id) || []));
+  }, nodeLines(node, context.parents.get(node.node_id) || [], context.state));
   const row = context.runtime && context.runtime.byNode.get(node.node_id);
-  if (row) button.append(runStrip(row));
+  if (row) button.append(runStrip(row, context.state));
   // The flag is CONSUMED, not only read: a keyboard Enter has no pointerdown
   // to reset it and would otherwise be swallowed by an older drag.
   button.addEventListener("click", () => {
@@ -432,14 +434,12 @@ function bindNodeDrag(button, node, context) {
 //: right edge through the two custom properties `.studio-port` reads.
 function portButton(node, context) {
   const port = element("button", {
-    "aria-label": `Connect from ${node.title}. Drag to another step, or use `
-      + "the Transitions section of the inspector.",
+    "aria-label": localize(context.state, "workflow_detail.port_aria", {title: String(node.title)}),
     className: "studio-port", "data-focus": `port-${node.node_id}`,
     "data-port": node.node_id, disabled: context.editable ? null : "",
     type: "button"}, [element("span", {text: "→"})]);
   port.addEventListener("click", () => call(context.handlers, "onStatus",
-    "Drag from this port onto another step to connect them, or use the "
-    + "Transitions section of the inspector."));
+    {key: "workflow_detail.port_help"}));
   bindConnectDrag(port, node, context);
   return port;
 }
@@ -458,8 +458,7 @@ function bindConnectDrag(port, node, context) {
     const target = under && under.closest ? under.closest("[data-node-id]") : null;
     const to = target && target.getAttribute("data-node-id");
     if (!to || to === node.node_id) {
-      call(context.handlers, "onStatus",
-        "A connection needs a different step under the pointer when you let go.");
+      call(context.handlers, "onStatus", {key: "workflow_detail.port_no_target"});
       return;
     }
     call(context.handlers, "onEdit", {
@@ -505,8 +504,8 @@ function edgeHit(cells, edge, context) {
   hit.setAttribute("aria-pressed", String(selected));
   hit.setAttribute("data-edge", id);
   hit.setAttribute("data-focus", `edge-${id}`);
-  hit.setAttribute("aria-label", `Connection from ${edge.from_node} to `
-    + `${edge.to_node}${context.layout.back.has(id) ? ", a step backwards" : ""}`);
+  hit.setAttribute("aria-label", localize(context.state, "workflow_detail.edge_aria", {from: String(edge.from_node), to: String(edge.to_node), back: context.layout.back.has(id)
+      ? localize(context.state, "workflow_detail.edge_back") : ""}));
   const select = () => call(context.handlers, "onSelect", {kind: "edge", id});
   hit.addEventListener("click", select);
   hit.addEventListener("keydown", (event) => {
@@ -701,11 +700,10 @@ function bindPan(stage, view, handlers) {
 
 // -- the mount -------------------------------------------------------------
 
-function emptyNote(shown) {
+function emptyNote(shown, state) {
   return element("p", {className: "studio-canvas__empty", text: shown.kind === "none"
-    ? "Nothing is drawn because no workflow document is open."
-    : "This workflow document has no steps yet. Add one from the palette, or "
-      + "press t, g or l."});
+    ? localize(state, "workflow_detail.empty_canvas")
+    : localize(state, "workflow_detail.empty_steps")});
 }
 
 /**
@@ -732,7 +730,7 @@ export function mountCanvas(mount, svg, state, handlers) {
   const context = {
     editable: shown.kind === "draft", gesture: {moved: false}, handlers,
     index: new Map(nodes.map((node, at) => [node.node_id, at])), pitch: 0,
-    layout, parents, runtime, selection: selectionOf(state), view,
+    layout, parents, runtime, selection: selectionOf(state), view, state,
   };
   // The stage is focusable: it is where the keyboard road starts, so it
   // carries a focus key like every other control.
@@ -761,20 +759,17 @@ export function mountCanvas(mount, svg, state, handlers) {
   bindPan(stage, view, handlers);
   const help = element("details", {className: "studio-canvas__help"}, [
     element("summary", {"data-focus": "canvas-help",
-      text: "Canvas controls and keyboard"}),
-    element("p", {className: "mono studio-canvas__keys", text: KEY_LEGEND}),
+      text: localize(state, "workflow_detail.canvas_help")}),
+    element("p", {className: "mono studio-canvas__keys", text: localize(state, "workflow_detail.canvas_keys")}),
     element("p", {className: "studio-canvas__positions", text:
-      "Drag a step to place it, or hold Alt and press an arrow. Where you put "
-      + "it is stored in the workflow document and comes back on reload. A "
-      + "step nobody has placed is laid out by its connections; order is "
-      + "edited in the inspector, and it is a different fact from position."}),
+      localize(state, "workflow_detail.canvas_positions")}),
   ]);
   help.open = mount.querySelector(".studio-canvas__help")?.open === true;
   const tools = element("div", {className: "studio-canvas__tools"}, [
-    palette(context.editable, handlers, context.selection), viewControls(view, handlers), help]);
+    palette(context.editable, handlers, context.selection, state), viewControls(view, handlers, state), help]);
   const reflow = () => { if (restack(stage, drawn, context) && svg) drawEdges(svg, nodes, edges, context); };
   const scope = JSON.stringify([state.workflows?.selectedId, shown.kind, shown.revision]);
-  const orbit = workflowOrbit(mount, scope, nodes, context.selection, handlers, stage, tools, reflow);
+  const orbit = workflowOrbit(mount, scope, nodes, context.selection, handlers, stage, tools, reflow, context.state);
   const chrome = element("div", {className: "studio-canvas__chrome"}, [
     element("div", {className: "studio-canvas__heading"}, [banner(shown, state, runtime), orbit.switches]), tools]);
   // Chrome first, drawing after, both in normal flow: the well scrolls one
@@ -782,6 +777,6 @@ export function mountCanvas(mount, svg, state, handlers) {
   mount.replaceChildren(chrome, orbit.panel, stage);
   orbit.refresh();
   if (restack(stage, drawn, context) && svg) drawEdges(svg, nodes, edges, context);
-  if (!nodes.length) chrome.append(emptyNote(shown));
+  if (!nodes.length) chrome.append(emptyNote(shown, state));
   restoreFocus(mount, key);
 }

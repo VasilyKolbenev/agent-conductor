@@ -158,3 +158,108 @@ jobs:
           path: ${{ runner.temp }}/browser-gate*
           if-no-files-found: warn
           retention-days: 14
+
+  # ONE wheel, built once, is what the installed road walks everywhere. It is pure
+  # py3-none-any, so the same bytes install on every platform; a wheel built per
+  # runner would be a different archive per platform and prove nothing about the
+  # one selected. Its sha256 travels with it, and the road refuses any other bytes.
+  wheel:
+    name: build one wheel
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    outputs:
+      sha256: ${{ steps.digest.outputs.sha256 }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build
+        run: |
+          python -m pip install build
+          python -m build --wheel --outdir "$RUNNER_TEMP/dist"
+
+      - name: Digest
+        id: digest
+        run: |
+          set -- "$RUNNER_TEMP"/dist/*.whl
+          if [ "$#" -ne 1 ]; then echo "expected one wheel, found $#"; exit 1; fi
+          digest=$(python -c "import hashlib, sys; print(hashlib.sha256(open(sys.argv[1], 'rb').read()).hexdigest())" "$1")
+          echo "sha256=$digest" >> "$GITHUB_OUTPUT"
+
+      - name: The checkout is clean
+        run: |
+          dirty="$(git status --porcelain --untracked-files=all)"
+          if [ -n "$dirty" ]; then
+            echo "the wheel build left the checkout dirty:"
+            echo "$dirty"
+            exit 1
+          fi
+
+      - name: Keep the wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: candidate-wheel
+          path: ${{ runner.temp }}/dist/*.whl
+          if-no-files-found: error
+          retention-days: 14
+
+  # The installed road on POSIX, from that one wheel: a clean venv, the wheel alone
+  # offline, provenance under -I, init -> ownership activate -> two `conduct up`
+  # lifetimes, each stopped by SIGINT to its own process group and followed by
+  # `closed` ownership. Windows walks the same road with a console Ctrl+C, which
+  # needs its own runner; docs/release-smoke.md says where. Only the report and
+  # the per-command logs are kept -- never the venv, the project or the wheel copy.
+  wheel-road:
+    name: installed wheel road ${{ matrix.os }}
+    needs: wheel
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: candidate-wheel
+          path: ${{ runner.temp }}/dist
+
+      - name: Installed wheel road
+        run: >
+          python scripts/wheel_road.py
+          --wheel "$(ls "$RUNNER_TEMP"/dist/*.whl)"
+          --sha256 "${{ needs.wheel.outputs.sha256 }}"
+          --work "$RUNNER_TEMP/wheel-road"
+
+      - name: The checkout is clean
+        run: |
+          dirty="$(git status --porcelain --untracked-files=all)"
+          if [ -n "$dirty" ]; then
+            echo "the installed road left the checkout dirty:"
+            echo "$dirty"
+            exit 1
+          fi
+
+      - name: Keep the road's records
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheel-road-${{ matrix.os }}
+          path: |
+            ${{ runner.temp }}/wheel-road/report.json
+            ${{ runner.temp }}/wheel-road/*.log
+          if-no-files-found: warn
+          retention-days: 14

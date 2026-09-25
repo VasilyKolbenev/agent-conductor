@@ -65,6 +65,9 @@ best-effort, exactly as the preview's route gate states of itself.
 """
 from __future__ import annotations
 
+from functools import wraps
+from .process import ProcessRunner
+
 import hashlib
 import os
 import stat
@@ -73,6 +76,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from threading import Lock, RLock
 from weakref import WeakValueDictionary
+
+from .workspace_turn import _RootGate, indexed_root_gate
+from ..path_admission import admit_work_path
+from ..work_layout import WORK_DIR, TASKS_DIR, work_parts, work_route
+from .attempt_scope import AttemptScope
 
 from ..containment import (
     RouteViolation,
@@ -88,15 +96,7 @@ from ..containment import (
 #: the task's own text is read from. Both are facts about the run, so every
 #: provider driving that run reads and writes the SAME two, and neither is a
 #: name a provider may choose.
-WORK_DIR = "work"
 INSTRUCTION_DIR = "instructions"
-#: The container every TASK's work lives in, one level below the work tree. It
-#: can never be a work item's own directory: a work item id begins with a letter
-#: or a digit, so no plan written before tasks existed -- and no task-less plan
-#: written since -- can name it, in any letter case, on any filesystem. A task's
-#: work is kept apart from history by STRUCTURE, not by a spelling that a legal
-#: legacy id could also have used (the 2026-09-18 review's R1 and R2).
-TASKS_DIR = "_tasks"
 #: The two names a PROVIDER brings instead: see ``HarnessWorkspace``. They are
 #: not defaulted anywhere, because a default would let two harnesses share one
 #: home root by saying nothing, and the whole retention promise below is that a
@@ -105,8 +105,8 @@ _RESERVED_DIRS = frozenset({WORK_DIR, INSTRUCTION_DIR})
 #: The one name shape an instruction is read from, and the bound on its size: a
 #: task is a task, not a payload, and an unbounded read is an unbounded prompt.
 INSTRUCTION_SUFFIX = ".md"
-INSTRUCTION_LIMIT = 64 * 1024
-FILE_BUDGET = 16 * 1024
+INSTRUCTION_LIMIT = 256 * 1024
+FILE_BUDGET = 32 * 1024
 #: Windows marks a reparse DIRECTORY here; removing its own entry needs rmdir.
 _DIRECTORY_ATTRIBUTE = getattr(stat, "FILE_ATTRIBUTE_DIRECTORY", 0x10)
 #: What ONE name inside an attempt home turned out to be. A CLOSED vocabulary,
@@ -129,6 +129,10 @@ HOME_LEAF_FILE = "file"
 HOME_LEAF_OTHER = "other"
 HOME_LEAF_KINDS = (
     HOME_LEAF_ABSENT, HOME_LEAF_EMPTY, HOME_LEAF_FILE, HOME_LEAF_OTHER)
+
+
+class WorkspaceBusy(RuntimeError):
+    """The root's turn did not come within the wait a bounded caller allowed."""
 
 
 class WorkspaceNotContained(RuntimeError):
@@ -174,34 +178,6 @@ def _component(name: object) -> str:
     if any(ord(character) <= _LAST_CONTROL for character in name):
         raise WorkspaceNotContained(f"{name!r} is not a single route component")
     return name
-
-
-def work_parts(work_item_id: str, work_scope: str | None = None) -> tuple[str, ...]:
-    """The route below the workspace root where ONE work item's files live.
-
-    The single definition of that place: the directory a child stands in, the
-    tree a checker reads, and the path an argv names are all this answer, so they
-    cannot come to disagree. A task-less item lives at ``work/<item>``, exactly
-    where it always has, so no standing plan's directory moves. A task's item
-    lives at ``work/_tasks/<scope>/<item>``: two tasks are two directories because
-    their scopes are two path COMPONENTS -- there is no encoding to be ambiguous --
-    and nothing a task-less item can be named reaches under ``_tasks``.
-
-    Args:
-        work_item_id: The plan's own work item id.
-        work_scope: The run's task scope, or None for a task-less run.
-
-    Returns:
-        The route parts, the work tree's own name first.
-    """
-    if work_scope is None:
-        return (WORK_DIR, work_item_id)
-    return (WORK_DIR, TASKS_DIR, work_scope, work_item_id)
-
-
-def work_route(work_item_id: str, work_scope: str | None = None) -> str:
-    """`work_parts` spelled as the relative path an argv carries."""
-    return "/".join(work_parts(work_item_id, work_scope))
 
 
 def _leaf(path: Path) -> os.stat_result | None:
@@ -284,52 +260,21 @@ def _remove_tree(root: Path) -> None:
         path.rmdir()
 
 
-class _RootGate:
-    """One weakly indexed, workspace-owned process-local harness root gate."""
-
-    __slots__ = ("lock", "__weakref__")
-
-    def __init__(self) -> None:
-        self.lock = RLock()
-
-
-# Process-local only, and keyed by the RESOLVED root, so two workspaces reached
-# by different names for one tree take the same gate and a second tree takes its
-# own. The weak table releases a root nothing holds. This is the same shape the
-# run store's root gate and the runtime's operation lock already use; it is
-# deliberately NOT either of them -- a dispatch must not hold a store
-# transaction across a child process.
-#
-# The key was briefly the root TOGETHER WITH the two names a provider owns,
-# reasoning that two providers own different homes and markers and so have no
-# state to contend over. That reasoning was WRONG and the change was a race:
-# they also share `work` and `instructions`, and the evidence snapshot spans the
-# WHOLE work tree. A neighbour writing its own work item during another
-# provider's dispatch lands in that provider's before/after diff, where it reads
-# as a change outside the authorized subtree -- a mismatch pinned on a child
-# that did nothing wrong. Reproduced, before the revert, as:
-#     wrote_while_one_owned_root=True
-#     foreign_change=['b/foreign.txt']
-#
-# The prose above this gate had claimed for a long time that one harness's root
-# must not stop "another provider". That claim was aspirational and the CODE was
-# right; the correction was to fix the sentence, not the key. A comment is not a
-# specification, and a guarantee is not safe to invert because a comment nearby
-# describes a nicer world.
-#
-# Serializing providers on one root is the cost, and it is the honest one: they
-# are writing into one tree and reading evidence from all of it.
 _ROOT_GATES_GUARD = Lock()
 _ROOT_GATES: WeakValueDictionary[Path, _RootGate] = WeakValueDictionary()
 
 
 def _root_gate(key: Path) -> _RootGate:
-    with _ROOT_GATES_GUARD:
-        gate = _ROOT_GATES.get(key)
-        if gate is None:
-            gate = _RootGate()
-            _ROOT_GATES[key] = gate
-        return gate
+    return indexed_root_gate(
+        key, guard=_ROOT_GATES_GUARD, gates=_ROOT_GATES, lock_factory=RLock)
+
+
+def _owned_effect(method):
+    @wraps(method)
+    def guarded(self, *args, **kwargs):
+        with ProcessRunner.project_write_guard(self.root):
+            return method(self, *args, **kwargs)
+    return guarded
 
 
 @dataclass(frozen=True)
@@ -383,12 +328,17 @@ class HarnessWorkspace:
         and `instructions`, and the evidence snapshot spans the whole work tree,
         so a narrower key lets a neighbour's ordinary dispatch appear in another
         provider's evidence as a change outside its authorized subtree. The
-        comment above ``_root_gate`` records the reproduction.
+        ``workspace_turn`` records the reproduction beside ``_root_gate``.
         """
         return self.root
 
+    def attempt_scope(self) -> AttemptScope:
+        """The same strongly held gate used by direct transport calls."""
+        gate = _root_gate(self._gate_key())
+        return AttemptScope(gate, gate.acquire, gate.release)
+
     @contextmanager
-    def owned(self):
+    def owned(self, *, wait: float | None = None):
         """Hold this ROOT for one whole dispatch: sweep, homes, task and cleanup.
 
         The cycle below is not a set of independent doors, it is one owner's
@@ -409,10 +359,10 @@ class HarnessWorkspace:
         ordinary work into the other's evidence.
 
         Holding the gate is necessary and it is not sufficient on its own. The
-        gate spans one dispatch, and a verification that re-read the tree AFTER
-        the dispatch released it would read a tree a neighbour may have changed
-        in between -- the runtime's own lock is keyed per ACTION, so two
-        providers really do run at once. That is why the transport takes BOTH
+        direct guard spans one dispatch; runtime may retain this same gate
+        through a separate checker and terminal append. A direct caller that
+        re-reads after releasing its turn can still meet a neighbour's changes.
+        That is why the transport takes BOTH
         evidence snapshots inside this turn and verification judges the pair it
         was handed. What is judged is what was read here.
 
@@ -423,8 +373,14 @@ class HarnessWorkspace:
         holds its turn.
         """
         gate = _root_gate(self._gate_key())
-        with gate.lock:
+        # `wait` bounds the acquire for a reader that must not queue behind a
+        # whole dispatch (a quota read); a dispatch's own turn is unbounded.
+        if not gate.lock.acquire(timeout=-1 if wait is None else wait):
+            raise WorkspaceBusy("the harness root is held by another turn")
+        try:
             yield
+        finally:
+            gate.lock.release()
 
     # -- the one containment relation every road below goes through -------------
 
@@ -462,6 +418,7 @@ class HarnessWorkspace:
         """The ONE root every home cleanup below is bounded to."""
         return self.root / self.home_dir
 
+    @_owned_effect
     def mint_home(self, name: str) -> Path:
         """A fresh home. ``exist_ok=False`` makes reuse a hard error, not a merge."""
         home = self._directory_route(self.home_dir, name)
@@ -469,6 +426,7 @@ class HarnessWorkspace:
         self.minted.add(home.name)
         return home
 
+    @_owned_effect
     def discard_home(self, home: str | os.PathLike[str]) -> None:
         """Delete ONE attempt home, bounded to the fixed homes root, or refuse.
 
@@ -547,6 +505,7 @@ class HarnessWorkspace:
             return HOME_LEAF_OTHER
         return HOME_LEAF_EMPTY if found.st_size == 0 else HOME_LEAF_FILE
 
+    @_owned_effect
     def sweep_homes(self) -> tuple[str, ...]:
         """Discard every home a crashed attempt left, naming what it refused.
 
@@ -633,6 +592,7 @@ class HarnessWorkspace:
         _legacy, stale = self._file_route(*self._legacy_marker_parts(action_id))
         return stale is not None
 
+    @_owned_effect
     def claim(self, run_id: str, action_id: str) -> None:
         """Claim the action BEFORE its task spawns, so a crash cannot un-claim it.
 
@@ -651,6 +611,7 @@ class HarnessWorkspace:
         _path, found = self._file_route(*self._verification_parts(run_id, action_id))
         return found is not None
 
+    @_owned_effect
     def claim_verification(self, run_id: str, action_id: str) -> None:
         """Reserve one checker spawn before it starts; never overwrite a claim."""
         marker, found = self._file_route(*self._verification_parts(run_id, action_id))
@@ -712,12 +673,20 @@ class HarnessWorkspace:
 
     # -- the authorized work tree and its evidence ----------------------------
 
+    @_owned_effect
     def work_root(self) -> Path:
         root = self._directory_route(WORK_DIR)
         root.mkdir(parents=True, exist_ok=True)
         return root
 
+    def admit_work_dir(self, item: str, scope: str | None = None) -> None:
+        """Pure admission using the same work_parts as every reader."""
+        parts = tuple(_component(part) for part in work_parts(item, scope))
+        admit_work_path(self.root.joinpath(*parts), item, scope)
+
+    @_owned_effect
     def work_dir(self, work_item_id: str, work_scope: str | None = None) -> Path:
+        self.admit_work_dir(work_item_id, work_scope)
         self.work_root()
         work = self._directory_route(*work_parts(work_item_id, work_scope))
         work.mkdir(parents=True, exist_ok=True)
@@ -809,3 +778,21 @@ class HarnessWorkspace:
                     if content is not None:
                         contents[relative] = content
         return tree, contents
+
+    def read_result_tree(self, work_item_id, changed, *, work_scope=None):
+        """Read complete changed files and prove each reported deletion locally."""
+        if type(changed) is not tuple or any(type(path) is not str for path in changed):
+            raise TypeError("changed must be a tuple of work-tree paths")
+        base = self._directory_route(*work_parts(work_item_id, work_scope))
+        subtree = self.subtree(base)
+        if any(not path.startswith(subtree) for path in changed):
+            raise WorkspaceNotContained("result member is outside the exact work-item subtree")
+        tree, contents = self.read_work_tree(work_item_id, changed, work_scope=work_scope)
+        absent = []
+        for path in changed:
+            if path not in tree:
+                _, found = self._file_route(WORK_DIR, *path.split("/"))
+                if found is not None:
+                    raise WorkspaceNotContained("a reported deletion still has a file")
+                absent.append(path)
+        return tree, contents, tuple(absent), subtree

@@ -17,38 +17,45 @@
 // write ASKED FOR. Anything else is outcome-unknown, and never a guess.
 import {ERROR_LABELS, canonicalJson, refusalCode} from "./command-projection.js";
 import {mountCanvas} from "./studio-canvas.js";
-import {focusTarget, restoreFocus} from "./studio-focus.js";
+import {focusTarget, restoreFocus, restoreTyped, typedValues} from "./studio-focus.js";
 import {mountInspector} from "./studio-inspector.js";
 import {mountAgents, mountDecisions} from "./studio-people.js";
 import {mountRuns} from "./studio-runs.js";
+import {workflowWriters} from "./studio-workflowwrite.js";
+import {automationFlow} from "./studio-automation-flow.js";
+import {mountAutomation} from "./studio-automation.js";
+import {mountBridge} from "./studio-bridge.js";
+import {mountTasks} from "./studio-tasks.js";
+import {studioMounts} from "./studio-mounts.js";
+import {mountShell, wireScreenKeys} from "./studio-shell.js";
+import {preferences, preferenceHash} from "./studio-preferences.js";
+import {quotaFlow} from "./studio-quotaflow.js";
+import {navigation, navigationHash, taskFlow} from "./studio-taskflow.js";
 //: What a Human's press on a step control MEANS. The wire stays HERE: that
 //: module is handed this one's `write` and reaches no socket of its own.
 import {decisionWriters, documentWriters, stepWriters}
   from "./studio-runwrite.js";
-import {EMPTY, SCREENS, draftFrom, reduce, saveProblems} from "./studio-store.js";
-import {isId, mountDiagnostics, mountOverview, mountShell, mountToolbar}
+import {EMPTY, SCREENS, reduce} from "./studio-store.js";
+import {isId, mountDiagnostics, mountOverview, mountToolbar}
   from "./studio-view.js";
 
-const UNKNOWN = "Outcome unknown. Read this workflow again to see what stands.";
-const STREAM_DOWN = "Connection lost. The last read facts are still on screen, "
-  + "and nothing may be written until the stream is back and what you are "
-  + "writing to has been read again.";
+//: What this window says is stored as a catalogue key and drawn in the reader's language
+//: (`studio-notice-copy.js`), so a sentence already on screen switches with it.
+const UNKNOWN = Object.freeze({key: "notice.outcome_unknown"});
+const STREAM_DOWN = Object.freeze({key: "notice.stream_down_write"});
 //: A GET is aborted at READ_DEADLINE, its body included -- wide, as a healthy
 //: read can queue behind a write. LATE is this window's word for it.
 const READ_DEADLINE = 20000;
 const LATE = "read_late";
-const LATE_SAID = "The server did not answer a read in time, so this window "
-  + "stopped waiting. It proves nothing about any write; read again to retry.";
-const UNSENT = "The server did not answer in time; this press wrote nothing.";
-const DRAFT_REFUSED = "The drawing was refused before it was offered to the "
-  + "server: what stops it is listed beside the canvas.";
-const SAVED = "The draft is stored on the server. It is not a revision: "
-  + "publishing is what makes one, and a revision can never be edited.";
-const PUBLISHED = "The revision is published and read back. A published "
-  + "revision is immutable -- a change makes the next one and leaves this "
-  + "exactly as it is.";
-const RUN_OPENED = "The run is open and its plan is materialized from that "
-  + "exact revision. Nothing about the workflow changed.";
+const LATE_SAID = Object.freeze({key: "notice.read_late"});
+const UNSENT = Object.freeze({key: "notice.unsent"});
+const WRITING = Object.freeze({key: "notice.writing"});
+//: Whether a stored notice says this message, alone or as one of its parts.
+const noticeHas = (notice, key) => Array.isArray(notice)
+  ? notice.some((part) => noticeHas(part, key)) : notice?.key === key;
+
+
+
 //: The refusals a PUBLISH can meet that this window recovers from instead of
 //: only reporting: both say the reviewed draft is not what the server holds --
 //: one because its content moved, one because it is gone -- and both are
@@ -59,38 +66,19 @@ const RUN_OPENED = "The run is open and its plan is materialized from that "
 //: read there would merge the server's draft into the drawing on screen, which
 //: is the automatic overwrite this whole seam exists to refuse: the person's
 //: unsaved work stays exactly as it is and the read is theirs to ask for.
-const REOPENED = Object.freeze(["draft_changed", "draft_conflict"]);
+
 
 (() => {
   const shell = document.getElementById("studioShell");
   if (!shell) return;
   const byId = (name) => document.getElementById(name);
-  const mounts = {
-    project: byId("studioProject"),
-    connection: byId("studioConnection"),
-    primary: byId("studioPrimary"),
-    status: byId("studioStatus"),
-    tabs: [...byId("studioNav").querySelectorAll("[data-screen]")],
-    screens: {
-      overview: byId("screenOverview"), workflow: byId("screenWorkflow"),
-      runs: byId("screenRuns"), decisions: byId("screenDecisions"),
-      agents: byId("screenAgents"),
-    },
-    states: {
-      overview: byId("stateOverview"), workflow: byId("stateWorkflow"),
-      runs: byId("stateRuns"), decisions: byId("stateDecisions"),
-      agents: byId("stateAgents"),
-    },
-    bodyOverview: byId("bodyOverview"),
-    bodyRuns: byId("bodyRuns"),
-    bodyDecisions: byId("bodyDecisions"),
-    bodyAgents: byId("bodyAgents"),
-    toolbar: byId("workflowToolbar"),
-    edges: byId("workflowEdges"),
-    nodes: byId("workflowNodes"),
-    inspector: byId("workflowInspector"),
-    diagnostics: byId("workflowDiagnostics"),
-  };
+  const mounts = studioMounts(byId);
+  // A control a person typed into and has not committed carries its words across a pass.
+  shell.addEventListener("input", (event) => event.target.setAttribute?.("data-typed", ""));
+  // Only a commit unmarks it: a control that refused its words (`aria-invalid`) still holds them.
+  shell.addEventListener("change", (event) => {
+    if (event.target.getAttribute?.("aria-invalid") !== "true") event.target.removeAttribute?.("data-typed");
+  });
 
   let state = EMPTY;
   // The token this process minted, held in ONE module-local variable. It goes
@@ -106,7 +94,7 @@ const REOPENED = Object.freeze(["draft_changed", "draft_conflict"]);
   // state because a read that refuses still has a subject worth naming.
   let chosenWorkflow = "", chosenRun = "";
   let workflowEpoch = 0, workflowDirty = false, workflowBusy = false;
-  let runEpoch = 0, runDirty = false, runBusy = false;
+  let runEpoch = 0, runNavigation = 0, runDirty = false, runBusy = false;
   // What each queue has on the wire, for a press or a new subject to abort, and
   // the newest read of each list that has landed.
   let workflowReading = new AbortController();
@@ -116,11 +104,28 @@ const REOPENED = Object.freeze(["draft_changed", "draft_conflict"]);
   // the write ASKED FOR -- a document's canonical text, or a revision number --
   // because only a read showing that same thing confirms anything about it.
   let pendingCarry = null;
+  const resume = navigation(location.hash);
+  let readLocale = null;
+  const appearance = preferences({root: document.documentElement,
+    mount: byId("studioPreferences"), hash: location.hash, language: navigator.language,
+    media: window.matchMedia("(prefers-color-scheme: dark)"), change: () => {
+      history.replaceState(null, "", preferenceHash(navigationHash(state), appearance.value));
+      render();
+      if (readLocale !== appearance.value.locale) {
+        readLocale = appearance.value.locale;
+        loadWorkflows();
+        if (chosenWorkflow && state.workflows.draft === state.workflows.readDraft) refreshWorkflow(chosenWorkflow);
+        if (chosenRun) refreshRun(chosenRun);
+      }
+    }});
+  readLocale = appearance.value.locale;
+  window.addEventListener("pagehide", () => appearance.dispose());
 
   function dispatch(event, redraw = true) {
     const next = reduce(state, event);
     if (next === state) return;
     state = next;
+    history.replaceState(null, "", preferenceHash(navigationHash(state), appearance.value));
     if (redraw) render();
   }
 
@@ -129,16 +134,20 @@ const REOPENED = Object.freeze(["draft_changed", "draft_conflict"]);
   // Every mount redraws from the state. What a person had focused, typed and
   // selected is carried across the pass by the net in `studio-focus.js`.
   function render() {
-    const key = focusTarget();
-    mountShell(mounts, state, handlers);
-    mountOverview(mounts.bodyOverview, state, handlers);
-    mountToolbar(mounts.toolbar, state, handlers);
-    mountDiagnostics(mounts.diagnostics, state);
-    mountCanvas(mounts.nodes, mounts.edges, state, handlers);
-    mountInspector(mounts.inspector, state, handlers);
-    mountRuns(mounts.bodyRuns, state, handlers);
-    mountDecisions(mounts.bodyDecisions, state, handlers);
-    mountAgents(mounts.bodyAgents, state, handlers);
+    const key = focusTarget(), typed = typedValues(shell), presentation = {...state, locale: appearance.value.locale};
+    mountShell(mounts, presentation, handlers);
+    mountTasks(byId("studioTasks"), presentation, handlers);
+    mountOverview(mounts.bodyOverview, presentation, handlers);
+    mountToolbar(mounts.toolbar, presentation, handlers);
+    mountDiagnostics(mounts.diagnostics, presentation);
+    mountCanvas(mounts.nodes, mounts.edges, presentation, handlers);
+    mountInspector(mounts.inspector, presentation, handlers);
+    mountRuns(mounts.bodyRuns, presentation, handlers);
+    mountBridge(mounts.bridge, presentation, handlers);
+    mountAutomation(mounts.bodyRuns, presentation, automation.snapshot(), automation);
+    mountDecisions(mounts.bodyDecisions, presentation, handlers);
+    mountAgents(mounts.bodyAgents, presentation, handlers);
+    restoreTyped(shell, typed);
     restoreFocus(shell, key);
   }
 
@@ -151,7 +160,8 @@ const REOPENED = Object.freeze(["draft_changed", "draft_conflict"]);
     const timer = setTimeout(() => stop.abort(LATE), READ_DEADLINE);
     let response, payload;
     try {
-      response = await fetch(target, {cache: "no-store", signal: stop.signal});
+      response = await fetch(target, {cache: "no-store", signal: stop.signal,
+        headers: {"Accept-Language": appearance.value.locale}});
       payload = await response.json();
     } catch (_error) {
       throw new Error(stop.signal.aborted ? LATE : "store_error");
@@ -180,6 +190,7 @@ const REOPENED = Object.freeze(["draft_changed", "draft_conflict"]);
   }
 
   const path = Object.freeze({
+    tasks: () => "/command/tasks",
     workflows: () => "/command/workflows",
     workflow: (id) => `/command/workflows/${encodeURIComponent(id)}`,
     revision: (id, n) => `/command/workflows/${encodeURIComponent(id)}`
@@ -193,20 +204,23 @@ const REOPENED = Object.freeze(["draft_changed", "draft_conflict"]);
     proposals: (id) => `/command/runs/${encodeURIComponent(id)}/proposals`,
     actions: (id) => `/command/runs/${encodeURIComponent(id)}/actions`,
     artifacts: (id) => `/command/runs/${encodeURIComponent(id)}/artifacts`,
+    automation: (id) => `/command/runs/${encodeURIComponent(id)}/automation`,
+    automationPreview: (id) => `/command/runs/${encodeURIComponent(id)}/automation/preview`,
+    automationAuthorize: (id) => `/command/runs/${encodeURIComponent(id)}/automation/authorize`,
+    automationControl: (id) => `/command/runs/${encodeURIComponent(id)}/automation/control`,
   });
-  //: The seven targets the one mutation door may name. A write to anything
-  //: else is unrepresentable rather than screened out afterwards.
+  // Closed mutation targets share the same CSRF and refusal door.
   const WRITE_TARGETS = Object.freeze(["draft", "revisions", "runs",
-    "decisions", "proposals", "actions", "artifacts"]);
-  //: Which of them are about a RUN. They are gated on the STREAM being open
-  //: rather than on a workflow's readiness, because none of them is about a
-  //: workflow at all.
+    "decisions", "proposals", "actions", "artifacts", "tasks",
+    "automationPreview", "automationAuthorize", "automationControl"]);
+  // These writes are independent of a selected workflow.
   const RUN_SCOPED = Object.freeze(
-    ["decisions", "proposals", "actions", "artifacts"]);
+    ["decisions", "proposals", "actions", "artifacts", "tasks",
+    "automationPreview", "automationAuthorize", "automationControl"]);
 
   function said(code) {
     if (code === LATE) return LATE_SAID;
-    return ERROR_LABELS[code] || ERROR_LABELS.store_error;
+    return Object.freeze({key: `error.${Object.hasOwn(ERROR_LABELS, code) ? code : "store_error"}`});
   }
 
   //: A read abandoned at its deadline FAILED. That is said once however many
@@ -215,9 +229,9 @@ const REOPENED = Object.freeze(["draft_changed", "draft_conflict"]);
     const code = error instanceof Error ? error.message : "store_error";
     if (code !== LATE) return {phase: "refused", notice: said(code)};
     const {notice, noticeFrom} = state;
-    if (notice.includes(LATE_SAID)) return {phase: "failed", notice};
+    if (noticeHas(notice, LATE_SAID.key)) return {phase: "failed", notice};
     return {phase: "failed", notice: noticeFrom === "human" && notice
-      ? `${notice} ${LATE_SAID}` : LATE_SAID};
+      ? Object.freeze([notice, LATE_SAID]) : LATE_SAID};
   }
 
   //: A deadline that passed while a frame's read of the SAME subject queued
@@ -359,7 +373,13 @@ const REOPENED = Object.freeze(["draft_changed", "draft_conflict"]);
         readJson(path.controls(runId), stop).catch(() => null),
       ]);
       if (asked !== runEpoch) return;
+      if (state.tasks.selectedId && read.config?.task?.id !== state.tasks.selectedId) {
+        clearRun();
+        dispatch({type: "status", notice: {key: "notice.run_other_task"}});
+        return;
+      }
       dispatch({type: "run-loaded", read, controls});
+      automation.sync(state.runs.detail);
     } catch (error) {
       if (asked !== runEpoch && !stillNews(runId === chosenRun, stop)) return;
       const heard = unread(error);
@@ -372,8 +392,8 @@ const REOPENED = Object.freeze(["draft_changed", "draft_conflict"]);
   // Serialized the same way, and a press or a change of run aborts likewise.
   async function refreshRun(runId, fresh = false) {
     if (!isId(runId)) return;
-    if (fresh || runId !== chosenRun) runReading.abort();
-    if (runId !== chosenRun) dispatch({type: "run-chosen", runId});
+    if (fresh || runId !== chosenRun) { runNavigation += 1; runReading.abort(); }
+    if (runId !== chosenRun) { automation.clear(); dispatch({type: "run-chosen", runId}); }
     chosenRun = runId;
     runEpoch += 1;
     runDirty = true;
@@ -408,7 +428,7 @@ const REOPENED = Object.freeze(["draft_changed", "draft_conflict"]);
     try {
       response = await fetch(path[target](subject), {
         body: JSON.stringify(body),
-        headers: {"Content-Type": "application/json",
+        headers: {"Content-Type": "application/json", "Accept-Language": appearance.value.locale,
           "X-Conduct-CSRF": session.token},
         method: "POST",
       });
@@ -444,13 +464,15 @@ const REOPENED = Object.freeze(["draft_changed", "draft_conflict"]);
     const rows = result.payload && Array.isArray(result.payload.diagnostics)
       ? result.payload.diagnostics.map((row) => row.message).join(" · ") : "";
     return {phase: "refused",
-      notice: rows ? `${said(result.code)} ${rows}` : said(result.code)};
+      notice: rows ? Object.freeze({key: "notice.refusal_rows", params: {label: said(result.code), rows}})
+        : said(result.code)};
   }
 
   //: A write's outcome lands beside the control that asked for it. A decision
   //: refusal written to the workflow save line would answer one question in
   //: the place another was asked.
   function say(channel, phase, notice) {
+    if (["automationPreview", "automationAuthorize", "automationControl"].includes(channel)) return;
     dispatch(RUN_SCOPED.includes(channel)
       ? {type: "status", notice} : {type: "save", phase, notice});
   }
@@ -474,6 +496,7 @@ const REOPENED = Object.freeze(["draft_changed", "draft_conflict"]);
       ? streamOpen : state.workflows.writeReady;
     if (!ready) {
       say(target, "refused", STREAM_DOWN);
+      if (recover) recover({status: "refused", code: LATE});
       return;
     }
     // A RUN-SCOPED write is retired by nothing but its own answer. Its
@@ -483,206 +506,78 @@ const REOPENED = Object.freeze(["draft_changed", "draft_conflict"]);
     // the workflow doors' rule -- one workflow write at a time -- and over
     // both it retired alpha's refusal the moment omega's write began.
     const mine = RUN_SCOPED.includes(target) ? null : ++writeGeneration;
-    say(target, "submitting", "Writing…");
+    // A run-scoped refusal is spoken only where it was asked: a person who has
+    // since chosen another task or run is not told about a run they left.
+    const asked = mine === null && target !== "tasks" ? subject : null;
+    say(target, "submitting", WRITING);
     const result = await submit(target, subject, body);
     if (mine !== null && mine !== writeGeneration) return;
     if (result.status !== "accepted") {
       const refusal = refusalOf(result);
-      say(target, refusal.phase, refusal.notice);
+      if (asked === null || asked === chosenRun) say(target, refusal.phase, refusal.notice);
+      else if (noticeHas(state.notice, WRITING.key) && !Object.entries(state.runs.writes).some(([key, word]) =>
+        key.startsWith(`${chosenRun}/`) && word === "writing")) dispatch({type: "status", notice: ""});
       if (recover) recover(result);
       return;
     }
     carry(result);
   }
 
-  // -- what a Human presses -------------------------------------------------
-  function onSaveDraft() {
-    const held = state.workflows;
-    const drawing = held.draft;
-    if (drawing === null || !isId(chosenWorkflow)) {
-      dispatch({type: "save", phase: "refused",
-        notice: "Choose a workflow and draw something before saving."});
-      return;
-    }
-    if (saveProblems(drawing).length) {
-      dispatch({type: "save", phase: "refused", notice: DRAFT_REFUSED});
-      return;
-    }
-    // The document is read into a value ONCE and that value is what is judged,
-    // what is sent, and what the confirming read is compared against.
-    const written = JSON.parse(JSON.stringify(drawing));
-    // Beside it, WHICH stored draft this window is replacing: the digest the
-    // last read carried, or the claim that the last read carried none. It is
-    // the same echo the publish body sends, one road earlier, and it is what
-    // stops this save silently overwriting a draft another window stored after
-    // this one last looked. `reviewedDigest` is exactly that answer and is
-    // taken away by the read that would make it wrong.
-    const body = held.reviewedDigest === null
-      ? {document: written, expected_absent: true}
-      : {document: written, expected_digest: held.reviewedDigest};
-    const asked = chosenWorkflow;
-    write("draft", asked, body, () => {
-      // The answer belongs to the workflow it was asked about. If the Human
-      // has moved on, it is not announced here and no read is provoked for a
-      // workflow this write never touched.
-      if (asked !== chosenWorkflow) return;
-      refreshWorkflow(asked, {kind: "draft", workflowId: asked,
-        text: canonicalJson(written), phase: "saved", notice: SAVED});
-    });
+
+
+  function clearRun() {
+    automation.clear();
+    runNavigation += 1;
+    chosenRun = "";
+    runEpoch += 1;
+    runDirty = false;
+    runReading.abort();
+    dispatch({type: "run-cleared"});
   }
 
-  // Publishing is two steps. This one opens the review and writes NOTHING; the
-  // reducer refuses to open it over a workflow the server has not called
-  // publishable, so a review can never be shown for a write that would be
-  // refused anyway.
-  function onPublish() {
-    dispatch({type: "publish-review", open: true});
-  }
 
-  // Cancel writes nothing at all: the draft, the drawing and every standing
-  // revision are exactly as they were, and the panel closes.
-  function onPublishCancel() {
-    dispatch({type: "publish-review", open: false});
-  }
-
-  function onPublishConfirm() {
-    const held = state.workflows;
-    const number = held.nextRevision;
-    if (!isId(chosenWorkflow) || !held.publishable
-        || !Number.isInteger(number)) {
-      dispatch({type: "save", phase: "refused",
-        notice: "Publishing needs a SAVED draft the server says would "
-          + "construct a revision."});
-      return;
-    }
-    const asked = chosenWorkflow;
-    // The body names the revision expected, no document, and WHICH draft this
-    // window reviewed. The draft the server holds is the one durable source,
-    // read once by the route -- and the echo is what lets the route refuse when
-    // that source moved between the review and this click.
-    write("revisions", asked,
-          {revision: number, reviewed_digest: held.reviewedDigest}, () => {
-      if (asked !== chosenWorkflow) return;
-      refreshWorkflow(asked, {kind: "publish", workflowId: asked,
-        revision: number, phase: "saved", notice: PUBLISHED});
-    }, (result) => {
-      // The two refusals a window can act on rather than only report, and the
-      // recovery is one shape because the situation is: the review on screen is
-      // of a document the server no longer holds. Leaving the panel open would
-      // show a person that document above a Confirm now guaranteed to fail. So
-      // the review is closed and the workflow is re-read, and what comes back
-      // is what actually stands -- the newer DRAFT, which the person reviews
-      // instead, or, when the draft was consumed rather than replaced, the
-      // published REVISION, from which Edit as new draft is the road on.
-      if (!REOPENED.includes(result.code) || asked !== chosenWorkflow) return;
-      dispatch({type: "publish-review", open: false});
-      refreshWorkflow(asked);
-    });
-  }
-
-  function onOpenRun(request) {
-    if (!isId(request.runId) || !isId(request.cycleId)
-        || !isId(chosenWorkflow) || !Number.isInteger(request.revision)) {
-      dispatch({type: "save", phase: "refused",
-        notice: "A run needs a chosen workflow with a published revision, a "
-          + "run id and a cycle id -- each letters, digits, dot, underscore "
-          + "or hyphen."});
-      return;
-    }
-    // No task picker yet: a run opened from this form binds no task.
-    const body = {run_id: request.runId, cycle_id: request.cycleId,
-      mode: request.mode, participants: request.participants,
-      workflow_id: chosenWorkflow, revision: request.revision,
-      assignments: request.assignments, task_id: null};
-    write("runs", null, body, () => {
-      dispatch({type: "save", phase: "saved", notice: RUN_OPENED});
-      dispatch({type: "opening-cleared"});
-      loadRuns();
-      refreshRun(request.runId);
-    });
-  }
-
-  function onStartWorkflow(request) {
-    if (!isId(request.workflowId)) {
-      dispatch({type: "status",
-        notice: "A workflow id is letters, digits, dot, underscore or hyphen, "
-          + "up to 128 characters."});
-      return;
-    }
-    const starter = state.workflows.starters.find(
-      (row) => row.starter_id === request.starterId) || null;
-    const seed = starter === null
-      ? {schema_version: 1, title: request.workflowId, nodes: [], edges: []}
-      : starter.document;
-    // The read goes first and the drawing lands on top of it: opening a name
-    // that already exists must show what the server holds, not bury it.
-    refreshWorkflow(request.workflowId);
-    dispatch({type: "seed", document: draftFrom(seed)});
-  }
-
-  //: The one road out of a published workflow that holds no draft. It copies
-  //: the revision ON SCREEN -- `detail.published`, the document the canvas is
-  //: drawing -- into a draft this window holds, and reaches the wire not at
-  //: all: `draftFrom` rebuilds it without `template_id` and `revision`, the two
-  //: words the save route refuses, and Save draft is what puts it on the server
-  //: through the draft route that already exists. The revision is untouched;
-  //: publishing the copy makes the NEXT one, which is what immutability means
-  //: from the editing side.
-  //:
-  //: It seeds for the workflow ALREADY chosen and never re-chooses it. Choosing
-  //: is the one door a held drawing is let go through, and it clears the very
-  //: read this copy is taken from, so a re-choose here would throw away the
-  //: published document on the way to copying it.
-  //:
-  //: The two refusals are this door's own rule rather than a second opinion
-  //: about the control's: a drawing already on screen is work a copy would
-  //: destroy, and a revision that is not there cannot be copied. The toolbar
-  //: shuts the control on those same two facts and on the write door besides,
-  //: because the road ends in a write.
-  function onEditPublished() {
-    const held = state.workflows;
-    const copy = held.detail === null ? null : draftFrom(held.detail.published);
-    if (held.draft !== null || copy === null) {
-      dispatch({type: "status", notice: held.draft !== null
-        ? "There is already a drawing on screen, and copying the published "
-          + "revision would replace it. Nothing was copied."
-        : "There is no published revision on screen to copy."});
-      return;
-    }
-    dispatch({type: "seed", document: copy});
-  }
-
-  function onValidate() {
-    if (!isId(chosenWorkflow)) return;
-    refreshWorkflow(chosenWorkflow, null, true);
-    dispatch({type: "status", notice: "Read again. The server's diagnostics "
-      + "describe the SAVED draft; the list beside them is what this window "
-      + "already sees about the drawing, which has not been sent."});
-  }
 
   //: The step road's four callbacks, handed the doors they may use and no
   //: others. `chosenRun` is a getter because the answer moves.
+  const workflow = workflowWriters({state: () => state, chosenWorkflow: () => chosenWorkflow,
+    dispatch, write, refreshWorkflow});
   const step = stepWriters({chosenRun: () => chosenRun, dispatch, isId,
     refreshRun, said, write});
-  const docs = documentWriters({chosenRun: () => chosenRun, dispatch, isId,
+  const docs = documentWriters({state: () => ({...state, locale: appearance.value.locale}), chosenRun: () => chosenRun, dispatch, isId,
     refreshRun, said, write});
   const decisions = decisionWriters({chosenRun: () => chosenRun, dispatch,
     draft: () => state.decisions.draft, isId, refreshRun, write});
+  const tasks = taskFlow({state: () => state, read: readJson, write, dispatch,
+    clearRun, loadRuns, refreshRun, runSelection: () => runNavigation});
+  const automation = automationFlow({changed: render, selected: () => chosenRun,
+    ready: () => streamOpen && state.runs.phase === "ready" && state.runs.detail?.run.run_id === chosenRun,
+    read: (id, stop) => readJson(path.automation(id), stop), stop: () => new AbortController(),
+    id: (kind) => `${kind}-${crypto.randomUUID()}`, write, refreshRun});
+  const quotas = quotaFlow({read: readJson, dispatch,
+    enabled: () => streamOpen && ["runs", "agents"].includes(state.screen) && !document.hidden,
+    stop: () => new AbortController(), cancel: (timer) => clearTimeout(timer),
+    schedule: (callback) => setTimeout(callback, 60000)});
+  document.addEventListener("visibilitychange", () => quotas.syncQuotas());
+  window.addEventListener("pagehide", () => { quotas.disposeQuotas(); automation.clear(); });
 
   const handlers = Object.freeze({
     onScreen: (screen) => {
       if (!SCREENS.includes(screen)) return;
+      runNavigation += 1;
       dispatch({type: "screen", screen});
       if (screen === "runs" && state.runs.phase === "empty") loadRuns();
+      quotas.syncQuotas();
     },
     onChooseWorkflow: (workflowId) => {
       if (workflowId) refreshWorkflow(workflowId);
     },
-    onStartWorkflow, onValidate, onSaveDraft, onPublish, onPublishConfirm,
-    onPublishCancel, onEditPublished, onOpenRun,
+    ...workflow, onOpenRun: tasks.openRun,
+    chooseTask: tasks.chooseTask, createTask: tasks.createTask,
+    refreshTasks: tasks.refreshTasks,
+    refreshQuotas: quotas.refreshQuotas,
+    editTask: tasks.editTask,
     onFold: (name, open) => dispatch({type: "fold", name, open}),
-    // Text commits on blur must not replace the next click's target. Their
-    // live controls already show the edit; a later frame reads the held value.
+    // Text edits keep their live controls; a later frame reads the held value.
     editStarter: (patch) => dispatch({type: "starter-edit", patch},
       !Object.hasOwn(patch, "workflowId")),
     editOpening: (patch) => dispatch({type: "opening-edit", patch},
@@ -691,6 +586,11 @@ const REOPENED = Object.freeze(["draft_changed", "draft_conflict"]);
     onRefreshRuns: () => loadRuns(),
     onRefreshRun: () => { if (chosenRun) refreshRun(chosenRun, true); },
     onRefreshAgents: () => loadWorkflows(),
+    onSelectTaskRun: (taskId, runId) => {
+      tasks.chooseTask(taskId, false);
+      dispatch({type: "screen", screen: "runs"});
+      refreshRun(runId, true);
+    },
     onSelectRun: (runId) => {
       dispatch({type: "screen", screen: "runs"});
       refreshRun(runId, true);
@@ -725,17 +625,7 @@ const REOPENED = Object.freeze(["draft_changed", "draft_conflict"]);
   // Five screens and one place that changes which is showing. The tabs are
   // wired by `mountShell` through `onScreen`; this adds the keyboard road the
   // platform expects of a tablist and nothing else.
-  mounts.tabs.forEach((node, at) => {
-    node.addEventListener("keydown", (event) => {
-      const step = {ArrowRight: 1, ArrowLeft: -1}[event.key];
-      if (!step) return;
-      event.preventDefault();
-      const next = mounts.tabs[(at + step + mounts.tabs.length)
-        % mounts.tabs.length];
-      handlers.onScreen(next.getAttribute("data-screen"));
-      next.focus();
-    });
-  });
+  wireScreenKeys(mounts.tabs, handlers);
 
   // -- the stream ----------------------------------------------------------
   //
@@ -754,6 +644,7 @@ const REOPENED = Object.freeze(["draft_changed", "draft_conflict"]);
     if (!frame || typeof frame !== "object") return;
     if (frame.kind === "state") {
       loadWorkflows();
+      tasks.refreshTasks();
       if (chosenWorkflow) refreshWorkflow(chosenWorkflow);
       if (chosenRun) refreshRun(chosenRun);
       return;
@@ -771,6 +662,8 @@ const REOPENED = Object.freeze(["draft_changed", "draft_conflict"]);
     dispatch({type: "connection", state: "open"});
     loadWorkflows();
     loadRuns();
+    tasks.refreshTasks();
+    quotas.syncQuotas();
     if (chosenWorkflow) refreshWorkflow(chosenWorkflow);
     if (chosenRun) refreshRun(chosenRun);
   });
@@ -786,13 +679,19 @@ const REOPENED = Object.freeze(["draft_changed", "draft_conflict"]);
     writeGeneration += 1;
     csrfToken = "";
     pendingCarry = null;
+    quotas.disconnectQuotas();
+    automation.disconnect();
     dispatch({type: "connection", state: "closed"});
   });
 
+  if (resume.taskId) dispatch({type: "task-chosen", taskId: resume.taskId}, false);
+  dispatch({type: "screen", screen: resume.screen}, false);
+  if (resume.workflowId) refreshWorkflow(resume.workflowId);
+  if (resume.runId) refreshRun(resume.runId);
   render();
-  // The window opens by reading what this project holds. Nothing is drawn from
-  // a fixture and nothing is assumed: until these land, every screen says in
-  // plain language that nothing has been read.
+  // Only authoritative reads turn navigation hints into displayed facts.
   loadWorkflows();
   loadRuns();
+  tasks.refreshTasks();
+  quotas.syncQuotas();
 })();

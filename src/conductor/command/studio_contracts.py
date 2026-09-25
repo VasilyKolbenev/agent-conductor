@@ -127,6 +127,7 @@ class RunInput:
     #: it did before tasks existed; the wire requires the key regardless
     #: (`_RUN_FIELDS`), and `parse_run` always passes it.
     task_id: str | None = None
+    automation_contract: str | None = None
 
     def snapshot(self, task: TaskBinding | None = None) -> dict[str, Any]:
         """The frozen configuration THIS SERVER writes for those participants.
@@ -175,6 +176,8 @@ class RunInput:
                                     "revision": self.revision}
         if task is not None:
             snapshot["task"] = {"id": task.task_id, "work_scope": task.work_scope}
+        if self.automation_contract is not None:
+            snapshot["automation_contract"] = self.automation_contract
         return snapshot
 
     def build(self, snapshot: Mapping[str, Any], created_at: str) -> RunEnvelope:
@@ -310,7 +313,15 @@ def parse_run(body: object) -> RunInput:
     ``task_id`` is an id within the task bound or ``null``; whether a task
     stands under it is a fact about a project, asked of the store by the route.
     """
+    marker = None
+    if isinstance(body, dict) and "automation_contract" in body:
+        body = dict(body)
+        marker = body.pop("automation_contract")
+        if marker != "bounded-run-v1" or type(marker) is not str:
+            raise ApiRefusal.fixed("contract_invalid")
     values = _closed(body, _RUN_FIELDS)
+    if marker is not None and (values["mode"] != "policy" or values["workflow_id"] is None):
+        raise ApiRefusal.fixed("contract_invalid")
     mode = values["mode"]
     if not isinstance(mode, str) or mode not in CONTROL_MODES:
         raise ApiRefusal.fixed("contract_invalid")
@@ -338,4 +349,4 @@ def parse_run(body: object) -> RunInput:
         run_id=_contract(_id, "run_id", values["run_id"]),
         cycle_id=_contract(_id, "cycle_id", values["cycle_id"]),
         mode=mode, participants=participants, workflow_id=workflow_id,
-        revision=revision, binding=binding, task_id=task_id)
+        revision=revision, binding=binding, task_id=task_id, automation_contract=marker)

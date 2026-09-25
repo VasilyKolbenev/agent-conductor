@@ -44,7 +44,11 @@ MEASURED at the pinned versions, with a fresh directory and one real spawn:
   it, and -- even under ``--no-session-persistence`` -- a ``sessions`` directory
   holding one JSON file per process, carrying that process's own working
   directory, and a ``.last-cleanup`` stamp. The first two are the profile the
-  login lives beside; the last two are per-run and are taken back.
+  login lives beside; the last two are per-run and are taken back. On the first
+  REAL subscription login (23.09.2026) a spawn that starts a shell also wrote
+  ``session-env/<session>/`` and ``shell-snapshots/``, and a plan-mode review wrote
+  ``plans/<slug>.md``, a review spilling tool output wrote ``projects/<cwd>/<session>/``,
+  and ``file-history/<session>/`` is the binary's edit checkpoint: per-run, taken back too.
 - Codex CLI 0.112.0 unpacks a ``skills`` tree on its first real ``exec`` and
   writes a ``tmp`` directory holding one lock and two batch files per spawn. The
   skills tree is a cache the vendor rebuilds if it is removed, so it is expected
@@ -145,6 +149,29 @@ def _declares(held: object, key: str) -> bool:
     return False
 
 
+def plain_config(home: str, name: str, allowed: tuple[dict, ...]) -> bool:
+    """A dedicated login profile may retain only native bootstrap configuration.
+
+    Compare decoded values, never rewrite an operator's configuration. Providers
+    declare measured bootstrap forms; custom execution/endpoint configuration is
+    refused before the profile is used for either metadata or task execution.
+    """
+    import tomllib
+
+    target = Path(home) / name
+    if not _pinned(home) or _is_portal(target):
+        return False
+    try:
+        if target.stat().st_size > CREDENTIAL_LIMIT:
+            return False
+        value = tomllib.loads(target.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return True
+    except Exception:
+        return False
+    return any(value == form for form in allowed)
+
+
 def credential_values(home: str, names: tuple[str, ...]) -> tuple[bytes, ...]:
     """Every string a provider's declared login file holds, as bytes to scan for.
 
@@ -163,6 +190,23 @@ def credential_values(home: str, names: tuple[str, ...]) -> tuple[bytes, ...]:
             if len(value) >= 12:
                 found.append(value.encode("utf-8"))
     return tuple(dict.fromkeys(found))
+
+
+def quota_metadata(home: str, name: str, field: str) -> object:
+    """One declared quota field from a bounded native profile JSON document.
+
+    The provider owns the fixed file/field names. Other profile data is neither
+    returned nor persisted. This uses the same containment and size checks as
+    the existing login scan, and performs no write or credential refresh.
+    """
+    from .harness_profile import reviewed_login_name
+
+    reviewed_login_name(name, "quota metadata file")
+    target = Path(home) / name
+    if _is_portal(target):
+        return None
+    value = _read_json(target)
+    return value.get(field) if type(value) is dict else None
 
 
 def _read_json(target: Path) -> object:
@@ -387,8 +431,12 @@ def take_back(home: str, scratch: tuple[str, ...],
     directory may be one a person also uses themselves: their own transcripts
     can be standing under a name this build calls per-run, and deleting those
     would be destroying an operator's work to keep a promise about this build's
-    own leavings. What this spawn did not create, this build does not remove --
-    and an unknown measurement removes nothing at all.
+    own leavings. What did not APPEAR while the spawn ran is not removed -- and an
+    unknown measurement removes nothing at all. "Appeared" is what this build can
+    measure, not proof of authorship: a session a person starts in the SAME pinned
+    directory while a spawn runs could have its per-run entries taken back with
+    the spawn's. The pinned login directory is therefore this build's alone while
+    its spawns run (see `docs/first-run-v1.md`).
 
     A portal standing where a scratch name is expected is removed BY ITS OWN
     ENTRY and never walked through: deleting through a junction would reach
@@ -441,3 +489,61 @@ def _leaf_stands(target: Path) -> bool:
         return target.is_symlink() or target.exists()
     except OSError:  # noqa: BLE001 -- unreadable is still standing
         return True
+
+
+def profile_absent(home: str, name: str) -> bool:
+    """True only when nothing at all stands at one fixed profile name: a sign-in still owed.
+
+    Anything present -- readable, unreadable or a portal -- stays with ``profile_document`` and
+    the provider's own policy; this answers only whether the vendor's login has written it yet.
+    """
+    from .harness_profile import reviewed_login_name
+    reviewed_login_name(name, "profile file")
+    return _pinned(home) and not os.path.lexists(Path(home) / name)
+
+
+def profile_document(home: str, name: str) -> dict | None:
+    """Read one fixed bounded TOML document for a provider-owned pure policy."""
+    import tomllib
+    from .harness_profile import reviewed_login_name
+    reviewed_login_name(name, "profile file")
+    target = Path(home) / name
+    if not _pinned(home) or _is_portal(target):
+        return None
+    try:
+        if target.stat().st_size > CREDENTIAL_LIMIT:
+            return None
+        return tomllib.loads(target.read_text(encoding="utf-8"))
+    except (OSError, ValueError, UnicodeError):
+        return None
+
+
+def nested_credentials(home: str, directory: str, names: tuple[str, ...]) -> tuple[bytes, ...]:
+    """Provider-declared credential leaves, with every intermediate portal refused."""
+    from .harness_profile import reviewed_login_name
+    reviewed_login_name(directory, "credential directory")
+    for name in names:
+        reviewed_login_name(name, "credential file")
+    target = Path(home) / directory
+    if not _pinned(home) or _is_portal(target):
+        return ()
+    return credential_values(str(target), names)
+
+
+
+def native_server_token(home: str, name: str) -> str | None:
+    """Read the native local-server bearer; never rotate, return or persist it publicly."""
+    from .harness_profile import reviewed_login_name
+    reviewed_login_name(name, "local server token file")
+    target = Path(home) / name
+    if not _pinned(home) or _is_portal(target):
+        return None
+    try:
+        if not stat.S_ISREG(target.stat().st_mode) or target.stat().st_size > 256:
+            return None
+        token = target.read_text(encoding="ascii").strip()
+        if len(token) != 43 or any(c not in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_" for c in token):
+            return None
+        return token
+    except (OSError, UnicodeError):
+        return None

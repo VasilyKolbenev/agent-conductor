@@ -28,16 +28,14 @@
 // audit, and it is now the whole of one file.
 import {canonicalJson} from "./command-projection.js";
 import {element} from "./command-view.js";
+import {localize as L} from "./studio-i18n.js";
 //: Which of a step's arguments name the documents it READS, as the reviewed
 //: schema marks them: the one rule, declared beside the form that publishes
 //: under those references.
 import {inputRefs, needsMaterialReproposal} from "./studio-rundocs.js";
 import {isolationFacts} from "./studio-isolation.js";
 import {boundDocument, latestDocument} from "./studio-runread.js";
-import {MATERIAL_BINDING, REBIND_MATERIALS, STREAM_DOWN_REASON,
-  SAME_ADAPTER_VERIFICATION, UNVERSIONED_MATERIALS, VERIFICATION_FRAME_NOTE,
-  VERIFICATION_MATERIALS, VERIFICATION_OUTPUT_NOTE, WRITING_NOTE}
-  from "./studio-runwords.js";
+import {MATERIAL_BINDING} from "./studio-runwords.js";
 
 //: `contract_values._id`'s grammar, twice: once as a value this window judges
 //: with, once as the pattern a control spells for the platform. Both are copies
@@ -124,7 +122,7 @@ export const STEP_MOVED = Object.freeze(
 export const READ_AGAIN = "Read again: this step is offered only while the "
   + "run's plan calls it runnable and the request fits what the run allows; "
   + "the run was read again.";
-//: What a control says while its own write is in flight is `WRITING_NOTE`,
+//: What a control says while its own write is in flight is `L(state, "runstep.writing")`,
 //: declared with the other sentences two fragments say. The draft is NOT
 //: destroyed at the door: a refusal that does not re-read must give the
 //: control back with what was typed still in it, so the shut state is a fact
@@ -138,9 +136,10 @@ const TIMEOUT_NOTE = "The window asks for this step's own ceiling or "
 
 const NOT_STATED = "not stated";
 
-function show(value) {
-  if (value === null || value === undefined || value === "") return NOT_STATED;
-  if (Array.isArray(value)) return value.length ? value.join(", ") : NOT_STATED;
+function show(value, state = null) {
+  const missing = state === null ? NOT_STATED : L(state, "runstep.not_stated");
+  if (value === null || value === undefined || value === "") return missing;
+  if (Array.isArray(value)) return value.length ? value.join(", ") : missing;
   return String(value);
 }
 
@@ -157,10 +156,10 @@ function note(value) {
   return element("p", {className: "studio-note", text: value});
 }
 
-function fact(label, value) {
+function fact(label, value, state) {
   return element("p", {className: "studio-fact"}, [
     element("span", {className: "studio-fact__k", text: label}),
-    element("span", {className: "studio-fact__v", text: show(value)}),
+    element("span", {className: "studio-fact__v", text: show(value, state)}),
   ]);
 }
 
@@ -172,8 +171,8 @@ function handlerOf(handlers, name) {
 //: The one sentence a control says when this screen was mounted without the
 //: wire it needs, spelled the way `studio-runs.js` spells it: a person meeting
 //: a shut control is owed the same explanation wherever it sits.
-function mountedWithout(name) {
-  return `This screen was mounted without a ${name} handler.`;
+function mountedWithout(name, state) {
+  return L(state, "runstep.missing_handler", {name});
 }
 
 //: Which run this control writes to, off the read it was drawn from.
@@ -191,18 +190,14 @@ function runOf(detail) {
 // that never landed is a THIRD answer and says so -- "no adapter serves this"
 // and "this window was not told" are different facts, and a person acting on
 // the first while the second is true would go looking for a provider they have.
-function whyNoAdapter(detail, node) {
+function whyNoAdapter(detail, node, state) {
   const controls = object(detail.controls);
   const pair = `${show(node.instance_id)}/${show(node.capability)}`;
-  if (controls === null) {
-    return "This run's controls read has not landed here, so this window "
-      + `cannot say whether any adapter serves ${pair}.`;
-  }
+  if (controls === null) return L(state, "runstep.controls_missing", {pair});
   const bound = rows(controls.instances)
     .find((row) => row.instance_id === node.instance_id) || null;
   if (bound === null || !rows(bound.controls).includes(node.capability)) {
-    return `This build serves no adapter for ${pair}, so nothing here can `
-      + "carry this step out. The step is offered and the control is shut.";
+    return L(state, "runstep.adapter_missing", {pair});
   }
   return null;
 }
@@ -242,25 +237,29 @@ const NO_WORKFLOW_ROAD = "This run follows no workflow. To carry a step out, "
   + "publish a workflow and open a run of it with authority confirm: "
   + "the Open a run form on the Workflow screen grants it explicitly.";
 
-function authorityOf(detail) {
+function authorityOf(detail, state) {
   const run = object(detail.run) || {};
   return {mode: show(run.mode), permits: PERMITS[run.mode] || "nothing",
-    road: typeof run.workflow_id === "string" ? CONFIRM_ROAD : NO_WORKFLOW_ROAD};
+    road: L(state, typeof run.workflow_id === "string"
+      ? "runstep.confirm_road" : "runstep.no_workflow_road")};
 }
 
-function nothingPermitted(authority) {
-  return note(`This run's authority is ${authority.mode}: nothing may be `
-    + `proposed on it and nothing runs. ${authority.road}`);
+function modeLabel(mode, state) {
+  return Object.hasOwn(PERMITS, mode) ? L(state, `runstep.mode_${mode}`) : mode;
 }
 
-function proposalsOnly(authority) {
-  return note(`A proposal stands on this step and this run's authority is `
-    + `${authority.mode}: nothing can confirm it here. ${authority.road}`);
+function nothingPermitted(authority, state) {
+  return note(L(state, "runstep.nothing_permitted",
+    {mode: modeLabel(authority.mode, state), road: authority.road}));
 }
 
-function proposedUnder(mode) {
-  return note(`In a ${mode} run a proposal is a durable record and nothing `
-    + "carries it out here.");
+function proposalsOnly(authority, state) {
+  return note(L(state, "runstep.proposals_only",
+    {mode: modeLabel(authority.mode, state), road: authority.road}));
+}
+
+function proposedUnder(mode, state) {
+  return note(L(state, "runstep.proposed_under", {mode: modeLabel(mode, state)}));
 }
 
 // -- the facts the plan already decided ---------------------------------------
@@ -373,28 +372,21 @@ function byteLength(value) {
   return new TextEncoder().encode(value).length;
 }
 
-function instructionFacts(ref, bound, standing) {
+function instructionFacts(ref, bound, standing, state) {
   if (ref === null) return [];
-  const label = `Instruction ${ref}`;
+  const label = L(state, "runstep.instruction", {ref});
   if (bound === null) {
-    return [fact(label, "no durable document"), note(standing
-      ? `No document stood under ${ref} when this proposal was written, so `
-        + `the machine's instructions/${ref}.md is read if it exists and the `
-        + "attempt is refused before anything is spawned if not."
-      : `No document stands under ${ref} in this run, so a proposal made now `
-        + `binds the machine's instructions/${ref}.md if it exists -- or is `
-        + "refused before anything is spawned. Publish a document under "
-        + `${ref} below, and a proposal made after that binds it.`)];
+    return [fact(label, L(state, "runstep.no_document"), state),
+      note(L(state, standing ? "runstep.instruction_missing_bound"
+        : "runstep.instruction_missing_now", {ref}))];
   }
-  return [fact(label, `durable document ${show(bound.artifact_id)} · `
-    + `${byteLength(text(bound.content))} bytes · written `
-    + `${show(bound.created_at)}`), note(standing
-    ? "The one standing when this proposal was written: confirming this "
-      + "proposal runs it. A document published since is durable and is not "
-      + "what runs; the newest one standing is bound by the next proposal "
-      + "made on this step, once this attempt has answered."
-    : "The one standing now: a proposal made now binds it, and a document "
-      + "published after that proposal is not what runs.")];
+  return [fact(label, documentLabel(bound, state), state),
+    note(L(state, standing ? "runstep.instruction_bound" : "runstep.instruction_now"))];
+}
+
+function documentLabel(bound, state) {
+  return L(state, "runstep.document", {artifact: show(bound.artifact_id, state),
+    bytes: String(byteLength(text(bound.content))), at: show(bound.created_at, state)});
 }
 
 //: WHICH DOCUMENTS A STEP READS, one fact per input reference, bound at the
@@ -403,69 +395,59 @@ function instructionFacts(ref, bound, standing) {
 //: the one standing when the proposal was written. A reference under which
 //: nothing stands is said so: the attempt is refused before anything is
 //: spawned rather than run on nothing.
-function inputFacts(refs, lookup, standing) {
+function inputFacts(refs, lookup, standing, state) {
   if (!refs.length) return [];
   return [...refs.map((ref) => {
     const bound = lookup(ref);
-    return fact(`Input ${ref}`, bound === null
-      ? "no durable document -- the attempt is refused before anything is spawned"
-      : `durable document ${show(bound.artifact_id)} · `
-        + `${byteLength(text(bound.content))} bytes · written `
-        + `${show(bound.created_at)}`);
-  }), note(standing
-    ? "Each input is the document standing when this proposal was written; "
-      + "the child reads exactly these, whatever is published since."
-    : "Each input is the newest document standing under its reference now: "
-      + "a proposal made now binds these, and one published after it is not "
-      + "what the child reads.")];
+    return fact(L(state, "runstep.input", {ref}), bound === null
+      ? L(state, "runstep.input_missing") : documentLabel(bound, state), state);
+  }), note(L(state, standing ? "runstep.inputs_bound" : "runstep.inputs_now"))];
 }
 
 //: What the PLAN decided about this step, drawn read-only. Every one of these
 //: travels into the body exactly as it is shown: there is no control here that
 //: could make the screen and the wire disagree.
-function planFacts(node, runtime, detail) {
+function planFacts(node, runtime, detail, state) {
   const ref = instructionRef(node.arguments);
   return [
-    fact("Step", `${show(node.title)} · ${show(node.node_id)}`),
-    fact("Instance", node.instance_id),
-    fact("Capability", node.capability),
-    fact("Arguments", canonicalJson(node.arguments)),
-    note("The arguments are the plan's own bytes. The server refuses a "
-      + "proposal that does not repeat them, so they are shown rather than "
-      + "offered."),
+    fact(L(state, "runstep.step"), `${show(node.title)} · ${show(node.node_id)}`, state),
+    fact(L(state, "runstep.instance"), node.instance_id, state),
+    fact(L(state, "runstep.capability"), node.capability, state),
+    fact(L(state, "runstep.arguments"), canonicalJson(node.arguments), state),
+    note(L(state, "runstep.arguments_note")),
     ...instructionFacts(ref, ref === null ? null
-      : latestDocument(rows(detail.records), ref), false),
+      : latestDocument(rows(detail.records), ref), false, state),
     ...inputFacts(inputRefs(node.capability, node.arguments),
-      (input) => latestDocument(rows(detail.records), input), false),
-    fact("Longest this may run", `${timeoutOf(node)}s`),
-    note(TIMEOUT_NOTE),
-    ...verificationFacts(node, detail, timeoutOf(node)),
-    fact("Attempt id", attemptId(node, runtime)),
-    fact("Scope", SCOPE),
-    note(SCOPE_NOTE),
+      (input) => latestDocument(rows(detail.records), input), false, state),
+    fact(L(state, "runstep.longest"), L(state, "runstep.seconds", {seconds: String(timeoutOf(node))}), state),
+    note(L(state, "runstep.timeout_note", {seconds: String(DEFAULT_TIMEOUT)})),
+    ...verificationFacts(node, detail, timeoutOf(node), state),
+    fact(L(state, "runstep.attempt_id"), attemptId(node, runtime), state),
+    fact(L(state, "runstep.scope"), SCOPE, state),
+    note(L(state, "runstep.scope_note")),
   ];
 }
 
 // Identity and frozen model come from this run's controls, never the roster
 // of another workflow. Both Propose and Confirm state the extra paid action.
-function verificationFacts(node, detail, ceiling) {
+function verificationFacts(node, detail, ceiling, state) {
   if (typeof node.verifier_instance_id !== "string") {
-    return [note(SAME_ADAPTER_VERIFICATION)];
+    return [note(L(state, "runstep.same_adapter"))];
   }
   const controls = object(detail.controls) || {};
   const binding = rows(controls.instances).find(
     (row) => row.instance_id === node.verifier_instance_id);
   const who = binding ? `${binding.instance_id} · ${binding.adapter_id} · `
-    + (binding.model === null ? "provider default" : show(binding.model))
-    : `${node.verifier_instance_id} · binding not available in this read`;
-  return [fact("Independent verifier", who),
-    fact("Verification materials", VERIFICATION_MATERIALS[node.capability]),
-    note(VERIFICATION_FRAME_NOTE),
-    fact("Task time ceilings", `${ceiling}s for the attempt + ${ceiling}s `
-      + `for one check (2 × ${ceiling}s = ${2 * ceiling}s combined task time). `
-      + "Bounded version preflights and setup add wall-clock time. "
-      + "This run's budget must cover both task ceilings."),
-    note(VERIFICATION_OUTPUT_NOTE)];
+    + (binding.model === null ? L(state, "runstep.provider_default") : show(binding.model, state))
+    : L(state, "runstep.binding_missing", {instance: node.verifier_instance_id});
+  const material = {dispatch: "runstep.materials_dispatch", review: "runstep.materials_review"};
+  return [fact(L(state, "runstep.verifier"), who, state),
+    fact(L(state, "runstep.materials"), Object.hasOwn(material, node.capability)
+      ? L(state, material[node.capability]) : null, state),
+    note(L(state, "runstep.verification_frame")),
+    fact(L(state, "runstep.ceilings"), L(state, "runstep.verification_ceiling",
+      {ceiling: String(ceiling), total: String(2 * ceiling)}), state),
+    note(L(state, "runstep.verification_output"))];
 }
 
 // -- the controls -------------------------------------------------------------
@@ -486,20 +468,20 @@ function textControl(name, key, value, edit, label, attributes) {
 //: The one submit control, and every reason it may be shut, in the order a
 //: person can do something about them. A dropped stream is said first: it is
 //: the reason no amount of typing here answers.
-function submitControl(label, stops, wire) {
+function submitControl(label, stops, wire, state) {
   const button = element("button", {
     "data-focus-key": wire.key, text: label, type: "submit",
   });
   button.disabled = stops !== null || wire.shut;
-  if (wire.writing) button.title = WRITING_NOTE;
-  else if (!wire.live) button.title = STREAM_DOWN_REASON;
+  if (wire.writing) button.title = L(state, "runstep.writing");
+  else if (!wire.live) button.title = L(state, "runstep.stream_down");
   const said = [];
   // The write in flight is said FIRST: it is the only one of these a person
   // has already done something about, and it is about to end by itself.
-  if (wire.writing) said.push(note(WRITING_NOTE));
-  if (!wire.live) said.push(note(STREAM_DOWN_REASON));
+  if (wire.writing) said.push(note(L(state, "runstep.writing")));
+  if (!wire.live) said.push(note(L(state, "runstep.stream_down")));
   if (stops !== null) said.push(note(stops));
-  if (wire.missing !== null) said.push(note(mountedWithout(wire.missing)));
+  if (wire.missing !== null) said.push(note(mountedWithout(wire.missing, state)));
   return [button, ...said];
 }
 
@@ -573,18 +555,10 @@ function liveValue(step, name, fallback) {
 //: rules are `ActionProposal`'s own -- `proposed_by` is an id, `rationale` is a
 //: non-empty text -- asked here so the control refuses beside the person rather
 //: than on the wire.
-function whyNotProposable(draft) {
-  if (draft === null) {
-    return "Type who is proposing this step and why, and it can be written.";
-  }
-  if (!ID_RE.test(text(draft.proposedBy))) {
-    return "Type who is proposing, as a plain id: letters, digits, dot, "
-      + "underscore or hyphen, up to 128 characters.";
-  }
-  if (!text(draft.rationale).trim()) {
-    return "Say why this step is being proposed. The reason becomes part of "
-      + "the durable record.";
-  }
+function whyNotProposable(draft, state) {
+  if (draft === null) return L(state, "runstep.propose_hint");
+  if (!ID_RE.test(text(draft.proposedBy))) return L(state, "runstep.proposer_invalid");
+  if (!text(draft.rationale).trim()) return L(state, "runstep.rationale_missing");
   return null;
 }
 
@@ -615,21 +589,21 @@ function proposeForm(node, runtime, detail, state, handlers, authority) {
   const wire = wireFor("proposeStep", `propose:${node.node_id}`,
     editorFor(node, draft !== null, handlers), submit,
     state.connection === "open", writingOf(state, detail, node));
-  const shut = whyNoAdapter(detail, node);
-  const stops = shut === null ? whyNotProposable(draft) : shut;
+  const shut = whyNoAdapter(detail, node, state);
+  const stops = shut === null ? whyNotProposable(draft, state) : shut;
   const form = element("form", {className: "studio-step", "data-step": step},
-    [element("h4", {text: "Propose this step"}), note(PROPOSED_NOTE),
+    [element("h4", {text: L(state, "runstep.propose")}), note(L(state, "runstep.proposed_note")),
       ...(authority.permits === "proposals"
-        ? [proposedUnder(authority.mode)] : []),
-      ...planFacts(node, runtime, detail),
+        ? [proposedUnder(authority.mode, state)] : []),
+      ...planFacts(node, runtime, detail, state),
       textControl("proposed_by", "proposedBy", liveValue(step, "proposed_by",
         draft === null ? "" : text(draft.proposedBy)), wire.edit,
-      "Proposed by", {maxlength: "128", pattern: ID_PATTERN, required: ""}),
+      L(state, "runstep.proposed_by"), {maxlength: "128", pattern: ID_PATTERN, required: ""}),
       textControl("rationale", "rationale", liveValue(step, "rationale",
         draft === null ? "" : text(draft.rationale)), wire.edit,
-      `Why (up to ${RATIONALE_LIMIT} characters)`,
+      L(state, "runstep.rationale", {limit: String(RATIONALE_LIMIT)}),
       {maxlength: String(RATIONALE_LIMIT)}),
-      ...submitControl("Propose this step", stops, wire)]);
+      ...submitControl(L(state, "runstep.propose"), stops, wire, state)]);
   form.addEventListener("submit", (event) => {
     event.preventDefault();
     if (stops !== null || submit === null || wire.shut) return;
@@ -686,31 +660,30 @@ function confirmBody(proposal, draft) {
 // Age alone does not stale a proposal: freshness judges the confirmation.
 // Material binding is separate, explicitly revisioned, and cannot be claimed
 // for an older record. `Proposed at` stays as history, not an expiry verdict.
-function proposalFacts(proposal, detail) {
+function proposalFacts(proposal, detail, state) {
   const ref = instructionRef(proposal.arguments);
   const bound = proposal.input_binding === MATERIAL_BINDING;
   return [
-    fact("Proposal", proposal.proposal_id),
-    fact("Proposed at", proposal.proposed_at),
-    fact("Proposed by", proposal.proposed_by),
-    fact("Why", proposal.rationale),
-    fact("Capability", proposal.capability),
-    fact("Arguments", canonicalJson(proposal.arguments)),
+    fact(L(state, "runstep.proposal"), proposal.proposal_id, state),
+    fact(L(state, "runstep.proposed_at"), proposal.proposed_at, state),
+    fact(L(state, "runstep.proposed_by"), proposal.proposed_by, state),
+    fact(L(state, "runstep.why"), proposal.rationale, state),
+    fact(L(state, "runstep.capability"), proposal.capability, state),
+    fact(L(state, "runstep.arguments"), canonicalJson(proposal.arguments), state),
     ...(bound ? instructionFacts(ref, ref === null ? null : boundDocument(
-      rows(detail.records), proposal.proposal_id, ref), true) : []),
+      rows(detail.records), proposal.proposal_id, ref), true, state) : []),
     ...(bound ? inputFacts(inputRefs(proposal.capability, proposal.arguments),
       (input) => boundDocument(rows(detail.records), proposal.proposal_id,
-        input), true) : [note(UNVERSIONED_MATERIALS)]),
-    fact("Scope", proposal.scope),
-    fact("Preview digest", proposal.preview_digest),
-    fact("Against configuration", proposal.config_digest),
+        input), true, state) : [note(L(state, "runstep.unversioned"))]),
+    fact(L(state, "runstep.scope"), proposal.scope, state),
+    fact(L(state, "runstep.preview_digest"), proposal.preview_digest, state),
+    fact(L(state, "runstep.config_digest"), proposal.config_digest, state),
   ];
 }
 
-function whyNotConfirmable(draft) {
+function whyNotConfirmable(draft, state) {
   if (draft === null || !ID_RE.test(text(draft.confirmedBy))) {
-    return "Type who is confirming, as a plain id: letters, digits, dot, "
-      + "underscore or hyphen, up to 128 characters.";
+    return L(state, "runstep.confirmer_invalid");
   }
   return null;
 }
@@ -718,9 +691,7 @@ function whyNotConfirmable(draft) {
 function confirmForm(node, detail, state, handlers) {
   const proposal = standingProposal(detail, node.node_id);
   if (proposal === null) {
-    return [note("This step reads as proposed and this window cannot find the "
-      + "proposal standing on it. Read the run again: nothing is offered "
-      + "against a record that is not there.")];
+    return [note(L(state, "runstep.proposal_missing"))];
   }
   const draft = draftFor(state, node);
   const step = `confirm:${show(node.node_id)}`;
@@ -728,20 +699,20 @@ function confirmForm(node, detail, state, handlers) {
   const wire = wireFor("confirmStep", `confirm:${node.node_id}`,
     editorFor(node, draft !== null, handlers), submit,
     state.connection === "open", writingOf(state, detail, node));
-  const shut = whyNoAdapter(detail, node);
-  const stops = shut === null ? whyNotConfirmable(draft) : shut;
+  const shut = whyNoAdapter(detail, node, state);
+  const stops = shut === null ? whyNotConfirmable(draft, state) : shut;
   const form = element("form", {className: "studio-step", "data-step": step},
-    [element("h4", {text: "Confirm this proposal"}), note(REQUESTED_NOTE),
-      ...proposalFacts(proposal, detail),
-      ...verificationFacts(node, detail, proposal.timeout_seconds),
+    [element("h4", {text: L(state, "runstep.confirm")}), note(L(state, "runstep.requested_note")),
+      ...proposalFacts(proposal, detail, state),
+      ...verificationFacts(node, detail, proposal.timeout_seconds, state),
       // Before the control that authorizes it, never after, and keyed to the
       // capability THIS PROPOSAL carries: what protects a step is a fact about
       // its road as much as its binding, and the road is the proposal's own.
-      ...isolationFacts(detail, node, proposal.capability),
+      ...isolationFacts(detail, node, proposal.capability, state),
       textControl("confirmed_by", "confirmedBy", liveValue(step, "confirmed_by",
         draft === null ? "" : text(draft.confirmedBy)), wire.edit,
-      "Confirmed by", {maxlength: "128", pattern: ID_PATTERN, required: ""}),
-      ...submitControl("Confirm and authorize", stops, wire)]);
+      L(state, "runstep.confirmed_by"), {maxlength: "128", pattern: ID_PATTERN, required: ""}),
+      ...submitControl(L(state, "runstep.authorize"), stops, wire, state)]);
   form.addEventListener("submit", (event) => {
     event.preventDefault();
     if (stops !== null || submit === null || wire.shut) return;
@@ -776,24 +747,32 @@ function confirmForm(node, detail, state, handlers) {
  * @returns {Array<Element>} Nodes to append to the row; empty when none.
  */
 export function stepControls(node, runtime, standing, detail, state, handlers) {
-  if (standing === null || standing.state !== "runnable") return [];
+  const offer = offeredControl(node, runtime, standing, detail);
+  if (offer === "none") return [];
+  const authority = authorityOf(detail, state);
+  if (offer === "nothing_permitted") return [nothingPermitted(authority, state)];
+  if (offer === "proposals_only") return [proposalsOnly(authority, state)];
+  if (offer === "confirm" || offer === "proposal_missing") return confirmForm(node, detail, state, handlers);
+  return [...(offer === "repropose" ? [note(L(state, "runstep.rebind"))] : []),
+    ...proposeForm(node, runtime, detail, state, handlers, authority)];
+}
+
+//: Which control that row draws, decided HERE once, for the row and for the Runs header's main
+//: action alike, so the header never points at a form the row does not draw: "propose" and
+//: "repropose" draw the proposal form, "confirm" the confirmation form; "none",
+//: "nothing_permitted", "proposals_only" and "proposal_missing" draw no form.
+export function offeredControl(node, runtime, standing, detail) {
+  if (standing === null || standing.state !== "runnable") return "none";
   if (typeof node.node_id !== "string"
       || typeof node.instance_id !== "string"
       || typeof node.capability !== "string") {
-    return [];
+    return "none";
   }
-  const authority = authorityOf(detail);
-  if (authority.permits === "nothing") {
-    return [nothingPermitted(authority)];
-  }
-  if (runtime.phase === "proposed") {
-    if (needsMaterialReproposal(standingProposal(detail, node.node_id), detail)) {
-      return [note(REBIND_MATERIALS),
-        ...proposeForm(node, runtime, detail, state, handlers, authority)];
-    }
-    return authority.permits === "confirmations"
-      ? confirmForm(node, detail, state, handlers)
-      : [proposalsOnly(authority)];
-  }
-  return proposeForm(node, runtime, detail, state, handlers, authority);
+  const permits = PERMITS[(object(detail.run) || {}).mode] || "nothing";
+  if (permits === "nothing") return "nothing_permitted";
+  if (runtime.phase !== "proposed") return "propose";
+  const proposal = standingProposal(detail, node.node_id);
+  if (needsMaterialReproposal(proposal, detail)) return "repropose";
+  if (permits !== "confirmations") return "proposals_only";
+  return proposal === null ? "proposal_missing" : "confirm";
 }

@@ -20,6 +20,7 @@ from __future__ import annotations
 import os
 import signal
 import subprocess
+import time
 from typing import Protocol
 
 
@@ -30,12 +31,30 @@ class ProcessGroup(Protocol):
 
     def close(self) -> None: ...
 
+    def retired(self, *, timeout: float) -> bool: ...
+
 
 def popen_kwargs() -> dict[str, object]:
     """Spawn flags that put the child in its own killable group on each platform."""
     if os.name == "nt":
         return {"creationflags": _CREATE_NO_WINDOW | _CREATE_SUSPENDED}
     return {"start_new_session": True}
+
+
+#: CreateProcess's bound on the command line it is handed, in UTF-16 code units INCLUDING the
+#: terminating NUL. MEASURED 25.09.2026 (r1-cmdline-boundary.log): 32,766 units and the NUL start,
+#: 32,767 and the NUL refuse with WinError 206 -- ASCII and non-BMP text alike.
+COMMAND_LINE_LIMIT = 32_767
+
+
+def command_line_units(argv) -> int:
+    """UTF-16 code units of the command line Windows builds from ``argv``, its NUL included.
+
+    The serializer is the one ``Popen`` hands ``CreateProcess`` (``subprocess.list2cmdline``),
+    counted the way Windows counts it: a character past the BMP is two units. Spawns nothing.
+    """
+    line = subprocess.list2cmdline(list(argv))
+    return len(line) + sum(1 for char in line if ord(char) > 0xFFFF) + 1
 
 
 class _SessionGroup:
@@ -54,6 +73,19 @@ class _SessionGroup:
                     self._proc.kill()
                 except ProcessLookupError:
                     return
+
+    def retired(self, *, timeout: float) -> bool:
+        deadline = time.monotonic() + timeout
+        while True:
+            try:
+                os.killpg(self._pgid, 0)
+            except ProcessLookupError:
+                return True
+            except PermissionError:
+                return False
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(0.01)
 
     def close(self) -> None:
         return None
@@ -78,6 +110,14 @@ if os.name == "nt":  # pragma: win32 cover
     _k32.SetInformationJobObject.argtypes = [
         wintypes.HANDLE, ctypes.c_int, wintypes.LPVOID, wintypes.DWORD]
     _k32.CloseHandle.argtypes = [wintypes.HANDLE]
+    _k32.QueryInformationJobObject.argtypes = [wintypes.HANDLE, ctypes.c_int,
+        wintypes.LPVOID, wintypes.DWORD, ctypes.c_void_p]
+
+    class _ACCOUNTING(ctypes.Structure):
+        _fields_ = [("total_user", ctypes.c_int64), ("total_kernel", ctypes.c_int64),
+            ("period_user", ctypes.c_int64), ("period_kernel", ctypes.c_int64),
+            ("page_faults", wintypes.DWORD), ("total_processes", wintypes.DWORD),
+            ("active_processes", wintypes.DWORD), ("terminated_processes", wintypes.DWORD)]
     _ntdll = ctypes.WinDLL("ntdll")
     _ntdll.NtResumeProcess.restype = wintypes.LONG
     _ntdll.NtResumeProcess.argtypes = [wintypes.HANDLE]
@@ -144,6 +184,20 @@ if os.name == "nt":  # pragma: win32 cover
                 self._proc.wait(timeout=5)
             except subprocess.TimeoutExpired as e:
                 raise OSError("terminated Job did not reap its leader") from e
+
+        def retired(self, *, timeout: float) -> bool:
+            deadline = time.monotonic() + timeout
+            while self._job:
+                facts = _ACCOUNTING()
+                if not _k32.QueryInformationJobObject(self._job, 1, ctypes.byref(facts),
+                        ctypes.sizeof(facts), None):
+                    raise _win_error("QueryInformationJobObject")
+                if facts.active_processes == 0:
+                    return True
+                if time.monotonic() >= deadline:
+                    return False
+                time.sleep(0.01)
+            return False
 
         def close(self) -> None:
             if self._job:

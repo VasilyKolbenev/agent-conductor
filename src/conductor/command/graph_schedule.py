@@ -642,6 +642,15 @@ def _is_halted(plan: _Plan, rows: tuple[NodeSchedule, ...]) -> bool:
                if row.state == "settled")
 
 
+def run_is_halted(definition: GraphDefinition, values: tuple[Any, ...],
+                  computed: RunSchedule) -> bool:
+    """Expose the scheduler's existing halt fact without re-deriving its policy."""
+    incoming, _outgoing = _roads(definition.nodes, definition.edges)
+    plan = _Plan(run_id=definition.run_id, values=values,
+                 by_id={node.node_id: node for node in definition.nodes}, incoming=incoming)
+    return _is_halted(plan, computed.nodes)
+
+
 def _stop_runnable(rows: tuple[NodeSchedule, ...]) -> tuple[NodeSchedule, ...]:
     """Offer nothing further, which is what a halt means and all it means.
 

@@ -97,7 +97,8 @@ def load_provider_configs(path: Path | str) -> tuple[ProviderConfig, ...]:
 
 
 def save_provider_configs(
-        path: Path | str, configs: "tuple[ProviderConfig, ...] | list[ProviderConfig]") -> Path:
+        path: Path | str, configs: "tuple[ProviderConfig, ...] | list[ProviderConfig]", *,
+        project_root: Path | str | None = None) -> Path:
     """Write the operator's pinned providers, all or nothing.
 
     What is written is the document `load_provider_configs` reads and nothing
@@ -132,14 +133,16 @@ def save_provider_configs(
             document its own reader rejects would strand an operator with a
             project they cannot start and a file they were told was saved.
     """
+    from ..ownership import provider_write_guard, OwnerRefused
     target = Path(path)
     document = {"schema_version": SCHEMA_VERSION,
                 "providers": _rows_document(target, configs)}
     payload = (json.dumps(document, indent=2, sort_keys=True,
                           ensure_ascii=False) + "\n").encode("utf-8")
     try:
-        _replace_bytes(target, payload)
-    except OSError as error:
+        with provider_write_guard(target, project_root):
+            _replace_bytes(target, payload)
+    except (OSError, OwnerRefused) as error:
         raise OperatorConfigError(f"{target}: cannot be written: {error}") from None
     return target
 

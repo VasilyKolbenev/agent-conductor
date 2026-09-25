@@ -50,6 +50,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
+from .contracts import ABSENT as _EXECUTION_ABSENT
 from .contracts import (
     ContractError,
     _content_digest,
@@ -636,9 +637,10 @@ class GraphDefinition:
     edges: tuple[GraphEdge, ...] = ()
     schema_version: int = 2
     extra: Mapping[str, Any] = field(default_factory=dict, repr=False)
+    execution_contract: object = _EXECUTION_ABSENT
 
     _FIELDS = frozenset({
-        "schema_version", "graph_id", "run_id", "created_at", "nodes", "edges",
+        "schema_version", "graph_id", "run_id", "created_at", "nodes", "edges", "execution_contract",
     })
 
     def __post_init__(self) -> None:
@@ -648,6 +650,8 @@ class GraphDefinition:
         object.__setattr__(self, "schema_version", _schema(self.schema_version))
         object.__setattr__(self, "extra", _extra(self.extra, self._FIELDS))
         _reserved("graph", self.extra)
+        from .graph_execution import settled_execution_contract
+        object.__setattr__(self, "execution_contract", settled_execution_contract(self.execution_contract))
         object.__setattr__(self, "nodes", self._settled_nodes())
         object.__setattr__(self, "edges", self._settled_edges())
         settle_edge_conditions(self.nodes, self.edges)
@@ -704,6 +708,8 @@ class GraphDefinition:
         binds to an effecting capability, each of them stands behind a gate. A
         graph may have none, one, or several.
         """
+        if self.execution_contract is not _EXECUTION_ABSENT:
+            return  # Admission comes from a bounded grant; explicit Human gates remain in the graph.
         gates = {node.node_id for node in self.nodes if node.kind == "gate"}
         for node in self.nodes:
             if not node.effecting:
@@ -749,6 +755,8 @@ class GraphDefinition:
             "nodes": [node.as_dict() for node in self.nodes],
             "edges": [edge.as_dict() for edge in self.edges],
         })
+        if self.execution_contract is not _EXECUTION_ABSENT:
+            out["execution_contract"] = self.execution_contract
         return out
 
     @classmethod
@@ -763,4 +771,5 @@ class GraphDefinition:
             created_at=_take(known, "created_at"),
             nodes=tuple(GraphNode.from_dict(row) for row in nodes),
             edges=tuple(GraphEdge.from_dict(row) for row in edges),
-            schema_version=known.pop("schema_version", 2), extra=data)
+            schema_version=known.pop("schema_version", 2), extra=data,
+            execution_contract=known.pop("execution_contract", _EXECUTION_ABSENT))

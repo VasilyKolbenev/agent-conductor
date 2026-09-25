@@ -43,6 +43,8 @@ ERROR_STATUS = MappingProxyType({
     "route_not_found": 404,
     "malformed_request": 400,
     "contract_invalid": 422,
+    "windows_name_unsafe": 422,
+    "windows_path_too_long": 422,
     "run_corrupt": 409,
     "store_error": 500,
     "route_unsafe": 409,
@@ -64,6 +66,10 @@ _FIXED_MESSAGES = MappingProxyType({
     "route_not_found": "command route does not exist",
     "malformed_request": "request transport or JSON shape is malformed",
     "contract_invalid": "request values do not satisfy the contract",
+    "windows_name_unsafe": "choose an identifier without a trailing dot or space "
+                           "and without a reserved Windows basename such as NUL",
+    "windows_path_too_long": "shorten the identifier or move the project to a "
+                             "shorter path; the Windows path budget is exceeded",
     "run_corrupt": "stored run is corrupt",
     "store_error": "run store could not complete the request",
     "route_unsafe": "run route is not structurally contained",

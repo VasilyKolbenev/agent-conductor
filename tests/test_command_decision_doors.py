@@ -27,6 +27,7 @@ refused call, because "the record is absent" would also be true of a journal
 that had been rewritten.
 """
 from __future__ import annotations
+from tests.human_situation_samples import READ_AT
 
 import pytest
 
@@ -391,7 +392,7 @@ def served_word(store, node_id: str) -> str | None:
     instruments -- the projection and the HTTP boundary -- rather than to a copy
     of the door's own predicate.
     """
-    rows = graph_payload(store.read(RUN_ID))["schedule"]["nodes"]
+    rows = graph_payload(store.read(RUN_ID), computed_at=READ_AT)["schedule"]["nodes"]
     return next(row["answerable"] for row in rows if row["node_id"] == node_id)
 
 

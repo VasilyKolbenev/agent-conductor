@@ -523,10 +523,10 @@ def run(args: argparse.Namespace, ask: Callable[[str], str] | None = None) -> in
     _summarise(config, path, [row.provider_id for row in standing])
     if not _confirmed(ask):
         return 1
-    return _write(path, standing, config)
+    return _write(path, standing, config, project_root=args.dir)
 
 
-def _write(path, standing, config) -> int:
+def _write(path, standing, config, *, project_root=None) -> int:
     """Put the new row beside the ones already there, and say what happens next.
 
     Replace by identity rather than append: configuring a provider twice is
@@ -538,7 +538,7 @@ def _write(path, standing, config) -> int:
 
     kept = [row for row in standing if row.provider_id != config.provider_id]
     try:
-        operator_config.save_provider_configs(path, [*kept, config])
+        operator_config.save_provider_configs(path, [*kept, config], project_root=project_root)
     except operator_config.OperatorConfigError as error:
         _say(str(error))
         return 1

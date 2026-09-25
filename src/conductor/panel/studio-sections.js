@@ -1,4 +1,5 @@
 "use strict";
+import {localize} from "./studio-i18n.js";
 // The inspector's CONTROLS: the six sections, in one order, and the field
 // primitives every one of them is built from.
 //
@@ -154,63 +155,50 @@ function positionControls(box, form) {
     const input = element("input", {"data-edit-field": `position_${name}`,
       "data-focus": `edit-position-${name}`, max: String(POSITION_LIMIT),
       min: String(-POSITION_LIMIT), name: `position_${name}`,
-      placeholder: "laid out", step: "1", type: "number"});
+      placeholder: localize(form.state || {}, "workflow.copy_8"), step: "1", type: "number"});
     input.value = at === null ? "" : String(at[name]);
     input.addEventListener("change", send);
-    const wrapper = field(`Canvas ${name}`, editable(input, form));
+    const wrapper = field(localize(form.state || {}, name === "x" ? "workflow.canvas_x" : "workflow.canvas_y"),
+      editable(input, form));
     wrapper.classList.add("studio-field");
     box.append(wrapper);
     axes[name] = input;
   }
   if (at !== null) {
-    actionButton(box, form, "Let the canvas place it", "unplace",
+    actionButton(box, form, localize(form.state || {}, "workflow.copy_9"), "unplace",
       {type: "move", nodeId: form.node.node_id, clear: true});
   }
   note(box, at === null
-    ? "Nobody has placed this step, so the canvas lays it out: its column "
-      + "comes from the connections and its row from the document's order. "
-      + "Type a pair here, or drag it, and it stays where you put it."
-    : "This step was placed. Where it sits is stored in the workflow document "
-      + "and comes back on reload — and it is not execution semantics: a run's "
-      + "frozen plan carries no coordinate, so moving a box can never change "
-      + "what the run does.");
+    ? localize(form.state || {}, "workflow.copy_10")
+    : localize(form.state || {}, "workflow.copy_11"));
 }
 
 // -- 1. General ------------------------------------------------------------
 
 export function generalSection(form) {
   const {node} = form;
-  const box = sectionOf("general", "General");
-  context(box, "Stable id", node.node_id, "the workflow document");
-  note(box, "A step's id is what its connections, a loop's back_to and every "
-    + "run's journal name it by. This build does not rename one: add a step "
-    + "and connect it instead.");
-  textField(box, form, "Display name", "title", node.title,
-    "Stored on the step and materialized into every run's plan as its title.");
-  selectField(box, form, "Step type", "kind",
-    NODE_KINDS.map((kind) => ({value: kind})), node.kind);
-  note(box, "A human gate must name a gate id; a loop must name a bound and "
-    + "the step it reopens. Change the type and this draft will say what it "
-    + "still needs — a draft is allowed to be incomplete.");
+  const box = sectionOf("general", localize(form.state || {}, "workflow.copy_12"));
+  context(box, localize(form.state || {}, "workflow.copy_13"), node.node_id, localize(form.state || {}, "workflow.copy_14"));
+  note(box, localize(form.state || {}, "workflow.copy_15"));
+  textField(box, form, localize(form.state || {}, "workflow.copy_16"), "title", node.title,
+    localize(form.state || {}, "workflow.copy_17"));
+  selectField(box, form, localize(form.state || {}, "workflow.copy_18"), "kind",
+    NODE_KINDS.map((kind) => ({value: kind, label: localize(form.state || {}, `workflow.kind_${kind}`)})), node.kind);
+  note(box, localize(form.state || {}, "workflow.copy_19"));
   if (node.kind === "task") {
-    selectField(box, form, "Stage (five-step cycle)", "stage",
-      [{value: "", label: "no stage"}].concat(STAGE_NAMES.map(
-        (name, at) => ({value: name, label: `${at + 1}/5 · ${name}`}))),
+    selectField(box, form, localize(form.state || {}, "workflow.copy_20"), "stage",
+      [{value: "", label: localize(form.state || {}, "workflow.copy_21")}].concat(STAGE_NAMES.map(
+        (name, at) => ({value: name, label: `${at + 1}/5 · ${localize(form.state || {}, `workflow.stage_${name}`)}`}))),
       node.stage || "");
   } else {
-    context(box, "Stage", "none — a gate or a loop names no stage",
-      "the workflow contract");
+    context(box, localize(form.state || {}, "workflow.copy_22"), localize(form.state || {}, "workflow.copy_23"),
+      localize(form.state || {}, "workflow.copy_24"));
   }
   positionControls(box, form);
-  textField(box, form, "Purpose / description", "purpose", node.purpose || "",
+  textField(box, form, localize(form.state || {}, "workflow.copy_25"), "purpose", node.purpose || "",
     node.capability === null || node.capability === undefined
-      ? "Stored on the step and frozen into every run's plan, where the "
-        + "Decisions and Runs screens read it. A step that carries nothing out "
-        + "reaches no harness, so this is written for the people who do."
-      : "Stored on the step, frozen into the plan, and carried into the frame "
-        + "the harness is handed — labelled there as the workflow's own words, "
-        + "never as an instruction. One line, at most "
-        + `${MAX_PURPOSE} characters.`);
+      ? localize(form.state || {}, "workflow.copy_26")
+      : localize(form.state || {}, "workflow.purpose_help", {max: String(MAX_PURPOSE)}));
   return box;
 }
 
@@ -218,19 +206,17 @@ export function generalSection(form) {
 
 function compatibilityLine(box, form, capability) {
   if (!capability) {
-    note(box, "This step names no capability, so there is nothing to check a "
-      + "provider against.");
+    note(box, localize(form.state || {}, "workflow.copy_28"));
     return;
   }
   const serving = form.capabilities.byCapability.get(capability) || [];
   if (!serving.length) {
-    note(box, `No configured provider declares "${capability}". A run bound `
-      + "to this role would have nothing able to carry the step out.");
+    note(box, localize(form.state || {}, "workflow.no_provider", {capability: String(capability)}));
     return;
   }
   for (const row of serving) {
-    context(box, "Can serve it", `${row.provider_id} · ${row.availability}`
-      + ` · ${row.implementation}`, "the provider roster this build resolved");
+    context(box, localize(form.state || {}, "workflow.copy_30"), `${row.provider_id} · ${row.availability}`
+      + ` · ${row.implementation}`, localize(form.state || {}, "workflow.copy_31"));
   }
 }
 
@@ -239,45 +225,38 @@ function boundProviderLine(box, run, capability, form) {
   const provider = form.capabilities.roster.find(
     (row) => row.provider_id === run.instance.adapter);
   if (!provider) {
-    note(box, "The run's configuration names an adapter this build's provider "
-      + "roster does not carry, so nothing can be said about its controls.");
+    note(box, localize(form.state || {}, "workflow.copy_32"));
     return;
   }
   const declares = rows(provider.controls).includes(capability);
-  context(box, "Bound provider declares this capability", declares ? "yes" : "no",
-    `the provider roster, joined to run ${run.runId} by adapter id`);
+  context(box, localize(form.state || {}, "workflow.copy_33"), localize(form.state || {}, "workflow.yes_no", {answer: localize(form.state || {}, declares ? "workflow.yes" : "workflow.no")}),
+    localize(form.state || {}, "workflow.source_roster", {run: String(run.runId)}));
 }
 
 export function assignmentSection(form) {
   const {node, run} = form;
-  const box = sectionOf("assignment", "Assignment");
-  note(box, "A workflow names ROLES. A run binds a role to a participant, and "
-    + "a participant names a provider and at most a model. So the two fields "
-    + "below are the workflow's; everything under them is a run's, read-only.");
-  textField(box, form, "Role", "role_id", node.role_id,
-    "A role and a capability are set together or neither: half a binding "
-    + "names a step nobody can carry out.");
-  selectField(box, form, "Capability", "capability",
-    [{value: "", label: "no capability"}].concat(
+  const box = sectionOf("assignment", localize(form.state || {}, "workflow.copy_34"));
+  note(box, localize(form.state || {}, "workflow.copy_35"));
+  textField(box, form, localize(form.state || {}, "workflow.copy_36"), "role_id", node.role_id,
+    localize(form.state || {}, "workflow.copy_37"));
+  selectField(box, form, localize(form.state || {}, "workflow.copy_38"), "capability",
+    [{value: "", label: localize(form.state || {}, "workflow.copy_39")}].concat(
       form.capabilities.names.map((name) => ({value: name}))),
     node.capability || "");
-  note(box, "Every choice above comes from the PROVEN controls the provider "
-    + "roster reports for this build. Nothing here is a written-down list.");
+  note(box, localize(form.state || {}, "workflow.copy_40"));
   if (!run) {
-    note(box, "No run is open, so no participant, provider or model is bound "
-      + "to this role yet. Start a run to bind one.");
+    note(box, localize(form.state || {}, "workflow.copy_41"));
   } else if (!run.planned) {
-    context(box, "Participant", "none — the open run's plan does not name this "
-      + "step", `run ${run.runId}`);
+    context(box, localize(form.state || {}, "workflow.copy_42"), localize(form.state || {}, "workflow.copy_43"), localize(form.state || {}, "workflow.source_run", {run: String(run.runId)}));
   } else {
-    context(box, "Participant", String(run.planned.instance_id),
-      `the plan of run ${run.runId}`);
-    context(box, "Harness / provider", run.instance
+    context(box, localize(form.state || {}, "workflow.copy_44"), String(run.planned.instance_id),
+      localize(form.state || {}, "workflow.source_plan", {run: String(run.runId)}));
+    context(box, localize(form.state || {}, "workflow.copy_45"), run.instance
       ? String(run.instance.adapter)
-      : "unreadable — the run's frozen configuration names no such instance",
-    `the frozen configuration of run ${run.runId}`);
-    context(box, "Model", modelWord(run.instance),
-      `the frozen configuration of run ${run.runId}`);
+      : localize(form.state || {}, "workflow.copy_46"),
+    localize(form.state || {}, "workflow.source_config", {run: String(run.runId)}));
+    context(box, localize(form.state || {}, "workflow.copy_47"), modelWord(run.instance, form),
+      localize(form.state || {}, "workflow.source_config", {run: String(run.runId)}));
   }
   compatibilityLine(box, form, node.capability);
   boundProviderLine(box, run, node.capability, form);
@@ -287,10 +266,10 @@ export function assignmentSection(form) {
 //: Three states and they are three, exactly as `graph-view.appendDeployment`
 //: keeps them apart: a pinned model, a configuration that pinned none, and a
 //: configuration this window could not read.
-function modelWord(instance) {
-  if (!instance) return "unreadable — no row for this instance";
+function modelWord(instance, form) {
+  if (!instance) return localize(form.state || {}, "workflow.copy_48");
   if (instance.model === null || instance.model === undefined) {
-    return "none pinned — the provider's own configuration decides";
+    return localize(form.state || {}, "workflow.copy_49");
   }
   return String(instance.model);
 }
@@ -318,38 +297,22 @@ const CONSUMED_KIND = "sandbox";
 //: NTFS alternate data stream are outside it. Saying otherwise on this screen
 //: would be selling a promise the product does not keep.
 function routeAttachments(box, form) {
-  note(box, "A `sandbox` row is a demand this plan makes of the machine that "
-    + "runs the step, and this build provides one route: `project-root`. What "
-    + "it buys is ROUTE CONTAINMENT — before a child is started, the route it "
-    + "will run on is walked from the project root and refused if it leaves: a "
-    + "symlink, a junction, a reparse point, a hard link, a `..` segment, or "
-    + "anything not strictly beneath the root. A step demanding any other "
-    + "route is refused before anything is spawned — when the run is opened, "
-    + "and again when an attempt is authorized.");
-  note(box, "This is NOT operating-system isolation. There is no privilege "
-    + "drop and no filesystem jail in this build, and the check reads the "
-    + "route at the instant it walks it — a component swapped underneath it "
-    + "afterwards, and an NTFS alternate data stream, are outside this door. "
-    + "It is a structural check on where work may stand, and nothing more.");
-  note(box, "The other five kinds — model, tool, skill, session and "
-    + "filesystem — are stored on the step and materialized into a run's plan, "
-    + "and this build does nothing else with them. They accept any name and "
-    + "are refused by nobody, because refusing a name nothing reads would be "
-    + "inventing a promise about it.");
+  note(box, localize(form.state || {}, "workflow.copy_50"));
+  note(box, localize(form.state || {}, "workflow.copy_51"));
+  note(box, localize(form.state || {}, "workflow.copy_52"));
   resourceAdder(box, form, resourceRows(box, form));
 }
 
 function resourceRows(box, form) {
   const held = rows(form.node.resources).filter(isObject);
-  if (!held.length) note(box, "This step attaches nothing.");
+  if (!held.length) note(box, localize(form.state || {}, "workflow.copy_53"));
   const list = element("ul", {className: "studio-resources"});
   held.forEach((row, at) => {
     const item = element("li", {className: "mono studio-resource"}, [
       element("span", {text: `${row.kind}: ${row.name}`})]);
-    const drop = element("button", {"aria-label": `Remove ${row.kind} `
-      + `${row.name}`, className: "studio-resource__drop",
+    const drop = element("button", {"aria-label": localize(form.state || {}, "workflow.remove_resource", {kind: String(row.kind), name: String(row.name)}), className: "studio-resource__drop",
     "data-focus": `resource-drop-${at}`, type: "button"},
-    [element("span", {text: "Remove"})]);
+    [element("span", {text: localize(form.state || {}, "workflow.copy_55")})]);
     drop.addEventListener("click", () => commit(form, "resources",
       held.filter((_, index) => index !== at)));
     item.append(editable(drop, form));
@@ -361,43 +324,41 @@ function resourceRows(box, form) {
 
 function resourceAdder(box, form, held) {
   const kind = element("select", {"data-focus": "resource-kind",
-    name: "resource_kind"}, RESOURCE_KINDS.map((row) => option(row)));
+    name: "resource_kind"}, RESOURCE_KINDS.map((row) => option(row, localize(form.state || {}, `workflow.resource_${row}`))));
   const name = element("input", {autocomplete: "off",
     "data-focus": "resource-name", name: "resource_name", spellcheck: "false",
     type: "text"});
   const add = element("button", {className: "studio-resource__add",
     "data-focus": "resource-add", type: "button"},
-  [element("span", {text: "Attach"})]);
+  [element("span", {text: localize(form.state || {}, "workflow.copy_56")})]);
   add.addEventListener("click", () => {
     if (!ID_PATTERN.test(name.value)) {
-      call(form.handlers, "onStatus", "An attachment name must match "
-        + "[A-Za-z0-9][A-Za-z0-9._-]{0,127}.");
+      call(form.handlers, "onStatus", {key: "workflow.copy_57"});
       return;
     }
     if (held.length >= MAX_RESOURCES) {
-      call(form.handlers, "onStatus",
-        `A step attaches at most ${MAX_RESOURCES} resources.`);
+      call(form.handlers, "onStatus", {key: "workflow.max_resources", params: {max: String(MAX_RESOURCES)}});
       return;
     }
     commit(form, "resources", held.concat([{kind: kind.value, name: name.value}]));
   });
-  const kindField = field("Attachment kind", editable(kind, form));
-  const nameField = field("Attachment name", editable(name, form));
+  const kindField = field(localize(form.state || {}, "workflow.copy_58"), editable(kind, form));
+  const nameField = field(localize(form.state || {}, "workflow.copy_59"), editable(name, form));
   for (const wrapper of [kindField, nameField]) wrapper.classList.add("studio-field");
   box.append(kindField, nameField, editable(add, form));
 }
 
-function argumentRows(box, node) {
+function argumentRows(box, node, form) {
   const payload = isObject(node.arguments) ? node.arguments : {};
   const names = Object.keys(payload).sort();
   if (!names.length) {
-    note(box, "This step carries no capability arguments.");
+    note(box, localize(form.state || {}, "workflow.copy_60"));
     return;
   }
   box.append(element("ul", {className: "studio-arguments"}, names.map(
     (name) => element("li", {className: "mono", text: `${name}: `
       + (isObject(payload[name]) || Array.isArray(payload[name])
-        ? "(a structured value)" : String(payload[name]))}))));
+        ? localize(form.state || {}, "workflow.copy_61") : String(payload[name]))}))));
 }
 
 //: One control for both plan-side ceilings, because they are one idea: a whole
@@ -408,7 +369,7 @@ function ceilingField(box, form, label, name) {
   const rule = CEILINGS[name];
   const input = element("input", {"data-edit-field": name,
     "data-focus": `edit-${name}`, max: String(rule.max), min: String(rule.min),
-    name, placeholder: "no limit", step: "1", type: "number"});
+    name, placeholder: localize(form.state || {}, "workflow.copy_62"), step: "1", type: "number"});
   const held = form.node[name];
   input.value = held === undefined || held === null ? "" : String(held);
   input.addEventListener("change", () => commit(form, name, input.value));
@@ -451,10 +412,10 @@ function enumChoices(capability, field) {
 //: admits and this build has no byte count for is NAMED as that, never shown as
 //: `undefined bytes`: the two tables are held equal by a test, and this is what
 //: the screen does on the day they are not.
-function budgetLabel(word) {
+function budgetLabel(word, form) {
   return Object.hasOwn(OUTPUT_LIMIT_BYTES, word)
-    ? `${word} · ${OUTPUT_LIMIT_BYTES[word]} bytes`
-    : `${word} · this build knows no byte count for it`;
+    ? localize(form.state || {}, "workflow.budget_bytes", {word: String(word), bytes: String(OUTPUT_LIMIT_BYTES[word])})
+    : localize(form.state || {}, "workflow.budget_unknown", {word: String(word)});
 }
 
 //: The select that writes it. Empty is offered beside the profiles, and it is
@@ -465,12 +426,12 @@ function budgetLabel(word) {
 function budgetSelect(box, form, choices, named) {
   const control = element("select", {"data-edit-field": OUTPUT_LIMIT_FIELD,
     "data-focus": `edit-${OUTPUT_LIMIT_FIELD}`, name: OUTPUT_LIMIT_FIELD},
-  [option("", "no profile")].concat(
-    choices.map((word) => option(word, budgetLabel(word)))));
+  [option("", localize(form.state || {}, "workflow.copy_63"))].concat(
+    choices.map((word) => option(word, budgetLabel(word, form)))));
   control.value = choices.includes(named) ? named : "";
   control.addEventListener("change", () => commit(form, "arguments",
     withArgument(form.node, OUTPUT_LIMIT_FIELD, control.value)));
-  const wrapper = field("Output budget", editable(control, form));
+  const wrapper = field(localize(form.state || {}, "workflow.copy_64"), editable(control, form));
   wrapper.classList.add("studio-field");
   box.append(wrapper);
 }
@@ -488,51 +449,34 @@ function outputBudget(box, form) {
   const named = held[OUTPUT_LIMIT_FIELD];
   const choices = enumChoices(node.capability, OUTPUT_LIMIT_FIELD);
   if (choices === null) {
-    context(box, "Output budget", "none — the reviewed schema for this step's "
-      + "capability declares no output limit profile, so there is none to name",
-    "the step's capability arguments");
+    context(box, localize(form.state || {}, "workflow.copy_65"), localize(form.state || {}, "workflow.copy_66"),
+    localize(form.state || {}, "workflow.copy_67"));
     return;
   }
   budgetSelect(box, form, choices, named);
-  context(box, "Output budget", choices.includes(named) ? budgetLabel(named)
-    : "none — this step names no output limit profile, so the provider's own "
-      + "reviewed ceiling is what bounds it",
-  "the step's capability arguments, spent at the spawn");
-  note(box, "A CEILING, like the timeout above: the smaller of this and the "
-    + "provider's own reviewed limit is what the child may write. The choices "
-    + "are the reviewed schema's own, and every other argument of this step is "
-    + "carried across untouched when this one changes. Leaving it at no profile "
-    + "is a real answer and it has a plain cost: this schema REQUIRES the "
-    + "field, so while a dispatching step names none, no run of this workflow "
-    + "can be opened at all — the open-run route refuses it, by the contract "
-    + "rather than by this window.");
+  context(box, localize(form.state || {}, "workflow.copy_68"), choices.includes(named) ? budgetLabel(named, form)
+    : localize(form.state || {}, "workflow.copy_69"),
+  localize(form.state || {}, "workflow.copy_70"));
+  note(box, localize(form.state || {}, "workflow.copy_71"));
 }
 
 export function executionSection(form) {
   const {node, run} = form;
-  const box = sectionOf("execution", "Execution");
-  context(box, "Confirmation mode", run && run.mode ? run.mode
-    : "none — no run is open", run ? `the envelope of run ${run.runId}`
-    : "the run read");
-  note(box, "A mode is a RUN's authority ladder, not a step's: the same "
-    + "workflow can be run under any of them.");
-  ceilingField(box, form, "Timeout (seconds)", "timeout_seconds");
-  note(box, "A CEILING, not a default. The action a Human confirms may ask for "
-    + "less and never more, and a step that names none is unlimited by the "
-    + "plan. Empty means no limit.");
-  ceilingField(box, form, "Attempt bound", "attempt_bound");
-  note(box, "How many attempts this step may have. Counted the way a loop "
-    + "counts its passes -- distinct attempts naming this step -- and spent "
-    + "before an action is authorized, so the bound is never exceeded once.");
+  const box = sectionOf("execution", localize(form.state || {}, "workflow.copy_72"));
+  context(box, localize(form.state || {}, "workflow.copy_73"), run && run.mode ? run.mode
+    : localize(form.state || {}, "workflow.copy_74"), run ? localize(form.state || {}, "workflow.source_envelope", {run: String(run.runId)})
+    : localize(form.state || {}, "workflow.copy_75"));
+  note(box, localize(form.state || {}, "workflow.copy_76"));
+  ceilingField(box, form, localize(form.state || {}, "workflow.copy_77"), "timeout_seconds");
+  note(box, localize(form.state || {}, "workflow.copy_78"));
+  ceilingField(box, form, localize(form.state || {}, "workflow.copy_79"), "attempt_bound");
+  note(box, localize(form.state || {}, "workflow.copy_80"));
   outputBudget(box, form);
-  box.append(element("h4", {text: "Route and policy attachments"}));
+  box.append(element("h4", {text: localize(form.state || {}, "workflow.copy_81")}));
   routeAttachments(box, form);
-  box.append(element("h4", {text: "Provider-specific options"}));
-  argumentRows(box, node);
-  note(box, "Read-only here. Capability arguments are judged by the reviewed "
-    + "closed schema registered for that capability, and they are composed at "
-    + "the Cockpit's proposal door where that schema is enforced. This "
-    + "inspector will not write a free-form payload past it.");
+  box.append(element("h4", {text: localize(form.state || {}, "workflow.copy_82")}));
+  argumentRows(box, node, form);
+  note(box, localize(form.state || {}, "workflow.copy_83"));
   return box;
 }
 
@@ -557,18 +501,12 @@ export function executionSection(form) {
 function verifierControl(box, form) {
   const {node} = form;
   const bound = node.role_id !== null && node.role_id !== undefined;
-  suggestedField(box, form, "Verifier role", "verifier_role_id",
+  suggestedField(box, form, localize(form.state || {}, "workflow.copy_84"), "verifier_role_id",
     node.verifier_role_id,
-    "A role, not a person: a run binds it to a participant like any other. "
-    + "Type any name — a reviewer role no step carries out is exactly the "
-    + "shape a separate reviewer takes — or pick one this document already "
-    + "names.", roleOffers(form));
+    localize(form.state || {}, "workflow.copy_85"), roleOffers(form));
   note(box, bound
-    ? "Naming a verifier here makes this step's confirmation somebody's job in "
-      + "every run of this workflow, and Open a run will ask who fills it."
-    : "This step binds no role of its own, so it may not name a verifier: a "
-      + "step that carries nothing out has nothing to verify. Give it a role "
-      + "and a capability under Assignment first.");
+    ? localize(form.state || {}, "workflow.copy_86")
+    : localize(form.state || {}, "workflow.copy_87"));
 }
 
 //: What each word of the vocabulary ASKS FOR, said the way somebody choosing it
@@ -577,12 +515,12 @@ function verifierControl(box, form) {
 //: shape next door, and it is what the screen does on the day the two move
 //: apart rather than showing `undefined`.
 const EVIDENCE_DEMANDS = Object.freeze({
-  digest: "the verification must name what it checked",
+  digest: "workflow.copy_88",
 });
 
-function evidenceLabel(word) {
-  return Object.hasOwn(EVIDENCE_DEMANDS, word) ? EVIDENCE_DEMANDS[word]
-    : `${word} — this build has no sentence for what it requires`;
+function evidenceLabel(word, form) {
+  return Object.hasOwn(EVIDENCE_DEMANDS, word) ? localize(form.state || {}, EVIDENCE_DEMANDS[word])
+    : localize(form.state || {}, "workflow.evidence_unknown", {word: String(word)});
 }
 
 //: WHAT this step's verification must name, beyond having happened.
@@ -599,28 +537,17 @@ function evidenceRequirement(box, form) {
   const named = typeof node.required_evidence === "string"
     ? node.required_evidence : "";
   if (node.role_id === null || node.role_id === undefined) {
-    context(box, "Evidence requirements", "none — this step binds no role, so "
-      + "nobody verifies it and there is no verification to require anything "
-      + "of", "the workflow contract");
+    context(box, localize(form.state || {}, "workflow.copy_89"), localize(form.state || {}, "workflow.copy_90"), localize(form.state || {}, "workflow.copy_91"));
     return;
   }
-  selectField(box, form, "Evidence requirements", "required_evidence",
-    [{value: "", label: "no requirement — the verification is held to the "
-      + "runtime's own rule"}].concat(REQUIRED_EVIDENCE.map(
-      (word) => ({value: word, label: evidenceLabel(word)}))),
+  selectField(box, form, localize(form.state || {}, "workflow.copy_92"), "required_evidence",
+    [{value: "", label: localize(form.state || {}, "workflow.copy_93")}].concat(REQUIRED_EVIDENCE.map(
+      (word) => ({value: word, label: evidenceLabel(word, form)}))),
     named);
-  context(box, "Evidence requirements",
-    REQUIRED_EVIDENCE.includes(named) ? evidenceLabel(named)
-      : "none — this step is held to the runtime's own rule and to nothing "
-        + "more", "the workflow document");
-  note(box, "A TIGHTENING, and only ever a tightening. Every step already needs "
-    + "a verification signed by the one adapter this plan makes authoritative "
-    + "for it, recorded after the work was observed. What a requirement adds is "
-    + "that the verification NAME what it checked. A run whose step asks for "
-    + "this and whose harness writes no digest records verification_failed "
-    + "instead of succeeded — and the same refusal is made again when the "
-    + "journal is replayed from disk, so a hand-written record cannot buy the "
-    + "success either.");
+  context(box, localize(form.state || {}, "workflow.copy_94"),
+    REQUIRED_EVIDENCE.includes(named) ? evidenceLabel(named, form)
+      : localize(form.state || {}, "workflow.copy_95"), localize(form.state || {}, "workflow.copy_96"));
+  note(box, localize(form.state || {}, "workflow.copy_97"));
 }
 
 //: The one word a plan may say about what a FAILURE does to the rest of the run.
@@ -640,29 +567,20 @@ function failurePolicy(box, form) {
   const named = typeof node.failure_policy === "string"
     ? node.failure_policy : "";
   if (node.role_id === null || node.role_id === undefined) {
-    context(box, "Failure policy", "none — this step binds no role, so it "
-      + "carries nothing out and cannot fail", "the workflow contract");
+    context(box, localize(form.state || {}, "workflow.copy_98"), localize(form.state || {}, "workflow.copy_99"), localize(form.state || {}, "workflow.copy_100"));
     return;
   }
-  selectField(box, form, "Failure policy", "failure_policy",
-    [{value: "", label: "no policy — a failure here stops nothing else"},
+  selectField(box, form, localize(form.state || {}, "workflow.copy_101"), "failure_policy",
+    [{value: "", label: localize(form.state || {}, "workflow.copy_102")},
       {value: "halt_run",
-        label: "halt the run — authorize nothing further, anywhere in it"}],
+        label: localize(form.state || {}, "workflow.copy_103")}],
     named);
-  context(box, "Failure policy",
+  context(box, localize(form.state || {}, "workflow.copy_104"),
     named === "halt_run"
-      ? "the whole run stops when this step fails"
-      : "none — a failure here ends this step and no more",
-    "the workflow document");
-  note(box, "This is NOT routing. A connection out of this step may open on "
-    + "its failure and send the run somewhere; a policy says the run goes "
-    + "nowhere at all. It fires on every failed outcome this build records — "
-    + "failed, cancelled, rejected and verification_failed — and never on "
-    + "unknown, because unknown means the journal supports no answer and an "
-    + "unanswered question stays askable. What it does is make every step that "
-    + "could still run blocked, so the run reads stalled and records that "
-    + "ending — unless an attempt is still executing, in which case the ending "
-    + "is recorded when that attempt answers.");
+      ? localize(form.state || {}, "workflow.copy_105")
+      : localize(form.state || {}, "workflow.copy_106"),
+    localize(form.state || {}, "workflow.copy_107"));
+  note(box, localize(form.state || {}, "workflow.copy_108"));
 }
 
 //: What the OPEN RUN's own frozen plan demands of this step, which is not
@@ -678,25 +596,24 @@ function runEvidenceRow(box, form) {
   const {run} = form;
   if (!run) return;
   if (!run.planned) {
-    context(box, "Required by the open run", "none — the open run's plan does "
-      + "not name this step", `run ${run.runId}`);
+    context(box, localize(form.state || {}, "workflow.copy_109"), localize(form.state || {}, "workflow.copy_110"), localize(form.state || {}, "workflow.source_run", {run: String(run.runId)}));
     return;
   }
   const demanded = run.planned.required_evidence;
-  context(box, "Required by the open run",
+  context(box, localize(form.state || {}, "workflow.copy_111"),
     typeof demanded === "string" && demanded !== ""
-      ? evidenceLabel(demanded)
-      : "nothing beyond the runtime's own rule",
-    `the plan of run ${run.runId}`);
+      ? evidenceLabel(demanded, form)
+      : localize(form.state || {}, "workflow.copy_112"),
+    localize(form.state || {}, "workflow.source_plan", {run: String(run.runId)}));
   // The POLICY the open run froze, read off the same document and never off
   // the draft: a run materialized before this field was edited follows the
   // plan it was given, and that difference is what somebody looking at both
   // needs told.
-  context(box, "If this step fails in the open run",
+  context(box, localize(form.state || {}, "workflow.copy_113"),
     run.planned.failure_policy === "halt_run"
-      ? "the whole run stops — nothing further may be authorized in it"
-      : "this step ends and the rest of the run carries on",
-    `the plan of run ${run.runId}`);
+      ? localize(form.state || {}, "workflow.copy_114")
+      : localize(form.state || {}, "workflow.copy_115"),
+    localize(form.state || {}, "workflow.source_plan", {run: String(run.runId)}));
 }
 
 //: What counts as success for this step, READ rather than set.
@@ -710,36 +627,33 @@ function runEvidenceRow(box, form) {
 function successCriteria(box, form) {
   const rows = Array.isArray(form.criteria) ? form.criteria : [];
   if (!rows.length) {
-    context(box, "Success criteria",
-      "none — this step carries nothing out, so nothing is executed for it "
-      + "and no verification is owed", "the workflow contract");
+    context(box, localize(form.state || {}, "workflow.copy_116"),
+      localize(form.state || {}, "workflow.copy_117"), localize(form.state || {}, "workflow.copy_118"));
     return;
   }
   for (const row of rows) {
     if (!row || typeof row.text !== "string") continue;
-    context(box, "Success criteria", row.text,
-      typeof row.source === "string" ? row.source : "the server");
+    context(box, localize(form.state || {}, "workflow.copy_119"), row.text,
+      typeof row.source === "string" ? row.source : localize(form.state || {}, "workflow.copy_120"));
   }
 }
 
 export function verificationSection(form) {
   const {run} = form;
-  const box = sectionOf("verification", "Verification");
+  const box = sectionOf("verification", localize(form.state || {}, "workflow.copy_121"));
   verifierControl(box, form);
   evidenceRequirement(box, form);
   successCriteria(box, form);
   failurePolicy(box, form);
   runEvidenceRow(box, form);
-  note(box, "Process exit 0 proves the process finished, not that the work "
-    + "was verified. A run that reports verification_failed reached its "
-    + "boundary and did not prove its work.");
+  note(box, localize(form.state || {}, "workflow.copy_122"));
   if (run && run.position) {
-    context(box, "Outcome recorded", run.position.outcome === null
+    context(box, localize(form.state || {}, "workflow.copy_123"), run.position.outcome === null
       || run.position.outcome === undefined
-      ? "none — no result record for the current action"
-      : String(run.position.outcome), `the durable records of run ${run.runId}`);
-    context(box, "Position", String(run.position.phase),
-      `the projection of run ${run.runId}, computed and stored nowhere`);
+      ? localize(form.state || {}, "workflow.copy_124")
+      : String(run.position.outcome), localize(form.state || {}, "workflow.source_records", {run: String(run.runId)}));
+    context(box, localize(form.state || {}, "workflow.copy_125"), String(run.position.phase),
+      localize(form.state || {}, "workflow.source_projection", {run: String(run.runId)}));
   }
   return box;
 }
@@ -747,20 +661,16 @@ export function verificationSection(form) {
 // -- the step's own actions ------------------------------------------------
 
 export function stepActions(form) {
-  const box = panelOf("actions", "This step");
+  const box = panelOf("actions", localize(form.state || {}, "workflow.copy_126"));
   const at = form.nodes.findIndex((row) => row.node_id === form.node.node_id);
-  actionButton(box, form, "Move earlier", "earlier",
+  actionButton(box, form, localize(form.state || {}, "workflow.copy_127"), "earlier",
     {type: "reorder", nodeId: form.node.node_id, index: at - 1});
-  actionButton(box, form, "Move later", "later",
+  actionButton(box, form, localize(form.state || {}, "workflow.copy_128"), "later",
     {type: "reorder", nodeId: form.node.node_id, index: at + 1});
-  actionButton(box, form, "Duplicate", "duplicate",
+  actionButton(box, form, localize(form.state || {}, "workflow.copy_129"), "duplicate",
     {type: "duplicate", nodeId: form.node.node_id});
-  actionButton(box, form, "Delete step", "delete",
+  actionButton(box, form, localize(form.state || {}, "workflow.copy_130"), "delete",
     {type: "delete-node", nodeId: form.node.node_id});
-  note(box, "Order is stored in the document, and it is what the canvas reads "
-    + "for the row of a step NOBODY HAS PLACED — a step with a canvas position "
-    + "sits where it was put and takes no row. Columns come from the "
-    + "connections either way, so moving a step earlier or later never changes "
-    + "what depends on what.");
+  note(box, localize(form.state || {}, "workflow.copy_131"));
   return box;
 }

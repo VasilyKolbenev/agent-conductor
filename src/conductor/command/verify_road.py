@@ -16,6 +16,7 @@ PUBLISH_REASONS = MappingProxyType({
     "outside_subtree": words.DOER_OUTSIDE_SUBTREE,
     "nothing_changed": words.DOER_NOTHING_CHANGED,
     "uncontained": words.DOER_UNCONTAINED,
+    "over_read_budget": words.DOER_OVER_READ_BUDGET,
     "home_retained": words.DOER_HOME_RETAINED,
     "tree_changed": words.DOER_TREE_CHANGED,
     "env_echo": words.DOER_ENV_ECHO,
@@ -31,6 +32,7 @@ CHECK_REASONS = MappingProxyType({
     ("error", "material_unavailable"): words.CHECKER_MATERIAL_UNAVAILABLE,
     ("mismatch", "tree_changed"): words.CHECKER_TREE_CHANGED,
     ("mismatch", "rejected"): words.CHECKER_REJECTED,
+    ("mismatch", "rejected_findings_refused"): words.CHECKER_FINDINGS_REFUSED,
 })
 
 
@@ -52,7 +54,7 @@ def _resume(registry, store, request, verifier, observed):
                   else words.NOT_RESUMABLE_LOST)
 
 
-def verify_independently(registry, store, request, report, verifier, observed, *, live):
+def verify_independently(registry, store, request, report, verifier, observed, *, live, clock=None):
     """Return causal evidence or a fixed refusal, without producing a receipt."""
     doer = frozen_config_bindings(store.read(request.run_id).config)[request.instance_id]
     try:
@@ -70,6 +72,9 @@ def verify_independently(registry, store, request, report, verifier, observed, *
             if (isinstance(verification, AdapterVerification)
                     and verification.action_id == request.action_id
                     and verification.adapter_id == verifier.adapter_id):
+                if verification.feedback is not None:
+                    from .feedback_runtime import record_rejection
+                    record_rejection(store, request, verifier, verification, published, clock=clock)
                 refused = CHECK_REASONS.get(
                     (verification.state, verification.detail), refused)
             return None, refused

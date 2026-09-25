@@ -71,7 +71,12 @@ def conductor_dir(root: Path | str) -> Path:
         StoreError: If `root` has no `conductor/` directory — startup is
             fail-closed; everything after this point is tolerant.
     """
-    path = Path(root) / "conductor"
+    from .ownership_layout import read_data_root
+    from .ownership_errors import OwnerRefused
+    try:
+        path = read_data_root(root)
+    except OwnerRefused as error:
+        raise StoreError(str(error)) from error
     if not path.is_dir():
         raise StoreError(f"no conductor/ directory under {root} — run `conduct init`")
     return path

@@ -18,8 +18,12 @@ dated capability labels and schedules are not today's completion report.
   clear participant/model choices, real parameter consumption, and an uncluttered
   first path. Drafts survive refreshes and concurrent request completions honestly.
 - Bounded execution from immutable revisions: reached gates, conditions and loop
-  bounds govern eligibility; no hidden authority escalation or autonomous policy
-  executor. A step starts only through the product's permitted confirmation road.
+  bounds govern eligibility; no hidden authority escalation and no unbounded
+  autonomous executor. A step starts only through a permitted road: a per-step
+  confirmation, or a bounded automatic (Policy) run the owner authorized after
+  reviewing its explicit limits. Under such a run routine steps start without
+  per-action confirmation, human gates still wait for a person, and pause,
+  resume and revoke are explicit controls.
 - A real independent checker: a different participant, possibly on the same harness,
   judges the exact doer result and consumed materials under visible budgets. A
   process exit, a human approval and verified work remain three different facts.

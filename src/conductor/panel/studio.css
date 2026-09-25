@@ -15,6 +15,7 @@
    and every media environment -- or a named EXEMPT with the reason written
    beside it. A new colour that is neither reds the completeness test. */
 :root{
+  color-scheme:dark light;
   --ground:#0c100f; --panel:#111614; --sunk:#0b0f0d; --line:#2e3b32;
   --ink:#eff4e9; --muted:#a3b1a9; --faint:#839187;
   --accent:#78914f; --pass:#9dddac; --wait:#efc48b; --fail:#f59e8d;
@@ -28,11 +29,50 @@
   --accent:#718746; --pass:#247a4b; --wait:#8a6500; --fail:#b42318;
   --ion:#36520f;
 }}
+
+/* A stored choice overrides the OS; without it the media default stays live. */
+:root[data-theme="dark"]{
+  --ground:#0c100f; --panel:#111614; --sunk:#0b0f0d; --line:#2e3b32;
+  --ink:#eff4e9; --muted:#a3b1a9; --faint:#839187;
+  --accent:#78914f; --pass:#9dddac; --wait:#efc48b; --fail:#f59e8d;
+  --ion:#d4f99b;
+  --mono:ui-monospace,"Cascadia Mono",Consolas,"SF Mono",monospace;
+  --sans:ui-sans-serif,-apple-system,"Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;
+
+  color-scheme:dark;
+}
+:root[data-theme="light"]{
+  --ground:#eef1ed; --panel:#f8faf6; --sunk:#e6ece6; --line:#c7d1c8;
+  --ink:#18241c; --muted:#4e6055; --faint:#607568;
+  --accent:#718746; --pass:#247a4b; --wait:#8a6500; --fail:#b42318;
+  --ion:#36520f;
+
+  color-scheme:light;
+}
+.studio-preferences{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+.studio-preference{display:flex;align-items:center;gap:6px;font-size:12px}
+.studio-preference select{font:inherit;padding:6px;border:1px solid var(--line);
+  border-radius:6px;background:var(--sunk);color:var(--ink);max-width:140px}
 *{box-sizing:border-box}
+.studio-quotas{margin:20px 0;padding:20px;border:1px solid var(--line);border-radius:12px;
+  background:var(--panel);color:var(--ink);min-width:0}
+.studio-quotas button{background:var(--sunk);color:var(--ink);border:1px solid var(--line);
+  border-radius:6px;padding:8px 14px;font:inherit;cursor:pointer}
+.studio-quotas__grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));
+  gap:16px;margin-top:16px}
+.studio-quota{padding:16px;border:1px solid var(--line);border-radius:8px;min-width:0;
+  overflow-wrap:anywhere}
+.studio-quota h3,.studio-quota h4{margin:0 0 8px}
+.studio-quota__fact{display:grid;grid-template-columns:minmax(100px,1fr) minmax(0,2fr);
+  gap:12px;margin:7px 0}
+.studio-quota__fact dt{color:var(--muted)}
+.studio-quota__fact dd{margin:0;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.studio-quota__window{border-top:1px solid var(--line);padding-top:12px;margin-top:14px}
+.studio-quota__status{color:var(--ink);font-weight:600}
 [hidden]{display:none!important}
 body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--sans);
      font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased;
-     color-scheme:dark light}
+     color-scheme:inherit}
 h1,h2,h3{margin:0}
 h1{font-size:19px;letter-spacing:-.025em}
 h2{font-size:20px;letter-spacing:-.025em;font-weight:650}
@@ -93,7 +133,25 @@ button{font:inherit;cursor:pointer;background:none;border:none;color:inherit}
                                   border-bottom-color:var(--accent)}
 
 .studio-main{display:flex;flex-direction:column;min-width:0}
+.studio-task-bar{display:flex;align-items:center;flex-wrap:wrap;gap:8px 14px;
+  padding:0;margin:0}
+.studio-task-choice{flex:1 1 260px;max-width:550px;display:flex;align-items:center;gap:8px}
+.studio-task-bar select{width:100%;min-width:0}
+.studio-task-bar .studio-hint{flex-basis:100%;margin:0}
+.studio-task-bar details{min-width:0}
+.studio-task-bar summary{cursor:pointer;min-height:44px;display:flex;align-items:center}
+.studio-task-create{display:flex;align-items:end;gap:8px;flex-wrap:wrap;padding:8px 0}
+.studio-task-create input{min-width:0;max-width:100%}
 .studio-screen{display:flex;flex-direction:column;gap:8px;min-width:0}
+.studio-screen__head{display:flex;align-items:center;gap:8px 18px;flex-wrap:wrap}
+.studio-screen__head h2{font-size:16px}
+.studio-explain{margin-left:auto;font-size:14px;max-width:100%}
+.studio-explain summary,.studio-run-picker summary{cursor:pointer;min-height:44px;
+  padding:10px 0;overflow-wrap:anywhere}
+.studio-run-picker{min-width:0}
+.studio-run-bar{display:flex;align-items:center;justify-content:space-between;
+  gap:12px;flex-wrap:wrap}
+.studio-run-bar button{font-size:14px}
 .studio-body{display:flex;flex-direction:column;gap:10px;min-width:0}
 /* The plain-language half of the seven state words. The machine half is
    `data-state` on the screen container, so a test asserts the attribute and a
@@ -141,6 +199,10 @@ button{font:inherit;cursor:pointer;background:none;border:none;color:inherit}
 .studio-chip--fail .studio-glyph{color:var(--fail)}
 .studio-chip--none{color:var(--muted)}
 .studio-chip--none .studio-glyph{color:var(--faint)}
+.studio-decision{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;text-align:left}
+.studio-decision__t{flex:1 0 100%}
+.studio-decision__id{min-width:0;overflow-wrap:anywhere}
+.studio-choice{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px}
 
 /* ── forms ────────────────────────────────────────────────────────────── */
 .studio-field{display:flex;flex-direction:column;gap:4px;font-size:12px;
@@ -148,6 +210,7 @@ button{font:inherit;cursor:pointer;background:none;border:none;color:inherit}
 .studio-shell .command-field,.studio-shell .command-arg{
   display:flex;flex-direction:column;gap:4px;font-size:12px;
   color:var(--muted);min-width:0;max-width:100%}
+.studio-shell .studio-task-choice{flex-direction:row;align-items:center;gap:8px}
 /* Shared field() labels and schema-generated arguments must use the same
    surfaces as inspector fields. Element coverage also catches future fields
    before a browser-default white input can appear in the dark theme. */
@@ -195,6 +258,8 @@ button{font:inherit;cursor:pointer;background:none;border:none;color:inherit}
                    gap:8px}
 .studio-field--row .studio-btn{align-self:flex-end}
 .studio-field--row p,.studio-field--row div{flex-basis:100%}
+.studio-notes{display:flex;flex-wrap:wrap;gap:2px 16px}
+.studio-notes p{flex:0 1 auto;max-width:none}
 /* A select is sized by its widest option, so one long option once made this
    control 1379px wide and the page 1399 in a 1280px window. The labels are
    short now (`starterLabel`); this bounds the intrinsic width as well. */
@@ -343,8 +408,10 @@ button{font:inherit;cursor:pointer;background:none;border:none;color:inherit}
    NOT percent meters and do not pulse as a substitute for activity evidence.
    Steps remain separately named in the inspector, including verifier duties. */
 .studio-runs,.studio-runs__detail{display:flex;flex-direction:column;
-  gap:20px;min-width:0;overflow-wrap:anywhere}
-.studio-runs__list{min-width:0;display:flex;flex-direction:column;gap:8px}
+  gap:14px;min-width:0;overflow-wrap:anywhere}
+.studio-runs__detail h2{font-size:26px;line-height:1.25;font-weight:500;
+  letter-spacing:-.035em;margin:8px 0}
+.studio-runs__list{min-width:0;display:flex;flex-direction:column;gap:4px}
 .studio-runs__rows{list-style:none;margin:0;padding:0;display:grid;
   grid-template-columns:repeat(auto-fit,minmax(min(280px,100%),1fr));gap:12px}
 .studio-run{display:flex;flex-direction:column;align-items:flex-start;
@@ -358,38 +425,90 @@ button{font:inherit;cursor:pointer;background:none;border:none;color:inherit}
 .studio-fact__v{overflow-wrap:anywhere;min-width:0}
 .studio-positions,.studio-timeline,.studio-artifacts{min-width:0;
   padding-left:20px;display:flex;flex-direction:column;gap:16px}
-.studio-deck{padding:20px 0;border-top:1px solid var(--line);
+.studio-deck{padding:18px 0 0;border-top:1px solid var(--line);
               border-bottom:1px solid var(--line);gap:16px}
-.studio-deck__body{display:grid;grid-template-columns:minmax(0,1fr);gap:24px}
-.studio-deck__fleet{display:grid;
+.studio-deck__body{display:grid;grid-template-columns:minmax(0,1fr);gap:0}
+.studio-deck__fleet{position:relative;display:grid;
   grid-template-columns:repeat(auto-fit,minmax(min(180px,100%),1fr));
-  gap:12px;align-content:start;min-width:0}
+  gap:24px 12px;align-content:center;min-width:0;padding:32px 18px;
+  background-image:radial-gradient(ellipse at 50% 49%,
+    color-mix(in srgb,var(--ion) 7%,transparent),transparent 65%)}
 .studio-planet{display:flex;flex-direction:column;align-items:center;
   gap:8px;padding:18px 8px;border-radius:24px;text-align:center;
-  min-width:0;overflow-wrap:anywhere;background:none}
-.studio-planet__orb{width:92px;height:92px;border-radius:50%;
+  min-width:0;overflow-wrap:anywhere;background:none;position:relative;z-index:1}
+.studio-deck__routes{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.studio-deck__route{fill:none;stroke:var(--faint);stroke-width:1.2}
+.studio-deck__route-label{fill:none;stroke:var(--muted);stroke-width:1.5}
+.studio-deck__routes marker path{fill:var(--faint)}
+.studio-planet__orb{position:relative;width:72px;height:72px;border-radius:50%;
   border:1px solid var(--faint);display:grid;place-items:center;
-  font-family:var(--mono);font-size:22px;letter-spacing:-.04em;
-  background:var(--panel);color:var(--ink)}
+  font-family:var(--mono);font-size:14px;letter-spacing:.04em;
+  background:var(--panel);color:var(--ink);
+  background-image:radial-gradient(circle at 28% 20%,
+    color-mix(in srgb,var(--ink) 30%,var(--panel)),var(--panel) 68%);
+  box-shadow:inset 1px 1px 2px color-mix(in srgb,var(--ink) 22%,transparent),
+    inset -9px -6px 15px color-mix(in srgb,var(--ground) 70%,transparent)}
+.studio-planet__orb::after{content:"";position:absolute;inset:-9px;
+  border:1px solid var(--line);border-radius:50%;pointer-events:none}
 .studio-planet[aria-pressed="true"] .studio-planet__orb{
-  border:3px double var(--ion);color:var(--ion)}
+  border:3px double var(--ion);color:var(--ion);
+  background-image:radial-gradient(circle at 28% 20%,
+    color-mix(in srgb,var(--ion) 48%,var(--panel)),var(--panel) 74%);
+  box-shadow:inset 1px 1px 3px color-mix(in srgb,var(--ink) 30%,transparent),
+    inset -9px -6px 15px color-mix(in srgb,var(--ground) 70%,transparent),
+    0 0 42px color-mix(in srgb,var(--ion) 12%,transparent)}
 .studio-planet__selection{font-size:12px;text-decoration:underline;
   text-underline-offset:4px;color:var(--muted)}
 .studio-planet[aria-pressed="true"] .studio-planet__selection{
   color:var(--ion);font-weight:700}
 .studio-deck__inspector{display:flex;flex-direction:column;gap:10px;
-  min-width:0;padding:18px;border-radius:18px;background:var(--panel);
-  overflow-wrap:anywhere}
+  min-width:0;padding:24px 22px;background:var(--panel);
+  overflow-wrap:anywhere;max-height:460px;overflow:auto}
+.studio-inspect-more{font-size:14px;min-width:0}
+.studio-inspect-more summary{min-height:44px;padding:12px 0;cursor:pointer}
+.studio-inspect-more .studio-detail-pane{padding:4px 0 16px}
+.studio-detail-pane{display:flex;flex-direction:column;gap:14px}
+.studio-step-flow{display:flex;flex-direction:column;margin-top:12px;gap:10px}
+.studio-step-flow__stage{display:grid;grid-template-columns:20px minmax(0,1fr);gap:12px}
+.studio-step-flow__stage svg{width:20px;height:20px;fill:none;stroke:var(--muted);stroke-width:1.3}
+.studio-step-flow__body{display:grid;grid-template-columns:48px minmax(0,1fr);gap:10px;min-width:0;
+  align-items:start;padding-bottom:10px;border-bottom:1px solid var(--line)}
+.studio-step-flow__value{display:flex;flex-direction:column;gap:8px;min-width:0}
+.studio-step-flow h5{margin:0;font-size:12px;font-weight:500;letter-spacing:.04em;text-transform:uppercase}
+.studio-step-flow .studio-inspect-more summary{padding:8px 0}
+.studio-document-text{white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px}
+.studio-document-ref summary{overflow-wrap:anywhere}
+.studio-deck__content .studio-note{font-size:14px}
+.studio-deck__content select{width:100%;min-width:0;font-size:14px}
+.studio-deck__content .studio-deck__steps{padding-left:0;list-style:none}
+.studio-deck__content .studio-deck__step{gap:10px}
+.studio-deck__about summary{cursor:pointer;min-height:44px;
+  display:flex;align-items:center;font-size:14px}
+.studio-deck__about .studio-note{max-width:70ch}
 .studio-deck__steps{list-style:none;margin:0;padding:0;display:flex;
   flex-direction:column;gap:16px;min-width:0}
 .studio-deck__step{display:flex;flex-direction:column;gap:5px;min-width:0}
-.studio-deck__inspector h4{font-size:16px}
+.studio-deck__inspector h4{font-size:20px;font-weight:500;letter-spacing:-.02em}
 
 /* ── responsive ───────────────────────────────────────────────────────── */
 /* At 900 and above the workflow screen splits into canvas and rail. Below it
    the same markup is one column, which is the degradation and not a second
    layout: nothing is hidden, nothing moves to another container. */
 @media(min-width:900px){
+  .studio-runs__list{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+    gap:8px 24px;align-items:start}
+  .studio-run-picker{grid-column:1;grid-row:1}
+  .studio-run-bar{grid-column:2;grid-row:1}
+  .studio-deck__body{grid-template-columns:minmax(0,1fr) 298px}
+  .studio-deck__fleet{min-height:460px}
+  /* Placement is composition only, never execution order or activity. Larger
+     teams retain the fluid list; long labels grow their grid row, not overlap. */
+  .studio-deck__fleet[data-count="3"],.studio-deck__fleet[data-count="4"]{
+    grid-template-columns:repeat(3,minmax(0,1fr));align-items:start}
+  .studio-deck__fleet[data-count="3"] .studio-planet:nth-child(2),
+  .studio-deck__fleet[data-count="4"] .studio-planet:nth-child(2){
+    margin-top:100px;grid-column:2;grid-row:1 / span 2}
+  .studio-deck__fleet[data-count="4"] .studio-planet:nth-child(4){grid-column:3}
   .studio-workflow{grid-template-columns:minmax(0,1fr) 360px}
   .studio-body.studio-overview{grid-template-columns:repeat(6,minmax(0,1fr))}
   .studio-overview__latest,.studio-overview__attention{grid-column:span 3}
@@ -398,7 +517,7 @@ button{font:inherit;cursor:pointer;background:none;border:none;color:inherit}
 }
 @media(min-width:1280px){
   .studio-workflow{grid-template-columns:minmax(0,1fr) 400px}
-  .studio-deck__body{grid-template-columns:minmax(0,1fr) minmax(260px,340px)}
+  .studio-deck__body{grid-template-columns:minmax(0,1fr) 298px}
 }
 @media(max-width:600px){
   .studio-shell{padding:12px 12px 32px;gap:10px}
@@ -416,6 +535,149 @@ button{font:inherit;cursor:pointer;background:none;border:none;color:inherit}
    may be added -- the guard on that is a plain search for the at-rule, so it
    cannot be spelled out here without reddening it. */
 @media (prefers-reduced-motion:no-preference){
-  .studio-tab{transition:color .15s ease-out,border-color .15s ease-out}
+  .studio-tab{transition:border-color .15s ease-out}
   .studio-node{transition:border-color .15s ease-out}
 }
+
+/* The approved Bridge: one task rail, one scene, one shared inspector. */
+.studio-workspace,.studio-deck__scene,.studio-deck__head{min-width:0}
+.studio-main[data-screen="runs"]{display:grid;grid-template-columns:220px minmax(0,1fr) 260px;gap:16px;align-items:start}
+.studio-main[data-screen="runs"] .studio-task-bar{display:flex;flex-direction:column;align-items:stretch;padding:0 10px 18px 0;border-right:1px solid var(--line)}
+.studio-task-rail{display:flex;flex-direction:column;gap:4px;min-width:0}
+.studio-task-rail h2{font-size:12px;text-transform:uppercase;letter-spacing:.1em;padding:8px 12px}
+.studio-task-row{color:var(--ink);display:flex;flex-direction:column;align-items:start;text-align:left;gap:5px;min-width:0;width:100%;padding:10px 12px;border-radius:12px;overflow-wrap:anywhere}
+.studio-task-row strong{font-size:13px;font-weight:600}
+.studio-task-row span{font-size:11px}
+.studio-task-row[aria-pressed="true"]{background:var(--panel);box-shadow:inset 2px 0 0 var(--ion)}
+.studio-main[data-screen="runs"] .studio-task-create{display:flex;flex-direction:column;align-items:stretch}
+.studio-bridge{display:flex;flex-direction:column;gap:12px;min-width:0}
+.studio-bridge__box{color:var(--ink);display:flex;flex-direction:column;gap:9px;border:1px solid var(--line);border-radius:16px;padding:14px;background:var(--panel);overflow-wrap:anywhere}
+.studio-bridge__box h3{font-size:11px}.studio-bridge__box p{font-size:11px}
+.studio-bridge__box button{text-align:left;border-bottom:1px solid var(--line);padding:7px 0}
+.studio-bridge__box summary{min-height:44px;display:flex;align-items:center;cursor:pointer;font-size:12px}
+.studio-bridge__reading{display:flex;flex-direction:column;gap:5px;padding:9px 0;border-top:1px solid var(--line)}
+.studio-bridge__reading h4{font-size:12px}
+.studio-main[data-screen="runs"] .studio-deck__body{display:grid;grid-template-columns:minmax(0,1fr)}
+.studio-main[data-screen="runs"] .studio-deck__fleet{min-height:420px}
+.studio-main[data-screen="runs"] .studio-deck__inspector{max-height:380px;overflow-y:auto;margin-top:12px;padding:16px;border-radius:16px}
+.studio-main[data-screen="runs"] .studio-step-flow{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:0}
+/* Compact under the scene: who and which step on one row, then input, action and result side by side;
+   parameters and the full history stay behind their disclosures. */
+.studio-main[data-screen="runs"] .studio-step-flow__body{grid-template-columns:minmax(0,1fr);gap:6px}
+.studio-main[data-screen="runs"] .studio-deck__inspector{flex-direction:row;flex-wrap:wrap;align-items:center;gap:10px 16px}
+.studio-main[data-screen="runs"] .studio-deck__content{display:contents}
+.studio-main[data-screen="runs"] .studio-deck__inspector h4{flex:0 1 auto;margin:0}
+.studio-main[data-screen="runs"] .studio-deck__content select{flex:1 1 220px;width:auto}
+.studio-main[data-screen="runs"] .studio-deck__steps,.studio-main[data-screen="runs"] .studio-deck__inspector .studio-inspect-more,
+.studio-main[data-screen="runs"] .studio-deck__content .studio-note{flex:1 1 100%}
+.studio-main[data-screen="runs"] .studio-runs__list{display:flex;flex-wrap:wrap;gap:10px}
+.studio-main[data-screen="runs"] .studio-runs__detail h2{font-size:22px}
+.studio-main[data-screen="runs"] .studio-runs__situation{margin:2px 0 0;font-size:13px;line-height:1.35}
+.studio-trace{color:var(--ink);position:relative;min-width:0;height:450px;overflow-x:auto;overflow-y:hidden;border-radius:18px;background:var(--sunk);scrollbar-width:thin}
+.studio-trace__inner{position:relative;min-width:100%;height:450px;overflow:hidden;
+  background-image:radial-gradient(ellipse 70% 46% at 50% 58%,color-mix(in srgb,var(--ion) 9%,transparent),transparent 72%),
+    radial-gradient(circle at 12% 18%,color-mix(in srgb,var(--ink) 16%,transparent) 0 1px,transparent 1.6px),
+    radial-gradient(circle at 78% 9%,color-mix(in srgb,var(--ink) 12%,transparent) 0 1px,transparent 1.6px),
+    radial-gradient(circle at 42% 30%,color-mix(in srgb,var(--ink) 10%,transparent) 0 1px,transparent 1.6px),
+    radial-gradient(circle at 91% 34%,color-mix(in srgb,var(--ink) 14%,transparent) 0 1px,transparent 1.6px)}
+.studio-trace__inner svg{position:absolute;inset:0;width:100%;height:450px;pointer-events:none}
+.studio-trace__inner svg path{fill:none;stroke:var(--faint);stroke-width:1.2}
+.studio-trace__inner svg .studio-trace__horizon{fill:var(--panel);stroke:var(--line)}
+.studio-trace__inner svg .studio-trace__return,.studio-trace__inner svg [data-duty="verify"]{stroke-dasharray:4 5}
+.studio-trace__inner svg [data-open="true"]{stroke:var(--ion);stroke-width:2.2}
+.studio-trace__inner svg .studio-trace__glow{stroke-width:9;opacity:.22;filter:blur(5px)}
+.studio-trace__inner svg .studio-trace__contour{stroke-dasharray:1 7;stroke-linecap:round;opacity:.7}
+.studio-trace__inner svg .studio-trace__tether{stroke-width:1.4;opacity:.75}
+.studio-trace__inner svg .studio-trace__pip{stroke-width:1.6}
+.studio-trace__inner svg text{font:10px var(--sans);fill:var(--muted);paint-order:stroke;stroke:var(--sunk);stroke-width:5px;stroke-linejoin:round}
+.studio-trace__planet{position:absolute;top:12px;width:152px;transform:translateX(-50%);min-width:0;gap:2px;padding:0 4px}
+.studio-trace__planet .studio-planet__orb{width:56px;height:56px;margin-bottom:12px}
+.studio-trace__planet strong{font-size:12px;line-height:1.25;max-width:100%;overflow-wrap:anywhere}
+.studio-planet[data-word="awaiting_result"] .studio-planet__orb{box-shadow:inset 1px 1px 2px color-mix(in srgb,var(--ink) 22%,transparent),
+    inset -9px -6px 15px color-mix(in srgb,var(--ground) 70%,transparent),0 0 0 3px color-mix(in srgb,var(--ion) 55%,transparent),0 0 26px color-mix(in srgb,var(--ion) 30%,transparent)}
+.studio-planet[data-word="unassigned"] .studio-planet__orb,.studio-planet[data-word="blocked"] .studio-planet__orb{opacity:.72}
+.studio-trace__duty,.studio-trace__word{font-size:10px;line-height:1.3;max-width:100%;overflow-wrap:anywhere}
+.studio-trace__step{position:absolute;top:236px;transform:translateX(-50%);width:var(--trace-step,100px);display:flex;flex-direction:column;align-items:center;gap:3px;min-width:0;padding:0 2px}
+.studio-trace__point{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;font-size:14px;line-height:1;margin-bottom:5px;
+  background:var(--sunk);box-shadow:0 0 0 1.5px var(--faint),0 0 0 7px color-mix(in srgb,var(--sunk) 78%,transparent)}
+.studio-trace__step[data-kind="gate"] .studio-trace__point{border-radius:8px}
+.studio-trace__step[data-kind="loop"] .studio-trace__point{width:22px;height:22px;font-size:11px;margin-top:3px}
+.studio-trace__step[data-word="runnable"] .studio-trace__point{box-shadow:0 0 0 1.5px var(--ink),0 0 0 7px color-mix(in srgb,var(--sunk) 78%,transparent)}
+.studio-trace__step[data-word="awaiting_result"] .studio-trace__point,.studio-trace__step[data-word="needs_decision"] .studio-trace__point{
+  box-shadow:0 0 0 2px var(--ion),0 0 0 7px color-mix(in srgb,var(--sunk) 78%,transparent),0 0 22px color-mix(in srgb,var(--ion) 38%,transparent)}
+.studio-trace__step[data-word="closed"]{opacity:.62}
+.studio-trace__title{font-size:10px;font-weight:600;line-height:1.2;max-width:100%;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.studio-trace__step[aria-pressed="true"] .studio-trace__point{outline:2px solid var(--ion);outline-offset:3px}
+.studio-trace__step[data-word="needs_decision"] .studio-trace__point{color:var(--wait)}
+.studio-trace__step[data-word="outcome_verification_failed"] .studio-trace__point,
+.studio-trace__step[data-word="outcome_failed"] .studio-trace__point{color:var(--fail)}
+@media(max-width:1100px){
+  .studio-main[data-screen="runs"]{grid-template-columns:180px minmax(0,1fr)}
+  .studio-bridge{grid-column:1/-1;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));align-items:start}
+}
+@media(max-width:900px){
+  .studio-main[data-screen="runs"]{display:flex;flex-direction:column}
+  .studio-main[data-screen="runs"] .studio-task-bar{border-right:0}
+  .studio-task-rail{display:flex;flex-direction:row;flex-wrap:wrap}
+  .studio-task-row{width:auto;max-width:220px}
+  .studio-task-rail h2{width:100%}
+  .studio-bridge{display:flex;width:100%}
+  .studio-workspace{width:100%}
+  .studio-main[data-screen="runs"] .studio-step-flow{grid-template-columns:minmax(0,1fr)}
+}
+
+.studio-team-roster{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 12px}
+.studio-team-roster button{font-size:11px;padding:4px 8px;border-radius:6px;background:var(--sunk);color:var(--ink)}
+/* A run read whole, at 1280: its name and its controls share one row, and the team's
+   heading, lenses and roster share the next, so the scene and the inspector come first. */
+@media(min-width:900px){
+  .studio-main[data-screen="runs"] .studio-runs--read{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px 16px;align-items:center}
+  .studio-main[data-screen="runs"] .studio-runs--read .studio-runs__detail{display:contents}
+  .studio-main[data-screen="runs"] .studio-runs--read .studio-runs__list{grid-column:2;grid-row:1;align-self:start;
+    flex-direction:row;flex-wrap:nowrap;align-items:flex-start;gap:8px;max-width:380px}
+  .studio-main[data-screen="runs"] .studio-runs--read .studio-runs__detail h2{grid-column:1;grid-row:1;margin:0;
+    font-size:20px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .studio-main[data-screen="runs"] .studio-runs--read .studio-runs__detail section{grid-column:1/-1}
+  /* The rule above is for the run's own sections; a step's three stages are sections too and keep their columns. */
+  .studio-main[data-screen="runs"] .studio-runs--read .studio-step-flow .studio-step-flow__stage{grid-column:auto}
+  .studio-main[data-screen="runs"] .studio-runs--read .studio-runs__heading{grid-column:1;grid-row:1;min-width:0}
+  .studio-main[data-screen="runs"] .studio-deck{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;
+    gap:8px 16px;padding-top:10px}
+  .studio-main[data-screen="runs"] .studio-deck__head{display:flex;flex-wrap:wrap;align-items:center;gap:6px 16px}
+  .studio-main[data-screen="runs"] .studio-deck__body,.studio-main[data-screen="runs"] .studio-deck__about{grid-column:1/-1}
+  .studio-main[data-screen="runs"] .studio-team-roster{margin:0}
+  .studio-main[data-screen="runs"] .studio-team-roster button{min-width:44px}
+}
+.studio-automation{display:flex;flex-direction:column;gap:12px;overflow-wrap:anywhere}
+.studio-automation__bounds{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
+.studio-automation__bounds fieldset{min-width:0;display:grid;gap:8px}
+.studio-automation__review{display:flex;flex-direction:column;gap:16px}
+.studio-automation pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:360px;overflow:auto}
+
+/* The Orbit lens of a run: planets on one ring in the order the plan first uses
+   them, human decisions on a contour outside it, a bounded return at the core.
+   Placement is composition only and says nothing about who is running. The
+   fleet keeps one box in every window so a resize never resizes it back; a
+   narrow window or a large team falls back to rows inside the same box. */
+.studio-deck__fleet[data-kind="ring"]{display:block;height:460px;min-height:0;padding:0;overflow:auto}
+.studio-deck__fleet[data-kind="ring"] .studio-planet{position:absolute;left:var(--orb-x);top:var(--orb-y);transform:translateX(-50%);width:132px;padding:8px 4px;gap:4px;z-index:1}
+.studio-deck__fleet[data-kind="ring"] .studio-planet--up{flex-direction:column-reverse;transform:translate(-50%,-100%)}
+.studio-deck__fleet[data-kind="ring"] .studio-planet__orb{width:60px;height:60px}
+.studio-deck__fleet[data-kind="ring"] .studio-planet strong{font-size:12px;line-height:1.25;max-width:100%}
+.studio-deck__fleet[data-kind="ring"] .studio-planet .studio-note{font-size:11px;line-height:1.3}
+.studio-deck__fleet[data-kind="ring"] .studio-planet__selection{font-size:11px}
+.studio-deck__mark{position:absolute;left:var(--orb-x);top:var(--orb-y);transform:translate(-50%,-13px);display:flex;flex-direction:column;align-items:center;gap:3px;width:104px;padding:0;text-align:center;font-size:10px;line-height:1.2;z-index:1;overflow-wrap:anywhere}
+.studio-deck__mark strong{font-size:10px;font-weight:600;max-width:100%}
+.studio-deck__mark .studio-note{font-size:10px;line-height:1.2}
+.studio-deck__mark-point{width:26px;height:26px;border-radius:8px;display:grid;place-items:center;font-size:13px;line-height:1;background:var(--sunk);box-shadow:0 0 0 1.5px var(--faint),0 0 0 6px color-mix(in srgb,var(--sunk) 78%,transparent)}
+.studio-deck__mark--loop{transform:translate(-15px,-50%);flex-direction:row;align-items:center;text-align:left;width:auto;max-width:220px;gap:8px;white-space:nowrap}
+.studio-deck__mark--loop .studio-deck__mark-point{border-radius:50%;width:30px;height:30px;font-size:15px}
+.studio-deck__mark[data-word="needs_decision"] .studio-deck__mark-point{box-shadow:0 0 0 2px var(--ion),0 0 0 6px color-mix(in srgb,var(--sunk) 78%,transparent),0 0 20px color-mix(in srgb,var(--ion) 38%,transparent)}
+.studio-deck__mark[aria-pressed="true"] .studio-deck__mark-point{box-shadow:0 0 0 2px var(--ion),0 0 0 5px var(--sunk),0 0 0 6.5px var(--ion)}
+.studio-deck__core{position:absolute;left:var(--orb-x);top:var(--orb-y);transform:translate(-50%,-50%);max-width:150px;text-align:center;font-size:11px;line-height:1.3;z-index:1;overflow-wrap:anywhere}
+.studio-deck__ring{fill:none;stroke-width:1.2;opacity:.42}
+.studio-deck__ring[data-kind="contour"]{stroke-dasharray:2 7;stroke-linecap:round;opacity:.55}
+.studio-deck__contour{fill:none;stroke-width:1.2;opacity:.55}
+.studio-deck__contour[data-open="true"]{stroke-width:2;opacity:.95}
+.studio-deck__contour[data-kind="return"]{stroke-dasharray:4 5}
+.studio-deck__word{font:10px var(--sans);opacity:.8}

@@ -39,6 +39,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from .contracts import ABSENT as _EXECUTION_ABSENT
 from .contracts import (
     ContractError,
     _freeze_json,
@@ -426,9 +427,10 @@ class GraphTemplate:
     nodes: tuple[TemplateNode, ...]
     edges: tuple[GraphEdge, ...] = ()
     schema_version: int = SCHEMA_VERSION
+    execution_contract: object = _EXECUTION_ABSENT
 
     _FIELDS = frozenset({
-        "schema_version", "template_id", "revision", "title", "nodes", "edges",
+        "schema_version", "template_id", "revision", "title", "nodes", "edges", "execution_contract",
     })
 
     def __post_init__(self) -> None:
@@ -436,6 +438,8 @@ class GraphTemplate:
         object.__setattr__(self, "title", _text("title", self.title))
         object.__setattr__(self, "revision", _revision(self.revision))
         object.__setattr__(self, "schema_version", _schema_spoken(self.schema_version))
+        from .graph_execution import settled_execution_contract
+        object.__setattr__(self, "execution_contract", settled_execution_contract(self.execution_contract))
         object.__setattr__(self, "nodes", self._settled_nodes())
         object.__setattr__(self, "edges", tuple(
             _rebuilt_edge(row) for row in _sequence("template edges", self.edges)))
@@ -543,7 +547,7 @@ class GraphTemplate:
 
     def _document(self) -> dict[str, Any]:
         """This template as data, built once at construction and never again."""
-        return {
+        document = {
             "schema_version": self.schema_version,
             "template_id": self.template_id,
             "revision": self.revision,
@@ -551,6 +555,10 @@ class GraphTemplate:
             "nodes": [node.as_dict() for node in self.nodes],
             "edges": [edge.as_dict() for edge in self.edges],
         }
+
+        if self.execution_contract is not _EXECUTION_ABSENT:
+            document["execution_contract"] = self.execution_contract
+        return document
 
     def as_dict(self) -> dict[str, Any]:
         """A FRESH document, parsed from the canonical text settled at build.
@@ -577,7 +585,8 @@ class GraphTemplate:
                         for row in _json_list("template nodes", _take(data, "nodes"))),
             edges=tuple(GraphEdge.from_dict(row)
                         for row in _json_list("template edges", data.pop("edges", []))),
-            schema_version=data.pop("schema_version", SCHEMA_VERSION))
+            schema_version=data.pop("schema_version", SCHEMA_VERSION),
+            execution_contract=data.pop("execution_contract", _EXECUTION_ABSENT))
 
 
 def _schema_spoken(value: object) -> int:
@@ -706,4 +715,5 @@ def _build(template: GraphTemplate, assignments: Mapping[str, str], *,
             success_requires=node.success_requires)
         for node in steps)
     return GraphDefinition(graph_id=graph_id, run_id=run_id,
-                           created_at=created_at, nodes=nodes, edges=edges)
+                           created_at=created_at, nodes=nodes, edges=edges,
+                           execution_contract=template.as_dict().get("execution_contract", _EXECUTION_ABSENT))

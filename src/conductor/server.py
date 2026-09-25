@@ -64,6 +64,9 @@ from conductor.http_framing import IDLE_CONNECTION_SECONDS, KeptConnection
 from conductor.command.providers import ProviderResolution, resolve_providers
 from conductor.command.run_store import RunStore
 from conductor.command.runtime import Budget
+from conductor.command.quota_service import QuotaService
+from conductor.quota_collectors import QuotaCollector
+from conductor.server_retirement import retire_resources, retire_workers
 
 #: The `/harnesses.json` body, serialized once. The registry is frozen data
 #: that no project can influence, so this is the same answer for every request
@@ -84,7 +87,22 @@ _STUDIO_FILES = (
     "studio-runwords.js", "studio-runstep.js", "studio-runwrite.js", "studio-people.js",
     "studio-rundocs.js", "studio-rundraft.js", "studio-runwrites.js", "studio-toolbardraft.js",
     "studio-controls.js", "studio-isolation.js", "studio-focus.js", "studio-participants.js",
-    "studio-orbit.js", "studio-ceilings.js")
+    "studio-tasks-model.js", "studio-tasks.js", "studio-taskflow.js",
+    "studio-mounts.js", "studio-quotas-model.js", "studio-quotas.js", "studio-quotaflow.js",
+    "studio-orbit.js", "studio-ceilings.js", "studio-situation.js",
+    "studio-i18n.js", "studio-preferences.js", "studio-shell.js", "studio-runhead.js",
+    "studio-scene-model.js", "studio-trace.js", "studio-taskruns.js", "studio-bridge.js",
+    "studio-automation.js", "studio-automation-model.js", "studio-automation-providers.js",
+    "studio-workflow-copy.js",
+    "studio-workflow-detail-copy.js",
+    "studio-view-copy.js",
+    "studio-runform-copy.js",
+    "studio-runs-copy.js",
+    "studio-run-docs-copy.js",
+    "studio-participant-copy.js",
+    "studio-runstep-copy.js",
+    "studio-feedback.js", "studio-feedback-model.js", "studio-feedback-copy.js", "studio-notice-copy.js",
+    "studio-agents-copy.js", "studio-automation-flow.js", "studio-automation-copy.js", "studio-workflowwrite.js", "studio-draft.js")
 _STUDIO_TYPES = {"css": "text/css; charset=utf-8",
                  "js": "text/javascript; charset=utf-8"}
 
@@ -673,54 +691,49 @@ class ConductServer(ThreadingHTTPServer):
         # Attributes first: a failed bind makes socketserver call our
         # server_close() before __init__ finishes.
         self.shutting_down = False
+        self.project_owner = None
+        self.policy_driver = None
+        self.retirement_uncertain = False
         self.broker = Broker(root)
         self.clients = _Clients()
         self.watcher = Watcher(self.broker, cdir, self.clients)
         self.command_execution: ExecutionCoordinator | None = None
+        self.command_quotas = QuotaService()
+        self.quota_collector: QuotaCollector | None = None
         super().__init__(address, Handler)  # binds; EADDRINUSE raises here
-        assigned_port = self.server_address[1]
-        self.command_session = CommandSession.mint(assigned_port, token_factory)
-        self.command_store = RunStore(root)
-        resolution = _resolved_providers(registry, providers, root, clock, ids)
-        self.command_registry = resolution.registry
-        self.command_providers = resolution.contracts
-        self.command_api = CommandApi(
-            self.command_store, self.command_registry,
-            session=self.command_session, budget=budget, clock=clock, ids=ids,
-            publish_run=self.clients.publish_run, providers=self.command_providers,
-            project=self.broker.project_name)
-        # The effect belongs to server-owned workers, never to a request thread:
-        # the coordinator holds the API's own runtime, so it spends exactly the
-        # grants that boundary minted and can spend no others. Each start() mints
-        # one worker with its own queue and one token that retires only it.
-        self.command_execution = ExecutionCoordinator(self.command_api.runtime)
-        self.command_api.attach_execution(self.command_execution)
-        for _worker in range(EXECUTION_WORKERS):
-            self.command_execution.start()
-        self.broker.refresh()               # initial state before serving
-        self.watcher.start()
+        try:
+            from .server_policy import acquire_server_owner
+            acquire_server_owner(self, root)
+            self._start_command(root, registry, providers, budget, clock, ids, token_factory)
+            self.broker.refresh()               # initial state before serving
+            self.watcher.start()
+            self.quota_collector.start()
+        except BaseException:
+            self.server_close()
+            raise
+
+    def _start_command(self, root, registry, providers, budget, clock, ids, token_factory):
+        from .server_command import start_command
+        start_command(self, root, registry, providers, budget, clock, ids, token_factory)
 
     def shutdown(self) -> None:
         """Stop serve_forever, retire the owned worker, wake all SSE loops."""
         self.shutting_down = True
         self.clients.wake_all()
-        self._retire_execution()
-        super().shutdown()
+        try:
+            self._retire_execution()
+        finally:
+            super().shutdown()
 
     def _retire_execution(self) -> None:
-        """Retire only the worker this server's coordinator minted a token for."""
-        if self.command_execution is not None:
-            self.command_execution.shutdown()
+        """Retire this server's execution workers and quota collection lifetime."""
+        retire_workers(self)
 
     def server_close(self) -> None:
         """Stop and join the watcher and worker, wake SSE loops, close the socket."""
         self.shutting_down = True
         self.clients.wake_all()
-        self._retire_execution()
-        self.watcher.stop()
-        if self.watcher.is_alive():        # never started on a failed bind
-            self.watcher.join(timeout=POLL_INTERVAL * 2)
-        super().server_close()
+        retire_resources(self, super().server_close, POLL_INTERVAL)
 
     def handle_error(self, request: object, client_address: object) -> None:
         """Silence client aborts (panel refreshes, closed tabs); keep the rest.

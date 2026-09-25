@@ -24,8 +24,8 @@
 //: one of them is a plan.
 export const CEILINGS = Object.freeze({
   timeout_seconds: Object.freeze({min: 1, max: 86400,
-    what: "a timeout in seconds"}),
-  attempt_bound: Object.freeze({min: 1, max: 99, what: "an attempt bound"}),
+    what: "a timeout in seconds", said: "notice.ceiling_timeout"}),
+  attempt_bound: Object.freeze({min: 1, max: 99, what: "an attempt bound", said: "notice.ceiling_attempts"}),
 });
 
 //: What a person may put in a ceiling field, judged by the vocabulary above.
@@ -42,8 +42,7 @@ export function withCeiling(node, name, value) {
   }
   const number = Number(raw);
   if (!Number.isInteger(number) || number < rule.min || number > rule.max) {
-    return {node, notice: `${rule.what} is a whole number from ${rule.min} `
-      + `to ${rule.max}, or empty for no limit.`};
+    return {node, notice: {key: rule.said, params: {min: String(rule.min), max: String(rule.max)}}};
   }
   return {node: {...node, [name]: number}, notice: ""};
 }

@@ -13,6 +13,7 @@ from typing import Any
 
 from .adapters import AdapterContractError, UnsupportedCapability
 from .adapters.deep_commands import DEEP_ARGUMENT_TYPES
+from .path_admission import WindowsNameError, WindowsPathError
 from .artifacts import ArtifactDocument
 from .contracts import (
     ActionProposal,
@@ -204,11 +205,12 @@ class ArtifactInput:
             content=self.content)
 
 
-def _closed(body: object, fields: frozenset[str]) -> dict[str, Any]:
+def _closed(body: object, fields: frozenset[str], *,
+            optional: frozenset[str] = frozenset()) -> dict[str, Any]:
     if not isinstance(body, Mapping) or any(not isinstance(key, str) for key in body):
         raise ApiRefusal.fixed("contract_invalid")
     supplied = set(body)
-    if supplied != fields:
+    if not fields - optional <= supplied <= fields:
         raise ApiRefusal.fixed("contract_invalid")
     return dict(body)
 
@@ -380,7 +382,8 @@ def parse_template(body: object) -> GraphTemplate:
     needs no by-name screen for deployment words, because a template that
     carried one would not be a template.
     """
-    return _contract(GraphTemplate.from_dict, _closed(body, _TEMPLATE_FIELDS))
+    return _contract(GraphTemplate.from_dict, _closed(
+        body, _TEMPLATE_FIELDS, optional=frozenset({"execution_contract"})))
 
 
 def parse_graph_from_template(body: object) -> TemplateRef:
@@ -441,6 +444,10 @@ def refusal_from_exception(error: Exception) -> ApiRefusal:
     """Translate only exception types; submitted/OS/adapter prose is discarded."""
     if isinstance(error, HttpRefusal):
         return ApiRefusal.from_http(error)
+    if isinstance(error, WindowsNameError):
+        return ApiRefusal.fixed("windows_name_unsafe")
+    if isinstance(error, WindowsPathError):
+        return ApiRefusal.fixed("windows_path_too_long")
     if isinstance(error, CorruptRun):
         return ApiRefusal.fixed("run_corrupt")
     if isinstance(error, RecordConflict):

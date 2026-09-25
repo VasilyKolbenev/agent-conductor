@@ -19,6 +19,7 @@
 // module owns and hands in, so the button that WRITES is still built by the
 // module that owns the door it writes through.
 import {element, field} from "./command-view.js";
+import {localize} from "./studio-i18n.js";
 import {CONTROL_MODES} from "./studio-model.js";
 
 //: What each authority word PERMITS, in the user's own language. Read off the
@@ -29,8 +30,8 @@ export const MODE_MEANINGS = Object.freeze({
   propose: "Steps may be proposed, and nothing can confirm one here. Nothing "
     + "is carried out.",
   confirm: "Every effecting step waits for a person before it is carried out.",
-  policy: "Reserved: this build ships no policy executor. A policy run behaves "
-    + "as a propose run: steps may be proposed and nothing is carried out.",
+  policy: "Bounded automatic work requires a separate human preview and permission. "
+    + "Opening the run grants no execution permission.",
 });
 const NOT_STATED = "not stated";
 const ID_PATTERN = "[A-Za-z0-9][A-Za-z0-9._\\-]{0,127}";
@@ -42,9 +43,9 @@ function object(value) {
     ? value : null;
 }
 
-function show(value) {
-  if (value === null || value === undefined || value === "") return NOT_STATED;
-  if (Array.isArray(value)) return value.length ? value.join(", ") : NOT_STATED;
+function show(state, value) {
+  if (value === null || value === undefined || value === "") return localize(state, "runform.not_stated");
+  if (Array.isArray(value)) return value.length ? value.join(", ") : localize(state, "runform.not_stated");
   return String(value);
 }
 
@@ -84,25 +85,24 @@ function roleNames(held) {
   return [...found].sort();
 }
 
-//: Every control of the form committed back to the reducer on its change --
-//: the letters typed since, and the caret, are the boot module's focus net's
-//: to carry across a render. A form mounted without the door is shut, field
-//: by field, and says so.
-function wireTheEdits(edit, controls) {
+//: Text commits on input without rendering, so an in-flight open reply can
+//: distinguish the next draft even before blur. The focus net carries its
+//: caret; state owns the text. Missing edit doors shut every field.
+function wireTheEdits(state, edit, controls) {
   const {runId, cycleId, mode, meaning, pickers, models} = controls;
   const typed = [runId, cycleId, mode, ...pickers.values(), ...models.values()];
   if (edit === null) {
     for (const control of typed) {
       control.disabled = true;
-      control.title = "This screen was mounted without an editOpening handler.";
+      control.title = localize(state, "runform.m1");
     }
     return;
   }
-  runId.addEventListener("change", () => edit({runId: runId.value}));
-  cycleId.addEventListener("change", () => edit({cycleId: cycleId.value}));
+  runId.addEventListener("input", () => edit({runId: runId.value}));
+  cycleId.addEventListener("input", () => edit({cycleId: cycleId.value}));
   mode.addEventListener("change", () => {
-    meaning.textContent = MODE_MEANINGS[mode.value]
-      || "This build does not describe that mode.";
+    meaning.textContent = localize(state, `runform.mode_${mode.value}`)
+      || localize(state, "runform.m2");
     edit({mode: mode.value});
   });
   for (const pick of pickers.values()) {
@@ -110,7 +110,7 @@ function wireTheEdits(edit, controls) {
       [...pickers].map(([role, each]) => [role, each.value]))}));
   }
   for (const model of models.values()) {
-    model.addEventListener("change", () => edit({models: Object.fromEntries(
+    model.addEventListener("input", () => edit({models: Object.fromEntries(
       [...models].map(([role, each]) => [role, each.value]))}));
   }
 }
@@ -122,10 +122,11 @@ export function runForm(state, handlers) {
   const detail = object(state.workflows.detail);
   const published = detail === null ? null : object(detail.published);
   const box = element("form", {className: "studio-card studio-runform"});
-  box.append(element("h3", {text: "Open a run"}));
+  box.append(element("h3", {text: localize(state, "runform.m3")}));
+  const chosenTask = state.tasks?.list.find((row) => row.task_id === state.tasks.selectedId);
+  const taskReady = state.tasks?.phase === "ready" && chosenTask && !chosenTask.unreadable;
   if (published === null) {
-    box.append(note("A run follows a PUBLISHED revision, and this workflow has "
-      + "none yet. Publishing the draft is what makes one."));
+    box.append(note(localize(state, "runform.m4")));
     return box;
   }
   //: What this form already holds, from the reducer's own copy
@@ -134,23 +135,29 @@ export function runForm(state, handlers) {
   const opening = object(state.workflows.opening) || {};
   const edit = handlerOf(handlers, "editOpening");
   const runId = element("input", {autocomplete: "off", "data-focus": "run-id",
+    "data-focus-value": "state",
     maxlength: "128", name: "run-id", pattern: ID_PATTERN, required: "",
     spellcheck: "false", type: "text"});
   runId.value = typeof opening.runId === "string" ? opening.runId : "";
   const cycleId = element("input", {autocomplete: "off",
+    "data-focus-value": "state",
     "data-focus": "cycle-id", maxlength: "128", name: "cycle-id",
     pattern: ID_PATTERN, required: "", spellcheck: "false", type: "text"});
   cycleId.value = typeof opening.cycleId === "string" ? opening.cycleId : "";
   const mode = element("select", {"data-focus": "run-mode", name: "run-mode"},
-    CONTROL_MODES.map((word) => option(word)));
+    CONTROL_MODES.map((word) => option(word, localize(state, `runform.label_${word}`))));
   // The most restrictive mode that still lets a person proceed is what is
   // first offered: authority is granted deliberately, never inherited from a
   // default -- and once chosen it is kept, like every other typed fact here.
   mode.value = CONTROL_MODES.includes(opening.mode) ? opening.mode : "observe";
+  if (published.execution_contract === "bounded-run-v1") {
+    for (const choice of mode.options) choice.disabled = choice.value !== "policy";
+    mode.value = "policy";
+  }
   const meaning = element("p", {className: "studio-hint",
-    text: MODE_MEANINGS[mode.value]});
-  box.append(field("Run id", runId), field("Cycle id", cycleId),
-    field("Authority (mode)", mode), meaning);
+    text: localize(state, `runform.mode_${mode.value}`)});
+  box.append(field(localize(state, "runform.m5"), runId), field(localize(state, "runform.m6"), cycleId),
+    field(localize(state, "runform.m7"), mode), meaning);
   const roles = roleNames(published);
   const pickers = new Map();
   const models = new Map();
@@ -159,46 +166,45 @@ export function runForm(state, handlers) {
   const pinned = object(opening.models) || {};
   for (const role of roles) {
     const pick = element("select", {"data-focus": `role-${role}`,
-      name: `role-${role}`}, [option("", "no participant")].concat(
+      name: `role-${role}`}, [option("", localize(state, "runform.m8"))].concat(
       available.map((row) => option(row.provider_id,
         `${row.display_name} (${row.provider_id})`))));
     pick.value = typeof bound[role] === "string" ? bound[role] : "";
     pickers.set(role, pick);
     const model = element("input", {autocomplete: "off",
+      "data-focus-value": "state",
       "data-focus": `model-${role}`, maxlength: "128", name: `model-${role}`,
-      pattern: ID_PATTERN, placeholder: "Harness default (unpinned)",
+      pattern: ID_PATTERN, placeholder: localize(state, "runform.m9"),
       spellcheck: "false", type: "text"});
     model.disabled = !pick.value;
     model.value = pick.value && typeof pinned[role] === "string" ? pinned[role] : "";
-    model.title = "Optional full model ID. This form checks identifier syntax, "
-      + "not model availability or whether the harness supports model routing.";
+    model.title = localize(state, "runform.m10");
     models.set(role, model);
-    box.append(field(`Role ${role}`, pick), field(`Model: ${role}`, model));
+    box.append(field(localize(state, "runform.m16", {role: String(role)}), pick), field(localize(state, "runform.m17", {role: String(role)}), model));
   }
-  wireTheEdits(edit, {runId, cycleId, mode, meaning, pickers, models});
+  wireTheEdits(state, edit, {runId, cycleId, mode, meaning, pickers, models});
   if (!roles.length) {
-    box.append(note("Revision " + show(published.revision) + " names no role, "
-      + "so a run of it binds nobody."));
+    box.append(note(localize(state, "runform.m18", {revision: show(state, published.revision)})));
   }
   if (!available.length) {
-    box.append(note("No provider on this machine is available, so no role can "
-      + "be bound. The Agents screen names the file to write."));
+    box.append(note(localize(state, "runform.m11")));
   }
-  box.append(note("Each role binds a configured harness and an optional full "
-    + "model ID. Blank means the harness default (unpinned); changing harness "
-    + "clears its model. Model availability is not checked here. The server "
-    + "freezes these choices; no paths, argv or credentials are sent."));
+  box.append(note(localize(state, "runform.m12")));
   const open = handlerOf(handlers, "onOpenRun");
   const go = element("button", {className: "studio-btn",
-    "data-focus": "action:onOpenRun", text: "Open the run", type: "submit"});
+    "data-focus": "action:onOpenRun", text: localize(state, "runform.m13"), type: "submit"});
   if (open === null) {
     go.disabled = true;
-    go.title = "This screen was mounted without an onOpenRun handler.";
+    go.title = localize(state, "runform.m14");
+  }
+  if (!taskReady) {
+    go.disabled = true;
+    go.title = localize(state, "runform.m15");
   }
   box.append(go);
   box.addEventListener("submit", (event) => {
     event.preventDefault();
-    if (open === null || !box.reportValidity()) return;
+    if (open === null || !taskReady || !box.reportValidity()) return;
     const participants = [];
     const assignments = {};
     for (const [role, pick] of pickers) {

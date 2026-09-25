@@ -21,6 +21,7 @@
 // It builds fragments and mounts nothing; `studio-runs.js` owns the screen and
 // calls this once per run read, under the positions, and once per position
 // row for the instruction a step's proposal bound.
+import {localize} from "./studio-i18n.js";
 import {element} from "./command-view.js";
 import {CAPABILITY_FIELDS} from "./command-projection.js";
 import {boundDocument, endingOf} from "./studio-runread.js";
@@ -28,9 +29,6 @@ import {
   ARTIFACT_CONTENT_LIMIT,
   ARTIFACT_MEDIA_TYPES,
   MATERIAL_BINDING,
-  STREAM_DOWN_REASON,
-  UNVERSIONED_MATERIALS,
-  WRITING_NOTE,
 } from "./studio-runwords.js";
 
 //: The key a document write holds in the run screen's `writes`, beside the
@@ -43,10 +41,6 @@ export const DOCUMENT_KEY = "@document";
 export const PUBLISHED_NOTE = "The document is a durable record in this run's "
   + "journal. A step waiting for its reference is offered on the read that "
   + "follows, and a proposal made from now on binds it.";
-const PUBLISH_NOTE = "A document published here is immutable and is never "
-  + "edited or removed: a second document under the same reference stands "
-  + "beside the first, and whatever is proposed afterwards binds the newest "
-  + "one standing when the proposal is written.";
 //: The kinds the reviewed projection marks a step's INPUTS with, and the one
 //: field a dispatch reads its instruction under.
 const INPUT_KINDS = Object.freeze(["artifact-ids", "artifact-ids-required"]);
@@ -54,7 +48,6 @@ const INSTRUCTION_FIELD = "instruction_ref";
 //: `contract_values._id`'s budget, and the form this whole file is about.
 const ID_LIMIT = 128;
 const FORM = "document";
-const NOT_STATED = "not stated";
 
 function rows(value) { return Array.isArray(value) ? value : []; }
 
@@ -65,8 +58,8 @@ function object(value) {
 
 function plain(value) { return typeof value === "string" ? value : ""; }
 
-function show(value) {
-  if (value === null || value === undefined || value === "") return NOT_STATED;
+function show(value, state = {}) {
+  if (value === null || value === undefined || value === "") return localize(state, "run_docs.not_stated");
   return String(value);
 }
 
@@ -74,11 +67,11 @@ function note(value) {
   return element("p", {className: "studio-note", text: value});
 }
 
-function fact(label, value, attributes) {
+function fact(label, value, attributes, state = {}) {
   return element("p", Object.assign({className: "studio-fact"},
     attributes || {}), [
     element("span", {className: "studio-fact__k", text: label}),
-    element("span", {className: "studio-fact__v", text: show(value)}),
+    element("span", {className: "studio-fact__v", text: show(value, state)}),
   ]);
 }
 
@@ -87,8 +80,8 @@ function handlerOf(handlers, name) {
   return typeof found === "function" ? found : null;
 }
 
-function mountedWithout(name) {
-  return `This screen was mounted without a ${name} handler.`;
+function mountedWithout(name, state) {
+  return localize(state, "run_docs.missing_handler", {name: String(name)});
 }
 
 function runOf(detail) {
@@ -229,14 +222,13 @@ function liveValue(step, name, fallback) {
 //: What stops this document being written, in the person's words, or null.
 //: The rules are the boundary's own, asked here so the control refuses beside
 //: the person rather than on the wire.
-function whyNotPublishable(ref, refs, content, bytes) {
-  if (!refs.includes(ref)) return "Choose the reference this document answers.";
+function whyNotPublishable(ref, refs, content, bytes, state) {
+  if (!refs.includes(ref)) return localize(state, "run_docs.choose_reference");
   if (!content.trim()) {
-    return "Write the document: an empty body is refused at the boundary.";
+    return localize(state, "run_docs.empty_body");
   }
   if (bytes > ARTIFACT_CONTENT_LIMIT) {
-    return `This document is ${bytes - ARTIFACT_CONTENT_LIMIT} bytes over the `
-      + `${ARTIFACT_CONTENT_LIMIT}-byte bound, so it cannot be published.`;
+    return localize(state, "run_docs.over_limit", {over: String(bytes - ARTIFACT_CONTENT_LIMIT), limit: String(ARTIFACT_CONTENT_LIMIT)});
   }
   return null;
 }
@@ -260,7 +252,7 @@ function selectControl(name, key, value, choices, edit, label) {
 
 //: The document itself, with its size said live beside it: a bound a person
 //: meets only at the press is a bound they meet too late.
-function contentControl(value, edit, size) {
+function contentControl(value, edit, size, state) {
   const control = element("textarea", {"data-focus-key": "field:content",
     name: "content", rows: "8", spellcheck: "false"});
   control.value = value;
@@ -268,28 +260,26 @@ function contentControl(value, edit, size) {
   else {
     control.addEventListener("change", () => edit({content: control.value}));
     control.addEventListener("input", () => {
-      size.textContent = `${byteLength(control.value)} of `
-        + `${ARTIFACT_CONTENT_LIMIT} bytes`;
+      size.textContent = localize(state, "run_docs.size", {bytes: String(byteLength(control.value)), limit: String(ARTIFACT_CONTENT_LIMIT)});
     });
   }
   return element("label", {className: "studio-field"}, [
-    element("span", {text: `The document (up to ${ARTIFACT_CONTENT_LIMIT} `
-      + "bytes of UTF-8)"}), control,
+    element("span", {text: localize(state, "run_docs.body_label", {limit: String(ARTIFACT_CONTENT_LIMIT)})}), control,
   ]);
 }
 
 //: Start from a document this run already holds: its bytes and its kind are
 //: copied into the editor, where a person still reads and publishes them.
-function copyControls(documents, edit) {
+function copyControls(documents, edit, state) {
   if (!documents.length) {
-    return [note("This run holds no document yet to start from.")];
+    return [note(localize(state, "run_docs.no_source"))];
   }
   const from = element("select", {"data-focus-key": "field:start_from",
     name: "start_from"}, documents.map((row) => option(row.artifact_id,
-    `${show(row.artifact_id)} · ${show(row.artifact_ref)} · `
-      + `${show(row.media_type)}`)));
+    `${show(row.artifact_id, state)} · ${show(row.artifact_ref, state)} · `
+      + `${show(row.media_type, state)}`)));
   const copy = element("button", {className: "studio-btn",
-    "data-focus-key": "document:copy", text: "Copy into the editor",
+    "data-focus-key": "document:copy", text: localize(state, "run_docs.copy"),
     type: "button"});
   if (edit === null) copy.disabled = true;
   else {
@@ -301,24 +291,44 @@ function copyControls(documents, edit) {
     });
   }
   return [element("label", {className: "studio-field"}, [
-    element("span", {text: "Start from an existing document"}), from]), copy];
+    element("span", {text: localize(state, "run_docs.start_from")}), from]), copy];
 }
 
-function submitControl(stops, shut, missing, writing, live) {
+function submitControl(stops, shut, missing, writing, live, state) {
   const button = element("button", {"data-focus-key": "document:publish",
-    text: "Publish this document", type: "submit"});
+    text: localize(state, "run_docs.publish_this"), type: "submit"});
   button.disabled = stops !== null || shut;
   const said = [];
-  if (writing) said.push(note(WRITING_NOTE));
-  if (!live) said.push(note(STREAM_DOWN_REASON));
+  if (writing) said.push(note(localize(state, "run_docs.writing")));
+  if (!live) said.push(note(localize(state, "run_docs.stream_down")));
   if (stops !== null) said.push(note(stops));
-  if (missing !== null) said.push(note(mountedWithout(missing)));
+  if (missing !== null) said.push(note(mountedWithout(missing, state)));
   return [button, ...said];
 }
 
 // -- the section ----------------------------------------------------------------
 
 //: The form, drawn from the plan, the journal and the draft.
+/**
+ * The task channel of each participant this run binds, and the bound its WHOLE task meets.
+ *
+ * A published document travels inside the doer's task, so a person preparing input is told the
+ * bound the server states for each adapter this run names (review ruling R2), never one number
+ * for every channel. The fact is read off the controls answer; an adapter it states none for is
+ * not named.
+ */
+export function channelNotes(detail) {
+  const said = new Map();
+  for (const row of rows((object(detail.controls) || {}).instances)) {
+    const channel = object((object(row) || {}).task_channel);
+    if (channel !== null && !said.has(row.adapter_id)) {
+      said.set(row.adapter_id, {adapter: row.adapter_id, channel: channel.channel,
+        limit: channel.limit});
+    }
+  }
+  return [...said.values()].sort((a, b) => (a.adapter < b.adapter ? -1 : 1));
+}
+
 function documentForm(detail, state, handlers, refs) {
   const runId = runOf(detail);
   const draft = draftFor(state, runId);
@@ -334,26 +344,28 @@ function documentForm(detail, state, handlers, refs) {
   const documents = documentsOf(detail);
   const minted = refs.includes(ref)
     ? documentId(ref, documents.map((row) => row.artifact_id)) : null;
-  const stops = whyNotPublishable(ref, refs, content, bytes);
+  const stops = whyNotPublishable(ref, refs, content, bytes, state);
   const size = element("span", {className: "studio-fact__v",
-    text: `${bytes} of ${ARTIFACT_CONTENT_LIMIT} bytes`});
+    text: localize(state, "run_docs.size", {bytes: String(bytes), limit: String(ARTIFACT_CONTENT_LIMIT)})});
   const form = element("form", {className: "studio-step", "data-step": FORM}, [
-    element("h4", {text: "Publish a document"}), note(PUBLISH_NOTE),
+    element("h4", {text: localize(state, "run_docs.heading")}), note(localize(state, "run_docs.publish_note")),
+    ...channelNotes(detail).map((row) => note(localize(state, `run_docs.channel_${row.channel}`,
+      {adapter: row.adapter, limit: String(row.limit)}))),
     selectControl("artifact_ref", "artifactRef", ref,
-      [{value: "", label: "choose a reference"}].concat(
+      [{value: "", label: localize(state, "run_docs.reference_placeholder")}].concat(
         refs.map((row) => ({value: row, label: row}))),
-      edit, "Reference this document answers"),
-    fact("Document id", minted === null
-      ? "minted from the reference once one is chosen" : minted),
+      edit, localize(state, "run_docs.reference_label")),
+    fact(localize(state, "run_docs.document_id"), minted === null
+      ? localize(state, "run_docs.minted_id") : minted, null, state),
     selectControl("media_type", "mediaType", media,
       ARTIFACT_MEDIA_TYPES.map((row) => ({value: row, label: row})), edit,
-      "Kind of text"),
-    contentControl(content, edit, size),
+      localize(state, "run_docs.media_type")),
+    contentControl(content, edit, size, state),
     element("p", {className: "studio-fact", "data-document-bytes": String(bytes)},
-      [element("span", {className: "studio-fact__k", text: "Size"}), size]),
-    ...copyControls(documents, edit),
+      [element("span", {className: "studio-fact__k", text: localize(state, "run_docs.size_label")}), size]),
+    ...copyControls(documents, edit, state),
     ...submitControl(stops, shut, submit === null ? "publishDocument"
-      : (edit === null ? "editDocument" : null), writing, live),
+      : (edit === null ? "editDocument" : null), writing, live, state),
   ]);
   form.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -383,16 +395,14 @@ export function documentSection(detail, state, handlers) {
   // server refuses a recorded terminal (`run_terminal`) and a complete plan
   // would keep a document nothing reads. What is over is said.
   const body = ending.ended
-    ? [note(`This run is over: ${ending.plan_word === null
-      ? "its ending is recorded" : `the plan is ${ending.plan_word}`}. No `
-      + "step of it will read a document published now, so none is offered.")]
+    ? [note(localize(state, "run_docs.ended", {ending: ending.plan_word === null ? localize(state, "run_docs.ending_recorded")
+      : localize(state, "run_docs.ending_plan", {status: planEnding(ending.plan_word, state)})}))]
     : refs.length
       ? [documentForm(detail, state, handlers, refs)]
-      : [note("This run's plan names no document reference: no step reads "
-        + "one, so there is nothing a document published here could be for.")];
+      : [note(localize(state, "run_docs.no_references"))];
   return element("section", {className: "studio-section",
     "data-section": "documents"},
-  [element("h3", {text: "Publish a document"}), ...body]);
+  [element("h3", {text: localize(state, "run_docs.heading")}), ...body]);
 }
 
 /**
@@ -407,7 +417,7 @@ export function documentSection(detail, state, handlers) {
  * @param {object} node The plan's frozen node.
  * @returns {Array<Element>} One fact per bound source, or none.
  */
-export function boundSources(detail, node) {
+export function boundSources(detail, node, state = {}) {
   const held = object(node.arguments) || {};
   const ref = held[INSTRUCTION_FIELD];
   const inputs = inputRefs(node.capability, held);
@@ -419,22 +429,22 @@ export function boundSources(detail, node) {
   if (!proposals.length) return [];
   const latest = proposals[proposals.length - 1];
   if (latest.input_binding !== MATERIAL_BINDING) {
-    return [note(UNVERSIONED_MATERIALS)];
+    return [note(localize(state, "run_docs.unversioned"))];
   }
   const bound = (source) => boundDocument(
     rows(detail.records), latest.proposal_id, source);
   const said = [];
   if (typeof ref === "string") {
     const found = bound(ref);
-    said.push(fact(`Instruction ${ref} bound by ${show(latest.proposal_id)}`,
-      found === null ? `the machine's instructions/${ref}.md, if it exists`
-        : `durable document ${show(found.artifact_id)}`));
+    said.push(fact(localize(state, "run_docs.bound_instruction", {ref, proposal: show(latest.proposal_id, state)}),
+      found === null ? localize(state, "run_docs.local_instruction", {ref})
+        : localize(state, "run_docs.bound_document", {id: show(found.artifact_id, state)}), null, state));
   }
   for (const input of inputs) {
     const found = bound(input);
-    said.push(fact(`Input ${input} bound by ${show(latest.proposal_id)}`,
-      found === null ? "no durable document"
-        : `durable document ${show(found.artifact_id)}`));
+    said.push(fact(localize(state, "run_docs.bound_input", {ref: input, proposal: show(latest.proposal_id, state)}),
+      found === null ? localize(state, "run_docs.missing_document")
+        : localize(state, "run_docs.bound_document", {id: show(found.artifact_id, state)}), null, state));
   }
   return said;
 }
@@ -449,4 +459,14 @@ export function needsMaterialReproposal(proposal, detail) {
     (row) => row.instance_id === proposal.instance_id) || {};
   const schemas = object(instance.argument_schemas) || {};
   return schemas[proposal.capability] === "deep-arguments-v1";
+}
+
+//: Stored as its key, so the sentence on screen switches with the language.
+export function publishedNote(_state = {}) {
+  return Object.freeze({key: "run_docs.published"});
+}
+
+function planEnding(value, state) {
+  return ["complete", "cancelled", "failed"].includes(value)
+    ? localize(state, `run_docs.ending_${value}`) : String(value);
 }

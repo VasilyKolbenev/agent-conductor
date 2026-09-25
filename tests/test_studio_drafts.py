@@ -16,6 +16,7 @@ from __future__ import annotations
 import re
 
 from tests.test_graph_source import _code
+from tests.studio_source_messages import _code
 from tests.test_studio_wiring import BOOT, PANEL, RUNFORM, RUNWRITE, STORE, VIEW
 
 WRITES = PANEL / "studio-runwrites.js"
@@ -198,7 +199,7 @@ def test_the_toolbars_folds_and_fields_are_the_reducers():
     assert 'export const NO_FOLDS = Object.freeze({start: null, run: null});' in draft
     assert 'if (!FOLDS.includes(event.name) || typeof event.open !== "boolean")' in draft
     assert "mode: \"observe\"" in draft
-    boot = _code(BOOT)
+    boot = _code(BOOT, PANEL / "studio-taskflow.js")
     for wire in ('onFold: (name, open) => dispatch({type: "fold", name, open}),',
                  'editStarter: (patch) => dispatch({type: "starter-edit", patch},',
                  'editOpening: (patch) => dispatch({type: "opening-edit", patch},',
@@ -227,13 +228,19 @@ def test_the_toolbar_draws_its_folds_and_fields_from_the_slice_and_commits_back(
     assert 'addEventListener("input"' not in view
     assert "name.value = typeof held.workflowId === \"string\" ? held.workflowId : \"\";" in view
     form = _code(RUNFORM)
-    assert 'runId.addEventListener("change", () => edit({runId: runId.value}));' in form
-    assert 'cycleId.addEventListener("change", () => edit({cycleId: cycleId.value}));' in form
-    assert 'addEventListener("input"' not in form
+    # Run text commits without rendering: an accepted POST must see a newer
+    # opening draft even while its next field is still focused (before blur).
+    assert 'runId.addEventListener("input", () => edit({runId: runId.value}));' in form
+    assert 'cycleId.addEventListener("input", () => edit({cycleId: cycleId.value}));' in form
+    assert form.count('"data-focus-value": "state"') == 3
+    assert 'model.addEventListener("input", () => edit({models: Object.fromEntries(' in form
+    boot = _code(BOOT)
+    assert '!Object.hasOwn(patch, "runId") && !Object.hasOwn(patch, "cycleId")' in boot
+    assert '&& !Object.hasOwn(patch, "models"))' in boot
     assert "runId.value = typeof opening.runId === \"string\" ? opening.runId : \"\";" in form
     assert 'mode.value = CONTROL_MODES.includes(opening.mode) ? opening.mode : "observe";' in form
     assert "edit({roles: Object.fromEntries(" in form
-    summary = re.search(r"function runSummary\(held\) \{(.*?)\n\}", view, re.DOTALL)
+    summary = re.search(r"function runSummary\(state, held\) \{(.*?)\n\}", view, re.DOTALL)
     assert summary is not None
     assert 'const chosen = typeof held.selectedId === "string" && held.selectedId !== "";' in summary.group(1)
     for said in ("Open a run — choose or start a workflow first",
@@ -258,7 +265,7 @@ def test_the_focus_net_carries_the_words_and_the_caret_and_never_guesses():
     it back after, inside the shell -- that half is held on the boot.
     """
     boot, net = _code(BOOT), _code(PANEL / "studio-focus.js")
-    assert "const key = focusTarget();" in boot
+    assert re.search(r"const key = focusTarget\(\)(?:;|,)", boot)
     assert "restoreFocus(shell, key);" in boot
     target = re.search(r"export function focusTarget\(\) \{(.*?)\n\}", net, re.DOTALL)
     assert target is not None
@@ -271,7 +278,8 @@ def test_the_focus_net_carries_the_words_and_the_caret_and_never_guesses():
     assert restore is not None
     assert "if (found.length !== 1) return;" in restore.group(1)
     assert 'const within = held.step === null ? "" : `[data-step="${held.step}"] `;' in restore.group(1)
-    assert "if (successor.value !== held.value) successor.value = held.value;" in restore.group(1)
+    assert 'successor.getAttribute("data-focus-value") !== "state"' in restore.group(1)
+    assert "&& successor.value !== held.value) successor.value = held.value;" in restore.group(1)
     assert "successor.setSelectionRange(held.start, held.end);" in restore.group(1)
     # The Runs screen's own restore carries the caret too.
     runs = _code(PANEL / "studio-runs.js")
@@ -290,9 +298,9 @@ def test_a_model_is_a_roles_optional_harness_bound_draft_not_a_catalogue():
     assert '"data-focus": `model-${role}`, maxlength: "128"' in form
     assert 'pattern: ID_PATTERN, placeholder: "Harness default (unpinned)"' in form
     assert 'model: models.get(role).value.trim() || null' in form
-    assert 'model.addEventListener("change", () => edit({models:' in form
+    assert 'model.addEventListener("input", () => edit({models:' in form
     assert 'model.disabled = !pick.value;' in form
-    assert 'if (open === null || !box.reportValidity()) return;' in form
+    assert 'if (open === null || !taskReady || !box.reportValidity()) return;' in form
     draft = _code(TOOLBAR)
     assert 'models: Object.freeze({})' in draft
     assert 'const models = typedMap(patch, "models");' in draft

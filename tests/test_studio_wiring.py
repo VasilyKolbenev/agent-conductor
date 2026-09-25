@@ -48,7 +48,10 @@ RUNFORM = PANEL / "studio-runform.js"
 #: What the view builds a run form out of, and what the Overview's readiness
 #: card asks the same question with. Both are read out of the module below by
 #: name, so the split cannot quietly leave the view importing neither.
-VIEW_SURFACE = (VIEW, RUNFORM)
+SHELL = PANEL / "studio-shell.js"
+PREFERENCES = PANEL / "studio-preferences.js"
+I18N = PANEL / "studio-i18n.js"
+VIEW_SURFACE = (VIEW, RUNFORM, SHELL, PREFERENCES)
 BOOT = PANEL / "studio.js"
 CANVAS = PANEL / "studio-canvas.js"
 INSPECTOR = PANEL / "studio-inspector.js"
@@ -79,34 +82,53 @@ RUNWRITE = PANEL / "studio-runwrite.js"
 #: cap. It is render machinery and reaches no socket, and it stays on this list
 #: so the transport ban keeps reading code that left the boot module.
 FOCUS = PANEL / "studio-focus.js"
-MINE = (STORE, VIEW, RUNFORM, RUNWRITE, FOCUS, BOOT)
+TASKFLOW = PANEL / "studio-taskflow.js"
+MOUNTS = PANEL / "studio-mounts.js"
+QUOTAFLOW = PANEL / "studio-quotaflow.js"
+AUTOMATION = PANEL / "studio-automation-flow.js"
+WORKFLOWWRITE = PANEL / "studio-workflowwrite.js"
+MINE = (AUTOMATION, WORKFLOWWRITE, SHELL, PREFERENCES, I18N, STORE, VIEW, RUNFORM, RUNWRITE, FOCUS, BOOT, TASKFLOW, MOUNTS, QUOTAFLOW)
 LINE_CAP = 800
 
 #: The frontend contract's "May import" column for these rows, verbatim. It is
 #: a PERMISSION table: a module that has not needed one of its neighbours is not
 #: a fault, and one reaching for a neighbour it was never granted is.
 PERMITTED = {
-    "studio-store.js": frozenset({"./studio-model.js", "./studio-runread.js",
+    "studio-automation-flow.js": frozenset({"./studio-automation-model.js"}),
+    "studio-workflowwrite.js": frozenset({"./studio-model.js", "./studio-store.js", "./command-projection.js"}),
+    "studio-mounts.js": frozenset(),
+    "studio-i18n.js": frozenset({"./studio-runstep-copy.js", "./studio-participant-copy.js", "./studio-run-docs-copy.js", "./studio-runs-copy.js", "./studio-runform-copy.js", "./studio-view-copy.js", "./studio-workflow-detail-copy.js", "./studio-workflow-copy.js", "./studio-automation-copy.js", "./studio-agents-copy.js", "./studio-feedback-copy.js", "./studio-notice-copy.js"}),
+    "studio-preferences.js": frozenset({"./command-view.js", "./studio-i18n.js"}),
+    "studio-shell.js": frozenset({"./command-view.js", "./studio-i18n.js", "./studio-runhead.js"}),
+    "studio-quotaflow.js": frozenset(),
+    "studio-taskflow.js": frozenset({"./studio-tasks-model.js", "./studio-taskruns.js"}),
+    "studio-store.js": frozenset({"./studio-draft.js", "./studio-model.js", "./studio-runread.js",
+                                  "./studio-situation.js",
+                                  "./studio-quotas-model.js",
+                                  "./studio-tasks-model.js",
                                   "./studio-controls.js",
                                   "./studio-review.js", "./studio-edits.js",
                                   "./studio-rundraft.js",
                                   "./studio-runwrites.js",
                                   "./studio-toolbardraft.js"}),
     "studio-view.js": frozenset({"./command-view.js", "./command-projection.js",
-                                 "./studio-model.js", "./studio-runform.js"}),
+                                 "./studio-model.js", "./studio-runform.js",
+                                 "./studio-shell.js", "./studio-i18n.js", "./studio-taskruns.js"}),
     #: The run form sits BELOW the view and never reaches back up: the view
     #: imports it, and a permission to import the view is what would let the
     #: pair close into a cycle, so it is not granted.
-    "studio-runform.js": frozenset({"./command-view.js", "./studio-model.js"}),
+    "studio-runform.js": frozenset({"./studio-i18n.js", "./command-view.js", "./studio-model.js"}),
     #: `studio-runwrite.js` joined the row when the step road's four callbacks
     #: left this file at the line cap. The boot module builds them, handing
     #: over its own `write` and nothing else; it does not import the step
     #: control itself, which is the screen's business rather than the wire's.
-    "studio.js": frozenset({
+    "studio.js": frozenset({"./studio-workflowwrite.js", "./studio-automation.js", "./studio-automation-flow.js",
         "./command-view.js", "./command-projection.js", "./studio-model.js",
         "./studio-store.js", "./studio-view.js", "./studio-canvas.js",
         "./studio-inspector.js", "./studio-runs.js", "./studio-runwrite.js",
-        "./studio-people.js", "./studio-focus.js"}),
+        "./studio-people.js", "./studio-focus.js", "./studio-tasks.js",
+        "./studio-taskflow.js", "./studio-mounts.js", "./studio-quotaflow.js",
+        "./studio-shell.js", "./studio-preferences.js", "./studio-bridge.js"}),
     #: What a press MEANS, and the whole of what it may reach: the two
     #: fragments' own sentences and keys, nothing else.
     "studio-runwrite.js": frozenset({"./studio-runstep.js",
@@ -141,11 +163,13 @@ DOOR_COUNTS = (("fetch(", 2), ("new EventSource(", 1), ('method: "POST"', 1))
 #: every road goes through the same `fetch(`, the same token header and the
 #: same refusal vocabulary as the four before them.
 WRITE_TARGETS = frozenset({"draft", "revisions", "runs", "decisions",
-                           "proposals", "actions", "artifacts"})
+                           "proposals", "actions", "artifacts", "tasks",
+                           "automationPreview", "automationAuthorize", "automationControl"})
 #: Which of them are about a RUN and are therefore gated on the STREAM rather
 #: than on a workflow's readiness. Held as a subset of the targets above, so a
 #: word can never be gated by a list that does not name it.
-RUN_SCOPED = frozenset({"decisions", "proposals", "actions", "artifacts"})
+RUN_SCOPED = frozenset({"decisions", "proposals", "actions", "artifacts", "tasks",
+                           "automationPreview", "automationAuthorize", "automationControl"})
 #: Ids `studio.html` declares that nothing mounts into BY NAME, and why. Each
 #: is a container the stylesheet owns; a new id that mounts nothing must be
 #: argued for here rather than left unnoticed. The five nav buttons are not on
@@ -155,6 +179,7 @@ STRUCTURAL_IDS = frozenset({
     "studioShell",      # the outer frame, reached once by the boot module
     "studioHeader",     # a layout row; its three slots are what is written
     "studioMain",       # the screen well; the screens inside it are written
+    "studioWorkspace",  # central layout column; the five child screens are mounts
     "workflowCanvas",   # the pan/zoom viewport; the canvas draws in its layers
 })
 #: How the boot module reaches every nav button at once.
@@ -236,7 +261,7 @@ def _ids(path: Path) -> set[str]:
 def _frozen_list(source: str, name: str) -> list[str]:
     body = re.search(rf"{name} = Object\.freeze\(\s*\[(.*?)\]\)", source, re.DOTALL)
     assert body, name
-    return re.findall(r'"([a-z_-]+)"', body.group(1))
+    return re.findall(r'"([A-Za-z0-9_-]+)"', body.group(1))
 
 
 def _frozen_keys(source: str, name: str) -> set[str]:
@@ -273,10 +298,10 @@ def test_the_expression_reader_keeps_the_code_and_drops_the_sentences():
     kept = _expressions('const a = "reach this window."; window.x = `${b.c}`;')
     assert "window.x" in kept and "b.c" in kept
     assert "reach this" not in kept
-    view = _expressions(_code(VIEW))
+    view = _expressions(_code(SHELL))
     assert "export function mountShell(mounts, state, handlers) {" in view
     assert "Live changes reach this window." not in view
-    assert len(view.splitlines()) == len(_code(VIEW).splitlines())
+    assert len(view.splitlines()) == len(_code(SHELL).splitlines())
 
 
 def test_every_file_the_integrator_owns_sits_in_the_panel_under_the_line_cap():
@@ -377,7 +402,7 @@ def test_every_id_the_boot_module_mounts_into_is_one_the_shell_declares():
     direction is the one that pays -- an id the shell declares and nothing
     mounts into is dead markup, so it must be argued for in STRUCTURAL_IDS.
     """
-    boot = _code(BOOT)
+    boot = _code(BOOT, MOUNTS)
     declared = _ids(HTML)
     mounted = set(re.findall(r'byId\("([A-Za-z0-9_-]+)"\)', boot))
     assert mounted, "the boot module names no mount at all"
@@ -402,7 +427,7 @@ def test_the_boot_module_names_one_mount_per_screen_and_per_state_line():
     screens = {name for name in declared if name.startswith("screen")}
     states = {name for name in declared if name.startswith("state")
               and name != "studioStatus"}
-    boot = _code(BOOT)
+    boot = _code(BOOT, MOUNTS)
     assert len(screens) == 5 and len(states) == 5
     for name in screens | states:
         assert f'byId("{name}")' in boot, name
@@ -410,7 +435,7 @@ def test_the_boot_module_names_one_mount_per_screen_and_per_state_line():
     assert set(re.findall(r'data-state="([a-z]+)"', html)) <= SCREEN_STATES
 
 
-def test_the_mutation_door_names_exactly_seven_write_targets():
+def test_the_mutation_door_names_exactly_its_reviewed_write_targets():
     """One door, one closed list, and every name on it a real path.
 
     The list is what makes a write to anything else unrepresentable rather
@@ -651,7 +676,7 @@ def test_every_screen_says_the_same_seven_words():
     not differ is WHICH words exist, because a browser test asserts the machine
     word and a person reads the sentence beside it.
     """
-    for path in (VIEW, RUNS, PEOPLE):
+    for path in (SHELL, RUNS, PEOPLE):
         assert _frozen_keys(_code(path), "PHASE_SENTENCES") == SCREEN_STATES, path
     assert set(_frozen_list(_code(STORE), "PHASES")) == SCREEN_STATES
 
@@ -661,3 +686,10 @@ def test_the_reducer_and_the_shell_name_the_same_five_screens():
     html = HTML.read_text(encoding="utf-8")
     assert re.findall(r'data-screen="([a-z]+)"', html) \
         == _frozen_list(_code(STORE), "SCREENS")
+
+
+def test_write_target_reader_keeps_mixed_case_and_unknown_names_for_closed_admission():
+    source = 'const WRITE_TARGETS = Object.freeze(["draft", "automationAuthorize", "unreviewedTarget2"]);'
+    found = set(_frozen_list(source, "WRITE_TARGETS"))
+    assert found == {"draft", "automationAuthorize", "unreviewedTarget2"}
+    assert found - WRITE_TARGETS == {"unreviewedTarget2"}

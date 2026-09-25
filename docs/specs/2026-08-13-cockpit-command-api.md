@@ -20,10 +20,10 @@ yet are a record of what was true when the contract was fixed, not a description
 of this build. That is deliberate: a freeze that gets edited to match the code it
 was supposed to constrain has stopped being a freeze. What has since happened:
 
-- **The routes exist.** `command_routes.COMMAND_ROUTES` is the seventeen-entry
+- **The routes exist.** `command_routes.COMMAND_ROUTES` is the reviewed
   table the loopback server really serves, and it is the current authority on the
   surface — not the route list in section 0, which names none of them.
-- **The `graph` block grew from three keys to five.** Section 6.1.1 has been
+- **The `graph` block grew from three keys to six.** Section 6.1.1 has been
   brought up to date, because a reader counting keys off a stale list would build
   a broken client; the freeze's *rule* — the whole block present, never an absent
   key — is what it always was.
@@ -57,6 +57,12 @@ was supposed to constrain has stopped being a freeze. What has since happened:
   With them the run read (`GET /command/runs/<run_id>`) gained a sixth top-level
   key, `task` (`null` for a run bound to no task), and the run row a `task_id`;
   the frozen `run_read_response` example below keeps its five keys as written.
+- **One cache-only quota read was appended on 2026-09-21.** `GET /command/quotas`
+  is the twenty-first route. It projects existing observations for every supplied
+  catalog provider, including unconfigured rows; it performs no collection or
+  refresh and accepts no query or body. The Host/framing boundary remains the
+  existing one. The wire shape and explicit unknown-account treatment are in
+  `2026-09-21-quota-observations.md`; no execution authority was added.
 
 Where this document and the tree disagree about anything else, the tree is the
 fact and this file is the history.
@@ -181,7 +187,14 @@ scope, not permission for C/API-1 to invent a generic file-write endpoint.
   {
     "method": "GET", "path": "/command/tasks/<task_id>",
     "mutation": false, "csrf": false
-  }
+  },
+  {
+    "method": "GET", "path": "/command/quotas", "mutation": false, "csrf": false
+  },
+  {"method": "GET", "path": "/command/runs/<run_id>/automation", "mutation": false, "csrf": false},
+  {"method": "POST", "path": "/command/runs/<run_id>/automation/preview", "mutation": false, "csrf": true},
+  {"method": "POST", "path": "/command/runs/<run_id>/automation/authorize", "mutation": true, "csrf": true},
+  {"method": "POST", "path": "/command/runs/<run_id>/automation/control", "mutation": true, "csrf": true}
 ]
 ```
 3. Every **mutating** request (any method other than GET/HEAD on a `/command/*`
@@ -379,6 +392,8 @@ choose a code.
   { "code": "route_not_found",       "status": 404, "source": "routing" },
   { "code": "malformed_request",     "status": 400, "source": "http_shape" },
   { "code": "contract_invalid",      "status": 422, "source": "contract" },
+  { "code": "windows_name_unsafe",   "status": 422, "source": "path_admission" },
+  { "code": "windows_path_too_long", "status": 422, "source": "path_admission" },
   { "code": "run_corrupt",           "status": 409, "source": "store" },
   { "code": "store_error",           "status": 500, "source": "store" },
   { "code": "route_unsafe",          "status": 409, "source": "route_gate" },
@@ -394,6 +409,14 @@ choose a code.
 ]
 ```
 
+- `windows_name_unsafe` refuses a new filesystem identifier with a trailing
+  dot/space or Windows reserved basename (including case and extension).
+- `windows_path_too_long` refuses new creation/work paths beyond the supported
+  Windows UTF-16 budget. Both are fixed 422 messages with empty detail;
+  raw submitted identifiers, root paths and OS exception prose never render.
+  Admission runs before new store staging and new proposal/plan append.
+  Standing exact repeats and durable schema/read grammar are unchanged.
+  See `2026-09-21-windows-path-admission.md` for budgets and legacy behavior.
 - `contract_invalid` includes an unknown request field, a capability argument
   shape mismatch, and a `ContractError` from a CMD-1 constructor.
 - `run_corrupt` is the typed `CorruptRun` branch. Every other `StoreError` is
@@ -1386,7 +1409,10 @@ infer one from prose. The record kinds and their contracts are the closed v2 voc
 `evidence` (`EvidenceRef`), `decision` (`DecisionReceipt`),
 `action_proposal` (`ActionProposal`), `adapter_observation` (`ObservationRecord`),
 `attempt_event` (`AttemptEvent`), `graph_definition` (`GraphDefinition`),
-`artifact` (`ArtifactDocument`), and `run_terminal` (`RunTerminal`). One run
+`artifact` (`ArtifactDocument`), `run_terminal` (`RunTerminal`),
+`run_authorization` (`RunAuthorization`), and
+`run_authorization_control` (`RunAuthorizationControl`), and
+`correction_feedback` (`CorrectionFeedback`). One run
 follows at most one graph, and a second under another id is refused. A run
 records at most one `run_terminal`, it is refused on a run that follows no
 graph, and no record may follow it.
@@ -1395,71 +1421,209 @@ graph, and no record may follow it.
 ```json
 {
   "run": {
-    "schema_version": 2, "run_id": "run-cockpit-001", "cycle_id": "cockpit-orbit",
+    "schema_version": 2,
+    "run_id": "run-cockpit-001",
+    "cycle_id": "cockpit-orbit",
     "created_at": "2026-08-13T12:00:00Z",
     "config_digest": "sha256:0e0efae86b6ea79a902ef02935a2515e561e22de6b9bd6abebe8f4f174efa2e5",
-    "mode": "confirm", "status": "active"
+    "mode": "confirm",
+    "status": "active"
   },
   "config": {
-    "cycle": { "id": "cockpit-orbit", "phases": ["dispatch", "review"] },
+    "cycle": {
+      "id": "cockpit-orbit",
+      "phases": [
+        "dispatch",
+        "review"
+      ]
+    },
     "instances": [
-      { "id": "claude-dev", "adapter": "claude-code", "token_env": "ANTHROPIC_API_KEY" },
-      { "id": "codex-review", "adapter": "codex", "api_key_env": "OPENAI_API_KEY" }]
+      {
+        "id": "claude-dev",
+        "adapter": "claude-code",
+        "token_env": "ANTHROPIC_API_KEY"
+      },
+      {
+        "id": "codex-review",
+        "adapter": "codex",
+        "api_key_env": "OPENAI_API_KEY"
+      }
+    ]
   },
   "records": [
-    { "record_type": "action_proposal", "record": {
-      "schema_version": 2, "proposal_id": "proposal-cockpit-001", "run_id": "run-cockpit-001",
-      "attempt_id": "attempt-cockpit-001",
-      "instance_id": "claude-dev", "capability": "dispatch",
-      "arguments": {
-        "work_item_id": "work-cockpit-001", "instruction_ref": "instruction-cockpit-001",
-        "profile": "implement", "artifact_refs": ["artifact-cockpit-001"],
-        "output_limit_profile": "normal" }, "scope": ["src", "tests"],
-      "proposed_by": "claude-dev", "proposed_at": "2026-08-13T12:01:00Z",
-      "timeout_seconds": 900,
-      "rationale": "The lane finished its handoff and asks to dispatch implementation.",
-      "config_digest": "sha256:0e0efae86b6ea79a902ef02935a2515e561e22de6b9bd6abebe8f4f174efa2e5",
-      "preview_digest": "sha256:ef21f1ef6bfa392a6c6acb57469261a9b034fdb55cec95c2cf77db7ef2856c7f"
-    } },
-    { "record_type": "action_request", "record": {
-      "schema_version": 2, "action_id": "action-cockpit-001", "run_id": "run-cockpit-001",
-      "attempt_id": "attempt-cockpit-001", "instance_id": "claude-dev", "capability": "dispatch",
-      "arguments": {
-        "work_item_id": "work-cockpit-001", "instruction_ref": "instruction-cockpit-001",
-        "profile": "implement", "artifact_refs": ["artifact-cockpit-001"],
-        "output_limit_profile": "normal" }, "scope": ["src", "tests"],
-      "requested_by": "release-owner", "requested_at": "2026-08-13T12:02:00Z",
-      "idempotency_key": "dispatch-proposal-cockpit-001", "timeout_seconds": 900,
-      "preview_digest": "sha256:ef21f1ef6bfa392a6c6acb57469261a9b034fdb55cec95c2cf77db7ef2856c7f",
-      "mode": "confirm" } },
-    { "record_type": "attempt_event", "record": {
-      "schema_version": 2, "event_id": "event-lease-cockpit-001", "run_id": "run-cockpit-001",
-      "action_id": "action-cockpit-001", "attempt_id": "attempt-cockpit-001",
-      "instance_id": "claude-dev", "adapter_id": "claude-code", "phase": "effect_lease",
-      "recorded_at": "2026-08-13T12:03:00Z",
-      "request_digest": "sha256:4ff0ae5768792e2d8161e993399d2fc0720e1d2a42bde0380929f0688bc1c7a2",
-      "recovery_ref": "recovery-cockpit-001", "outcome": null, "exit_code": null } },
-    { "record_type": "attempt_event", "record": {
-      "schema_version": 2, "event_id": "event-observed-cockpit-001", "run_id": "run-cockpit-001",
-      "action_id": "action-cockpit-001", "attempt_id": "attempt-cockpit-001",
-      "instance_id": "claude-dev", "adapter_id": "claude-code", "phase": "execution_observed",
-      "recorded_at": "2026-08-13T12:20:00Z",
-      "request_digest": "sha256:4ff0ae5768792e2d8161e993399d2fc0720e1d2a42bde0380929f0688bc1c7a2",
-      "recovery_ref": "recovery-cockpit-001", "outcome": "succeeded", "exit_code": 0 } }
+    {
+      "record_type": "action_proposal",
+      "record": {
+        "schema_version": 2,
+        "proposal_id": "proposal-cockpit-001",
+        "run_id": "run-cockpit-001",
+        "attempt_id": "attempt-cockpit-001",
+        "instance_id": "claude-dev",
+        "capability": "dispatch",
+        "arguments": {
+          "work_item_id": "work-cockpit-001",
+          "instruction_ref": "instruction-cockpit-001",
+          "profile": "implement",
+          "artifact_refs": [
+            "artifact-cockpit-001"
+          ],
+          "output_limit_profile": "normal"
+        },
+        "scope": [
+          "src",
+          "tests"
+        ],
+        "proposed_by": "claude-dev",
+        "proposed_at": "2026-08-13T12:01:00Z",
+        "timeout_seconds": 900,
+        "rationale": "The lane finished its handoff and asks to dispatch implementation.",
+        "config_digest": "sha256:0e0efae86b6ea79a902ef02935a2515e561e22de6b9bd6abebe8f4f174efa2e5",
+        "preview_digest": "sha256:ef21f1ef6bfa392a6c6acb57469261a9b034fdb55cec95c2cf77db7ef2856c7f"
+      }
+    },
+    {
+      "record_type": "action_request",
+      "record": {
+        "schema_version": 2,
+        "action_id": "action-cockpit-001",
+        "run_id": "run-cockpit-001",
+        "attempt_id": "attempt-cockpit-001",
+        "instance_id": "claude-dev",
+        "capability": "dispatch",
+        "arguments": {
+          "work_item_id": "work-cockpit-001",
+          "instruction_ref": "instruction-cockpit-001",
+          "profile": "implement",
+          "artifact_refs": [
+            "artifact-cockpit-001"
+          ],
+          "output_limit_profile": "normal"
+        },
+        "scope": [
+          "src",
+          "tests"
+        ],
+        "requested_by": "release-owner",
+        "requested_at": "2026-08-13T12:02:00Z",
+        "idempotency_key": "dispatch-proposal-cockpit-001",
+        "timeout_seconds": 900,
+        "preview_digest": "sha256:ef21f1ef6bfa392a6c6acb57469261a9b034fdb55cec95c2cf77db7ef2856c7f",
+        "mode": "confirm"
+      }
+    },
+    {
+      "record_type": "attempt_event",
+      "record": {
+        "schema_version": 2,
+        "event_id": "event-lease-cockpit-001",
+        "run_id": "run-cockpit-001",
+        "action_id": "action-cockpit-001",
+        "attempt_id": "attempt-cockpit-001",
+        "instance_id": "claude-dev",
+        "adapter_id": "claude-code",
+        "phase": "effect_lease",
+        "recorded_at": "2026-08-13T12:03:00Z",
+        "request_digest": "sha256:4ff0ae5768792e2d8161e993399d2fc0720e1d2a42bde0380929f0688bc1c7a2",
+        "recovery_ref": "recovery-cockpit-001",
+        "outcome": null,
+        "exit_code": null
+      }
+    },
+    {
+      "record_type": "attempt_event",
+      "record": {
+        "schema_version": 2,
+        "event_id": "event-observed-cockpit-001",
+        "run_id": "run-cockpit-001",
+        "action_id": "action-cockpit-001",
+        "attempt_id": "attempt-cockpit-001",
+        "instance_id": "claude-dev",
+        "adapter_id": "claude-code",
+        "phase": "execution_observed",
+        "recorded_at": "2026-08-13T12:20:00Z",
+        "request_digest": "sha256:4ff0ae5768792e2d8161e993399d2fc0720e1d2a42bde0380929f0688bc1c7a2",
+        "recovery_ref": "recovery-cockpit-001",
+        "outcome": "succeeded",
+        "exit_code": 0
+      }
+    }
   ],
   "warnings": [],
   "graph": {
-    "definition": null, "definition_digest": null, "runtime": null,
-    "schedule": null, "success_criteria": {}
+    "definition": null,
+    "definition_digest": null,
+    "runtime": null,
+    "schedule": null,
+    "success_criteria": {},
+    "situation": {
+      "state": "not_required",
+      "computed_at": "2026-09-21T15:00:00.123Z",
+      "gates": [],
+      "checked": [
+        {
+          "reason": "gate_decision",
+          "count": 0,
+          "sources": []
+        },
+        {
+          "reason": "confirmation",
+          "count": 0,
+          "sources": []
+        },
+        {
+          "reason": "input_document",
+          "count": 0,
+          "sources": []
+        },
+        {
+          "reason": "reconcile",
+          "count": 0,
+          "sources": []
+        },
+        {
+          "reason": "attempt_bound",
+          "count": 0,
+          "sources": []
+        },
+        {
+          "reason": "run_ended",
+          "count": 0,
+          "sources": []
+        }
+      ],
+      "unknown_because": [],
+      "unknown_sources": [
+        {
+          "reason": "contradictory_gate_receipts",
+          "count": 0,
+          "sources": []
+        },
+        {
+          "reason": "replay_warnings",
+          "count": 0,
+          "sources": []
+        },
+        {
+          "reason": "unobserved_request",
+          "count": 0,
+          "sources": []
+        }
+      ]
+    }
   }
 }
 ```
 
-This run follows no graph, and says so with the whole block present and empty —
-four nulls and an empty object — rather than an absent key: a reader that has to
+This run follows no graph. Four plan readings are null and the criteria map
+is empty; its sixth graph key still reports the human situation. A reader that has to
 tell "no graph" from "old server" by the shape of a response is a reader
 guessing. `success_criteria` is an object rather than a null because it is a
 map from step to criteria, and a plan with no steps has none, not "unknown".
+
+The read instant above is explicitly supplied by the server clock. The S2
+closed schema and its uncertainty rules are specified in
+[2026-09-21-human-situation.md](2026-09-21-human-situation.md). This value
+is computed and is not a journal record, decision, grant or POST route.
 
 The two attempt phases are separate append-ordered facts. They bind to the same
 durable request, frozen adapter, attempt, and opaque recovery reference:
@@ -1549,7 +1713,7 @@ replay retains its original input semantics and bytes.
 
 #### 6.1.1 `graph` — the plan, its digest, and what the run did with it
 
-`graph` carries exactly five keys and is present on every run read. Three of them
+`graph` carries exactly six keys and is present on every run read. Three of them
 are the three readings of one plan — what was intended, what was observed, and
 what those two together permit — and no two of them share a word:
 
@@ -1579,8 +1743,12 @@ what those two together permit — and no two of them share a word:
   its digest is taken over, and a sentence this build composes is not part of
   what anybody published.
 
+- `situation` — the closed S2 reading of present human needs, checked
+  reasons and uncertainty, computed with the supplied read instant. It
+  confers no execution or decision authority. See the S2 spec above.
+
 A run following no graph answers `null` for the first four and `{}` for
-`success_criteria`.
+`success_criteria`; `situation` still reads its durable proposal/request facts.
 
 The projection and the definition share no word but the join. Every name a
 `runtime` node carries is a name the definition REFUSES as a field
@@ -1917,3 +2085,20 @@ or a new request field is a contract change, not harmless implementation detail.
   internal accept/refuse relation against the frozen vocabulary above.
   Its hostile transport cases retain ordered raw header pairs and exact body
   bytes (hex-encoded); no fixture pre-normalizes away duplicates.
+
+
+## Bounded automation extension — 21 September 2026
+
+The explicit `automation_contract: "bounded-run-v1"` open-run field is optional,
+legal only with Policy mode and a published workflow; omission preserves old
+snapshots. The automation preview is read-only despite POST and still requires
+all existing Host/Origin/CSRF checks. Its exact request/response fields, finite
+cache, authorization/control bodies and retry semantics are defined by
+`handoff-v1-studio/BOUNDED-RUN-AUTH-DESIGN-2026-09-07.md` in the delivery workspace.
+Runtime requests carry both `run_authorization_id` and
+`run_authorization_digest`, or omit both on old requests. Explicit null, an
+unmatched pair, or a link on Confirm refuses. Request and effect-lease replay
+hold recorded grant/control/expiry facts; fresh execution additionally holds
+live project ownership and provider configuration. A human Resume can rearm the
+same unexpired standing grant after restart; it does not reset spent budgets,
+reactivate an ambiguous request, or change its immutable instructions.

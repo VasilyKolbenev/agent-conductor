@@ -558,7 +558,7 @@ def test_the_listing_names_every_run_and_derives_each_field_from_the_records(
         "envelope_status": recovered.envelope.status,
         "graph_id": definition.graph_id,
         "undecided_gates": 1, "open_actions": 0, "last_outcome": None,
-        "workflow_id": WORKFLOW, "revision": 1, "task_id": None}
+        "workflow_id": WORKFLOW, "revision": 1, "task_id": None, "human_state": "required"}
     # A run with no plan has no gates to be undecided about, and says 0 rather
     # than null: null is what an unreadable run answers. It also froze no
     # workflow reference, so both halves of the provenance are null together.
@@ -589,7 +589,7 @@ def test_the_creation_time_word_is_named_so_no_reader_takes_it_for_a_position(
     assert set(row) == {
         "run_id", "unreadable", "cycle_id", "created_at", "mode",
         "envelope_status", "graph_id", "undecided_gates", "open_actions",
-        "last_outcome", "workflow_id", "revision", "task_id"}
+        "last_outcome", "workflow_id", "revision", "task_id", "human_state"}
 
 
 def test_a_run_whose_journal_does_not_replay_is_listed_with_its_own_marker(
@@ -617,7 +617,7 @@ def test_a_run_whose_journal_does_not_replay_is_listed_with_its_own_marker(
         "created_at": None, "mode": None, "envelope_status": None,
         "graph_id": None, "undecided_gates": None, "open_actions": None,
         "last_outcome": None, "workflow_id": None, "revision": None,
-        "task_id": None}
+        "task_id": None, "human_state": None}
     assert rows[RUN_ID]["unreadable"] is False
     assert rows[RUN_ID]["graph_id"] is not None
 

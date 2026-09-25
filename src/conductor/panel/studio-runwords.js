@@ -55,9 +55,12 @@ export const RECORD_KINDS = Object.freeze({
   adapter_observation: "An adapter reported its health",
   artifact: "An artifact was written",
   attempt_event: "An attempt crossed a durable boundary",
+  correction_feedback: "Correction findings recorded",
   decision: "A Human answered a gate",
   evidence: "Evidence was claimed",
   graph_definition: "The run was given its plan",
+  run_authorization: "Bounded authorization recorded",
+  run_authorization_control: "Authorization control recorded",
   run_terminal: "The plan has nothing left to open",
 });
 //: `artifacts.ARTIFACT_MEDIA_TYPES` and `artifacts.ARTIFACT_CONTENT_LIMIT`:
@@ -85,21 +88,24 @@ export const UNVERSIONED_MATERIALS = "This proposal has no material-binding "
 export const REBIND_MATERIALS = "This proposal predates material binding. "
   + "Create a new proposal below, review its materials, and confirm that one. "
   + "The earlier proposal stays in the history.";
-// The independent-check frame is bounded by the transport's 64 KiB stdin
+// The independent-check frame is bounded by the transport's 256 KiB stdin
 // ceiling, including its JSON encoding, not just the source text it carries.
 export const VERIFICATION_MATERIALS = Object.freeze({
   dispatch: "The instruction, input documents, the work item's file listing "
-    + "with digests, and bounded contents of changed files. Larger files are "
-    + "listed by digest and available to the checker in its read-only work area.",
+    + "with digests, and the whole contents of changed files up to 32 KiB each. "
+    + "Under confirmation a larger file is listed by digest and available to the checker "
+    + "in its read-only work area; a bounded run refuses it before any check.",
   review: "The result document this attempt produced and the input documents "
     + "it was given.",
 });
 export const VERIFICATION_FRAME_NOTE = "The complete encoded verification "
-  + "frame must fit 64 KiB. JSON expansion counts; an oversized frame refuses "
+  + "frame must fit 256 KiB. JSON expansion counts; an oversized frame refuses "
   + "the check before it starts.";
 export const VERIFICATION_OUTPUT_NOTE = "The checker's capture is bounded by "
   + "its provider. Only the first non-empty "
-  + "verdict line is judged; none of the checker's prose becomes durable.";
+  + "verdict line is judged. Only an explicitly authorized bounded run may "
+  + "record typed correction findings: 1–16 findings within 8192 canonical UTF-8 bytes. "
+  + "Unstructured checker prose is not a durable result.";
 export const SAME_ADAPTER_VERIFICATION = "Verified by the same participant's "
   + "adapter over its own post-observation evidence; no independent checker "
   + "is named by this step.";
@@ -110,8 +116,8 @@ export const CONTROL_MODES = Object.freeze({
   propose: "May propose work. Nothing can be authorized in this run, so "
     + "nothing runs.",
   confirm: "A Human confirms each proposal, and only then may it run.",
-  policy: "Reserved: this build ships no policy executor. A policy run behaves "
-    + "as a propose run: nothing can be authorized in it, so nothing runs.",
+  policy: "Bounded automatic work needs a separate human preview and permission. "
+    + "Opening a policy run alone grants no execution permission.",
 });
 //: The five steps of the real progression, in the one order they can happen.
 //: The first, second and fifth are record kinds; the third and fourth are the
@@ -126,8 +132,9 @@ export const INSTANT_FIELDS = Object.freeze({
   action_proposal: "proposed_at", action_request: "requested_at",
   action_result: "observed_at", adapter_observation: "observed_at",
   artifact: "created_at", attempt_event: "recorded_at",
-  decision: "decided_at", evidence: "observed_at",
-  graph_definition: "created_at", run_terminal: "recorded_at",
+  correction_feedback: "recorded_at", decision: "decided_at", evidence: "observed_at",
+  graph_definition: "created_at", run_authorization: "authorized_at",
+  run_authorization_control: "recorded_at", run_terminal: "recorded_at",
 });
 //: The identity fields each kind is summarised by, in reading order. Payload
 //: bodies (`arguments`, `content`) are deliberately absent: a timeline row is
@@ -145,11 +152,17 @@ export const ROW_FACTS = Object.freeze({
     "input_artifact_ids"],
   attempt_event: ["event_id", "action_id", "attempt_id", "instance_id",
     "adapter_id", "phase", "outcome", "exit_code"],
+  correction_feedback: ["feedback_id", "source_action_id", "source_attempt_id", "source_node_id",
+    "source_lap", "checker_instance_id", "checker_adapter_id", "result_manifest_digest"],
   decision: ["receipt_id", "gate_id", "action", "actor", "reason",
     "supersedes"],
   evidence: ["evidence_id", "kind", "label", "uri", "verification",
     "verified_by", "verified_at", "verifier_instance_id"],
   graph_definition: ["graph_id", "schema_version"],
+  run_authorization: ["authorization_id", "authorized_by", "expires_at",
+    "max_actions", "max_action_seconds", "max_total_task_seconds", "supersedes"],
+  run_authorization_control: ["control_id", "authorization_id", "action", "actor",
+    "expected_control_id"],
   run_terminal: ["terminal_id", "graph_id", "state", "settled_nodes",
     "unreachable_nodes"],
 });

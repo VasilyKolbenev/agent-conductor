@@ -52,6 +52,7 @@ from conductor.command.adapters.claude_code import CLAUDE_PROTOCOL
 from conductor.command.operator_config import ProviderConfig
 from conductor.command.run_store import RunStore
 from tests import _fakeclaude
+from browser_tests.task_picker import create_task
 
 #: An ordinary laptop, a common desktop, and a window narrower than either.
 SIZES = [(1280, 800), (1440, 900), (900, 700)]
@@ -455,7 +456,7 @@ def test_the_chosen_starters_note_is_drawn_whole_under_the_control(
             "items => items.map(item => item.value)")
         noted = [row for row in options if row.endswith("— see the note")]
         ready = [row for row in options if row.endswith("— ready to run")]
-        assert len(noted) == 1 and len(ready) == 2, options
+        assert len(noted) == 1 and len(ready) == 4, options
         note = page.locator("#workflowToolbar [data-starter-note]")
         assert note.inner_text() == "A blank start is an empty drawing."
         select.select_option(values[options.index(noted[0])])
@@ -522,6 +523,7 @@ def test_every_fold_is_reached_by_tab_and_toggled_by_enter(
 
 
 def _model_form(page: Page, workflow_id: str) -> list[str]:
+    create_task(page)
     _start_from_starter(page, workflow_id)
     _save_draft(page)
     _publish(page)
@@ -561,7 +563,11 @@ def test_each_roles_model_reaches_the_open_request_and_frozen_read_back(
         page.reload(wait_until="load")
         _settle(page)
         page.locator("#navRuns").click()
-        page.locator('[data-focus-key="run:run-model-pins"]').click()
+        from browser_tests.run_picker import choose_run
+        choose_run(page, "run-model-pins")
+        page.locator('[data-run-lens="orbit"]').click()
+        page.locator(f'[data-instance="instance-{roles[0]}"]').click()
+        page.locator("#studioParticipantInspector").get_by_text("Parameters", exact=True).click()
         page.wait_for_function("model => document.querySelector('#screenRuns')"
                                ".innerText.includes(model)", arg=model)
     finally:

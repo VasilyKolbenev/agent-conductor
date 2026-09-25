@@ -61,7 +61,7 @@ export const RESULT_OUTCOMES = Object.freeze(
 export const RECORD_KINDS = Object.freeze(
   ["action_request", "action_result", "evidence", "decision",
     "action_proposal", "adapter_observation", "attempt_event",
-    "graph_definition", "artifact", "run_terminal"]);
+    "correction_feedback", "graph_definition", "artifact", "run_terminal", "run_authorization", "run_authorization_control"]);
 //: command/contracts.py RunEnvelope._FIELDS -- the seven words a run envelope
 //: answers for. The durable contract also carries an `extra` seam, so a key
 //: outside this list is not a fault and is not refused; it is simply a key this
@@ -496,14 +496,14 @@ export function projectRevision(payload) {
 const RUNS_KEYS = ["runs", "providers"];
 const RUN_ROW_KEYS = ["run_id", "unreadable", "cycle_id", "created_at", "mode",
   "envelope_status", "graph_id", "undecided_gates", "open_actions",
-  "last_outcome", "workflow_id", "revision", "task_id"];
+  "last_outcome", "workflow_id", "revision", "task_id", "human_state"];
 //: What a row whose run did not replay says about everything but its identity.
 //: The provenance is in this list rather than outside it because "this run
 //: cannot be read" and "this run followed no workflow" must not arrive here as
 //: the same row: an unreadable run knows nothing, including that.
 const UNREADABLE_ROW_FIELDS = ["cycle_id", "created_at", "mode",
   "envelope_status", "graph_id", "undecided_gates", "open_actions",
-  "last_outcome", "workflow_id", "revision", "task_id"];
+  "last_outcome", "workflow_id", "revision", "task_id", "human_state"];
 
 function projectRunRow(row) {
   if (!isPlainObject(row) || !exactKeys(row, RUN_ROW_KEYS)) return null;
@@ -517,7 +517,7 @@ function projectRunRow(row) {
       ? Object.freeze({
         runId: row.run_id, unreadable: true, cycleId: null, createdAt: null,
         mode: null, envelopeStatus: null, graphId: null, undecidedGates: null,
-        openActions: null, lastOutcome: null, workflow: null, taskId: null,
+        openActions: null, lastOutcome: null, workflow: null, taskId: null, humanState: null,
       })
       : null;
   }
@@ -530,9 +530,10 @@ function projectRunRow(row) {
           || row.revision < 1)) {
     return null;
   }
-  if (row.task_id !== null && !isId(row.task_id)) return null;
+  if (row.task_id !== null && (!isId(row.task_id) || row.task_id.length > 64)) return null;
   if (!isId(row.cycle_id) || !isInstant(row.created_at)) return null;
   if (!CONTROL_MODES.includes(row.mode)) return null;
+  if (!["required", "not_required", "unknown"].includes(row.human_state)) return null;
   if (!RUN_STATES.includes(row.envelope_status)) return null;
   if (row.graph_id !== null && !isId(row.graph_id)) return null;
   if (!isCount(row.undecided_gates) || !isCount(row.open_actions)) return null;
@@ -551,7 +552,7 @@ function projectRunRow(row) {
     lastOutcome: row.last_outcome,
     workflow: row.workflow_id === null ? null
       : Object.freeze({id: row.workflow_id, revision: row.revision}),
-    taskId: row.task_id,
+    taskId: row.task_id, humanState: row.human_state,
   });
 }
 
@@ -663,15 +664,12 @@ function projectWorkflowRef(value) {
   return Object.freeze({id: row.id, revision: row.revision});
 }
 
-//: The task a run was opened under, frozen beside `workflow` so the digest
-//: covers it and a retry cannot rebind. OPTIONAL for the reason `workflow`
-//: is -- a run frozen before tasks existed carries none and reads as
-//: task-less -- and VALIDATED even so: a malformed binding is corrupt and
-//: never legacy, so `projectConfig` refuses the read whole rather than
-//: showing "no task". This window reads nothing out of it yet.
+// Frozen task identity follows the server's tighter 64-character contract.
+// Absence is legacy; a present but malformed binding refuses the whole read.
 function isTaskRef(row) {
   return isPlainObject(row) && exactKeys(row, ["id", "work_scope"])
-    && isId(row.id) && isId(row.work_scope);
+    && isId(row.id) && row.id.length <= 64
+    && isId(row.work_scope) && row.work_scope.length <= 64;
 }
 
 function projectConfig(value) {
@@ -739,7 +737,8 @@ function projectRecords(rows) {
 function isRunTask(row) {
   return isPlainObject(row)
     && exactKeys(row, ["id", "work_scope", "title", "unreadable"])
-    && isId(row.id) && isId(row.work_scope)
+    && isId(row.id) && row.id.length <= 64
+    && isId(row.work_scope) && row.work_scope.length <= 64
     && typeof row.unreadable === "boolean"
     && (row.title === null || isText(row.title));
 }
@@ -771,6 +770,9 @@ export function projectRunRead(payload) {
     return null;
   }
   if (payload.task !== null && !isRunTask(payload.task)) return null;
+  if (config.task === null ? payload.task !== null
+    : payload.task === null || payload.task.id !== config.task.id
+      || payload.task.work_scope !== config.task.workScope) return null;
   return Object.freeze({
     run,
     config,

@@ -167,6 +167,8 @@ EXIT = "FAKECLAUDE_EXIT"
 EMIT_STDOUT = "FAKECLAUDE_EMIT_STDOUT"
 EMIT_HEX = "FAKECLAUDE_EMIT_HEX"
 EMIT_REVIEW = "FAKECLAUDE_EMIT_REVIEW"
+#: A module the child imports from its working copy, as a reviewer running the project does.
+IMPORT_WORK = "FAKECLAUDE_IMPORT_WORK"
 EMIT_VERDICT = "FAKECLAUDE_EMIT_VERDICT"
 VERDICT_WRITE_FILE = "FAKECLAUDE_VERDICT_WRITE_FILE"
 VERDICT_EXIT = "FAKECLAUDE_VERDICT_EXIT"
@@ -478,6 +480,9 @@ def _run_prompt(checker=False, fix: str | None = None) -> int:
     if env.get(EMIT_STDOUT):
         sys.stdout.buffer.write(env[EMIT_STDOUT].encode("utf-8") + b"\n")
         sys.stdout.buffer.flush()
+    if env.get(IMPORT_WORK):
+        sys.path.insert(0, str(Path.cwd()))
+        __import__(env[IMPORT_WORK])
     if env.get(EMIT_REVIEW):
         sys.stdout.buffer.write(REVIEW_OUTPUT.encode("utf-8") + b"\n")
         sys.stdout.buffer.flush()

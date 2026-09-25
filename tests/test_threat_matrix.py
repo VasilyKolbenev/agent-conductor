@@ -70,7 +70,7 @@ EXPECTED_ROWS = {
         "::test_a_confirmation_older_than_the_freshness_budget_is_refused"),
     "CONF-DIGEST": (
         "HELD",
-        "src/conductor/command/contracts.py::ActionProposal.__post_init__",
+        "src/conductor/command/action_proposal.py::ActionProposal.__post_init__",
         "tests/test_command_proposals.py"
         "::test_a_durable_proposal_whose_field_was_edited_without_its_digest_is_refused"),
     "PATH-SCOPE": (
@@ -155,8 +155,8 @@ EXPECTED_ROWS = {
         "tests/test_command_independent_runtime.py"
         "::test_restart_with_no_checker_evidence_never_spends_a_second_grant"),
     "CHECKER-WRITES": (
-        "HELD", "src/conductor/command/adapters/artifact_transport.py"
-        "::ArtifactAwareTransport._check_owned",
+        "HELD", "src/conductor/command/adapters/independent_transport.py"
+        "::IndependentCheckTransport._check_owned",
         "tests/test_independent_checker_transport.py"
         "::test_checker_refusal_no_verdict_or_write_never_becomes_success"),
     "WORKTREE-CONTENT": (

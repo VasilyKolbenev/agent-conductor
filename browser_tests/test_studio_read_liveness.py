@@ -27,6 +27,8 @@ workflow queue.
 """
 from __future__ import annotations
 
+from browser_tests.run_picker import choose_run, reveal_runs
+
 import re
 import select
 import socket
@@ -90,11 +92,15 @@ TICK = """() => new Promise((done) => {
 
 
 def _sentence(name: str) -> str:
-    """One of the boot module's sentence constants, joined as JavaScript joins it."""
-    found = re.search(rf'^const {name} = ((?:"[^"\n]*"(?:\s*\+\s*)?)+);$',
-                      BOOT, re.M)
-    assert found is not None, f"studio.js declares no sentence {name}"
-    return "".join(re.findall(r'"([^"\n]*)"', found.group(1)))
+    """One of the boot module's notices, in English: its constant names a catalogue key.
+
+    The sentence itself lives in `studio-notice-copy.js`, so the notice on screen switches with
+    the language; the constant is still what the boot module says, and the key is read from it.
+    """
+    from tests.studio_source_messages import message_english
+    found = re.search(rf'^const {name} = Object\.freeze\(\{{key: "([a-z_]+\.[a-z_]+)"\}}\);$', BOOT, re.M)
+    assert found is not None, f"studio.js declares no notice {name}"
+    return message_english(found.group(1))
 
 
 # -- the server side: one GET held, and what its socket did ---------------------
@@ -283,7 +289,7 @@ def test_a_hung_run_read_is_aborted_at_the_deadline_and_frees_the_queue(
         _type(page, "field:proposed_by", ACTOR)
         before = stall.count(RUN_PATH)
         stall.arm(RUN_PATH, "headers")
-        page.locator(f'[data-focus-key="run:{RUN_ID}"]').click()
+        choose_run(page, RUN_ID)
         assert stall.entered.wait(10), "the press provoked no run read"
         assert not stall.aborted.is_set()
         _expire(page)
@@ -329,7 +335,7 @@ def test_a_read_whose_exit_throws_still_hands_the_queue_back(
         _read(page, RUN_ID)
         before = stall.count(RUN_PATH)
         stall.arm(RUN_PATH, "headers")
-        page.locator(f'[data-focus-key="run:{RUN_ID}"]').click()
+        choose_run(page, RUN_ID)
         assert stall.entered.wait(10), "the press provoked no run read"
         page.evaluate(BREAK_RENDER)
         _expire(page)
@@ -393,7 +399,7 @@ def test_a_hung_controls_read_is_aborted_and_the_step_stays_shut(
         page.evaluate(BODIES_OF, RUN_PATH)
         before = stall.count(CONTROLS_PATH)
         stall.arm(CONTROLS_PATH, "headers")
-        page.locator(f'[data-focus-key="run:{RUN_ID}"]').click()
+        choose_run(page, RUN_ID)
         assert stall.entered.wait(10), "the press provoked no controls read"
         page.wait_for_function("() => window.bodies > 0")
         _expire(page)
@@ -424,7 +430,7 @@ def test_a_hung_json_body_is_aborted_and_keeps_its_timeout_identity(
     try:
         _read(page, RUN_ID)
         stall.arm(RUN_PATH, "body")
-        page.locator(f'[data-focus-key="run:{RUN_ID}"]').click()
+        choose_run(page, RUN_ID)
         assert stall.entered.wait(10), "the press provoked no run read"
         _expire(page)
         assert stall.aborted.wait(10), "the deadline left the socket open"
@@ -474,6 +480,8 @@ def test_a_press_for_the_same_run_escapes_a_dead_read_without_waiting_for_it(
             node_id="identify", index=51, run_id=RUN_ID, config_digest=DIGEST))
         screen, control = PRESSES[press]
         page.locator(screen).click()
+        if press == "row":
+            reveal_runs(page)
         page.locator(control).click()
         assert stall.aborted.wait(10), "the press left the dead read's socket open"
         _more_items_than(page, items)
@@ -612,6 +620,7 @@ def test_a_retired_reads_late_answer_or_error_changes_nothing(
         if subject == "same":
             RunStore(bench.root).append(a_proposal(
                 node_id="identify", index=53, run_id=RUN_ID, config_digest=DIGEST))
+        reveal_runs(page)
         page.evaluate(LATE_UNDER_A_PRESS, [how, target])
         if subject == "same":
             _more_items_than(page, items)
@@ -700,7 +709,7 @@ def test_an_accepted_proposal_whose_confirming_read_stalls_is_written_exactly_on
         _press_anyway(page, PROPOSE)
         assert len(stall.posts) == 1
 
-        page.locator(f'[data-focus-key="run:{RUN_ID}"]').click()
+        choose_run(page, RUN_ID)
         page.wait_for_selector(f'[data-step="confirm:{STEP}"]')
         assert _state(page, "Decisions") == "ready"
         assert len(stall.posts) == 1

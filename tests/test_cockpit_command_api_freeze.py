@@ -17,6 +17,7 @@ accept/refuse relation against the frozen error vocabulary -- it makes NO claim
 that any server accepts or refuses them today.
 """
 from __future__ import annotations
+from tests.human_situation_samples import READ_AT
 
 import ast
 import hmac
@@ -42,6 +43,8 @@ from conductor.command.containment import RouteViolation, run_route_violations
 from conductor.command import graph_projection
 from conductor.command.graph_definition import GraphDefinition
 from conductor.command.run_terminal import RunTerminal
+from conductor.command.run_authorization import RunAuthorization, RunAuthorizationControl
+from conductor.command.correction_feedback import CorrectionFeedback
 from conductor.command.contracts import (
     ActionProposal,
     ActionRequest,
@@ -102,6 +105,9 @@ EXPECTED_RECORDS = {
     "graph_definition": (GraphDefinition, "graph_id"),
     "artifact": (ArtifactDocument, "artifact_id"),
     "run_terminal": (RunTerminal, "terminal_id"),
+    "run_authorization": (RunAuthorization, "authorization_id"),
+    "run_authorization_control": (RunAuthorizationControl, "control_id"),
+    "correction_feedback": (CorrectionFeedback, "feedback_id"),
 }
 
 #: The frozen refusal vocabulary, written out here so the spec cannot drift it
@@ -113,6 +119,8 @@ EXPECTED_ERRORS = {
     "route_not_found": (404, "routing"),
     "malformed_request": (400, "http_shape"),
     "contract_invalid": (422, "contract"),
+    "windows_name_unsafe": (422, "path_admission"),
+    "windows_path_too_long": (422, "path_admission"),
     "run_corrupt": (409, "store"),
     "store_error": (500, "store"),
     "route_unsafe": (409, "route_gate"),
@@ -156,6 +164,11 @@ EXPECTED_ROUTES = (
     ("GET", "/command/tasks", False, False),
     ("POST", "/command/tasks", True, True),
     ("GET", "/command/tasks/<task_id>", False, False),
+    ("GET", "/command/quotas", False, False),
+    ("GET", "/command/runs/<run_id>/automation", False, False),
+    ("POST", "/command/runs/<run_id>/automation/preview", False, True),
+    ("POST", "/command/runs/<run_id>/automation/authorize", True, True),
+    ("POST", "/command/runs/<run_id>/automation/control", True, True),
 )
 
 #: `step_purpose` is the plan's own sentence about a step, and it is on exactly
@@ -330,8 +343,9 @@ def test_route_unsafe_is_held_by_a_public_typed_relation_not_prose():
 
 
 def test_held_route_relation_maps_nonempty_typed_facts_without_rendering(tmp_path):
-    (tmp_path / "conductor").write_text("not a directory", encoding="utf-8")
     store = run_store_module.RunStore(tmp_path)
+    # The route changes after construction; this is not an ownership activation.
+    (tmp_path / "conductor").write_text("not a directory", encoding="utf-8")
     violations = run_route_violations(store, RUN_ID)
     assert violations and all(type(row) is RouteViolation for row in violations)
     refusal = ApiRefusal.fixed(CANON["route_dependency"]["nonempty_result"])
@@ -397,7 +411,9 @@ def test_run_envelope_and_run_read_response_bind_to_the_run_contract():
     assert read["graph"] == graph_projection.graph_payload(
         run_store_module.RecoveredRun(
             envelope=RunEnvelope.from_dict(read["run"]),
-            config=read["config"], records=(), warnings=()))
+            config=read["config"], records=tuple(run_store_module.StoredRecord(
+                row["record_type"], EXPECTED_RECORDS[row["record_type"]][0].from_dict(row["record"]))
+                for row in read["records"]), warnings=()), computed_at=READ_AT)
     envelope = RunEnvelope.from_dict(read["run"])
     assert envelope.as_dict() == read["run"]
     assert envelope.run_id == RUN_ID
@@ -447,6 +463,7 @@ def test_attempt_event_mutations_are_born_red_at_the_frozen_read_boundary():
         "action_request", "action_result", "evidence", "decision",
         "action_proposal", "adapter_observation", "attempt_event",
         "graph_definition", "artifact", "run_terminal",
+        "run_authorization", "run_authorization_control", "correction_feedback",
     }
 
 

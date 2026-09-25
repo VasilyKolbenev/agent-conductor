@@ -64,13 +64,14 @@ never the exit code.
 """
 from __future__ import annotations
 
+from .headless_spec import attempt_spec
+
 from collections.abc import Callable, Mapping
 from pathlib import Path
 
 from ..contracts import ActionRequest, ActionResultReceipt
 from .harness_profile import (
     DISPATCH_CAPABILITY,
-    LOGIN_RESIDUE_DETAIL,
     OUTPUT_LIMIT,
     PREFLIGHT_LOGIN_RESIDUE_DETAIL,
     PREFLIGHT_RESIDUE_DETAIL,
@@ -102,7 +103,9 @@ from .harness_workspace import (
     WorkspaceNotContained,
 )
 from . import login_home
+from ._procgroup import COMMAND_LINE_LIMIT, command_line_units
 from .headless_login import LoginRoad
+from .login_lifetime import owned_login_attempt
 from .headless_receipts import ReceiptWriting
 from .headless_routing import ModelRouting
 from .task_binding import (
@@ -115,6 +118,7 @@ from .headless_values import (
     attempt_relation,
 )
 from .process import (
+    STDIN_LIMIT,
     CommandSpec,
     ProcessOutcome,
     ProcessRunner,
@@ -188,6 +192,7 @@ class HeadlessCliTransport(
         self._workspace = HarnessWorkspace.at(
             root, home_dir=profile.home_dir, marker_dir=profile.marker_dir)
         self._root = self._workspace.root
+        self.attempt_scope = self._workspace.attempt_scope()
         self._clock = clock
         self._ids = ids
         #: Filed under the FULL attempt relation, never under an action id
@@ -307,6 +312,7 @@ class HeadlessCliTransport(
                 f"the {self.profile.tool_noun} harness adapter only prepares "
                 f"{capability!r}, not {request.capability!r}")
         args = self._dispatch_args(request.arguments)
+        self._workspace.admit_work_dir(args.work_item_id, args.task_scope)
         # The payload echoes the validated identifiers ONLY. No argv, no cwd, no
         # env value and no pinned path is carried here, so nothing downstream can
         # rewrite the command by rewriting the payload.
@@ -330,33 +336,6 @@ class HeadlessCliTransport(
                 "dispatch arguments do not match the closed deep dispatch schema")
         assert args is not None
         return args
-
-    def _task_text(self, args: DeepDispatchArgs, instruction: str) -> str:
-        """The composed task: `task_binding` owns how those bytes are made."""
-        return composed_task_text(
-            args, instruction, self.profile.tool_noun, self.error)
-
-    def _dispatch_task(
-            self, request: ActionRequest, args: DeepDispatchArgs,
-            instruction: str) -> str:
-        """Materialize one dispatch task; subclasses may add durable inputs."""
-        return self._task_text(args, instruction)
-
-    def _instruction_text(
-            self, request: ActionRequest, args: DeepDispatchArgs) -> str:
-        """The instruction the child is asked to do: this base reads the file.
-
-        One contained name under the workspace's instruction directory, or the
-        refusal that reaches no child. A subclass with a durable road answers
-        from the run's own journal first and falls back to exactly this.
-
-        A proposal that promised these bytes gets them read as they stand; one
-        that promised nothing gets the reading it has always had. The promise is
-        what makes the difference, so the promise is what asks for it.
-        """
-        del request
-        return self._workspace.read_instruction(
-            args.instruction_ref, exact=promised_bytes(args))
 
     # -- execution: preflight, mark, spawn once ---------------------------------
 
@@ -428,6 +407,7 @@ class HeadlessCliTransport(
         claimed = self._already_claimed(request)
         if claimed is not None:
             return claimed
+        self._workspace.admit_work_dir(args.work_item_id, args.task_scope)
         instruction = self._bound_instruction(request, args)
         # A home a crashed attempt left behind is model text this build promised
         # not to retain, so it goes before this attempt mints its own. What the
@@ -444,8 +424,17 @@ class HeadlessCliTransport(
         task_text = self._dispatch_task(request, args, instruction)
         work = self._workspace.work_dir(args.work_item_id, args.task_scope)
         before = self._workspace.digest_work_tree()
-        self._workspace.claim(request.run_id, request.action_id)
         argv, payload = self._task_command(task_text)
+        # Sized before the claim (review rulings K, R1): past the channel the spawn fails after it,
+        # leaving an unknown and a standing marker instead of this plain refusal. The argv channel
+        # (Kimi, Grok, DSH) is the WHOLE command line -- pins, flags, quoting, NUL -- as Windows
+        # counts it, on every platform: a POSIX argument may be far longer, so one rule is one fact.
+        if (payload is not None and (len(payload) > STDIN_LIMIT or b"\x00" in payload)
+                or payload is None
+                and command_line_units((*self._argv_prefix(), *argv)) > COMMAND_LINE_LIMIT):
+            return self._receipt(request, "failed", None,
+                "the materialized task exceeds the bounded task channel, so no task was spawned")
+        self._workspace.claim(request.run_id, request.action_id)
         outcome = self._attempt(
             argv, work.relative_to(self._workspace.root).as_posix(),
             timeout=request.timeout_seconds, stdin_bytes=payload, model=model,
@@ -460,8 +449,7 @@ class HeadlessCliTransport(
             # directory. Reporting it as succeeded with a sentence appended
             # would leave the run's own record saying the opposite of the
             # sentence; the outcome is the answer, and this is not a success.
-            return self._receipt(
-                request, "failed", outcome.exit_code, LOGIN_RESIDUE_DETAIL)
+            return self._residue_receipt(request, outcome)
         return self._observed(request, outcome)
 
     def _preflight_residue(
@@ -554,13 +542,16 @@ class HeadlessCliTransport(
                 f"so no task was spawned")
         return self._login_preflight(request)
 
+    @owned_login_attempt
     def _attempt(
             self, argv: ArgvSource, cwd: str, *,
             timeout: int | float,
             stdin_bytes: bytes | None = None,
+            stdin_completion_id: int | None = None,
             separate_stderr: bool = False,
             model: str | None = None,
-            output_limit: int | None = None) -> ProcessOutcome:
+            output_limit: int | None = None, server_read=None,
+            unset_env: tuple[str, ...] = ()) -> ProcessOutcome:
         """One spawn inside one FRESH home, and the home goes when the spawn does.
 
         This is the whole of the retention promise: a real harness may write
@@ -585,24 +576,24 @@ class HeadlessCliTransport(
         try:
             outcome = self._spawn(
                 argv, home, cwd, timeout=timeout, stdin_bytes=stdin_bytes,
+                stdin_completion_id=stdin_completion_id,
                 separate_stderr=separate_stderr, model=model,
-                output_limit=output_limit)
-            self._read_attempt_home(home)
-            # AFTER the spawn, and that is the whole point: a vendor refreshes
-            # its own credential while it runs, so the values this build scanned
-            # for before the spawn are not necessarily the ones the child could
-            # have echoed. The runner's own flag answers for the first set; this
-            # answers for the set the spawn left behind.
-            self._login_echo = self._echoed_login(outcome.output)
-            # AFTER as well as before: what the spawn left in the credential
-            # file is what the NEXT reader would scan for, and what stood before
-            # it is what this spawn could have written into a file.
-            self._remember_login_values()
+                output_limit=output_limit, unset_env=unset_env,
+                **({} if server_read is None else {"server_read": server_read}))
+            self._read_attempt_result(home, outcome)
             return outcome
         finally:
             if auth_home:
                 self._take_back_login(auth_home, before)
             self._discard(home)
+
+    def _read_attempt_result(self, home, outcome):
+        """Measure the completed spawn while its temporary home still exists."""
+        self._read_attempt_home(home)
+        # A vendor can refresh credentials while running. Scan the resulting
+        # values as well as those the runner already checked before spawning.
+        self._login_echo = self._echoed_login(outcome.output)
+        self._remember_login_values()
 
     def _release_attempt(self, relation: tuple[str, str, str, str]) -> None:
         """Drop what ONE finished attempt left on this transport."""
@@ -644,9 +635,11 @@ class HeadlessCliTransport(
             self, argv: ArgvSource, home: Path, cwd: str, *,
             timeout: int | float,
             stdin_bytes: bytes | None = None,
+            stdin_completion_id: int | None = None,
             separate_stderr: bool = False,
             model: str | None = None,
-            output_limit: int | None = None) -> ProcessOutcome:
+            output_limit: int | None = None, server_read=None,
+            unset_env: tuple[str, ...] = ()) -> ProcessOutcome:
         """The ONE place a child is started; argv, env and bounds are code-owned.
 
         ``cwd`` is a route RELATIVE to the project root, so the runner's own
@@ -660,26 +653,17 @@ class HeadlessCliTransport(
             # Building the spec is part of the spawn: a pin that cannot become a
             # valid argv must refuse with the SAME fixed sentence as a spawn that
             # cannot start, so no runner message and no path leaks through here.
-            spec = CommandSpec(
-                argv=(*self._argv_prefix(),
-                      *self._tokens(argv, home, model)), cwd=cwd,
-                env_allow=self._env_allow(),
-                # The minted home is written LAST so it cannot be
-                # displaced. A `forced_env` pair naming `home_env`
-                # would otherwise relocate the child's home and
-                # defeat the whole retention promise; the profile
-                # refuses that collision at construction, and this
-                # ordering means the promise holds even if it did not.
-                env={**dict(profile.forced_env),
-                     profile.home_env: self._home_value(home)},
-                output_limit=bounded_output(profile, output_limit),
-                timeout_seconds=timeout,
-                stdin_bytes=stdin_bytes, separate_stderr=separate_stderr,
-                # The one road a value -- never a name -- crosses this seam: a
-                # vendor login lives in a file, so the runner cannot derive it
-                # from the environment the way it derives every other credential
-                # this build hands a child.
-                sensitive_extra=self._login_secrets())
+            spec = attempt_spec(self, argv, home, cwd, timeout=timeout,
+                stdin_bytes=stdin_bytes, stdin_completion_id=stdin_completion_id,
+                separate_stderr=separate_stderr, model=model, output_limit=output_limit,
+                unset_env=unset_env)
+            if server_read is not None:
+                owned = self._runner.start(spec)
+                try:
+                    server_read(owned.pid)
+                finally:
+                    outcome = self._runner.stop(owned.token)
+                return outcome
             return self._runner.run(spec)
         except ProcessRunnerError:  # noqa: BLE001 -- carry no child detail onward
             failed = True

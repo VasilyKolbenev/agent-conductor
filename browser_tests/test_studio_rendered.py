@@ -27,6 +27,8 @@ of a real route, which is a stronger statement about the same surface.
 """
 from __future__ import annotations
 
+import json
+import re
 import threading
 from collections.abc import Iterator
 
@@ -38,6 +40,7 @@ from conductor.command.graph_template import GraphTemplate
 from conductor.command.template_store import TemplateStore
 
 from tests.test_store import good_lane, write_project
+from tests.test_panel_colour import contrast
 
 #: The one workflow this module's project holds, published once. The Studio is
 #: read-only here: nothing below writes, so a session-scoped server is honest.
@@ -84,6 +87,7 @@ NEW_DRAFT_CONTROL = '#workflowToolbar [data-focus="action:onEditPublished"]'
 #: carry answers 404 and would be invisible in a test that read the markup.
 BOOT_ASSETS = {
     "studio.css": 200, "studio.js": 200, "studio-store.js": 200,
+    "studio-tasks-model.js": 200, "studio-tasks.js": 200, "studio-taskflow.js": 200,
     "studio-model.js": 200, "studio-view.js": 200,
     "studio-runform.js": 200,
     "studio-canvas.js": 200, "studio-inspector.js": 200,
@@ -110,6 +114,22 @@ BOOT_ASSETS = {
     # sections import it, so the entry route's module graph fetches it.
     "studio-ceilings.js": 200,
     "command-projection.js": 200, "command-view.js": 200,
+    # The five-screen shell and its mounts, preferences and the scene lenses.
+    "studio-shell.js": 200, "studio-runhead.js": 200, "studio-mounts.js": 200, "studio-preferences.js": 200,
+    "studio-bridge.js": 200, "studio-situation.js": 200, "studio-taskruns.js": 200,
+    "studio-scene-model.js": 200, "studio-trace.js": 200, "studio-draft.js": 200,
+    "studio-workflowwrite.js": 200,
+    # The RU/EN catalogues: the shared table and one copy module per screen area.
+    "studio-i18n.js": 200, "studio-agents-copy.js": 200, "studio-automation-copy.js": 200,
+    "studio-feedback-copy.js": 200, "studio-participant-copy.js": 200,
+    "studio-run-docs-copy.js": 200, "studio-runform-copy.js": 200, "studio-runs-copy.js": 200,
+    "studio-runstep-copy.js": 200, "studio-view-copy.js": 200, "studio-workflow-copy.js": 200,
+    "studio-workflow-detail-copy.js": 200, "studio-notice-copy.js": 200,
+    # Readings, bounded automation and typed checker findings.
+    "studio-quotaflow.js": 200, "studio-quotas-model.js": 200, "studio-quotas.js": 200,
+    "studio-automation.js": 200, "studio-automation-flow.js": 200,
+    "studio-automation-model.js": 200, "studio-automation-providers.js": 200,
+    "studio-feedback.js": 200, "studio-feedback-model.js": 200,
 }
 
 
@@ -174,10 +194,18 @@ def studio(chromium: Browser, studio_url: str) -> Iterator[tuple[Page, list[str]
 
 
 def _phase_sentences(page: Page) -> dict[str, str]:
-    """The view module's own table, read out of the module the page loaded."""
+    """The shell's phase words, each with the catalogue's sentence in the page's language.
+
+    Read out of the modules the page loaded: the shell names the words, and
+    what it draws beside each one is the catalogue row ``phase.<word>``.
+    """
     return page.evaluate(
-        """() => import("/panel/studio-view.js")
-             .then(view => ({...view.PHASE_SENTENCES}))""")
+        """() => Promise.all([import("/panel/studio-shell.js"), import("/panel/studio-i18n.js")])
+             .then(([shell, i18n]) => {
+               const locale = new URLSearchParams(location.hash.slice(1)).get("lang") || "en";
+               return Object.fromEntries(Object.keys(shell.PHASE_SENTENCES)
+                 .map((word) => [word, i18n.message(locale, `phase.${word}`)]));
+             })""")
 
 
 def test_the_studio_boots_from_the_entry_route_with_no_error_at_all(
@@ -301,6 +329,55 @@ def test_a_keyboard_focus_draws_a_visible_ring_on_the_tab_it_lands_on(
     assert float(ring["width"].removesuffix("px")) >= 2, ring
     assert ring["colour"] != ring["background"], (
         "the focus ring is drawn in the page's own background colour")
+    assert problems == []
+
+
+@pytest.mark.parametrize("theme", ["dark", "light"])
+def test_tab_text_keeps_contrast_in_the_first_frames_of_a_theme_change(
+        studio: tuple[Page, list[str]], theme: str, tmp_path) -> None:
+    """Measure actual paint during a theme change, with motion permitted."""
+    page, problems = studio
+    initial = "light" if theme == "dark" else "dark"
+    page.emulate_media(color_scheme=initial, reduced_motion="reduce")
+    page.evaluate("() => getComputedStyle(document.body).backgroundColor")
+    page.emulate_media(color_scheme=initial, reduced_motion="no-preference")
+    page.evaluate("""theme => {
+      window.tabContrastFrames = [];
+      const media = matchMedia(`(prefers-color-scheme: ${theme})`);
+      const sample = () => {
+        const rows = [...document.querySelectorAll('#studioNav [role=tab]')].map(tab => {
+          const surfaces = [];
+          for (let at = tab; at && at !== document.body; at = at.parentElement) {
+            const style = getComputedStyle(at);
+            surfaces.push({background: style.backgroundColor, opacity: style.opacity,
+              image: style.backgroundImage});
+          }
+          return {id: tab.id, selected: tab.getAttribute('aria-selected'), surfaces,
+            color: getComputedStyle(tab).color};
+        });
+        window.tabContrastFrames.push({themeMatches: media.matches, rows,
+          background: getComputedStyle(document.body).backgroundColor});
+        if (window.tabContrastFrames.length < 4) requestAnimationFrame(sample);
+      };
+      media.addEventListener('change', event => { if (event.matches) sample(); }, {once: true});
+    }""", theme)
+    page.emulate_media(color_scheme=theme, reduced_motion="no-preference")
+    page.wait_for_function("() => window.tabContrastFrames.length === 4")
+    frames = page.evaluate("() => window.tabContrastFrames")
+    (tmp_path / f"tab-contrast-{theme}.json").write_text(
+        json.dumps(frames, indent=2), encoding="utf-8")
+    rgb = lambda value: tuple(float(channel) for channel in re.findall(r"[\d.]+", value)[:3])
+    for frame in frames:
+        assert frame["themeMatches"]
+        assert {row["id"] for row in frame["rows"]} == {row[1] for row in SCREENS}
+        assert sum(row["selected"] == "true" for row in frame["rows"]) == 1
+        for row in frame["rows"]:
+            # The actual body is the surface only while these ancestors are
+            # transparent and opaque as layers; refuse a different paint stack.
+            assert all(surface == {"background": "rgba(0, 0, 0, 0)",
+                "opacity": "1", "image": "none"} for surface in row["surfaces"]), row
+            measured = contrast(rgb(row["color"]), rgb(frame["background"]))
+            assert measured >= 4.5, (theme, row["id"], measured, frame)
     assert problems == []
 
 
@@ -516,16 +593,18 @@ def test_the_workflow_screen_offers_the_project_workflow_and_the_bundled_starter
     # starters carry that one title, so the picker offered a person two rows
     # they could not choose between -- and they are not equivalent, which is the
     # half that made it worth fixing rather than tolerating.
-    # Three shipped revisions since the routed one landed, and still no two
-    # rows a person cannot tell apart.
-    assert len(offered[1:]) == len(set(offered[1:])) == 3, offered
-    assert all("Dalio five-step cycle · revision " in row for row in offered[1:])
+    # Five shipped revisions, including both independent-checker starters, and no two
+    # rows a person cannot tell apart. Revision 5 is the standard and is offered first.
+    assert len(offered[1:]) == len(set(offered[1:])) == 5, offered
+    assert offered[1] == "Стандартный цикл · revision 5 — ready to run"
+    assert offered[-1] == "Стандартный цикл · revision 4 — ready to run"
+    assert all("Dalio five-step cycle · revision " in row for row in offered[2:-1])
     ready = [row for row in offered[1:] if row.endswith("ready to run")]
     caveated = [row for row in offered[1:] if row.endswith("see the note")]
-    # Two run-ready revisions since the routed one landed, and still exactly one
+    # Four run-ready revisions, and still exactly one
     # caveated: the caveat is DERIVED, so revision 3 inherits revision 2's fixed
     # artifact chain rather than a sentence somebody remembered to copy.
-    assert len(ready) == 2 and len(caveated) == 1, offered
+    assert len(ready) == 4 and len(caveated) == 1, offered
     # The caveat itself is no longer IN the option -- its 191 characters were
     # the select's intrinsic width and the page's overflow (R08) -- but under
     # the control, for the starter chosen, and it is the DERIVED one, naming

@@ -41,6 +41,7 @@ from __future__ import annotations
 import re
 
 from tests.test_studio_canvas import INSPECTOR, PANEL, ROOT, _code, _text
+from tests.studio_source_messages import _code
 
 #: Every field of the six sections that has no durable home in this build. The
 #: list is the report: a field named here SAYS so where it would have been, and
@@ -222,7 +223,7 @@ def test_the_inspector_lets_the_output_budget_be_chosen_and_still_states_it():
     # Both states still SAID: a schema that declares no profile, and -- in one
     # line with two arms -- a step that names one and a step that does not.
     assert body.count('context(box, "Output budget"') == 2, body
-    assert "budgetLabel(named)" in body, body
+    assert "budgetLabel(named, form)" in body, body
     assert "names no output limit profile" in body, body
     # And now CHOSEN, through a control the section really mounts.
     assert "budgetSelect(box, form, choices, named);" in body, body
@@ -411,7 +412,7 @@ def test_the_requirement_may_only_ever_ask_for_more_than_the_runtime_does():
         REQUIRED_EVIDENCE)
     # The fallback is the shape `budgetLabel` already has: a word this build has
     # no sentence for is NAMED as that, never rendered as `undefined`.
-    fallback = re.search(r"function evidenceLabel\(word\) \{(.*?)\n\}",
+    fallback = re.search(r"function evidenceLabel\(word, form\) \{(.*?)\n\}",
                          inspector, re.DOTALL).group(1)
     assert "Object.hasOwn(EVIDENCE_DEMANDS, word)" in fallback, fallback
     assert "no sentence for what it requires" in fallback, fallback
@@ -721,14 +722,14 @@ def test_the_open_run_says_which_document_it_is_waiting_for():
     "waiting for nothing" is a sentence about nothing.
     """
     inspector = _code(*INSPECTOR)
-    body = re.search(r"function runWaiting\(box, run, node\) \{(.*?)\n\}",
+    body = re.search(r"function runWaiting\(box, run, node, form\) \{(.*?)\n\}",
                      inspector, re.DOTALL).group(1)
 
     assert "run.schedule" in body, body
     assert "standing.awaiting_artifacts" in body, body
     assert 'context(box, "Waiting for"' in body, body
     assert "if (!waiting.length) return;" in body, body
-    assert "runWaiting(box, run, node);" in inspector
+    assert "runWaiting(box, run, node, form);" in inspector
 
 
 def test_a_run_s_own_artifacts_are_joined_to_the_step_that_produced_them():

@@ -26,6 +26,7 @@ from ..contracts import (
     canonical_json,
 )
 from ..dispatch import validate_dispatch_arguments
+from .attempt_scope import AttemptScopeError, registered_attempt_scope
 
 
 _ARGUMENT_SCHEMAS = frozenset({"structured-process-v1", "deep-arguments-v1"})
@@ -77,7 +78,7 @@ class IndependentVerifierUnavailable(AdapterContractError):
 #: prose. The two are held equal by a test, in the module that owns the words.
 PUBLISH_REFUSALS = frozenset({
     "outside_subtree", "nothing_changed", "uncontained", "home_retained",
-    "tree_changed", "env_echo",
+    "tree_changed", "env_echo", "over_read_budget",
 })
 
 
@@ -132,6 +133,7 @@ class Published:
     input_documents: tuple[Mapping[str, Any], ...] = field(default=(), repr=False)
     result_document: Mapping[str, Any] | None = field(default=None, repr=False)
     instruction_document: Mapping[str, Any] | None = field(default=None, repr=False)
+    result_manifest: Mapping[str, Any] | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         if self.refusal is not None and (
@@ -146,6 +148,7 @@ class Published:
                 type(value) is not bytes for value in self.sensitive):
             raise AdapterContractError("sensitive must be a tuple of bytes")
         self._freeze_material()
+        _freeze_manifest(self)
 
     def _freeze_material(self) -> None:
         if self.after is not None:
@@ -178,7 +181,13 @@ def _published(value: object) -> Published:
         input_artifact_ids=value.input_artifact_ids, sensitive=value.sensitive,
         instruction=value.instruction, input_documents=value.input_documents,
         result_document=value.result_document,
-        instruction_document=value.instruction_document)
+        instruction_document=value.instruction_document, result_manifest=value.result_manifest)
+
+
+def _freeze_manifest(value):
+    from ..contracts import rebuild_manifest
+    if value.result_manifest is not None:
+        object.__setattr__(value, "result_manifest", _contract(rebuild_manifest, value.result_manifest))
 
 
 CAPABILITIES = frozenset({
@@ -342,8 +351,20 @@ class AdapterVerification:
     observed_at: str
     detail: str
     evidence_refs: tuple[str, ...] | list[str] = ()
+    feedback: bytes | None = field(default=None, repr=False)
+    result_manifest: Mapping[str, Any] | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
+        _freeze_manifest(self)
+        from ..contracts import settled_feedback_bytes, FeedbackPayloadError
+        try:
+            object.__setattr__(self, "feedback", settled_feedback_bytes(self.feedback))
+        except FeedbackPayloadError:
+            raise AdapterContractError("invalid bounded feedback") from None
+        if self.feedback is not None and (self.state, self.detail) != ("mismatch", "rejected"):
+            raise AdapterContractError("feedback requires a definite independent rejection")
+        if self.feedback is not None and self.result_manifest is None:
+            raise AdapterContractError("feedback requires a result manifest")
         for name in ("adapter_id", "action_id"):
             object.__setattr__(self, name, _contract(_id, name, getattr(self, name)))
         if self.state not in VERIFICATION_STATES:
@@ -420,6 +441,7 @@ class AdapterRegistry:
         self._manifests: dict[str, AdapterManifest] = {}
         self._argument_schemas: dict[str, Mapping[str, str]] = {}
         self._independent_seams: dict[str, Mapping[str, Any]] = {}
+        self._attempt_scopes = {}
         for adapter in adapters:
             self.register(adapter)
 
@@ -451,11 +473,22 @@ class AdapterRegistry:
         independent = {
             name: seam for name in (*_INDEPENDENT_SEAMS, "verification_started")
             if callable(seam := getattr(adapter, name, None))}
+        try:
+            scope = registered_attempt_scope(adapter)
+        except AttemptScopeError as error:
+            raise AdapterContractError(str(error)) from None
         # Publish the registration only after every supplied claim validated.
         self._adapters[reviewed.adapter_id] = adapter
         self._manifests[reviewed.adapter_id] = reviewed
         self._argument_schemas[reviewed.adapter_id] = MappingProxyType(reviewed_schemas)
         self._independent_seams[reviewed.adapter_id] = MappingProxyType(independent)
+        self._attempt_scopes[reviewed.adapter_id] = scope
+
+    def attempt_scope(self, adapter_id: str):
+        """Return the registered value; no discovery or effect is performed."""
+        self.resolve(adapter_id)
+        scope = self._attempt_scopes[adapter_id]
+        return None if scope is None else scope.copied()
 
     def resolve(self, adapter_id: str) -> Adapter:
         safe = _contract(_id, "adapter_id", adapter_id)
@@ -628,7 +661,8 @@ class AdapterRegistry:
             state=verification.state,
             observed_at=verification.observed_at,
             detail=verification.detail,
-            evidence_refs=verification.evidence_refs)
+            evidence_refs=verification.evidence_refs, feedback=verification.feedback,
+            result_manifest=verification.result_manifest)
 
     def verifies_independently(self, adapter_id: str, capability: str) -> bool:
         """A registration fact, not a late claim made by a mutable adapter."""

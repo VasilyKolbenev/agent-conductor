@@ -2,12 +2,12 @@
 
 Configuring a provider meant hand-writing `conductor/providers.json`. Three
 surfaces said so and `docs/owner-acceptance.md` called it "the one place the
-script sends you back to a file" — an honest description of a gap, not a design.
+script sends you back to a file" вЂ” an honest description of a gap, not a design.
 
 The claim this module holds is not "a wizard exists". It is four claims, and
 they fail in different ways:
 
-1. the complete owner path after `init` requires no text editor — driven end to
+1. the complete owner path after `init` requires no text editor вЂ” driven end to
    end, ending at a provider the SERVER reports as `available`;
 2. no credential value can reach that file, and not because anything screens
    for one: the dialogue asks for environment variable NAMES, and there is
@@ -17,8 +17,8 @@ they fail in different ways:
    file surfaces later as "the harness could not start the pinned build",
    naming neither the variable nor the file;
 4. nothing is spelled on a command line. `--providers` is deliberately a path
-   and nothing else, so a flag-shaped setup would put a machine path — and
-   eventually a secret — into shell history and CI logs.
+   and nothing else, so a flag-shaped setup would put a machine path вЂ” and
+   eventually a secret вЂ” into shell history and CI logs.
 
 The wizard is driven with a scripted prompter rather than a real terminal, and
 that is the whole of the substitution: every refusal, every derivation and every
@@ -47,8 +47,8 @@ ENTRYPOINT = "/opt/harness/lib/agent.py"
 #: a mutation and call the result a pass. Written down, it is a claim about five
 #: vendors that a person can check against their documentation.
 #:
-#: `required` — the pinned executable is an INTERPRETER, and the script it runs
-#: is a second absolute path. `forbidden` — the pinned executable is the whole
+#: `required` вЂ” the pinned executable is an INTERPRETER, and the script it runs
+#: is a second absolute path. `forbidden` вЂ” the pinned executable is the whole
 #: harness, so there is no second file and offering to pin one produces a config
 #: this build will not honour.
 #: The answer that picks the environment-credential road at the login question,
@@ -59,14 +59,14 @@ ENV_LOGIN = "2"
 #: Which providers this dialogue asks a LOGIN question of, stated here for the
 #: same reason `PIN_SHAPES` is: a table derived from `providers.login_hint`
 #: would move with a mutation of that rule and call the result a pass. Only the
-#: two harnesses whose transport really drives a vendor login are asked; the
-#: other three are TOLD they read a credential from the environment.
+#: harnesses whose transport drives a vendor login are asked; the others
+#: are TOLD they read a credential from the environment.
 LOGIN_ASKED = {
     "claude-code": True,
     "codex": True,
     "deepseek-harness": False,
-    "grok-build": False,
-    "kimi-code": False,
+    "grok-build": True,
+    "kimi-code": True,
 }
 PIN_SHAPES = {
     "claude-code": "forbidden",

@@ -29,6 +29,8 @@ out, so every witness that moves the clock after a frame waits for it first.
 """
 from __future__ import annotations
 
+from browser_tests.run_picker import choose_run
+
 import time
 from collections.abc import Iterator
 from pathlib import Path
@@ -153,7 +155,7 @@ def test_a_deadline_under_a_queued_frame_is_still_told_to_the_person(
         _read(page, RUN_ID)
         before = stall.count(RUN_PATH)
         stall.arm(RUN_PATH, "headers")
-        page.locator(f'[data-focus-key="run:{RUN_ID}"]').click()
+        choose_run(page, RUN_ID)
         assert stall.entered.wait(10), "the press provoked no run read"
         _frame(page, RUN_ID)
         _list_landed(page)

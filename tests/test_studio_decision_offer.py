@@ -25,10 +25,18 @@ window ASKS the right layer. The rendered halves are in
 from __future__ import annotations
 
 import re
+import json
 
 from tests.test_studio_runs import PANEL, PEOPLE_FILE, WORDS_FILE, source
 
 RUNREAD_FILE = PANEL / "studio-runread.js"
+
+
+def _copy(key):
+    text = (PANEL / "studio-agents-copy.js").read_text(encoding="utf-8")
+    catalog = json.loads(text.split("Object.freeze(", 1)[1].rsplit(");", 1)[0])
+    return catalog["agents." + key][0]
+
 
 
 def _decision_rows() -> str:
@@ -132,27 +140,31 @@ def test_a_gate_that_cannot_be_answered_yet_says_which_of_the_two_it_is():
     is the Runs screen's own constant rather than a second copy, because one
     rule said twice in two files is one rule that can be said two ways.
     """
-    people = source(PEOPLE_FILE)
+    # The keys reached, as written: this guard is about WHICH catalogue rows a reason names.
+    people = PEOPLE_FILE.read_text(encoding="utf-8")
     sentence = re.search(r'ALL_ROADS = "(.+?)";', source(WORDS_FILE), re.DOTALL)
     assert sentence is not None, "the AND-join sentence has no one owner"
     assert "ALL incoming roads must open" in sentence.group(1).replace(
         '"\n  + "', "")
 
-    why = _sentences(people, "whyNotYet(row)")
-    assert '"This gate cannot be answered yet. " + ALL_ROADS' in why, why
-    assert "Waiting on: ${waiting}" in why, why
-    assert "This gate will never be asked: the road into it was closed " in why
-    assert "unreachable too" in why, why
-    # A run that has ENDED is said first: it is true of every gate at once, and
-    # a person told their gate is merely waiting would wait for ever.
-    assert "This run has ended (Plan: " in why, why
-    assert "no decision can be recorded" in why, why
-    # An `unknown` gate offers nothing, and says why rather than going quiet.
-    assert "recorded answers contradict each other" in why, why
-    # A halt stops WORK being offered and is not the roads failing to open.
-    assert "Nothing further is offered in this run: it was halted." in why, why
-    # And a build with no schedule refuses to guess in either direction.
-    assert "cannot say whether the plan has reached this gate" in why, why
+    why = _sentences(people, "whyNotYet(row, state)")
+    expected = {
+        "waiting": "Waiting on: {waiting}", "closed": "road into it was closed",
+        "unreachable": "unreachable too", "ended": "no decision can be recorded",
+        "contradiction": "recorded answers contradict each other",
+        "halted": "Nothing further is offered in this run: it was halted.",
+        "schedule_missing": "cannot say whether the plan has reached this gate",
+    }
+    for key, phrase in expected.items():
+        assert f'"agents.{key}"' in why
+        assert phrase in _copy(key)
+    # The translated clause preserves the existing AND-join owner's exact EN.
+    assert sentence.group(1).replace('"\n  + "', "") in _copy("waiting")
+    assert 'if (row.ended === true)' in why
+    assert why.index('"agents.ended"') < why.index('"agents.waiting"')
+    assert '{plan}' in _copy("ended") and 'plan: show(row.plan_word, state)' in why
+    assert 'waiting}' in why and 'closed}' in why
+
 
 
 def test_a_reopened_gate_says_the_answer_will_supersede_what_stands():
@@ -174,10 +186,11 @@ def test_a_reopened_gate_says_the_answer_will_supersede_what_stands():
     assert "superseded.has(receipt.receipt_id)" in standing, standing
     assert "current.length === 1" in standing, standing
 
-    said = _sentences(source(PEOPLE_FILE), "reopenedNote(row)")
+    said = _sentences(PEOPLE_FILE.read_text(encoding="utf-8"), "reopenedNote(row, state)")
     assert 'typeof row.standing !== "string"' in said, said
-    assert "supersedes ${row.standing}" in said, said
-    assert "a decision is never edited" in said, said
+    assert '"agents.reopened", {receipt: row.standing}' in said, said
+    assert "supersedes {receipt}" in _copy("reopened")
+    assert "a decision is never edited" in _copy("reopened")
 
 
 def test_a_second_answer_on_one_gate_carries_an_identity_of_its_own():

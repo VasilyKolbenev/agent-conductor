@@ -15,7 +15,14 @@ DIGESTS = {
     "sha256:6baff3e6aa465eed1f810c6f7dde63f92e64574867245476ec837736d8e7436f":
         "sha256:4768bec1d42475683e836c11c14bdae859ce0b73615553935de572d023145128",
 }
-REFUSALS = {"proposal_rebind_required": 409}
+#: New refusal vocabulary is added here; never regenerate the historical JSON.
+#: These literal statuses are pinned independently of ERROR_STATUS. Their fixed
+#: messages and actual admission doors are tested by the Windows/API witnesses.
+REFUSALS = {
+    "proposal_rebind_required": 409,
+    "windows_name_unsafe": 422,
+    "windows_path_too_long": 422,
+}
 #: The login each frozen provider row carries now that a row can pin one. Three
 #: of them were configured before the field existed, so they carry the login that
 #: shipped; the fourth is named by no row at all and carries none. These are
@@ -68,6 +75,22 @@ THREE_QUESTIONS = (
 #: `{id, work_scope, title, unreadable}` here, and no frozen run does.
 TASK_BINDING = None
 
+#: S2's expected additive value at this fixture's supplied read clock.
+#: The historical JSON stays unchanged; the live derivation must prove this pin.
+HUMAN_SITUATION = {'state': 'not_required',
+ 'computed_at': '2026-08-17T12:00:00Z',
+ 'gates': [],
+ 'checked': [{'reason': 'gate_decision', 'count': 0, 'sources': []},
+             {'reason': 'confirmation', 'count': 0, 'sources': []},
+             {'reason': 'input_document', 'count': 0, 'sources': []},
+             {'reason': 'reconcile', 'count': 0, 'sources': []},
+             {'reason': 'attempt_bound', 'count': 0, 'sources': []},
+             {'reason': 'run_ended', 'count': 0, 'sources': []}],
+ 'unknown_because': [],
+ 'unknown_sources': [{'reason': 'contradictory_gate_receipts', 'count': 0, 'sources': []},
+                     {'reason': 'replay_warnings', 'count': 0, 'sources': []},
+                     {'reason': 'unobserved_request', 'count': 0, 'sources': []}]}
+
 
 def current_form(value):
     """Copy a frozen fixture, applying only the independently pinned extension."""
@@ -86,6 +109,8 @@ def current_form(value):
     if {"run", "config", "records", "warnings", "graph"} <= result.keys():
         assert "task" not in result, "historical fixture was rewritten"
         result["task"] = TASK_BINDING
+        assert "situation" not in result["graph"], "historical fixture was rewritten"
+        result["graph"]["situation"] = current_form(HUMAN_SITUATION)
     if "refusal_codes" in result and "attempt_states" in result:
         assert not set(REFUSALS) & result["refusal_codes"].keys()
         result["refusal_codes"].update(REFUSALS)

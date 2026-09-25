@@ -66,6 +66,7 @@ NOT_YET_FIELDS = frozenset({"template_id", "revision"})
 #: ``api_contracts._TEMPLATE_FIELDS`` is, so a field added to ``GraphTemplate``
 #: cannot become a field a draft silently refuses.
 DRAFT_FIELDS = frozenset(GraphTemplate._FIELDS) - NOT_YET_FIELDS
+OPTIONAL_DRAFT_FIELDS = frozenset({"execution_contract"})
 #: The stored file's own shape.
 ENVELOPE_FIELDS = frozenset({
     "schema_version", "workflow_id", "saved_at", "document"})
@@ -139,9 +140,9 @@ def parse_document(value: object) -> dict[str, Any]:
     """
     data = dict(_json_object("workflow draft document", value))
     supplied = set(data)
-    if supplied != DRAFT_FIELDS:
+    if supplied - DRAFT_FIELDS or DRAFT_FIELDS - OPTIONAL_DRAFT_FIELDS - supplied:
         unknown = sorted(supplied - DRAFT_FIELDS)
-        missing = sorted(DRAFT_FIELDS - supplied)
+        missing = sorted(DRAFT_FIELDS - OPTIONAL_DRAFT_FIELDS - supplied)
         raise WorkflowDraftError(
             f"a workflow draft document carries exactly {sorted(DRAFT_FIELDS)!r}; "
             f"unsupported {unknown!r}, missing {missing!r}")
@@ -161,12 +162,16 @@ def parse_document(value: object) -> dict[str, Any]:
             f"a workflow draft carries at most {MAX_DRAFT_EDGES} edges")
     nodes = tuple(TemplateNode.from_dict(row) for row in rows)
     edges = tuple(GraphEdge.from_dict(row) for row in wires)
-    return {
+    settled = {
         "schema_version": version,
         "title": title,
         "nodes": [node.as_dict() for node in nodes],
         "edges": [edge.as_dict() for edge in edges],
     }
+    if "execution_contract" in data:
+        from .graph_execution import settled_execution_contract
+        settled["execution_contract"] = settled_execution_contract(data["execution_contract"])
+    return settled
 
 
 def publish_candidate(
@@ -346,12 +351,18 @@ def starters() -> list[dict[str, Any]]:
     is rooted at its own ``conductor/templates``.
 
     The whole document travels rather than a name to fetch it by. The bundled
-    set is code-owned -- an operator cannot add to it -- and is three files of
+    set is code-owned -- an operator cannot add to it -- and is a few files of
     about 3 KB each, so a second round trip per starter would buy nothing and a
     conditional payload shape would cost every client a second code path.
     """
+    from .graph_template import DEFAULT_TEMPLATE
+
     rows = []
-    for path in sorted(TEMPLATE_DIR.glob("*.json")):
+    # Offer the current standard first, retaining historical revisions by name.
+    # Choosing one is still the caller's decision; existing drafts never move.
+    paths = sorted(TEMPLATE_DIR.glob("*.json"),
+                   key=lambda path: (path.stem != DEFAULT_TEMPLATE, path.stem))
+    for path in paths:
         template = load_template(path.stem)
         rows.append({"starter_id": path.stem, "title": template.title,
                      "revision": template.revision,

@@ -36,7 +36,7 @@ $CONDUCT = "$ACC\venv\Scripts\conduct.exe"
 & $CONDUCT --help
 ```
 
-**You must see** the eleven subcommands and no traceback. Nothing on `PYTHONPATH`: an editable
+**You must see** the twelve subcommands, including `init`, `ownership`, `providers`, and `up`, and no traceback. Nothing on `PYTHONPATH`: an editable
 working tree would answer every command below and prove nothing.
 
 ## 2. Create a project
@@ -47,8 +47,18 @@ New-Item -ItemType Directory -Force -Path $PROJ | Out-Null
 & $CONDUCT init --template default-orbit --dir $PROJ
 ```
 
-**You must see** the bootstrap prompt on stdout and a new `conductor/` directory. This is the
-only step that writes a file for you, and the last time you touch the filesystem by hand.
+**You must see** the bootstrap prompt on stdout and a new `conductor/` directory. This
+scaffold is not yet an owned project. Activate it before opening Studio:
+
+```powershell
+& $CONDUCT ownership activate --legacy-writers-stopped --dir $PROJ
+& $CONDUCT ownership status --dir $PROJ
+```
+
+**You must see** `active`. Activation creates `conductor.v3/` and the legacy-writer
+fence; do not edit those paths by hand. The flag confirms that legacy writers have
+stopped. In this newly created project none have been started. See
+[first-run instructions](first-run-v1.md) for provider setup and existing-data limits.
 
 ## 3. Open the application
 
@@ -68,15 +78,17 @@ the screen must say it in words. A blank area is a finding. A spinner with no ex
 
 ## 4. Create a workflow, from blank or from a starting point
 
-Go to **Workflow**. Create one, either empty or from a bundled starting point (the Dalio
-five-step cycle ships with the product and needs no network).
+Go to **Workflow**. Create one, either empty or from a bundled starting point (five starters,
+`dalio-v1` … `dalio-v5`, ship with the product and need no network; the default is `dalio-v5`,
+titled *Стандартный цикл* — Standard cycle).
 
-**Three starters ship, and they must not look alike.** Each row names its revision and says
+**Five starters ship, and they must not look alike.** Each row names its revision and says
 either *ready to run* or *see the note*; the note itself is the readable text under the control,
 for the starter you have chosen, and it changes with your choice. One note says that four of
-that starter's review steps name no result artifact, so those steps cannot succeed. One starter
-draws the routed cycle: its connections carry conditions, so approving the confirm gate opens
-the effecting step and asking for changes at the result gate sends the run round again. If the
+that starter's review steps name no result artifact, so those steps cannot succeed. Three
+starters (`dalio-v3`, `dalio-v4` and `dalio-v5`) draw the routed cycle: their connections carry
+conditions, so approving the confirm gate opens the effecting step and asking for changes at the
+result gate sends the run round again. If the
 rows read identically you cannot choose between them, and that is a finding — they are not
 equal choices.
 
@@ -306,7 +318,11 @@ beside the first, and whatever is proposed afterwards binds the newest one stand
 
 ## 13. Drive the cycle and read the plan's own word
 
-Use the routed starter (`dalio-v3`) for this step, because its roads carry conditions.
+Use `dalio-v3` for this step: its roads carry conditions and its `do` needs no independent
+checker. `dalio-v4` and the default `dalio-v5` route too, but their `do` requires a second
+participant as independent checker, and in `dalio-v5` a rejected result takes its correction road
+instead of the result gate; that road is exercised in the real-result acceptance below, so this
+step keeps to the gates alone.
 
 **First pass, approve.** Answer the confirm gate `approve`. Then go to **Runs** and open the
 run: the `do` row now reads `plan: runnable` and offers **Propose this step**. Before you press
@@ -444,8 +460,14 @@ whose plan is merely `complete` must not count. Empty input must yield zero.
   The independent check must inspect that exact result and the documents the doer consumed;
   its evidence must name the checker instance and the checked digest. Explanatory checker
   stdout is not a durable review report in V1.
-- If the real check finds a defect, record its real finding, take the result gate's
-  `request_changes` path, correct it and obtain a fresh independent check. If the first result
+- If the real check finds a defect, record its real finding. The standard cycle (revision 5)
+  corrects it on its own road. Under bounded Policy, and only there, the checker's typed finding
+  is recorded as correction feedback and carried automatically, within the same authorization,
+  into one more pass of `do` with the original instruction, followed by a fresh independent check.
+  Under Confirm the same road opens, but nothing carries the finding: a person proposing `do` again
+  is a new proposal of their own, not the equivalent of the Policy correction. The acceptance of the
+  correction road is the Policy run. The result gate opens only on a checked result; its
+  `request_changes` path remains a person's own return to `identify`. If the first result
   is clean, the developer must separately demonstrate rejection of a plainly wrong result
   in an explicitly labelled isolated negative control with the real checker. Do not invent a
   finding or weaken the frozen requirement to manufacture this branch.

@@ -437,7 +437,8 @@ def test_a_decision_pressed_while_the_stream_is_down_refuses_and_writes_nothing(
 #: person's by the `status` arm a control dispatches into, the read's by a
 #: run-list answer this build cannot read. Answers with both sentences as well
 #: as both outcomes, so the caller can check the setup was real.
-_PROVENANCE = """() => import("/panel/studio-store.js").then((module) => {
+_PROVENANCE = """() => Promise.all([import("/panel/studio-store.js"),
+    import("/panel/studio-i18n.js")]).then(([module, i18n]) => {
   const landed = [
     ["runs-loaded", {payload: {runs: [], providers: []}}],
     ["workflows-loaded", {payload: {project: null, workflows: [],
@@ -447,7 +448,7 @@ _PROVENANCE = """() => import("/panel/studio-store.js").then((module) => {
     {type: "status", notice: "The decision is a durable receipt."});
   const read = module.reduce(module.EMPTY,
     {type: "runs-loaded", payload: {runs: "not a list"}});
-  return [human.notice, read.notice,
+  return [human.notice, i18n.noticeText({locale: "en"}, read.notice),
     landed.map(([type, event]) => module.reduce(human, {type, ...event}).notice),
     landed.map(([type, event]) => module.reduce(read, {type, ...event}).notice)];
 })"""

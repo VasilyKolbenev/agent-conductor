@@ -159,6 +159,8 @@ def save_draft(
     """
     asked = parse_draft_save(body)
     with templates.transaction(workflow_id):
+        if not templates.draft_path(workflow_id).parent.is_dir():
+            templates.admit_draft_write(workflow_id)
         _replaces_what_was_read(templates, workflow_id, asked)
         created = saved_draft(templates, workflow_id, asked.document, clock)
         return (201 if created else 200), workflow_state(templates, workflow_id)
@@ -219,6 +221,8 @@ def publish_revision(
     # stale and the publish is refused, and a save after the whole chain is a
     # new draft standing beside the revision that was just written.
     with templates.transaction(workflow_id):
+        if not templates.revision_path(workflow_id, asked.revision).parent.is_dir():
+            templates.admit_revision_write(workflow_id, asked.revision)
         return _publish_locked(templates, workflow_id, asked)
 
 
@@ -328,6 +332,15 @@ def refused_with(refused: DraftRefused) -> Answer:
         "diagnostics": [dict(row) for row in refused.diagnostics]}
 
 
+def _admitted_run_input(store: RunStore, body, hold_route) -> RunInput:
+    """Check missing Windows identities before route metadata or staging."""
+    asked = parse_run(body)
+    if not store.run_path(asked.run_id).is_dir():
+        store.admit_run_creation(asked.run_id)
+    hold_route(asked.run_id)
+    return asked
+
+
 def open_run(
         store: "RunStore", templates: "TemplateStore", body: Mapping[str, Any],
         *, tasks: "TaskStore", clock, ids, reachable, judge_plan, publish,
@@ -351,8 +364,7 @@ def open_run(
     unrepresentable; re-reading a durable source between the gate and the
     write is the defect it was written for.
     """
-    asked = parse_run(body)
-    hold_route(asked.run_id)
+    asked = _admitted_run_input(store, body, hold_route)
     standing = _standing_run(store, asked.run_id)
     snapshot = _frozen_snapshot(asked, tasks, standing)
     checked = None if standing is not None else _judged_revision(
@@ -522,7 +534,7 @@ def plain_json(value: object) -> object:
 
 
 def recovered_payload(
-        recovered, tasks: "TaskStore | None" = None) -> dict[str, Any]:
+        recovered, tasks: "TaskStore | None" = None, *, computed_at: str) -> dict[str, Any]:
     """One run read whole: its envelope, frozen config, journal, plan and task.
 
     Every part but the last two is a durable record verbatim. The plan, the
@@ -540,7 +552,7 @@ def recovered_payload(
         "records": [{"record_type": row.kind, "record": row.value.as_dict()}
                     for row in recovered.records],
         "warnings": list(recovered.warnings),
-        "graph": graph_payload(recovered),
+        "graph": graph_payload(recovered, computed_at=computed_at),
         "task": _task_payload(recovered.config, tasks),
     }
 
@@ -576,7 +588,7 @@ def _task_payload(
             "unreadable": record is None}
 
 
-def list_runs(store: "RunStore", providers) -> Answer:
+def list_runs(store: "RunStore", providers, *, computed_at: str) -> Answer:
     """Every run in this project, and the roster this build resolved.
 
     Nothing here is stored and nothing here writes: every field of every row is
@@ -584,7 +596,7 @@ def list_runs(store: "RunStore", providers) -> Answer:
     rather than ``recover``, so a listing repairs nothing either.
     """
     return 200, {
-        "runs": [run_row(store, run_id) for run_id in run_ids(store)],
+        "runs": [run_row(store, run_id, computed_at=computed_at) for run_id in run_ids(store)],
         "providers": provider_projection(providers),
     }
 
@@ -613,7 +625,7 @@ def run_ids(store: "RunStore") -> tuple[str, ...]:
     return tuple(found)
 
 
-def run_row(store: "RunStore", run_id: str) -> dict[str, Any]:
+def run_row(store: "RunStore", run_id: str, *, computed_at: str) -> dict[str, Any]:
     """One run as a list row, with every derived word named for its source.
 
     ``envelope_status`` is the DURABLE word and it is a creation-time one: a
@@ -652,7 +664,7 @@ def run_row(store: "RunStore", run_id: str) -> dict[str, Any]:
         "created_at": None, "mode": None, "envelope_status": None,
         "graph_id": None, "undecided_gates": None, "open_actions": None,
         "last_outcome": None, "workflow_id": None, "revision": None,
-        "task_id": None,
+        "task_id": None, "human_state": None,
     }
     if run_route_violations(store, run_id):
         return row
@@ -661,11 +673,11 @@ def run_row(store: "RunStore", run_id: str) -> dict[str, Any]:
         task = frozen_config_task(recovered.config)
     except (StoreError, ContractError):
         return row
-    row.update(_derived_row(recovered, task))
+    row.update(_derived_row(recovered, task, computed_at=computed_at))
     return row
 
 
-def _derived_row(recovered, task: TaskBinding | None) -> dict[str, Any]:
+def _derived_row(recovered, task: TaskBinding | None, *, computed_at: str) -> dict[str, Any]:
     """The live half of a run row, computed from the journal it replayed.
 
     Separated from the row above so the row's own shape -- what a reader gets
@@ -679,14 +691,14 @@ def _derived_row(recovered, task: TaskBinding | None) -> dict[str, Any]:
     answered = {receipt.action_id for receipt in results}
     requested = {value.action_id for value in values
                  if isinstance(value, ActionRequest)}
-    graph = graph_payload(recovered)
+    graph = graph_payload(recovered, computed_at=computed_at)
     runtime = graph["runtime"]
     # Read, never reconstructed: the frozen configuration is the one document
     # that can say which revision this run followed, and `config_digest` has
     # already re-verified it on this very replay.
     followed = frozen_config_workflow(recovered.config)
     return {
-        "unreadable": False,
+        "unreadable": False, "human_state": graph["situation"]["state"],
         "workflow_id": None if followed is None else followed[0],
         "revision": None if followed is None else followed[1],
         "task_id": None if task is None else task.task_id,

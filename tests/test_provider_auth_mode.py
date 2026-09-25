@@ -180,10 +180,10 @@ def test_the_operator_file_writes_no_authentication_key_for_the_road_that_shippe
     assert set(written) == {"provider_id", "executable", "protocol"}
 
 
-def test_the_vendor_login_is_implemented_for_exactly_two_protocols():
+def test_the_vendor_login_is_implemented_for_reviewed_protocols():
     """A mode is not a label: only a transport that drives a login may claim one."""
     assert SUBSCRIPTION_PROTOCOLS == frozenset({
-        "claude-code-headless-v1", "codex-headless-v1"})
+        "claude-code-headless-v1", "codex-headless-v1", "grok-build-headless-v1", "kimi-code-headless-v1"})
     assert SUBSCRIPTION_PROTOCOLS <= KNOWN_PROTOCOLS
 
 

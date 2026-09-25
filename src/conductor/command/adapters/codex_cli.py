@@ -216,6 +216,9 @@ this file or in none.
 """
 from __future__ import annotations
 
+from .quota_contracts import QuotaPolicy, bucket_windows
+from .subscription_quota import SubscriptionRpc, native_subscription_connection
+
 import re
 from collections.abc import Callable
 from pathlib import Path
@@ -385,8 +388,8 @@ LOGIN_FORBIDDEN = ("config.toml",)
 LOGIN_CONFIG_KEYS = ("projects", "model_provider")
 MODEL_FLAG = "--model"
 VERSION_ARGV = ("--version",)
-#: Capture ceiling for either spawn; the pump drains past it and drops the rest.
-CODEX_OUTPUT_LIMIT = 16 * 1024
+#: Capture ceiling for either spawn; a review's stdout becomes an artifact, so it is artifacts' bound.
+CODEX_OUTPUT_LIMIT = 48 * 1024
 #: The preflight is a version print, not work: it gets its own small budget.
 VERSION_TIMEOUT_SECONDS = 30
 #: The two subtrees THIS provider owns beneath the project root.
@@ -530,6 +533,9 @@ class CodexCliTransport(ArtifactAwareTransport):
     error = CodexCliError
     review_enabled = True
 
+    def quota_connection(self):
+        return native_subscription_connection(self, QUOTA_POLICY, QUOTA_RPC)
+
     def __init__(
             self, pin: ExecutablePin, runner: ProcessRunner, *,
             root: str | Path, clock: Callable[[], str],
@@ -667,7 +673,7 @@ class CodexCliTransport(ArtifactAwareTransport):
         UTF-8, and no trailing newline is added: the bytes handed over are the
         bytes the task text is, so what the child reads is what this build
         composed and nothing it appended. The runner bounds this at the same
-        64 KiB the workspace door bounds an instruction body at, and refuses a
+        256 KiB the workspace door bounds an instruction body at, and refuses a
         NUL, before any child exists.
         """
         return task_text.encode("utf-8")
@@ -771,3 +777,22 @@ class CodexAdapter(_DeepAdapter):
 #: This module's own statement of which concrete type is reviewed for the fake
 #: protocol above, read from the class's OWN ``__dict__`` and never inherited.
 CodexAdapter.REVIEWED_TYPE = CodexAdapter
+
+# The provider owns every native field; the helper only walks keyed windows.
+
+
+
+def _native_quota(payload):
+    return bucket_windows(
+        payload, map_field="rateLimitsByLimitId", legacy_field="rateLimits",
+        default_limit="codex", limit_field="limitId", window_fields=("primary", "secondary"),
+        used_field="usedPercent", reset_field="resetsAt", duration_field="windowDurationMins").bound_to(QUOTA_POLICY)
+
+
+QUOTA_POLICY = QuotaPolicy("openai", "codex-account-read", "codex-app-server",
+                           "quota", "unix", _native_quota)
+
+QUOTA_RPC = SubscriptionRpc(("app-server",),
+    b'{"id":1,"method":"initialize","params":{"clientInfo":{"name":"december_command","version":"1.0"}}}\n'
+    b'{"method":"initialized","params":{}}\n{"id":2,"method":"account/read","params":{"refreshToken":false}}\n'
+    b'{"id":3,"method":"account/rateLimits/read"}\n', (1, 2, 3), ("account", "type"), "chatgpt")

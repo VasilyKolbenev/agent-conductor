@@ -27,7 +27,7 @@
 //: person's own.
 export const NO_FOLDS = Object.freeze({start: null, run: null});
 //: The start box, empty.
-export const NO_STARTER = Object.freeze({workflowId: "", starterId: ""});
+export const NO_STARTER = Object.freeze({workflowId: "", starterId: "", executionContract: ""});
 //: The run form, as it is first drawn: the most restrictive authority that
 //: still lets a person proceed, granted deliberately and never by default.
 export const NO_OPENING = Object.freeze({
@@ -35,7 +35,7 @@ export const NO_OPENING = Object.freeze({
   models: Object.freeze({}),
 });
 const FOLDS = Object.freeze(["start", "run"]);
-const STARTER_KEYS = Object.freeze(["workflowId", "starterId"]);
+const STARTER_KEYS = Object.freeze(["workflowId", "starterId", "executionContract"]);
 const OPENING_KEYS = Object.freeze(["runId", "cycleId", "mode"]);
 
 function isObject(value) {

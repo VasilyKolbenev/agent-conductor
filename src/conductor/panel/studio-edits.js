@@ -122,22 +122,20 @@ function withLoop(node, name, value) {
   if (name === "loop_back_to") {
     if (value === null || value === "") {
       delete next.loop;
-      return {node: next, notice: "This step no longer reopens anything."};
+      return {node: next, notice: {key: "notice.loop_cleared"}};
     }
     const bound = Number.isInteger(loop.bound) ? loop.bound : LOOP_BOUND.min;
     next.loop = {bound, back_to: value};
     return {node: next, notice: Number.isInteger(loop.bound) ? ""
-      : `A loop is stored as a pair, so its greatest pass was set to `
-        + `${LOOP_BOUND.min}. Change it beside this.`};
+      : {key: "notice.loop_bound_defaulted", params: {min: String(LOOP_BOUND.min)}}};
   }
   if (!Number.isInteger(value) || value < LOOP_BOUND.min
       || value > LOOP_BOUND.max) {
-    return {node, notice: `A loop bound is a whole number from `
-      + `${LOOP_BOUND.min} to ${LOOP_BOUND.max}.`};
+    return {node, notice: {key: "notice.loop_bound_range",
+      params: {min: String(LOOP_BOUND.min), max: String(LOOP_BOUND.max)}}};
   }
   if (typeof loop.back_to !== "string") {
-    return {node, notice: "Choose the step this loop reopens first: a loop is "
-      + "stored as the pair (bound, back_to) and half of one cannot be saved."};
+    return {node, notice: {key: "notice.loop_target_first"}};
   }
   next.loop = {bound: value, back_to: loop.back_to};
   return {node: next, notice: ""};
@@ -177,14 +175,14 @@ function withField(node, name, value) {
   if (name === "kind") {
     return NODE_KINDS.includes(value)
       ? {node: withKind(node, value), notice: ""}
-      : {node, notice: "That step type is not one this build can store."};
+      : {node, notice: {key: "notice.step_kind_unstorable"}};
   }
   if (name === "resources") {
     return {node: withResources(node, value), notice: ""};
   }
   if (name === "title") {
     return text(value).trim() ? {node: {...node, title: value}, notice: ""}
-      : {node, notice: "A step needs a display name."};
+      : {node, notice: {key: "notice.step_title_required"}};
   }
   return {node: optional(node, name, value), notice: ""};
 }
@@ -217,7 +215,7 @@ function moveNode(draft, edit) {
   if (!Number.isInteger(x) || !Number.isInteger(y)
       || Math.abs(x) > POSITION_LIMIT || Math.abs(y) > POSITION_LIMIT) {
     return {draft: null,
-      notice: "A step stays within the canvas this build can store."};
+      notice: {key: "notice.position_range"}};
   }
   return replaceNode(draft, edit.nodeId, (node) => {
     const at = node.position;
@@ -232,7 +230,7 @@ function moveNode(draft, edit) {
 
 function replaceNode(draft, nodeId, make) {
   const at = rows(draft.nodes).findIndex((node) => node.node_id === nodeId);
-  if (at < 0) return {draft: null, notice: "That step is not in this drawing."};
+  if (at < 0) return {draft: null, notice: {key: "notice.step_missing"}};
   const answer = make(draft.nodes[at]);
   if (answer.node === draft.nodes[at]) return {draft: null, notice: answer.notice};
   const nodes = draft.nodes.slice();
@@ -244,12 +242,11 @@ function connect(draft, edit) {
   const known = new Set(nodeIds(draft));
   if (!known.has(edit.fromId) || !known.has(edit.toId)
       || edit.fromId === edit.toId) {
-    return {draft: null, notice: "A connection joins two different steps that "
-      + "are both in this drawing."};
+    return {draft: null, notice: {key: "notice.connection_invalid"}};
   }
   if (rows(draft.edges).some((edge) =>
     edge.from_node === edit.fromId && edge.to_node === edit.toId)) {
-    return {draft: null, notice: "Those steps are already connected."};
+    return {draft: null, notice: {key: "notice.connection_exists"}};
   }
   return {draft: {...draft, edges: [...draft.edges,
     {from_node: edit.fromId, to_node: edit.toId}]}, notice: ""};
@@ -260,13 +257,12 @@ function connect(draft, edit) {
 // which of them a Human decided.
 function duplicate(draft, edit) {
   const node = rows(draft.nodes).find((row) => row.node_id === edit.nodeId);
-  if (!node) return {draft: null, notice: "That step is not in this drawing."};
+  if (!node) return {draft: null, notice: {key: "notice.step_missing"}};
   const copy = {...node, node_id: freshId(draft.nodes, "step"),
     title: `${node.title} (copy)`};
   delete copy.gate_id;
   return {draft: {...draft, nodes: [...draft.nodes, copy]}, added: copy.node_id,
-    notice: `Added ${copy.node_id} as a copy. It is connected to nothing and, `
-      + "if it was a human gate, names no gate id yet."};
+    notice: {key: "notice.duplicated", params: {step: copy.node_id}}};
 }
 
 function reorder(draft, edit) {
@@ -282,19 +278,18 @@ function reorder(draft, edit) {
 
 function dropNode(draft, edit) {
   if (!nodeIds(draft).includes(edit.nodeId)) {
-    return {draft: null, notice: "That step is not in this drawing."};
+    return {draft: null, notice: {key: "notice.step_missing"}};
   }
   return {draft: {...draft,
     nodes: draft.nodes.filter((node) => node.node_id !== edit.nodeId),
     edges: draft.edges.filter((edge) =>
       edge.from_node !== edit.nodeId && edge.to_node !== edit.nodeId)},
-  notice: `Removed ${edit.nodeId} and every connection naming it. A loop still `
-    + "reopening it will say so in the diagnostics."};
+  notice: {key: "notice.removed", params: {step: edit.nodeId}}};
 }
 
 function addNode(draft, edit) {
   if (!NODE_KINDS.includes(edit.kind)) {
-    return {draft: null, notice: "That step type is not one this build stores."};
+    return {draft: null, notice: {key: "notice.step_kind_unstored"}};
   }
   const node = newNode(edit.kind, draft.nodes);
   const edges = typeof edit.afterId === "string"
@@ -302,8 +297,7 @@ function addNode(draft, edit) {
     ? [...draft.edges, {from_node: edit.afterId, to_node: node.node_id}]
     : draft.edges.slice();
   return {draft: {...draft, nodes: [...draft.nodes, node], edges},
-    added: node.node_id, notice: `Added ${node.node_id}. It names no role yet, `
-      + "so nothing would carry it out."};
+    added: node.node_id, notice: {key: "notice.added", params: {step: node.node_id}}};
 }
 
 //: One arm per edit word: a type not named here reaches no drawing at all. An
@@ -315,7 +309,7 @@ const EDITS = Object.freeze({
     const kept = draft.edges.filter((edge) =>
       !(edge.from_node === edit.fromId && edge.to_node === edit.toId));
     return kept.length === draft.edges.length
-      ? {draft: null, notice: "That connection is not in this drawing."}
+      ? {draft: null, notice: {key: "notice.connection_missing"}}
       : {draft: {...draft, edges: kept}, notice: ""};
   },
   "delete-node": dropNode,
@@ -328,8 +322,7 @@ const EDITS = Object.freeze({
   //: document the contract would rewrite under it.
   "set-edge-condition": (draft, edit) => {
     if (edit.value !== "" && !EDGE_CONDITIONS.includes(edit.value)) {
-      return {draft: null, notice: "That is not a word a connection can "
-        + "open on."};
+      return {draft: null, notice: {key: "notice.edge_condition_unknown"}};
     }
     let moved = false;
     const edges = rows(draft.edges).map((edge) => {
@@ -343,12 +336,12 @@ const EDITS = Object.freeze({
     });
     return moved
       ? {draft: {...draft, edges}, notice: ""}
-      : {draft: null, notice: "That connection already opens on that."};
+      : {draft: null, notice: {key: "notice.edge_condition_same"}};
   },
   "set-field": (draft, edit) => EDIT_FIELDS.includes(edit.field)
     ? replaceNode(draft, edit.nodeId,
       (node) => withField(node, edit.field, edit.value))
-    : {draft: null, notice: "That field is not one this build stores."},
+    : {draft: null, notice: {key: "notice.field_unstored"}},
 });
 
 

@@ -26,6 +26,7 @@ from .contracts import (
 )
 from .dispatch import DispatchArgumentError
 from .run_store import RunStore
+from .new_work_admission import admit_new_work
 from .task_contracts import frozen_config_task, work_scope_disagreement
 
 
@@ -114,6 +115,17 @@ class CommandService:
                 f"frozen config, not {adapter_id!r}")
         return bound
 
+    def _append_proposal(self, recovered, bound: str, proposal: ActionProposal) -> None:
+        """Standing IDs retain exact-repeat/conflict arbitration in the store."""
+        standing = any(row.kind == "action_proposal" and
+                       row.value.proposal_id == proposal.proposal_id
+                       for row in recovered.records)
+        if not standing:
+            admit_new_work(self._store.project_root,
+                           self._registry.argument_schema(bound, proposal.capability),
+                           proposal.capability, proposal.arguments)
+        self._store.append(proposal)
+
     def observe(
             self, *, run_id: str, instance_id: str, adapter_id: str | None = None,
             observation_id: str | None = None,
@@ -146,7 +158,7 @@ class CommandService:
             adapter_id: str | None = None,
             node_id: str | None = None,
             proposal_id: str | None = None,
-            proposed_at: str | None = None) -> ActionProposal:
+            proposed_at: str | None = None, feedback_ids=ABSENT) -> ActionProposal:
         """Persist one immutable proposal; refused in Observe, prepares nothing."""
         recovered = self._store.read(run_id)
         envelope = recovered.envelope
@@ -182,11 +194,11 @@ class CommandService:
             timeout_seconds=timeout_seconds,
             rationale=rationale,
             config_digest=envelope.config_digest,
-            node_id=node_id,
+            node_id=node_id, feedback_ids=feedback_ids,
             input_binding=(
                 PROPOSAL_INPUT_BINDING
                 if capability in ("dispatch", "review") and self._registry.argument_schema(
                     bound, capability) == "deep-arguments-v1" else ABSENT),
         )
-        self._store.append(proposal)
+        self._append_proposal(recovered, bound, proposal)
         return proposal

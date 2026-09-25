@@ -13,24 +13,10 @@
 import {element, field} from "./command-view.js";
 import {RESULT_OUTCOMES} from "./studio-model.js";
 import {reachable, runForm} from "./studio-runform.js";
+import {saveRefusal} from "./studio-shell.js";
+import {localize, noticeText} from "./studio-i18n.js";
+import {newestRun} from "./studio-taskruns.js";
 
-//: The seven words a screen container may stand in, and the plain sentence each
-//: is said with. `studio-runs.js` and `studio-people.js` carry the same table
-//: for their own banners; tests/test_studio_wiring.py holds the keys equal.
-export const PHASE_SENTENCES = Object.freeze({
-  empty: "Nothing has been read yet.",
-  loading: "Reading.",
-  ready: "Read.",
-  stale: "Shown from an earlier read; a newer one has not landed.",
-  refused: "This read was refused. Nothing below is newer than the refusal.",
-  failed: "This read failed. Nothing below is newer than the failure.",
-  disconnected: "The live connection is down, so nothing here updates.",
-});
-//: Which word wins when a screen is fed by two reads. The least-read source
-//: names the screen: an Overview that says `ready` while its run list failed
-//: would be reporting one half as the whole.
-const PHASE_ORDER = Object.freeze(
-  ["failed", "refused", "loading", "stale", "empty", "ready"]);
 //: The one sentence `verification_failed` never appears without.
 export const VERIFICATION_NOTE = "Process exit 0 proves the process finished, "
   + "not that the work was verified.";
@@ -46,9 +32,9 @@ function object(value) {
     ? value : null;
 }
 
-function show(value) {
-  if (value === null || value === undefined || value === "") return NOT_STATED;
-  if (Array.isArray(value)) return value.length ? value.join(", ") : NOT_STATED;
+function show(state, value) {
+  if (value === null || value === undefined || value === "") return localize(state, "view.not_stated");
+  if (Array.isArray(value)) return value.length ? value.join(", ") : localize(state, "view.not_stated");
   return String(value);
 }
 
@@ -66,10 +52,10 @@ function chip(channel, word) {
   ]);
 }
 
-function fact(label, value) {
+function fact(state, label, value) {
   return element("p", {className: "studio-row"}, [
     element("span", {text: `${label}: `}),
-    element("span", {className: "studio-mono", text: show(value)}),
+    element("span", {className: "studio-mono", text: show(state, value)}),
   ]);
 }
 
@@ -78,13 +64,13 @@ function note(value) { return element("p", {className: "studio-hint", text: valu
 //: A control whose handler was not wired is DISABLED and says why. It never
 //: disappears: a button that vanishes teaches a user the product cannot do the
 //: thing, when what happened is that this screen was mounted without its wire.
-function button(handlers, name, label, argument, extra) {
+function button(state, handlers, name, label, argument, extra) {
   const call = handlerOf(handlers, name);
   const control = element("button", Object.assign({className: "studio-btn",
     "data-focus": `action:${name}`, text: label, type: "button"}, extra || {}));
   if (call === null) {
     control.disabled = true;
-    control.title = `This screen was mounted without a ${name} handler.`;
+    control.title = localize(state, "view.m069", {name: String(name)});
     return control;
   }
   control.addEventListener("click", () => call(argument));
@@ -100,99 +86,6 @@ function card(title, children) {
     [element("h3", {text: title}), ...children]);
 }
 
-// -- the shell ------------------------------------------------------------
-//: Which of the seven words a screen stands in. A dropped stream outranks every
-//: read: the facts on screen may be true and none of them is current.
-export function screenPhase(state, screen) {
-  if (state.connection === "closed") return "disconnected";
-  if (screen === "overview") {
-    const seen = [state.workflows.phase, state.runs.phase];
-    return PHASE_ORDER.find((word) => seen.includes(word)) || "empty";
-  }
-  const held = object(state[screen === "workflow" ? "workflows" : screen]);
-  const word = held === null ? "empty" : held.phase;
-  return Object.hasOwn(PHASE_SENTENCES, word) ? word : "failed";
-}
-
-function connectionSentence(state) {
-  if (state.connection === "open") {
-    return "Connected. Live changes reach this window.";
-  }
-  return state.connection === "connecting"
-    ? "Connecting to this project's live stream."
-    : "Connection lost. What is on screen is the last thing that was read; "
-      + "nothing here updates and nothing may be written until it is back.";
-}
-
-//: The header's one primary action, chosen by the screen showing. It is a verb
-//: a person recognises, and it is the same door the screen's own controls use.
-const PRIMARY = Object.freeze({
-  overview: ["onScreen", "Edit the workflow", "workflow"],
-  workflow: ["onSaveDraft", "Save draft", null],
-  runs: ["onRefreshRuns", "Read runs again", null],
-  decisions: ["onRefreshRun", "Read this run again", null],
-  agents: ["onRefreshAgents", "Read the roster again", null],
-});
-
-function primaryAction(state, handlers) {
-  const named = PRIMARY[state.screen] || PRIMARY.overview;
-  const control = button(handlers, named[0], named[1], named[2]);
-  const refusal = state.screen === "workflow" ? saveRefusal(state.workflows) : null;
-  if (refusal !== null) {
-    control.disabled = true;
-    control.title = refusal;
-  }
-  return control;
-}
-
-function tab(node, state, handlers) {
-  const screen = node.getAttribute("data-screen");
-  const current = screen === state.screen;
-  node.setAttribute("aria-selected", String(current));
-  node.tabIndex = current ? 0 : -1;
-  if (node.dataset.wired === "yes") return;
-  node.dataset.wired = "yes";
-  const call = handlerOf(handlers, "onScreen");
-  if (call === null) node.disabled = true;
-  else node.addEventListener("click", () => call(screen));
-}
-
-/**
- * Write the shell chrome: header, tabs, the state word on every screen, and
- * the one status sentence.
- *
- * Safe to call repeatedly with the same state. The tab buttons are the ones
- * `studio.html` already carries -- they are wired once and updated after, so a
- * re-render never replaces the control a keyboard is standing on.
- *
- * @param {object} mounts the shell nodes, by the ids studio.html froze
- * @param {object} state the reducer's frozen value
- * @param {object} handlers `onScreen`, and the primary action of each screen
- */
-export function mountShell(mounts, state, handlers) {
-  // The heading names the PROJECT when the map gives one, because that is the
-  // thing a person opened. It falls back to the workflow being worked on, and
-  // then to the product's own name: `conduct init` writes a project name on
-  // every road now, but a project scaffolded before it did carries none, and a
-  // placeholder shown as a fact would be worse than the fallback.
-  const workflow = chosenWorkflow(state);
-  mounts.project.textContent = state.project.name !== null
-    ? state.project.name
-    : (workflow === null ? "Workflow Studio"
-      : (workflow.title || workflow.workflow_id));
-  mounts.connection.textContent = connectionSentence(state);
-  mounts.connection.setAttribute("data-connection", state.connection);
-  mounts.primary.replaceChildren(primaryAction(state, handlers));
-  for (const node of rows(mounts.tabs)) tab(node, state, handlers);
-  for (const [screen, screenMount] of Object.entries(mounts.screens)) {
-    const phase = screenPhase(state, screen);
-    screenMount.setAttribute("data-state", phase);
-    screenMount.hidden = screen !== state.screen;
-    mounts.states[screen].textContent = PHASE_SENTENCES[phase];
-  }
-  mounts.status.textContent = state.notice;
-}
-
 // -- the Overview ---------------------------------------------------------
 //: The chosen workflow's row in the list, or null. The LIST is the authority on
 //: a workflow's name: a detail read carries revisions and a draft, not a title.
@@ -205,14 +98,15 @@ function chosenWorkflow(state) {
 //: not replay carries no instant, so it can never be "the latest" -- it is
 //: counted among the blocked instead, where it can be acted on.
 function latestRun(state) {
-  return rows(state.runs.list)
-    .filter((row) => row.unreadable !== true && typeof row.created_at === "string")
-    .reduce((best, row) => best === null || row.created_at > best.created_at
-      ? row : best, null);
+  const selected = newestRun(state.runs, undefined);
+  return selected.state === "known" ? selected.row : null;
 }
 
 function gatesWaiting(state) {
-  return rows(state.decisions.list).filter((row) => row.decision === "idle");
+  if (state.connection !== "open" || state.runs.phase !== "ready") return [];
+  const needed = new Set(rows(state.runs.detail?.graph?.situation?.gates)
+    .filter((gate) => gate.needs_decision).map((gate) => gate.gate_id));
+  return rows(state.decisions.list).filter((row) => needed.has(row.gate_id));
 }
 
 //: What stops this project running, each row naming the payload it came from.
@@ -222,25 +116,23 @@ export function blockingRows(state) {
   const held = state.workflows;
   const found = [];
   for (const line of rows(held.problems)) {
-    found.push({where: "workflow", screen: "workflow", text: line});
+    found.push({where: "workflow", screen: "workflow", text: noticeText(state, line)});
   }
   for (const row of rows(held.diagnostics)) {
     found.push({where: "workflow", screen: "workflow",
-      text: `The saved draft does not yet construct a revision: ${row.message}`});
+      text: localize(state, "view.m070", {message: String(row.message)})});
   }
   for (const row of rows(held.list).filter((entry) => entry.unreadable === true)) {
     found.push({where: "workflow", screen: "workflow",
-      text: `Workflow ${row.workflow_id} has a revision this build cannot read.`});
+      text: localize(state, "view.m071", {id: String(row.workflow_id)})});
   }
   for (const row of rows(state.runs.list).filter((entry) => entry.unreadable === true)) {
     found.push({where: "run", screen: "runs",
-      text: `Run ${row.run_id} did not replay, so nothing derived from it can `
-        + "be shown. It is listed rather than hidden."});
+      text: localize(state, "view.m072", {id: String(row.run_id)})});
   }
   for (const [capability, steps] of unservedCapabilities(state)) {
     found.push({where: "agents", screen: "agents",
-      text: `No available provider serves ${capability}, and ${steps.length} `
-        + `step(s) of this workflow need it: ${steps.join(", ")}.`});
+      text: localize(state, "view.m073", {capability: String(capability), count: String(steps.length), steps: steps.join(", ")})});
   }
   return found;
 }
@@ -289,58 +181,48 @@ export function readiness(state) {
   const providers = reachable(state);
   if (workflow === null) {
     return {ready: false, channel: "wait",
-      why: "No workflow is chosen, so there is nothing to start."};
+      why: localize(state, "view.m001")};
   }
   if (revision === null) {
     return {ready: false, channel: "wait",
-      why: `${workflow.workflow_id} has no published revision yet. A run `
-        + "follows a revision, so publish the draft first."};
+      why: localize(state, "view.m074", {id: String(workflow.workflow_id)})};
   }
   if (!providers.length) {
     return {ready: false, channel: "fail",
-      why: "No configured provider is available on this machine, so nothing "
-        + "could carry a step out. The Agents screen says exactly what to write."};
+      why: localize(state, "view.m002")};
   }
   return {ready: true, channel: "pass",
-    why: `Revision ${revision} is published and ${providers.length} provider`
-      + `${providers.length === 1 ? " is" : "s are"} available on this machine. `
-      + "Which roles a run can bind is settled when it is opened."};
+    why: localize(state, "view.m075", {revision: String(revision), count: String(providers.length)})};
 }
 
 function whatThisIs(state, handlers) {
   const workflow = chosenWorkflow(state);
   const body = [
     element("p", {className: "studio-hint", text: state.project.name !== null
-      ? `This is ${state.project.name}, the project this server was `
-        + "started in. The name comes from conductor/map.toml."
-      : "This project has no name yet: its conductor/map.toml carries none, "
-        + "or still carries the placeholder a template ships with. Set "
-        + "`project` there and restart to see it here."}),
+      ? localize(state, "view.m076", {name: String(state.project.name)})
+      : localize(state, "view.m003")}),
   ];
   if (workflow === null) {
-    body.push(note("No workflow is chosen. The Workflow screen lists every "
-      + "one this project holds and can start a new one."),
-    button(handlers, "onScreen", "Choose a workflow", "workflow"));
-    return card("What this is", body);
+    body.push(note(localize(state, "view.m004")),
+    button(state, handlers, "onScreen", localize(state, "view.m005"), "workflow"));
+    return card(localize(state, "view.m006"), body);
   }
-  body.push(fact("Workflow", workflow.workflow_id),
-    fact("Name", workflow.title),
-    fact("Published revisions", workflow.revisions),
-    fact("Latest revision", workflow.latest_revision),
-    fact("Unsaved draft on the server", workflow.has_draft ? "yes" : "no"),
-    button(handlers, "onScreen", "Edit this workflow", "workflow"));
+  body.push(fact(state, localize(state, "view.m007"), workflow.workflow_id),
+    fact(state, localize(state, "view.m008"), workflow.title),
+    fact(state, localize(state, "view.m009"), workflow.revisions),
+    fact(state, localize(state, "view.m010"), workflow.latest_revision),
+    fact(state, localize(state, "view.m011"), workflow.has_draft ? localize(state, "view.m093") : localize(state, "view.m094")),
+    button(state, handlers, "onScreen", localize(state, "view.m012"), "workflow"));
   if (state.workflows.provenance === "local") {
-    body.push(note("The drawing on screen has changes this window is holding "
-      + "and the server has not been given. Saving the draft is what stores "
-      + "them."));
+    body.push(note(localize(state, "view.m013")));
   }
-  return card("What this is", body);
+  return card(localize(state, "view.m006"), body);
 }
 
 function readyCard(state) {
   const answer = readiness(state);
-  return card("Ready to run?", [
-    chip(answer.channel, answer.ready ? "ready to open a run" : "not yet"),
+  return card(localize(state, "view.m014"), [
+    chip(answer.channel, answer.ready ? localize(state, "view.m015") : localize(state, "view.m016")),
     note(answer.why),
   ]);
 }
@@ -348,51 +230,36 @@ function readyCard(state) {
 function blockedCard(state, handlers) {
   const found = blockingRows(state);
   if (!found.length) {
-    return card("What is blocked", [
-      note("Nothing read so far is blocking. That is a statement about what "
-        + "has been read, not a promise about what has not."),
+    return card(localize(state, "view.m017"), [
+      note(localize(state, "view.m018")),
     ]);
   }
   const list = element("ul", {className: "studio-list"});
   for (const row of found.slice(0, 12)) {
     list.append(element("li", {className: "studio-row"}, [
       element("span", {text: row.text}),
-      button(handlers, "onScreen", "Open it", row.screen),
+      button(state, handlers, "onScreen", localize(state, "view.m019"), row.screen),
     ]));
   }
-  const body = [chip("fail", `${found.length} blocking`), list];
+  const body = [chip("fail", localize(state, "view.m077", {count: String(found.length)})), list];
   if (found.length > 12) {
-    body.push(note(`${found.length - 12} more are on the screens above.`));
+    body.push(note(localize(state, "view.m078", {count: String(found.length - 12)})));
   }
-  return card("What is blocked", body);
+  return card(localize(state, "view.m017"), body);
 }
 
 function needsYouCard(state, handlers) {
-  const waiting = gatesWaiting(state);
-  if (!rows(state.decisions.list).length) {
-    return card("What needs you", [
-      note(state.runs.selectedId === null
-        ? "No run is selected. Open a run to see which decisions need you."
-        : "This run's plan names no gate, so nothing in it waits for a person."),
-    ]);
+  const situation = state.runs.detail?.graph?.situation;
+  const fresh = state.connection === "open" && state.runs.phase === "ready" && situation;
+  const value = fresh ? situation.state : "unknown";
+  const body = [note(localize(state, `bridge.${value}`))];
+  if (fresh) for (const row of situation.checked) {
+    if (row.count > 0 && row.reason !== "run_ended") body.push(note(localize(state,
+      `bridge.${row.reason}`, {count: String(row.count)})));
   }
-  if (!waiting.length) {
-    return card("What needs you", [chip("pass", "nothing waiting"),
-      note("Every gate this run names has been answered. A decision is never "
-        + "edited; answering again writes a receipt that supersedes it.")]);
-  }
-  const list = element("ul", {className: "studio-list"});
-  for (const row of waiting) {
-    list.append(element("li", {className: "studio-row"}, [
-      element("span", {text: show(row.title)}),
-      element("span", {className: "studio-mono",
-        text: `${show(row.run_id)} · ${show(row.gate_id)}`}),
-    ]));
-  }
-  return card("What needs you", [
-    chip("wait", `${waiting.length} waiting for a decision`), list,
-    button(handlers, "onScreen", "Open the decisions", "decisions"),
-  ]);
+  if (gatesWaiting(state).length) body.push(button(state, handlers, "onScreen",
+    localize(state, "scene.open_decisions"), "decisions"));
+  return card(localize(state, "bridge.attention"), body);
 }
 
 function outcomeChannel(word) {
@@ -404,33 +271,29 @@ function outcomeChannel(word) {
 function latestRunCard(state, handlers) {
   const row = latestRun(state);
   if (row === null) {
-    return card("The most recent run", [
+    return card(localize(state, "view.m020"), [
       note(rows(state.runs.list).length
-        ? "Every run this project holds is one whose journal did not replay, "
-          + "so none of them can name a most recent."
-        : "This project holds no run yet. Opening one from the Workflow "
-          + "screen is what creates the first."),
-      button(handlers, "onScreen", "Open the Runs screen", "runs"),
+        ? localize(state, "view.m021")
+        : localize(state, "view.m022")),
+      button(state, handlers, "onScreen", localize(state, "view.m023"), "runs"),
     ]);
   }
   const body = [
-    fact("Run", row.run_id), fact("Opened at", row.created_at),
-    fact("Authority (mode)", row.mode),
-    fact("Opened as", row.envelope_status),
-    note("Opened as is what the run was CREATED as. A run envelope is "
-      + "immutable, so it never reports where the run now stands."),
+    fact(state, localize(state, "view.m024"), row.run_id), fact(state, localize(state, "view.m025"), row.created_at),
+    fact(state, localize(state, "view.m026"), row.mode),
+    fact(state, localize(state, "view.m027"), row.envelope_status),
+    note(localize(state, "view.m028")),
     chip(outcomeChannel(row.last_outcome),
-      `last outcome: ${show(row.last_outcome)}`),
+      localize(state, "view.m079", {outcome: show(state, row.last_outcome)})),
   ];
-  if (row.last_outcome === "verification_failed") body.push(note(VERIFICATION_NOTE));
+  if (row.last_outcome === "verification_failed") body.push(note(localize(state, "view.verification_note")));
   if (row.last_outcome === null) {
-    body.push(note("No action of this run has recorded a result yet, which is "
-      + "a different thing from a result that was bad."));
+    body.push(note(localize(state, "view.m029")));
   }
-  body.push(fact("Gates waiting", row.undecided_gates),
-    fact("Actions still open", row.open_actions),
-    button(handlers, "onSelectRun", "Read this run", row.run_id));
-  return card("The most recent run", body);
+  body.push(fact(state, localize(state, "bridge.attention"), localize(state, `bridge.${state.connection === "open" ? row.human_state || "unknown" : "unknown"}`)),
+    fact(state, localize(state, "view.m030"), row.open_actions),
+    button(state, handlers, "onSelectRun", localize(state, "view.m031"), row.run_id));
+  return card(localize(state, "view.m020"), body);
 }
 
 /** Draw source-derived Overview facts, latest run and attention first.
@@ -456,21 +319,21 @@ function workflowPicker(state, handlers) {
   const chosen = state.workflows.selectedId || "";
   // A workflow just STARTED is not in the server's list — nothing has been
   // saved under that id yet — so setting `value` to it matched no option and
-  // the picker fell back to "choose a workflow". A person who had named a
+  // the picker fell back to localize(state, "view.m032"). A person who had named a
   // workflow and seeded its drawing was told nothing was chosen, and only a
   // reload (after a save) fixed it. It gets an option of its own, saying what
   // it is, so the picker reports the state the rest of the screen is in.
   const unsaved = chosen && !held.some((row) => row.workflow_id === chosen)
-    ? [option(chosen, `${chosen} — new, not saved yet`)] : [];
+    ? [option(chosen, localize(state, "view.m080", {id: String(chosen)}))] : [];
   const control = element("select", {"data-focus": "pick-workflow",
-    name: "workflow"}, [option("", "choose a workflow")].concat(
+    name: "workflow"}, [option("", localize(state, "view.m032"))].concat(
     held.map((row) => option(row.workflow_id,
       `${row.workflow_id}${row.title === null ? "" : ` — ${row.title}`}`)),
     unsaved));
   control.value = chosen;
   if (choose === null) control.disabled = true;
   else control.addEventListener("change", () => choose(control.value || null));
-  return field("Workflow", control);
+  return field(localize(state, "view.m007"), control);
 }
 
 //: What one starter is CALLED in the picker, and what it is not.
@@ -484,19 +347,19 @@ function workflowPicker(state, handlers) {
 //: 191 characters made the control 1379px wide and the page 1399 in a 1280px
 //: window. The label says that a note exists; `starterNote` draws the note
 //: itself, whole, under the control, for the starter chosen.
-function starterLabel(row) {
-  const named = `${row.title} · revision ${row.revision}`;
+function starterLabel(state, row) {
+  const named = localize(state, "view.m081", {title: String(row.title), revision: String(row.revision)});
   return rows(row.caveats).length === 0
-    ? `${named} — ready to run`
-    : `${named} — see the note`;
+    ? localize(state, "view.m082", {name: named})
+    : localize(state, "view.m083", {name: named});
 }
 
 //: The chosen starter's caveats, every one and in full, as readable text.
-function starterNote(row) {
-  if (row === null) return "A blank start is an empty drawing.";
+function starterNote(state, row) {
+  if (row === null) return localize(state, "view.m033");
   const caveats = rows(row.caveats);
   return caveats.length === 0
-    ? `${row.title} · revision ${row.revision} is ready to run.`
+    ? localize(state, "view.m084", {title: String(row.title), revision: String(row.revision)})
     : caveats.join(" ");
 }
 
@@ -509,6 +372,16 @@ function starterNote(row) {
 //: typed since the last change, and the caret, are the boot module's focus
 //: net's to carry across the render; committing on every keystroke moved the
 //: caret to the end and doubled an IME's composition (the fold review).
+function executionChoice(state, held, edit) {
+  const execution = element("select", {"data-focus": "new-execution", name: "new-execution"}, [
+    option("", localize(state, "automation.workflow_manual")),
+    option("bounded-run-v1", localize(state, "automation.workflow_bounded"))]);
+  execution.value = held.executionContract || "";
+  execution.disabled = edit === null;
+  execution.addEventListener("change", () => { if (edit) edit({executionContract: execution.value}); });
+  return execution;
+}
+
 function starterControls(state, handlers) {
   const box = element("div", {className: "studio-field studio-field--row"});
   const held = object(state.workflows.starter) || {};
@@ -519,67 +392,59 @@ function starterControls(state, handlers) {
   name.value = typeof held.workflowId === "string" ? held.workflowId : "";
   const starters = rows(state.workflows.starters);
   const from = element("select", {"data-focus": "new-from", name: "new-from"},
-    [option("", "start blank")].concat(starters.map(
-      (row) => option(row.starter_id, starterLabel(row)))));
+    [option("", localize(state, "view.m034"))].concat(starters.map(
+      (row) => option(row.starter_id, starterLabel(state, row)))));
   from.value = typeof held.starterId === "string" ? held.starterId : "";
+  const execution = executionChoice(state, held, edit);
   const chosen = starters.find((row) => row.starter_id === from.value) || null;
   const said = element("p", {className: "studio-hint",
-    "data-starter-note": "", text: starterNote(chosen)});
+    "data-starter-note": "", text: starterNote(state, chosen)});
   if (edit === null) {
     name.disabled = true;
     from.disabled = true;
-    name.title = "This screen was mounted without an editStarter handler.";
+    name.title = localize(state, "view.m035");
   } else {
     name.addEventListener("change", () => edit({workflowId: name.value}));
     from.addEventListener("change", () => edit({starterId: from.value}));
   }
   const start = handlerOf(handlers, "onStartWorkflow");
   const go = element("button", {className: "studio-btn",
-    "data-focus": "action:onStartWorkflow", text: "Start a workflow",
+    "data-focus": "action:onStartWorkflow", text: localize(state, "view.m036"),
     type: "button"});
   if (start === null) {
     go.disabled = true;
-    go.title = "This screen was mounted without an onStartWorkflow handler.";
+    go.title = localize(state, "view.m037");
   } else {
     go.addEventListener("click", () => start(
-      {workflowId: name.value.trim(), starterId: from.value || null}));
+      {workflowId: name.value.trim(), starterId: from.value || null, executionContract: execution.value}));
   }
-  box.append(field("New workflow id", name), field("Start from", from), said,
-    go);
+  // The three facts and their one action stand in one row; what they mean reads beneath
+  // them, so an open start box costs one row of controls and one line of notes.
+  box.append(field(localize(state, "view.m038"), name), field(localize(state, "view.m039"), from),
+    field(localize(state, "automation.workflow_kind"), execution), go,
+    element("div", {className: "studio-notes"}, [said, note(localize(state, "automation.workflow_note"))]));
   return box;
 }
 
-function saveRefusal(held) {
-  if (held.draft === null) {
-    return object(held.detail) && object(held.detail.published)
-      ? `There is no drawing to save. ${NEW_DRAFT} copies the published `
-        + "revision into one you can change."
-      : "There is no drawing to save.";
-  }
-  if (!held.writeReady) return "This workflow has not been read since the connection "
-    + "came back, so nothing may be written to it yet.";
-  return held.savePhase === "submitting"
-    ? "This draft is being saved. Wait for its answer before saving again." : null;
-}
 
 function saveControls(state, handlers) {
   const held = state.workflows;
   const box = element("div", {className: "studio-field studio-field--row"});
-  const save = button(handlers, "onSaveDraft", "Save draft", null);
-  const publish = button(handlers, "onPublish",
-    held.nextRevision === null ? "Publish revision"
-      : `Publish revision ${held.nextRevision}`, null);
-  const check = button(handlers, "onValidate", "Validate", null);
+  const save = button(state, handlers, "onSaveDraft", localize(state, "primary.workflow"), null);
+  const publish = button(state, handlers, "onPublish",
+    held.nextRevision === null ? localize(state, "view.m040")
+      : localize(state, "view.m085", {revision: String(held.nextRevision)}), null);
+  const check = button(state, handlers, "onValidate", localize(state, "view.m041"), null);
   // The copy road is shut with a reason whenever pressing it would do nothing.
   const shut = held.draft !== null
-    ? "There is already a drawing on screen; edit it and save the draft."
+    ? localize(state, "view.m042")
     : (object(held.detail) === null || object(held.detail.published) === null
-      ? "This workflow has no published revision to copy."
+      ? localize(state, "view.m043")
       : (held.writeReady ? null
-        : "This workflow has not been read since the connection came back."));
-  const fresh = button(handlers, "onEditPublished", NEW_DRAFT, null,
+        : localize(state, "view.m044")));
+  const fresh = button(state, handlers, "onEditPublished", localize(state, "view.new_draft"), null,
     {disabled: shut === null ? null : "", title: shut});
-  const refusal = saveRefusal(held);
+  const refusal = saveRefusal(held, state);
   if (refusal !== null) {
     save.disabled = true;
     save.title = refusal;
@@ -587,12 +452,10 @@ function saveControls(state, handlers) {
   if (!held.writeReady || !held.publishable) {
     publish.disabled = true;
     publish.title = held.unchanged
-      ? "This draft is the revision already published, word for word. "
-        + "Publishing it would record an edit that never happened."
+      ? localize(state, "view.m045")
       : (held.publishable
-        ? "This workflow has not been read since the connection came back."
-        : "Publishing needs a SAVED draft the server says would construct a "
-          + "revision. Save the drawing first, then read what stops it.");
+        ? localize(state, "view.m044")
+        : localize(state, "view.m046"));
   }
   box.append(check, save, publish, fresh);
   if (held.reviewing) box.append(publishReview(state, handlers));
@@ -602,19 +465,19 @@ function saveControls(state, handlers) {
 //: One line per KIND of change, and the ids under it. A person about to create
 //: an immutable revision is answering "is this what I meant", and a count with
 //: no names cannot be checked against what they remember doing.
-function changeLines(changes) {
+function changeLines(state, changes) {
   const lines = [];
   if (changes === null) return lines;
   if (changes.first) {
-    lines.push(`Creates the workflow "${changes.title.to}"`);
+    lines.push(localize(state, "view.m088", {title: String(changes.title.to)}));
   } else if (changes.title !== null) {
-    lines.push(`Title: "${changes.title.from}" becomes "${changes.title.to}"`);
+    lines.push(localize(state, "view.m089", {before: String(changes.title.from), after: String(changes.title.to)}));
   }
-  const named = [["Steps added", changes.added],
-                 ["Steps removed", changes.removed],
-                 ["Steps changed", changes.changed],
-                 ["Connections added", changes.edgesAdded],
-                 ["Connections removed", changes.edgesRemoved]];
+  const named = [[localize(state, "view.m047"), changes.added],
+                 [localize(state, "view.m048"), changes.removed],
+                 [localize(state, "view.m049"), changes.changed],
+                 [localize(state, "view.m050"), changes.edgesAdded],
+                 [localize(state, "view.m051"), changes.edgesRemoved]];
   for (const [label, ids] of named) {
     if (ids.length) lines.push(`${label} (${ids.length}): ${ids.join(", ")}`);
   }
@@ -628,43 +491,40 @@ function changeLines(changes) {
 //: were, which is why it is a button and not a smaller word.
 function publishReview(state, handlers) {
   const held = state.workflows;
-  const lines = changeLines(held.changes);
+  const lines = changeLines(state, held.changes);
   const box = element("div", {className: "studio-review",
     "data-review": "publish"});
-  box.append(element("h3", {text: `Publish revision ${held.nextRevision}?`}));
+  box.append(element("h3", {text: localize(state, "view.m086", {revision: String(held.nextRevision)})}));
   box.append(element("p", {className: "studio-hint", text:
-    "A revision is immutable. Once written it stands, and later edits become "
-    + "further revisions rather than changing this one."}));
+    localize(state, "view.m052")}));
   box.append(element("p", {className: "studio-fact__v", text:
     held.diagnostics.length === 0
-      ? "Validation: the server says this draft would construct a revision."
-      : "Validation: the server refuses this draft."}));
+      ? localize(state, "view.m053")
+      : localize(state, "view.m054")}));
   if (held.changes !== null && held.changes.first) {
     box.append(element("p", {className: "studio-hint", text:
-      "This is the first revision, so there is nothing to compare it against. "
-      + "What it creates is listed in full."}));
+      localize(state, "view.m055")}));
   }
   if (held.changes === null) {
     box.append(element("p", {className: "studio-hint", text:
-      "There is no drawing to review."}));
+      localize(state, "view.m056")}));
   } else if (lines.length === 0) {
     box.append(element("p", {className: "studio-hint", text:
-      "No structural change was found between this drawing and the revision "
-      + "now standing."}));
+      localize(state, "view.m057")}));
   } else {
     box.append(element("ul", {className: "studio-review__changes"},
       lines.map((line) => element("li", {text: line}))));
   }
-  box.append(button(handlers, "onPublishConfirm",
-    `Confirm and publish revision ${held.nextRevision}`, null));
-  box.append(button(handlers, "onPublishCancel", "Cancel", null));
+  box.append(button(state, handlers, "onPublishConfirm",
+    localize(state, "view.m087", {revision: String(held.nextRevision)}), null));
+  box.append(button(state, handlers, "onPublishCancel", localize(state, "view.m058"), null));
   return box;
 }
 
 function saveLine(state) {
   const held = state.workflows;
   const said = element("p", {className: "studio-state",
-    "data-save": held.savePhase, text: held.saveNotice});
+    "data-save": held.savePhase, text: noticeText(state, held.saveNotice)});
   return said;
 }
 
@@ -707,15 +567,15 @@ function foldOpen(held, name, byState) {
 //: What the run fold holds and where that stands, in the order a person
 //: meets the states: no workflow chosen, one chosen and not yet read (or
 //: refused), one chosen and unpublished, published.
-function runSummary(held) {
+function runSummary(state, held) {
   const chosen = typeof held.selectedId === "string" && held.selectedId !== "";
-  if (!chosen) return "Open a run — choose or start a workflow first";
+  if (!chosen) return localize(state, "view.m059");
   const detail = object(held.detail);
-  if (detail === null) return "Open a run — this workflow has not been read";
+  if (detail === null) return localize(state, "view.m060");
   const published = object(detail.published);
   return published === null
-    ? "Open a run — publish a revision first"
-    : `Open a run — revision ${published.revision} is published`;
+    ? localize(state, "view.m061")
+    : localize(state, "view.m090", {revision: String(published.revision)});
 }
 
 /**
@@ -738,28 +598,28 @@ export function mountToolbar(mount, state, handlers) {
   const detail = object(held.detail);
   const published = detail !== null && object(detail.published) !== null;
   mount.replaceChildren(workflowPicker(state, handlers),
-    disclosure("start", "Start a new workflow", foldOpen(held, "start", !chosen),
+    disclosure("start", localize(state, "view.m062"), foldOpen(held, "start", !chosen),
       starterControls(state, handlers), handlers),
     saveControls(state, handlers), saveLine(state),
-    disclosure("run", runSummary(held),
+    disclosure("run", runSummary(state, held),
       foldOpen(held, "run", published && held.draft === null),
       runForm(state, handlers), handlers));
 }
 
 // -- the diagnostics panel ------------------------------------------------
-function diagList(title, said, lines, code) {
+function diagList(state, title, said, lines, code) {
   const box = element("div", {className: "studio-section"});
   box.append(element("h4", {text: title}), note(said));
   if (!lines.length) {
     box.append(element("p", {className: "studio-hint",
-      text: "Nothing here stops it."}));
+      text: localize(state, "view.m063")}));
     return box;
   }
   const list = element("ul", {className: "studio-list"});
   for (const line of lines) {
     list.append(element("li", {className: "studio-diag"}, [
       element("span", {className: "studio-diag__code", text: code}),
-      element("span", {text: line}),
+      element("span", {text: noticeText(state, line)}),
     ]));
   }
   box.append(list);
@@ -775,20 +635,19 @@ function diagList(title, said, lines, code) {
  */
 export function mountDiagnostics(mount, state) {
   const held = state.workflows;
-  mount.replaceChildren(element("h3", {text: "What stops publishing"}));
+  mount.replaceChildren(element("h3", {text: localize(state, "view.m064")}));
   mount.append(
-    diagList("The drawing on screen",
-      "What this window can already see the save route would refuse. It is "
-      + "about the UNSAVED drawing and nothing has been sent.",
+    diagList(state, localize(state, "view.m065"),
+      localize(state, "view.m066"),
       rows(held.problems), "local"),
-    diagList("The draft on the server",
+    diagList(state, localize(state, "view.m067"),
       held.savedAt === null
-        ? "No draft is stored for this workflow yet."
-        : `The server's own answer about the draft it stored at ${held.savedAt}.`,
+        ? localize(state, "view.m068")
+        : localize(state, "view.m091", {at: String(held.savedAt)}),
       rows(held.diagnostics).map((row) => row.message), "server"));
   if (held.publishable) {
     mount.append(element("p", {className: "studio-hint",
-      text: `Nothing stops publishing revision ${show(held.nextRevision)}.`}));
+      text: localize(state, "view.m092", {revision: show(state, held.nextRevision)})}));
   }
 }
 

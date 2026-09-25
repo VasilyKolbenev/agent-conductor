@@ -105,6 +105,8 @@ from .verify_holds import (
     standing_evidence,
 )
 from .verify_road import verify_independently
+from .runtime_scope import attempt_scope_active, drive_fresh_attempt
+from .failure_reasons import reason_words
 
 
 #: A raw execute-reported outcome that is not ``succeeded`` maps here without ever
@@ -174,6 +176,7 @@ class ControlRuntime:
         # Memory-only execution authority. A durable request recovered by a new
         # runtime is evidence of authorization, not proof its effect never ran.
         self._grants: set[tuple[str, str]] = set()
+        self._policy = None
 
     # -- authorize (A/CONF-1): refuse before preparation, else record the confirmation --
 
@@ -263,6 +266,11 @@ class ControlRuntime:
         return Authorization(
             request=ActionRequest.from_dict(canonical.as_dict()),
             record_created=appended)
+
+    def authorize_policy(self, run_id: str, proposal_id: str, authorization_id: str, *,
+                         admit: Callable[[], None] | None = None) -> Authorization:
+        from .policy_runtime import authorize_policy
+        return authorize_policy(self, run_id, proposal_id, authorization_id, admit)
 
     def _lock_key(self, operation: str, *parts: str) -> tuple[Any, ...]:
         return (operation, self._store.project_root, *parts)
@@ -408,8 +416,8 @@ class ControlRuntime:
         claimed = ActionRequest.from_dict(authorization.request.as_dict())
         self._hold_route(claimed.run_id, ExecutionError)
         recovered = self._store.read(claimed.run_id)
-        if recovered.envelope.mode is not ControlMode.CONFIRM:
-            raise ExecutionError("Confirm runtime requires run mode 'confirm'")
+        from .policy_runtime import hold_execution_mode
+        hold_execution_mode(recovered)
         if recovered.warnings:
             raise ExecutionError(
                 "execute refuses a run whose replay left unjudged durable bytes")
@@ -428,35 +436,11 @@ class ControlRuntime:
     def _execute_granted(
             self, canonical: ActionRequest, recovered: RecoveredRun,
             grant: tuple[str, str]) -> Attempt:
-        """Consume fresh authority, then bracket the one effect with durable events."""
-        # Consume before the first untrusted adapter seam. Every later retry is
-        # fail-closed even if an effect happened but no terminal receipt landed.
-        self._grants.remove(grant)
-        _, bound = self._bound_adapter(recovered, canonical.instance_id)
-        self._hold_route(canonical.run_id, ExecutionError)
-        try:
-            model = frozen_config_models(recovered.config).get(canonical.instance_id)
-            prepared = self._registry.prepare(
-                bound, ActionRequest.from_dict(canonical.as_dict()), model=model)
-        except Exception:  # noqa: BLE001 -- refusal becomes a durable unknown
-            return self._finish(
-                canonical, AttemptState.UNKNOWN, (AttemptState.ACCEPTED,),
-                detail="adapter prepare failed")
-        history = (AttemptState.ACCEPTED, AttemptState.STARTED)
-        self._hold_route(canonical.run_id, ExecutionError)
-        lease = self._append_event(canonical, bound, phase="effect_lease")
-        report, note = self._observe_execute(bound, prepared, canonical)
-        observed = self._append_event(
-            canonical, bound, phase="execution_observed",
-            recovery_ref=lease.recovery_ref,
-            outcome=report.outcome if report is not None else "unknown",
-            exit_code=report.exit_code if report is not None else None)
-        if report is None:
-            self._release_independent(recovered, canonical)
-            return self._finish(canonical, AttemptState.UNKNOWN, history, detail=note)
-        canonical_report = self._observed_report(canonical, observed)
-        return self._resolve(canonical, self._verifier_for(recovered, canonical),
-                             canonical_report, observed, history, live=True)
+        return drive_fresh_attempt(self, canonical, recovered, grant)
+
+    def _execute_fresh(self, canonical: ActionRequest, recovered: RecoveredRun) -> Attempt:
+        from .execution_road import execute_fresh
+        return execute_fresh(self, canonical, recovered)
 
     @staticmethod
     def _replayed_attempt(request: ActionRequest, recovered: RecoveredRun) -> Attempt | None:
@@ -535,6 +519,8 @@ class ControlRuntime:
 
     def _hold_lock_order(self, error: type[RuntimeError]) -> None:
         """Refuse public operation entry from below the operation-lock layer."""
+        if attempt_scope_active():
+            raise error("runtime operation cannot start inside an attempt scope")
         if self._store.current_thread_holds_transaction():
             raise error("runtime operation cannot start inside a store transaction")
 
@@ -639,12 +625,17 @@ class ControlRuntime:
     def _resolve(
             self, request: ActionRequest, verifier: str | VerifierBinding,
             report: ActionResultReceipt, observed: AttemptEvent,
-            history: tuple[AttemptState, ...], *, live: bool) -> Attempt:
+            history: tuple[AttemptState, ...], *, live: bool,
+            reason: str | None = None) -> Attempt:
         if report.outcome != "succeeded":
             self._release_independent(self._store.read(request.run_id), request)
+            # WHY, in the runtime's own words from a closed table: adapter prose is never
+            # copied (the leak-surface tests). A restart settles from the event, which has none.
+            words = reason_words(reason)
+            said = f": {words}" if words else ""
             return self._finish(
                 request, _NON_SUCCESS[report.outcome], history,
-                detail=f"adapter reported {report.outcome}", exit_code=report.exit_code)
+                detail=f"adapter reported {report.outcome}{said}", exit_code=report.exit_code)
         return self._verify(request, verifier, report, observed, history, live=live)
 
     def _verify(
@@ -685,7 +676,7 @@ class ControlRuntime:
         self._hold_route(request.run_id, ExecutionError)
         try:
             evidence, refused = verify_independently(
-                self._registry, self._store, request, report, verifier, observed, live=live)
+                self._registry, self._store, request, report, verifier, observed, live=live, clock=self._clock)
         except Exception:  # includes a release seam that failed after a checker answered
             evidence, refused = None, VERIFY_RAISED
         return self._finish(
@@ -771,8 +762,8 @@ class ControlRuntime:
         with _operation_lock(self._lock_key("execute", run_id, action_id)):
             self._hold_route(run_id, ExecutionError)
             recovered = self._store.read(run_id)
-            if recovered.envelope.mode is not ControlMode.CONFIRM:
-                raise ExecutionError("Confirm runtime requires run mode 'confirm'")
+            from .policy_runtime import hold_execution_mode
+            hold_execution_mode(recovered)
             if recovered.warnings:
                 raise ExecutionError(
                     "reconcile refuses a run whose replay left unjudged durable bytes")

@@ -75,6 +75,8 @@ def create_task(
     """
     asked = parse_task(body)
     with tasks.transaction():
+        if not tasks.task_path(asked.task_id).is_dir():
+            tasks.admit_task_creation(asked.task_id)
         standing = tasks.standing(asked.task_id)
         if standing is not None:
             if standing.as_dict() != asked.build(standing.created_at).as_dict():

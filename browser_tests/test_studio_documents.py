@@ -13,6 +13,8 @@ screen is asked last.
 """
 from __future__ import annotations
 
+from browser_tests.run_picker import choose_run
+
 from dataclasses import replace
 
 import pytest
@@ -50,7 +52,7 @@ from browser_tests.test_studio_step import (  # noqa: F401
 )
 from browser_tests.test_studio_step import _open as _open_bench
 from browser_tests.test_studio_step_offers import _type_into
-from browser_tests.test_studio_step_offers import _open_run_under, _propose, _row_says
+from browser_tests.test_studio_step_offers import FOCUSED_FORM, _open_run_under, _propose, _row_says
 from browser_tests.test_studio_step_races import _let_through
 from tests.schedule_journal import routed_dalio
 from tests.test_command_graph_projection import a_decision, settle_to_the_confirm_gate
@@ -292,7 +294,7 @@ def test_what_is_typed_into_the_document_survives_a_read_of_the_run(
             artifact_id="artifact-note-1", artifact_ref="artifact-note",
             run_id=RUN_ID, created_at=NOW, media_type="text/plain",
             content="a note on another reference"))
-        page.locator(f'[data-focus-key="run:{RUN_ID}"]').click()
+        choose_run(page, RUN_ID)
         page.wait_for_function(
             "n => document.querySelectorAll('ol.studio-timeline > li').length"
             " > n", arg=before)
@@ -527,6 +529,10 @@ def test_a_legacy_material_proposal_has_a_truthful_replacement_road(
             assert window.writes("/proposals") == 0
             return
         assert "Create a new proposal below" in said
+        # The header's main action is the row's own: Propose again, never the Confirm the row withholds.
+        assert page.locator('#studioPrimary [data-run-action="confirm"]').count() == 0
+        page.locator('#studioPrimary [data-run-action="propose"]').click()
+        assert page.evaluate(FOCUSED_FORM) == f"propose:{node_id}", mode
         assert _propose(page, node_id) == 201
         proposals = bench.records(run_id, "action_proposal")
         assert len(proposals) == 2 and proposals[0] == legacy
@@ -573,7 +579,7 @@ def test_material_reproposal_uses_registered_schema_not_argument_names(
           const schema = value => projectControls({providers:[],isolation_facts:[],
             instances:[{
             instance_id:'native',adapter_id:'native',model:null,controls:['dispatch'],
-            argument_schemas:value,isolation:{}}]});
+            argument_schemas:value,isolation:{},task_channel:null}]});
           return {rule,form:shown.map(node => node.textContent).join(' '),
             disabled:form?.querySelector('button')?.disabled ?? true,
             schemas:[schema({}) !== null,schema({dispatch:'deep-arguments-v1'}) !== null,
@@ -632,10 +638,11 @@ def test_independent_verification_is_visible_before_authority_and_in_history(
         form = page.locator('[data-step="propose:checked"]').inner_text()
         assert "checker · claude-code · checker-model" in form
         assert "result document this attempt produced" in form
-        assert "64 KiB" in form and "JSON expansion counts" in form
+        assert "256 KiB" in form and "JSON expansion counts" in form
         assert "2 × 120s = 240s" in form and "budget must cover both" in form
         assert "preflights and setup add wall-clock time" in form
-        assert "none of the checker's prose becomes durable" in form
+        # Typed findings of a bounded run are durable now; free checker prose still is not.
+        assert "Unstructured checker prose is not a durable result" in form
         assert "no independent checker" not in form
         assert _propose(page, "checked") == 201
         page.wait_for_selector('[data-step="confirm:checked"]')

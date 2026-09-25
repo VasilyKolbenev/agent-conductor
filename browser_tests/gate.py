@@ -109,7 +109,8 @@ def probe_versions(artifacts: Path) -> dict[str, str]:
     probe_environment = {**os.environ, "CHROME_LOG_FILE":
                          str(chromium_log(artifacts, "version-probe"))}
     with sync_playwright() as api:
-        browser = api.chromium.launch(headless=True, env=probe_environment)
+        browser = api.chromium.launch(headless=True, env=probe_environment,
+            args=[f"--log-file={probe_environment['CHROME_LOG_FILE']}"])
         try:
             versions = {"playwright": version("playwright"),
                         "chromium": browser.version,
@@ -127,6 +128,7 @@ def _child_environment(artifacts: Path, repo: Path,
     environment = dict(os.environ)
     environment["CONDUCT_GATE_ARTIFACTS"] = str(artifacts)
     environment["PYTHONPATH"] = str(repo / "src")
+    environment["PYTHONIOENCODING"] = "utf-8"
     # The engine this child launches keeps its own log; the gate says where.
     environment["CHROME_LOG_FILE"] = str(chromium_log(artifacts, module.stem))
     # Playwright's browser channel: launch lines and Chromium's own stderr
@@ -161,7 +163,12 @@ def _own_basetemp(artifacts: Path, module: Path) -> Path:
 def run_module(module: Path, artifacts: Path, repo: Path,
                timeout: float) -> dict[str, object]:
     """Run one module once, in a fresh pytest/Chromium process."""
+    module, artifacts, repo = (path.resolve() for path in (module, artifacts, repo))
     basetemp = _own_basetemp(artifacts, module)
+    # GPU subprocesses can ignore CHROME_LOG_FILE. Keep their fallback logs
+    # inside this module's artifacts too, outside pytest's replaceable basetemp.
+    working = artifacts / "working" / module.stem
+    working.mkdir(parents=True, exist_ok=True)
     started = time.monotonic()
     try:
         completed = subprocess.run(
@@ -169,7 +176,7 @@ def run_module(module: Path, artifacts: Path, repo: Path,
              "-rEf", "-p", "no:cacheprovider", "-o", "addopts=",
              "--basetemp", str(basetemp)],
             capture_output=True, text=True, encoding="utf-8", errors="replace",
-            cwd=str(repo), env=_child_environment(artifacts, repo, module),
+            cwd=str(working), env=_child_environment(artifacts, repo, module),
             timeout=timeout, check=False)
         exit_code: object = completed.returncode
         stdout, stderr = completed.stdout, completed.stderr
@@ -187,6 +194,7 @@ def run_module(module: Path, artifacts: Path, repo: Path,
         "exit_code": exit_code,
         "duration_seconds": duration,
         "basetemp": str(basetemp),
+        "cwd": str(working),
         "failed_nodes": _FAILED_NODE.findall(stdout),
         "tail": stdout.strip().splitlines()[-1:],
         **waivers,
@@ -218,6 +226,7 @@ def run_gate(modules_dir: Path, artifacts: Path, reverse: bool,
              skip_version_probe: bool,
              timeout: float = MODULE_TIMEOUT_SECONDS) -> int:
     """The gate: modules in order, one process and one chance each."""
+    modules_dir, artifacts = modules_dir.resolve(), artifacts.resolve()
     repo = modules_dir.resolve().parent
     artifacts.mkdir(parents=True, exist_ok=True)
     if not skip_version_probe:

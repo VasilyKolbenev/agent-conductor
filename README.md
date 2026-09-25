@@ -10,11 +10,17 @@ December Command is a self-hosted control plane for the AI coding harnesses alre
 your code — Claude Code, Codex, or anything that can write a JSON file. Each agent keeps
 one file — its lane — saying what it is doing, what it found, and what it needs from you. When
 you want to run a process rather than watch one, the Workflow Studio lets you publish a workflow
-and open a run against it, where nothing is dispatched until you confirm it.
+and open a run against it. Confirm mode asks for each action; an explicitly bounded
+Policy workflow can run under one reviewed human grant, with independent checking
+and recorded correction findings. Opening a run alone grants no execution authority.
 
 *Alpha — Protocol v1. The distribution is `agent-conductor`; the CLI is `conduct`.*
 
 ## 60-second quickstart
+
+For the current V1 candidate, use the supplied build and the
+[first-run guide](docs/first-run-v1.en.md) ([Russian](docs/first-run-v1.md)). The demo below is a separate introduction;
+installing the GitHub default branch does not identify a tested release candidate.
 
 Requires Python 3.11+. Not on PyPI yet — install from GitHub:
 
@@ -66,13 +72,14 @@ conduct report      # the merged state as Markdown, on stdout
 conduct preview     # propose one dispatch and print its canonical preview (no execution)
 conduct integration-smoke  # run the synthetic end-to-end gate and print its receipt
 conduct reconcile   # list the actions a crash stranded; close one with --run/--action
+conduct ownership activate --legacy-writers-stopped # only after legacy writers stop
 conduct providers   # configure a harness: paths and env NAMES, never a credential
 conduct up          # Workflow Studio at http://127.0.0.1:7777/
 ```
 
 `conduct prompt` prints the working instructions for one agent — paste the output into
 Claude Code, Codex, or whatever harness holds that role. The agent then keeps its lane
-file (`conductor/lanes/claude.json`) up to date, and the panel reflects every write
+file (`conductor.v3/lanes/claude.json` after activation) up to date, and the panel reflects every write
 live.
 
 `conduct report` renders the same merged state the panel serves, as Markdown on stdout:
@@ -133,7 +140,8 @@ is never touched: init says so and exits 1.
 
 ## What it is
 
-- **Files are the API.** All state lives in a `conductor/` directory inside your
+- **Files are the API.** Project data starts in `conductor/`; explicit ownership
+  activation moves it to `conductor.v3/` and stores ownership records in `.conduct/` inside your
   project: `map.toml` (the project map), `lanes/<author>.json` (one file per agent),
   `events.jsonl` (an append-only log), and — once you use the Studio — `templates/`
   (published workflow revisions and drafts) and `runs/` (each run's append-only journal
@@ -143,27 +151,27 @@ is never touched: init says so and exits 1.
   stale, and the panel says so. Disagreements, staleness, review coverage, and the human
   queue are all computed from the raw lanes, so no agent can bury a conflict by declining
   to write it down. Nothing unknown shows green.
-- **The panel is local, and its only writes are yours.** It binds to 127.0.0.1, answers only
+- **The panel is local; execution needs authority.** It binds to 127.0.0.1, answers only
   the two loopback `Host` names it minted for its own port, and calls no model itself.
-  Reading is all it does until you act: with no run under `conductor/runs/` there is nothing
-  for it to write to. When a run exists, the Studio can append what you confirm — a proposal,
+  Quota collectors read the configured native accounts; on the current V1 candidate only
+  Claude's subscription quota has been read live. When a run exists,
+  Studio can append what you authorize — a proposal,
   an action request, a decision receipt, a workflow draft or a published revision — and each
   such request must carry that loopback `Host`, an allowed `Origin`, and the per-process CSRF
-  token the page was served with. Those writes go under `conductor/runs/` and
-  `conductor/templates/` and nowhere else: it cannot write a lane, `map.toml`,
-  `events.jsonl`, your source, or a secret.
+  token the page was served with. Run and workflow records live in the active data
+  directory. Authorized native harnesses can change files in the task's work scope;
+  the independent checker determines whether the result is verified.
 
 ## What it is not
 
 - Not a chat with your agents.
-- Not an orchestrator — nothing runs on a timer, and no agent starts without a confirmation you
-  gave for that exact request. There *is* a scheduler, and it is worth being exact about what it
-  does: it reads a run's plan and its durable records and computes which steps may run now,
-  which are blocked, which are settled and which no run can reach. It dispatches nothing. Its
-  whole output is a refusal or a permission — the runtime asks it before authorizing an attempt,
-  and a step it does not make runnable is one no confirmation can start.
+- No unbounded background authority. The scheduler derives eligible steps from the frozen
+  plan and durable records. The bounded Policy driver needs an owned project, a reviewed
+  grant, eligible steps and remaining budget. Human gates remain human decisions;
+  restarting the server does not automatically resume an earlier grant.
 - Not a trace warehouse.
-- Not a cloud service — no account, no network access, no API keys.
+- Not a hosted service. Native harnesses and quota readers use the configured provider
+  accounts; direct DeepSeek API uses an environment variable, never a key pasted into Studio.
 
 ## How it works
 
@@ -181,8 +189,9 @@ immutable revision, and open a run frozen against that exact revision. From then
 overwritten: every proposal, confirmation, decision, receipt and gate answer is appended to that
 run's journal, and the state you see is computed from the records rather than stored beside
 them. The scheduler reads the plan and those records and says which steps may run now; you
-confirm one, or you answer the gate that is waiting. No step starts without a confirmation you
-gave for that exact request.
+confirm one, or you answer the gate that is waiting. A bounded Policy grant may authorize
+the next eligible step automatically within its reviewed limits. Pause and revocation stop
+further authorization; an uncertain result requires human resolution.
 
 ## Documentation
 
@@ -195,6 +204,9 @@ gave for that exact request.
 - The release smoke test, run against a release candidate before publishing:
   `docs/release-smoke.md`
 - Owner acceptance — can a person operate this without a developer: `docs/owner-acceptance.md`
+- First run of the V1 candidate: `docs/first-run-v1.en.md` (English), `docs/first-run-v1.md` (Russian)
+- V1 alpha release notes, including the known limitations of the current candidate:
+  `docs/release-notes-v1-alpha.md` (Russian: `docs/release-notes-v1-alpha.ru.md`)
 
 ## Browser-level panel checks
 
@@ -217,6 +229,8 @@ is not in it, because it is not a `/panel/*` route — it is what `GET /` answer
 
 ## Status
 
-December Command v0.1.0 alpha. Protocol v1. Python 3.11+, zero runtime dependencies. CI runs the
-suite on Linux, Windows and macOS, and the browser gate on all three.
+December Command v0.1.0 alpha. Protocol v1. Python 3.11+, zero runtime dependencies. The CI
+configuration runs the suite on Linux, Windows and macOS, and the browser gate on all three; no
+CI run exists yet on the current V1 candidate, and macOS has not been verified for it (see the
+release notes).
 MIT license.

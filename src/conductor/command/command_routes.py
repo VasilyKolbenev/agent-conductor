@@ -44,6 +44,11 @@ COMMAND_ROUTES = (
     ("GET", "/command/tasks"),
     ("POST", "/command/tasks"),
     ("GET", "/command/tasks/<task_id>"),
+    ("GET", "/command/quotas"),
+    ("GET", "/command/runs/<run_id>/automation"),
+    ("POST", "/command/runs/<run_id>/automation/preview"),
+    ("POST", "/command/runs/<run_id>/automation/authorize"),
+    ("POST", "/command/runs/<run_id>/automation/control"),
 )
 
 _RUN_ROUTE = re.compile(
@@ -51,7 +56,7 @@ _RUN_ROUTE = re.compile(
     # The longer tail is spelled FIRST: alternation is leftmost-first, and a
     # `graph` that matched before `graph/from-template` would send every
     # materialization to the route that speaks a different document.
-    r"(?:/(controls|proposals|actions|decisions|graph/from-template|artifacts|graph))?\Z")
+    r"(?:/(automation/preview|automation/authorize|automation/control|automation|controls|proposals|actions|decisions|graph/from-template|artifacts|graph))?\Z")
 _WORKFLOW_ROUTE = re.compile(
     r"/command/workflows/(?P<workflow_id>[A-Za-z0-9][A-Za-z0-9._-]{0,127})"
     # The revision number is a tail of the `revisions` tail rather than a fourth
@@ -68,6 +73,7 @@ _WORKFLOW_ROUTE = re.compile(
 _TASK_ROUTE = re.compile(
     rf"/command/tasks/([A-Za-z0-9][A-Za-z0-9._-]{{0,{MAX_TASK_ID - 1}}})\Z")
 _SESSION_PATH = "/command/session"
+_QUOTAS_PATH = "/command/quotas"
 _WORKFLOWS_PATH = "/command/workflows"
 #: The one run route that names no run: the list, and the door that opens one.
 _RUNS_PATH = "/command/runs"
@@ -118,10 +124,10 @@ def match_route(method: str, path: str) -> Route:
     if method not in {"GET", "POST"}:
         raise ApiRefusal.fixed(
             "method_not_allowed" if _known(path) else "route_not_found")
-    if path == _SESSION_PATH:
+    if path in {_SESSION_PATH, _QUOTAS_PATH}:
         if method != "GET":
             raise ApiRefusal.fixed("method_not_allowed")
-        return Route("session")
+        return Route("session" if path == _SESSION_PATH else "quotas")
     if path == _TEMPLATES_PATH:
         if method != "POST":
             raise ApiRefusal.fixed("method_not_allowed")
@@ -145,7 +151,7 @@ def match_route(method: str, path: str) -> Route:
         raise ApiRefusal.fixed("route_not_found")
     run_id, tail = matched.groups()
     name = (tail or "run").replace("/", "_").replace("-", "_")
-    expected = "GET" if name in {"run", "controls"} else "POST"
+    expected = "GET" if name in {"run", "controls", "automation"} else "POST"
     if method != expected:
         raise ApiRefusal.fixed("method_not_allowed")
     return Route(name, run_id)
@@ -153,7 +159,7 @@ def match_route(method: str, path: str) -> Route:
 
 def _known(path: str) -> bool:
     """Whether some row names this path under any method at all."""
-    return (path in {_SESSION_PATH, _TEMPLATES_PATH, _WORKFLOWS_PATH,
+    return (path in {_SESSION_PATH, _QUOTAS_PATH, _TEMPLATES_PATH, _WORKFLOWS_PATH,
                      _RUNS_PATH, _TASKS_PATH}
             or _RUN_ROUTE.fullmatch(path) is not None
             or _WORKFLOW_ROUTE.fullmatch(path) is not None

@@ -413,6 +413,49 @@ def test_per_run_state_that_was_already_there_is_a_persons_own_and_survives(
     assert (home / "backups").exists(), "vendor state this build declares was taken"
 
 
+@pytest.mark.parametrize("stood_before", [True, False], ids=["existing-dir", "fresh-login"])
+@pytest.mark.parametrize("left", ["session-env/8268492b-2653-4f78/hooks.env:{}",
+                                  "shell-snapshots/snapshot-bash-1790159048-x.sh:export",
+                                  "plans/produce-the-complete-review-snug-balloon.md:# plan",
+                                  "projects/C--work-001/3f1c6240/tool-results/r1.txt:out",
+                                  "file-history/3f1c6240/count_succeeded.py@v1:old"])
+def test_the_session_state_a_shell_spawn_writes_is_taken_back(tmp_path, left, stood_before):
+    """MEASURED on the first real login (23.09.2026): a spawn that starts a shell writes
+    `session-env/<session>/` and `shell-snapshots/`. Per-run, so taken back -- and only what this
+    spawn wrote: what already stood under the same name stays; on a fresh login the whole new
+    directory goes."""
+    home = a_login_home(tmp_path)
+    top = left.split("/", 1)[0]
+    if stood_before:
+        (home / top / "earlier").mkdir(parents=True)
+        (home / top / "earlier" / "kept.txt").write_text("before", encoding="utf-8", newline="\n")
+    adapter, _root, _log = a_harness(
+        tmp_path, auth="subscription", auth_home=str(home), **{_fakeclaude.HOME_FILE: left})
+
+    receipt = run_once(adapter, a_request())
+
+    assert receipt.outcome == "succeeded", receipt.detail
+    assert not (home / left.split(":", 1)[0]).exists(), "session state this spawn wrote stayed behind"
+    if stood_before:
+        assert (home / top / "earlier" / "kept.txt").exists(), "state that stood before was taken"
+    else:
+        assert not (home / top).exists(), "the directory this spawn created stayed behind"
+
+
+def test_the_same_nested_state_under_an_undeclared_name_is_still_residue(tmp_path):
+    """The control for the test above: the fixture really writes the nested path, and only the
+    DECLARED names are taken back -- a lookalike stays and fails the task."""
+    home = a_login_home(tmp_path)
+    adapter, _root, _log = a_harness(
+        tmp_path, auth="subscription", auth_home=str(home),
+        **{_fakeclaude.HOME_FILE: "session-envs/8268492b/hooks.env:{}"})
+
+    receipt = run_once(adapter, a_request())
+
+    assert (home / "session-envs" / "8268492b" / "hooks.env").exists()
+    assert receipt.outcome == "failed" and "does not declare" in receipt.detail
+
+
 def test_a_file_a_spawn_writes_into_an_existing_scratch_directory_is_seen(
         tmp_path):
     """Top-level names alone hid the thing that matters most.
@@ -500,6 +543,10 @@ def test_a_name_no_declaration_accounts_for_is_reported_on_every_receipt(
     assert receipt.outcome == "failed"
     assert "left state this build does not declare" in receipt.detail
     assert "stowaway" not in receipt.detail, "a receipt named operator state"
+    # And a receipt the runtime ADMITS: the child exited 0, and `failed` carrying 0 was recorded as
+    # `unknown` with this sentence lost (first real login, 23.09.2026).
+    from conductor.command.runtime import ControlRuntime
+    assert receipt.exit_code is None and ControlRuntime._valid_observed_result(receipt)
 
 
 def test_declared_state_a_spawn_leaves_is_taken_back_and_never_reported(tmp_path):

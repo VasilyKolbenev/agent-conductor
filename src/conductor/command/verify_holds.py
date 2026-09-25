@@ -58,6 +58,13 @@ NOT_RESUMABLE_NEVER = "the checker never started under live authority; verificat
 DOER_OUTSIDE_SUBTREE = "the doer changed files outside its authorized work item"
 DOER_NOTHING_CHANGED = "the doer left no changed file for the checker to verify"
 DOER_UNCONTAINED = "the doer left no contained work tree for independent verification"
+#: A readable tree whose changed file is larger than the check reads whole: the digest is
+#: known, the bytes were never handed over, and the checker cannot judge what it did not
+#: receive. MEASURED live (live-v5-8, 23.09.2026): a 19,538-byte test file was reported with
+#: the sentence above, which named a different fault.
+DOER_OVER_READ_BUDGET = (
+    "a changed file is larger than the independent check reads whole, so it was not "
+    "offered for independent verification")
 #: A DIFFERENT fact from the one above, and it needs its own word: the tree was
 #: readable, and what broke was the promise to take the attempt's own home back.
 #: A reader of the run's record has to be able to tell which promise failed.
@@ -80,6 +87,9 @@ CHECKER_NO_VERDICT = "the checker returned no complete accepted verdict for this
 CHECKER_MATERIAL_UNAVAILABLE = "the checker could not read the exact result materials safely"
 CHECKER_TREE_CHANGED = "the checker changed the work tree; its verdict was not accepted"
 CHECKER_REJECTED = "the independent checker rejected the doer's result"
+CHECKER_FINDINGS_REFUSED = (
+    "the independent checker rejected the doer's result, but the typed feedback protocol refused "
+    "its findings, so no correction can carry them")
 VERIFIED_INDEPENDENTLY = "the plan's independent participant verified the observed result"
 
 

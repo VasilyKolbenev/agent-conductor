@@ -50,16 +50,21 @@ MODEL = PANEL / "studio-model.js"
 #: Every module of the Studio, spelled out so a new one cannot arrive without
 #: passing every guard below. The partition test underneath holds this list to
 #: the packaged directory in both directions.
-MODULES = ("studio.js", "studio-store.js", "studio-view.js", "studio-model.js",
+MODULES = ("studio-runstep-copy.js", "studio-participant-copy.js", "studio-run-docs-copy.js", "studio-runs-copy.js", "studio-runform-copy.js", "studio-view-copy.js", "studio-workflow-detail-copy.js", "studio-workflow-copy.js", "studio-feedback.js", "studio-feedback-model.js", "studio-feedback-copy.js", "studio-notice-copy.js", "studio-agents-copy.js", 'studio-automation-model.js', 'studio-automation-providers.js', 'studio-automation-flow.js', 'studio-automation-copy.js', 'studio-automation.js', 'studio-workflowwrite.js', 'studio-draft.js',
+           "studio-scene-model.js", "studio-trace.js", "studio-taskruns.js", "studio-bridge.js",
+           "studio.js", "studio-store.js", "studio-view.js", "studio-model.js",
            "studio-canvas.js", "studio-inspector.js", "studio-runs.js",
            "studio-runwords.js", "studio-runstep.js", "studio-runwrite.js",
            "studio-people.js", "studio-runread.js", "studio-review.js",
-           "studio-layout.js", "studio-edits.js",
+           "studio-layout.js", "studio-edits.js", "studio-situation.js",
            "studio-sections.js", "studio-artifacts.js", "studio-runform.js",
            "studio-transitions.js", "studio-fields.js", "studio-rundocs.js",
            "studio-rundraft.js", "studio-runwrites.js", "studio-toolbardraft.js",
            "studio-controls.js", "studio-isolation.js", "studio-focus.js",
-           "studio-participants.js", "studio-orbit.js", "studio-ceilings.js")
+           "studio-participants.js", "studio-orbit.js", "studio-ceilings.js",
+           "studio-tasks-model.js", "studio-tasks.js", "studio-taskflow.js",
+           "studio-mounts.js", "studio-shell.js", "studio-runhead.js", "studio-preferences.js", "studio-i18n.js",
+           "studio-quotas-model.js", "studio-quotas.js", "studio-quotaflow.js")
 #: The one transport module: every `fetch(`, the one stream, the session token
 #: and the screen router. `graph.js` holds the same position in its window, and
 #: the sealed-API guard below pins this one the same way.
@@ -71,7 +76,49 @@ IMPORTS = r'from "(\./[a-z-]+\.js)";'
 #: has not yet needed one of its permitted neighbours is not a fault; a module
 #: reaching for one it was never granted is.
 PERMITTED_IMPORTS = {
+    "studio-runstep-copy.js": frozenset(),
+    "studio-participant-copy.js": frozenset(),
+    "studio-run-docs-copy.js": frozenset(),
+    "studio-runs-copy.js": frozenset(),
+    "studio-runform-copy.js": frozenset(),
+    "studio-view-copy.js": frozenset(),
+    "studio-workflow-detail-copy.js": frozenset(),
+    "studio-workflow-copy.js": frozenset(),
+    "studio-feedback.js": frozenset({"./command-view.js", "./studio-i18n.js"}),
+    "studio-feedback-model.js": frozenset({"./studio-model.js", "./command-projection.js"}),
+    "studio-feedback-copy.js": frozenset(),
+    "studio-notice-copy.js": frozenset(),
+    "studio-agents-copy.js": frozenset(),
+    'studio-automation-model.js': frozenset({'./studio-taskruns.js', './command-projection.js', './studio-model.js', './studio-automation-providers.js'}),
+    'studio-automation-providers.js': frozenset({'./studio-model.js'}),
+    'studio-automation-flow.js': frozenset({'./studio-automation-model.js'}),
+    'studio-automation-copy.js': frozenset(set()),
+    'studio-automation.js': frozenset({'./studio-i18n.js', './studio-automation-model.js', './command-view.js'}),
+    'studio-workflowwrite.js': frozenset({'./studio-model.js', './studio-store.js', './command-projection.js'}),
+    'studio-draft.js': frozenset({'./studio-model.js'}),
+
+    "studio-scene-model.js": frozenset({"./studio-runread.js"}),
+    "studio-taskruns.js": frozenset({"./studio-model.js"}),
+    "studio-trace.js": frozenset({"./command-view.js", "./studio-scene-model.js", "./studio-i18n.js"}),
+    "studio-bridge.js": frozenset({"./command-view.js", "./studio-i18n.js", "./studio-taskruns.js"}),
+    "studio-mounts.js": frozenset(),
+    "studio-i18n.js": frozenset({"./studio-runstep-copy.js", "./studio-participant-copy.js", "./studio-run-docs-copy.js", "./studio-runs-copy.js", "./studio-runform-copy.js", "./studio-view-copy.js", "./studio-workflow-detail-copy.js", "./studio-workflow-copy.js", "./studio-automation-copy.js", "./studio-agents-copy.js", "./studio-feedback-copy.js", "./studio-notice-copy.js"}),
+    "studio-preferences.js": frozenset({"./command-view.js", "./studio-i18n.js"}),
+    "studio-shell.js": frozenset({"./command-view.js", "./studio-i18n.js", "./studio-runhead.js"}),
+    #: The Runs header of one read run: its situation line and main action. It asks the step control
+    #: which form a row draws (`offeredControl`) instead of keeping a second copy of that rule.
+    "studio-runhead.js": frozenset({"./command-view.js", "./studio-i18n.js", "./studio-runstep.js"}),
+    "studio-quotas-model.js": frozenset({"./studio-model.js"}),
+    "studio-quotas.js": frozenset({"./command-view.js", "./studio-i18n.js"}),
+    "studio-quotaflow.js": frozenset(),
+    "studio-tasks-model.js": frozenset({"./studio-model.js"}),
+    "studio-tasks.js": frozenset({"./command-view.js", "./studio-tasks-model.js", "./studio-i18n.js", "./studio-taskruns.js",
+                                  "./studio-runhead.js"}),
+    "studio-taskflow.js": frozenset({"./studio-tasks-model.js", "./studio-taskruns.js"}),
     "studio-model.js": frozenset(),
+    # Pure S2 decoder; the actual store read door composes it with the base model.
+    "studio-situation.js": frozenset({"./studio-model.js", "./studio-feedback-model.js",
+                                      "./studio-runwords.js"}),
     #: The two ceilings and the judge of a typed ceiling field, split off the
     #: boundary at its line cap when the task binding arrived. It imports
     #: nothing for the boundary's own reason, and the boundary does NOT
@@ -80,17 +127,19 @@ PERMITTED_IMPORTS = {
     #: The controls route's whole answer: declared capabilities and what is
     #: protecting the run. It reads the boundary's helpers and nothing else, and
     #: `studio-model` does NOT re-export it -- that would be a cycle.
-    "studio-controls.js": frozenset({"./studio-model.js"}),
+    "studio-controls.js": frozenset({"./studio-model.js", "./studio-automation-providers.js"}),
     #: What is protecting the step in front of a person, drawn from the words
     #: the server sent. It builds elements, so it reaches the view's element
     #: helper and nothing else -- no store, no model, no copy of any sentence.
-    "studio-isolation.js": frozenset({"./command-view.js"}),
+    "studio-isolation.js": frozenset({"./command-view.js", "./studio-i18n.js"}),
     #: The focus net under the boot module's render pass, split off it at the
     #: line cap. It reads the focused control and imports nothing.
     "studio-focus.js": frozenset(),
-    "studio-participants.js": frozenset({"./command-view.js",
-                                         "./studio-runread.js", "./studio-runwords.js"}),
-    "studio-orbit.js": frozenset({"./command-view.js"}),
+    "studio-participants.js": frozenset({"./studio-feedback.js", "./command-view.js",
+                                         "./studio-runread.js", "./studio-runwords.js",
+                                         "./command-projection.js", "./studio-rundocs.js",
+                                         "./studio-scene-model.js", "./studio-trace.js", "./studio-i18n.js"}),
+    "studio-orbit.js": frozenset({"./command-view.js", "./studio-i18n.js"}),
     "studio-edits.js": frozenset({"./studio-ceilings.js"}),
     #: Projections over one run read, and nothing else. It imports nothing for
     #: the reason `studio-model.js` imports nothing: a pure computation that
@@ -105,7 +154,10 @@ PERMITTED_IMPORTS = {
     #: could reach a neighbour could answer from something other than the
     #: two documents it was handed.
     "studio-review.js": frozenset(),
-    "studio-store.js": frozenset({"./studio-model.js", "./studio-runread.js",
+    "studio-store.js": frozenset({"./studio-draft.js", "./studio-model.js", "./studio-runread.js",
+                                  "./studio-situation.js",
+                                  "./studio-quotas-model.js",
+                                  "./studio-tasks-model.js",
                                   "./studio-controls.js",
                                   "./studio-review.js", "./studio-edits.js",
                                   "./studio-rundraft.js",
@@ -125,20 +177,21 @@ PERMITTED_IMPORTS = {
     #: importing nothing.
     "studio-runwrites.js": frozenset(),
     "studio-view.js": frozenset({"./command-view.js", "./command-projection.js",
-                                 "./studio-model.js", "./studio-runform.js"}),
+                                 "./studio-model.js", "./studio-runform.js",
+                                 "./studio-shell.js", "./studio-i18n.js", "./studio-taskruns.js"}),
     #: The form that opens a run, split off the shell view at the line cap. It
     #: sits BELOW the view rather than beside it: the view imports it, and it
     #: imports nothing of the view's, which is what keeps the two out of a cycle.
-    "studio-runform.js": frozenset({"./command-view.js", "./studio-model.js"}),
-    "studio-canvas.js": frozenset({"./command-view.js",
+    "studio-runform.js": frozenset({"./studio-i18n.js", "./command-view.js", "./studio-model.js"}),
+    "studio-canvas.js": frozenset({"./studio-i18n.js", "./command-view.js",
                                    "./command-projection.js",
                                    "./studio-model.js",
                                    "./studio-layout.js", "./studio-orbit.js"}),
     #: The field primitives every control on the inspector is built from. They
     #: sit BELOW the sections and reach nothing: a toolkit that could import a
     #: section would close the ring the split was drawn to open.
-    "studio-fields.js": frozenset({"./command-view.js"}),
-    "studio-sections.js": frozenset({"./command-view.js",
+    "studio-fields.js": frozenset({"./studio-i18n.js", "./command-view.js"}),
+    "studio-sections.js": frozenset({"./studio-i18n.js", "./command-view.js",
                                      "./command-projection.js",
                                      "./studio-ceilings.js",
                                      "./studio-fields.js"}),
@@ -148,15 +201,15 @@ PERMITTED_IMPORTS = {
     #: the reason its neighbour is -- what a step may require and publish is
     #: declared by the capability's schema, and this window reads that rather
     #: than keeping an idea of its own.
-    "studio-artifacts.js": frozenset({"./command-view.js",
+    "studio-artifacts.js": frozenset({"./studio-i18n.js", "./command-view.js",
                                       "./command-projection.js",
                                       "./studio-fields.js"}),
     #: The sixth section, on its own, beside the other two for the same
     #: reason: where a step goes next is about to carry conditions, and a
     #: control that offers one belongs with the roads it draws.
-    "studio-transitions.js": frozenset({"./command-view.js",
+    "studio-transitions.js": frozenset({"./studio-i18n.js", "./command-view.js",
                                         "./studio-fields.js"}),
-    "studio-inspector.js": frozenset({"./command-view.js",
+    "studio-inspector.js": frozenset({"./studio-i18n.js", "./command-view.js",
                                       "./command-projection.js",
                                       "./studio-model.js",
                                       "./studio-artifacts.js",
@@ -167,8 +220,8 @@ PERMITTED_IMPORTS = {
     #: "is an attempt still unanswered" from the RECORDS rather than from the
     #: runtime phase. It is a projection over one run read and imports nothing,
     #: so the grant adds a leaf and cannot add a ring.
-    "studio-runs.js": frozenset({"./command-view.js",
-                                 "./studio-participants.js",
+    "studio-runs.js": frozenset({"./studio-i18n.js", "./command-view.js",
+                                 "./studio-participants.js", "./studio-runhead.js",
                                  "./command-projection.js",
                                  "./studio-model.js",
                                  "./studio-runwords.js",
@@ -181,7 +234,7 @@ PERMITTED_IMPORTS = {
     #: fragments say, and the projection that answers which document a
     #: proposal bound -- and may not import `studio-runs.js` or the step
     #: control: the screen imports both, and either edge back is a ring.
-    "studio-rundocs.js": frozenset({"./command-view.js",
+    "studio-rundocs.js": frozenset({"./studio-i18n.js", "./command-view.js",
                                     "./command-projection.js",
                                     "./studio-runwords.js",
                                     "./studio-runread.js"}),
@@ -195,7 +248,7 @@ PERMITTED_IMPORTS = {
     #: form's one rule (`inputRefs`), so the two cannot disagree about what a
     #: step reads. The form imports nothing of the step control's, which is
     #: what keeps the pair out of a ring.
-    "studio-runstep.js": frozenset({"./command-view.js",
+    "studio-runstep.js": frozenset({"./studio-i18n.js", "./command-view.js",
                                     "./command-projection.js",
                                     "./studio-runwords.js",
                                     "./studio-runread.js",
@@ -219,7 +272,8 @@ PERMITTED_IMPORTS = {
     #: is one rule that can be said two ways. The grant is to the words module
     #: alone -- never to `studio-runs.js`, which would put two screens in one
     #: ring.
-    "studio-people.js": frozenset({"./command-view.js",
+    "studio-people.js": frozenset({"./command-view.js", "./studio-i18n.js",
+                                   "./studio-quotas.js",
                                    "./command-projection.js",
                                    "./studio-model.js",
                                    "./studio-runwords.js"}),
@@ -610,7 +664,9 @@ def test_the_boundary_refuses_rather_than_repairs_and_says_which_it_does():
     # corrupt and never "no task" -- and each is judged in place by a predicate
     # with no arm of its own, so this count grows by three and the third-answer
     # count next door by none.
-    assert source.count("return null;") == 85
+    # The extra refusal joins the displayed task to the frozen identity/scope.
+    # S2 adds one whole-row refusal for an absent/malformed human_state.
+    assert source.count("return null;") == 87
     assert source.count("return false;") == 6
 
 

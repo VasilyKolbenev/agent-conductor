@@ -18,10 +18,11 @@ import {
   exactKeys, frozenJson, frozenList, isId, isPlainObject, projectProviders,
   projectVendorDetail,
 } from "./studio-model.js";
+import {taskChannelShape} from "./studio-automation-providers.js";
 
 const CONTROLS_KEYS = ["instances", "providers", "isolation_facts"];
 const CONTROL_ROW_KEYS = ["instance_id", "adapter_id", "model", "controls",
-  "argument_schemas", "isolation"];
+  "argument_schemas", "isolation", "task_channel"];
 const FACT_KEYS = ["name", "category", "sentence"];
 //: A standing carries `vendor_detail` only for the vendor's own mechanism, so
 //: the shape is "the three, optionally plus that one".
@@ -112,7 +113,7 @@ export function wireControls(settled) {
     instances: Object.freeze(settled.instances.map((row) => Object.freeze({
       instance_id: row.instanceId, adapter_id: row.adapterId,
       model: row.model, controls: row.controls,
-      argument_schemas: row.argumentSchemas,
+      argument_schemas: row.argumentSchemas, task_channel: row.taskChannel,
       // Back to the wire's spelling, like every field beside it. The screen
       // reads one convention for a whole row; handing it a camelCase island
       // inside a snake_case row is how a renderer comes to read a key that is
@@ -150,6 +151,8 @@ export function projectControls(payload) {
         && isId(schema))) return null;
     const isolation = projectRoads(row.isolation, row.controls, known);
     if (isolation === null) return null;
+    // The bound this binding's whole task meets (review ruling R2): null, or the closed fact.
+    if (row.task_channel !== null && !taskChannelShape(row.task_channel)) return null;
     // Two rows for one instance are two answers to one question and neither
     // survives, identical rows included.
     if (rows.some((kept) => kept.instanceId === row.instance_id)) {
@@ -163,6 +166,7 @@ export function projectControls(payload) {
       controls: frozenList(row.controls.slice()),
       argumentSchemas: frozenJson(row.argument_schemas),
       isolation,
+      taskChannel: row.task_channel === null ? null : frozenJson(row.task_channel),
     }));
   }
   return Object.freeze({

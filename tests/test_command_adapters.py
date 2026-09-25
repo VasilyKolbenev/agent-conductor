@@ -345,8 +345,9 @@ def test_registry_public_surface_names_the_two_explicit_effect_wrappers():
     # `isolation_guards` joins the read-only half of this surface, beside
     # `controls` and `argument_schema`: it answers a question ABOUT a
     # registration and reaches no adapter method, so it starts nothing.
+    # `attempt_scope` likewise returns a copied registration value, not a lock acquisition.
     assert public == [
-        "argument_schema", "controls", "execute", "isolation_guards",
+        "argument_schema", "attempt_scope", "controls", "execute", "isolation_guards",
         "manifests", "observe", "prepare", "publish", "register", "release",
         "resolve", "validate_arguments", "verification_started",
         "verifies_independently", "verify"]

@@ -76,7 +76,7 @@ from tests.test_command_run_store import CONFIG, a_run
 
 NOW = "2026-09-01T10:00:00Z"
 SOLO = {"instances": [{"id": "solo", "adapter": "claude-code"}]}
-STARTERS = ("dalio-v1", "dalio-v2", "dalio-v3")
+STARTERS = ("dalio-v1", "dalio-v2", "dalio-v3", "dalio-v4", "dalio-v5")
 #: The store-backed witnesses use their own run id, because the run they open
 #: is a real one built by `tests.test_command_run_store`'s own helpers.
 STORE_RUN = "run-001"
@@ -408,6 +408,8 @@ def test_a_shipped_starter_names_no_policy_and_digests_as_it_always_did(starter)
     identity would move and this is where it would be caught.
     """
     from tests.test_alpha6_dalio_revision import (
+        REVISION_FIVE_DIGEST,
+        REVISION_FOUR_DIGEST,
         REVISION_ONE_DIGEST,
         REVISION_THREE_DIGEST,
         REVISION_TWO_DIGEST,
@@ -415,7 +417,9 @@ def test_a_shipped_starter_names_no_policy_and_digests_as_it_always_did(starter)
 
     pinned = {"dalio-v1": REVISION_ONE_DIGEST,
               "dalio-v2": REVISION_TWO_DIGEST,
-              "dalio-v3": REVISION_THREE_DIGEST}[starter]
+              "dalio-v3": REVISION_THREE_DIGEST,
+              "dalio-v4": REVISION_FOUR_DIGEST,
+              "dalio-v5": REVISION_FIVE_DIGEST}[starter]
     template = load_template(starter)
     assert [node.missing_artifact_policy for node in template.nodes] == (
         [None] * len(template.nodes))
@@ -431,9 +435,16 @@ def test_a_shipped_starter_names_no_policy_and_digests_as_it_always_did(starter)
 def test_a_starters_materialized_plan_carries_no_policy_either(starter):
     """The definition half of the same measurement, on the same shipped bytes."""
     template = load_template(starter)
+    verifier_roles = {node.verifier_role_id for node in template.nodes
+                      if node.verifier_role_id is not None}
+    config = ({"instances": [*SOLO["instances"],
+                             {"id": "checker", "adapter": "claude-code"}]}
+              if verifier_roles else SOLO)
     plan = materialize(
-        template, RunBinding(assignments={r: "solo" for r in template.roles}),
-        SOLO, graph_id="graph-run", run_id="run-001", created_at=NOW)
+        template, RunBinding(assignments={
+            role: "checker" if role in verifier_roles else "solo"
+            for role in template.roles}),
+        config, graph_id="graph-run", run_id="run-001", created_at=NOW)
 
     assert all(node.missing_artifact_policy is None for node in plan.nodes)
     for node in plan.as_dict()["nodes"]:

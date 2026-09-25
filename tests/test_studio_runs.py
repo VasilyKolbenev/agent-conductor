@@ -24,6 +24,7 @@ import re
 from pathlib import Path
 
 import pytest
+from tests.studio_source_messages import rendered_source
 
 from conductor.command.adapters.provider import (
     AVAILABILITY_STATES,
@@ -116,15 +117,16 @@ BANNED_APIS = (
 #: nothing may import `studio-runs.js`: it imports the step control, so a
 #: permission the other way is what would close the pair into a ring.
 ALLOWED_IMPORTS = {
-    RUNS_FILE: frozenset({"./command-view.js", "./studio-runwords.js",
-                          "./studio-participants.js",
+    RUNS_FILE: frozenset({"./studio-i18n.js", "./command-view.js", "./studio-runwords.js", "./command-projection.js",
+                          "./studio-participants.js", "./studio-runhead.js",
                           "./studio-runread.js", "./studio-runstep.js",
                           "./studio-rundocs.js"}),
-    STEP_FILE: frozenset({"./command-view.js", "./command-projection.js",
+    STEP_FILE: frozenset({"./studio-i18n.js", "./command-view.js", "./command-projection.js",
                           "./studio-runwords.js", "./studio-runread.js",
                           "./studio-rundocs.js", "./studio-isolation.js"}),
-    PEOPLE_FILE: frozenset({"./command-view.js", "./studio-runwords.js"}),
-    DOCS_FILE: frozenset({"./command-view.js", "./command-projection.js",
+    PEOPLE_FILE: frozenset({"./studio-i18n.js", "./command-view.js", "./studio-runwords.js",
+                            "./studio-quotas.js"}),
+    DOCS_FILE: frozenset({"./studio-i18n.js", "./command-view.js", "./command-projection.js",
                           "./studio-runwords.js", "./studio-runread.js"}),
 }
 #: The tags a listener may be attached to. A click on a `div` is not operable
@@ -134,7 +136,7 @@ LINE_CAP = 800
 
 
 def source(path: Path) -> str:
-    return path.read_text(encoding="utf-8")
+    return rendered_source(path.read_text(encoding="utf-8"))
 
 
 def _balanced(text: str, start: int, opener: str, closer: str) -> str:
@@ -282,7 +284,13 @@ def test_the_step_control_exports_one_builder_and_mounts_nothing() -> None:
     the colour guard reads.
     """
     text = source(STEP_FILE)
-    assert set(re.findall(r"export function (\w+)\(", text)) == {"stepControls"}
+    # One builder. `offeredControl` is the row's decision -- which form it draws -- exported so the
+    # Runs header asks the row instead of keeping a second copy of the rule; it answers a word and
+    # builds nothing.
+    assert set(re.findall(r"export function (\w+)\(", text)) == {"stepControls", "offeredControl"}
+    decision = text[text.index("export function offeredControl("):]
+    decision = decision[:decision.index("\n}\n")]
+    assert "element(" not in decision and "note(" not in decision and "Form(" not in decision
     assert "export default" not in text
     assert "mount.replaceChildren(" not in text
     assert "focusKey(" not in text and "restoreFocus(" not in text
@@ -333,7 +341,9 @@ def test_a_screen_module_invokes_only_the_callbacks_it_declares(
     """The handler names are the wire to slice D, and they are exact."""
     text = source(path)
     named = set(re.findall(r'handlerOf\(handlers, "(\w+)"\)', text))
-    named |= set(re.findall(r'actionButton\(handlers, "(\w+)"', text))
+    # The Runs screen's button takes the state first, for the sentence it
+    # says when its wire is missing; the people screens' takes it last.
+    named |= set(re.findall(r'actionButton\((?:state, )?handlers, "(\w+)"', text))
     assert named == HANDLER_NAMES[path]
 
 
@@ -362,6 +372,8 @@ def test_a_control_whose_handler_is_missing_is_disabled_and_says_so(
         if "handlerOf(handlers" in line:
             assert "||" not in line and "??" not in line, line
     assert text.count(".disabled = ") == DISABLED_CONTROLS[path]
+    # The sentence is what the reached call renders, with the handler's name
+    # spliced in -- in all four files, whichever catalogue row each reaches.
     assert "This screen was mounted without a ${name} handler." in text
 
 
@@ -516,8 +528,8 @@ def test_an_unreadable_run_is_drawn_with_what_the_operator_can_do() -> None:
     text = source(RUNS_FILE)
     assert text.count("unreadableDetail(") == 2, "declared once, called once"
     assert ("  if (row !== null && row.unreadable === true) "
-            "return unreadableDetail(row);") in text
-    assert "conductor/runs/${show(row.run_id)}/" in text
+            "return unreadableDetail(state, row);") in text
+    assert "conductor/runs/${show(state, row.run_id)}/" in text
     assert "What you can do:" in text
 
 
@@ -537,25 +549,27 @@ def test_verification_failed_never_appears_without_its_explanation() -> None:
     spends it. A new container cannot forget the rule without failing to call
     the only thing that renders the outcome's explanation at all.
     """
-    # The SENTENCE moved to the words module and the one-voice emitter that
-    # spends it did not. Both are still read, so the rule -- one comparison,
-    # one writer, one emitter, spent by every container -- is held across
-    # the split rather than weakened by it.
-    text, words = source(RUNS_FILE), source(WORDS_OF[RUNS_FILE])
-    note = re.search(r'VERIFICATION_FAILED_NOTE = "(.+?)";', words,
-                     re.DOTALL)
-    assert note is not None
-    words = note.group(1).replace('"\n  + "', "")
-    assert "exit 0" in words
-    assert "not that the work was verified" in words
-    # One comparison, one writer, and they are the same function.
-    assert len(re.findall(r'=== "verification_failed"', text)) == 1, text
-    assert text.count("note(VERIFICATION_FAILED_NOTE)") == 1
-    emitter = re.search(r"function alsoSay\(outcome\) \{(.*?)\n\}",
+    # The SENTENCE is reached through the catalogue now, and the one-voice
+    # emitter that spends it is unchanged. What is read is what the emitter
+    # RENDERS, so the rule -- one comparison, one writer, one emitter, spent
+    # by every container -- is held on the reached call rather than on a
+    # constant nothing draws.
+    text = source(RUNS_FILE)
+    emitter = re.search(r"function alsoSay\(state, outcome\) \{(.*?)\n\}",
                         text, re.DOTALL)
     assert emitter, "the one-voice emitter is gone"
+    said = re.search(r'\? \[note\("(.+?)"\)\] : \[\];', emitter.group(1))
+    assert said, emitter.group(1)
+    assert "exit 0" in said.group(1)
+    assert "not that the work was verified" in said.group(1)
+    # One comparison, one writer, and they are the same function.
+    assert len(re.findall(r'=== "verification_failed"', text)) == 1, text
     assert '=== "verification_failed"' in emitter.group(1)
-    assert "note(VERIFICATION_FAILED_NOTE)" in emitter.group(1)
+    assert text.count(said.group(1)) == 1
+    # One sentence, one owner: the words module's constant and every catalogue copy are the same words.
+    from tests.test_studio_routing_labels import _js_constant
+    owner = _js_constant(PANEL / "studio-runwords.js", "VERIFICATION_FAILED_NOTE")
+    assert said.group(1) == owner
     # And it is SPENT by every container that can show an outcome word: the run
     # row, the plan section, the position row, the outcome section and the
     # timeline row, and now an artifact's source outcome. A declaration with
@@ -671,14 +685,10 @@ def _the_surviving_statement_is_true() -> bool:
     roles whenever a payload carries them.
     """
     text = source(PEOPLE_FILE)
-    body = re.search(r'unsupported\("Roles it carries",(.*?)\)\);',
-                     text, re.S)
-    if body is None:
-        return False
-    said = body.group(1)
-    return ("A materialized plan names instances, not roles" in said
-            and "not carried into the run's plan" in said
-            and 'fact("Roles it carries", row.role_ids)' in text)
+    return ('unsupported("Roles it carries",\n      "A materialized plan names '
+            "instances, not roles: the role is a workflow document's word and "
+            "it is not carried into the run's plan.\", state)" in text
+            and 'localizedFact(state, "agents.roles", row.role_ids)' in text)
 
 
 def test_the_runs_screen_reports_the_revision_the_run_froze() -> None:
@@ -697,10 +707,10 @@ def test_the_runs_screen_reports_the_revision_the_run_froze() -> None:
     """
     text = source(RUNS_FILE)
     assert 'unsupported("Workflow revision",' not in text
-    assert 'fact("Revision", followed === null' in text
+    assert 'fact(state, "Revision", followed === null' in text
     assert "detail.config" in text
     # Both halves refuse together, so no reader can find one and infer the other.
-    assert 'fact("Workflow", followed === null' in text
+    assert 'fact(state, "Workflow", followed === null' in text
 
 
 def test_the_agents_screen_marks_the_roles_a_plan_does_not_carry() -> None:
@@ -738,8 +748,8 @@ def test_a_gate_asks_with_the_workflows_own_words_when_the_plan_carried_any():
         carried), carried
 
     people = PEOPLE_FILE.read_text(encoding="utf-8")
-    why = re.search(r"function whyAsked\(row\) \{(.*?)\n\}", people,
+    why = re.search(r"function whyAsked\(row, state\) \{(.*?)\n\}", people,
                     re.DOTALL).group(1)
-    assert 'fact("The workflow says", row.purpose)' in why, why
+    assert 'localizedFact(state, "agents.workflow_says", row.purpose)' in why, why
     # And only when there IS one: an empty attribution is worse than silence.
     assert 'typeof row.purpose === "string" && row.purpose' in why, why

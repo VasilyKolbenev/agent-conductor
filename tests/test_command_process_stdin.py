@@ -265,11 +265,12 @@ def _fed(payload: bytes, stream) -> str:
     """Drive the real feed against one stream and return the state it left.
 
     `_Owned` is built without `__init__`, so nothing here starts a child: the
-    subject is the feed, which reads exactly two attributes of what it is given.
+    subject is the original finite feed, with no RPC completion wait.
     """
     owned = _Owned.__new__(_Owned)
     owned.proc = type("_P", (), {"stdin": stream})()
     owned.stdin_state = STDIN_INCOMPLETE
+    owned._completion = None
 
     _Owned._feed(owned, payload)
 
@@ -592,3 +593,11 @@ def test_the_stdin_ceiling_is_the_instruction_ceiling_the_workspace_already_hold
     instruction the first ceiling refused.
     """
     assert STDIN_LIMIT == INSTRUCTION_LIMIT
+
+
+def test_the_frame_the_stdin_and_the_instruction_share_one_ceiling_and_a_file_its_budget():
+    """Codex ruling K (23.09.2026): one budget along the whole do -> checker road."""
+    from conductor.command.adapters.harness_workspace import FILE_BUDGET
+    from conductor.command.adapters.independent_check import FRAME_LIMIT
+    assert FRAME_LIMIT == STDIN_LIMIT == INSTRUCTION_LIMIT == 256 * 1024
+    assert FILE_BUDGET == 32 * 1024

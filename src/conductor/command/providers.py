@@ -22,11 +22,12 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable, Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
 
 from .adapters import AdapterContractError, AdapterRegistry
+from .quota_plans import ProviderQuotaPlan, quota_plan_for
 from .adapters.claude_code import (
     CLAUDE_CAPABILITIES,
     CLAUDE_DISPLAY_NAME,
@@ -54,6 +55,8 @@ from .adapters.dsh_harness import DSH_PROTOCOL, DshHarnessAdapter, DshPin
 from .adapters.grok_build import (
     GROK_CAPABILITIES,
     GROK_DISPLAY_NAME,
+    GROK_HOME_ENV,
+    GROK_LOGIN_ARGV,
     GROK_LIFECYCLE,
     GROK_PROTOCOL,
     GROK_PROVIDER_ID,
@@ -63,6 +66,8 @@ from .adapters.grok_build import (
 from .adapters.kimi_code import (
     KIMI_CAPABILITIES,
     KIMI_DISPLAY_NAME,
+    KIMI_HOME_ENV,
+    KIMI_LOGIN_ARGV,
     KIMI_LIFECYCLE,
     KIMI_PROTOCOL,
     KIMI_PROVIDER_ID,
@@ -165,6 +170,7 @@ class ProviderResolution:
 
     registry: AdapterRegistry
     contracts: tuple[ProviderContract, ...]
+    quota_plans: tuple[ProviderQuotaPlan, ...] = field(default=(), repr=False)
 
     def spawn_capable(self, provider_id: str) -> bool:
         """True only when an available provider's adapter can be spawned at all."""
@@ -255,6 +261,10 @@ def login_hint(protocol: str) -> tuple[str, tuple[str, ...]] | None:
         return CLAUDE_HOME_ENV, CLAUDE_LOGIN_ARGV
     if protocol == CODEX_PROTOCOL:
         return CODEX_HOME_ENV, CODEX_LOGIN_ARGV
+    if protocol == GROK_PROTOCOL:
+        return GROK_HOME_ENV, GROK_LOGIN_ARGV
+    if protocol == KIMI_PROTOCOL:
+        return KIMI_HOME_ENV, KIMI_LOGIN_ARGV
     return None
 
 
@@ -376,6 +386,7 @@ def resolve_providers(
     reviewed = _reviewed_configs(configs)
     providers = ProviderRegistry()
     runner: ProcessRunner | None = None
+    quota_plans: list[ProviderQuotaPlan] = []
     configured = {config.provider_id: config for config in reviewed}
     for provider_id in _catalogued_ids(catalog, configured):
         entry = _catalogued(catalog, provider_id)
@@ -396,10 +407,14 @@ def resolve_providers(
                 runner = ProcessRunner(Path(root), environ=environ)
             adapter = _build_adapter(
                 entry, config, runner, root=root, clock=clock, ids=ids)
+            quota_plan = quota_plan_for(provider_id, adapter)
+            if quota_plan is not None:
+                quota_plans.append(quota_plan)
         providers.register(
             entry, availability=availability, auth=config.auth, adapter=adapter)
     return ProviderResolution(
-        registry=providers.adapters, contracts=providers.contracts())
+        registry=providers.adapters, contracts=providers.contracts(),
+        quota_plans=tuple(quota_plans))
 
 
 def _catalogued_ids(

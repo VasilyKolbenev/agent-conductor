@@ -31,6 +31,8 @@ from __future__ import annotations
 
 import hashlib
 
+from ..contracts import ActionRequest
+
 from .deep_commands import DeepDispatchArgs
 from .deep_contracts import OMITTED
 from .harness_profile import DISPATCH_CAPABILITY
@@ -111,14 +113,43 @@ class InstructionBinding:
     three lines in the middle of a spawn road.
 
     What this needs from the class it is mixed into is stated rather than
-    assumed: ``_instruction_text``, which every transport already has and which
-    the durable road overrides.
+    assumed: ``profile``, ``error`` and the contained ``_workspace``. The
+    default instruction reader and task composer moved here unchanged from
+    headless_cli at its line cap. The durable road still overrides the
+    reader and dispatch composer through the same inherited methods.
     """
 
     #: The one guard this mixin implements. Dispatch only, because dispatch is
     #: the only road that resolves an instruction at all -- there is no question
     #: to ask on the others, which is different from asking it and passing.
     isolation_guards = {"instruction_bytes_moved": (DISPATCH_CAPABILITY,)}
+
+    def _task_text(self, args: DeepDispatchArgs, instruction: str) -> str:
+        """The composed task: `task_binding` owns how those bytes are made."""
+        return composed_task_text(
+            args, instruction, self.profile.tool_noun, self.error)
+
+    def _dispatch_task(
+            self, request: ActionRequest, args: DeepDispatchArgs,
+            instruction: str) -> str:
+        """Materialize one dispatch task; subclasses may add durable inputs."""
+        return self._task_text(args, instruction)
+
+    def _instruction_text(
+            self, request: ActionRequest, args: DeepDispatchArgs) -> str:
+        """The instruction the child is asked to do: this base reads the file.
+
+        One contained name under the workspace's instruction directory, or the
+        refusal that reaches no child. A subclass with a durable road answers
+        from the run's own journal first and falls back to exactly this.
+
+        A proposal that promised these bytes gets them read as they stand; one
+        that promised nothing gets the reading it has always had. The promise is
+        what makes the difference, so the promise is what asks for it.
+        """
+        del request
+        return self._workspace.read_instruction(
+            args.instruction_ref, exact=promised_bytes(args))
 
     def _bound_instruction(self, request, args: DeepDispatchArgs) -> str:
         """The instruction to run, or a refusal if it is not the previewed one.

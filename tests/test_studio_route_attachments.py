@@ -28,6 +28,7 @@ import re
 
 from conductor.command.graph_definition import RESOURCE_KINDS
 from tests.test_studio_canvas import INSPECTOR, ROOT, _code, _text
+from tests.studio_source_messages import _code
 
 
 

@@ -17,7 +17,9 @@ import pytest
 from conductor.command.contracts import ContractError
 from conductor.command.graph_dalio import (
     DalioTemplateError,
+    is_dalio_correction_template,
     is_dalio_template,
+    validate_dalio_correction_template,
     validate_dalio_template,
 )
 from conductor.command.graph_definition import (
@@ -149,3 +151,81 @@ def test_the_template_validates_exactly_a_definition_and_not_a_subclass():
                        edges=base.edges)
     with pytest.raises(DalioTemplateError, match="exactly a GraphDefinition"):
         validate_dalio_template(hostile)
+
+
+# -- revision 5: the corrected template, held to its own check ---------------------------------
+
+
+def shipped(name):
+    """A shipped template materialized onto two instances, as a run would materialize it."""
+    from conductor.command.graph_template import RunBinding, load_template, materialize
+
+    template = load_template(name)
+    config = {"instances": [{"id": "doer", "adapter": "claude-code"},
+                            {"id": "checker", "adapter": "codex-cli"}]}
+    return materialize(template, RunBinding(assignments={
+        role: "checker" if role == "role-checker" else "doer" for role in template.roles}),
+        config, graph_id="graph-shipped", run_id="run-shipped", created_at="2026-09-23T00:00:00Z")
+
+
+def test_revision_five_is_the_corrected_template_and_revision_four_keeps_the_one_loop_shape():
+    five, four = shipped("dalio-v5"), shipped("dalio-v4")
+    assert validate_dalio_correction_template(five) is five
+    assert is_dalio_template(five) is False, "the one-loop check was widened to admit revision 5"
+    assert validate_dalio_template(four) is four
+    assert is_dalio_correction_template(four) is False
+
+
+def _changed(edit):
+    """The shipped revision-5 document, edited, then materialized through the same contract."""
+    import copy
+
+    from conductor.command.graph_template import GraphTemplate, RunBinding, load_template, materialize
+
+    document = copy.deepcopy(load_template("dalio-v5").as_dict())
+    edit(document)
+    template = GraphTemplate.from_dict(document)
+    config = {"instances": [{"id": "doer", "adapter": "claude-code"},
+                            {"id": "checker", "adapter": "codex-cli"}]}
+    return materialize(template, RunBinding(assignments={
+        role: "checker" if role == "role-checker" else "doer" for role in template.roles}),
+        config, graph_id="graph-changed", run_id="run-changed", created_at="2026-09-23T00:00:00Z")
+
+
+def _edge(document, pair):
+    return next(edge for edge in document["edges"] if (edge["from_node"], edge["to_node"]) == pair)
+
+
+def _node(document, node_id):
+    return next(node for node in document["nodes"] if node["node_id"] == node_id)
+
+
+def _second_road(document, from_node, to_node, condition, existing_condition):
+    """Give a step a second, conditional road; its existing road is made conditional too (contract)."""
+    for edge in document["edges"]:
+        if edge["from_node"] == from_node:
+            edge["condition"] = existing_condition
+    document["edges"].append({"from_node": from_node, "to_node": to_node, "condition": condition})
+
+
+def _swap_do_roads(document):
+    _edge(document, ("do", "result-gate"))["condition"] = "on_failed"
+    _edge(document, ("do", "correct"))["condition"] = "on_succeeded"
+
+
+SABOTAGES = {
+    "correction_allows_no_second_pass": lambda d: _node(d, "correct")["loop"].update(bound=1),
+    "correction_home_is_design": lambda d: _node(d, "correct")["loop"].update(back_to="design"),
+    "correction_reached_from_design": lambda d: _second_road(d, "design", "correct", "on_failed", "on_succeeded"),
+    "outer_loop_reached_by_a_task": lambda d: _second_road(d, "identify", "retry-loop", "on_failed", "on_succeeded"),
+    "success_and_failure_roads_swapped": _swap_do_roads,
+}
+
+
+@pytest.mark.parametrize("sabotage", sorted(SABOTAGES))
+def test_the_corrected_template_refuses_every_other_shape(sabotage):
+    """Each graph below is one the BASE contract accepts; only the corrected template's check refuses it."""
+    changed = _changed(SABOTAGES[sabotage])
+    with pytest.raises(DalioTemplateError):
+        validate_dalio_correction_template(changed)
+    assert is_dalio_correction_template(changed) is False

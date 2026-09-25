@@ -40,7 +40,7 @@ HEADER = SHELL + [E("header", "studio-header")]
 NAV = SHELL + [E("nav", "studio-nav")]
 TAB = NAV + [E("button", "studio-tab")]
 MAIN = SHELL + [E("main", "studio-main")]
-SCREEN = MAIN + [E("section", "studio-screen")]
+SCREEN = MAIN + [E("div", "studio-workspace"), E("section", "studio-screen")]
 CARD = SCREEN + [E("div", "studio-card")]
 CANVAS = SCREEN + [E("div", "studio-canvas")]
 NODES = CANVAS + [E("div", "studio-nodes")]
@@ -57,6 +57,9 @@ PLANET = DECK + [E("button", "studio-planet")]
 ORBIT = NODES + [E("section", "studio-orbit")]
 ROLE_ORB = ORBIT + [E("div", "studio-orbit__fleet"),
                     E("button", "studio-planet", "studio-orbit__role", **PRESSED)]
+QUOTAS = SCREEN + [E("section", "studio-quotas")]
+QUOTA = QUOTAS + [E("div", "studio-quotas__grid"), E("article", "studio-quota")]
+QUOTA_WINDOW = QUOTA + [E("section", "studio-quota__window")]
 
 
 def _chip(*variant: str) -> object:
@@ -73,6 +76,16 @@ def _rows_on(base: list, *tail, prop: str = "color",
 #: None composites the surface by walking the chain's own backgrounds.
 MEASURED = {
     "body": [_rows_on(BODY)],
+    ".studio-preference select": [_rows_on(HEADER, E("div", "studio-preferences"),
+        E("label", "studio-preference"), E("select"))],
+    ".studio-quotas": [_rows_on(QUOTAS)],
+    ".studio-quotas button": [_rows_on(QUOTAS, E("button"))],
+    ".studio-quota__fact dt": [
+        _rows_on(base, E("dl"), E("div", "studio-quota__fact"), E("dt"))
+        for base in (QUOTA, QUOTA_WINDOW)],
+    ".studio-quota__status": [
+        _rows_on(base, E("p", "studio-quota__status"))
+        for base in (QUOTA, QUOTA_WINDOW)],
     # The one focus ring, measured on each of the three surfaces a control in
     # this shell can stand on. A ring nobody can see is not a ring.
     ":focus-visible": [
@@ -164,6 +177,19 @@ MEASURED['.studio-planet[aria-pressed="true"] .studio-planet__orb'].extend([
 MEASURED['.studio-planet[aria-pressed="true"] .studio-planet__selection'].append(
     _rows_on(ROLE_ORB, E("span", "studio-planet__selection")))
 MEASURED[".studio-fact__k"] = [_rows_on(SCREEN, E("span", "studio-fact__k"))]
+MEASURED[".studio-deck__route"] = [
+    _rows_on(DECK, E("div", "studio-deck__fleet"), E("svg", "studio-deck__routes"),
+             E("path", "studio-deck__route"), prop="stroke", floor=NONTEXT_MIN)]
+MEASURED[".studio-deck__route-label"] = [
+    _rows_on(DECK, E("div", "studio-deck__fleet"), E("svg", "studio-deck__routes"),
+             E("g", "studio-deck__route-label"), prop="stroke", floor=NONTEXT_MIN)]
+MEASURED[".studio-step-flow__stage svg"] = [
+    _rows_on(DECK, E("section", "studio-deck__inspector"),
+             E("section", "studio-step-flow__stage"), E("svg"),
+             prop="stroke", floor=NONTEXT_MIN, bg="--panel")]
+MEASURED[".studio-deck__routes marker path"] = [
+    _rows_on(DECK, E("svg", "studio-deck__routes"), E("marker"), E("path"),
+             prop="fill", floor=NONTEXT_MIN)]
 MEASURED['.studio-run[aria-pressed="true"]'] = [
     _rows_on(SCREEN, E("button", "studio-run", **PRESSED),
              prop="border-bottom", floor=NONTEXT_MIN)]
@@ -206,7 +232,45 @@ for _status in ("pass", "wait", "fail"):
 
 #: Colour-bearing selectors that are deliberately not contrast rows, each with
 #: its reason on the record.
+# Real Bridge and trace chains, with their own surfaces and state attributes.
+RUN_MAIN = SHELL + [E("main", "studio-main", **{"data-screen": "runs"})]
+TASK_ROW = RUN_MAIN + [E("aside"), E("div", "studio-task-bar"),
+    E("nav", "studio-task-rail"), E("button", "studio-task-row", **PRESSED)]
+BRIDGE = RUN_MAIN + [E("aside", "studio-bridge"), E("section", "studio-bridge__box")]
+TRACE = DECK + [E("div", "studio-deck__body"), E("div", "studio-deck__scene"),
+    E("section", "studio-trace")]
+TRACE_INNER = TRACE + [E("div", "studio-trace__inner")]
+MEASURED[".studio-task-row"] = [_rows_on(TASK_ROW)]
+MEASURED['.studio-task-row[aria-pressed="true"]'] = [_rows_on(TASK_ROW)]
+MEASURED['.studio-bridge__box'] = [_rows_on(BRIDGE)]
+MEASURED['.studio-trace'] = [_rows_on(TRACE)]
+MEASURED['.studio-trace__inner svg path'] = [_rows_on(TRACE_INNER,
+    E("svg"), E("path", "studio-trace__link"), prop="stroke", floor=NONTEXT_MIN)]
+MEASURED['.studio-trace__inner svg [data-open="true"]'] = [_rows_on(TRACE_INNER,
+    E("svg"), E("path", "studio-trace__link", **{"data-open": "true"}), prop="stroke", floor=NONTEXT_MIN)]
+MEASURED['.studio-trace__inner svg text'] = [_rows_on(TRACE_INNER,
+    E("svg"), E("text"), prop="fill")]
+MEASURED['.studio-trace__step[aria-pressed="true"] .studio-trace__point'] = [_rows_on(TRACE_INNER,
+    E("button", "studio-trace__step", **PRESSED), E("span", "studio-trace__point"),
+    prop="outline", floor=NONTEXT_MIN)]
+for _word in ("needs_decision", "outcome_verification_failed", "outcome_failed"):
+    MEASURED[f'.studio-trace__step[data-word="{_word}"] .studio-trace__point'] = [_rows_on(TRACE_INNER,
+        E("button", "studio-trace__step", **{"data-word": _word}), E("span", "studio-trace__point"),
+        floor=NONTEXT_MIN)]  # symbolic point; the adjacent status word uses the text floor
+
+MEASURED[".studio-team-roster button"] = [_rows_on(DECK,
+    E("div", "studio-deck__head"),
+    E("nav", "studio-team-roster"), E("button"))]
+
 EXEMPT = {
+    '.studio-main[data-screen="runs"] .studio-task-bar': "Neutral separator between the task rail and scene; no status is encoded.",
+    '.studio-bridge__box button': "Neutral row divider; each control retains its text and focus ring.",
+    '.studio-bridge__reading': "Neutral separator between independent quota contexts.",
+    '.studio-trace__inner svg .studio-trace__horizon': "Decorative horizon; step words, glyphs and measured route strokes carry the plan.",
+    ".studio-quota": "neutral enclosure; source, freshness and funds are explicit text",
+    ".studio-quota__window": "neutral separator; each balance or window has a heading",
+    ".studio-step-flow__body": "neutral separators; words and icons identify every stage",
+    ".studio-planet__orb::after": "decorative outer orbit; selected border remains measured",
     ".studio-orbit__fleet::before": "decorative role-group ring, not a route or state carrier",
     ".studio-run": "neutral run-list separator; selection is independently measured",
     ".studio-deck": "neutral separators; participant selection has its own measured ring",
@@ -348,8 +412,9 @@ def test_the_studio_stylesheet_declares_only_modelled_interactive_states():
     inert: it repaints, and every paint it wins is a MEASURED row above. The
     inert names key on what a thing IS, never on somebody touching it.
     """
-    modelled = {"hover", "focus-visible", "aria-pressed", "aria-selected"}
-    inert = {"root", "hidden"}
+    modelled = {"hover", "focus-visible", "aria-pressed", "aria-selected", "data-theme", "data-screen", "data-open", "data-word"}
+    # Participant count and DOM position choose geometry, never repaint a state.
+    inert = {"root", "hidden", "data-count", "nth-child", "data-kind", "data-duty"}
     for rule in rules(STUDIO):
         for token in _TOKEN.findall(rule.selector):
             if token.startswith("::"):
@@ -456,3 +521,14 @@ def test_overview_layout_preserves_reading_order_without_hiding_cards():
             win = computed(chain, STUDIO, env)
             assert win.get("display") != "none"
             assert "order" not in win and "grid-row" not in win
+
+
+def test_manual_theme_tokens_are_exactly_the_measured_system_palettes():
+    """Explicit selection changes precedence, never introduces unmeasured colours."""
+    automatic = _root_blocks(STUDIO)
+    for theme, expected in zip(THEMES, automatic):
+        match = re.search(r':root\[data-theme="' + theme + r'"\]\{(.*?)\}', STUDIO, re.S)
+        assert match is not None
+        actual = dict(re.findall(r"(--[a-z0-9-]+):([^;}]+)", match[1]))
+        assert actual == expected
+        assert "color-scheme:" + theme in match[1]

@@ -12,6 +12,7 @@ from .adapters import AdapterContractError, AdapterRegistry
 from .api_contracts import ARGUMENT_SCHEMAS
 from .contracts import frozen_config_bindings, frozen_config_models
 from .isolation_facts import facts_for
+from .policy_providers import task_channel_fact
 
 
 def instance_controls(config: Mapping[str, Any],
@@ -55,8 +56,22 @@ def instance_controls(config: Mapping[str, Any],
                     facts.get("auth"), facts.get("vendor_sandbox"), guards,
                     capability))
                 for capability in controls},
+            "task_channel": _task_channel(registry, adapter_id),
         })
     return rows
+
+
+def _task_channel(registry: AdapterRegistry, adapter_id: str):
+    """The bound this binding's whole task meets before its claim (review ruling R2), or None.
+
+    The same fact a bounded grant freezes (``policy_providers.task_channel_fact``), read off the
+    bound adapter's CLASS profile; an adapter the registry cannot resolve states none.
+    """
+    try:
+        adapter = registry.resolve(adapter_id)
+    except AdapterContractError:
+        return None
+    return task_channel_fact(getattr(type(adapter), "profile", None))
 
 
 def _registered(registry: AdapterRegistry, adapter_id: str):

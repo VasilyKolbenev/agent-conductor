@@ -262,6 +262,8 @@ def materialize(template: GraphTemplate, binding: RunBinding,
         raise TemplateError("materialize takes exactly a GraphTemplate")
     if type(binding) is not RunBinding:
         raise TemplateError("materialize takes exactly a RunBinding")
+    from .graph_execution import hold_template_execution
+    hold_template_execution(template, config)
     binding.covers(template)
     _declared(binding, frozen_config_bindings(config))
     # The run's task, off the same frozen configuration and through the same
@@ -276,6 +278,9 @@ def materialize(template: GraphTemplate, binding: RunBinding,
 #: cycle is editing one of these files, and nothing in Python or JavaScript
 #: has to move for a corrected cycle to be the one a run materializes from.
 TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
+#: The current standard cycle offered first to a new workflow. Earlier files
+#: remain loadable by their exact names; this never upgrades a frozen run.
+DEFAULT_TEMPLATE = "dalio-v5"
 
 
 def load_template(name: str) -> GraphTemplate:

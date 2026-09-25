@@ -50,7 +50,7 @@ LANE = json.dumps({
 #: no project byte, so their witness is the packaged document's own title tag;
 #: without it a 403 body could not be told apart from a served page.
 WITNESS = {
-    "/": b"<title>",
+    "/": b'<title id="studioTitle">',
     "/panel/graph.html": b"<title>",
     "/state.json": MARKER.encode("ascii"),
     "/harnesses.json": b"claude-code",

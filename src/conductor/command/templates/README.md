@@ -68,3 +68,50 @@ defect to smooth over.
 
 The document is closed: every field is one the contract names, and a key it
 does not name is refused rather than ignored. Explanations belong in this file.
+
+`dalio-v4` was the **Стандартный цикл** until revision 5 (below), and stays
+selectable as it is. It keeps revision 3's stages, artifact references, human gates and
+bounded return to `identify`, and adds `role-checker` as the required verifier
+of `do`. Binding that role to the doer's own instance is refused. A separate
+instance of the same harness is allowed; no vendor or model is prescribed.
+
+This revision does not automate human decisions. A rejection remains a failed
+verification; the operator may request changes at the result gate, complete the
+reopened planning steps and approve the next execution. Each execution again
+requires the bound independent checker. The instruction document remains a
+separate input supplied before execution, as in revision 3. Autonomous feedback
+and cycle authorization are separate runtime work.
+
+The current server default permits eight actions. A full second pass needs
+nine (four initial planning steps, execution, three replanning steps, execution),
+so that default stops before the second execution. Three complete passes need
+thirteen actions. The standard does not raise the server budget; configuring and
+authorizing an appropriate finite cycle budget remains separate work.
+
+Revisions 1, 2 and 3 remain unchanged and explicitly selectable. A new starter
+does not alter a previously saved custom workflow, published revision or run.
+
+`dalio-v5` is the current **Стандартный цикл**, offered first when creating a
+workflow. It is revision 4 plus the road a rejected execution is corrected by,
+and nothing else: `do` reaches the result gate only `on_succeeded`, and on
+`on_failed` it enters `correct`, a loop of bound 2 home to `do`. Revision 4 had
+no such road — the Policy runtime corrects only along a failed step's `on_failed`
+roads (`policy_frontier.correction_frontier`), so a checker's rejection there
+ended the authorized work, and correcting it by replanning needed nine actions
+against the default eight.
+
+Under one authorization the correction is exactly one more pass of `do`: it
+carries the original instruction and the checker's exact typed feedback, and it
+is checked again by the same independent checker. A second rejection exhausts
+the loop and stops the run; it is never a success, and a person's approval at
+the result gate cannot stand in for the check, because that gate opens only on a
+checked result. A rejection without usable feedback is not corrected by invented
+data. The bound counts passes of `do` for the whole run, not per outer lap.
+
+Everything else is revision 4's: the stages, roles, artifact references, the
+required independent checker, both human gates, and the outer return from the
+result gate's `on_changes_requested` to `identify`. A clean pass costs five
+actions and one correction six, both within the default eight; a full replanned
+second lap still needs nine and is not promised under that default.
+`graph_dalio.validate_dalio_correction_template` holds this revision to its own
+shape; the one-loop check for revisions 1–4 is unchanged.

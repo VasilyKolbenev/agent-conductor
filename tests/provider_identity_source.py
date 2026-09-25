@@ -292,37 +292,69 @@ def _bind_imported(alias: ast.alias, target: str, source: Offer,
                 alias.name, (target, alias.name))
 
 
+class _OfferResolver:
+    """Memoize identical source resolutions, preserving cycle-cut provenance.
+
+    An ancestor that cannot be reached from this module cannot affect its
+    cycle cut. Excluding only those irrelevant ancestors gives shared DAG
+    tails one cache entry without laundering an answer between cycle contexts.
+    """
+
+    def __init__(self, trees: Mapping[str, ast.Module]):
+        self.trees = trees
+        self.memo: dict[tuple[str, frozenset[str]], Offer] = {}
+        self.reachable: dict[str, frozenset[str]] = {}
+
+    def _targets(self, module: str) -> frozenset[str]:
+        if module not in self.reachable:
+            reached: set[str] = set()
+            pending = [module]
+            while pending:
+                name = pending.pop()
+                if name in reached:
+                    continue
+                reached.add(name)
+                file_name = _file_of(name, self.trees)
+                if file_name is not None:
+                    pending.extend(_absolute(node, file_name)
+                                   for node in _import_froms(self.trees[file_name]))
+            self.reachable[module] = frozenset(reached)
+        return self.reachable[module]
+
+    def resolve(self, module: str, seen: frozenset[str] = frozenset()) -> Offer:
+        file_name = _file_of(module, self.trees)
+        if file_name is None or module in seen:
+            return EMPTY_OFFER
+        relevant = seen & self._targets(module)
+        key = module, relevant
+        if key in self.memo:
+            return self.memo[key]
+        tree = self.trees[file_name]
+        held = Offer({}, {}, {}, {})
+        for node in _import_froms(tree):
+            target = _absolute(node, file_name)
+            source = self.resolve(target, relevant | {module})
+            for alias in node.names:
+                _bind_imported(alias, target, source, held)
+        self.memo[key] = _settled(module, tree, *held)
+        return self.memo[key]
+
+
 def _exported_offer(module: str, trees: Mapping[str, ast.Module],
                     seen: frozenset[str] = frozenset()) -> Offer:
-    """Everything a module offers under a name -- its own, and its re-exports.
+    """Resolve one source map without sharing its facts with another map."""
+    return _OfferResolver(trees).resolve(module, seen)
 
-    A package `__init__` that lists a constant in a `from . import` line hands
-    it on under the PACKAGE's name, so `from .adapters import KIMI_PROVIDER_ID`
-    is the same branch as importing it from the file that declares it.
-    Following the re-export is what stops this being a rule about which
-    spelling an author reached for. `seen` ends a cycle in the source text.
-    """
-    file_name = _file_of(module, trees)
-    if file_name is None or module in seen:
-        return EMPTY_OFFER
-    tree = trees[file_name]
-    strings: dict[str, str] = {}
-    classes: dict[str, dict[str, str]] = {}
-    containers: dict[str, Container] = {}
-    origins: dict[str, tuple[str, str]] = {}
-    held = Offer(strings, classes, containers, origins)
-    for node in _import_froms(tree):
-        target = _absolute(node, file_name)
-        source = _exported_offer(target, trees, seen | {module})
-        for alias in node.names:
-            _bind_imported(alias, target, source, held)
-    return _settled(module, tree, strings, classes, containers, origins)
+
+@lru_cache(maxsize=1)
+def _shipped_resolver() -> _OfferResolver:
+    return _OfferResolver(_trees())
 
 
 @lru_cache(maxsize=None)
 def _shipped_offer(module: str) -> Offer:
-    """What one SHIPPED module offers, resolved once for the whole session."""
-    return _exported_offer(module, _trees())
+    """The shipped graph shares resolution work, including shared DAG tails."""
+    return _shipped_resolver().resolve(module)
 
 
 def _offered(module: str, trees: Mapping[str, ast.Module]) -> Offer:

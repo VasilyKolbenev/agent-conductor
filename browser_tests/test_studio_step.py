@@ -31,6 +31,8 @@ real attempt through the real runtime.
 """
 from __future__ import annotations
 
+from browser_tests.run_picker import choose_run
+
 import json
 import threading
 from collections.abc import Iterator
@@ -403,7 +405,7 @@ def _read(page: Page, run_id: str) -> None:
     """Open one run whole, waiting on the DETAIL being the one asked for."""
     page.locator("#navRuns").click()
     page.wait_for_selector("#screenRuns:not([hidden])")
-    page.locator(f'[data-focus-key="run:{run_id}"]').click()
+    choose_run(page, run_id)
     page.wait_for_function(
         "id => { const head = document.querySelector("
         "'.studio-runs__detail h2'); return head "
@@ -609,17 +611,23 @@ def test_the_step_control_says_what_a_proposal_will_carry_and_offers_no_edit(
         assert "900s" in said, said
         assert "Scope is a declaration this run's records carry" in said, said
         # TWO text controls on this form -- who is proposing and why -- and
-        # nothing else on the screen that could touch a step: no select, no
-        # argument box, no way to name another step. The only other controls
-        # on the screen are the document form's, and every one of them sits
-        # inside it. The third of the three a person ever types,
+        # no argument box or way to change the proposed step. The inspector's
+        # selector changes only what is READ; document controls are separate.
+        # The third of the three a person ever types,
         # `confirmed_by`, belongs to the form that replaces this one.
         assert form.locator("input").count() == 2
         assert form.locator("select").count() == 0
         assert form.locator("textarea").count() == 0
+        inspector = page.locator("#bodyRuns .studio-deck__inspector")
+        assert inspector.locator("select").count() == 1
+        assert inspector.locator("input, textarea").count() == 0
+        inspected = inspector.get_by_role("combobox", name="Step to inspect")
+        inspected.select_option(inspected.locator("option").last.get_attribute("value"))
+        assert form.inner_text() == said
+        assert window.posted("/proposals") == []
         for tag in ("select", "textarea"):
             assert page.locator(f"#bodyRuns {tag}").count() == page.locator(
-                f'#bodyRuns [data-step="document"] {tag}').count(), tag
+                f'#bodyRuns [data-step="document"] {tag}').count() + inspector.locator(tag).count(), tag
         assert sorted(form.locator("input").evaluate_all(
             "items => items.map(item => item.name)")) == [
                 "proposed_by", "rationale"]
@@ -703,7 +711,7 @@ def test_a_read_of_the_same_run_leaves_the_words_a_person_is_typing_alone(
         # progress writes, and exactly what a `run` frame arrives about.
         RunStore(bench.root).append(a_proposal(
             node_id="identify", index=41, run_id=RUN_ID, config_digest=DIGEST))
-        page.locator(f'[data-focus-key="run:{RUN_ID}"]').click()
+        choose_run(page, RUN_ID)
         page.wait_for_function(
             "n => document.querySelectorAll('ol.studio-timeline > li').length"
             " > n", arg=before)

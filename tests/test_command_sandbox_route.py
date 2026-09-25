@@ -188,7 +188,7 @@ def test_the_node_contract_still_stores_a_route_it_cannot_provide(name):
     assert GraphNode.from_dict(node.as_dict()) == node
 
 
-@pytest.mark.parametrize("starter", ["dalio-v1", "dalio-v2", "dalio-v3"])
+@pytest.mark.parametrize("starter", ["dalio-v1", "dalio-v2", "dalio-v3", "dalio-v4", "dalio-v5"])
 def test_the_shipped_starters_demand_only_the_route_this_build_provides(starter):
     """The compatibility measurement, on the bytes that really ship."""
     from conductor.command.graph_template import load_template
@@ -198,12 +198,13 @@ def test_the_shipped_starters_demand_only_the_route_this_build_provides(starter)
         assert unprovidable_sandboxes(node.resources) == (), node.node_id
 
 
-def test_the_shipped_dalio_really_does_carry_one_and_this_is_not_vacuous():
+@pytest.mark.parametrize("starter", ["dalio-v1", "dalio-v2", "dalio-v3", "dalio-v4", "dalio-v5"])
+def test_the_shipped_dalio_really_does_carry_one_and_this_is_not_vacuous(starter):
     """The control on the measurement above: a starter with no sandbox row at
     all would satisfy it while proving nothing."""
     from conductor.command.graph_template import load_template
 
-    rows = [row for node in load_template("dalio-v3").nodes
+    rows = [row for node in load_template(starter).nodes
             for row in node.resources if row.kind == SANDBOX_KIND]
 
     assert [row.name for row in rows] == ["project-root"]

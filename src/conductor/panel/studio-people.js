@@ -15,7 +15,9 @@
 // provider that is available says nothing about whether a run bound it, and a
 // run that bound one says nothing about whether this machine can still reach
 // it.
+import {localize as L} from "./studio-i18n.js";
 import {element} from "./command-view.js";
+import {quotaSection} from "./studio-quotas.js";
 //: The AND-join sentence, from the module that declares it. The Runs screen
 //: says it about a step that is not offered and this screen says it about a
 //: gate that cannot be answered yet; a second copy here would be a second
@@ -146,9 +148,10 @@ const REASON_LIMIT = 200;
 
 const NOT_STATED = "not stated";
 
-function show(value) {
-  if (value === null || value === undefined || value === "") return NOT_STATED;
-  if (Array.isArray(value)) return value.length ? value.join(", ") : NOT_STATED;
+function show(value, state = null) {
+  const missing = state === null ? NOT_STATED : L(state, "agents.not_stated");
+  if (value === null || value === undefined || value === "") return missing;
+  if (Array.isArray(value)) return value.length ? value.join(", ") : missing;
   return String(value);
 }
 
@@ -167,6 +170,13 @@ function fact(label, value) {
   ]);
 }
 
+function localizedFact(state, key, value) {
+  const shown = value === null || value === undefined || value === ""
+    || (Array.isArray(value) && !value.length)
+    ? L(state, "agents.not_stated") : show(value);
+  return fact(L(state, key), shown);
+}
+
 function note(value) {
   return element("p", {className: "studio-note", text: value});
 }
@@ -180,11 +190,11 @@ function section(title, children) {
     [element("h3", {text: title}), ...children]);
 }
 
-function unsupported(label, why) {
+function unsupported(label, why, state) {
   return element("p", {className: "studio-unsupported"}, [
     element("span", {className: "studio-fact__k", text: label}),
     element("span", {className: "studio-fact__v",
-      text: "not recorded by this build"}),
+      text: L(state, "agents.not_recorded")}),
     element("span", {className: "studio-why", text: why}),
   ]);
 }
@@ -194,10 +204,10 @@ function handlerOf(handlers, name) {
   return typeof found === "function" ? found : null;
 }
 
-function banner(phase) {
+function banner(phase, state) {
   const word = PHASE_SENTENCES[phase] ? phase : "failed";
   return element("p", {className: `studio-banner studio-banner--${word}`}, [
-    element("span", {text: PHASE_SENTENCES[word]}), " ", protocolWord(word),
+    element("span", {text: L(state, `phase.${word}`)}), " ", protocolWord(word),
   ]);
 }
 
@@ -211,14 +221,14 @@ function object(value) {
 //: A control whose handler was not wired is DISABLED and says why. It never
 //: disappears: a button that vanishes teaches a user the product cannot do the
 //: thing, when what happened is that this screen was mounted without its wire.
-function actionButton(handlers, name, label, argument) {
+function actionButton(handlers, name, label, argument, state) {
   const call = handlerOf(handlers, name);
   const button = element("button", {
     "data-focus-key": `action:${name}`, text: label, type: "button",
   });
   if (call === null) {
     button.disabled = true;
-    button.title = `This screen was mounted without a ${name} handler.`;
+    button.title = L(state, "agents.handler_missing", {name});
     return button;
   }
   button.addEventListener("click", () => call(argument));
@@ -253,19 +263,17 @@ function draftKey(draft) {
 
 //: Why a person is being asked. The run's authority ladder says what may
 //: happen without one; the gate says this step asks for one by name.
-function whyAsked(row) {
-  const carried = [note("A gate is a step the plan itself marks as needing a "
-    + "person's answer. Nothing behind it is carried out until one is "
-    + "recorded, and no amount of waiting changes that.")];
+function whyAsked(row, state) {
+  const carried = [note(L(state, "agents.gate_explainer"))];
   // The workflow author's own words about this step, when they wrote any. It
   // is stated as theirs rather than as this build's: everything else on this
   // screen is a fact the product derived, and an unattributed sentence beside
   // those would read as one more of them.
   if (typeof row.purpose === "string" && row.purpose) {
-    carried.push(fact("The workflow says", row.purpose));
+    carried.push(localizedFact(state, "agents.workflow_says", row.purpose));
   }
   if (typeof row.mode === "string") {
-    carried.push(fact("This run's authority", row.mode));
+    carried.push(localizedFact(state, "agents.authority", row.mode));
   }
   return carried;
 }
@@ -277,49 +285,47 @@ function whyAsked(row) {
 // this gate is APPROVED and is closed by every other answer, and a person
 // deciding is entitled to know which of the four they are being asked for.
 // A road carrying none opens on any decided answer, and says nothing extra.
-function whatItUnblocks(row) {
+function whatItUnblocks(row, state) {
   const next = rows(row.unblocks);
   if (!next.length) {
-    return note("What becomes runnable is read off the plan's edges. This view "
-      + "was not given them for this gate, so nothing here claims to know.");
+    return note(L(state, "agents.unblocks_unknown"));
   }
   return element("ul", {className: "studio-unblocks"},
     next.map((step) => element("li", {}, [
-      element("span", {text: show(step.title)}),
+      element("span", {text: show(step.title, state)}), " ",
       protocolWord(show(step.node_id)),
       ...(typeof step.condition === "string"
-        ? [protocolWord(`opens on ${step.condition}`)] : []),
+        ? [" ", protocolWord(L(state, "agents.opens_on", {condition: step.condition}))] : []),
     ])));
 }
 
-function receiptBlock(receipt) {
-  return section("The receipt this decision wrote", [
-    note("A decision is immutable. It is corrected only by a later receipt "
-      + "that supersedes it, and both stay in the journal."),
-    fact("Receipt", receipt.receipt_id),
-    fact("Answer", receipt.action),
-    fact("Causes the gate to become", DECISION_ACTIONS[receipt.action]),
-    fact("Decided by", receipt.actor),
-    fact("Decided at", receipt.decided_at),
-    fact("Reason", receipt.reason),
-    fact("Supersedes", receipt.supersedes),
-    fact("Against configuration", receipt.config_digest),
+function receiptBlock(receipt, state) {
+  return section(L(state, "agents.receipt_title"), [
+    note(L(state, "agents.immutable")),
+    localizedFact(state, "agents.receipt", receipt.receipt_id),
+    localizedFact(state, "agents.answer", receipt.action),
+    localizedFact(state, "agents.causes", DECISION_ACTIONS[receipt.action]),
+    localizedFact(state, "agents.actor", receipt.actor),
+    localizedFact(state, "agents.decided_at", receipt.decided_at),
+    localizedFact(state, "agents.reason", receipt.reason),
+    localizedFact(state, "agents.supersedes", receipt.supersedes),
+    localizedFact(state, "agents.configuration", receipt.config_digest),
   ]);
 }
 
-function decisionButton(row, draft, handlers) {
+function decisionButton(row, draft, handlers, state) {
   const key = decisionKey(row);
   const button = element("button", {
     "aria-pressed": key === draftKey(draft) ? "true" : "false",
     className: "studio-decision", "data-focus-key": `decision:${key}`,
     type: "button",
-  }, [element("span", {className: "studio-decision__t", text: show(row.title)}),
-    protocolWord(key),
-    chip(GATE_CHANNEL[row.decision] || "none", `gate ${show(row.decision)}`)]);
+  }, [element("span", {className: "studio-decision__t", text: show(row.title, state)}), " ",
+    element("span", {className: "studio-mono studio-decision__id", text: key}), " ",
+    chip(GATE_CHANNEL[row.decision] || "none", L(state, "agents.gate_state", {decision: show(row.decision, state)}))]);
   const select = handlerOf(handlers, "selectDecision");
   if (select === null) {
     button.disabled = true;
-    button.title = "This screen was mounted without a selectDecision handler.";
+    button.title = L(state, "agents.handler_missing", {name: "selectDecision"});
   } else button.addEventListener("click", () => select(key));
   return button;
 }
@@ -327,7 +333,7 @@ function decisionButton(row, draft, handlers) {
 //: What stops this draft being submitted, in the user's words, or null. The
 //: rules are the receipt contract's own, asked here first so a control refuses
 //: before the wire does rather than after.
-function whyNotSubmittable(draft) {
+function whyNotSubmittable(draft, state) {
   // Judged on the RAW draft values. `show` is a display function and turns an
   // absent value into the words "not stated", which every one of these tests
   // would then read as a filled-in answer.
@@ -336,19 +342,18 @@ function whyNotSubmittable(draft) {
   const reason = typeof draft.reason === "string" ? draft.reason : "";
   if (typeof action !== "string"
       || !Object.prototype.hasOwnProperty.call(DECISION_ACTIONS, action)) {
-    return "Choose one of the four answers.";
+    return L(state, "agents.choose_answer");
   }
   if (!ID_RE.test(actor)) {
-    return "Type who is deciding, as a plain id: letters, digits, dot, "
-      + "underscore or hyphen, up to 128 characters.";
+    return L(state, "agents.actor_hint");
   }
   if (REASON_REQUIRED.includes(action) && !reason.trim()) {
-    return `A reason is required when the answer is ${action}.`;
+    return L(state, "agents.reason_required", {action});
   }
   return null;
 }
 
-function choiceControl(action, draft, edit) {
+function choiceControl(action, draft, edit, state) {
   const control = element("input", {
     "data-focus-key": `choice:${action}`, name: "decision-action",
     type: "radio", value: action,
@@ -358,11 +363,11 @@ function choiceControl(action, draft, edit) {
   else control.addEventListener("change", () => edit({action}));
   return element("label", {className: "studio-choice"}, [
     control,
-    element("span", {className: "studio-choice__a", text: action}),
+    element("span", {className: "studio-choice__a", text: action}), " ",
     element("span", {className: "studio-choice__m",
-      text: DECISION_MEANINGS[action]}),
+      text: L(state, `agents.decision_${action}`)}), " ",
     element("span", {className: "studio-choice__c",
-      text: `causes: ${DECISION_ACTIONS[action]}`}),
+      text: L(state, "agents.causes_state", {decision: DECISION_ACTIONS[action]})}),
   ]);
 }
 
@@ -393,11 +398,9 @@ function textControl(name, key, draft, edit, label, attributes) {
 // beside it, and it is posted as `supersedes` -- which is what keeps the gate
 // readable instead of `unknown`. Spelled as a list so the form appends it the
 // way it appends every other optional note.
-function reopenedNote(row) {
+function reopenedNote(row, state) {
   if (typeof row.standing !== "string") return [];
-  return [note("This gate was already answered. Answering it now writes a "
-    + `receipt that supersedes ${row.standing}; both stay in the journal, `
-    + "and a decision is never edited.")];
+  return [note(L(state, "agents.reopened", {receipt: row.standing}))];
 }
 
 //: The four answers, minus the one this gate's plan refuses, plus what each
@@ -407,56 +410,53 @@ function reopenedNote(row) {
 // answer that would set it aside. Offering it and refusing the save would
 // teach a person the product is broken; the plan said this before the run
 // opened, so the screen says it here.
-function answerChoices(row, draft, edit) {
+function answerChoices(row, draft, edit, state) {
   const choices = element("fieldset", {className: "studio-choices"},
-    [element("legend", {text: "Your answer, and what each one causes"})]);
+    [element("legend", {text: L(state, "agents.answer_choices")})]);
   const demanded = typeof row.success_requires === "string";
   for (const action of Object.keys(DECISION_ACTIONS)) {
     if (demanded && action === "waive") continue;
-    choices.append(choiceControl(action, draft, edit));
+    choices.append(choiceControl(action, draft, edit, state));
   }
   if (demanded) {
-    choices.append(note("This gate requires explicit human approval, so it "
-      + "cannot be waived. Approve it, reject it, or ask for changes."));
+    choices.append(note(L(state, "agents.approval_required")));
   }
-  for (const said of reopenedNote(row)) choices.append(said);
+  for (const said of reopenedNote(row, state)) choices.append(said);
   return choices;
 }
 
-function decisionForm(row, draft, handlers, live) {
+function decisionForm(row, draft, handlers, live, state) {
   const edit = handlerOf(handlers, "editDecision");
   const submit = handlerOf(handlers, "submitDecision");
   const form = element("form", {className: "studio-decide"});
-  form.append(answerChoices(row, draft, edit),
-    textControl("actor", "actor", draft, edit, "Decided by",
+  form.append(answerChoices(row, draft, edit, state),
+    textControl("actor", "actor", draft, edit, L(state, "agents.actor"),
       {maxlength: "128", pattern: ID_PATTERN, required: ""}),
     textControl("reason", "reason", draft, edit,
-      `Reason (up to ${REASON_LIMIT} characters)`,
+      L(state, "agents.reason_limit", {limit: String(REASON_LIMIT)}),
       {maxlength: String(REASON_LIMIT)}));
-  const stops = whyNotSubmittable(draft);
+  const stops = whyNotSubmittable(draft, state);
   const button = element("button", {
     "data-focus-key": "action:submitDecision",
-    text: "Record this decision", type: "submit",
+    text: L(state, "agents.record_decision"), type: "submit",
   });
   button.disabled = stops !== null || submit === null || !live;
-  if (!live) button.title = STREAM_DOWN_REASON;
+  if (!live) button.title = L(state, "agents.stream_down");
   form.append(button);
   // The dropped stream is said first: it is the one reason of the three that
   // no amount of typing here answers.
-  if (!live) form.append(note(STREAM_DOWN_REASON));
+  if (!live) form.append(note(L(state, "agents.stream_down")));
   if (stops !== null) form.append(note(stops));
   if (submit === null) {
-    form.append(note("This screen was mounted without a submitDecision "
-      + "handler, so nothing here can be recorded."));
+    form.append(note(L(state, "agents.submit_missing")));
   } else {
     form.addEventListener("submit", (event) => {
       event.preventDefault();
-      if (whyNotSubmittable(draft) === null) submit(row);
+      if (whyNotSubmittable(draft, state) === null) submit(row);
     });
   }
   if (edit === null) {
-    form.append(note("This screen was mounted without an editDecision "
-      + "handler, so these controls cannot take an answer."));
+    form.append(note(L(state, "agents.edit_missing")));
   }
   return form;
 }
@@ -491,77 +491,69 @@ function offersAnAnswer(row) {
 //: Why this gate is offering nothing, in the user's words. Five situations,
 //: five sentences, and they are nothing alike -- one ends when the steps in
 //: front of it finish, one never ends at all, and one has already ended.
-function whyNotYet(row) {
+function whyNotYet(row, state) {
   if (row.ended === true) {
-    return note("This run has ended (Plan: " + show(row.plan_word) + "); no "
-      + "decision can be recorded.");
+    return note(L(state, "agents.ended", {plan: show(row.plan_word, state)}));
   }
   if (row.decision === "unknown") {
-    return note("This gate's recorded answers contradict each other; the "
-      + "journal supports no answer and the screen offers none.");
+    return note(L(state, "agents.contradiction"));
   }
   if (row.state === null) {
-    return note("This build was not given this run's schedule, so this window "
-      + "cannot say whether the plan has reached this gate. It offers no "
-      + "answer rather than guessing at one.");
+    return note(L(state, "agents.schedule_missing"));
   }
   const waiting = rows(row.blocked_by).join(", ");
   if (waiting) {
-    return note("This gate cannot be answered yet. " + ALL_ROADS
-      + ` Waiting on: ${waiting}.`);
+    return note(L(state, "agents.waiting", {waiting}));
   }
   const closed = rows(row.closed_by).join(", ");
   if (closed) {
-    return note("This gate will never be asked: the road into it was closed "
-      + `by ${closed}.`);
+    return note(L(state, "agents.closed", {closed}));
   }
   if (row.reachable) {
-    return note("Nothing further is offered in this run: it was halted.");
+    return note(L(state, "agents.halted"));
   }
-  return note("This gate will never be asked: what leads to it is "
-    + "unreachable too.");
+  return note(L(state, "agents.unreachable"));
 }
 
-function decisionDetail(row, draft, handlers, live) {
+function decisionDetail(row, draft, handlers, live, state) {
   const receipt = object(row.receipt);
   const body = [
-    element("h3", {text: show(row.title)}),
-    fact("The step", row.node_id), fact("The gate", row.gate_id),
-    fact("In run", row.run_id),
-    chip(GATE_CHANNEL[row.decision] || "none", `gate ${show(row.decision)}`),
-    ...whyAsked(row),
-    section("What becomes runnable once this is answered",
-      [whatItUnblocks(row)]),
+    element("h3", {text: show(row.title, state)}),
+    localizedFact(state, "agents.step", row.node_id), localizedFact(state, "agents.gate", row.gate_id),
+    localizedFact(state, "agents.run", row.run_id),
+    chip(GATE_CHANNEL[row.decision] || "none", L(state, "agents.gate_state", {decision: show(row.decision, state)})),
+    ...whyAsked(row, state),
+    section(L(state, "agents.unblocks"),
+      [whatItUnblocks(row, state)]),
   ];
   if (offersAnAnswer(row)) {
-    body.push(decisionForm(row, draft, handlers, live));
+    body.push(decisionForm(row, draft, handlers, live, state));
   } else {
-    body.push(whyNotYet(row));
+    body.push(whyNotYet(row, state));
   }
-  if (receipt !== null) body.push(receiptBlock(receipt));
+  if (receipt !== null) body.push(receiptBlock(receipt, state));
   else if (row.decision !== "idle") {
-    body.push(note("This view was not given the receipt behind that answer. "
-      + "It is in the run's journal, on the Runs screen."));
+    body.push(note(L(state, "agents.receipt_missing")));
   }
-  return element("div", {className: "studio-decisions__detail"}, body);
+  return element("div", {className: "studio-decisions__detail",
+    "data-subject": `decision:${decisionKey(row)}`}, body);
 }
 
-function decisionList(state, draft, handlers) {
-  const list = rows(state.list);
-  const body = [banner(state.phase)];
+function decisionList(decisions, draft, handlers, state) {
+  const list = rows(decisions.list);
+  const body = [banner(decisions.phase, state)];
   if (!list.length) {
-    body.push(note("Nothing is waiting for you. When a run reaches a gate, "
-      + "the step and its choices appear here."));
+    body.push(note(L(state, "agents.no_decisions")));
     return element("nav", {className: "studio-decisions__list",
-      "aria-label": "Decisions"}, body);
+      "aria-label": L(state, "agents.decisions")}, body);
   }
   const items = element("ul", {className: "studio-decisions__rows"});
   for (const row of list) {
-    items.append(element("li", {}, [decisionButton(row, draft, handlers)]));
+    items.append(element("li", {}, [decisionButton(row, draft, handlers, state)]));
   }
   body.push(items);
   return element("nav", {className: "studio-decisions__list",
-    "aria-label": "Decisions"}, body);
+    "aria-label": L(state, "agents.decisions")}, body);
 }
 
 /**
@@ -589,17 +581,13 @@ export function mountDecisions(mount, state, handlers) {
   const chosen = rows(decisions.list)
     .find((row) => decisionKey(row) === draftKey(draft)) || null;
   mount.replaceChildren(element("div", {className: "studio-decisions"}, [
-    element("h2", {text: "Decisions"}),
     element("p", {className: "studio-lede", text:
-      "Every answer here becomes an immutable receipt in the run's own "
-      + "journal. Nothing is executed by answering; a decision changes what "
-      + "the plan is allowed to do next, and nothing else."}),
-    decisionList(decisions, draft, handlers),
+      L(state, "agents.decisions_lede")}),
+    decisionList(decisions, draft, handlers, state),
     chosen === null
       ? element("div", {className: "studio-decisions__detail"},
-        [note("Choose a gate on the left to see why it is asking and what "
-          + "each answer causes.")])
-      : decisionDetail(chosen, draft, handlers, live),
+        [note(L(state, "agents.choose_gate"))])
+      : decisionDetail(chosen, draft, handlers, live, state),
   ]));
   restoreFocus(mount, key);
 }
@@ -610,115 +598,100 @@ export function mountDecisions(mount, state, handlers) {
 //: provider configuration yet. It says the exact file, the exact keys, and the
 //: exact command -- because "no participant" is only actionable if the next
 //: action is spelled out.
-function noProviders(handlers) {
-  return section("No provider is configured", [
-    note("This build resolved no provider, so nothing on this machine can "
-      + "carry out a step. That is a configuration this project does not have "
-      + "yet, not a failure."),
-    fact("Run this", PROVIDER_SETUP_COMMAND),
-    note("It asks which harness you have, where it is on this machine, and "
-      + "which environment variables it may read — NAMES only. It never asks "
-      + "for a credential: a value is read from your environment when a step "
-      + "runs and is written down nowhere."),
-    fact("It writes", PROVIDER_CONFIG_FILE),
-    fact("Each row carries", PROVIDER_CONFIG_REQUIRED),
-    fact("And may also carry", PROVIDER_CONFIG_OPTIONAL),
-    fact("Then restart with", PROVIDER_CONFIG_COMMAND),
-    actionButton(handlers, "refreshAgents", "Read the roster again", null),
+function noProviders(handlers, state) {
+  return section(L(state, "agents.no_provider"), [
+    note(L(state, "agents.no_provider_explainer")),
+    localizedFact(state, "agents.run_command", PROVIDER_SETUP_COMMAND),
+    note(L(state, "agents.setup_explainer")),
+    localizedFact(state, "agents.writes", PROVIDER_CONFIG_FILE),
+    localizedFact(state, "agents.required_fields", PROVIDER_CONFIG_REQUIRED),
+    localizedFact(state, "agents.optional_fields", PROVIDER_CONFIG_OPTIONAL),
+    localizedFact(state, "agents.restart", PROVIDER_CONFIG_COMMAND),
+    actionButton(handlers, "refreshAgents", L(state, "primary.agents"), null, state),
   ]);
 }
 
-function providerRow(row) {
+function providerRow(row, state) {
   const availability = show(row.availability);
   const implementation = show(row.implementation);
   const auth = show(row.auth);
+  // The name, the id and each fact with its meaning read apart, on screen and in the text a
+  // reader is given: adjacent spans with no space between them run together (as on Decisions).
   return element("li", {className: "studio-provider"}, [
     element("span", {className: "studio-provider__n",
-      text: show(row.display_name)}),
-    protocolWord(show(row.provider_id)),
-    chip(AVAILABILITY_CHANNEL[availability] || "none", availability),
+      text: show(row.display_name, state)}), " ",
+    protocolWord(show(row.provider_id)), " ",
+    chip(AVAILABILITY_CHANNEL[availability] || "none", availability), " ",
     element("span", {className: "studio-why",
-      text: AVAILABILITY_MEANINGS[availability]
-        || "This build does not describe that machine state."}),
-    chip(IMPLEMENTATION_CHANNEL[implementation] || "none", implementation),
+      text: Object.hasOwn(AVAILABILITY_MEANINGS, availability)
+        ? L(state, `agents.availability_${availability}`) : L(state, "agents.availability_unknown")}), " ",
+    chip(IMPLEMENTATION_CHANNEL[implementation] || "none", implementation), " ",
     element("span", {className: "studio-why",
-      text: IMPLEMENTATION_MEANINGS[implementation]
-        || "This build does not describe that transport state."}),
-    chip(AUTH_CHANNEL[auth] || "none", auth),
+      text: Object.hasOwn(IMPLEMENTATION_MEANINGS, implementation)
+        ? L(state, `agents.implementation_${implementation}`) : L(state, "agents.implementation_unknown")}), " ",
+    chip(AUTH_CHANNEL[auth] || "none", auth), " ",
     element("span", {className: "studio-why",
-      text: AUTH_MEANINGS[auth] || "This build does not describe that login state."}),
-    fact("Capabilities it is proven to serve", row.controls),
+      text: Object.hasOwn(AUTH_MEANINGS, auth)
+        ? L(state, `agents.auth_${auth}`) : L(state, "agents.auth_unknown")}),
+    localizedFact(state, "agents.proven_controls", row.controls),
   ]);
 }
 
-function providerSection(providers, handlers) {
-  if (!providers.length) return noProviders(handlers);
+function providerSection(providers, handlers, state) {
+  if (!providers.length) return noProviders(handlers, state);
   const list = element("ul", {className: "studio-providers"},
-    providers.map(providerRow));
-  return section("Harnesses this build and this machine can reach", [
-    note("Three facts per row, and they answer different questions. What the "
-      + "MACHINE resolved is whether the pinned executable is there; what the "
-      + "BUILD claims is whether this version talks to the real product or "
-      + "answers from a fixture; what the CONFIG pinned is which login it would "
-      + "use. None is read off another, and none of them is evidence that a real "
-      + "authenticated run ever happened."),
+    providers.map((row) => providerRow(row, state)));
+  return section(L(state, "agents.harnesses"), [
+    note(L(state, "agents.provider_explainer")),
     list,
-    actionButton(handlers, "refreshAgents", "Read the roster again", null),
+    actionButton(handlers, "refreshAgents", L(state, "primary.agents"), null, state),
   ]);
 }
 
 //: One participant: a binding a run FROZE. The provider roster is joined to it
 //: by identity so a reader can see that a binding this run holds is one this
 //: machine can no longer reach -- the one reading the two arrays exist for.
-function participantRow(row, roster) {
+function participantRow(row, roster, state) {
   const providerId = show(row.provider_id || row.adapter_id);
   const known = roster.get(providerId) || null;
   const item = element("li", {className: "studio-participant"}, [
     element("span", {className: "studio-participant__i",
       text: show(row.instance_id)}),
-    fact("Carried by", providerId),
-    fact("Model", Object.prototype.hasOwnProperty.call(row, "model")
+    localizedFact(state, "agents.provider", providerId),
+    localizedFact(state, "agents.model", Object.prototype.hasOwnProperty.call(row, "model")
       ? row.model : null),
   ]);
   if (!Object.prototype.hasOwnProperty.call(row, "model") || row.model === null) {
-    item.append(note("No model was pinned for this instance, so whatever the "
-      + "provider's own configuration decides is what runs. That is not a "
-      + "default this screen chose."));
+    item.append(note(L(state, "agents.model_unpinned")));
   }
-  item.append(fact("Capabilities this binding may be asked for", row.controls));
-  if (row.run_id !== undefined) item.append(fact("Frozen into run", row.run_id));
+  item.append(localizedFact(state, "agents.binding_controls", row.controls));
+  if (row.run_id !== undefined) item.append(localizedFact(state, "agents.bound_run", row.run_id));
   if (known === null) {
-    item.append(note("This build's roster carries no provider by that name, "
-      + "so nothing here can say whether this machine could still start it."));
+    item.append(note(L(state, "agents.provider_unknown")));
   } else {
     item.append(chip(AVAILABILITY_CHANNEL[known.availability] || "none",
-      `on this machine: ${show(known.availability)}`));
+      L(state, "agents.machine_state", {availability: show(known.availability, state)})));
   }
   if (Array.isArray(row.role_ids)) {
-    item.append(fact("Roles it carries", row.role_ids));
+    item.append(localizedFact(state, "agents.roles", row.role_ids));
   } else {
-    item.append(unsupported("Roles it carries",
-      "A materialized plan names instances, not roles: the role is a workflow "
-      + "document's word and it is not carried into the run's plan."));
+    item.append(unsupported(L(state, "agents.roles"),
+      L(state, "agents.roles_unknown"), state));
   }
   return item;
 }
 
-function participantSection(agents, roster) {
+function participantSection(agents, roster, state) {
   const participants = rows(agents.participants);
   if (!participants.length) {
-    return section("Participants", [
-      note("No run in view binds anybody yet. A participant exists only "
-        + "inside a run: opening one is what binds an instance to a provider "
-        + "and freezes it for that run's whole life."),
+    return section(L(state, "agents.participants"), [
+      note(L(state, "agents.no_participants")),
     ]);
   }
-  return section("Participants", [
-    note("A participant is one instance a run bound to one provider, frozen "
-      + "when the run was opened. It never changes afterwards, which is why "
-      + "it can disagree with the roster above."),
+  return section(L(state, "agents.participants"), [
+    note(L(state, "agents.participant_explainer")),
     element("ul", {className: "studio-participants"},
-      participants.map((row) => participantRow(row, roster))),
+      participants.map((row) => participantRow(row, roster, state))),
   ]);
 }
 
@@ -740,16 +713,14 @@ export function mountAgents(mount, state, handlers) {
   const agents = object(whole.agents) || {};
   const providers = rows(whole.providers);
   const roster = new Map(providers.map((row) => [row.provider_id, row]));
+  // The screen's heading is the one `studio.html` draws; this module draws no second.
   mount.replaceChildren(element("div", {className: "studio-agents"}, [
-    element("h2", {text: "Agents"}),
     element("p", {className: "studio-lede", text:
-      "A workflow names roles. A run binds each role to a participant, and a "
-      + "participant names one configured provider and at most one model. "
-      + "Nothing in a workflow document may name a provider, a model or a "
-      + "run."}),
-    banner(agents.phase),
-    providerSection(providers, handlers),
-    participantSection(agents, roster),
+      L(state, "agents.agents_lede")}),
+    banner(agents.phase, state),
+    quotaSection(state.quotas, handlers, state),
+    providerSection(providers, handlers, state),
+    participantSection(agents, roster, state),
   ]));
   restoreFocus(mount, key);
 }

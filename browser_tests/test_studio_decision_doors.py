@@ -28,6 +28,8 @@ Playwright stays an explicit development/CI dependency.
 """
 from __future__ import annotations
 
+from browser_tests.run_picker import choose_run
+
 import json
 import threading
 from collections.abc import Iterator
@@ -212,7 +214,7 @@ def _read_the_run(page: Page, project: _Project, run: str = GATED_RUN) -> None:
     with page.expect_response(
             lambda answer: answer.url.endswith(
                 f"/command/runs/{run}/controls")):
-        page.locator(f'[data-focus-key="run:{run}"]').click()
+        choose_run(page, run)
     page.wait_for_function(
         "n => document.querySelectorAll('ol.studio-timeline > li').length === n",
         arg=records)

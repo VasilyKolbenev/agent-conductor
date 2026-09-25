@@ -15,6 +15,7 @@ run-open body come from the modules beside this one, so a task and the run
 that binds to it go through the SAME allowlist and the SAME store.
 """
 from __future__ import annotations
+from tests.human_situation_samples import READ_AT
 
 import os
 import shutil
@@ -595,8 +596,8 @@ def test_recovered_payload_without_a_task_store_reads_a_bound_task_as_unreadable
     assert post(subject, "/command/tasks", a_task_body()).status == 201
     assert post(subject, "/command/runs", a_bound_run()).status == 201
 
-    payload = recovered_payload(store.read(RUN_ID))
+    payload = recovered_payload(store.read(RUN_ID), computed_at=READ_AT)
     assert payload["task"] == {
         "id": TASK, "work_scope": TASK, "title": None, "unreadable": True}
-    assert recovered_payload(store.read(RUN_ID), TaskStore(tmp_path))["task"] == {
+    assert recovered_payload(store.read(RUN_ID), TaskStore(tmp_path), computed_at=READ_AT)["task"] == {
         "id": TASK, "work_scope": TASK, "title": TITLE, "unreadable": False}

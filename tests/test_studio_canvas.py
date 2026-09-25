@@ -27,6 +27,7 @@ would red a guard that has nothing to do with this surface.
 """
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -398,7 +399,10 @@ def test_the_canvas_offers_a_keyboard_road_beside_every_pointer_one():
         r"function keyAdds\(key\) \{\s*return \{(.*?)\}", canvas,
         re.DOTALL).group(1)))
     assert set(adds.values()) == graph_definition.NODE_KINDS
-    legend = re.search(r'const KEY_LEGEND = (.*?);\n', canvas, re.DOTALL).group(1)
+    assert 'workflow_detail.canvas_keys' in canvas
+    catalog = (PANEL / "studio-workflow-detail-copy.js").read_text(encoding="utf-8")
+    data = json.loads(re.search(r'Object\.freeze\((\{.*\})\);', catalog, re.S).group(1))
+    legend = data["workflow_detail.canvas_keys"][0]
     modifiers = {"altKey": "Alt+", "shiftKey": "Shift+"}
     named = sorted(word for branch, word in modifiers.items()
                    if f"event.{branch}" in canvas)
@@ -431,7 +435,10 @@ def test_the_alt_modifier_moves_the_selected_step_and_says_so():
     assert branch, "Alt no longer reaches a move through MOVE_NUDGE"
     assert "event.altKey" in branch.group(1)
     assert 'type: "move"' in branch.group(1)
-    legend = re.search(r'const KEY_LEGEND = (.*?);\n', canvas, re.DOTALL).group(1)
+    assert 'workflow_detail.canvas_keys' in canvas
+    catalog = (PANEL / "studio-workflow-detail-copy.js").read_text(encoding="utf-8")
+    data = json.loads(re.search(r'Object\.freeze\((\{.*\})\);', catalog, re.S).group(1))
+    legend = data["workflow_detail.canvas_keys"][0]
     assert "move" in legend.lower(), legend
 
 
@@ -495,17 +502,20 @@ def test_the_canvas_says_which_document_it_is_showing_and_never_mixes_two():
     assert re.findall(r'"data-document": ([a-z.]+)', canvas) == ["shown.kind"]
     kinds = set(re.findall(r'return \{kind: "(\w+)",', canvas))
     assert kinds == {"draft", "published", "none"}
-    runtime = re.search(r"function runStrip\(row\) \{(.*?)\n\}", canvas,
+    runtime = re.search(r"function runStrip\(row, state\) \{(.*?)\n\}", canvas,
                         re.DOTALL).group(1)
-    assert 'text: "run"' in runtime
+    assert 'text: localize(state, "workflow_detail.run_label")' in runtime
+    assert _locale_copy("studio-workflow-detail-copy.js")["workflow_detail.run_label"][0] == "run"
     for word in ("phase", "outcome", "decision", "pass"):
         assert f"row.{word}" in runtime, word
     # Every runtime word is written by that one function and by no other.
     outside = canvas.replace(runtime, "")
     for word in ("row.phase", "row.outcome", "row.bound_reached"):
         assert word not in outside, word
-    assert "a step id is the only join" in _text(CANVAS)
-    assert "records no workflow identity" in canvas
+    assert "workflow_detail.run_join_note" in canvas
+    prose = " ".join(pair[0] for pair in _locale_copy("studio-workflow-detail-copy.js").values())
+    assert "a step id is the only join" in prose
+    assert "records no workflow identity" in prose
 
 
 def test_a_published_revision_is_immutable_on_both_surfaces():
@@ -559,16 +569,27 @@ def test_the_inspector_reads_a_run_only_through_records_a_contract_validated():
     configuration this window could not read.
     """
     inspector = _code(*INSPECTOR)
-    word = re.search(r"function modelWord\(instance\) \{(.*?)\n\}", inspector,
+    word = re.search(r"function modelWord\(instance, form\) \{(.*?)\n\}", inspector,
                      re.DOTALL).group(1)
-    assert "unreadable" in word and "none pinned" in word
+    copy = _locale_copy("studio-workflow-copy.js")
+    keys = re.findall(r'"(workflow\.[a-z0-9_]+)"', word)
+    prose = " ".join(copy[key][0] for key in keys)
+    assert "unreadable" in prose and "none pinned" in prose
     assert "String(instance.model)" in word
     # Every read of a run is labelled with the run it came from.
-    sources = re.findall(r'`the (?:frozen configuration|plan|projection|durable '
-                         r'records|envelope) of run \$\{run\.runId\}', inspector)
+    sources = re.findall(r'"(workflow\.source_(?:config|plan|projection|records|envelope))", '
+                         r'\{run: String\(run\.runId\)\}', inspector)
     assert len(sources) >= 5
-    assert "Process exit 0 proves the process finished, not that the work" in (
-        "".join(_text(path) for path in INSPECTOR))
+    for key in sources:
+        assert "of run {run}" in copy[key][0]
+    assert 'workflow.copy_122' in inspector
+    assert "Process exit 0 proves the process finished, not that the work" in copy['workflow.copy_122'][0]
+
+
+def _locale_copy(name):
+    text = (PANEL / name).read_text(encoding="utf-8")
+    body = re.search(r'Object\.freeze\((\{.*\})\);', text, re.S).group(1)
+    return json.loads(body[:-1].rstrip().removesuffix(',') + '}')
 
 
 # -- a position is editable in the inspector, not only by pointer ------------

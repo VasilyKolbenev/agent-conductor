@@ -30,7 +30,7 @@ from __future__ import annotations
 
 from ..contracts import ActionRequest, ActionResultReceipt
 from .base import AdapterVerification
-from .harness_profile import login_residue_detail, retained_detail
+from .harness_profile import LOGIN_RESIDUE_DETAIL, login_residue_detail, retained_detail
 #: What this mixin needs from the class it is mixed into, stated rather than
 #: assumed: `profile`, `_ids`, `_clock`, `manifest`, and the two cleanup
 #: counters -- `_retained` for an attempt home that would not go, and
@@ -103,6 +103,22 @@ class ReceiptWriting:
             "exit-code contract for this mode, so the code is read as the "
             "process having ended and as nothing else. It is not a verification "
             "of the work, and this build cannot turn it into one")
+
+    def _residue_receipt(
+            self, request: ActionRequest, outcome: ProcessOutcome) -> ActionResultReceipt:
+        """A task that ran and left undeclared state in the login directory: `failed`.
+
+        ONE form for the dispatch road and the review road. The failure is this
+        build's refusal, not the process's, so an exit of zero is not carried: the
+        runtime admits `failed` only with no code or a non-zero one, and a
+        `failed` receipt carrying 0 was recorded as `unknown` -- MEASURED on the
+        first real subscription login (23.09.2026). A non-zero exit is still
+        carried, because then the process failed too. This sentence stays on the
+        adapter's receipt; the runtime settles from the durable event, which holds
+        no adapter prose, so the run itself records `failed` and nothing more.
+        """
+        return self._receipt(request, "failed", outcome.exit_code or None,
+                             LOGIN_RESIDUE_DETAIL)
 
     def _receipt(
             self, request: ActionRequest, observed: str, exit_code: int | None,

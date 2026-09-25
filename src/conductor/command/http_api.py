@@ -20,6 +20,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -92,11 +93,14 @@ from .http_transport import (
     validate_command_host,
 )
 from .run_store import CorruptRun, RecordConflict, RunStore, StoreError
+from .new_work_admission import admit_new_work
 from .task_store import TaskStore
 from .template_store import TemplateStore
 from .runtime import Budget, ControlRuntime
 from .service import CommandService
-from . import studio_routes, task_routes
+from .quota_service import QuotaService
+from .quota_views import DEFAULT_QUOTA_MAX_AGE, QuotaView, validate_get as _quota_get
+from . import http_reads, studio_routes, task_routes
 from .studio_routes import (
     plain_json as _plain_json,
     recovered_payload as _recovered_payload,
@@ -144,6 +148,9 @@ class CommandApi:
             clock: Callable[[], str], ids: Callable[[str], str],
             publish_run: Callable[[str], None],
             providers: Iterable[ProviderContract] = (),
+            provider_configs=(),
+            quota_service: QuotaService | None = None,
+            quota_max_age: timedelta = DEFAULT_QUOTA_MAX_AGE,
             templates: TemplateStore | None = None,
             tasks: TaskStore | None = None,
             project: Callable[[], str | None] = lambda: None) -> None:
@@ -161,6 +168,7 @@ class CommandApi:
         # Reviewed descriptors only, rebuilt by the projection before one field of
         # them is read; the boundary never resolves or probes a provider itself.
         self._providers = tuple(providers)
+        self._quota_view = QuotaView(quota_service, quota_max_age)
         # A CALLABLE, not a value: the map holding the name is re-read while the
         # server runs, so a name captured here would go stale against it.
         self._project = project
@@ -179,11 +187,14 @@ class CommandApi:
             budget.max_confirmation_age_seconds)
         self._clock = clock
         self._ids = ids
-        self._publish_run = publish_run
+        from .policy_wiring import notify_run, make_policy
+        self._publish_run = notify_run(self, publish_run)
         self._service = CommandService(store, registry, clock=clock, ids=ids)
         self._runtime = ControlRuntime(
-            store, registry, clock=clock, ids=ids, notify=publish_run)
+            store, registry, clock=clock, ids=ids, notify=self._publish_run)
         self._execution: ExecutionCoordinator | None = None
+        self._policy = make_policy(self, provider_configs)
+        self._runtime._policy = self._policy
 
     @property
     def runtime(self) -> ControlRuntime:
@@ -221,9 +232,11 @@ class CommandApi:
             pairs = tuple(raw_headers)
             if method == "GET":
                 host = validate_command_host(pairs, self._session.allowed_hosts)
-                return self._get(route, host)
+                if route.name == "quotas":
+                    _quota_get(target, pairs, raw_body)
+                return self._localized(self._get(route, host), pairs)
             body = self._session.validate_mutation(pairs, raw_body)
-            return self._post(route, body)
+            return self._localized(self._post(route, body), pairs)
         except ApiRefusal as refusal:
             return CommandResponse(refusal.status, refusal.as_dict())
         except Exception as error:
@@ -233,6 +246,11 @@ class CommandApi:
                 raise
             return CommandResponse(refusal.status, refusal.as_dict())
 
+    @staticmethod
+    def _localized(response, pairs):
+        from .response_locale import language_for, localize_criteria
+        return CommandResponse(response.status, localize_criteria(response.payload, language_for(pairs)))
+
     def body_length(
             self, target: str,
             raw_headers: Iterable[tuple[str, str]]) -> int:
@@ -241,32 +259,12 @@ class CommandApi:
         return self._session.body_length(raw_headers)
 
     def _get(self, route: _Route, host: str) -> CommandResponse:
-        if route.name == "session":
-            return CommandResponse(200, self._session.session_response(host))
-        if route.name == "workflows":
-            return self._list_workflows()
-        if route.name == "runs":
-            return self._list_runs()
-        if route.name == "tasks":
-            return CommandResponse(*task_routes.list_tasks(self._tasks))
-        if route.name == "task":
-            assert route.task_id is not None
-            return CommandResponse(*task_routes.read_task(
-                self._tasks, self._store, route.task_id))
-        if route.name in {"workflow", "workflow_revision"}:
-            assert route.workflow_id is not None
-            if route.name == "workflow":
-                return self._workflow_state(route.workflow_id)
-            assert route.revision is not None
-            return self._read_revision(route.workflow_id, route.revision)
-        assert route.run_id is not None
-        self._hold_route(route.run_id)
-        recovered = self._store.read(route.run_id)
-        if route.name == "run":
-            return CommandResponse(200, _recovered_payload(recovered, self._tasks))
-        return CommandResponse(200, self._controls(recovered.config))
+        return CommandResponse(*http_reads.read_route(self, route, host))
 
     def _post(self, route: _Route, body: Mapping[str, Any]) -> CommandResponse:
+        if route.name.startswith("automation_"):
+            from .policy_routes import route as policy_route
+            return CommandResponse(*policy_route(self, route.name, route.run_id, body))
         if route.name == "templates":
             return self._publish_template(body)
         if route.name == "runs":
@@ -326,7 +324,7 @@ class CommandApi:
 
     def _list_runs(self) -> CommandResponse:
         return CommandResponse(
-            *studio_routes.list_runs(self._store, self._providers))
+            *studio_routes.list_runs(self._store, self._providers, computed_at=self._clock()))
 
     def _write_artifact(
             self, run_id: str, body: Mapping[str, Any]) -> CommandResponse:
@@ -405,8 +403,8 @@ class CommandApi:
             probe = _plan(checked, initial.config, run_id, asked, _PROBE_AT)
             # Create road only: the comparison road below admits nothing.
             work_scope_admits(probe.nodes, task)
-            self._bindings_are_reachable(initial.config, run_id, probe.nodes)
-            self._bindings_are_servable(initial.config, run_id, probe.nodes)
+            # One judgement per plan, whichever door writes it: a checker that cannot check
+            self._judge_plan(initial.config, run_id, probe.nodes)  # would wedge an immutable plan
         with self._store.transaction():
             self._hold_route(run_id)
             recovered = self._store.read(run_id)
@@ -608,6 +606,9 @@ class CommandApi:
             bound = self._bound_adapter(config, run_id, node.instance_id)
             _servable_pair(
                 self._registry, bound, node.capability, node.payload())
+            admit_new_work(self._store.project_root,
+                           self._registry.argument_schema(bound, node.capability),
+                           node.capability, node.payload())
 
     def _propose(self, run_id: str, body: Mapping[str, Any]) -> CommandResponse:
         """Record one proposal; a resubmit after the ending is a NEW record.

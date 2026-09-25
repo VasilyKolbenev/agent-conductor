@@ -493,6 +493,19 @@ def _add_map_commands(sub: argparse._SubParsersAction) -> None:
     _add_dir_and_func(p, _cmd_report)
 
 
+def _cmd_ownership(args):
+    from conductor.ownership_cli import ownership_command
+    return ownership_command(args)
+
+
+def _add_ownership(sub):
+    parser = sub.add_parser("ownership", help="explicit ownership status and maintenance")
+    parser.add_argument("operation", choices=("status", "activate", "rollback", "recover", "recover-login"))
+    parser.add_argument("--legacy-writers-stopped", action="store_true")
+    parser.add_argument("--auth-home", default=None)
+    _add_dir_and_func(parser, _cmd_ownership)
+
+
 def _build_parser() -> argparse.ArgumentParser:
     """Build the `conduct` argument parser: one explicit block per subcommand."""
     parser = argparse.ArgumentParser(
@@ -500,6 +513,7 @@ def _build_parser() -> argparse.ArgumentParser:
         description="A local, decision-centric control plane for AI coding agents.")
     sub = parser.add_subparsers(dest="command", required=True)
     _add_map_commands(sub)
+    _add_ownership(sub)
 
     p = sub.add_parser(
         "preview",
@@ -559,7 +573,8 @@ def main(argv: list[str] | None = None) -> int:
             stream.reconfigure(encoding="utf-8")
     args = _build_parser().parse_args(argv)
     try:
-        return args.func(args)
+        from conductor.ownership_cli import dispatch
+        return dispatch(args)
     except store.StoreError as e:
         print(str(e), file=sys.stderr)
         return 1

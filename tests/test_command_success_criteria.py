@@ -23,6 +23,7 @@ run read and the workflow read, and the window renders it: the tests that hold
 THAT are next door in ``test_studio_success_criteria`` and in the browser.
 """
 from __future__ import annotations
+from tests.human_situation_samples import READ_AT
 
 import pytest
 
@@ -175,7 +176,7 @@ def test_the_run_read_carries_the_statement_for_the_step_it_describes(tmp_path):
               config_digest=snapshot_digest(CONFIG)), CONFIG)
     store.append(a_plan())
 
-    served = graph_payload(store.read("run-001"))["success_criteria"]
+    served = graph_payload(store.read("run-001"), computed_at=READ_AT)["success_criteria"]
 
     assert set(served) == {"gate", "check"}
     said = texts(served["check"])

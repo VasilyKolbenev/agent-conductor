@@ -280,8 +280,8 @@ class _Window:
 
 
 def _open(chromium: Browser, project: _Project, *,
-          double: bool = False) -> tuple[Page, _Window]:
-    context = chromium.new_context(viewport={"width": 1700, "height": 1400})
+          double: bool = False, locale: str = "en-US") -> tuple[Page, _Window]:
+    context = chromium.new_context(viewport={"width": 1700, "height": 1400}, locale=locale)
     if double:
         context.add_init_script(_STREAM_DOUBLE)
     page = context.new_page()
@@ -313,7 +313,10 @@ def _start_from_starter(page: Page, workflow_id: str) -> None:
 def _save_draft(page: Page) -> None:
     page.wait_for_selector(
         '#workflowToolbar [data-focus="action:onSaveDraft"]:not([disabled])')
-    page.locator('#workflowToolbar [data-focus="action:onSaveDraft"]').click()
+    with page.expect_response(lambda row: row.request.method == "POST"
+                              and "/command/workflows/" in row.url and row.url.endswith("/draft")) as response:
+        page.locator('#workflowToolbar [data-focus="action:onSaveDraft"]').click()
+    assert response.value.status in (200, 201), response.value.json()
     page.wait_for_selector('#workflowToolbar [data-save="saved"]')
 
 
@@ -406,14 +409,21 @@ def test_a_saved_draft_comes_back_from_the_server_after_a_full_reload(
         assert sorted(document) == ["edges", "nodes", "schema_version", "title"]
         assert len(document["nodes"]) == STARTER_STEPS
         drawn = window.node_ids()
-
+        held = []
+        def hold_first_read(route):
+            if not held:
+                held.append(route)
+            else:
+                route.continue_()
+        page.route(project.url + "command/workflows/reload-bench", hold_first_read)
         page.reload(wait_until="load")
         _settle(page)
         assert window.storage() == [0, 0], (
             "the window put something in browser storage across a reload")
         assert window.node_ids() == [], (
             "a drawing survived a reload without a read; it came from the tab")
-        _choose(page, "reload-bench")
+        assert held, "restored navigation must read the selected workflow"
+        held[0].continue_()
         page.wait_for_selector(
             '.studio-canvas__banner[data-document="draft"]')
         page.wait_for_function(

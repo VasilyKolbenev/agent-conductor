@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>December — Workflow Studio</title>
+<title id="studioTitle">December — Workflow Studio</title>
 <!-- The application shell. This document is what `GET /` answers with; the
      classic panel keeps its own file name and is reached at /panel/index.html.
 
@@ -45,8 +45,10 @@
          same words in every state, and a link that only appeared once a read
          had landed would be missing on exactly the screens a person reaches
          when a read did not. -->
-    <a class="studio-elsewhere" href="/panel/index.html">Map, findings, feed
+    <a class="studio-elsewhere" data-i18n="shell.classic" href="/panel/index.html">Map, findings, feed
       and handoffs — classic panel</a>
+    <div class="studio-preferences" id="studioPreferences" role="group"
+      aria-label="Appearance and language"></div>
     <div class="studio-primary" id="studioPrimary"></div>
   </header>
 
@@ -55,7 +57,7 @@
        carried by aria-selected, an underline and a heavier word -- three
        carriers, so the current screen is never named by colour alone. -->
   <nav class="studio-nav" id="studioNav" role="tablist"
-       aria-label="Studio screens">
+       aria-label="Studio screens" data-i18n-label="nav.label">
     <button aria-controls="screenOverview" aria-selected="true"
       class="studio-tab" data-screen="overview" id="navOverview" role="tab"
       type="button">Overview</button>
@@ -79,12 +81,14 @@
        A test asserts the attribute; a person reads the sentence; neither has
        to parse the other. -->
   <main class="studio-main" id="studioMain">
+    <aside aria-label="Project tasks" data-i18n-label="task.section" id="studioTasks"></aside>
+    <div class="studio-workspace" id="studioWorkspace">
 
     <section aria-labelledby="navOverview" class="studio-screen"
       data-state="empty" id="screenOverview" role="tabpanel" tabindex="0">
-      <h2>Overview</h2>
+      <h2 data-i18n="nav.overview">Overview</h2>
       <p class="studio-state" id="stateOverview">Nothing has been read yet.</p>
-      <p class="studio-hint">This screen answers what the project is, whether
+      <p class="studio-hint" data-i18n="shell.overview">This screen answers what the project is, whether
         it is ready to run, what is blocked, and what needs you.</p>
       <div class="studio-body" id="bodyOverview"></div>
     </section>
@@ -92,9 +96,9 @@
     <section aria-labelledby="navWorkflow" class="studio-screen"
       data-state="empty" hidden id="screenWorkflow" role="tabpanel"
       tabindex="0">
-      <h2>Workflow</h2>
-      <p class="studio-state" id="stateWorkflow">Nothing has been read yet.</p>
-      <p class="studio-hint">A workflow names roles and steps. It never names a
+      <header class="studio-screen__head"><h2 data-i18n="nav.workflow">Workflow</h2>
+      <p class="studio-state" id="stateWorkflow">Nothing has been read yet.</p></header>
+      <p class="studio-hint" data-i18n="shell.workflow">A workflow names roles and steps. It never names a
         provider, a model or a run — a run binds those when it starts.</p>
       <!-- The toolbar is a mount point, not a set of controls the shell
            invents: every button here writes, and a control that writes must be
@@ -114,32 +118,36 @@
 
     <section aria-labelledby="navRuns" class="studio-screen" data-state="empty"
       hidden id="screenRuns" role="tabpanel" tabindex="0">
-      <h2>Runs</h2>
+      <header class="studio-screen__head"><h2 data-i18n="nav.runs">Runs</h2>
       <p class="studio-state" id="stateRuns">Nothing has been read yet.</p>
-      <p class="studio-hint">A process that exits 0 has finished, which is not
-        the same as having been verified. Both words are shown.</p>
+      <details class="studio-explain"><summary data-i18n="shell.runs">About runs</summary>
+        <p class="studio-hint" data-i18n="shell.verification">A process that exits 0 has finished, which is not
+          the same as having been verified. Both words are shown.</p>
+      </details></header>
       <div class="studio-body" id="bodyRuns"></div>
     </section>
 
     <section aria-labelledby="navDecisions" class="studio-screen"
       data-state="empty" hidden id="screenDecisions" role="tabpanel"
       tabindex="0">
-      <h2>Decisions</h2>
+      <h2 data-i18n="nav.decisions">Decisions</h2>
       <p class="studio-state" id="stateDecisions">Nothing has been read yet.</p>
-      <p class="studio-hint">A decision is a durable receipt. This screen says
+      <p class="studio-hint" data-i18n="shell.decisions">A decision is a durable receipt. This screen says
         why one is needed, what each choice causes, and what it unblocks.</p>
       <div class="studio-body" id="bodyDecisions"></div>
     </section>
 
     <section aria-labelledby="navAgents" class="studio-screen"
       data-state="empty" hidden id="screenAgents" role="tabpanel" tabindex="0">
-      <h2>Agents</h2>
+      <h2 data-i18n="nav.agents">Agents</h2>
       <p class="studio-state" id="stateAgents">Nothing has been read yet.</p>
-      <p class="studio-hint">A participant binds one instance to one configured
+      <p class="studio-hint" data-i18n="shell.agents">A participant binds one instance to one configured
         provider. Providers are operator-written and read at startup.</p>
       <div class="studio-body" id="bodyAgents"></div>
     </section>
 
+    </div>
+    <aside class="studio-bridge" id="studioBridge" hidden aria-label="Run controls and usage" data-i18n-label="bridge.region"></aside>
   </main>
 
   <!-- The one place a transient sentence is written. Persistent in the

@@ -434,6 +434,10 @@ def _print_next_steps(args: argparse.Namespace, text: str) -> None:
     if roles:
         _say(f"  conduct prompt --role {roles[0]['id']}{where}")
         _say("      the working prompt for that role — paste it into your harness")
+    _say(f"  conduct ownership activate --legacy-writers-stopped{where}")
+    _say("      activate ownership after all legacy writers have stopped")
+    _say(f"  conduct providers{where}")
+    _say("      configure existing native harness profiles before starting Studio")
     _say(f"  conduct up{where}")
     # Derived, never retyped: init advising a port the panel does not bind
     # would be worse than saying nothing.
@@ -529,7 +533,13 @@ def run(args: argparse.Namespace,
         and is the exception: an unwritable root, or a generated map that
         fails its own validation, which leaves the directory in place.
     """
-    cdir = Path(args.dir) / "conductor"
+    from .ownership_layout import init_target
+    from .ownership_errors import OwnerRefused
+    try:
+        cdir = init_target(args.dir)
+    except OwnerRefused as error:
+        _say(str(error))
+        return 1
     if cdir.exists():                 # checked before any question is asked
         _say(f"{cdir} already exists — refusing to touch it")
         return 1

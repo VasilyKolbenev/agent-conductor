@@ -286,7 +286,7 @@ def test_both_jobs_prove_the_checkout_is_clean_before_they_report_green(
     that printed the dirt and returned zero would read like a gate and be a
     report.
     """
-    for name in ("test", "browser"):
+    for name in ("test", "browser", "wheel", "wheel-road"):
         job = _job(workflow, name)
         assert "git status --porcelain" in job, (
             f"the {name} job never checks whether it left the checkout dirty")
@@ -308,6 +308,27 @@ def test_the_wheel_smoke_rides_the_whole_core_matrix(workflow: str) -> None:
 
     assert "python -m build --wheel" in job
     assert "conduct validate --dir" in job
+
+
+def test_one_selected_wheel_walks_the_installed_road_on_linux_and_macos(workflow: str) -> None:
+    """Codex 25.09.2026: a clean venv, init -> activate -> up -> SIGINT -> closed, twice.
+
+    Built ONCE and handed on by digest: a wheel built per runner is a different archive per
+    platform. The road runs the repository's own runner, and only its report and logs are kept,
+    under the runner's temporary root -- never a venv, a project or the wheel copy.
+    """
+    build, road = _job(workflow, "wheel"), _job(workflow, "wheel-road")
+    assert 'python -m build --wheel --outdir "$RUNNER_TEMP/dist"' in build
+    assert '>> "$GITHUB_OUTPUT"' in build and "sha256=" in build
+    assert "needs: wheel" in road
+    assert "ubuntu-latest" in road and "macos-latest" in road
+    assert "python scripts/wheel_road.py" in road
+    assert '--sha256 "${{ needs.wheel.outputs.sha256 }}"' in road
+    kept = [line.strip() for line in road.splitlines() if "/wheel-road/" in line]
+    assert kept == ["${{ runner.temp }}/wheel-road/report.json",
+                    "${{ runner.temp }}/wheel-road/*.log"], kept
+    assert (ROOT / "scripts" / "wheel_road.py").is_file()
+    assert (ROOT / "scripts" / "installed_probe.py").is_file()
 
 
 #: The prose word each runner label is spoken as, where a document names the

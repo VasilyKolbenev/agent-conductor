@@ -33,6 +33,7 @@ from conductor.command.api_contracts import _CONFIRM_FIELDS, _PROPOSAL_REQUIRED
 from conductor.command.contract_values import ControlMode
 
 from tests.test_graph_source import _code
+from tests.studio_source_messages import _code
 from tests.test_studio_runs import _balanced
 
 PANEL = Path(__file__).resolve().parents[1] / "src" / "conductor" / "panel"
@@ -117,6 +118,13 @@ def test_the_studios_proposal_body_carries_the_schedules_node_and_never_a_typed_
         "proposedBy", "rationale"]
 
 
+def _body_of(step: str, name: str) -> str:
+    """One exported function's body out of the step control, or a failure naming it."""
+    found = re.search(rf"export function {name}\([^)]*\) \{{(.*?)\n\}}", step, re.DOTALL)
+    assert found is not None, f"studio-runstep.js exports no {name}"
+    return found.group(1)
+
+
 def test_the_step_the_body_names_is_the_one_the_servers_schedule_chose():
     """The offer rule, read from a durable fact and never from a refusal.
 
@@ -127,12 +135,12 @@ def test_the_step_the_body_names_is_the_one_the_servers_schedule_chose():
     refuse, which is the defect the schedule exists to remove.
     """
     step = _code(STEP)
-    offer = re.search(
-        r"export function stepControls\([^)]*\) \{(.*?)\n\}", step, re.DOTALL)
-    assert offer is not None, "studio-runstep.js exports no stepControls"
-    body = offer.group(1)
+    # The rule lives in ONE decision the row and the Runs header both read (`offeredControl`);
+    # the builder draws what it answers, and nothing for "none".
+    body = _body_of(step, "offeredControl")
     assert 'standing === null || standing.state !== "runnable"' in body, body
-    assert "return [];" in body, body
+    assert 'return "none";' in body, body
+    assert 'if (offer === "none") return [];' in _body_of(step, "stepControls")
     # And a step the plan binds to nothing is offered nothing either: a node
     # with no instance and no capability has no body to build.
     assert 'typeof node.instance_id !== "string"' in body, body
@@ -164,10 +172,10 @@ def test_the_step_controls_ask_a_person_for_three_facts_and_no_binding():
     # serves this" and "this window was not told" send a person to two
     # different places, and answering the first while the second is true sends
     # them looking for a provider they already have.
-    join = re.search(r"function whyNoAdapter\(detail, node\) \{(.*?)\n\}", step,
+    join = re.search(r"function whyNoAdapter\(detail, node, state\) \{(.*?)\n\}", step,
                      re.DOTALL)
     assert join is not None, "nothing joins the plan node to the controls read"
-    assert "if (controls === null) {" in join.group(1), join.group(1)
+    assert "if (controls === null) return " in join.group(1), join.group(1)
     assert "controls read has not landed here" in join.group(1)
     assert "This build serves no adapter for" in join.group(1)
     # The two submit controls, keyed by the node the schedule chose, so the
@@ -362,9 +370,11 @@ def test_the_window_asks_for_the_smaller_of_the_two_ceilings():
     assert "Math.min(node.timeout_seconds, DEFAULT_TIMEOUT)" in said, said
     assert ": DEFAULT_TIMEOUT;" in said, said
     assert "const DEFAULT_TIMEOUT = 900;" in step
-    # And the sentence beside it says both halves of the rule.
+    # And the sentence beside it says both halves of the rule, with the
+    # window's own number spliced in from the one constant that holds it.
     assert "whichever is smaller" in step
-    assert 'note(TIMEOUT_NOTE),' in step
+    assert ("note(`The window asks for this step's own ceiling or "
+            "${DEFAULT_TIMEOUT}s, whichever is smaller.") in step
 
 
 def test_a_standing_proposal_is_never_described_as_going_stale():
@@ -381,7 +391,7 @@ def test_a_standing_proposal_is_never_described_as_going_stale():
     for gone in ("freshness budget", "FRESHNESS", "left standing long enough"):
         assert gone not in step, gone
     # `Proposed at` stays. It is history, and the row draws it as history.
-    assert 'fact("Proposed at", proposal.proposed_at),' in step
+    assert 'fact("Proposed at", proposal.proposed_at, state),' in step
 
 
 def test_the_stale_screen_sentence_names_the_run_as_well_as_the_plan():
@@ -445,9 +455,12 @@ def test_a_refusal_gives_the_control_back_with_what_was_typed_still_in_it():
     assert door.count("door.refreshRun(asked);") == 2, door
     step = _code(STEP)
     assert "shut: submit === null || edit === null || !live || writing" in step
-    assert "if (wire.writing) said.push(note(WRITING_NOTE));" in step
-    # The sentence is declared once, with the words two fragments say.
-    assert "What you have typed here is kept." in _code(WORDS)
+    said = re.search(r'if \(wire\.writing\) said\.push\(note\("([^"]+)"\)\);', step)
+    assert said is not None, step
+    assert said.group(1).endswith("What you have typed here is kept."), said.group(1)
+    # The two fragments that shut a control on a write say the one sentence.
+    assert f'if (writing) said.push(note("{said.group(1)}"));' in _code(
+        PANEL / "studio-rundocs.js")
 
 
 def test_the_screen_hands_the_step_control_the_row_and_decides_nothing():
@@ -478,23 +491,24 @@ def test_the_controls_offer_only_what_the_runs_frozen_authority_permits():
     ladder, and a word the table does not carry permits nothing.
     """
     step = _code(STEP)
-    offer = re.search(
-        r"export function stepControls\([^)]*\) \{(.*?)\n\}", step, re.DOTALL)
-    assert offer is not None, "studio-runstep.js exports no stepControls"
-    body = offer.group(1)
+    body = _body_of(step, "offeredControl")
     # The schedule's word still comes FIRST: a blocked row of an observe run is
     # told why it is blocked by the sentence next door, not that it is
     # unwritable -- the authority sentence stands where a control would have.
-    assert body.index('standing.state !== "runnable"') < body.index(
-        "authorityOf(detail)"), body
-    assert ('if (authority.permits === "nothing") {\n'
-            "    return [nothingPermitted(authority)];") in body, body
-    assert re.search(r'authority\.permits === "confirmations"\s*\n\s*'
-                     r"\? confirmForm\(", body), body
-    assert ": [proposalsOnly(authority)]" in body, body
-    assert body.count("confirmForm(") == 1 and body.count("proposeForm(") == 2
-    assert body.index('authority.permits === "nothing"') < body.index(
-        "needsMaterialReproposal(standingProposal(detail, node.node_id), detail)")
+    assert body.index('standing.state !== "runnable"') < body.index("PERMITS["), body
+    assert 'const permits = PERMITS[(object(detail.run) || {}).mode] || "nothing";' in body, body
+    assert 'if (permits === "nothing") return "nothing_permitted";' in body, body
+    assert body.index('permits === "nothing"') < body.index("needsMaterialReproposal(proposal, detail)")
+    assert body.index("needsMaterialReproposal(proposal, detail)") < body.index(
+        'if (permits !== "confirmations") return "proposals_only";'), body
+    assert 'return proposal === null ? "proposal_missing" : "confirm";' in body, body
+    # And the builder draws exactly what the decision answered: one withheld sentence per word,
+    # one confirmation form and one proposal form.
+    build = _body_of(step, "stepControls")
+    assert "const offer = offeredControl(node, runtime, standing, detail);" in build, build
+    assert 'if (offer === "nothing_permitted") return [nothingPermitted(authority, state)];' in build
+    assert 'if (offer === "proposals_only") return [proposalsOnly(authority, state)];' in build
+    assert build.count("confirmForm(") == 1 and build.count("proposeForm(") == 1, build
     # The table is the server's whole ladder, and what each rung permits is
     # the server's two refusals restated: observe proposes nothing, confirm
     # alone confirms, and policy -- a word nothing serves -- is propose.
@@ -514,7 +528,7 @@ def test_the_controls_offer_only_what_the_runs_frozen_authority_permits():
     assert "Open a run form on the Workflow screen" in step
     assert "nothing can confirm it here" in step
     assert ('...(authority.permits === "proposals"\n'
-            "        ? [proposedUnder(authority.mode)] : [])") in step
+            "        ? [proposedUnder(authority.mode, state)] : [])") in step
 
 
 def test_the_confirm_road_names_what_the_run_form_really_opens():
@@ -527,13 +541,20 @@ def test_the_confirm_road_names_what_the_run_form_really_opens():
     sentences name the one form that grants authority.
     """
     step = _code(STEP)
-    assert "open a new run of this workflow's " in step
-    assert "published revision with authority confirm" in step
+    # Judged on the one function that hands the road to every sentence that
+    # withholds a control, so a sentence declared and reached by nothing
+    # cannot stand in for the one a person reads.
+    road = re.search(r"function authorityOf\(detail, state\) \{(.*?)\n\}", step,
+                     re.DOTALL)
+    assert road is not None, "studio-runstep.js reads no authority off the run"
+    said = road.group(1)
+    assert ('road: (typeof run.workflow_id === "string" ? "To carry a step out, '
+            "open a new run of this workflow's published revision with "
+            "authority confirm") in said, said
+    assert (' : "This run follows no workflow. To carry a step out, publish a '
+            "workflow and open a run of it with authority confirm") in said, said
+    assert said.count("the Open a run form on the Workflow screen grants it explicitly.") == 2
     assert "new run of this revision" not in step
-    assert 'const NO_WORKFLOW_ROAD = "This run follows no workflow. ' in step
-    assert step.count("the Open a run form on the Workflow screen grants it explicitly.") == 2
-    assert ('road: typeof run.workflow_id === "string" ? CONFIRM_ROAD : NO_WORKFLOW_ROAD'
-            in step)
 
 
 def test_a_write_in_flight_is_its_run_and_steps_own_and_spends_only_its_draft():
@@ -733,6 +754,6 @@ def test_no_rung_of_the_ladder_claims_an_executor_this_build_does_not_ship():
     notes = _sentences(WORDS, "CONTROL_MODES")
     for name, said in (("MODE_MEANINGS", meanings), ("CONTROL_MODES", notes)):
         assert set(said) == {mode.value for mode in ControlMode}, (name, said)
-        assert "no policy executor" in said["policy"], (name, said["policy"])
-        assert "as a propose run" in said["policy"], (name, said["policy"])
+        assert "separate human preview and permission" in said["policy"], (name, said["policy"])
+        assert "execution permission" in said["policy"], (name, said["policy"])
     assert "Nothing can be authorized in this run" in notes["propose"], notes

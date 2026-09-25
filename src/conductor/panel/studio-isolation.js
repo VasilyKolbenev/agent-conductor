@@ -16,6 +16,7 @@
 // configuration does not have, `unknown` is a combination nobody measured, and
 // a stated absence is something this build openly does not do -- none of the
 // three is a guarantee, and each says which it is in its own words.
+import {localize as L} from "./studio-i18n.js";
 import {element} from "./command-view.js";
 
 const ACTIVE = "active";
@@ -25,19 +26,19 @@ const DETECTED = "detected_after_spawn";
 //: not drawn at all rather than drawn empty: an empty heading reads as "nothing
 //: here", which is a claim.
 const GROUPS = [
-  [REFUSED, "Stopped before the step runs"],
-  [DETECTED, "Noticed only after it has run"],
+  [REFUSED, "agents.isolation_before"],
+  [DETECTED, "agents.isolation_after"],
 ];
 //: What the third category is called where a person reads it. The word
 //: "isolation" is deliberately absent from the first two headings: they are
 //: refusals and detections, and calling either isolation is the confusion this
 //: whole surface exists to end.
 const NOT_ISOLATED = "not_isolated";
-const NOT_ISOLATED_TITLE = "Not confined by this build";
+const NOT_ISOLATED_TITLE = "agents.isolation_absent";
 //: And the rows this configuration has no answer for. Named as unsettled rather
 //: than dropped: a check nobody could establish is a thing to tell somebody
 //: before they authorize a run, not a thing to leave off the page.
-const UNSETTLED_TITLE = "Not established for this configuration";
+const UNSETTLED_TITLE = "agents.isolation_unsettled";
 
 function bindingFor(detail, node) {
   const controls = detail && detail.controls;
@@ -58,26 +59,9 @@ function wordsFrom(detail) {
 //: inspector open: on the screen, "nobody measured this" and "this build openly
 //: does not do it" were the same paragraph, which is the confusion the four
 //: words exist to end.
-const STANDING_WORDS = {
-  unknown: "Not established for this configuration — nothing here says it "
-    + "does or does not stand.",
-  not_applicable: "Not a protection this configuration has: it needs "
-    + "something this run did not ask for.",
-};
+const STANDING_WORDS = Object.freeze({unknown: "agents.isolation_unknown", not_applicable: "agents.isolation_not_applicable"});
 
-//: The vendor's own mechanism has THREE answers and each is a different
-//: sentence. The absence of a CLI flag is never written as "this vendor has no
-//: sandbox": what this build can say is what it ASKED for.
-const VENDOR_UNKNOWN =
-  "This integration carries no reviewed declaration for this provider, so "
-  + "nothing is stated here either way — neither that a vendor sandbox mode is "
-  + "requested nor that none is.";
-const VENDOR_NONE =
-  "This integration reviewed this provider and requests NO vendor sandbox "
-  + "mode on any road. That is a statement about what this build asks for, not "
-  + "a finding that the vendor ships none.";
-
-function vendorLine(row) {
+function vendorLine(row, state) {
   // The vendor's own words, per road, marked as a mode that was REQUESTED. A
   // platform may or may not enforce it, and this build never presents it as
   // proof that the operating system confined anything.
@@ -86,40 +70,37 @@ function vendorLine(row) {
   // at all, and is a different question entirely.
   if (!Object.hasOwn(row, "vendor_detail")) return null;
   const detail = row.vendor_detail;
-  let text = VENDOR_UNKNOWN;
+  let text = L(state, "agents.isolation_vendor_unknown");
   if (Array.isArray(detail)) {
-    text = detail.length === 0 ? VENDOR_NONE
-      : `Requested of the vendor — ${detail
-        .map(([road, tokens]) => `${road}: ${tokens}`).join("; ")}. Whether the `
-        + "platform enforces it is the vendor's business, not a boundary this "
-        + "build imposes.";
+    text = detail.length === 0 ? L(state, "agents.isolation_vendor_none")
+      : L(state, "agents.isolation_requested", {requests: detail.map(([road, tokens]) => `${road}: ${tokens}`).join("; ")});
   }
   return element("p", {className: "studio-isolation-vendor", text});
 }
 
-function rowItem(row, words) {
+function rowItem(row, words, state) {
   const said = words.get(row.name);
   if (!said) return null;
   const item = element("li", {className: `studio-isolation-${row.standing}`,
     "data-fact": row.name, "data-standing": row.standing},
   [element("span", {text: said.sentence})]);
-  const vendor = vendorLine(row);
+  const vendor = vendorLine(row, state);
   // A row speaks for itself where it can: the vendor's own line already says
   // which of its three answers this is, so a second sentence saying "not
   // established" beside it would be the same fact twice.
   if (vendor !== null) item.append(vendor);
   else if (Object.hasOwn(STANDING_WORDS, row.standing)) {
     item.append(element("p", {className: "studio-isolation-standing",
-      text: STANDING_WORDS[row.standing]}));
+      text: L(state, STANDING_WORDS[row.standing])}));
   }
   return item;
 }
 
-function group(rows, words, title) {
-  const items = rows.map((row) => rowItem(row, words)).filter(Boolean);
+function group(rows, words, title, state) {
+  const items = rows.map((row) => rowItem(row, words, state)).filter(Boolean);
   if (!items.length) return null;
   return element("section", {className: "studio-isolation-group"},
-    [element("h5", {text: title}), element("ul", {}, items)]);
+    [element("h5", {text: L(state, title)}), element("ul", {}, items)]);
 }
 
 /**
@@ -132,7 +113,7 @@ function group(rows, words, title) {
  * describe gets no section at all -- an absent answer is never drawn as a
  * reassuring one.
  */
-export function isolationFacts(detail, node, capability) {
+export function isolationFacts(detail, node, capability, state = {}) {
   const binding = bindingFor(detail, node);
   const words = wordsFrom(detail);
   if (binding === null || !words.size) return [];
@@ -146,26 +127,23 @@ export function isolationFacts(detail, node, capability) {
     (row) => row.standing === ACTIVE && row.category !== NOT_ISOLATED);
   const groups = GROUPS
     .map(([category, title]) => group(
-      active.filter((row) => row.category === category), words, title))
+      active.filter((row) => row.category === category), words, title, state))
     .filter(Boolean);
   const absences = standings.filter((row) => row.category === NOT_ISOLATED);
-  const notIsolated = group(absences, words, NOT_ISOLATED_TITLE);
+  const notIsolated = group(absences, words, NOT_ISOLATED_TITLE, state);
   if (notIsolated !== null) groups.push(notIsolated);
   // Everything the server could not answer for, said OUT LOUD rather than left
   // out. Silence about a check reads as "nothing to say here", which is itself
   // a reassurance -- and these are the rows where this build knows least.
   const unsettled = standings.filter(
     (row) => row.category !== NOT_ISOLATED && row.standing !== ACTIVE);
-  const open = group(unsettled, words, UNSETTLED_TITLE);
+  const open = group(unsettled, words, UNSETTLED_TITLE, state);
   if (open !== null) groups.push(open);
   if (!groups.length) return [];
-  const summary = `${active.length} check${active.length === 1 ? "" : "s"} `
-    + `stand for ${binding.instance_id} · ${binding.adapter_id} on the `
-    + `${capability} road. `
-    + "This build starts an ordinary process with your own rights.";
+  const summary = L(state, active.length === 1 ? "agents.isolation_summary_one" : "agents.isolation_summary", {count: String(active.length), instance: binding.instance_id, adapter: binding.adapter_id, capability});
   return [element("section", {className: "studio-isolation",
     "data-instance": binding.instance_id},
   [element("p", {className: "studio-isolation-summary", text: summary}),
     element("details", {className: "studio-isolation-detail"},
-      [element("summary", {text: "What that means"}), ...groups])])];
+      [element("summary", {text: L(state, "agents.isolation_details")}), ...groups])])];
 }

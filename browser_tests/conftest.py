@@ -122,6 +122,9 @@ def _instrumented(browser: Browser) -> Browser:
     minting = browser.new_context
 
     def new_context(**options):
+        # Every scenario names its locale: the English selectors below are not
+        # a bet on the host's language, and the RU/EN scenarios pass their own.
+        options.setdefault("locale", "en-US")
         context = minting(**options)
         _OPEN_CONTEXTS.append(context)
         # Every page this context will ever hold, however it was opened.
@@ -136,7 +139,9 @@ def _instrumented(browser: Browser) -> Browser:
 def chromium() -> Iterator[Browser]:
     """Launch the same Chromium engine the independent CI job installs."""
     with sync_playwright() as playwright:
-        browser = _instrumented(playwright.chromium.launch(headless=True))
+        log_path = os.environ.get("CHROME_LOG_FILE")
+        log_args = [f"--log-file={log_path}"] if log_path else []
+        browser = _instrumented(playwright.chromium.launch(headless=True, args=log_args))
         try:
             yield browser
         finally:

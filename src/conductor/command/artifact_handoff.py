@@ -65,6 +65,13 @@ class ArtifactHandoff:
         return tuple(ArtifactDocument.from_dict(row.as_dict()) for row in (
             latest_artifacts(documents, asked)))
 
+    def feedback(self, request):
+        if request.run_authorization_id is ABSENT:
+            return ()
+        from .feedback_history import feedback_for_request
+        return tuple(value.as_dict() for value in feedback_for_request(
+            self._store.read(request.run_id), request))
+
     # -- what stood when the proposal was written --------------------------------
     #
     # A source is bound when it is confirmed, never chosen again at execution

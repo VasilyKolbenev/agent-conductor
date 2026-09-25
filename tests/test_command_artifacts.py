@@ -107,12 +107,13 @@ def test_artifact_route_is_immutable_idempotent_and_visible_in_run_read(tmp_path
     created = post(subject, path, body())
     retried = post(subject, path, body())
     conflicted = post(subject, path, body(content="Different durable bytes."))
+    assert clock_calls == [NOW]  # Exact retry/conflict mint no new document time.
     read = subject.handle("GET", f"/command/runs/{RUN_ID}", get_headers())
 
     assert (created.status, retried.status, conflicted.status) == (201, 200, 409)
     assert created.payload == retried.payload == artifact().as_dict()
     assert conflicted.payload["error"]["code"] == "record_conflict"
-    assert clock_calls == [NOW]
+    assert clock_calls == [NOW, NOW]  # S2 reads one explicit situation instant.
     assert events == [RUN_ID]
     assert read.payload["records"] == [{
         "record_type": "artifact", "record": artifact().as_dict()}]

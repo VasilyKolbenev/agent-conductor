@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import re
 
+from tests.studio_source_messages import message_english
 from tests.test_studio_canvas import PANEL, _code
 
 EDITS = PANEL / "studio-edits.js"
@@ -69,7 +70,8 @@ def test_an_edit_that_changes_nothing_answers_null_rather_than_unsaved():
 
     assert "let moved = false;" in body, body
     assert 'moved = moved || (condition || "") !== edit.value;' in body, body
-    assert "already opens on that" in body, body
+    assert 'notice: {key: "notice.edge_condition_same"}' in body, body
+    assert "already opens on that" in message_english("notice.edge_condition_same")
 
 
 def test_the_arm_touches_only_the_road_the_edit_names():

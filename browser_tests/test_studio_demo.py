@@ -89,8 +89,11 @@ def test_the_demo_front_door_is_not_empty(front_door) -> None:
     assert "web-app" in said, said
     assert demo_scenario.RUN_ID in said, said
     assert "succeeded" in said, said
-    # The waiting gate is counted where a person first looks for it.
-    assert "Gates waiting" in said, said
+    # Where a person first looks, the latest run says whether a person is needed: the
+    # server's own reading (`human_state`), never a blind count of undecided gates.
+    latest = _overview_card(page, "The most recent run").inner_text()
+    assert "Human attention" in latest and "You are needed" in latest, latest
+    assert "Gates waiting" not in said and "gate(s) waiting" not in said, said
     assert problems == []
 
 
@@ -132,7 +135,10 @@ def test_the_runs_screen_lists_the_demo_run_with_its_outcome(
 
     said = page.locator("#bodyRuns").inner_text()
     assert "succeeded" in said, said
-    assert "1 gate(s) waiting" in said, said
+    # The list row carries the server's reading of whether a person is needed, and
+    # no blind count of undecided gates beside it (MAIN-UI-STUDIO-PORT-SPEC §5.2).
+    assert "human attention required" in said, said
+    assert "gate(s) waiting" not in said, said
     # WHICH plan it followed, in the LIST row rather than only after opening it.
     # This test used to assert the outcome and the gate and stop there, which
     # was exactly the shape of the complaint: two runs of two workflows were
@@ -203,6 +209,15 @@ def test_the_decisions_screen_shows_the_gate_still_waiting_for_a_person(
     # one alone never shows what an answer looks like afterwards.
     assert "gate satisfied" in said, said
     assert "gate idle" in said, said
+    # The screen names itself once, and each gate reads as three things apart -- its title, the
+    # run and gate it is, its state -- in the accessible name as well as on the screen.
+    expect(page.locator("#screenDecisions h2")).to_have_count(1)
+    key = f"{demo_scenario.RUN_ID}/{demo_scenario.WAITING_GATE}"
+    gate = page.locator(".studio-decision", has=page.locator(".studio-decision__id", has_text=key))
+    assert f" {key} " in gate.evaluate("n => n.textContent"), gate.evaluate("n => n.textContent")
+    title = gate.locator(".studio-decision__t").bounding_box()
+    ident = gate.locator(".studio-decision__id").bounding_box()
+    assert ident["y"] >= title["y"] + title["height"] - 1, (title, ident)
     assert problems == []
 
 
@@ -248,7 +263,7 @@ def test_the_demo_front_door_does_not_open_on_five_blockers(front_door) -> None:
 # The expected order is a reading order, not a census of the CSS classes that
 # happen to implement it. Geometry below must agree with these visible headings.
 OVERVIEW_HEADINGS = (
-    "The most recent run", "What needs you", "What is blocked",
+    "The most recent run", "Human attention", "What is blocked",
     "Ready to run?", "What this is",
 )
 
@@ -262,8 +277,11 @@ def _overview_geometry(page: Page) -> list[dict]:
     page.wait_for_selector('#screenOverview[data-state="ready"]:not([hidden])')
     expect(page.locator("#bodyOverview").get_by_role(
         "button", name="Read this run", exact=True)).to_be_visible()
-    return page.locator("#bodyOverview > section").evaluate_all(
-        """cards => cards.map(card => {
+    # Found and measured in ONE evaluation. Every render replaces these cards and reads still
+    # land after the screen says ready; a locator's evaluate_all finds the cards in one round
+    # trip and measures them in the next, so a render between the two measured detached nodes.
+    return page.evaluate(
+        """() => [...document.querySelectorAll('#bodyOverview > section')].map(card => {
           const box = card.getBoundingClientRect();
           const style = getComputedStyle(card);
           return {title: card.querySelector('h3').textContent,
@@ -317,8 +335,52 @@ def test_overview_keeps_every_card_readable_in_one_narrow_column(
     assert problems == []
 
 
+# A render queued behind every query that finds the Overview's cards, through the language
+# control's own door: choosing the language already chosen changes no fact and redraws every
+# mount. A microtask lands after the query holds its nodes and before any later step can run.
+_RENDER_AFTER_EVERY_FIND = """() => {
+  window.rendersQueued = 0;
+  const language = document.querySelector('#studioPreferences select[name="language"]');
+  let pending = false;
+  for (const kind of [Document, Element]) {
+    const find = kind.prototype.querySelectorAll;
+    kind.prototype.querySelectorAll = function (selector) {
+      const found = find.call(this, selector);
+      if (!pending && [...found].some((node) => node.parentElement?.id === "bodyOverview")) {
+        pending = true;
+        window.rendersQueued += 1;
+        queueMicrotask(() => {
+          language.dispatchEvent(new Event("change"));
+          pending = false;
+        });
+      }
+      return found;
+    };
+  }
+}"""
+
+
+def test_overview_geometry_is_read_from_the_cards_on_screen_when_a_render_follows_every_find(
+        front_door) -> None:
+    """Every render replaces the Overview's cards, and reads still land after it says ready.
+
+    Measured at frozen-17 in the reverse gate: a render landed between finding the cards and
+    measuring them, and five detached sections came back with their titles and every box zero
+    while the screen showed them whole. Here a render follows every query that finds them.
+    """
+    page, problems = front_door
+    page.evaluate(_RENDER_AFTER_EVERY_FIND)
+    for width in (1280, 500):
+        page.set_viewport_size({"width": width, "height": 800})
+        cards = _overview_geometry(page)
+        assert tuple(card["title"] for card in cards) == OVERVIEW_HEADINGS
+        assert all(card["visible"] for card in cards), cards
+    assert page.evaluate("() => window.rendersQueued") >= 2
+    assert problems == []
+
+
 def _assert_overview_keyboard_order(page: Page) -> None:
-    expected = ["Read this run", "Open the decisions", "Choose a workflow"]
+    expected = ["Read this run", "Open decisions", "Choose a workflow"]
     controls = page.locator("#bodyOverview").get_by_role("button")
     assert controls.all_text_contents() == expected
     controls.first.focus()
@@ -333,20 +395,22 @@ def test_overview_run_link_opens_its_history_and_scopes_attention_to_that_run(
     """No selection is unknown attention, not proof that nobody is waiting."""
     page, problems = front_door
     _overview_geometry(page)
-    attention = _overview_card(page, "What needs you")
-    expect(attention).to_contain_text(
-        "No run is selected. Open a run to see which decisions need you.")
-    assert "nothing is waiting on a person" not in attention.inner_text()
-    count = _overview_card(page, "The most recent run").locator(
-        "p.studio-row").filter(has_text="Gates waiting:").locator("span").last
-    expect(count).to_have_text("1")
+    attention = _overview_card(page, "Human attention")
+    # No run read yet: the need is not established -- never "nobody is needed", never zero.
+    expect(attention).to_contain_text("Needs are not established")
+    assert "No action is needed" not in attention.inner_text()
+    assert "Decisions needed" not in attention.inner_text()
+    assert attention.get_by_role("button", name="Open decisions", exact=True).count() == 0
+    latest = _overview_card(page, "The most recent run").inner_text()
+    assert "You are needed" in latest and "Gates waiting" not in latest, latest
     opener = page.locator("#bodyOverview").get_by_role(
         "button", name="Read this run", exact=True)
     opener.focus()
     page.keyboard.press("Enter")
     page.wait_for_selector("#screenRuns:not([hidden]) ol.studio-timeline")
     detail = page.locator(".studio-runs__detail")
-    expect(detail.get_by_role("heading", level=2)).to_have_text(demo_scenario.RUN_ID)
+    # The demo run belongs to a named task, so the header names the task, not the run id.
+    expect(detail.get_by_role("heading", level=2)).to_have_text(demo_scenario.TASK_TITLE)
     expect(detail.locator("p").filter(has_text="Workflow").first).to_have_text(
         f"Workflow{demo_scenario.WORKFLOW_ID}")
     expect(detail.locator("p").filter(has_text="Revision").first).to_have_text(
@@ -358,12 +422,45 @@ def test_overview_run_link_opens_its_history_and_scopes_attention_to_that_run(
                      "action_request", "attempt_event", "attempt_event",
                      "evidence", "action_result"]
     page.locator("#navOverview").click()
-    expect(attention).to_contain_text("1 waiting for a decision")
-    assert demo_scenario.WAITING_GATE in attention.inner_text()
-    assert demo_scenario.RUN_ID in attention.inner_text()
-    assert demo_scenario.ANSWERED_GATE not in attention.inner_text()
-    assert "No run is selected" not in attention.inner_text()
+    # The opened run's verified situation: one decision is needed now (the result gate),
+    # and the gate answered on this lap is not counted as a current need.
+    expect(attention).to_contain_text("You are needed")
+    expect(attention).to_contain_text("Decisions needed: 1")
+    assert "Needs are not established" not in attention.inner_text()
     _assert_overview_keyboard_order(page)
+    # And the attention is about THIS run: its action opens this run's waiting gate.
+    attention.get_by_role("button", name="Open decisions", exact=True).click()
+    decisions = page.locator("#screenDecisions")
+    expect(decisions).to_contain_text(demo_scenario.WAITING_GATE)
+    assert demo_scenario.RUN_ID in decisions.inner_text()
+    assert problems == []
+
+
+def test_the_demo_run_is_named_by_its_task_and_its_header_offers_what_it_needs(front_door) -> None:
+    """The run belongs to a named task, so the header names the task, says where the run stands and who
+    is needed, and its one main action is that need's own door: the waiting result gate."""
+    page, problems = front_door
+    page.locator("#navRuns").click()
+    rail = page.locator(".studio-task-rail")
+    expect(rail).to_contain_text(demo_scenario.SECOND_TASK_TITLE)
+    page.locator(f'[data-task-id="{demo_scenario.TASK_ID}"]').click()
+    heading = page.locator("#bodyRuns .studio-runs__heading")
+    expect(heading.get_by_role("heading", level=2)).to_have_text(demo_scenario.TASK_TITLE)
+    situation = heading.locator("[data-run-situation]")
+    expect(situation).to_have_attribute("data-run-situation", "required")
+    expect(situation).to_have_text("In progress · You are needed · Decisions needed: 1")
+    # The cycle under the tasks is this run's own: its process and revision, its crew, its one loop.
+    card = page.locator(f'#studioTasks [data-cycle-run="{demo_scenario.RUN_ID}"]')
+    expect(card).to_contain_text(f"Release review · revision {demo_scenario.REVISION}")
+    expect(card).to_contain_text("Participants: 3 · human gates: 2")
+    expect(card.locator("[data-cycle-loop]")).to_have_count(1)
+    expect(card.locator("[data-cycle-member]")).to_have_count(len(demo_scenario.PARTICIPANTS))
+    main = page.locator('#studioPrimary [data-run-action="decide"]')
+    expect(main).to_have_text("Make the decision")
+    main.click()
+    decisions = page.locator("#screenDecisions")
+    expect(decisions).to_contain_text(demo_scenario.WAITING_GATE)
+    assert demo_scenario.RUN_ID in decisions.inner_text()
     assert problems == []
 
 

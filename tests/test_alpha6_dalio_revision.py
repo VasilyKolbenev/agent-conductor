@@ -53,6 +53,8 @@ RESULTS = {
 REVISION_ONE_DIGEST = "79776b1ecbbfb71c3e5d84d32292f3e2522c31ae67c7a62a1f39455194d13f50"
 REVISION_TWO_DIGEST = "25b4772a53df720149989d7a2be57bc16d0e00d58922724495ae32bb789c6cab"
 REVISION_THREE_DIGEST = "329d229f96d0a80c497f2015d164df402f42f9fedc6497b6f3e95eed6d502c82"
+REVISION_FOUR_DIGEST = "5c7b532a378098c0878e8918c0d32db05f5638b582c13b5954ee8aadfb090a76"
+REVISION_FIVE_DIGEST = "fa97ce0e9a1eb0e067540d0c96bdf0857108c3e26f18ba93addbcfe3c014b480"
 
 #: Which road each answer opens, in revision 3 and in no earlier one. Read
 #: off the cycle it makes real: approving the confirm gate is what opens the
@@ -213,3 +215,39 @@ def test_only_revision_three_routes_and_the_earlier_two_are_untouched():
     for name in ("dalio-v1", "dalio-v2"):
         assert all(edge.condition is None
                    for edge in load_template(name).settled()[1]), name
+
+
+def test_revision_four_adds_an_independent_checker_without_rewriting_the_cycle():
+    document = _document("dalio-v3")
+    document["revision"] = 4
+    document["title"] = "Стандартный цикл"
+    next(node for node in document["nodes"] if node["node_id"] == "do")[
+        "verifier_role_id"] = "role-checker"
+    assert _document("dalio-v4") == document
+    assert _digest(document) == REVISION_FOUR_DIGEST
+    assert _digest(_document("dalio-v3")) == REVISION_THREE_DIGEST
+    assert load_template("dalio-v4").roles == (
+        *load_template("dalio-v3").roles, "role-checker")
+
+
+def test_revision_five_adds_the_correction_road_without_rewriting_the_cycle():
+    """Revision 4 plus exactly the road a rejected `do` is corrected by, and nothing else.
+
+    `do` reaches the result gate only on success; on failure it enters `correct`, a loop of bound 2
+    home to `do`: one correction under the same authorization. Stages, roles, arguments, the
+    verifier, both human gates and the outer return to identify are revision 4's, byte for byte.
+    """
+    document = _document("dalio-v4")
+    document["revision"] = 5
+    nodes = document["nodes"]
+    at = next(index for index, node in enumerate(nodes) if node["node_id"] == "do")
+    nodes.insert(at + 1, {"node_id": "correct", "kind": "loop", "title": "Correct the rejected result",
+                          "loop": {"bound": 2, "back_to": "do"}, "resources": []})
+    edges = document["edges"]
+    to_gate = next(edge for edge in edges if (edge["from_node"], edge["to_node"]) == ("do", "result-gate"))
+    to_gate["condition"] = "on_succeeded"
+    edges.insert(edges.index(to_gate) + 1, {"from_node": "do", "to_node": "correct", "condition": "on_failed"})
+    assert _document("dalio-v5") == document
+    assert _digest(document) == REVISION_FIVE_DIGEST
+    assert _digest(_document("dalio-v4")) == REVISION_FOUR_DIGEST
+    assert load_template("dalio-v5").roles == load_template("dalio-v4").roles

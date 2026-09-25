@@ -59,8 +59,11 @@ def test_sse_emits_on_file_change(tmp_path):
         try:
             line = req.readline()      # greeting frame, sent on connect
             assert line.startswith(b"data:")
+            before = server._fingerprint(root / "conductor")
+            # Windows writes can share one mtime tick; change valid JSON's size too.
             (root / "conductor" / "lanes" / "claude.json").write_text(
-                good_lane().replace("11:00:00", "11:30:00"), encoding="utf-8")
+                good_lane().replace("11:00:00", "11:30:00") + "\n", encoding="utf-8")
+            assert server._fingerprint(root / "conductor") != before
             while True:                # next non-blank line must be the change frame
                 line = req.readline()
                 assert line, "SSE stream closed before the change frame arrived"
@@ -215,8 +218,11 @@ def test_change_frame_reaches_all_sse_clients(tmp_path):
         try:
             assert req_a.readline().startswith(b"data:")   # greetings
             assert req_b.readline().startswith(b"data:")
+            before = server._fingerprint(root / "conductor")
+            # Windows writes can share one mtime tick; change valid JSON's size too.
             (root / "conductor" / "lanes" / "claude.json").write_text(
-                good_lane().replace("11:00:00", "11:30:00"), encoding="utf-8")
+                good_lane().replace("11:00:00", "11:30:00") + "\n", encoding="utf-8")
+            assert server._fingerprint(root / "conductor") != before
             assert _read_change_frame(req_a).startswith(b"data:")
             assert _read_change_frame(req_b).startswith(b"data:")
         finally:

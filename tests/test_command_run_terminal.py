@@ -211,11 +211,11 @@ def test_every_fact_but_the_schema_is_required(missing):
 # -- it is a record kind like the nine before it -------------------------------
 
 
-def test_the_terminal_is_the_tenth_record_kind_the_store_knows():
+def test_the_terminal_remains_registered_beside_bounded_authorization_history():
     contract, identity = run_store_module._RECORDS["run_terminal"]
 
     assert (contract, identity) == (RunTerminal, "terminal_id")
-    assert len(run_store_module._RECORDS) == 10
+    assert len(run_store_module._RECORDS) == 13
 
 
 def test_a_terminal_is_appended_and_recovered_whole(tmp_path):

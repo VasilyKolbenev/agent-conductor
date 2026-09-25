@@ -355,7 +355,8 @@ def test_every_refusal_arm_of_the_store_is_pinned_by_count():
     # the pair, and the walk over the nodes answers with the refusal value.
     adapter = ADAPTER.read_text(encoding="utf-8")
     assert adapter.count("return refused();") == 8
-    assert adapter.count("return GRAPH_REFUSED;") == 6
+    # The seventh arm rejects a mismatched bounded execution contract.
+    assert adapter.count("return GRAPH_REFUSED;") == 7
     # The level screens: each answers false for a key its level has no
     # mapping for, so nothing is ever dropped on the way in.
     assert adapter.count("return false;") == 7

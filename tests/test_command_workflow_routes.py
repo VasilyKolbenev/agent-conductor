@@ -44,6 +44,8 @@ from conductor.command.template_store import TemplateStore
 from conductor.command.workflow_draft import NOT_YET_FIELDS
 
 from tests.test_alpha6_dalio_revision import (
+    REVISION_FIVE_DIGEST,
+    REVISION_FOUR_DIGEST,
     REVISION_ONE_DIGEST,
     REVISION_THREE_DIGEST,
     REVISION_TWO_DIGEST,
@@ -91,13 +93,14 @@ TASK = "task-studio-1"
 #: The two shipped files this module publishes documents derived from. Nothing
 #: any test does may move one byte of either.
 SHIPPED = {"dalio-v1": REVISION_ONE_DIGEST, "dalio-v2": REVISION_TWO_DIGEST,
-           "dalio-v3": REVISION_THREE_DIGEST}
+           "dalio-v3": REVISION_THREE_DIGEST, "dalio-v4": REVISION_FOUR_DIGEST,
+           "dalio-v5": REVISION_FIVE_DIGEST}
 
 
 def target(path):
     """One route pattern with every identity a path can carry substituted."""
     filled = (path.replace("<workflow_id>", WORKFLOW).replace("<revision>", "1")
-              .replace("<task_id>", TASK))
+              .replace("<task_id>", TASK).replace("<run_id>", "run-studio-1"))
     assert "<" not in filled, filled
     return filled
 

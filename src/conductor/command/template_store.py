@@ -42,6 +42,8 @@ is told it is consuming, so the invariant does not rest on the lock alone.
 """
 from __future__ import annotations
 
+from ..ownership import data_root, owned_write
+
 import json
 import os
 import stat
@@ -52,6 +54,7 @@ from types import MappingProxyType
 from typing import NamedTuple
 from weakref import WeakValueDictionary
 
+from .path_admission import admit_file, admit_name
 from .containment import (
     RouteViolation,
     RouteViolationCode,
@@ -192,7 +195,7 @@ class TemplateStore:
 
     def __init__(self, project_root: str | os.PathLike[str]) -> None:
         self.project_root = Path(project_root).resolve()
-        self.templates_root = self.project_root / "conductor" / "templates"
+        self.templates_root = data_root(self.project_root) / "templates"
         # STRONGLY held, which is the half of "weakly indexed, strongly
         # store-owned" that does the work. The module table is weak so two
         # stores over one project share a gate and an idle project's gates are
@@ -285,11 +288,22 @@ class TemplateStore:
         defect as a writer sending bytes there.
         """
         violation = first_directory_violation((
-            self.project_root / "conductor", self.templates_root, path.parent,
+            self.templates_root.parent, self.templates_root, path.parent,
         )) or _leaf_violation(path)
         if violation is not None:
             self._refuse(violation)
 
+    def admit_revision_write(self, workflow_id: str, revision: int) -> None:
+        path = self.revision_path(workflow_id, revision)
+        admit_name(workflow_id, "workflow_id")
+        admit_file(path, "workflow revision")
+
+    def admit_draft_write(self, workflow_id: str) -> None:
+        path = self.draft_path(workflow_id)
+        admit_name(workflow_id, "workflow_id")
+        admit_file(path, "workflow draft")
+
+    @owned_write
     def save(self, template: GraphTemplate) -> Published:
         """Publish one revision, or agree that it is already published.
 
@@ -303,6 +317,11 @@ class TemplateStore:
             raise StoreError("save takes exactly a GraphTemplate")
         document = template.as_dict()
         path = self.revision_path(template.template_id, template.revision)
+        if path.exists():
+            self._owned(path)
+            self._agrees(path, template, document)
+            return Published(path, created=False)
+        self.admit_revision_write(template.template_id, template.revision)
         self._owned(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         self._owned(path)
@@ -394,7 +413,7 @@ class TemplateStore:
         about a name every other call on this store refuses to touch.
         """
         violation = first_directory_violation(
-            (self.project_root / "conductor", self.templates_root))
+            (self.templates_root.parent, self.templates_root))
         if violation is not None:
             self._refuse(violation)
         try:
@@ -430,6 +449,7 @@ class TemplateStore:
         self._owned(path)
         return path.exists()
 
+    @owned_write
     def save_draft(self, draft: WorkflowDraft) -> DraftSaved:
         """Replace one workflow's editable document, all or nothing.
 
@@ -453,14 +473,18 @@ class TemplateStore:
 
     def _save_draft_locked(self, draft: WorkflowDraft) -> DraftSaved:
         path = self.draft_path(draft.workflow_id)
-        self._owned(path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        self._owned(path)
         payload = _canonical_bytes(draft.as_dict())
+        standing = None
         try:
-            standing = path.read_bytes() if path.exists() else None
-            if standing == payload:
-                return DraftSaved(path, created=False)
+            if path.exists():
+                self._owned(path)
+                standing = path.read_bytes()
+                if standing == payload:
+                    return DraftSaved(path, created=False)
+            self.admit_draft_write(draft.workflow_id)
+            self._owned(path)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            self._owned(path)
             _replace_bytes(path, payload)
         except OSError as error:
             raise StoreError(
@@ -509,6 +533,7 @@ class TemplateStore:
                 f"{draft.workflow_id!r} instead")
         return draft
 
+    @owned_write
     def discard_draft(
             self, template_id: str, *,
             expecting: "WorkflowDraft | None" = None) -> bool:

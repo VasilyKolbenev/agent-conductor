@@ -1,0 +1,172 @@
+{
+  "schema_version": 1,
+  "template_id": "template-dalio",
+  "revision": 5,
+  "title": "Стандартный цикл",
+  "nodes": [
+    {
+      "node_id": "goal",
+      "kind": "task",
+      "title": "Goal",
+      "stage": "goal",
+      "role_id": "role-thinker",
+      "capability": "review",
+      "arguments": {
+        "work_item_id": "work-001",
+        "target_artifact_refs": [
+          "artifact-brief"
+        ],
+        "result_artifact_ref": "artifact-goal",
+        "review_profile": "spec"
+      },
+      "resources": []
+    },
+    {
+      "node_id": "identify",
+      "kind": "task",
+      "title": "Identify Problems",
+      "stage": "identify",
+      "role_id": "role-thinker",
+      "capability": "review",
+      "arguments": {
+        "work_item_id": "work-001",
+        "target_artifact_refs": [
+          "artifact-goal"
+        ],
+        "result_artifact_ref": "artifact-problems",
+        "review_profile": "quality"
+      },
+      "resources": []
+    },
+    {
+      "node_id": "diagnose",
+      "kind": "task",
+      "title": "Diagnose Root Causes",
+      "stage": "diagnose",
+      "role_id": "role-diagnostician",
+      "capability": "review",
+      "arguments": {
+        "work_item_id": "work-001",
+        "target_artifact_refs": [
+          "artifact-problems"
+        ],
+        "result_artifact_ref": "artifact-causes",
+        "review_profile": "quality"
+      },
+      "resources": []
+    },
+    {
+      "node_id": "design",
+      "kind": "task",
+      "title": "Design the Plan",
+      "stage": "design",
+      "role_id": "role-designer",
+      "capability": "review",
+      "arguments": {
+        "work_item_id": "work-001",
+        "target_artifact_refs": [
+          "artifact-causes"
+        ],
+        "result_artifact_ref": "artifact-plan",
+        "review_profile": "spec"
+      },
+      "resources": []
+    },
+    {
+      "node_id": "confirm-gate",
+      "kind": "gate",
+      "title": "Human Gate - Confirm Do",
+      "gate_id": "gate-confirm-do",
+      "resources": []
+    },
+    {
+      "node_id": "do",
+      "kind": "task",
+      "title": "Do",
+      "stage": "do",
+      "role_id": "role-implementer",
+      "capability": "dispatch",
+      "arguments": {
+        "work_item_id": "work-001",
+        "instruction_ref": "instruction-plan",
+        "profile": "implement",
+        "artifact_refs": [
+          "artifact-plan"
+        ],
+        "output_limit_profile": "normal"
+      },
+      "resources": [
+        {
+          "kind": "sandbox",
+          "name": "project-root"
+        }
+      ],
+      "verifier_role_id": "role-checker"
+    },
+    {
+      "node_id": "correct",
+      "kind": "loop",
+      "title": "Correct the rejected result",
+      "loop": {
+        "bound": 2,
+        "back_to": "do"
+      },
+      "resources": []
+    },
+    {
+      "node_id": "result-gate",
+      "kind": "gate",
+      "title": "Result Gate",
+      "gate_id": "gate-result",
+      "resources": []
+    },
+    {
+      "node_id": "retry-loop",
+      "kind": "loop",
+      "title": "Turn problems into progress",
+      "loop": {
+        "bound": 3,
+        "back_to": "identify"
+      },
+      "resources": []
+    }
+  ],
+  "edges": [
+    {
+      "from_node": "goal",
+      "to_node": "identify"
+    },
+    {
+      "from_node": "identify",
+      "to_node": "diagnose"
+    },
+    {
+      "from_node": "diagnose",
+      "to_node": "design"
+    },
+    {
+      "from_node": "design",
+      "to_node": "confirm-gate"
+    },
+    {
+      "from_node": "confirm-gate",
+      "to_node": "do",
+      "condition": "on_approved"
+    },
+    {
+      "from_node": "do",
+      "to_node": "result-gate",
+      "condition": "on_succeeded"
+    },
+    {
+      "from_node": "do",
+      "to_node": "correct",
+      "condition": "on_failed"
+    },
+    {
+      "from_node": "result-gate",
+      "to_node": "retry-loop",
+      "condition": "on_changes_requested"
+    }
+  ]
+}

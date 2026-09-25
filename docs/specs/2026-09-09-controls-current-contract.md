@@ -66,6 +66,27 @@ false for one of the two steps a person confirms.
 whose adapter is not registered carries `controls: []` and `isolation: {}` — no
 road, and a standing lives on a road.
 
+## An instance row: `task_channel`, the bound its whole task meets
+
+Added 25.09.2026 (Codex ruling R2). Either `null` or one closed object:
+`{"channel", "limit", "unit", "scope"}`, read off the bound adapter's class
+profile by the same function that puts it into the provider facts a bounded
+grant binds (`policy_providers.task_channel_fact`), so the two answers cannot
+disagree.
+
+- `"channel": "stdin"` — `"unit": "utf8_bytes"`, `"scope": "task"`: the task
+  payload read on standard input, at most `limit` bytes.
+- `"channel": "argv"` — `"unit": "utf16_units"`, `"scope": "command_line"`: the
+  WHOLE command line (pinned paths, flags, quoting and the task) as Windows
+  counts it, its terminating NUL included, at most `limit` units, on every
+  platform.
+
+A task past its bound is refused before its claim, and nothing is spawned. A
+published document travels inside the doer's task, which is why Studio's
+document form states this bound for each binding. `null` means the binding
+states no channel — an unregistered adapter, or a class with no profile — and
+is never read as "no bound".
+
 ## A standing: four words, one of which is a protection
 
 | standing | what it says |
@@ -114,7 +135,8 @@ to carry one.
       "model": null,
       "controls": [],
       "argument_schemas": {},
-      "isolation": {}
+      "isolation": {},
+      "task_channel": null
     },
     {
       "instance_id": "worker",
@@ -200,6 +222,12 @@ to carry one.
             ]
           }
         ]
+      },
+      "task_channel": {
+        "channel": "argv",
+        "limit": 32767,
+        "unit": "utf16_units",
+        "scope": "command_line"
       }
     }
   ],
@@ -385,7 +413,8 @@ carrying no reviewed declaration at all (`null`, `unknown`).
             "vendor_detail": null
           }
         ]
-      }
+      },
+      "task_channel": null
     },
     {
       "instance_id": "worker",
@@ -466,6 +495,12 @@ carrying no reviewed declaration at all (`null`, `unknown`).
             "vendor_detail": []
           }
         ]
+      },
+      "task_channel": {
+        "channel": "argv",
+        "limit": 32767,
+        "unit": "utf16_units",
+        "scope": "command_line"
       }
     }
   ],

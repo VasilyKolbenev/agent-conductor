@@ -23,6 +23,7 @@ what keeps every stored run readable: `conduct preview` and the control loop
 both open runs with no plan, and their frozen bytes are exactly what they were.
 """
 from __future__ import annotations
+from tests.human_situation_samples import READ_AT
 
 import json
 
@@ -232,7 +233,7 @@ def test_the_run_row_reports_the_revision_it_froze(tmp_path):
     store = RunStore(root)
     store.create_run(asked.build(snapshot, "2026-01-01T00:00:00Z"), snapshot)
 
-    row = run_row(store, "run-a")
+    row = run_row(store, "run-a", computed_at=READ_AT)
 
     assert (row["workflow_id"], row["revision"]) == ("flow-x", 2)
 
@@ -249,7 +250,7 @@ def test_a_run_with_no_workflow_reports_both_halves_null(tmp_path):
     store = RunStore(root)
     store.create_run(asked.build(snapshot, "2026-01-01T00:00:00Z"), snapshot)
 
-    row = run_row(store, "run-a")
+    row = run_row(store, "run-a", computed_at=READ_AT)
 
     assert (row["workflow_id"], row["revision"]) == (None, None)
 
@@ -269,7 +270,7 @@ def test_an_unreadable_run_reports_the_reference_as_unknown_not_as_absent(tmp_pa
     store.runs_root.mkdir(parents=True, exist_ok=True)
     (store.runs_root / "ghost").mkdir()
 
-    row = run_row(store, "ghost")
+    row = run_row(store, "ghost", computed_at=READ_AT)
 
     assert row["unreadable"] is True
     assert "workflow_id" in row and row["workflow_id"] is None
@@ -318,8 +319,8 @@ def test_a_run_frozen_without_a_task_reads_as_task_none_everywhere(tmp_path):
     store.create_run(asked.build(snapshot, "2026-01-01T00:00:00Z"), snapshot)
 
     assert "task" not in snapshot
-    assert run_row(store, "run-a")["task_id"] is None
-    assert recovered_payload(store.read("run-a"))["task"] is None
+    assert run_row(store, "run-a", computed_at=READ_AT)["task_id"] is None
+    assert recovered_payload(store.read("run-a"), computed_at=READ_AT)["task"] is None
     assert frozen_config_task(store.read("run-a").config) is None
 
 
@@ -346,8 +347,8 @@ def test_a_legacy_runs_cycle_id_is_never_read_as_its_task(tmp_path):
     store = RunStore(root)
     store.create_run(asked.build(snapshot, "2026-01-01T00:00:00Z"), snapshot)
 
-    assert run_row(store, "run-a")["task_id"] is None
-    assert recovered_payload(store.read("run-a"), tasks)["task"] is None
+    assert run_row(store, "run-a", computed_at=READ_AT)["task_id"] is None
+    assert recovered_payload(store.read("run-a"), tasks, computed_at=READ_AT)["task"] is None
     assert read_task(tasks, store, "cycle-a") == (
         200, {"task": tasks.read("cycle-a").as_dict(), "runs": []})
 
@@ -373,8 +374,8 @@ def test_a_malformed_task_binding_is_corrupt_and_never_legacy(tmp_path):
 
     with pytest.raises(ContractError):
         frozen_config_task(recovered.config)
-    row = run_row(store, "run-a")
+    row = run_row(store, "run-a", computed_at=READ_AT)
     assert row["unreadable"] is True and row["task_id"] is None
     with pytest.raises(ApiRefusal) as refused:
-        recovered_payload(recovered)
+        recovered_payload(recovered, computed_at=READ_AT)
     assert refused.value.code == "run_corrupt"

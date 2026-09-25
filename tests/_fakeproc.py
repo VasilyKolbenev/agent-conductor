@@ -95,7 +95,19 @@ def _write_atomic(path: str, text: str) -> None:
     tmp = f"{path}.{os.getpid()}.tmp"
     with open(tmp, "w", encoding="ascii") as handle:
         handle.write(text)
-    os.replace(tmp, path)
+    # Windows may deny replacing an open destination even if its reader shares
+    # DELETE. This fake owns both names. Retry only the measured Windows codes;
+    # a persistent permission error still escapes unchanged at the deadline.
+    deadline = time.monotonic() + 1.0
+    while True:
+        try:
+            os.replace(tmp, path)
+            return
+        except PermissionError as error:
+            if (os.name != "nt" or getattr(error, "winerror", None) not in (5, 32, 33)
+                    or time.monotonic() >= deadline):
+                raise
+            time.sleep(0.005)
 
 
 def _emit(line: str) -> None:

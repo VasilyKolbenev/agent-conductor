@@ -31,6 +31,7 @@
 // vocabularies, and neither the sections nor the frame. Two halves of one
 // inspector that could import each other would close the ring the split was
 // drawn to open.
+import {localize} from "./studio-i18n.js";
 import {element, field} from "./command-view.js";
 import {
   call,
@@ -72,7 +73,7 @@ function isObject(value) {
 function outgoingRows(box, form) {
   const outgoing = form.edges.filter((edge) => edge.from_node === form.node.node_id);
   if (!outgoing.length) {
-    note(box, "No outgoing connection: this step ends the plan as drawn.");
+    note(box, localize(form.state || {}, "workflow_detail.no_outgoing"));
     return;
   }
   const list = element("ul", {className: "studio-edges"});
@@ -84,10 +85,9 @@ function outgoingRows(box, form) {
     [element("span", {className: "mono", text: `→ ${edge.to_node}`})]);
     open.addEventListener("click", () => call(form.handlers, "onSelect",
       {kind: "edge", id}));
-    const drop = element("button", {"aria-label": `Disconnect `
-      + `${edge.from_node} from ${edge.to_node}`,
+    const drop = element("button", {"aria-label": localize(form.state || {}, "workflow_detail.disconnect_pair", {from: String(edge.from_node), to: String(edge.to_node)}),
     className: "studio-edge-row__drop", "data-focus": `edge-drop-${id}`,
-    type: "button"}, [element("span", {text: "Disconnect"})]);
+    type: "button"}, [element("span", {text: localize(form.state || {}, "workflow_detail.disconnect")})]);
     drop.addEventListener("click", () => call(form.handlers, "onEdit", {
       type: "delete-edge", fromId: edge.from_node, toId: edge.to_node}));
     item.append(open, conditionControl(form, edge), editable(drop, form));
@@ -111,14 +111,14 @@ function conditionControl(form, edge) {
   const words = conditionWords(form.node);
   if (!words.length) {
     return element("span", {className: "studio-edge-row__note",
-      text: "carries out no work — no condition"});
+      text: localize(form.state || {}, "workflow_detail.condition_none")});
   }
   const control = element("select", {"data-edge-condition":
     `${edge.from_node} ${edge.to_node}`,
   "data-focus": `edge-condition-${edge.from_node} ${edge.to_node}`,
   name: "edge_condition"},
-  [option("", "always — unconditional"),
-    ...words.map((word) => option(word, conditionLabel(word)))]);
+  [option("", localize(form.state || {}, "workflow_detail.always")),
+    ...words.map((word) => option(word, conditionLabel(word, form.state)))]);
   control.value = typeof edge.condition === "string" ? edge.condition : "";
   control.addEventListener("change", () => call(form.handlers, "onEdit", {
     type: "set-edge-condition", fromId: edge.from_node, toId: edge.to_node,
@@ -129,8 +129,8 @@ function conditionControl(form, edge) {
 //: One word, one sentence a person reads. Derived from the vocabulary rather
 //: than typed beside it: a word this build gains and nobody labels would show
 //: as its own identifier, which is a control nobody can use.
-function conditionLabel(word) {
-  return word.replace(/^on_/, "").replace(/_/g, " ");
+function conditionLabel(word, state) {
+  return EDGE_CONDITIONS.includes(word) ? localize(state || {}, `workflow_detail.condition_${word}`) : word;
 }
 
 //: Where a decision SENDS this run, read off the roads already drawn.
@@ -142,37 +142,37 @@ function conditionLabel(word) {
 // answer opens which step.
 function decisionRouting(box, form) {
   if (form.node.kind !== "gate") {
-    context(box, "Decision routing", "none — only a gate's answer routes",
-      "the workflow contract");
+    context(box, "Decision routing", localize(form.state || {}, "workflow_detail.routing_only_gate"),
+      localize(form.state || {}, "workflow_detail.contract_source"), form.state);
     return;
   }
   const outgoing = form.edges.filter(
     (edge) => edge.from_node === form.node.node_id);
   const routed = outgoing.filter((edge) => typeof edge.condition === "string");
   if (!outgoing.length) {
-    context(box, "Decision routing", "none — this gate opens no step",
-      "the workflow document");
+    context(box, "Decision routing", localize(form.state || {}, "workflow_detail.routing_no_step"),
+      localize(form.state || {}, "workflow_detail.document_source"), form.state);
     return;
   }
   if (!routed.length) {
     context(box, "Decision routing",
-      `every answer opens ${outgoing.map((edge) => edge.to_node).join(", ")}`,
-      "the workflow document");
+      localize(form.state || {}, "workflow_detail.routing_every", {steps: outgoing.map((edge) => edge.to_node).join(", ")}),
+      localize(form.state || {}, "workflow_detail.document_source"), form.state);
     return;
   }
   const list = element("ul", {className: "studio-routes"});
   for (const edge of routed) {
     list.append(element("li", {className: "studio-route",
       "data-route": `${edge.condition} ${edge.to_node}`,
-      text: `${conditionLabel(edge.condition)} → ${edge.to_node}`}));
+      text: `${conditionLabel(edge.condition, form.state)} → ${edge.to_node}`}));
   }
-  box.append(field("Decision routing", list));
+  box.append(field(localize(form.state || {}, "workflow_detail.routing_heading"), list));
 }
 
 function connectControl(box, form) {
   const others = form.nodes.filter((row) => row.node_id !== form.node.node_id);
   if (!others.length) {
-    note(box, "There is no other step to connect this one to.");
+    note(box, localize(form.state || {}, "workflow_detail.no_other_step"));
     return;
   }
   const target = element("select", {"data-focus": "connect-target",
@@ -180,10 +180,10 @@ function connectControl(box, form) {
       `${row.node_id} — ${row.title}`)));
   const go = element("button", {className: "studio-connect",
     "data-focus": "connect-go", type: "button"},
-  [element("span", {text: "Connect"})]);
+  [element("span", {text: localize(form.state || {}, "workflow_detail.connect")})]);
   go.addEventListener("click", () => call(form.handlers, "onEdit", {
     type: "connect", fromId: form.node.node_id, toId: target.value}));
-  const wrapper = field("Connect to", editable(target, form));
+  const wrapper = field(localize(form.state || {}, "workflow_detail.connect_to"), editable(target, form));
   wrapper.classList.add("studio-field");
   box.append(wrapper, editable(go, form));
 }
@@ -197,9 +197,7 @@ export const GATE_SUCCESS_DEMANDS = Object.freeze(["human_approval"]);
 //: Python layer grows appears here instead of being silently unofferable --
 //: and a word with no sentence yet shows as itself rather than as nothing,
 //: which is a visible fault instead of a missing option.
-const DEMAND_LABELS = Object.freeze({
-  human_approval: "yes — this gate may not be waived",
-});
+const DEMAND_LABELS = Object.freeze({human_approval: "workflow_detail.demand_yes"});
 
 //: The one thing a gate may demand, and the only place it can be said.
 //:
@@ -214,38 +212,29 @@ function gateDemand(box, form) {
     ? form.node.success_requires : "";
   selectField(box, form, "Require explicit human approval — waiver disabled",
     "success_requires",
-    [{value: "", label: "no — this gate may be approved, rejected, sent back "
-      + "for changes, or waived"}].concat(
+    [{value: "", label: localize(form.state || {}, "workflow_detail.demand_no")}].concat(
       GATE_SUCCESS_DEMANDS.map((word) => ({value: word,
-        label: DEMAND_LABELS[word] || word}))),
+        label: DEMAND_LABELS[word] ? localize(form.state || {}, DEMAND_LABELS[word]) : word}))),
     named);
-  note(box, "Waiving is the one answer that closes a gate without judging the "
-    + "work. Requiring explicit human approval removes it: the Decisions "
-    + "screen stops offering it, the server refuses it before anything is "
-    + "recorded, and a journal carrying one is refused when it is read. "
-    + "Rejecting and requesting changes stay available — this makes the gate "
-    + "harder to pass, never harder to fail. A connection out of this gate on "
-    + "`on_waived` becomes a road no run could travel, so publishing one is "
-    + "refused.");
+  note(box, localize(form.state || {}, "workflow_detail.demand_note"));
 }
 
 function gateControls(box, form) {
   if (form.node.kind === "gate") {
     textField(box, form, "Gate id", "gate_id", form.node.gate_id,
-      "The id a Human's decision receipt names. A run's gate state is read "
-      + "through it, and through nothing else.");
+      localize(form.state || {}, "workflow_detail.gate_id_note"));
     gateDemand(box, form);
   } else {
-    context(box, "Human decision", "none — only a gate step carries one",
-      "the workflow contract");
+    context(box, "Human decision", localize(form.state || {}, "workflow_detail.human_only_gate"),
+      localize(form.state || {}, "workflow_detail.contract_source"), form.state);
   }
   decisionRouting(box, form);
 }
 
 function loopControls(box, form) {
   if (form.node.kind !== "loop") {
-    context(box, "Loop", "none — only a loop step reopens work",
-      "the workflow contract");
+    context(box, "Loop", localize(form.state || {}, "workflow_detail.loop_only"),
+      localize(form.state || {}, "workflow_detail.contract_source"), form.state);
     return;
   }
   const loop = isObject(form.node.loop) ? form.node.loop : {};
@@ -261,19 +250,15 @@ function loopControls(box, form) {
     const value = Number(bound.value);
     if (!Number.isInteger(value) || value < LOOP_BOUND.min
         || value > LOOP_BOUND.max) {
-      call(form.handlers, "onStatus", `A loop bound is a whole number from `
-        + `${LOOP_BOUND.min} to ${LOOP_BOUND.max}.`);
+      call(form.handlers, "onStatus", {key: "workflow_detail.loop_bound_error", params: {min: String(LOOP_BOUND.min), max: String(LOOP_BOUND.max)}});
       return;
     }
     commit(form, "loop_bound", value);
   });
-  const wrapper = field("Loop bound (greatest pass)", editable(bound, form));
+  const wrapper = field(localize(form.state || {}, "workflow_detail.loop_bound_label"), editable(bound, form));
   wrapper.classList.add("studio-field");
   box.append(wrapper);
-  note(box, "A bound is a ceiling on the POSITION — the greatest pass this "
-    + "work may reach — never a count of reopenings beside it. Which pass a "
-    + "run is on is the run's own fact and is shown under Assignment's run "
-    + "context, never here.");
+  note(box, localize(form.state || {}, "workflow_detail.loop_note"));
 }
 
 //: The SAME select, on the edge's own panel in the frame next door.
@@ -289,38 +274,38 @@ export function edgeConditionRow(box, form, fromId, toId) {
   const edge = form.edges.filter(isObject).find(
     (row) => row.from_node === fromId && row.to_node === toId);
   if (!source || !edge) {
-    context(box, "Condition", "none — this drawing does not carry that road",
-      "the workflow document");
+    context(box, "Condition", localize(form.state || {}, "workflow_detail.condition_missing_edge"),
+      localize(form.state || {}, "workflow_detail.document_source"), form.state);
     return;
   }
   const words = conditionWords(source);
   if (!words.length) {
     context(box, "Condition",
-      `none — ${fromId} carries out no work, so it produces no word`,
-      "the workflow contract");
+      localize(form.state || {}, "workflow_detail.condition_missing_work", {step: String(fromId)}),
+      localize(form.state || {}, "workflow_detail.contract_source"), form.state);
     return;
   }
   const control = element("select", {"data-edge-condition": `${fromId} ${toId}`,
     "data-focus": "edge-condition", name: "edge_condition"},
-  [option("", "always — unconditional"),
-    ...words.map((word) => option(word, conditionLabel(word)))]);
+  [option("", localize(form.state || {}, "workflow_detail.always")),
+    ...words.map((word) => option(word, conditionLabel(word, form.state)))]);
   control.value = typeof edge.condition === "string" ? edge.condition : "";
   control.addEventListener("change", () => call(form.handlers, "onEdit", {
     type: "set-edge-condition", fromId, toId, value: control.value}));
-  const wrapper = field("Condition", editable(control, form));
+  const wrapper = field(localize(form.state || {}, "workflow_detail.condition_label"), editable(control, form));
   wrapper.classList.add("studio-field");
   box.append(wrapper);
 }
 
 
 export function transitionSection(form) {
-  const box = sectionOf("transitions", "Transitions");
-  box.append(element("h4", {text: "Outgoing connections"}));
+  const box = sectionOf("transitions", "Transitions", form.state);
+  box.append(element("h4", {text: localize(form.state || {}, "workflow_detail.outgoing_heading")}));
   outgoingRows(box, form);
   connectControl(box, form);
-  box.append(element("h4", {text: "Human decision routing"}));
+  box.append(element("h4", {text: localize(form.state || {}, "workflow_detail.human_routing")}));
   gateControls(box, form);
-  box.append(element("h4", {text: "Loop"}));
+  box.append(element("h4", {text: localize(form.state || {}, "workflow_detail.loop_heading")}));
   loopControls(box, form);
   return box;
 }

@@ -39,10 +39,10 @@ this walk reads, so it is neither detected nor traversed.
 from __future__ import annotations
 
 import os
-import re
 import secrets
 import subprocess
 import threading
+from contextlib import contextmanager
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -59,6 +59,10 @@ from ..containment import (
 )
 from ..dispatch import DispatchArgumentError, validate_dispatch_arguments
 from . import _procgroup
+from .process_ownership_values import OwnershipScopes, ProcessLease, LoginBorrow
+from .jsonl_completion import JsonlCompletion
+from .process_values import validated_argv, validated_stdin
+from .environment_values import ENV_NAME as _ENV_NAME, EnvironmentValues, literal_environment, select_environment
 from .base import (
     AdapterContractError,
     AdapterManifest,
@@ -70,12 +74,12 @@ from .base import (
 
 #: Default ceiling on captured output; a child cannot push the parent past it.
 DEFAULT_OUTPUT_LIMIT = 64 * 1024
-#: Ceiling on what a caller may hand a child through stdin. The same 64 KiB the
-#: workspace door already imposes on an instruction body -- deliberately, and
-#: pinned equal by a test, because the only thing this build ever writes to a
-#: child's stdin IS an instruction body. A second, larger ceiling here would be
-#: a way to deliver an instruction the first one refused.
-STDIN_LIMIT = 64 * 1024
+#: Ceiling on what a caller may hand a child through stdin: ONE number with the
+#: workspace instruction door and the independent-check frame, pinned equal by a
+#: test, so no road can hand a child what another would refuse. 256 KiB holds a
+#: do step's plan at the 48 KiB document bound with its changed files (Codex
+#: ruling K, 23.09.2026); every road still refuses rather than truncates.
+STDIN_LIMIT = 256 * 1024
 #: What became of the input a caller offered the child. A CLOSED vocabulary,
 #: because the question it answers is not "did an error occur" but "was the
 #: child ever asked the question at all", and there is no third honest answer.
@@ -103,8 +107,6 @@ STDIN_INCOMPLETE = "incomplete"
 STDIN_STATES = (STDIN_NOT_PROVIDED, STDIN_DELIVERED, STDIN_INCOMPLETE)
 #: One read from the child's merged pipe; the pump loops over these.
 _READ_CHUNK = 64 * 1024
-#: A POSIX environment variable name; the same shape run_store screens against.
-_ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
 #: The one capability this adapter executes; every other control stays absent.
 DISPATCH_CAPABILITY = "dispatch"
 
@@ -185,19 +187,12 @@ class OwnershipError(ProcessRunnerError):
     """A stop names no child this runner started and still holds."""
 
 
-def _argv(value: object) -> tuple[str, ...]:
-    """A non-empty list of NUL-free strings; a shell string is not a command."""
-    if isinstance(value, (str, bytes)) or not isinstance(value, Sequence):
-        raise CommandSpecError("argv must be a list of strings, never a shell string")
-    rows = tuple(value)
-    if not rows:
-        raise CommandSpecError("argv must name at least the executable to run")
-    for item in rows:
-        if not isinstance(item, str):
-            raise CommandSpecError(f"argv element must be a string, got {item!r}")
-        if "\x00" in item:
-            raise CommandSpecError("argv element must not contain NUL")
-    return rows
+def _argv(value):
+    return validated_argv(value, CommandSpecError)
+
+
+def _stdin(value):
+    return validated_stdin(value, CommandSpecError, STDIN_LIMIT)
 
 
 def _env_names(value: object) -> tuple[str, ...]:
@@ -224,40 +219,7 @@ def _env_names(value: object) -> tuple[str, ...]:
 
 def _env_map(value: object) -> Mapping[str, str]:
     """Explicit literal variables: valid names to NUL-free string values."""
-    if not isinstance(value, Mapping):
-        raise CommandSpecError("env must map variable names to string values")
-    out: dict[str, str] = {}
-    for name, item in value.items():
-        if not isinstance(name, str) or _ENV_NAME.fullmatch(name) is None:
-            raise CommandSpecError(f"env names an invalid variable: {name!r}")
-        if not isinstance(item, str) or "\x00" in item:
-            raise CommandSpecError(f"env[{name!r}] must be a string without NUL")
-        out[name] = item
-    return MappingProxyType(out)
-
-
-def _stdin(value: object) -> bytes | None:
-    """Nothing, or a bounded NUL-free byte payload the child will read whole.
-
-    Refused BEFORE the spawn, every time, because the alternative is a child
-    that already exists when the input turns out to be inadmissible -- and a
-    child that exists has already been handed the workspace.
-
-    NUL is refused for the same reason argv refuses it: this payload is an
-    instruction body, a text artefact, and an embedded NUL is either a truncation
-    a downstream reader will act on or something that was never text.
-    """
-    if value is None:
-        return None
-    if type(value) is not bytes:
-        raise CommandSpecError("stdin_bytes must be bytes or None, never text")
-    if len(value) > STDIN_LIMIT:
-        # The LENGTH is named and the content is not; this message is a road out.
-        raise CommandSpecError(
-            f"stdin_bytes is {len(value)} bytes, past the {STDIN_LIMIT} ceiling")
-    if b"\x00" in value:
-        raise CommandSpecError("stdin_bytes must not contain NUL")
-    return value
+    return literal_environment(value, CommandSpecError)
 
 
 @dataclass(frozen=True)
@@ -299,6 +261,8 @@ class CommandSpec:
     #: ones: the road a vendor login takes, since it lives in a file rather than
     #: the environment (``adapters/login_home.py``). CODE-OWNED like ``env``.
     sensitive_extra: tuple[bytes, ...] = field(default=(), repr=False)
+    # A finite RPC batch keeps stdin open until this stdout response arrives.
+    stdin_completion_id: int | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "argv", _argv(self.argv))
@@ -317,6 +281,11 @@ class CommandSpec:
         if type(self.separate_stderr) is not bool:
             raise CommandSpecError("separate_stderr must be a boolean")
         object.__setattr__(self, "stdin_bytes", _stdin(self.stdin_bytes))
+        if self.stdin_completion_id is not None and (
+                type(self.stdin_completion_id) is not int or self.stdin_completion_id < 0
+                or self.stdin_bytes is None or not self.separate_stderr
+                or self.timeout_seconds is None or self.timeout_seconds > 60):
+            raise CommandSpecError("RPC completion requires bounded separated stdout and input")
         extra = self.sensitive_extra
         if type(extra) not in (tuple, list) or any(type(r) is not bytes for r in extra):
             raise CommandSpecError("sensitive_extra carries VALUES as bytes")
@@ -373,13 +342,16 @@ class _Owned:
     def __init__(self, proc: "subprocess.Popen[bytes]", token: str, limit: int,
                  group: _procgroup.ProcessGroup,
                  stdin_bytes: bytes | None = None,
-                 sensitive_values: tuple[bytes, ...] = ()) -> None:
+                 sensitive_values: tuple[bytes, ...] = (),
+                 completion_id: int | None = None) -> None:
         self.proc = proc
         self.token = token
         self.pid = proc.pid
         self.limit = limit
         self.group = group
         self._sensitive_values = sensitive_values
+        self._completion = None if completion_id is None else JsonlCompletion(completion_id, limit)
+        self._input_done = threading.Event()
         self._buf = bytearray()
         self._truncated = False
         self._lock = threading.Lock()
@@ -435,6 +407,9 @@ class _Owned:
             if not view:
                 stream.flush()
                 written_whole = True
+                if self._completion is not None:
+                    self._input_done.wait()
+                    written_whole = self._completion.complete
         except (OSError, ValueError):
             pass
         try:
@@ -466,6 +441,10 @@ class _Owned:
                 break
             if not chunk:
                 break
+            if self._completion is not None:
+                self._completion.observe(chunk)
+                if self._completion.finished:
+                    self._input_done.set()
             with self._lock:
                 room = self.limit - len(self._buf)
                 if room > 0:
@@ -474,6 +453,8 @@ class _Owned:
                         self._truncated = True
                 else:
                     self._truncated = True
+
+        self._input_done.set()  # EOF also releases an incomplete RPC feeder.
 
     def finish(self, status: str) -> ProcessOutcome:
         # The feeder is joined FIRST, and only ever after the caller has waited
@@ -499,6 +480,27 @@ class _Owned:
 class ProcessRunner:
     """Own children beneath one root, with an explicit environment snapshot."""
 
+    ownership_scopes = OwnershipScopes(threading.RLock())
+
+    @classmethod
+    @contextmanager
+    def project_write_guard(cls, root):
+        root = Path(root).resolve()
+        scope = cls.ownership_scopes.find(root)
+        if scope is None:
+            if any(os.path.lexists(root / name) for name in (".conduct", "conductor.v3")):
+                raise OwnershipError("activated project needs a registered live owner")
+            yield
+        else:
+            with scope.borrow():
+                yield
+
+    @classmethod
+    def login_write_guard(cls, root, auth_home):
+        root = Path(root).resolve()
+        return LoginBorrow(cls.project_write_guard(root),
+                            lambda: cls.ownership_scopes.find(root), auth_home)
+
     def __init__(self, project_root: str | os.PathLike[str], *,
                  environ: Mapping[str, str] | None = None) -> None:
         self._root = Path(project_root).resolve()
@@ -519,21 +521,21 @@ class ProcessRunner:
     def run(self, spec: CommandSpec) -> ProcessOutcome:
         """Spawn, wait up to the timeout, terminate on overrun, and account for it."""
         owned = self._spawn(spec)
+        status = "stopped"
         try:
-            try:
-                owned.proc.wait(timeout=spec.timeout_seconds)
-                status = "completed"
-            except subprocess.TimeoutExpired:
-                owned.group.terminate()
-                owned.proc.wait()
-                status = "timed_out"
-            # A leader may exit while descendants still run.  Terminate the
-            # group BEFORE joining the inherited output pipe: a descendant may
-            # still hold that pipe open after the leader exits.
-            owned.group.terminate()
-            return owned.finish(status)
+            owned.proc.wait(timeout=spec.timeout_seconds)
+            status = "completed"
+        except subprocess.TimeoutExpired:
+            status = "timed_out"
         finally:
-            self._release(owned)
+            # Always retire descendants before pipes/token, including interrupted waits.
+            try:
+                owned.group.terminate()
+                owned.proc.wait(timeout=5)
+                outcome = owned.finish(status)
+            finally:
+                self._release(owned)
+        return outcome
 
     def stop(self, token: str) -> ProcessOutcome:
         """Terminate the child this token names; refuse a token never minted here."""
@@ -575,7 +577,54 @@ class ProcessRunner:
         # before this field existed. A payload means a pipe, and nothing else
         # about the spawn changes.
         payload = spec.stdin_bytes
-        proc = subprocess.Popen(
+        with self.project_write_guard(self._root):
+            scope = self.ownership_scopes.find(self._root)
+            loan = None if scope is None else scope.claim()
+        try:
+            proc = self._launch(spec, cwd, env, payload, loan)
+        except BaseException:
+            if loan is not None:
+                loan.retire(False)
+            raise
+        try:
+            group = _procgroup.make_group(proc)
+        except BaseException:
+            try:
+                self._cleanup_failed_spawn(proc, None)
+            finally:
+                if loan is not None:
+                    loan.retire(False)
+            raise
+        try:
+            token = secrets.token_hex(16)
+            owned = _Owned(
+                proc, token, spec.output_limit, group, payload,
+                sensitive_values, spec.stdin_completion_id)
+        except BaseException:
+            try:
+                self._cleanup_failed_spawn(proc, group)
+            finally:
+                if loan is not None:
+                    loan.retire(False)
+            raise
+        owned.owner_loan = loan
+        with self._lock:
+            self._owned[token] = owned
+        return owned
+
+    @staticmethod
+    def _launch(spec, cwd, env, payload, loan):
+        options = _procgroup.popen_kwargs()
+        if loan is not None:
+            if type(loan) is not ProcessLease:
+                raise OwnershipError("invalid native ownership loan")
+            if os.name == "nt":
+                info = subprocess.STARTUPINFO()
+                info.lpAttributeList = {"handle_list": list(loan.handles)}
+                options["startupinfo"] = info
+            else:
+                options["pass_fds"] = loan.handles
+        return subprocess.Popen(
             list(spec.argv), cwd=str(cwd), env=env, shell=False, bufsize=0,
             stdin=subprocess.DEVNULL if payload is None else subprocess.PIPE,
             stdout=subprocess.PIPE,
@@ -584,23 +633,7 @@ class ProcessRunner:
             # drains stalls the child that fills it.
             stderr=(subprocess.DEVNULL if spec.separate_stderr
                     else subprocess.STDOUT),
-            **_procgroup.popen_kwargs())
-        try:
-            group = _procgroup.make_group(proc)
-        except BaseException:
-            self._cleanup_failed_spawn(proc, None)
-            raise
-        try:
-            token = secrets.token_hex(16)
-            owned = _Owned(
-                proc, token, spec.output_limit, group, payload,
-                sensitive_values)
-        except BaseException:
-            self._cleanup_failed_spawn(proc, group)
-            raise
-        with self._lock:
-            self._owned[token] = owned
-        return owned
+            **options)
 
     @staticmethod
     def _cleanup_failed_spawn(
@@ -641,7 +674,16 @@ class ProcessRunner:
     def _release(self, owned: _Owned) -> None:
         with self._lock:
             self._owned.pop(owned.token, None)
-        owned.group.close()
+        loan = getattr(owned, "owner_loan", None)
+        try:
+            retired = loan is None or owned.group.retired(timeout=5)
+            owned.group.close()
+        except BaseException:
+            if loan is not None:
+                loan.retire(False)
+            raise
+        if loan is not None:
+            loan.retire(retired)
 
     def _resolve_cwd(self, raw_cwd: str) -> Path:
         walked, violation = assess_cwd_route(self._root, raw_cwd)
@@ -653,8 +695,13 @@ class ProcessRunner:
         return self._environment(spec.env_allow, spec.env)
 
     def _environment(self, names, overrides) -> dict[str, str]:
-        return {**{name: self._environ[name] for name in names if name in self._environ},
-                **overrides}
+        return select_environment(self._environ, names, overrides)
+
+    def capture_environment(self, names, *, overrides=None) -> EnvironmentValues:
+        """Detached private view of the same constructor snapshot used by spawn."""
+        names = _env_names(names)
+        literals = _env_map({} if overrides is None else overrides)
+        return EnvironmentValues(self._environment(names, literals), windows=os.name == "nt")
 
     def allowed_environment_values(self, names, *, overrides=None) -> tuple[bytes, ...]:
         """The nonempty allowed values the child receives, after explicit extras."""
@@ -662,72 +709,23 @@ class ProcessRunner:
         return tuple(env[name].encode("utf-8") for name in names if name in env and env[name])
 
 
-def _spec_from_arguments(
-        arguments: Mapping[str, object], timeout_seconds: int) -> CommandSpec:
-    """Read a dispatch request's structured command; refuse a malformed one."""
-    if not isinstance(arguments, Mapping):
-        raise AdapterContractError("dispatch arguments must be a JSON object")
-    try:
-        validate_dispatch_arguments(arguments)
-        return CommandSpec(
-            argv=arguments.get("argv"),
-            cwd=arguments.get("cwd"),
-            env_allow=arguments.get("env_allow", ()),
-            output_limit=arguments.get("output_limit", DEFAULT_OUTPUT_LIMIT),
-            timeout_seconds=timeout_seconds)
-    except (CommandSpecError, DispatchArgumentError, TypeError, ValueError) as e:
-        raise AdapterContractError(
-            f"dispatch arguments are not a valid command: {e}") from e
+from . import process_projection as _projection
 
 
-def _payload_from_spec(spec: CommandSpec) -> dict[str, object]:
-    """The adapter payload: a plain-JSON echo of the validated command."""
-    return {
-        "argv": list(spec.argv), "cwd": spec.cwd,
-        "env_allow": list(spec.env_allow),
-        "output_limit": spec.output_limit,
-    }
+def _spec_from_arguments(arguments, timeout_seconds):
+    return _projection._spec_from_arguments(arguments, timeout_seconds, CommandSpec, DEFAULT_OUTPUT_LIMIT, CommandSpecError)
 
 
-def _spec_from_payload(payload: Mapping[str, object], timeout_seconds: int) -> CommandSpec:
-    return CommandSpec(
-        argv=tuple(payload["argv"]), cwd=payload["cwd"],
-        env_allow=payload["env_allow"],
-        output_limit=payload["output_limit"], timeout_seconds=timeout_seconds)
+def _payload_from_spec(spec):
+    return _projection._payload_from_spec(spec)
 
 
-def _detail(outcome: ProcessOutcome, summary: str) -> str:
-    note = f"{summary}; captured {len(outcome.output)} bytes"
-    if outcome.output_truncated:
-        note += f", truncated at the {outcome.output_limit}-byte capture bound"
-    return note
+def _spec_from_payload(payload, timeout_seconds):
+    return _projection._spec_from_payload(payload, timeout_seconds, CommandSpec, CommandSpecError)
 
 
-def _map_outcome(outcome: ProcessOutcome) -> tuple[str, str]:
-    """Project a process outcome onto the receipt vocabulary; timeout is not success.
-
-    Undelivered input is checked inside the ``completed`` arm rather than ahead
-    of everything, so a timeout stays a timeout and a stop stays a cancellation:
-    those two already say the run did not succeed, and overwriting them would
-    trade one true fact for another. What may never happen is a ZERO becoming a
-    success while the child never received what it was meant to act on.
-    """
-    if outcome.status == "completed":
-        if outcome.exit_code == 0:
-            if outcome.stdin_state == STDIN_INCOMPLETE:
-                return "failed", _detail(
-                    outcome,
-                    "the process exited zero, but the input it was to act on "
-                    "was never delivered whole, so the zero answers a question "
-                    "this build never finished asking")
-            return "succeeded", _detail(outcome, "the process exited zero")
-        return "failed", _detail(outcome, f"the process exited {outcome.exit_code}")
-    if outcome.status == "timed_out":
-        return "failed", _detail(
-            outcome, "the process exceeded its timeout and was terminated")
-    if outcome.status == "stopped":
-        return "cancelled", _detail(outcome, "the process was stopped by the runner")
-    raise AdapterContractError(f"unknown process status {outcome.status!r}")
+def _map_outcome(outcome):
+    return _projection._map_outcome(outcome, STDIN_INCOMPLETE)
 
 
 class ProcessAdapter:
@@ -779,11 +777,16 @@ class ProcessAdapter:
         spec = _spec_from_payload(prepared.adapter_payload, request.timeout_seconds)
         outcome = self._runner.run(spec)
         mapped, detail = _map_outcome(outcome)
+        # A zero the vocabulary refused to read as success (undelivered input) is not carried:
+        # the runtime admits `failed` only with no code or a non-zero one, and recorded the
+        # pair as `unknown` otherwise (the same defect the first real login found on the
+        # harness road, 23.09.2026).
         return ActionResultReceipt(
             receipt_id=self._ids("receipt"), action_id=request.action_id,
             run_id=request.run_id, attempt_id=request.attempt_id,
             instance_id=request.instance_id, outcome=mapped,
-            observed_at=self._clock(), detail=detail, exit_code=outcome.exit_code)
+            observed_at=self._clock(), detail=detail,
+            exit_code=outcome.exit_code if mapped == "succeeded" else (outcome.exit_code or None))
 
     def verify(
             self, request: ActionRequest, result: ActionResultReceipt,

@@ -31,6 +31,7 @@ cannot drift from the boundary either; and `_js_array` refuses a repeated key,
 so a set that grew a duplicate is caught on the way in.
 """
 from __future__ import annotations
+from tests.human_situation_samples import READ_AT
 
 import re
 
@@ -138,7 +139,7 @@ def test_the_revision_read_payload_is_exactly_what_the_window_admits(tmp_path):
 def test_the_runs_listing_payload_is_exactly_what_the_window_admits(tmp_path):
     store = _run(tmp_path)
 
-    _, payload = studio_routes.list_runs(store, ())
+    _, payload = studio_routes.list_runs(store, (), computed_at=READ_AT)
 
     assert set(payload) == _js_array(_model_source(), "RUNS_KEYS")
 
@@ -147,7 +148,7 @@ def test_the_run_row_is_exactly_what_the_window_admits(tmp_path):
     """The row that broke silently when it learned which plan a run followed."""
     store = _run(tmp_path, workflow_id=WORKFLOW, revision=1)
 
-    row = studio_routes.run_row(store, RUN_ID)
+    row = studio_routes.run_row(store, RUN_ID, computed_at=READ_AT)
 
     assert set(row) == _js_array(_model_source(), "RUN_ROW_KEYS")
 
@@ -163,7 +164,7 @@ def test_an_unreadable_run_row_carries_the_same_keys_as_a_readable_one(tmp_path)
     store.runs_root.mkdir(parents=True, exist_ok=True)
     (store.runs_root / "ghost").mkdir()
 
-    row = studio_routes.run_row(store, "ghost")
+    row = studio_routes.run_row(store, "ghost", computed_at=READ_AT)
 
     assert row["unreadable"] is True
     assert set(row) == _js_array(_model_source(), "RUN_ROW_KEYS")
@@ -243,7 +244,7 @@ def test_every_route_that_carries_a_provider_row_sends_what_the_window_admits(
     roster = (_contract(),)
     payloads = [
         studio_routes.list_workflows(_published(tmp_path), roster, None)[1],
-        studio_routes.list_runs(_run(tmp_path), roster)[1],
+        studio_routes.list_runs(_run(tmp_path), roster, computed_at=READ_AT)[1],
         # The controls route reaches the same projection by its own road, and
         # its rows land beside the isolation standings.
         {"providers": provider_projection(roster)},

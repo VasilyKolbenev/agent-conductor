@@ -93,7 +93,9 @@ re-checkable only if what it said is written down.
   ``CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`` (lines 2463, 2740, 2817, 4964).
   The updater one is a VERSION invariant, not a privacy one: an update between
   the version preflight and the task would mean this build proved one binary and
-  ran another.
+  ran another. ONE spawn runs without the traffic switch: the quota control read
+  (``claude_quota.CONTROL_QUOTA_RPC.unset_env``), because under it get_usage only
+  echoes the vendor's cache (measured live, live-v5-7). Every task spawn keeps both.
 - **Credentials** come from the shell as ``ANTHROPIC_API_KEY``; ``REPO`` names it
   eighteen times and ``CHANGELOG.md:1540`` shows ``claude -p`` failing without
   one. Env NAMES are pinned in operator config and values are read at spawn,
@@ -169,6 +171,13 @@ carrying that id belongs in this file or in none.
 """
 from __future__ import annotations
 
+from .subscription_quota import native_subscription_connection
+
+#: Split out at the 800-line cap; imported back so every existing importer keeps its names.
+from .claude_quota import (  # noqa: F401 -- re-exported
+    API_BILLING_PLAN, CONTROL_QUOTA_POLICY, CONTROL_QUOTA_RPC, FIRST_PARTY, QUOTA_POLICY,
+    _control_sample, plan_value)
+
 import json
 import re
 from collections.abc import Callable
@@ -232,8 +241,15 @@ PRINT_FLAG = "-p"
 #: it carries no run identifier, no work item, no instruction and no name. What
 #: to do arrives on stdin; this sentence only tells the child to go and read it.
 CONSTANT_PROMPT = "Execute the complete task supplied on standard input."
-REVIEW_PROMPT = "Produce the complete review artifact supplied on standard input."
-VERDICT_PROMPT = "Independently judge the supplied result and return the requested verdict."
+#: MEASURED live (live-v5-4, 23.09.2026): under `--permission-mode plan` the vendor has the model
+#: write a plan file, and one review replied only with a pointer to `plans/<slug>.md` -- 227 bytes
+#: that became the artifact the next step reads, while the file was taken back as per-run state.
+#: So both prompts say where the deliverable goes: into the reply, whole.
+REVIEW_PROMPT = ("Produce the complete review artifact supplied on standard input. Your final reply is "
+                 "that artifact: write the whole document in it, not a summary of it or a pointer to "
+                 "a file or plan.")
+VERDICT_PROMPT = ("Independently judge the supplied result and return the requested verdict. Your final "
+                  "reply carries the verdict itself, never a pointer to a file or plan.")
 INPUT_FORMAT_ARGV = ("--input-format", "text")
 OUTPUT_FORMAT_ARGV = ("--output-format", "text")
 NO_SESSION_ARGV = ("--no-session-persistence",)
@@ -282,7 +298,19 @@ LOGIN_STATUS_ARGV = ("auth", "status", "--json")
 #: which carries that process's own working directory, and is written even under
 #: `--no-session-persistence` -- and a `.last-cleanup` stamp. Both are per-run,
 #: so both are taken back after every spawn.
-LOGIN_SCRATCH = ("sessions", ".last-cleanup")
+#: MEASURED again on the first REAL subscription login (23.09.2026, a `review`
+#: task that ran a shell): a spawn that starts a shell also writes
+#: `session-env/<session>/` and `shell-snapshots/` -- the same per-run kind,
+#: taken back the same way. A spawn that runs no shell writes neither (measured
+#: on the same login with a tool-less review and an `acceptEdits` dispatch).
+#: A `--permission-mode plan` review that ends by presenting a plan writes it to
+#: `plans/<slug>.md` (third live run, 23.09.2026): model text, per-run, taken back.
+#: A review whose tool output spilled to disk wrote `projects/<cwd>/<session>/tool-results/`
+#: even under `--no-session-persistence` (fourth live run). `file-history/<session>/` is the
+#: pinned binary's own per-session edit checkpoint (`join(configDir, "file-history", session)`
+#: in 2.1.239), which an editing dispatch can write. All per-run, all taken back.
+LOGIN_SCRATCH = ("sessions", ".last-cleanup", "session-env", "shell-snapshots", "plans",
+                 "projects", "file-history")
 #: What the same measurement showed the vendor KEEPS beside the login: its
 #: profile and the backups it rotates. Left alone, because deleting them would
 #: be deleting the operator's own state, and reported by neither list.
@@ -298,7 +326,7 @@ LOGIN_CREDENTIALS = (".credentials.json",)
 #: MEASURED rather than guessed: a subscription-shaped credential file makes
 #: 2.1.239 answer `authMethod: "claude.ai"`, `apiProvider: "firstParty"`, exit 0.
 #: A CONSOLE-shaped file answers with exactly those three as well, which is why
-#: the method is not the whole rule -- see `API_BILLING_PLAN` below.
+#: the method is not the whole rule -- see `claude_quota.API_BILLING_PLAN`.
 #:
 #: Positive and not merely "not one of the two bad ones", because an unknown
 #: answer -- an empty string, a method a future build invents, a localized
@@ -307,21 +335,6 @@ LOGIN_CREDENTIALS = (".credentials.json",)
 #: FORMAT: not the authenticity of a credential, not that a plan is live, and
 #: not that any model call would succeed.
 ADMITTED_LOGIN_METHODS = ("claude.ai",)
-FIRST_PARTY = "firstParty"
-#: The plan value that means the vendor's own login is paid for as API usage.
-#: MEASURED on 2.1.239 with two synthetic credential files of the SAME shape:
-#: one carrying `subscriptionType: "max"` and one carrying `"console"` both
-#: answer `authMethod: "claude.ai"`, `apiProvider: "firstParty"` and exit 0, and
-#: the plan is the only field that separates them. The vendor's own login
-#: command offers exactly this pair -- `--claudeai` and `--console` -- so
-#: admitting the method alone would have taken the road the owner forbade.
-#:
-#: Refused by knowledge, like the method used to be, and for a reason that does
-#: not apply to the method: the plan names a subscription can carry are an open
-#: set nobody here has enumerated, while the one that means API billing is
-#: measured. A missing plan refuses too -- an answer that does not say cannot
-#: say it is not this one.
-API_BILLING_PLAN = "console"
 #: What a login directory may not also hold. `--safe-mode` was measured to
 #: suppress both of these, and they are refused anyway: the flag is one line of
 #: argv, and this is the directory that would carry the customization if it ever
@@ -341,7 +354,12 @@ PERMISSION_MODE_ARGV = ("--permission-mode", "acceptEdits")
 REVIEW_PERMISSION_MODE_ARGV = ("--permission-mode", "plan")
 VERSION_ARGV = ("--version",)
 #: Capture ceiling for either spawn; the pump drains past it and drops the rest.
-CLAUDE_OUTPUT_LIMIT = 16 * 1024
+#: A review's stdout BECOMES an artifact, so the ceiling is the artifact's own bound
+#: (`artifacts.ARTIFACT_CONTENT_LIMIT`, held equal by a test). At 16 KiB a real
+#: `diagnose` review failed as truncated on the first live run (23.09.2026) while
+#: `identify` had already written 14.5 KiB. A dispatch is still capped by its plan's
+#: `output_limit_profile` (at most 16 KiB): a ceiling, never a raise.
+CLAUDE_OUTPUT_LIMIT = 48 * 1024
 #: The preflight is a version print, not work: it gets its own small budget.
 VERSION_TIMEOUT_SECONDS = 30
 #: The two subtrees THIS provider owns beneath the project root.
@@ -430,6 +448,10 @@ class ClaudeCodeTransport(ArtifactAwareTransport):
     error = ClaudeCodeError
     review_enabled = True
 
+    def quota_connection(self):
+        return native_subscription_connection(
+            self, CONTROL_QUOTA_POLICY, CONTROL_QUOTA_RPC, project=_control_sample)
+
     def __init__(
             self, pin: ExecutablePin, runner: ProcessRunner, *,
             root: str | Path, clock: Callable[[], str],
@@ -498,7 +520,7 @@ class ClaudeCodeTransport(ArtifactAwareTransport):
             and said.get("authMethod") in ADMITTED_LOGIN_METHODS
             and "apiKeySource" not in said
             and isinstance(plan, str) and plan.strip()
-            and plan.strip().casefold() != API_BILLING_PLAN)
+            and plan_value(plan) != API_BILLING_PLAN)
 
     def _login_status_argv(self) -> tuple[str, ...]:
         """The status question, behind this road's own isolation flag.
@@ -564,7 +586,7 @@ class ClaudeCodeTransport(ArtifactAwareTransport):
         UTF-8, and no trailing newline is added: the bytes handed over are the
         bytes the task text is, so what the child reads is what this build
         composed and nothing it appended. The runner bounds this at the same
-        64 KiB the workspace door bounds an instruction body at, and refuses a
+        256 KiB the workspace door bounds an instruction body at, and refuses a
         NUL, before any child exists.
         """
         return task_text.encode("utf-8")

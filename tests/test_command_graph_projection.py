@@ -12,6 +12,7 @@ of the two. And it shares no word with the definition except the join: what is
 a ceiling over there is a position here, and a reader can never confuse them.
 """
 from __future__ import annotations
+from tests.human_situation_samples import READ_AT, empty_situation
 
 import ast
 from pathlib import Path
@@ -207,7 +208,7 @@ def reach_the_confirm_gate(root, *, run_id=RUN_ID, config_digest=None):
 
 
 def payload_of(store):
-    return graph_payload(store.read(RUN_ID))
+    return graph_payload(store.read(RUN_ID), computed_at=READ_AT)
 
 
 def node_of(payload, node_id):
@@ -223,7 +224,7 @@ def test_a_run_that_follows_no_graph_answers_three_nulls(tmp_path):
     payload = payload_of(a_store(tmp_path, with_graph=False))
     assert payload == {
         "definition": None, "definition_digest": None, "runtime": None,
-        "schedule": None, "success_criteria": {}}
+        "schedule": None, "success_criteria": {}, "situation": empty_situation()}
 
 
 def test_the_definition_and_its_digest_are_the_contracts_own(tmp_path):

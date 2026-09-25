@@ -14,10 +14,12 @@
 //
 // The draft rules below are this product's most expensive invariants, measured
 // on `graph-store.js:186-267` and carried here unchanged.
+import {draftFrom, frozenCopy, projectWorkflow} from "./studio-draft.js";
 import {EDIT_TYPES, MAX_EDGES, MAX_NODES, MAX_RESOURCES, NODE_KINDS,
   applyEdit, nodeIds} from "./studio-edits.js";
-import {projectProviders, projectRunRead, projectRuns,
-  projectStarters, projectWorkflow, projectWorkflows} from "./studio-model.js";
+import {projectProviders, projectRuns,
+  projectStarters, projectWorkflows} from "./studio-model.js";
+import {projectRunRead} from "./studio-situation.js";
 import {projectControls, wireControls} from "./studio-controls.js";
 import {NO_DOCUMENT, documentCleared, documentEdited, documentSpent}
   from "./studio-rundraft.js";
@@ -26,6 +28,8 @@ import {readWrites, stepAnswered, stepWriting} from "./studio-runwrites.js";
 import {NO_FOLDS, NO_OPENING, NO_STARTER, foldMoved, openingCleared,
   openingEdited, starterEdited} from "./studio-toolbardraft.js";
 import {changeSummary} from "./studio-review.js";
+import {NO_TASKS, reduceTasks} from "./studio-tasks-model.js";
+import {NO_QUOTAS, reduceQuotas} from "./studio-quotas-model.js";
 
 //: The seven words a screen container may stand in; the plain sentence beside
 //: each is the view's.
@@ -35,7 +39,7 @@ export const PHASES = Object.freeze(["empty", "loading", "ready", "stale",
 export const SCREENS = Object.freeze(
   ["overview", "workflow", "runs", "decisions", "agents"]);
 //: `graph_template.SCHEMA_VERSION`, the one a draft document must claim.
-export const WORKFLOW_SCHEMA = 1;
+export {WORKFLOW_SCHEMA, draftFrom} from "./studio-draft.js";
 const ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const ZOOM = Object.freeze({min: 0.4, max: 2});
 
@@ -45,20 +49,17 @@ function isObject(value) {
 
 function rows(value) { return Array.isArray(value) ? value : []; }
 function text(value) { return typeof value === "string" ? value : ""; }
+//: A notice is a string of data, `{key, params}` said in the reader's language, or a list of
+//: either (`studio-i18n.js` noticeText). What this module says itself is always a key.
+function noticeOf(value) {
+  return typeof value === "string" || Array.isArray(value) || typeof value?.key === "string" ? value : "";
+}
+const said = (key, params = {}) => Object.freeze({key, params: Object.freeze({...params})});
 
 // A frozen copy built key by key -- the transport module still holds the
 // parsed payload. Every key is DEFINED rather than assigned, so a document
 // carrying `__proto__` gets an own property, never the prototype setter.
-function frozenCopy(value) {
-  if (Array.isArray(value)) return Object.freeze(value.map(frozenCopy));
-  if (!isObject(value)) return value;
-  const out = {};
-  for (const key of Object.keys(value)) {
-    Object.defineProperty(out, key, {configurable: false, enumerable: true,
-      value: frozenCopy(value[key]), writable: false});
-  }
-  return Object.freeze(out);
-}
+
 const NO_DRAFT = Object.freeze({key: null, action: "approve", actor: "",
   reason: ""});
 //: What a person has typed against ONE step of a run's plan, and which step
@@ -93,6 +94,8 @@ const WORKFLOWS = Object.freeze({
   //: which is the document this window is editing, saved or not.
   detail: null,
   draft: null,
+  //: The drawing as the last read left it: an edit since makes `draft` another object.
+  readDraft: null,
   //: The one mark that tells a composed step from a durable one. It lives
   //: BESIDE the document because a draft document is a closed key set: a mark
   //: written into a node would make the drawing FOREIGN, and an unsavable
@@ -141,7 +144,7 @@ const WORKFLOWS = Object.freeze({
 export const EMPTY = Object.freeze({
   screen: "overview",
   connection: "connecting",   // connecting | open | closed
-  notice: "Nothing has been read yet.",
+  notice: said("phase.empty"),
   //: WHOSE sentence the notice above is. A read may replace its own sentence
   //: with a newer one or with nothing; it may not delete a sentence about what
   //: the PERSON just did. Every write on this surface announces itself and then
@@ -157,6 +160,8 @@ export const EMPTY = Object.freeze({
   //: sentence, never as a blank and never as a guess.
   project: Object.freeze({name: null, warnings: Object.freeze([])}),
   providers: Object.freeze([]),
+  tasks: NO_TASKS,
+  quotas: NO_QUOTAS,
   workflows: WORKFLOWS,
   canvas: Object.freeze({pan: Object.freeze({x: 0, y: 0}), zoom: 1,
     selection: Object.freeze({kind: null, id: null})}),
@@ -194,13 +199,6 @@ function wireStarters(value) {
 //: -- are carried by every starter and every published revision. So it is
 //: REBUILT from a draft's four keys rather than copied and pruned: neither word
 //: can ride in and make the drawing something the save route refuses.
-export function draftFrom(value) {
-  if (!isObject(value)) return null;
-  return frozenCopy({schema_version: WORKFLOW_SCHEMA,
-    title: text(value.title) || "Untitled workflow",
-    nodes: rows(value.nodes).filter(isObject),
-    edges: rows(value.edges).filter(isObject)});
-}
 
 // What an authoritative read REPLACES, and what it may not. The DURABLE arm
 // and only that: the read really does bring a stored draft, so that document
@@ -259,39 +257,20 @@ function localPlan(state) {
 //: no diagnostics. What a draft is ALLOWED to be missing is absent from this
 //: list on purpose: that is what `diagnostics` reports.
 function nodeProblems(node, found) {
-  const named = ID_RE.test(text(node.node_id)) ? node.node_id : "a step";
-  if (!ID_RE.test(text(node.node_id))) {
-    found.push("A step id must be letters, digits, dot, underscore or hyphen, "
-      + "up to 128 characters.");
-  }
-  if (!text(node.title).trim()) found.push(`Step ${named} needs a display name.`);
-  if (!NODE_KINDS.includes(node.kind)) {
-    found.push(`Step ${named} names a step type this build cannot store.`);
-  }
-  if (Object.hasOwn(node, "role_id") !== Object.hasOwn(node, "capability")) {
-    found.push(`Step ${named} names half a binding. A role and a capability are `
-      + "stored together or neither, so this draft cannot be saved until the "
-      + "other half is chosen.");
-  }
+  const named = ID_RE.test(text(node.node_id)) ? node.node_id : said("notice.a_step");
+  const step = (key, extra = {}) => found.push(said(key, {step: named, ...extra}));
+  if (!ID_RE.test(text(node.node_id))) found.push(said("notice.problem_id_grammar"));
+  if (!text(node.title).trim()) step("notice.problem_step_title");
+  if (!NODE_KINDS.includes(node.kind)) step("notice.problem_step_kind");
+  if (Object.hasOwn(node, "role_id") !== Object.hasOwn(node, "capability")) step("notice.problem_half_binding");
   if (Object.hasOwn(node, "verifier_role_id") && !Object.hasOwn(node, "role_id")) {
-    found.push(`Step ${named} names a verifier role and binds no role of its `
-      + "own. A step that carries nothing out has nothing to verify, so this "
-      + "draft cannot be saved until the step names a role or the verifier is "
-      + "cleared.");
+    step("notice.problem_verifier_no_role");
   }
-  if (Object.hasOwn(node, "required_evidence")
-      && !Object.hasOwn(node, "role_id")) {
-    found.push(`Step ${named} requires evidence of a verification it will `
-      + "never have. A step that binds no role carries nothing out and is "
-      + "verified by nobody, so this draft cannot be saved until the step "
-      + "names a role or the requirement is cleared.");
+  if (Object.hasOwn(node, "required_evidence") && !Object.hasOwn(node, "role_id")) {
+    step("notice.problem_evidence_no_role");
   }
-  if (Object.hasOwn(node, "failure_policy")
-      && !Object.hasOwn(node, "role_id")) {
-    found.push(`Step ${named} names a failure policy for work it never `
-      + "carries out. A step that binds no role cannot fail, so this "
-      + "draft cannot be saved until the step names a role or the policy "
-      + "is cleared.");
+  if (Object.hasOwn(node, "failure_policy") && !Object.hasOwn(node, "role_id")) {
+    step("notice.problem_policy_no_role");
   }
   // The half of the missing-artifact pairing rule this module can answer. The
   // contract's rule is about the CAPABILITY -- only the two the reviewed
@@ -304,26 +283,17 @@ function nodeProblems(node, found) {
   // names the capability and sends the person to the control they changed.
   if (Object.hasOwn(node, "missing_artifact_policy")
       && !Object.hasOwn(node, "capability")) {
-    found.push(`Step ${named} says what to do about a missing input artifact `
-      + "and is given none. A step that binds no capability is handed no "
-      + "documents, so this draft cannot be saved until the step names one or "
-      + "the behaviour is cleared.");
+    step("notice.problem_missing_artifact_no_capability");
   }
-  if (rows(node.resources).length > MAX_RESOURCES) {
-    found.push(`Step ${named} attaches more than ${MAX_RESOURCES} resources.`);
-  }
+  if (rows(node.resources).length > MAX_RESOURCES) step("notice.problem_resources", {max: String(MAX_RESOURCES)});
 }
 
 export function saveProblems(draft) {
   if (!isObject(draft)) return Object.freeze([]);
   const found = [];
-  if (!text(draft.title).trim()) found.push("This workflow needs a name.");
-  if (rows(draft.nodes).length > MAX_NODES) {
-    found.push(`A workflow draft carries at most ${MAX_NODES} steps.`);
-  }
-  if (rows(draft.edges).length > MAX_EDGES) {
-    found.push(`A workflow draft carries at most ${MAX_EDGES} connections.`);
-  }
+  if (!text(draft.title).trim()) found.push(said("notice.problem_workflow_name"));
+  if (rows(draft.nodes).length > MAX_NODES) found.push(said("notice.problem_max_nodes", {max: String(MAX_NODES)}));
+  if (rows(draft.edges).length > MAX_EDGES) found.push(said("notice.problem_max_edges", {max: String(MAX_EDGES)}));
   for (const node of rows(draft.nodes)) nodeProblems(node, found);
   return Object.freeze(found);
 }
@@ -332,8 +302,7 @@ function edited(state, edit) {
   const held = state.workflows;
   if (!EDIT_TYPES.includes(edit && edit.type)) return state;
   if (held.draft === null) {
-    return spoken(state, "There is no editable draft on screen. A published "
-      + "revision is immutable; start a draft to change this workflow.");
+    return spoken(state, said("notice.edit_no_draft"));
   }
   // The document half lives next door and answers with a draft or a refusal;
   // everything below this line is the STATE half, which is what stayed here.
@@ -386,8 +355,7 @@ function workflowsLoaded(state, event) {
     return Object.freeze({...state,
       workflows: Object.freeze({...state.workflows, phase: "failed"}),
       noticeFrom: "read",
-      notice: "The workflow list could not be read as this build speaks it. "
-        + "Nothing on screen was replaced by a payload nobody can read."});
+      notice: said("notice.workflows_unreadable")});
   }
   return Object.freeze({...state,
     // The boundary already refused a name this build could not have written,
@@ -406,9 +374,7 @@ function workflowsLoaded(state, event) {
 
 function workflowLoaded(state, event) {
   const settled = projectWorkflow(event.payload);
-  if (settled === null) return workflowUnread(state, event, "failed",
-    "This workflow answered with a payload this build cannot read. Nothing "
-    + "about it is inferred from a document nobody can read.");
+  if (settled === null) return workflowUnread(state, event, "failed", said("notice.workflow_unreadable"));
   const payload = frozenCopy(event.payload);
   const stored = payload.draft === null ? null : payload.draft.document;
   const brought = stored === null ? null : draftFrom(stored);
@@ -419,7 +385,7 @@ function workflowLoaded(state, event) {
   return Object.freeze({...state,
     workflows: Object.freeze({...state.workflows, phase: "ready",
       selectedId: payload.workflow_id, detail: payload,
-      draft, localIds: merged === null ? Object.freeze([]) : merged.localIds,
+      draft, readDraft: draft, localIds: merged === null ? Object.freeze([]) : merged.localIds,
       provenance: merged === null ? "none" : merged.provenance,
       diagnostics: payload.diagnostics, problems: saveProblems(draft),
       publishable: payload.publishable, nextRevision: payload.next_revision,
@@ -452,9 +418,7 @@ function workflowUnread(state, event, phase, notice) {
       provenance: kept === null ? held.provenance : kept.provenance,
       writeReady: false, ...carried(held, event)}),
     noticeFrom: "read",
-    notice: kept === null ? notice : notice + " The drawing on screen is still "
-      + "held in this window and has not been saved; nothing may be written "
-      + "until this workflow has been read again.",
+    notice: kept === null ? notice : Object.freeze([notice, said("notice.drawing_held")]),
   });
 }
 
@@ -483,9 +447,7 @@ function runsLoaded(state, event) {
     return Object.freeze({...state,
       runs: Object.freeze({...state.runs, phase: "failed"}),
       noticeFrom: "read",
-      notice: "The run list could not be read as this build speaks it, so it "
-        + "is not shown at all: a run you cannot see is worse than one you "
-        + "cannot read."});
+      notice: said("notice.runs_unreadable")});
   }
   return Object.freeze({...state,
     providers: wireProviders(event.payload.providers),
@@ -563,8 +525,7 @@ function runLoaded(state, event) {
     // typed against it is kept, and only the writes in flight are not this
     // road's to touch either. An error road is not a change of run.
     const failed = runMoved(state, "failed", null, {noticeFrom: "read",
-      notice: "This run answered with a payload this build cannot read. "
-        + "Nothing about it is inferred from a document nobody can read."});
+      notice: said("notice.run_unreadable")});
     return Object.freeze({...failed,
       runs: Object.freeze({...failed.runs, step: state.runs.step,
         document: state.runs.document}),
@@ -595,8 +556,7 @@ function runChosen(state, runId) {
 function seeded(state, event) {
   const draft = draftFrom(event.document);
   if (draft === null) {
-    return spoken(state, "That starting document is not one this build can "
-      + "read as a workflow.");
+    return spoken(state, said("notice.starter_unreadable"));
   }
   return Object.freeze({...state,
     // Every step of a seeded drawing is this window's until it is saved, so
@@ -604,8 +564,7 @@ function seeded(state, event) {
     workflows: Object.freeze({...state.workflows, draft,
       localIds: Object.freeze(nodeIds(draft)), provenance: "local",
       problems: saveProblems(draft), savePhase: "idle", saveNotice: ""}),
-    notice: "This drawing is held in this window and has been saved nowhere. "
-      + "Save the draft to put it on the server.",
+    notice: said("notice.seeded_unsaved"),
     noticeFrom: "human",
   });
 }
@@ -618,10 +577,7 @@ function connectionMoved(state, value) {
       // missed while it was down is unknown, so readiness is granted by the
       // READ that follows and by nothing else.
       writeReady: open ? state.workflows.writeReady : false}),
-    notice: open ? state.notice
-      : "Connection lost. The last read facts are still on screen, and nothing "
-        + "may be written until the stream is back and this workflow has been "
-        + "read again.",
+    notice: open ? state.notice : said("notice.connection_lost"),
     noticeFrom: open ? state.noticeFrom : "read",
   });
 }
@@ -713,7 +669,7 @@ function phaseMoved(state, screen, event) {
   if (!PHASES.includes(event.phase)) return state;
   // A phase move is a READ saying where it got to, so a sentence it carries is
   // that read's own; one it does not carry leaves the standing sentence alone.
-  const carries = typeof event.notice === "string";
+  const carries = event.notice !== undefined && noticeOf(event.notice) === event.notice;
   return Object.freeze({...state, [screen]: Object.freeze({
     ...state[screen], phase: event.phase}),
   notice: carries ? event.notice : state.notice,
@@ -734,7 +690,7 @@ function saveMoved(state, event) {
   return Object.freeze({...state, workflows: Object.freeze({...state.workflows,
     savePhase: ["idle", "submitting", "refused", "outcome-unknown", "saved"]
       .includes(event.phase) ? event.phase : "outcome-unknown",
-    saveNotice: text(event.notice)})});
+    saveNotice: noticeOf(event.notice)})});
 }
 
 const ARMS = Object.freeze({
@@ -767,7 +723,7 @@ const ARMS = Object.freeze({
     ? Object.freeze({...state, screen: event.screen}) : state,
   seed: seeded,
   "starter-edit": (state, event) => starterEdited(state, event.patch),
-  status: (state, event) => spoken(state, text(event.notice)),
+  status: (state, event) => spoken(state, noticeOf(event.notice)),
   "document-edit": (state, event) => documentEdited(state, event.patch),
   "document-spent": documentSpent,
   "step-answered": stepAnswered,
@@ -778,7 +734,7 @@ const ARMS = Object.freeze({
   "workflow-chosen": (state, event) => workflowChosen(state, event.workflowId),
   "workflow-loaded": workflowLoaded,
   "workflow-unread": (state, event) => workflowUnread(state, event,
-    event.phase === "refused" ? "refused" : "failed", text(event.notice)),
+    event.phase === "refused" ? "refused" : "failed", noticeOf(event.notice)),
   "workflows-loaded": workflowsLoaded,
   "workflows-phase": (state, event) => phaseMoved(state, "workflows", event),
 });
@@ -787,6 +743,9 @@ const ARMS = Object.freeze({
 // spelling of it, so an inherited member is never reached as an arm.
 export function reduce(state, event) {
   if (!event || typeof event.type !== "string") return state;
+  if (event.type === "run-cleared") { const {phase, list, writes, step, document: doc} = state.runs;
+    return Object.freeze({...runChosen(state, null), runs: Object.freeze({...EMPTY.runs, phase,
+      list, writes, step: cleared(step), document: documentCleared(doc)})}); }
   return Object.hasOwn(ARMS, event.type)
-    ? ARMS[event.type](state, event) : state;
+    ? ARMS[event.type](state, event) : reduceQuotas(reduceTasks(state, event), event);
 }

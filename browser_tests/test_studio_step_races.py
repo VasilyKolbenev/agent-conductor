@@ -44,6 +44,8 @@ and are imported; the gate runs every module in its own process.
 """
 from __future__ import annotations
 
+from browser_tests.run_picker import choose_run
+
 import json
 
 from playwright.sync_api import Browser, Page, TimeoutError as BrowserTimeout
@@ -227,7 +229,7 @@ def _a_read_lands(page: Page, bench: _Bench, run_id: str, index: int) -> None:
     before = page.locator("ol.studio-timeline > li").count()
     RunStore(bench.root).append(a_proposal(
         node_id="identify", index=index, run_id=run_id, config_digest=DIGEST))
-    page.locator(f'[data-focus-key="run:{run_id}"]').click()
+    choose_run(page, run_id)
     page.wait_for_function(
         "n => document.querySelectorAll('ol.studio-timeline > li').length > n",
         arg=before)
@@ -761,12 +763,12 @@ def test_a_read_the_projection_refuses_leaves_the_words_alone(
         _type(page, "field:rationale", WHY)
         page.route(f"**/command/runs/{RUN_ID}", lambda route: route.fulfill(
             status=200, content_type="application/json", body="{}"))
-        page.locator(f'[data-focus-key="run:{RUN_ID}"]').click()
+        choose_run(page, RUN_ID)
         page.wait_for_function(
             "() => document.body.innerText.includes("
             "'a payload this build cannot read')")
         _let_through(page, f"**/command/runs/{RUN_ID}")
-        page.locator(f'[data-focus-key="run:{RUN_ID}"]').click()
+        choose_run(page, RUN_ID)
         page.wait_for_selector(f'[data-step="propose:{STEP}"]')
         form = page.locator(f'[data-step="propose:{STEP}"]')
         assert form.locator('[name="proposed_by"]').input_value() == ACTOR
@@ -774,4 +776,53 @@ def test_a_read_the_projection_refuses_leaves_the_words_alone(
         assert window.writes("/proposals") == 0
     finally:
         assert window.problems == []
+        page.context.close()
+
+
+#: A second run, for the person to be looking at when another run's refusal lands.
+ELSEWHERE = "run-elsewhere"
+
+
+def test_a_late_refusal_is_not_announced_on_another_runs_screen(
+        chromium: Browser, bench: _Bench) -> None:
+    """H: alpha's POST is held; the person opens another run; the refusal lands.
+
+    A run-scoped refusal is spoken only on the run that asked for the write:
+    the status line of the run the person is looking at does not change.
+    """
+    store = RunStore(bench.root)
+    _open_run(store, TWO_LIVE)
+    store.append(_two_steps(TWO_LIVE, (_review(LONE), _review(HALTING))))
+    _open_run(store, ELSEWHERE)
+    store.append(_two_steps(ELSEWHERE, (_review(LONE),)))
+    page, window = _open(chromium, bench)
+    try:
+        _read(page, TWO_LIVE)
+        held = _hold_the_first(page, TWO_LIVE, "proposals")
+        _type_into(page, LONE, "proposed_by", "alice")
+        _type_into(page, LONE, "rationale", "First step")
+        with page.expect_request(lambda request: request.method == "POST"
+                                 and request.url.endswith("/proposals")):
+            page.locator(f'[data-focus-key="propose:{LONE}"]').click()
+        for _ in range(40):
+            if held:
+                break
+            page.wait_for_timeout(25)
+        assert len(held) == 1, held
+        _read(page, ELSEWHERE)
+        before = page.locator("#studioStatus").inner_text()
+        with page.expect_response(lambda answer: answer.url.endswith("/proposals")):
+            held[0].fulfill(status=409, content_type="application/json",
+                            body=json.dumps({"error": {"code": "record_conflict",
+                                                       "message": "held by the test"}}))
+        page.wait_for_timeout(150)
+        after = page.locator("#studioStatus").inner_text()
+        assert "held by the test" not in after and "conflict" not in after.lower(), after
+        # The pending sentence of a write on the run the person left does not stay behind.
+        assert before == "Writing…" and after == "", (before, after)
+        assert window.writes("/proposals") == 1
+    finally:
+        # The 409 is this test's own; the browser notes every non-2xx answer on its console.
+        assert [row for row in window.console_errors if "409" not in row] == []
+        assert window.page_errors == []
         page.context.close()

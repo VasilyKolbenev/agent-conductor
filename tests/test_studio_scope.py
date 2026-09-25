@@ -63,10 +63,19 @@ GLOBALS = frozenset({
     "if", "for", "while", "switch", "catch", "return", "typeof", "function",
     "await", "new", "else", "do", "of", "in", "case", "throw",
 })
-# Native layout observation is needed only by the orbit. Keep this narrower
-# than GLOBALS: allowing its use there must not forgive it in every module.
+# Native layout observation is needed by the two modules that draw against a
+# measured box: the orbit, and the participants strip that now sizes itself the
+# same way. Keep this narrower than GLOBALS: a name admitted here is admitted
+# for the module that argued for it and for no other, so a third module
+# reaching for an observer has to come here and be written down. It is a name
+# per module, never a wildcard and never a module-wide forgiveness -- a typo
+# or any other foreign global is still reported in these modules too.
 # Browser witnesses exercise construction, redraw, resizing and teardown.
-MODULE_GLOBALS = {"studio-orbit.js": frozenset({"ResizeObserver"})}
+MODULE_GLOBALS = {
+    "studio-trace.js": frozenset({"ResizeObserver"}),
+    "studio-orbit.js": frozenset({"ResizeObserver"}),
+    "studio-participants.js": frozenset({"ResizeObserver"}),
+}
 #: A call is `name(`, with the name not preceded by a dot -- `a.map(` is a
 #: method on a value and says nothing about this module's scope.
 _CALL = re.compile(r"(?<![.\w$])([A-Za-z_$][\w$]*)\s*\(")
@@ -78,6 +87,7 @@ _CALL = re.compile(r"(?<![.\w$])([A-Za-z_$][\w$]*)\s*\(")
 #: second JavaScript implementation living in the test suite.
 _DECLARED = (
     re.compile(r"(?:export\s+)?function\s+([A-Za-z_$][\w$]*)"),
+    re.compile(r"(?:export\s+)?class\s+([A-Za-z_$][\w$]*)"),
     re.compile(r"(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)"),
 )
 #: Names a body is handed rather than declares: destructurings, the parameter
@@ -90,6 +100,8 @@ _BOUND = (
     re.compile(r"\(([^()]*)\)\s*=>"),
     re.compile(r"(?<![.\w$])([A-Za-z_$][\w$]*)\s*=>"),
 )
+_METHOD_DECLARATION = re.compile(
+    r"(?m)^[ \t]*(?:async[ \t]+)?([A-Za-z_$][\w$]*)[ \t]*\([^;{}\n]*\)[ \t]*\{")
 _IMPORTED = re.compile(r"import\s*\{([^}]*)\}\s*from", re.S)
 
 
@@ -141,7 +153,9 @@ def _scannable(source: str) -> str:
 
 def _called(source: str) -> set[str]:
     """Every bare name this module calls, method calls excluded."""
-    return set(_CALL.findall(source))
+    declarations = {match.start(1) for match in _METHOD_DECLARATION.finditer(source)}
+    return {match.group(1) for match in _CALL.finditer(source)
+            if match.start(1) not in declarations}
 
 
 def _unreachable(source: str, module: str) -> list[str]:
@@ -160,12 +174,35 @@ def test_every_name_a_module_calls_is_one_it_can_reach(name):
         "a move left them behind")
 
 
-def test_resize_observer_is_admitted_only_here_and_no_unknown_name_is_forgiven():
+def test_resize_observer_is_admitted_module_by_module_and_forgives_no_unknown_name():
+    """The admission is per module in BOTH directions, and it forgives one name.
+
+    One identical source, read as each module in turn: the two that argued for
+    an observer reach it, every other module does not, and in the admitted
+    modules a typo of the same name and an absent helper are both still
+    reported. The table itself is held to one name per module, so the next
+    entry cannot quietly be a wildcard or a module-wide forgiveness.
+    """
     source = "function watch() { new ResizeObserver(() => 0); missingHelper(); }"
-    assert _unreachable(source, "studio-orbit.js") == ["missingHelper"]
-    assert _unreachable(source, "studio-model.js") == ["ResizeObserver", "missingHelper"]
-    assert _unreachable(source.replace("ResizeObserver", "ResizeObserverTypo"),
-                        "studio-orbit.js") == ["ResizeObserverTypo", "missingHelper"]
+    for observer in ("studio-orbit.js", "studio-participants.js", "studio-trace.js"):
+        assert _unreachable(source, observer) == ["missingHelper"], observer
+        assert _unreachable(source.replace("ResizeObserver", "ResizeObserverTypo"),
+                            observer) == ["ResizeObserverTypo", "missingHelper"]
+    blind = set(MODULES) - set(MODULE_GLOBALS)
+    assert set(MODULE_GLOBALS) < set(MODULES) and blind, sorted(MODULE_GLOBALS)
+    for module in blind:
+        assert _unreachable(source, module) == [
+            "ResizeObserver", "missingHelper"], module
+    assert all(names == frozenset({"ResizeObserver"})
+               for names in MODULE_GLOBALS.values()), MODULE_GLOBALS
+    # And every admission is SPENT: a module listed here that never calls the
+    # name it was admitted for is a forgiveness nobody argued for, which is the
+    # one widening the rest of this test cannot see -- each of its claims holds
+    # over one identical synthetic source and none of them reads the module.
+    unspent = {module: sorted(name for name in names
+                              if name not in _code(PANEL / module))
+               for module, names in MODULE_GLOBALS.items()}
+    assert not any(unspent.values()), unspent
 
 
 def test_this_guard_catches_the_break_that_produced_it():
@@ -263,3 +300,17 @@ def test_the_deadline_globals_are_reached_by_the_boot_module_alone():
             assert reached == ["AbortController", "clearTimeout", "setTimeout"]
         else:
             assert reached == [], (name, reached)
+
+
+def test_class_methods_are_declarations_but_bare_missing_calls_still_fail():
+    source = """class Preferences {
+  constructor(door) { this.door = door; }
+  paint() { this.door.paint(); absentHelper(); }
+  dispose() { this.door.remove(); }
+}
+function make(door) { return new Preferences(door); }
+"""
+    assert _unreachable(source, "studio-preferences.js") == ["absentHelper"]
+    # A method declaration does not introduce a bare callable outside it.
+    assert _unreachable(source + "\npaint();", "studio-preferences.js") == [
+        "absentHelper", "paint"]

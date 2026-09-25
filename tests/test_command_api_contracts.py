@@ -340,6 +340,10 @@ def test_every_fixed_code_has_one_test_owned_exact_message_and_empty_detail():
         "route_not_found": "command route does not exist",
         "malformed_request": "request transport or JSON shape is malformed",
         "contract_invalid": "request values do not satisfy the contract",
+        "windows_name_unsafe": "choose an identifier without a trailing dot or space "
+                               "and without a reserved Windows basename such as NUL",
+        "windows_path_too_long": "shorten the identifier or move the project to a "
+                                 "shorter path; the Windows path budget is exceeded",
         "run_corrupt": "stored run is corrupt",
         "store_error": "run store could not complete the request",
         "route_unsafe": "run route is not structurally contained",

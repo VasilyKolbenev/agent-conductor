@@ -118,6 +118,7 @@ from .containment import (
     unowned_paths,
 )
 from .identity import mapping_differences
+from .path_admission import WindowsNameError, WindowsPathError
 from .run_store import (
     RecoveredRun,
     RunExists,
@@ -455,6 +456,20 @@ def _check_found_run(store: RunStore, envelope: RunEnvelope) -> None:
             "so nothing was proposed into it:", differences))
 
 
+def _create_or_open_preview_run(store: RunStore, envelope: RunEnvelope) -> None:
+    """Translate creation refusal and preserve the standing preview proof."""
+    try:
+        store.create_run(envelope, FROZEN_CONFIG)
+    except RunExists:
+        # Found state, not frozen state: see _check_found_run.
+        _check_found_run(store, envelope)
+    except (StoreError, OSError, WindowsNameError, WindowsPathError) as e:
+        # A store-level creation failure -- e.g. a FILE at conductor/runs --
+        # is a refusal through the contract diagnostics, not a bare error
+        # or a traceback: the message names the exact run path.
+        raise PreviewError(_uncreatable_refusal(store.run_path(_RUN_ID), e)) from e
+
+
 def render_dispatch_preview(
         project_root: str, *, instance_id: str = DEFAULT_INSTANCE,
         adapter_id: str | None = None) -> str:
@@ -484,16 +499,7 @@ def render_dispatch_preview(
         run_id=_RUN_ID, cycle_id="preview-orbit", created_at=_NOW,
         config_digest=snapshot_digest(FROZEN_CONFIG), mode="propose")
     try:
-        try:
-            store.create_run(envelope, FROZEN_CONFIG)
-        except RunExists:
-            # Found state, not frozen state: see _check_found_run.
-            _check_found_run(store, envelope)
-        except (StoreError, OSError) as e:
-            # A store-level creation failure -- e.g. a FILE at conductor/runs --
-            # is a refusal through the contract diagnostics, not a bare error
-            # or a traceback: the message names the exact run path.
-            raise PreviewError(_uncreatable_refusal(store.run_path(_RUN_ID), e)) from e
+        _create_or_open_preview_run(store, envelope)
         service = CommandService(
             store, AdapterRegistry([_PreviewAdapter()]),
             clock=lambda: _NOW, ids=_preview_id)
@@ -502,6 +508,7 @@ def render_dispatch_preview(
             attempt_id=_ATTEMPT_ID, capability="dispatch", arguments=_ARGUMENTS,
             scope=_SCOPE, proposed_by=_PROPOSED_BY, rationale=_RATIONALE,
             timeout_seconds=_TIMEOUT_SECONDS)
-    except (ServiceError, AdapterContractError, StoreError) as e:
+    except (ServiceError, AdapterContractError, StoreError,
+            WindowsNameError, WindowsPathError) as e:
         raise PreviewError(str(e)) from e
     return canonical_json(proposal)

@@ -44,6 +44,9 @@ import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
+
+from ..ownership import data_root, owned_write
+from .path_admission import admit_directory, admit_name
 from types import MappingProxyType
 from typing import NoReturn
 
@@ -100,7 +103,7 @@ class TaskStore:
 
     def __init__(self, project_root: str | os.PathLike[str]) -> None:
         self.project_root = Path(project_root).resolve()
-        self.tasks_root = self.project_root / "conductor" / "tasks"
+        self.tasks_root = data_root(self.project_root) / "tasks"
         # The run store's gate for this root, held STRONGLY here for the same
         # reason `RunStore` holds it: the module table is weak.
         self._root_gate = _root_gate(self.project_root)
@@ -149,11 +152,16 @@ class TaskStore:
         `TemplateStore._owned`.
         """
         violation = first_directory_violation((
-            self.project_root / "conductor", self.tasks_root, directory,
+            self.tasks_root.parent, self.tasks_root, directory,
         )) or _leaf_violation(directory / TASK_FILE)
         if violation is not None:
             self._refuse(violation)
 
+    def admit_task_creation(self, task_id: str) -> None:
+        self.task_path(task_id)  # retain the historical grammar first
+        admit_directory(self.tasks_root, task_id, (TASK_FILE,), "task_id")
+
+    @owned_write
     @_transactional
     def create_task(self, record: TaskRecord) -> Path:
         """Exclusively create one task; a second create under its id is `TaskExists`.
@@ -173,6 +181,11 @@ class TaskStore:
         if type(record) is not TaskRecord:
             raise StoreError("create_task takes exactly a TaskRecord")
         final = self.task_path(record.task_id)
+        if final.is_dir():
+            self._owned(final)
+            raise TaskExists(f"task {record.task_id!r} already exists")
+        self.admit_task_creation(record.task_id)
+        admit_name(record.work_scope, "work_scope")
         self._owned(final)
         self.tasks_root.mkdir(parents=True, exist_ok=True)
         self._owned(final)
@@ -266,7 +279,7 @@ class TaskStore:
         over its neighbours; see `_listed`.
         """
         violation = first_directory_violation(
-            (self.project_root / "conductor", self.tasks_root))
+            (self.tasks_root.parent, self.tasks_root))
         if violation is not None:
             self._refuse(violation)
         try:

@@ -63,6 +63,9 @@ from .run_files import (  # noqa: F401 -- re-exported under their old names
     _replace_bytes,
 )
 from .run_terminal import RunTerminal
+from .run_authorization import RunAuthorization, RunAuthorizationControl
+from .correction_feedback import CorrectionFeedback
+from .authorization_history import hold_authorization_history
 from .store_errors import (  # noqa: F401 -- re-exported under their old names
     CorruptRun,
     RecordConflict,
@@ -70,6 +73,8 @@ from .store_errors import (  # noqa: F401 -- re-exported under their old names
     RunExists,
     StoreError,
 )
+from ..ownership import data_root, owned_write
+from .path_admission import admit_directory
 from .contracts import (
     ActionProposal,
     ActionRequest,
@@ -121,7 +126,7 @@ def _transactional(method):
 RecordValue = (
     ActionRequest | ActionResultReceipt | EvidenceRef | DecisionReceipt
     | ActionProposal | ObservationRecord | AttemptEvent | GraphDefinition
-    | ArtifactDocument | RunTerminal
+    | ArtifactDocument | RunTerminal | RunAuthorization | RunAuthorizationControl | CorrectionFeedback
 )
 
 
@@ -154,6 +159,9 @@ _RECORDS: dict[str, tuple[type[RecordValue], str]] = {
     "graph_definition": (GraphDefinition, "graph_id"),
     "artifact": (ArtifactDocument, "artifact_id"),
     "run_terminal": (RunTerminal, "terminal_id"),
+    "correction_feedback": (CorrectionFeedback, "feedback_id"),
+    "run_authorization": (RunAuthorization, "authorization_id"),
+    "run_authorization_control": (RunAuthorizationControl, "control_id"),
 }
 
 # A named-key screen, not a proof that the snapshot is secret-free: a key is
@@ -368,7 +376,7 @@ class RunStore:
             self, project_root: str | os.PathLike[str], *,
             on_warning: Callable[[str], None] | None = None) -> None:
         self.project_root = Path(project_root).resolve()
-        self.runs_root = self.project_root / "conductor" / "runs"
+        self.runs_root = data_root(self.project_root) / "runs"
         self._on_warning = on_warning
         self._root_gate = _root_gate(self.project_root)
 
@@ -395,6 +403,13 @@ class RunStore:
         """Report a root lock held by this thread, independent of its project."""
         return bool(getattr(_ROOT_TRANSACTION_STATE, "depth", 0))
 
+    def admit_run_creation(self, run_id: str) -> None:
+        self.run_path(run_id)  # retain the historical grammar first
+        admit_directory(self.runs_root, run_id,
+                        ("run.json", "config.json", "records.jsonl"), "run_id",
+                        directories=("decisions",))
+
+    @owned_write
     @_transactional
     def create_run(self, envelope: RunEnvelope, snapshot: Mapping[str, Any]) -> Path:
         """Exclusively create a complete run envelope and frozen configuration."""
@@ -414,6 +429,9 @@ class RunStore:
                 f"envelope has {envelope.config_digest}, computed {digest}")
 
         final = self.run_path(envelope.run_id)
+        if final.is_dir():
+            raise RunExists(f"run {envelope.run_id!r} already exists")
+        self.admit_run_creation(envelope.run_id)
         self.runs_root.mkdir(parents=True, exist_ok=True)
         if final.exists():
             raise RunExists(f"run {envelope.run_id!r} already exists")
@@ -438,6 +456,7 @@ class RunStore:
             if stage.exists():
                 shutil.rmtree(stage)
 
+    @owned_write
     @_transactional
     def append(self, value: RecordValue) -> bool:
         """Append one immutable record; return False for an identical retry."""
@@ -477,6 +496,7 @@ class RunStore:
         """Validate and replay a run without editing one durable byte."""
         return self._replay(run_id, repair=False)
 
+    @owned_write
     @_transactional
     def recover(self, run_id: str) -> RecoveredRun:
         """Replay a run and repair what a crash left behind; only the writer may."""
@@ -567,6 +587,9 @@ class RunStore:
     @staticmethod
     def _validate_new_relation(recovered: RecoveredRun, value: RecordValue) -> None:
         _hold_run_accepts_records(recovered, value)
+        hold_authorization_history(recovered, value)
+        from .feedback_history import validate_feedback_history
+        _as_store_error(validate_feedback_history, recovered, value)
         prior_values = tuple(row.value for row in recovered.records)
         if isinstance(value, GraphDefinition):
             _one_graph_per_run(recovered, value)

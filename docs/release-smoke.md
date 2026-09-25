@@ -60,7 +60,7 @@ you are shipping.
 Expect exit 0, and this list of subcommands — no more, no fewer:
 
 ```
-usage: conduct [-h] {validate,init,doctor,prompt,report,preview,integration-smoke,reconcile,providers,up,demo} ...
+usage: conduct [-h] {validate,init,doctor,prompt,report,preview,integration-smoke,reconcile,providers,ownership,up,demo} ...
 ```
 
 If a subcommand you expected is missing, the wheel is not built from what you think it is.
@@ -265,6 +265,15 @@ Run it a second time and expect a refusal, exit 1 — a release that overwrites 
 ```
 ...\proj\conductor already exists — refusing to touch it
 ```
+
+Check the ownership state without migrating the release fixture:
+
+```powershell
+& $CONDUCT ownership status --dir $PROJ
+```
+
+`conduct ownership status` must report the fresh legacy state and exit 0.
+Activation for new Studio work is covered by the first-run instructions.
 
 ## 9. `conduct validate`, `conduct doctor`, `conduct report` and `conduct prompt` read what init wrote
 
@@ -486,18 +495,32 @@ here is one somebody will meet; a gap nobody named is one they meet alone.
   Native/process proposals are not reclassified by their argument spelling.
 - **Independent verification is bounded, not a hidden unlimited second agent.** Its exact
   first non-empty answer must be `VERDICT: accept` or `VERDICT: reject`; malformed output,
-  rejection, timeout or changed work cannot yield success. The frame limit is 64 KiB; changed
-  file content is inlined up to 16 KiB per file and larger files are listed by digest. A review
+  rejection, timeout or changed work cannot yield success. The frame limit is 256 KiB; changed
+  file content is inlined whole up to 32 KiB per file; under confirmation a larger file is
+  listed by digest, and a bounded run refuses it before any check. A review
   whose combined input/result does not fit is refused rather than truncated. **What it costs:**
   divide oversized work deliberately, and preserve the failed attempt instead of treating a
   human decision as verification. Each task child gets its own timeout N; 2 × N is the combined
   task allowance, not a total wall-clock deadline including preflights and setup. Restart
   reuses matching evidence if it exists but never spends another checker call automatically.
-- **The browser gate is sensitive to socket exhaustion on Windows.** Consecutive full-gate runs
-  can fail with `ERR_NO_BUFFER_SPACE` or a setup stall while sockets sit in `TIME_WAIT`.
-  **What it costs:** record the failed command, socket state and exact timeout, then let the
-  host drain before an isolated repeat. A green repeat alone proves neither a host diagnosis
-  nor that the original failure was harmless; final normal and reverse gates must still pass.
+- **A task's own channel is bounded before its claim.** Claude and Codex read the task on standard
+  input: at most 256 KiB of UTF-8. Kimi, Grok and DSH receive it on the command line: the whole
+  command — pinned paths, flags, quoting and the task, instruction, input documents and any
+  correction included — must fit in 32,767 UTF-16 code units with its terminating NUL, the bound
+  Windows measured (one more unit fails with WinError 206). The same rule applies on every
+  platform. An input document is at most 48 KiB, so one large document can already fill a
+  command-line task. The channel, bound, unit and scope are part of the provider facts a bounded
+  grant binds. **What it costs:** a larger task is refused with "the materialized task exceeds the
+  bounded task channel" and nothing is spawned; split the input or pick a standard-input doer. A
+  grant made before these facts changed is refused at its next action and needs a new preview.
+- **The browser gate has failed on this Windows host for two unexplained reasons.** One is
+  `ERR_NO_BUFFER_SPACE` (WSAENOBUFS, 10055) while a module loads; which resource runs out is
+  not measured, and `TIME_WAIT` counts are an observation, not an established cause. The other,
+  separate, was an Overview geometry check reading four zero-size cards: a test race, now fixed,
+  in which a re-render landed between finding the cards and measuring them. **What it costs:**
+  record the failed command, socket state and exact timeout before any repeat. A green repeat
+  alone proves neither a host diagnosis nor that the original failure was harmless; final
+  normal and reverse gates must still pass.
 
 ## Additional release gates — not filled by the twelve checks above
 
@@ -582,9 +605,12 @@ Named so that passing it is not read as more than it is.
   and by nothing in this procedure.
 - **Ctrl-C.** The steps above stop the servers with `Stop-Process`, which is not the interrupt
   a person sends. Stop one by hand once.
-- **Any platform but this one.** Everything above ran on Windows. CI runs the suite and the
-  browser gate on Linux, Windows and macOS — nine jobs — but this procedure has been executed
-  on Windows only, so what is unchecked here is the procedure, not the suite.
+- **Any platform but this one.** Everything above ran on Windows. The CI configuration runs the
+  suite and the browser gate on Linux, Windows and macOS (nine jobs), builds one wheel, and walks
+  the installed-wheel road (`scripts/wheel_road.py`: a clean venv, init, ownership activate, two
+  `conduct up` lifetimes stopped by SIGINT, `closed`) on Linux and macOS. A configuration is not
+  evidence: no CI run exists on the current candidate. The installed road has been walked locally
+  on Windows and on Linux (WSL); macOS has not been walked at all yet.
 - **A skip that does not name what it could not get.** The mutation-harness suites carry exactly
   two skips and each names its primitive: `tests/test_mutate_harness.py:676` skips under
   `os.geteuid() == 0` saying "root ignores the read-only bit" — the test makes a file read-only

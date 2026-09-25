@@ -196,7 +196,24 @@ _REPORTS_ITS_LOG = (
     "    named = os.environ['CHROME_LOG_FILE']\n"
     "    artifacts = Path(os.environ['CONDUCT_GATE_ARTIFACTS'])\n"
     "    stem = Path(__file__).stem\n"
+    "    assert Path.cwd() == artifacts / 'working' / stem\n"
+    "    assert os.environ['PYTHONIOENCODING'] == 'utf-8'\n"
     "    (artifacts / (stem + '.named.txt')).write_text(named, 'utf-8')\n")
+
+
+def test_relative_gate_paths_survive_the_isolated_child_working_directory(
+        tmp_path: Path, monkeypatch) -> None:
+    modules = tmp_path / "modules"
+    modules.mkdir()
+    (modules / "test_relative.py").write_text(_REPORTS_ITS_LOG, encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    code = gate.run_gate(Path("modules"), Path("artifacts"), False, True)
+    report = json.loads((tmp_path / "artifacts/gate.json").read_text(encoding="utf-8"))
+    assert code == 0 and report["result"] == "green", report
+    row = report["records"][0]
+    assert Path(row["cwd"]) == tmp_path / "artifacts/working/test_relative"
+    assert Path(row["basetemp"]).is_absolute()
+    assert (tmp_path / "artifacts/test_relative.named.txt").is_file()
 
 
 def test_every_module_is_told_to_keep_chromiums_own_log_in_the_artifacts(
@@ -262,6 +279,7 @@ def test_the_gates_own_version_probe_launches_under_the_same_containment(
     assert versions["chromium"] == "test-chromium"
     named = Path(recorder.launched["env"]["CHROME_LOG_FILE"])
     assert named.is_absolute() and tmp_path in named.parents
+    assert recorder.launched["args"] == [f"--log-file={named}"]
     # The machine's own environment travels with it, not just the one key.
     assert recorder.launched["env"]["PATH"] == os.environ["PATH"]
 
@@ -304,11 +322,16 @@ def _run_hook_module(tmp_path: Path, with_env: bool) -> Path:
         environment[gate_conftest.ARTIFACTS_ENV] = str(evidence)
     else:
         environment.pop(gate_conftest.ARTIFACTS_ENV, None)
-    subprocess.run(
+    completed = subprocess.run(
         [sys.executable, "-m", "pytest", str(modules_dir / "test_hook.py"),
-         "-q", "-p", "no:cacheprovider"],
-        capture_output=True, text=True, cwd=str(ROOT), env=environment,
+         "-q", "-p", "no:cacheprovider", "--rootdir", str(modules_dir)],
+        capture_output=True, text=True, cwd=str(modules_dir), env=environment,
         check=False)
+    (modules_dir / "pytest.stdout.txt").write_text(completed.stdout, encoding="utf-8")
+    (modules_dir / "pytest.stderr.txt").write_text(completed.stderr, encoding="utf-8")
+    assert completed.returncode == 1, (
+        f"Expected intentional call/teardown failures (exit 1), got {completed.returncode}.\n"
+        f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}")
     return evidence
 
 

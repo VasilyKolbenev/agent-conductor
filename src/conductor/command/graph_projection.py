@@ -36,10 +36,9 @@ from .contracts import (
     DecisionReceipt,
     gate_decision,
 )
-from .graph_causality import decision_is_reached, standing_receipt
 from .graph_definition import GraphDefinition, GraphNode
 from .graph_schedule import loop_position, schedule
-from .run_terminal import RunTerminal
+from .human_situation import human_situation, gate_answerability as _answerable
 from .success_criteria import for_plan
 
 if TYPE_CHECKING:  # pragma: no cover -- import cycle avoided at runtime
@@ -61,20 +60,24 @@ GATE_STATES = (
     "idle", "satisfied", "failed", "changes_requested", "waived", "unknown")
 
 
-def graph_payload(recovered: "RecoveredRun") -> dict[str, Any]:
+def graph_payload(recovered: "RecoveredRun", *, computed_at: str) -> dict[str, Any]:
     """The whole graph half of a run read: the plan, its digest, and the run.
 
-    A run that follows no graph answers the whole block, empty -- four nulls and
-    an empty object -- rather than an absent key, because a reader that has to
-    tell "no graph" from "old server" by the shape of a response is a reader
-    guessing. `success_criteria` is `{}` and not null because it is a map from
+    A run without a graph still answers four null plan readings, an empty
+    criteria map, and its durable human situation. A reader must not have to
+    guess whether an absent block means "no graph" or "old server".
+    `success_criteria` is `{}` and not null because it is a map from
     step to criteria: a plan with no steps has none, which is not "unknown".
     """
     definition = _definition(recovered)
+    values = tuple(row.value for row in recovered.records)
+    computed = None if definition is None else schedule(definition, values)
+    situation = human_situation(definition, values, computed,
+        run_id=recovered.envelope.run_id, mode=recovered.envelope.mode.value,
+        warnings=recovered.warnings, computed_at=computed_at)
     if definition is None:
         return {"definition": None, "definition_digest": None, "runtime": None,
-                "schedule": None, "success_criteria": {}}
-    values = tuple(row.value for row in recovered.records)
+                "schedule": None, "success_criteria": {}, "situation": situation}
     return {
         "definition": definition.as_dict(),
         # Computed here rather than stored beside the document, exactly as the
@@ -82,7 +85,8 @@ def graph_payload(recovered: "RecoveredRun") -> dict[str, Any]:
         # down can disagree with oneself.
         "definition_digest": definition.digest(),
         "runtime": graph_runtime(recovered, definition),
-        "schedule": _schedule_payload(definition, values),
+        "schedule": _schedule_payload(definition, values, computed),
+        "situation": situation,
         # What counts as success for each step, derived from the rules
         # that really operate on it. A READING and never a stored field:
         # it is beside the definition rather than inside it, because a
@@ -93,7 +97,7 @@ def graph_payload(recovered: "RecoveredRun") -> dict[str, Any]:
 
 
 def _schedule_payload(
-        definition: GraphDefinition, values: tuple[Any, ...]) -> dict[str, Any]:
+        definition: GraphDefinition, values: tuple[Any, ...], computed) -> dict[str, Any]:
     """What the plan says may happen now, as the wire spells it.
 
     A THIRD reading beside the other two, and deliberately not folded into
@@ -108,7 +112,6 @@ def _schedule_payload(
     successor computation, in Python, is what stops a screen and a refusal
     disagreeing about which step may run.
     """
-    computed = schedule(definition, values)
     drawn = {node.node_id: node for node in definition.nodes}
     return {
         "run_state": computed.run_state,
@@ -130,40 +133,6 @@ def _schedule_payload(
             "answerable": _answerable(definition, values, drawn[row.node_id]),
         } for row in computed.nodes],
     }
-
-
-def _answerable(definition: GraphDefinition, values: tuple[Any, ...],
-                node: GraphNode) -> str | None:
-    """The decision door's verdict for a receipt offered on this gate NOW.
-
-    `first` when nothing stands and the plan has reached the gate; `supersede`
-    when the standing answer may be replaced -- this lap's correction, or a
-    reopened lap the plan has reached again; `none` when the door would refuse;
-    and None on a step that is not a gate at all.
-
-    Asked of `decision_is_reached` itself and never re-derived: R02 of the
-    review of `8dec0e4` was a screen spelling the door's arms for itself and
-    offering a supersede the door refused. One of the arms -- whether the
-    standing answer belongs to the lap the gate is on now -- needs the lap
-    arithmetic, and a second copy of that in a browser is how the two came to
-    disagree. Served on the read, the screen has nothing left to compute.
-
-    A run that has recorded its ending answers `none` on every gate: the door
-    refuses every receipt there (`run_terminal`) before it asks the plan
-    anything, and a word served from the plan alone said `supersede` about a
-    run nothing can be added to.
-    """
-    if node.gate_id is None:
-        return None
-    if any(isinstance(value, RunTerminal) for value in values):
-        return "none"
-    stands = standing_receipt(values, definition.run_id, node.gate_id)
-    admitted = decision_is_reached(
-        definition, values, node.gate_id,
-        None if stands is None else stands.receipt_id)
-    if not admitted:
-        return "none"
-    return "first" if stands is None else "supersede"
 
 
 def graph_runtime(

@@ -30,13 +30,19 @@ Everything here is SOURCE; what a browser draws and posts is
 """
 from __future__ import annotations
 
+import json
 import re
+import shutil
+import subprocess
 from pathlib import Path
+
+import pytest
 
 from conductor.command.api_contracts import _ARTIFACT_FIELDS
 from conductor.command.artifacts import ARTIFACT_CONTENT_LIMIT, ARTIFACT_MEDIA_TYPES
 
 from tests.test_graph_source import _code
+from tests.studio_source_messages import _code
 from tests.test_studio_runs import frozen_list
 
 PANEL = Path(__file__).resolve().parents[1] / "src" / "conductor" / "panel"
@@ -115,6 +121,69 @@ def test_the_id_is_minted_from_the_reference_the_way_an_attempt_id_is():
 # -- 2. the boundary's numbers are the boundary's ---------------------------------
 
 
+def test_the_form_tells_each_doer_this_run_names_the_bound_its_whole_task_meets():
+    """Codex R2: a document travels inside the doer's task, so the form states the bound the
+    server's controls answer states for each binding -- never one number for every channel."""
+    from conductor.command.policy_providers import task_channel_fact
+    from conductor.command.adapters.claude_code import CLAUDE_PROFILE
+    from conductor.command.adapters.kimi_code import KIMI_PROFILE
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node is required for the real Studio modules")
+    rows = [{"instance_id": "doer", "adapter_id": "kimi-code",
+             "task_channel": task_channel_fact(KIMI_PROFILE)},
+            {"instance_id": "checker", "adapter_id": "claude-code",
+             "task_channel": task_channel_fact(CLAUDE_PROFILE)},
+            {"instance_id": "odd", "adapter_id": "unregistered", "task_channel": None}]
+    source = (f"import {{channelNotes}} from {json.dumps(DOCS.as_uri())};\n"
+              f"import {{localize}} from {json.dumps((PANEL / 'studio-i18n.js').as_uri())};\n"
+              f"const detail = {{controls: {{instances: {json.dumps(rows)}}}}};\n"
+              "const notes = channelNotes(detail);\n"
+              "const said = notes.map((row) => localize({locale: 'en'}, `run_docs.channel_${row.channel}`,"
+              " {adapter: row.adapter, limit: String(row.limit)}));\n"
+              "console.log(JSON.stringify([notes, said, channelNotes({})]));")
+    done = subprocess.run([node, "--input-type=module", "-e", source], capture_output=True,
+                          text=True, encoding="utf-8", timeout=15, check=False)
+    assert done.returncode == 0, done.stderr
+    notes, said, empty = json.loads(done.stdout)
+    assert notes == [{"adapter": "claude-code", "channel": "stdin", "limit": 262144},
+                     {"adapter": "kimi-code", "channel": "argv", "limit": 32767}]
+    assert said[1] == ("kimi-code receives its task on the command line: the whole command — this "
+                       "document, the instruction and every other input included — must fit in 32767 "
+                       "UTF-16 code units, its terminating NUL included. A larger task is refused "
+                       "before it starts.")
+    assert said[0].startswith("claude-code receives its task on standard input") and "262144" in said[0]
+    assert empty == []
+    form = _function(_code(DOCS), "documentForm")
+    assert "...channelNotes(detail).map((row) => note(localize(state, `run_docs.channel_${row.channel}`," in form
+
+
+def test_the_controls_answer_carries_a_task_channel_only_in_its_closed_shape():
+    """Codex R2: the run's controls admit the bound as the grant review reads it, and hand it back."""
+    from conductor.command.adapters.kimi_code import KIMI_PROFILE
+    from conductor.command.policy_providers import task_channel_fact
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node is required for the real Studio modules")
+    controls = json.dumps((PANEL / "studio-controls.js").as_uri())
+    source = (f"import {{projectControls, wireControls}} from {controls};\n"
+              f"const argv = {json.dumps(task_channel_fact(KIMI_PROFILE))};\n"
+              "const read = (value) => projectControls({providers: [], isolation_facts: [],"
+              " instances: [{instance_id: 'doer', adapter_id: 'kimi-code', model: null,"
+              " controls: [], argument_schemas: {}, isolation: {}, task_channel: value}]});\n"
+              "const kept = read(argv);\n"
+              "console.log(JSON.stringify([wireControls(kept).instances[0].task_channel,"
+              " read(null) !== null, [{...argv, unit: 'utf8_bytes'}, {...argv, scope: 'task'},"
+              " {...argv, limit: 0}, {...argv, extra: 1}, 'argv', {...argv, channel: 'pipe'}]"
+              ".map((value) => read(value) === null)]));")
+    done = subprocess.run([node, "--input-type=module", "-e", source], capture_output=True,
+                          text=True, encoding="utf-8", timeout=15, check=False)
+    assert done.returncode == 0, done.stderr
+    handed, admits_null, refused = json.loads(done.stdout)
+    assert handed == task_channel_fact(KIMI_PROFILE)
+    assert admits_null and refused == [True] * 6
+
+
 def test_the_media_types_and_the_byte_bound_are_copies_of_the_contracts():
     words = _code(WORDS)
     assert set(frozen_list(WORDS, "ARTIFACT_MEDIA_TYPES")) == set(
@@ -189,7 +258,11 @@ def test_the_step_forms_name_the_document_a_proposal_binds():
     step = _code(STEP)
     facts = _function(step, "instructionFacts")
     assert "no durable document" in facts
-    assert "durable document ${show(bound.artifact_id)}" in facts
+    # The bound document is named by the one label both forms and the input
+    # facts draw, so it is asserted where it is spelled and where it is spent.
+    assert "fact(label, documentLabel(bound, state), state)" in facts
+    assert "durable document ${show(bound.artifact_id, state)}" in _function(
+        step, "documentLabel")
     assert "The one standing when this proposal was written: confirming this " in facts
     assert "The one standing now: a proposal made now binds it" in facts
     assert "instructions/${ref}.md" in facts
@@ -200,9 +273,9 @@ def test_the_step_forms_name_the_document_a_proposal_binds():
     assert "is bound by the next proposal" in facts
     assert "once this attempt has answered" in facts
     # The Propose form asks for the latest; the Confirm form for the bound.
-    assert ": latestDocument(rows(detail.records), ref), false)" in _function(
+    assert ": latestDocument(rows(detail.records), ref), false, state)" in _function(
         step, "planFacts")
-    assert "boundDocument(\n      rows(detail.records), proposal.proposal_id, ref), true)" in _function(
+    assert "boundDocument(\n      rows(detail.records), proposal.proposal_id, ref), true, state)" in _function(
         step, "proposalFacts")
     read = _code(READ)
     bound = _function(read, "boundDocument")
@@ -211,7 +284,7 @@ def test_the_step_forms_name_the_document_a_proposal_binds():
     assert bound.strip().endswith("return null;")
     # And the position row names what the latest proposal bound.
     runs = _code(RUNS)
-    assert "item.append(...boundSources(detail, node));" in runs
+    assert "item.append(...boundSources(detail, node, state));" in runs
     assert "documentSection(detail, state, handlers)," in runs
 
 
@@ -238,14 +311,16 @@ def test_the_step_forms_name_every_input_document_a_proposal_binds():
     assert "fact(`Input ${ref}`, bound === null" in facts
     assert "the attempt is refused before anything is spawned" in facts
     assert ("...inputFacts(inputRefs(node.capability, node.arguments),\n"
-            "      (input) => latestDocument(rows(detail.records), input), false),"
+            "      (input) => latestDocument(rows(detail.records), input), false, state),"
             ) in _function(step, "planFacts")
     assert ("...(bound ? inputFacts(inputRefs(proposal.capability, proposal.arguments),\n"
             "      (input) => boundDocument(rows(detail.records), proposal.proposal_id,\n"
-            "        input), true) : [note(UNVERSIONED_MATERIALS)]),") in _function(step, "proposalFacts")
+            '        input), true, state) : [note("This proposal has no material-binding '
+            "revision. Its history is readable, but this window cannot claim that the "
+            'proposal bound the documents shown now.")]),') in _function(step, "proposalFacts")
     sources = _function(docs, "boundSources")
     assert "const inputs = inputRefs(node.capability, held);" in sources
-    assert "fact(`Input ${input} bound by ${show(latest.proposal_id)}`," in sources
+    assert "fact(`Input ${input} bound by ${show(latest.proposal_id, state)}`," in sources
 
 
 def test_a_run_that_is_over_is_offered_no_document_form():
@@ -269,8 +344,13 @@ def test_a_run_that_is_over_is_offered_no_document_form():
 def test_the_document_fragment_exports_its_two_builders_and_mounts_nothing():
     """The fragment's shape, which is the step control's and not a mount's."""
     docs = _code(DOCS)
+    # `publishedNote` is the sentence the writer announces an accepted document
+    # with, in the window's own language; the writer next door reaches it.
+    # `channelNotes` is pure (Codex R2) and exported for its own witness above.
     assert set(re.findall(r"export function (\w+)\(", docs)) == {
-        "documentSection", "boundSources", "inputRefs", "needsMaterialReproposal"}
+        "documentSection", "boundSources", "inputRefs", "needsMaterialReproposal",
+        "publishedNote", "channelNotes"}
+    assert "notice: publishedNote(" in _code(WRITER)
     assert "export default" not in docs
     assert "mount.replaceChildren(" not in docs
     assert "chip(" not in docs

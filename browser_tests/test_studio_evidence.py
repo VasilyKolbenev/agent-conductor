@@ -268,13 +268,15 @@ def test_a_document_that_makes_the_demand_anyway_is_refused_before_the_wire(
     Driven through the module the PAGE really loaded, so this is the shipped
     reducer answering and not a copy of its rule kept beside the test.
     """
+    # The store keeps each problem as a catalogue key; the page's own renderer says it.
     refused = bench.page.evaluate(
-        """(demand) => import("/panel/studio-store.js").then((module) => [
-             ...module.saveProblems({
+        """(demand) => Promise.all([import("/panel/studio-store.js"),
+             import("/panel/studio-i18n.js")]).then(([module, i18n]) =>
+             module.saveProblems({
                title: "Evidence bench",
                nodes: [{node_id: "loose", kind: "task", title: "Carries nothing",
                         required_evidence: demand, resources: []}],
-               edges: []})])""", DEMAND)
+               edges: []}).map((row) => i18n.noticeText({locale: "en"}, row)))""", DEMAND)
 
     assert any("verification it will never have" in row for row in refused), (
         refused)

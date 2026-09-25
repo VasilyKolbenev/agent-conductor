@@ -1,4 +1,5 @@
 "use strict";
+import {localize} from "./studio-i18n.js";
 // The Runs screen: every run this project holds, one run read whole, and the
 // journal that run actually wrote. Every node here is built from text; no
 // markup string is ever parsed, nothing is fetched, and no clock is read.
@@ -16,6 +17,7 @@
 // The timeline walks every `records` row in append order. Unknown durable
 // kinds are shown by name, never dropped or replaced with invented steps.
 import {element} from "./command-view.js";
+import {projectTaskBinding} from "./command-projection.js";
 //: The closed vocabularies and the one-voice sentence, re-exported under the
 //: names they have always had. See `studio-runwords.js` for why they moved and
 //: why that module imports nothing.
@@ -63,20 +65,15 @@ import {stepControls} from "./studio-runstep.js";
 //: step's proposal bound: the other write on this screen, in its own file for
 //: the step control's reason.
 import {boundSources, documentSection} from "./studio-rundocs.js";
-import {participantDeck, participantSelection} from "./studio-participants.js";
+import {participantDeck, participantSelection, releaseParticipants,
+  restoreParticipantScroll} from "./studio-participants.js";
+import {runHeading} from "./studio-runhead.js";
 
 //: The one sentence, handed to whichever container is showing the word. Every
 //: container carrying `verification_failed` needs its OWN copy -- one written
 //: elsewhere on the screen does not cover a section that shows the word alone
 //: -- and spelling that rule at each site is how a sixth site came to forget
 //: it. Spelled once here, spread into whatever is being built.
-function alsoSay(outcome) {
-  return outcome === "verification_failed"
-    ? [note(VERIFICATION_FAILED_NOTE)] : [];
-}
-
-//: The seven words a screen container may stand in, and the plain sentence
-//: each one is said with.
 export const PHASE_SENTENCES = Object.freeze({
   empty: "Nothing has been read yet.",
   loading: "Reading this project's runs.",
@@ -87,11 +84,20 @@ export const PHASE_SENTENCES = Object.freeze({
   disconnected: "The live connection is down, so nothing here updates.",
 });
 
+function alsoSay(state, outcome) {
+  return outcome === "verification_failed"
+    ? [note(localize(state, "runs.verification_failed_note"))] : [];
+}
+
+//: The seven words a screen container may stand in, and the plain sentence
+//: each one is said with.
+
+
 const NOT_STATED = "not stated";
 
-function show(value) {
-  if (value === null || value === undefined || value === "") return NOT_STATED;
-  if (Array.isArray(value)) return value.length ? value.join(", ") : NOT_STATED;
+function show(state, value) {
+  if (value === null || value === undefined || value === "") return localize(state, "runs.copy_8");
+  if (Array.isArray(value)) return value.length ? value.join(", ") : localize(state, "runs.copy_8");
   return String(value);
 }
 
@@ -103,10 +109,10 @@ function chip(channel, word) {
   ]);
 }
 
-function fact(label, value) {
+function fact(state, label, value) {
   return element("p", {className: "studio-fact"}, [
     element("span", {className: "studio-fact__k", text: label}),
-    element("span", {className: "studio-fact__v", text: show(value)}),
+    element("span", {className: "studio-fact__v", text: show(state, value)}),
   ]);
 }
 
@@ -131,24 +137,24 @@ function handlerOf(handlers, name) {
 //: A control whose handler was not wired is DISABLED and says why. It never
 //: disappears: a button that vanishes teaches a user the product cannot do the
 //: thing, when what happened is that this screen was mounted without its wire.
-function actionButton(handlers, name, label, run) {
+function actionButton(state, handlers, name, label, run) {
   const call = handlerOf(handlers, name);
   const button = element("button", {
     "data-focus-key": `action:${name}`, text: label, type: "button",
   });
   if (call === null) {
     button.disabled = true;
-    button.title = `This screen was mounted without a ${name} handler.`;
+    button.title = localize(state, "runs.copy_11", {name: String(name)});
     return button;
   }
   button.addEventListener("click", () => call(run));
   return button;
 }
 
-function banner(phase) {
+function banner(state, phase) {
   const word = PHASE_SENTENCES[phase] ? phase : "failed";
   return element("p", {className: `studio-banner studio-banner--${word}`}, [
-    element("span", {text: PHASE_SENTENCES[word]}), " ", protocolWord(word),
+    element("span", {text: localize(state, "runs.phase_" + word)}), " ", protocolWord(word),
   ]);
 }
 
@@ -168,31 +174,32 @@ function object(value) {
 //: row showing an id with no revision would be describing a state the store
 //: cannot produce. The revision is the half that matters — two runs of one
 //: workflow at two revisions are two different plans.
-function followed(row) {
+function followed(state, row) {
   if (typeof row.workflow_id !== "string"
       || !Number.isInteger(row.revision)) {
-    return "no workflow";
+    return localize(state, "runs.copy_14");
   }
-  return `${row.workflow_id} rev ${row.revision}`;
+  return localize(state, "runs.copy_15", {id: String(row.workflow_id), revision: String(row.revision)});
 }
 
-function runSummary(row) {
+function runSummary(state, row, connected) {
   if (row.unreadable === true) {
-    return [chip("fail", "unreadable"),
+    return [chip("fail", localize(state, "runs.unreadable")),
       element("span", {className: "studio-run__meta",
-        text: "this journal did not replay"})];
+        text: localize(state, "runs.copy_16")})];
   }
-  const waiting = row.undecided_gates;
+  const human = connected ? row.human_state : "unknown";
   // WHICH plan this run froze itself to follow, first, because it is the
   // question a list of runs is usually being scanned for. The detail below has
   // always shown it and the row payload has always carried it -- the row simply
   // did not render it, so telling two runs of two workflows apart meant opening
   // both. A run that follows no workflow says so rather than showing a gap.
-  const parts = [followed(row),
-    `opened as ${show(row.envelope_status)}`,
-    `mode ${show(row.mode)}`,
-    `${show(waiting)} gate(s) waiting`,
-    `${show(row.open_actions)} action(s) open`];
+  const parts = [followed(state, row),
+    localize(state, "runs.copy_17", {status: String(show(state, row.envelope_status))}),
+    localize(state, "runs.copy_18", {mode: String(show(state, row.mode))}),
+    human === "required" ? localize(state, "runs.copy_19")
+      : human === "not_required" ? localize(state, "runs.copy_20") : localize(state, "runs.copy_21"),
+    localize(state, "runs.copy_22", {count: String(show(state, row.open_actions))})];
   const carried = [element("span", {className: "studio-run__meta",
     text: parts.join(" · ")})];
   if (typeof row.last_outcome === "string") {
@@ -202,17 +209,17 @@ function runSummary(row) {
   return carried;
 }
 
-function runButton(row, selectedId, handlers) {
-  const runId = show(row.run_id);
+function runButton(state, row, selectedId, handlers, connected) {
+  const runId = show(state, row.run_id);
   const button = element("button", {
     "aria-pressed": runId === selectedId ? "true" : "false",
     className: "studio-run", "data-focus-key": `run:${runId}`, type: "button",
   }, [element("span", {className: "studio-run__id", text: runId}),
-    ...runSummary(row)]);
+    ...runSummary(state, row, connected)]);
   const select = handlerOf(handlers, "selectRun");
   if (select === null) {
     button.disabled = true;
-    button.title = "This screen was mounted without a selectRun handler.";
+    button.title = localize(state, "runs.copy_26");
   } else button.addEventListener("click", () => select(row.run_id));
   return button;
 }
@@ -227,103 +234,103 @@ function runButton(row, selectedId, handlers) {
 //: accessible name is the words it contains and a paragraph is not phrasing
 //: content, so a sentence put inside the control would be invalid markup and
 //: a name too long to be spoken as one.
-function runRow(row, selectedId, handlers) {
-  const item = element("li", {}, [runButton(row, selectedId, handlers)]);
-  item.append(...alsoSay(row.last_outcome));
+function runRow(state, row, selectedId, handlers, connected) {
+  const item = element("li", {}, [runButton(state, row, selectedId, handlers, connected)]);
+  item.append(...alsoSay(state, row.last_outcome));
   return item;
 }
 
-function runList(state, handlers) {
-  const list = rows(state.list);
-  const body = [banner(state.phase),
-    actionButton(handlers, "refreshRuns", "Read runs again", null)];
+function runList(state, runs, handlers, expanded, taskId, connected) {
+  const list = rows(runs.list).filter((row) => !taskId || row.task_id === taskId);
+  const picker = element("details", {className: "studio-run-picker"}, [
+    element("summary", {"data-focus-key": "run-picker", text:
+      runs.selectedId ? localize(state, "runs.copy_27") : localize(state, "runs.copy_28")}),
+  ]);
+  picker.open = expanded ?? !runs.selectedId;
+  const body = [element("div", {className: "studio-run-bar"}, [
+    ...(runs.phase === "ready" ? [] : [banner(state, runs.phase)]),
+    actionButton(state, handlers, "refreshRuns", localize(state, "runs.copy_30"), null)]), picker];
   if (!list.length) {
-    body.push(note("This project holds no runs yet. Opening one from the "
-      + "Workflow screen is what creates the first."));
+    picker.append(note(localize(state, "runs.copy_31")));
   } else {
     const items = element("ul", {className: "studio-runs__rows"});
-    for (const row of list) items.append(runRow(row, state.selectedId, handlers));
-    body.push(items);
+    for (const row of list) items.append(runRow(state, row, runs.selectedId, handlers, connected));
+    picker.append(items);
   }
   return element("nav", {className: "studio-runs__list",
-    "aria-label": "Runs"}, body);
+    "aria-label": localize(state, "runs.copy_32")}, body);
 }
 
 // -- one run ------------------------------------------------------------------
 
-function identitySection(detail, handlers) {
+function identitySection(state, detail, handlers) {
   const run = object(detail.run) || {};
   // The frozen configuration owns this fact; the boundary already refused the
   // read if the reference was there and malformed, so `null` here means the
   // run genuinely froze none.
   const followed = (object(detail.config) || {}).workflow || null;
-  const mode = show(run.mode);
+  const mode = show(state, run.mode);
+  const task = projectTaskBinding(detail);
   const body = [
-    fact("Run", run.run_id), fact("Cycle", run.cycle_id),
-    fact("Opened at", run.created_at),
-    fact("Authority (mode)", mode),
-    note(CONTROL_MODES[mode] || "This build does not describe that mode."),
-    fact("Opened as", run.status),
-    note("Opened as is what the run was CREATED as. A run envelope is "
-      + "immutable, so it never reports where the run now stands — the "
-      + "records below do that."),
-    fact("Configuration digest", run.config_digest),
+    fact(state, localize(state, "runs.copy_33"), task.state === "bound" ? `${task.title || task.taskId} · ${task.taskId}`
+      : task.state === "none" ? localize(state, "runs.copy_35") : localize(state, "runs.copy_36")),
+    ...(task.state === "bound" ? [fact(state, localize(state, "runs.copy_37"), task.workScope)] : []),
+    fact(state, localize(state, "runs.copy_38"), run.run_id), fact(state, localize(state, "runs.copy_39"), run.cycle_id),
+    fact(state, localize(state, "runs.copy_40"), run.created_at),
+    fact(state, localize(state, "runs.copy_41"), mode),
+    note((CONTROL_MODES[mode] ? localize(state, "runs.mode_" + mode) : null) || localize(state, "runs.copy_42")),
+    fact(state, localize(state, "runs.copy_43"), run.status),
+    note(localize(state, "runs.copy_44")),
+    fact(state, localize(state, "runs.copy_45"), run.config_digest),
     // Read out of the run's own frozen configuration, which is the document
     // `config_digest` above is taken over -- so the two facts on this screen
     // stand or fall together, and a run that froze no workflow says so in
     // words rather than showing a plausible one.
-    fact("Workflow", followed === null
-      ? "none — this run was opened without one"
+    fact(state, localize(state, "runs.copy_46"), followed === null
+      ? localize(state, "runs.copy_47")
       : followed.id),
-    fact("Revision", followed === null
-      ? "none — a run that follows no workflow follows no revision"
-      : `revision ${followed.revision}`),
+    fact(state, localize(state, "runs.copy_48"), followed === null
+      ? localize(state, "runs.copy_49")
+      : localize(state, "runs.copy_50", {revision: String(followed.revision)})),
     note(followed === null
-      ? "A run may be opened with no workflow at all; `conduct preview` and "
-        + "the integration smoke both are. Nothing was lost."
-      : "Frozen when the run was opened. Publishing a later revision of this "
-        + "workflow does not move it: a run follows the plan it started with."),
+      ? localize(state, "runs.copy_51")
+      : localize(state, "runs.copy_52")),
   ];
   const warnings = rows(detail.warnings);
   if (warnings.length) {
     body.push(element("ul", {className: "studio-warnings"},
-      warnings.map((line) => element("li", {text: show(line)}))));
+      warnings.map((line) => element("li", {text: show(state, line)}))));
   }
-  body.push(actionButton(handlers, "showDecisions", "Open the decisions here",
+  body.push(actionButton(state, handlers, "showDecisions", localize(state, "runs.copy_54"),
     run.run_id));
-  return section("This run", body);
+  return section(localize(state, "runs.copy_55"), body);
 }
 
 //: The frozen binding, joined to what this build can serve. The binding comes
 //: from the run's own configuration snapshot; the capability list comes from
 //: the controls read and is joined BY IDENTITY, never by a displayed label.
-function planSection(detail) {
+function planSection(state, detail) {
   const graph = object(detail.graph);
   if (graph === null || graph.definition === null
       || graph.definition === undefined) {
-    return section("Plan", [note("This run follows no plan. Its actions are "
-      + "not bound to any step, so there is no position to report.")]);
+    return section(localize(state, "runs.copy_56"), [note(localize(state, "runs.copy_57"))]);
   }
   const definition = object(graph.definition) || {};
-  return section("Plan", [
-    fact("Plan", definition.graph_id),
-    fact("Digest", graph.definition_digest),
-    fact("Steps", rows(definition.nodes).length),
-    ...planWord(graph),
-    note("A plan is written once and never edited. Editing the workflow it "
-      + "came from makes a new revision and leaves this one exactly as it "
-      + "was."),
+  return section(localize(state, "runs.copy_58"), [
+    fact(state, localize(state, "runs.copy_59"), definition.graph_id),
+    fact(state, localize(state, "runs.copy_60"), graph.definition_digest),
+    fact(state, localize(state, "runs.copy_61"), rows(definition.nodes).length),
+    ...planWord(state, graph),
+    note(localize(state, "runs.copy_62")),
   ]);
 }
 
 //: What each run word MEANS. `complete` is the one a reader will get wrong: it
 //: says the plan has nothing left to open and never that the run succeeded.
 const PLAN_WORDS = Object.freeze({
-  open: "steps remain that this run may still take",
-  complete: "the plan has nothing left to open — this does NOT mean the run "
-    + "succeeded",
-  stalled: "nothing is runnable, no attempt is still running, and what is "
-    + "still owed can never be spent: a bound is exhausted or the run was halted",
+  open: "runs.copy_63",
+  complete: "runs.copy_64",
+  stalled: "runs.copy_65",
 });
 
 function lastWhere(nodes, pick) {
@@ -338,16 +345,16 @@ function lastWhere(nodes, pick) {
 // that there is nothing left to do -- and the run that burned every retry lands
 // on the same word. So the word is stated, and the loop's position and the last
 // answer are stated beside it, because those two tell the two apart.
-function planWord(graph) {
+function planWord(state, graph) {
   const schedule = object(graph.schedule);
   if (schedule === null) return [];
   const word = typeof schedule.run_state === "string"
     ? schedule.run_state : "unknown";
   const body = [element("p", {className: "studio-fact"}, [
-    element("span", {className: "studio-fact__k", text: "Plan"}),
+    element("span", {className: "studio-fact__k", text: localize(state, "runs.copy_66")}),
     chip("none", word),
     element("span", {className: "studio-fact__v",
-      text: PLAN_WORDS[word] || "this build does not know that word"}),
+      text: (PLAN_WORDS[word] ? localize(state, PLAN_WORDS[word]) : null) || localize(state, "runs.copy_67")}),
   ])];
   const runtime = object(graph.runtime);
   const nodes = rows(runtime && runtime.nodes);
@@ -355,25 +362,25 @@ function planWord(graph) {
   const gate = lastWhere(nodes, (row) => typeof row.decision === "string"
     && row.decision !== "idle");
   const seen = lastWhere(nodes, (row) => typeof row.outcome === "string");
-  if (spent) body.push(fact("Loop", `${show(spent.node_id)} — bound reached`));
-  if (gate) body.push(fact("Last gate answer", `${show(gate.node_id)} — `
+  if (spent) body.push(fact(state, localize(state, "runs.copy_68"), localize(state, "runs.copy_69", {id: String(show(state, spent.node_id))})));
+  if (gate) body.push(fact(state, localize(state, "runs.copy_70"), `${show(state, gate.node_id)} — `
     + `${gate.decision}`));
-  if (seen) body.push(fact("Last outcome", `${show(seen.node_id)} — `
+  if (seen) body.push(fact(state, localize(state, "runs.copy_72"), `${show(state, seen.node_id)} — `
     + `${seen.outcome}`));
-  if (seen) body.push(...alsoSay(seen.outcome));
+  if (seen) body.push(...alsoSay(state, seen.outcome));
   return body;
 }
 
-function loopLine(node, runtime) {
+function loopLine(state, node, runtime) {
   const loop = object(node.loop);
   if (loop === null) return null;
   const at = typeof runtime.pass === "number"
-    ? `pass ${runtime.pass} of ${loop.bound}`
-    : `at most ${show(loop.bound)} passes`;
+    ? localize(state, "runs.copy_74", {pass: String(runtime.pass), bound: String(loop.bound)})
+    : localize(state, "runs.copy_75", {bound: String(show(state, loop.bound))});
   const reached = runtime.bound_reached === true
-    ? " · no pass left" : "";
+    ? localize(state, "runs.copy_76") : "";
   return element("p", {className: "studio-mono studio-loop",
-    text: `bounded loop · ${at} · reopens ${show(loop.back_to)}`
+    text: localize(state, "runs.copy_78", {at: String(at), step: String(show(state, loop.back_to))})
       + reached});
 }
 
@@ -396,27 +403,24 @@ function standingOf(schedule, nodeId) {
 //
 // `flying` is the RECORDS' answer and never the runtime phase's -- see
 // `attemptInFlight`, which is where two readings of the phase went wrong.
-function stillOwed(flying) {
+function stillOwed(state, flying) {
   return flying
-    ? "An attempt on this step is still in flight; the plan offers it again "
-      + "only after that attempt answers."
-    : "Nothing further is offered in this run: it was halted.";
+    ? localize(state, "runs.copy_79")
+    : localize(state, "runs.copy_80");
 }
 
-function planStanding(item, standing, flying) {
+function planStanding(state, item, standing, flying) {
   if (standing === null) return;
-  item.append(chip("none", `plan: ${show(standing.state)}`));
+  item.append(chip("none", localize(state, "runs.copy_81", {state: String(show(state, standing.state))})));
   // A settled step is DONE with, and the plan says so rather than leaving the
   // word to be read as "waiting". The one thing that reopens it is a loop, and
   // that is stated because it is the only road back.
   if (standing.state === "settled") {
-    item.append(note("This step has settled; the plan offers it no further "
-      + "attempt unless a loop reopens it."));
+    item.append(note(localize(state, "runs.copy_82")));
     return;
   }
   if (standing.state === "blocked" && standing.attempts_spent === true) {
-    item.append(note("Every attempt this plan allows the step has been "
-      + "authorized, so it can never settle again."));
+    item.append(note(localize(state, "runs.copy_83")));
     return;
   }
   // A step waiting for a DOCUMENT is asked about before the roads are. The two
@@ -427,35 +431,33 @@ function planStanding(item, standing, flying) {
   // that does not exist. Both are said when both are true.
   const awaited = rows(standing.awaiting_artifacts);
   if (standing.state === "blocked" && awaited.length) {
-    item.append(fact("Waiting for artifact", awaited.join(", ")));
-    item.append(note("This step's plan says to wait rather than to try and "
-      + "fail: it is not offered until every artifact named here exists in "
-      + "this run. Nothing has been attempted for it."));
+    item.append(fact(state, localize(state, "runs.copy_84"), awaited.join(", ")));
+    item.append(note(localize(state, "runs.copy_86")));
   }
   if (standing.state === "blocked") {
     const roads = rows(standing.blocked_by);
     if (roads.length) {
-      item.append(fact("Waiting on", roads.join(", ")));
-      item.append(note(ALL_ROADS));
+      item.append(fact(state, localize(state, "runs.copy_87"), roads.join(", ")));
+      item.append(note(localize(state, "runs.all_roads")));
     } else if (!awaited.length) {
-      item.append(note(stillOwed(flying)));
+      item.append(note(stillOwed(state, flying)));
     }
     return;
   }
   if (standing.state === "unreachable") {
     const closed = rows(standing.closed_by);
     item.append(note(closed.length
-      ? `No run reaches this step: ${closed.join(", ")} took another road.`
-      : "No run reaches this step: what leads to it is unreachable too."));
+      ? localize(state, "runs.copy_89", {steps: String(closed.join(", "))})
+      : localize(state, "runs.copy_90")));
   }
 }
 
 function positionRow(node, runtime, standing, detail, state, handlers) {
   const item = element("li", {className: "studio-position"}, [
-    element("span", {className: "studio-position__t", text: show(node.title)}),
+    element("span", {className: "studio-position__t", text: show(state, node.title)}),
     element("span", {className: "studio-mono",
-      text: `${show(node.node_id)} · ${show(node.kind)}`}),
-    chip(PHASE_CHANNEL[runtime.phase] || "none", show(runtime.phase)),
+      text: `${show(state, node.node_id)} · ${show(state, node.kind)}`}),
+    chip(PHASE_CHANNEL[runtime.phase] || "none", show(state, runtime.phase)),
   ]);
   if (typeof runtime.outcome === "string") {
     item.append(chip(OUTCOME_CHANNEL[runtime.outcome] || "none",
@@ -463,20 +465,20 @@ function positionRow(node, runtime, standing, detail, state, handlers) {
   }
   if (typeof runtime.decision === "string") {
     item.append(chip(GATE_CHANNEL[runtime.decision] || "none",
-      `gate ${runtime.decision}`));
+      localize(state, "runs.copy_92", {decision: String(runtime.decision)})));
   }
-  item.append(fact("Observed at", runtime.observed_at),
-    fact("Attempts", rows(runtime.attempt_ids).length),
-    fact("Evidence", runtime.evidence_refs));
-  const loop = loopLine(node, runtime);
+  item.append(fact(state, localize(state, "runs.copy_93"), runtime.observed_at),
+    fact(state, localize(state, "runs.copy_94"), rows(runtime.attempt_ids).length),
+    fact(state, localize(state, "runs.copy_95"), runtime.evidence_refs));
+  const loop = loopLine(state, node, runtime);
   if (loop !== null) item.append(loop);
   const plan = standing === undefined ? null : standing;
   // The RUNTIME row's id, never the plan node's: a runtime row the definition
   // does not name arrives here with an empty node, and an absent id would then
   // match every unbound request in the journal.
-  planStanding(item, plan, attemptInFlight(detail, runtime.node_id));
-  item.append(...boundSources(detail, node));
-  item.append(...alsoSay(runtime.outcome));
+  planStanding(state, item, plan, attemptInFlight(detail, runtime.node_id));
+  item.append(...boundSources(detail, node, state));
+  item.append(...alsoSay(state, runtime.outcome));
   // …and last, the one thing on this screen a person can DO to the run. It is
   // offered on the SCHEDULE's word and nothing else; the sentences above have
   // already said why a row that gets none gets none.
@@ -491,8 +493,7 @@ function positionSection(detail, state, handlers) {
   const graph = object(detail.graph);
   const runtime = graph ? object(graph.runtime) : null;
   if (runtime === null) {
-    return section("Where this run stands", [note("This run follows no plan, "
-      + "so there is nothing to stand on. Its journal is below.")]);
+    return section(localize(state, "runs.copy_96"), [note(localize(state, "runs.copy_97"))]);
   }
   const definition = object(graph.definition) || {};
   const planned = new Map(rows(definition.nodes)
@@ -503,55 +504,52 @@ function positionSection(detail, state, handlers) {
     list.append(positionRow(planned.get(row.node_id) || {}, row,
       standingOf(schedule, row.node_id), detail, state, handlers));
   }
-  return section("Where this run stands", [
-    note("Each step reports its CURRENT action only. Observed says an "
-      + "execution boundary was reached — the outcome beside it is what "
-      + "came of it, and the two are never the same fact."),
+  return section(localize(state, "runs.copy_98"), [
+    note(localize(state, "runs.copy_99")),
     list]);
 }
 
-function evidenceItem(record) {
+function evidenceItem(state, record) {
   return element("li", {className: "studio-evidence"}, [
     element("span", {className: "studio-mono",
-      text: `${show(record.kind)} ${show(record.evidence_id)}`}),
-    element("span", {text: show(record.label)}),
+      text: `${show(state, record.kind)} ${show(state, record.evidence_id)}`}),
+    element("span", {text: show(state, record.label)}),
     chip(VERIFICATION_CHANNEL[record.verification] || "none",
-      show(record.verification)),
-    fact("Where", record.uri),
-    fact("Verified by", record.verified_by),
-    fact("Verifier instance", record.verifier_instance_id),
+      show(state, record.verification)),
+    fact(state, localize(state, "runs.copy_101"), record.uri),
+    fact(state, localize(state, "runs.copy_102"), record.verified_by),
+    fact(state, localize(state, "runs.copy_103"), record.verifier_instance_id),
   ]);
 }
 
-function outcomeSection(records) {
+function outcomeSection(state, records) {
   const results = records.filter((row) => row.record_type === "action_result");
   const evidence = records.filter((row) => row.record_type === "evidence");
   const body = [];
   if (!results.length) {
-    body.push(note("No result has been observed for this run."));
+    body.push(note(localize(state, "runs.copy_104")));
   } else {
     const last = object(results[results.length - 1].record) || {};
-    body.push(fact("Last outcome", last.outcome),
-      chip(OUTCOME_CHANNEL[last.outcome] || "none", show(last.outcome)),
-      fact("Exit code", last.exit_code),
-      fact("Detail recorded by the code", last.detail),
-      fact("Action", last.action_id));
-    body.push(...alsoSay(last.outcome));
+    body.push(fact(state, localize(state, "runs.copy_105"), last.outcome),
+      chip(OUTCOME_CHANNEL[last.outcome] || "none", show(state, last.outcome)),
+      fact(state, localize(state, "runs.copy_106"), last.exit_code),
+      fact(state, localize(state, "runs.copy_107"), last.detail),
+      fact(state, localize(state, "runs.copy_108"), last.action_id));
+    body.push(...alsoSay(state, last.outcome));
   }
   if (!evidence.length) {
-    body.push(note("This run claims no evidence, so nothing about it has "
-      + "been verified."));
+    body.push(note(localize(state, "runs.copy_109")));
   } else {
     body.push(element("ul", {className: "studio-evidences"},
-      evidence.map((row) => evidenceItem(object(row.record) || {}))));
+      evidence.map((row) => evidenceItem(state, object(row.record) || {}))));
   }
-  return section("Outcome and verification", body);
+  return section(localize(state, "runs.copy_110"), body);
 }
 
-function artifactSection(records) {
+function artifactSection(state, records) {
   const written = records.filter((row) => row.record_type === "artifact");
   if (!written.length) {
-    return section("Artifacts", [note("This run wrote no artifact.")]);
+    return section(localize(state, "runs.copy_111"), [note(localize(state, "runs.copy_112"))]);
   }
   const list = element("ul", {className: "studio-artifacts"});
   for (const row of written) {
@@ -560,23 +558,21 @@ function artifactSection(records) {
       .map((item) => object(item.record) || {})
       .filter((item) => item.action_id === record.source_action_id).at(-1);
     list.append(element("li", {className: "studio-artifact"}, [
-      element("span", {className: "studio-mono", text: show(record.artifact_id)}),
-      fact("Handoff name", record.artifact_ref),
-      fact("Media type", record.media_type),
-      fact("Written at", record.created_at),
-      fact("From action", record.source_action_id),
-      fact("Source outcome", source ? source.outcome : record.source_action_id
-        ? "awaiting result" : "not action-produced"),
-      ...(source ? alsoSay(source.outcome) : []),
-      ...(source && source.outcome !== "succeeded" ? [note("The source action "
-        + "did not succeed. This product stays in history and is not used "
-        + "as input by later steps.")] : []),
-      fact("Built on", record.input_artifact_ids),
-      fact("Characters", typeof record.content === "string"
+      element("span", {className: "studio-mono", text: show(state, record.artifact_id)}),
+      fact(state, localize(state, "runs.copy_113"), record.artifact_ref),
+      fact(state, localize(state, "runs.copy_114"), record.media_type),
+      fact(state, localize(state, "runs.copy_115"), record.created_at),
+      fact(state, localize(state, "runs.copy_116"), record.source_action_id),
+      fact(state, localize(state, "runs.copy_117"), source ? source.outcome : record.source_action_id
+        ? localize(state, "runs.copy_118") : localize(state, "runs.copy_119")),
+      ...(source ? alsoSay(state, source.outcome) : []),
+      ...(source && source.outcome !== "succeeded" ? [note(localize(state, "runs.copy_120"))] : []),
+      fact(state, localize(state, "runs.copy_121"), record.input_artifact_ids),
+      fact(state, localize(state, "runs.copy_122"), typeof record.content === "string"
         ? record.content.length : null),
     ]));
   }
-  return section("Artifacts", [list]);
+  return section(localize(state, "runs.copy_123"), [list]);
 }
 
 // -- the timeline -------------------------------------------------------------
@@ -592,22 +588,21 @@ function stepOf(kind, record) {
   return ATTEMPT_PHASES.includes(phase) ? phase : null;
 }
 
-function timelineFacts(kind, record) {
+function timelineFacts(state, kind, record) {
   const names = ROW_FACTS[kind];
   const carried = element("div", {className: "studio-row__facts"});
   if (!names) {
-    carried.append(note("This build does not know this record kind. It is "
-      + "shown by the name the journal gave it and is not interpreted."));
+    carried.append(note(localize(state, "runs.copy_124")));
     return carried;
   }
   for (const name of names) {
     if (!Object.prototype.hasOwnProperty.call(record, name)) continue;
-    carried.append(fact(name, record[name]));
+    carried.append(fact(state, name, record[name]));
   }
   return carried;
 }
 
-function timelineChip(kind, record) {
+function timelineChip(state, kind, record) {
   if (kind === "action_result" || kind === "attempt_event") {
     if (typeof record.outcome !== "string") return null;
     return chip(OUTCOME_CHANNEL[record.outcome] || "none", record.outcome);
@@ -622,55 +617,48 @@ function timelineChip(kind, record) {
   return null;
 }
 
-function timelineRow(wrapper, index) {
-  const kind = show(wrapper.record_type);
+function timelineRow(state, wrapper, index) {
+  const kind = show(state, wrapper.record_type);
   const record = object(wrapper.record) || {};
   const instantField = INSTANT_FIELDS[kind];
   const step = stepOf(kind, record);
   const head = element("p", {className: "studio-row__head"}, [
     element("span", {className: "studio-row__n", text: `${index + 1}`}),
-    element("span", {text: RECORD_KINDS[kind] || "An unknown record kind"}),
+    element("span", {text: (RECORD_KINDS[kind] ? localize(state, "runs.record_" + kind) : null) || localize(state, "runs.copy_126")}),
     protocolWord(kind),
   ]);
-  if (step !== null) head.append(protocolWord(`step: ${step}`));
+  if (step !== null) head.append(protocolWord(localize(state, "runs.copy_127", {step: String(step)})));
   head.append(element("span", {className: "studio-row__at",
-    text: instantField ? show(record[instantField])
-      : "no instant this build knows"}));
-  const badge = timelineChip(kind, record);
+    text: instantField ? show(state, record[instantField])
+      : localize(state, "runs.copy_128")}));
+  const badge = timelineChip(state, kind, record);
   if (badge !== null) head.append(badge);
   const item = element("li", {className: "studio-row"},
-    [head, timelineFacts(kind, record)]);
-  item.append(...alsoSay(record.outcome));
+    [head, timelineFacts(state, kind, record)]);
+  item.append(...alsoSay(state, record.outcome));
   return item;
 }
 
-function timelineSection(records) {
+function timelineSection(state, records) {
   if (!records.length) {
-    return section("Timeline", [note("This run's journal is empty: nothing "
-      + "has been proposed, authorized, attempted or decided.")]);
+    return section(localize(state, "runs.copy_129"), [note(localize(state, "runs.copy_130"))]);
   }
   const list = element("ol", {className: "studio-timeline"});
-  records.forEach((wrapper, index) => list.append(timelineRow(wrapper, index)));
-  return section("Timeline", [
-    note("Every row is one durable record, in the order the run appended it, "
-      + "named by the record it came from. A step that is not here was never "
-      + "written."),
+  records.forEach((wrapper, index) => list.append(timelineRow(state, wrapper, index)));
+  return section(localize(state, "runs.copy_131"), [
+    note(localize(state, "runs.copy_132")),
     list]);
 }
 
 // -- the detail column --------------------------------------------------------
 
-function unreadableDetail(row) {
+function unreadableDetail(state, row) {
   return element("div", {className: "studio-runs__detail"}, [
-    element("h2", {text: show(row.run_id)}),
-    chip("fail", "unreadable"),
-    note("This run's journal did not replay, so nothing derived from it can "
-      + "be shown. It is listed rather than hidden."),
-    fact("Where it lives", `conductor/runs/${show(row.run_id)}/`),
-    note("What you can do: read that directory, keep it, and report it. "
-      + "Nothing in this screen repairs a run — listing and reading are "
-      + "both read-only, by design, so a damaged journal is never rewritten "
-      + "underneath you."),
+    element("h2", {text: show(state, row.run_id)}),
+    chip("fail", localize(state, "runs.unreadable")),
+    note(localize(state, "runs.copy_133")),
+    fact(state, localize(state, "runs.copy_134"), `conductor/runs/${show(state, row.run_id)}/`),
+    note(localize(state, "runs.copy_135")),
   ]);
 }
 
@@ -680,25 +668,26 @@ function selectedRow(state) {
 
 function detailColumn(runs, state, handlers, participant) {
   const row = selectedRow(runs);
-  if (row !== null && row.unreadable === true) return unreadableDetail(row);
+  if (row !== null && row.unreadable === true) return unreadableDetail(state, row);
   const detail = object(runs.detail);
   if (detail === null) {
     return element("div", {className: "studio-runs__detail"}, [
       note(runs.selectedId
-        ? "This run has been chosen and its read has not landed here yet."
-        : "Choose a run on the left to read it whole.")]);
+        ? localize(state, "runs.copy_136")
+        : localize(state, "runs.copy_137"))]);
   }
   const records = rows(detail.records);
-  return element("div", {className: "studio-runs__detail"}, [
-    element("h2", {text: show((object(detail.run) || {}).run_id)}),
-    participantDeck(detail, participant),
-    identitySection(detail, handlers),
-    planSection(detail),
+  return element("div", {className: "studio-runs__detail",
+    "data-subject": `run:${String((object(detail.run) || {}).run_id)}`}, [
+    runHeading(state, detail, detail.task?.title || show(state, (object(detail.run) || {}).run_id)),
+    participantDeck(detail, participant, state, handlers),
+    identitySection(state, detail, handlers),
+    planSection(state, detail),
     positionSection(detail, state, handlers),
     documentSection(detail, state, handlers),
-    outcomeSection(records),
-    artifactSection(records),
-    timelineSection(records),
+    outcomeSection(state, records),
+    artifactSection(state, records),
+    timelineSection(state, records),
   ]);
 }
 
@@ -719,21 +708,34 @@ function focusKey(mount) {
   const form = active.closest("[data-step]");
   const typed = typeof active.setSelectionRange === "function";
   return {key, step: form === null ? null : form.getAttribute("data-step"),
+    run: mount.querySelector("[data-deck-run]")?.dataset.deckRun,
     start: typed ? active.selectionStart : null,
     end: typed ? active.selectionEnd : null};
 }
 
 function restoreFocus(mount, key) {
   if (key === null) return;
+  // A participant, and the caret in a text control, belong to the run they were read in.
+  if ((key.key.startsWith("participant") || key.start !== null)
+    && key.run !== mount.querySelector("[data-deck-run]")?.dataset.deckRun) return;
   const within = key.step === null ? "" : `[data-step="${key.step}"] `;
   const successor = mount.querySelector(
     `${within}[data-focus-key="${key.key}"]`);
   if (!successor) return;
+  const fold = successor.closest(".studio-inspect-more");
+  if (fold && !fold.open && successor.tagName !== "SUMMARY") {
+    fold.querySelector("summary").focus(); return;
+  }
+  const picker = successor.closest(".studio-run-picker");
+  if (picker && !picker.open && successor.tagName !== "SUMMARY") {
+    picker.querySelector("summary").focus(); return;
+  }
   successor.focus();
   if (key.start !== null && typeof successor.setSelectionRange === "function") {
     successor.setSelectionRange(key.start, key.end);
   }
 }
+
 
 /**
  * Draw the Runs screen: every run, the one chosen, and its durable journal.
@@ -752,14 +754,22 @@ function restoreFocus(mount, key) {
 export function mountRuns(mount, state, handlers) {
   const key = focusKey(mount);
   const participant = participantSelection(mount);
+  releaseParticipants(mount);
   // The WHOLE state travels into the detail column: a step control is gated on
   // the stream being open, which is a fact about the window and not about this
   // screen's own slice.
   const whole = object(state) || {};
   const runs = object(whole.runs) || {};
-  mount.replaceChildren(element("div", {className: "studio-runs"}, [
-    runList(runs, handlers),
-    detailColumn(runs, whole, handlers, participant),
+  const expanded = mount.dataset.pickerRun === (runs.selectedId || "")
+    ? mount.querySelector(".studio-run-picker")?.open : undefined;
+  mount.dataset.pickerRun = runs.selectedId || "";
+  const column = detailColumn(runs, whole, handlers, participant);
+  // A run read whole puts its name and its controls on one row (studio.css, Runs only).
+  const read = column.querySelector("[data-deck-run]") ? " studio-runs--read" : "";
+  mount.replaceChildren(element("div", {className: `studio-runs${read}`}, [
+    runList(state, runs, handlers, expanded, whole.tasks?.selectedId, whole.connection === "open"),
+    column,
   ]));
   restoreFocus(mount, key);
+  restoreParticipantScroll(mount, participant);
 }

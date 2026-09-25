@@ -1,4 +1,5 @@
 "use strict";
+import {localize, MESSAGES} from "./studio-i18n.js";
 // The inspector's FIELD PRIMITIVES: the shapes every control on this screen is
 // built from, and the two grammars they judge against.
 //
@@ -36,42 +37,43 @@ export function call(handlers, name, value) {
 
 // -- the writers -----------------------------------------------------------
 
-export function sectionOf(name, title) {
+export function sectionOf(name, title, state = {}) {
   return element("section", {className: "studio-section",
-    "data-section": name}, [element("h3", {text: title})]);
+    "data-section": name}, [element("h3", {text: workflowLabel(state, title)})]);
 }
 
 //: Anything that is NOT one of the six. `data-section` names exactly the six
 //: the design fixes, so a reader — and a browser test — can count them.
-export function panelOf(name, title) {
+export function panelOf(name, title, state = {}) {
   return element("section", {className: "studio-panel",
-    "data-panel": name}, [element("h3", {text: title})]);
+    "data-panel": name}, [element("h3", {text: workflowLabel(state, title)})]);
 }
 
 //: One machine word for a label a human reads, so a test can address a row
 //: without matching prose that is allowed to be rewritten.
 function slug(label) {
-  return label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  const original = Object.entries(MESSAGES).find(([key, row]) => key.startsWith("workflow.") && row.ru === label)?.[1].en || label;
+  return original.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 }
 
 //: The one shape an unsupported field takes. It NAMES the field, says this
 //: harness does not support it, and gives the reason -- so a reader learns
 //: what the product does not do rather than finding a gap where a control
 //: should be. `data-unsupported` is the machine word beside the sentence.
-export function unsupported(mount, label, reason) {
+export function unsupported(mount, label, reason, state = {}) {
   mount.append(element("p", {className: "studio-unsupported",
     "data-unsupported": slug(label)}, [
-    element("strong", {text: label}),
-    element("span", {text: ` — not supported by this harness. ${reason}`}),
+    element("strong", {text: workflowLabel(state, label)}),
+    element("span", {text: localize(state, "workflow.unsupported", {reason: String(reason)})}),
   ]));
 }
 
 //: A fact this screen READS and cannot write, with the document it came from
 //: named beside it. A value with no named source is a claim nobody can check.
-export function context(mount, label, value, source) {
+export function context(mount, label, value, source, state = {}) {
   mount.append(element("p", {className: "studio-context",
     "data-context": slug(label)}, [
-    element("strong", {text: label}),
+    element("strong", {text: workflowLabel(state, label)}),
     element("span", {className: "mono", text: `: ${value}`}),
     element("i", {className: "mono studio-context__source", text: ` (${source})`}),
   ]));
@@ -81,8 +83,8 @@ export function note(mount, text) {
   mount.append(element("p", {className: "studio-note", text}));
 }
 
-export function option(value, label) {
-  return element("option", {text: label === undefined ? value : label, value});
+export function option(value, label, state = {}) {
+  return element("option", {text: label === undefined ? value : workflowLabel(state, label), value});
 }
 
 //: Every control this module writes is disabled together when the document on
@@ -128,23 +130,22 @@ export function withArgument(node, field, chosen) {
 //: posts a body for the server to reject.
 const CHECKS = Object.freeze({
   title: (value) => value.trim() && !value.includes("\0") ? null
-    : "A display name must be a non-empty string and must not contain NUL.",
+    : "workflow.copy_2",
   //: Empty is a real answer -- it means the step names no purpose -- so this
   //: judges only what a NON-empty one may be, and it judges the same three
   //: things `settled_purpose` does one layer down.
   purpose: (value) => !value.trim() || (
     value.length <= MAX_PURPOSE && !/[\0\r\n]/.test(value)) ? null
-    : `A purpose is one line of at most ${MAX_PURPOSE} characters, with no `
-      + "line break and no NUL.",
+    : "workflow.invalid_purpose",
   role_id: (value) => value === "" || ID_PATTERN.test(value) ? null
-    : "A role must match [A-Za-z0-9][A-Za-z0-9._-]{0,127}, or be empty.",
+    : "workflow.copy_4",
   gate_id: (value) => value === "" || ID_PATTERN.test(value) ? null
-    : "A gate id must match [A-Za-z0-9][A-Za-z0-9._-]{0,127}, or be empty.",
+    : "workflow.copy_5",
   //: The same grammar `role_id` is held to, because it IS a role -- the one a
   //: run binds to whoever confirms this step. Empty is a real answer: it means
   //: nobody is named as the verifier of this step.
   verifier_role_id: (value) => value === "" || ID_PATTERN.test(value) ? null
-    : "A verifier role must match [A-Za-z0-9][A-Za-z0-9._-]{0,127}, or be empty.",
+    : "workflow.copy_6",
 });
 
 //: The error sits beside the control from the first render, `hidden` until it
@@ -162,7 +163,7 @@ export function textField(mount, form, label, name, value, help) {
   control.value = value === null || value === undefined ? "" : String(value);
   const judge = () => {
     const said = check(control.value);
-    error.textContent = said || "";
+    error.textContent = said ? localize(form.state || {}, said, said === "workflow.invalid_purpose" ? {max: String(MAX_PURPOSE)} : {}) : "";
     error.hidden = !said;
     control.setAttribute("aria-invalid", said ? "true" : "false");
     return said;
@@ -173,7 +174,7 @@ export function textField(mount, form, label, name, value, help) {
     commit(form, name, name.endsWith("_id") && control.value === ""
       ? null : control.value);
   });
-  const wrapper = field(label, editable(control, form));
+  const wrapper = field(workflowLabel(form.state || {}, label), editable(control, form));
   wrapper.classList.add("studio-field");
   mount.append(wrapper, error);
   if (help) note(mount, help);
@@ -198,11 +199,11 @@ export function suggestedField(mount, form, label, name, value, help, offers) {
 export function selectField(mount, form, label, name, values, value) {
   const control = element("select", {"data-edit-field": name,
     "data-focus": `edit-${name}`, name}, values.map((row) => option(row.value,
-      row.label)));
+      row.label, form.state || {})));
   control.value = value === null || value === undefined ? "" : String(value);
   control.addEventListener("change", () => commit(form, name,
     control.value === "" ? null : control.value));
-  const wrapper = field(label, editable(control, form));
+  const wrapper = field(workflowLabel(form.state || {}, label), editable(control, form));
   wrapper.classList.add("studio-field");
   mount.append(wrapper);
   return control;
@@ -211,8 +212,16 @@ export function selectField(mount, form, label, name, values, value) {
 export function actionButton(mount, form, label, key, edit) {
   const button = element("button", {className: "studio-action",
     "data-action": key, "data-focus": `action-${key}`, type: "button"},
-  [element("span", {text: label})]);
+  [element("span", {text: workflowLabel(form.state || {}, label)})]);
   button.addEventListener("click", () => call(form.handlers, "onEdit", edit));
   mount.append(editable(button, form));
   return button;
+}
+
+
+// Only controlled field labels enter this lookup; user values never do.
+function workflowLabel(state, label) {
+  const entry = Object.entries(MESSAGES).find(([key, row]) =>
+    key.startsWith("workflow.") && row.en === label);
+  return entry ? localize(state, entry[0]) : label;
 }
