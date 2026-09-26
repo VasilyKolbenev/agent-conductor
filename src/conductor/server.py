@@ -36,6 +36,7 @@ import json
 import os
 import re
 import secrets
+import socketserver
 import sys
 import threading
 import time
@@ -679,6 +680,15 @@ class ConductServer(ThreadingHTTPServer):
     # of failing EADDRINUSE — keep it off there so `up` on a busy port exits
     # 1 (design: startup failure). POSIX keeps it for TIME_WAIT-free restarts.
     allow_reuse_address = os.name != "nt"
+
+    def server_bind(self) -> None:
+        """Bind exactly as TCPServer does; name the server by its literal, not by DNS.
+
+        HTTPServer.server_bind adds socket.getfqdn(host), a reverse lookup of a
+        loopback literal that nothing here reads (review ruling: macOS start).
+        """
+        socketserver.TCPServer.server_bind(self)  # honours allow_reuse_address
+        self.server_name, self.server_port = self.server_address[:2]
 
     def __init__(
             self, address: tuple[str, int], root: Path, cdir: Path, *,

@@ -7,6 +7,8 @@ plain sleeper first; then: a stdlib venv, an offline install of that wheel alone
 installed bytes == wheel bytes, every packaged panel file served, `conduct --help`, init ->
 ownership activate -> status, and two `conduct up` lifetimes -- each checked over HTTP, stopped by
 SIGINT to the server's own process group, and followed by `closed` ownership.
+Before every other step, a bounded child times the stdlib HTTPServer start (its bind ends in a
+reverse lookup of the bound address); that row is recorded as a diagnostic and never judged.
 No provider is configured: this is the platform road, not a vendor account.
 
 Ported from the WSL smoke that attested wheel 83dc8d85 on 25.09.2026; the Windows road is the
@@ -38,6 +40,18 @@ ENDPOINTS = ("/state.json", "/harnesses.json", "/command/session", "/command/tas
              "/command/workflows", "/command/runs", "/command/quotas")
 SCREENS = ("Overview", "Workflow", "Runs", "Decisions", "Agents")
 PROBE = Path(__file__).resolve().with_name("installed_probe.py")
+#: The ORIGINAL stdlib start the product no longer takes: HTTPServer's bind ends in
+#: socket.getfqdn(host). Timed in its own child, then the lookup alone a second time: a second
+#: value near the first says no cache helped, so a fast candidate start is the product's own.
+STDLIB_BIND_CONTROL = "\n".join((
+    "import http.server, socket, time",
+    "started = time.monotonic()",
+    "server = http.server.HTTPServer(('127.0.0.1', 0), http.server.BaseHTTPRequestHandler)",
+    "print('seconds_http_server_cold', round(time.monotonic() - started, 3), flush=True)",
+    "server.server_close()",
+    "started = time.monotonic()",
+    "socket.getfqdn('127.0.0.1')",
+    "print('seconds_getfqdn_second', round(time.monotonic() - started, 3), flush=True)"))
 
 
 def sha(data: bytes) -> str:
@@ -112,6 +126,41 @@ def control(road: Road) -> None:
     if code not in (-signal.SIGINT, 128 + signal.SIGINT):
         raise RuntimeError(f"SIGINT did not stop a plain sleeper (exit {code}); "
                            "the runner cannot attest a stop")
+
+
+def stdlib_bind_control(road: Road, timeout: float = 120.0) -> None:
+    """Time the stdlib HTTPServer start in a separate child, first; recorded, never judged.
+
+    It runs before any other step of this walk, so no step of the walk has touched the resolver
+    yet; the CI steps before the walk are not controlled. Whatever it measures, the road's
+    verdict stays the candidate's. At the deadline its process group is killed and the row says
+    timed_out; its output is kept as stdlib-bind-control.log.
+    """
+    row: dict = {"seconds_http_server_cold": None, "seconds_getfqdn_second": None,
+                 "exit_code": None, "timed_out": False}
+    road.report["stdlib_bind_control"] = row
+    log = road.work / "stdlib-bind-control.log"
+    try:
+        with log.open("wb") as out:
+            child = subprocess.Popen([sys.executable, "-I", "-c", STDLIB_BIND_CONTROL],
+                                     env=road.env, cwd=road.work, stdin=subprocess.DEVNULL,
+                                     stdout=out, stderr=subprocess.STDOUT,
+                                     start_new_session=True)
+            try:
+                child.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                row["timed_out"] = True
+            finally:
+                if child.poll() is None:  # a deadline never leaves the control behind
+                    os.killpg(child.pid, signal.SIGKILL)
+                    child.wait(timeout=10)
+        row["exit_code"] = child.returncode
+        text = log.read_text(errors="replace")
+        for name, seconds in re.findall(r"^(seconds_\w+) (\d+(?:\.\d+)?)$", text, re.M):
+            if name in row:
+                row[name] = float(seconds)
+    except (OSError, subprocess.SubprocessError) as error:  # recorded; the road goes on
+        row["error"] = repr(error)
 
 
 def http_checks(url: str, provenance: dict) -> int:
@@ -218,6 +267,7 @@ def install(road: Road, source: Path, expected: str) -> tuple[Path, Path]:
 
 
 def walk(road: Road, args: argparse.Namespace) -> None:
+    stdlib_bind_control(road)
     road.report["work_filesystem"] = filesystem_of(road.work)
     if args.require_filesystem and road.report["work_filesystem"] != args.require_filesystem:
         raise RuntimeError(f"work directory is on {road.report['work_filesystem']}, "
@@ -273,6 +323,7 @@ def main(argv: list[str] | None = None) -> int:
                                          for key in ("python", "prefix", "package", "version")}
         (args.work / "report.json").write_text(json.dumps(road.report, indent=1), encoding="utf-8")
     print(json.dumps({"success": road.report["success"], "work": str(args.work),
+                      "stdlib_bind_control": road.report.get("stdlib_bind_control"),
                       "servers": road.report["servers"],
                       "error": road.report.get("error", "")[-600:]}))
     return 0 if road.report["success"] else 1

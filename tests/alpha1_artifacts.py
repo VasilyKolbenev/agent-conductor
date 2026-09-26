@@ -291,6 +291,33 @@ def _projection_document(resolution) -> dict:
 # -- the served run: the HTTP/SSE end-to-end and the identifier-only relation --
 
 
+def _hold_before_lease(registry) -> tuple[threading.Event, threading.Event]:
+    """Park the worker on its way out of prepare, before its effect_lease exists.
+
+    For a confirm-mode action the worker calls the registry's ``prepare`` and
+    then appends the ``effect_lease`` attempt_event with no durable write in
+    between (``execution_road.execute_fresh``). Holding that one call is the last
+    point on the real path at which no attempt_event can exist, and it is outside
+    the store transaction the lease is appended under.
+
+    Returns:
+        ``(parked, release)``: ``parked`` is set once the worker stands here, and
+        the worker goes on to its lease only after ``release`` is set.
+    """
+    parked, release = threading.Event(), threading.Event()
+    prepare = registry.prepare
+
+    def held(adapter_id, request, **keywords):
+        prepared = prepare(adapter_id, request, **keywords)
+        parked.set()
+        if not release.wait(WAIT):
+            raise TimeoutError("the barrier before the effect_lease was never released")
+        return prepared
+
+    registry.prepare = held
+    return parked, release
+
+
 def _served_run(root_parent: Path) -> dict:
     root = write_project(root_parent, lanes={"claude": good_lane()})
     mint = ids()
@@ -300,6 +327,7 @@ def _served_run(root_parent: Path) -> dict:
     adapter.evidence_sink = store.append
     adapter.verifies_with_evidence = True
     adapter.gates["execute"].clear()
+    parked, release = _hold_before_lease(resolution.registry)
     subject = server.build(
         root, 0, registry=resolution.registry, clock=lambda: NOW, ids=mint,
         token_factory=lambda _size: TOKEN)
@@ -311,16 +339,18 @@ def _served_run(root_parent: Path) -> dict:
         connection.request("GET", "/events")
         stream = connection.getresponse()
         assert stream.status == 200
-        return _served_steps(subject, store, adapter, stream)
+        return _served_steps(subject, store, adapter, stream, (parked, release))
     finally:
+        release.set()
         adapter.gates["execute"].set()
         connection.close()
         subject.shutdown()
         subject.server_close()
 
 
-def _served_steps(subject, store, adapter, stream) -> dict:
+def _served_steps(subject, store, adapter, stream, lease_barrier) -> dict:
     """Drive propose -> Confirm -> async execute -> evidence -> refresh over HTTP."""
+    parked, release = lease_barrier
     frames = [_read_frame(stream)]
     proposed = _request(
         subject, "POST", f"/command/runs/{RUN_ID}/proposals",
@@ -333,8 +363,11 @@ def _served_steps(subject, store, adapter, stream) -> dict:
     assert confirmed[0] == 201, confirmed[1]
     frames.append(_read_frame(stream))
     action_id = confirmed[1]["action_id"]
+    # The worker took the action and is held before its lease: read the journal now.
+    assert parked.wait(WAIT) is True
     at_response = [
         row["record_type"] for row in _records_for(store.read(RUN_ID), action_id)]
+    release.set()
 
     adapter.gates["execute"].set()
     assert subject.command_execution.wait_idle(WAIT) is True
@@ -370,9 +403,10 @@ def _end_to_end_document(
             _step(
                 "confirm", "POST", f"/command/runs/{RUN_ID}/actions", confirmed,
                 durable_record_types_at_response=at_response,
-                note=("The Confirm answered with the recorded action_request "
-                      "while the adapter was still held inside execute, so no "
-                      "result existed yet: the effect is asynchronous.")),
+                note=("Read once the Confirm had answered with the recorded "
+                      "action_request, while its worker was held after prepare "
+                      "and before its effect_lease: no attempt_event and no "
+                      "result existed yet, so the effect is asynchronous.")),
             _step(
                 "duplicate_confirm", "POST", f"/command/runs/{RUN_ID}/actions",
                 duplicate,

@@ -71,7 +71,7 @@
         "action_proposal",
         "action_request"
       ],
-      "note": "The Confirm answered with the recorded action_request while the adapter was still held inside execute, so no result existed yet: the effect is asynchronous."
+      "note": "Read once the Confirm had answered with the recorded action_request, while its worker was held after prepare and before its effect_lease: no attempt_event and no result existed yet, so the effect is asynchronous."
     },
     {
       "step": "duplicate_confirm",

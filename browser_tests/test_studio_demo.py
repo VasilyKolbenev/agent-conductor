@@ -56,6 +56,13 @@ def _watch(page: Page) -> list[str]:
     return problems
 
 
+def _booted(page: Page) -> None:
+    """A first render, then the live connection open: what the fixture waits for."""
+    page.wait_for_function(
+        "() => document.getElementById('studioPrimary').children.length > 0")
+    page.wait_for_selector('#studioConnection[data-connection="open"]')
+
+
 @pytest.fixture
 def front_door(chromium: Browser, demo_url: str) -> Iterator[tuple[Page, list[str]]]:
     """The demo's front door, booted and connected, on the Overview screen."""
@@ -63,13 +70,28 @@ def front_door(chromium: Browser, demo_url: str) -> Iterator[tuple[Page, list[st
     page = context.new_page()
     problems = _watch(page)
     page.goto(demo_url, wait_until="load")
-    page.wait_for_function(
-        "() => document.getElementById('studioPrimary').children.length > 0")
-    page.wait_for_selector('#studioConnection[data-connection="open"]')
+    _booted(page)
     try:
         yield page, problems
     finally:
         context.close()
+
+
+def _assert_the_front_door_is_populated(page: Page) -> None:
+    overview = page.locator("#screenOverview")
+    # An open connection is not a screen that has read: the stream's `open` asks for both
+    # lists again (studio.js, its `open` listener) and the Overview says "Reading." until they
+    # land. So the check waits, within expect's own finite deadline, for "ready" itself.
+    expect(overview).to_have_attribute("data-state", "ready")
+    said = overview.inner_text()
+    assert "web-app" in said, said
+    assert demo_scenario.RUN_ID in said, said
+    assert "succeeded" in said, said
+    # Where a person first looks, the latest run says whether a person is needed: the
+    # server's own reading (`human_state`), never a blind count of undecided gates.
+    latest = _overview_card(page, "The most recent run").inner_text()
+    assert "Human attention" in latest and "You are needed" in latest, latest
+    assert "Gates waiting" not in said and "gate(s) waiting" not in said, said
 
 
 def test_the_demo_front_door_is_not_empty(front_door) -> None:
@@ -81,19 +103,47 @@ def test_the_demo_front_door_is_not_empty(front_door) -> None:
     without clicking, so it is where "populated" has to be true first.
     """
     page, problems = front_door
-    overview = page.locator("#screenOverview")
+    _assert_the_front_door_is_populated(page)
+    assert problems == []
 
-    assert overview.get_attribute("data-state") == "ready", (
-        overview.locator("#stateOverview").inner_text())
-    said = overview.inner_text()
-    assert "web-app" in said, said
-    assert demo_scenario.RUN_ID in said, said
-    assert "succeeded" in said, said
-    # Where a person first looks, the latest run says whether a person is needed: the
-    # server's own reading (`human_state`), never a blind count of undecided gates.
-    latest = _overview_card(page, "The most recent run").inner_text()
-    assert "Human attention" in latest and "You are needed" in latest, latest
-    assert "Gates waiting" not in said and "gate(s) waiting" not in said, said
+
+# Every list read held from the page's first script, so the stream opens with both lists still
+# out: the Ubuntu gate's order, made certain. The witness lets them go and the check starts at
+# once; the reads leave a short page-side delay after that, so the check begins while the
+# screen still says "Reading.", and only the check's own wait can carry it to the answer.
+_HOLD_LIST_READS = """(() => {
+  const read = window.fetch.bind(window), waiting = [];
+  const lists = new Set(["/command/workflows", "/command/runs"]);
+  window.listReads = {asked: 0, landed: 0, released: false};
+  window.releaseListReadsSoon = () => setTimeout(() => {
+    window.listReads.released = true;
+    for (const go of waiting.splice(0)) go();
+  }, 300);
+  window.fetch = (target, options) => {
+    if (!lists.has(target) || window.listReads.released) return read(target, options);
+    window.listReads.asked += 1;
+    return new Promise((answer) => waiting.push(() => answer(read(target, options)
+      .finally(() => { window.listReads.landed += 1; }))));
+  };
+})()"""
+
+
+def test_the_front_door_is_judged_after_the_reads_its_open_stream_starts(front_door) -> None:
+    """Measured on the Ubuntu browser gate (CI run 36174448250): the connection said open and
+    the Overview still said "Reading.", because the stream's `open` asks for both lists again.
+    Here the lists are held until after it opens, so the front-door check begins mid-read."""
+    page, problems = front_door
+    page.add_init_script(_HOLD_LIST_READS)
+    page.reload(wait_until="load")
+    _booted(page)
+    # The race, standing before the check: open, and every list read still out -- two from
+    # the boot, two from the stream's `open`, one more once the server's first frame is in.
+    held = page.evaluate("() => window.listReads")
+    assert held["asked"] >= 4 and held["landed"] == 0, held
+    assert page.locator("#screenOverview").get_attribute("data-state") == "loading"
+    page.evaluate("() => window.releaseListReadsSoon()")
+    _assert_the_front_door_is_populated(page)
+    assert page.evaluate("() => window.listReads.landed") >= 2
     assert problems == []
 
 
@@ -310,10 +360,22 @@ def test_overview_shows_latest_run_and_attention_together_on_a_laptop(
     assert problems == []
 
 
-def test_overview_keeps_every_card_readable_in_one_narrow_column(
-        front_door) -> None:
-    """No clipped card or horizontal page scroll hides the secondary facts."""
-    page, problems = front_door
+# Scrolled to and measured in ONE evaluation, on the card on screen at that moment. A locator's
+# scroll finds its node in one round trip and scrolls it in a later one, after waiting frames
+# for it to be stable; on the Ubuntu gate a render replaced the card in between, and the
+# scroll failed on a detached node. "nearest" scrolls only as far as the card needs.
+_SCROLL_TO_CARD = """(title) => {
+  const card = [...document.querySelectorAll('#bodyOverview > section')]
+    .find((node) => node.querySelector('h3')?.textContent === title);
+  if (card === undefined) return null;
+  card.scrollIntoView({block: "nearest", inline: "nearest"});
+  const box = card.getBoundingClientRect();
+  return {x: box.x, y: box.y, width: box.width, height: box.height,
+    viewport: document.documentElement.clientHeight};
+}"""
+
+
+def _assert_every_card_readable_in_one_narrow_column(page: Page) -> None:
     page.set_viewport_size({"width": 500, "height": 800})
     cards = _overview_geometry(page)
     assert tuple(card["title"] for card in cards) == OVERVIEW_HEADINGS
@@ -323,15 +385,24 @@ def test_overview_keeps_every_card_readable_in_one_narrow_column(
         assert abs(later["left"] - earlier["left"]) <= 1, cards
         assert abs(later["width"] - earlier["width"]) <= 1, cards
     for title in OVERVIEW_HEADINGS:
-        card = _overview_card(page, title)
-        card.scroll_into_view_if_needed()
-        expect(card.get_by_role("heading", name=title, exact=True)).to_be_visible()
-        box = card.bounding_box()
-        assert box is not None and box["x"] >= 0, box
+        box = page.evaluate(_SCROLL_TO_CARD, title)
+        assert box is not None, title
+        # Scrolled to: the card now reaches into the viewport a reader has.
+        assert box["y"] < box["viewport"] and box["y"] + box["height"] > 0, box
+        expect(_overview_card(page, title).get_by_role(
+            "heading", name=title, exact=True)).to_be_visible()
+        assert box["x"] >= 0, box
         assert box["x"] + box["width"] <= 500, box
     assert page.evaluate(
         "() => Math.max(document.documentElement.scrollWidth, "
         "document.body.scrollWidth) - document.documentElement.clientWidth") == 0
+
+
+def test_overview_keeps_every_card_readable_in_one_narrow_column(
+        front_door) -> None:
+    """No clipped card or horizontal page scroll hides the secondary facts."""
+    page, problems = front_door
+    _assert_every_card_readable_in_one_narrow_column(page)
     assert problems == []
 
 
@@ -376,6 +447,38 @@ def test_overview_geometry_is_read_from_the_cards_on_screen_when_a_render_follow
         assert tuple(card["title"] for card in cards) == OVERVIEW_HEADINGS
         assert all(card["visible"] for card in cards), cards
     assert page.evaluate("() => window.rendersQueued") >= 2
+    assert problems == []
+
+
+# A render on every animation frame, through the same language door. Playwright's own finds run
+# outside the page's scripts, so the query hook above never sees them; but a handle action waits
+# frames for its node to be stable, so a render each frame lands between any such find and act.
+# Frames alone may not fall between steps that wait for none, so the witness pairs this with the
+# query hook. The first card is kept aside, so the witness can show the cards were replaced.
+_RENDER_EVERY_FRAME = """() => {
+  window.firstCard = document.querySelector('#bodyOverview > section');
+  const language = document.querySelector('#studioPreferences select[name="language"]');
+  const render = () => {
+    language.dispatchEvent(new Event("change"));
+    requestAnimationFrame(render);
+  };
+  requestAnimationFrame(render);
+}"""
+
+
+def test_the_narrow_column_is_scrolled_on_cards_on_screen_when_renders_follow_finds_and_frames(
+        front_door) -> None:
+    """Measured on the Ubuntu browser gate (CI run 36174448250): the narrow column's scroll
+    found a card, a render replaced it, and the scroll failed on a node no longer in the page.
+    Here a render is queued after every find of the cards and on every animation frame. The
+    frame renders are what turn the old locator scroll red (its stability wait needs frames);
+    on the fixed path the find hook is what proves the cards were replaced under it."""
+    page, problems = front_door
+    page.evaluate(_RENDER_EVERY_FRAME)
+    page.evaluate(_RENDER_AFTER_EVERY_FIND)
+    _assert_every_card_readable_in_one_narrow_column(page)
+    replaced = page.evaluate("() => [window.rendersQueued, window.firstCard.isConnected]")
+    assert replaced[0] >= len(OVERVIEW_HEADINGS) + 1 and replaced[1] is False, replaced
     assert problems == []
 
 
