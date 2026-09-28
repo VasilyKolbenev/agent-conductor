@@ -106,8 +106,8 @@ export const ERROR_LABELS = Object.freeze({
   windows_path_too_long: "Shorten the identifier or move the project to a "
     + "shorter path. The Windows path budget is exceeded.",
   csrf_denied: "The local session expired. Submit again.",
-  draft_changed: "The draft changed while you were reviewing it. The newer "
-    + "version has been loaded — read it and publish again.",
+  draft_changed: "The draft changed while you were reviewing it. Read the "
+    + "current draft before publishing again.",
   draft_conflict: "The stored draft is not the one this window last read — "
     + "another window saved or published it. Nothing here was written and your "
     + "drawing is untouched. Read the workflow again to see what stands now.",

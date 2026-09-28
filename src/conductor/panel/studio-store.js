@@ -733,6 +733,11 @@ const ARMS = Object.freeze({
   "step-writing": stepWriting,
   "workflow-chosen": (state, event) => workflowChosen(state, event.workflowId),
   "workflow-loaded": workflowLoaded,
+  // A conflict retires this read's write authority before its replacement is
+  // requested. Keep the drawing and digest; only a landed read reopens writes.
+  "workflow-stale": (state) => Object.freeze({...state,
+    workflows: Object.freeze({...state.workflows, phase: "loading",
+      reviewing: false, writeReady: false})}),
   "workflow-unread": (state, event) => workflowUnread(state, event,
     event.phase === "refused" ? "refused" : "failed", noticeOf(event.notice)),
   "workflows-loaded": workflowsLoaded,

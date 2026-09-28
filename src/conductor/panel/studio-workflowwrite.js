@@ -92,7 +92,7 @@ class WorkflowWriters {
       // instead, or, when the draft was consumed rather than replaced, the
       // published REVISION, from which Edit as new draft is the road on.
       if (!REOPENED.includes(result.code) || asked !== this.door.chosenWorkflow()) return;
-      dispatch({type: "publish-review", open: false});
+      dispatch({type: "workflow-stale"});
       refreshWorkflow(asked);
     });
   }

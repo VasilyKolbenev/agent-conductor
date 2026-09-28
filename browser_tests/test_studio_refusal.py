@@ -27,6 +27,8 @@ one description read twice.
 """
 from __future__ import annotations
 
+import pytest
+
 from conductor.command.template_store import TemplateStore
 from conductor.command.workflow_draft import WorkflowDraft
 
@@ -320,8 +322,9 @@ def test_a_review_that_went_stale_is_refused_and_reopened_on_the_new_draft(
     _only_the_refusal_was_logged(bench)
 
 
+@pytest.mark.parametrize("recovery_fails", [False, True], ids=["read", "retry"])
 def test_the_reopened_review_publishes_the_draft_that_now_stands(
-        bench: _Bench, tmp_path) -> None:
+        bench: _Bench, tmp_path, recovery_fails: bool) -> None:
     """The over-correction control: the road must still lead somewhere.
 
     A refusal that closed the review and left the window unable to publish
@@ -335,11 +338,48 @@ def test_the_reopened_review_publishes_the_draft_that_now_stands(
     page.locator('#workflowToolbar [data-focus="action:onPublish"]').click()
     page.wait_for_selector('[data-review="publish"]')
     _save_over_the_open_review(tmp_path)
+    # Hold the recovery read after the server answers. The refusal appears
+    # before that answer lands, so a fast second Publish used to open the old
+    # review, whose Confirm then vanished when the newer draft arrived.
+    page.evaluate("""workflowId => {
+      const read = window.fetch.bind(window);
+      const recovery = window.recoveryRead = {held: false, release: null};
+      window.fetch = async (target, options) => {
+        const response = await read(target, options);
+        if (target === `/command/workflows/${workflowId}`) {
+          window.fetch = read;
+          await new Promise(resolve => {
+            recovery.release = resolve;
+            recovery.held = true;
+          });
+          if (recovery.fail) throw new Error("recovery read unavailable");
+        }
+        return response;
+      };
+    }""", WORKFLOW_ID)
     page.locator('[data-focus="action:onPublishConfirm"]').click()
     page.wait_for_selector('[data-review="publish"]', state="detached")
+    page.wait_for_function("() => window.recoveryRead.held")
     page.wait_for_function(
         "() => document.querySelector('#workflowToolbar [data-save]')"
         ".innerText.includes('draft changed')")
+    assert page.locator(
+        '#workflowToolbar [data-focus="action:onPublish"]').is_disabled(), (
+        "a stale draft can be reviewed again before its replacement is read")
+    assert "has been loaded" not in page.locator(
+        "#workflowToolbar [data-save]").inner_text()
+    assert bench.recorder.writes("/revisions") == 1
+    page.evaluate("""fail => {
+      window.recoveryRead.fail = fail;
+      window.recoveryRead.release();
+    }""", recovery_fails)
+    if recovery_fails:
+        page.wait_for_selector('#screenWorkflow[data-state="refused"]')
+        assert page.locator(
+            '#workflowToolbar [data-focus="action:onPublish"]').is_disabled()
+        # A failed refresh keeps stale writes shut but leaves the retry door
+        # reachable. Its successful read is what enables the next review.
+        page.locator('#workflowToolbar [data-focus="action:onValidate"]').click()
 
     _publish(page)
 
