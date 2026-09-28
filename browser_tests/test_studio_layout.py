@@ -706,19 +706,21 @@ def test_a_real_step_not_just_the_canvas_container_is_above_the_fold(
     page, window = _workflow_screen(chromium, project, 1280, 800)
     try:
         _start_from_starter(page, "visible-step")
-        # MEASURED on the first remote run (frozen-19, Ubuntu): every step read off-screen -- the
-        # answer detached nodes give, and the find-then-measure race proven on the Overview. One
-        # evaluation finds and measures, so a red here now is a layout fact, not that race.
+        # Find and measure in one evaluation, so detached nodes cannot masquerade as a
+        # layout failure. Keep the actual rectangles: on Linux the closed run summary
+        # wrapped onto another toolbar row and put the first step's bottom at 836 of 800.
         drawn = page.evaluate("""() => {
           const nodes = [...document.querySelectorAll('.studio-node')];
           const well = document.querySelector('#workflowCanvas').getBoundingClientRect();
           return nodes.map(node => {
             const r = node.getBoundingClientRect();
-            return r.top >= 0 && r.bottom <= innerHeight && r.left >= well.left
-              && r.right <= well.right;
+            return {id: node.dataset.nodeId, rect: r.toJSON(), viewport: innerHeight,
+              well: well.toJSON(), visible: node.checkVisibility(),
+              fits: r.top >= 0 && r.bottom <= innerHeight && r.left >= well.left
+                && r.right <= well.right};
           });
         }""")
-        assert drawn and any(drawn), "toolbar chrome pushed every real step off-screen"
+        assert drawn and any(row["visible"] and row["fits"] for row in drawn), drawn
     finally:
         assert window.problems == []
         page.context.close()

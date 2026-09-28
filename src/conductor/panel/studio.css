@@ -292,13 +292,15 @@ button{font:inherit;cursor:pointer;background:none;border:none;color:inherit}
 .studio-canvas svg{display:block}
 .studio-nodes{position:relative;min-height:40px}
 .studio-canvas__chrome{display:flex;flex-direction:column;gap:10px;
-                       margin-bottom:24px;min-width:0}
+                       margin-bottom:12px;min-width:0}
 .studio-canvas__tools{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:start}
 .studio-canvas__heading{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:start;
   justify-content:space-between;min-width:0}
 .studio-canvas__heading .studio-canvas__banner{flex:1 1 300px}
 .studio-canvas__tools .studio-palette{flex:1 1 300px}
-.studio-canvas__tools .studio-canvas__help{flex-basis:100%}
+/* The canvas help takes no row of its own: closed, its summary fits beside the view controls;
+   opened, its text is wider than what is left and wraps it to a full row by itself. A closed
+   help on a row of its own kept every step below the fold at 1280x800 on Linux. */
 .studio-lenses{display:flex;gap:16px;flex-wrap:wrap}
 .studio-lens{min-height:44px;font-size:14px;padding:6px 2px}
 .studio-lens[aria-pressed="true"]{border-bottom:2px solid var(--ion);font-weight:700}
