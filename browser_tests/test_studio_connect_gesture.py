@@ -33,13 +33,39 @@ from tests.test_store import good_lane, write_project
 #: under the pointer in either document.
 OTHER_ID = "editing-bench-other"
 
-#: The start's THIRD real task answer held as it came, until the test lets it go.
+#: The start's THIRD real task answer held as it came, until the test lets it go -- and its
+#: SECOND held until the third ask has begun. Each ask shows the "Reading tasks" row, and only
+#: an answer landing after the LAST ask hides it (studio-taskflow.js, `refreshTasks`). On the
+#: Ubuntu gate (CI run 36391406861), the row stayed visible. A controlled probe reproduced
+#: this when answers 1 and 2 landed before ask 3; CI did not trace their order. Answer 2 lands after
+#: ask 3 in either order of arrival -- the barrier remembers that ask 3 began -- and
+#: `secondApplied` says so once the page has drawn it; the held third answer is then the only
+#: task render left for the test to let go.
 _HOLD_THIRD_TASK_ANSWER = """(() => {
   const read = window.fetch.bind(window);
-  const held = window.heldAnswer = {asked: 0, held: false};
+  const held = window.heldAnswer = {asked: 0, held: false, thirdAsked: false,
+    secondApplied: false};
+  let letSecondGo = null;
+  const drawn = (response) => {
+    const parse = response.json.bind(response);
+    response.json = () => {
+      const body = parse();
+      body.then(() => setTimeout(() => { held.secondApplied = true; }), () => {});
+      return body;
+    };
+    return response;
+  };
   window.fetch = (target, options) => {
     const answer = read(target, options);
-    if (target !== "/command/tasks" || ++held.asked !== 3) return answer;
+    if (target !== "/command/tasks") return answer;
+    const asked = ++held.asked;
+    if (asked === 2) return answer.then((response) => new Promise((resolve) => {
+      letSecondGo = () => resolve(drawn(response));
+      if (held.thirdAsked) letSecondGo();
+    }));
+    if (asked !== 3) return answer;
+    held.thirdAsked = true;
+    if (letSecondGo) letSecondGo();
     return answer.then((response) => new Promise((resolve) => {
       held.held = true;
       window.releaseHeldAnswer = () => resolve(response);
@@ -84,7 +110,8 @@ def held_bench(chromium: Browser, two_drafts_url: str) -> Iterator[_Bench]:
     context.add_init_script(_HOLD_THIRD_TASK_ANSWER)
     try:
         bench = _open_bench(context, two_drafts_url)
-        bench.page.wait_for_function("() => window.heldAnswer.held === true")
+        bench.page.wait_for_function(
+            "() => window.heldAnswer.held === true && window.heldAnswer.secondApplied === true")
         yield bench
     finally:
         context.close()
