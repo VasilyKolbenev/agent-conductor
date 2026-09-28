@@ -112,26 +112,36 @@ function gatesWaiting(state) {
 //: What stops this project running, each row naming the payload it came from.
 //: Nothing here is a severity this window invented: a row exists because a read
 //: answered with it.
+//: A row's identity for the focus net: its source's own untranslated facts, never its words
+//: or its place in the list, reduced to what an attribute selector takes as it stands
+//: (studio-focus.js finds a successor by `[data-focus="…"]`).
+function rowKey(...parts) {
+  return parts.map((part) => String(part ?? "").replace(/[^A-Za-z0-9._-]/g, "_")).join(":");
+}
+
 export function blockingRows(state) {
   const held = state.workflows;
   const found = [];
   for (const line of rows(held.problems)) {
-    found.push({where: "workflow", screen: "workflow", text: noticeText(state, line)});
+    found.push({where: "workflow", screen: "workflow", text: noticeText(state, line),
+      id: typeof line === "string" ? rowKey("problem", line)
+        : rowKey("problem", line?.key, ...Object.values(line?.params || {}))});
   }
   for (const row of rows(held.diagnostics)) {
     found.push({where: "workflow", screen: "workflow",
+      id: rowKey("diagnostic", row.code, row.nodeId, row.field),
       text: localize(state, "view.m070", {message: String(row.message)})});
   }
   for (const row of rows(held.list).filter((entry) => entry.unreadable === true)) {
-    found.push({where: "workflow", screen: "workflow",
+    found.push({where: "workflow", screen: "workflow", id: rowKey("workflow", row.workflow_id),
       text: localize(state, "view.m071", {id: String(row.workflow_id)})});
   }
   for (const row of rows(state.runs.list).filter((entry) => entry.unreadable === true)) {
-    found.push({where: "run", screen: "runs",
+    found.push({where: "run", screen: "runs", id: rowKey("run", row.run_id),
       text: localize(state, "view.m072", {id: String(row.run_id)})});
   }
   for (const [capability, steps] of unservedCapabilities(state)) {
-    found.push({where: "agents", screen: "agents",
+    found.push({where: "agents", screen: "agents", id: rowKey("capability", capability),
       text: localize(state, "view.m073", {capability: String(capability), count: String(steps.length), steps: steps.join(", ")})});
   }
   return found;
@@ -195,6 +205,12 @@ export function readiness(state) {
     why: localize(state, "view.m075", {revision: String(revision), count: String(providers.length)})};
 }
 
+//: The Overview names its own controls (review ruling R1). The shell's main button calls
+//: the same `onScreen`, so `action:onScreen` once named up to four controls at a time, and
+//: the focus net -- rightly refusing to choose among them -- dropped the keyboard to the
+//: body on every pass. The card's empty and chosen states go to one place: one key.
+const OVERVIEW_WORKFLOW = Object.freeze({"data-focus": "overview:workflow"});
+
 function whatThisIs(state, handlers) {
   const workflow = chosenWorkflow(state);
   const body = [
@@ -204,7 +220,8 @@ function whatThisIs(state, handlers) {
   ];
   if (workflow === null) {
     body.push(note(localize(state, "view.m004")),
-    button(state, handlers, "onScreen", localize(state, "view.m005"), "workflow"));
+    button(state, handlers, "onScreen", localize(state, "view.m005"), "workflow",
+      OVERVIEW_WORKFLOW));
     return card(localize(state, "view.m006"), body);
   }
   body.push(fact(state, localize(state, "view.m007"), workflow.workflow_id),
@@ -212,7 +229,8 @@ function whatThisIs(state, handlers) {
     fact(state, localize(state, "view.m009"), workflow.revisions),
     fact(state, localize(state, "view.m010"), workflow.latest_revision),
     fact(state, localize(state, "view.m011"), workflow.has_draft ? localize(state, "view.m093") : localize(state, "view.m094")),
-    button(state, handlers, "onScreen", localize(state, "view.m012"), "workflow"));
+    button(state, handlers, "onScreen", localize(state, "view.m012"), "workflow",
+      OVERVIEW_WORKFLOW));
   if (state.workflows.provenance === "local") {
     body.push(note(localize(state, "view.m013")));
   }
@@ -238,7 +256,8 @@ function blockedCard(state, handlers) {
   for (const row of found.slice(0, 12)) {
     list.append(element("li", {className: "studio-row"}, [
       element("span", {text: row.text}),
-      button(state, handlers, "onScreen", localize(state, "view.m019"), row.screen),
+      button(state, handlers, "onScreen", localize(state, "view.m019"), row.screen,
+        {"data-focus": `overview:blocked:${row.id}`}),
     ]));
   }
   const body = [chip("fail", localize(state, "view.m077", {count: String(found.length)})), list];
@@ -258,7 +277,7 @@ function needsYouCard(state, handlers) {
       `bridge.${row.reason}`, {count: String(row.count)})));
   }
   if (gatesWaiting(state).length) body.push(button(state, handlers, "onScreen",
-    localize(state, "scene.open_decisions"), "decisions"));
+    localize(state, "scene.open_decisions"), "decisions", {"data-focus": "overview:decisions"}));
   return card(localize(state, "bridge.attention"), body);
 }
 
@@ -275,7 +294,8 @@ function latestRunCard(state, handlers) {
       note(rows(state.runs.list).length
         ? localize(state, "view.m021")
         : localize(state, "view.m022")),
-      button(state, handlers, "onScreen", localize(state, "view.m023"), "runs"),
+      button(state, handlers, "onScreen", localize(state, "view.m023"), "runs",
+        {"data-focus": "overview:runs"}),
     ]);
   }
   const body = [

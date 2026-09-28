@@ -652,7 +652,7 @@ def test_a_dropped_stream_says_so_on_every_screen_and_shuts_the_write_door(
         assert page.locator(
             '#workflowToolbar [data-focus="action:onPublish"]').is_disabled()
         assert page.locator(
-            '#studioPrimary [data-focus="action:onSaveDraft"]').is_disabled()
+            '#studioPrimary [data-focus="primary:onSaveDraft"]').is_disabled()
         assert window.problems == []
     finally:
         page.context.close()

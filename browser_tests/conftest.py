@@ -52,6 +52,11 @@ _SAID: "dict[object, list[str]]" = {}
 #: fixture that died before it could leaves the one that matters.
 _OPEN_CONTEXTS: "list[object]" = []
 
+#: What the reaper met, for the module's closing picture (browser_tests/host_snapshot.py).
+#: A `close()` that raised used to vanish here, so whether reaping WORKED after the
+#: Windows 10055 setup failure could not be read; the first few errors are kept verbatim.
+_REAPED: "dict[str, object]" = {"returned": 0, "raised": 0, "errors": []}
+
 
 def _reap_contexts() -> None:
     """Close every context still registered, and forget it either way.
@@ -64,8 +69,11 @@ def _reap_contexts() -> None:
         context = _OPEN_CONTEXTS.pop()
         try:
             context.close()
-        except Exception:  # noqa: BLE001 -- a closed context is the goal, not an event
-            pass
+            _REAPED["returned"] += 1
+        except Exception as error:  # noqa: BLE001 -- a closed context is the goal; kept, not raised
+            _REAPED["raised"] += 1
+            if len(_REAPED["errors"]) < 5:
+                _REAPED["errors"].append(repr(error)[:300])
 
 
 def _remember(page: object) -> list[str]:
@@ -142,10 +150,22 @@ def chromium() -> Iterator[Browser]:
         log_path = os.environ.get("CHROME_LOG_FILE")
         log_args = [f"--log-file={log_path}"] if log_path else []
         browser = _instrumented(playwright.chromium.launch(headless=True, args=log_args))
+        boundary = None
+        if os.environ.get(ARTIFACTS_ENV):
+            try:  # a picture of the module's start; never a reason to stop the gate
+                from browser_tests.host_snapshot import ModuleBoundary
+                boundary = ModuleBoundary(os.environ[ARTIFACTS_ENV])
+            except Exception:  # noqa: BLE001 -- the gate runs without its picture
+                boundary = None
         try:
             yield browser
         finally:
-            browser.close()
+            left = len(browser.contexts)
+            try:
+                browser.close()
+            finally:  # a close that raises is the flake's class: its picture is kept too
+                if boundary is not None:
+                    boundary.finish(contexts_left=left, reaped=_REAPED)
 
 
 @pytest.fixture(autouse=True)
@@ -230,6 +250,17 @@ def _write_failure_evidence(item: pytest.Item, report: pytest.TestReport) -> Non
         except Exception as error:  # noqa: BLE001 — evidence must not mask the failure
             with open(f"{stem}.page{shot}.err.txt", "w", encoding="utf-8") as note:
                 note.write(f"screenshot failed: {error!r}\n")
+    if report.when != "teardown":
+        # After the traceback and the screenshots, still before teardown: a picture that
+        # cannot be taken says why in its place, and never costs the failure it follows.
+        try:
+            from browser_tests.host_snapshot import failure_section
+            words = "\n".join(line for _page, lines in said for line in lines)
+            section = failure_section(item.funcargs, words, _OPEN_CONTEXTS)
+        except Exception as error:  # noqa: BLE001 -- the failure above is the record
+            section = f"host snapshot unavailable: {error!r}\n"
+        with open(f"{stem}.failure.txt", "a", encoding="utf-8") as record:
+            record.write("\n" + section)
 
 
 @pytest.hookimpl(hookwrapper=True)

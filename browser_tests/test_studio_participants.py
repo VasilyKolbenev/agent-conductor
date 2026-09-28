@@ -184,9 +184,17 @@ def test_command_deck_has_depth_and_adjacent_inspector_without_losing_actions(st
     page.emulate_media(color_scheme=theme)
     page.set_viewport_size({"width": 1280, "height": 900})
     _mount(page, _detail())
-    fleet = page.locator("#deckTest .studio-deck__fleet")
     panel = _inspector(page)
-    geometry = fleet.bounding_box(), panel.bounding_box()
+    # Both boxes from ONE layout: the deck sits below the live shell, whose height a task
+    # notice or the first list read can change between two separate bounding_box calls.
+    geometry = page.evaluate("""() => ['.studio-deck__fleet', '.studio-deck__inspector'].map(
+      (part) => {
+        const found = document.querySelectorAll(`#deckTest ${part}`);
+        if (found.length !== 1) return {count: found.length};
+        const box = found[0].getBoundingClientRect();
+        return {x: box.x, y: box.y, width: box.width, height: box.height};
+      })""")
+    assert all("count" not in box for box in geometry), geometry
     assert abs(geometry[0]["y"] - geometry[1]["y"]) < 2
     assert abs(geometry[0]["x"] + geometry[0]["width"] - geometry[1]["x"]) < 2
     assert geometry[1]["width"] == 298

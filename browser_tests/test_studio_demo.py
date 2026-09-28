@@ -19,6 +19,7 @@ that refuses a whole answer when one key moves.
 """
 from __future__ import annotations
 
+import re
 import threading
 from collections.abc import Iterator
 
@@ -234,6 +235,19 @@ def test_the_run_draws_its_whole_durable_timeline(front_door) -> None:
     assert problems == []
 
 
+# The waiting gate's title and identifier lines, measured together on the card that carries
+# its key (studio-people.js, `decisionButton`), with how many such cards there are.
+_DECISION_LINES = """(key) => {
+  const cards = document.querySelectorAll(`[data-focus-key="decision:${key}"]`);
+  if (cards.length !== 1) return {cards: cards.length};
+  const line = (selector) => {
+    const box = cards[0].querySelector(selector).getBoundingClientRect();
+    return {y: box.y, height: box.height};
+  };
+  return {cards: 1, title: line(".studio-decision__t"), ident: line(".studio-decision__id")};
+}"""
+
+
 def test_the_decisions_screen_shows_the_gate_still_waiting_for_a_person(
         front_door) -> None:
     """One gate answered and one waiting is the pair that explains the concept.
@@ -265,9 +279,13 @@ def test_the_decisions_screen_shows_the_gate_still_waiting_for_a_person(
     key = f"{demo_scenario.RUN_ID}/{demo_scenario.WAITING_GATE}"
     gate = page.locator(".studio-decision", has=page.locator(".studio-decision__id", has_text=key))
     assert f" {key} " in gate.evaluate("n => n.textContent"), gate.evaluate("n => n.textContent")
-    title = gate.locator(".studio-decision__t").bounding_box()
-    ident = gate.locator(".studio-decision__id").bounding_box()
-    assert ident["y"] >= title["y"] + title["height"] - 1, (title, ident)
+    # Both boxes from ONE layout, off the card on screen at that moment: the list and task
+    # reads the stream's `open` and greeting start re-render every mount, and two
+    # bounding_box calls could meet a detached card or two layouts a notice row apart.
+    boxes = page.evaluate(_DECISION_LINES, key)
+    assert boxes["cards"] == 1, boxes
+    title, ident = boxes["title"], boxes["ident"]
+    assert ident["y"] >= title["y"] + title["height"] - 1, boxes
     assert problems == []
 
 
@@ -539,6 +557,127 @@ def test_overview_run_link_opens_its_history_and_scopes_attention_to_that_run(
     assert problems == []
 
 
+# One ordinary render with the keyboard on a control. The language door says `change`, and
+# the pass it runs is the same `render()` an answered read runs; switching the language as it
+# does shows the control's identity does not live in its words.
+_RENDER_UNDER_FOCUS = """([selector, language]) => {
+  const held = document.querySelector(selector);
+  held.focus();
+  const pick = document.querySelector('#studioPreferences select[name="language"]');
+  pick.value = language;
+  pick.dispatchEvent(new Event("change"));
+  const now = document.activeElement;
+  return {replaced: !held.isConnected, key: now.getAttribute("data-focus"),
+    same: now === document.querySelector(selector), words: now.textContent};
+}"""
+
+# The Overview's three actions and the shell's main button, with the key each keeps. "Read
+# this run" was already alone on its key: the positive control.
+_KEYBOARD_ACTIONS = (
+    ("#bodyOverview .studio-overview__latest button", "action:onSelectRun"),
+    ("#bodyOverview .studio-overview__attention button", "overview:decisions"),
+    ("#bodyOverview .studio-overview__context button", "overview:workflow"),
+    ("#studioPrimary button", "action:onScreen"),
+)
+
+
+def test_a_render_keeps_the_keyboard_on_the_same_overview_action_in_both_languages(
+        front_door) -> None:
+    """Measured in review (CI3 slice): after one ordinary render the keyboard on "Open
+    decisions", "Choose a workflow" or the shell's main button fell to the page body. The
+    three shared `action:onScreen`, and the focus net rightly refuses to choose among
+    several successors (studio-focus.js). Each now keeps a key of its own, whatever the
+    language, and the real keyboard goes on from where the render left it."""
+    page, problems = front_door
+    _read_the_demo_run(page)
+    page.locator("#navOverview").click()
+    expect(page.locator(_KEYBOARD_ACTIONS[1][0])).to_have_text("Open decisions")
+    for selector, key in _KEYBOARD_ACTIONS:
+        said = set()
+        for language in ("ru", "en"):
+            after = page.evaluate(_RENDER_UNDER_FOCUS, [selector, language])
+            assert (after["replaced"], after["key"], after["same"]) == (True, key, True), (
+                selector, language, after)
+            said.add(after["words"])
+        assert len(said) == 2, (selector, said)
+    page.evaluate(_RENDER_UNDER_FOCUS, [_KEYBOARD_ACTIONS[1][0], "en"])
+    page.keyboard.press("Tab")
+    assert page.evaluate("() => document.activeElement.textContent") == "Choose a workflow"
+    page.keyboard.press("Shift+Tab")
+    page.keyboard.press("Enter")
+    expect(page.locator("#screenDecisions")).to_contain_text(demo_scenario.WAITING_GATE)
+    page.locator("#navOverview").click()
+    page.evaluate(_RENDER_UNDER_FOCUS, [_KEYBOARD_ACTIONS[3][0], "en"])
+    page.keyboard.press("Enter")
+    expect(page.locator("#screenWorkflow")).to_be_visible()
+    assert problems == []
+
+
+#: The workflow chosen through the toolbar's own control while the keyboard rests on the
+#: Overview's workflow card: the pass redraws that card in its chosen state.
+_CHOOSE_UNDER_FOCUS = """(workflow) => {
+  const held = document.querySelector('#bodyOverview .studio-overview__context button');
+  held.focus();
+  const pick = document.querySelector("#workflowToolbar select[name='workflow']");
+  pick.value = workflow;
+  pick.dispatchEvent(new Event("change", {bubbles: true}));
+  const now = document.activeElement;
+  return {replaced: !held.isConnected, key: now.getAttribute("data-focus"), words: now.textContent};
+}"""
+
+
+def test_the_chosen_workflow_and_its_blocking_rows_keep_their_keys_through_a_render(
+        front_door) -> None:
+    """The Overview's other keyed controls, drawn and rendered under focus: the workflow card
+    going from its empty to its chosen state keeps the keyboard on it, and each blocking row a
+    chosen revision raises is its own successor, in both languages."""
+    page, problems = front_door
+    context = "#bodyOverview .studio-overview__context button"
+    expect(page.locator(context)).to_have_text("Choose a workflow")
+    after = page.evaluate(_CHOOSE_UNDER_FOCUS, demo_scenario.WORKFLOW_ID)
+    assert after == {"replaced": True, "key": "overview:workflow",
+                     "words": "Edit this workflow"}, after
+    blocked = page.locator("#bodyOverview .studio-overview__blocked button")
+    expect(blocked.first).to_have_text("Open it")
+    keys = blocked.evaluate_all("rows => rows.map((row) => row.getAttribute('data-focus'))")
+    assert keys and len(set(keys)) == len(keys), keys
+    assert all(key.startswith("overview:blocked:") for key in keys), keys
+    for selector, key in (("#bodyOverview .studio-overview__blocked button", keys[0]),
+                          (context, "overview:workflow")):
+        for language in ("ru", "en"):
+            moved = page.evaluate(_RENDER_UNDER_FOCUS, [selector, language])
+            assert (moved["replaced"], moved["key"], moved["same"]) == (True, key, True), (
+                selector, language, moved)
+    assert problems == []
+
+
+def test_every_blocking_row_carries_its_own_key_in_both_languages(front_door) -> None:
+    """The Overview's blocking rows all open a screen, and several open the same one, so a
+    row is keyed by its source's own facts -- never by its words or its place -- in
+    characters the focus net's attribute selector takes as they stand."""
+    page, problems = front_door
+    rows = [{"workflow_id": "w-1", "unreadable": True}, {"workflow_id": "w-2", "unreadable": True}]
+    state = {"workflows": {
+        "problems": [{"key": "notice.problem_workflow_name"},
+                     {"key": "notice.problem_max_nodes", "params": {"max": "12"}}],
+        "diagnostics": [{"code": "c", "message": "m", "nodeId": "a", "field": 'title"x'},
+                        {"code": "c", "message": "m", "nodeId": "b", "field": None}],
+        "list": rows, "detail": {"published": {"nodes": [
+            {"node_id": "do", "capability": "dispatch"},
+            {"node_id": "check", "capability": "review"}]}}},
+        "runs": {"list": [{"run_id": "r-1", "unreadable": True}]}, "providers": []}
+    read = {language: page.evaluate(
+        "async (given) => { const m = await import('/panel/studio-view.js');"
+        " return m.blockingRows(given).map((row) => [row.id, row.text]); }",
+        {**state, "locale": language}) for language in ("en", "ru")}
+    keys = [key for key, _text in read["en"]]
+    assert len(keys) == 9 and len(set(keys)) == 9, keys
+    assert keys == [key for key, _text in read["ru"]]
+    assert all(re.fullmatch(r"[A-Za-z0-9._:-]+", key) for key in keys), keys
+    assert [text for _key, text in read["en"]] != [text for _key, text in read["ru"]]
+    assert problems == []
+
+
 def test_the_demo_run_is_named_by_its_task_and_its_header_offers_what_it_needs(front_door) -> None:
     """The run belongs to a named task, so the header names the task, says where the run stands and who
     is needed, and its one main action is that need's own door: the waiting result gate."""
@@ -595,11 +734,16 @@ def test_demo_decision_choices_keep_native_keyboard_state_and_themed_surfaces(
     expect(reject).to_be_checked()
     expect(approve).not_to_be_checked()
     expect(reject).to_be_focused()
-    paint = reject.evaluate("""node => {
-      const style = getComputedStyle(node), box = node.getBoundingClientRect();
+    # Found and measured in one evaluation: a detached radio has no computed style and a
+    # zero box, and a render may replace it after the focus check above.
+    paint = page.evaluate("""() => {
+      const all = document.querySelectorAll('input[type="radio"][value="reject"]');
+      if (all.length !== 1) return {count: all.length};
+      const node = all[0], style = getComputedStyle(node), box = node.getBoundingClientRect();
       return {background: style.backgroundColor, color: style.color,
         height: box.height, appearance: style.appearance};
     }""")
+    assert "count" not in paint, paint
     assert paint["background"] == background and paint["color"] == ink, paint
     assert paint["height"] >= 44 and paint["appearance"] != "none", paint
     submit = page.get_by_role("button", name="Record this decision", exact=True)

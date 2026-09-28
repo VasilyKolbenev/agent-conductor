@@ -18,7 +18,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from playwright.sync_api import Browser, Page
+from playwright.sync_api import Browser, Page, expect
 
 from conductor import server
 
@@ -61,6 +61,17 @@ def graph_url(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
         assert not thread.is_alive(), "graph server did not stop"
 
 
+def _carrying(page: Page) -> None:
+    """Wait, within expect's finite deadline, for the render the stream's `open` buys.
+
+    That `open` dispatches `ready` (graph.js, its `open` listener), and the render it
+    causes replaces the composer, the save form and the detail card. Only that render
+    enables the save door, so an enabled door is the visible fact that it has landed;
+    a window handed over before it could detach a control between finding and measuring.
+    """
+    expect(page.locator('#saveCard [name="save"]')).to_be_enabled()
+
+
 @pytest.fixture(params=("dark", "light"))
 def graph_page(chromium: Browser, graph_url: str,
                request: pytest.FixtureRequest) -> Iterator[Page]:
@@ -72,6 +83,7 @@ def graph_page(chromium: Browser, graph_url: str,
     page = context.new_page()
     page.goto(graph_url, wait_until="load")
     page.wait_for_function("Boolean(window.conductGraph)")
+    _carrying(page)
     try:
         yield page
     finally:
@@ -723,3 +735,47 @@ def test_every_form_control_offers_at_least_a_44px_target(
     for index in range(controls.count()):
         box = controls.nth(index).bounding_box()
         assert box is not None and box["height"] >= 44, index
+
+
+#: The window's own `open` listener held from its first script: the stream opens, and the
+#: render its `open` buys stays out until a short page-side delay after the release, so a
+#: check begun at the release meets the window as it stood before that render.
+_HOLD_OPEN = """(() => {
+  const add = EventSource.prototype.addEventListener, waiting = [];
+  const hold = window.openHeld = {held: 0, released: false};
+  window.releaseOpenSoon = () => setTimeout(() => {
+    hold.released = true;
+    for (const go of waiting.splice(0)) go();
+  }, 300);
+  EventSource.prototype.addEventListener = function (type, listener, options) {
+    if (type !== "open") return add.call(this, type, listener, options);
+    return add.call(this, type, (event) => {
+      if (hold.released) return listener.call(this, event);
+      hold.held += 1;
+      waiting.push(() => listener.call(this, event));
+    }, options);
+  };
+})()"""
+
+
+def test_the_graph_window_is_handed_over_after_the_render_its_stream_buys(
+        chromium: Browser, graph_url: str) -> None:
+    """The window stands where the fixture used to stop waiting -- modules loaded, the seam
+    present, the stream open -- with the render its `open` buys still held. The save door is
+    marked there; only the fixture's own wait carries it past the render that replaces the
+    door, so the controls a test measures next are the ones that stay."""
+    context = chromium.new_context(viewport={"width": 1440, "height": 1200})
+    context.add_init_script(_HOLD_OPEN)
+    page = context.new_page()
+    try:
+        page.goto(graph_url, wait_until="load")
+        page.wait_for_function("Boolean(window.conductGraph)")
+        page.wait_for_function("() => window.openHeld.held === 1")
+        door = page.locator('#saveCard [name="save"]')
+        expect(door).to_be_disabled()
+        door.evaluate("node => { node.dataset.beforeOpen = 'y'; }")
+        page.evaluate("() => window.releaseOpenSoon()")
+        _carrying(page)
+        assert page.locator("[data-before-open]").count() == 0
+    finally:
+        context.close()

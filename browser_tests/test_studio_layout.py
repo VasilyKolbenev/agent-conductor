@@ -463,8 +463,19 @@ def test_the_chosen_starters_note_is_drawn_whole_under_the_control(
         said = note.inner_text()
         assert "4 review step(s) name no result artifact" in said, said
         assert said not in options, "the whole note is still an option's text"
-        box = note.bounding_box()
-        assert box is not None and box["x"] + box["width"] <= 1280, box
+        # Found and measured in one evaluation, with its words: the list reads the stream's
+        # `open` and greeting start rebuild the toolbar, and a note found in one round trip
+        # can be detached by the next (then it has no box).
+        box = page.evaluate("""() => {
+          const found = document.querySelectorAll('#workflowToolbar [data-starter-note]');
+          const note = found.length === 1 ? found[0] : null;
+          if (!note || note.getClientRects().length === 0) return null;
+          const rect = note.getBoundingClientRect();
+          return {x: rect.x, y: rect.y, width: rect.width, height: rect.height,
+            said: note.innerText};
+        }""")
+        assert box is not None and box["said"] == said, box
+        assert box["x"] + box["width"] <= 1280, box
         assert box["y"] + box["height"] <= 800, box
         select.select_option(values[options.index(ready[0])])
         assert note.inner_text().endswith("is ready to run."), note.inner_text()
@@ -722,7 +733,7 @@ def test_header_and_toolbar_save_share_the_drafts_real_availability(
         _save_draft(page)
         _publish(page)
         page.wait_for_selector('.studio-canvas__banner[data-document="published"]')
-        header = page.locator('#studioPrimary [data-focus="action:onSaveDraft"]')
+        header = page.locator('#studioPrimary [data-focus="primary:onSaveDraft"]')
         toolbar = page.locator('#workflowToolbar [data-focus="action:onSaveDraft"]')
         assert header.is_disabled() and toolbar.is_disabled(), "no draft exists to save"
         assert header.get_attribute("title") == toolbar.get_attribute("title")

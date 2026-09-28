@@ -43,6 +43,55 @@ def panel_url(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
         assert not thread.is_alive(), "panel server did not stop"
 
 
+#: What redraws the map, counted and left alone. The panel draws the whole map
+#: again for every `/state.json` answer and once more for the registry's, and
+#: its start asks three times: on load, on the stream's `open`, and for the
+#: server's greeting frame. The Ubuntu gate (CI run 36258690638) held a status
+#: node from the FIRST drawing and scrolled it after a later one had replaced
+#: it. A task queued once a body is parsed runs after the page's own
+#: continuation of that body, which is the render; a read that fails or is
+#: refused draws nothing and lands at once. The stream's two flags are set in a
+#: task too, so the page's handler has asked for its read by then, whichever
+#: listener ran first.
+_WATCH_REDRAWS = """(() => {
+  const watch = window.panelReads = {asked: 0, landed: 0, opened: false, framed: false};
+  const draws = new Set(["/state.json", "/harnesses.json"]);
+  const read = window.fetch.bind(window);
+  const land = () => setTimeout(() => { watch.landed += 1; });
+  window.fetch = (target, options) => {
+    const answer = read(target, options);
+    if (!draws.has(target)) return answer;
+    watch.asked += 1;
+    return answer.then((response) => {
+      if (!response.ok) { land(); return response; }
+      const parse = response.json.bind(response);
+      response.json = () => { const body = parse(); body.then(land, land); return body; };
+      return response;
+    }, (error) => { land(); throw error; });
+  };
+  const Stream = window.EventSource;
+  window.EventSource = function (url, options) {
+    const stream = new Stream(url, options);
+    stream.addEventListener("open", () => setTimeout(() => { watch.opened = true; }));
+    stream.addEventListener("message", () => setTimeout(() => { watch.framed = true; }));
+    return stream;
+  };
+})()"""
+
+
+def _settled(page: Page) -> dict[str, object]:
+    """Wait, within the page's finite default timeout, for the last drawing the start asks for.
+
+    The stream open and greeted, and every read that redraws the map answered and drawn.
+    A static project asks for nothing after that, so the nodes read next are the ones on
+    screen for the rest of the test.
+    """
+    page.wait_for_function(
+        "() => { const w = window.panelReads;"
+        " return w.opened && w.framed && w.asked === w.landed; }")
+    return page.evaluate("() => ({...window.panelReads})")
+
+
 @pytest.fixture(params=("dark", "light"))
 def panel_page(chromium: Browser, panel_url: str, request: pytest.FixtureRequest) -> Iterator[Page]:
     """Open one isolated panel in each approved December colour scheme."""
@@ -50,9 +99,11 @@ def panel_page(chromium: Browser, panel_url: str, request: pytest.FixtureRequest
         color_scheme=request.param,
         viewport={"width": 1440, "height": 1200},
     )
+    context.add_init_script(_WATCH_REDRAWS)
     page = context.new_page()
     page.goto(panel_url, wait_until="domcontentloaded")
     page.locator('[data-node="smoke"]').wait_for(state="visible")
+    _settled(page)
     try:
         yield page
     finally:
@@ -171,6 +222,10 @@ def test_rendered_status_channels_survive_pointer_focus_and_selection(panel_page
         "smoke": "fail",
         "live": "blocked",
     }
+    # Every profile below is compared with one taken earlier on the same node, so no
+    # redrawing read may start in between: a new node would carry neither the hover,
+    # the focus nor the press being judged, and would pass by being fresh.
+    reads = panel_page.evaluate("() => ({...window.panelReads})")
     for node_id, status in expected.items():
         node = panel_page.locator(f'[data-node="{node_id}"]')
         assert f"node--{status}" in (node.get_attribute("class") or "")
@@ -201,6 +256,57 @@ def test_rendered_status_channels_survive_pointer_focus_and_selection(panel_page
         for node_id in ("schemas", "smoke", "live")
     }
     assert len(distinct) == 3
+    assert panel_page.evaluate("() => ({...window.panelReads})") == reads
+
+
+#: Every `/state.json` read after the first held from the page's first script: the map is drawn
+#: once, then the stream opens and greets and both reads it asks for stay out -- the Ubuntu
+#: gate's order, made certain. Installed BEFORE the watcher, which therefore counts a held read
+#: as asked the moment the page asks.
+_HOLD_LATER_READS = """(() => {
+  const read = window.fetch.bind(window), waiting = [];
+  const hold = window.heldReads = {first: true, held: 0, released: false};
+  window.releaseHeldReadsSoon = () => setTimeout(() => {
+    hold.released = true;
+    for (const go of waiting.splice(0)) go();
+  }, 300);
+  window.fetch = (target, options) => {
+    if (target !== "/state.json" || hold.released) return read(target, options);
+    if (hold.first) { hold.first = false; return read(target, options); }
+    hold.held += 1;
+    return new Promise((answer) => waiting.push(() => answer(read(target, options))));
+  };
+})()"""
+
+
+def test_the_panel_is_handed_over_after_the_redraws_its_open_stream_asks_for(
+        chromium: Browser, panel_url: str) -> None:
+    """Measured on the Ubuntu gate (CI run 36258690638): a status node was visible, then
+    replaced by a later drawing before it could be scrolled. Here the stream's reads are held
+    and the first drawing is marked, so a check begun where the fixture used to stop waiting
+    would hold the marked node; only the settle's own wait carries it to the drawing that stays."""
+    context = chromium.new_context(viewport={"width": 1440, "height": 1200})
+    context.add_init_script(_HOLD_LATER_READS)
+    context.add_init_script(_WATCH_REDRAWS)
+    page = context.new_page()
+    try:
+        page.goto(panel_url, wait_until="domcontentloaded")
+        page.locator('[data-node="smoke"]').wait_for(state="visible")
+        # Open and greeted, both of its reads held; the first read and the registry drawn.
+        page.wait_for_function(
+            "() => window.heldReads.held >= 2 && window.panelReads.landed >= 2")
+        page.evaluate(
+            "() => { document.querySelector('[data-node=\"smoke\"]').dataset.firstDrawing = 'y'; }")
+        before = page.evaluate("() => ({...window.panelReads})")
+        assert before["asked"] > before["landed"], before
+        assert page.locator("[data-first-drawing]").count() == 1
+        page.evaluate("() => window.releaseHeldReadsSoon()")
+        after = _settled(page)
+        assert page.locator("[data-first-drawing]").count() == 0
+        assert page.locator('[data-node="smoke"]').count() == 1
+        assert after["asked"] == after["landed"] >= before["asked"], after
+    finally:
+        context.close()
 
 
 def test_browser_composites_status_chips_above_their_declared_thresholds(panel_page: Page) -> None:

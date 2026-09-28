@@ -385,9 +385,10 @@ button{font:inherit;cursor:pointer;background:none;border:none;color:inherit}
    across the column gap and a pointer selects it at its own midpoint, so a
    handle that reached that far would take the click meant for the edge -- which
    it did at 24px, with the gap only 46px wide. It starts at the step's edge and
-   stops short of the middle. */
+   stops short of the middle. A touch that starts on it is the connect drag, not a
+   page pan: without `touch-action:none` the browser takes it and cancels the pointer. */
 .studio-port{position:absolute;left:var(--x);top:var(--y);
-             transform:translateY(-50%);width:20px;padding:0;
+             transform:translateY(-50%);width:20px;padding:0;touch-action:none;
              display:flex;align-items:center;justify-content:center}
 .studio-node__title{font-size:14px;font-weight:640;overflow-wrap:anywhere}
 .studio-node__meta{font-size:12px;color:var(--muted);overflow-wrap:anywhere}

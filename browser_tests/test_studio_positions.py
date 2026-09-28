@@ -33,7 +33,7 @@ from browser_tests.test_studio_editing import (  # noqa: F401
     DRAG_ONE_ROW,
     WORKFLOW_ID,
     _Bench,
-    _centre,
+    _centres,
     _drag,
     bench,
     studio_url,
@@ -65,7 +65,7 @@ def test_dragging_a_step_moves_it_on_the_canvas_and_leaves_the_order_alone(
     help_summary.click()
     before_order = bench.node_ids()
     before_x, before_y = _placed_at(bench.page, "alpha")
-    x, y = _centre(bench.page, '[data-node-id="alpha"]')
+    [(x, y)] = _centres(bench.page, '[data-node-id="alpha"]')
 
     _drag(bench.page, (x, y), (x + 120, y + DRAG_ONE_ROW))
 
@@ -137,7 +137,7 @@ def test_a_placed_step_is_written_to_the_draft_and_survives_a_reload(
     reloaded whole, and what is measured after is the step's drawn position --
     which can only have arrived from the server.
     """
-    x, y = _centre(bench.page, '[data-node-id="beta"]')
+    [(x, y)] = _centres(bench.page, '[data-node-id="beta"]')
     before_y = _placed_at(bench.page, "beta")[1]
     _drag(bench.page, (x, y), (x + 96, y + DRAG_ONE_ROW))
     bench.page.wait_for_function(

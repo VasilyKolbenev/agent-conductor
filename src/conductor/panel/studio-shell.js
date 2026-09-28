@@ -47,8 +47,11 @@ function primaryAction(state, handlers) {
   const screen = Object.hasOwn(PRIMARY, state.screen) ? state.screen : "overview";
   const [name, argument] = PRIMARY[screen];
   const call = handlers[name];
+  // The Workflow toolbar draws its own Save beside this one, so here the main button keeps a
+  // key of its own: two successors on one key and the focus net restores neither.
+  const key = screen === "workflow" ? `primary:${name}` : `action:${name}`;
   const control = element("button", {className: "studio-btn", type: "button",
-    "data-focus": `action:${name}`, text: localize(state, `primary.${screen}`)});
+    "data-focus": key, text: localize(state, `primary.${screen}`)});
   if (typeof call === "function") control.addEventListener("click", () => call(argument));
   else control.disabled = true;
   const refusal = screen === "workflow" ? saveRefusal(state.workflows, state) : null;

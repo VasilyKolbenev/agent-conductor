@@ -48,7 +48,7 @@ import threading
 from collections.abc import Iterator
 
 import pytest
-from playwright.sync_api import Browser, Page
+from playwright.sync_api import Browser, BrowserContext, Page, expect
 
 from conductor import server
 from conductor.command.template_store import TemplateStore
@@ -188,10 +188,24 @@ def _watch(page: Page) -> list[str]:
     return problems
 
 
-@pytest.fixture
-def bench(chromium: Browser, studio_url: str) -> Iterator[_Bench]:
-    """The Workflow screen, on the seeded draft, ready to be written to."""
-    context = chromium.new_context(viewport={"width": 1700, "height": 1400})
+#: The task reads the Studio asks for, counted and left alone. Its start asks three times
+#: (studio.js: the boot, the stream's `open`, the server's greeting frame); each ask shows a
+#: "Reading tasks" row above the canvas, and the first answer after it hides the row again
+#: (studio-taskflow.js, `refreshTasks`). The third ask out and the row hidden settle the
+#: ROW'S geometry, not every render: an answer still out may land later and redraw the
+#: canvas, which a gesture in progress survives (test_studio_connect_gesture.py).
+_COUNT_TASK_ASKS = """(() => {
+  const asks = window.taskAsks = {asked: 0};
+  const read = window.fetch.bind(window);
+  window.fetch = (target, options) => {
+    if (target === "/command/tasks") asks.asked += 1;
+    return read(target, options);
+  };
+})()"""
+
+
+def _open_bench(context: BrowserContext, studio_url: str) -> _Bench:
+    """A new page of `context` on the Workflow screen and the seeded draft, ready to write."""
     page = context.new_page()
     problems = _watch(page)
     recorder = _Recorder(page)
@@ -209,8 +223,20 @@ def bench(chromium: Browser, studio_url: str) -> Iterator[_Bench]:
     # this waits for the door rather than for a moment.
     page.wait_for_selector(
         '#workflowToolbar [data-focus="action:onSaveDraft"]:not([disabled])')
+    # A gesture aimed at a port measured before the "Reading tasks" row went would miss it
+    # by a line: the start's third task ask out, then the row hidden (`_COUNT_TASK_ASKS`).
+    page.wait_for_function("() => window.taskAsks.asked >= 3")
+    expect(page.locator("[data-task-notice]")).to_be_hidden()
+    return _Bench(page, problems, recorder)
+
+
+@pytest.fixture
+def bench(chromium: Browser, studio_url: str) -> Iterator[_Bench]:
+    """The Workflow screen, on the seeded draft, ready to be written to."""
+    context = chromium.new_context(viewport={"width": 1700, "height": 1400})
+    context.add_init_script(_COUNT_TASK_ASKS)
     try:
-        yield _Bench(page, problems, recorder)
+        yield _open_bench(context, studio_url)
     finally:
         context.close()
 
@@ -250,26 +276,42 @@ def _edge_point(page: Page, edge_id: str) -> tuple[float, float]:
     return point[0], point[1]
 
 
-def _centre(page: Page, selector: str) -> tuple[float, float]:
-    locator = page.locator(selector)
-    locator.scroll_into_view_if_needed()
-    box = locator.bounding_box()
-    assert box is not None, f"{selector} has no box to point at"
-    return box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
+def _centres(page: Page, *selectors: str) -> list[tuple[float, float]]:
+    """Each target brought into view, then every centre read, in ONE evaluation.
+
+    A locator's scroll and its box are two round trips, and a render between them
+    detaches the node; two targets measured apart can come from two layouts, and
+    scrolling the second can move the first. So all of it is one layout.
+    """
+    centres = page.evaluate(
+        """selectors => {
+          const found = selectors.map(selector => document.querySelectorAll(selector));
+          if (found.some(list => list.length !== 1)) return null;
+          const nodes = found.map(list => list[0]);
+          nodes.forEach(node => node.scrollIntoView({block: "nearest", inline: "nearest"}));
+          return nodes.map(node => {
+            const box = node.getBoundingClientRect();
+            return [box.x + box.width / 2, box.y + box.height / 2];
+          });
+        }""", list(selectors))
+    assert centres is not None, f"{selectors} do not each name one node to point at"
+    return [(x, y) for x, y in centres]
 
 
 def _port_geometry(page: Page, node_id: str) -> dict:
     """One connect handle's box, its step's box, and what is painted over it.
 
     All three are read in ONE evaluation, after the handle has been brought
-    into view: they have to describe the same layout, and `elementFromPoint`
-    answers about the live screen rather than about a box measured earlier.
+    into view IN that evaluation: they have to describe the same layout, and
+    `elementFromPoint` answers about the live screen rather than about a box
+    measured earlier. A locator's scroll found the handle one round trip before
+    moving it, and a render in between left it detached.
     """
-    page.locator(f'[data-port="{node_id}"]').scroll_into_view_if_needed()
     return page.evaluate(
         """id => {
           const port = document.querySelector(`[data-port="${id}"]`);
           const node = document.querySelector(`[data-node-id="${id}"]`);
+          port.scrollIntoView({block: "nearest", inline: "nearest"});
           const pb = port.getBoundingClientRect();
           const nb = node.getBoundingClientRect();
           const under = document.elementFromPoint(
@@ -460,8 +502,7 @@ def test_a_drag_from_a_port_onto_another_step_connects_the_two(
         f"the connect handle is {boxes['position']} and lands at the stage "
         "origin instead of beside its step")
     assert boxes["port"]["x"] >= boxes["node"]["right"] - 1, boxes
-    start = _centre(bench.page, '[data-port="alpha"]')
-    end = _centre(bench.page, '[data-node-id="beta"]')
+    start, end = _centres(bench.page, '[data-port="alpha"]', '[data-node-id="beta"]')
     _drag(bench.page, start, end)
     bench.wait_for_edges(1)
     assert bench.edge_ids() == ["alpha beta"]

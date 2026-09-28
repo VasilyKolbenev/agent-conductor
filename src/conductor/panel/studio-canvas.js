@@ -398,36 +398,49 @@ function nodeButton(node, context) {
 //: named as what it is. The two stopped being the same gesture the moment
 //: either could be expressed on its own.
 function bindNodeDrag(button, node, context) {
-  let origin = null;
-  button.addEventListener("pointerdown", (event) => {
-    if (!context.editable || event.button !== 0) return;
-    origin = {x: event.clientX, y: event.clientY};
+  button.addEventListener("pointerdown", (start) => {
+    if (!context.editable || start.button !== 0) return;
     context.gesture.moved = false;
-    button.setPointerCapture(event.pointerId);
-  });
-  button.addEventListener("pointermove", (event) => {
-    if (!origin) return;
-    const dy = event.clientY - origin.y;
-    const dx = event.clientX - origin.x;
-    if (Math.abs(dx) + Math.abs(dy) > DRAG_SLOP) context.gesture.moved = true;
-    // Both axes now: the x delta used to be measured and thrown away.
-    if (context.gesture.moved) {
-      button.style.transform = `translate(${dx}px, ${dy}px)`;
-    }
-  });
-  button.addEventListener("pointerup", (event) => {
-    if (!origin) return;
-    const delta = {x: event.clientX - origin.x, y: event.clientY - origin.y};
-    origin = null;
-    button.style.transform = "";
-    if (!context.gesture.moved) return;
-    const cell = context.layout.cells[node.node_id];
-    if (!cell) return;
-    const at = droppedAt(cell, context.pitch, delta, context.view.zoom);
-    call(context.handlers, "onEdit", {
-      type: "move", nodeId: node.node_id, x: at.x, y: at.y});
+    button.setPointerCapture(start.pointerId);
+    const delta = (event) => ({x: event.clientX - start.clientX, y: event.clientY - start.clientY});
+    // The step on screen NOW: a render mid-drag draws a new button in the pressed one's place.
+    // Another document's step of the same name is not it, and is neither moved nor cleared.
+    const shown = () => (onScreen(context) ? [...context.mount.querySelectorAll("[data-node-id]")]
+      .find((each) => each.dataset.nodeId === node.node_id) : null);
+    follow(start, (event) => {
+      const {x, y} = delta(event);
+      if (Math.abs(x) + Math.abs(y) > DRAG_SLOP) context.gesture.moved = true;
+      if (context.gesture.moved && shown()) shown().style.transform = `translate(${x}px, ${y}px)`;
+    }, (up) => {
+      if (shown()) shown().style.transform = "";
+      if (!up) context.gesture.moved = false;
+      const cell = context.layout.cells[node.node_id];
+      if (!up || !context.gesture.moved || !cell || !onScreen(context)) return;
+      const at = droppedAt(cell, context.pitch, delta(up), context.view.zoom);
+      call(context.handlers, "onEdit", {type: "move", nodeId: node.node_id, x: at.x, y: at.y});
+    });
   });
 }
+
+//: One pointer gesture's life, heard on the DOCUMENT while it lasts: a render mid-gesture -- an
+//: unrelated read answering, or the gesture's own view change -- replaces the element that was
+//: pressed, and that element's own events never come. It ends at its pointer's release or
+//: cancel, at a move with no button held, or at the pointer's next press (the last two are a
+//: release the page never got); `end` is handed the release, or null.
+function follow(start, move, end) {
+  const types = ["pointerdown", "pointermove", "pointerup", "pointercancel"];
+  const hear = (event) => {
+    if (event.pointerId !== start.pointerId) return;
+    if (event.type === "pointermove" && event.buttons) return move(event);
+    for (const type of types) document.removeEventListener(type, hear, true);
+    end(event.type === "pointerup" ? event : null);
+  };
+  for (const type of types) document.addEventListener(type, hear, true);
+}
+
+//: What a gesture may change is the drawing it began on, still on screen: the same document
+//: (`drawnScope`, stamped on the mount by every pass), or nothing.
+function onScreen(context) { return context.mount.drawnScope === context.scope; }
 
 //: A real button beside the step, not nested inside it: the step stays a
 //: `<button>` and both stay reachable by Tab. `restack` puts it on the step's
@@ -444,26 +457,28 @@ function portButton(node, context) {
   return port;
 }
 
+//: Its end is heard for the gesture's life (`follow`): a read landing mid-drag replaces the
+//: port that holds the pointer. What the release may write is judged then (`onScreen`).
 function bindConnectDrag(port, node, context) {
-  let live = false;
-  port.addEventListener("pointerdown", (event) => {
-    if (!context.editable || event.button !== 0) return;
-    live = true;
-    port.setPointerCapture(event.pointerId);
+  port.addEventListener("pointerdown", (start) => {
+    if (!context.editable || start.button !== 0) return;
+    port.setPointerCapture(start.pointerId);
+    follow(start, () => {}, (up) => {
+      if (up && onScreen(context)) connectAt(up, node, context);
+    });
   });
-  port.addEventListener("pointerup", (event) => {
-    if (!live) return;
-    live = false;
-    const under = document.elementFromPoint(event.clientX, event.clientY);
-    const target = under && under.closest ? under.closest("[data-node-id]") : null;
-    const to = target && target.getAttribute("data-node-id");
-    if (!to || to === node.node_id) {
-      call(context.handlers, "onStatus", {key: "workflow_detail.port_no_target"});
-      return;
-    }
-    call(context.handlers, "onEdit", {
-      type: "connect", fromId: node.node_id, toId: to});
-  });
+}
+
+function connectAt(event, node, context) {
+  const under = document.elementFromPoint(event.clientX, event.clientY);
+  const target = under && under.closest ? under.closest("[data-node-id]") : null;
+  const to = target && target.getAttribute("data-node-id");
+  if (!to || to === node.node_id) {
+    call(context.handlers, "onStatus", {key: "workflow_detail.port_no_target"});
+    return;
+  }
+  call(context.handlers, "onEdit", {
+    type: "connect", fromId: node.node_id, toId: to});
 }
 
 // -- the edge layer --------------------------------------------------------
@@ -675,27 +690,23 @@ function bindKeys(stage, nodes, context) {
   });
 }
 
-//: Dragging the background pans, captured on the stage so no listener
-//: outlives the gesture. "Background" is said as what it is NOT: the edge
-//: layer fills the drawing, so testing for the stage element itself would make
-//: the pan unreachable everywhere the SVG lies -- which is everywhere.
+//: Dragging the background pans, for the gesture's life (`follow`) and no longer: every move
+//: redraws the stage that was pressed, so the pan is measured from the view it began on, and
+//: moves nothing once another document is on screen. "Background" is said as what it is NOT:
+//: the edge layer fills the drawing, so testing for the stage element itself would make the
+//: pan unreachable everywhere the SVG lies -- which is everywhere.
 const HELD = "[data-node-id],[data-port],[data-edge]";
 
-function bindPan(stage, view, handlers) {
-  let origin = null;
-  stage.addEventListener("pointerdown", (event) => {
-    const on = event.target;
-    if (event.button !== 0 || (on.closest && on.closest(HELD))) return;
-    origin = {x: event.clientX, y: event.clientY, panX: view.x, panY: view.y};
-    stage.setPointerCapture(event.pointerId);
+function bindPan(stage, view, context) {
+  stage.addEventListener("pointerdown", (start) => {
+    const on = start.target;
+    if (start.button !== 0 || (on.closest && on.closest(HELD))) return;
+    stage.setPointerCapture(start.pointerId);
+    follow(start, (event) => {
+      if (onScreen(context)) call(context.handlers, "onView", {zoom: view.zoom, pan: {
+        x: view.x + event.clientX - start.clientX, y: view.y + event.clientY - start.clientY}});
+    }, () => {});
   });
-  stage.addEventListener("pointermove", (event) => {
-    if (!origin) return;
-    call(handlers, "onView", {zoom: view.zoom, pan: {
-      x: origin.panX + (event.clientX - origin.x),
-      y: origin.panY + (event.clientY - origin.y)}});
-  });
-  stage.addEventListener("pointerup", () => { origin = null; });
 }
 
 // -- the mount -------------------------------------------------------------
@@ -727,8 +738,9 @@ export function mountCanvas(mount, svg, state, handlers) {
   const runtime = runtimeIndex(state);
   const parents = new Map(nodes.map((node) => [node.node_id, edges.filter(
     (edge) => edge.to_node === node.node_id).map((edge) => edge.from_node)]));
+  const scope = JSON.stringify([state.workflows?.selectedId, shown.kind, shown.revision]);
   const context = {
-    editable: shown.kind === "draft", gesture: {moved: false}, handlers,
+    editable: shown.kind === "draft", gesture: {moved: false}, handlers, mount, scope,
     index: new Map(nodes.map((node, at) => [node.node_id, at])), pitch: 0,
     layout, parents, runtime, selection: selectionOf(state), view, state,
   };
@@ -756,7 +768,7 @@ export function mountCanvas(mount, svg, state, handlers) {
   }
   for (const each of drawn) stage.append(each.node, each.port);
   bindKeys(stage, nodes, context);
-  bindPan(stage, view, handlers);
+  bindPan(stage, view, context);
   const help = element("details", {className: "studio-canvas__help"}, [
     element("summary", {"data-focus": "canvas-help",
       text: localize(state, "workflow_detail.canvas_help")}),
@@ -768,13 +780,13 @@ export function mountCanvas(mount, svg, state, handlers) {
   const tools = element("div", {className: "studio-canvas__tools"}, [
     palette(context.editable, handlers, context.selection, state), viewControls(view, handlers, state), help]);
   const reflow = () => { if (restack(stage, drawn, context) && svg) drawEdges(svg, nodes, edges, context); };
-  const scope = JSON.stringify([state.workflows?.selectedId, shown.kind, shown.revision]);
   const orbit = workflowOrbit(mount, scope, nodes, context.selection, handlers, stage, tools, reflow, context.state);
   const chrome = element("div", {className: "studio-canvas__chrome"}, [
     element("div", {className: "studio-canvas__heading"}, [banner(shown, state, runtime), orbit.switches]), tools]);
   // Chrome first, drawing after, both in normal flow: the well scrolls one
   // column and no control is stacked over a step.
   mount.replaceChildren(chrome, orbit.panel, stage);
+  mount.drawnScope = scope;
   orbit.refresh();
   if (restack(stage, drawn, context) && svg) drawEdges(svg, nodes, edges, context);
   if (!nodes.length) chrome.append(emptyNote(shown, state));
