@@ -86,8 +86,21 @@ def test_native_auth_preflight_admits_positive_control_and_refuses_wrong_initial
     assert not value._login_method_admitted(raw)
 
 
+OFFICIAL_MARKETPLACE=('[marketplace]\ndefault_skills_installs_purged = true\n'
+    'official_marketplace_auto_installed = true\n[[marketplace.sources]]\nname = "xAI Official"\n'
+    'git = "https://github.com/xai-org/plugin-marketplace.git"\n')
+
+
+def test_the_official_marketplace_a_real_login_registers_is_admitted(tmp_path):
+    value,runner,home=make(tmp_path); (home/'config.toml').write_text(OFFICIAL_MARKETPLACE)
+    assert value._login_home_grants(str(home))==()
+    assert value.quota_connection().read()==BILLING
+
+
 @pytest.mark.parametrize('config',['[model]\napi_key="synthetic"\n',
-    '[hooks]\ncommand="do-not-run"\n','[grok_com_config]\nbase_url="https://other.invalid"\n'])
+    '[hooks]\ncommand="do-not-run"\n','[grok_com_config]\nbase_url="https://other.invalid"\n',
+    OFFICIAL_MARKETPLACE.replace('github.com/xai-org/','other.invalid/'),
+    OFFICIAL_MARKETPLACE+'[[marketplace.sources]]\nname = "Other"\ngit = "https://other.invalid/m.git"\n'])
 def test_custom_profile_configuration_refuses_before_any_spawn(config,tmp_path):
     value,runner,home=make(tmp_path); (home/'config.toml').write_text(config)
     with pytest.raises(NativeQuotaReadError,match='not_supported'):

@@ -322,8 +322,7 @@ class GrokBuildAdapter(ArtifactAwareTransport):
 
     def _login_home_grants(self, home: str) -> tuple[str, ...]:
         blocked = tuple(name for name in super()._login_home_grants(home) if name != "config.toml")
-        if not login_home.plain_config(home, "config.toml", ({}, {
-                "marketplace": {"default_skills_installs_purged": True}})):
+        if not login_home.plain_config(home, "config.toml", LOGIN_CONFIG_FORMS):
             blocked += ("config.toml",)
         selected = self._runner.capture_environment(self._env_allow())
         if any(selected.native_value(name) is not None for name in GROK_LOGIN_OVERRIDES):
@@ -413,6 +412,17 @@ def _native_quota(payload):
 
 
 QUOTA_POLICY = QuotaPolicy("xai", "grok-account", "grok-acp", "quota", "rfc3339", _native_quota)
+
+#: The bootstrap configuration a dedicated login profile may hold, compared as decoded values.
+#: MEASURED on a real subscription login (1.0.5, 28.09.2026): the vendor's own login registers its
+#: official marketplace as a source. A source installs nothing by itself; installed skills,
+#: plugins, hooks and MCP stay forbidden in the login home (`login_forbidden`), so this exact
+#: official form is admitted -- another source, or another address, is not.
+LOGIN_CONFIG_FORMS = ({}, {"marketplace": {"default_skills_installs_purged": True}}, {
+    "marketplace": {"default_skills_installs_purged": True,
+                    "official_marketplace_auto_installed": True,
+                    "sources": [{"name": "xAI Official",
+                                 "git": "https://github.com/xai-org/plugin-marketplace.git"}]}})
 
 # Native 1.0.5 ACP calibration: these metadata requests do not create a session
 # or send a model prompt. Billing requires the native xAI session auth gate.
