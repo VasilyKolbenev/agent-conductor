@@ -116,6 +116,11 @@ button{font:inherit;cursor:pointer;background:none;border:none;color:inherit}
    four control types the shell builds and not the one anchor it declares. */
 .studio-elsewhere{font-size:12px;color:var(--muted);text-decoration:underline;
                   min-height:44px;display:inline-flex;align-items:center}
+/* Let the long translated link wrap within the header's 44px row instead of
+   pushing the primary action, and therefore the run's inspector, down a row. */
+@media(min-width:900px){
+  .studio-elsewhere{flex:1 1 240px;min-width:0}
+}
 /* The one primary action of the screen now showing. Empty in the static
    document: which verb belongs here is a fact only a read can supply. */
 .studio-primary{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}

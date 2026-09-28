@@ -135,9 +135,11 @@ from .subscription_quota import SubscriptionRpc, native_subscription_connection
 
 from .quota_contracts import NativeQuotaReading, NativeQuotaWindow, QuotaError, QuotaPolicy, quota_object
 
+import json
 import re
 from collections.abc import Callable
 from pathlib import Path
+from types import MappingProxyType
 
 from .deep_contracts import DeepProtocol
 from .artifact_transport import ArtifactAwareTransport
@@ -343,6 +345,77 @@ class GrokBuildAdapter(ArtifactAwareTransport):
     def quota_connection(self):
         return native_subscription_connection(self, QUOTA_POLICY, GROK_QUOTA_RPC)
 
+    #: The native metadata exchange the running spawn is, or None for every other spawn.
+    _service: SubscriptionRpc | None = None
+
+    def _attempt(self, argv, cwd, **options):
+        """Mark a native metadata exchange, known by its exact argv and stdin, for one spawn."""
+        self._service = (_SERVICE_BY_PAYLOAD.get(options.get("stdin_bytes"))
+                         if argv == _RPC_ARGV else None)
+        self._service_metadata: dict[str, frozenset[bytes]] = {}
+        self._service_values: tuple[bytes, ...] = ()
+        self._service_protected: tuple[bytes, ...] = ()
+        try:
+            return super()._attempt(argv, cwd, **options)
+        finally:
+            self._service = None
+            self._service_metadata = {}
+            self._service_values = self._service_protected = ()
+
+    def _remember_login_values(self) -> None:
+        """Publication history retains every value, including metadata allowed in a service reply."""
+        self._login_seen = tuple(dict.fromkeys((*self._login_seen, *super()._login_secrets())))
+
+    def _login_secrets(self) -> tuple[bytes, ...]:
+        """Every login value, less -- on a metadata exchange only -- the metadata its reply repeats.
+
+        The runner scans the whole output for what this returns before the spawn,
+        and ``_echoed_login`` reads the same split after it, so the two sides never
+        disagree about which values a reply may carry.
+        """
+        values = super()._login_secrets()
+        if self._service is None:
+            return values
+        metadata = self._reply_metadata()
+        admitted = frozenset().union(*metadata.values())
+        self._service_values = tuple(dict.fromkeys((*self._service_values, *values)))
+        self._service_protected = tuple(dict.fromkeys((*self._service_protected,
+            *(value for value in values if value not in admitted))))
+        for field, samples in metadata.items():
+            self._service_metadata[field] = self._service_metadata.get(field, frozenset()) | samples
+        # A refresh may replace metadata or change a value's role. Keep its old
+        # field provenance, while a protected role on either side always wins.
+        self._service_metadata = {field: frozenset(value for value in samples
+            if not any(value in key or key in value for key in self._service_protected))
+            for field, samples in self._service_metadata.items()}
+        admitted = frozenset().union(*self._service_metadata.values())
+        return tuple(value for value in self._service_values if value not in admitted)
+
+    def _echoed_login(self, output: bytes) -> bool:
+        """A key anywhere, or admitted metadata anywhere but its own field of a verified reply."""
+        if self._service is None:
+            return super()._echoed_login(output)
+        if not output or not self._signed_in_road():
+            return False
+        if any(value in output for value in self._login_secrets()):
+            return True
+        metadata = self._service_metadata
+        for value in frozenset().union(*metadata.values()):
+            # Judge each value at its own fields: masking another metadata
+            # value must not conceal this one inside it.
+            own_fields = {field: frozenset((value,)) for field, samples in metadata.items()
+                          if value in samples}
+            if value in _masked_reply(output, self._service, own_fields):
+                return True
+        return False
+
+    def _reply_metadata(self) -> dict[str, frozenset[bytes]]:
+        home = self._signed_in_road()
+        if not home:
+            return {}
+        (name,) = self.profile.login_credentials
+        return _reply_metadata(login_home.credential_document(home, name))
+
     def _parsed_version(self, output: bytes) -> str | None:
         r"""The semver this parser reads out of a version print, or ``None``.
 
@@ -440,3 +513,99 @@ GROK_AUTH_RPC = SubscriptionRpc(_RPC_ARGV, _RPC_INIT+_RPC_INFO, (1, 2),
 GROK_QUOTA_RPC = SubscriptionRpc(_RPC_ARGV, _RPC_INIT+_RPC_INFO+
     b'{"jsonrpc":"2.0","id":3,"method":"_x.ai/billing","params":{}}\n',
     (1, 2, 3), ("methodId",), "cached_token", _RPC_NOTIFICATIONS)
+_SERVICE_BY_PAYLOAD = MappingProxyType({GROK_AUTH_RPC.payload: GROK_AUTH_RPC,
+                                        GROK_QUOTA_RPC.payload: GROK_QUOTA_RPC})
+#: The id of the auth/info reply in both exchanges above.
+_RPC_INFO_ID = 2
+
+#: The login file is the vendor's `AuthStore`, a map of `GrokAuth` records (SOURCE,
+#: crates/codegen/xai-grok-shell/src/auth/model.rs at PINNED_COMMIT, the commit the
+#: reviewed 1.0.5 prints). These are that record's fields; `key` and `refresh_token`
+#: carry the credential, and a field outside this list is unknown and counts as one.
+GROK_AUTH_FIELDS = (
+    "key", "auth_mode", "create_time", "user_id", "email", "first_name", "last_name",
+    "profile_image_asset_id", "principal_type", "principal_id", "team_id", "team_name",
+    "team_role", "organization_id", "organization_name", "organization_role",
+    "user_blocked_reason", "team_blocked_reasons", "coding_data_retention_opt_out",
+    "has_grok_code_access", "refresh_token", "expires_at", "oidc_issuer", "oidc_client_id")
+GROK_AUTH_CREDENTIALS = ("key", "refresh_token")
+#: auth/info reply field -> the login field whose value it repeats. MEASURED on a real
+#: subscription login (1.0.5, 28.09.2026, names only): these four, and no other reply
+#: field, carried a login value; the image URL carries the asset id inside it.
+GROK_REPLY_METADATA = MappingProxyType({
+    "email": "email", "teamId": "team_id", "principalId": "principal_id",
+    "profileImageUrl": "profile_image_asset_id"})
+#: The leak scan's own floor for a login value (`login_home.credential_values`).
+_SECRET_FLOOR = 12
+
+
+def _strings(value: object) -> list[str]:
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, dict):
+        return [row for item in value.values() for row in _strings(item)]
+    if isinstance(value, list):
+        return [row for item in value for row in _strings(item)]
+    return []
+
+
+def _reply_metadata(document: object) -> dict[str, frozenset[bytes]]:
+    """The login values a verified reply may repeat, by login field.
+
+    A value that equals, holds or sits inside a credential -- or a value of a
+    field the vendor's schema does not name -- is never admitted: the key wins.
+    A file of any other shape admits nothing.
+    """
+    records = list(document.values()) if type(document) is dict else []
+    if not records or any(type(record) is not dict for record in records):
+        return {}
+    keys = [value.encode("utf-8") for record in records for name, item in record.items()
+            if name in GROK_AUTH_CREDENTIALS or name not in GROK_AUTH_FIELDS
+            for value in _strings(item) if len(value) >= _SECRET_FLOOR]
+    admitted: dict[str, set[bytes]] = {}
+    for record in records:
+        for field in GROK_REPLY_METADATA.values():
+            value = record.get(field)
+            if type(value) is not str or len(value) < _SECRET_FLOOR:
+                continue
+            raw = value.encode("utf-8")
+            if not any(raw in key or key in raw for key in keys):
+                admitted.setdefault(field, set()).add(raw)
+    return {field: frozenset(values) for field, values in admitted.items()}
+
+
+def _masked_reply(output: bytes, service: SubscriptionRpc,
+                  metadata: dict[str, frozenset[bytes]]) -> bytes:
+    """The output with admitted metadata blanked in its own auth/info fields -- if verified.
+
+    A transcript the exchange's own decoder refuses is returned whole, so nothing
+    in it is admitted. Only the named reply fields are blanked, and only when they
+    carry their own login field's value; an unknown field or a nested one stays.
+    """
+    try:
+        service.decode(output)
+    except NativeQuotaReadError:
+        return output
+    rows = []
+    for line in output.splitlines():
+        row = json.loads(line)
+        result = row.get("result") if row.get("id") == _RPC_INFO_ID else None
+        if type(result) is dict:
+            result = {name: _mask_value(name, value, metadata)
+                      for name, value in result.items()}
+            line = json.dumps({**row, "result": result}, ensure_ascii=False).encode("utf-8")
+        rows.append(line)
+    return b"\n".join(rows)
+
+
+def _mask_value(name: str, value: object, metadata: dict[str, frozenset[bytes]]) -> object:
+    field = GROK_REPLY_METADATA.get(name)
+    if field is None or type(value) is not str:
+        return value
+    raw = value.encode("utf-8")
+    for known in metadata.get(field, ()):
+        if raw == known:
+            return ""
+        if name == "profileImageUrl" and known in raw:
+            return value.replace(known.decode("utf-8"), "", 1)
+    return value

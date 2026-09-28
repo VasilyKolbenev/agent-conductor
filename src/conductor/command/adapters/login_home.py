@@ -209,6 +209,19 @@ def quota_metadata(home: str, name: str, field: str) -> object:
     return value.get(field) if type(value) is dict else None
 
 
+def credential_document(home: str, name: str) -> object:
+    """One declared login file as parsed JSON, under the leak scan's own bounds, or None.
+
+    For a provider that tells its login file's credential fields from its account
+    metadata by the vendor's own schema. Nothing read here is returned onward or kept.
+    """
+    from .harness_profile import reviewed_login_name
+
+    reviewed_login_name(name, "login credential file")
+    target = Path(home) / name
+    return None if _is_portal(target) else _read_json(target)
+
+
 def _read_json(target: Path) -> object:
     """One bounded read of one named file; anything unreadable answers None."""
     if not _pinned(str(target.parent)):
