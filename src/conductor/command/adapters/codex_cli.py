@@ -532,6 +532,8 @@ class CodexCliTransport(ArtifactAwareTransport):
     profile = CODEX_PROFILE
     error = CodexCliError
     review_enabled = True
+    #: MEASURED live (28.09.2026): the stderr progress log passed 16 KiB; the answer is stdout.
+    dispatch_separate_stderr = True
 
     def quota_connection(self):
         return native_subscription_connection(self, QUOTA_POLICY, QUOTA_RPC)

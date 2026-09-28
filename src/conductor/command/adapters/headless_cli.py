@@ -135,6 +135,9 @@ class HeadlessCliTransport(
     below is the part that must not differ between providers.
     """
 
+    #: Whether a dispatch sends the child's stderr to the null device: set by a CLI whose
+    #: stderr is its progress log and whose stdout is its answer.
+    dispatch_separate_stderr = False
     #: The guards this class's code applies, on the roads its methods are
     #: reached on -- `work_outside_the_item` is `verify`'s own tree comparison.
     isolation_guards = {
@@ -438,7 +441,8 @@ class HeadlessCliTransport(
         outcome = self._attempt(
             argv, work.relative_to(self._workspace.root).as_posix(),
             timeout=request.timeout_seconds, stdin_bytes=payload, model=model,
-            output_limit=OUTPUT_LIMIT_BYTES[args.output_limit_profile])
+            output_limit=OUTPUT_LIMIT_BYTES[args.output_limit_profile],
+            separate_stderr=self.dispatch_separate_stderr)
         self._attempts[attempt_relation(request)] = _Attempt(
             work_dir=work, before=before, after=self._evidence(),
             retained=bool(self._retained))

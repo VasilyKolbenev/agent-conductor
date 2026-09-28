@@ -66,6 +66,7 @@ from conductor.command.adapters.grok_build import GrokBuildError
 from conductor.command.adapters.headless_cli import (
     TASK_CHANNEL_STDIN,
     ExecutablePin,
+    HeadlessCliTransport,
 )
 from conductor.command.adapters.process import (
     STDIN_DELIVERED,
@@ -671,3 +672,15 @@ def test_no_catalogued_provider_is_a_fixture_any_more(tmp_path):
         provider_id for provider_id, entry in PROVIDER_CATALOG.items()
         if "review" in entry.capabilities]
     assert reviewers == ["claude-code", "codex"]
+
+
+def test_a_dispatch_keeps_the_progress_log_on_stderr_out_of_the_bounded_answer(tmp_path):
+    """MEASURED live (28.09.2026): a real `codex exec` writes its progress log on stderr and its
+    answer on stdout, and on a small task the log passed the 16 KiB capture bound, so a merged
+    capture failed a dispatch that had done its work. On this road stderr now goes to the null
+    device, as it already does on the review road, and the answer alone meets the bound."""
+    adapter, _root, _log = a_harness(tmp_path, **{_fakecodex.EMIT_STDERR: "p" * (20 * 1024)})
+    receipt = run_once(adapter, a_request())
+    assert receipt.outcome == "succeeded", receipt.detail
+    assert CodexCliTransport.dispatch_separate_stderr is True
+    assert HeadlessCliTransport.dispatch_separate_stderr is False
