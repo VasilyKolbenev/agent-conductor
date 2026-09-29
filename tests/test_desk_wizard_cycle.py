@@ -21,11 +21,12 @@ DATA = {"flows": FLOWS, "workflows": fixture("wizard", "workflows.json"),
         "unpinned": fixture("wizard", "project_cycle_none.json"),
         "git": fixture("wizard", "git_repo.json"),
         "none": fixture("wizard", "flow_state_none.json")}
-#: A wizard standing on the cycle step: `atCycle` has asked nothing yet, `settled` has read the
-#: three answers a preselection needs, `answer` hands one ask's outcome back to the reducer,
+#: A wizard standing on the cycle step: `atCycle` has read the project's git (step 2 holds while
+#: it is unread) and moved on, `settled` has read the three answers a preselection needs,
+#: `answer` hands one ask's outcome back to the reducer,
 #: `picks` chooses a card and answers its first read, so the write it made due is `asks[0]`.
 CYCLE = PRELUDE + """
-const atCycle = (over = {}) => run(started(over), {type: "next"});
+const atCycle = (over = {}) => run(reply(opened(started(over)), "git", d.git), {type: "next"});
 const answer = (state, ask, result) => wiz.reduceWizard(state, {type: "answered", ask, result});
 const ok = (payload) => ({status: "accepted", payload});
 const settled = (pin = d.pinned, runs = d.runs, workflows = d.workflows) => {
@@ -527,9 +528,52 @@ def test_the_cycle_step_is_complete_only_with_a_chosen_card_whose_flow_landed_an
     assert out["refusal"]["diagnostics"][0]["code"] == "final_gate_missing"
 
 
+def test_next_is_enabled_only_when_moving_on_would_not_be_refused_and_names_the_failing_step():
+    out = run_js(CYCLE + """
+      const ready = () => land(settled(d.unpinned), drafted(d.flows.standard));
+      const dropped = (state) => wiz.reduceWizard(state, {type: "reread", name: "git"});
+      const gitAnswer = (state, result) => wiz.reduceWizard(state, {type: "answered",
+        ask: askOf(state, "git"), result});
+      const scenarios = {ready: ready(), git_dropped: dropped(ready()),
+        git_not_repo_root: gitAnswer(dropped(ready()), ok(d.roots)),
+        git_unsupported: gitAnswer(dropped(ready()), ok(d.unsupported)),
+        git_failed: gitAnswer(dropped(ready()), {status: "refused", code: "store_error"}),
+        title_cleared: wiz.reduceWizard(ready(), {type: "edit-title", value: ""})};
+      show(Object.fromEntries(Object.entries(scenarios).map(([name, state]) => {
+        const gate = wiz.canAdvance(state), after = wiz.reduceWizard(state, {type: "next"});
+        return [name, {ok: gate.ok, reason: gate.reason, step: gate.step,
+          moved: after.step !== state.step}];
+      })));
+    """, {**DATA, "roots": fixture("wizard", "git_not_repo_root.json"),
+          "unsupported": fixture("wizard", "git_unsupported.json")})
+    assert out["ready"] == {"ok": True, "reason": None, "step": "cycle", "moved": True}
+    for name, reason, step in (("git_dropped", "git_reading", "materials"),
+                               ("git_not_repo_root", "git_stops", "materials"),
+                               ("git_unsupported", "git_stops", "materials"),
+                               ("git_failed", "git_failed", "materials"),
+                               ("title_cleared", "title_invalid", "task")):
+        assert out[name] == {"ok": False, "reason": reason, "step": step, "moved": False}, name
+    assert all(row["ok"] == row["moved"] for row in out.values()), "Next never outruns moveTo"
+
+
+def test_a_passed_step_whose_gate_fails_again_is_shown_as_needing_attention():
+    out = run_js(CYCLE + """
+      const ready = land(settled(d.unpinned), drafted(d.flows.standard));
+      const lost = wiz.reduceWizard(ready, {type: "reread", name: "git"});
+      const rows = (state) => wiz.stepStates(state).map((row) =>
+        [row.step, row.status, row.reason]);
+      show({ready: rows(ready), lost: rows(lost)});
+    """, DATA)
+    assert out["ready"][:4] == [["task", "done", None], ["materials", "done", None],
+                                ["cycle", "current", None], ["roles", "ready", None]]
+    assert out["lost"] == [["task", "done", None], ["materials", "attention", "git_reading"],
+                           ["cycle", "current", None], ["roles", "blocked", "git_reading"],
+                           ["prepare", "later", None], ["run", "later", None]]
+
+
 def test_flow_asks_wait_for_the_cycle_step_and_the_cycle_step_publishes_the_next_revision():
     out = run_js(CYCLE + """
-      let early = opened(started());
+      let early = reply(opened(started()), "git", d.git);
       for (const [name, payload] of [["workflows", d.workflows], ["runs", d.runs],
           ["cycle_read", d.unpinned], ["tasks", d.tasks]]) early = reply(early, name, payload);
       const arrived = wiz.stepWizard(early, {type: "next"});

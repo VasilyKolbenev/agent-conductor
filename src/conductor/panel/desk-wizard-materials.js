@@ -145,11 +145,16 @@ function exitsOf(state, starter) {
 }
 
 const COMMANDS = Object.freeze({unsafe_directory: "safe_directory", unavailable: "pin_git"});
+//: A read that has not landed, or has failed, is not a fact about the project, so the step holds
+//: (a failed read offers to be read again). It is judged before the starter's own stop, which
+//: would say "no repository" about a repository nobody has looked at yet.
+const HOLDS = Object.freeze({reading: "git_reading", failed: "git_failed"});
 
 //: What the step says about where the agents get their code, from the one git read and the
 //: mode. `stop` is why the step cannot be left, `blocks` whether it cannot: a state that ends
-//: the wizard, or a starter that has no repository yet (in view, git waits for activation and
-//: the starter goes on to be queued). No state is guessed: an unread or failed read is its own.
+//: the wizard, a read still out or lost, or a starter that has no repository yet (in view, git
+//: waits for activation and the starter goes on to be queued). No state is guessed: an unread
+//: or failed read is its own.
 export function gitFacts(read, mode) {
   const starter = mode.starterId !== null;
   let state = "reading", git = null;
@@ -160,7 +165,8 @@ export function gitFacts(read, mode) {
   } else if (mode.view) state = "not_active";
   const ends = ENDS_THE_WIZARD.includes(state);
   const needsGit = starter && !mode.view && state !== "repo";
-  const stop = ends ? "git_stops" : needsGit ? "starter_needs_git" : null;
+  const held = Object.hasOwn(HOLDS, state) ? HOLDS[state] : null;
+  const stop = ends ? "git_stops" : held ?? (needsGit ? "starter_needs_git" : null);
   return {state, sentence: state, params: git === null ? {} : paramsOf(git),
     exits: state === "failed" ? ["reread"] : exitsOf(state, starter), blocks: stop !== null,
     stop, command: COMMANDS[state] ?? null};

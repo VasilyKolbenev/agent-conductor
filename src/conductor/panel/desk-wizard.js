@@ -86,7 +86,7 @@ function head(ctx) {
 function stepRow(ctx, row, at) {
   const label = `${at + 1}. ${ctx.t(`wizard.step.${row.step}`)}`;
   const built = BUILT_STEPS.includes(row.step);
-  const openable = built && ["current", "done", "ready"].includes(row.status);
+  const openable = built && ["current", "done", "ready", "attention"].includes(row.status);
   const note = row.status === "later" ? ctx.t("wizard.step_later")
     : ctx.t(`wizard.step_${row.status === "current" ? "now" : row.status}`);
   const why = row.status === "blocked" && row.reason !== null
@@ -104,11 +104,21 @@ function stepper(ctx) {
     stepStates(ctx.wizard).map((row, at) => stepRow(ctx, row, at)));
 }
 
-//: Back is always there past the first step. Next is enabled only while the step is complete, and
-//: says why when it is not; the last built step offers "prepare" as a control that waits.
+//: The reason a gate gives, said with its step when it is not the one the owner stands on: an
+//: earlier step can fail again after it was left, and "this is not complete" must not sound
+//: like it is about the screen in front of them.
+function gateWords(ctx, gate) {
+  const words = ctx.t(`wizard.reason.${gate.reason}`);
+  return gate.step === ctx.wizard.step ? words : ctx.t("wizard.reason.earlier",
+    {step: ctx.t(`wizard.step.${gate.step}`), reason: words});
+}
+
+//: Back is always there past the first step. Next is enabled only while this step and every step
+//: before it are complete, and says why when they are not; the last built step offers "prepare"
+//: as a control that waits.
 function foot(ctx) {
   const wizard = ctx.wizard, gate = canAdvance(wizard), following = nextStep(wizard);
-  const why = gate.ok ? "" : ctx.t(`wizard.reason.${gate.reason}`);
+  const why = gate.ok ? "" : gateWords(ctx, gate);
   const back = wizard.step === BUILT_STEPS[0] ? []
     : [action("wizard:back", ctx.t("wizard.back"), () => ctx.send({type: "back"}))];
   const primary = following === null

@@ -18,7 +18,8 @@ DATA = {
     "document": fixture("wizard", "document.json"),
 }
 SPEC = "d-1f0a9c3e5b7d2468a1f0a9c3e5b7d246"
-#: Helpers for a state that has read the project's documents and holds some cards.
+#: Helpers for a state that has read the project's documents and holds some cards (`onGit` has
+#: read a repository too: step 2 holds while git is unread, so a gate measured without it says so).
 CARDS = PRELUDE + """
 const withDocuments = (state) => {
   const asked = wiz.stepWizard(state, {type: "material-add", kind: "project_doc"});
@@ -29,6 +30,7 @@ const addDoc = (state, docId = "d-1f0a9c3e5b7d2468a1f0a9c3e5b7d246") =>
 const note = (title = "Idea", content = "Some text.") => [
   {type: "material-add", kind: "note", title, content}];
 const keys = (state) => state.materials.items.map((item) => item.key);
+const onGit = () => reply(opened(), "git", d.git.repo);
 """
 
 
@@ -96,8 +98,8 @@ def test_the_thirteenth_material_is_refused_and_the_twelfth_is_accepted():
 def test_a_document_over_the_byte_limit_is_flagged_and_the_hint_offers_a_link():
     out = run_js(CARDS + """
       const huge = "я".repeat(30000);
-      const plain = run(opened(), ...note("Long", huge));
-      let copy = addDoc(withDocuments(opened()));
+      const plain = run(onGit(), ...note("Long", huge));
+      let copy = addDoc(withDocuments(onGit()));
       const key = keys(copy)[0];
       copy = run(copy, {type: "material-mode", key, mode: "copy"});
       copy = reply(copy, "document", {...d.document, content: huge}, {subject: d.document.doc_id});
@@ -117,7 +119,7 @@ def test_a_document_over_the_byte_limit_is_flagged_and_the_hint_offers_a_link():
 
 def test_a_project_document_as_a_link_carries_no_text_and_as_a_copy_carries_its_text():
     out = run_js(CARDS + """
-      const first = addDoc(withDocuments(opened()));
+      const first = addDoc(withDocuments(onGit()));
       const key = keys(first)[0];
       const item = (state) => wiz.materialsBody(state, "en").items[0];
       const asked = wiz.stepWizard(first, {type: "material-mode", key, mode: "copy"});
@@ -200,11 +202,37 @@ def test_git_reading_says_it_is_reading_or_could_not_read_and_never_guesses_a_st
       show({not_yet_asked: shown(started()), reading: shown(opened()), failed: shown(failed),
         lost: shown(lost), code: failed.reads.git.code});
     """, DATA)
-    assert out["not_yet_asked"] == ["reading", "reading", [], False]
-    assert out["reading"] == ["reading", "reading", [], False]
-    assert out["failed"] == ["failed", "failed", ["reread"], False]
-    assert out["lost"] == ["failed", "failed", ["reread"], False]
+    assert out["not_yet_asked"] == ["reading", "reading", [], True]
+    assert out["reading"] == ["reading", "reading", [], True]
+    assert out["failed"] == ["failed", "failed", ["reread"], True]
+    assert out["lost"] == ["failed", "failed", ["reread"], True]
     assert out["code"] == "store_error"
+
+
+def test_step_two_holds_while_git_is_unread_or_failed_and_says_which():
+    out = run_js(CARDS + """
+      const starter = () => run(open({starterId: "desk-starter-docs"}),
+        {type: "edit-title", value: "Notes"}, {type: "edit-idea", value: "An app."},
+        {type: "next"});
+      const gate = (state) => wiz.canAdvance(state).reason;
+      const lost = {status: "refused", code: "store_error"};
+      show({unread: gate(started()), reading: gate(opened()),
+        failed: gate(reply(opened(), "git", null, lost)),
+        lost: gate(reply(opened(), "git", null, {status: "unknown"})),
+        repo: gate(reply(opened(), "git", d.git.repo)),
+        starter_reading: gate(opened(starter())),
+        starter_failed: gate(reply(opened(starter()), "git", null, lost)),
+        starter_repo: gate(reply(opened(starter()), "git", d.git.repo)),
+        view_without_a_read: gate(opened(started({viewMode: true}))),
+        view_failed: gate(reply(opened(started({viewMode: true})), "git", null, lost)),
+        reread: gate(wiz.reduceWizard(reply(opened(), "git", d.git.repo),
+          {type: "reread", name: "git"}))});
+    """, DATA)
+    assert out == {"unread": "git_reading", "reading": "git_reading", "failed": "git_failed",
+                   "lost": "git_failed", "repo": None, "starter_reading": "git_reading",
+                   "starter_failed": "git_failed", "starter_repo": None,
+                   "view_without_a_read": None, "view_failed": "git_failed",
+                   "reread": "git_reading"}
 
 
 @pytest.mark.parametrize("mode", ["normal", "starter", "view"])
@@ -247,7 +275,7 @@ def test_starter_mode_without_git_stops_and_offers_only_connect_git():
     assert out["not_git"] == [["connect_git"], True, "starter_needs_git"]
     assert out["unborn"] == [["first_commit"], True, "starter_needs_git"]
     assert out["repo"] == [[], False, None]
-    assert out["reading"] == [[], True, "starter_needs_git"]
+    assert out["reading"] == [[], True, "git_reading"], "not yet read is not 'no repository'"
     assert out["normal_not_git"] == [["connect_git", "run_without_git"], False, None]
     assert out["in_view"] == [["connect_git"], False, None]
     assert out["in_view_without_git"][1:] == [False, None]
@@ -355,7 +383,7 @@ def test_the_document_picker_closes_without_adding_anything_and_asks_nothing_mor
 
 def test_the_materials_step_is_complete_only_with_finished_cards_within_the_limits():
     out = run_js(CARDS + """
-      const base = opened();
+      const base = onGit();
       const gate = (...events) => wiz.canAdvance(run(base, ...events)).reason;
       show({none: gate(), blank_content: gate({type: "material-add", kind: "plan", title: "P"}),
         blank_title: gate({type: "material-add", kind: "plan", content: "x"}),
@@ -394,7 +422,7 @@ def test_closing_with_materials_asks_for_confirmation_and_keeping_them_cancels_t
 
 def test_materials_publish_the_composed_body_and_a_seed_request_that_waits_for_a_later_slice():
     out = run_js(CARDS + """
-      const state = run(opened(), ...note("Idea", "Try X."));
+      const state = run(onGit(), ...note("Idea", "Try X."));
       const rows = wiz.publications(state, "en");
       show({steps: rows.map((row) => row.step), materials: rows[1]});
     """, DATA)

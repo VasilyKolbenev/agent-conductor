@@ -23,6 +23,7 @@ export const WIZARD_COPY = Object.freeze({
   "wizard.step_done": ["done", "пройден"],
   "wizard.step_ready": ["can be opened", "можно открыть"],
   "wizard.step_blocked": ["not available yet", "пока недоступен"],
+  "wizard.step_attention": ["needs another look", "нужно проверить ещё раз"],
   "wizard.why_not": ["Why this is not available:", "Почему это недоступно:"],
   // -- step 1: the task -----------------------------------------------------------------
   "wizard.task.title": ["Task name", "Название задачи"],
@@ -88,6 +89,13 @@ export const WIZARD_COPY = Object.freeze({
     "Подготовка запуска появится позже."],
   "wizard.reason.git_stops": ["This project cannot be used; see the note at the top of the step.",
     "Этот проект использовать нельзя: см. пояснение вверху шага."],
+  "wizard.reason.earlier": ["Step “{step}” is not complete: {reason}",
+    "Шаг «{step}» не завершён: {reason}"],
+  "wizard.reason.git_reading": ["Reading the project's git state…",
+    "Читаем состояние git проекта…"],
+  "wizard.reason.git_failed": ["The git state could not be read: read it again with the button "
+    + "at the top of the step.", "Не удалось прочитать состояние git: прочитайте ещё раз кнопкой "
+    + "вверху шага."],
   "wizard.reason.starter_needs_git": ["This mode needs a git repository first.",
     "Для этого режима сначала нужен git-репозиторий."],
   // -- step 2: the materials ------------------------------------------------------------

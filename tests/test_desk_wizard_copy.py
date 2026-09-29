@@ -122,7 +122,7 @@ def test_every_code_a_gate_refusal_or_note_returns_is_in_its_closed_list():
         for body in re.findall(r"function \w*Gate\(state\) \{\n(.*?)\n\}\n", text[name], re.S):
             for returned in re.findall(r"return ([^;]*);", body):
                 gates += re.findall(r'"([a-z]+_[a-z_]+)"', returned)
-    stops = re.findall(r'"(git_stops|starter_needs_git)"', text["desk-wizard-materials.js"])
+    stops = re.findall(r'"(git_[a-z]+|starter_needs_git)"', text["desk-wizard-materials.js"])
     refusals = re.findall(r'refuse\(state, "([a-z_]+)"\)', text["desk-wizard-model.js"])
     blocked = re.findall(r'"(document_not_text|read_failed)"', text["desk-wizard-model.js"])
     notes = re.findall(r'notes(?:\.push\(|, )"([a-z_]+)"', text["desk-wizard-roles.js"])

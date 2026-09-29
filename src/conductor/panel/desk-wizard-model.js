@@ -56,8 +56,8 @@ export const suggestAssignment = suggest;
 //: in the catalogue, and a guard holds this list to the codes the gates really return.
 export const REASONS = Object.freeze([
   "title_invalid", "brief_empty", "idea_empty", "brief_too_large",
-  "git_stops", "starter_needs_git", "materials_over_count", "material_incomplete",
-  "materials_over_bytes",
+  "git_stops", "git_reading", "git_failed", "starter_needs_git", "materials_over_count",
+  "material_incomplete", "materials_over_bytes",
   "cycle_none", "flow_pending", "flow_conflict", "flow_changed_elsewhere", "flow_refused",
   "flow_unknown", "flow_unpublishable",
   "no_providers", "roster_pending", "roles_unassigned", "instruction_empty",
@@ -287,13 +287,22 @@ export function nextStep(state) {
   return BUILT_STEPS[BUILT_STEPS.indexOf(state.step) + 1] ?? null;
 }
 
-//: Whether the current step is complete, and if not, the code that says why. It does not say
-//: whether a step follows: the last built step is complete and still has nowhere to go.
+//: Whether the wizard may leave the current step, and if not, the code that says why and the step
+//: it belongs to: the first gate that fails among the steps up to and including this one, which
+//: is exactly what `moveTo` refuses on, so Next is never enabled where pressing it does nothing.
+//: An earlier step can fail again after it was left (a read lands late), and then it, not the
+//: current step, is what stands in the way. It does not say whether a step follows: the last
+//: built step is complete and still has nowhere to go.
 export function canAdvance(state) {
-  const reason = gateOf(state, state.step);
-  return Object.freeze({ok: reason === null, reason});
+  for (const step of BUILT_STEPS.slice(0, BUILT_STEPS.indexOf(state.step) + 1)) {
+    const reason = gateOf(state, step);
+    if (reason !== null) return Object.freeze({ok: false, reason, step});
+  }
+  return Object.freeze({ok: true, reason: null, step: state.step});
 }
 
+//: One row per step. A step before the current one whose gate fails again is `attention`, never
+//: `done`: the owner can open it (it is behind them) and sees why.
 export function stepStates(state) {
   const at = STEPS.indexOf(state.step);
   let blocker = null;
@@ -303,9 +312,11 @@ export function stepStates(state) {
     let status = "later";
     if (built) {
       if (index === at) status = "current";
-      else status = index < at ? "done" : blocker === null ? "ready" : "blocked";
+      else if (index < at) status = failing === null ? "done" : "attention";
+      else status = blocker === null ? "ready" : "blocked";
     }
-    const reason = status === "blocked" ? blocker : status === "current" ? failing : null;
+    const reason = status === "blocked" ? blocker
+      : status === "current" || status === "attention" ? failing : null;
     if (built && blocker === null && failing !== null) blocker = failing;
     return frozen({step, status, reason});
   }));

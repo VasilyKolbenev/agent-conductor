@@ -16,6 +16,7 @@ FLOWS = {"standard": fixture("flow", "desk-standard.flow-state.json"),
          "dalio": fixture("flow", "dalio-v5.flow-state.json")}
 DATA = {"flows": FLOWS, "workflows": fixture("wizard", "workflows.json"),
         "served": fixture("wizard", "workflows_served.json"),
+        "git": fixture("wizard", "git_repo.json"),
         "runs": fixture("wizard", "runs.json"), "tasks": fixture("wizard", "tasks.json"),
         "unpinned": fixture("wizard", "project_cycle_none.json"),
         "pinned": fixture("wizard", "project_cycle.json"),
@@ -36,7 +37,8 @@ const pin = (id) => ({pinned: {workflow_id: id, latest_revision: 1, set_by: "Ð’Ñ
 const reads = (state, over = {}) => Object.entries({workflows: d.workflows, runs: d.runs,
   cycle_read: d.unpinned, tasks: d.tasks, quotas: d.quotas, ...over})
   .reduce((now, [name, payload]) => reply(now, name, payload), state);
-const atCycle = (over = {}) => reads(opened(run(started(), {type: "next"})), over);
+const atCycle = (over = {}) => reads(run(reply(opened(started()), "git", d.git),
+  {type: "next"}), over);
 const atRoles = (over = {}, flow = d.flows.standard) =>
   wiz.reduceWizard(land(atCycle(over), flowOf(flow)), {type: "next"});
 const standardAt = (id, base = d.flows.standard) => atRoles({cycle_read: pin(id)}, base);

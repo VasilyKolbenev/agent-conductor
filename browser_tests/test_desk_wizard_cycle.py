@@ -246,6 +246,47 @@ def test_a_racing_window_makes_the_owner_try_again_and_the_retry_writes_the_fres
 
 
 @pytest.mark.parametrize("lang", LANGS)
+def test_git_lost_after_step_two_disables_next_names_that_step_and_the_stepper_reopens_it(
+        bench, lang):
+    to_step(bench, lang, "cycle", reads=reads())
+    expect(bench.control("wizard:next")).to_be_enabled()
+    bench.page.evaluate("() => { window.host.auto.git = {}; }")
+    bench.dispatch(type="reread", name="git")
+    step = bench.say("wizard.step.materials")
+    line = bench.page.locator("[data-wizard-reason]")
+    expect(line).to_have_text(bench.say(
+        "wizard.reason.earlier", step=step, reason=bench.say("wizard.reason.git_reading")))
+    assert bench.control("wizard:next").is_disabled()
+    row = bench.page.locator('[data-wizard-step="materials"]')
+    assert row.get_attribute("data-status") == "attention", "not shown as done"
+    assert bench.say("wizard.step_attention") in row.inner_text()
+    bench.answer("git", fixture("wizard", "git_not_repo_root.json"))
+    expect(line).to_have_text(bench.say(
+        "wizard.reason.earlier", step=step, reason=bench.say("wizard.reason.git_stops")))
+    assert bench.control("wizard:next").is_disabled()
+    bench.control("wizard:step:materials").click()
+    expect(bench.root()).to_have_attribute("data-step", "materials")
+    assert bench.page.locator("[data-wizard-reason]").inner_text() == bench.say(
+        "wizard.reason.git_stops"), "on its own step the reason has no prefix"
+    assert bench.problems == []
+
+
+@pytest.mark.parametrize("lang", LANGS)
+def test_a_failed_git_read_holds_step_two_and_reading_it_again_lets_the_owner_go_on(bench, lang):
+    refused = {"status": "refused", "code": "store_error", "payload": None}
+    to_step(bench, lang, "materials", reads=wizard_reads(git={"*": refused}))
+    expect(bench.page.locator("[data-wizard-reason]")).to_have_text(
+        bench.say("wizard.reason.git_failed"))
+    assert bench.control("wizard:next").is_disabled()
+    bench.page.evaluate("(fixed) => { window.host.auto.git = {'*': fixed}; }",
+                        ok(fixture("wizard", "git_repo.json")))
+    bench.control("wizard:git:reread").click()
+    expect(bench.control("wizard:next")).to_be_enabled()
+    assert bench.page.locator("[data-wizard-reason]").inner_text() == ""
+    assert bench.problems == []
+
+
+@pytest.mark.parametrize("lang", LANGS)
 def test_a_published_card_offers_make_project_cycle_and_it_is_disabled_with_its_reason(bench, lang):
     to_step(bench, lang, "cycle", reads=reads())
     pin = bench.control("wizard:cycle:pin:desk-standard")
