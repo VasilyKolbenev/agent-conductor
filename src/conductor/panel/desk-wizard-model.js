@@ -27,7 +27,9 @@
 //   materials {items, counter, picker, refusal, includeInstructions},
 //   cycle {choice, chosenBy, generation, flow, flowFor, flowGeneration, draft, status, refusal,
 //          settled, boundKey},  (draft: what the last flow answer said about the standing draft)
-//   roles {owner, instructions}, history {runs, revisions}.
+//   roles {owner, instructions}, history {runs, revisions},
+//   run {phase, pressed, lang, settled, done, attempts, seq, prep, ...}: the chain of step 5
+//   (`desk-wizard-prep.js` says what each field is).
 import {taskTitle, isTaskId} from "./studio-tasks-model.js";
 import {GIT_EXITS, GIT_SENTENCES, MATERIAL_KINDS, REFUSALS, bodyOf, documentCard, estimateOf,
   gitFacts, instructionsRow, isComplete, isDocumentRow, isMaterialKind, isOid, pickerOf,
@@ -36,12 +38,15 @@ import {WIZARD_STARTERS, cardsOf, factsOf, flowBody, isFlowState, preselect}
   from "./desk-wizard-cycle.js";
 import {NOTES, QUOTA_REASONS, ROLE_KINDS, argvFit, offersFor, quotaOf, roleKind, rolesOf,
   rosterOf, rosterState, suggest} from "./desk-wizard-roles.js";
-import {BUILT_STEPS, LIMITS, STEPS, briefDocument, evolve, frozen, inputChars, taskText,
-  utf8Bytes} from "./desk-wizard-base.js";
+import {BUILT_STEPS, FILL_STEPS, LIMITS, STEPS, briefDocument, evolve, frozen, inputChars,
+  isLanguage, taskText, utf8Bytes} from "./desk-wizard-base.js";
 import {answerHistory, assignRole, assignmentView, bindingNow, editInstruction, hasProviders,
   historyAsks, instructionFields, likeInstruction, ownInstruction,
   previousAssignment, rolesGate, rolesPublication, rosterStatus, syncBinding}
   from "./desk-wizard-team.js";
+import {runInput} from "./desk-wizard-input.js";
+import {adoptRun, bumpRun, chainAsks, initialRun, landChain, linkStates, retryChain, startChain}
+  from "./desk-wizard-prep.js";
 
 //: The one starter the hash may name (spec 4.5.2). The two ready cycles the wizard offers as
 //: cards are the cycle module's, re-exported here as the wizard's one vocabulary.
@@ -62,7 +67,7 @@ export const REASONS = Object.freeze([
   "flow_unknown", "flow_unpublishable",
   "no_providers", "roster_pending", "roles_unassigned", "instruction_empty",
   "instruction_too_large",
-  "instruction_argv_over", "binding_pending", "binding_rows"]);
+  "instruction_argv_over", "binding_pending", "binding_rows", "seed_needs_git"]);
 //: The controls whose door a later slice opens. Each is drawn disabled with its reason and
 //: never as a button that does nothing.
 export const LATER = Object.freeze(["connect_git", "first_commit", "run_without_git",
@@ -108,7 +113,7 @@ export function initialWizard(opening) {
       flow: null, flowFor: null, flowGeneration: -1, draft: null, status: "idle",
       refusal: null, settled: [], boundKey: "null"},
     roles: {owner: {}, instructions: {}},
-    history: {runs: {}, revisions: {}}});
+    history: {runs: {}, revisions: {}}, run: initialRun()});
 }
 
 // -- step 1: the task ------------------------------------------------------------------
@@ -331,6 +336,44 @@ function moveTo(state, step) {
   return to > at && held ? state : evolve(state, {step});
 }
 
+// -- step 5: the chain -----------------------------------------------------------------
+
+//: The plain facts the chain is built from, in the language the owner pressed the button in.
+function chainInput(state, lang = state.run.lang) {
+  const flow = state.cycle.flow;
+  const next = flow !== null && Number.isSafeInteger(flow.next_revision) ? flow.next_revision
+    : null;
+  const request = next === null ? null : flowWriteRequest(state, {publish: next, binding: null});
+  return runInput(state, lang, request);
+}
+
+//: Whether the chain may begin: the four steps are complete, and a cycle whose steps work in a
+//: folder has a repository to seed it from (the ways out for a project without one are later
+//: slices, so the reason is said, not skipped).
+export function prepareGate(state) {
+  for (const step of FILL_STEPS) {
+    const reason = gateOf(state, step);
+    if (reason !== null) return Object.freeze({ok: false, reason, step});
+  }
+  const input = chainInput(state);
+  const blocked = input.dispatch ? input.seed.blocked : null;
+  return Object.freeze({ok: blocked === null, reason: blocked,
+    step: blocked === null ? null : "prepare"});
+}
+
+//: One row per link of the chain, with where it stands.
+export function chainLinks(state) {
+  return Object.freeze(linkStates(state.run, chainInput(state)));
+}
+
+function withRun(state, run) {
+  return run === state.run ? state : evolve(state, {run});
+}
+
+function chainWanted(state) {
+  return state.run.pressed ? chainAsks(state.run, chainInput(state)) : [];
+}
+
 //: What each step would publish once the chain of later slices sends it. The chain runs in
 //: order, so a step publishes only when it and every step before it is complete, and no
 //: descriptor carries an id the chain has yet to make.
@@ -400,7 +443,7 @@ function cycleAsks(state) {
 export function wantedAsks(state) {
   if (!state.opened) return [];
   return [...OPENING_READS.map(([name, target]) => readAsk(name, target)),
-    ...materialAsks(state), ...cycleAsks(state), ...historyAsks(state)];
+    ...materialAsks(state), ...cycleAsks(state), ...historyAsks(state), ...chainWanted(state)];
 }
 
 function readOf(result) {
@@ -478,8 +521,15 @@ function answerDocument(state, ask, result) {
     final ? reason : "read_failed");
 }
 
+//: The asks of the chain: each answer is folded into the `run` slice by `desk-wizard-prep.js`.
+const CHAIN_ASKS = Object.freeze(["prep_read", "prep_task", "prep_seed", "prep_flow",
+  "prep_flow_read", "prep_run", "prep_doc", "prep_materials", "preview"]);
+const landed = (state, ask, result) => withRun(state,
+  landChain(state.run, chainInput(state), ask, result));
+
 const ANSWERS = {...Object.fromEntries([...READ_NAMES, "documents"]
-  .map((name) => [name, answerRead(name)])), document: answerDocument,
+  .map((name) => [name, answerRead(name)])),
+  ...Object.fromEntries(CHAIN_ASKS.map((name) => [name, landed])), document: answerDocument,
   previous_run: answerHistory("runs"), previous_revision: answerHistory("revisions"),
   flow: (state, ask, result) => landFlow(state, ask, result, true),
   flow_read: (state, ask, result) => landFlow(state, ask, result, false)};
@@ -627,6 +677,11 @@ const HANDLERS = {
     && state.materials.includeInstructions !== event.value
     ? evolve(state, {materials: {...state.materials, includeInstructions: event.value}})
     : state),
+  "prepare-start": (state, event) => (isLanguage(event.lang) && prepareGate(state).ok
+    ? withRun(state, startChain(state.run, chainInput(state, event.lang), event.lang)) : state),
+  "prepare-retry": (state) => withRun(state, retryChain(state.run)),
+  "prepare-adopt": (state) => withRun(state, adoptRun(state.run)),
+  "prepare-bump": (state) => withRun(state, bumpRun(state.run)),
   "close-request": (state) => (closeNeedsWarning(state) && state.closing === null
     ? evolve(state, {closing: "confirm"}) : state),
   "close-cancel": (state) => (state.closing === null ? state : evolve(state, {closing: null})),

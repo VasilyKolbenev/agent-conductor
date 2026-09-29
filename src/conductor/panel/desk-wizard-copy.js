@@ -388,6 +388,10 @@ export const WIZARD_COPY = Object.freeze({
     "Указание не помещается в командную строку харнесса: выберите другой харнесс."],
   "wizard.reason.binding_pending": ["The server is checking the assignment…",
     "Сервер проверяет расстановку…"],
+  "wizard.reason.seed_needs_git": ["The agents work on a copy of the project's git repository, "
+    + "and this project has none the wizard can read: connect git or run without git (both "
+    + "come in a later step).", "Агенты работают над копией git-репозитория проекта, а "
+    + "здесь его нет: подключите git или запустите без git (обе кнопки появятся позже)."],
   "wizard.reason.binding_rows": ["The server says a harness cannot carry out its role: see the "
     + "checks.", "Сервер сообщает, что харнесс не может выполнить роль: смотрите проверки."],
 });
