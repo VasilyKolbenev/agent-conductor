@@ -1,0 +1,88 @@
+"""Real git repositories in a temporary folder, and a reader that runs git through the real runner.
+
+The tests of the project's documents and of the materials door read a repository the way the
+product does: through `project_git.process_git_read` over a `ProcessRunner`, with an environment
+that cannot see the account's git configuration. `Script` is the other kind of witness, a reader
+that answers from a table and records every call, so each branch and each argument is judged
+without git.
+"""
+from __future__ import annotations
+
+import os
+import shutil
+import subprocess
+from pathlib import Path
+
+import pytest
+
+from conductor.command import project_git
+from conductor.command.adapters.process import ProcessRunner
+
+GIT = shutil.which("git")
+needs_git = pytest.mark.skipif(GIT is None, reason="git is not installed")
+ISOLATED = {"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1", "LC_ALL": "C"}
+KEPT = ("SystemRoot", "PATH", "HOME", "USERPROFILE", "TEMP", "TMP")
+IDENTITY = ("-c", "user.name=Tester", "-c", "user.email=tester@example.invalid",
+            "-c", "commit.gpgsign=false", "-c", "core.autocrlf=false")
+
+
+class Script:
+    """A git reader that answers from a table and records what it was asked."""
+
+    def __init__(self, *answers):
+        self.answers, self.calls = list(answers), []
+
+    def __call__(self, args, separate_stderr=False):
+        self.calls.append((tuple(args), separate_stderr))
+        return self.answers.pop(0)
+
+
+def said(output=b"", code=0, **flags):
+    return project_git.GitAnswer(exit_code=code, output=output, **flags)
+
+
+def git(*args, cwd, check=True):
+    """Run the real git in `cwd` with the account's configuration out of sight."""
+    done = subprocess.run([GIT, *IDENTITY, *args], cwd=cwd, env={**os.environ, **ISOLATED},
+                          capture_output=True)
+    assert not check or done.returncode == 0, done.stderr.decode(errors="replace")
+    return done
+
+
+def real_reader(tmp_path):
+    """A reader over the real runner, standing in a folder of its own."""
+    home = tmp_path / "runner-home"
+    (home / "cwd").mkdir(parents=True, exist_ok=True)
+    runner = ProcessRunner(home, environ={name: os.environ[name] for name in KEPT
+                                          if name in os.environ})
+    return project_git.process_git_read(runner, GIT, str(home / "cwd"), env_allow=KEPT,
+                                        env=ISOLATED)
+
+
+def repository(tmp_path, name="repo"):
+    """An empty repository (no commit yet) and the folder it lives in."""
+    folder = tmp_path / name
+    folder.mkdir()
+    git("init", "-q", cwd=folder)
+    return folder
+
+
+def commit(folder, files, message="commit"):
+    """Write `files` (path to text or bytes), stage them all, commit, return the commit oid."""
+    for relative, content in files.items():
+        target = folder / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(content if isinstance(content, bytes) else content.encode("utf-8"))
+    git("add", "-A", cwd=folder)
+    git("commit", "-q", "-m", message, cwd=folder)
+    return git("rev-parse", "HEAD", cwd=folder).stdout.decode().strip()
+
+
+def blob_oid(folder, relative, revision="HEAD"):
+    return git("rev-parse", f"{revision}:{relative}", cwd=folder).stdout.decode().strip()
+
+
+def snapshot(git_dir):
+    """Every file under a `.git` folder, by relative path, with its bytes."""
+    return {path.relative_to(git_dir).as_posix(): path.read_bytes()
+            for path in sorted(Path(git_dir).rglob("*")) if path.is_file()}
