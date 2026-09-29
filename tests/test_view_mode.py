@@ -52,7 +52,7 @@ from tests.test_command_run_routes import INSTANCE, ROLE
 from tests.test_command_run_socket import pinned
 from tests.test_command_workflow_draft import WORKFLOW, a_document
 from tests.test_command_workflow_flow import chain, review, step
-from tests.test_policy_driver import ask
+from tests.test_policy_driver import ask, assert_two_steps, wait_terminal
 from tests.test_policy_runtime import NOW, PD, setup
 from tests.test_server_command_http import _request
 from tests.test_store import good_lane, write_project
@@ -123,8 +123,9 @@ def test_a_refused_spawn_claims_no_ownership_loan_and_leaves_the_owner_whole(tmp
 # -- the first witness ---------------------------------------------------------------
 
 
-def _walk_reads_and_preview(tmp_path, mode: str = "view") -> int:
-    """A task, the reads and the preview on a server launched in `mode`; how many steps."""
+@contextmanager
+def _served_by_hand(tmp_path, mode: str = "view"):
+    """An activated project on two fake adapters (no runner is built), launched in `mode`."""
     root = write_project(tmp_path, lanes={"claude": good_lane()})
     f = setup(root, two_steps=True, checker=True)
     ownership_transition.activate(root, legacy_writers_stopped=True)
@@ -136,31 +137,40 @@ def _walk_reads_and_preview(tmp_path, mode: str = "view") -> int:
     # A registry given by hand has no installed provider configuration to judge.
     subject.command_api._policy.provider_digest = lambda config: PD
     subject.command_api._policy.provider_facts = None
-    flow = [
-        ("GET", "/command/session", None, 200),
-        ("GET", "/command/tasks", None, 200),
-        ("POST", "/command/tasks", {"task_id": "task-1", "title": "Look around"}, 201),
-        ("GET", "/command/tasks/task-1", None, 200),
-        ("GET", "/command/workflows", None, 200),
-        ("GET", "/command/runs", None, 200),
-        ("GET", "/command/runs/run", None, 200),
-        ("GET", "/command/runs/run/controls", None, 200),
-        ("GET", "/command/quotas", None, 200),
-        ("GET", "/command/runs/run/automation", None, 200),
-        ("POST", "/command/runs/run/automation/preview", ask(), 200),
-    ]
+    f.policy, f.runtime, f.store = (subject.command_api._policy, subject.command_api.runtime,
+                                    subject.command_store)
+    f.adapter._store = f.verifier._store = f.store
     try:
-        walked = []
-        for method, path, body, expected in flow:
-            status, payload, _ = _request(subject, method, path, body)
-            walked.append((method, path, status))
-            assert status == expected, (method, path, status, payload)
+        yield subject, f
     finally:
         subject.shutdown()
         subject.server_close()
         thread.join(10)
-    assert len(walked) == len(flow) and not thread.is_alive()
-    return len(walked)
+        assert not thread.is_alive()
+
+
+READS_AND_PREVIEW = [
+    ("GET", "/command/session", None, 200),
+    ("GET", "/command/tasks", None, 200),
+    ("POST", "/command/tasks", {"task_id": "task-1", "title": "Look around"}, 201),
+    ("GET", "/command/tasks/task-1", None, 200),
+    ("GET", "/command/workflows", None, 200),
+    ("GET", "/command/runs", None, 200),
+    ("GET", "/command/runs/run", None, 200),
+    ("GET", "/command/runs/run/controls", None, 200),
+    ("GET", "/command/quotas", None, 200),
+    ("GET", "/command/runs/run/automation", None, 200),
+    ("POST", "/command/runs/run/automation/preview", ask(), 200),
+]
+
+
+def _walk_reads_and_preview(tmp_path, mode: str = "view") -> int:
+    """A task, the reads and the preview on a server launched in `mode`; how many steps."""
+    with _served_by_hand(tmp_path, mode) as (subject, _):
+        for method, path, body, expected in READS_AND_PREVIEW:
+            status, payload, _ = _request(subject, method, path, body)
+            assert status == expected, (method, path, status, payload)
+    return len(READS_AND_PREVIEW)
 
 
 def test_a_server_launched_for_viewing_spawns_no_child_through_task_creation_reads_and_preview(
@@ -403,6 +413,44 @@ def test_the_hub_snapshot_key_is_absent_in_active_mode_even_when_a_snapshot_stan
     with _served(tmp_path / "active", "active") as subject:
         answer = _quotas(subject)
     assert "hub_snapshot" not in answer and answer["providers"]
+
+
+# -- authorize and resume in view: the door is lane L's (spec 4.3.1, 4.4.1) -------------
+
+
+def _asked_in(mode: str, tmp_path) -> list:
+    """`authorize` and a `resume` control, as the desk would send them, and what each was told."""
+    with _served_by_hand(tmp_path, mode) as (subject, f):
+        base = "/command/runs/run/automation"
+        status, preview, _ = _request(subject, "POST", f"{base}/preview", ask())
+        assert status == 200, preview
+        granted = _request(subject, "POST", f"{base}/authorize", {
+            "authorization_id": "grant", "preview_digest": preview["preview_digest"],
+            "authorized_by": "owner", "terms": preview["terms"], "supersedes": None})
+        digest = granted[1]["authorization_digest"] if granted[0] == 201 else "sha256:" + "0" * 64
+        resumed = _request(subject, "POST", f"{base}/control", {
+            "control_id": "resume-1", "authorization_id": "grant", "action": "resume",
+            "authorization_digest": digest, "actor": "owner", "expected_control_id": None})
+        if mode == "active":
+            assert_two_steps(f, wait_terminal(f))
+    return [(status, payload.get("error", {}).get("code")) for status, payload, _ in
+            (granted, resumed)]
+
+
+@pytest.mark.xfail(strict=True, reason=(
+    "the door that throws the code is lane L's (command/policy_service.py, spec 4.4.1); the two "
+    "lines are in handoffs/H-to-L-view-door.patch. When they land this turns XPASS, which strict "
+    "reports as a failure: remove this marker then."))
+def test_view_mode_refuses_authorize_and_resume_with_project_not_active(tmp_path):
+    """In view both writes are refused 409 `project_not_active`; in active neither is.
+
+    The active run is the control: there `authorize` creates the grant (201) and the driver
+    runs the two steps, and the resume is judged by the grant's history like any other.
+    """
+    viewed = _asked_in("view", tmp_path / "view")
+    active = _asked_in("active", tmp_path / "active")
+    assert viewed == [(409, CODE), (409, CODE)], viewed
+    assert active[0] == (201, None) and active[1][1] != CODE, active
 
 
 # -- the code the view door throws (spec 4.3.1, 11.1) -----------------------------------
