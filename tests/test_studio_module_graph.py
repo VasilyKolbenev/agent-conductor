@@ -107,6 +107,7 @@ PERMITTED_IMPORTS = {
                                        "./desk-wizard-team.js",
                                        "./desk-wizard-input.js",
                                        "./desk-wizard-prep.js",
+                                       "./desk-wizard-launch.js",
                                        "./desk-wizard-run.js"}),
     #: What the model and the step adapters share (the order of the steps, the limits, a frozen
     #: change, the words of the documents), so neither imports the other. It reaches the task
@@ -156,10 +157,15 @@ PERMITTED_IMPORTS = {
     #: Step 5's chain as pure functions over those facts and its own slice. It reaches only the
     #: digest that names a document by its bytes.
     "desk-wizard-prep.js": frozenset({"./desk-wizard-digest.js"}),
+    #: Step 6's terms card and what may be pressed, as pure functions over its own slice: the
+    #: preview's reading, the slot, the countdown, the authorization. It reaches only the digest
+    #: that gives a key its stable bytes.
+    "desk-wizard-launch.js": frozenset({"./desk-wizard-digest.js"}),
     #: The chain applied to the wizard's state, and the same after a reload: the seam the model
     #: calls. It is handed the model's judgement of the four steps and never imports the model.
     "desk-wizard-run.js": frozenset({"./desk-wizard-base.js", "./desk-wizard-input.js",
-                                     "./desk-wizard-prep.js"}),
+                                     "./desk-wizard-launch.js", "./desk-wizard-prep.js",
+                                     "./desk-wizard-team.js"}),
     # Pure S2 decoder; the actual store read door composes it with the base model.
     "studio-situation.js": frozenset({"./studio-model.js", "./studio-feedback-model.js",
                                       "./studio-runwords.js"}),

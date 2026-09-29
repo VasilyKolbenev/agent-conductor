@@ -1,5 +1,6 @@
 "use strict";
-// SHA-256 and the id of a document the preparation chain publishes (spec 6.4.1, link 5).
+// SHA-256, the id of a document the preparation chain publishes (spec 6.4.1, link 5), and the
+// stable spelling of a value that a key or a comparison is made of.
 //
 // A document's id is `doc-` and the first 32 hex digits of the digest of the run, the reference,
 // the media type and the content, joined by NUL: the same bytes always give the same id, so a
@@ -71,6 +72,18 @@ export function sha256Hex(text) {
   let state = INITIAL;
   for (let at = 0; at < words.length; at += 16) state = compress(state, words.slice(at, at + 16));
   return state.map((value) => (value >>> 0).toString(16).padStart(8, "0")).join("");
+}
+
+//: A value spelled the same whatever the order its keys were made in: what two things are compared
+//: by when they must be equal as data, and what a key that holds a body is made of.
+export function stableJson(value) {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+  if (value !== null && typeof value === "object") {
+    const facts = Object.keys(value).sort()
+      .map((key) => `${JSON.stringify(key)}:${stableJson(value[key])}`);
+    return `{${facts.join(",")}}`;
+  }
+  return JSON.stringify(value);
 }
 
 //: The id of a document the chain publishes, derived from the bytes it carries.

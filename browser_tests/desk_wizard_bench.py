@@ -77,7 +77,7 @@ async () => {
     Object.assign(host, {log: [], auto: auto || {}, closed: 0, outcome: null, exit: null,
       renders: 0});
     host.state = {locale, wizard: wiz.initialWizard({starterId: null, viewMode: false,
-      newTaskId: "task-bench", ...opening})};
+      newTaskId: "task-bench", nonce: "bench0000", ...opening})};
     return dispatch({type: "open"});
   };
   host.answer = (name, result, subject) => {

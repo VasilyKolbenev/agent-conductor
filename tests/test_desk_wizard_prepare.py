@@ -75,6 +75,7 @@ const drive = (first, over = {}, cap = 40) => {
   let step = first;
   for (let at = 0; at < cap && step.asks.length > 0; at += 1) {
     const [ask] = step.asks;
+    if (ask.name.startsWith("launch_")) break;
     log.push(ask);
     step = answer(step, plan[ask.name](ask, step.state, log));
   }
@@ -243,6 +244,7 @@ def test_the_hash_an_ask_names_is_the_hash_the_state_wants_when_the_ask_is_made(
         let step = press(ready());
         for (let at = 0; at < 40 && step.asks.length > 0; at += 1) {
           const [ask] = step.asks;
+          if (ask.name.startsWith("launch_")) break;
           same.push([ask.name, JSON.stringify(ask.hash) === JSON.stringify(
             wiz.wizardHash(step.state))]);
           step = answer(step, ({...table, ...over})[ask.name](ask, step.state, same));

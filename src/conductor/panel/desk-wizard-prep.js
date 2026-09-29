@@ -17,8 +17,9 @@
 // state, and the `run` slice it folds answers into:
 //   phase: idle | preparing | unknown | refused | review, pressed, lang, settled [ask ids],
 //   done [job keys], attempts {job key: sends that did not settle}, seq (reads made), prep (the
-//   last preparation read), readFailed, flowCheck, runId, revision, adopted, refusal, preview.
-import {documentId, sha256Hex} from "./desk-wizard-digest.js";
+//   last preparation read), readFailed, flowCheck, runId, revision, adopted, refusal, preview
+//   (the chain's preview, the first card of step 6), seed (what the seed write answered), resume.
+import {documentId, sha256Hex, stableJson as stable} from "./desk-wizard-digest.js";
 
 export const LINKS = Object.freeze(["task", "seed", "flow", "run", "documents", "preview"]);
 //: Where a link can stand (`linkStates`); each has its word in the catalogue.
@@ -31,7 +32,7 @@ const STARTS = Object.freeze(["idle", "review"]);
 export function initialRun() {
   return {phase: "idle", pressed: false, lang: "en", settled: [], done: [], attempts: {}, seq: 0,
     prep: null, readFailed: null, flowCheck: false, runId: null, revision: null, adopted: null,
-    refusal: null, preview: null, resume: null};
+    refusal: null, preview: null, resume: null, seed: null};
 }
 
 // -- after a reload ----------------------------------------------------------------------
@@ -103,17 +104,6 @@ export function resumeAsks(run, input) {
 
 function record(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-//: A value spelled the same whatever the order its keys were made in.
-function stable(value) {
-  if (Array.isArray(value)) return `[${value.map(stable).join(",")}]`;
-  if (record(value)) {
-    const facts = Object.keys(value).sort()
-      .map((key) => `${JSON.stringify(key)}:${stable(value[key])}`);
-    return `{${facts.join(",")}}`;
-  }
-  return JSON.stringify(value);
 }
 
 // -- the links as jobs -------------------------------------------------------------------
@@ -390,6 +380,7 @@ function acceptedWrite(run, input, ask, payload) {
     if (!Number.isSafeInteger(revision)) return unreadable(run, ask);
     return fixRun({...run, done, revision, flowCheck: false}, input);
   }
+  if (ask.name === "prep_seed") return {...run, done, seed: record(payload) ? payload : null};
   return ask.name === "preview" ? {...run, done, phase: "review", preview: payload}
     : {...run, done};
 }

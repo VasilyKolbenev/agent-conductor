@@ -57,6 +57,17 @@ def test_two_documents_that_differ_in_any_one_field_get_different_ids():
     assert len(set(out[:5])) == 5 and out[5] == out[0]
 
 
+def test_stable_json_spells_equal_data_the_same_whatever_the_order_of_its_keys():
+    out = run_js("""
+      const a = {b: [1, {y: 2, x: 1}], a: "é", c: null};
+      const b = {c: null, a: "é", b: [1, {x: 1, y: 2}]};
+      console.log(JSON.stringify([dig.stableJson(a) === dig.stableJson(b), dig.stableJson(a),
+        dig.stableJson([1, 2]) === dig.stableJson([2, 1]), dig.stableJson(undefined) ?? null]));
+    """, modules=MODULES)
+    assert out[0] is True and out[2] is False and out[3] is None
+    assert out[1] == '{"a":"é","b":[1,{"x":1,"y":2}],"c":null}'
+
+
 def test_the_digest_module_imports_nothing_and_names_no_platform_digest():
     source = (PANEL / "desk-wizard-digest.js").read_text(encoding="utf-8")
     assert "import " not in source.replace("import * as", "")

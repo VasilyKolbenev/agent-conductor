@@ -23,7 +23,8 @@ const lost = {status: "unknown"};
 const refused = (code, payload = null) => ({status: "refused", code, payload});
 const moved = (value) => JSON.parse(JSON.stringify(value).replaceAll("task-bench", "task-t1"));
 const resumed = (over = {}, resume = {runId: "task-t1-r1", workflowId: "desk-standard"}) =>
-  wiz.initialWizard({starterId: null, viewMode: false, newTaskId: "task-t1", resume, ...over});
+  wiz.initialWizard({starterId: null, viewMode: false, newTaskId: "task-t1", nonce: "n0nce0001",
+    resume, ...over});
 const begin = (state) => wiz.stepWizard(state, {type: "open"});
 const answer = (step, result) => wiz.stepWizard(step.state, {type: "answered",
   ask: step.asks.find((ask) => ask.name === "prep_read") ?? step.asks[0], result});
@@ -39,6 +40,7 @@ const drive = (first, over = {}) => {
   let step = first;
   for (let at = 0; at < 20 && step.asks.length > 0; at += 1) {
     const [ask] = step.asks;
+    if (ask.name.startsWith("launch_")) break;
     log.push(ask);
     step = wiz.stepWizard(step.state, {type: "answered", ask, result: table[ask.name](ask)});
   }

@@ -1,14 +1,19 @@
 "use strict";
-// The `run` slice as the wizard's model sees it: the chain of step 5 applied to the wizard's
-// state, and the same chain after a reload.
+// The `run` and `launch` slices as the wizard's model sees them: the chain of step 5 applied to
+// the wizard's state, the same chain after a reload, and the terms card of step 6.
 //
-// `desk-wizard-prep.js` knows nothing of the wizard's state and `desk-wizard-input.js` reads it
-// once; this module is the seam the model calls: the gate of the step, the asks the slice calls
-// for, an answer folded into the state (with what a reloaded page learns about its task), the
-// owner's moves as functions of the state, and what a reloaded page says. The judgement of the
-// four filling steps is the model's (`gateOf`), so it is handed in; the model is not imported.
+// `desk-wizard-prep.js` and `desk-wizard-launch.js` know nothing of the wizard's state and
+// `desk-wizard-input.js` reads it once; this module is the seam the model calls: the gate of the
+// step, the asks the slices call for, an answer folded into the state (with what a reloaded page
+// learns about its task), the owner's moves as functions of the state, and what a reloaded page
+// and the card say. The judgement of the four filling steps is the model's (`gateOf`), so it is
+// handed in; the model is not imported.
 import {FILL_STEPS, LIMITS, evolve, isLanguage, utf8Bytes} from "./desk-wizard-base.js";
 import {resumeInput, runInput} from "./desk-wizard-input.js";
+import {adoptPreview, beginLaunch, cardFacts, controlsOf, editActor, initialLaunch, isActor,
+  landLaunch, launchAsks, refreshLaunch, remaining, repeatsSpent, rereadLaunch, seenLaunch,
+  tickLaunch} from "./desk-wizard-launch.js";
+import {heldFlow} from "./desk-wizard-team.js";
 import {adoptRun, bumpRun, chainAsks, followingRunNumber, hashNow, initialRun, landChain,
   linkStates, openResume, resumeAsks, resumeFields, resumeSituation, retryChain, startChain}
   from "./desk-wizard-prep.js";
@@ -51,8 +56,8 @@ export function runWanted(state) {
 //: A wizard that has learned the server has no such task starts over at step 1 with nothing
 //: written; its reads (git, cycles, roster) are still true.
 function startOver(state) {
-  return evolve(state, {step: "task", run: initialRun(), task: {...state.task, title: "",
-    written: false}});
+  return evolve(state, {step: "task", run: initialRun(), launch: initialLaunch(state.launch.actor),
+    task: {...state.task, title: "", written: false}});
 }
 
 /**
@@ -64,14 +69,17 @@ export function landRun(state, ask, result) {
   if (run === state.run) return state;
   const next = evolve(state, {run});
   if (run.resume !== null && run.resume.lost) return startOver(next);
-  if (state.task.written) return next;
+  //: The preview of the chain is the first card of step 6 (a later one replaces or keeps it).
+  const carded = ask.name === "preview" && run.phase === "review"
+    ? evolve(next, {launch: adoptPreview(state.launch, run.preview, run.runId)}) : next;
+  if (state.task.written) return carded;
   if (run.resume === null) {
     //: The title is fixed once the task is written: the same id with another title would clash.
     return run.done.some((key) => key.startsWith("task:"))
-      ? evolve(next, {task: {...next.task, written: true}}) : next;
+      ? evolve(carded, {task: {...carded.task, written: true}}) : carded;
   }
-  if (run.prep === null) return next;
-  return evolve(next, {task: {...next.task, title: run.prep.task.title, written: true}});
+  if (run.prep === null) return carded;
+  return evolve(carded, {task: {...carded.task, title: run.prep.task.title, written: true}});
 }
 
 // -- the owner's moves -------------------------------------------------------------------
@@ -155,11 +163,79 @@ export function prepareFacts(state, gateOf) {
     prepared: run.phase === "review" && settled, following: followingRunNumber(run)});
 }
 
-/** When a reloaded page finds its run past preparation: the run to open, and where it stands. */
+/**
+ * When the wizard has nothing more to do: a reloaded page finds its run past preparation, or the
+ * owner started or queued it. The run for the desk to open, and where it stands.
+ */
 export function wizardExit(state) {
+  if (state.launch.result !== null) {
+    return {runId: state.run.runId, stage: state.launch.result.kind};
+  }
   const situation = resumeSituation(state.run);
   return situation !== null && situation.kind === "exit"
     ? {runId: situation.runId, stage: situation.stage} : null;
+}
+
+// -- step 6: the card --------------------------------------------------------------------
+
+//: What a card ask or answer needs to know about the run around it.
+const launchCtx = (state) => ({runId: state.run.runId, nonce: state.nonce,
+  phase: state.run.phase});
+
+function withLaunch(state, launch) {
+  return launch === state.launch ? state : evolve(state, {launch});
+}
+
+/** The reads, the write and the repeated preview the card calls for now. */
+export function launchWanted(state) {
+  return launchAsks(state.launch, launchCtx(state));
+}
+
+/** Fold one answer of the card in. */
+export function landCard(state, ask, result) {
+  return withLaunch(state, landLaunch(state.launch, launchCtx(state), ask, result));
+}
+
+export const cardTick = (state, event) => withLaunch(state,
+  tickLaunch(state.launch, event.now));
+export const cardActor = (state, event) => withLaunch(state,
+  editActor(state.launch, event.value));
+export const cardStart = (state) => withLaunch(state, beginLaunch(state.launch, "start"));
+export const cardEnqueue = (state) => withLaunch(state, beginLaunch(state.launch, "enqueue"));
+export const cardRefresh = (state) => withLaunch(state, refreshLaunch(state.launch));
+export const cardReread = (state) => withLaunch(state, rereadLaunch(state.launch));
+export const cardSeen = (state) => withLaunch(state, seenLaunch(state.launch));
+
+//: The role of each step of the cycle the run follows, when this window holds it.
+function rolesByStep(state) {
+  const steps = heldFlow(state)?.flow.steps ?? [];
+  return Object.fromEntries(steps.filter((step) => step.type === "agent")
+    .map((step) => [step.step_id, step.role_id]));
+}
+
+//: The line about where the agents get their code, from the seed the chain wrote or the read holds.
+function seedLine(run) {
+  const seed = run.seed ?? run.prep?.seed ?? null;
+  if (seed === null) return null;
+  if (seed.state === "requested") return {kind: "request"};
+  if (typeof seed.base_commit !== "string") return null;
+  const ref = typeof seed.base_ref === "string" ? seed.base_ref.replace(/^refs\/heads\//, "")
+    : null;
+  return {kind: "copy", ref, commit: seed.base_commit.slice(0, 7)};
+}
+
+/**
+ * What step 6 draws: the card (every number the server's), the controls the slot allows, the
+ * countdown, and what the last answer said.
+ */
+export function launchFacts(state) {
+  const {launch} = state, seconds = remaining(launch);
+  return Object.freeze({phase: launch.phase, error: launch.error, note: launch.note,
+    refusal: launch.refusal, result: launch.result, actor: launch.actor,
+    actorValid: isActor(launch.actor), changed: launch.changed, seen: launch.seen,
+    repeatsSpent: repeatsSpent(launch), controls: controlsOf(launch),
+    countdown: seconds === null ? null : {seconds, until: launch.preview.valid_until},
+    card: cardFacts(launch, {roles: rolesByStep(state), seed: seedLine(state.run)})});
 }
 
 /** The wizard's keys of the desk's hash as they stand now, or null when it wants none. */

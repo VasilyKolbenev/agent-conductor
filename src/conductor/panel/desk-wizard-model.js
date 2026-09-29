@@ -44,9 +44,12 @@ import {answerHistory, assignRole, assignmentView, bindingNow, editInstruction, 
   previousAssignment, rolesGate, rolesPublication, rosterStatus, syncBinding}
   from "./desk-wizard-team.js";
 import {flowWriteRequest} from "./desk-wizard-input.js";
-import {chainLinks, landRun, resumeEdit, resumeGate as judgeResume, resumeOpening, resumeRestart,
-  resumeView, runAdopt, runBump, runRetry, runStart, runWanted, wizardExit, wizardHash,
-  prepareFacts as judgeFacts, prepareGate as judgePrepare} from "./desk-wizard-run.js";
+import {cardActor, cardEnqueue, cardRefresh, cardReread, cardSeen, cardStart, cardTick,
+  chainLinks, landCard, landRun, launchFacts, launchWanted, resumeEdit,
+  resumeGate as judgeResume, resumeOpening, resumeRestart, resumeView, runAdopt, runBump,
+  runRetry, runStart, runWanted, wizardExit, wizardHash, prepareFacts as judgeFacts,
+  prepareGate as judgePrepare} from "./desk-wizard-run.js";
+import {initialLaunch} from "./desk-wizard-launch.js";
 import {EXITS as RESUME_EXITS, LINKS as CHAIN_LINKS, STATUSES as LINK_STATUSES, initialRun}
   from "./desk-wizard-prep.js";
 
@@ -59,7 +62,7 @@ export {STEPS, BUILT_STEPS, LIMITS, MATERIAL_KINDS, WIZARD_STARTERS, argvFit, br
   assignmentView, hasProviders, instructionFields, previousAssignment,
   GIT_EXITS, GIT_SENTENCES, NOTES, QUOTA_REASONS, REFUSALS, ROLE_KINDS,
   CHAIN_LINKS, LINK_STATUSES, RESUME_EXITS,
-  chainLinks, flowWriteRequest, resumeView, wizardExit, wizardHash};
+  chainLinks, flowWriteRequest, launchFacts, resumeView, wizardExit, wizardHash};
 export const suggestAssignment = suggest;
 //: Every reason a step can give for not being complete, as a closed code. Each has a message
 //: in the catalogue, and a guard holds this list to the codes the gates really return.
@@ -110,19 +113,28 @@ export function resumeFrom(keys, starters) {
     starterId: openingFrom(keys, starters).starterId});
 }
 
+//: A page-load random the caller makes, like the task id: the ids of a card's authorization and of
+//: a pause are made from it, so two windows never write the same id with different terms.
+const NONCE = /^[a-z0-9]{8,32}$/;
+
 //: Nothing is prefilled (spec 6): every text field starts empty. What arrives from outside is
-//: the task id the page drew, and -- for a task that is already written and being resumed --
-//: the title the server holds for it, which is a record and not a default.
+//: the task id and the nonce the page drew, the owner's name if the page has one (`actor`, held
+//: in memory only), and -- for a task that is already written and being resumed -- the title the
+//: server holds for it, which is a record and not a default.
 export function initialWizard(opening) {
   if (!opening || !isTaskId(opening.newTaskId)) {
     throw new Error("the wizard needs a task id from its caller");
+  }
+  if (typeof opening.nonce !== "string" || !NONCE.test(opening.nonce)) {
+    throw new Error("the wizard needs a nonce from its caller");
   }
   const starterId = HASH_STARTERS.includes(opening.starterId) ? opening.starterId : null;
   const written = opening.taskWritten === true;
   const title = written && typeof opening.title === "string" ? opening.title : "";
   const resumed = opening.resume !== undefined && opening.resume !== null;
+  const actor = typeof opening.actor === "string" ? opening.actor : "";
   return frozen({step: resumed ? "prepare" : "task", opened: false, asked: [], closing: null,
-    mode: {starterId, view: opening.viewMode === true},
+    nonce: opening.nonce, mode: {starterId, view: opening.viewMode === true},
     task: {taskId: opening.newTaskId, title, brief: "", hint: "", idea: "", written},
     reads: {},
     materials: {items: [], counter: 0, picker: false, refusal: null,
@@ -132,7 +144,8 @@ export function initialWizard(opening) {
       flow: null, flowFor: null, flowGeneration: -1, draft: null, status: "idle",
       refusal: null, settled: [], boundKey: "null"},
     roles: {owner: {}, instructions: {}},
-    history: {runs: {}, revisions: {}}, run: resumed ? resumeOpening(opening) : initialRun()});
+    history: {runs: {}, revisions: {}}, run: resumed ? resumeOpening(opening) : initialRun(),
+    launch: initialLaunch(actor)});
 }
 
 // -- step 1: the task ------------------------------------------------------------------
@@ -431,7 +444,7 @@ export function wantedAsks(state) {
   const filling = state.run.resume === null
     ? [...materialAsks(state), ...cycleAsks(state), ...historyAsks(state)] : [];
   return [...OPENING_READS.map(([name, target]) => readAsk(name, target)), ...filling,
-    ...runWanted(state)];
+    ...runWanted(state), ...launchWanted(state)];
 }
 
 function readOf(result) {
@@ -513,9 +526,14 @@ function answerDocument(state, ask, result) {
 const CHAIN_ASKS = Object.freeze(["prep_read", "prep_task", "prep_seed", "prep_flow",
   "prep_flow_read", "prep_run", "prep_doc", "prep_materials", "preview"]);
 
+//: The asks of the card of step 6, folded into the `launch` slice.
+const CARD_ASKS = Object.freeze(["launch_queue", "launch_automation", "launch_run",
+  "launch_preview", "launch_authorize", "launch_enqueue"]);
+
 const ANSWERS = {...Object.fromEntries([...READ_NAMES, "documents"]
   .map((name) => [name, answerRead(name)])),
-  ...Object.fromEntries(CHAIN_ASKS.map((name) => [name, landRun])), document: answerDocument,
+  ...Object.fromEntries(CHAIN_ASKS.map((name) => [name, landRun])),
+  ...Object.fromEntries(CARD_ASKS.map((name) => [name, landCard])), document: answerDocument,
   previous_run: answerHistory("runs"), previous_revision: answerHistory("revisions"),
   flow: (state, ask, result) => landFlow(state, ask, result, true),
   flow_read: (state, ask, result) => landFlow(state, ask, result, false)};
@@ -669,6 +687,13 @@ const HANDLERS = {
   "prepare-bump": runBump,
   "resume-edit": resumeEdit,
   "resume-restart": resumeRestart,
+  tick: cardTick,
+  "actor-edit": cardActor,
+  "launch-start": cardStart,
+  "launch-enqueue": cardEnqueue,
+  "launch-refresh": cardRefresh,
+  "launch-reread": cardReread,
+  "launch-seen": cardSeen,
   "close-request": (state) => (closeNeedsWarning(state) && state.closing === null
     ? evolve(state, {closing: "confirm"}) : state),
   "close-cancel": (state) => (state.closing === null ? state : evolve(state, {closing: null})),

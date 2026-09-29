@@ -28,7 +28,7 @@ MODEL = "desk-wizard-model.js"
 #: (a cycle's expectation is read before its first write).
 PRELUDE = """
 const open = (over = {}) => wiz.initialWizard(
-  {starterId: null, viewMode: false, newTaskId: "task-t1", ...over});
+  {starterId: null, viewMode: false, newTaskId: "task-t1", nonce: "n0nce0001", ...over});
 const run = (state, ...events) => events.reduce((now, one) => wiz.reduceWizard(now, one), state);
 const typed = (over = {}) => run(open(over),
   {type: "edit-title", value: "Fix login"}, {type: "edit-brief", value: "Make it work."});
