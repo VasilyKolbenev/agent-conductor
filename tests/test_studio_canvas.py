@@ -45,6 +45,11 @@ from conductor.command.providers import PROVIDER_CATALOG
 ROOT = Path(__file__).resolve().parents[1]
 PANEL = ROOT / "src" / "conductor" / "panel"
 CANVAS = PANEL / "studio-canvas.js"
+#: The canvas is two files: the edge layer left it when it neared the line cap.
+#: An assertion about text that may sit on either side of that seam reads the
+#: pair; one about what must stay in the canvas reads `CANVAS` alone.
+EDGES = PANEL / "studio-canvas-edges.js"
+CANVAS_PARTS = (CANVAS, EDGES)
 #: The inspector is FOUR files now: the frame that decides what is selected,
 #: five of the six sections, the sixth -- inputs and outputs, which grows and so
 #: went first -- and the field primitives every control in all of them is built
@@ -60,7 +65,7 @@ ARTIFACTS = PANEL / "studio-artifacts.js"
 TRANSITIONS = PANEL / "studio-transitions.js"
 FIELDS = PANEL / "studio-fields.js"
 INSPECTOR = (FRAME, SECTIONS, ARTIFACTS, TRANSITIONS, FIELDS)
-STUDIO_FILES = (CANVAS, FRAME, SECTIONS, ARTIFACTS, TRANSITIONS, FIELDS)
+STUDIO_FILES = (CANVAS, EDGES, FRAME, SECTIONS, ARTIFACTS, TRANSITIONS, FIELDS)
 IMPORTS = r'from "(\./[a-z-]+\.js)";'
 _LINE_COMMENT = re.compile(r"^[ \t]*//.*$", re.MULTILINE)
 _BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.DOTALL)
@@ -140,6 +145,32 @@ def test_both_studio_files_sit_in_the_panel_under_the_line_cap():
         assert len(_text(path).splitlines()) <= 800, path.name
 
 
+def test_the_canvas_module_keeps_at_least_eighty_lines_of_headroom_under_the_cap():
+    """The split existed to make room; this is the room, written as a check.
+
+    The flow canvas grows in this file (steps drawn with their roles, checks
+    and passes), so a canvas back at the cap would send the next slice to split
+    it again with no time left for it.
+    """
+    assert len(_text(CANVAS).splitlines()) <= 720
+
+
+def test_the_edge_layer_is_drawn_by_its_own_module_and_the_canvas_only_calls_it():
+    """The seam of the split, held from both sides.
+
+    `drawEdges` is the one door of the edge module. The canvas builds no SVG
+    node and keeps no namespace for one, so a second edge drawer cannot grow
+    back into the file that was split to make room for the flow's links.
+    """
+    edges, canvas = _code(EDGES), _code(CANVAS)
+    assert re.findall(r"^export (?:function|const) (\w+)", edges,
+                      re.MULTILINE) == ["drawEdges"]
+    assert "createElementNS" not in canvas and "SVG_NS" not in canvas
+    assert "function drawEdges" not in canvas
+    assert 'import {drawEdges} from "./studio-canvas-edges.js";' in _text(CANVAS)
+    assert "drawEdges(svg, nodes, edges, context)" in canvas
+
+
 #: What each of these files may reach for, in the order it spells them. The
 #: canvas gained the model when it crossed the line cap and its pure layout half
 #: moved next door; the inspector's three parts form a chain and nothing in it
@@ -148,7 +179,12 @@ def test_both_studio_files_sit_in_the_panel_under_the_line_cap():
 #: is the load-bearing one: a primitive that could import a section would close
 #: the ring both of these splits were drawn to open.
 _ALLOWED_IMPORTS = {
-    "studio-canvas.js": ["./command-view.js", "./studio-layout.js", "./studio-orbit.js"],
+    "studio-canvas.js": ["./command-view.js", "./studio-layout.js", "./studio-orbit.js",
+                         "./studio-canvas-edges.js"],
+    #: The edge layer reaches the placement arithmetic and, through the
+    #: catalogue (outside this pattern, like the other copy imports), the words
+    #: it labels an edge with. It may not reach the canvas that draws it.
+    "studio-canvas-edges.js": ["./studio-layout.js"],
     "studio-inspector.js": ["./command-view.js", "./studio-artifacts.js",
                             "./studio-fields.js", "./studio-sections.js",
                             "./studio-transitions.js"],
@@ -288,7 +324,7 @@ def test_capability_choices_come_from_the_payload_and_never_from_a_provider_id()
     the PROVEN `controls` each row declares. So a capability name appearing as
     a literal in the inspector would be a second, silent roster.
     """
-    inspector, canvas = _code(*INSPECTOR), _code(CANVAS)
+    inspector, canvas = _code(*INSPECTOR), _code(*CANVAS_PARTS)
     literals = set(re.findall(r'"([a-z_-]+)"', inspector))
     assert not literals & adapter_base.CAPABILITIES
     # The canvas names exactly one, and only to tell a review step apart.
@@ -317,9 +353,10 @@ def test_the_mount_api_is_exactly_the_two_signatures_slice_d_wires():
     assert _code(CANVAS).count("mount.replaceChildren(") == 1
     assert _code(*INSPECTOR).count("mount.replaceChildren(") == 1
     # Neither module defines a handler; both only call the ones handed in.
-    for source in (_code(CANVAS), _code(*INSPECTOR)):
+    for source in (_code(*CANVAS_PARTS), _code(*INSPECTOR)):
         assert "handlers.on" not in source
-    assert set(re.findall(r'call\((?:context\.)?handlers, "(\w+)"', _code(CANVAS))) == {
+    assert set(re.findall(r'call\((?:context\.)?handlers, "(\w+)"',
+                          _code(*CANVAS_PARTS))) == {
         "onSelect", "onView", "onEdit", "onStatus"}
     assert set(re.findall(r'call\(\w*\.?handlers, "(\w+)"', _code(*INSPECTOR))) == {
         "onSelect", "onEdit", "onStatus"}
@@ -375,7 +412,7 @@ def test_every_control_either_module_writes_can_be_focused_after_a_re_render():
             "mounting them")
     # The one focusable this module builds outside `element()`: the edge's own
     # hit path, which is an SVG node and so is built with createElementNS.
-    canvas = _code(CANVAS)
+    canvas = _code(*CANVAS_PARTS)
     assert 'hit.setAttribute("tabindex", "0")' in canvas
     assert 'hit.setAttribute("data-focus"' in canvas
 
@@ -485,8 +522,9 @@ def test_the_edge_layer_rides_inside_the_one_transformed_stage():
     # The drawn line is inert and its wide twin carries the interaction, so a
     # press on the background is a pan wherever the SVG lies -- which, since it
     # fills the whole drawing, is everywhere.
-    assert 'path.setAttribute("pointer-events", "none");' in canvas
-    assert 'hit.setAttribute("pointer-events", "stroke");' in canvas
+    drawing = _code(*CANVAS_PARTS)
+    assert 'path.setAttribute("pointer-events", "none");' in drawing
+    assert 'hit.setAttribute("pointer-events", "stroke");' in drawing
     assert 'const HELD = "[data-node-id],[data-port],[data-edge]";' in canvas
 
 

@@ -56,6 +56,7 @@ MODULES = ("studio-runstep-copy.js", "studio-participant-copy.js", "studio-run-d
            "studio-scene-model.js", "studio-trace.js", "studio-taskruns.js", "studio-bridge.js",
            "studio.js", "studio-store.js", "studio-view.js", "studio-model.js",
            "studio-canvas.js", "studio-inspector.js", "studio-runs.js",
+           "studio-canvas-edges.js",
            "studio-runwords.js", "studio-runstep.js", "studio-runwrite.js",
            "studio-people.js", "studio-runread.js", "studio-review.js",
            "studio-layout.js", "studio-edits.js", "studio-situation.js",
@@ -197,7 +198,12 @@ PERMITTED_IMPORTS = {
     "studio-canvas.js": frozenset({"./studio-i18n.js", "./command-view.js",
                                    "./command-projection.js",
                                    "./studio-model.js",
-                                   "./studio-layout.js", "./studio-orbit.js"}),
+                                   "./studio-layout.js", "./studio-orbit.js",
+                                   "./studio-canvas-edges.js"}),
+    #: The canvas's edge layer, split off it at the line cap. It draws from the
+    #: layout the canvas hands it and the words the catalogue holds, and reaches
+    #: nothing else: the canvas imports IT, so a permission back would close a ring.
+    "studio-canvas-edges.js": frozenset({"./studio-i18n.js", "./studio-layout.js"}),
     #: The field primitives every control on the inspector is built from. They
     #: sit BELOW the sections and reach nothing: a toolkit that could import a
     #: section would close the ring the split was drawn to open.
