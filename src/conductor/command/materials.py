@@ -7,10 +7,14 @@ artifact id is a digest of them, and a request repeated after a lost answer must
 already standing.
 
 Pure: no store, clock, randomness or I/O. Judging an item against the seed record, and turning a
-refusal into the wire's `materials_refused`, belong to the caller. The caller hands over `base`,
-the files the seed really copied into the task folder. A path the seed skipped is left out of it,
-and the caller refuses that link first as `doc_not_seeded`: only the seed's own record knows why a
-file is missing. The desk never sends a path; the composer reads it from `base` by document id.
+refusal into the wire's `materials_refused`, belong to the caller. The desk never sends a path; the
+composer reads it by document id from one of two mappings the caller hands over, by what the item
+is. A link says where a file lies in the task folder, so it is judged against `base`, the files
+the seed really copied there: a path the seed skipped is left out of it, and the caller refuses
+that link first as `doc_not_seeded`, because only the seed's own record knows why a file is
+missing. A copy is the owner's text and names only where it was read from, so it needs no seed:
+its path comes from `documents`, the tracked documents of HEAD, whatever the seed did or did not
+copy (an agent-instructions file, a path skipped for the seed's budget).
 """
 from __future__ import annotations
 
@@ -75,7 +79,8 @@ class _Section(NamedTuple):
 
 
 def compose_materials(items: Sequence[Mapping[str, Any]], lang: str,
-                      base: Mapping[str, BaseFile] | None) -> str:
+                      base: Mapping[str, BaseFile] | None,
+                      documents: Mapping[str, str]) -> str:
     """The text of `artifact-materials` for these items, in this language.
 
     The document is `# <Materials>` and then one section per item, `## <n>. <heading> · <kind>`,
@@ -90,23 +95,30 @@ def compose_materials(items: Sequence[Mapping[str, Any]], lang: str,
             and, for a copy, `content`.
         lang: `ru` or `en`; only the words the composer writes change, never the owner's text.
         base: The files the seed copied, by document id, or None when the task has no seed.
+            Only a link is judged against it.
+        documents: The tracked documents of HEAD, path by document id (the list the desk chose
+            from). A copy takes its path from it and is judged against nothing else.
 
     Returns:
         The document, ending in one newline, at most `ARTIFACT_CONTENT_LIMIT` UTF-8 bytes.
 
     Raises:
         MaterialsRefused: More than `MAX_MATERIALS` items (judged before any item is read), a
-            document over the byte limit, a copy that is not text, a project document the base
-            lacks, a link whose blob is not the base's, or a project document with no seed.
-        ContractError: The body is not in the closed shape, or `base` is not what it says.
+            document over the byte limit, a copy that is not text, a copy whose document HEAD
+            does not list, a link the base lacks, a link whose blob is not the base's, or a link
+            with no seed.
+        ContractError: The body is not in the closed shape, or `base` or `documents` is not what
+            it says.
     """
     if lang not in LANGS:
         raise ContractError(f"lang must be one of {', '.join(LANGS)}")
     if not isinstance(items, (list, tuple)):
         raise ContractError("items must be a list")
+    if not isinstance(documents, Mapping):
+        raise ContractError("documents must map a document id to its path")
     if len(items) > MAX_MATERIALS:
         raise MaterialsRefused("too_many_materials")
-    sections = [_section(at, item, lang, base) for at, item in enumerate(items)]
+    sections = [_section(at, item, lang, base, documents) for at, item in enumerate(items)]
     parts = [f"# {_HEADING[lang]}"]
     parts += [f"## {number}. {one.heading} · {one.kind}\n{one.body}"
               for number, one in enumerate(sections, start=1)] or [_NONE[lang]]
@@ -116,14 +128,15 @@ def compose_materials(items: Sequence[Mapping[str, Any]], lang: str,
     return document
 
 
-def _section(at: int, item: object, lang: str, base: Mapping[str, BaseFile] | None) -> _Section:
+def _section(at: int, item: object, lang: str, base: Mapping[str, BaseFile] | None,
+             documents: Mapping[str, str]) -> _Section:
     if not isinstance(item, Mapping):
         raise ContractError(f"items[{at}] must be an object")
     kind = item.get("kind")
     if kind in TEXT_KINDS:
         return _text_section(at, item)
     if kind == PROJECT_DOC:
-        return _document_section(at, item, lang, base)
+        return _document_section(at, item, lang, base, documents)
     raise ContractError(
         f"items[{at}].kind must be one of {', '.join((*TEXT_KINDS, PROJECT_DOC))}")
 
@@ -136,26 +149,41 @@ def _text_section(at: int, item: Mapping[str, Any]) -> _Section:
 
 
 def _document_section(at: int, item: Mapping[str, Any], lang: str,
-                      base: Mapping[str, BaseFile] | None) -> _Section:
+                      base: Mapping[str, BaseFile] | None,
+                      documents: Mapping[str, str]) -> _Section:
     mode = item.get("mode")
     if mode not in ("link", "copy"):
         raise ContractError(f"items[{at}].mode must be link or copy")
     _closed(at, item, mode)
     doc_id = _grammar(f"items[{at}].doc_id", item["doc_id"], _DOC_ID)
     oid = _grammar(f"items[{at}].git_oid", item["git_oid"], _GIT_OID)
-    held = _held(at, doc_id, base)
     if mode == "link":
-        if held.git_oid != oid:
-            raise MaterialsRefused("materials_base_moved", index=at)
-        return _Section(PROJECT_DOC, held.path, _LINK_LINE[lang].format(path=held.path, oid=oid))
-    content = item["content"]
+        return _link_section(at, doc_id, oid, lang, base)
+    return _copy_section(at, item["content"], doc_id, oid, documents)
+
+
+def _link_section(at: int, doc_id: str, oid: str, lang: str,
+                  base: Mapping[str, BaseFile] | None) -> _Section:
+    held = _held(at, doc_id, base)
+    if held.git_oid != oid:
+        raise MaterialsRefused("materials_base_moved", index=at)
+    return _Section(PROJECT_DOC, held.path, _LINK_LINE[lang].format(path=held.path, oid=oid))
+
+
+def _copy_section(at: int, content: object, doc_id: str, oid: str,
+                  documents: Mapping[str, str]) -> _Section:
+    # A copy is the owner's text, not a claim about the seed: it is judged against neither the
+    # seed nor the base blob. Only its heading needs a path, and HEAD's documents give it.
+    if doc_id not in documents:
+        raise MaterialsRefused("doc_unknown", index=at)
+    path = documents[doc_id]
+    if not _quotable(path):
+        raise ContractError("documents holds each path as one line of text without a backtick")
     if not isinstance(content, str) or not content.strip():
         raise ContractError(f"items[{at}].content must be non-blank text")
     if not _is_text(content):
         raise MaterialsRefused("document_not_text", index=at)
-    # A copy is the owner's text, not a claim about the base, so its blob is not compared: the
-    # heading names the one it was read at.
-    return _Section(PROJECT_DOC, f"{held.path}@{oid}", content)
+    return _Section(PROJECT_DOC, f"{path}@{oid}", content)
 
 
 def _held(at: int, doc_id: str, base: Mapping[str, BaseFile] | None) -> BaseFile:

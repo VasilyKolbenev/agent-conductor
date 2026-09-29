@@ -6,7 +6,9 @@ promise: the same bytes for the same input whatever order the mappings were buil
 measured in UTF-8 bytes and decided before the work that would make it, a closed vocabulary of
 refusals with the material each names, and no clock, randomness or I/O. Routes, the seed record
 and the wire's own status codes are lane L's: the caller hands the composer `base`, the files the
-seed really copied, and turns a `MaterialsRefused` into `materials_refused`.
+seed really copied (a link is judged against it), and `documents`, the tracked documents of HEAD
+by document id (a copy takes its path from it, and needs no seed), and turns a `MaterialsRefused`
+into `materials_refused`.
 """
 from __future__ import annotations
 
@@ -32,7 +34,10 @@ OID = "a" * 40
 OTHER_OID = "b" * 40
 SPEC_ID = "d-" + "1" * 32
 NOTES_ID = "d-" + "2" * 32
+AGENTS_ID = "d-" + "3" * 32
 BASE = {SPEC_ID: BaseFile("docs/spec.md", OID), NOTES_ID: BaseFile("docs/notes.md", OTHER_OID)}
+#: HEAD's documents, which the seed need not have copied: `AGENTS.md` is one the seed leaves out.
+DOCUMENTS = {SPEC_ID: "docs/spec.md", NOTES_ID: "docs/notes.md", AGENTS_ID: "AGENTS.md"}
 
 
 def note(title="Notes", content="Body", kind="note"):
@@ -52,9 +57,9 @@ def size(text):
     return len(text.encode("utf-8"))
 
 
-def refusal(items, lang="en", base=BASE):
+def refusal(items, lang="en", base=BASE, documents=DOCUMENTS):
     with pytest.raises(MaterialsRefused) as raised:
-        compose_materials(items, lang, base)
+        compose_materials(items, lang, base, documents)
     return raised.value
 
 
@@ -64,13 +69,14 @@ def refusal(items, lang="en", base=BASE):
 def test_materials_document_is_composed_deterministically_and_bounded():
     items = [note("План", "Шаг один.", "plan"), note("Схема", "flowchart TD\n  A --> B", "scheme"),
              link(), copy_of(NOTES_ID, OTHER_OID, "Копия")]
-    first = compose_materials(items, "ru", BASE)
-    assert first.encode("utf-8") == compose_materials(items, "ru", BASE).encode("utf-8")
+    first = compose_materials(items, "ru", BASE, DOCUMENTS)
+    assert first.encode("utf-8") == compose_materials(items, "ru", BASE, DOCUMENTS).encode("utf-8")
     reversed_keys = [dict(reversed(list(item.items()))) for item in items]
-    assert compose_materials(reversed_keys, "ru", dict(reversed(list(BASE.items())))) == first
+    assert compose_materials(reversed_keys, "ru", dict(reversed(list(BASE.items()))),
+                             dict(reversed(list(DOCUMENTS.items())))) == first
     assert size(first) <= ARTIFACT_CONTENT_LIMIT
     twelve = [note(f"N{at}", "text") for at in range(MAX_MATERIALS)]
-    assert compose_materials(twelve, "en", None).count("\n## ") == 12
+    assert compose_materials(twelve, "en", None, DOCUMENTS).count("\n## ") == 12
     assert refusal(twelve + [note()]).reason == "too_many_materials"
 
 
@@ -81,7 +87,7 @@ def test_the_count_is_judged_before_any_item_is_looked_at():
 
 def test_the_size_limit_counts_utf_8_bytes_of_the_composed_document_not_characters():
     def document(content):
-        return compose_materials([note("T", content)], "en", None)
+        return compose_materials([note("T", content)], "en", None, DOCUMENTS)
 
     overhead = size(document("ж")) - 2
     room = ARTIFACT_CONTENT_LIMIT - overhead
@@ -100,28 +106,29 @@ def test_the_size_limit_counts_utf_8_bytes_of_the_composed_document_not_characte
 def test_sections_are_numbered_in_order_and_each_names_its_kind():
     items = [note("Plan", "First step.", "plan"), note("Ideas", "One idea.", "ideas"),
              note("Notes", "A note.", "note")]
-    assert compose_materials(items, "en", None) == (
+    assert compose_materials(items, "en", None, DOCUMENTS) == (
         "# Materials\n\n## 1. Plan · plan\nFirst step.\n\n## 2. Ideas · ideas\nOne idea.\n\n"
         "## 3. Notes · note\nA note.\n")
-    assert compose_materials(items[:1], "ru", None) == (
+    assert compose_materials(items[:1], "ru", None, DOCUMENTS) == (
         "# Материалы\n\n## 1. Plan · plan\nFirst step.\n")
 
 
 def test_a_scheme_is_fenced_as_mermaid_with_a_fence_longer_than_any_backtick_run_inside():
-    plain = compose_materials([note("S", "flowchart TD\n  A --> B", "scheme")], "en", None)
-    assert plain.endswith("## 1. S · scheme\n```mermaid\nflowchart TD\n  A --> B\n```\n")
-    inside = compose_materials([note("S", "a ``` b", "scheme")], "en", None)
-    assert "````mermaid\na ``` b\n````\n" in inside
-    longer = compose_materials([note("S", "`````", "scheme")], "en", None)
-    assert "``````mermaid\n`````\n``````\n" in longer
+    def scheme(content):
+        return compose_materials([note("S", content, "scheme")], "en", None, DOCUMENTS)
+
+    assert scheme("flowchart TD\n  A --> B").endswith(
+        "## 1. S · scheme\n```mermaid\nflowchart TD\n  A --> B\n```\n")
+    assert "````mermaid\na ``` b\n````\n" in scheme("a ``` b")
+    assert "``````mermaid\n`````\n``````\n" in scheme("`````")
 
 
 def test_a_link_says_the_path_and_the_blob_and_that_no_text_was_copied_in_each_language():
-    ru = compose_materials([link()], "ru", BASE)
+    ru = compose_materials([link()], "ru", BASE, DOCUMENTS)
     assert ru == ("# Материалы\n\n## 1. docs/spec.md · project_doc\n"
                   f"Файл проекта в рабочей папке: `docs/spec.md` (git blob `{OID}`), "
                   "текст не скопирован\n")
-    en = compose_materials([link()], "en", BASE)
+    en = compose_materials([link()], "en", BASE, DOCUMENTS)
     assert en == ("# Materials\n\n## 1. docs/spec.md · project_doc\n"
                   f"Project file in the work folder: `docs/spec.md` (git blob `{OID}`), "
                   "text not copied\n")
@@ -129,25 +136,44 @@ def test_a_link_says_the_path_and_the_blob_and_that_no_text_was_copied_in_each_l
 
 def test_a_copy_names_its_source_as_path_at_oid_and_carries_the_owners_text():
     document = compose_materials([copy_of(SPEC_ID, OTHER_OID, "Edited by the owner.")], "en",
-                                 BASE)
+                                 BASE, DOCUMENTS)
     assert document == (f"# Materials\n\n## 1. docs/spec.md@{OTHER_OID} · project_doc\n"
                         "Edited by the owner.\n")
 
 
 def test_a_copy_is_not_compared_with_the_base_blob_because_it_is_the_owners_text():
-    document = compose_materials([copy_of(SPEC_ID, OTHER_OID)], "en", BASE)
+    document = compose_materials([copy_of(SPEC_ID, OTHER_OID)], "en", BASE, DOCUMENTS)
     assert f"docs/spec.md@{OTHER_OID}" in document and OID not in document
 
 
+def test_a_copy_needs_no_seed_because_its_path_comes_from_the_head_documents():
+    document = compose_materials([copy_of(SPEC_ID, OID, "Owner text")], "en", None, DOCUMENTS)
+    assert document == f"# Materials\n\n## 1. docs/spec.md@{OID} · project_doc\nOwner text\n"
+
+
+def test_a_copy_of_a_document_the_seed_did_not_copy_is_composed():
+    """An agent-instructions file the seed leaves out is still a document the owner may copy."""
+    assert AGENTS_ID not in BASE
+    document = compose_materials([copy_of(AGENTS_ID, OID, "Rules, edited")], "en", BASE,
+                                 DOCUMENTS)
+    assert f"## 1. AGENTS.md@{OID} · project_doc\nRules, edited\n" in document
+
+
+def test_a_copy_takes_its_path_from_the_documents_and_never_from_the_base():
+    elsewhere = {SPEC_ID: BaseFile("elsewhere/spec.md", OID)}
+    document = compose_materials([copy_of()], "en", elsewhere, DOCUMENTS)
+    assert f"## 1. docs/spec.md@{OID}" in document and "elsewhere" not in document
+
+
 def test_no_materials_compose_the_none_document_in_each_language():
-    assert compose_materials([], "ru", None) == "# Материалы\n\nМатериалов нет\n"
-    assert compose_materials([], "en", None) == "# Materials\n\nNo materials\n"
+    assert compose_materials([], "ru", None, DOCUMENTS) == "# Материалы\n\nМатериалов нет\n"
+    assert compose_materials([], "en", None, DOCUMENTS) == "# Materials\n\nNo materials\n"
 
 
 def test_the_language_changes_only_the_words_the_composer_writes_and_never_the_owners_text():
     items = [note("Owner title", "Owner body", "plan"), link(), copy_of()]
     for lang in ("ru", "en"):
-        document = compose_materials(items, lang, BASE)
+        document = compose_materials(items, lang, BASE, DOCUMENTS)
         for kept in ("Owner title", "Owner body", "Spec text", "docs/spec.md", OID):
             assert kept in document, (lang, kept)
 
@@ -161,11 +187,18 @@ def test_a_copy_that_is_not_text_is_refused_as_not_text_and_names_its_material()
         assert (raised.reason, raised.index) == ("document_not_text", 1)
 
 
-def test_a_link_or_a_copy_of_a_document_the_base_lacks_is_refused_as_unknown():
+def test_a_link_the_seed_base_lacks_is_refused_as_unknown_even_when_the_head_documents_list_it():
     stranger = "d-" + "9" * 32
     assert refusal([link(stranger)]).reason == "doc_unknown"
-    assert refusal([note(), copy_of(stranger)]).reason == "doc_unknown"
     assert refusal([note(), link(stranger)]).index == 1
+    assert AGENTS_ID in DOCUMENTS and AGENTS_ID not in BASE
+    assert refusal([link(AGENTS_ID)]).reason == "doc_unknown"
+
+
+def test_a_copy_the_head_documents_lack_is_refused_as_unknown_and_names_its_material():
+    raised = refusal([note(), copy_of("d-" + "9" * 32)])
+    assert (raised.reason, raised.index) == ("doc_unknown", 1)
+    assert refusal([copy_of()], documents={}).reason == "doc_unknown"
 
 
 def test_a_link_whose_oid_is_not_the_base_blob_is_refused_as_moved():
@@ -173,10 +206,10 @@ def test_a_link_whose_oid_is_not_the_base_blob_is_refused_as_moved():
     assert (raised.reason, raised.index) == ("materials_base_moved", 0)
 
 
-def test_a_project_document_without_a_seed_is_refused_as_seed_missing():
-    assert refusal([link()], base=None).reason == "seed_missing"
-    assert refusal([copy_of()], base=None).reason == "seed_missing"
-    assert compose_materials([note()], "en", None), "text materials need no seed"
+def test_a_link_without_a_seed_is_refused_as_seed_missing_and_text_needs_no_seed():
+    raised = refusal([note(), link()], base=None)
+    assert (raised.reason, raised.index) == ("seed_missing", 1)
+    assert compose_materials([note()], "en", None, DOCUMENTS), "text materials need no seed"
 
 
 def test_every_reason_the_composer_can_raise_is_in_the_closed_list():
@@ -212,24 +245,37 @@ SHAPE_FAULTS = {
 @pytest.mark.parametrize("items", SHAPE_FAULTS.values(), ids=list(SHAPE_FAULTS))
 def test_a_body_the_closed_shape_does_not_name_is_a_contract_error_and_not_a_refusal(items):
     with pytest.raises(ContractError) as raised:
-        compose_materials(items, "en", BASE)
+        compose_materials(items, "en", BASE, DOCUMENTS)
     assert not isinstance(raised.value, MaterialsRefused)
 
 
 def test_a_language_the_desk_does_not_speak_is_a_contract_error():
     with pytest.raises(ContractError):
-        compose_materials([note()], "de", None)
+        compose_materials([note()], "de", None, DOCUMENTS)
 
 
 def test_a_base_row_that_is_not_a_base_file_is_a_contract_error():
     with pytest.raises(ContractError):
-        compose_materials([link()], "en", {SPEC_ID: ("docs/spec.md", OID)})
+        compose_materials([link()], "en", {SPEC_ID: ("docs/spec.md", OID)}, DOCUMENTS)
 
 
 @pytest.mark.parametrize("path", ["docs/a\nb.md", "docs/`x`.md", "docs/a\x00b.md", ""])
 def test_a_path_the_document_could_not_quote_is_a_contract_error(path):
     with pytest.raises(ContractError):
-        compose_materials([link()], "en", {SPEC_ID: BaseFile(path, OID)})
+        compose_materials([link()], "en", {SPEC_ID: BaseFile(path, OID)}, DOCUMENTS)
+
+
+@pytest.mark.parametrize("path", ["docs/a\nb.md", "docs/`x`.md", "docs/a\x00b.md", "", 7, None])
+def test_a_documents_row_the_heading_could_not_carry_is_a_contract_error(path):
+    with pytest.raises(ContractError) as raised:
+        compose_materials([copy_of()], "en", None, {SPEC_ID: path})
+    assert not isinstance(raised.value, MaterialsRefused)
+
+
+@pytest.mark.parametrize("documents", [None, [SPEC_ID], "docs/spec.md"])
+def test_documents_that_are_not_a_mapping_are_a_contract_error(documents):
+    with pytest.raises(ContractError):
+        compose_materials([copy_of()], "en", None, documents)
 
 
 # --- purity ------------------------------------------------------------------------------------
@@ -237,9 +283,9 @@ def test_a_path_the_document_could_not_quote_is_a_contract_error(path):
 
 def test_the_composer_never_changes_its_inputs():
     items = [note("T", "c", "scheme"), link(), copy_of()]
-    held_items, held_base = copy.deepcopy(items), dict(BASE)
-    compose_materials(items, "en", BASE)
-    assert items == held_items and BASE == held_base
+    held_items, held_base, held_documents = copy.deepcopy(items), dict(BASE), dict(DOCUMENTS)
+    compose_materials(items, "en", BASE, DOCUMENTS)
+    assert items == held_items and BASE == held_base and DOCUMENTS == held_documents
 
 
 ALLOWED_IMPORTS = {"__future__", "re", "collections.abc", "typing", "conductor.command.artifacts",
@@ -289,5 +335,5 @@ def test_the_composer_accepts_the_body_the_desk_sends_and_the_desks_estimate_is_
     for lang in ("ru", "en"):
         body = sent[lang]
         assert body["lang"] == lang
-        document = compose_materials(body["items"], lang, BASE)
+        document = compose_materials(body["items"], lang, BASE, DOCUMENTS)
         assert size(sent["estimate"]) >= size(document), (lang, sent["estimate"], document)
