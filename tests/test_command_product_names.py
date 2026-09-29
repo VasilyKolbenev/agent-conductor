@@ -297,3 +297,29 @@ def test_git_honours_the_block_it_is_given(tmp_path):
     assert git("check-ignore", "-q", "src/main.py", cwd=tmp_path).returncode == 1
     status = git("status", "--porcelain", "--untracked-files=all", cwd=tmp_path).stdout
     assert status.split() == ["??", "src/main.py"]
+
+
+# --- the one predicate for "is this path the product's" (spec 9.2, 9.5, 9.6) --------------------
+
+
+def a_product_path(name):
+    """A path inside a top-level product name, a glob's star made into a letter."""
+    return f"{name.replace('*', 'x')}/inside.md"
+
+
+@pytest.mark.parametrize("name", names.PRODUCT_TOP_NAMES)
+def test_a_path_under_every_product_top_name_is_a_product_path(name):
+    assert names.is_product_path(a_product_path(name))
+    assert names.is_product_path(name.replace("*", "x")), "a file of that name at the top too"
+
+
+@pytest.mark.parametrize("path", ["Work/a.md", "INSTRUCTIONS/a.md", ".Claude-Home/a.md"])
+def test_the_top_name_is_compared_without_regard_to_case(path):
+    assert names.is_product_path(path)
+
+
+@pytest.mark.parametrize("path", [
+    "docs/work/a.md", "src/main.py", "README.md", "workspace/a.md", "worker.md",
+    "conductors/a.md", "docs/instructions/a.md", ".conductor-notes/a.md"])
+def test_a_path_that_only_looks_like_a_product_name_is_not_a_product_path(path):
+    assert not names.is_product_path(path)
