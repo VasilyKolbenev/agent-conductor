@@ -24,6 +24,8 @@ from tests._drain_harness import (
 
 #: A drain begins at once; this bounds how long a witness waits to SEE it begin.
 DRAIN_BEGINS = 10.0
+#: The fake quota poll fires every second; three seconds would show at least two more.
+QUOTA_WINDOW = 3.0
 
 
 @pytest.fixture
@@ -34,9 +36,9 @@ def project(tmp_path):
 
 
 def _holding_one_attempt(project, *, hub, ctrl_c="none", node_timeout=None,
-                         margin=None) -> DrainChild:
+                         margin=None, quota=None) -> DrainChild:
     """A serving child with a grant and attempt 1 inside its effect and its login lease."""
-    child = project.start(hub=hub, margin=margin, ctrl_c=ctrl_c)
+    child = project.start(hub=hub, margin=margin, ctrl_c=ctrl_c, quota=quota)
     child.wait_serving()
     child.authorize(node_timeout)
     child.wait_attempt(1)
@@ -185,3 +187,31 @@ def test_unproven_retirement_ends_in_stop_uncertain_with_exit_1(project):
     assert child.wait_exit(WAIT) == 1
     assert child.state() == "stop_uncertain"
     assert project.head_phase() == "opened" and not project.closed_leases()
+
+
+def test_a_quota_poll_that_needs_a_new_spawn_is_not_admitted_after_the_stop_request(project):
+    child = _holding_one_attempt(project, hub=True, quota="poll")
+    wait_until(lambda: project.quota_polls() >= 1, WAIT, "the first quota poll to start", child)
+    child.close_stdin()
+    # The deadline is published at step 4, after the quota collector was stopped at step 3.
+    wait_until(lambda: (child.status() or {}).get("drain_deadline"), WAIT,
+               "the drain to publish its deadline", child)
+    started = project.quota_polls()
+    stays_true(lambda: child.alive() and project.quota_polls() == started, QUOTA_WINDOW,
+               "no quota poll starts once the stop was requested")
+    child.release(1)
+    assert child.wait_exit(WAIT) == 0
+    assert project.quota_polls() == started
+
+
+def test_the_drain_waits_for_a_quota_poll_that_is_already_running(project):
+    child = project.start(hub=True, quota="hold-1")
+    child.wait_serving()
+    wait_until(lambda: project.quota_polls() >= 1, WAIT, "quota poll 1 to start", child)
+    child.close_stdin()
+    child.wait_state("stopping", DRAIN_BEGINS)
+    stays_true(lambda: child.alive() and not (child.status() or {}).get("drain_deadline"),
+               PAST_THE_OLD_JOIN, "the drain waits inside step 3 for the running poll")
+    project.release_quota_poll(1)
+    assert child.wait_exit(WAIT) == 0
+    assert project.head_phase() == "closed"
