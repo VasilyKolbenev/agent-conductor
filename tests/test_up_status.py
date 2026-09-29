@@ -142,19 +142,37 @@ def test_a_refused_record_carries_the_code_and_only_the_refused_record_does(tmp_
 
 
 def test_a_status_write_replaces_the_whole_file_atomically(tmp_path, monkeypatch):
+    """Observed at the swap itself, through the door's own `replace=` seam.
+
+    Atomic here means one swap between two whole files: at that instant the target is
+    still the old whole record, the staged file is the complete new record beside it
+    (the same folder, or the swap would not be one rename), and afterwards the target
+    is exactly the staged bytes and nothing is left staged. A write in place, or a
+    stage in another folder, cannot satisfy all of that.
+    """
     status = _status(tmp_path)
     status.write("starting")
-    seen: list[str] = []
+    old_whole = status.path.read_bytes()
+    at_the_swap: list[dict] = []
     real = atomic_replace.replace_bytes
 
-    def watching(path, payload, **options):
-        seen.append(Path(path).read_text(encoding="utf-8"))   # what a reader sees mid-write
-        real(path, payload, **options)
+    def observing_swap(source, target) -> None:
+        at_the_swap.append({"target": Path(target).read_bytes(),
+                            "staged": Path(source).read_bytes(),
+                            "same_folder": Path(source).parent == Path(target).parent})
+        os.replace(source, target)
 
-    monkeypatch.setattr(atomic_replace, "replace_bytes", watching)
+    def through_the_door(path, payload, **options) -> None:
+        real(path, payload, replace=observing_swap, **options)
+
+    monkeypatch.setattr(atomic_replace, "replace_bytes", through_the_door)
     status.write("serving")
-    assert json.loads(seen[0])["state"] == "starting"     # the old whole, never a torn one
-    assert _read(status.path)["state"] == "serving"
+    assert len(at_the_swap) == 1, "the record was not published by one swap"
+    seen = at_the_swap[0]
+    assert seen["target"] == old_whole                       # a reader still sees the old whole
+    assert set(json.loads(seen["staged"])) == RECORD_KEYS    # the staged record is complete
+    assert json.loads(seen["staged"])["state"] == "serving" and seen["same_folder"]
+    assert status.path.read_bytes() == seen["staged"]        # the swap moved those very bytes
     assert _staging_files(status.path.parent) == []
 
 

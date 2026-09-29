@@ -7,7 +7,9 @@ around every attempt. What they assert is the FINAL behavior: the `stopping`,
 409 `server_stopping` refusal, the ownership head `closed` published only after
 the attempt and its login lease retired, and the exit codes. None of them names a
 function of the drain module: they were written, and shown red with `--runxfail`,
-before it existed, and they passed unchanged when it landed.
+before it existed, and they passed when it landed. One changed on the way: the probe
+window of the overdue witness (4) was lengthened in 521a0fe, because a mutant drain that
+closed right after `stop_overdue` passed inside the original one second.
 
 The instrument control needs no drain: it proves the harness itself (fake dispatch,
 lease, ownership close, Ctrl+C delivery) so a red witness cannot be blamed on it.
@@ -198,16 +200,20 @@ def test_unproven_retirement_ends_in_stop_uncertain_with_exit_1(project):
     assert project.head_phase() == "opened" and not project.closed_leases()
 
 
-def test_a_quota_poll_that_needs_a_new_spawn_is_not_admitted_after_the_stop_request(project):
+def test_no_quota_poll_that_needs_a_new_spawn_starts_once_the_drain_has_stopped_the_collector(
+        project):
     child = _holding_one_attempt(project, hub=True, quota="poll")
     wait_until(lambda: project.quota_polls() >= 1, WAIT, "the first quota poll to start", child)
     child.close_stdin()
-    # The deadline is published at step 4, after the quota collector was stopped at step 3.
+    # The deadline is published at step 4, after the quota collector was stopped at step 3, so
+    # the count below is taken after the stop. Not judged: a poll that starts between the end of
+    # stdin and `collector.stop()` (one status write, about 3 ms, and an in-memory flag); the
+    # spec still allows a poll there, so asserting none would fail one run in a few hundred.
     wait_until(lambda: (child.status() or {}).get("drain_deadline"), WAIT,
                "the drain to publish its deadline", child)
     started = project.quota_polls()
     stays_true(lambda: child.alive() and project.quota_polls() == started, QUOTA_WINDOW,
-               "no quota poll starts once the stop was requested")
+               "no quota poll starts once the drain has stopped the collector")
     child.release(1)
     assert child.wait_exit(WAIT) == 0
     assert project.quota_polls() == started

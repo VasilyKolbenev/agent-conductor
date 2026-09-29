@@ -33,7 +33,9 @@ OWNER_CODES = frozenset({"owner_busy", "recovery_required", "ownership_lost",
 MODES = ("active", "view")
 
 _PROJECT_ID = re.compile(r"[0-9a-f]{32}")
-_HUB_ORIGIN = re.compile(r"http://127\.0\.0\.1:([1-9][0-9]{0,4})")
+#: The one spelling of the hub's origin (4.5.1, 4.6.2): read by this module for the flag
+#: and by `http_framing` for the frame policy, so there is no second grammar.
+HUB_ORIGIN = re.compile(r"http://127\.0\.0\.1:([1-9][0-9]{0,4})")
 _UUID = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
 _TRANSITION = re.compile(_UUID)
 _AUTO_CONTINUE = re.compile(_UUID + r"@[1-9][0-9]{0,8}")
@@ -159,9 +161,14 @@ def _project_id(value: str | None) -> str | None:
     return value
 
 
+def is_hub_origin(value: object) -> bool:
+    """Whether `value` is exactly `http://127.0.0.1:<port>` with a port from 1 to 65535."""
+    found = HUB_ORIGIN.fullmatch(value) if isinstance(value, str) else None
+    return found is not None and int(found.group(1)) <= 65535
+
+
 def _hub_origin(value: str) -> str:
-    found = _HUB_ORIGIN.fullmatch(value)
-    if found is None or int(found.group(1)) > 65535:
+    if not is_hub_origin(value):
         raise UpRefusal("hub_origin_invalid",
                         "--hub-origin must be http://127.0.0.1:<port> with a port up to 65535")
     return value

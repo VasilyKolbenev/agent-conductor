@@ -22,7 +22,9 @@ live updates; Ctrl-C → exit 0; `--providers PATH` names the operator provider
 file, default `conductor/providers.json`, and an absent one configures nothing);
 `demo` (materialize the bundled fixture into a
 temp directory, write the workflow, revision and run the Studio reads, and serve
-both halves — takes `--port` but no `--dir`). Every other
+both halves — takes `--port` but no `--dir`); `tools pin git|gh --path ABS` (pin the
+git or gh a child may run and print the pin as JSON — it takes no `--dir` either, the
+pins live in the hub's folder). Every other
 command takes `--dir` (the project root, default `.`).
 
 THE STREAM CONTRACT, which every command here obeys and every command added
@@ -493,6 +495,22 @@ def _add_ownership(sub):
     _add_dir_and_func(parser, _cmd_ownership)
 
 
+def _cmd_tools(args: argparse.Namespace) -> int:
+    # Deferred like the server: it runs a subprocess, and `conduct init` must not import that.
+    from conductor import tool_pins
+    return tool_pins.pin_command(args.tool, args.path)
+
+
+def _add_tools(sub) -> None:
+    parser = sub.add_parser("tools", help="pin the git and gh this product may run")
+    verbs = parser.add_subparsers(dest="tools_command", required=True)
+    pin = verbs.add_parser("pin", help="pin git or gh at an absolute path; prints the pin as JSON")
+    pin.add_argument("tool", choices=("git", "gh"))
+    pin.add_argument("--path", required=True, metavar="ABS_PATH",
+                     help="the absolute path of the executable to pin")
+    pin.set_defaults(func=_cmd_tools)
+
+
 def _build_parser() -> argparse.ArgumentParser:
     """Build the `conduct` argument parser: one explicit block per subcommand."""
     parser = argparse.ArgumentParser(
@@ -539,6 +557,7 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_port(p)
     p.set_defaults(func=_cmd_demo)
 
+    _add_tools(sub)
     return parser
 
 
