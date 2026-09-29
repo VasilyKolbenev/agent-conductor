@@ -7,7 +7,8 @@ off the dict it returns, with the platform stated (`win32`, `darwin`, `linux`) s
 three PATH rules and the case rule of Windows are judged on any OS. Two are judged
 where they can be: `GCM_INTERACTIVE` is spelled one way and `core.hooksPath` is written
 in one module of the whole product, and a REAL git proves that the hooks the built
-environment silences are hooks that do run without it.
+environment silences are hooks that do run without it: with the environment's hooks folder
+absent (the product creates none yet) and empty, and with a repository-local `core.hooksPath`.
 """
 from __future__ import annotations
 
@@ -219,30 +220,68 @@ def _git_version(git: str) -> tuple[int, int]:
 
 
 GIT = shutil.which("git")
+needs_git = pytest.mark.skipif(GIT is None or _git_version(GIT) < (2, 31),
+                               reason="needs git 2.31 or newer (GIT_CONFIG_COUNT)")
+PLAIN = {name: os.environ[name] for name in ("PATH", "SystemRoot", "HOME", "USERPROFILE")
+         if name in os.environ}
+COMMIT = ("-c", "user.name=Test", "-c", "user.email=test@example.invalid",
+          "commit", "--allow-empty", "-q", "-m", "one")
 
 
-@pytest.mark.skipif(GIT is None or _git_version(GIT) < (2, 31),
-                    reason="needs git 2.31 or newer (GIT_CONFIG_COUNT)")
-def test_git_runs_no_hook_under_the_built_environment_and_runs_it_without(tmp_path):
+def _git(env: dict[str, str], repo: Path, *args: str) -> None:
+    subprocess.run([GIT, *args], cwd=repo, env=env, check=True, capture_output=True)
+
+
+def _repo_with_hook(tmp_path: Path, hooks_path: str | None) -> tuple[Path, Path]:
+    """A repository whose pre-commit hook writes a marker file: `(repo, marker)`.
+
+    `hooks_path` is the repository-local `core.hooksPath` the hook lives under (husky
+    style), or None for the default `.git/hooks`.
+    """
     repo = tmp_path / "repo"
     repo.mkdir()
-    plain = {name: os.environ[name] for name in ("PATH", "SystemRoot", "HOME", "USERPROFILE")
-             if name in os.environ}
-
-    def git(env: dict[str, str], *args: str) -> None:
-        subprocess.run([GIT, *args], cwd=repo, env=env, check=True, capture_output=True)
-
-    git(plain, "init", "-q")
+    _git(PLAIN, repo, "init", "-q")
+    if hooks_path is not None:
+        _git(PLAIN, repo, "config", "core.hooksPath", hooks_path)
     marker = tmp_path / "the-hook-ran"
-    hook = repo / ".git" / "hooks" / "pre-commit"
+    folder = repo / (hooks_path or ".git/hooks")
+    folder.mkdir(parents=True, exist_ok=True)
+    hook = folder / "pre-commit"
     hook.write_text(f"#!/bin/sh\necho ran > '{marker.as_posix()}'\n", newline="\n")
     hook.chmod(0o755)
-    commit = ("-c", "user.name=Test", "-c", "user.email=test@example.invalid",
-              "commit", "--allow-empty", "-q", "-m", "one")
-    git(plain, *commit)
-    assert marker.exists(), "control: the hook runs when nothing silences it"
-    marker.unlink()
+    return repo, marker
+
+
+def _the_commit_runs_the_hook(repo: Path, marker: Path, env: dict[str, str]) -> bool:
+    marker.unlink(missing_ok=True)
+    _git(env, repo, *COMMIT)
+    return marker.exists()
+
+
+@needs_git
+@pytest.mark.parametrize("folder", ["absent", "empty"])
+def test_git_runs_no_hook_under_the_built_environment_and_runs_it_without(tmp_path, folder):
+    """The product creates no hooks folder until `conduct_home()` does (day 9), so "absent"
+    is the state every git call runs in today and "empty" the one after."""
+    repo, marker = _repo_with_hook(tmp_path, None)
+    assert _the_commit_runs_the_hook(repo, marker, PLAIN), "control: nothing silences the hook"
     home = tmp_path / "home"
-    (home / "git" / "hooks-empty").mkdir(parents=True)
-    git(tool_env.tool_env(os.environ, _pins(GIT), home), *commit)
-    assert not marker.exists(), "the built environment did not silence the hook"
+    hooks = Path(tool_env.hooks_folder(home))
+    if folder == "empty":
+        hooks.mkdir(parents=True)
+    assert hooks.is_dir() == (folder == "empty"), "the folder is not in the state the case names"
+    env = tool_env.tool_env(os.environ, _pins(GIT), home)
+    assert not _the_commit_runs_the_hook(repo, marker, env), (
+        "the built environment did not silence the hook")
+
+
+@needs_git
+def test_the_built_environment_silences_a_hook_of_a_repository_local_hooks_path(tmp_path):
+    """A husky-style repository sets its own `core.hooksPath`: the environment's setting is
+    command scope, which wins over it, and the folder of the environment is absent here too."""
+    repo, marker = _repo_with_hook(tmp_path, ".husky")
+    assert _the_commit_runs_the_hook(repo, marker, PLAIN), (
+        "control: the repository's own hooksPath is honoured without the environment")
+    env = tool_env.tool_env(os.environ, _pins(GIT), tmp_path / "home")
+    assert not _the_commit_runs_the_hook(repo, marker, env), (
+        "the built environment did not silence the hook of the local hooksPath")
