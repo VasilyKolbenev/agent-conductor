@@ -198,16 +198,20 @@ def test_unproven_retirement_ends_in_stop_uncertain_with_exit_1(project):
     assert project.head_phase() == "opened" and not project.closed_leases()
 
 
-def test_a_quota_poll_that_needs_a_new_spawn_is_not_admitted_after_the_stop_request(project):
+def test_no_quota_poll_that_needs_a_new_spawn_starts_once_the_drain_has_stopped_the_collector(
+        project):
     child = _holding_one_attempt(project, hub=True, quota="poll")
     wait_until(lambda: project.quota_polls() >= 1, WAIT, "the first quota poll to start", child)
     child.close_stdin()
-    # The deadline is published at step 4, after the quota collector was stopped at step 3.
+    # The deadline is published at step 4, after the quota collector was stopped at step 3, so
+    # the count below is taken after the stop. Not judged: a poll that starts between the end of
+    # stdin and `collector.stop()` (one status write, about 3 ms, and an in-memory flag); the
+    # spec still allows a poll there, so asserting none would fail one run in a few hundred.
     wait_until(lambda: (child.status() or {}).get("drain_deadline"), WAIT,
                "the drain to publish its deadline", child)
     started = project.quota_polls()
     stays_true(lambda: child.alive() and project.quota_polls() == started, QUOTA_WINDOW,
-               "no quota poll starts once the stop was requested")
+               "no quota poll starts once the drain has stopped the collector")
     child.release(1)
     assert child.wait_exit(WAIT) == 0
     assert project.quota_polls() == started
