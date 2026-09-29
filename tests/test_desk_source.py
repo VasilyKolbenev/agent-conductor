@@ -55,6 +55,8 @@ def _inline_faults(html: str, expected_scripts: tuple[str, ...]) -> list[str]:
         faults.append("the script tags are not exactly the expected ones")
     if re.search(r"<style\b", html, re.IGNORECASE):
         faults.append("the page carries a <style> block")
+    if re.search(r"\sstyle\s*=", html, re.IGNORECASE):
+        faults.append("the page carries an inline style attribute")
     if re.search(r"\son[a-z]+\s*=", html, re.IGNORECASE):
         faults.append("the page carries an inline handler")
     return faults
@@ -119,6 +121,12 @@ BROKEN = {
         "</body>", '<script src="/panel/desk.js" type="module"></script>\n</body>'),
         "script"),
     "a style block": (CLEAN.replace("</head>", "<style>a{}</style>\n</head>"), "style"),
+    "an inline style attribute": (
+        CLEAN.replace("<a ", '<a style="color:red" '), "style attribute"),
+    "a single-quoted style attribute": (
+        CLEAN.replace("<a ", "<a style='color:red' "), "style attribute"),
+    "an upper-case style attribute": (
+        CLEAN.replace("<a ", '<a STYLE="color:red" '), "style attribute"),
     "an inline handler": (CLEAN.replace("<a ", '<a onclick="run()" '), "handler"),
     "no language": (CLEAN.replace(' lang="en"', ""), "lang"),
     "an empty title": (CLEAN.replace("<title>Desk</title>", "<title> </title>"), "title"),
