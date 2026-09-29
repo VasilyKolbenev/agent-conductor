@@ -32,6 +32,15 @@ FORMS = {
     "GET /hub/github/repos/<owner>": {"owner", "repos"},
 }
 EVENTS = "GET /hub/events"
+#: A fixture may name, under this key, the dotted paths of values that are only
+#: illustrations of what the server will produce; they hold no contract.
+ILLUSTRATIVE = "illustrative"
+OPERATION = "GET /hub/operations/<operation_id>"
+#: The lines of the `.git/info/exclude` block, in the one spelling of spec 9.2 (and the
+#: example of 8.1): five product names, then a folder and a marker file per harness.
+BLOCK_LINES = ["/conductor/", "/conductor.v3/", "/.conduct*", "/work/", "/instructions/"] + [
+    line for harness in ("claude", "codex", "grok", "kimi", "dsh")
+    for line in (f"/.{harness}-home/", f"/.{harness}-marker")]
 PROJECT_ROW = {
     "project_id", "name", "folder", "source", "repo", "state", "working", "mode",
     "queue_position", "stopped_at", "resume_run_id", "auto_continue", "state_code",
@@ -75,7 +84,7 @@ def test_every_hub_fixture_parses_and_names_one_get_route_of_the_spec():
     assert set(documents) == {*FORMS, EVENTS}
     for route, document in documents.items():
         body = "frames" if route == EVENTS else "response"
-        assert set(document) == {"route", "status", body}, route
+        assert set(document) - {ILLUSTRATIVE} == {"route", "status", body}, route
         assert document["status"] == 200, route
 
 
@@ -121,3 +130,40 @@ def test_a_fixture_that_names_a_route_outside_the_spec_is_caught(tmp_path, monke
     monkeypatch.setitem(globals(), "FIXTURES", broken)
     with pytest.raises(AssertionError, match="hub/nope"):
         test_every_hub_fixture_parses_and_names_one_get_route_of_the_spec()
+
+
+def _resolve(document: dict, dotted: str):
+    value = document
+    for part in dotted.split("."):
+        value = value[part]
+    return value
+
+
+def test_a_login_box_used_by_the_running_active_project_reads_in_use_never_unclosed():
+    """Spec 4.1.8 and 4.6.4: `unclosed` needs an `active.json` and NO running active child."""
+    documents = _documents()
+    rows = documents["GET /hub/projects"]["response"]["projects"]
+    running = {row["project_id"] for row in rows
+               if row["state"] == "running" and row["working"] == "active"}
+    boxes = documents["GET /hub/setup"]["response"]["logins"]
+    assert running and boxes, "control: the fixture has a running active project and a box"
+    for box in boxes:
+        assert box["state"] in {"free", "in_use", "unclosed"}, box
+        assert box["state"] != "unclosed", box
+        if set(box["used_by"]) & running:
+            assert box["state"] == "in_use", box
+
+
+def test_the_exclude_names_are_the_lines_of_the_block_of_section_9_2_and_marked_illustrative():
+    document = _documents()[OPERATION]
+    assert _resolve(document, "response.result.exclude_names") == BLOCK_LINES
+    assert "response.result.exclude_names" in document[ILLUSTRATIVE]
+
+
+def test_every_illustrative_path_names_a_value_that_exists():
+    named = 0
+    for route, document in _documents().items():
+        for dotted in document.get(ILLUSTRATIVE, []):
+            _resolve(document, dotted)
+            named += 1
+    assert named >= 1
