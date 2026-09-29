@@ -39,7 +39,9 @@ from conductor.command import (
     workflow_draft,
 )
 from conductor.command.adapters import provider
+from conductor.server_assets import DESK_ASSETS
 
+from tests.studio_partition import hub_registry_names, packaged_names, partition_faults
 from tests.test_graph_source import _code
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -350,17 +352,28 @@ def test_every_studio_file_sits_in_the_panel_under_the_line_cap():
         assert lines <= LINE_CAP, f"{path.name} is {lines} lines"
 
 
-def test_the_packaged_studio_modules_are_exactly_the_ones_this_module_guards():
+def test_the_packaged_studio_desk_and_hub_files_are_all_guarded_or_registered():
     """A tenth module cannot arrive and be guarded by nothing.
 
     The list above is what every other test here iterates, so a file that is
     not on it passes no guard at all. Held in both directions: a module added
     to the package without a line here reds, and a line here naming no file
-    reds too.
+    reds too. The desk's files and the hub page's join the Studio's under the
+    same rule, each set answering to the registry of what its server serves:
+    `DESK_ASSETS` for the project server, `HUB_ASSETS` for the hub.
+
+    `HUB_ASSETS` is written by the lane that owns the hub and does not exist
+    yet. `hub_registry_names` reads it as absent -- and only for a missing
+    `conductor.hub.assets` -- so a `hub*` file packaged while no registry exists
+    reds here, and the day that lane adds the module this test starts judging
+    against it with no edit. The relation itself is `tests/studio_partition.py`'s,
+    shown biting on synthetic trees in `tests/test_desk_source.py`.
     """
-    packaged = {entry.name for entry in PANEL.iterdir()
-                if entry.name.startswith("studio") and entry.name.endswith(".js")}
-    assert packaged == set(MODULES)
+    faults = partition_faults(
+        packaged=packaged_names(PANEL), modules=frozenset(MODULES),
+        desk=frozenset(name for _, name in DESK_ASSETS.values()),
+        hub=hub_registry_names())
+    assert faults == [], faults
 
 
 def test_the_studio_module_graph_is_acyclic_and_stays_inside_its_permissions():

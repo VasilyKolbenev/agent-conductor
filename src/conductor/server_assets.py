@@ -41,6 +41,17 @@ _STUDIO_TYPES = {"css": "text/css; charset=utf-8",
 #: so no request target can select it. It is not a `PANEL_ASSETS` key.
 ENTRY_PAGE = "studio.html"
 
+#: The desk's own files, registered by the desk's lane and served from the first
+#: day. Written as literal rows -- route, content type, packaged name -- for the
+#: reason the Studio's names are literals below: nothing in a route comes from a
+#: request. `desk.html` is reachable here while `GET /` still answers
+#: `ENTRY_PAGE`; the entry page switches to it in the slice that removes the
+#: Studio's five tabs, and `hub` mounts this route both before and after. Every
+#: row must also be a key of `PANEL_ASSETS`, which splices this table in.
+DESK_ASSETS = {
+    "/panel/desk.html": ("text/html; charset=utf-8", "desk.html"),
+}
+
 # Exact package resources, never a path derived from the request target.
 PANEL_ASSETS = {
     "/panel/command.css": ("text/css; charset=utf-8", "command.css"),
@@ -79,6 +90,8 @@ PANEL_ASSETS = {
     # was when it was typed out.
     **{f"/panel/{name}": (_STUDIO_TYPES[name.rsplit(".", 1)[1]], name)
        for name in _STUDIO_FILES},
+    # The desk: its own registry, spliced in whole.
+    **DESK_ASSETS,
     # The classic panel. It kept its file name when the Studio took the front
     # door, and this is the route that now reaches it. It was a deliberate 404
     # until this line existed, which is exactly why its near-misses in
