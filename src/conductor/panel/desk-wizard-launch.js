@@ -431,11 +431,13 @@ export function unreadUnknown(launch) {
 
 //: A lost answer is settled by the two reads alone, comparing the ids and the terms: the grant or
 //: the queue entry is there and is this card's, or the read that decides says it is not written and
-//: the owner may press again. A read that failed says nothing, so it settles nothing.
+//: the owner may press again. A read that failed says nothing, so it settles nothing. The grant
+//: counts for an enqueue too: the queue's pump may already have taken the entry and started the
+//: run, and the grant is then what stands (an entry that was never taken is looked for after it).
 function settleUnknown(launch, ctx) {
   if (unreadUnknown(launch)) return launch;
   const done = {...launch, sending: null};
-  if (launch.sending === "start" && grantStands(launch, ctx)) {
+  if (grantStands(launch, ctx)) {
     return {...done, phase: "started", result: {kind: "started"}};
   }
   const entry = launch.sending === "enqueue" ? entryOf(launch, ctx) : null;

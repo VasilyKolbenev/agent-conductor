@@ -591,6 +591,24 @@ def test_a_lost_enqueue_stays_unknown_while_the_queue_read_that_decides_it_has_f
     assert (out["absent"]["phase"], out["absent"]["note"]) == ("review", {"kind": "not_written"})
 
 
+def test_a_lost_enqueue_the_pump_already_started_is_settled_by_the_grant_that_stands():
+    out = run_js(LOST + """
+      const lostEnqueue = lostAt("enqueue");
+      //: The queue holds no entry (the pump took it) and the automation says the run began with
+      //: the grant this card's enqueue named; a grant of another card is not this one.
+      const pumped = both(lostEnqueue.state, ok(fresh(d.busy_waiting)),
+        ok(standing(lostEnqueue.id)));
+      const other = both(lostEnqueue.state, ok(fresh(d.busy_waiting)),
+        ok(standing("auth-other-card-9")));
+      const none = both(lostEnqueue.state, ok(fresh(d.busy_waiting)), ok(fresh(d.auto_new)));
+      show({pumped: seen(pumped), other: seen(other), none: seen(none)});
+    """, DATA, modules=MODULES)
+    assert (out["pumped"]["phase"], out["pumped"]["result"]) == ("started", {"kind": "started"})
+    assert out["pumped"]["note"] is None
+    for name in ("other", "none"):
+        assert (out[name]["phase"], out[name]["note"]) == ("review", {"kind": "not_written"}), name
+
+
 def test_the_stand_still_refresh_and_reread_are_the_owners_and_change_nothing_they_do_not_name():
     out = run_js(LAUNCH + """
       const state = reviewed({clock: CLOCK});
