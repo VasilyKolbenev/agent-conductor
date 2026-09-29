@@ -15,7 +15,7 @@ _STUDIO_FILES = (
     "studio-runread.js", "studio-edits.js", "studio-sections.js", "studio-artifacts.js",
     "studio-fields.js", "studio-transitions.js", "studio-store.js", "studio-view.js",
     "studio-runform.js", "studio-canvas.js", "studio-inspector.js", "studio-runs.js",
-    "studio-canvas-edges.js",
+    "studio-canvas-edges.js", "studio-canvas-flow.js",
     "studio-runwords.js", "studio-runstep.js", "studio-runwrite.js", "studio-people.js",
     "studio-rundocs.js", "studio-rundraft.js", "studio-runwrites.js", "studio-toolbardraft.js",
     "studio-controls.js", "studio-isolation.js", "studio-focus.js", "studio-participants.js",
@@ -93,6 +93,7 @@ DESK_ASSETS = {
     "/panel/desk-flow-edits.js": ("text/javascript; charset=utf-8", "desk-flow-edits.js"),
     "/panel/desk-flowwrite.js": ("text/javascript; charset=utf-8", "desk-flowwrite.js"),
     "/panel/desk-quickcycle.js": ("text/javascript; charset=utf-8", "desk-quickcycle.js"),
+    "/panel/desk-flow-graph.js": ("text/javascript; charset=utf-8", "desk-flow-graph.js"),
 }
 
 # Exact package resources, never a path derived from the request target.

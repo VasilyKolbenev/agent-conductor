@@ -198,6 +198,9 @@ PERMITTED_IMPORTS = {
     #: The quick straight-line mode: rows of role kinds turned into a flow by the edits and by
     #: nothing else. It declares no vocabulary of its own.
     "desk-quickcycle.js": frozenset({"./desk-flow-edits.js", "./desk-flow-shape.js"}),
+    #: The flow as the canvas draws it, and the summary before a revision: the branches and the
+    #: shape, nothing that touches the page.
+    "desk-flow-graph.js": frozenset({"./desk-flow-branches.js", "./desk-flow-shape.js"}),
     # Pure S2 decoder; the actual store read door composes it with the base model.
     "studio-situation.js": frozenset({"./studio-model.js", "./studio-feedback-model.js",
                                       "./studio-runwords.js"}),
@@ -269,7 +272,11 @@ PERMITTED_IMPORTS = {
                                    "./command-projection.js",
                                    "./studio-model.js",
                                    "./studio-layout.js", "./studio-orbit.js",
-                                   "./studio-canvas-edges.js"}),
+                                   "./studio-canvas-edges.js", "./studio-canvas-flow.js"}),
+    #: What only a flow draws on the canvas (a step's branch and mark, the caller's palette, no
+    #: banner), split off it so the canvas keeps its headroom. It builds elements through the
+    #: view's helper and reaches nothing else; the canvas imports IT.
+    "studio-canvas-flow.js": frozenset({"./command-view.js"}),
     #: The canvas's edge layer, split off it at the line cap. It draws from the
     #: layout the canvas hands it and the words the catalogue holds, and reaches
     #: nothing else: the canvas imports IT, so a permission back would close a ring.

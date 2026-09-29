@@ -21,6 +21,9 @@ import {workflowOrbit} from "./studio-orbit.js";
 // The edge layer: the SVG lines and their wide hit twins. It moved next door
 // when this file neared the line cap, and it is drawn by one call.
 import {drawEdges} from "./studio-canvas-edges.js";
+// The hooks a flow's projection uses (branch, marks, palette, no banner), inert without their keys.
+import {customButton, customPalette, flowAttributes, flowLines,
+  quietBanner} from "./studio-canvas-flow.js";
 export {CELL, canvasLayout, edgeEnds, edgeId};
 
 // -- vocabularies this module consumes -------------------------------------
@@ -251,9 +254,11 @@ function paletteButton(kind, editable, handlers, selection, state) {
 function palette(editable, handlers, selection, state) {
   const bar = element("div", {className: "studio-palette",
     role: "group", "aria-label": localize(state, "workflow_detail.add_step")});
-  for (const kind of NODE_KINDS) {
+  const chosen = customPalette(state);
+  for (const kind of chosen === null ? NODE_KINDS : []) {
     bar.append(paletteButton(kind, editable, handlers, selection, state));
   }
+  for (const entry of chosen ?? []) bar.append(customButton(entry, editable, handlers, selection));
   bar.append(element("p", {className: "studio-palette__note", text: editable
     ? localize(state, "workflow_detail.new_step_note")
     : localize(state, "workflow_detail.published_note")}));
@@ -364,7 +369,7 @@ function nodeLines(node, parents, state) {
   }
   lines.push(element("span", {className: "mono studio-node__from",
     text: parents.length ? localize(state, "workflow_detail.after", {steps: parents.join(", ")}) : localize(state, "workflow_detail.start")}));
-  return lines;
+  return lines.concat(flowLines(node));
 }
 
 function nodeButton(node, context) {
@@ -372,7 +377,7 @@ function nodeButton(node, context) {
     && context.selection.id === node.node_id;
   const button = element("button", {
     "aria-pressed": String(pressed),
-    className: `studio-node studio-node--${node.kind}`,
+    className: `studio-node studio-node--${node.kind}`, ...flowAttributes(node),
     "data-focus": `node-${node.node_id}`, "data-node-id": node.node_id,
     type: "button",
   }, nodeLines(node, context.parents.get(node.node_id) || [], context.state));
@@ -688,7 +693,8 @@ export function mountCanvas(mount, svg, state, handlers) {
   const reflow = () => { if (restack(stage, drawn, context) && svg) drawEdges(svg, nodes, edges, context); };
   const orbit = workflowOrbit(mount, scope, nodes, context.selection, handlers, stage, tools, reflow, context.state);
   const chrome = element("div", {className: "studio-canvas__chrome"}, [
-    element("div", {className: "studio-canvas__heading"}, [banner(shown, state, runtime), orbit.switches]), tools]);
+    element("div", {className: "studio-canvas__heading"},
+      [...(quietBanner(state) ? [] : [banner(shown, state, runtime)]), orbit.switches]), tools]);
   // Chrome first, drawing after, both in normal flow: the well scrolls one
   // column and no control is stacked over a step.
   mount.replaceChildren(chrome, orbit.panel, stage);
