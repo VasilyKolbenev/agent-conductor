@@ -26,6 +26,15 @@ MAX_WINDOW_SECONDS = 86400
 _CLEAN_CONDITIONS = frozenset({None, "on_succeeded", "on_approved"})
 
 
+def product_limits(budget: Any) -> dict[str, int]:
+    """The three limits `plan_budget` is given, from the boundary's own `Budget`.
+
+    The total is the ceiling the preview checks (`max_actions` reservations of the longest one).
+    """
+    return {"max_actions": budget.max_actions, "max_action_seconds": budget.max_action_seconds,
+            "max_total_task_seconds": budget.max_actions * budget.max_action_seconds}
+
+
 def plan_budget(nodes: Iterable[Any], edges: Iterable[Any], limits: Mapping[str, int],
                 spent: Mapping[str, Any] | None = None) -> dict[str, Any]:
     """The `Budget` of spec 7.8 for these nodes and edges under these limits.

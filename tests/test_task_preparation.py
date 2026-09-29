@@ -72,12 +72,12 @@ class Project:
             notify=lambda run_id: None)
         self.policy.driver = Activation()
 
-    def open_run(self, number, workflow="desk-standard", task_id=TASK):
+    def open_run(self, number, workflow="desk-standard", task_id=TASK, template=None):
         run_id = f"{task_id}-r{number}"
         config = config_for(run_id, task_id, workflow)
         self.store.create_run(RunEnvelope(
             run_id, run_id, NOW, snapshot_digest(config), mode="policy"), config)
-        template = load_template(workflow)
+        template = load_template(workflow) if template is None else template
         self.store.append(materialize(
             template, binding_of(template), config, graph_id=f"graph-{run_id}", run_id=run_id,
             created_at=NOW))
@@ -94,8 +94,8 @@ class Project:
         self.publish(run_id, "artifact-brief", "artifact-materials", "instruction-do")
         return run_id
 
-    def grant(self, run_id):
-        preview = self.policy.preview(run_id, STANDARD_ASK)
+    def grant(self, run_id, ask=STANDARD_ASK):
+        preview = self.policy.preview(run_id, ask)
         return self.policy.authorize(run_id, {
             "authorization_id": f"grant-{run_id}", "preview_digest": preview["preview_digest"],
             "authorized_by": "owner", "terms": preview["terms"], "supersedes": None})[0]

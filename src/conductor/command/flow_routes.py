@@ -17,7 +17,7 @@ from .api_refusals import ApiRefusal
 from .contract_values import ContractError, _digest, _id
 from .flow_rules import FLOW_CODES, flow_rules
 from .graph_template import GraphTemplate, load_template
-from .plan_budget import plan_budget
+from .plan_budget import plan_budget, product_limits  # noqa: F401 - re-exported
 from .studio_routes import _replaces_what_was_read, refused_with
 from .workflow_draft import (
     DraftRefused, draft_digest, parse_document, publish_candidate, saved_draft,
@@ -40,12 +40,6 @@ class FlowWrite:
     expected_digest: str | None
     publish_revision: int | None
     binding: dict[str, str] | None
-
-
-def product_limits(budget: Any) -> dict[str, int]:
-    """The three limits `plan_budget` is given, from the boundary's own `Budget`."""
-    return {"max_actions": budget.max_actions, "max_action_seconds": budget.max_action_seconds,
-            "max_total_task_seconds": budget.max_actions * budget.max_action_seconds}
 
 
 def binding_facts(registry: Any, binding: Mapping[str, str]) -> dict[str, dict | None]:
