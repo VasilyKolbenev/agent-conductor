@@ -1,0 +1,25 @@
+{
+  "route": "GET /hub/github/repos",
+  "status": 200,
+  "response": {
+    "owner": null,
+    "repos": [
+      {
+        "full_name": "octocat/landing",
+        "description": "Landing page for the product",
+        "visibility": "private",
+        "updated_at": "2026-09-28T18:20:00Z",
+        "archived": false,
+        "fork": false
+      },
+      {
+        "full_name": "octocat/hello-world",
+        "description": null,
+        "visibility": "public",
+        "updated_at": "2026-08-02T09:00:00Z",
+        "archived": true,
+        "fork": true
+      }
+    ]
+  }
+}

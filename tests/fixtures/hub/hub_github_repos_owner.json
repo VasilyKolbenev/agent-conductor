@@ -1,0 +1,17 @@
+{
+  "route": "GET /hub/github/repos/<owner>",
+  "status": 200,
+  "response": {
+    "owner": "acme-labs",
+    "repos": [
+      {
+        "full_name": "acme-labs/site",
+        "description": "Company site",
+        "visibility": "internal",
+        "updated_at": "2026-09-27T12:00:00Z",
+        "archived": false,
+        "fork": false
+      }
+    ]
+  }
+}

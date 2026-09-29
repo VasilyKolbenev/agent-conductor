@@ -1,0 +1,64 @@
+{
+  "route": "GET /hub/limits",
+  "status": 200,
+  "response": {
+    "computed_at": "2026-09-29T10:00:00Z",
+    "project_id": "3f9c0d5a7b2e4c168a90d3e1f4b7a625",
+    "source": "live",
+    "taken_at": "2026-09-29T09:59:40Z",
+    "as_of": "2026-09-29T09:59:40Z",
+    "max_age_seconds": 300,
+    "accounts": [
+      {
+        "key": {
+          "vendor": "openai",
+          "account_digest": "sha256:c85e0f1ef6567f516596eef0fec300a6f533d0e91acc2e873af64f1fa2eb2631"
+        },
+        "verified": true,
+        "row": {
+          "account": {
+            "vendor": "openai",
+            "account_digest": "c85e0f1ef6567f516596eef0fec300a6f533d0e91acc2e873af64f1fa2eb2631",
+            "verified_by": "codex-account-read"
+          },
+          "source": {"kind": "codex-app-server", "version": "tested-version"},
+          "observed_at": "2026-09-29T09:59:40Z",
+          "state": "observed",
+          "reason": null,
+          "windows": [
+            {
+              "limit_id": "codex",
+              "window_id": "primary",
+              "used_percent": 25.0,
+              "remaining_percent": 75.0,
+              "resets_at": "2026-09-29T12:00:00Z",
+              "starts_at": null,
+              "duration_minutes": 300,
+              "freshness": "current"
+            }
+          ],
+          "binding_ids": ["first", "alias"],
+          "freshness": "current",
+          "deferred_at": null,
+          "account_status": "verified"
+        }
+      },
+      {
+        "key": {"binding_ids": ["glm-1"]},
+        "verified": false,
+        "row": {
+          "account": null,
+          "source": null,
+          "observed_at": null,
+          "state": "missing",
+          "reason": "no_data",
+          "windows": [],
+          "binding_ids": ["glm-1"],
+          "freshness": "missing",
+          "deferred_at": null,
+          "account_status": "unknown"
+        }
+      }
+    ]
+  }
+}

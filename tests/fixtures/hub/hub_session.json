@@ -1,0 +1,8 @@
+{
+  "route": "GET /hub/session",
+  "status": 200,
+  "response": {
+    "csrf_token": "4Wq1kD0m2Xy8VfR6nJtPzA9sLcE3uHbG-oYiN5aKxTw",
+    "origin": "http://127.0.0.1:7700"
+  }
+}

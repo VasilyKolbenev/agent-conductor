@@ -1,0 +1,12 @@
+{
+  "route": "GET /hub/events",
+  "status": 200,
+  "frames": [
+    {"kind": "projects"},
+    {"kind": "project", "project_id": "3f9c0d5a7b2e4c168a90d3e1f4b7a625"},
+    {"kind": "limits"},
+    {"kind": "setup"},
+    {"kind": "operation", "operation_id": "operation-2b7e4d19a0c84f56b3e8d1a97c052f64"},
+    {"kind": "pick", "pick_id": "pick-9d3f5a71c20e4b86a1f7d04e2c8b6395"}
+  ]
+}
