@@ -29,7 +29,8 @@ START_CODES = FLAG_CODES | frozenset({
     "store_error", "providers_invalid", "bind_failed", "start_failed"})
 #: The codes an ownership refusal may keep; any other one is `start_failed`.
 OWNER_CODES = frozenset({"owner_busy", "recovery_required", "ownership_lost",
-                         "transition_conflict", "ownership_unavailable"})
+                         "transition_conflict", "ownership_unavailable",
+                         "project_identity_changed"})
 MODES = ("active", "view")
 
 _PROJECT_ID = re.compile(r"[0-9a-f]{32}")

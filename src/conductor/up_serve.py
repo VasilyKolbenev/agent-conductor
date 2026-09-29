@@ -123,7 +123,8 @@ def _start(root, port, providers, plan: up_flags.UpPlan, status, stopper):
     try:
         srv = server.build(root, port=port, providers=pinned, hub_origin=plan.hub_origin,
                            launch=Launch(plan.mode, plan.demo, plan.transition,
-                                         plan.auto_continue))
+                                         plan.auto_continue),
+                           expected_project_id=plan.project_id)
     except server.ServerBindError as error:
         raise _bind_refusal(error, port) from error
     except (OwnerRefused, store.StoreError, OSError) as error:

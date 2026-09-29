@@ -248,3 +248,43 @@ def test_an_api_given_no_identity_serves_no_project_and_refuses_any_claim_on_it(
         "project_id": None, "hub_origin": None, "demo": False, "mode": "active"}
     assert unclaimed.check([HOST]) is None
     assert _refusal_of(unclaimed, [("X-Conduct-Project", NONCE)]).code == CODE
+
+
+# -- the second identity check: after the owner is held, not only before the bind ----
+
+
+def test_a_root_that_holds_another_project_once_the_owner_is_taken_is_refused_and_closed(
+        tmp_path, monkeypatch):
+    from conductor import server
+    from conductor.command.adapters import AdapterRegistry
+    from conductor.ownership_errors import OwnerRefused
+    root, nonce = _activated(tmp_path)
+    monkeypatch.setattr(ownership.ProjectOwner, "project_id", property(lambda self: OTHER))
+    with pytest.raises(OwnerRefused) as caught:
+        server.build(root, 0, registry=AdapterRegistry(), expected_project_id=nonce)
+    assert caught.value.code == "project_identity_changed"
+    with pytest.raises(OwnerRefused, match="owner_required"):    # the owner was let go again
+        ownership.require_owner(root)
+
+
+def test_a_root_that_holds_the_project_that_was_asked_for_is_served(tmp_path):
+    from conductor import server
+    from conductor.command.adapters import AdapterRegistry
+    root, nonce = _activated(tmp_path)
+    subject = server.build(root, 0, registry=AdapterRegistry(), expected_project_id=nonce)
+    try:
+        assert subject.project_identity.project_id == nonce
+    finally:
+        subject.server_close()
+
+
+def test_a_root_that_was_never_activated_cannot_answer_for_a_project_that_was_asked_for(
+        tmp_path):
+    from conductor import server
+    from conductor.command.adapters import AdapterRegistry
+    from conductor.ownership_errors import OwnerRefused
+    from tests.test_store import good_lane, write_project
+    root = write_project(tmp_path, lanes={"claude": good_lane()})
+    with pytest.raises(OwnerRefused) as caught:
+        server.build(root, 0, registry=AdapterRegistry(), expected_project_id=NONCE)
+    assert caught.value.code == "project_identity_changed"
