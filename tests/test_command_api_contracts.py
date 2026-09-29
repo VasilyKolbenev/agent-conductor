@@ -360,6 +360,7 @@ def test_every_fixed_code_has_one_test_owned_exact_message_and_empty_detail():
                         "records",
         "gate_unreached": "a decision may stand only on a gate this run's plan "
                           "has reached",
+        "server_stopping": "the server is stopping and accepts no new command",
     }
     assert set(expected) == set(ERROR_STATUS)
     for code, message in expected.items():

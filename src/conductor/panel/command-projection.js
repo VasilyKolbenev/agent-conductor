@@ -122,6 +122,8 @@ export const ERROR_LABELS = Object.freeze({
   run_terminal: "This run has finished. Its plan has nothing left to open, so "
     + "nothing further can be proposed, decided or authorized on it.",
   same_origin_denied: "The local origin was refused.",
+  server_stopping: "This project's server is stopping. Nothing was written; "
+    + "start it again to continue.",
   service_refused: "The command service refused the request.",
   store_error: "The run store is unavailable.",
 });
