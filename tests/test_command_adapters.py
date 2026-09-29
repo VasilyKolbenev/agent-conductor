@@ -48,8 +48,12 @@ SDK_EXECUTION_DOOR = frozenset({"process.py", "_procgroup.py"})
 # child at and may NOT delete -- an operator's own login -- so it reads names
 # there and takes back the per-run ones. It holds no execution door either, and
 # it opens no file: its whole vocabulary is names and kinds.
+# ``work_seed`` is the work-tree half of ``harness_workspace``, split off when
+# that module reached its line cap: it walks the tree the door proved contained
+# and hands back digests and bounded contents. It holds no execution door either.
 SDK_WORKSPACE_DOOR = frozenset({
-    "artifact_transport.py", "harness_workspace.py", "login_home.py"})
+    "artifact_transport.py", "harness_workspace.py", "login_home.py",
+    "work_seed.py"})
 # Names that would let a value module reach an executable, the filesystem, or the
 # import system on its own.
 BANNED_SDK_CALLS = frozenset({
