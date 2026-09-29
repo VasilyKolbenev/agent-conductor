@@ -253,12 +253,41 @@ def target_faults(sheet: str) -> list[str]:
     return faults
 
 
+def declared_media(css: str) -> list[tuple[str, int]]:
+    """Every `@media` head of the sheet with the depth it stands at, by a scan of its text.
+
+    This is deliberately not the cascade model's own list: that one is built from the
+    contexts of the rules it parsed, so a media block with no rule in it, or one the model
+    reads only as its innermost condition, would vanish from it and from every guard that
+    walks it. The heads are found here by their spelling and their braces.
+    """
+    text = re.sub(r"/\*.*?\*/", " ", css, flags=re.DOTALL)
+    return [(f"@media {re.sub(r'[ \t\r\n]+', ' ', found.group(1)).strip()}",
+             text[:found.start()].count("{") - text[:found.start()].count("}"))
+            for found in re.finditer(r"@media\b([^{]*)\{", text)]
+
+
+def media_faults(sheet: str, css: str) -> list[str]:
+    """Every `@media` head the floor checks would silently not measure under."""
+    walked = {re.sub(r"[ \t\r\n]+", " ", context).strip()
+              for theme in THEMES for _label, conditions in environments(theme, sheet)
+              for context in conditions}
+    faults = []
+    for head, depth in declared_media(css):
+        if depth:
+            faults.append(f"media block nested in another, which the cascade reads only as "
+                          f"its innermost condition: {head}")
+        if head not in walked:
+            faults.append(f"media head no environment walks: {head}")
+    return faults
+
+
 def sheet_faults(css: str) -> list[str]:
     """Every way `css` fails the desk stylesheet's contract, as plain sentences."""
     sheet = _wrap(css)
     faults = (paint_faults(sheet) + row_faults(sheet) + floor_faults(sheet)
               + palette_faults(sheet) + motion_faults(sheet) + selector_faults(sheet)
-              + target_faults(sheet))
+              + target_faults(sheet) + media_faults(sheet, css))
     lines = len(css.splitlines())
     return faults + ([f"the sheet is {lines} lines, over the {LINE_CAP} cap"]
                      if lines > LINE_CAP else [])
@@ -305,6 +334,11 @@ BROKEN = {
     "a focus ring drawn thin": (_swap("outline:2px solid var(--ion)",
                                       "outline:1px solid var(--ion)"), "focus ring"),
     "a sheet over the line cap": (lambda css: css + "\n" * LINE_CAP, "cap"),
+    "a media block with no rule in it": (
+        lambda css: css + "@media (min-width:1200px){}\n", "no environment walks"),
+    "a media block nested in another": (
+        lambda css: css + "@media (min-width:1200px){@media (min-width:1300px){"
+                          ".desk-note{margin:0}}}\n", "nested"),
 }
 
 
@@ -327,8 +361,25 @@ def test_every_concept_token_pair_clears_its_floor_in_both_themes(theme):
         assert ratio >= floor, f"{theme}: {foreground} on {ground} is {ratio:.2f}:1, floor {floor}"
 
 
+#: The `@media` heads the sheet declares, written out here by hand. A media condition that
+#: arrives in the sheet has to be argued for on this line, and the walk below is held to
+#: exactly these.
+DECLARED_MEDIA = ["@media (max-width:900px)", "@media (prefers-color-scheme:light)"]
+
+
 def test_the_desk_page_is_measured_in_every_media_environment_the_sheet_declares():
-    """Calibration: a floor check that walked no environment would pass on nothing."""
-    labels = [label for label, _env in environments("light", _wrap(CSS))]
-    assert labels[0] == "light" and len(labels) >= 2, labels
-    assert sum(1 for _ in _rows(_wrap(CSS))) >= 2 * len(MEASURED)
+    """Calibration: a floor check that walked no environment would pass on nothing.
+
+    The heads are read out of the sheet's text and are exactly the two written above; the
+    cascade walk visits every one of them; and the number of rows the floor test measures
+    is the product of the themes, the measured rows and the environments each theme has --
+    the theme alone, then the theme with each other condition.
+    """
+    sheet = _wrap(CSS)
+    assert sorted(head for head, _depth in declared_media(CSS)) == DECLARED_MEDIA
+    assert {depth for _head, depth in declared_media(CSS)} == {0}
+    assert media_faults(sheet, CSS) == []
+    labels = [label for label, _env in environments("light", sheet)]
+    assert labels == ["light", "light+max-width-900px"]
+    specs = sum(len(rows) for rows in MEASURED.values())
+    assert sum(1 for _ in _rows(sheet)) == len(THEMES) * specs * len(labels)
