@@ -184,6 +184,14 @@ PERMITTED_IMPORTS = {
                                      "./desk-wizard-input.js", "./desk-wizard-launch.js",
                                      "./desk-wizard-prep.js", "./desk-wizard-skip.js",
                                      "./desk-wizard-team.js"}),
+    #: The «Схема» edits a flow (spec 7.2). The shape holds the facts of flow v1 and pure questions
+    #: over one, and imports nothing; the loop sugar, the branches and the edits stand on it and on
+    #: each other in one direction, and none of them reaches the wire, a store or the page.
+    "desk-flow-shape.js": frozenset(),
+    "desk-flow-loops.js": frozenset({"./desk-flow-shape.js"}),
+    "desk-flow-branches.js": frozenset({"./desk-flow-shape.js"}),
+    "desk-flow-edits.js": frozenset({"./desk-flow-shape.js", "./desk-flow-loops.js",
+                                     "./desk-flow-branches.js"}),
     # Pure S2 decoder; the actual store read door composes it with the base model.
     "studio-situation.js": frozenset({"./studio-model.js", "./studio-feedback-model.js",
                                       "./studio-runwords.js"}),
