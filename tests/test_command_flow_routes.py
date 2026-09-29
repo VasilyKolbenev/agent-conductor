@@ -9,10 +9,10 @@ import json
 
 import pytest
 
-from conductor.command import graph_template
+from conductor.command import flow_routes, graph_template
 from conductor.command.api_contracts import ERROR_STATUS
 from conductor.command.contracts import canonical_json
-from conductor.command.workflow_draft import draft_digest
+from conductor.command.workflow_draft import DraftRefused, draft_digest
 from conductor.command.workflow_flow import compile_flow, import_template
 from tests.test_command_run_routes import INSTANCE, PROVIDER, RUN_ID, a_run, journal_of
 from tests.test_command_workflow_flow import chain, fixture_flow, review, step
@@ -161,7 +161,35 @@ def test_publish_with_an_error_row_is_contract_invalid_with_diagnostics(tmp_path
     assert (refused.status, code_of(refused)) == (422, "contract_invalid")
     assert "dispatch_without_checker" in [row["code"] for row in refused.payload["diagnostics"]]
     assert revisions_on_disk(templates) == []
-    assert templates.load_draft(WORKFLOW_ID) is not None, "the drawing itself is still kept"
+    assert templates.load_draft(WORKFLOW_ID) is None, "a refused publication saves no draft"
+
+
+def test_a_publication_refused_for_error_rows_leaves_the_clients_expectation_valid(tmp_path):
+    subject, *_ = api(tmp_path)
+    held = expecting(subject)
+    refused = post(subject, flow_path(), {
+        "source": {"flow": broken()}, "publish_revision": 1, **held})
+    assert (refused.status, code_of(refused)) == (422, "contract_invalid")
+    # The client read no draft and was refused; what it held is still what stands, so the
+    # next write with the same expectation is a save, never a conflict with itself.
+    retried = post(subject, flow_path(), {"source": {"flow": good()}, **held})
+    assert retried.status == 201 and retried.payload["source"] == "draft"
+
+
+def test_a_candidate_the_constructor_refuses_is_refused_before_a_draft_is_saved(
+        tmp_path, monkeypatch):
+    subject, _store, templates, _events = api(tmp_path)
+    row = {"code": "template_refused", "severity": "error", "at": None, "params": {}}
+
+    def refusing(document, *, workflow_id, revision):
+        raise DraftRefused((row,))
+
+    monkeypatch.setattr(flow_routes, "publish_candidate", refusing)
+    refused = write(subject, good(), publish=1)
+    assert (refused.status, code_of(refused)) == (422, "contract_invalid")
+    assert refused.payload["diagnostics"] == [row]
+    assert templates.load_draft(WORKFLOW_ID) is None
+    assert revisions_on_disk(templates) == []
 
 
 def test_publish_writes_the_revision_and_takes_the_draft_away(tmp_path):
@@ -212,9 +240,16 @@ def test_publishing_an_old_number_with_a_different_document_is_the_revision_rout
     subject, _store, templates, _events = api(tmp_path)
     assert write(subject, good(), publish=1).status == 201
     assert write(subject, better(), publish=2).status == 201
-    refused = write(subject, chain(review("plan", purpose="Other."), step("result", "human")),
-                    publish=1)
-    assert refused.status >= 400 and revisions_on_disk(templates) == [1, 2]
+    other = chain(review("plan", purpose="Other."), step("result", "human"))
+    refused = write(subject, other, publish=1)
+    assert (refused.status, code_of(refused)) == (
+        ERROR_STATUS["record_conflict"], "record_conflict")
+    assert revisions_on_disk(templates) == [1, 2]
+    assert templates.load_draft(WORKFLOW_ID) is None, "a refused publication saves no draft"
+    # The same document at the same number, through the door that arbitrates revisions.
+    door = post(subject, f"/command/workflows/{WORKFLOW_ID}/revisions", {
+        "revision": 1, "document": compile_flow(other)})
+    assert (door.status, code_of(door)) == (refused.status, code_of(refused))
 
 
 def test_flow_state_carries_the_latest_revision_flow_beside_the_draft(tmp_path):
@@ -321,15 +356,24 @@ def test_a_binding_adds_its_warnings_to_the_answer_and_is_never_stored(tmp_path)
 
 def test_a_refused_write_moves_no_durable_byte_and_no_frame(tmp_path):
     subject, _store, _templates, events = seeded(tmp_path)
+    assert write(subject, good(), publish=1).status == 201
+    assert write(subject, better(), publish=2).status == 201
     before = durable_digest(tmp_path)
     stale = "sha256:" + "1" * 64
+    other = chain(review("plan", purpose="Other."), step("result", "human"))
     refusals = [
         post(subject, flow_path("cycle-other1"), {"source": {"flow": good()}}),
         post(subject, flow_path("cycle-other1"), {
             "source": {"flow": good()}, "expected_digest": stale}),
         write(subject, {"flow_version": 1}, workflow_id="cycle-other1"),
-        write(subject, good(), workflow_id="cycle-other1", publish=5)]
-    assert [row.status >= 400 for row in refusals] == [True] * 4
+        write(subject, good(), workflow_id="cycle-other1", publish=5),
+        write(subject, broken(), workflow_id="cycle-other1", publish=1),
+        write(subject, broken(), publish=3),
+        write(subject, other, publish=1)]
+    assert [(row.status, code_of(row)) for row in refusals] == [
+        (422, "contract_invalid"), (409, "draft_conflict"), (422, "contract_invalid"),
+        (422, "contract_invalid"), (422, "contract_invalid"), (422, "contract_invalid"),
+        (409, "record_conflict")]
     assert events == [] and durable_digest(tmp_path) == before
 
 

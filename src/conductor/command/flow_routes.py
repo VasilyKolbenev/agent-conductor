@@ -223,8 +223,10 @@ def write_flow(templates: Any, workflow_id: str, body: Mapping[str, Any], clock:
 
     A flow the form or the core refuses is `contract_invalid` with the rows and nothing is
     saved. Any other fault is saved with the draft and shown in `diagnostics`; only a
-    publication needs a clean flow. `201` when this call made a draft that stands or a
-    revision, `200` when nothing is new.
+    publication needs a clean flow. A publication that cannot be made (a fault row, a number
+    the store holds with other facts) is refused whole: no draft is saved either, so the
+    expectation the client held still stands. `201` when this call made a draft that stands
+    or a revision, `200` when nothing is new.
     """
     asked = parse_flow_write(body)
     if workflow_id.startswith(RESERVED_PREFIX) and (
@@ -243,11 +245,12 @@ def write_flow(templates: Any, workflow_id: str, body: Mapping[str, Any], clock:
             templates.admit_draft_write(workflow_id)
         _replaces_what_was_read(templates, workflow_id, asked)
         _hold_publish_number(templates, workflow_id, asked.publish_revision)
-        created = saved_draft(templates, workflow_id, draft_document, clock)
-        published, refused = _publish_if_asked(
+        plan, refused = _judged_publication(
             templates, workflow_id, asked.publish_revision, draft_document, rows)
         if refused is not None:
             return refused
+        created = saved_draft(templates, workflow_id, draft_document, clock)
+        published = _publish(templates, workflow_id, plan)
         state = _state(templates, workflow_id, limits, facts, published)
     made = (published is not None and published["created"]) or (
         created and state["source"] == "draft")
@@ -277,29 +280,56 @@ def _hold_publish_number(templates: Any, workflow_id: str, revision: int | None)
         raise ApiRefusal.fixed("contract_invalid")
 
 
-def _publish_if_asked(templates: Any, workflow_id: str, revision: int | None,
-                      document: dict[str, Any], rows: list[dict[str, Any]]):
-    """`(published, refusal)`: the revision this call wrote or found equal, or the refusal."""
+@dataclass(frozen=True)
+class _Publication:
+    """The revision a write asked for, judged before any byte of the write is stored."""
+
+    revision: int
+    #: None when the document repeats `revision` (the latest): there is nothing to write.
+    template: GraphTemplate | None
+
+
+def _judged_publication(templates: Any, workflow_id: str, revision: int | None,
+                        document: dict[str, Any], rows: list[dict[str, Any]]):
+    """`(plan, refusal)`: what publishing would do, decided before the draft is written.
+
+    Every refusal of a publication is here, so a publication that is refused has saved no
+    draft either and the client's expectation of the draft still stands (spec 7.1, step 4).
+    A number the store already holds is arbitrated by the store itself: `save` on a claimed
+    number reads and compares and writes nothing, so the answer is the one `/revisions` gives.
+    """
     if revision is None:
         return None, None
     if _errors(rows):
         return None, refused_with(DraftRefused(tuple(rows)))
     revisions = templates.revisions(workflow_id)
     latest = revisions[-1] if revisions else None
-    draft = templates.load_draft(workflow_id)
     if _repeats(templates, workflow_id, document, latest):
-        templates.discard_draft(workflow_id, expecting=draft)
-        return {"revision": latest, "created": False}, None
+        return _Publication(latest, None), None
     try:
         template = publish_candidate(document, workflow_id=workflow_id, revision=revision)
     except DraftRefused as refused:
         return None, refused_with(refused)
-    if not templates.revision_path(workflow_id, revision).parent.is_dir():
-        templates.admit_revision_write(workflow_id, revision)
-    saved = templates.save(template)
+    if revision in revisions:
+        templates.save(template)
+    return _Publication(revision, template), None
+
+
+def _publish(templates: Any, workflow_id: str,
+             plan: _Publication | None) -> dict[str, Any] | None:
+    """The revision this call wrote or found equal; every refusal came before the draft."""
+    if plan is None:
+        return None
+    draft = templates.load_draft(workflow_id)
+    if plan.template is None:
+        templates.discard_draft(workflow_id, expecting=draft)
+        return {"revision": plan.revision, "created": False}
+    if not templates.revision_path(workflow_id, plan.revision).parent.is_dir():
+        templates.admit_revision_write(workflow_id, plan.revision)
+    saved = templates.save(plan.template)
     if saved.created:
         templates.discard_draft(workflow_id, expecting=draft)
-    return {"revision": revision, "created": saved.created}, None
+    return {"revision": plan.revision, "created": saved.created}
 
 
 def _repeats(templates: Any, workflow_id: str, document: dict[str, Any],
