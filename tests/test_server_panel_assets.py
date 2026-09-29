@@ -362,7 +362,13 @@ def test_a_refused_post_consumes_exactly_what_its_framing_declares(
     assert refused.answered == [404]
 
 
-def test_the_allowlist_is_exactly_the_expected_routes_each_named_for_a_plain_packaged_file():
+def test_the_allowlist_is_exactly_the_expected_routes_each_named_for_a_plain_file():
+    """The route set, the content types and the spelling of each name; not packaging.
+
+    That every named file is packaged is the claim of the partition test below
+    and of the served-bytes and wheel tests: a row for a file that is not there
+    leaves this test green and reds those.
+    """
     assert set(server.PANEL_ASSETS) == set(ASSETS)
     for target, (content_type, name) in server.PANEL_ASSETS.items():
         assert content_type == ASSETS[target]
