@@ -35,6 +35,7 @@ from conductor import ownership_transition as transition
 from conductor.command.command_routes import COMMAND_ROUTES
 from conductor.command.coordinator import JOIN_TIMEOUT_SECONDS
 from conductor.command.run_store import RunStore
+from conductor.ownership_errors import OwnerRefused
 from tests.test_policy_driver import ask as two_step_ask
 from tests.test_policy_runtime import setup
 from tests.test_store import good_lane, write_project
@@ -101,7 +102,7 @@ def wait_until(predicate: Callable[[], object], timeout: float, what: str,
     deadline = time.monotonic() + timeout
     while True:
         exited = child is not None and not child.alive()
-        if predicate():
+        if _read(predicate):
             return
         if exited:
             child.raise_if_exited(what)
@@ -112,11 +113,28 @@ def wait_until(predicate: Callable[[], object], timeout: float, what: str,
 
 
 def stays_true(predicate: Callable[[], object], window: float, what: str) -> None:
-    """Assert the predicate holds at every poll across the whole window."""
+    """Assert the predicate holds at every poll that could read it, across the window."""
     deadline = time.monotonic() + window
     while time.monotonic() < deadline:
-        assert predicate(), f"{what}: stopped holding inside the {window}s window"
+        holds = _read(predicate)
+        assert holds is not False, f"{what}: stopped holding inside the {window}s window"
         time.sleep(0.05)
+
+
+def _read(predicate: Callable[[], object]) -> bool | None:
+    """One poll: True or False, or None when the ownership head could not be read just now.
+
+    The child publishes a new head generation while a witness reads it, and a read
+    that lands inside that publication refuses `transition_conflict`. That is a
+    fact about the moment of the read, not about the state, so it answers "not yet"
+    to a wait and "no news" to a probe. Any other ownership refusal is a finding.
+    """
+    try:
+        return bool(predicate())
+    except OwnerRefused as refusal:
+        if refusal.code != "transition_conflict":
+            raise
+        return None
 
 
 def _launch_options(*, console: bool) -> dict:
@@ -303,6 +321,7 @@ class DrainChild:
     def finish(self) -> None:
         for number in range(1, 5):
             self.release(number)
+            self.project.release_quota_poll(number)
         try:
             self.proc.stdin and self.proc.stdin.close()
         except OSError:
@@ -348,8 +367,12 @@ class DrainProject:
 
     def start(self, *, hub: bool, auto_release: bool = False, fault: str | None = None,
               margin: float | None = None, ctrl_c: str = "none",
-              settle_delay: float = LINGER) -> DrainChild:
-        """Launch the child; `ctrl_c` is `none` (no console), `ignored` or `enabled` (its own)."""
+              settle_delay: float = LINGER, quota: str | None = None) -> DrainChild:
+        """Launch the child; `ctrl_c` is `none` (no console), `ignored` or `enabled` (its own).
+
+        `quota` gives the child a real collector polling a fake source every second:
+        `poll` marks each poll, `hold-<n>` also holds poll `n` until it is released.
+        """
         argv = [sys.executable, str(CHILD), "up", "--dir", str(self.root), "--port", "0"]
         if hub:
             argv += ["--project-id", self.project_id,
@@ -359,7 +382,7 @@ class DrainProject:
         with stderr_path.open("wb") as stderr:
             proc = subprocess.Popen(
                 argv, cwd=self.home,
-                env=self._environment(auto_release, fault, margin, ctrl_c, settle_delay),
+                env=self._environment(auto_release, fault, margin, ctrl_c, settle_delay, quota),
                 stdin=subprocess.PIPE if hub else subprocess.DEVNULL,
                 stdout=subprocess.PIPE, stderr=stderr,
                 **_launch_options(console=ctrl_c != "none"))
@@ -368,15 +391,19 @@ class DrainProject:
         self.children.append(child)
         return child
 
-    def _environment(self, auto_release, fault, margin, ctrl_c, settle_delay) -> dict[str, str]:
+    def _environment(self, auto_release, fault, margin, ctrl_c, settle_delay,
+                     quota) -> dict[str, str]:
         env = dict(os.environ)
         env.update(PYTHONPATH=os.pathsep.join((str(SOURCE_ROOT), str(REPO_ROOT))),
                    PYTHONDONTWRITEBYTECODE="1", PYTHONNOUSERSITE="1",
                    CONDUCT_HOME=str(self.home), DRAIN_ROOT=str(self.root),
                    DRAIN_CONTROL=str(self.control), DRAIN_LOGIN=str(self.login),
                    DRAIN_SETTLE_DELAY=str(settle_delay))
-        for name in ("DRAIN_AUTO_RELEASE", "DRAIN_FAULT", "DRAIN_MARGIN", "DRAIN_CTRL_C"):
+        for name in ("DRAIN_AUTO_RELEASE", "DRAIN_FAULT", "DRAIN_MARGIN", "DRAIN_CTRL_C",
+                     "DRAIN_QUOTA"):
             env.pop(name, None)
+        if quota is not None:
+            env["DRAIN_QUOTA"] = quota
         if auto_release:
             env["DRAIN_AUTO_RELEASE"] = "1"
         if fault is not None:
@@ -419,6 +446,13 @@ class DrainProject:
 
     def results(self) -> list[str]:
         return [row.value.outcome for row in self._records() if row.kind == "action_result"]
+
+    def quota_polls(self) -> int:
+        """How many quota polls have started (the fake source marks each one)."""
+        return len(list(self.control.glob("quota-poll-*")))
+
+    def release_quota_poll(self, number: int) -> None:
+        (self.control / f"quota-release-{number}").write_text("1", encoding="ascii")
 
     def wait_run_terminal(self, child: DrainChild) -> None:
         wait_until(lambda: any(row.kind == "run_terminal" for row in self._records()),

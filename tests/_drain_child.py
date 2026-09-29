@@ -18,11 +18,15 @@ Optional knobs, all environment: ``DRAIN_AUTO_RELEASE`` (never hold),
 exists), ``DRAIN_SETTLE_DELAY`` (seconds a worker lingers after each attempt's
 receipt), ``DRAIN_CTRL_C=ignored|enabled`` (a known Ctrl+C state on entry, whatever
 the parent's own state was: `ignored` is what a harness child inherits, and the
-product's standalone `up` must clear it for itself).
+product's standalone `up` must clear it for itself), ``DRAIN_QUOTA=poll|hold-<n>``
+(the REAL quota collector over one fake source, polling every second: `quota-poll-<n>`
+marks the start of poll `n`, and `hold-<n>` keeps that poll running until
+`quota-release-<n>` exists).
 """
 from __future__ import annotations
 
 import importlib.util
+import itertools
 import os
 import signal
 import sys
@@ -123,6 +127,28 @@ class _UncertainQuota:
             "quota worker retirement is unconfirmed")
 
 
+def _polling_quota(real_collector, mode: str):
+    """The real collector, with its plans replaced by one whose fetch marks every poll."""
+    from tests.test_quota_collectors import balance, ready
+    control = Path(os.environ["DRAIN_CONTROL"])
+    hold = int(mode.split("-", 1)[1]) if mode.startswith("hold-") else None
+    numbers = itertools.count(1)
+
+    def fetch(endpoint, bearer):
+        number = next(numbers)
+        (control / f"quota-poll-{number}").write_text("1", encoding="ascii")
+        deadline = time.monotonic() + HOLD_LIMIT_SECONDS
+        while number == hold and time.monotonic() < deadline:
+            if (control / f"quota-release-{number}").exists():
+                break
+            time.sleep(0.02)
+        return balance()
+
+    def build(service, plans, **kwargs):
+        return real_collector(service, (ready(),), fetch=fetch, interval_seconds=1, **kwargs)
+    return build
+
+
 def _shorten_drain_margin() -> None:
     margin = os.environ.get("DRAIN_MARGIN")
     if margin is None or importlib.util.find_spec("conductor.server_drain") is None:
@@ -179,6 +205,8 @@ def _install() -> None:
         set_console_ctrl_c(os.environ["DRAIN_CTRL_C"])
     if os.environ.get("DRAIN_FAULT") == "quota_uncertain":
         server.QuotaCollector = _UncertainQuota
+    if os.environ.get("DRAIN_QUOTA"):
+        server.QuotaCollector = _polling_quota(server.QuotaCollector, os.environ["DRAIN_QUOTA"])
     _shorten_drain_margin()
     server.build = _fake_build(server.build)
 

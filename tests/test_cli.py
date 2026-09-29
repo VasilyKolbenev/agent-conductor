@@ -184,12 +184,15 @@ def test_a_prompt_usage_error_comes_from_the_prompt_subparser_not_the_top_level(
 
 
 class _FakeServer:
-    """A bound server that returns from `serve_forever` at once, as Ctrl-C does."""
+    """A bound server that returns from `serve_forever` at once, as a stopped one does."""
 
     server_address = ("127.0.0.1", 7777)
 
     def serve_forever(self):
-        raise KeyboardInterrupt
+        return None
+
+    def shutdown(self):
+        pass
 
     def server_close(self):
         pass
@@ -494,7 +497,7 @@ def test_up_and_demo_reach_the_same_serve_function_with_the_users_port(
     # user typed rather than a default.
     calls = []
 
-    def fake_serve(root, port, providers=None):
+    def fake_serve(root, port, providers=None, plan=None):
         calls.append(port)
         return 23
 

@@ -21,19 +21,20 @@
         "/.conduct*",
         "/work/",
         "/instructions/",
-        ".claude-home",
-        ".claude-marker",
-        ".codex-home",
-        ".codex-marker",
-        ".grok-home",
-        ".grok-marker",
-        ".kimi-home",
-        ".kimi-marker",
-        ".dsh-home",
-        ".dsh-marker"
+        "/.claude-home/",
+        "/.claude-marker",
+        "/.codex-home/",
+        "/.codex-marker",
+        "/.grok-home/",
+        "/.grok-marker",
+        "/.kimi-home/",
+        "/.kimi-marker",
+        "/.dsh-home/",
+        "/.dsh-marker"
       ],
       "agent_instructions": ["AGENTS.md", ".claude/"],
       "projects_home_created": false
     }
-  }
+  },
+  "illustrative": ["response.result.exclude_names"]
 }

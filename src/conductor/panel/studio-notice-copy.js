@@ -90,6 +90,7 @@ export const NOTICE_COPY = Object.freeze({
   "error.run_corrupt": ["The run history is corrupt.", "История запуска повреждена."],
   "error.run_terminal": ["This run has finished. Its plan has nothing left to open, so nothing further can be proposed, decided or authorized on it.", "Этот запуск завершён. В его плане больше нечего открывать, поэтому в нём ничего нельзя предложить, решить или разрешить."],
   "error.same_origin_denied": ["The local origin was refused.", "Локальный источник отклонён."],
+  "error.server_stopping": ["This project's server is stopping. Nothing was written; start it again to continue.", "Сервер проекта останавливается. Ничего не записано; запустите его снова, чтобы продолжить."],
   "error.service_refused": ["The command service refused the request.", "Командная служба отклонила запрос."],
   "error.store_error": ["The run store is unavailable.", "Хранилище запусков недоступно."],
 });

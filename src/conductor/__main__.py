@@ -131,57 +131,24 @@ def _cmd_report(args: argparse.Namespace) -> int:
     return 0
 
 
-def _serve(root: Path | str, port: int, providers: str | None = None) -> int:
+def _serve(root: Path | str, port: int, providers: str | None = None, plan=None) -> int:
     """Serve the panel for `root` on 127.0.0.1; Ctrl-C shuts down cleanly.
 
     `providers` names the operator's provider file; without it the default under
     the project's own `conductor/` is read, and an absent file configures nothing.
-    A file that IS there and cannot be honoured is a refusal on stderr with exit
-    1 and no server at all — starting with a provider the operator asked for
-    silently dropped would be the worse answer.
+    A start that cannot go on is one stderr line, `conduct up: refused <code>:
+    <detail>`, with exit 1 and no server at all — starting with a provider the
+    operator asked for silently dropped would be the worse answer. The whole
+    sequence lives in `conductor.up_serve`; `plan` is what `up_flags` settled.
     """
-    from conductor import server              # deferred: see the import block
-    from conductor.command import operator_config   # deferred: see the import block
-    path = (Path(providers) if providers is not None
-            else operator_config.provider_config_path(store.conductor_dir(root)))
-    try:
-        pinned = operator_config.load_provider_configs(path)
-    except operator_config.OperatorConfigError as e:
-        print(str(e), file=sys.stderr)
-        return 1
-    try:
-        srv = server.build(root, port=port, providers=pinned)
-    except OSError as e:                  # port busy / unbindable → exit 1
-        # `port` is the one the user asked for, and the ONLY port this message
-        # may name: an OSError is not proof the port is busy, and no other
-        # port is known to be free, so the hint keeps the PORT placeholder
-        # literal instead of volunteering a number.
-        print(f"cannot serve on 127.0.0.1:{port}: {e}. "
-              "To try a different port, rerun with --port PORT.", file=sys.stderr)
-        return 1
-    host, bound = srv.server_address[:2]
-    # The URL is the result; how to stop the server is lifecycle chatter. Split
-    # so `conduct up | xargs open` gets a URL and not a sentence about it.
-    #
-    # flush=True is load-bearing, not tidiness. A redirected stdout is
-    # block-buffered, and the next statement blocks until the server stops —
-    # so without the flush the URL reaches the pipe only once it is useless,
-    # and a killed server never emits it at all. stderr needs no flush: it is
-    # line-buffered whether or not it is a terminal.
-    print(f"http://{host}:{bound}/", flush=True)
-    print(f"serving {root} — Ctrl+C to stop", file=sys.stderr)
-    try:
-        srv.serve_forever()
-    except KeyboardInterrupt:
-        pass
-    finally:
-        srv.server_close()
-    return 0
+    from conductor import up_serve            # deferred: see the import block
+    return up_serve.serve(root, port, providers, plan)
 
 
 def _cmd_up(args: argparse.Namespace) -> int:
     """Serve the panel on 127.0.0.1; Ctrl-C shuts down cleanly (exit 0)."""
-    return _serve(args.dir, args.port, args.providers)
+    from conductor import up_serve            # deferred: see the import block
+    return up_serve.up(args, _serve)
 
 
 def _cmd_providers(args: argparse.Namespace) -> int:
@@ -407,6 +374,26 @@ def _add_providers(p: argparse.ArgumentParser) -> None:
                         "nothing)")
 
 
+def _add_hub_flags(p: argparse.ArgumentParser) -> None:
+    """Attach the flags a hub gives its child (spec 4.1.4); `conductor.up_flags` judges them."""
+    # No `choices`, `type` or `required` here: argparse would answer a bad value with a
+    # usage error (exit 2), and every refusal of `up` is one stderr line with exit 1.
+    p.add_argument("--project-id", default=None, metavar="ID",
+                   help="assert that the project's activation nonce is ID")
+    p.add_argument("--hub-origin", default=None, metavar="ORIGIN",
+                   help="origin of the hub that embeds this server (http://127.0.0.1:PORT)")
+    p.add_argument("--status-file", default=None, metavar="PATH",
+                   help="where this process publishes its state (hub children only)")
+    p.add_argument("--stop-on-stdin-eof", action="store_true",
+                   help="drain and stop when stdin reaches end of file")
+    p.add_argument("--mode", action="append", default=None, metavar="MODE",
+                   help="active (default) or view; view needs the hub flags")
+    p.add_argument("--transition", default=None, metavar="UUID",
+                   help="the planned hub transition that started this server")
+    p.add_argument("--auto-continue", default=None, metavar="FLAG@REVISION",
+                   help="the continue-after flag the hub handed this transition")
+
+
 def _add_stranded_ids(p: argparse.ArgumentParser) -> None:
     """Attach `reconcile`'s two ids: the run, and the action inside it.
 
@@ -542,6 +529,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("up", help="serve the panel on loopback HTTP with live updates")
     _add_port(p)
     _add_providers(p)
+    _add_hub_flags(p)
     _add_dir_and_func(p, _cmd_up)
 
     # No --dir: demo materializes its own throwaway root.

@@ -379,6 +379,9 @@ class Handler(KeptConnection, BaseHTTPRequestHandler):
             self, method: str, *, read_body: bool = False,
             head: bool = False) -> None:
         """Bridge raw HTTP facts to CommandApi without normalizing headers."""
+        if method == "POST" and self.server.draining:
+            self._refuse_while_draining()
+            return
         pairs = tuple(self.headers.raw_items())
         body = b""
         if read_body:
@@ -398,6 +401,19 @@ class Handler(KeptConnection, BaseHTTPRequestHandler):
         self._send_body(
             response.status, "application/json; charset=utf-8", encoded,
             write_body=not head)
+
+    def _refuse_while_draining(self) -> None:
+        """Answer a command POST `409 server_stopping`; nothing is executed (spec 4.1.6).
+
+        The body is consumed through the bounded door first, as for any refused
+        POST, so the answer is not sent over bytes still on the connection. Host,
+        Origin and CSRF are not consulted: this answer grants nothing and says
+        only that the server is stopping.
+        """
+        self._drain_refused_body()
+        refusal = ApiRefusal.fixed("server_stopping")
+        self._send_body(refusal.status, "application/json; charset=utf-8",
+                        canonical_json(refusal.as_dict()).encode("utf-8"))
 
     def _serve_panel(self) -> None:
         """Answer `GET /` with the Workflow Studio's shell.
@@ -521,6 +537,7 @@ class ConductServer(ThreadingHTTPServer):
         # Attributes first: a failed bind makes socketserver call our
         # server_close() before __init__ finishes.
         self.shutting_down = False
+        self.draining = False               # set by the drain: every command POST is refused
         self.project_owner = None
         self.policy_driver = None
         self.retirement_uncertain = False

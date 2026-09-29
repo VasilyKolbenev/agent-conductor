@@ -33,7 +33,7 @@
         "login_key": "a3f1c9e07b5d4286b0e1d7c4f9a2385e6d1b0c7f4a9e2385b6d0c1f7a4e9b238",
         "harness": "claude-code",
         "used_by": ["3f9c0d5a7b2e4c168a90d3e1f4b7a625"],
-        "state": "unclosed"
+        "state": "in_use"
       }
     ],
     "hub_job": "none"

@@ -57,6 +57,7 @@ ERROR_STATUS = MappingProxyType({
     "draft_conflict": 409,
     "run_terminal": 409,
     "gate_unreached": 409,
+    "server_stopping": 409,
 })
 
 _FIXED_MESSAGES = MappingProxyType({
@@ -119,6 +120,11 @@ _FIXED_MESSAGES = MappingProxyType({
     #: than from a refusal envelope.
     "gate_unreached": "a decision may stand only on a gate this run's plan "
                       "has reached",
+    #: Its own code because nothing is wrong with the request and nothing about
+    #: it needs changing: this server is draining toward a stop and accepts no
+    #: write, whichever one it is. It carries no detail, so it needs no
+    #: `_REVIEWED_FACTS` row.
+    "server_stopping": "the server is stopping and accepts no new command",
 })
 
 

@@ -413,7 +413,8 @@ choose a code.
   { "code": "draft_changed",         "status": 409, "source": "concurrency" },
   { "code": "draft_conflict",        "status": 409, "source": "concurrency" },
   { "code": "run_terminal",          "status": 409, "source": "plan" },
-  { "code": "gate_unreached",        "status": 409, "source": "plan" }
+  { "code": "gate_unreached",        "status": 409, "source": "plan" },
+  { "code": "server_stopping",       "status": 409, "source": "lifecycle" }
 ]
 ```
 

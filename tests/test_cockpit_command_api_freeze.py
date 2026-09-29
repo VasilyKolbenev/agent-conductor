@@ -140,6 +140,9 @@ EXPECTED_ERRORS = {
     #: opened this gate yet. Neither is the store's, the service's or the
     #: caller's fault, and both change only when a record arrives.
     "gate_unreached": (409, "plan"),
+    #: The LIFECYCLE of the server itself: nothing about the request, the run or
+    #: the plan is at fault, the process is draining toward a stop.
+    "server_stopping": (409, "lifecycle"),
 }
 EXPECTED_ERROR_CODES = frozenset(EXPECTED_ERRORS)
 
