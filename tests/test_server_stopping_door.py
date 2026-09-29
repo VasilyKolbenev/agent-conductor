@@ -80,6 +80,15 @@ def test_reads_and_the_event_stream_route_still_answer_while_the_server_drains(s
     serving.draining = True
     for path in ("/command/session", "/state.json", "/harnesses.json"):
         assert _request(serving, "GET", path)[0] == 200, path
+    # The stream has no end, so only its head is read: getresponse() stops after the headers.
+    connection = http.client.HTTPConnection("127.0.0.1", serving.server_address[1], timeout=10)
+    try:
+        connection.request("GET", "/events")
+        stream = connection.getresponse()
+        assert stream.status == 200
+        assert stream.getheader("Content-Type") == "text/event-stream"
+    finally:
+        connection.close()
 
 
 def test_a_server_that_is_not_draining_never_says_server_stopping(serving):
