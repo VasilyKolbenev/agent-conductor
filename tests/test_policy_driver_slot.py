@@ -3,6 +3,7 @@
 Real driver, real store, the two-step independent-check run of test_policy_driver. A Gate holds the
 doer's execute open, so a step stays in flight for exactly as long as a test needs it to.
 """
+from dataclasses import FrozenInstanceError
 from threading import Event, Thread
 from types import SimpleNamespace
 
@@ -135,3 +136,28 @@ def test_hold_new_work_returns_only_after_a_tick_past_the_gate_has_admitted_its_
     holder.join(8)
     assert not holder.is_alive()
     assert seen["requests"] == ["do"] and seen["inflight"] is not None
+
+
+def test_slot_of_a_driver_that_was_never_activated_is_empty_and_not_holding(run):
+    assert run.driver.slot() == policy_driver.SlotSnapshot(None, None, False)
+
+
+def test_slot_reports_the_active_and_inflight_runs_and_the_hold(run):
+    snapshot = policy_driver.SlotSnapshot
+    in_flight(run)
+    assert run.driver.slot() == snapshot("run", "run", False)
+    run.driver.hold_new_work()
+    assert run.driver.slot() == snapshot("run", "run", True)
+    let_the_step_finish(run)
+    run.driver._tick("run", "grant")  # settles the finished action
+    assert run.driver.slot() == snapshot("run", None, True)
+    run.driver.deactivate("run")
+    assert run.driver.slot() == snapshot(None, None, True)
+
+
+def test_a_slot_snapshot_is_frozen_and_does_not_follow_the_driver(run):
+    before = run.driver.slot()
+    run.driver.hold_new_work()
+    assert before.holding_new_work is False and run.driver.slot().holding_new_work is True
+    with pytest.raises(FrozenInstanceError):
+        before.holding_new_work = True

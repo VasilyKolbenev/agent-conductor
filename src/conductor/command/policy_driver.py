@@ -1,5 +1,6 @@
 """One coalesced wake, one selected run, and existing execution admission."""
 import hashlib
+from dataclasses import dataclass
 from threading import Condition, Lock, Thread
 
 from .contracts import ActionProposal, ActionRequest, ActionResultReceipt, PROPOSAL_INPUT_BINDING, ABSENT, _thaw_json
@@ -13,6 +14,14 @@ from .work_layout import work_route
 
 class NewWorkHeld(ContractError):
     """The driver is draining: what is in flight settles, nothing new is activated or started."""
+
+
+@dataclass(frozen=True)
+class SlotSnapshot:
+    """What the driver holds at one instant: a copy, never a live view."""
+    active_run_id: str | None
+    inflight_run_id: str | None
+    holding_new_work: bool
 
 
 class PolicyDriver:
@@ -58,6 +67,18 @@ class PolicyDriver:
             self._holding_new_work = True
         with self._admission:
             pass
+
+    def slot(self) -> SlotSnapshot:
+        """A frozen copy of the active run, the run with an action in flight, and the hold flag.
+
+        It reads no journal, so `_inflight` can lag one tick behind a written result; the state of
+        the holder comes from `automation_view` (spec 4.4.6).
+        """
+        with self._condition:
+            return SlotSnapshot(
+                active_run_id=self._active[0] if self._active is not None else None,
+                inflight_run_id=self._inflight[0] if self._inflight is not None else None,
+                holding_new_work=self._holding_new_work)
 
     def hold_activation(self, run_id):
         self._settle_inflight()
