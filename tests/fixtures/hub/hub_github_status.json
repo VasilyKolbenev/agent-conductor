@@ -1,0 +1,9 @@
+{
+  "route": "GET /hub/github/status",
+  "status": 200,
+  "response": {
+    "state": "ok",
+    "login": "octocat",
+    "login_command": null
+  }
+}

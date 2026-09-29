@@ -1,0 +1,12 @@
+{
+  "route": "GET /hub/dialogs/<pick_id>",
+  "status": 200,
+  "response": {
+    "pick_id": "pick-9d3f5a71c20e4b86a1f7d04e2c8b6395",
+    "purpose": "project",
+    "state": "picked",
+    "folder": "web-app",
+    "project": "legacy",
+    "code": null
+  }
+}
