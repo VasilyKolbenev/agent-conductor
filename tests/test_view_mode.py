@@ -6,13 +6,22 @@ child exists, no ownership loan was claimed (a loan that is retired without proo
 the owner), and the refusal is the same `CommandSpecError` every unusable command gets.
 
 This is the first slice of that section. What is here: the runner's refusal (with a control,
-so a spy that sees nothing cannot pass), and the first witness, that a server launched in
-view mode spawns nothing through the routes that exist today (task creation, the reads and the
-preview). What is NOT here yet, on purpose: the mode does not reach the runner's construction
-site (`command/providers.py`), the policy driver and the quota collector are not gated by the
-mode, and `--mode view` still refuses to start (day 8); the routes that read git or request a
-seed are lane L's and come later. Each of those adds a step to the witness below, and the
-witness must stay green with every one.
+so a spy that sees nothing cannot pass), and a witness that a server launched with
+`Launch(mode="view")` spawns nothing through task creation, the reads and the preview.
+
+What that witness does NOT prove, and why its name says what it walks and not what it
+guarantees: the mode does not gate spawning yet. `Launch.mode` reaches only the project
+identity; the runner built at `command/providers.py` is still spawn-capable whatever the mode,
+so the witness is green in `active` too. It says that today's walk starts no child, not that a
+view process cannot start one. Also not here: the policy driver and the quota collector are
+not gated by the mode, `--mode view` still refuses to start, and the routes that read git or
+request a seed are lane L's.
+
+The spec's own name for the witness (4.3.6) is kept for the day-8 version, which must (a) make
+the mode reach the runner's construction site and (b) discriminate: assert that the runner the
+flow reaches refuses to spawn, or add the control where the same flow does spawn in `active`
+(authorize, then the driver). A green test under that name is read as the guarantee holding,
+so it is not used before it is true.
 """
 from __future__ import annotations
 
@@ -97,8 +106,14 @@ def test_a_refused_spawn_claims_no_ownership_loan_and_leaves_the_owner_whole(tmp
 # -- the first witness ---------------------------------------------------------------
 
 
-def test_view_mode_process_never_spawns_a_child_through_a_full_prepare_flow(
+def test_a_server_launched_for_viewing_spawns_no_child_through_task_creation_reads_and_preview(
         tmp_path, spy):
+    """A task, the reads and the preview, walked on a server launched for viewing: no child.
+
+    It holds for `Launch(mode="active")` as well, because the mode does not reach the runner
+    yet (see the module docstring). What it pins is the walk: each step below answers as
+    written, and the process starts nothing while it does.
+    """
     root = write_project(tmp_path, lanes={"claude": good_lane()})
     f = setup(root, two_steps=True, checker=True)
     ownership_transition.activate(root, legacy_writers_stopped=True)
