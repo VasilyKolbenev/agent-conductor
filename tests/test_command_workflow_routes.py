@@ -50,7 +50,6 @@ from tests.test_alpha6_dalio_revision import (
     REVISION_THREE_DIGEST,
     REVISION_TWO_DIGEST,
 )
-from tests.test_command_desk_templates import DESK_DIGESTS
 from tests.test_command_schema_doubles import DeepPlanAdapter
 from tests.test_command_workflow_draft import (
     FOREIGN,
@@ -97,7 +96,9 @@ TASK = "task-studio-1"
 #: any test does may move one byte of either.
 SHIPPED = {"dalio-v1": REVISION_ONE_DIGEST, "dalio-v2": REVISION_TWO_DIGEST,
            "dalio-v3": REVISION_THREE_DIGEST, "dalio-v4": REVISION_FOUR_DIGEST,
-           "dalio-v5": REVISION_FIVE_DIGEST, **DESK_DIGESTS}
+           "dalio-v5": REVISION_FIVE_DIGEST,
+           **json.loads(Path(__file__).with_name("fixtures").joinpath(
+               "desk_template_digests.json").read_text(encoding="utf-8"))}
 
 
 def target(path):
