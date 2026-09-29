@@ -190,6 +190,22 @@ def test_in_view_mode_the_git_step_says_not_active_and_there_is_no_project_docum
 
 
 @pytest.mark.parametrize("lang", LANGS)
+def test_in_view_mode_git_is_unread_until_the_answer_lands_and_only_then_not_active(bench, lang):
+    unanswered = {name: table for name, table in answers().items() if name != "git"}
+    to_materials(bench, lang, view=True, auto=unanswered)
+    panel = bench.page.locator("[data-git-state]")
+    assert panel.get_attribute("data-git-state") == "reading"
+    assert panel.locator("p").first.inner_text() == bench.say("wizard.git.reading")
+    assert bench.control("wizard:next").is_disabled()
+    assert bench.text("[data-wizard-reason]") == bench.say("wizard.reason.git_reading")
+    bench.answer("git", GIT["not_active"])
+    expect(panel).to_have_attribute("data-git-state", "not_active")
+    assert panel.locator("p").first.inner_text() == bench.say("wizard.git.not_active")
+    expect(bench.control("wizard:next")).to_be_enabled()
+    assert bench.problems == []
+
+
+@pytest.mark.parametrize("lang", LANGS)
 def test_unwired_git_buttons_are_disabled_and_say_they_wait_for_a_later_step(bench, lang):
     for state, ids in (("not_git", ["connect_git", "run_without_git"]),
                        ("unborn", ["first_commit"])):

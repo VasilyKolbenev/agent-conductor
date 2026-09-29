@@ -161,7 +161,8 @@ const HOLDS = Object.freeze({reading: "git_reading", failed: "git_failed"});
 //: mode. `stop` is why the step cannot be left, `blocks` whether it cannot: a state that ends
 //: the wizard, a read still out or lost, or a starter that has no repository yet (in view, git
 //: waits for activation and the starter goes on to be queued). No state is guessed: an unread
-//: or failed read is its own.
+//: or failed read is its own, in view as everywhere; `not_active` is what the server says when
+//: it says it (spec 6.2.1), never what the desk supposes before the answer lands.
 export function gitFacts(read, mode) {
   const starter = mode.starterId !== null;
   let state = "reading", git = null;
@@ -169,7 +170,7 @@ export function gitFacts(read, mode) {
   else if (read && read.status === "ok") {
     git = read.payload?.git ?? {};
     state = typeof git.state === "string" ? git.state : "failed";
-  } else if (mode.view) state = "not_active";
+  }
   const ends = ENDS_THE_WIZARD.includes(state);
   const needsGit = starter && !mode.view && state !== "repo";
   const held = Object.hasOwn(HOLDS, state) ? HOLDS[state] : null;
