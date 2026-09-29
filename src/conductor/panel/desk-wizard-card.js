@@ -9,7 +9,7 @@
 // an ⓘ are open or closed in the model, so the redraw of a ticking clock keeps them as they are.
 import {element} from "./command-view.js";
 import {action, choice, instantText, textField, timeText} from "./desk-wizard-draw.js";
-import {LAUNCH_REFUSALS, LAUNCH_WHY, SKIP_STOPS, launchFacts, roleKind}
+import {LAUNCH_REFUSALS, LAUNCH_STAGES, LAUNCH_WHY, SKIP_STOPS, launchFacts, roleKind}
   from "./desk-wizard-model.js";
 
 const START = "wizard:launch:start";
@@ -307,6 +307,24 @@ function progressLine(ctx, facts) {
     text: ctx.t(`wizard.launch.${facts.phase}`)})];
 }
 
+//: The reason for `queue_not_ready`, which the server gives no detail for: what the preparation
+//: read found (a run past step 6 is left by the wizard itself, so it has no sentence of its own).
+function checkWords(ctx, check) {
+  if (check.status === "reading") return ctx.t("wizard.launch.check.reading");
+  if (check.status === "failed") return ctx.t("wizard.launch.check.failed", {code: check.code});
+  if (!check.listed) return ctx.t("wizard.launch.check.unlisted");
+  if (LAUNCH_STAGES.includes(check.stage)) {
+    return ctx.t(`wizard.launch.check.stage.${check.stage}`);
+  }
+  return ctx.t("wizard.launch.check.stage_other", {stage: check.stage ?? "—"});
+}
+
+function checkLine(ctx, facts) {
+  const {check, refusal} = facts;
+  if (check === null || refusal?.code !== "queue_not_ready") return [];
+  return [element("p", {"data-launch-check": check.status, text: checkWords(ctx, check)})];
+}
+
 //: What the last answer said: a note (the slot was taken, the terms were stale, nothing was
 //: written) or a refusal with its code. None of them presses anything by itself.
 function answerLines(ctx, facts) {
@@ -323,7 +341,7 @@ function answerLines(ctx, facts) {
       text: known ? ctx.t(`wizard.launch.refused.${refusal.code}`)
         : ctx.t("wizard.launch.refused.other", {code: refusal.code})}));
   }
-  return out;
+  return [...out, ...checkLine(ctx, facts)];
 }
 
 //: Started, or queued. A queue entry in a viewed project keeps the wizard open: the closing line,

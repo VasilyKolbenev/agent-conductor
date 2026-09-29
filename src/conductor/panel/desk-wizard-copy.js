@@ -565,9 +565,22 @@ export const WIZARD_COPY = Object.freeze({
     + "повторите"],
   "wizard.launch.refused.queue_full": ["The queue is full: make room and try again",
     "Очередь заполнена: освободите место и повторите"],
-  "wizard.launch.refused.queue_not_ready": ["This run cannot be queued yet: the preparation must "
-    + "be read again", "Этот запуск пока нельзя поставить в очередь: подготовку нужно "
-    + "прочитать заново"],
+  "wizard.launch.refused.queue_not_ready": ["This run cannot be queued yet",
+    "Этот запуск пока нельзя поставить в очередь"],
+  "wizard.launch.check.reading": ["Reading the preparation to see why…",
+    "Читаем подготовку, чтобы понять причину…"],
+  "wizard.launch.check.failed": ["The preparation could not be read ({code}): press the button "
+    + "again to ask again", "Подготовку не удалось прочитать ({code}): нажмите кнопку ещё раз, "
+    + "чтобы спросить снова"],
+  "wizard.launch.check.unlisted": ["The preparation does not list this run",
+    "В подготовке этого запуска нет"],
+  "wizard.launch.check.stage.documents_missing": ["The preparation says some documents of this "
+    + "run are missing", "Подготовка сообщает: не все документы запуска записаны"],
+  "wizard.launch.check.stage.ready_to_preview": ["The preparation lists this run as ready and "
+    + "gives no reason for the refusal", "Подготовка показывает запуск готовым и не называет "
+    + "причину отказа"],
+  "wizard.launch.check.stage_other": ["The preparation lists this run as: {stage}",
+    "Подготовка показывает запуск как: {stage}"],
   "wizard.launch.refused.server_stopping": ["The project is stopping", "Проект останавливается"],
   "wizard.launch.refused.contract_invalid": ["The terms admit no action: they are being read "
     + "again", "Условия не допускают ни одного действия: читаем их заново"],

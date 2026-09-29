@@ -312,6 +312,73 @@ def test_a_slot_taken_between_the_read_and_the_press_offers_the_queue_and_never_
     assert bench.problems == []
 
 
+def not_ready(code="queue_not_ready", **more):
+    """The queue write refused once with `code`, and whatever else the test refuses."""
+    return {"launch_enqueue": {"code": code, "count": 1}, **more}
+
+
+def prepared_reads(bench):
+    return queue_door.world(bench)["reads"]["prep"]
+
+
+@pytest.mark.parametrize("lang", LANGS)
+@pytest.mark.parametrize("prep,stage", [
+    ("preparation_authorized", "authorized"), ("preparation_queued", "queued"),
+    ("preparation_ended", "ended")])
+def test_a_refused_queue_write_for_a_run_past_step_six_reads_the_preparation_and_leaves(
+        bench, lang, prep, stage):
+    to_card(bench, lang, queue="queue_busy_waiting", prep=prep, refuse=not_ready())
+    bench.control(ENQUEUE).click()
+    expect(bench.page.locator('[data-launch-refusal="queue_not_ready"]')).to_have_text(
+        bench.say("wizard.launch.refused.queue_not_ready"))
+    expect(bench.page.locator("[data-launch-check]")).to_have_text(
+        bench.say("wizard.launch.check.stage_other", stage=stage))
+    assert prepared_reads(bench) == 1, "the preparation is read once, by the desk"
+    assert bench.exit() == {"runId": "task-bench-r1", "stage": stage}
+    assert queue_door.world(bench)["enqueue_calls"] == 1
+    assert bench.problems == []
+
+
+@pytest.mark.parametrize("lang", LANGS)
+@pytest.mark.parametrize("prep,key", [
+    ("preparation_ready", "wizard.launch.check.stage.ready_to_preview"),
+    ("preparation_documents_missing", "wizard.launch.check.stage.documents_missing")])
+def test_a_refused_queue_write_for_a_run_still_to_be_prepared_says_what_the_preparation_says(
+        bench, lang, prep, key):
+    to_card(bench, lang, queue="queue_busy_waiting", prep=prep, refuse=not_ready())
+    bench.control(ENQUEUE).click()
+    expect(bench.page.locator("[data-launch-check]")).to_have_text(bench.say(key))
+    assert prepared_reads(bench) == 1 and bench.exit() is None
+    assert bench.control(ENQUEUE).is_enabled(), "the owner may press again"
+    assert bench.problems == []
+
+
+@pytest.mark.parametrize("lang", LANGS)
+def test_a_full_queue_reads_the_preparation_too_and_gives_no_second_reason(bench, lang):
+    to_card(bench, lang, queue="queue_busy_waiting", refuse=not_ready("queue_full"))
+    bench.control(ENQUEUE).click()
+    expect(bench.page.locator('[data-launch-refusal="queue_full"]')).to_have_text(
+        bench.say("wizard.launch.refused.queue_full"))
+    bench.page.wait_for_function("() => window.host.launchWorld.reads.prep === 1")
+    assert bench.page.locator("[data-launch-check]").count() == 0
+    assert bench.exit() is None and bench.problems == []
+
+
+@pytest.mark.parametrize("lang", LANGS)
+def test_a_preparation_that_cannot_be_read_is_said_by_its_code_and_the_next_press_goes_on(
+        bench, lang):
+    refuse = not_ready(launch_prep={"code": "store_error", "count": 1})
+    to_card(bench, lang, queue="queue_busy_waiting", refuse=refuse)
+    bench.control(ENQUEUE).click()
+    expect(bench.page.locator("[data-launch-check]")).to_have_text(
+        bench.say("wizard.launch.check.failed", code="store_error"))
+    assert bench.exit() is None and bench.control(ENQUEUE).is_enabled()
+    bench.control(ENQUEUE).click()
+    expect(bench.page.locator('[data-launch-result="queued"]')).to_be_visible()
+    assert queue_door.world(bench)["enqueue_calls"] == 2
+    assert bench.problems == []
+
+
 @pytest.mark.parametrize("lang", LANGS)
 def test_a_replacement_grant_says_what_the_earlier_ones_spent(bench, lang):
     replacing = fixture("wizard", "preview_replacing.json")

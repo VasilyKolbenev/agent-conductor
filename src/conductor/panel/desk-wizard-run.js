@@ -17,7 +17,7 @@ import {adoptPreview, beginLaunch, cardFacts, controlsOf, editActor, initialLaun
 import {advanceSkip, beginSkip, cancelSkip, confirmSkip, landSkip, skipAsks, skipFacts}
   from "./desk-wizard-skip.js";
 import {heldFlow} from "./desk-wizard-team.js";
-import {adoptRun, bumpRun, chainAsks, followingRunNumber, hashNow, initialRun, landChain,
+import {EXITS, adoptRun, bumpRun, chainAsks, followingRunNumber, hashNow, initialRun, landChain,
   linkStates, openResume, resumeAsks, resumeFields, resumeSituation, retryChain, startChain}
   from "./desk-wizard-prep.js";
 
@@ -177,15 +177,20 @@ export function isPrepared(state) {
 }
 
 /**
- * When the wizard has nothing more to do: a reloaded page finds its run past preparation, or the
- * owner started or queued it. The run for the desk to open, and where it stands. A queue entry in
- * a project that is only viewed is not an exit: the closing line and the way to the flag are on
- * the wizard's own screen, and the owner leaves from there.
+ * When the wizard has nothing more to do: a reloaded page finds its run past preparation, the
+ * owner started or queued it, or the preparation read after a refused queue write lists the run
+ * as past it (authorized or queued elsewhere, or ended). The run for the desk to open, and where
+ * it stands. A queue entry in a project that is only viewed is not an exit: the closing line and
+ * the way to the flag are on the wizard's own screen, and the owner leaves from there.
  */
 export function wizardExit(state) {
   if (state.launch.result !== null) {
     const viewed = state.launch.result.kind === "queued" && isViewing(state.launch);
     return viewed ? null : {runId: state.run.runId, stage: state.launch.result.kind};
+  }
+  const found = state.launch.prep;
+  if (found?.status === "ok" && EXITS.includes(found.stage)) {
+    return {runId: state.run.runId, stage: found.stage};
   }
   const situation = resumeSituation(state.run);
   return situation !== null && situation.kind === "exit"
@@ -195,8 +200,8 @@ export function wizardExit(state) {
 // -- step 6: the card --------------------------------------------------------------------
 
 //: What a card ask or answer needs to know about the run around it.
-const launchCtx = (state) => ({runId: state.run.runId, nonce: state.nonce,
-  phase: state.run.phase});
+const launchCtx = (state) => ({runId: state.run.runId, taskId: state.task.taskId,
+  nonce: state.nonce, phase: state.run.phase});
 
 function withLaunch(state, launch) {
   return launch === state.launch ? state : evolve(state, {launch});
@@ -263,11 +268,12 @@ function noteOf(state) {
  * What step 6 draws: the card (every number the server's), the controls the slot allows, the
  * countdown, and what the last answer said. `lostUnread` is true while a lost answer waits on a
  * read that failed: nothing is known of the write, and reading again is what the owner may do.
+ * `check` is what the preparation read found after `queue_full` or `queue_not_ready`.
  */
 export function launchFacts(state) {
   const {launch} = state, seconds = remaining(launch);
   return Object.freeze({phase: launch.phase, error: launch.error, note: noteOf(state),
-    lostUnread: unreadUnknown(launch),
+    lostUnread: unreadUnknown(launch), check: launch.prep === null ? null : {...launch.prep},
     refusal: launch.refusal, result: launch.result, viewing: isViewing(launch),
     runId: state.run.runId, infos: launch.infos,
     skip: skipFacts(launch, launchCtx(state), (runId) => taskTitleOfRun(state.reads, runId)),

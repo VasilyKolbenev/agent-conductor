@@ -2,9 +2,10 @@
 
 Not a test module (pytest does not collect it). It stands where the doors of spec 4.4.5-4.4.6 and
 6.4.4-6.4.5 will stand, behind the asks the card makes (`launch_queue`, `launch_automation`,
-`launch_run`, `launch_preview`, `launch_authorize`, `launch_enqueue`, and the holder's read and
-the four writes of "skip ahead": `launch_holder`, `launch_skip_enqueue`, `launch_skip_order`,
-`launch_skip_pause`, `launch_skip_resume`) and in front of whatever answered before it. It keeps
+`launch_run`, `launch_preview`, `launch_authorize`, `launch_enqueue`, the read of the preparation
+after a refusal of the queue, `launch_prep`, and the holder's read and the four writes of "skip
+ahead": `launch_holder`, `launch_skip_enqueue`, `launch_skip_order`, `launch_skip_pause`,
+`launch_skip_resume`) and in front of whatever answered before it. It keeps
 the slot, the queue's entries and their revision, the holder's automation, the grant that was
 written and the preview it last served, so a repeated write finds what stands, a lost answer can
 land without being heard, and a refusal (with the slot it leaves behind) comes on demand.
@@ -25,7 +26,8 @@ QUEUE_JS = """
   const queue = structuredClone(setup.queue);
   const world = {queue, automation: structuredClone(setup.automation), grants: {},
     authorize_calls: 0, enqueue_calls: 0, previews: 0,
-    reads: {queue: 0, automation: 0, run: 0, holder: 0}, holder: structuredClone(setup.holder),
+    reads: {queue: 0, automation: 0, run: 0, holder: 0, prep: 0},
+    holder: structuredClone(setup.holder),
     skips: {enqueue: 0, order: 0, pause: 0, resume: 0}, skip_bodies: [],
     authorize_bodies: [], enqueue_bodies: [], calls: [], lose: {...setup.lose},
     drop: {...setup.drop},
@@ -130,6 +132,7 @@ QUEUE_JS = """
       return said(structuredClone(world.automation));
     },
     launch_run: () => { world.reads.run += 1; return said(setup.run); },
+    launch_prep: () => { world.reads.prep += 1; return said(structuredClone(setup.prep)); },
     launch_preview: () => answer("launch_preview", repeat()),
     launch_authorize: (ask) => {
       const body = ask.body, id = body.authorization_id;
@@ -194,13 +197,15 @@ QUEUE_JS = """
 
 def install(bench: Any, *, queue: str = "queue_free", automation: str = "automation_unconfigured",
             holder: str = "automation_holder_waiting", holder_over: dict[str, Any] | None = None,
-            preview: Any = None, overrides: list[dict[str, Any]] | None = None,
+            prep: str = "preparation_ready", preview: Any = None,
+            overrides: list[dict[str, Any]] | None = None,
             lose: dict[str, int] | None = None, drop: dict[str, int] | None = None,
             refuse: dict[str, dict[str, Any]] | None = None) -> None:
     """Put the fake queue door in front of the card's asks (after the chain's fake server).
 
-    `queue`, `automation` and `holder` name fixtures of `tests/fixtures/wizard/` (`holder` is the
-    automation of the run that holds a busy slot; `holder_over` is merged into it); `refuse` maps
+    `queue`, `automation`, `holder` and `prep` name fixtures of `tests/fixtures/wizard/` (`holder`
+    is the automation of the run that holds a busy slot; `holder_over` is merged into it; `prep` is
+    the preparation read the card makes after `queue_full` or `queue_not_ready`); `refuse` maps
     an ask name to `{code, count, after?, detail?, slot?}`: the slot, when given, is what the
     queue reads after that refusal (a slot taken between the read and the press). `lose` counts
     writes that land and are answered `unknown`; `drop` counts writes that never land and are
@@ -210,6 +215,7 @@ def install(bench: Any, *, queue: str = "queue_free", automation: str = "automat
         "queue": fixture("wizard", f"{queue}.json"),
         "automation": fixture("wizard", f"{automation}.json"),
         "holder": {**fixture("wizard", f"{holder}.json"), **(holder_over or {})},
+        "prep": fixture("wizard", f"{prep}.json"),
         "preview": preview or fixture("wizard", "preview_standard.json"),
         "run": fixture("wizard", "run_detail.json"), "overrides": overrides or [{}],
         "lose": lose or {}, "drop": drop or {}, "refuse": refuse or {}})

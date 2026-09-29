@@ -12,7 +12,8 @@
 // ordinal `card`, what `changed` when another replaced it and whether the owner has `seen` that),
 // the reads it is drawn from (`reads.queue`, `.automation`, `.run`, and `.holder`, the automation
 // of the run that holds a busy slot), the phase (review | starting | enqueuing | skipping |
-// unknown | started | queued), a `note` or a `refusal` from the last answer, the press of
+// unknown | started | queued), a `note` or a `refusal` from the last answer (and, after the two
+// refusals the preparation explains, what its read found: `prep`), the press of
 // «Пропустить вперёд» (`skip`, folded by `desk-wizard-skip.js`), and the counters that make every
 // ask's id (`previews`, `seq`, `attempts`, `presses`).
 import {stableJson as stable} from "./desk-wizard-digest.js";
@@ -37,6 +38,13 @@ export const LAUNCH_NOTES = Object.freeze(["slot_busy", "project_not_active", "s
   "not_written"]);
 export const LAUNCH_REFUSALS = Object.freeze(["authorization_refused", "queue_full",
   "queue_not_ready", "server_stopping", "contract_invalid"]);
+//: The stages of a run the preparation read can give for a run that is still to be prepared, each
+//: with a sentence of its own on the card. A stage past step 6 (queued, authorized, ended) is not
+//: said: the wizard leaves.
+export const LAUNCH_STAGES = Object.freeze(["documents_missing", "ready_to_preview"]);
+//: The two refusals the preparation explains: `queue_not_ready` has no detail (its reason is what
+//: the preparation says), and either may mean the run is past step 6 already (spec 6.4.5).
+const RECHECKED = Object.freeze(["queue_full", "queue_not_ready"]);
 //: Which line of the card each field of the terms is drawn on: a replaced card marks these lines.
 const LINE_OF = Object.freeze({max_actions: "actions", max_action_seconds: "time",
   max_total_task_seconds: "time", duration_seconds: "window", node_limits: "steps",
@@ -75,8 +83,8 @@ export function initialLaunch(actor) {
   return {actor, card: 0, preview: null, digest: null, changed: [], seen: true, now: null,
     repeats: 0, previews: 0, refreshWanted: false, repeatFailed: false, error: null,
     reads: {queue: null, automation: null, run: null, holder: null}, seq: 0, phase: "idle",
-    sending: null, note: null, refusal: null, result: null, settled: [], attempts: {}, infos: [],
-    skip: null, presses: 0};
+    sending: null, note: null, refusal: null, prep: null, result: null, settled: [], attempts: {},
+    infos: [], skip: null, presses: 0};
 }
 
 //: The explanations the card can open behind an ⓘ: the time it reserves, and the short digest of
@@ -322,6 +330,10 @@ export function launchAsks(launch, ctx) {
     asks.push({id: `write:launch:preview:${launch.previews}`, name: "launch_preview",
       door: "write", target: "automationPreview", subject: ctx.runId, body: {}});
   }
+  if (launch.prep?.status === "reading") {
+    asks.push({id: `read:launch:prep:${launch.seq}`, name: "launch_prep", door: "read",
+      target: "preparation", subject: ctx.taskId, body: null});
+  }
   return asks;
 }
 
@@ -365,7 +377,7 @@ export function beginLaunch(launch, kind) {
   const one = controlsOf(launch)[kind === "start" ? "start" : "enqueue"];
   if (!one.shown || one.blocked !== null) return launch;
   return {...launch, phase: kind === "start" ? "starting" : "enqueuing", sending: kind,
-    note: null, refusal: null, repeats: 0};
+    note: null, refusal: null, prep: null, repeats: 0};
 }
 
 // -- the answers -------------------------------------------------------------------------
@@ -456,6 +468,24 @@ function landPreview(launch, ctx, result) {
   return {...base, repeatFailed: true, error: result.code ?? result.status};
 }
 
+//: What the preparation read found about this run after `queue_full` or `queue_not_ready`: the
+//: stage its row gives, whether the read lists the run at all, or why it could not be read. Nothing
+//: waits for it once the owner has pressed again, so a late answer changes nothing.
+function landPrep(launch, ctx, result) {
+  if (launch.prep?.status !== "reading") return launch;
+  const {payload} = result;
+  const good = result.status === "accepted" && record(payload) && record(payload.task)
+    && payload.task.task_id === ctx.taskId && Array.isArray(payload.runs);
+  if (!good) {
+    const code = result.code ?? (result.status === "accepted" ? "answer_unreadable"
+      : result.status);
+    return {...launch, prep: {status: "failed", code}};
+  }
+  const row = payload.runs.find((one) => record(one) && one.run_id === ctx.runId);
+  return {...launch, prep: {status: "ok", listed: row !== undefined,
+    stage: typeof row?.stage === "string" ? row.stage : null}};
+}
+
 //: What each refusal of starting or of queueing means. None of them starts anything by itself: a
 //: taken slot or a stale preview changes what the card says, and the owner presses again.
 function refusalAnswer(launch, ctx, code, detail) {
@@ -466,6 +496,9 @@ function refusalAnswer(launch, ctx, code, detail) {
   }
   if (code === "project_not_active") return {...launch, ...reread, note: {kind: code}};
   if (code === "preview_stale") return {...launch, note: {kind: "stale"}, refreshWanted: true};
+  if (RECHECKED.includes(code)) {
+    return {...launch, refusal: {code}, prep: {status: "reading"}, seq: launch.seq + 1};
+  }
   const replacing = grantBody(launch, ctx.nonce).supersedes !== null;
   const again = code === "contract_invalid" && replacing ? {refreshWanted: true} : {};
   return {...launch, ...again, refusal: {code}};
@@ -495,7 +528,8 @@ function landWrite(launch, ctx, ask, result) {
  * Fold one answer of the card in. An answer already settled changes nothing.
  *
  * @param {object} launch The `launch` slice.
- * @param {object} ctx `{runId, nonce, phase}`: the run, the page's nonce, the chain's phase.
+ * @param {object} ctx `{runId, taskId, nonce, phase}`: the run and its task, the page's nonce, the
+ *   chain's phase.
  * @param {object} ask The ask that was performed.
  * @param {object} result `{status, code, payload}`.
  */
@@ -503,6 +537,7 @@ export function landLaunch(launch, ctx, ask, result) {
   if (launch.settled.includes(ask.id)) return launch;
   const marked = {...launch, settled: [...launch.settled, ask.id]};
   if (ask.name === "launch_preview") return landPreview(marked, ctx, result);
+  if (ask.name === "launch_prep") return landPrep(marked, ctx, result);
   if (ask.name === "launch_authorize" || ask.name === "launch_enqueue") {
     return landWrite(marked, ctx, ask, result);
   }

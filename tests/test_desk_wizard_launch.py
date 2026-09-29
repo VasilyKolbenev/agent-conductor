@@ -24,7 +24,9 @@ DATA = {**CHAIN_DATA,
         "auto_holder": fixture("wizard", "automation_holder_waiting.json"),
         **{name: fixture("wizard", f"queue_{name}.json") for name in (
             "free", "busy_waiting", "busy_running", "stuck", "view", "owner_required",
-            "server_stopping", "with_entries")}}
+            "server_stopping", "with_entries")},
+        **{f"prep_{name}": fixture("wizard", f"preparation_{name}.json") for name in (
+            "ready", "documents_missing", "queued", "authorized", "ended")}}
 LAUNCH = CHAIN + """
 const runId = "task-t1-r1";
 const asksOf = (state, prefix = "launch_") => wiz.wantedAsks(state)
@@ -602,3 +604,100 @@ def test_the_stand_still_refresh_and_reread_are_the_owners_and_change_nothing_th
     assert out["refresh"] == ["launch_preview"]
     assert out["reread"] == ["launch_queue", "launch_automation"]
     assert out["idle"] == 0 and out["tick_same"] is True
+
+
+#: A refusal of the queue write (or of the start), and what the preparation read says after it.
+REFUSED = LAUNCH + """
+const refusedWith = (code, kind = "enqueue") => {
+  const begun = kind === "start" ? wiz.stepWizard(reviewed(), {type: "launch-start"})
+    : wiz.stepWizard(reviewed({queue: d.busy_waiting}), {type: "launch-enqueue"});
+  const wire = {error: {code, message: code, detail: {}}};
+  return wiz.stepWizard(begun.state, {type: "answered", ask: begun.asks[0],
+    result: refused(code, wire)});
+};
+const afterRead = (step, result) => wiz.stepWizard(step.state, {type: "answered",
+  ask: step.asks.find((ask) => ask.name === "launch_prep"), result});
+const outcome = (state) => {
+  const facts = wiz.launchFacts(state);
+  return {exit: wiz.wizardExit(state), check: facts.check, refusal: facts.refusal,
+    phase: facts.phase};
+};
+"""
+
+
+def test_queue_full_and_queue_not_ready_ask_the_preparation_of_the_task_and_no_other_refusal_does():
+    out = run_js(REFUSED + """
+      const asked = (code, kind) => refusedWith(code, kind).asks
+        .filter((ask) => ask.name === "launch_prep")
+        .map((ask) => [ask.id, ask.door, ask.target, ask.subject, ask.body]);
+      const others = ["slot_busy", "preview_stale", "project_not_active", "authorization_refused",
+        "server_stopping", "contract_invalid", "something_new"];
+      show({full: asked("queue_full"), not_ready: asked("queue_not_ready"),
+        start: asked("queue_not_ready", "start"),
+        others: others.map((code) => asked(code)).flat(),
+        reading: wiz.launchFacts(refusedWith("queue_full").state).check,
+        quiet: wiz.launchFacts(refusedWith("slot_busy").state).check});
+    """, DATA, modules=MODULES)
+    read = [["read:launch:prep:1", "read", "preparation", "task-t1", None]]
+    assert out["full"] == out["not_ready"] == out["start"] == read
+    assert out["others"] == [], "only these two refusals are explained by the preparation"
+    assert out["reading"] == {"status": "reading"} and out["quiet"] is None
+
+
+def test_a_run_the_preparation_lists_past_step_six_lets_the_wizard_leave_and_any_other_is_said():
+    out = run_js(REFUSED + """
+      const after = (code, payload, result = ok(payload)) => outcome(
+        afterRead(refusedWith(code), result).state);
+      const prepared = fresh(d.prep_ready);
+      show({queued: after("queue_not_ready", fresh(d.prep_queued)),
+        authorized: after("queue_not_ready", fresh(d.prep_authorized)),
+        ended: after("queue_full", fresh(d.prep_ended)),
+        ready: after("queue_not_ready", prepared),
+        missing: after("queue_not_ready", fresh(d.prep_documents_missing)),
+        unlisted: after("queue_not_ready", {...prepared, runs: []}),
+        other_task: after("queue_not_ready", {...prepared,
+          task: {...prepared.task, task_id: "x"}}),
+        refused: after("queue_not_ready", null, refused("service_refused")),
+        lost: after("queue_not_ready", null, lost),
+        unreadable: after("queue_not_ready", {runs: "none"})});
+    """, DATA, modules=MODULES)
+    for name, stage in (("queued", "queued"), ("authorized", "authorized"), ("ended", "ended")):
+        row = out[name]
+        assert row["exit"] == {"runId": "task-t1-r1", "stage": stage}, name
+        assert row["check"] == {"status": "ok", "listed": True, "stage": stage}, name
+        assert row["refusal"]["code"] in ("queue_not_ready", "queue_full"), name
+        assert row["phase"] == "review", name
+    for name, stage in (("ready", "ready_to_preview"), ("missing", "documents_missing")):
+        assert out[name]["exit"] is None, name
+        assert out[name]["check"] == {"status": "ok", "listed": True, "stage": stage}, name
+    assert out["unlisted"]["exit"] is None
+    assert out["unlisted"]["check"] == {"status": "ok", "listed": False, "stage": None}
+    for name, code in (("other_task", "answer_unreadable"), ("refused", "service_refused"),
+                       ("lost", "unknown"), ("unreadable", "answer_unreadable")):
+        assert out[name]["exit"] is None, name
+        assert out[name]["check"] == {"status": "failed", "code": code}, name
+
+
+def test_a_second_refusal_reads_again_under_a_new_id_and_pressing_again_forgets_the_read():
+    out = run_js(REFUSED + """
+      const first = refusedWith("queue_not_ready");
+      const read = afterRead(first, ok(fresh(d.prep_ready)));
+      const pressed = wiz.stepWizard(read.state, {type: "launch-enqueue"});
+      const wire = {error: {code: "queue_not_ready", message: "x", detail: {}}};
+      const again = wiz.stepWizard(pressed.state, {type: "answered", ask: pressed.asks[0],
+        result: refused("queue_not_ready", wire)});
+      const outstanding = refusedWith("queue_full");
+      const soon = wiz.stepWizard(outstanding.state, {type: "launch-enqueue"});
+      const late = wiz.stepWizard(soon.state, {type: "answered", ask: outstanding.asks[0],
+        result: ok(fresh(d.prep_authorized))});
+      const prepIds = (step) => step.asks.filter((ask) => ask.name === "launch_prep")
+        .map((ask) => ask.id);
+      show({first: prepIds(first), pressed: wiz.launchFacts(pressed.state).check,
+        second: prepIds(again), soon: wiz.launchFacts(soon.state).check,
+        late: outcome(late.state)});
+    """, DATA, modules=MODULES)
+    assert out["first"] == ["read:launch:prep:1"] and out["second"] == ["read:launch:prep:2"]
+    assert out["pressed"] is None, "a reason is about the last thing tried"
+    assert out["soon"] is None
+    assert out["late"]["exit"] is None and out["late"]["check"] is None, \
+        "an answer nobody waits for changes nothing"

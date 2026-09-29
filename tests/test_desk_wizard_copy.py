@@ -101,6 +101,7 @@ FAMILIES = {
     "launch_notes": "wizard.launch.note.{}", "launch_refusals": "wizard.launch.refused.{}",
     "launch_lines": "wizard.launch.line.{}", "skip_steps": "wizard.launch.skip_step.{}",
     "skip_stops": "wizard.launch.skip_stop.{}", "skip_status": "wizard.launch.skip_status.{}",
+    "launch_stages": "wizard.launch.check.stage.{}",
 }
 
 
@@ -140,7 +141,7 @@ def test_every_closed_word_the_model_can_say_has_a_message_in_both_languages():
         statuses: wiz.LINK_STATUSES, stages: wiz.RESUME_EXITS, launch_why: wiz.LAUNCH_WHY,
         launch_notes: wiz.LAUNCH_NOTES, launch_refusals: wiz.LAUNCH_REFUSALS,
         launch_lines: wiz.CARD_LINES, skip_steps: wiz.SKIP_STEPS, skip_stops: wiz.SKIP_STOPS,
-        skip_status: wiz.SKIP_STATUS};
+        skip_status: wiz.SKIP_STATUS, launch_stages: wiz.LAUNCH_STAGES};
       const missing = [];
       for (const [family, list] of Object.entries(words)) {
         for (const word of list) {
@@ -181,6 +182,20 @@ def test_every_reason_note_and_refusal_the_card_returns_is_in_its_closed_list():
     assert reasons <= set(out["why"]), reasons - set(out["why"])
     assert notes <= set(out["notes"]), notes - set(out["notes"])
     assert {"project_not_active", "owner_required", "server_stopping"} <= set(out["why"])
+
+
+def test_every_state_of_the_preparation_read_the_card_can_draw_has_a_sentence_in_both_languages():
+    out = run_js("""
+      const plain = ["reading", "unlisted", "stage.documents_missing", "stage.ready_to_preview"];
+      const said = (lang) => ({
+        plain: plain.map((key) => i18n.message(lang, `wizard.launch.check.${key}`)),
+        failed: i18n.message(lang, "wizard.launch.check.failed", {code: "made_up"}),
+        other: i18n.message(lang, "wizard.launch.check.stage_other", {stage: "made_up"})});
+      console.log(JSON.stringify({en: said("en"), ru: said("ru")}));
+    """, modules=MODULES)
+    for lang in ("en", "ru"):
+        assert all(out[lang]["plain"]), lang
+        assert "made_up" in out[lang]["failed"] and "made_up" in out[lang]["other"], lang
 
 
 def test_every_stop_code_a_skip_ahead_press_returns_is_in_its_closed_list():
