@@ -1,0 +1,53 @@
+{
+  "project": "Notes app",
+  "workflows": [
+    {"workflow_id": "cycle-7c1e5a90", "title": "Standard with a tester", "latest_revision": 2,
+     "revisions": [1, 2], "has_draft": false, "unreadable": false},
+    {"workflow_id": "cycle-aa11bb22", "title": "Only a draft", "latest_revision": null,
+     "revisions": [], "has_draft": true, "unreadable": false},
+    {"workflow_id": "cycle-ff00ee11", "title": "Damaged", "latest_revision": 1,
+     "revisions": [1], "has_draft": false, "unreadable": true},
+    {"workflow_id": "desk-standard", "title": "Standard", "latest_revision": 1,
+     "revisions": [1], "has_draft": false, "unreadable": false},
+    {"workflow_id": "desk-starter-docs", "title": "Starter documents", "latest_revision": 1,
+     "revisions": [1], "has_draft": false, "unreadable": false},
+    {"workflow_id": "old-cycle", "title": "Old cycle", "latest_revision": 3,
+     "revisions": [1, 2, 3], "has_draft": false, "unreadable": false}
+  ],
+  "providers": [
+    {"provider_id": "claude-code", "display_name": "Claude Code (headless, experimental)",
+     "availability": "available", "implementation": "real_experimental", "auth": "subscription",
+     "controls": ["dispatch", "review"], "vendor_sandbox": null, "offered": true,
+     "task_channel": {"channel": "stdin", "limit": 1048576, "unit": "utf8_bytes", "scope": "task"}},
+    {"provider_id": "codex", "display_name": "Codex CLI (headless, experimental)",
+     "availability": "available", "implementation": "real_experimental", "auth": "subscription",
+     "controls": ["dispatch", "review"], "vendor_sandbox": null, "offered": true,
+     "task_channel": {"channel": "stdin", "limit": 1048576, "unit": "utf8_bytes", "scope": "task"}},
+    {"provider_id": "grok-build", "display_name": "Grok Build (headless, experimental)",
+     "availability": "available", "implementation": "real_experimental", "auth": "subscription",
+     "controls": ["dispatch"], "vendor_sandbox": null, "offered": true,
+     "task_channel": {"channel": "argv", "limit": 32767, "unit": "utf16_units",
+                      "scope": "command_line"}},
+    {"provider_id": "kimi-code", "display_name": "Kimi Code (headless, experimental)",
+     "availability": "executable_absent", "implementation": "real_experimental",
+     "auth": "subscription", "controls": ["dispatch"], "vendor_sandbox": null, "offered": true,
+     "task_channel": {"channel": "argv", "limit": 32767, "unit": "utf16_units",
+                      "scope": "command_line"}},
+    {"provider_id": "deepseek-harness", "display_name": "DeepSeek Harness (dsh, headless)",
+     "availability": "available", "implementation": "real_experimental", "auth": "api_key",
+     "controls": ["dispatch"], "vendor_sandbox": null, "offered": true,
+     "task_channel": {"channel": "argv", "limit": 32767, "unit": "utf16_units",
+                      "scope": "command_line"}},
+    {"provider_id": "qwen-code", "display_name": "Qwen Code", "availability": "available",
+     "implementation": "unproven", "auth": "subscription", "controls": ["dispatch", "review"],
+     "vendor_sandbox": null, "offered": false,
+     "task_channel": {"channel": "stdin", "limit": 1048576, "unit": "utf8_bytes", "scope": "task"}}
+  ],
+  "starters": [
+    {"starter_id": "desk-standard", "title": "Standard", "revision": 1, "caveats": []},
+    {"starter_id": "desk-short", "title": "Short", "revision": 1, "caveats": []},
+    {"starter_id": "desk-starter-docs", "title": "Starter documents", "revision": 1,
+     "caveats": []},
+    {"starter_id": "dalio-v5", "title": "Dalio five-step cycle", "revision": 5, "caveats": []}
+  ]
+}

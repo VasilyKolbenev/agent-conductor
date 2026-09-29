@@ -95,6 +95,28 @@ def _js_ordered(source: str, name: str) -> list[str]:
     return re.findall(r'"([a-z0-9_-]+)"', body.group(1))
 
 
+_EXPORT_DECLARATION = re.compile(
+    r"^export\s+(?:async\s+)?(?:function\s*\*?|const|let|var|class)\s+(\w+)", re.MULTILINE)
+_EXPORT_LIST = re.compile(r"^export\s*\{([^}]*)\}", re.MULTILINE)
+_EXPORT_OTHER = re.compile(r"^export\s+(default\b|\*)", re.MULTILINE)
+
+
+def _exported_names(code: str) -> list[str]:
+    """Every name a module exports, whichever form of `export` says it.
+
+    A guard that counted only `export function` and `export const` would stay
+    green for a second door spelled `export let`, `export class`, `export {..}`,
+    `export default` or `export * from`. The listed names are the ones a reader
+    imports, so `a as b` counts as `b`; a default and a star are named as such.
+    """
+    names = _EXPORT_DECLARATION.findall(code)
+    for body in _EXPORT_LIST.findall(code):
+        names += [part.split(" as ")[-1].strip() for part in body.split(",") if part.strip()]
+    names += ["default" if word.startswith("default") else "*"
+              for word in _EXPORT_OTHER.findall(code)]
+    return names
+
+
 def _js_function(source: str, name: str) -> str:
     """One exported top-level function body, from its brace to column zero."""
     body = re.search(rf"export function {name}\(state\) \{{\n(.*?)\n\}}\n",
@@ -163,12 +185,24 @@ def test_the_edge_layer_is_drawn_by_its_own_module_and_the_canvas_only_calls_it(
     back into the file that was split to make room for the flow's links.
     """
     edges, canvas = _code(EDGES), _code(CANVAS)
-    assert re.findall(r"^export (?:function|const) (\w+)", edges,
-                      re.MULTILINE) == ["drawEdges"]
+    assert _exported_names(edges) == ["drawEdges"]
     assert "createElementNS" not in canvas and "SVG_NS" not in canvas
     assert "function drawEdges" not in canvas
     assert 'import {drawEdges} from "./studio-canvas-edges.js";' in _text(CANVAS)
     assert "drawEdges(svg, nodes, edges, context)" in canvas
+
+
+def test_the_export_reader_sees_declarations_lists_default_and_star_exports():
+    """The seam guard's eyes, proven on text with a second door in every form."""
+    source = "\n".join([
+        "export function drawEdges() {}", "export async function later() {}",
+        "export const A = 1;", "export let b = 2;", "export var c = 3;",
+        "export class D {}", "export {\n  e, f as g,\n};", 'export * from "./x.js";',
+        "export default 1;", "const notExported = 1; // export let hidden",
+    ])
+    assert sorted(_exported_names(source)) == sorted([
+        "drawEdges", "later", "A", "b", "c", "D", "e", "g", "*", "default"])
+    assert _exported_names("function quiet() {}\n") == []
 
 
 #: What each of these files may reach for, in the order it spells them. The

@@ -1,0 +1,14 @@
+{
+  "git": {
+    "state": "not_active",
+    "unsupported": null,
+    "head": null,
+    "object_format": null,
+    "dirty_paths": null,
+    "exclude": null,
+    "agent_instructions": {"found": null, "default_include": false},
+    "remotes": null,
+    "tools": null,
+    "signing": null
+  }
+}

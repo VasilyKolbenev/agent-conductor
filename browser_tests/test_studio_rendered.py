@@ -127,6 +127,8 @@ BOOT_ASSETS = {
     "studio-run-docs-copy.js": 200, "studio-runform-copy.js": 200, "studio-runs-copy.js": 200,
     "studio-runstep-copy.js": 200, "studio-view-copy.js": 200, "studio-workflow-copy.js": 200,
     "studio-workflow-detail-copy.js": 200, "studio-notice-copy.js": 200,
+    # The wizard's catalogue, spread into the shared table, so the entry route fetches it too.
+    "desk-wizard-copy.js": 200,
     # Readings, bounded automation and typed checker findings.
     "studio-quotaflow.js": 200, "studio-quotas-model.js": 200, "studio-quotas.js": 200,
     "studio-automation.js": 200, "studio-automation-flow.js": 200,

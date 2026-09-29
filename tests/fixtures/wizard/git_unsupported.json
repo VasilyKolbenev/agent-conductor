@@ -1,0 +1,14 @@
+{
+  "git": {
+    "state": "unsupported",
+    "unsupported": {"reason": "tracks_product_dir", "names": ["work"]},
+    "head": {"ref": "refs/heads/main", "commit": "abc1234def5678abc1234def5678abc1234def56"},
+    "object_format": "sha1",
+    "dirty_paths": 0,
+    "exclude": "absent",
+    "agent_instructions": {"found": 0, "default_include": false},
+    "remotes": [],
+    "tools": {"git": {"version": "2.47.1"}, "gh": null},
+    "signing": false
+  }
+}

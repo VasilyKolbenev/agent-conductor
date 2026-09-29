@@ -1,0 +1,13 @@
+{
+  "computed_at": "2026-09-29T09:00:00Z",
+  "runs": [
+    {"run_id": "task-a-r1", "unreadable": false, "task_id": "task-a",
+     "workflow_id": "cycle-7c1e5a90", "revision": 2, "created_at": "2026-09-27T10:00:00Z"},
+    {"run_id": "task-b-r1", "unreadable": false, "task_id": "task-b",
+     "workflow_id": "desk-standard", "revision": 1, "created_at": "2026-09-28T13:50:00Z"},
+    {"run_id": "old-demo", "unreadable": false, "task_id": null,
+     "workflow_id": null, "revision": null, "created_at": "2026-09-29T08:00:00Z"},
+    {"run_id": "broken-run", "unreadable": true, "task_id": null,
+     "workflow_id": null, "revision": null, "created_at": null}
+  ]
+}

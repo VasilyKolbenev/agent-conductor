@@ -68,7 +68,10 @@ MODULES = ("studio-runstep-copy.js", "studio-participant-copy.js", "studio-run-d
            "studio-tasks-model.js", "studio-tasks.js", "studio-taskflow.js",
            "studio-mounts.js", "studio-shell.js", "studio-runhead.js", "studio-preferences.js", "studio-i18n.js",
            "studio-quotas-model.js", "studio-quotas.js", "studio-quotaflow.js",
-           "desk-transport.js", "desk.js")
+           "desk-transport.js", "desk.js",
+           "desk-wizard-model.js", "desk-wizard-materials.js", "desk-wizard-cycle.js",
+           "desk-wizard-roles.js", "desk-wizard-base.js", "desk-wizard-team.js",
+           "desk-wizard-copy.js", "desk-wizard.js")
 #: The boot module: what each frame and each read MEANS, and the screen router.
 #: It reaches the wire only through the transport module below.
 BOOT = "studio.js"
@@ -110,7 +113,7 @@ PERMITTED_IMPORTS = {
     "studio-trace.js": frozenset({"./command-view.js", "./studio-scene-model.js", "./studio-i18n.js"}),
     "studio-bridge.js": frozenset({"./command-view.js", "./studio-i18n.js", "./studio-taskruns.js"}),
     "studio-mounts.js": frozenset(),
-    "studio-i18n.js": frozenset({"./studio-runstep-copy.js", "./studio-participant-copy.js", "./studio-run-docs-copy.js", "./studio-runs-copy.js", "./studio-runform-copy.js", "./studio-view-copy.js", "./studio-workflow-detail-copy.js", "./studio-workflow-copy.js", "./studio-automation-copy.js", "./studio-agents-copy.js", "./studio-feedback-copy.js", "./studio-notice-copy.js"}),
+    "studio-i18n.js": frozenset({"./studio-runstep-copy.js", "./studio-participant-copy.js", "./studio-run-docs-copy.js", "./studio-runs-copy.js", "./studio-runform-copy.js", "./studio-view-copy.js", "./studio-workflow-detail-copy.js", "./studio-workflow-copy.js", "./studio-automation-copy.js", "./studio-agents-copy.js", "./studio-feedback-copy.js", "./studio-notice-copy.js", "./desk-wizard-copy.js"}),
     "studio-preferences.js": frozenset({"./command-view.js", "./studio-i18n.js"}),
     "studio-shell.js": frozenset({"./command-view.js", "./studio-i18n.js", "./studio-runhead.js"}),
     #: The Runs header of one read run: its situation line and main action. It asks the step control
@@ -132,6 +135,43 @@ PERMITTED_IMPORTS = {
     #: reader's language. It reaches no screen, no store and no model of the Studio's,
     #: and the wire only through the transport -- it holds no door of its own.
     "desk.js": frozenset({"./desk-transport.js", "./studio-i18n.js"}),
+    #: The wizard's whole state and every way it changes, as pure functions. It
+    #: reaches the task model for the one rule that judges a task title, and the
+    #: step modules that answer its questions, and nothing else: no DOM builder,
+    #: no copy, no transport -- an ask it wants performed is a value it returns.
+    "desk-wizard-model.js": frozenset({"./studio-tasks-model.js",
+                                       "./desk-wizard-materials.js",
+                                       "./desk-wizard-cycle.js",
+                                       "./desk-wizard-roles.js",
+                                       "./desk-wizard-base.js",
+                                       "./desk-wizard-team.js"}),
+    #: What the model and the step adapters share (the order of the steps, the limits, a frozen
+    #: change, the words of the documents), so neither imports the other. It reaches the task
+    #: model for the title limit and the three step modules for theirs, and nothing above it.
+    "desk-wizard-base.js": frozenset({"./studio-tasks-model.js", "./desk-wizard-materials.js",
+                                      "./desk-wizard-roles.js"}),
+    #: The wizard, drawn: `mountWizard` only. It reads the model's slice and the words, builds
+    #: elements through the view's helper, and may import no store, no transport and no other
+    #: screen -- an edit is an event it hands to its host.
+    "desk-wizard.js": frozenset({"./desk-wizard-model.js", "./desk-wizard-copy.js",
+                                 "./command-view.js", "./studio-i18n.js"}),
+    #: The wizard's RU/EN strings, one frozen catalogue in the shape of the other copy
+    #: modules. It imports nothing: text is data, and `studio-i18n.js` spreads it in.
+    "desk-wizard-copy.js": frozenset(),
+    #: Step 4 as the model sees it: the pure step functions applied to the wizard's state. It
+    #: imports the base and the step modules, never the model that imports it.
+    "desk-wizard-team.js": frozenset({"./desk-wizard-base.js", "./desk-wizard-cycle.js",
+                                      "./desk-wizard-roles.js"}),
+    #: Step 2 as pure functions over values the model hands it: what git said,
+    #: what the cards would compose. It imports nothing, so the model above it
+    #: can never be reached back.
+    "desk-wizard-materials.js": frozenset(),
+    #: Step 3 the same way: the cards, the preselection and the flow write's body,
+    #: from the reads the model hands over. It imports nothing for the same reason.
+    "desk-wizard-cycle.js": frozenset(),
+    #: Step 4 the same way: the roles of a flow, who may take each, the suggestion and the
+    #: instruction fields. It imports nothing for the same reason.
+    "desk-wizard-roles.js": frozenset(),
     # Pure S2 decoder; the actual store read door composes it with the base model.
     "studio-situation.js": frozenset({"./studio-model.js", "./studio-feedback-model.js",
                                       "./studio-runwords.js"}),

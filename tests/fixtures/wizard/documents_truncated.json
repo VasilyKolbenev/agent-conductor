@@ -1,0 +1,8 @@
+{
+  "base": {"commit": "abc1234def5678abc1234def5678abc1234def56", "ref": "refs/heads/main"},
+  "documents": [
+    {"doc_id": "d-1f0a9c3e5b7d2468a1f0a9c3e5b7d246", "path": "docs/spec.md", "length": 1200,
+     "git_oid": "1111111111111111111111111111111111111111"}
+  ],
+  "truncated": true
+}

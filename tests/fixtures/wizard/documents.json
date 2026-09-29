@@ -1,0 +1,12 @@
+{
+  "base": {"commit": "abc1234def5678abc1234def5678abc1234def56", "ref": "refs/heads/main"},
+  "documents": [
+    {"doc_id": "d-1f0a9c3e5b7d2468a1f0a9c3e5b7d246", "path": "docs/spec.md", "length": 1200,
+     "git_oid": "1111111111111111111111111111111111111111"},
+    {"doc_id": "d-2e1b0d4f6c8e3579b2e1b0d4f6c8e357", "path": "README.md", "length": 640,
+     "git_oid": "2222222222222222222222222222222222222222"},
+    {"doc_id": "d-3d2c1e5a7d9f468ac3d2c1e5a7d9f468", "path": "notes/todo.txt", "length": 88,
+     "git_oid": "3333333333333333333333333333333333333333"}
+  ],
+  "truncated": false
+}
