@@ -41,6 +41,7 @@ from conductor.command.adapters import base as adapter_base
 from conductor.command.adapters import provider as provider_module
 from conductor.command.graph_template import DEPLOYMENT_ONLY_FIELDS, TemplateNode
 from conductor.command.providers import PROVIDER_CATALOG
+from tests.js_exports import exported_names as _exported_names
 
 ROOT = Path(__file__).resolve().parents[1]
 PANEL = ROOT / "src" / "conductor" / "panel"
@@ -93,81 +94,6 @@ def _js_ordered(source: str, name: str) -> list[str]:
     body = re.search(rf"{name} = Object\.freeze\(\s*\[(.*?)\]\)", source, re.DOTALL)
     assert body, name
     return re.findall(r'"([a-z0-9_-]+)"', body.group(1))
-
-
-_EXPORT_DECLARATION = re.compile(
-    r"^export\s+(?:async\s+)?(?:function\s*\*?|class)\s+(\w+)", re.MULTILINE)
-_EXPORT_BINDINGS = re.compile(r"^export\s+(?:const|let|var)\s+", re.MULTILINE)
-_EXPORT_LIST = re.compile(r"^export\s*\{([^}]*)\}", re.MULTILINE)
-_EXPORT_OTHER = re.compile(r"^export\s+(default\b|\*)", re.MULTILINE)
-
-
-def _at_top(text: str):
-    """Every (index, character) of `text` that stands outside brackets and strings."""
-    depth, quote, escaped = 0, "", False
-    for at, char in enumerate(text):
-        if quote:
-            if escaped:
-                escaped = False
-            elif char == "\\":
-                escaped = True
-            elif char == quote:
-                quote = ""
-        elif char in "\"'`":
-            quote = char
-        elif char in "([{":
-            depth += 1
-        elif char in ")]}":
-            depth -= 1
-        elif depth == 0:
-            yield at, char
-
-
-def _split(text: str, mark: str) -> list[str]:
-    """`text` cut at each `mark` that stands at the top, outside brackets and strings."""
-    edges = [-1, *(at for at, char in _at_top(text) if char == mark), len(text)]
-    return [text[left + 1:right] for left, right in zip(edges, edges[1:])]
-
-
-def _declaration(code: str, start: int) -> str:
-    """The text from `start` to the `;` that ends the declaration, or to the end of `code`."""
-    ends = [at for at, char in _at_top(code[start:]) if char == ";"]
-    return code[start:start + ends[0]] if ends else code[start:]
-
-
-def _bound_names(target: str) -> list[str]:
-    """The names one declarator's left side binds: a name, or an object or array pattern
-    with its renames, defaults, rest elements and nested patterns."""
-    target = target.strip()
-    if target[:1] not in ("{", "["):
-        return [target] if target.isidentifier() else []
-    names = []
-    for element in _split(target[1:-1], ","):
-        head = _split(element, "=")[0]
-        bound = _split(head, ":")[-1] if target[0] == "{" else head
-        names += _bound_names(bound.strip().removeprefix("..."))
-    return names
-
-
-def _exported_names(code: str) -> list[str]:
-    """Every name a module exports, whichever form of `export` says it.
-
-    A guard that counted only `export function` and `export const` would stay
-    green for a second door spelled `export let`, `export class`, `export {..}`,
-    `export default` or `export * from`, or for the names after the first in
-    `export const a = 1, b = 2` and those inside `export const {a, b} = source`.
-    The listed names are the ones a reader imports, so `a as b` counts as `b`; a
-    default and a star are named as such.
-    """
-    names = _EXPORT_DECLARATION.findall(code)
-    for match in _EXPORT_BINDINGS.finditer(code):
-        for declarator in _split(_declaration(code, match.end()), ","):
-            names += _bound_names(_split(declarator, "=")[0])
-    for body in _EXPORT_LIST.findall(code):
-        names += [part.split(" as ")[-1].strip() for part in body.split(",") if part.strip()]
-    names += ["default" if word.startswith("default") else "*"
-              for word in _EXPORT_OTHER.findall(code)]
-    return names
 
 
 def _js_function(source: str, name: str) -> str:
@@ -243,36 +169,6 @@ def test_the_edge_layer_is_drawn_by_its_own_module_and_the_canvas_only_calls_it(
     assert "function drawEdges" not in canvas
     assert 'import {drawEdges} from "./studio-canvas-edges.js";' in _text(CANVAS)
     assert "drawEdges(svg, nodes, edges, context)" in canvas
-
-
-def test_the_export_reader_sees_declarations_lists_default_and_star_exports():
-    """The seam guard's eyes, proven on text with a second door in every form."""
-    source = "\n".join([
-        "export function drawEdges() {}", "export async function later() {}",
-        "export const A = 1;", "export let b = 2;", "export var c = 3;",
-        "export class D {}", "export {\n  e, f as g,\n};", 'export * from "./x.js";',
-        "export default 1;", "const notExported = 1; // export let hidden",
-    ])
-    assert sorted(_exported_names(source)) == sorted([
-        "drawEdges", "later", "A", "b", "c", "D", "e", "g", "*", "default"])
-    assert _exported_names("function quiet() {}\n") == []
-
-
-def test_the_export_reader_sees_every_name_of_a_comma_declaration_and_of_a_destructuring():
-    """A second door hides in the names after the first: `export const a = 1, b = 2`, or in a
-    pattern the reader took for no name at all: `export const {a, b} = source`.
-    """
-    source = "\n".join([
-        "export const a = 1, b = 2;", "export let x = f(1, 2), y;",
-        'export var s = "p,q;r", t = [1, 2];', "export const {c, d: e, ...f} = obj;",
-        "export const [g, , h = 3, ...i] = arr;", "export const {j: {k, l = 1}, m: [n]} = deep;",
-        'export const {o = "a,b", p: q = fn(1, 2)} = other;',
-        "export const multi = {\n  u: 1,\n  v: 2,\n}, second = 3;", "export function fn() {}",
-        "const inner = 1, notExported = 2; // export const hidden = 1, alsoHidden = 2",
-    ])
-    assert sorted(_exported_names(source)) == sorted([
-        "a", "b", "x", "y", "s", "t", "c", "e", "f", "g", "h", "i", "k", "l", "n", "o", "q",
-        "multi", "second", "fn"])
 
 
 #: What each of these files may reach for, in the order it spells them. The

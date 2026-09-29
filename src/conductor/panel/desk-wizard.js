@@ -11,10 +11,15 @@
 //
 // Every control that takes a key or a click carries a `data-focus` key, so the focus net under
 // the host's render pass can hand the caret back to the control that replaced it; text fields
-// carry `data-focus-value="state"` because the model, not the DOM, holds what was typed.
+// carry `data-focus-value="state"` because the model, not the DOM, holds what was typed. The
+// pieces the controls are made of are `desk-wizard-draw.js`'s, step 5 is drawn by
+// `desk-wizard-prepare-view.js` and step 6 by `desk-wizard-card.js`.
 import {element} from "./command-view.js";
 import {localize} from "./studio-i18n.js";
 import {WIZARD_COPY} from "./desk-wizard-copy.js";
+import {action, choice, instantText, later, textField, timeText} from "./desk-wizard-draw.js";
+import {prepareBody} from "./desk-wizard-prepare-view.js";
+import {runBody} from "./desk-wizard-card.js";
 import {BUILT_STEPS, LIMITS, RETRYABLE, agentInstructionsRow, assignmentView, availableKinds,
   canAdvance, closeNeedsWarning, cycleCards, cycleFacts, documentPicker, gitReading,
   instructionFields, materialsEstimate, nextStep, preselection, rosterStatus, stepStates,
@@ -26,51 +31,12 @@ function modeOf(wizard) {
 }
 
 //: What one pass carries: the model's slice, the words in the reader's language, and the two ways
-//: out. `lang` is the language a document the wizard writes is composed in.
+//: out. `lang` is the language a document the wizard writes is composed in; leaving may name the
+//: run the desk should open (`{runId, stage}`).
 function context(state, handlers) {
   return {wizard: state.wizard, lang: state.locale === "ru" ? "ru" : "en",
     t: (key, params) => localize(state, key, params),
-    send: (event) => handlers.onWizard(event), leave: () => handlers.onWizardClose()};
-}
-
-//: A button with a focus key. A `blocked` reason (already words) disables it and is written on
-//: screen beside it, so nothing is a silent no-op.
-function action(key, label, onClick, blocked = null) {
-  const node = element("button", {type: "button", "data-focus": key, text: label,
-    disabled: blocked === null ? null : "", "aria-disabled": blocked === null ? null : "true"});
-  if (blocked === null) node.addEventListener("click", onClick);
-  if (blocked === null) return node;
-  return element("span", {className: "desk-wizard__blocked", "data-blocked": key},
-    [node, element("small", {className: "desk-wizard__why", text: blocked})]);
-}
-
-//: A choice drawn as a button that says whether it is on (`role` radio or switch), never as an
-//: `<input type=radio|checkbox>`: the focus net puts the caret back with `setSelectionRange`,
-//: which such an input refuses, so a keyed one would break the redraw that follows its press.
-function choice(key, label, role, on, onClick) {
-  const node = element("button", {type: "button", role, "data-focus": key, text: label,
-    "aria-checked": on ? "true" : "false"});
-  node.addEventListener("click", onClick);
-  return node;
-}
-
-//: A control whose door a later slice opens: drawn disabled, with the reason on screen. Git
-//: waits for activation in view, and for a later slice otherwise.
-function later(ctx, id, key, label) {
-  const reason = id === "connect_git" && ctx.wizard.mode.view ? "connect_git_view" : id;
-  return action(key, label, () => {}, ctx.t(`wizard.later.${reason}`));
-}
-
-//: A text field the model holds the words of: each input goes to the model as it is typed.
-function textField(ctx, spec) {
-  const control = element(spec.multi ? "textarea" : "input", {"data-focus": spec.key,
-    "data-focus-value": "state", name: spec.name, autocomplete: "off", spellcheck: "false",
-    type: spec.multi ? null : "text", rows: spec.multi ? "5" : null,
-    disabled: spec.locked ? "" : null});
-  control.value = spec.value;
-  control.addEventListener("input", () => spec.onValue(control.value));
-  return element("label", {className: "desk-wizard__field", "data-field": spec.name},
-    [element("span", {text: spec.label}), control, ...(spec.extra ?? [])]);
+    send: (event) => handlers.onWizard(event), leave: (outcome) => handlers.onWizardClose(outcome)};
 }
 
 // -- the frame ---------------------------------------------------------------------------
@@ -114,19 +80,18 @@ function gateWords(ctx, gate) {
 }
 
 //: Back is always there past the first step. Next is enabled only while this step and every step
-//: before it are complete, and says why when they are not; the last built step offers "prepare"
-//: as a control that waits.
+//: before it are complete, and says why when they are not; the last built step has no Next (its
+//: own body holds the button that goes on).
 function foot(ctx) {
   const wizard = ctx.wizard, gate = canAdvance(wizard), following = nextStep(wizard);
   const why = gate.ok ? "" : gateWords(ctx, gate);
   const back = wizard.step === BUILT_STEPS[0] ? []
     : [action("wizard:back", ctx.t("wizard.back"), () => ctx.send({type: "back"}))];
-  const primary = following === null
-    ? action("wizard:prepare", ctx.t("wizard.prepare"), () => {}, ctx.t("wizard.later.prepare"))
-    : action("wizard:next", ctx.t("wizard.next"), () => ctx.send({type: "next"}),
-      gate.ok ? null : why);
+  const primary = following === null ? []
+    : [action("wizard:next", ctx.t("wizard.next"), () => ctx.send({type: "next"}),
+      gate.ok ? null : why)];
   return element("footer", {className: "desk-wizard__foot"}, [
-    ...back, primary, element("p", {className: "desk-wizard__reason", "data-wizard-reason": "",
+    ...back, ...primary, element("p", {className: "desk-wizard__reason", "data-wizard-reason": "",
       "aria-live": "polite", text: why})]);
 }
 
@@ -334,20 +299,14 @@ function materialsBody(ctx) {
 const CYCLE_NAMES = Object.freeze({"desk-standard": "standard", "desk-short": "short",
   "desk-starter-docs": "starter_docs"});
 
-//: A UTC instant as the desk writes it until the shared time module arrives: date, minutes, zone.
-function instantText(iso) {
-  return typeof iso === "string" ? `${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC` : "";
-}
-
-//: A duration the server counted, said in hours and minutes. Only the format is drawn here.
-function timeText(ctx, seconds) {
-  const total = Math.round(seconds / 60), hours = Math.floor(total / 60), minutes = total % 60;
-  if (hours > 0 && minutes > 0) {
-    return ctx.t("wizard.time.hm", {hours: String(hours), minutes: String(minutes)});
-  }
-  if (hours > 0) return ctx.t("wizard.time.h", {hours: String(hours)});
-  if (minutes > 0) return ctx.t("wizard.time.m", {minutes: String(minutes)});
-  return ctx.t("wizard.time.s", {seconds: String(seconds)});
+//: Names the cycle the last run went by: the product's own name for a cycle it ships, else the
+//: title the list of cycles gives, else nothing at all. The id is a key, never a word the owner
+//: reads.
+function uncardedLine(ctx, source, at) {
+  const named = Object.hasOwn(CYCLE_NAMES, source.workflowId)
+    ? ctx.t(`wizard.cycle.name_${CYCLE_NAMES[source.workflowId]}`) : source.cycleTitle;
+  return named === null ? ctx.t("wizard.cycle.source_last_run_unlisted", {at})
+    : ctx.t("wizard.cycle.source_last_run_other", {cycle: named, at});
 }
 
 //: Where the preselected card came from, said only while the choice is still the preselection. A
@@ -365,7 +324,7 @@ function sourceLine(ctx) {
     text = source.taskTitle === null ? ctx.t("wizard.cycle.source_last_run_untitled", {at})
       : ctx.t("wizard.cycle.source_last_run", {task: source.taskTitle, at});
   } else if (source.kind === "last_run_uncarded") {
-    text = ctx.t("wizard.cycle.source_last_run_other", {workflow: source.workflowId, at});
+    text = uncardedLine(ctx, source, at);
   }
   return text === null ? [] : [element("p", {"data-cycle-source": source.kind, text})];
 }
@@ -594,7 +553,8 @@ function rolesBody(ctx) {
 // -- the pass ----------------------------------------------------------------------------
 
 //: One body for each built step.
-const BODIES = {task: taskBody, materials: materialsBody, cycle: cycleBody, roles: rolesBody};
+const BODIES = {task: taskBody, materials: materialsBody, cycle: cycleBody, roles: rolesBody,
+  prepare: prepareBody, run: runBody};
 
 export function mountWizard(mount, state, handlers) {
   if (typeof handlers?.onWizard !== "function" || typeof handlers.onWizardClose !== "function") {

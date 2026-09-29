@@ -13,26 +13,53 @@ import re
 from pathlib import Path
 
 from tests.desk_wizard_node import run_js
+from tests.js_exports import exported_names
 from tests.test_graph_source import _code
-from tests.test_studio_canvas import _exported_names
 
 PANEL = Path(__file__).resolve().parents[1] / "src" / "conductor" / "panel"
 #: The wizard's pure modules, each with the one set of siblings it may import. Grown by the
 #: commit that creates a module, in the same commit as its registry rows.
 PURE = {"desk-wizard-model.js": {"./studio-tasks-model.js", "./desk-wizard-materials.js",
                                  "./desk-wizard-cycle.js", "./desk-wizard-roles.js",
-                                 "./desk-wizard-base.js", "./desk-wizard-team.js"},
+                                 "./desk-wizard-base.js", "./desk-wizard-team.js",
+                                 "./desk-wizard-input.js", "./desk-wizard-prep.js",
+                                 "./desk-wizard-launch.js", "./desk-wizard-run.js",
+                                 "./desk-wizard-skip.js"},
+        "desk-wizard-input.js": {"./desk-wizard-base.js", "./desk-wizard-cycle.js",
+                                 "./desk-wizard-materials.js", "./desk-wizard-team.js",
+                                 "./desk-wizard-prep.js"},
+        "desk-wizard-prep.js": {"./desk-wizard-digest.js"},
+        "desk-wizard-launch.js": {"./desk-wizard-digest.js"},
+        "desk-wizard-skip.js": {"./desk-wizard-launch.js"},
+        "desk-wizard-run.js": {"./desk-wizard-base.js", "./desk-wizard-cycle.js",
+                               "./desk-wizard-input.js", "./desk-wizard-launch.js",
+                               "./desk-wizard-prep.js", "./desk-wizard-skip.js",
+                               "./desk-wizard-team.js"},
         "desk-wizard-base.js": {"./studio-tasks-model.js", "./desk-wizard-materials.js",
                                 "./desk-wizard-roles.js"},
         "desk-wizard-team.js": {"./desk-wizard-base.js", "./desk-wizard-cycle.js",
                                 "./desk-wizard-roles.js"},
         "desk-wizard-materials.js": set(), "desk-wizard-cycle.js": set(),
-        "desk-wizard-roles.js": set()}
+        "desk-wizard-roles.js": set(), "desk-wizard-digest.js": set()}
 #: The renderer: it builds elements, so it reaches the view's helper and the words, and no store,
 #: no transport and no other screen.
 RENDERER = "desk-wizard.js"
+#: Every module that draws, with the one set of siblings it may import. The renderer mounts and
+#: the two others hold what it draws from: the controls every step is made of, and step 5.
 DRAWN = {RENDERER: {"./command-view.js", "./studio-i18n.js", "./desk-wizard-model.js",
-                    "./desk-wizard-copy.js"}}
+                    "./desk-wizard-copy.js", "./desk-wizard-draw.js",
+                    "./desk-wizard-prepare-view.js", "./desk-wizard-card.js"},
+         "desk-wizard-draw.js": {"./command-view.js"},
+         "desk-wizard-prepare-view.js": {"./command-view.js", "./desk-wizard-draw.js",
+                                         "./desk-wizard-model.js"},
+         "desk-wizard-card.js": {"./command-view.js", "./desk-wizard-draw.js",
+                                 "./desk-wizard-model.js"}}
+#: What each drawing module hands the ones above it, and nothing else.
+DRAWN_EXPORTS = {RENDERER: ["mountWizard"],
+                 "desk-wizard-draw.js": ["action", "choice", "later", "textField", "instantText",
+                                         "timeText"],
+                 "desk-wizard-prepare-view.js": ["prepareBody"],
+                 "desk-wizard-card.js": ["runBody"]}
 #: Data only: the catalogue holds strings and nothing else.
 DATA = ("desk-wizard-copy.js",)
 IMPORTS = r'from "(\./[a-z-]+\.js)";'
@@ -47,12 +74,18 @@ IMPURE = (r"\bDate\b", r"Math\.random", r"\bcrypto\b", "localStorage", "sessionS
 #: harness is offered from the roster's own facts and never names one in code.
 VENDOR_WORDS = ("claude", "codex", "grok", "kimi", "qwen", "deepseek", "anthropic", "openai",
                 "gemini", "dsh")
-#: The events only the host sends: the wizard never emits them from a control.
-HOST_EVENTS = {"open", "answered"}
+#: The events only the host sends: the wizard never emits them from a control. `tick` is the host's
+#: clock: the model holds no clock, so the seconds of a countdown arrive as an event.
+HOST_EVENTS = {"open", "answered", "tick"}
 
 
 def _source(name: str) -> str:
     return (PANEL / name).read_text(encoding="utf-8")
+
+
+def _drawn_code() -> str:
+    """The code of every drawing module, together: a control may be built in any of them."""
+    return "\n".join(_code(PANEL / name) for name in DRAWN)
 
 
 def test_the_wizard_modules_import_only_the_siblings_each_is_granted():
@@ -95,7 +128,13 @@ def test_the_events_are_one_closed_table_whose_keys_are_the_event_list():
 
 
 def test_the_renderer_exports_mount_wizard_and_nothing_else():
-    assert _exported_names(_code(PANEL / RENDERER)) == ["mountWizard"]
+    assert exported_names(_code(PANEL / RENDERER)) == ["mountWizard"]
+
+
+def test_each_drawing_module_exports_exactly_what_the_ones_above_it_take():
+    for name, expected in DRAWN_EXPORTS.items():
+        assert exported_names(_code(PANEL / name)) == expected, name
+    assert set(DRAWN_EXPORTS) == set(DRAWN)
 
 
 def _emitted(code: str, events: list[str]) -> set[str]:
@@ -108,7 +147,7 @@ def _emitted(code: str, events: list[str]) -> set[str]:
 
 def test_the_renderer_hands_its_host_only_events_of_the_models_closed_table():
     events = run_js('console.log(JSON.stringify(wiz.EVENTS));')
-    emitted = _emitted(_code(PANEL / RENDERER), events)
+    emitted = _emitted(_drawn_code(), events)
     assert emitted and emitted <= set(events), emitted - set(events)
     assert not emitted & HOST_EVENTS, "the host opens the wizard and answers its asks"
 
@@ -116,8 +155,9 @@ def test_the_renderer_hands_its_host_only_events_of_the_models_closed_table():
 def test_the_renderer_can_cause_every_event_the_model_takes_but_the_hosts_own():
     """An event no control sends is a way to change the wizard that nobody can reach."""
     events = run_js('console.log(JSON.stringify(wiz.EVENTS));')
-    emitted = _emitted(_code(PANEL / RENDERER), events)
-    assert set(events) - HOST_EVENTS - emitted == set(), set(events) - HOST_EVENTS - emitted
+    emitted = _emitted(_drawn_code(), events)
+    left = set(events) - HOST_EVENTS - emitted
+    assert left == set(), left
 
 
 def _blocks(source: str, tag_words: tuple[str, ...]) -> list[str]:
@@ -141,7 +181,7 @@ def test_the_renderer_draws_no_radio_or_checkbox_input_the_focus_net_cannot_rest
     A keyed one throws inside the host's redraw and drops the asks the same event made, so a
     choice is a button that says whether it is on (`role` radio or switch, `aria-checked`).
     """
-    code = _code(PANEL / RENDERER)
+    code = _drawn_code()
     assert not re.search(r'type: "(?:radio|checkbox)"', code)
     assert "aria-checked" in code
 
@@ -160,7 +200,7 @@ def test_no_wizard_module_writes_the_focus_nets_scope_attribute():
 
 
 def test_every_control_the_renderer_builds_carries_a_focus_key():
-    blocks = _blocks(_code(PANEL / RENDERER), ("button", "input", "textarea", "select"))
+    blocks = _blocks(_drawn_code(), ("button", "input", "textarea", "select"))
     assert len(blocks) >= 5
     assert all('"data-focus"' in block for block in blocks), [
         block[:60] for block in blocks if '"data-focus"' not in block]

@@ -11,6 +11,7 @@ shipped bytes, are L's (spec 7.11 item 5); this file only holds the shape of the
 """
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
 import re
@@ -33,12 +34,10 @@ LANGUAGE_SENTENCE = "Answer in the language of the brief."
 SHARED_ROLES = {"role-analyst", "role-reviewer", "role-designer", "role-doer", "role-checker"}
 #: The digest of each file's canonical JSON at revision 1. A published revision is frozen
 #: (`templates/README.md`): a change of these bytes is a new revision and a new digest, on the
-#: record. `test_command_workflow_routes.py` reads them to hold every shipped file unmoved.
-DESK_DIGESTS = {
-    "desk-standard": "109b1a448aa05336dc8bc5ff5a71afbbcf86475a085856db97ec4fcaaa641b41",
-    "desk-short": "789f6c26ce6d5b1d3a3209dd18f1a44a01e7f20387646f9b406653ea13a1508d",
-    "desk-starter-docs": "b5db65bc9826ce7ef34f2d0b00a4eaf8a04578eada4d4d2621cc9058a97bf3e2",
-}
+#: record. They live in a fixture neither lane owns, and `test_command_workflow_routes.py` reads
+#: the same file to hold every shipped file unmoved.
+DESK_DIGESTS_FILE = Path(__file__).resolve().parent / "fixtures" / "desk_template_digests.json"
+DESK_DIGESTS = json.loads(DESK_DIGESTS_FILE.read_text(encoding="utf-8"))
 #: Harness and vendor words; a template names roles and nothing about a deployment.
 DEPLOYMENT_WORDS = ("claude", "codex", "grok", "kimi", "qwen", "deepseek", "anthropic", "openai",
                     "gemini", "dsh", "gpt", "glm")
@@ -89,6 +88,22 @@ def test_a_desk_template_keeps_the_digest_its_first_revision_was_shipped_with(na
     digest = hashlib.sha256(canonical_json(shipped(name)).encode("utf-8")).hexdigest()
     assert digest == DESK_DIGESTS[name], (
         f"{name} moved: a change is revision 2 with a new digest, not an edit of revision 1")
+
+
+def test_no_lane_freeze_imports_the_desk_digests_from_another_lanes_test_module():
+    """Lane L's freeze pins the shipped bytes; it must not stand on a module lane D2 may rename."""
+    freeze = Path(__file__).with_name("test_command_workflow_routes.py")
+    tree = ast.parse(freeze.read_text(encoding="utf-8"))
+    imported = {node.module for node in ast.walk(tree)
+                if isinstance(node, ast.ImportFrom) and node.module}
+    assert not {name for name in imported if name.startswith("tests.test_command_desk_")}
+
+
+def test_the_desk_digests_are_one_fixture_and_the_freeze_of_lane_l_pins_exactly_them():
+    from tests import test_command_workflow_routes as freeze
+    assert set(DESK_DIGESTS) == set(DESK)
+    assert {name: freeze.SHIPPED[name] for name in DESK} == DESK_DIGESTS
+    assert DESK_DIGESTS_FILE.parent == Path(__file__).resolve().parent / "fixtures"
 
 
 def test_desk_template_files_are_exactly_the_three_the_spec_names():

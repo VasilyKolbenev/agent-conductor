@@ -8,7 +8,11 @@ import {MATERIAL_LIMITS, composeText} from "./desk-wizard-materials.js";
 import {ARGV_LIMIT} from "./desk-wizard-roles.js";
 
 export const STEPS = Object.freeze(["task", "materials", "cycle", "roles", "prepare", "run"]);
-export const BUILT_STEPS = Object.freeze(["task", "materials", "cycle", "roles"]);
+//: The four steps the owner fills in: what the chain of step 5 writes is what they said there.
+export const FILL_STEPS = Object.freeze(["task", "materials", "cycle", "roles"]);
+//: The steps this build draws: the four the owner fills in, the preparation that writes them and
+//: the terms card the run starts or is queued from.
+export const BUILT_STEPS = Object.freeze([...FILL_STEPS, "prepare", "run"]);
 export const LIMITS = Object.freeze({materials: MATERIAL_LIMITS.count,
   documentBytes: MATERIAL_LIMITS.bytes, argvChars: ARGV_LIMIT, title: TASK_TITLE_LIMIT});
 

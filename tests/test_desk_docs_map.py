@@ -19,7 +19,7 @@ DOCS = (ROOT / "docs" / "architecture.md", ROOT / "docs" / "architecture.ru.md")
 #: A link to a desk module, as the map writes one.
 LINK = re.compile(r"\]\(\.\./src/conductor/panel/(desk(?:-[a-z]+)*\.js)\)")
 #: The transport's own row and the wizard's family are documented elsewhere.
-LEFT_OUT = re.compile(r"desk-transport\.js|desk-wizard(?:-[a-z]+)?\.js")
+LEFT_OUT = re.compile(r"desk-transport\.js|desk-wizard(?:-[a-z]+)*\.js")
 
 
 def packaged_desk_modules(panel: Path) -> frozenset[str]:
@@ -72,3 +72,10 @@ def test_the_map_check_refuses_a_missing_module_and_a_module_that_does_not_exist
     assert map_faults(ghost, packaged) == [
         "the map links a desk module that is not packaged: desk-time.js"]
     assert map_faults("", packaged) != []
+
+
+def test_a_wizard_module_named_with_two_words_is_left_out_of_the_comparison(tmp_path):
+    for name in ("desk.js", "desk-wizard.js", "desk-wizard-card.js",
+                 "desk-wizard-prepare-view.js"):
+        (tmp_path / name).write_text("", encoding="utf-8")
+    assert packaged_desk_modules(tmp_path) == frozenset({"desk.js"})

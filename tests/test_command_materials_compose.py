@@ -165,6 +165,30 @@ def test_a_copy_takes_its_path_from_the_documents_and_never_from_the_base():
     assert f"## 1. docs/spec.md@{OID}" in document and "elsewhere" not in document
 
 
+@pytest.mark.parametrize("path,quoted", [
+    ("docs/a`b.md", "``docs/a`b.md``"),
+    ("docs/a``b.md", "```docs/a``b.md```"),
+    ("`lead.md", "`` `lead.md ``"),
+    ("trail.md`", "`` trail.md` ``"),
+    (" spaced ", "`  spaced  `"),
+    ("docs/plain.md", "`docs/plain.md`")])
+def test_a_link_quotes_a_path_holding_a_backtick_with_a_longer_code_span(path, quoted):
+    """A tracked file may be named with a backtick, and §9.1.3 skips no such name, so the link
+    line must carry it: the delimiter is longer than any run inside, padded where CommonMark
+    would otherwise eat a backtick or a space at an end of the span."""
+    document = compose_materials([link()], "en", {SPEC_ID: BaseFile(path, OID)}, DOCUMENTS)
+    assert document == (f"# Materials\n\n## 1. {path} · project_doc\n"
+                        f"Project file in the work folder: {quoted} (git blob `{OID}`), "
+                        "text not copied\n")
+
+
+def test_a_copy_of_a_document_whose_path_holds_a_backtick_names_it_as_it_is():
+    """The heading of a copy is text, not a code span: the path needs no quoting there."""
+    document = compose_materials([copy_of(SPEC_ID, OID, "Owner text")], "en", None,
+                                 {SPEC_ID: "docs/a`b.md"})
+    assert document == f"# Materials\n\n## 1. docs/a`b.md@{OID} · project_doc\nOwner text\n"
+
+
 def test_no_materials_compose_the_none_document_in_each_language():
     assert compose_materials([], "ru", None, DOCUMENTS) == "# Материалы\n\nМатериалов нет\n"
     assert compose_materials([], "en", None, DOCUMENTS) == "# Materials\n\nNo materials\n"
@@ -259,13 +283,13 @@ def test_a_base_row_that_is_not_a_base_file_is_a_contract_error():
         compose_materials([link()], "en", {SPEC_ID: ("docs/spec.md", OID)}, DOCUMENTS)
 
 
-@pytest.mark.parametrize("path", ["docs/a\nb.md", "docs/`x`.md", "docs/a\x00b.md", ""])
-def test_a_path_the_document_could_not_quote_is_a_contract_error(path):
+@pytest.mark.parametrize("path", ["docs/a\nb.md", "docs/a\rb.md", "docs/a\x00b.md", ""])
+def test_a_path_the_document_could_not_carry_on_one_line_is_a_contract_error(path):
     with pytest.raises(ContractError):
         compose_materials([link()], "en", {SPEC_ID: BaseFile(path, OID)}, DOCUMENTS)
 
 
-@pytest.mark.parametrize("path", ["docs/a\nb.md", "docs/`x`.md", "docs/a\x00b.md", "", 7, None])
+@pytest.mark.parametrize("path", ["docs/a\nb.md", "docs/a\rb.md", "docs/a\x00b.md", "", 7, None])
 def test_a_documents_row_the_heading_could_not_carry_is_a_contract_error(path):
     with pytest.raises(ContractError) as raised:
         compose_materials([copy_of()], "en", None, {SPEC_ID: path})
@@ -276,6 +300,16 @@ def test_a_documents_row_the_heading_could_not_carry_is_a_contract_error(path):
 def test_documents_that_are_not_a_mapping_are_a_contract_error(documents):
     with pytest.raises(ContractError):
         compose_materials([copy_of()], "en", None, documents)
+
+
+@pytest.mark.parametrize("base", [[SPEC_ID], "docs/spec.md", 7, ()])
+@pytest.mark.parametrize("items", [[link()], [note()], []], ids=["a link", "a note", "none"])
+def test_a_base_that_is_neither_none_nor_a_mapping_is_a_contract_error(base, items):
+    """The docstring promises a ContractError for a `base` that is not what it says, so a
+    list handed over by mistake must not surface as an AttributeError from a `.get`."""
+    with pytest.raises(ContractError) as raised:
+        compose_materials(items, "en", base, DOCUMENTS)
+    assert not isinstance(raised.value, MaterialsRefused)
 
 
 # --- purity ------------------------------------------------------------------------------------
@@ -325,10 +359,33 @@ console.log(JSON.stringify({ru: m.bodyOf(cards, "ru"), en: m.bodyOf(cards, "en")
   estimate: m.composeText(cards, "ru")}));
 """
 NO_CARDS = "const cards = [];"
+#: Two schemes whose text holds runs of backticks: the composer lengthens the fence around the
+#: longest run, so a fence of three would leave the estimate below the document.
+TICK_CARDS = """
+const cards = [
+  m.textCard("m1", {kind: "scheme", title: "S1", content: "a ````` b"}),
+  m.textCard("m2", {kind: "scheme", title: "S2", content: "```\\n``` and ``"})];
+"""
 DOCS = {"spec": SPEC_ID, "notes": NOTES_ID, "oid": OID, "other": OTHER_OID}
 
 
-@pytest.mark.parametrize("cards", [DESK_CARDS, NO_CARDS], ids=["five cards", "no cards"])
+@pytest.mark.parametrize("path", ["docs/a`b.md", "docs/a``b.md", "`lead.md", "trail.md`",
+                                  " spaced ", "docs/plain.md"])
+def test_the_desks_line_for_a_link_is_the_composers_whatever_backticks_the_path_holds(path):
+    """One link card, so the estimate is the whole document: it is held equal, byte for byte."""
+    cards = """const cards = [{...m.documentCard("m1", {doc_id: d.id, git_oid: d.oid,
+      path: d.path, length: 10}), mode: "link"}];
+      console.log(JSON.stringify({ru: m.composeText(cards, "ru"), en: m.composeText(cards, "en"),
+        body: m.bodyOf(cards, "en")}));"""
+    sent = run_js(cards, {"id": SPEC_ID, "oid": OID, "path": path},
+                  modules={"m": "desk-wizard-materials.js"})
+    base = {SPEC_ID: BaseFile(path, OID)}
+    for lang in ("ru", "en"):
+        assert compose_materials(sent["body"]["items"], lang, base, DOCUMENTS) == sent[lang]
+
+
+@pytest.mark.parametrize("cards", [DESK_CARDS, NO_CARDS, TICK_CARDS],
+                         ids=["five cards", "no cards", "schemes with backticks"])
 def test_the_composer_accepts_the_body_the_desk_sends_and_the_desks_estimate_is_not_below_it(
         cards):
     sent = run_js(cards + DESK_SENDS, DOCS, modules={"m": "desk-wizard-materials.js"})

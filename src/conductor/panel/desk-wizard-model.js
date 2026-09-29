@@ -27,13 +27,14 @@
 //   materials {items, counter, picker, refusal, includeInstructions},
 //   cycle {choice, chosenBy, generation, flow, flowFor, flowGeneration, draft, status, refusal,
 //          settled, boundKey},  (draft: what the last flow answer said about the standing draft)
-//   roles {owner, instructions}, history {runs, revisions}.
+//   roles {owner, instructions}, history {runs, revisions},
+//   run {phase, pressed, lang, settled, done, attempts, seq, prep, ...}: the chain of step 5
+//   (`desk-wizard-prep.js` says what each field is).
 import {taskTitle, isTaskId} from "./studio-tasks-model.js";
 import {GIT_EXITS, GIT_SENTENCES, MATERIAL_KINDS, REFUSALS, bodyOf, documentCard, estimateOf,
   gitFacts, instructionsRow, isComplete, isDocumentRow, isMaterialKind, isOid, pickerOf,
   textCard} from "./desk-wizard-materials.js";
-import {WIZARD_STARTERS, cardsOf, factsOf, flowBody, isFlowState, preselect}
-  from "./desk-wizard-cycle.js";
+import {WIZARD_STARTERS, cardsOf, factsOf, isFlowState, preselect} from "./desk-wizard-cycle.js";
 import {NOTES, QUOTA_REASONS, ROLE_KINDS, argvFit, offersFor, quotaOf, roleKind, rolesOf,
   rosterOf, rosterState, suggest} from "./desk-wizard-roles.js";
 import {BUILT_STEPS, LIMITS, STEPS, briefDocument, evolve, frozen, inputChars, taskText,
@@ -42,6 +43,18 @@ import {answerHistory, assignRole, assignmentView, bindingNow, editInstruction, 
   historyAsks, instructionFields, likeInstruction, ownInstruction,
   previousAssignment, rolesGate, rolesPublication, rosterStatus, syncBinding}
   from "./desk-wizard-team.js";
+import {flowWriteRequest} from "./desk-wizard-input.js";
+import {cardActor, cardEnqueue, cardInfo, cardRefresh, cardReread, cardSeen, cardSkip,
+  cardSkipCancel, cardSkipConfirm, cardStart, cardTick,
+  chainLinks, isPrepared, landCard, landRun, launchFacts, launchWanted, resumeEdit,
+  resumeGate as judgeResume, resumeOpening, resumeRestart, resumeView, runAdopt, runBump,
+  runRetry, runStart, runWanted, wizardExit, wizardHash, prepareFacts as judgeFacts,
+  prepareGate as judgePrepare} from "./desk-wizard-run.js";
+import {CARD_LINES, LAUNCH_NOTES, LAUNCH_REFUSALS, LAUNCH_STAGES, LAUNCH_WHY, initialLaunch}
+  from "./desk-wizard-launch.js";
+import {SKIP_STATUS, SKIP_STEPS, SKIP_STOPS} from "./desk-wizard-skip.js";
+import {EXITS as RESUME_EXITS, LINKS as CHAIN_LINKS, STATUSES as LINK_STATUSES, initialRun}
+  from "./desk-wizard-prep.js";
 
 //: The one starter the hash may name (spec 4.5.2). The two ready cycles the wizard offers as
 //: cards are the cycle module's, re-exported here as the wizard's one vocabulary.
@@ -50,7 +63,10 @@ export {STEPS, BUILT_STEPS, LIMITS, MATERIAL_KINDS, WIZARD_STARTERS, argvFit, br
   inputChars, offersFor, quotaOf, roleKind, rolesOf, rosterOf, rosterState, rosterStatus,
   taskText, utf8Bytes,
   assignmentView, hasProviders, instructionFields, previousAssignment,
-  GIT_EXITS, GIT_SENTENCES, NOTES, QUOTA_REASONS, REFUSALS, ROLE_KINDS};
+  GIT_EXITS, GIT_SENTENCES, NOTES, QUOTA_REASONS, REFUSALS, ROLE_KINDS,
+  CHAIN_LINKS, LINK_STATUSES, RESUME_EXITS, CARD_LINES, LAUNCH_NOTES, LAUNCH_REFUSALS,
+  LAUNCH_STAGES, LAUNCH_WHY, SKIP_STATUS, SKIP_STEPS, SKIP_STOPS, chainLinks, flowWriteRequest,
+  launchFacts, resumeView, wizardExit, wizardHash};
 export const suggestAssignment = suggest;
 //: Every reason a step can give for not being complete, as a closed code. Each has a message
 //: in the catalogue, and a guard holds this list to the codes the gates really return.
@@ -62,11 +78,12 @@ export const REASONS = Object.freeze([
   "flow_unknown", "flow_unpublishable",
   "no_providers", "roster_pending", "roles_unassigned", "instruction_empty",
   "instruction_too_large",
-  "instruction_argv_over", "binding_pending", "binding_rows"]);
+  "instruction_argv_over", "binding_pending", "binding_rows", "seed_needs_git",
+  "resume_pending", "prepare_not_done"]);
 //: The controls whose door a later slice opens. Each is drawn disabled with its reason and
 //: never as a button that does nothing.
 export const LATER = Object.freeze(["connect_git", "first_commit", "run_without_git",
-  "from_starter_docs", "build_own", "make_project_cycle", "unpin_project_cycle", "prepare"]);
+  "from_starter_docs", "build_own", "make_project_cycle", "unpin_project_cycle"]);
 
 export function isLater(control) {
   return LATER.includes(control);
@@ -87,18 +104,41 @@ export function openingFrom(keys, starters) {
   return Object.freeze({starterId: HASH_STARTERS.includes(named) && known ? named : null});
 }
 
+const ID_GRAMMAR = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+
+//: A reloaded page (spec 6.4.3): `prepare=1` beside a valid `task`. The run and the cycle the hash
+//: names are ids only when they are shaped like one, and the starter counts as it does for a new
+//: task. Anything else is not a resume, and the wizard starts at step 1.
+export function resumeFrom(keys, starters) {
+  if (!keys || keys.prepare !== "1" || !isTaskId(keys.task)) return null;
+  const named = (key) => (typeof keys[key] === "string" && ID_GRAMMAR.test(keys[key])
+    ? keys[key] : null);
+  return Object.freeze({taskId: keys.task, runId: named("run"), workflowId: named("workflow"),
+    starterId: openingFrom(keys, starters).starterId});
+}
+
+//: A page-load random the caller makes, like the task id: the ids of a card's authorization and of
+//: a pause are made from it, so two windows never write the same id with different terms.
+const NONCE = /^[a-z0-9]{8,32}$/;
+
 //: Nothing is prefilled (spec 6): every text field starts empty. What arrives from outside is
-//: the task id the page drew, and -- for a task that is already written and being resumed --
-//: the title the server holds for it, which is a record and not a default.
+//: the task id and the nonce the page drew, the owner's name if the page has one (`actor`, held
+//: in memory only), and -- for a task that is already written and being resumed -- the title the
+//: server holds for it, which is a record and not a default.
 export function initialWizard(opening) {
   if (!opening || !isTaskId(opening.newTaskId)) {
     throw new Error("the wizard needs a task id from its caller");
   }
+  if (typeof opening.nonce !== "string" || !NONCE.test(opening.nonce)) {
+    throw new Error("the wizard needs a nonce from its caller");
+  }
   const starterId = HASH_STARTERS.includes(opening.starterId) ? opening.starterId : null;
   const written = opening.taskWritten === true;
   const title = written && typeof opening.title === "string" ? opening.title : "";
-  return frozen({step: "task", opened: false, asked: [], closing: null,
-    mode: {starterId, view: opening.viewMode === true},
+  const resumed = opening.resume !== undefined && opening.resume !== null;
+  const actor = typeof opening.actor === "string" ? opening.actor : "";
+  return frozen({step: resumed ? "prepare" : "task", opened: false, asked: [], closing: null,
+    nonce: opening.nonce, mode: {starterId, view: opening.viewMode === true},
     task: {taskId: opening.newTaskId, title, brief: "", hint: "", idea: "", written},
     reads: {},
     materials: {items: [], counter: 0, picker: false, refusal: null,
@@ -108,7 +148,8 @@ export function initialWizard(opening) {
       flow: null, flowFor: null, flowGeneration: -1, draft: null, status: "idle",
       refusal: null, settled: [], boundKey: "null"},
     roles: {owner: {}, instructions: {}},
-    history: {runs: {}, revisions: {}}});
+    history: {runs: {}, revisions: {}}, run: resumed ? resumeOpening(opening) : initialRun(),
+    launch: initialLaunch(actor)});
 }
 
 // -- step 1: the task ------------------------------------------------------------------
@@ -198,19 +239,6 @@ export function cycleFacts(state) {
   return factsOf(state.cycle);
 }
 
-//: `POST …/flow` for the chosen cycle. Its id carries the generation of the choice, so an
-//: answer for a card the owner has left is told apart from the card they are on. There is no
-//: request until a read or an answer has said what draft stands for this cycle: the write's
-//: expectation is that fact, never a guess (spec 7.1).
-export function flowWriteRequest(state, {publish = null, binding = null} = {}) {
-  const {choice, flow, flowFor, draft, generation} = state.cycle;
-  if (choice === null || draft === null || draft.for !== choice.workflowId) return null;
-  const held = flow !== null && flowFor === choice.workflowId ? flow : null;
-  const body = flowBody(choice, held, draft.digest, publish, binding);
-  return body === null ? null : {id: `write:flow:${generation}`, name: "flow", door: "write",
-    target: "flow", subject: choice.workflowId, body};
-}
-
 function cycleGate(state) {
   const cycle = state.cycle;
   if (cycle.choice === null) return "cycle_none";
@@ -273,9 +301,16 @@ function chooseCycle(state, event) {
 
 // -- the steps and their gates ---------------------------------------------------------
 
+//: Step 5 is complete when the run is prepared: the chain done, the preview made, nothing edited
+//: since. That is what opens step 6, whose card is drawn from that preview.
+function preparedGate(state) {
+  return isPrepared(state) ? null : "prepare_not_done";
+}
+
 //: Why a step is not complete yet, as a closed code (null when it is). One entry per built
 //: step; a step with no entry has nothing to refuse.
-const GATES = {task: taskGate, materials: materialsGate, cycle: cycleGate, roles: rolesGate};
+const GATES = {task: taskGate, materials: materialsGate, cycle: cycleGate, roles: rolesGate,
+  prepare: preparedGate};
 const PUBLISHERS = {task: taskPublication, materials: materialsPublication,
   cycle: cyclePublication, roles: rolesPublication};
 
@@ -329,6 +364,22 @@ function moveTo(state, step) {
   if (to < 0 || to === at) return state;
   const held = BUILT_STEPS.slice(0, to).some((prior) => gateOf(state, prior) !== null);
   return to > at && held ? state : evolve(state, {step});
+}
+
+// -- step 5: the chain (its rules are `desk-wizard-run.js`; the judgement of the four filling
+// steps, which it is handed, is this module's) --------------------------------------------
+
+export function prepareGate(state) {
+  return judgePrepare(state, gateOf);
+}
+
+export function resumeGate(state) {
+  return judgeResume(state, gateOf);
+}
+
+//: What step 5 draws (see `desk-wizard-run.js`).
+export function prepareFacts(state) {
+  return judgeFacts(state, gateOf);
 }
 
 //: What each step would publish once the chain of later slices sends it. The chain runs in
@@ -399,8 +450,12 @@ function cycleAsks(state) {
 //: only those whose id is not yet in `asked`.
 export function wantedAsks(state) {
   if (!state.opened) return [];
-  return [...OPENING_READS.map(([name, target]) => readAsk(name, target)),
-    ...materialAsks(state), ...cycleAsks(state), ...historyAsks(state)];
+  //: A reloaded page fills nothing in: it reads the task and asks for no cycle, no history and
+  //: no document of the project.
+  const filling = state.run.resume === null
+    ? [...materialAsks(state), ...cycleAsks(state), ...historyAsks(state)] : [];
+  return [...OPENING_READS.map(([name, target]) => readAsk(name, target)), ...filling,
+    ...runWanted(state), ...launchWanted(state)];
 }
 
 function readOf(result) {
@@ -478,8 +533,19 @@ function answerDocument(state, ask, result) {
     final ? reason : "read_failed");
 }
 
+//: The asks of the chain: each answer is folded into the `run` slice by `desk-wizard-run.js`.
+const CHAIN_ASKS = Object.freeze(["prep_read", "prep_task", "prep_seed", "prep_flow",
+  "prep_flow_read", "prep_run", "prep_doc", "prep_materials", "preview"]);
+
+//: The asks of the card of step 6, folded into the `launch` slice.
+const CARD_ASKS = Object.freeze(["launch_queue", "launch_automation", "launch_run",
+  "launch_holder", "launch_preview", "launch_prep", "launch_authorize", "launch_enqueue",
+  "launch_skip_enqueue", "launch_skip_order", "launch_skip_pause", "launch_skip_resume"]);
+
 const ANSWERS = {...Object.fromEntries([...READ_NAMES, "documents"]
-  .map((name) => [name, answerRead(name)])), document: answerDocument,
+  .map((name) => [name, answerRead(name)])),
+  ...Object.fromEntries(CHAIN_ASKS.map((name) => [name, landRun])),
+  ...Object.fromEntries(CARD_ASKS.map((name) => [name, landCard])), document: answerDocument,
   previous_run: answerHistory("runs"), previous_revision: answerHistory("revisions"),
   flow: (state, ask, result) => landFlow(state, ask, result, true),
   flow_read: (state, ask, result) => landFlow(state, ask, result, false)};
@@ -627,6 +693,23 @@ const HANDLERS = {
     && state.materials.includeInstructions !== event.value
     ? evolve(state, {materials: {...state.materials, includeInstructions: event.value}})
     : state),
+  "prepare-start": (state, event) => runStart(state, event, gateOf),
+  "prepare-retry": runRetry,
+  "prepare-adopt": runAdopt,
+  "prepare-bump": runBump,
+  "resume-edit": resumeEdit,
+  "resume-restart": resumeRestart,
+  tick: cardTick,
+  "actor-edit": cardActor,
+  "launch-start": cardStart,
+  "launch-enqueue": cardEnqueue,
+  "launch-refresh": cardRefresh,
+  "launch-reread": cardReread,
+  "launch-seen": cardSeen,
+  "launch-info": cardInfo,
+  "launch-skip": cardSkip,
+  "launch-skip-confirm": cardSkipConfirm,
+  "launch-skip-cancel": cardSkipCancel,
   "close-request": (state) => (closeNeedsWarning(state) && state.closing === null
     ? evolve(state, {closing: "confirm"}) : state),
   "close-cancel": (state) => (state.closing === null ? state : evolve(state, {closing: null})),

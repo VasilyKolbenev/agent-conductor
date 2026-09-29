@@ -1,0 +1,6 @@
+{
+  "schema_version": 1,
+  "revision": 3,
+  "slot": {"state": "busy", "run_id": "task-a-r1", "reason_code": "action_in_flight"},
+  "entries": []
+}

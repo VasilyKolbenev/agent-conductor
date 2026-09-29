@@ -88,8 +88,6 @@ export const WIZARD_COPY = Object.freeze({
   "wizard.later.unpin_project_cycle": ["Unpinning the project cycle comes in a later step: its "
     + "door is not open yet.", "Открепление цикла проекта появится позже: его дверь ещё не "
     + "открыта."],
-  "wizard.later.prepare": ["Preparing the run comes in a later step.",
-    "Подготовка запуска появится позже."],
   "wizard.reason.git_stops": ["This project cannot be used; see the note at the top of the step.",
     "Этот проект использовать нельзя: см. пояснение вверху шага."],
   "wizard.reason.earlier": ["Step “{step}” is not complete: {reason}",
@@ -192,9 +190,12 @@ export const WIZARD_COPY = Object.freeze({
   "wizard.cycle.source_last_run_untitled": ["as in the last run · {at}",
     "как в прошлом запуске · {at}"],
   "wizard.cycle.source_last_run_other": ["The last run went by a cycle that is not offered "
-    + "here: {workflow} · {at}. Choose a cycle.",
-    "Прошлый запуск шёл по циклу, которого нет среди карточек: {workflow} · {at}. "
+    + "here: {cycle} · {at}. Choose a cycle.",
+    "Прошлый запуск шёл по циклу, которого нет среди карточек: {cycle} · {at}. "
     + "Выберите цикл."],
+  "wizard.cycle.source_last_run_unlisted": ["The last run went by a cycle that is not offered "
+    + "here · {at}. Choose a cycle.",
+    "Прошлый запуск шёл по циклу, которого нет среди карточек · {at}. Выберите цикл."],
   "wizard.cycle.pinned_unread": ["The project cycle could not be read, so nothing is said about it.",
     "Цикл проекта не удалось прочитать, поэтому о нём ничего не сказано."],
   "wizard.cycle.workflows_unread": ["The list of cycles could not be read, so no cycle is chosen "
@@ -385,6 +386,269 @@ export const WIZARD_COPY = Object.freeze({
     "Указание не помещается в командную строку харнесса: выберите другой харнесс."],
   "wizard.reason.binding_pending": ["The server is checking the assignment…",
     "Сервер проверяет расстановку…"],
+  "wizard.reason.seed_needs_git": ["The agents work on a copy of the project's git repository, "
+    + "and this project has none the wizard can read: connect git or run without git (both "
+    + "come in a later step).", "Агенты работают над копией git-репозитория проекта, а "
+    + "здесь его нет: подключите git или запустите без git (обе кнопки появятся позже)."],
+  // -- step 5: the chain «Подготовить запуск» and a reloaded page --------------------------
+  "wizard.prepare.heading": ["Preparing the run", "Подготовка запуска"],
+  "wizard.prepare.continue": ["Continue preparation", "Продолжить подготовку"],
+  "wizard.chain.link.task": ["Task", "Задача"],
+  "wizard.chain.link.seed": ["Seed", "Засев"],
+  "wizard.chain.link.flow": ["Cycle", "Цикл"],
+  "wizard.chain.link.run": ["Run", "Запуск"],
+  "wizard.chain.link.documents": ["Documents", "Документы"],
+  "wizard.chain.link.preview": ["Preview", "Предпросмотр"],
+  "wizard.chain.status.done": ["done", "сделано"],
+  "wizard.chain.status.skipped": ["not needed", "не нужно"],
+  "wizard.chain.status.running": ["writing…", "записываем…"],
+  "wizard.chain.status.unknown": ["the answer was lost", "ответ потерян"],
+  "wizard.chain.status.refused": ["refused", "отказ"],
+  "wizard.chain.status.todo": ["not started yet", "ещё не начато"],
+  "wizard.chain.status.needed": ["needed", "нужно"],
+  "wizard.chain.refused": ["The server refused this link: {code}.",
+    "Сервер отказал на этом звене: {code}."],
+  "wizard.chain.conflict_run": ["A run with this number is already open with another "
+    + "arrangement of the roles: they were changed after an answer was lost.",
+    "Запуск с этим номером уже открыт с другой расстановкой: роли меняли после потерянного "
+    + "ответа."],
+  "wizard.chain.adopt": ["Continue with the recorded arrangement",
+    "Продолжить с записанной расстановкой"],
+  "wizard.chain.bump": ["Open run r{number}", "Открыть запуск r{number}"],
+  "wizard.chain.retry": ["Try again", "Повторить"],
+  "wizard.chain.unknown": ["The answer was lost, so nothing is sent again until what the server "
+    + "holds has been read.", "Ответ потерян, поэтому ничего не отправляется повторно, пока не "
+    + "прочитано, что записал сервер."],
+  "wizard.chain.read_failed": ["What the server holds could not be read ({code}).",
+    "Не удалось прочитать, что записал сервер ({code})."],
+  "wizard.chain.ready": ["The run is prepared: its terms are read.",
+    "Запуск подготовлен: условия прочитаны."],
+  "wizard.resume.reading": ["Reading where this task stands…",
+    "Читаем, на чём остановилась эта задача…"],
+  "wizard.resume.failed": ["Where this task stands could not be read ({code}).",
+    "Не удалось прочитать, на чём остановилась задача ({code})."],
+  "wizard.resume.no_run": ["The task “{title}” is written, but the text you typed and the roles "
+    + "you chose were not saved before the page was reloaded.",
+    "Задача «{title}» записана, но введённый текст и выбранные роли не были сохранены до "
+    + "перезагрузки страницы."],
+  "wizard.resume.restart": ["Fill in again", "Заполнить заново"],
+  "wizard.resume.retype": ["The text of these fields was not written before the reload: type it "
+    + "again", "Текст этих полей не был записан до перезагрузки — введите его заново"],
+  "wizard.resume.preview": ["Everything is written: only the terms are left to read.",
+    "Всё записано: осталось прочитать условия."],
+  "wizard.resume.materials": ["Materials (may stay empty)",
+    "Материалы (можно оставить пустыми)"],
+  "wizard.resume.exit_queued": ["This run is already in the queue.",
+    "Этот запуск уже стоит в очереди."],
+  "wizard.resume.exit_authorized": ["This run is already authorized.",
+    "Этот запуск уже разрешён."],
+  "wizard.resume.exit_ended": ["This run has ended.", "Этот запуск завершён."],
+  "wizard.resume.open": ["Open the run", "Открыть запуск"],
+  "wizard.reason.resume_pending": ["Waiting for the server to say where this task stands.",
+    "Ждём, пока сервер скажет, на чём остановилась эта задача."],
   "wizard.reason.binding_rows": ["The server says a harness cannot carry out its role: see the "
     + "checks.", "Сервер сообщает, что харнесс не может выполнить роль: смотрите проверки."],
+  "wizard.reason.prepare_not_done": ["Prepare the run first: the terms come from its preview.",
+    "Сначала подготовьте запуск: условия берутся из его предпросмотра."],
+  // -- step 6: the terms card ------------------------------------------------------------
+  "wizard.launch.heading": ["Terms of the run", "Условия запуска"],
+  "wizard.launch.waiting": ["The terms are not counted yet.", "Условия ещё не посчитаны."],
+  "wizard.launch.unreadable": ["The server's answer could not be read as terms ({code}).",
+    "Ответ сервера не удалось прочитать как условия ({code})."],
+  "wizard.launch.preview_failed": ["The terms could not be refreshed ({code}).",
+    "Не удалось обновить условия ({code})."],
+  "wizard.launch.actions": ["Actions: up to {max} of {of} for the whole run",
+    "Действия: до {max} из {of} на весь запуск"],
+  "wizard.launch.actions_spent": ["Actions: up to {max} of {of} for the whole run · already "
+    + "spent {spent}", "Действия: до {max} из {of} на весь запуск · уже потрачено {spent}"],
+  "wizard.launch.warn.clean_over_actions": ["Even without any fixes the run needs {actions} "
+    + "actions and {limit} are allowed: it will stop before it is done",
+  "Даже без исправлений запуску нужно {actions} действий, разрешено {limit} — он остановится, "
+    + "не дойдя до конца"],
+  "wizard.launch.warn.worst_over_actions": ["In the worst case the run needs {actions} actions "
+    + "and {limit} are allowed: it may stop", "В худшем случае запуску нужно {actions} "
+    + "действий, разрешено {limit}: он может остановиться"],
+  "wizard.launch.exhausted": ["The limit of the run is used up: {spent} of {of} actions are "
+    + "spent. This run cannot be continued; “Rework” opens a new run.",
+  "Лимит запуска исчерпан: потрачено {spent} из {of} действий. Продолжить этот запуск нельзя — "
+    + "«Доработать» откроет новый запуск"],
+  "wizard.launch.time": ["Working time: up to {time}", "Время работы: до {time}"],
+  "wizard.launch.time_info": ["A step that is checked reserves time twice: for the doer and "
+    + "for the verifier.", "Проверяемый шаг резервирует время дважды — исполнителю и "
+    + "проверяющему."],
+  "wizard.launch.window": ["The permission lasts {time} from the start",
+    "Разрешение действует {time} с момента старта"],
+  "wizard.launch.window_queued": ["the window begins when the run starts",
+    "окно начнётся, когда запуск стартует"],
+  "wizard.launch.steps": ["By step", "По шагам"],
+  "wizard.launch.step_timeout": ["timeout {time}", "таймаут {time}"],
+  "wizard.launch.step_attempts": ["attempts: {count}", "попыток: {count}"],
+  "wizard.launch.step_clamped": ["timeout shortened to fit", "таймаут сокращён"],
+  "wizard.launch.step_no_harness": ["no harness in the plan", "харнесс не назначен"],
+  "wizard.launch.harnesses": ["Harnesses and models", "Харнессы и модели"],
+  "wizard.launch.harness_version": ["{name}, version {version}", "{name}, версия {version}"],
+  "wizard.launch.receives": ["What the agents receive", "Что получат агенты"],
+  "wizard.launch.input_brief": ["The task", "Задача"],
+  "wizard.launch.input_materials": ["Materials", "Материалы"],
+  "wizard.launch.input_other": ["Input {ref}", "Вход {ref}"],
+  "wizard.launch.instruction": ["Instruction for step {step}", "Указание для шага {step}"],
+  "wizard.launch.digest": ["Digest {digest}", "Дайджест {digest}"],
+  "wizard.launch.seed_copy": ["a copy of {ref} at commit {commit}",
+    "копия {ref} на коммите {commit}"],
+  "wizard.launch.seed_request": ["a copy of HEAD at the moment of the start; the active "
+    + "project will make the seed", "копия HEAD на момент старта; засев сделает активный "
+    + "проект"],
+  "wizard.launch.countdown": ["The terms are valid for another {left}",
+    "Условия действуют ещё {left}"],
+  "wizard.launch.countdown_over": ["The terms have run out: asking the server again…",
+    "Срок условий вышел: спрашиваем сервер снова…"],
+  "wizard.launch.repeats_spent": ["The terms were checked six times in a row: refresh them "
+    + "yourself.", "Условия проверены шесть раз подряд: обновите их сами."],
+  "wizard.launch.refresh": ["Refresh the terms", "Обновить условия"],
+  "wizard.launch.changed": ["The terms changed: {lines}. Look at them again.",
+    "Условия изменились: {lines}. Посмотрите их заново."],
+  "wizard.launch.line.actions": ["actions", "действия"],
+  "wizard.launch.line.time": ["working time", "время работы"],
+  "wizard.launch.line.window": ["the permission window", "окно разрешения"],
+  "wizard.launch.line.steps": ["steps", "шаги"],
+  "wizard.launch.line.harnesses": ["harnesses", "харнессы"],
+  "wizard.launch.line.receives": ["what the agents receive", "что получат агенты"],
+  "wizard.launch.changed_quiet": ["The terms changed in a detail the card does not show. Look "
+    + "at them again.", "Условия изменились в подробности, которой нет на карточке. Посмотрите "
+    + "их заново."],
+  "wizard.launch.info": ["Details", "Подробнее"],
+  "wizard.launch.seen": ["I have looked at the new terms", "Я посмотрел новые условия"],
+  "wizard.launch.actor": ["You:", "Вы:"],
+  "wizard.launch.actor_hint": ["Kept on this page only. Letters, digits, dot, dash, underscore.",
+    "Хранится только на этой странице. Буквы, цифры, точка, дефис, подчёркивание."],
+  "wizard.launch.start": ["Start", "Запустить"],
+  "wizard.launch.enqueue": ["Add to the queue", "Поставить в очередь"],
+  "wizard.launch.reread": ["Read the queue again", "Прочитать очередь заново"],
+  "wizard.launch.reread_lost": ["Read again", "Прочитать заново"],
+  "wizard.launch.release": ["A stuck run holds the slot: “Free the slot” is in your desk.",
+    "Слот держит зависший запуск: «Освободить слот» — в Пульте."],
+  "wizard.launch.release_open": ["Free the slot in the desk", "Освободить слот в Пульте"],
+  "wizard.launch.caption_queue": ["The run will start by itself when the slot is free, if the "
+    + "terms do not change. If they change, we will ask you again",
+  "Запуск начнётся сам, когда освободится слот, если условия не изменятся. Если изменятся — "
+    + "спросим вас снова"],
+  "wizard.launch.caption_queue_view": ["The run will start after the project is activated: by "
+    + "itself only if the project has “continue after” with a task queue; otherwise we will ask "
+    + "you again after activation", "Запуск начнётся после активации проекта — сам, только если "
+    + "у проекта стоит «продолжить после» с очередью задач; иначе после активации спросим вас "
+    + "снова"],
+  "wizard.launch.why.slot_reading": ["Reading the queue…", "Читаем очередь…"],
+  "wizard.launch.why.slot_unread": ["The queue could not be read", "Очередь не удалось прочитать"],
+  "wizard.launch.why.busy": ["Waiting for the server…", "Ждём ответ сервера…"],
+  "wizard.launch.why.lost_unread": ["Read again first: the last answer was lost",
+    "Сначала прочитайте заново: ответ потерян"],
+  "wizard.launch.why.exhausted": ["The limit of the run is used up", "Лимит запуска исчерпан"],
+  "wizard.launch.why.card_changed": ["Look at the changed terms first",
+    "Сначала посмотрите изменившиеся условия"],
+  "wizard.launch.why.actor_invalid": ["Your name is not valid", "Имя не подходит"],
+  "wizard.launch.why.project_not_active": ["Start is only for an active project",
+    "Запуск — только у активного проекта"],
+  "wizard.launch.why.owner_required": ["The project has no owner", "Нет владельца проекта"],
+  "wizard.launch.why.server_stopping": ["The project is stopping", "Проект останавливается"],
+  "wizard.launch.why.other": ["The queue says: {code}", "Очередь сообщает: {code}"],
+  "wizard.launch.note.slot_busy": ["the slot was just taken by {holder}",
+    "слот только что занял {holder}"],
+  "wizard.launch.note.project_not_active": ["Start is only for an active project: the project "
+    + "was switched to view, add the run to the queue", "Запуск — только у активного проекта: "
+    + "проект перешёл в режим просмотра, поставьте запуск в очередь"],
+  "wizard.launch.note.stale": ["The terms were out of date and have been read again: press the "
+    + "button once more", "Условия устарели и прочитаны заново: нажмите кнопку ещё раз"],
+  "wizard.launch.note.not_written": ["The answer was lost and nothing was written: press the "
+    + "button again", "Ответ потерян, и ничего не записано: нажмите кнопку ещё раз"],
+  "wizard.launch.refused.authorization_refused": ["The project has no owner present: open it as "
+    + "its owner and try again", "Нет владельца проекта: откройте проект от имени владельца и "
+    + "повторите"],
+  "wizard.launch.refused.queue_full": ["The queue is full: make room and try again",
+    "Очередь заполнена: освободите место и повторите"],
+  "wizard.launch.refused.queue_not_ready": ["This run cannot be queued yet",
+    "Этот запуск пока нельзя поставить в очередь"],
+  "wizard.launch.check.reading": ["Reading the preparation to see why…",
+    "Читаем подготовку, чтобы понять причину…"],
+  "wizard.launch.check.failed": ["The preparation could not be read ({code}): press the button "
+    + "again to ask again", "Подготовку не удалось прочитать ({code}): нажмите кнопку ещё раз, "
+    + "чтобы спросить снова"],
+  "wizard.launch.check.unlisted": ["The preparation does not list this run",
+    "В подготовке этого запуска нет"],
+  "wizard.launch.check.stage.documents_missing": ["The preparation says some documents of this "
+    + "run are missing", "Подготовка сообщает: не все документы запуска записаны"],
+  "wizard.launch.check.stage.ready_to_preview": ["The preparation lists this run as ready and "
+    + "gives no reason for the refusal", "Подготовка показывает запуск готовым и не называет "
+    + "причину отказа"],
+  "wizard.launch.check.stage_other": ["The preparation lists this run as: {stage}",
+    "Подготовка показывает запуск как: {stage}"],
+  "wizard.launch.refused.server_stopping": ["The project is stopping", "Проект останавливается"],
+  "wizard.launch.refused.contract_invalid": ["The terms admit no action: they are being read "
+    + "again", "Условия не допускают ни одного действия: читаем их заново"],
+  "wizard.launch.refused.other": ["The server refused: {code}", "Сервер отказал: {code}"],
+  "wizard.launch.starting": ["Starting the run…", "Запускаем…"],
+  "wizard.launch.enqueuing": ["Adding the run to the queue…", "Ставим запуск в очередь…"],
+  "wizard.launch.unknown": ["The answer was lost. Reading the queue and the permission to see "
+    + "whether it was written…", "Ответ потерян. Читаем очередь и разрешение, чтобы понять, "
+    + "записано ли…"],
+  "wizard.launch.unknown_unread": ["The answer was lost and the server could not be read to see "
+    + "whether it was written. Read again before pressing anything.", "Ответ потерян, и сервер не "
+    + "удалось прочитать, чтобы понять, записано ли. Прочитайте заново, прежде чем нажимать "
+    + "что-либо."],
+  "wizard.launch.result_started": ["Started", "Запущено"],
+  "wizard.launch.result_queued": ["Queued · No. {position}", "В очереди · {position}-я"],
+  "wizard.launch.result_queued_plain": ["Queued", "В очереди"],
+  "wizard.launch.result_queued_view": ["Queued · will start after the project is activated",
+    "В очереди · начнётся после активации проекта"],
+  "wizard.launch.continue_after": ["Continue after…", "Продолжить после…"],
+  // -- step 6: skip ahead from the card ---------------------------------------------------
+  "wizard.launch.skip": ["Skip ahead", "Пропустить вперёд"],
+  "wizard.launch.skip_cancel": ["Cancel", "Отмена"],
+  "wizard.launch.skip_holder_unknown": ["The run that holds the slot",
+    "Запуск, который держит слот"],
+  "wizard.launch.skip_dialog": ["{task} will be paused and will continue after the queue. Its "
+    + "permission lasts until {until} and is not extended in the meantime.",
+  "{task} встанет на паузу и продолжит после очереди. Его разрешение действует до {until} и за "
+    + "это время не продлевается."],
+  "wizard.launch.skip_running": ["Skipping ahead: writing the steps one by one…",
+    "Пропускаем вперёд: записываем шаги по порядку…"],
+  "wizard.launch.skip_step.enqueue": ["This run is queued with these terms",
+    "Этот запуск поставлен в очередь с этими условиями"],
+  "wizard.launch.skip_step.order": ["This run is first in the queue",
+    "Этот запуск первый в очереди"],
+  "wizard.launch.skip_step.pause": ["The holder of the slot is paused",
+    "Держатель слота на паузе"],
+  "wizard.launch.skip_step.resume": ["The holder is queued to continue after the queue",
+    "Держатель поставлен в очередь на продолжение"],
+  "wizard.launch.skip_status.done": ["done", "сделано"],
+  "wizard.launch.skip_status.todo": ["not done", "не сделано"],
+  "wizard.launch.skip_status.reading": ["reading…", "читаем…"],
+  "wizard.launch.skip_status.unknown": ["not known", "неизвестно"],
+  "wizard.launch.skip_stopped": ["Skipping ahead stopped: {reason}",
+    "«Пропустить вперёд» остановилось: {reason}"],
+  "wizard.launch.skip_stop.not_written": ["a step was sent three times and the server's reads "
+    + "still do not show it", "шаг отправлен три раза, а чтения сервера всё ещё его не показывают"],
+  "wizard.launch.skip_stop.read_failed": ["the queue or the holder could not be read",
+    "очередь или держателя слота не удалось прочитать"],
+  "wizard.launch.skip_stop.queue_changed": ["the queue changed twice while it was being "
+    + "reordered, so it is shown below as it stands", "очередь дважды менялась во время "
+    + "перестановки, поэтому ниже она показана как есть"],
+  "wizard.launch.skip_stop.preview_stale": ["the terms were out of date and have been read "
+    + "again", "условия устарели и прочитаны заново"],
+  "wizard.launch.skip_stop.authorization_refused": ["the project has no owner present",
+    "нет владельца проекта"],
+  "wizard.launch.skip_stop.queue_full": ["the queue is full", "очередь заполнена"],
+  "wizard.launch.skip_stop.queue_not_ready": ["the server cannot queue this yet",
+    "сервер пока не может поставить это в очередь"],
+  "wizard.launch.skip_stop.server_stopping": ["the project is stopping", "проект останавливается"],
+  "wizard.launch.skip_stop.contract_invalid": ["the server did not accept the request for this "
+    + "permission", "сервер не принял запрос для этого разрешения"],
+  "wizard.launch.skip_stop.other": ["the server refused: {code}", "сервер отказал: {code}"],
+  "wizard.launch.skip_stands_first": ["This run is first in the queue and will start when the "
+    + "holder frees the slot.", "Этот запуск первый в очереди и начнётся, когда держатель "
+    + "освободит слот."],
+  "wizard.launch.skip_again": ["Press “Skip ahead” again to continue from the first step that is "
+    + "not done.", "Нажмите «Пропустить вперёд» ещё раз, чтобы продолжить с первого несделанного "
+    + "шага."],
+  "wizard.launch.skip_queue": ["The queue as it stands", "Очередь сейчас"],
+  "wizard.launch.skip_ack": ["Close", "Закрыть"],
 });

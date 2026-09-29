@@ -470,12 +470,12 @@ def test_the_next_step_is_ready_only_with_every_role_assigned_and_every_instruct
         binding_rows: gate(binding(state, {diagnostics: rows})),
         refused: gate(answer(state, flowAsk(state), {status: "refused",
           code: "contract_invalid", payload: null})),
-        last_step_next: wiz.nextStep(binding(state))});
+        step_after_roles: wiz.nextStep(binding(state))});
     """, DATA)
     assert out["no_providers"] == "no_providers" and out["pending"] == "binding_pending"
     assert out["ready"] is None and out["binding_rows"] == "binding_rows"
     assert out["refused"] == "flow_refused"
-    assert out["last_step_next"] is None
+    assert out["step_after_roles"] == "prepare", "the roles are no longer the last built step"
 
 
 def test_the_roles_step_publishes_instructions_assignments_and_a_shared_instruction_choice():

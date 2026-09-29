@@ -111,7 +111,12 @@ PERMITTED_IMPORTS = {
                                        "./desk-wizard-cycle.js",
                                        "./desk-wizard-roles.js",
                                        "./desk-wizard-base.js",
-                                       "./desk-wizard-team.js"}),
+                                       "./desk-wizard-team.js",
+                                       "./desk-wizard-input.js",
+                                       "./desk-wizard-prep.js",
+                                       "./desk-wizard-launch.js",
+                                       "./desk-wizard-run.js",
+                                       "./desk-wizard-skip.js"}),
     #: What the model and the step adapters share (the order of the steps, the limits, a frozen
     #: change, the words of the documents), so neither imports the other. It reaches the task
     #: model for the title limit and the three step modules for theirs, and nothing above it.
@@ -121,7 +126,22 @@ PERMITTED_IMPORTS = {
     #: elements through the view's helper, and may import no store, no transport and no other
     #: screen -- an edit is an event it hands to its host.
     "desk-wizard.js": frozenset({"./desk-wizard-model.js", "./desk-wizard-copy.js",
-                                 "./command-view.js", "./studio-i18n.js"}),
+                                 "./command-view.js", "./studio-i18n.js",
+                                 "./desk-wizard-draw.js", "./desk-wizard-prepare-view.js",
+                                 "./desk-wizard-card.js"}),
+    #: The controls every step of the wizard is drawn from (a keyed button, a choice, a control
+    #: whose door is not open, a text field, the format of an instant and of a duration). They
+    #: build elements through the view's helper and reach nothing else.
+    "desk-wizard-draw.js": frozenset({"./command-view.js"}),
+    #: Step 5 drawn: the links of the chain, what may be pressed, and what a reloaded page found.
+    #: It draws what the model says, through the shared controls, and never a store or a wire.
+    "desk-wizard-prepare-view.js": frozenset({"./command-view.js", "./desk-wizard-draw.js",
+                                              "./desk-wizard-model.js"}),
+    #: Step 6 drawn: the terms card, the countdown, the owner's name and the buttons the slot
+    #: allows. It draws what the model says through the shared controls, and never a store or a
+    #: wire.
+    "desk-wizard-card.js": frozenset({"./command-view.js", "./desk-wizard-draw.js",
+                                      "./desk-wizard-model.js"}),
     #: The wizard's RU/EN strings, one frozen catalogue in the shape of the other copy
     #: modules. It imports nothing: text is data, and `studio-i18n.js` spreads it in.
     "desk-wizard-copy.js": frozenset(),
@@ -139,6 +159,31 @@ PERMITTED_IMPORTS = {
     #: Step 4 the same way: the roles of a flow, who may take each, the suggestion and the
     #: instruction fields. It imports nothing for the same reason.
     "desk-wizard-roles.js": frozenset(),
+    #: SHA-256 and the id of a document the chain publishes, as a fixed pure function. It imports
+    #: nothing, so nothing above it can be reached back.
+    "desk-wizard-digest.js": frozenset(),
+    #: The wizard's state read once, as the plain facts the chain of step 5 is built from, and
+    #: the flow write. It reaches the base, the cycle, the materials and the roles (through the
+    #: team adapter) and the chain's own reader of a reloaded page, never the model.
+    "desk-wizard-input.js": frozenset({"./desk-wizard-base.js", "./desk-wizard-cycle.js",
+                                       "./desk-wizard-materials.js", "./desk-wizard-team.js",
+                                       "./desk-wizard-prep.js"}),
+    #: Step 5's chain as pure functions over those facts and its own slice. It reaches only the
+    #: digest that names a document by its bytes.
+    "desk-wizard-prep.js": frozenset({"./desk-wizard-digest.js"}),
+    #: Step 6's terms card and what may be pressed, as pure functions over its own slice: the
+    #: preview's reading, the slot, the countdown, the authorization. It reaches only the digest
+    #: that gives a key its stable bytes.
+    "desk-wizard-launch.js": frozenset({"./desk-wizard-digest.js"}),
+    #: «Пропустить вперёд» from the card: four idempotent writes derived from the reads, as pure
+    #: functions over the card's slice. It reaches the card's own module and nothing else.
+    "desk-wizard-skip.js": frozenset({"./desk-wizard-launch.js"}),
+    #: The chain applied to the wizard's state, and the same after a reload: the seam the model
+    #: calls. It is handed the model's judgement of the four steps and never imports the model.
+    "desk-wizard-run.js": frozenset({"./desk-wizard-base.js", "./desk-wizard-cycle.js",
+                                     "./desk-wizard-input.js", "./desk-wizard-launch.js",
+                                     "./desk-wizard-prep.js", "./desk-wizard-skip.js",
+                                     "./desk-wizard-team.js"}),
     # Pure S2 decoder; the actual store read door composes it with the base model.
     "studio-situation.js": frozenset({"./studio-model.js", "./studio-feedback-model.js",
                                       "./studio-runwords.js"}),

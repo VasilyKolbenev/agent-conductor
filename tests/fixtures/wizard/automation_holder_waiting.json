@@ -1,0 +1,48 @@
+{
+  "run_id": "task-a-r1",
+  "authorization": {
+    "schema_version": 2,
+    "authorization_id": "auth-holder-1",
+    "authorized_by": "vasily",
+    "authorized_at": "2026-09-29T09:00:00Z",
+    "expires_at": "2026-09-29T13:00:00Z",
+    "supersedes": null,
+    "authorization_digest": "sha256:a07d16e5a07d16e5a07d16e5a07d16e5a07d16e5a07d16e5a07d16e5a07d16e5",
+    "run_id": "task-a-r1",
+    "contract": "bounded-run-v1",
+    "config_digest": "sha256:c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00",
+    "graph_digest": "sha256:90abcdef90abcdef90abcdef90abcdef90abcdef90abcdef90abcdef90abcdef",
+    "provider_config_digest": "sha256:1a2b3c4d1a2b3c4d1a2b3c4d1a2b3c4d1a2b3c4d1a2b3c4d1a2b3c4d1a2b3c4d",
+    "source_prefix_digest": "sha256:3d4e5f6a3d4e5f6a3d4e5f6a3d4e5f6a3d4e5f6a3d4e5f6a3d4e5f6a3d4e5f6a",
+    "node_limits": [
+      {"node_id": "analyst", "timeout_seconds": 1800, "max_attempts": 1},
+      {"node_id": "do", "timeout_seconds": 1800, "max_attempts": 3}
+    ],
+    "instruction_bindings": [
+      {"node_id": "do", "artifact_id": "doc-0ddba11a0ddba11a0ddba11a0ddba11a",
+       "content_digest": "sha256:0ddba11a0ddba11a0ddba11a0ddba11a0ddba11a0ddba11a0ddba11a0ddba11a"}
+    ],
+    "initial_input_bindings": [
+      {"artifact_ref": "artifact-brief", "artifact_id": "doc-0badf00d0badf00d0badf00d0badf00d",
+       "content_digest": "sha256:0badf00d0badf00d0badf00d0badf00d0badf00d0badf00d0badf00d0badf00d"},
+      {"artifact_ref": "artifact-materials", "artifact_id": "doc-0defaced0defaced0defaced0defaced",
+       "content_digest": "sha256:0defaced0defaced0defaced0defaced0defaced0defaced0defaced0defaced"}
+    ],
+    "max_actions": 4,
+    "max_action_seconds": 3600,
+    "max_total_task_seconds": 12600,
+    "concurrency": 1,
+    "failure_handling": "explicit-failure-route-only"
+  },
+  "control": null,
+  "state": "waiting",
+  "reason_code": "plan_waiting",
+  "active_action_id": null,
+  "next_node_id": null,
+  "spent_actions": 2,
+  "remaining_actions": 2,
+  "spent_task_seconds": 5400,
+  "remaining_task_seconds": 7200,
+  "expires_at": "2026-09-29T13:00:00Z",
+  "owner_present": true
+}

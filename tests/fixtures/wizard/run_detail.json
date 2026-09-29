@@ -1,0 +1,21 @@
+{
+  "run": {"run_id": "task-bench-r1"},
+  "config": {
+    "instances": [
+      {"id": "instance-role-analyst", "adapter": "claude-code"},
+      {"id": "instance-role-doer", "adapter": "codex"},
+      {"id": "instance-role-checker", "adapter": "claude-code"}
+    ]
+  },
+  "graph": {
+    "definition": {
+      "nodes": [
+        {"node_id": "analyst", "kind": "task", "instance_id": "instance-role-analyst",
+         "verifier_instance_id": null},
+        {"node_id": "do", "kind": "task", "instance_id": "instance-role-doer",
+         "verifier_instance_id": "instance-role-checker"},
+        {"node_id": "result", "kind": "gate", "instance_id": null, "verifier_instance_id": null}
+      ]
+    }
+  }
+}

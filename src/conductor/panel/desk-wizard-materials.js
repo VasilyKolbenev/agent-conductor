@@ -29,11 +29,33 @@ const STARTER_MARK = Object.freeze({ru: "из стартовых докумен�
 const HEADING = Object.freeze({ru: "Материалы", en: "Materials"});
 const NONE = Object.freeze({ru: "Материалов нет", en: "No materials"});
 const LINK_LINE = Object.freeze({
-  ru: (path, oid) => `Файл проекта в рабочей папке: \`${path}\` (git blob \`${oid}\`), `
+  ru: (path, oid) => `Файл проекта в рабочей папке: ${codeSpan(path)} (git blob \`${oid}\`), `
     + "текст не скопирован",
-  en: (path, oid) => `Project file in the work folder: \`${path}\` (git blob \`${oid}\`), `
+  en: (path, oid) => `Project file in the work folder: ${codeSpan(path)} (git blob \`${oid}\`), `
     + "text not copied",
 });
+
+//: The length of the longest run of one character in a text (0 when it does not occur). A loop and
+//: not a regex literal: the scope guard reads a backtick inside a regex as the start of a template.
+function longestRun(text, mark) {
+  let longest = 0, run = 0;
+  for (const char of text) {
+    run = char === mark ? run + 1 : 0;
+    longest = Math.max(longest, run);
+  }
+  return longest;
+}
+
+//: `text` as an inline code span whatever backticks it holds, as the composer writes it: a
+//: delimiter one longer than the longest run inside, and a space on each side where the text
+//: begins or ends with a backtick, or with a space on both ends.
+function codeSpan(text) {
+  const delimiter = "`".repeat(longestRun(text, "`") + 1);
+  const padded = text.startsWith("`") || text.endsWith("`")
+    || (text.startsWith(" ") && text.endsWith(" "));
+  const pad = padded ? " " : "";
+  return `${delimiter}${pad}${text}${pad}${delimiter}`;
+}
 
 function bytes(text) {
   return encoder.encode(text).length;
@@ -97,6 +119,12 @@ export function bodyOf(cards, lang) {
   return {lang, items: cards.map((card) => bodyItem(card, lang))};
 }
 
+//: The fence of a Mermaid block, as the composer writes it: three backticks, or one more than
+//: the longest run of backticks inside the text, so the text can never close its own block.
+function fenceFor(content) {
+  return "`".repeat(Math.max(3, longestRun(content, "`") + 1));
+}
+
 function section(card, number, lang) {
   if (card.kind === "project_doc") {
     if (card.mode === "link") {
@@ -106,14 +134,16 @@ function section(card, number, lang) {
     // A copy is headed with the blob it was read at, as the server heads it.
     return `## ${number}. ${card.path}@${card.gitOid} · ${card.kind}\n${card.content}`;
   }
-  const body = card.kind === "scheme" ? `\`\`\`mermaid\n${card.content}\n\`\`\`` : card.content;
+  const fence = fenceFor(card.content);
+  const body = card.kind === "scheme" ? `${fence}mermaid\n${card.content}\n${fence}` : card.content;
   return `## ${number}. ${cardTitle(card, lang)} · ${card.kind}\n${body}`;
 }
 
-//: An approximation of the document the server will compose from these cards: the exact bytes
-//: are the server's alone, this is the text the estimate and the argv arithmetic measure. It says
-//: what `command/materials.py` says, and a test holds its size at or above the composed one, so
-//: the desk never calls a list small that the server would refuse as too large.
+//: The document the server will compose from these cards, as far as the desk can say it: the same
+//: template and the same fence rule for a scheme as `command/materials.py`, which alone knows the
+//: exact bytes (a link's path comes from the seed). This is the text the estimate and the argv
+//: arithmetic measure, and a test holds its size at or above the composed one, so the desk never
+//: calls a list small that the server would refuse as too large.
 export function composeText(cards, lang) {
   const sections = cards.map((card, at) => section(card, at + 1, lang));
   const parts = [`# ${HEADING[lang]}`, ...(sections.length > 0 ? sections : [NONE[lang]])];

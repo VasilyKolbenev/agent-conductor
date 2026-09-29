@@ -88,14 +88,38 @@ def test_a_last_run_on_a_cycle_that_is_not_a_card_is_said_and_no_older_cycle_sta
     to_step(bench, lang, "cycle", reads=reads(runs=ok(runs)))
     label = bench.page.locator("[data-cycle-source]")
     assert label.get_attribute("data-cycle-source") == "last_run_uncarded"
-    assert label.inner_text() == bench.say("wizard.cycle.source_last_run_other",
-                                           workflow="desk-starter-docs", at="2026-09-28 13:50 UTC")
+    assert label.inner_text() == bench.say(
+        "wizard.cycle.source_last_run_other", cycle=bench.say("wizard.cycle.name_starter_docs"),
+        at="2026-09-28 13:50 UTC")
     assert bench.page.locator('[data-card-id][data-chosen="true"]').count() == 0
     assert bench.control("wizard:next").is_disabled()
     assert bench.text("[data-wizard-reason]") == bench.say("wizard.reason.cycle_none")
     bench.control("wizard:cycle:choose:desk-short").click()
     expect(label).to_have_count(0)
     assert bench.page.locator('[data-card-id="desk-short"]').get_attribute("data-chosen") == "true"
+    assert bench.problems == []
+
+
+@pytest.mark.parametrize("lang", LANGS)
+def test_the_last_run_line_names_a_cycle_by_its_product_name_or_title_and_never_by_its_id(
+        bench, lang):
+    """The first task after «С нуля» is the common case: its cycle is a product name, not an id."""
+    at = "2026-09-28 13:50 UTC"
+    cases = {"desk-starter-docs": "product", "cycle-aa11bb22": "Only a draft",
+             "gone-cycle": None, "cycle-ff00ee11": None}
+    for workflow_id, named in cases.items():
+        runs = fixture("wizard", "runs.json")
+        runs["runs"][1]["workflow_id"] = workflow_id
+        to_step(bench, lang, "cycle", reads=reads(runs=ok(runs)))
+        if named == "product":
+            named = bench.say("wizard.cycle.name_starter_docs")
+        expected = bench.say("wizard.cycle.source_last_run_unlisted", at=at) if named is None \
+            else bench.say("wizard.cycle.source_last_run_other", cycle=named, at=at)
+        facts = bench.page.evaluate("""() => ({
+          line: document.querySelector("[data-cycle-source]").innerText,
+          body: document.querySelector('[data-body="cycle"]').innerText})""")
+        assert facts["line"] == expected, workflow_id
+        assert workflow_id not in facts["body"], f"the id {workflow_id} is on screen"
     assert bench.problems == []
 
 
