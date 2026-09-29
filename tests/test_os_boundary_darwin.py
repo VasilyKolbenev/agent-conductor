@@ -94,7 +94,7 @@ def test_an_implement_profile_child_changes_the_work_copy_and_still_not_the_sour
     assert box.snapshot("source") == before_source
 
 
-def test_allowed_tmp_and_home_take_every_kind_of_write_under_the_sandbox(implement_box):
+def test_allowed_tmp_and_home_take_file_and_directory_writes_under_the_sandbox(implement_box):
     box = implement_box
     body = "; ".join(
         f'printf 1 > "{d}/a"; printf 2 >> "{d}/a"; mv "{d}/a" "{d}/b"; mkdir "{d}/s"; '
@@ -160,7 +160,7 @@ def protected_state(vendor) -> tuple:
 
 
 @pytest.mark.parametrize("operation", PROTECTED_OPS, ids=_ids)
-def test_a_protected_entry_inside_a_writable_directory_survives_every_change(
+def test_a_protected_entry_inside_a_writable_directory_survives_the_attempted_change(
         protected_box, operation):
     box = protected_box
     results = box.run(operation, root="vendor")

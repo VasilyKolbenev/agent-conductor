@@ -93,7 +93,7 @@ def protected_box(implement_box):
 
 
 @pytest.mark.parametrize("operation", PROTECTED_OPS, ids=lambda op: op.name)
-def test_a_protected_entry_inside_a_writable_directory_survives_every_change(
+def test_a_protected_entry_inside_a_writable_directory_survives_the_attempted_change(
         protected_box, operation):
     box = protected_box
     results = box.run(operation, root="vendor")

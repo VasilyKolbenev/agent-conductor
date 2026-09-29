@@ -136,7 +136,7 @@ def test_a_work_copy_granted_for_writing_changes_while_the_source_stays_untouche
     assert box.snapshot("source") == before_source
 
 
-def test_allowed_tmp_and_home_take_every_kind_of_write_under_confinement(implement_box):
+def test_allowed_tmp_and_home_take_file_and_directory_writes_under_confinement(implement_box):
     box = implement_box
     script = (
         "$t='@TMPD@'; $h='@HOMED@'; "
