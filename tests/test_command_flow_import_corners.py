@@ -139,10 +139,98 @@ def test_a_stored_revision_with_a_bound_gate_reads_back_as_a_flow_and_publishes_
     assert list(templates.revisions(WORKFLOW_ID)) == [1]
 
 
+def shipped_documents():
+    return [json.loads(path.read_text(encoding="utf-8"))
+            for path in sorted(TEMPLATE_DIR.glob("*.json"))]
+
+
 def test_the_shipped_templates_and_the_studio_corpus_keep_their_ext_free_of_role_keys():
-    documents = [accepted(raw) for raw in STUDIO_CORPUS.values()]
-    documents += [json.loads(path.read_text(encoding="utf-8"))
-                  for path in sorted(TEMPLATE_DIR.glob("*.json"))]
+    documents = [accepted(raw) for raw in STUDIO_CORPUS.values()] + shipped_documents()
     for document in documents:
         for row in imported(document)["steps"]:
             assert not flow_schema.BOUND_EXT_FIELDS & set(row["ext"])
+
+
+# --- typed reads: only where the rules accept them (spec 7.2.3, 7.4) -----------------------------
+
+#: `do` names the result of a review that is not above it: `side` runs beside the road to `do`.
+SIBLING_REVIEW = template([
+    review_node("plan", ["artifact-brief"]), review_node("side", ["artifact-brief"]),
+    dispatch_node("do", ["artifact-plan", "artifact-side"]), gate_node("result")],
+    [edge("plan", "do", "on_succeeded"), edge("do", "result", "on_succeeded"),
+     edge("side", "result", "on_succeeded")], **BOUNDED)
+#: `polish` borrows the instruction of `do`; `third` names `polish`, which borrows one itself.
+BORROW_CHAIN = template([
+    review_node("plan", ["artifact-brief"]), dispatch_node("do", ["artifact-plan"]),
+    dispatch_node("polish", ["artifact-plan"], instruction="instruction-do"),
+    dispatch_node("third", ["artifact-plan"], instruction="instruction-polish"),
+    gate_node("result")],
+    [edge("plan", "do", "on_succeeded"), edge("do", "polish", "on_succeeded"),
+     edge("polish", "third", "on_succeeded"), edge("third", "result", "on_succeeded")], **BOUNDED)
+#: Two steps that name each other's instruction: neither owns one.
+BORROW_LOOP = template([
+    review_node("plan", ["artifact-brief"]),
+    dispatch_node("a", ["artifact-plan"], instruction="instruction-b"),
+    dispatch_node("b", ["artifact-plan"], instruction="instruction-a"),
+    gate_node("result")],
+    [edge("plan", "a", "on_succeeded"), edge("a", "b", "on_succeeded"),
+     edge("b", "result", "on_succeeded")], **BOUNDED)
+#: `scheme` reads `plan`, which is above it though not the nearest review: a real `reads`.
+READ_ABOVE = template([
+    review_node("plan", ["artifact-brief"]),
+    review_node("ideas", ["artifact-plan"], role="role-reviewer"),
+    review_node("scheme", ["artifact-plan", "artifact-ideas"], role="role-designer"),
+    gate_node("result")],
+    [edge("plan", "ideas", "on_succeeded"), edge("ideas", "scheme", "on_succeeded"),
+     edge("scheme", "result", "on_succeeded")], **BOUNDED)
+
+
+def step_of(flow, step_id):
+    return next(row for row in flow["steps"] if row["step_id"] == step_id)
+
+
+def test_a_review_named_by_a_step_it_is_not_above_is_not_typed_as_a_read():
+    document = accepted(SIBLING_REVIEW)
+    flow = imported(document)
+    do = step_of(flow, "do")
+    assert do["reads"] == []
+    assert do["ext"]["arguments"]["artifact_refs"] == ["artifact-plan", "artifact-side"]
+    assert same(compiled(flow), without_identity(document))
+    assert "reads_invalid" not in {row["code"] for row in flow_rules.flow_rules(flow)}
+
+
+def test_a_review_above_the_step_but_not_its_nearest_is_typed_as_a_read():
+    document = accepted(READ_ABOVE)
+    flow = imported(document)
+    assert step_of(flow, "scheme")["reads"] == ["plan"]
+    assert step_of(flow, "scheme")["ext"] == {}
+    assert same(compiled(flow), without_identity(document))
+
+
+def test_an_instruction_borrowed_from_a_step_that_borrows_is_not_typed_and_stays_in_ext():
+    document = accepted(BORROW_CHAIN)
+    flow = imported(document)
+    assert step_of(flow, "polish")["instruction_from"] == "do"
+    third = step_of(flow, "third")
+    assert third["instruction_from"] is None
+    assert third["ext"]["arguments"]["instruction_ref"] == "instruction-polish"
+    assert same(compiled(flow), without_identity(document))
+    assert "instruction_from_invalid" not in {row["code"] for row in flow_rules.flow_rules(flow)}
+
+
+def test_two_steps_that_name_each_others_instruction_are_both_left_in_ext():
+    document = accepted(BORROW_LOOP)
+    flow = imported(document)
+    for name, other in (("a", "b"), ("b", "a")):
+        row = step_of(flow, name)
+        assert row["instruction_from"] is None
+        assert row["ext"]["arguments"]["instruction_ref"] == f"instruction-{other}"
+    assert same(compiled(flow), without_identity(document))
+
+
+def test_an_imported_flow_never_carries_a_reads_or_an_instruction_error_its_document_lacked():
+    documents = [accepted(raw) for raw in (
+        SIBLING_REVIEW, BORROW_CHAIN, BORROW_LOOP, READ_ABOVE, *STUDIO_CORPUS.values())]
+    for document in documents + shipped_documents():
+        codes = {row["code"] for row in flow_rules.flow_rules(imported(document))}
+        assert not codes & {"reads_invalid", "instruction_from_invalid"}, codes

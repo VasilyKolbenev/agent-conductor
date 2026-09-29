@@ -448,27 +448,46 @@ def _read_typed_arguments(steps: list[dict[str, Any]], links: list[dict[str, str
                           nodes: list[dict[str, Any]]) -> None:
     """Say a review's profile and reads and a dispatch's instruction source with typed fields.
 
-    Only what the document's own arguments spell is read. Whether that is all they say is decided
-    afterwards, by compiling the step and comparing; arguments that differ go whole into `ext`.
+    Only what the document's own arguments spell is read, and only what `flow_rules` would accept:
+    a `reads` names a review above the step, and an `instruction_from` names a dispatch step that
+    owns its instruction. Whether the typed fields say all the arguments do is decided afterwards,
+    by compiling the step and comparing; arguments that differ go whole into `ext`.
     """
     order, reviews, parents = _roads(steps, links)
-    dispatching = {row["step_id"] for row in steps
-                   if row["type"] == "agent" and row["capability"] == "dispatch"}
+    borrowed = _borrowed_instructions(steps, nodes)
     for step, node in zip(steps, nodes):
         if step["type"] != "agent" or step["capability"] not in ("review", "dispatch"):
             continue
-        arguments = node["arguments"]
+        name, arguments = step["step_id"], node["arguments"]
         if step["capability"] == "review":
             profile = arguments.get("review_profile")
             step["review_profile"] = profile if profile in REVIEW_PROFILES else None
             refs = arguments.get("target_artifact_refs")
         else:
-            step["instruction_from"] = _instruction_source(
-                arguments.get("instruction_ref"), step["step_id"], dispatching)
+            source = borrowed.get(name)
+            step["instruction_from"] = source if source not in borrowed else None
             refs = arguments.get("artifact_refs")
-        nearest = _nearest_reviews(step["step_id"], parents, reviews)
-        extra = _extra_reads(refs, reviews - nearest - {step["step_id"]}, order)
+        readable = (reviews & _above(name, parents)) - _nearest_reviews(name, parents, reviews)
+        extra = _extra_reads(refs, readable - {name}, order)
         step["reads"] = extra if len(extra) <= MAX_READS else []
+
+
+def _borrowed_instructions(steps: list[dict[str, Any]], nodes: list[dict[str, Any]]) -> dict:
+    """For each dispatch step whose instruction ref names another dispatch step, that step.
+
+    The caller types a borrowing only when the named step is not itself in this mapping, so that
+    a step never borrows from one that borrows (`instruction_from_invalid`).
+    """
+    dispatching = {row["step_id"] for row in steps
+                   if row["type"] == "agent" and row["capability"] == "dispatch"}
+    found = {}
+    for step, node in zip(steps, nodes):
+        if step["step_id"] in dispatching:
+            source = _instruction_source(
+                node["arguments"].get("instruction_ref"), step["step_id"], dispatching)
+            if source is not None:
+                found[step["step_id"]] = source
+    return found
 
 
 def _instruction_source(ref: object, own: str, dispatching: set[str]) -> str | None:
@@ -477,6 +496,18 @@ def _instruction_source(ref: object, own: str, dispatching: set[str]) -> str | N
         return None
     name = ref[len("instruction-"):]
     return name if name != own and name in dispatching else None
+
+
+def _above(step_id: str, parents: dict[str, list[str]]) -> set[str]:
+    """Every step above `step_id` along the roads."""
+    found: set[str] = set()
+    pending = list(parents.get(step_id, ()))
+    while pending:
+        name = pending.pop()
+        if name not in found:
+            found.add(name)
+            pending.extend(parents.get(name, ()))
+    return found
 
 
 def _extra_reads(refs: object, candidates: set[str], order: dict[str, int]) -> list[str]:
