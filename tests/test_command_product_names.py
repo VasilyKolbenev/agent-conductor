@@ -7,7 +7,12 @@ harness added to the catalog and forgotten in the module turns a test red (L14).
 import ast
 import fnmatch
 import importlib
+import os
+import shutil
+import subprocess
 from pathlib import Path
+
+import pytest
 
 from conductor import ownership_records
 from conductor.command import product_names as names
@@ -99,3 +104,169 @@ def test_the_exclude_lines_cover_every_product_top_name():
     for name in names.PRODUCT_TOP_NAMES:
         sample = name.replace("*", "x")
         assert any(fnmatch.fnmatchcase(sample, pattern) for pattern in patterns), name
+
+
+# --- write_exclude_block --------------------------------------------------------------------
+
+BEGIN, END = b"# conduct", b"# /conduct"
+needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
+
+
+def the_block(newline=b"\n"):
+    """The block the writer must produce, spelled from the module's own lines."""
+    body = [BEGIN, names.BLOCK_NOTE.encode(), *(line.encode() for line in names.EXCLUDE_LINES), END]
+    return newline.join(body) + newline
+
+
+def repo_dir(tmp_path):
+    """A `.git` directory with no `info` folder yet: as small as a repository can be."""
+    git_dir = tmp_path / ".git"
+    git_dir.mkdir()
+    return git_dir
+
+
+def exclude_file(git_dir):
+    return git_dir / "info" / "exclude"
+
+
+def with_owner_file(tmp_path, content):
+    git_dir = repo_dir(tmp_path)
+    (git_dir / "info").mkdir()
+    exclude_file(git_dir).write_bytes(content)
+    return git_dir
+
+
+def test_a_missing_git_dir_answers_not_git_and_writes_nothing(tmp_path):
+    assert names.write_exclude_block(tmp_path / ".git") == "not_git"
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_a_git_dir_that_is_a_file_answers_deferred_and_writes_nothing(tmp_path):
+    linked = tmp_path / ".git"
+    linked.write_bytes(b"gitdir: ../elsewhere/.git/worktrees/w\n")
+    assert names.write_exclude_block(linked) == "deferred"
+    assert linked.read_bytes() == b"gitdir: ../elsewhere/.git/worktrees/w\n"
+    assert [path.name for path in tmp_path.iterdir()] == [".git"]
+
+
+def test_a_first_write_creates_the_block_and_answers_written(tmp_path):
+    git_dir = repo_dir(tmp_path)
+    assert names.write_exclude_block(git_dir) == "written"
+    assert exclude_file(git_dir).read_bytes() == the_block()
+    assert [path.name for path in (git_dir / "info").iterdir()] == ["exclude"]
+
+
+def test_the_owner_lines_before_and_after_the_block_are_kept_byte_for_byte(tmp_path):
+    before, after = b"# mine\n*.log\n", b"secret.txt\n  spaced  \n"
+    old_block = b"# conduct\n/old-name/\n# /conduct\n"
+    git_dir = with_owner_file(tmp_path, before + old_block + after)
+    assert names.write_exclude_block(git_dir) == "written"
+    assert exclude_file(git_dir).read_bytes() == before + the_block() + after
+
+
+def test_writing_the_same_block_again_answers_present_and_leaves_the_bytes_alone(tmp_path):
+    git_dir = with_owner_file(tmp_path, b"*.log\n")
+    assert names.write_exclude_block(git_dir) == "written"
+    written = exclude_file(git_dir).read_bytes()
+    stamp = exclude_file(git_dir).stat().st_mtime_ns
+    assert names.write_exclude_block(git_dir) == "present"
+    assert exclude_file(git_dir).read_bytes() == written
+    assert exclude_file(git_dir).stat().st_mtime_ns == stamp
+    assert written.count(BEGIN + b"\n") == 1
+
+
+def test_a_block_that_differs_is_replaced_and_nothing_else_moves(tmp_path):
+    git_dir = with_owner_file(tmp_path, b"keep-1\n" + the_block().replace(
+        b"/work/", b"/elsewhere/") + b"keep-2\n")
+    assert names.write_exclude_block(git_dir) == "written"
+    assert exclude_file(git_dir).read_bytes() == b"keep-1\n" + the_block() + b"keep-2\n"
+
+
+def test_a_file_without_a_final_newline_gets_one_before_the_block(tmp_path):
+    git_dir = with_owner_file(tmp_path, b"*.log")
+    assert names.write_exclude_block(git_dir) == "written"
+    assert exclude_file(git_dir).read_bytes() == b"*.log\n" + the_block()
+
+
+def test_a_crlf_file_keeps_its_line_endings_and_is_recognised(tmp_path):
+    git_dir = with_owner_file(tmp_path, b"*.log\r\n")
+    assert names.write_exclude_block(git_dir) == "written"
+    assert exclude_file(git_dir).read_bytes() == b"*.log\r\n" + the_block(b"\r\n")
+    assert names.write_exclude_block(git_dir) == "present"
+
+
+def test_an_unterminated_block_is_refused_and_the_file_is_untouched(tmp_path):
+    damaged = b"a\n# conduct\n/old/\nowner-line\n"
+    git_dir = with_owner_file(tmp_path, damaged)
+    with pytest.raises(names.ExcludeWriteError) as refused:
+        names.write_exclude_block(git_dir)
+    assert refused.value.code == "git_exclude_failed"
+    assert exclude_file(git_dir).read_bytes() == damaged
+
+
+def test_the_block_writer_starts_no_process(tmp_path, monkeypatch):
+    def refuse(*args, **kwargs):
+        raise AssertionError("the exclude block is a file write; no process may start")
+    monkeypatch.setattr(subprocess, "Popen", refuse)
+    monkeypatch.setattr(os, "system", refuse)
+    assert names.write_exclude_block(repo_dir(tmp_path)) == "written"
+
+
+def test_an_info_exclude_that_is_a_symlink_is_refused_and_untouched(tmp_path):
+    git_dir = repo_dir(tmp_path)
+    (git_dir / "info").mkdir()
+    shared = tmp_path / "shared-exclude"
+    shared.write_bytes(b"shared\n")
+    try:
+        os.symlink(shared, exclude_file(git_dir))
+    except (OSError, NotImplementedError):
+        pytest.skip("this system does not let the test create a symlink")
+    with pytest.raises(names.ExcludeWriteError):
+        names.write_exclude_block(git_dir)
+    assert shared.read_bytes() == b"shared\n" and exclude_file(git_dir).is_symlink()
+
+
+def test_an_info_that_is_a_file_is_refused(tmp_path):
+    git_dir = repo_dir(tmp_path)
+    (git_dir / "info").write_bytes(b"not a folder")
+    with pytest.raises(names.ExcludeWriteError):
+        names.write_exclude_block(git_dir)
+
+
+def test_a_failed_replace_raises_the_exclude_error_and_leaves_no_temporary_file(
+        tmp_path, monkeypatch):
+    git_dir = with_owner_file(tmp_path, b"*.log\n")
+
+    def broken(source, target):
+        raise OSError("the disk went away")
+    monkeypatch.setattr(os, "replace", broken)
+    with pytest.raises(names.ExcludeWriteError) as refused:
+        names.write_exclude_block(git_dir)
+    assert str(tmp_path) not in str(refused.value)
+    assert [path.name for path in (git_dir / "info").iterdir()] == ["exclude"]
+    assert exclude_file(git_dir).read_bytes() == b"*.log\n"
+
+
+def git(*args, cwd):
+    environment = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+    return subprocess.run(["git", *args], cwd=cwd, env=environment, capture_output=True, text=True)
+
+
+@needs_git
+def test_git_honours_the_block_it_is_given(tmp_path):
+    assert git("init", "-q", cwd=tmp_path).returncode == 0
+    assert names.write_exclude_block(tmp_path / ".git") == "written"
+    made = [f"{name.replace('*', 'x')}/inside.txt" for name in names.PRODUCT_TOP_NAMES]
+    for relative in made:
+        path = tmp_path / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("x")
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "main.py").write_text("print()")
+    for relative in made:
+        assert git("check-ignore", "-q", relative, cwd=tmp_path).returncode == 0, relative
+    for _home, marker in harness_names():  # a marker is excluded as a file too
+        assert git("check-ignore", "-q", marker, cwd=tmp_path).returncode == 0, marker
+    assert git("check-ignore", "-q", "src/main.py", cwd=tmp_path).returncode == 1
+    status = git("status", "--porcelain", "--untracked-files=all", cwd=tmp_path).stdout
+    assert status.split() == ["??", "src/main.py"]
