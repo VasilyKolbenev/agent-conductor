@@ -14,9 +14,10 @@
 // carry `data-focus-value="state"` because the model, not the DOM, holds what was typed.
 import {element} from "./command-view.js";
 import {localize} from "./studio-i18n.js";
+import {WIZARD_COPY} from "./desk-wizard-copy.js";
 import {BUILT_STEPS, LIMITS, agentInstructionsRow, availableKinds, canAdvance,
-  closeNeedsWarning, documentPicker, gitReading, materialsEstimate, nextStep, stepStates,
-  taskFields} from "./desk-wizard-model.js";
+  closeNeedsWarning, cycleCards, cycleFacts, documentPicker, gitReading, materialsEstimate,
+  nextStep, preselection, stepStates, taskFields} from "./desk-wizard-model.js";
 
 function modeOf(wizard) {
   if (wizard.mode.starterId !== null) return "starter";
@@ -317,10 +318,143 @@ function materialsBody(ctx) {
     ...cards, ...tally(ctx, estimate)];
 }
 
+// -- step 3: the cycle -------------------------------------------------------------------
+
+const CYCLE_NAMES = Object.freeze({"desk-standard": "standard", "desk-short": "short",
+  "desk-starter-docs": "starter_docs"});
+
+//: A UTC instant as the desk writes it until the shared time module arrives: date, minutes, zone.
+function instantText(iso) {
+  return typeof iso === "string" ? `${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC` : "";
+}
+
+//: A duration the server counted, said in hours and minutes. Only the format is drawn here.
+function timeText(ctx, seconds) {
+  const total = Math.round(seconds / 60), hours = Math.floor(total / 60), minutes = total % 60;
+  if (hours > 0 && minutes > 0) {
+    return ctx.t("wizard.time.hm", {hours: String(hours), minutes: String(minutes)});
+  }
+  if (hours > 0) return ctx.t("wizard.time.h", {hours: String(hours)});
+  if (minutes > 0) return ctx.t("wizard.time.m", {minutes: String(minutes)});
+  return ctx.t("wizard.time.s", {seconds: String(seconds)});
+}
+
+//: Where the preselected card came from, said only while the choice is still the preselection.
+function sourceLine(ctx) {
+  if (ctx.wizard.cycle.chosenBy !== "preselection") return [];
+  const source = preselection(ctx.wizard.reads).source, at = instantText(source.at);
+  let text = null;
+  if (source.kind === "pinned") {
+    text = ctx.t("wizard.cycle.source_pinned", {by: source.by ?? "—", at});
+  } else if (source.kind === "last_run") {
+    text = source.taskTitle === null ? ctx.t("wizard.cycle.source_last_run_untitled", {at})
+      : ctx.t("wizard.cycle.source_last_run", {task: source.taskTitle, at});
+  }
+  return text === null ? [] : [element("p", {"data-cycle-source": source.kind, text})];
+}
+
+//: A pinned cycle that could not be read is said to be unread, never to be absent.
+function unreadNote(ctx) {
+  if (ctx.wizard.mode.starterId !== null || !preselection(ctx.wizard.reads).pinnedUnread) return [];
+  return [element("p", {"data-cycle-unread": "", text: ctx.t("wizard.cycle.pinned_unread")})];
+}
+
+function cardName(ctx, card) {
+  return card.kind === "starter" ? ctx.t(`wizard.cycle.name_${CYCLE_NAMES[card.id]}`)
+    : card.title ?? card.id;
+}
+
+function cycleCard(ctx, card) {
+  const chosen = ctx.wizard.cycle.choice?.workflowId === card.workflowId;
+  const small = (text) => element("small", {text});
+  const notes = [];
+  if (card.pinned) notes.push(small(ctx.t("wizard.cycle.pinned")));
+  if (card.kind === "starter" && !card.published) notes.push(small(ctx.t("wizard.cycle.unpublished")));
+  if (card.published) notes.push(small(ctx.t("wizard.cycle.revision", {number: String(card.revision)})));
+  const pick = action(`wizard:cycle:choose:${card.id}`,
+    ctx.t(chosen ? "wizard.cycle.chosen" : "wizard.cycle.choose"),
+    () => ctx.send({type: "cycle-choose", id: card.id}));
+  pick.setAttribute("aria-pressed", chosen ? "true" : "false");
+  const pin = card.canPin ? [later(ctx, "make_project_cycle", `wizard:cycle:pin:${card.id}`,
+    ctx.t("wizard.cycle.make_project"))] : [];
+  return element("li", {className: "desk-wizard__card", "data-card-id": card.id,
+    "data-chosen": chosen ? "true" : "false", "data-pinned": card.pinned ? "true" : "false",
+    "data-locked": card.locked ? "true" : null},
+  [element("h4", {text: cardName(ctx, card)}), ...notes, ...(card.locked ? [] : [pick, ...pin])]);
+}
+
+function cardItems(ctx) {
+  return cycleCards(ctx.wizard).map((card) => (card.kind === "build"
+    ? element("li", {className: "desk-wizard__card", "data-card-id": "build"},
+      [later(ctx, "build_own", "wizard:cycle:build", ctx.t("wizard.cycle.build"))])
+    : cycleCard(ctx, card)));
+}
+
+//: What the server said about the cycle chosen, or that its answer is not in yet.
+function flowStatus(ctx, facts) {
+  if (ctx.wizard.cycle.choice === null) return [];
+  const key = {conflict: "changed", changed_elsewhere: "changed", refused: "refused",
+    unknown: "unknown"}[facts.status] ?? (facts.revisions === null ? "pending" : null);
+  return key === null ? []
+    : [element("p", {"data-flow-status": facts.status, text: ctx.t(`wizard.flow.${key}`)})];
+}
+
+//: The conditions exactly as the server counted them; nothing is added or worked out here.
+function budgetView(ctx, facts) {
+  const budget = facts.budget;
+  if (budget === null) return [];
+  const {clean, worst, limits} = budget, line = (name, text) => element("p", {[name]: "", text});
+  return [element("section", {className: "desk-wizard__budget", "data-budget": ""}, [
+    element("h3", {text: ctx.t("wizard.budget.heading")}),
+    line("data-budget-clean", ctx.t("wizard.budget.clean", {actions: String(clean.actions),
+      time: timeText(ctx, clean.seconds)})),
+    line("data-budget-worst", ctx.t("wizard.budget.worst", {actions: String(worst.actions),
+      time: timeText(ctx, worst.seconds)})),
+    line("data-budget-limit", ctx.t("wizard.budget.limit",
+      {actions: String(limits.max_actions)}))])];
+}
+
+function addressText(ctx, at) {
+  if (at && typeof at.step_id === "string") return ctx.t("wizard.diag.at_step", {step: at.step_id});
+  if (at && Array.isArray(at.link)) {
+    return ctx.t("wizard.diag.at_link", {from: String(at.link[0]), to: String(at.link[1])});
+  }
+  return "";
+}
+
+function diagnosticRow(ctx, row) {
+  const key = `wizard.diag.${row.code}`, where = addressText(ctx, row.at);
+  const text = Object.hasOwn(WIZARD_COPY, key) ? ctx.t(key)
+    : ctx.t("wizard.diag.unknown", {code: String(row.code)});
+  return element("li", {"data-diag": row.code, "data-severity": row.severity}, [
+    element("strong", {text: ctx.t(row.severity === "error" ? "wizard.diag.error"
+      : "wizard.diag.warning")}), element("span", {text: ` ${text}`}),
+    ...(where === "" ? [] : [element("small", {text: ` ${where}`})])]);
+}
+
+function diagnosticsView(ctx, facts) {
+  if (facts.revisions === null) return [];
+  if (facts.diagnostics.length === 0) {
+    return [element("p", {"data-diag-none": "", text: ctx.t("wizard.diag.none")})];
+  }
+  return [element("section", {className: "desk-wizard__diagnostics"}, [
+    element("h3", {text: ctx.t("wizard.diag.heading")}),
+    element("ul", {}, facts.diagnostics.map((row) => diagnosticRow(ctx, row)))])];
+}
+
+function cycleBody(ctx) {
+  const facts = cycleFacts(ctx.wizard);
+  const locked = ctx.wizard.mode.starterId === null ? []
+    : [element("p", {text: ctx.t("wizard.cycle.locked")})];
+  return [element("h3", {text: ctx.t("wizard.cycle.heading")}), ...locked, ...sourceLine(ctx),
+    ...unreadNote(ctx), element("ul", {className: "desk-wizard__cards"}, cardItems(ctx)),
+    ...flowStatus(ctx, facts), ...budgetView(ctx, facts), ...diagnosticsView(ctx, facts)];
+}
+
 // -- the pass ----------------------------------------------------------------------------
 
 //: One body for each step the renderer draws so far.
-const BODIES = {task: taskBody, materials: materialsBody};
+const BODIES = {task: taskBody, materials: materialsBody, cycle: cycleBody};
 
 export function mountWizard(mount, state, handlers) {
   if (typeof handlers?.onWizard !== "function" || typeof handlers.onWizardClose !== "function") {

@@ -31,7 +31,8 @@ PURE = {"desk-wizard-model.js": {"./studio-tasks-model.js", "./desk-wizard-mater
 #: The renderer: it builds elements, so it reaches the view's helper and the words, and no store,
 #: no transport and no other screen.
 RENDERER = "desk-wizard.js"
-DRAWN = {RENDERER: {"./command-view.js", "./studio-i18n.js", "./desk-wizard-model.js"}}
+DRAWN = {RENDERER: {"./command-view.js", "./studio-i18n.js", "./desk-wizard-model.js",
+                    "./desk-wizard-copy.js"}}
 #: Data only: the catalogue holds strings and nothing else.
 DATA = ("desk-wizard-copy.js",)
 IMPORTS = r'from "(\./[a-z-]+\.js)";'

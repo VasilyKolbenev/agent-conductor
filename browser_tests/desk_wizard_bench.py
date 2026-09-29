@@ -17,9 +17,10 @@ from collections.abc import Iterator
 from typing import Any
 
 import pytest
-from playwright.sync_api import Browser, Page
+from playwright.sync_api import Browser, Page, expect
 
 from conductor import server
+from tests.desk_wizard_node import fixture
 from tests.test_store import good_lane, write_project
 
 #: Evaluated once on the served page. `host.log` is every ask the model made, in order; `auto`
@@ -135,6 +136,48 @@ class Bench:
         field = self.control(key)
         field.click()
         field.press_sequentially(text)
+
+
+def ok(payload: Any) -> dict[str, Any]:
+    """An accepted answer, shaped like the one door's own."""
+    return {"status": "accepted", "code": None, "payload": payload}
+
+
+def wizard_reads(**over: Any) -> dict[str, Any]:
+    """The table a host answers the opening reads from: every read the wizard makes at open.
+
+    Each value is a result, or a table of results by ask subject with "*" as the default.
+    Override a read by name; a plain result is wrapped as the default for every subject.
+    """
+    table: dict[str, Any] = {
+        "git": ok(fixture("wizard", "git_repo.json")),
+        "workflows": ok(fixture("wizard", "workflows.json")),
+        "runs": ok(fixture("wizard", "runs.json")),
+        "cycle_read": ok(fixture("wizard", "project_cycle_none.json")),
+        "tasks": ok(fixture("wizard", "tasks.json")),
+        "quotas": ok(fixture("wizard", "quotas.json")),
+        "documents": ok(fixture("wizard", "documents.json")),
+        "document": ok(fixture("wizard", "document.json"))}
+    table.update(over)
+    return {name: {"*": value} if "status" in value else value for name, value in table.items()}
+
+
+def to_step(bench: Bench, lang: str, step: str, *, starter: str | None = None,
+            view: bool = False, reads: dict[str, Any] | None = None) -> None:
+    """Open the wizard, fill step 1 and press Next until `step` is on screen.
+
+    The answers must let every step on the way be left: for the cycle step the flow of the
+    preselected card, for the roles step the harness roster and the quotas.
+    """
+    bench.open(lang, starter=starter, view=view, auto=reads or wizard_reads())
+    bench.type_into("wizard:title", "Fix login")
+    bench.type_into("wizard:idea" if starter else "wizard:brief", "Make it work.")
+    for following in ("materials", "cycle", "roles"):
+        if bench.root().get_attribute("data-step") == step:
+            break
+        expect(bench.control("wizard:next")).to_be_enabled()
+        bench.control("wizard:next").click()
+        expect(bench.root()).to_have_attribute("data-step", following)
 
 
 @pytest.fixture(scope="session")
