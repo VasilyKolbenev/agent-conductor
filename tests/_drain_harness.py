@@ -91,13 +91,20 @@ time.sleep(60)
 
 def wait_until(predicate: Callable[[], object], timeout: float, what: str,
                child: DrainChild | None = None) -> None:
-    """Poll until the predicate holds; fail naming `what` and the child's stderr."""
+    """Poll until the predicate holds; fail naming `what` and the child's stderr.
+
+    The exit is observed BEFORE the predicate is evaluated and raised only when
+    the predicate is still false: a state is durable before its writer exits, so
+    an exit seen first means that state is already readable. A child that
+    publishes its last state and leaves within one poll therefore still counts.
+    """
     deadline = time.monotonic() + timeout
     while True:
-        if child is not None:
-            child.raise_if_exited(what)
+        exited = child is not None and not child.alive()
         if predicate():
             return
+        if exited:
+            child.raise_if_exited(what)
         if time.monotonic() >= deadline:
             tail = "" if child is None else f"\nchild stderr:\n{child.stderr_tail()}"
             raise AssertionError(f"timed out after {timeout}s waiting for {what}{tail}")
