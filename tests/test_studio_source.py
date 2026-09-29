@@ -69,7 +69,8 @@ MODULES = ("studio-runstep-copy.js", "studio-participant-copy.js", "studio-run-d
            "studio-mounts.js", "studio-shell.js", "studio-runhead.js", "studio-preferences.js", "studio-i18n.js",
            "studio-quotas-model.js", "studio-quotas.js", "studio-quotaflow.js",
            "desk-transport.js",
-           "desk-wizard-model.js", "desk-wizard-materials.js", "desk-wizard-cycle.js")
+           "desk-wizard-model.js", "desk-wizard-materials.js", "desk-wizard-cycle.js",
+           "desk-wizard-roles.js", "desk-wizard-base.js", "desk-wizard-team.js")
 #: The boot module: what each frame and each read MEANS, and the screen router.
 #: It reaches the wire only through the transport module below.
 BOOT = "studio.js"
@@ -135,7 +136,19 @@ PERMITTED_IMPORTS = {
     #: no copy, no transport -- an ask it wants performed is a value it returns.
     "desk-wizard-model.js": frozenset({"./studio-tasks-model.js",
                                        "./desk-wizard-materials.js",
-                                       "./desk-wizard-cycle.js"}),
+                                       "./desk-wizard-cycle.js",
+                                       "./desk-wizard-roles.js",
+                                       "./desk-wizard-base.js",
+                                       "./desk-wizard-team.js"}),
+    #: What the model and the step adapters share (the order of the steps, the limits, a frozen
+    #: change, the words of the documents), so neither imports the other. It reaches the task
+    #: model for the title limit and the three step modules for theirs, and nothing above it.
+    "desk-wizard-base.js": frozenset({"./studio-tasks-model.js", "./desk-wizard-materials.js",
+                                      "./desk-wizard-roles.js"}),
+    #: Step 4 as the model sees it: the pure step functions applied to the wizard's state. It
+    #: imports the base and the step modules, never the model that imports it.
+    "desk-wizard-team.js": frozenset({"./desk-wizard-base.js", "./desk-wizard-cycle.js",
+                                      "./desk-wizard-roles.js"}),
     #: Step 2 as pure functions over values the model hands it: what git said,
     #: what the cards would compose. It imports nothing, so the model above it
     #: can never be reached back.
@@ -143,6 +156,9 @@ PERMITTED_IMPORTS = {
     #: Step 3 the same way: the cards, the preselection and the flow write's body,
     #: from the reads the model hands over. It imports nothing for the same reason.
     "desk-wizard-cycle.js": frozenset(),
+    #: Step 4 the same way: the roles of a flow, who may take each, the suggestion and the
+    #: instruction fields. It imports nothing for the same reason.
+    "desk-wizard-roles.js": frozenset(),
     # Pure S2 decoder; the actual store read door composes it with the base model.
     "studio-situation.js": frozenset({"./studio-model.js", "./studio-feedback-model.js",
                                       "./studio-runwords.js"}),

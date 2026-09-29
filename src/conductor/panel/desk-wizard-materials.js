@@ -98,12 +98,17 @@ function section(card, number, lang) {
   return `## ${number}. ${cardTitle(card, lang)} · ${card.kind}\n${body}`;
 }
 
-//: An approximation of the document the server will compose from these cards, in the longer
-//: of the two languages. The exact size is the server's alone; this is only the "≈" the owner
-//: sees while typing, and the gate against sending what would be refused anyway.
+//: An approximation of the document the server will compose from these cards: the exact bytes
+//: are the server's alone, this is the text the estimate and the argv arithmetic measure.
+export function composeText(cards, lang) {
+  const parts = [`# ${HEADING[lang]}`, ...cards.map((card, at) => section(card, at + 1, lang))];
+  return `${parts.join("\n\n")}\n`;
+}
+
+//: The "≈" the owner sees while typing, in the longer of the two languages, and the gate
+//: against sending what would be refused anyway.
 export function estimateOf(cards) {
-  const parts = [`# ${HEADING.ru}`, ...cards.map((card, at) => section(card, at + 1, "ru"))];
-  const size = bytes(`${parts.join("\n\n")}\n`);
+  const size = bytes(composeText(cards, "ru"));
   const overBytes = size > MATERIAL_LIMITS.bytes;
   const linkable = cards.filter((card) => card.kind === "project_doc" && card.mode === "copy")
     .map((card) => card.key);

@@ -17,24 +17,38 @@
 // payload}`). Nothing in this slice writes to a server; what a step would publish
 // is only described (`publications`).
 //
+// The step modules hold the pure rules of each step (`desk-wizard-materials.js`, `-cycle.js`,
+// `-roles.js`); `desk-wizard-base.js` holds what they share and `desk-wizard-team.js` applies
+// step 4's rules to this state. This module is the state, the table of events and the asks.
+//
 // State shape (all frozen):
 //   step, mode {starterId, view}, task {taskId, title, brief, hint, idea, written},
 //   reads {name: {status: "ok" | "failed", code, payload}}, asked [ask id], opened, closing,
 //   materials {items, counter, picker, refusal, includeInstructions},
-//   cycle {choice, chosenBy, generation, flow, flowFor, flowGeneration, status, refusal, settled}.
-import {taskTitle, TASK_TITLE_LIMIT, isTaskId} from "./studio-tasks-model.js";
-import {MATERIAL_KINDS, MATERIAL_LIMITS, bodyOf, documentCard, estimateOf, gitFacts,
-  instructionsRow, isComplete, isDocumentRow, isMaterialKind, isOid, pickerOf, textCard}
+//   cycle {choice, chosenBy, generation, flow, flowFor, flowGeneration, status, refusal,
+//          settled, boundKey},
+//   roles {owner, instructions}, history {runs, revisions}.
+import {taskTitle, isTaskId} from "./studio-tasks-model.js";
+import {MATERIAL_KINDS, bodyOf, documentCard, estimateOf, gitFacts, instructionsRow,
+  isComplete, isDocumentRow, isMaterialKind, isOid, pickerOf, textCard}
   from "./desk-wizard-materials.js";
 import {WIZARD_STARTERS, cardsOf, factsOf, flowBody, isFlowState, preselect}
   from "./desk-wizard-cycle.js";
+import {argvFit, offersFor, quotaOf, roleKind, rolesOf, rosterOf, suggest}
+  from "./desk-wizard-roles.js";
+import {BUILT_STEPS, LIMITS, STEPS, briefDocument, evolve, frozen, inputChars, taskText,
+  utf8Bytes} from "./desk-wizard-base.js";
+import {answerHistory, assignRole, assignmentView, bindingNow, editInstruction, heldFlow,
+  historyAsks, instructionFields, likeInstruction, ownInstruction, previousAssignment,
+  rolesGate, rolesPublication, syncBinding} from "./desk-wizard-team.js";
 
-export const STEPS = Object.freeze(["task", "materials", "cycle", "roles", "prepare", "run"]);
-export const BUILT_STEPS = Object.freeze(["task", "materials", "cycle", "roles"]);
 //: The one starter the hash may name (spec 4.5.2). The two ready cycles the wizard offers as
 //: cards are the cycle module's, re-exported here as the wizard's one vocabulary.
 export const HASH_STARTERS = Object.freeze(["desk-starter-docs"]);
-export {MATERIAL_KINDS, WIZARD_STARTERS};
+export {STEPS, BUILT_STEPS, LIMITS, MATERIAL_KINDS, WIZARD_STARTERS, argvFit, briefDocument,
+  inputChars, offersFor, quotaOf, roleKind, rolesOf, rosterOf, taskText, utf8Bytes,
+  assignmentView, instructionFields, previousAssignment};
+export const suggestAssignment = suggest;
 //: The controls whose door a later slice opens. Each is drawn disabled with its reason and
 //: never as a button that does nothing.
 export const LATER = Object.freeze(["connect_git", "first_commit", "run_without_git",
@@ -43,36 +57,11 @@ export const LATER = Object.freeze(["connect_git", "first_commit", "run_without_
 export function isLater(control) {
   return LATER.includes(control);
 }
-export const LIMITS = Object.freeze({materials: MATERIAL_LIMITS.count,
-  documentBytes: MATERIAL_LIMITS.bytes, argvChars: 32767, title: TASK_TITLE_LIMIT});
 
-//: What the documents this wizard composes say, in the language of the interface. A document
-//: is data for agents, not interface text, so its headings live here and not in the catalogue.
-const WORDS = Object.freeze({
-  ru: Object.freeze({todo: "Что нужно сделать", idea: "Идея проекта",
-    hint: "Как понять, что готово (подсказка)", none: "—"}),
-  en: Object.freeze({todo: "What needs to be done", idea: "Project idea",
-    hint: "How to tell it is done (hint)", none: "—"}),
-});
 //: The reads a wizard asks for once it opens: every later step draws on one of them.
 const OPENING_READS = Object.freeze([["git", "git"], ["workflows", "workflows"],
   ["runs", "runs"], ["cycle_read", "projectCycle"], ["tasks", "tasks"], ["quotas", "quotas"]]);
 const READ_NAMES = Object.freeze(OPENING_READS.map(([name]) => name));
-const encoder = new TextEncoder();
-
-export function utf8Bytes(text) {
-  return encoder.encode(text).length;
-}
-
-function frozen(value) {
-  if (value === null || typeof value !== "object" || Object.isFrozen(value)) return value;
-  for (const item of Object.values(value)) frozen(item);
-  return Object.freeze(value);
-}
-
-function evolve(state, patch) {
-  return frozen({...state, ...patch});
-}
 
 // -- opening ---------------------------------------------------------------------------
 
@@ -103,7 +92,9 @@ export function initialWizard(opening) {
     cycle: {choice: starterId === null ? null : {kind: "starter", workflowId: starterId},
       chosenBy: starterId === null ? null : "starter", generation: starterId === null ? 0 : 1,
       flow: null, flowFor: null, flowGeneration: -1, status: "idle", refusal: null,
-      settled: []}});
+      settled: [], boundKey: "null"},
+    roles: {owner: {}, instructions: {}},
+    history: {runs: {}, revisions: {}}});
 }
 
 // -- step 1: the task ------------------------------------------------------------------
@@ -111,18 +102,6 @@ export function initialWizard(opening) {
 export function taskFields(state) {
   return Object.freeze(state.mode.starterId === null
     ? ["title", "brief", "hint"] : ["title", "idea"]);
-}
-
-//: The `artifact-brief` document (spec 6.2.3, n. 1), byte for byte: the same template the
-//: server-side readers expect, a starter's idea under its own heading, a dash for no hint.
-export function briefDocument(state, lang) {
-  const words = WORDS[lang];
-  if (!words) throw new Error("unknown document language");
-  const starter = state.mode.starterId !== null;
-  const text = starter ? state.task.idea : state.task.brief;
-  const hint = starter || state.task.hint.trim() === "" ? words.none : state.task.hint;
-  return `# ${state.task.title}\n\n## ${starter ? words.idea : words.todo}\n${text}\n\n`
-    + `## ${words.hint}\n${hint}\n`;
 }
 
 function taskGate(state) {
@@ -248,7 +227,7 @@ function chooseCycle(state, event) {
   if (!card) return state;
   const cycle = state.cycle;
   const same = cycle.choice?.workflowId === card.workflowId;
-  const left = same ? {} : {flow: null, flowFor: null, flowGeneration: -1};
+  const left = same ? {} : {flow: null, flowFor: null, flowGeneration: -1, boundKey: "null"};
   return evolve(state, {cycle: {...cycle, ...left, choice: {kind: card.kind,
     workflowId: card.workflowId}, chosenBy: "owner", generation: cycle.generation + 1,
     status: "idle", refusal: null}});
@@ -258,9 +237,9 @@ function chooseCycle(state, event) {
 
 //: Why a step is not complete yet, as a closed code (null when it is). One entry per built
 //: step; a step with no entry has nothing to refuse.
-const GATES = {task: taskGate, materials: materialsGate, cycle: cycleGate};
+const GATES = {task: taskGate, materials: materialsGate, cycle: cycleGate, roles: rolesGate};
 const PUBLISHERS = {task: taskPublication, materials: materialsPublication,
-  cycle: cyclePublication};
+  cycle: cyclePublication, roles: rolesPublication};
 
 function gateOf(state, step) {
   return Object.hasOwn(GATES, step) ? GATES[step](state) : null;
@@ -352,12 +331,15 @@ function cycleAsks(state) {
     return [];
   }
   const id = cycle.choice.workflowId;
-  if (cycle.status === "conflict") return [flowReadAsk(`read:flow:${cycle.generation}:reread`, id)];
-  const held = cycle.flow !== null && cycle.flowFor === id;
-  if (cycle.choice.kind === "saved") {
-    return held ? [] : [flowReadAsk(`read:flow:${cycle.generation}`, id)];
+  if (cycle.status === "conflict") {
+    return [flowReadAsk(`read:flow:${cycle.generation}:reread`, id)];
   }
-  const ask = flowWriteRequest(state, {publish: null, binding: null});
+  if (cycle.choice.kind === "saved" && heldFlow(state) === null) {
+    return [flowReadAsk(`read:flow:${cycle.generation}`, id)];
+  }
+  const binding = bindingNow(state);
+  if (cycle.choice.kind === "saved" && binding === null) return [];
+  const ask = flowWriteRequest(state, {publish: null, binding});
   const busy = state.asked.some((sent) => sent.startsWith("write:flow:") && sent !== ask.id
     && !cycle.settled.includes(sent));
   return busy ? [] : [ask];
@@ -368,7 +350,7 @@ function cycleAsks(state) {
 export function wantedAsks(state) {
   if (!state.opened) return [];
   return [...OPENING_READS.map(([name, target]) => readAsk(name, target)),
-    ...materialAsks(state), ...cycleAsks(state)];
+    ...materialAsks(state), ...cycleAsks(state), ...historyAsks(state)];
 }
 
 function readOf(result) {
@@ -432,6 +414,7 @@ function answerDocument(state, ask, result) {
 
 const ANSWERS = {...Object.fromEntries([...READ_NAMES, "documents"]
   .map((name) => [name, answerRead(name)])), document: answerDocument,
+  previous_run: answerHistory("runs"), previous_revision: answerHistory("revisions"),
   flow: (state, ask, result) => landFlow(state, ask, result, true),
   flow_read: (state, ask, result) => landFlow(state, ask, result, false)};
 
@@ -567,6 +550,10 @@ const HANDLERS = {
   "material-remove": removeMaterial,
   "material-mode": setMode,
   "cycle-choose": chooseCycle,
+  "role-assign": assignRole,
+  "instruction-edit": editInstruction,
+  "instruction-own": ownInstruction,
+  "instruction-like": likeInstruction,
   "include-instructions": (state, event) => (typeof event.value === "boolean"
     && state.materials.includeInstructions !== event.value
     ? evolve(state, {materials: {...state.materials, includeInstructions: event.value}})
@@ -584,8 +571,9 @@ export const EVENTS = Object.freeze(Object.keys(HANDLERS));
 //: name, or one that changes nothing, hands back the very same state object and no asks.
 export function stepWizard(state, event) {
   if (!event || !Object.hasOwn(HANDLERS, event.type)) return {state, asks: []};
-  const next = HANDLERS[event.type](state, event);
-  if (next === state) return {state, asks: []};
+  const changed = HANDLERS[event.type](state, event);
+  if (changed === state) return {state, asks: []};
+  const next = syncBinding(changed);
   const asks = wantedAsks(next).filter((ask) => !next.asked.includes(ask.id));
   if (asks.length === 0) return {state: next, asks};
   return {state: evolve(next, {asked: [...next.asked, ...asks.map((ask) => ask.id)]}), asks};

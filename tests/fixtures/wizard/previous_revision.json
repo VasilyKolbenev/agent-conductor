@@ -1,0 +1,13 @@
+{
+  "workflow_id": "desk-standard",
+  "revision": 1,
+  "document": {
+    "nodes": [
+      {"node_id": "analyst", "kind": "task", "role_id": "role-analyst",
+       "capability": "review"},
+      {"node_id": "do", "kind": "task", "role_id": "role-doer", "capability": "dispatch",
+       "verifier_role_id": "role-checker"},
+      {"node_id": "result", "kind": "gate"}
+    ]
+  }
+}

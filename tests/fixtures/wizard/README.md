@@ -14,6 +14,13 @@ difference is settled in the fixture or in the route, on the record.
 | `runs.json` | `GET /command/runs` (the keys the preselection reads) | 7.10 |
 | `project_cycle.json`, `project_cycle_none.json` | `GET /command/project/cycle`, pinned and not | 7.10 |
 | `tasks.json` | `GET /command/tasks` (the title in the preselection's label) | 7.10 |
+| `quotas.json` | `GET /command/quotas` (the keys the roles step reads) | 5.6.6, 6.3 |
+| `previous_run.json`, `previous_revision.json` | `GET /command/runs/<id>` and `GET /command/workflows/<id>/revisions/<n>` of the last run | 7.10 |
+
+The provider rows inside `workflows.json` carry three facts the server's roster does not carry
+yet: `capabilities` (which roads a harness has), `task_channel` (how it is fed, in the shape
+`studio-automation-providers.js` already judges) and `offered` (whether this version offers it).
+The wizard treats a row without `offered: true` as not offered.
 
 The flow answers (`FlowState` and `Budget` of the five cycles) are lane L's, in
 `tests/fixtures/flow/`; the wizard reads those unchanged.

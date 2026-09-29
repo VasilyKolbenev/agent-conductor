@@ -363,12 +363,18 @@ def test_flow_asks_wait_for_the_cycle_step_and_the_cycle_step_publishes_the_next
       show({early_choice: early.cycle.choice, early_asks: wiz.wantedAsks(early)
           .filter((ask) => ask.door === "write" || ask.name === "flow_read").length,
         on_arrival: asksOf(arrived), steps: rows.map((row) => row.step),
-        flow_write: rows.at(-1)});
+        before_the_flow_landed: wiz.publications(arrived.state, "en").map((row) => row.step),
+        flow_write: rows.find((row) => row.step === "cycle")});
     """, DATA)
     assert out["early_choice"] == {"kind": "starter", "workflowId": "desk-standard"}
     assert out["early_asks"] == 0
-    assert out["on_arrival"] == [["write:flow:1", "flow", "write", "flow", "desk-standard"]]
-    assert out["steps"] == ["task", "materials", "cycle"]
+    assert out["on_arrival"] == [
+        ["write:flow:1", "flow", "write", "flow", "desk-standard"],
+        ["read:run:task-b-r1", "previous_run", "read", "run", "task-b-r1"],
+        ["read:revision:desk-standard:1", "previous_revision", "read", "revision",
+         "desk-standard"]]
+    assert out["steps"][:3] == ["task", "materials", "cycle"]
+    assert out["before_the_flow_landed"] == ["task", "materials"]
     assert out["flow_write"] == {"step": "cycle", "writes": [
         {"link": 3, "target": "flow", "workflow_id": "desk-standard",
          "body": {"source": {"starter_id": "desk-standard"},

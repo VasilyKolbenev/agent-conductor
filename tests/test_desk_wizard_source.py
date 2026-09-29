@@ -17,8 +17,14 @@ PANEL = Path(__file__).resolve().parents[1] / "src" / "conductor" / "panel"
 #: The wizard's pure modules, each with the one set of siblings it may import. Grown by the
 #: commit that creates a module, in the same commit as its registry rows.
 PURE = {"desk-wizard-model.js": {"./studio-tasks-model.js", "./desk-wizard-materials.js",
-                                 "./desk-wizard-cycle.js"},
-        "desk-wizard-materials.js": set(), "desk-wizard-cycle.js": set()}
+                                 "./desk-wizard-cycle.js", "./desk-wizard-roles.js",
+                                 "./desk-wizard-base.js", "./desk-wizard-team.js"},
+        "desk-wizard-base.js": {"./studio-tasks-model.js", "./desk-wizard-materials.js",
+                                "./desk-wizard-roles.js"},
+        "desk-wizard-team.js": {"./desk-wizard-base.js", "./desk-wizard-cycle.js",
+                                "./desk-wizard-roles.js"},
+        "desk-wizard-materials.js": set(), "desk-wizard-cycle.js": set(),
+        "desk-wizard-roles.js": set()}
 IMPORTS = r'from "(\./[a-z-]+\.js)";'
 FUNCTION_CAP = 50
 #: A clock, a random source, storage and the DOM: what a pure module must never reach for.
