@@ -16,6 +16,9 @@ What this module holds, each as a measurement of the page and not a reading of s
   task that has one -- no other route, no method but GET, no project header, nothing stored;
 - a refused or unanswered list read empties the rail and says so, and an automation read that
   fails changes only the row it belongs to;
+- a record the server cannot read is never drawn as "not started": one unreadable run row makes
+  every row say so and the scene say the newest run cannot be established, and an unreadable
+  task says so on its row and on the scene, with no run and no automation read for it;
 - pressing a row marks it and only it, and keeps the keyboard's place across the redraw.
 
 A fact and its sentence are read in ONE evaluation, as `test_desk_shell.py` does.
@@ -25,7 +28,7 @@ from __future__ import annotations
 import json
 import re
 import threading
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -148,7 +151,20 @@ class Window:
     asked: list[tuple[str, str, bool]] = field(default_factory=list)
 
 
-def _open(browser: Browser, url: str, language: str, *, width: int = 1280) -> Window:
+Rewrites = dict[str, Callable[[dict], None]]
+
+
+def _rewriting(edit: Callable[[dict], None]) -> Callable[[Route], None]:
+    """A route handler that answers with the real body, `edit` applied to it in flight."""
+    def handle(route: Route) -> None:
+        body = route.fetch().json()
+        edit(body)
+        route.fulfill(status=200, content_type="application/json", body=json.dumps(body))
+    return handle
+
+
+def _open(browser: Browser, url: str, language: str, *, width: int = 1280,
+          rewrite: Rewrites | None = None) -> Window:
     context = browser.new_context(viewport={"width": width, "height": 900})
     page = context.new_page()
     window = Window(page)
@@ -157,6 +173,8 @@ def _open(browser: Browser, url: str, language: str, *, width: int = 1280) -> Wi
     page.on("pageerror", lambda error: window.problems.append(str(error)))
     page.on("request", lambda request: window.asked.append(
         (request.method, urlsplit(request.url).path, "x-conduct-project" in request.headers)))
+    for pattern, edit in (rewrite or {}).items():
+        page.route(pattern, _rewriting(edit))
     page.goto(f"{url}#lang={language}", wait_until="load")
     page.wait_for_function(SETTLED)
     return window
@@ -167,8 +185,9 @@ def desk_in(chromium: Browser, seeded_url: str) -> Iterator:
     """A factory of booted windows, each closed when the test is over."""
     opened: list[Window] = []
 
-    def make(language: str = "en", *, width: int = 1280) -> Window:
-        opened.append(_open(chromium, seeded_url, language, width=width))
+    def make(language: str = "en", *, width: int = 1280, rewrite: Rewrites | None = None
+             ) -> Window:
+        opened.append(_open(chromium, seeded_url, language, width=width, rewrite=rewrite))
         return opened[-1]
 
     yield make
@@ -304,6 +323,73 @@ def test_a_finished_but_unverified_run_is_never_drawn_without_its_sentence(
         assert not RAW_TOKENS.search(facts["text"]), facts["text"]
 
 
+# -- a record the server cannot read is never a task that has not started ---------------------
+#
+# The server lists a record it cannot read with every field but its id null and `unreadable`
+# true. The rewrites below make the real answer say that for one run row and for one task, in
+# flight, so the page is asked about the shape the server really gives and not about one the
+# test invented: the keys are the real row's own.
+#: The word every row that cannot be read says, and the name such a task is drawn under.
+UNREADABLE_WORD = {"en": "Record cannot be read", "ru": "Запись не читается"}
+UNREADABLE_TITLE = {"en": "Unreadable task", "ru": "Задача не читается"}
+RUNS_ROUTE, TASKS_ROUTE = "**/command/runs", "**/command/tasks"
+#: The task whose record is made unreadable, and the run whose record is.
+LOST_TASK, LOST_RUN = "task-fix", "run-docs"
+
+
+def _make_unreadable(rows: list[dict], key: str, ident: str) -> None:
+    for row in rows:
+        if row[key] == ident:
+            row.update({name: None for name in row if name != key}, unreadable=True)
+
+
+def _one_run_unreadable(body: dict) -> None:
+    _make_unreadable(body["runs"], "run_id", LOST_RUN)
+
+
+def _one_task_unreadable(body: dict) -> None:
+    _make_unreadable(body["tasks"], "task_id", LOST_TASK)
+
+
+def _reads(window: Window, *, automation: bool) -> list[str]:
+    """The run routes the window asked for: every automation read, or every other run read."""
+    return sorted(path for _method, path, _header in window.asked
+                  if path.startswith("/command/runs/")
+                  and path.endswith("/automation") == automation)
+
+
+@pytest.mark.parametrize("language", ["en", "ru"])
+def test_one_unreadable_run_record_makes_every_rail_row_say_the_record_cannot_be_read(
+        desk_in, language):
+    """A run row that does not read hides whose it is and when it was made, so the newest run
+    of NO task can be established: every row says so, and none says it has not started."""
+    window = desk_in(language, rewrite={RUNS_ROUTE: _one_run_unreadable})
+    facts = window.page.evaluate(RAIL_FACTS)
+    assert sorted(row["id"] for row in facts["rows"]) == sorted(task for task, _ in TASKS)
+    assert {row["word"] for row in facts["rows"]} == {UNREADABLE_WORD[language]}
+    assert (facts["shell"], facts["rail"]) == ("ready", "ready")
+    assert not RAW_TOKENS.search(facts["text"]) and "_unreadable" not in facts["text"]
+    assert _reads(window, automation=True) == []
+    assert window.problems == []
+
+
+@pytest.mark.parametrize("language", ["en", "ru"])
+def test_an_unreadable_task_says_the_record_cannot_be_read_and_its_run_is_not_asked_about(
+        desk_in, language):
+    window = desk_in(language, rewrite={TASKS_ROUTE: _one_task_unreadable})
+    facts = window.page.evaluate(RAIL_FACTS)
+    rows = _rows(facts)
+    assert rows[LOST_TASK] == (f"{UNREADABLE_TITLE[language]} · {LOST_TASK}",
+                               UNREADABLE_WORD[language], None)
+    assert {key: row for key, row in rows.items() if key != LOST_TASK} == {
+        key: row for key, row in ROWS[language].items() if key != LOST_TASK}
+    assert (facts["shell"], facts["rail"]) == ("ready", "ready")
+    assert not RAW_TOKENS.search(facts["text"]) and "_unreadable" not in facts["text"]
+    assert _reads(window, automation=True) == sorted(
+        f"/command/runs/{run}/automation" for task, run in NEWEST.items() if task != LOST_TASK)
+    assert window.problems == []
+
+
 def test_pressing_a_row_marks_it_alone_and_the_keyboard_keeps_its_place(desk_in):
     window = desk_in("en")
     page = window.page
@@ -329,11 +415,17 @@ FIX_STEPS = 8
 SCENE_WORDS = {
     "en": {"team": "Run team", "lenses": ["Trace", "Orbit"], "gate": "Decision needed",
            "subject": "Fix lost text · run run-fix-new", "none": "This task has no run yet.",
-           "choose": "Choose a task to see its newest run."},
+           "choose": "Choose a task to see its newest run.",
+           "unknown": "The newest run of this task cannot be established: a run record "
+                      "cannot be read.",
+           "unreadable": "This task cannot be read, so there is no run to show."},
     "ru": {"team": "Команда запуска", "lenses": ["Трасса", "Орбита"], "gate": "Нужно решение",
            "subject": "Fix lost text · запуск run-fix-new",
            "none": "У этой задачи ещё нет запусков.",
-           "choose": "Выберите задачу, чтобы увидеть её новейший запуск."},
+           "choose": "Выберите задачу, чтобы увидеть её новейший запуск.",
+           "unknown": "Новейший запуск задачи не установлен: одна из записей запусков "
+                      "не читается.",
+           "unreadable": "Задача не читается, показывать нечего."},
 }
 #: Everything the scene tests ask of the page, in one evaluation.
 SCENE_FACTS = """() => {
@@ -493,6 +585,34 @@ def test_a_task_with_no_run_says_so_and_choosing_back_restores_the_scene(desk_in
     _choose(page, "task-docs")
     _scene_settled(page, "ready")
     assert page.evaluate(SCENE_FACTS)["run"] == "run-docs"
+    assert window.problems == []
+
+
+@pytest.mark.parametrize("language", ["en", "ru"])
+def test_choosing_a_task_amid_an_unreadable_run_record_says_its_newest_run_cannot_be_established(
+        desk_in, language):
+    """With one run row unreadable no task's newest run can be told, so the scene says that and
+    draws nothing -- not "no run yet", and no run is read for the task chosen."""
+    window = desk_in(language, rewrite={RUNS_ROUTE: _one_run_unreadable})
+    _choose(window.page, "task-fix")
+    facts = window.page.evaluate(SCENE_FACTS)
+    assert (facts["scene"], facts["shell"], facts["run"]) == ("empty", "ready", None)
+    assert facts["text"].strip() == SCENE_WORDS[language]["unknown"]
+    assert facts["chosen"] == ["task-fix"]
+    assert _reads(window, automation=False) == [] and _reads(window, automation=True) == []
+    assert window.problems == []
+
+
+@pytest.mark.parametrize("language", ["en", "ru"])
+def test_choosing_an_unreadable_task_says_there_is_no_run_to_show_and_reads_none(
+        desk_in, language):
+    window = desk_in(language, rewrite={TASKS_ROUTE: _one_task_unreadable})
+    _choose(window.page, LOST_TASK)
+    facts = window.page.evaluate(SCENE_FACTS)
+    assert (facts["scene"], facts["shell"], facts["run"]) == ("empty", "ready", None)
+    assert facts["text"].strip() == SCENE_WORDS[language]["unreadable"]
+    assert facts["chosen"] == [LOST_TASK]
+    assert _reads(window, automation=False) == []
     assert window.problems == []
 
 
