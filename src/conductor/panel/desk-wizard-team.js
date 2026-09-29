@@ -22,6 +22,11 @@ function providersOf(state) {
   return read && read.status === "ok" ? read.payload?.providers ?? [] : [];
 }
 
+//: Whether any harness is offered at all: with none, the step says so and cannot be left.
+export function hasProviders(state) {
+  return rosterOf(providersOf(state)).length > 0;
+}
+
 function quotasOf(state) {
   const read = state.reads.quotas;
   return read && read.status === "ok" ? read.payload : null;

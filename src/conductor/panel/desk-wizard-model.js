@@ -38,16 +38,16 @@ import {NOTES, QUOTA_REASONS, ROLE_KINDS, argvFit, offersFor, quotaOf, roleKind,
   rosterOf, suggest} from "./desk-wizard-roles.js";
 import {BUILT_STEPS, LIMITS, STEPS, briefDocument, evolve, frozen, inputChars, taskText,
   utf8Bytes} from "./desk-wizard-base.js";
-import {answerHistory, assignRole, assignmentView, bindingNow, editInstruction, heldFlow,
-  historyAsks, instructionFields, likeInstruction, ownInstruction, previousAssignment,
-  rolesGate, rolesPublication, syncBinding} from "./desk-wizard-team.js";
+import {answerHistory, assignRole, assignmentView, bindingNow, editInstruction, hasProviders,
+  heldFlow, historyAsks, instructionFields, likeInstruction, ownInstruction,
+  previousAssignment, rolesGate, rolesPublication, syncBinding} from "./desk-wizard-team.js";
 
 //: The one starter the hash may name (spec 4.5.2). The two ready cycles the wizard offers as
 //: cards are the cycle module's, re-exported here as the wizard's one vocabulary.
 export const HASH_STARTERS = Object.freeze(["desk-starter-docs"]);
 export {STEPS, BUILT_STEPS, LIMITS, MATERIAL_KINDS, WIZARD_STARTERS, argvFit, briefDocument,
   inputChars, offersFor, quotaOf, roleKind, rolesOf, rosterOf, taskText, utf8Bytes,
-  assignmentView, instructionFields, previousAssignment,
+  assignmentView, hasProviders, instructionFields, previousAssignment,
   GIT_EXITS, GIT_SENTENCES, NOTES, QUOTA_REASONS, REFUSALS, ROLE_KINDS};
 export const suggestAssignment = suggest;
 //: Every reason a step can give for not being complete, as a closed code. Each has a message

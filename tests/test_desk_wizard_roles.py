@@ -73,6 +73,20 @@ def test_roles_are_the_union_of_role_and_verifier_role_over_the_flow_steps():
     assert "custom" in {row[1] for row in out["dalio"]}
 
 
+def test_the_roster_says_whether_any_harness_is_offered_to_anyone():
+    out = run_js(ROLES + """
+      const none = {...structuredClone(d.workflows), providers: []};
+      const hidden = {...structuredClone(d.workflows),
+        providers: d.workflows.providers.filter((row) => row.offered !== true)};
+      show({offered: wiz.hasProviders(standardAt("desk-standard")),
+        none: wiz.hasProviders(atRoles({workflows: none})),
+        only_hidden: wiz.hasProviders(atRoles({workflows: hidden})),
+        before_any_read: wiz.hasProviders(open())});
+    """, DATA)
+    assert out == {"offered": True, "none": False, "only_hidden": False,
+                   "before_any_read": False}
+
+
 def test_role_kinds_read_the_name_and_a_numbered_role_is_the_same_kind_again():
     out = run_js(ROLES + """
       show(["role-doer", "role-doer-2", "role-checker", "role-thinker", "doer", "role-", ""]

@@ -15,9 +15,10 @@
 import {element} from "./command-view.js";
 import {localize} from "./studio-i18n.js";
 import {WIZARD_COPY} from "./desk-wizard-copy.js";
-import {BUILT_STEPS, LIMITS, agentInstructionsRow, availableKinds, canAdvance,
-  closeNeedsWarning, cycleCards, cycleFacts, documentPicker, gitReading, materialsEstimate,
-  nextStep, preselection, stepStates, taskFields} from "./desk-wizard-model.js";
+import {BUILT_STEPS, LIMITS, agentInstructionsRow, assignmentView, availableKinds, canAdvance,
+  closeNeedsWarning, cycleCards, cycleFacts, documentPicker, gitReading, hasProviders,
+  instructionFields, materialsEstimate, nextStep, preselection, stepStates, taskFields}
+  from "./desk-wizard-model.js";
 
 function modeOf(wizard) {
   if (wizard.mode.starterId !== null) return "starter";
@@ -116,7 +117,7 @@ function foot(ctx) {
       gate.ok ? null : why);
   return element("footer", {className: "desk-wizard__foot"}, [
     ...back, primary, element("p", {className: "desk-wizard__reason", "data-wizard-reason": "",
-      "aria-live": "polite", text: following === null ? "" : why})]);
+      "aria-live": "polite", text: why})]);
 }
 
 //: The warning shown while the owner has asked to close with materials that are not saved.
@@ -451,10 +452,119 @@ function cycleBody(ctx) {
     ...flowStatus(ctx, facts), ...budgetView(ctx, facts), ...diagnosticsView(ctx, facts)];
 }
 
+// -- step 4: roles and instructions ------------------------------------------------------
+
+function roleName(ctx, row) {
+  return row.kind === "custom"
+    ? ctx.t("wizard.role.custom", {name: row.role_id.replace(/^role-/, "")})
+    : ctx.t(`wizard.role.${row.kind}`);
+}
+
+//: What is left of a harness's limit, or that it is not known and why. Never a remainder that
+//: was not read.
+function quotaText(ctx, quota) {
+  if (!quota.known) return `${ctx.t("wizard.quota.unknown")} · ${ctx.t(`wizard.quota.${quota.reason}`)}`;
+  return quota.kind === "balance" ? ctx.t("wizard.quota.balance")
+    : ctx.t("wizard.quota.remaining", {value: String(quota.remaining)});
+}
+
+function rolePicker(ctx, row) {
+  const pick = element("select", {"data-focus": `wizard:role:${row.role_id}`, name: row.role_id,
+    "aria-label": roleName(ctx, row)});
+  if (row.provider === null) {
+    pick.append(element("option", {value: "", text: ctx.t("wizard.role.unassigned"),
+      disabled: ""}));
+  }
+  for (const offer of row.offers) {
+    pick.append(element("option", {value: offer.id,
+      text: `${offer.name} · ${quotaText(ctx, offer.quota)}`}));
+  }
+  pick.value = row.provider ?? "";
+  pick.addEventListener("change", () => ctx.send({type: "role-assign", role_id: row.role_id,
+    provider_id: pick.value}));
+  return pick;
+}
+
+function roleRow(ctx, row) {
+  const by = row.by === null ? ctx.t("wizard.role.unassigned") : ctx.t(`wizard.role.by_${row.by}`);
+  const notes = row.notes.map((code) => element("small", {"data-note": code,
+    text: ctx.t(`wizard.note.${code}`)}));
+  const clear = row.by === "owner" ? [action(`wizard:role:${row.role_id}:clear`,
+    ctx.t("wizard.role.clear"), () => ctx.send({type: "role-assign", role_id: row.role_id,
+      provider_id: null}))] : [];
+  return element("li", {className: "desk-wizard__role", "data-role": row.role_id,
+    "data-by": row.by ?? "none", "data-subject": `role:${row.role_id}`}, [
+    element("span", {text: roleName(ctx, row)}), rolePicker(ctx, row),
+    element("small", {text: by}), ...notes, ...clear]);
+}
+
+function fieldLabel(ctx, field) {
+  if (field.kind === "doer") return ctx.t("wizard.instr.field_doer");
+  if (field.kind === "tester") return ctx.t("wizard.instr.field_tester");
+  return ctx.t("wizard.instr.field_custom", {step: field.title ?? field.step_id});
+}
+
+//: The "as step X" chooser, offered only where the model says it may be.
+function likePicker(ctx, field) {
+  if (field.likeChoices.length === 0 && field.source !== "like") return [];
+  const pick = element("select", {"data-focus": `wizard:instr:${field.step_id}:like`,
+    "aria-label": ctx.t("wizard.instr.like")}, [
+    element("option", {value: "", text: ctx.t("wizard.instr.like_none")}),
+    ...field.likeChoices.map((id) => element("option", {value: id, text: id}))]);
+  pick.value = field.like ?? "";
+  pick.addEventListener("change", () => ctx.send({type: "instruction-like",
+    step_id: field.step_id, like: pick.value === "" ? null : pick.value}));
+  return [element("label", {}, [element("span", {text: ctx.t("wizard.instr.like")}), pick])];
+}
+
+function instructionBody(ctx, field) {
+  const label = fieldLabel(ctx, field);
+  if (field.source === "own") {
+    return [textField(ctx, {key: `wizard:instr:${field.step_id}:text`,
+      name: `instruction-${field.step_id}`, multi: true, label, value: field.text,
+      onValue: (text) => ctx.send({type: "instruction-edit", step_id: field.step_id, text}),
+      extra: [element("small", {text: ctx.t("wizard.instr.required")})]})];
+  }
+  if (field.source === "like") {
+    return [element("p", {text: label}),
+      element("p", {"data-like-of": field.like, text: ctx.t("wizard.instr.like_of",
+        {step: field.like})}), element("small", {text: ctx.t("wizard.instr.like_cost")})];
+  }
+  return [element("p", {text: label}), element("p", {"data-instruction-text": "",
+    text: field.text}), element("small", {text: ctx.t("wizard.instr.from_task")}),
+  action(`wizard:instr:${field.step_id}:apart`, ctx.t("wizard.instr.write_apart"),
+    () => ctx.send({type: "instruction-own", step_id: field.step_id, lang: ctx.lang}))];
+}
+
+function instructionView(ctx, field) {
+  const argv = field.argv === null ? [] : [element("p", {"data-argv": "",
+    "data-fits": String(field.argv.fits), text: ctx.t("wizard.instr.argv",
+      {chars: String(field.argv.chars), limit: String(LIMITS.argvChars)})})];
+  return element("div", {className: "desk-wizard__instruction", "data-instruction": field.step_id,
+    "data-subject": `instruction:${field.step_id}`},
+  [...instructionBody(ctx, field), ...likePicker(ctx, field), ...argv]);
+}
+
+function rolesBody(ctx) {
+  const heading = element("h3", {text: ctx.t("wizard.roles.heading")});
+  if (!hasProviders(ctx.wizard)) {
+    return [heading, element("p", {"data-providers-none": "",
+      text: ctx.t("wizard.providers.none")})];
+  }
+  const facts = cycleFacts(ctx.wizard), fields = instructionFields(ctx.wizard, ctx.lang);
+  const none = fields.length === 0
+    ? [element("p", {"data-instructions-none": "", text: ctx.t("wizard.instr.none")})] : [];
+  return [heading, element("ul", {className: "desk-wizard__roles"},
+    assignmentView(ctx.wizard).map((row) => roleRow(ctx, row))),
+  element("h3", {text: ctx.t("wizard.roles.instructions")}), ...none,
+  ...fields.map((field) => instructionView(ctx, field)),
+  ...flowStatus(ctx, facts), ...diagnosticsView(ctx, facts)];
+}
+
 // -- the pass ----------------------------------------------------------------------------
 
-//: One body for each step the renderer draws so far.
-const BODIES = {task: taskBody, materials: materialsBody, cycle: cycleBody};
+//: One body for each built step.
+const BODIES = {task: taskBody, materials: materialsBody, cycle: cycleBody, roles: rolesBody};
 
 export function mountWizard(mount, state, handlers) {
   if (typeof handlers?.onWizard !== "function" || typeof handlers.onWizardClose !== "function") {

@@ -113,6 +113,13 @@ def test_the_renderer_hands_its_host_only_events_of_the_models_closed_table():
     assert not emitted & HOST_EVENTS, "the host opens the wizard and answers its asks"
 
 
+def test_the_renderer_can_cause_every_event_the_model_takes_but_the_hosts_own():
+    """An event no control sends is a way to change the wizard that nobody can reach."""
+    events = run_js('console.log(JSON.stringify(wiz.EVENTS));')
+    emitted = _emitted(_code(PANEL / RENDERER), events)
+    assert set(events) - HOST_EVENTS - emitted == set(), set(events) - HOST_EVENTS - emitted
+
+
 def _blocks(source: str, tag_words: tuple[str, ...]) -> list[str]:
     """The attribute object of every `element(<tag>, {..})` whose tag names a control."""
     found = []
@@ -141,6 +148,6 @@ def test_the_renderer_draws_no_radio_or_checkbox_input_the_focus_net_cannot_rest
 
 def test_every_control_the_renderer_builds_carries_a_focus_key():
     blocks = _blocks(_code(PANEL / RENDERER), ("button", "input", "textarea", "select"))
-    assert len(blocks) >= 2
+    assert len(blocks) >= 5
     assert all('"data-focus"' in block for block in blocks), [
         block[:60] for block in blocks if '"data-focus"' not in block]
