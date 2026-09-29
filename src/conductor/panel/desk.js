@@ -13,8 +13,9 @@
 // The address (spec 4.5.2 and 4.5.3) is read by `desk-hash.js` and moved by one function here,
 // `remember`, which writes the canonical hash by `replaceState` and so fires no `hashchange`.
 // A hash the desk did not write is read by ONE listener, the router, which selects, reads and
-// sets the appearance and nothing else. A hash that claims another project than the one the
-// desk bound to puts it in a terminal state, and it then reads and applies nothing.
+// sets the appearance and nothing else. A hash, or a project claim, that names another project
+// than the one the desk bound to puts it in a terminal state, and it then reads and applies
+// nothing.
 //
 // It reaches the wire only through `desk-transport.js`, the ONLY module of the Studio and
 // the desk that touches the network (`graph.js` and the classic `command.js` keep doors of
@@ -28,7 +29,8 @@ import {LATE, createTransport, path} from "./desk-transport.js";
 import {message} from "./studio-i18n.js";
 import {deskHash, foreignProject, navigationChange, preferenceHash, readDeskHash,
   readPreferences} from "./desk-hash.js";
-import {announceLocation, embedAsked, embedTarget} from "./desk-embed.js";
+import {announceLocation, claimNamesAnotherProject, embedAsked,
+  embedTarget} from "./desk-embed.js";
 import {projectTasks} from "./studio-tasks-model.js";
 import {projectRuns} from "./studio-model.js";
 import {newestRun} from "./studio-taskruns.js";
@@ -400,10 +402,11 @@ async function start(address) {
 }
 
 //: Embed mode (spec 4.5.5), decided once, at load. Only a framed window whose hash asks for it
-//: reads the project claim; the desk embeds only if the claim repeats the hash's project and
-//: names a hub origin of the exact grammar. Any other answer, a refusal, or no route at all
-//: leaves it off, and the hash the desk keeps then says no `embed`. The hub is told where the
-//: desk stands at once, and again at each change.
+//: reads the project claim. A claim that names another project than the one the desk bound to
+//: ends the desk (spec 4.5.1): it is open for another project, and says so. The desk embeds
+//: only if the claim repeats the hash's project and names a hub origin of the exact grammar.
+//: Any other answer, a refusal, or no route at all leaves it off, and the hash the desk keeps
+//: then says no `embed`. The hub is told where the desk stands at once, and again at each change.
 async function enterEmbed(address) {
   const framed = window.parent !== window;
   if (!embedAsked({framed, address})) return;
@@ -413,8 +416,13 @@ async function enterEmbed(address) {
   } catch (_error) {
     claim = null;
   }
+  if (state.foreign) return;
+  if (claimNamesAnotherProject(bound, claim)) {
+    enterForeign();
+    return;
+  }
   const origin = embedTarget({framed, address, claim});
-  if (origin === null || state.foreign) return;
+  if (origin === null) return;
   embedded = Object.freeze({origin});
   remember();
   announce();

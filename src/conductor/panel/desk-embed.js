@@ -11,6 +11,10 @@
 // named, never a wildcard, so a page that is not the hub cannot receive it. The desk has no
 // inbound channel: it listens for no message, and the hub speaks to it through the hash alone.
 //
+// The same claim can say the desk is open for the wrong project: when it names another project
+// than the one the desk bound to (an id that differs, or none), the desk is not merely not
+// embedded, it ends (spec 4.5.1). `claimNamesAnotherProject` answers that; the boot module acts.
+//
 // This module is values in and one call out. It reads no route and opens no door; the boot
 // module asks the claim and hands the answer here.
 
@@ -33,14 +37,27 @@ export function embedAsked({framed, address}) {
   return framed === true && address.embed === "hub" && address.project !== null;
 }
 
+//: A project claim is a plain object. A refusal, a route that is not there, or any other body
+//: is not one.
+function plainClaim(claim) {
+  return claim !== null && typeof claim === "object" && !Array.isArray(claim);
+}
+
 //: The origin the desk may post its location to, or `null` when it is not embedded. The claim
 //: is the server's answer to the project read (or `null` when there was none): it must repeat
 //: the hash's project and carry a hub origin of the exact grammar.
 export function embedTarget({framed, address, claim}) {
   if (!embedAsked({framed, address})) return null;
-  const plain = claim !== null && typeof claim === "object" && !Array.isArray(claim);
-  if (!plain || claim.project_id !== address.project) return null;
+  if (!plainClaim(claim) || claim.project_id !== address.project) return null;
   return hubOrigin(claim.hub_origin);
+}
+
+//: Whether the server's claim names another project than the one the desk bound to (spec
+//: 4.5.1): an id that differs, and `null` against an id, either way round; a claim with no
+//: `project_id` names none, as `null` does. Only a claim can name a project: a read that gave
+//: none names nothing, and that is not this question's answer.
+export function claimNamesAnotherProject(bound, claim) {
+  return plainClaim(claim) && (claim.project_id ?? null) !== bound;
 }
 
 //: The one message. Only the three ids are copied off `at`, so nothing else it may carry can

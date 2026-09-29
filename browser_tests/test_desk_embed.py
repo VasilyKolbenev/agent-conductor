@@ -16,9 +16,12 @@ What this module holds, each as a measurement of the page and not a reading of s
   origin reaches the host with nothing, though the desk is embedded (the witness that the target
   is not the wildcard);
 - a hash the hub sets by `location.replace` selects without a reload and is announced;
-- every condition of embed alone keeps it off: another project's claim, no or a bad `hub_origin`,
-  a refused read, a route that does not exist, no `project` in the hash, a repeated `embed`, and a
-  window that is not framed -- and when the hash could not ask for embed the claim is not read;
+- every condition of embed alone keeps it off: no or a bad `hub_origin`, a refused read, a route
+  that does not exist, no `project` in the hash, a repeated `embed`, and a window that is not
+  framed -- and when the hash could not ask for embed the claim is not read;
+- a claim that names another project (or none) is not one more reason for embed to stay off: it
+  is the terminal state "open for another project" (spec 4.5.1), which the desk enters once,
+  asks and says nothing after, and never leaves;
 - the desk listens for nothing the host posts, and a desk that has gone foreign sends nothing.
 
 A fact and its sentence are read in ONE evaluation, as `test_desk_shell.py` does.
@@ -35,7 +38,8 @@ from urllib.parse import quote, urlsplit
 import pytest
 from playwright.sync_api import Browser, Frame, Page, Request, Route
 
-from browser_tests.test_desk_hash import INIT, ON_RUN, QUIET, PROJECT_A as PROJECT, PROJECT_B
+from browser_tests.test_desk_hash import (
+    FACTS, INIT, ON_RUN, QUIET, PROJECT_A as PROJECT, PROJECT_B, _foreign)
 from browser_tests.test_desk_rail_scene import SETTLED, _seed
 from conductor import server
 from tests.test_store import good_lane, write_project
@@ -264,8 +268,6 @@ def test_the_message_goes_only_to_the_origin_the_claim_names(embed):
 #: (row, the address, the answer to the claim read, whether the read is asked at all). Each row
 #: is ONE reason embed stays off; the host must receive nothing and the desk must drop `embed`.
 STAYS_OFF = (
-    ("the-claim-names-another-project", f"#project={PROJECT}&embed=hub&lang=en",
-     lambda rig: _answering(_claim(project_id=PROJECT_B, hub_origin=rig.host_origin)), True),
     ("the-claim-has-no-hub-origin", f"#project={PROJECT}&embed=hub&lang=en",
      lambda rig: _answering(_claim(hub_origin=None)), True),
     ("the-claim-has-a-badly-formed-origin", f"#project={PROJECT}&embed=hub&lang=en",
@@ -297,6 +299,39 @@ def test_embed_stays_off_and_nothing_is_sent_when_any_one_of_its_conditions_fail
     assert "embed" not in address and shell == "ready"
     # A refused read and a missing route are logged by the browser as failed resource loads.
     assert [text for text in window.problems if "Failed to load resource" not in text] == []
+
+
+REFUSED = ("() => document.getElementById('deskShell').getAttribute('data-state') "
+           "=== 'refused'")
+
+
+@pytest.mark.parametrize("language", ["en", "ru"])
+@pytest.mark.parametrize("named", [PROJECT_B, None], ids=["another-project", "no-project"])
+def test_a_claim_naming_another_project_leaves_a_framed_desk_foreign_with_no_message_and_no_read(
+        embed, rig, language, named):
+    """The stale-iframe-on-a-reused-port case (spec 4.5.1). The claim's answer is held until the
+    desk has drawn a task and its run, so nothing the desk asks while it loads can be taken for
+    a read after the claim; then it is released, naming a project that is not the hash's."""
+    held: list[Route] = []
+    window = embed(f"#project={PROJECT}&embed=hub&task=task-fix&lang={language}",
+                   lambda route: held.append(route))
+    window.frame.wait_for_function(ON_RUN, arg="run-fix-new")
+    assert len(held) == 1 and window.claim_reads() == 1 and window.settle() == []
+    asked = len(window.asked)
+    held[0].fulfill(status=200, content_type="application/json",
+                    body=json.dumps(_claim(project_id=named, hub_origin=rig.host_origin)))
+    window.frame.wait_for_function(REFUSED)
+    window.frame.evaluate(QUIET)
+    facts = window.frame.evaluate(FACTS)
+    _foreign(facts, language)
+    assert facts["hash"] == f"#project={PROJECT}&task=task-fix&run=run-fix-new&lang={language}"
+    # Terminal: a hash the same project's hub would send now moves nothing and asks nothing.
+    window.frame.evaluate("(hash) => location.replace(location.href.split('#')[0] + hash)",
+                          f"#project={PROJECT}&embed=hub&task=task-docs&lang={language}")
+    window.frame.evaluate(QUIET)
+    _foreign(window.frame.evaluate(FACTS), language)
+    assert window.settle() == [] and len(window.asked) == asked
+    assert window.claim_reads() == 1 and window.problems == []
 
 
 def test_a_desk_that_is_not_framed_never_asks_for_the_claim_and_drops_embed(

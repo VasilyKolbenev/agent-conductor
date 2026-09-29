@@ -3,9 +3,10 @@
 `desk-embed.js` decides whether a desk is embedded by a hub and, when it is, says its location
 to the page that frames it in ONE message. The decision is a function of four facts -- is the
 window framed, what does the hash ask, what did the server's project claim answer -- so it is
-tested as a table, spelled out here and not read back from the module. What the desk does with
-the decision is `browser_tests/test_desk_embed.py`'s; the one-`postMessage` rule is
-`test_desk_address_source.py`'s.
+tested as a table, spelled out here and not read back from the module. So is the one question
+the same claim answers for the boot module: does it name another project than the bound one.
+What the desk does with either is `browser_tests/test_desk_embed.py`'s; the one-`postMessage`
+rule is `test_desk_address_source.py`'s.
 """
 from __future__ import annotations
 
@@ -53,6 +54,28 @@ def test_every_condition_of_embed_alone_keeps_a_desk_from_embedding():
         (True, ASKS, _claim(hub_origin=None)),                    # a project no hub started
     ]
     assert _decide(rows) == [None] * len(rows)
+
+
+def test_a_claim_that_names_another_project_or_none_is_told_from_one_that_names_the_bound_one():
+    rows = [
+        (PROJECT, _claim()),                                   # the bound project
+        (PROJECT, _claim(hub_origin=None)),                    # the bound project, no hub: embed's
+        (PROJECT, _claim(project_id=OTHER)),                   # another project
+        (PROJECT, _claim(project_id=None)),                    # no project: null against an id
+        (PROJECT, {"hub_origin": HUB}),                        # no project_id at all: the same
+        (PROJECT, _claim(project_id=7)),                       # an id that is no id
+        (None, _claim(project_id=None)),                       # null against null: the same
+        (None, _claim()),                                      # an id against null
+        (PROJECT, None),                                       # the read gave no claim
+        (PROJECT, "http://127.0.0.1:7700"),                    # a claim that is not an object
+        (PROJECT, [PROJECT]),                                  # nor a list
+        (PROJECT, 7),                                          # nor a number
+    ]
+    got = run_js("""
+      console.log(JSON.stringify(d.map(([bound, claim]) =>
+        embed.claimNamesAnotherProject(bound, claim))));
+    """, MODULES, [list(row) for row in rows])
+    assert got == [False, False, True, True, True, True, False, True, False, False, False, False]
 
 
 def test_the_hub_origin_must_be_exactly_a_loopback_origin_with_a_port_and_nothing_else():
