@@ -108,6 +108,7 @@ ASSETS = {
     # studio.html, so the two documents are told apart by route alone.
     "/panel/desk.html": "text/html; charset=utf-8",
     "/panel/desk.css": "text/css; charset=utf-8",
+    "/panel/desk.js": "text/javascript; charset=utf-8",
     # The wire doors, moved out of the Studio's boot module for the desk to share.
     "/panel/desk-transport.js": "text/javascript; charset=utf-8",
     # The classic panel, at the route that now reaches it. This target was a
@@ -203,6 +204,10 @@ REFUSED = (
     "/panel/desk.json", "/panel/desk.css?v=1", "/panel/desk.css.map",
     "/panel/../desk.css", "/panel/%2e%2e/desk.css", "/panel/DESK.CSS",
     "/panel/Desk.css", "/panel/desk.css/", "/panel/desk.css%00.txt",
+    # The desk's boot module: a guessed sibling and the eight spellings around it.
+    "/panel/desk-boot.js", "/panel/desk.js?v=1", "/panel/desk.js.map",
+    "/panel/../desk.js", "/panel/%2e%2e/desk.js", "/panel/DESK.JS",
+    "/panel/Desk.js", "/panel/desk.js/", "/panel/desk.js%00.txt",
     # The wire doors module, given the same nine shapes as the Studio's own.
     "/panel/desk-transport.json", "/panel/desk-transport.js?v=1",
     "/panel/desk-transport.js.map", "/panel/../desk-transport.js",

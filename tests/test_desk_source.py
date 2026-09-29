@@ -23,15 +23,18 @@ import pytest
 from conductor import server, server_assets
 from tests import studio_partition
 from tests.studio_partition import hub_registry_names, packaged_names, partition_faults
+from tests.test_panel_cascade import strip_comments
 from tests.test_studio_source import SCREEN_STATES
 
 ROOT = Path(__file__).resolve().parents[1]
 PANEL = ROOT / "src" / "conductor" / "panel"
 DESK_PAGE = PANEL / "desk.html"
-#: The opening tags of the scripts the page may load, in order, exactly. None
-#: yet: the page is a stub. The slice that adds `desk.js` adds its tag here in
-#: the same commit, so a script cannot arrive on the page unargued.
-EXPECTED_SCRIPTS: tuple[str, ...] = ()
+DESK_SCRIPT = PANEL / "desk.js"
+#: The opening tags of the scripts the page may load, in order, exactly. A slice
+#: that adds a script adds its tag here in the same commit, so a script cannot
+#: arrive on the page unargued.
+DESK_TAG = '<script src="/panel/desk.js" type="module">'
+EXPECTED_SCRIPTS: tuple[str, ...] = (DESK_TAG,)
 #: Every attribute that names another resource, quoted or not, and the quoted
 #: form alone. A page whose two counts differ carries a reference the second
 #: pattern cannot judge, and that is a fault in itself.
@@ -93,8 +96,9 @@ def desk_page_faults(
 
 CLEAN = (
     '<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n'
-    "<title>Desk</title>\n</head>\n<body>\n"
+    f"<title>Desk</title>\n{DESK_TAG}</script>\n</head>\n<body>\n"
     '<a href="/panel/index.html">Classic panel</a>\n</body>\n</html>\n')
+OTHER_TAG = '<script src="/panel/other.js" type="module">'
 LINK = 'href="/panel/index.html"'
 #: Each defect the checker claims to refuse, the page that carries it, and a
 #: word the fault must contain -- so a check that refuses a page for the WRONG
@@ -119,8 +123,8 @@ BROKEN = {
     "an upper-case script tag": (CLEAN.replace("</body>", "<SCRIPT>run()</SCRIPT>\n</body>"),
                                  "script"),
     "a script nobody expected": (CLEAN.replace(
-        "</body>", '<script src="/panel/desk.js" type="module"></script>\n</body>'),
-        "script"),
+        "</body>", f"{OTHER_TAG}</script>\n</body>"), "script"),
+    "the expected script missing": (CLEAN.replace(f"{DESK_TAG}</script>\n", ""), "script"),
     "a style block": (CLEAN.replace("</head>", "<style>a{}</style>\n</head>"), "style"),
     "an inline style attribute": (
         CLEAN.replace("<a ", '<a style="color:red" '), "style attribute"),
@@ -148,11 +152,11 @@ def test_the_desk_page_check_refuses_each_defect_and_names_it(html, needle):
 
 
 def test_the_desk_page_check_allows_exactly_the_scripts_it_is_told_to_expect():
-    tag = '<script src="/panel/desk.js" type="module">'
-    page = CLEAN.replace("</body>", f"{tag}</script>\n</body>")
-    assert desk_page_faults(page, (tag,)) == []
-    assert desk_page_faults(page, ()) != []
-    assert desk_page_faults(CLEAN, (tag,)) != []
+    page = CLEAN.replace("</body>", f"{OTHER_TAG}</script>\n</body>")
+    assert desk_page_faults(page, (DESK_TAG, OTHER_TAG)) == []
+    assert desk_page_faults(page, (DESK_TAG,)) != []
+    assert desk_page_faults(CLEAN, (DESK_TAG, OTHER_TAG)) != []
+    assert desk_page_faults(CLEAN, ()) != []
 
 
 def test_the_desk_page_meets_its_own_contract():
@@ -162,18 +166,18 @@ def test_the_desk_page_meets_its_own_contract():
 
 
 def test_every_reference_the_desk_page_makes_is_a_route_this_server_serves():
-    """The page names exactly its stylesheet and one neighbour, all real routes.
+    """The page names its stylesheet, its script and one neighbour, all real routes.
 
-    The list is exact so a further reference has to be argued for here, and it
-    is not empty so the served-route check below cannot pass by having nothing
-    to judge. The slice that adds `desk.js` extends it to
-    `["/panel/desk.css", "/panel/desk.js", "/panel/index.html"]` (spec 5.6.8).
+    The list is exactly spec 5.6.8's, so a further reference has to be argued for
+    here, and it is not empty so the served-route check below cannot pass by
+    having nothing to judge.
     """
     html = DESK_PAGE.read_text(encoding="utf-8")
     refs = re.findall(QUOTED_REFERENCE, html)
-    assert refs == ["/panel/desk.css", "/panel/index.html"]
+    assert refs == ["/panel/desk.css", "/panel/desk.js", "/panel/index.html"]
     assert set(refs) <= set(server.PANEL_ASSETS), sorted(set(refs) - set(server.PANEL_ASSETS))
     assert html.count('<link rel="stylesheet" href="/panel/desk.css">') == 1
+    assert html.count(f"{DESK_TAG}</script>") == 1
 
 
 #: The regions spec 5.1 gives the desk besides its top bar, in reading order, with
@@ -193,6 +197,84 @@ def test_the_desk_page_carries_its_five_region_mounts_once_each_and_empty():
         assert re.search(rf'id="{ident}"[^>]*></[a-z]+>', html), f"{ident} is not empty"
     assert re.findall(r'data-region="([a-z]+)"', html) == [name for name, _ in REGIONS]
     assert html.count('id="deskShell"') == 1 and html.count('id="deskStatus"') == 1
+
+
+# -- the boot module -------------------------------------------------------------
+#
+# `desk.js` reads two routes and paints what each read says on the mount it
+# feeds. It may read no other route until one is argued for here, it writes no
+# route out by hand (a route is `path.<name>` of the transport module), and it
+# names only ids the page carries. `GET /command/project` and the
+# `X-Conduct-Project` header belong to lane H's route on day 5 and are not faked:
+# the day that lands this list, the literal check and the header check change with it.
+
+#: The `path.<name>` reads the boot module makes, exactly.
+DESK_READS = frozenset({"tasks", "runs"})
+MOUNT_IDS = frozenset(ident for _, ident in REGIONS)
+
+
+def desk_boot_faults(source: str, page: str) -> list[str]:
+    """Every way the desk's boot module steps outside what the shell has argued for.
+
+    Args:
+        source: The text of `desk.js`.
+        page: The text of `desk.html`.
+
+    Returns:
+        One sentence per fault; empty when the module is within its contract.
+    """
+    code = strip_comments(source)
+    faults = [f"a route written out as a literal: {literal}"
+              for literal in re.findall(r"""["'`](/command[^"'`]*)""", code)]
+    used = set(re.findall(r"\bpath\.([A-Za-z]+)\(", code))
+    faults += [f"reads a route the shell has not argued for: path.{name}"
+               for name in sorted(used - DESK_READS)]
+    faults += [f"no longer reads path.{name}" for name in sorted(DESK_READS - used)]
+    named = set(re.findall(r'"(desk[A-Z][A-Za-z]*)"', code))
+    faults += [f"names id {ident}, which the page does not carry once"
+               for ident in sorted(named) if page.count(f'id="{ident}"') != 1]
+    faults += [f"does not mount {ident}" for ident in sorted(MOUNT_IDS - named)]
+    if re.search(r"x-conduct-project", code, re.IGNORECASE):
+        faults.append("sends X-Conduct-Project before lane H's route exists")
+    return faults
+
+
+def _edit(old: str, new: str):
+    def apply(text: str) -> str:
+        assert old in text, f"the sabotage target is gone from the module: {old!r}"
+        return text.replace(old, new, 1)
+    return apply
+
+
+#: Each defect the guard claims to refuse: the edit that plants it in a copy of
+#: the real module, and a word its fault must contain.
+BOOT_BROKEN = {
+    "a route written out as a literal": (_edit("path.runs()", '"/command/runs"'), "literal"),
+    "a read nobody argued for": (_edit("path.runs()", "path.workflows()"), "not argued for"),
+    "a read that was dropped": (_edit("path.tasks()", "path.runs()"), "no longer reads"),
+    "an id the page does not carry": (_edit('"deskFeed"', '"deskFeeds"'), "does not carry"),
+    "a mount the module forgot": (_edit('"deskPult"', '"deskShell"'), "does not mount"),
+    "the project header before its route": (
+        lambda text: text + '\nconst HEADERS = {"X-Conduct-Project": "p"};\n',
+        "X-Conduct-Project"),
+}
+
+
+def test_the_desk_boot_module_meets_its_contract():
+    source = DESK_SCRIPT.read_text(encoding="utf-8")
+    page = DESK_PAGE.read_text(encoding="utf-8")
+    assert desk_boot_faults(source, page) == []
+    assert "/panel/desk.js" in server_assets.DESK_ASSETS
+    transport = strip_comments((PANEL / "desk-transport.js").read_text(encoding="utf-8"))
+    assert "x-conduct-project" not in transport.lower()
+
+
+@pytest.mark.parametrize("edit,needle", list(BOOT_BROKEN.values()), ids=list(BOOT_BROKEN))
+def test_the_desk_boot_check_refuses_each_defect_and_names_it(edit, needle):
+    faults = desk_boot_faults(edit(DESK_SCRIPT.read_text(encoding="utf-8")),
+                              DESK_PAGE.read_text(encoding="utf-8"))
+    assert faults, "a defective module was accepted"
+    assert any(needle in fault for fault in faults), faults
 
 
 # -- the partition over studio*, desk* and hub* ---------------------------------

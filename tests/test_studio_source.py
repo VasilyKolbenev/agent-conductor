@@ -68,7 +68,7 @@ MODULES = ("studio-runstep-copy.js", "studio-participant-copy.js", "studio-run-d
            "studio-tasks-model.js", "studio-tasks.js", "studio-taskflow.js",
            "studio-mounts.js", "studio-shell.js", "studio-runhead.js", "studio-preferences.js", "studio-i18n.js",
            "studio-quotas-model.js", "studio-quotas.js", "studio-quotaflow.js",
-           "desk-transport.js")
+           "desk-transport.js", "desk.js")
 #: The boot module: what each frame and each read MEANS, and the screen router.
 #: It reaches the wire only through the transport module below.
 BOOT = "studio.js"
@@ -128,6 +128,10 @@ PERMITTED_IMPORTS = {
     #: screen, store or copy module: a door that could reach a screen would be a
     #: second boot module.
     "desk-transport.js": frozenset({"./command-projection.js"}),
+    #: The desk's boot module: the doors, and the catalogue that says a phase in the
+    #: reader's language. It reaches no screen, no store and no model of the Studio's,
+    #: and the wire only through the transport -- it holds no door of its own.
+    "desk.js": frozenset({"./desk-transport.js", "./studio-i18n.js"}),
     # Pure S2 decoder; the actual store read door composes it with the base model.
     "studio-situation.js": frozenset({"./studio-model.js", "./studio-feedback-model.js",
                                       "./studio-runwords.js"}),
