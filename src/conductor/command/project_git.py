@@ -98,9 +98,14 @@ def repository_admission(root: str | os.PathLike[str], git: GitRead) -> Reposito
     (else `unsupported`: activation would move a folder the repository tracks).
 
     Raises:
+        ValueError: `root` is not absolute. A relative path has no ancestors to search for a
+            `.git` entry and git would read it against the working folder, so it is a fault of
+            the caller and not an answer about a folder.
         GitReadFailed: git failed or ran out of time.
     """
     folder = Path(root)
+    if not folder.is_absolute():
+        raise ValueError("repository_admission needs an absolute root")
     if not _under_git(folder):
         return RepositoryAdmission("not_git")
     probe = git(["-C", str(folder), "rev-parse", "--show-toplevel"], separate_stderr=False)

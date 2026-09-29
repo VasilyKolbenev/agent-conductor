@@ -1,10 +1,14 @@
 """Human preview/authorization/control, with exact retries before live checks."""
+from collections.abc import Mapping
+
 from .authorization_terms import closed_fields
 from .authorization_history import validate_authorization_history
 from .contract_values import ContractError, _content_digest, _id
 from .contracts import ActionRequest, ActionResultReceipt
+from .plan_budget import product_limits
 from .policy_history import current_authorization
-from .policy_preview import (PREVIEW_FIELDS, PreviewCache, authorization_terms,
+from .preview_draft import drafted_preview
+from .policy_preview import (PREVIEW_FIELDS, PreviewCache, PreviewStale, authorization_terms,
                              build_preview, from_terms)
 from .run_authorization import RunAuthorization, RunAuthorizationControl
 from .store_errors import RecordConflict
@@ -27,11 +31,22 @@ class PolicyService:
         self.driver = None
 
     def preview(self, run_id, body):
+        """A candidate for the run: the caller's five fields, or, for `{}`, the server's own draft.
+
+        An empty body asks the server for the terms it would offer (spec 6.4.4): they come from
+        the run's plan and the answer carries the `Budget` behind them, which is neither part of
+        the terms nor of their digest and is not kept in the cache.
+        """
         with self.store.transaction():
-            result = build_preview(self.store.read(run_id), body, budget=self.budget,
+            recovered = self.store.read(run_id)
+            drafted = None
+            if isinstance(body, Mapping) and not body:
+                drafted = drafted_preview(recovered.records, product_limits(self.budget))
+                body = drafted[0]
+            result = build_preview(recovered, body, budget=self.budget,
                 provider_digest=self.provider_digest, registry=self.registry, clock=self.clock, provider_facts=self.provider_facts)
             self.previews.put(self.session, run_id, result)
-            return result
+            return result if drafted is None else {**result, "budget": drafted[1]}
 
     def authorize(self, run_id, body):
         body = closed_fields(body, AUTHORIZE_FIELDS, "automation authorize")
@@ -54,7 +69,7 @@ class PolicyService:
             fresh = build_preview(recovered, asked, budget=self.budget, registry=self.registry,
                 provider_digest=self.provider_digest, clock=lambda: now, provider_facts=self.provider_facts)
             if fresh["terms"] != body["terms"] or fresh["preview_digest"] != body["preview_digest"]:
-                raise ContractError("reviewed starting facts changed; preview again")
+                raise PreviewStale("reviewed starting facts changed; preview again")
             candidate = self._candidate(body, now)
             if candidate.run_id != run_id:
                 raise ContractError("preview belongs to another run")

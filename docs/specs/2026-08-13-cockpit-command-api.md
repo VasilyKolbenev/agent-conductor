@@ -197,7 +197,19 @@ scope, not permission for C/API-1 to invent a generic file-write endpoint.
     "mutation": false, "csrf": false
   },
   {
+    "method": "GET", "path": "/command/tasks/<task_id>/preparation",
+    "mutation": false, "csrf": false
+  },
+  {
     "method": "GET", "path": "/command/quotas", "mutation": false, "csrf": false
+  },
+  {
+    "method": "GET", "path": "/command/project/cycle",
+    "mutation": false, "csrf": false
+  },
+  {
+    "method": "POST", "path": "/command/project/cycle/pin",
+    "mutation": true, "csrf": true
   },
   {"method": "GET", "path": "/command/runs/<run_id>/automation", "mutation": false, "csrf": false},
   {"method": "POST", "path": "/command/runs/<run_id>/automation/preview", "mutation": false, "csrf": true},
@@ -415,7 +427,9 @@ choose a code.
   { "code": "run_terminal",          "status": 409, "source": "plan" },
   { "code": "gate_unreached",        "status": 409, "source": "plan" },
   { "code": "server_stopping",       "status": 409, "source": "lifecycle" },
-  { "code": "project_mismatch",      "status": 409, "source": "identity" }
+  { "code": "project_mismatch",      "status": 409, "source": "identity" },
+  { "code": "slot_busy",             "status": 409, "source": "concurrency" },
+  { "code": "preview_stale",         "status": 409, "source": "authorization" }
 ]
 ```
 
@@ -1084,6 +1098,16 @@ publishes a revision under the revision route's own lock. A document equal to
 the latest revision answers 200 and creates nothing. Both verbs are on one path,
 and no other frozen route changes. The shapes are in the desk redesign
 specification, section 7.1.
+
+Three more routes serve the desk's preparation and its project cycle, each with
+one verb: `GET /command/tasks/<task_id>/preparation` answers, for one task, the
+task, its runs and what each still lacks before it may start (its stage, the
+documents it misses, its grant and its queue entry) and only reads;
+`GET /command/project/cycle` answers which workflow the human pinned as the
+project's cycle, if any; and `POST /command/project/cycle/pin` pins a workflow
+that has a published revision, or unpins with `null`, under a human identity.
+The same pin by the same person writes nothing. The shapes are in the desk
+redesign specification, sections 6.4.2 and 7.10.
 
 The body is the canonical `GraphTemplate` document and nothing else — closed to
 exactly `schema_version`, `template_id`, `revision`, `title`, `nodes` and

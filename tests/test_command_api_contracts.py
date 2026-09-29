@@ -362,6 +362,8 @@ def test_every_fixed_code_has_one_test_owned_exact_message_and_empty_detail():
                           "has reached",
         "server_stopping": "the server is stopping and accepts no new command",
         "project_mismatch": "this server serves another project",
+        "slot_busy": "another bounded run holds this project's slot",
+        "preview_stale": "the reviewed preview is absent, expired or no longer matches the run",
     }
     assert set(expected) == set(ERROR_STATUS)
     for code, message in expected.items():

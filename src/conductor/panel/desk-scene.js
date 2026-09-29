@@ -7,7 +7,9 @@
 //
 // Nothing is written and nothing is read here. The deck opens no door and asks the host
 // for none: its one handler, the button that would open the decisions, stays off until a
-// decisions panel exists to open.
+// decisions panel exists to open. The word of the live connection is the boot module's to
+// say, and goes to the deck as it is: the deck's own rule turns a gate into an attention it
+// cannot confirm when that word is `closed`.
 import {element} from "./command-view.js";
 import {localize} from "./studio-i18n.js";
 import {participantDeck, participantSelection, releaseParticipants,
@@ -47,7 +49,8 @@ export function mountScene(mount, view, handlers) {
   if (phase === "loading") mount.replaceChildren(note(view, "phase.loading"));
   else if (detail !== null) {
     mount.replaceChildren(subject(view),
-      participantDeck(detail, previous, {locale: view.locale}, handlers));
+      participantDeck(detail, previous, {locale: view.locale, connection: view.connection},
+        handlers));
   } else mount.replaceChildren(...nothingToShow(view));
   restoreParticipantScroll(mount, previous);
 }

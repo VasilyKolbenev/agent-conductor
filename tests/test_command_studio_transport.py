@@ -45,7 +45,7 @@ from tests.test_command_workflow_routes import (
     target,
 )
 
-def test_the_new_routes_are_derived_from_the_live_table_and_are_the_seventeen(tmp_path):
+def test_the_new_routes_are_derived_from_the_live_table_and_are_the_twenty(tmp_path):
     """What this file holds to the contract is what the allowlist actually says."""
     assert NEW_ROUTES == (
         ("GET", "/command/workflows"),
@@ -60,7 +60,10 @@ def test_the_new_routes_are_derived_from_the_live_table_and_are_the_seventeen(tm
         ("GET", "/command/tasks"),
         ("POST", "/command/tasks"),
         ("GET", "/command/tasks/<task_id>"),
+        ("GET", "/command/tasks/<task_id>/preparation"),
         ("GET", "/command/quotas"),
+        ("GET", "/command/project/cycle"),
+        ("POST", "/command/project/cycle/pin"),
         ("GET", "/command/runs/<run_id>/automation"),
         ("POST", "/command/runs/<run_id>/automation/preview"),
         ("POST", "/command/runs/<run_id>/automation/authorize"),

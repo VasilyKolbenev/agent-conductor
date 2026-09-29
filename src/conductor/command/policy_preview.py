@@ -18,6 +18,15 @@ GENERATED_FIELDS = frozenset({"schema_version", "authorization_id", "authorized_
 MAX_PREVIEWS = 64
 
 
+class PreviewStale(ContractError):
+    """The preview a human reviewed is not the one to act on: gone, evicted, expired or moved.
+
+    A ContractError so every caller that already catches one still does, and its own word on
+    the wire (`preview_stale`) so a desk can repeat the preview instead of resending a body
+    that was never wrong.
+    """
+
+
 def instant(value):
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
@@ -114,9 +123,9 @@ class PreviewCache:
         with self._lock:
             preview = self._entries.get((session, run_id))
             if preview is None or preview["preview_digest"] != digest or preview["terms"] != terms:
-                raise ContractError("preview is absent, evicted or differs from the reviewed terms")
+                raise PreviewStale("preview is absent, evicted or differs from the reviewed terms")
             if not instant(preview["previewed_at"]) <= instant(now) < instant(preview["valid_until"]):
-                raise ContractError("preview has expired")
+                raise PreviewStale("preview has expired")
             return _thaw_json(preview)
 
     def discard(self, session, run_id):

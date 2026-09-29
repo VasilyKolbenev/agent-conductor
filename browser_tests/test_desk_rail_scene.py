@@ -290,6 +290,27 @@ def test_an_automation_read_that_fails_changes_only_the_row_it_belongs_to(
     assert uncaught == []
 
 
+def _name_another_run(body: dict) -> None:
+    body["run_id"] = "run-other"
+
+
+def test_an_automation_answer_that_names_another_run_is_dropped(desk_in):
+    """A body for a run the desk did not ask about is not the automation of the row's run.
+
+    Only `run_id` is rewritten, so the answer is otherwise the real one, which earns the row
+    "Not started"; dropped, the row falls to the word an unread automation gives (the same
+    fall as a lost read) and no other row changes.
+    """
+    window = desk_in("en", rewrite={"**/command/runs/run-docs/automation": _name_another_run})
+    facts = window.page.evaluate(RAIL_FACTS)
+    rows = _rows(facts)
+    assert rows["task-docs"] == ("Write the docs", "No result yet", None)
+    assert {key: value for key, value in rows.items() if key != "task-docs"} == {
+        key: value for key, value in ROWS["en"].items() if key != "task-docs"}
+    assert (facts["rail"], facts["shell"]) == ("ready", "ready")
+    assert window.problems == []
+
+
 def test_a_finished_but_unverified_run_is_never_drawn_without_its_sentence(
         chromium: Browser, seeded_url: str):
     """The one word a test cannot seed through the journal: the run row is made to say it.
@@ -412,14 +433,18 @@ def test_pressing_a_row_marks_it_alone_and_the_keyboard_keeps_its_place(desk_in)
 # one; the deck's own inner workings are the Studio's and have their own browser modules.
 FIX_STEPS = 8
 #: What the scene of `task-fix` (its newest run stands at the Confirm gate) says, per language.
+#: The desk opens no stream, so nothing on the scene is confirmed live and the gate is said
+#: as `unconfirmed` (the Studio's own word for a decision it cannot vouch for), not as a
+#: decision needed.
 SCENE_WORDS = {
-    "en": {"team": "Run team", "lenses": ["Trace", "Orbit"], "gate": "Decision needed",
+    "en": {"team": "Run team", "lenses": ["Trace", "Orbit"], "unconfirmed": "Attention unconfirmed",
            "subject": "Fix lost text · run run-fix-new", "none": "This task has no run yet.",
            "choose": "Choose a task to see its newest run.",
            "unknown": "The newest run of this task cannot be established: a run record "
                       "cannot be read.",
            "unreadable": "This task cannot be read, so there is no run to show."},
-    "ru": {"team": "Команда запуска", "lenses": ["Трасса", "Орбита"], "gate": "Нужно решение",
+    "ru": {"team": "Команда запуска", "lenses": ["Трасса", "Орбита"],
+           "unconfirmed": "Участие не подтверждено",
            "subject": "Fix lost text · запуск run-fix-new",
            "none": "У этой задачи ещё нет запусков.",
            "choose": "Выберите задачу, чтобы увидеть её новейший запуск.",
@@ -449,6 +474,9 @@ SCENE_FACTS = """() => {
     steps: document.querySelectorAll("#deskScene .studio-trace__step").length,
     gates: [...document.querySelectorAll(
       '#deskScene .studio-trace__step[data-word="needs_decision"]')].map((node) => node.innerText),
+    unconfirmed: [...document.querySelectorAll(
+      '#deskScene .studio-trace__step[data-word="attention_unconfirmed"]')].map(
+      (node) => node.innerText),
     planets: [...document.querySelectorAll(
       "#deskScene [data-trassa-instance], #deskScene [data-instance]")].map(
       (node) => ({id: node.dataset.trassaInstance || node.dataset.instance,
@@ -494,7 +522,8 @@ def test_choosing_a_task_mounts_the_trace_for_its_newest_run_and_only_reads(desk
         "ready", words["subject"], ["task-fix"])
     assert facts["lenses"] == words["lenses"] and facts["pressed"] == ["true", "false"]
     assert facts["traceShown"] and not facts["fleetShown"] and facts["steps"] == FIX_STEPS
-    assert len(facts["gates"]) == 1 and words["gate"] in facts["gates"][0]
+    assert facts["gates"] == []
+    assert len(facts["unconfirmed"]) == 1 and words["unconfirmed"] in facts["unconfirmed"][0]
     assert [row["id"] for row in facts["planets"] if row["shown"]] == ["claude-dev"]
     detail = sorted(path for _method, path, _header in window.asked
                     if path.startswith("/command/runs/") and not path.endswith("/automation"))
@@ -676,6 +705,10 @@ def test_a_run_of_another_task_is_never_drawn_as_the_chosen_ones(
     """The run read names the task it belongs to; an answer for another task is refused."""
     context = chromium.new_context(viewport={"width": 1280, "height": 900})
     page = context.new_page()
+    problems: list[str] = []
+    page.on("console", lambda message: problems.append(message.text)
+            if message.type == "error" else None)
+    page.on("pageerror", lambda error: problems.append(str(error)))
 
     def wrong_task(route: Route) -> None:
         # Rewritten whole and consistently, so the Studio's boundary finds nothing torn and
@@ -696,6 +729,7 @@ def test_a_run_of_another_task_is_never_drawn_as_the_chosen_ones(
     finally:
         context.close()
     assert facts["run"] is None and facts["shell"] == "failed"
+    assert problems == []
 
 
 def test_the_page_does_not_scroll_sideways_with_a_run_on_the_scene_at_any_swept_width(desk_in):
