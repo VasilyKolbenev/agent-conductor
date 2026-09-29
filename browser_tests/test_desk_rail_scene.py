@@ -697,6 +697,10 @@ def test_a_run_of_another_task_is_never_drawn_as_the_chosen_ones(
     """The run read names the task it belongs to; an answer for another task is refused."""
     context = chromium.new_context(viewport={"width": 1280, "height": 900})
     page = context.new_page()
+    problems: list[str] = []
+    page.on("console", lambda message: problems.append(message.text)
+            if message.type == "error" else None)
+    page.on("pageerror", lambda error: problems.append(str(error)))
 
     def wrong_task(route: Route) -> None:
         # Rewritten whole and consistently, so the Studio's boundary finds nothing torn and
@@ -717,6 +721,7 @@ def test_a_run_of_another_task_is_never_drawn_as_the_chosen_ones(
     finally:
         context.close()
     assert facts["run"] is None and facts["shell"] == "failed"
+    assert problems == []
 
 
 def test_the_page_does_not_scroll_sideways_with_a_run_on_the_scene_at_any_swept_width(desk_in):
