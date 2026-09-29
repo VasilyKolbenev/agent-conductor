@@ -453,11 +453,17 @@ function landRead(launch, ctx, ask, result) {
   return launch.phase === "unknown" && both ? settleUnknown(next, ctx) : next;
 }
 
-//: A press writes for the card the owner confirmed, so an answer that comes late changes nothing
-//: but its count: the id of the next preview ask is made from it, and the model hands an id out
-//: once. A dialog that is still open is for a card that another digest replaces, and closes with it.
+//: The phases in which a write for the card is out, or its answer is lost and not yet settled: the
+//: authorization id names that card, and a settle compares against it.
+const WRITING = Object.freeze(["starting", "enqueuing", "unknown"]);
+
+//: A press, or a write of a plain start or enqueue, is for the card the owner confirmed, so an
+//: answer that comes late changes nothing but its count: the id of the next preview ask is made
+//: from it, and the model hands an id out once. A dialog that is still open is for a card that
+//: another digest replaces, and closes with it.
 function landPreview(launch, ctx, result) {
-  if (launch.skip !== null && launch.skip.phase === "running") {
+  const pressing = launch.skip !== null && launch.skip.phase === "running";
+  if (pressing || WRITING.includes(launch.phase)) {
     return {...launch, previews: launch.previews + 1};
   }
   const base = {...launch, previews: launch.previews + 1, refreshWanted: false};

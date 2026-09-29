@@ -467,3 +467,38 @@ def test_a_preview_answer_that_lands_during_a_press_does_not_spend_the_next_asks
         assert row["due"] == "write:launch:preview:0"
         assert row["asked"] == ["write:launch:preview:1"], f"{name}: a new id, and it was sent"
         assert row["refresh"] == [["launch_preview", "write:launch:preview:2"]], name
+
+
+def test_a_preview_answer_that_lands_while_a_write_is_out_or_lost_changes_only_its_count():
+    out = run_js(SKIP + NEXT_CARD + """
+      //: The terms ran out and their ask is out; the owner then presses a button of the card; the
+      //: preview answer lands with other terms while that write is out, or after its answer was lost.
+      //: The authorization id names the card the owner pressed for, so the card must not move.
+      const pressed = (event, over) => {
+        const base = reviewed({clock: DUE, ...over});
+        return {due: dueOf(base), begun: wiz.stepWizard(base, event)};
+      };
+      const late = (row, lostFirst) => {
+        const write = row.begun.asks.find((ask) => ["launch_authorize", "launch_enqueue"]
+          .includes(ask.name));
+        const held = lostFirst ? wiz.stepWizard(row.begun.state, {type: "answered", ask: write,
+          result: lost}).state : row.begun.state;
+        const landed = wiz.stepWizard(held, {type: "answered", ask: row.due,
+          result: ok(another())}).state;
+        return {phase: [held.launch.phase, landed.launch.phase],
+          card: [held.launch.card, landed.launch.card], seen: landed.launch.seen,
+          same: landed.launch.digest === held.launch.digest,
+          previews: landed.launch.previews - held.launch.previews};
+      };
+      const start = pressed({type: "launch-start"}, {});
+      const enqueue = pressed({type: "launch-enqueue"}, {queue: d.busy_waiting});
+      show({start: late(start, false), enqueue: late(enqueue, false), lost_start: late(start, true),
+        lost_enqueue: late(enqueue, true)});
+    """, DATA, modules=MODULES)
+    expected_phase = {"start": ["starting", "starting"], "enqueue": ["enqueuing", "enqueuing"],
+                      "lost_start": ["unknown", "unknown"], "lost_enqueue": ["unknown", "unknown"]}
+    for name, phases in expected_phase.items():
+        row = out[name]
+        assert row["phase"] == phases, f"{name}: the phase the press is in stays"
+        assert row["card"] == [1, 1] and row["same"] is True, f"{name}: the card did not move"
+        assert row["seen"] is True and row["previews"] == 1, f"{name}: only the count grows"
