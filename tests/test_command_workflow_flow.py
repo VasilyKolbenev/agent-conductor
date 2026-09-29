@@ -16,7 +16,7 @@ from conductor.command import workflow_draft, workflow_flow as flow_schema
 from conductor.command.adapters.deep_commands import REVIEW_PROFILES
 from conductor.command.contract_values import ContractError
 from conductor.command.graph_conditions import EDGE_CONDITIONS
-from conductor.command.graph_template_document import TemplateNode
+from conductor.command.graph_template_document import GraphTemplate, TemplateNode
 from conductor.command.workflow_flow import FlowShapeError, settled_flow
 
 SPEC_STEP_KEYS = {
@@ -224,3 +224,228 @@ def test_a_bad_id_or_an_out_of_range_number_still_settles_for_the_rules_to_addre
     flow["steps"][3].update(bound=0)
     flow["links"][0].update({"from": "", "to": "nowhere"})
     assert settled_flow(flow) == flow
+
+
+# --- compile_flow (spec 7.3) ----------------------------------------------------------------
+
+FIXTURES = Path(__file__).resolve().parent / "fixtures" / "flow"
+CYCLES = ["desk-standard", "desk-short", "desk-starter-docs", "desk-standard-tester", "dalio-v5"]
+BRIEF_AND_MATERIALS = ["artifact-brief", "artifact-materials"]
+
+
+def compiled(flow):
+    return flow_schema.compile_flow(flow)
+
+
+def nodes_of(flow):
+    return {row["node_id"]: row for row in compiled(flow)["nodes"]}
+
+
+def fixture_flow(name):
+    path = FIXTURES / f"{name}.flow-state.json"
+    return json.loads(path.read_text(encoding="utf-8"))["flow"]
+
+
+def review(step_id, **own):
+    own = {"role_id": "role-analyst", "review_profile": "spec", **own}
+    return step(step_id, "agent", capability="review", **own)
+
+
+def chain(*steps):
+    """A flow whose steps follow one another by `success` roads, in the order given."""
+    links = [{"from": a["step_id"], "to": b["step_id"], "when": "success"}
+             for a, b in zip(steps, steps[1:])]
+    return {"flow_version": 1, "title": "Chain", "steps": list(steps), "links": links, "ext": {}}
+
+
+def test_compile_writes_the_table_of_section_7_3_for_each_step_type():
+    document = compiled(canonical_flow())
+    assert document["schema_version"] == 1 and document["title"] == "Standard"
+    assert document["execution_contract"] == "bounded-run-v1"
+    assert "template_id" not in document and "revision" not in document
+    nodes = {row["node_id"]: row for row in document["nodes"]}
+    assert nodes["analyst"] == {
+        "node_id": "analyst", "kind": "task", "title": "Analyst", "role_id": "role-analyst",
+        "capability": "review", "resources": [],
+        "arguments": {"work_item_id": "work-001", "target_artifact_refs": BRIEF_AND_MATERIALS,
+                      "result_artifact_ref": "artifact-analyst", "review_profile": "spec"}}
+    assert nodes["do"] == {
+        "node_id": "do", "kind": "task", "title": "Doer", "role_id": "role-doer",
+        "capability": "dispatch", "timeout_seconds": 1800, "verifier_role_id": "role-checker",
+        "resources": [{"kind": "sandbox", "name": "project-root"}],
+        "arguments": {"work_item_id": "work-001", "instruction_ref": "instruction-do",
+                      "profile": "implement", "artifact_refs": ["artifact-analyst"],
+                      "output_limit_profile": "normal"}}
+    assert nodes["result"] == {
+        "node_id": "result", "kind": "gate", "title": "Decision", "gate_id": "gate-result",
+        "success_requires": "human_approval", "resources": []}
+    assert nodes["do-fix"] == {
+        "node_id": "do-fix", "kind": "loop", "title": "Loop", "resources": [],
+        "loop": {"bound": 3, "back_to": "do"}}
+    assert document["edges"] == [
+        {"from_node": "analyst", "to_node": "do", "condition": "on_succeeded"},
+        {"from_node": "do", "to_node": "result", "condition": "on_succeeded"},
+        {"from_node": "do", "to_node": "do-fix", "condition": "on_failed"}]
+
+
+def test_a_route_step_compiles_to_a_task_without_a_role():
+    flow = chain(step("wait-here", "route"), step("done", "human"))
+    assert nodes_of(flow)["wait-here"] == {
+        "node_id": "wait-here", "kind": "task", "title": "Route", "resources": []}
+
+
+def test_purpose_position_and_timeout_are_carried_when_set_and_left_out_when_not():
+    flow = chain(review("plan", purpose="Plan it.", position={"x": 3, "y": -4},
+                        timeout_seconds=900), step("done", "human"))
+    nodes = nodes_of(flow)
+    assert nodes["plan"]["purpose"] == "Plan it."
+    assert nodes["plan"]["position"] == {"x": 3, "y": -4}
+    assert nodes["plan"]["timeout_seconds"] == 900
+    assert not {"purpose", "position", "timeout_seconds"} & set(nodes["done"])
+
+
+@pytest.mark.parametrize("role,title", [
+    ("role-analyst", "Analyst"), ("role-designer", "Designer"),
+    ("role-diagnostician", "Diagnostician"), ("role-reviewer", "Reviewer"),
+    ("role-doer", "Doer"), ("role-tester", "Tester"), ("role-doer-2", "Doer"),
+    ("role-thinker", "thinker"), ("scribe", "scribe")])
+def test_an_empty_title_takes_the_english_name_of_the_kind(role, title):
+    flow = chain(step("a", "agent", role_id=role), step("done", "human"))
+    assert nodes_of(flow)["a"]["title"] == title
+    assert nodes_of(flow)["done"]["title"] == "Decision"
+
+
+def test_a_title_the_author_wrote_is_kept():
+    flow = chain(step("a", "agent", title="Read the brief"), step("done", "human", title="Sign"))
+    assert [row["title"] for row in compiled(flow)["nodes"]] == ["Read the brief", "Sign"]
+
+
+def test_entry_steps_read_brief_and_materials_and_others_read_the_nearest_reviews():
+    plan, ideas = review("plan"), review("ideas", role_id="role-reviewer")
+    scheme = review("scheme", role_id="role-designer", reads=["plan"])
+    build, verify = step("build", "agent"), step("verify", "agent", role_id="role-tester")
+    flow = chain(plan, ideas, scheme, build, verify, step("done", "human"))
+    args = {sid: row["arguments"] for sid, row in nodes_of(flow).items() if "arguments" in row}
+    assert args["plan"]["target_artifact_refs"] == BRIEF_AND_MATERIALS
+    assert args["ideas"]["target_artifact_refs"] == ["artifact-plan"]
+    assert args["scheme"]["target_artifact_refs"] == ["artifact-plan", "artifact-ideas"], (
+        "reads join the nearest review, in the order of steps")
+    assert args["build"]["artifact_refs"] == ["artifact-scheme"]
+    assert args["verify"]["artifact_refs"] == ["artifact-scheme"], (
+        "the search goes past a dispatch step to the nearest review above it")
+
+
+def test_a_dispatch_entry_step_reads_brief_and_materials():
+    flow = chain(step("do", "agent"), step("done", "human"))
+    assert nodes_of(flow)["do"]["arguments"]["artifact_refs"] == BRIEF_AND_MATERIALS
+
+
+def test_a_step_below_two_reviews_reads_both_in_the_order_of_steps():
+    a, b, join = review("a"), review("b"), step("join", "agent")
+    flow = {"flow_version": 1, "title": "Fork", "steps": [a, b, join], "ext": {},
+            "links": [{"from": "a", "to": "join", "when": "success"},
+                      {"from": "b", "to": "join", "when": "success"}]}
+    assert nodes_of(flow)["join"]["arguments"]["artifact_refs"] == ["artifact-a", "artifact-b"]
+
+
+def test_each_dispatch_step_has_its_own_instruction_unless_it_names_another():
+    flow = chain(step("do", "agent"), step("test", "agent", role_id="role-tester"),
+                 step("polish", "agent", instruction_from="do"), step("done", "human"))
+    refs = {sid: row["arguments"]["instruction_ref"] for sid, row in nodes_of(flow).items()
+            if row.get("capability") == "dispatch"}
+    assert refs == {"do": "instruction-do", "test": "instruction-test", "polish": "instruction-do"}
+
+
+def test_an_extension_key_replaces_the_computed_value_whole():
+    override = {"work_item_id": "work-009", "instruction_ref": "instruction-plan",
+                "profile": "implement", "artifact_refs": ["artifact-brief"]}  # a key fewer
+    flow = chain(step("do", "agent", ext={
+        "arguments": override, "resources": [], "stage": "do", "attempt_bound": 4,
+        "required_evidence": "test_run", "failure_policy": "stop",
+        "missing_artifact_policy": "stop"}), step("done", "human", ext={"gate_id": "gate-mine"}))
+    nodes = nodes_of(flow)
+    assert nodes["do"]["arguments"] == override
+    assert nodes["do"]["resources"] == []
+    assert {key: nodes["do"][key] for key in (
+        "stage", "attempt_bound", "required_evidence", "failure_policy",
+        "missing_artifact_policy")} == {
+        "stage": "do", "attempt_bound": 4, "required_evidence": "test_run",
+        "failure_policy": "stop", "missing_artifact_policy": "stop"}
+    assert nodes["done"]["gate_id"] == "gate-mine"
+    assert nodes["done"]["success_requires"] == "human_approval"
+
+
+def test_a_null_success_requires_writes_no_such_field():
+    flow = chain(step("do", "agent"), step("done", "human", ext={"success_requires": None}))
+    assert "success_requires" not in nodes_of(flow)["done"]
+
+
+def test_the_cycle_may_drop_its_execution_contract():
+    flow = chain(step("done", "human"))
+    assert compiled(flow)["execution_contract"] == "bounded-run-v1"
+    flow["ext"] = {"execution_contract": None}
+    assert "execution_contract" not in compiled(flow)
+
+
+def test_tester_passes_compile_to_a_loop_home_to_the_nearest_upstream_doer():
+    doer = step("do", "agent", verifier_role_id="role-checker")
+    tester = step("tester", "agent", role_id="role-tester", verifier_role_id="role-checker")
+    flow = chain(doer, tester, step("result", "human"))
+    flow["steps"].append(step("tester-fix", "loop", back_to="do", bound=2))
+    flow["links"].append({"from": "tester", "to": "tester-fix", "when": "failed"})
+    document = compiled(flow)
+    loop = next(row for row in document["nodes"] if row["node_id"] == "tester-fix")
+    assert loop["loop"] == {"bound": 2, "back_to": "do"}
+    assert document["edges"][-1] == {
+        "from_node": "tester", "to_node": "tester-fix", "condition": "on_failed"}
+    built = GraphTemplate.from_dict({**document, "template_id": "cycle-test", "revision": 1})
+    assert [node.node_id for node in built.nodes][-1] == "tester-fix"
+
+
+def test_compile_keeps_the_order_of_steps_and_links():
+    flow = chain(step("z", "agent"), step("a", "agent", role_id="role-tester"), step("m", "human"))
+    flow["links"].reverse()
+    document = compiled(flow)
+    assert [row["node_id"] for row in document["nodes"]] == ["z", "a", "m"]
+    assert [(row["from_node"], row["to_node"]) for row in document["edges"]] == [
+        ("a", "m"), ("z", "a")]
+
+
+def test_an_unconditional_link_compiles_to_an_edge_without_a_condition():
+    flow = chain(step("a", "agent"), step("b", "human"))
+    flow["links"][0]["when"] = "always"
+    assert compiled(flow)["edges"] == [{"from_node": "a", "to_node": "b"}]
+
+
+def test_compile_of_another_capability_takes_its_arguments_from_ext_only():
+    flow = chain(step("probe", "agent", capability="evidence"), step("done", "human"))
+    assert nodes_of(flow)["probe"]["arguments"] == {}
+    assert nodes_of(flow)["probe"]["resources"] == []
+    said = {"target_action_id": "action-1", "kinds": ["test_run"]}
+    flow["steps"][0]["ext"] = {"arguments": said}
+    assert nodes_of(flow)["probe"]["arguments"] == said
+
+
+def test_compile_does_not_alias_or_mutate_its_input():
+    flow = canonical_flow()
+    flow["steps"][1]["ext"] = {"arguments": {"files": ["a"]}}
+    before = copy.deepcopy(flow)
+    document = compiled(flow)
+    assert flow == before
+    document["nodes"][1]["arguments"]["files"].append("b")
+    assert flow == before, "the document shares nothing with the flow it came from"
+
+
+def test_compile_refuses_what_the_shape_refuses():
+    flow = canonical_flow()
+    flow["steps"][0]["bogus"] = 1
+    with pytest.raises(FlowShapeError):
+        compiled(flow)
+
+
+@pytest.mark.parametrize("cycle", CYCLES)
+def test_every_compiled_fixture_cycle_builds_a_template(cycle):
+    document = compiled(fixture_flow(cycle))
+    built = GraphTemplate.from_dict({**document, "template_id": "cycle-test", "revision": 1})
+    assert [node.node_id for node in built.nodes] == [
+        row["step_id"] for row in fixture_flow(cycle)["steps"]]

@@ -9,10 +9,13 @@ from __future__ import annotations
 
 import copy
 import math
+import re
 from types import MappingProxyType
 from typing import Any
 
+from .authorization_terms import AUTOMATION_CONTRACT
 from .contract_values import ContractError
+from .graph_template_document import SCHEMA_VERSION
 from .workflow_draft import MAX_DRAFT_EDGES as MAX_LINKS, MAX_DRAFT_NODES as MAX_STEPS
 
 FLOW_VERSION = 1
@@ -205,3 +208,152 @@ def _plain(path: str, value: object) -> None:
             continue
         else:
             raise FlowShapeError(path, "must hold plain JSON only")
+
+
+# --- compile: a flow becomes a workflow document (spec 7.3) ------------------------------------
+
+#: The English name of a role kind, shown when a step's author left the title empty. The kind is
+#: read from the role's name: `role-<kind>` or `role-<kind>-<n>` (spec 7.2.2).
+KIND_TITLES = MappingProxyType({
+    "analyst": "Analyst", "designer": "Designer", "diagnostician": "Diagnostician",
+    "reviewer": "Reviewer", "doer": "Doer", "tester": "Tester",
+})
+_STEP_TITLES = MappingProxyType({"human": "Decision", "loop": "Loop", "route": "Route"})
+_KIND_OF_ROLE = re.compile(r"role-([a-z]+)(?:-[0-9]+)?\Z")
+_NODE_KIND = MappingProxyType({"agent": "task", "route": "task", "human": "gate", "loop": "loop"})
+#: What the entry steps read: the two documents every run is opened with (spec 6.2.3, 7.3).
+ENTRY_INPUTS = ("artifact-brief", "artifact-materials")
+#: Every step of a compiled cycle works in this one folder, so a later step sees an earlier one's
+#: changes and "accept" moves one folder (spec 7.3, 9.1.1).
+WORK_ITEM_ID = "work-001"
+
+
+def compile_flow(flow: object) -> dict[str, Any]:
+    """The workflow document of a flow, without `template_id` and `revision` (spec 7.3).
+
+    The order of steps and of links is the order of nodes and of edges: the driver takes the first
+    ready node of the plan, and the schedule breaks a tie between loops by it. An `ext` key is
+    written over the computed value whole.
+
+    Raises:
+        FlowShapeError: The flow is not in the closed shape of `settled_flow`.
+    """
+    settled = settled_flow(flow)
+    steps, links = settled["steps"], settled["links"]
+    inputs = _step_inputs(steps, links)
+    document: dict[str, Any] = {
+        "schema_version": SCHEMA_VERSION, "title": settled["title"],
+        "nodes": [_node(row, inputs.get(row["step_id"], [])) for row in steps],
+        "edges": [_edge(link) for link in links]}
+    if "execution_contract" not in settled["ext"]:
+        document["execution_contract"] = AUTOMATION_CONTRACT
+    return document
+
+
+def kind_title(step: dict[str, Any]) -> str:
+    """The name a step shows when its own title is empty."""
+    if step["type"] != "agent":
+        return _STEP_TITLES[step["type"]]
+    role = step["role_id"]
+    named = _KIND_OF_ROLE.fullmatch(role)
+    if named is not None and named.group(1) in KIND_TITLES:
+        return KIND_TITLES[named.group(1)]
+    return role[len("role-"):] if role.startswith("role-") else role
+
+
+def _node(step: dict[str, Any], inputs: list[str]) -> dict[str, Any]:
+    node: dict[str, Any] = {"node_id": step["step_id"], "kind": _NODE_KIND[step["type"]],
+                            "title": step["title"] or kind_title(step)}
+    for key in ("purpose", "position", "timeout_seconds"):
+        if step[key] is not None:
+            node[key] = copy.deepcopy(step[key])
+    node.update(_typed_part(step, inputs))
+    for key, value in step["ext"].items():
+        if key == "success_requires" and value is None:
+            node.pop(key, None)
+        else:
+            node[key] = copy.deepcopy(value)
+    return node
+
+
+def _typed_part(step: dict[str, Any], inputs: list[str]) -> dict[str, Any]:
+    """What a step's type writes into its node, before its `ext` is laid over it."""
+    kind = step["type"]
+    if kind == "human":
+        return {"gate_id": f"gate-{step['step_id']}", "success_requires": "human_approval",
+                "resources": []}
+    if kind == "loop":
+        return {"loop": {"bound": step["bound"], "back_to": step["back_to"]}, "resources": []}
+    if kind == "route":
+        return {"resources": []}
+    return _agent_part(step, inputs)
+
+
+def _agent_part(step: dict[str, Any], inputs: list[str]) -> dict[str, Any]:
+    part: dict[str, Any] = {"role_id": step["role_id"], "capability": step["capability"]}
+    if step["verifier_role_id"] is not None:
+        part["verifier_role_id"] = step["verifier_role_id"]
+    if step["capability"] == "review":
+        arguments = {"work_item_id": WORK_ITEM_ID, "target_artifact_refs": list(inputs),
+                     "result_artifact_ref": f"artifact-{step['step_id']}"}
+        if step["review_profile"] is not None:
+            arguments["review_profile"] = step["review_profile"]
+        return {**part, "arguments": arguments, "resources": []}
+    if step["capability"] == "dispatch":
+        source = step["instruction_from"] or step["step_id"]
+        arguments = {"work_item_id": WORK_ITEM_ID, "instruction_ref": f"instruction-{source}",
+                     "profile": "implement", "artifact_refs": list(inputs),
+                     "output_limit_profile": "normal"}
+        return {**part, "arguments": arguments,
+                "resources": [{"kind": "sandbox", "name": "project-root"}]}
+    return {**part, "arguments": {}, "resources": []}
+
+
+def _edge(link: dict[str, str]) -> dict[str, str]:
+    edge = {"from_node": link["from"], "to_node": link["to"]}
+    condition = LINK_WHEN[link["when"]]
+    if condition is not None:
+        edge["condition"] = condition
+    return edge
+
+
+def _step_inputs(steps: list[dict[str, Any]], links: list[dict[str, str]]) -> dict[str, list[str]]:
+    """The documents each agent step reads (spec 7.3, L23), by the step's id.
+
+    An entry step, with no review anywhere above it along the roads, reads the brief and the
+    materials. Any other step reads the result of the nearest reviews above it, and of the steps
+    it names in `reads`, in the order of `steps`.
+    """
+    order = {row["step_id"]: n for n, row in enumerate(steps)}
+    reviews = {row["step_id"] for row in steps
+               if row["type"] == "agent" and row["capability"] == "review"}
+    parents: dict[str, list[str]] = {}
+    for link in links:
+        parents.setdefault(link["to"], []).append(link["from"])
+    found: dict[str, list[str]] = {}
+    for row in steps:
+        if row["type"] != "agent":
+            continue
+        nearest = _nearest_reviews(row["step_id"], parents, reviews)
+        chosen = sorted(nearest | {name for name in row["reads"] if name in order},
+                        key=order.__getitem__)
+        refs = [f"artifact-{name}" for name in chosen]
+        found[row["step_id"]] = refs if nearest else [*ENTRY_INPUTS, *refs]
+    return found
+
+
+def _nearest_reviews(step_id: str, parents: dict[str, list[str]], reviews: set[str]) -> set[str]:
+    """The review steps first met walking up the roads from `step_id` (a review stops the walk)."""
+    found: set[str] = set()
+    seen = {step_id}
+    pending = list(parents.get(step_id, ()))
+    while pending:
+        name = pending.pop()
+        if name in seen:
+            continue
+        seen.add(name)
+        if name in reviews:
+            found.add(name)
+        else:
+            pending.extend(parents.get(name, ()))
+    return found
