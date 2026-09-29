@@ -27,6 +27,7 @@ const DOC_ID = /^d-[0-9a-f]{32}$/;
 const STARTER_MARK = Object.freeze({ru: "из стартовых документов · правка владельца",
   en: "from the starter documents · owner's edit"});
 const HEADING = Object.freeze({ru: "Материалы", en: "Materials"});
+const NONE = Object.freeze({ru: "Материалов нет", en: "No materials"});
 const LINK_LINE = Object.freeze({
   ru: (path, oid) => `Файл проекта в рабочей папке: \`${path}\` (git blob \`${oid}\`), `
     + "текст не скопирован",
@@ -98,18 +99,24 @@ export function bodyOf(cards, lang) {
 
 function section(card, number, lang) {
   if (card.kind === "project_doc") {
-    const head = `## ${number}. ${card.path} · ${card.kind}`;
-    return card.mode === "link" ? `${head}\n${LINK_LINE[lang](card.path, card.gitOid)}`
-      : `${head}\n${card.content}`;
+    if (card.mode === "link") {
+      const head = `## ${number}. ${card.path} · ${card.kind}`;
+      return `${head}\n${LINK_LINE[lang](card.path, card.gitOid)}`;
+    }
+    // A copy is headed with the blob it was read at, as the server heads it.
+    return `## ${number}. ${card.path}@${card.gitOid} · ${card.kind}\n${card.content}`;
   }
   const body = card.kind === "scheme" ? `\`\`\`mermaid\n${card.content}\n\`\`\`` : card.content;
   return `## ${number}. ${cardTitle(card, lang)} · ${card.kind}\n${body}`;
 }
 
 //: An approximation of the document the server will compose from these cards: the exact bytes
-//: are the server's alone, this is the text the estimate and the argv arithmetic measure.
+//: are the server's alone, this is the text the estimate and the argv arithmetic measure. It says
+//: what `command/materials.py` says, and a test holds its size at or above the composed one, so
+//: the desk never calls a list small that the server would refuse as too large.
 export function composeText(cards, lang) {
-  const parts = [`# ${HEADING[lang]}`, ...cards.map((card, at) => section(card, at + 1, lang))];
+  const sections = cards.map((card, at) => section(card, at + 1, lang));
+  const parts = [`# ${HEADING[lang]}`, ...(sections.length > 0 ? sections : [NONE[lang]])];
   return `${parts.join("\n\n")}\n`;
 }
 
