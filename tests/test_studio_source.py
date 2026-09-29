@@ -72,7 +72,7 @@ MODULES = ("studio-runstep-copy.js", "studio-participant-copy.js", "studio-run-d
            "desk-status-copy.js", "desk-rail.js", "desk-scene.js",
            "desk-wizard-model.js", "desk-wizard-materials.js", "desk-wizard-cycle.js",
            "desk-wizard-roles.js", "desk-wizard-base.js", "desk-wizard-team.js",
-           "desk-wizard-copy.js", "desk-wizard.js")
+           "desk-wizard-digest.js", "desk-wizard-copy.js", "desk-wizard.js")
 #: The boot module: what each frame and each read MEANS, and the screen router.
 #: It reaches the wire only through the transport module below.
 BOOT = "studio.js"

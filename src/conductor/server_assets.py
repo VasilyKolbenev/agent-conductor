@@ -71,6 +71,7 @@ DESK_ASSETS = {
     "/panel/desk-wizard-roles.js": ("text/javascript; charset=utf-8", "desk-wizard-roles.js"),
     "/panel/desk-wizard-base.js": ("text/javascript; charset=utf-8", "desk-wizard-base.js"),
     "/panel/desk-wizard-team.js": ("text/javascript; charset=utf-8", "desk-wizard-team.js"),
+    "/panel/desk-wizard-digest.js": ("text/javascript; charset=utf-8", "desk-wizard-digest.js"),
     "/panel/desk-wizard-copy.js": ("text/javascript; charset=utf-8", "desk-wizard-copy.js"),
     "/panel/desk-wizard.js": ("text/javascript; charset=utf-8", "desk-wizard.js"),
 }

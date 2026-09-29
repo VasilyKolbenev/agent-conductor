@@ -132,6 +132,9 @@ PERMITTED_IMPORTS = {
     #: Step 4 the same way: the roles of a flow, who may take each, the suggestion and the
     #: instruction fields. It imports nothing for the same reason.
     "desk-wizard-roles.js": frozenset(),
+    #: SHA-256 and the id of a document the chain publishes, as a fixed pure function. It imports
+    #: nothing, so nothing above it can be reached back.
+    "desk-wizard-digest.js": frozenset(),
     # Pure S2 decoder; the actual store read door composes it with the base model.
     "studio-situation.js": frozenset({"./studio-model.js", "./studio-feedback-model.js",
                                       "./studio-runwords.js"}),
