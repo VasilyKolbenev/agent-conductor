@@ -94,6 +94,7 @@ export const NOTICE_COPY = Object.freeze({
   "error.server_stopping": ["This project's server is stopping. Nothing was written; start it again to continue.", "Сервер проекта останавливается. Ничего не записано; запустите его снова, чтобы продолжить."],
   "error.service_refused": ["The command service refused the request.", "Командная служба отклонила запрос."],
   "error.preview_stale": ["The conditions you reviewed are out of date. Nothing was started; review them again.", "Условия, которые вы смотрели, устарели. Ничего не запущено; посмотрите их заново."],
+  "error.materials_refused": ["The materials were not accepted. Nothing was published; correct the list and try again.", "Материалы не приняты. Ничего не опубликовано; исправьте список и попробуйте снова."],
   "error.project_not_active": ["This project is open for viewing. Nothing was started; make it the active project first.", "Проект открыт на просмотр. Ничего не запущено; сначала сделайте его активным."],
   "error.slot_busy": ["Another run holds this project's slot. Nothing was started.", "Слот проекта занят другим запуском. Ничего не запущено."],
   "error.store_error": ["The run store is unavailable.", "Хранилище запусков недоступно."],

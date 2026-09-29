@@ -431,7 +431,8 @@ choose a code.
   { "code": "project_mismatch",      "status": 409, "source": "identity" },
   { "code": "slot_busy",             "status": 409, "source": "concurrency" },
   { "code": "preview_stale",         "status": 409, "source": "authorization" },
-  { "code": "project_not_active",    "status": 409, "source": "lifecycle" }
+  { "code": "project_not_active",    "status": 409, "source": "lifecycle" },
+  { "code": "materials_refused",     "status": 409, "source": "service" }
 ]
 ```
 

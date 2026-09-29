@@ -154,6 +154,9 @@ EXPECTED_ERRORS = {
     #: The server was started to view the project: the request is fine, and what it needs is
     #: done only by the active server.
     "project_not_active": (409, "lifecycle"),
+    #: The list of materials is well formed and the server will not make a document of it; the
+    #: reason, one word of a closed list, is the detail.
+    "materials_refused": (409, "service"),
 }
 EXPECTED_ERROR_CODES = frozenset(EXPECTED_ERRORS)
 

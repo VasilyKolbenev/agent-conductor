@@ -33,6 +33,7 @@ CAPPED = (
     "tests/test_command_project_git.py",
     "tests/test_command_project_route.py",
     "tests/test_command_workflow_flow.py",
+    "tests/test_materials_refused_refusal.py",
     "tests/test_policy_driver_slot.py",
     "tests/test_preview_draft.py",
     "tests/test_preview_stale_refusal.py",
