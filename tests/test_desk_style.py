@@ -83,10 +83,117 @@ MEASURED = {
         (BODY + [E("button", states=FOCUSED)], "outline", NONTEXT_MIN, "--space"),
         (SHELL + [E("button", states=FOCUSED)], "outline", NONTEXT_MIN, "--ground")],
 }
+# -- the rail: a caption, a sentence, and one button per task ---------------------
+RAIL = SHELL + [E("nav", "desk-rail")]
+LIST = RAIL + [E("div", "desk-rail__list")]
+PRESSED = {"aria-pressed": "true"}
+TASK = LIST + [E("button", "desk-task")]
+TASK_ON = LIST + [E("button", "desk-task", **PRESSED)]
+
+
+def _on_both(*tail, prop: str = "color", floor: float = TEXT_MIN) -> list[tuple]:
+    """The same row on a resting task and on the pressed one, which stands on a panel."""
+    return [(base + list(tail), prop, floor, None) for base in (TASK, TASK_ON)]
+
+
+MEASURED[".desk-rail__head"] = [(RAIL + [E("h2", "desk-rail__head")], "color", TEXT_MIN, None)]
+MEASURED[".desk-rail__none"] = [(RAIL + [E("p", "desk-rail__none")], "color", TEXT_MIN, None)]
+MEASURED[".desk-task"] = _on_both()
+MEASURED[".desk-task__state"] = _on_both(E("span", "desk-task__state"))
+MEASURED[".desk-task__note"] = _on_both(E("span", "desk-task__note"))
+for _tone in ("amber", "ion"):
+    MEASURED[f'.desk-task__state[data-tone="{_tone}"]'] = _on_both(
+        E("span", "desk-task__state", **{"data-tone": _tone}))
+# -- the scene: the Studio's run deck, on the concept's grounds -------------------
+CENTER = SHELL + [E("main", "desk-center")]
+SCENE = CENTER + [E("section", "desk-scene")]
+DECK = SCENE + [E("section", "studio-section", "studio-deck")]
+HEAD = DECK + [E("div", "studio-deck__head")]
+BODY_ROW = DECK + [E("div", "studio-deck__body")]
+STAGE = BODY_ROW + [E("div", "studio-deck__scene")]
+TRACE = STAGE + [E("section", "studio-trace")]
+TRACE_INNER = TRACE + [E("div", "studio-trace__inner")]
+FLEET = STAGE + [E("div", "studio-deck__fleet")]
+RING = STAGE + [E("div", "studio-deck__fleet", **{"data-kind": "ring"})]
+INSPECTOR = BODY_ROW + [E("section", "studio-deck__inspector")]
+TRACE_PLANET = TRACE_INNER + [E("button", "studio-planet", "studio-trace__planet")]
+TRACE_PLANET_ON = TRACE_INNER + [
+    E("button", "studio-planet", "studio-trace__planet", **PRESSED)]
+FLEET_PLANET = FLEET + [E("button", "studio-planet")]
+FLEET_PLANET_ON = FLEET + [E("button", "studio-planet", **PRESSED)]
+ORBS = (STAGE + [E("button", "studio-planet")], TRACE_PLANET, FLEET_PLANET)
+ORBS_ON = (STAGE + [E("button", "studio-planet", **PRESSED)], TRACE_PLANET_ON,
+           FLEET_PLANET_ON)
+
+
+def _in(chains, *tail, prop: str = "color", floor: float = TEXT_MIN) -> list[tuple]:
+    """The same row on each ground a mark can stand on."""
+    return [(list(chain) + list(tail), prop, floor, None) for chain in chains]
+
+
+MEASURED[".desk-scene__note"] = _in([SCENE], E("p", "desk-scene__note"))
+MEASURED[".desk-scene__subject"] = _in([SCENE], E("p", "desk-scene__subject"))
+MEASURED[".desk-scene .studio-deck h3"] = _in([DECK], E("h3"))
+MEASURED['.desk-scene .studio-lens[aria-pressed="true"]'] = _in(
+    [HEAD], E("div", "studio-lenses"), E("button", "studio-lens", **PRESSED),
+    prop="border-bottom", floor=NONTEXT_MIN)
+MEASURED[".desk-scene .studio-team-roster button"] = _in(
+    [HEAD], E("nav", "studio-team-roster"), E("button"))
+MEASURED[".desk-scene .studio-trace"] = _in([TRACE])
+MEASURED[".desk-scene .studio-trace__inner svg path"] = _in(
+    [TRACE_INNER], E("svg"), E("path", "studio-trace__link"), prop="stroke",
+    floor=NONTEXT_MIN)
+MEASURED['.desk-scene .studio-trace__inner svg [data-open="true"]'] = _in(
+    [TRACE_INNER], E("svg"), E("path", "studio-trace__link", **{"data-open": "true"}),
+    prop="stroke", floor=NONTEXT_MIN)
+MEASURED[".desk-scene .studio-trace__inner svg text"] = _in(
+    [TRACE_INNER], E("svg"), E("text"), prop="fill")
+MEASURED[".desk-scene .studio-planet__orb"] = (
+    _in(ORBS, E("span", "studio-planet__orb"))
+    + _in(ORBS, E("span", "studio-planet__orb"), prop="border", floor=NONTEXT_MIN))
+MEASURED['.desk-scene .studio-planet[aria-pressed="true"] .studio-planet__orb'] = (
+    _in(ORBS_ON, E("span", "studio-planet__orb"))
+    + _in(ORBS_ON, E("span", "studio-planet__orb"), prop="border", floor=NONTEXT_MIN))
+MEASURED[".desk-scene .studio-planet__selection"] = _in(
+    [TRACE_PLANET, FLEET_PLANET], E("span", "studio-planet__selection"))
+MEASURED['.desk-scene .studio-planet[aria-pressed="true"] .studio-planet__selection'] = _in(
+    [TRACE_PLANET_ON, FLEET_PLANET_ON], E("span", "studio-planet__selection"))
+MEASURED['.desk-scene .studio-trace__step[aria-pressed="true"] .studio-trace__point'] = _in(
+    [TRACE_INNER], E("button", "studio-trace__step", **PRESSED),
+    E("span", "studio-trace__point"), prop="outline", floor=NONTEXT_MIN)
+# A symbolic point: the step's word beside it carries the meaning at the text floor.
+MEASURED['.desk-scene .studio-trace__step[data-word="needs_decision"] .studio-trace__point'] = _in(
+    [TRACE_INNER], E("button", "studio-trace__step", **{"data-word": "needs_decision"}),
+    E("span", "studio-trace__point"), floor=NONTEXT_MIN)
+MEASURED[".desk-scene .studio-deck__route"] = _in(
+    [FLEET], E("svg", "studio-deck__routes"), E("path", "studio-deck__route"),
+    prop="stroke", floor=NONTEXT_MIN)
+MEASURED[".desk-scene .studio-deck__route-label"] = _in(
+    [FLEET], E("svg", "studio-deck__routes"), E("g", "studio-deck__route-label"),
+    prop="stroke", floor=NONTEXT_MIN)
+MEASURED[".desk-scene .studio-deck__routes marker path"] = _in(
+    [FLEET], E("svg", "studio-deck__routes"), E("marker"), E("path"), prop="fill",
+    floor=NONTEXT_MIN)
+MEASURED[".desk-scene .studio-note"] = (
+    _in([INSPECTOR], E("p", "studio-note"))
+    + _in([FLEET_PLANET, RING + [E("button", "studio-planet")]], E("span", "studio-note"))
+    + _in([FLEET + [E("button", "studio-deck__mark")]], E("span", "studio-note")))
+MEASURED[".desk-scene .studio-step-flow__stage svg"] = _in(
+    [INSPECTOR], E("section", "studio-step-flow__stage"), E("svg"), prop="stroke",
+    floor=NONTEXT_MIN)
+MEASURED[".desk-shell select"] = [
+    (SHELL + [E("select")], prop, floor, None)
+    for prop, floor in (("color", TEXT_MIN), ("border", NONTEXT_MIN))]
 NEUTRAL = "neutral separator between regions; it identifies no state and carries no word"
 EXEMPT = {
     ".desk-top": NEUTRAL, ".desk-rail": NEUTRAL, ".desk-summary": NEUTRAL,
     ".desk-pult": NEUTRAL,
+    ".desk-scene .studio-trace__inner svg .studio-trace__horizon":
+        "decorative horizon; the step words, glyphs and the measured route strokes carry the plan",
+    ".desk-scene .studio-planet__orb::after":
+        "decorative outer ring; the orb's own border and its selected state are measured",
+    ".desk-scene .studio-step-flow__body":
+        "neutral separator between stages; the icons and words identify each stage",
 }
 #: Which declarations are marks. `background` is not one: a surface is composited
 #: under a mark rather than being one.
@@ -96,13 +203,22 @@ MARK_PROPS = ("color", "stroke", "fill", "outline", "border", "border-color",
 COLOURFUL = re.compile(r"var\(--[\w-]+\)|#[0-9a-fA-F]{3,8}")
 #: The closed set of states a rule may key on (spec 5.6.8): the studio's
 #: `data-screen` is gone and `data-tone`, `data-state`, `data-view` and `data-lit`
-#: come in. `root` and `hidden` say what a thing is, not what somebody did to it.
+#: come in. The scene's own modules write two more that repaint, `data-word` (what a
+#: step or a participant stands at) and `data-open` (a road that is open): each paint
+#: they win is a measured row above. `root` and `hidden` say what a thing is, not what
+#: somebody did to it; `data-kind` and `data-duty` choose a shape or a dash, never a colour
+#: of their own.
 MODELLED = {"hover", "focus-visible", "aria-pressed", "aria-selected", "data-theme",
-            "data-tone", "data-state", "data-view", "data-lit"}
-INERT = {"root", "hidden"}
+            "data-tone", "data-state", "data-view", "data-lit", "data-word", "data-open"}
+INERT = {"root", "hidden", "data-kind", "data-duty"}
 CONTROLS = tuple(
     [E("div", "desk-shell"), E(tag)] for tag in ("button", "select", "input", "textarea")
-) + ([E("div", "desk-shell"), E("header", "desk-top"), E("a", "desk-classic")],)
+) + ([E("div", "desk-shell"), E("header", "desk-top"), E("a", "desk-classic")],
+     # A disclosure's summary is a control the scene's inspector builds, in two places.
+     [E("div", "desk-shell"), E("section", "desk-scene"),
+      E("details", "studio-inspect-more"), E("summary")],
+     [E("div", "desk-shell"), E("section", "desk-scene"),
+      E("details", "studio-deck__about"), E("summary")])
 
 
 def _wrap(css: str) -> str:
@@ -253,12 +369,41 @@ def target_faults(sheet: str) -> list[str]:
     return faults
 
 
+def declared_media(css: str) -> list[tuple[str, int]]:
+    """Every `@media` head of the sheet with the depth it stands at, by a scan of its text.
+
+    This is deliberately not the cascade model's own list: that one is built from the
+    contexts of the rules it parsed, so a media block with no rule in it, or one the model
+    reads only as its innermost condition, would vanish from it and from every guard that
+    walks it. The heads are found here by their spelling and their braces.
+    """
+    text = re.sub(r"/\*.*?\*/", " ", css, flags=re.DOTALL)
+    return [(f"@media {re.sub(r'[ \t\r\n]+', ' ', found.group(1)).strip()}",
+             text[:found.start()].count("{") - text[:found.start()].count("}"))
+            for found in re.finditer(r"@media\b([^{]*)\{", text)]
+
+
+def media_faults(sheet: str, css: str) -> list[str]:
+    """Every `@media` head the floor checks would silently not measure under."""
+    walked = {re.sub(r"[ \t\r\n]+", " ", context).strip()
+              for theme in THEMES for _label, conditions in environments(theme, sheet)
+              for context in conditions}
+    faults = []
+    for head, depth in declared_media(css):
+        if depth:
+            faults.append(f"media block nested in another, which the cascade reads only as "
+                          f"its innermost condition: {head}")
+        if head not in walked:
+            faults.append(f"media head no environment walks: {head}")
+    return faults
+
+
 def sheet_faults(css: str) -> list[str]:
     """Every way `css` fails the desk stylesheet's contract, as plain sentences."""
     sheet = _wrap(css)
     faults = (paint_faults(sheet) + row_faults(sheet) + floor_faults(sheet)
               + palette_faults(sheet) + motion_faults(sheet) + selector_faults(sheet)
-              + target_faults(sheet))
+              + target_faults(sheet) + media_faults(sheet, css))
     lines = len(css.splitlines())
     return faults + ([f"the sheet is {lines} lines, over the {LINE_CAP} cap"]
                      if lines > LINE_CAP else [])
@@ -305,6 +450,27 @@ BROKEN = {
     "a focus ring drawn thin": (_swap("outline:2px solid var(--ion)",
                                       "outline:1px solid var(--ion)"), "focus ring"),
     "a sheet over the line cap": (lambda css: css + "\n" * LINE_CAP, "cap"),
+    "a scene note under its floor": (
+        _swap(".desk-scene .studio-note{font-size:12px;line-height:1.5;color:var(--muted);",
+              ".desk-scene .studio-note{font-size:12px;line-height:1.5;color:var(--line);"),
+        "below its floor"),
+    "a trace road under its floor": (
+        _swap(".desk-scene .studio-trace__inner svg path{fill:none;stroke:var(--faint)",
+              ".desk-scene .studio-trace__inner svg path{fill:none;stroke:var(--line)"),
+        "below its floor"),
+    "an unmeasured scene colour": (
+        lambda css: css + ".desk-scene .studio-extra{color:var(--ink)}\n", "unmeasured paint"),
+    "a scene rule keyed on an attribute nobody modelled": (
+        lambda css: css + '.desk-scene .studio-planet[data-mood="x"]{margin:0}\n',
+        "unmodelled state data-mood"),
+    "a scene summary under the 44px floor": (
+        _swap(".desk-scene .studio-inspect-more summary{min-height:44px;",
+              ".desk-scene .studio-inspect-more summary{min-height:40px;"), "summary"),
+    "a media block with no rule in it": (
+        lambda css: css + "@media (min-width:1200px){}\n", "no environment walks"),
+    "a media block nested in another": (
+        lambda css: css + "@media (min-width:1200px){@media (min-width:1300px){"
+                          ".desk-note{margin:0}}}\n", "nested"),
 }
 
 
@@ -327,8 +493,25 @@ def test_every_concept_token_pair_clears_its_floor_in_both_themes(theme):
         assert ratio >= floor, f"{theme}: {foreground} on {ground} is {ratio:.2f}:1, floor {floor}"
 
 
+#: The `@media` heads the sheet declares, written out here by hand. A media condition that
+#: arrives in the sheet has to be argued for on this line, and the walk below is held to
+#: exactly these.
+DECLARED_MEDIA = ["@media (max-width:900px)", "@media (prefers-color-scheme:light)"]
+
+
 def test_the_desk_page_is_measured_in_every_media_environment_the_sheet_declares():
-    """Calibration: a floor check that walked no environment would pass on nothing."""
-    labels = [label for label, _env in environments("light", _wrap(CSS))]
-    assert labels[0] == "light" and len(labels) >= 2, labels
-    assert sum(1 for _ in _rows(_wrap(CSS))) >= 2 * len(MEASURED)
+    """Calibration: a floor check that walked no environment would pass on nothing.
+
+    The heads are read out of the sheet's text and are exactly the two written above; the
+    cascade walk visits every one of them; and the number of rows the floor test measures
+    is the product of the themes, the measured rows and the environments each theme has --
+    the theme alone, then the theme with each other condition.
+    """
+    sheet = _wrap(CSS)
+    assert sorted(head for head, _depth in declared_media(CSS)) == DECLARED_MEDIA
+    assert {depth for _head, depth in declared_media(CSS)} == {0}
+    assert media_faults(sheet, CSS) == []
+    labels = [label for label, _env in environments("light", sheet)]
+    assert labels == ["light", "light+max-width-900px"]
+    specs = sum(len(rows) for rows in MEASURED.values())
+    assert sum(1 for _ in _rows(sheet)) == len(THEMES) * specs * len(labels)

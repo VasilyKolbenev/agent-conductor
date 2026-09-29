@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>December — Desk</title>
+<title>December Command</title>
 <link rel="stylesheet" href="/panel/desk.css">
 <script src="/panel/desk.js" type="module"></script>
 <!-- The project desk. It is served at /panel/desk.html from the first day, and
@@ -18,26 +18,32 @@
      and holds this page to nothing inline: no style block, no style attribute,
      no handler, and no script the test does not name.
 
+     The page carries no English. Its one literal is the product's name; every
+     other word a person reads or a screen reader speaks is a catalogue key
+     (`data-i18n` for text, `data-i18n-label` for a name) that desk.js writes in
+     the reader's language. The same test refuses a literal sentence, link text,
+     aria-label or tooltip here.
+
      The five mounts below are the regions of the desk (spec 5.1): the rail of
-     tasks, the scene, the feed, the summary and the pult. Each is EMPTY and
-     stands in the machine word `empty` until a module fills it and a read says
-     otherwise; the top bar's status line is the one sentence a person reads. -->
+     tasks, the scene, the feed, the summary and the pult. Each stands in the
+     machine word `empty` until a module fills it and a read says otherwise; the
+     top bar's status line is the one sentence a person reads. -->
 </head>
 <body>
 <div class="desk-shell" id="deskShell">
   <header class="desk-top" id="deskTop">
     <h1 class="desk-brand">December Command</h1>
     <p class="desk-status" id="deskStatus" role="status" aria-live="polite"></p>
-    <p class="desk-note">The desk is being built: its regions are mounted and stay empty until their modules land.</p>
-    <a class="desk-classic" href="/panel/index.html">Classic panel</a>
+    <p class="desk-note" data-i18n="desk.note"></p>
+    <a class="desk-classic" href="/panel/index.html" data-i18n="desk.classic"></a>
   </header>
-  <nav class="desk-rail" id="deskRail" aria-label="Tasks" data-region="rail" data-state="empty"></nav>
+  <nav class="desk-rail" id="deskRail" data-i18n-label="desk.rail.label" data-region="rail" data-state="empty"></nav>
   <main class="desk-center" id="deskCenter">
-    <section class="desk-scene" id="deskScene" aria-label="Scene" data-region="scene" data-state="empty"></section>
-    <section class="desk-feed" id="deskFeed" aria-label="Progress" data-region="feed" data-state="empty"></section>
-    <section class="desk-summary" id="deskSummary" aria-label="Summary" data-region="summary" data-state="empty"></section>
+    <section class="desk-scene" id="deskScene" data-i18n-label="desk.scene.label" data-region="scene" data-state="empty"></section>
+    <section class="desk-feed" id="deskFeed" data-i18n-label="desk.feed.label" data-region="feed" data-state="empty"></section>
+    <section class="desk-summary" id="deskSummary" data-i18n-label="desk.summary.label" data-region="summary" data-state="empty"></section>
   </main>
-  <aside class="desk-pult" id="deskPult" aria-label="Your console" data-region="pult" data-state="empty"></aside>
+  <aside class="desk-pult" id="deskPult" data-i18n-label="desk.pult.label" data-region="pult" data-state="empty"></aside>
 </div>
 </body>
 </html>

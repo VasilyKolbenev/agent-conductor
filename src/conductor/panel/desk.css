@@ -75,15 +75,202 @@ button{font:inherit;cursor:pointer;background:none;border:0;padding:0;color:inhe
 /* ── the five regions ─────────────────────────────────────────────────── */
 .desk-rail{min-width:0;min-height:0;padding:16px 12px;overflow:auto;
   border-right:1px solid var(--line)}
+/* The rail's caption, and one button per task: the title, and under it the word the
+   task's newest run has earned. A pressed row stands on a panel. Amber asks for you and
+   ion says the run is going; the word is in the row as well, so no tone stands alone. */
+.desk-rail__head{margin:0 0 8px;padding:0 10px;font:500 11px var(--display);
+  letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.desk-rail__list{display:flex;flex-direction:column;gap:4px}
+.desk-rail__none{padding:0 10px;font-size:12px;color:var(--muted)}
+.desk-task{display:flex;flex-direction:column;align-items:flex-start;gap:4px;width:100%;
+  padding:10px 12px 11px;border-radius:12px;text-align:left;color:var(--ink);
+  overflow-wrap:anywhere}
+.desk-task[aria-pressed="true"]{background:var(--panel);box-shadow:inset 2px 0 0 var(--ion)}
+.desk-task__title{font-size:13.5px;font-weight:500;line-height:1.3}
+.desk-task__state{font-size:12px;color:var(--muted)}
+.desk-task__state[data-tone="amber"]{color:var(--amber)}
+.desk-task__state[data-tone="ion"]{color:var(--ion)}
+.desk-task__note{font-size:11.5px;line-height:1.4;color:var(--muted)}
 .desk-center{display:grid;grid-template-rows:minmax(0,1fr) auto auto;min-width:0;min-height:0}
-.desk-scene{min-height:320px;margin:12px;border-radius:18px;background:var(--space)}
+.desk-scene{min-height:320px;min-width:0;margin:12px;border-radius:18px;
+  background:var(--space);overflow-x:auto}
 .desk-feed{min-height:120px;padding:12px 22px}
 .desk-summary{min-height:56px;padding:0 22px;border-top:1px solid var(--line)}
 .desk-pult{min-width:0;min-height:0;padding:16px 14px;overflow:auto;
   border-left:1px solid var(--line)}
 
+/* ── the scene ────────────────────────────────────────────────────────── */
+/* The Studio's run deck, drawn by its own modules, in the concept's tokens: the ground the
+   Studio called `sunk` is `--space` here, the wait colour is `--amber`, and the concept has
+   no red, so a failed step is told by its word and its glyph and not by a colour. The
+   Trace is a ground card on the scene; the Orbit's ring and marks stand on the scene
+   itself; the inspector is a panel. */
+.desk-scene__note{padding:24px;font-size:13px;color:var(--muted)}
+.desk-scene__subject{padding:14px 18px 0;font-size:12.5px;color:var(--muted)}
+.desk-scene .studio-deck{display:flex;flex-direction:column;gap:12px;min-width:0;
+  padding:8px 16px 16px}
+.desk-scene .studio-deck h3{margin:0;font:500 11px var(--display);letter-spacing:.14em;
+  text-transform:uppercase;color:var(--muted)}
+.desk-scene .studio-deck__head{display:flex;flex-wrap:wrap;align-items:center;gap:6px 16px;
+  min-width:0}
+.desk-scene .studio-lenses{display:flex;gap:16px;flex-wrap:wrap}
+.desk-scene .studio-lens{font-size:14px;padding:6px 2px}
+.desk-scene .studio-lens[aria-pressed="true"]{border-bottom:2px solid var(--ion);font-weight:700}
+.desk-scene .studio-team-roster{display:flex;flex-wrap:wrap;gap:6px}
+.desk-scene .studio-team-roster button{min-width:44px;padding:4px 8px;border-radius:6px;
+  font-size:11px;background:var(--panel);color:var(--ink)}
+.desk-scene .studio-deck__body{display:grid;grid-template-columns:minmax(0,1fr);gap:12px}
+.desk-scene .studio-deck__scene{min-width:0}
+.desk-scene .studio-trace{position:relative;min-width:0;height:450px;overflow-x:auto;
+  overflow-y:hidden;border-radius:18px;background:var(--ground);color:var(--ink)}
+.desk-scene .studio-trace__inner{position:relative;min-width:100%;height:450px;overflow:hidden}
+.desk-scene .studio-trace__inner svg{position:absolute;inset:0;width:100%;height:450px;
+  pointer-events:none}
+.desk-scene .studio-trace__inner svg path{fill:none;stroke:var(--faint);stroke-width:1.2}
+.desk-scene .studio-trace__inner svg .studio-trace__horizon{fill:var(--panel);
+  stroke:var(--line)}
+.desk-scene .studio-trace__inner svg .studio-trace__return,
+.desk-scene .studio-trace__inner svg [data-duty="verify"]{stroke-dasharray:4 5}
+.desk-scene .studio-trace__inner svg [data-open="true"]{stroke:var(--ion);stroke-width:2.2}
+.desk-scene .studio-trace__inner svg .studio-trace__glow{stroke-width:9;opacity:.22;
+  filter:blur(5px)}
+.desk-scene .studio-trace__inner svg .studio-trace__contour{stroke-dasharray:1 7;
+  stroke-linecap:round;opacity:.7}
+.desk-scene .studio-trace__inner svg .studio-trace__tether{stroke-width:1.4;opacity:.75}
+.desk-scene .studio-trace__inner svg .studio-trace__pip{stroke-width:1.6}
+.desk-scene .studio-trace__inner svg text{font:10px var(--sans);fill:var(--muted);
+  paint-order:stroke;stroke:var(--ground);stroke-width:5px;stroke-linejoin:round}
+.desk-scene .studio-planet{display:flex;flex-direction:column;align-items:center;gap:8px;
+  position:relative;z-index:1;min-width:0;padding:18px 8px;border-radius:24px;
+  text-align:center;overflow-wrap:anywhere;background:none}
+.desk-scene .studio-planet__orb{position:relative;display:grid;place-items:center;width:72px;
+  height:72px;border-radius:50%;border:1px solid var(--faint);font-family:var(--mono);
+  font-size:14px;letter-spacing:.04em;background:var(--panel);color:var(--ink)}
+.desk-scene .studio-planet__orb::after{content:"";position:absolute;inset:-9px;
+  border:1px solid var(--line);border-radius:50%;pointer-events:none}
+.desk-scene .studio-planet[aria-pressed="true"] .studio-planet__orb{
+  border:3px double var(--ion);color:var(--ion)}
+.desk-scene .studio-planet[data-word="awaiting_result"] .studio-planet__orb{
+  box-shadow:0 0 0 3px color-mix(in srgb,var(--ion) 55%,transparent)}
+.desk-scene .studio-planet[data-word="unassigned"] .studio-planet__orb,
+.desk-scene .studio-planet[data-word="blocked"] .studio-planet__orb{opacity:.72}
+.desk-scene .studio-planet__selection{font-size:12px;text-decoration:underline;
+  text-underline-offset:4px;color:var(--muted)}
+.desk-scene .studio-planet[aria-pressed="true"] .studio-planet__selection{
+  color:var(--ion);font-weight:700}
+.desk-scene .studio-trace__planet{position:absolute;top:12px;width:152px;min-width:0;gap:2px;
+  padding:0 4px;transform:translateX(-50%)}
+.desk-scene .studio-trace__planet .studio-planet__orb{width:56px;height:56px;margin-bottom:12px}
+.desk-scene .studio-trace__planet strong{max-width:100%;font-size:12px;line-height:1.25;
+  overflow-wrap:anywhere}
+.desk-scene .studio-trace__duty,.desk-scene .studio-trace__word{max-width:100%;font-size:10px;
+  line-height:1.3;overflow-wrap:anywhere}
+.desk-scene .studio-trace__step{position:absolute;top:236px;display:flex;
+  flex-direction:column;align-items:center;gap:3px;width:var(--trace-step,100px);min-width:0;
+  padding:0 2px;transform:translateX(-50%)}
+.desk-scene .studio-trace__point{display:grid;place-items:center;width:28px;height:28px;
+  margin-bottom:5px;border-radius:50%;font-size:14px;line-height:1;background:var(--ground);
+  box-shadow:0 0 0 1.5px var(--faint)}
+.desk-scene .studio-trace__step[data-kind="gate"] .studio-trace__point{border-radius:8px}
+.desk-scene .studio-trace__step[data-kind="loop"] .studio-trace__point{width:22px;height:22px;
+  margin-top:3px;font-size:11px}
+.desk-scene .studio-trace__step[data-word="runnable"] .studio-trace__point{
+  box-shadow:0 0 0 1.5px var(--ink)}
+.desk-scene .studio-trace__step[data-word="awaiting_result"] .studio-trace__point,
+.desk-scene .studio-trace__step[data-word="needs_decision"] .studio-trace__point{
+  box-shadow:0 0 0 2px var(--ion),0 0 22px color-mix(in srgb,var(--ion) 38%,transparent)}
+.desk-scene .studio-trace__step[data-word="closed"]{opacity:.62}
+.desk-scene .studio-trace__title{display:-webkit-box;max-width:100%;overflow:hidden;
+  font-size:10px;font-weight:600;line-height:1.2;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.desk-scene .studio-trace__step[aria-pressed="true"] .studio-trace__point{
+  outline:2px solid var(--ion);outline-offset:3px}
+.desk-scene .studio-trace__step[data-word="needs_decision"] .studio-trace__point{
+  color:var(--amber)}
+.desk-scene .studio-deck__fleet{position:relative;display:grid;min-width:0;
+  grid-template-columns:repeat(auto-fit,minmax(min(180px,100%),1fr));gap:24px 12px;
+  align-content:center;padding:32px 18px}
+.desk-scene .studio-deck__fleet[data-kind="ring"]{display:block;height:460px;min-height:0;
+  padding:0;overflow:auto}
+.desk-scene .studio-deck__fleet[data-kind="ring"] .studio-planet{position:absolute;
+  left:var(--orb-x);top:var(--orb-y);z-index:1;width:132px;gap:4px;padding:8px 4px;
+  transform:translateX(-50%)}
+.desk-scene .studio-deck__fleet[data-kind="ring"] .studio-planet--up{
+  flex-direction:column-reverse;transform:translate(-50%,-100%)}
+.desk-scene .studio-deck__fleet[data-kind="ring"] .studio-planet__orb{width:60px;height:60px}
+.desk-scene .studio-deck__fleet[data-kind="ring"] .studio-planet strong{max-width:100%;
+  font-size:12px;line-height:1.25}
+.desk-scene .studio-deck__fleet[data-kind="ring"] .studio-planet .studio-note{font-size:11px;
+  line-height:1.3}
+.desk-scene .studio-deck__fleet[data-kind="ring"] .studio-planet__selection{font-size:11px}
+.desk-scene .studio-deck__routes{position:absolute;inset:0;width:100%;height:100%;
+  pointer-events:none}
+.desk-scene .studio-deck__route{fill:none;stroke:var(--faint);stroke-width:1.2}
+.desk-scene .studio-deck__route-label{fill:none;stroke:var(--muted);stroke-width:1.5}
+.desk-scene .studio-deck__routes marker path{fill:var(--faint)}
+.desk-scene .studio-deck__mark{position:absolute;left:var(--orb-x);top:var(--orb-y);z-index:1;
+  display:flex;flex-direction:column;align-items:center;gap:3px;width:104px;padding:0;
+  font-size:10px;line-height:1.2;text-align:center;overflow-wrap:anywhere;
+  transform:translate(-50%,-13px)}
+.desk-scene .studio-deck__mark strong{max-width:100%;font-size:10px;font-weight:600}
+.desk-scene .studio-deck__mark .studio-note{font-size:10px;line-height:1.2}
+.desk-scene .studio-deck__mark-point{display:grid;place-items:center;width:26px;height:26px;
+  border-radius:8px;font-size:13px;line-height:1;background:var(--ground);
+  box-shadow:0 0 0 1.5px var(--faint)}
+.desk-scene .studio-deck__mark--loop{flex-direction:row;align-items:center;gap:8px;
+  width:auto;max-width:220px;text-align:left;white-space:nowrap;
+  transform:translate(-15px,-50%)}
+.desk-scene .studio-deck__mark--loop .studio-deck__mark-point{width:30px;height:30px;
+  border-radius:50%;font-size:15px}
+.desk-scene .studio-deck__mark[data-word="needs_decision"] .studio-deck__mark-point{
+  box-shadow:0 0 0 2px var(--ion),0 0 20px color-mix(in srgb,var(--ion) 38%,transparent)}
+.desk-scene .studio-deck__mark[aria-pressed="true"] .studio-deck__mark-point{
+  box-shadow:0 0 0 2px var(--ion),0 0 0 5px var(--ground),0 0 0 6.5px var(--ion)}
+.desk-scene .studio-deck__core{position:absolute;left:var(--orb-x);top:var(--orb-y);z-index:1;
+  max-width:150px;font-size:11px;line-height:1.3;text-align:center;overflow-wrap:anywhere;
+  transform:translate(-50%,-50%)}
+.desk-scene .studio-deck__ring{fill:none;stroke-width:1.2;opacity:.42}
+.desk-scene .studio-deck__ring[data-kind="contour"]{stroke-dasharray:2 7;stroke-linecap:round;
+  opacity:.55}
+.desk-scene .studio-deck__contour{fill:none;stroke-width:1.2;opacity:.55}
+.desk-scene .studio-deck__contour[data-open="true"]{stroke-width:2;opacity:.95}
+.desk-scene .studio-deck__contour[data-kind="return"]{stroke-dasharray:4 5}
+.desk-scene .studio-deck__word{font:10px var(--sans);opacity:.8}
+.desk-scene .studio-deck__inspector{display:flex;flex-direction:column;gap:10px;min-width:0;
+  max-height:380px;padding:16px;border-radius:16px;overflow:auto;overflow-wrap:anywhere;
+  background:var(--panel)}
+.desk-scene .studio-deck__inspector h4{margin:0;font-size:20px;font-weight:500;
+  letter-spacing:-.02em}
+.desk-scene .studio-note{font-size:12px;line-height:1.5;color:var(--muted);
+  overflow-wrap:anywhere}
+.desk-scene .studio-deck__content .studio-note{font-size:14px}
+.desk-scene .studio-inspect-more{min-width:0;font-size:14px}
+.desk-scene .studio-inspect-more summary{min-height:44px;padding:12px 0;cursor:pointer}
+.desk-scene .studio-detail-pane{display:flex;flex-direction:column;gap:14px;padding:4px 0 16px}
+.desk-scene .studio-step-flow{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:16px}
+.desk-scene .studio-step-flow__stage{display:grid;grid-template-columns:20px minmax(0,1fr);
+  gap:12px}
+.desk-scene .studio-step-flow__stage svg{width:20px;height:20px;fill:none;stroke:var(--muted);
+  stroke-width:1.3}
+.desk-scene .studio-step-flow__body{display:grid;grid-template-columns:minmax(0,1fr);gap:6px;
+  min-width:0;align-items:start;padding-bottom:10px;border-bottom:1px solid var(--line)}
+.desk-scene .studio-step-flow__value{display:flex;flex-direction:column;gap:8px;min-width:0}
+.desk-scene .studio-step-flow h5{margin:0;font-size:12px;font-weight:500;letter-spacing:.04em;
+  text-transform:uppercase}
+.desk-scene .studio-document-text{white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px}
+.desk-scene .studio-deck__content select{width:100%;min-width:0;font-size:14px}
+.desk-scene .studio-deck__steps{display:flex;flex-direction:column;gap:16px;min-width:0;
+  margin:0;padding:0;list-style:none}
+.desk-scene .studio-deck__step{display:flex;flex-direction:column;gap:5px;min-width:0}
+.desk-scene .studio-deck__about summary{display:flex;align-items:center;min-height:44px;
+  font-size:14px;cursor:pointer}
+.desk-scene .studio-deck__about .studio-note{max-width:70ch}
+.desk-shell select{font:inherit;padding:4px 8px;border:1px solid var(--faint);
+  border-radius:6px;background:var(--panel);color:var(--ink)}
+
 @media (max-width:900px){
   .desk-shell{grid-template-columns:minmax(0,1fr);grid-template-rows:auto}
   .desk-rail{border-right:0;border-bottom:1px solid var(--line)}
   .desk-pult{border-left:0;border-top:1px solid var(--line)}
+  .desk-scene .studio-step-flow{grid-template-columns:minmax(0,1fr)}
 }

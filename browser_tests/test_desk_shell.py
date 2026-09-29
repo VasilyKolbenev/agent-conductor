@@ -11,16 +11,19 @@ What this module holds, each as a measurement and not a reading of source:
 - the page boots with no console error and no uncaught exception, and every file
   its module graph fetches answers 200 (the census is spelled out, not derived
   from the server's own allowlist, which would only agree with itself);
-- the five regions of spec 5.1 are mounted, childless, and say in `data-state`
-  what became of the read that feeds them: the rail and the summary `ready`, the
-  three with no read of their own still `empty`;
-- a read that is refused, never answered or abandoned at its deadline puts ITS
-  region, and the whole shell and its one sentence, in the word it earned
+- the five regions of spec 5.1 are mounted and say in `data-state` what became
+  of the read that feeds them: the rail and the summary `ready`, the scene, the
+  feed and the pult, which nothing feeds yet, still `empty` and childless; the
+  rail of a project with no tasks says so (what the rail draws for a project
+  that has tasks is `test_desk_rail_scene.py`'s);
+- a read that is refused, never answered or abandoned at its deadline puts the
+  regions it feeds, and the whole shell and its one sentence, in the word it earned
   (`refused` or `failed`): a shell that wrote `ready` whatever came back would
   pass every check above, because the server answers both reads;
-- the shell reads exactly `/command/tasks` and `/command/runs` and writes nothing
-  -- no other route, no method but GET, nothing in browser storage. The project
-  route and its header are lane H's, and are not faked here;
+- the shell of a project with no tasks reads exactly `/command/tasks` and
+  `/command/runs` and writes nothing -- no other route, no method but GET, nothing
+  in browser storage. The project route and its header are lane H's, and are not
+  faked here;
 - the page never scrolls sideways, at the desk's width and stacked under 900px.
 
 A fact and its sentence are read in ONE evaluation: two round trips let a read
@@ -42,11 +45,25 @@ from tests.test_store import good_lane, write_project
 
 #: Every file the desk page's module graph fetches, with the answer each owes:
 #: the page, its sheet and boot module, the transport and the refusal vocabulary
-#: it translates with, and the catalogue (with its thirteen copy modules) that says
-#: a phase in the reader's language.
+#: it translates with, the reader of the address's language (and the element
+#: helper that reader draws its controls with), and the catalogue (with its
+#: fifteen copy modules) that says a word in the reader's language.
 DESK_BOOT_ASSETS = {
     "desk.html": 200, "desk.css": 200, "desk.js": 200, "desk-transport.js": 200,
     "command-projection.js": 200, "studio-i18n.js": 200,
+    "studio-preferences.js": 200, "command-view.js": 200, "desk-copy.js": 200,
+    "desk-status-copy.js": 200,
+    # What the boot module judges a read with, and the rail it draws from it.
+    "studio-tasks-model.js": 200, "studio-model.js": 200, "studio-taskruns.js": 200,
+    "studio-draft.js": 200, "studio-focus.js": 200, "desk-rail.js": 200,
+    "desk-status.js": 200,
+    # The scene, and the Studio's run deck it hands one frozen run read to, with what the
+    # deck and the run-read judges are built from.
+    "desk-scene.js": 200, "studio-participants.js": 200, "studio-feedback.js": 200,
+    "studio-runread.js": 200, "studio-runwords.js": 200, "studio-rundocs.js": 200,
+    "studio-scene-model.js": 200, "studio-trace.js": 200, "studio-situation.js": 200,
+    "studio-feedback-model.js": 200, "studio-controls.js": 200,
+    "studio-automation-providers.js": 200,
     "studio-agents-copy.js": 200, "studio-automation-copy.js": 200,
     "studio-feedback-copy.js": 200, "studio-notice-copy.js": 200,
     "studio-participant-copy.js": 200, "studio-run-docs-copy.js": 200,
@@ -57,12 +74,40 @@ DESK_BOOT_ASSETS = {
 }
 #: The regions, the word each stands in once the reads have landed, and why.
 REGION_WORDS = (
-    ("deskRail", "ready"),     # fed by the tasks read
+    ("deskRail", "ready"),     # fed by the tasks read and the runs read
     ("deskScene", "empty"),    # follows a chosen task: no read of its own yet
     ("deskFeed", "empty"),     # follows a chosen run
     ("deskSummary", "ready"),  # fed by the runs read
     ("deskPult", "empty"),     # follows the gates of a run
 )
+#: Every word the page carries itself, read in ONE evaluation: the document's language and
+#: title, the note and the link in the top bar, the accessible name of each region and the
+#: sentence the top bar says once the reads have landed.
+PAGE_WORDS = """() => ({
+  lang: document.documentElement.lang, title: document.title,
+  note: document.querySelector(".desk-note").innerText.trim(),
+  link: document.querySelector(".desk-classic").innerText.trim(),
+  labels: ["deskRail", "deskScene", "deskFeed", "deskSummary", "deskPult"].map(
+    (id) => document.getElementById(id).getAttribute("aria-label")),
+  said: document.getElementById("deskStatus").innerText.trim()})"""
+#: What the page says in each language the address can choose, spelled out here and not
+#: read back from the catalogue the page loads.
+PAGE_LANGUAGES = {
+    "en": {
+        "lang": "en", "title": "December Command — Desk",
+        "note": "The desk is being built: the rail and the scene are live; the feed, the "
+                "summary and the console stay empty until their modules land.",
+        "link": "Classic panel",
+        "labels": ["Tasks", "Scene", "Progress", "Summary", "Your console"],
+        "said": "Read."},
+    "ru": {
+        "lang": "ru", "title": "December Command — Стол",
+        "note": "Стол в разработке: рельс и сцена работают; лента, выжимка и пульт "
+                "остаются пустыми, пока не появятся их модули.",
+        "link": "Прежняя панель",
+        "labels": ["Задачи", "Сцена", "Ход работы", "Выжимка", "Ваш пульт"],
+        "said": "Данные прочитаны."},
+}
 #: One evaluation for everything a region test asks: word, children and words.
 REGION_FACTS = """(ids) => ({
   shell: document.getElementById("deskShell").getAttribute("data-state"),
@@ -81,6 +126,13 @@ LAYOUT_FACTS = """(ids) => ({
     const box = document.getElementById(id).getBoundingClientRect();
     return [id, {x: box.x, y: box.y, width: box.width, height: box.height}];
   }))})"""
+#: The widths the page is measured at, from a small phone to a wide screen, both sides of the
+#: 900px break included, and the largest window that stacks.
+SWEPT_WIDTHS = (320, 375, 414, 600, 768, 899, 900, 901, 1024, 1280, 1440, 1920)
+STACKED_UP_TO = 900
+#: A rule that widens one region only in a window under 400px: the overflow a two-width
+#: test at 800 and 1280 cannot see.
+PLANTED_NARROW_OVERFLOW = "@media (max-width:400px){.desk-feed{min-width:600px}}"
 #: The sentences the top bar says for the two phases a bad read earns, spelled
 #: out here and not read back from the catalogue the page loads.
 SAID_REFUSED = "This read was refused. Nothing below is newer than the refusal."
@@ -104,7 +156,7 @@ SHORT_DEADLINE = """(() => {
 #: `real` passes through to the server; `refused` is a 403 with a known code;
 #: `unanswered` aborts the request; `held` is never answered at all.
 PHASE_ROWS = (
-    ("refused-then-unanswered", "refused", "unanswered", "refused", "failed",
+    ("refused-then-unanswered", "refused", "unanswered", "failed", "failed",
      "failed", SAID_FAILED),
     ("refused-then-real", "refused", "real", "refused", "ready",
      "refused", SAID_REFUSED),
@@ -174,11 +226,17 @@ def test_the_desk_boots_from_its_own_address_with_no_error_and_every_file_answer
     assert desk.problems == []
 
 
-def test_the_five_regions_are_mounted_childless_and_the_two_that_are_read_stand_ready(
+def test_the_two_regions_that_are_read_stand_ready_and_the_three_no_read_feeds_stay_empty(
         desk: Desk) -> None:
     facts = desk.page.evaluate(REGION_FACTS, [ident for ident, _ in REGION_WORDS])
     assert [(row["id"], row["word"]) for row in facts["regions"]] == list(REGION_WORDS)
-    assert all(row["children"] == 0 and row["text"] == "" for row in facts["regions"])
+    by_id = {row["id"]: row for row in facts["regions"]}
+    assert all(row["children"] == 0 and row["text"] == "" for name, row in by_id.items()
+               if name not in ("deskRail", "deskSummary"))
+    # The summary has no module yet; the rail of a project with no tasks says so.
+    assert by_id["deskSummary"]["children"] == 0
+    assert by_id["deskRail"]["children"] == 2
+    assert by_id["deskRail"]["text"] == "TasksThis project has no tasks yet."
     assert facts["shell"] == "ready" and facts["said"] == "Read." and facts["lang"] == "en"
     assert desk.problems == []
 
@@ -205,11 +263,12 @@ def test_a_refused_or_unanswered_read_puts_its_region_and_the_shell_in_the_word_
         rail: str, summary: str, shell: str, said: str) -> None:
     """Every word here is a read the page did not get, and each row names its own.
 
-    The rail is fed by the tasks read and the summary by the runs read; the shell
-    says the worst of the two, in the one sentence a person reads. Two reads that
-    fail differently tell `refused` from `failed` on the region they feed and
-    `failed` from `ready` on the shell, so a page that wrote one word whatever
-    came back, or that mixed the two up, is red on some row.
+    The word of a task is a fact of both lists, so the rail says the worst of the tasks
+    read and the runs read; the summary is fed by the runs read alone; the shell says
+    the worst of the regions, in the one sentence a person reads. Two reads that fail
+    differently tell `refused` from `failed` on the regions they feed and `failed` from
+    `ready` on the shell, so a page that wrote one word whatever came back, or that
+    mixed the two up, is red on some row.
     """
     context = chromium.new_context(viewport={"width": 1280, "height": 900})
     page = context.new_page()
@@ -234,7 +293,34 @@ def test_a_refused_or_unanswered_read_puts_its_region_and_the_shell_in_the_word_
     assert uncaught == []
 
 
-def test_the_shell_reads_the_two_routes_that_exist_and_writes_nothing(desk: Desk) -> None:
+@pytest.mark.parametrize("language", list(PAGE_LANGUAGES))
+def test_every_word_the_page_carries_is_said_in_the_language_the_address_chooses(
+        chromium: Browser, desk_url: str, language: str) -> None:
+    """The page's HTML holds no English: what a reader sees arrives from the catalogue.
+
+    `#lang=en` and `#lang=ru` choose the language, and the document, its title, its note,
+    its link and the name of every region follow, together with the sentence the top bar
+    says. The English row is what the page said before it had a catalogue, so a page that
+    kept its literals would pass it and fail the Russian one.
+    """
+    context = chromium.new_context(viewport={"width": 1280, "height": 900})
+    page = context.new_page()
+    problems: list[str] = []
+    page.on("console", lambda message: problems.append(message.text)
+            if message.type == "error" else None)
+    page.on("pageerror", lambda error: problems.append(str(error)))
+    try:
+        page.goto(f"{desk_url}#lang={language}", wait_until="load")
+        page.wait_for_selector('#deskShell[data-state="ready"]')
+        words = page.evaluate(PAGE_WORDS)
+    finally:
+        context.close()
+    assert words == PAGE_LANGUAGES[language]
+    assert problems == []
+
+
+def test_the_shell_of_a_project_with_no_tasks_reads_the_two_lists_and_writes_nothing(
+        desk: Desk) -> None:
     command = [(method, path, header) for method, path, header in desk.asked
                if path.startswith("/command/")]
     assert sorted(command) == [("GET", "/command/runs", False),
@@ -244,23 +330,61 @@ def test_the_shell_reads_the_two_routes_that_exist_and_writes_nothing(desk: Desk
     assert desk.problems == []
 
 
-def test_the_page_never_scrolls_sideways_and_the_regions_stack_under_900px(
-        desk: Desk) -> None:
+def _sweep(page: Page) -> dict[int, dict]:
+    """The layout facts at each swept width, one evaluation per width."""
     ids = [ident for ident, _ in REGION_WORDS]
-    wide = desk.page.evaluate(LAYOUT_FACTS, ids)
-    boxes = wide["boxes"]
-    assert wide["overflow"] <= 0, wide
-    # Three columns under the top bar: the rail, the centre, the pult.
-    assert boxes["deskRail"]["x"] < boxes["deskScene"]["x"] < boxes["deskPult"]["x"]
-    assert boxes["deskRail"]["y"] == boxes["deskPult"]["y"] > 0
-    assert boxes["deskScene"]["y"] < boxes["deskFeed"]["y"] < boxes["deskSummary"]["y"]
-    desk.page.set_viewport_size({"width": 800, "height": 900})
-    narrow = desk.page.evaluate(LAYOUT_FACTS, ids)
-    stacked = narrow["boxes"]
-    assert narrow["overflow"] <= 0, narrow
-    assert stacked["deskRail"]["y"] < stacked["deskScene"]["y"] < stacked["deskPult"]["y"]
-    assert all(box["width"] > 0 for box in stacked.values()), stacked
+    facts = {}
+    for width in SWEPT_WIDTHS:
+        page.set_viewport_size({"width": width, "height": 900})
+        facts[width] = page.evaluate(LAYOUT_FACTS, ids)
+    return facts
+
+
+def test_the_page_does_not_scroll_sideways_at_any_swept_width_and_stacks_up_to_900px(
+        desk: Desk) -> None:
+    """Twelve widths from a phone to a wide screen, the two sides of the 900px break included.
+
+    The claim is the sweep's, and it is stated as the sweep: at every width in the table the
+    page's scroll width is no wider than the window, and the regions stand in the layout that
+    width owes them -- three columns above 900px, one stacked reading order at 900px and under.
+    """
+    for width, facts in _sweep(desk.page).items():
+        boxes = facts["boxes"]
+        assert facts["overflow"] <= 0, (width, facts["overflow"])
+        assert all(box["width"] > 0 for box in boxes.values()), (width, boxes)
+        assert boxes["deskScene"]["y"] < boxes["deskFeed"]["y"] < boxes["deskSummary"]["y"], width
+        if width <= STACKED_UP_TO:
+            assert boxes["deskRail"]["y"] < boxes["deskScene"]["y"] < boxes["deskPult"]["y"], width
+        else:
+            assert boxes["deskRail"]["x"] < boxes["deskScene"]["x"] < boxes["deskPult"]["x"], width
+            assert boxes["deskRail"]["y"] == boxes["deskPult"]["y"] > 0, width
     assert desk.problems == []
+
+
+def test_the_sweep_sees_an_overflow_that_only_a_narrow_window_shows(
+        chromium: Browser, desk_url: str) -> None:
+    """The regression for the old two-width test: a region wider than a phone.
+
+    A rule that widens the feed only under 400px leaves 800px and 1280px, the two widths the
+    test used to look at, exactly as they were. Sweeping finds it at 320px and 375px and
+    nowhere else, so a page that scrolled sideways on a phone can no longer pass.
+    """
+    context = chromium.new_context(viewport={"width": 1280, "height": 900})
+    page = context.new_page()
+
+    def widen(route: Route) -> None:
+        real = route.fetch()
+        route.fulfill(response=real, body=real.text() + PLANTED_NARROW_OVERFLOW)
+
+    page.route("**/panel/desk.css", widen)
+    try:
+        page.goto(desk_url, wait_until="load")
+        page.wait_for_selector('#deskShell[data-state="ready"]')
+        overflowing = {width for width, facts in _sweep(page).items() if facts["overflow"] > 0}
+    finally:
+        context.close()
+    assert overflowing == {320, 375}
+    assert not overflowing & {800, 1280}
 
 
 def test_the_classic_panel_link_is_a_visible_focusable_target_of_44px(desk: Desk) -> None:

@@ -10,15 +10,20 @@
 // What a caller does with an answer, and which screen it lands on, stays with
 // the caller: this module opens the doors and knows nothing else.
 //
-// Nothing here has been changed in the move. The one addition is the seam the
-// move needed: the reader's language and the session drop were names in the boot
-// module's closure, and they are a `locale` accessor handed in and a
-// `dropSession` handed out.
-//
-// The doors that keep nothing between calls -- the read, the wire step of the
-// write, the stream -- are module-level functions; `createTransport` holds only
-// what a window remembers, its token and its session epoch, so no function here
-// runs past fifty lines.
+// The statements were moved out of `studio.js`, and the text is not identical: a
+// name that lived in the boot module's closure had to cross the seam. What
+// differs from the Studio's text is exactly this. The reader's language is a
+// `locale` accessor handed to `createTransport`, where the boot module read its
+// own preferences. The session drop that `submit` and the dropped-stream handler
+// each did inline is `dropSession`, handed out. The payload judgment that
+// `loadSession` made inline is `foreignSession`. The stream is opened by
+// `openStream`, the wire step of a write is `postJson`, and both of those and
+// `readJson` are module-level functions that take what they use, because the
+// doors that keep nothing between calls have no need of the closure:
+// `createTransport` holds only what a window remembers, its token and its session
+// epoch, so no function here runs past fifty lines. The request each door makes
+// -- its address, headers and body, its deadline, the way a refusal is
+// translated -- is the request the boot module made.
 import {refusalCode} from "./command-projection.js";
 
 //: A GET is aborted at READ_DEADLINE, its body included -- wide, as a healthy

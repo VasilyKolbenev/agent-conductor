@@ -111,6 +111,14 @@ ASSETS = {
     "/panel/desk.js": "text/javascript; charset=utf-8",
     # The wire doors, moved out of the Studio's boot module for the desk to share.
     "/panel/desk-transport.js": "text/javascript; charset=utf-8",
+    # The desk's own words, RU and EN.
+    "/panel/desk-copy.js": "text/javascript; charset=utf-8",
+    # The word of a task row and the strings that say it.
+    "/panel/desk-status.js": "text/javascript; charset=utf-8",
+    "/panel/desk-status-copy.js": "text/javascript; charset=utf-8",
+    # The regions the desk draws.
+    "/panel/desk-rail.js": "text/javascript; charset=utf-8",
+    "/panel/desk-scene.js": "text/javascript; charset=utf-8",
     # The wizard's pure model: the lane that writes the wizard registers its own rows.
     "/panel/desk-wizard-model.js": "text/javascript; charset=utf-8",
     "/panel/desk-wizard-materials.js": "text/javascript; charset=utf-8",
@@ -223,6 +231,27 @@ REFUSED = (
     "/panel/%2e%2e/desk-transport.js", "/panel/DESK-TRANSPORT.JS",
     "/panel/Desk-transport.js", "/panel/desk-transport.js/",
     "/panel/desk-transport.js%00.txt",
+    # The desk's catalogue, the same nine shapes again.
+    "/panel/desk-copy.json", "/panel/desk-copy.js?v=1", "/panel/desk-copy.js.map",
+    "/panel/../desk-copy.js", "/panel/%2e%2e/desk-copy.js", "/panel/DESK-COPY.JS",
+    "/panel/Desk-copy.js", "/panel/desk-copy.js/", "/panel/desk-copy.js%00.txt",
+    # The two status modules, the same nine shapes each.
+    "/panel/desk-status.json", "/panel/desk-status.js?v=1", "/panel/desk-status.js.map",
+    "/panel/../desk-status.js", "/panel/%2e%2e/desk-status.js", "/panel/DESK-STATUS.JS",
+    "/panel/Desk-status.js", "/panel/desk-status.js/", "/panel/desk-status.js%00.txt",
+    "/panel/desk-status-copy.json", "/panel/desk-status-copy.js?v=1",
+    "/panel/desk-status-copy.js.map", "/panel/../desk-status-copy.js",
+    "/panel/%2e%2e/desk-status-copy.js", "/panel/DESK-STATUS-COPY.JS",
+    "/panel/Desk-status-copy.js", "/panel/desk-status-copy.js/",
+    "/panel/desk-status-copy.js%00.txt",
+    # The rail, the same nine shapes.
+    "/panel/desk-rail.json", "/panel/desk-rail.js?v=1", "/panel/desk-rail.js.map",
+    "/panel/../desk-rail.js", "/panel/%2e%2e/desk-rail.js", "/panel/DESK-RAIL.JS",
+    "/panel/Desk-rail.js", "/panel/desk-rail.js/", "/panel/desk-rail.js%00.txt",
+    # The scene, the same nine shapes.
+    "/panel/desk-scene.json", "/panel/desk-scene.js?v=1", "/panel/desk-scene.js.map",
+    "/panel/../desk-scene.js", "/panel/%2e%2e/desk-scene.js", "/panel/DESK-SCENE.JS",
+    "/panel/Desk-scene.js", "/panel/desk-scene.js/", "/panel/desk-scene.js%00.txt",
 )
 #: Packaged panel resources served by NO route. The Graph window's files left
 #: this list when the route above became real; the partition check below is

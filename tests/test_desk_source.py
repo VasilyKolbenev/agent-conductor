@@ -15,6 +15,7 @@ text and says nothing about what a browser renders.
 from __future__ import annotations
 
 import re
+from html.parser import HTMLParser
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -53,17 +54,85 @@ def _document_faults(html: str) -> list[str]:
     return faults
 
 
+class _Attributes(HTMLParser):
+    """Every attribute name of every start tag, as the tokenizer reads them, lower-cased."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.names: list[str] = []
+
+    def handle_starttag(self, tag, attrs):
+        self.names += [name for name, _value in attrs]
+
+
+def _attribute_names(html: str) -> list[str]:
+    seen = _Attributes()
+    seen.feed(html)
+    seen.close()
+    return seen.names
+
+
 def _inline_faults(html: str, expected_scripts: tuple[str, ...]) -> list[str]:
     faults = []
     if re.findall(r"<script\b[^>]*>", html, re.IGNORECASE) != list(expected_scripts):
         faults.append("the script tags are not exactly the expected ones")
     if re.search(r"<style\b", html, re.IGNORECASE):
         faults.append("the page carries a <style> block")
-    if re.search(r"\sstyle\s*=", html, re.IGNORECASE):
+    # The verdict is the tokenizer's: an attribute is whatever it reads as one, however it is
+    # separated from what precedes it (a space, a `/`, or nothing after a quoted value). The
+    # patterns stay as a second net over the raw text, and each is written to take a space or a
+    # `/` as the separator, as the tokenizer does.
+    names = _attribute_names(html)
+    if "style" in names or re.search(r"[\s/]style\s*=", html, re.IGNORECASE):
         faults.append("the page carries an inline style attribute")
-    if re.search(r"\son[a-z]+\s*=", html, re.IGNORECASE):
+    if (any(name.startswith("on") for name in names)
+            or re.search(r"[\s/]on[a-z]+\s*=", html, re.IGNORECASE)):
         faults.append("the page carries an inline handler")
     return faults
+
+
+#: The one literal a person may read on the page: the product's own name, which is the
+#: same word in both languages. Every other word comes from the catalogue.
+PRODUCT_NAME = "December Command"
+#: The attributes that hold words a person hears or sees: a screen reader's name for a
+#: control, a tooltip, an image's text and a field's hint.
+LABEL_ATTRIBUTES = ("aria-label", "title", "alt", "placeholder")
+
+
+class _Words(HTMLParser):
+    """The text nodes and the labelling attributes of a page, as the tokenizer reads them.
+
+    A comment and the body of a script or a style are not words a person reads, so they
+    are left out; everything else, the `<title>` included, is.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.texts: list[str] = []
+        self.labels: list[tuple[str, str, str]] = []
+        self._raw = 0
+
+    def handle_starttag(self, tag, attrs):
+        self.labels += [(tag, name, value or "") for name, value in attrs
+                        if name in LABEL_ATTRIBUTES]
+        self._raw += tag in ("script", "style")
+
+    def handle_endtag(self, tag):
+        self._raw -= bool(self._raw) and tag in ("script", "style")
+
+    def handle_data(self, data):
+        if not self._raw and data.strip():
+            self.texts.append(data.strip())
+
+
+def _text_faults(html: str) -> list[str]:
+    words = _Words()
+    words.feed(html)
+    words.close()
+    faults = [f"person-facing text written as a literal: {text!r}"
+              for text in words.texts if text != PRODUCT_NAME]
+    return faults + [f"person-facing {name} written as a literal on <{tag}>: {value!r}"
+                     for tag, name, value in words.labels]
 
 
 def _reference_faults(html: str) -> list[str]:
@@ -91,13 +160,13 @@ def desk_page_faults(
         One sentence per fault; empty when the page is sound.
     """
     return (_document_faults(html) + _inline_faults(html, expected_scripts)
-            + _reference_faults(html))
+            + _reference_faults(html) + _text_faults(html))
 
 
 CLEAN = (
     '<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n'
-    f"<title>Desk</title>\n{DESK_TAG}</script>\n</head>\n<body>\n"
-    '<a href="/panel/index.html">Classic panel</a>\n</body>\n</html>\n')
+    f"<title>{PRODUCT_NAME}</title>\n{DESK_TAG}</script>\n</head>\n<body>\n"
+    '<a href="/panel/index.html" data-i18n="desk.classic"></a>\n</body>\n</html>\n')
 OTHER_TAG = '<script src="/panel/other.js" type="module">'
 LINK = 'href="/panel/index.html"'
 #: Each defect the checker claims to refuse, the page that carries it, and a
@@ -132,11 +201,43 @@ BROKEN = {
         CLEAN.replace("<a ", "<a style='color:red' "), "style attribute"),
     "an upper-case style attribute": (
         CLEAN.replace("<a ", '<a STYLE="color:red" '), "style attribute"),
+    # The tokenizer reads a `/` before an attribute name as a separator, as it reads a space:
+    # `<a/style="x">` carries a style attribute, and so does `<a/onclick="x">` a handler.
+    "a style attribute after a slash": (
+        CLEAN.replace("<a ", '<a/style="color:red" '), "style attribute"),
+    "a style attribute after a tab": (
+        CLEAN.replace("<a ", '<a\tstyle="color:red" '), "style attribute"),
+    "a style attribute after a newline": (
+        CLEAN.replace("<a ", '<a\nstyle="color:red" '), "style attribute"),
     "an inline handler": (CLEAN.replace("<a ", '<a onclick="run()" '), "handler"),
+    "a handler after a slash": (CLEAN.replace("<a ", '<a/onclick="run()" '), "handler"),
+    "a handler after a tab": (CLEAN.replace("<a ", '<a\tonclick="run()" '), "handler"),
+    "a handler after a newline": (CLEAN.replace("<a ", '<a\nonclick="run()" '), "handler"),
+    # After a quoted value the tokenizer needs no separator either: it reads the next attribute
+    # name where the closing quote ends (a parse error, and an attribute all the same).
+    "a style attribute straight after a quoted value": (
+        CLEAN.replace(LINK, LINK + 'style="color:red"'), "style attribute"),
+    "a handler straight after a quoted value": (
+        CLEAN.replace(LINK, LINK + 'onclick="run()"'), "handler"),
+    "a handler on the root element straight after a quoted value": (
+        CLEAN.replace('<html lang="en">', '<html lang="en"onload="run()">'), "handler"),
     "no language": (CLEAN.replace(' lang="en"', ""), "lang"),
-    "an empty title": (CLEAN.replace("<title>Desk</title>", "<title> </title>"), "title"),
-    "no title": (CLEAN.replace("<title>Desk</title>\n", ""), "title"),
+    "an empty title": (CLEAN.replace(f"<title>{PRODUCT_NAME}</title>", "<title> </title>"),
+                       "title"),
+    "no title": (CLEAN.replace(f"<title>{PRODUCT_NAME}</title>\n", ""), "title"),
     "no doctype": (CLEAN.replace("<!doctype html>\n", ""), "doctype"),
+    "a sentence written as a literal": (
+        CLEAN.replace("</body>", "<p>The desk is being built.</p>\n</body>"), "literal"),
+    "a link text written as a literal": (
+        CLEAN.replace(' data-i18n="desk.classic"></a>', ">Classic panel</a>"), "literal"),
+    "a title written as a literal": (
+        CLEAN.replace(f"<title>{PRODUCT_NAME}</title>", "<title>Desk</title>"), "literal"),
+    "an aria-label written as a literal": (
+        CLEAN.replace("<a ", '<a aria-label="Tasks" '), "aria-label"),
+    "a tooltip written as a literal": (
+        CLEAN.replace("<a ", '<a title="Open the classic panel" '), "title"),
+    "a placeholder written as a literal": (
+        CLEAN.replace("</body>", '<input placeholder="Name">\n</body>'), "placeholder"),
 }
 
 
@@ -193,6 +294,8 @@ def test_the_desk_page_carries_its_five_region_mounts_once_each_and_empty():
         assert html.count(f'id="{ident}"') == 1, ident
         tag = re.search(rf'<[a-z]+ [^>]*id="{ident}"[^>]*>', html)
         assert tag and f'data-region="{region}"' in tag[0], ident
+        # Each mount is named to a screen reader from the catalogue, never by a literal.
+        assert f'data-i18n-label="desk.{region}.label"' in tag[0], ident
         assert 'data-state="empty"' in tag[0] and "empty" in SCREEN_STATES, ident
         assert re.search(rf'id="{ident}"[^>]*></[a-z]+>', html), f"{ident} is not empty"
     assert re.findall(r'data-region="([a-z]+)"', html) == [name for name, _ in REGIONS]
@@ -208,8 +311,10 @@ def test_the_desk_page_carries_its_five_region_mounts_once_each_and_empty():
 # `X-Conduct-Project` header belong to lane H's route on day 5 and are not faked:
 # the day that lands this list, the literal check and the header check change with it.
 
-#: The `path.<name>` reads the boot module makes, exactly.
-DESK_READS = frozenset({"tasks", "runs"})
+#: The `path.<name>` reads the boot module makes, exactly: the two lists, the automation of
+#: the newest run of each task (spec 5.2.1 reads it for every task, as the hub does), and
+#: the read of the chosen task's newest run and of its controls.
+DESK_READS = frozenset({"tasks", "runs", "automation", "run", "controls"})
 MOUNT_IDS = frozenset(ident for _, ident in REGIONS)
 
 
@@ -254,6 +359,10 @@ BOOT_BROKEN = {
     "a read that was dropped": (_edit("path.tasks()", "path.runs()"), "no longer reads"),
     "an id the page does not carry": (_edit('"deskFeed"', '"deskFeeds"'), "does not carry"),
     "a mount the module forgot": (_edit('"deskPult"', '"deskShell"'), "does not mount"),
+    "a read the scene never argued for": (
+        _edit("path.controls(runId)", "path.decisions(runId)"), "not argued for"),
+    "a scene read that was dropped": (
+        _edit("path.controls(runId)", "path.run(runId)"), "no longer reads"),
     "the project header before its route": (
         lambda text: text + '\nconst HEADERS = {"X-Conduct-Project": "p"};\n',
         "X-Conduct-Project"),
@@ -275,6 +384,137 @@ def test_the_desk_boot_check_refuses_each_defect_and_names_it(edit, needle):
                               DESK_PAGE.read_text(encoding="utf-8"))
     assert faults, "a defective module was accepted"
     assert any(needle in fault for fault in faults), faults
+
+
+# -- the boot module writes nothing ----------------------------------------------
+#
+# Facts enter the desk through a READ and through nothing else, and this module is the
+# one that turns a read into a word on a region. It may not reach the mutation door
+# (the transport's `submit` and the session it mints a write's token from), open a door
+# of its own, or say a state word the seven do not hold. The event stream is not among
+# them: it is a read, and the spec puts the desk's subscription in this module. The doors
+# are named, not counted: the function reads the module's code, comments stripped, so
+# prose that says "submit" does not red and a real call does.
+
+#: What reaches a write, or a door of the module's own. Each is a word of the code.
+WRITE_DOORS = (r"\bsubmit\b", r"\bdropSession\b", r"\bfetch\s*\(", r"\bmethod\s*:",
+               r'"POST"', r"\bXMLHttpRequest\b", r"\bsendBeacon\b")
+#: The functions whose returns ARE phases: every word they return is a state word.
+PHASE_FUNCTIONS = ("phaseOf", "worst")
+
+
+def _function_body(code: str, name: str) -> str:
+    start = re.search(rf"function\s+{name}\s*\([^)]*\)\s*\{{", code)
+    if start is None:
+        return ""
+    depth, at = 1, start.end()
+    while at < len(code) and depth:
+        depth += (code[at] == "{") - (code[at] == "}")
+        at += 1
+    return code[start.end():at]
+
+
+def _state_words(code: str) -> set[str]:
+    """Every literal the module puts in a state position: a mark, an attribute, a phase."""
+    words = set(re.findall(r'\bmark\([^,()]+,\s*"([^"]*)"\s*\)', code))
+    words |= set(re.findall(r'data-state"\s*,\s*"([^"]*)"', code))
+    words |= set(re.findall(r'\bdataset\.state\s*=\s*"([^"]*)"', code))
+    words |= set(re.findall(r'\bphase\s*:\s*"([^"]*)"', code))
+    for name in PHASE_FUNCTIONS:
+        words |= set(re.findall(r'"([a-z]+)"', _function_body(code, name)))
+    return words
+
+
+def desk_write_faults(source: str) -> list[str]:
+    """Every way a desk module reaches a write door or says a stray state word.
+
+    Args:
+        source: The text of one desk module.
+
+    Returns:
+        One sentence per fault; empty when the module only reads and says the seven.
+    """
+    code = strip_comments(source)
+    faults = [f"reaches a write door: {found.group(0)}"
+              for pattern in WRITE_DOORS for found in re.finditer(pattern, code)]
+    faults += [f"writes the state word {word!r}, which is not one of the seven"
+               for word in sorted(_state_words(code) - set(SCREEN_STATES))]
+    return faults
+
+
+#: Each defect the guard claims to refuse: the edit that plants it in a copy of the real
+#: module, and a word its fault must contain.
+BOOT_WRITES = {
+    "a submit taken from the transport": (
+        lambda text: text + "\nconst {submit} = createTransport(locale);\n", "write door"),
+    "a session drop": (lambda text: text + "\ndropSession();\n", "write door"),
+    "a POST method": (lambda text: text + '\nconst OPTIONS = {method: "POST"};\n',
+                      "write door"),
+    "a door of its own": (lambda text: text + '\nfetch("/command/tasks");\n', "write door"),
+    "a state word the seven do not hold, through mark": (
+        lambda text: text + '\nmark(shell, "done");\n', "'done'"),
+    "a phase word the seven do not hold, returned": (
+        _edit('  return "ready";\n}', '  return "finished";\n}'), "'finished'"),
+    "a phase word the seven do not hold, in a phase property": (
+        _edit('Object.freeze({phase: "loading", list: NONE})',
+              'Object.freeze({phase: "pending", list: NONE})'), "'pending'"),
+    "a state word through setAttribute": (
+        lambda text: text + '\nnode.setAttribute("data-state", "ok");\n', "'ok'"),
+    "a state word through dataset": (
+        lambda text: text + '\nnode.dataset.state = "idle";\n', "'idle'"),
+}
+
+
+def test_the_desk_boot_module_writes_nothing_and_says_only_the_seven_state_words():
+    assert len(SCREEN_STATES) == 7
+    assert desk_write_faults(DESK_SCRIPT.read_text(encoding="utf-8")) == []
+
+
+@pytest.mark.parametrize("edit,needle", list(BOOT_WRITES.values()), ids=list(BOOT_WRITES))
+def test_the_desk_write_check_refuses_each_planted_write_and_names_it(edit, needle):
+    faults = desk_write_faults(edit(DESK_SCRIPT.read_text(encoding="utf-8")))
+    assert faults, "a defective module was accepted"
+    assert any(needle in fault for fault in faults), faults
+
+
+def test_the_desk_write_check_does_not_take_the_stream_for_a_write_door():
+    """The event stream is a read: a frame buys a re-read and is never a fact or a write.
+
+    The boot module is where the spec puts its subscription (5.6.1), so a check that refused
+    `openStream` would refuse the desk its own live updates the day they are written.
+    """
+    source = DESK_SCRIPT.read_text(encoding="utf-8")
+    assert desk_write_faults(source + "\nconst stream = openStream();\n") == []
+
+
+def test_the_desk_write_check_reads_code_and_not_the_prose_around_it():
+    prose = '// it never calls submit() and never says "done" in mark(shell, "done")\n'
+    assert desk_write_faults(prose + DESK_SCRIPT.read_text(encoding="utf-8")) == []
+
+
+#: The modules of the desk that only read, draw or say a word: none reaches a write door, and
+#: none says a state word outside the seven. A module joins this list the day it is written.
+READ_SIDE = ("desk.js", "desk-rail.js", "desk-scene.js", "desk-status.js")
+#: The render modules, and the one function each exports (`mountX(mount, state, handlers)`).
+RENDER_MODULES = {"desk-rail.js": "mountRail", "desk-scene.js": "mountScene"}
+
+
+@pytest.mark.parametrize("name", READ_SIDE)
+def test_no_read_side_desk_module_reaches_a_write_door_or_says_a_stray_state_word(name):
+    source = (PANEL / name).read_text(encoding="utf-8")
+    assert desk_write_faults(source) == []
+    # Calibration: the same check bites a write planted in THIS module, so a clean answer
+    # is not an empty one.
+    assert desk_write_faults(source + "\nsubmit();\n")
+    assert desk_write_faults(source + '\nmark(node, "done");\n')
+
+
+@pytest.mark.parametrize("name,mount", list(RENDER_MODULES.items()))
+def test_a_desk_render_module_exports_only_its_mount(name, mount):
+    code = strip_comments((PANEL / name).read_text(encoding="utf-8"))
+    exported = re.findall(r"^export\s+(?:async\s+)?(?:function|const|class)\s+(\w+)", code,
+                          re.MULTILINE)
+    assert exported == [mount]
 
 
 # -- the partition over studio*, desk* and hub* ---------------------------------
