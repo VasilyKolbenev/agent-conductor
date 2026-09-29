@@ -11,11 +11,13 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 LIMIT = 100
 CAPPED = (
+    "src/conductor/command/plan_budget.py",
     "src/conductor/command/product_names.py",
     "src/conductor/command/project_git.py",
     "src/conductor/command/workflow_flow.py",
     "tests/test_command_line_cap.py",
     "tests/test_command_flow_fixtures.py",
+    "tests/test_command_plan_budget.py",
     "tests/test_command_product_names.py",
     "tests/test_command_project_git.py",
     "tests/test_command_workflow_flow.py",
