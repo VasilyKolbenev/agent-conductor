@@ -14,6 +14,10 @@ export const DESK_COPY = Object.freeze({
     "Стол в разработке: рельс и сцена работают; лента, выжимка и пульт остаются пустыми, "
       + "пока не появятся их модули."],
   "desk.classic": ["Classic panel", "Прежняя панель"],
+  // -- the terminal state: an address that claims another project ------------------------
+  "desk.foreign": [
+    "This desk is open for another project. Reload the page to continue.",
+    "Стол открыт для другого проекта. Перезагрузите страницу, чтобы продолжить."],
   // -- the names of the five regions, as a screen reader hears them --------------------
   "desk.rail.label": ["Tasks", "Задачи"],
   "desk.scene.label": ["Scene", "Сцена"],

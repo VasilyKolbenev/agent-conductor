@@ -33,6 +33,7 @@ export const LATE = "read_late";
 
 export const path = Object.freeze({
   tasks: () => "/command/tasks",
+  project: () => "/command/project",
   workflows: () => "/command/workflows",
   workflow: (id) => `/command/workflows/${encodeURIComponent(id)}`,
   revision: (id, n) => `/command/workflows/${encodeURIComponent(id)}`
