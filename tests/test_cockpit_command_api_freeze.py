@@ -151,6 +151,9 @@ EXPECTED_ERRORS = {
     #: The confirmation a human gave no longer stands on the run's facts: it moved, or the
     #: preview it named is gone. The request is well formed and nothing else is at fault.
     "preview_stale": (409, "authorization"),
+    #: The server was started to view the project: the request is fine, and what it needs is
+    #: done only by the active server.
+    "project_not_active": (409, "lifecycle"),
 }
 EXPECTED_ERROR_CODES = frozenset(EXPECTED_ERRORS)
 
