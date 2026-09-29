@@ -114,6 +114,8 @@ BOOT_ASSETS = {
     # sections import it, so the entry route's module graph fetches it.
     "studio-ceilings.js": 200,
     "command-projection.js": 200, "command-view.js": 200,
+    # The wire doors the boot module imports: reads, writes, session and stream.
+    "desk-transport.js": 200,
     # The five-screen shell and its mounts, preferences and the scene lenses.
     "studio-shell.js": 200, "studio-runhead.js": 200, "studio-mounts.js": 200, "studio-preferences.js": 200,
     "studio-bridge.js": 200, "studio-situation.js": 200, "studio-taskruns.js": 200,

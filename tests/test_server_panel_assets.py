@@ -10,7 +10,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from conductor import server
+from conductor import server, server_assets
 from conductor.command.http_transport import MAX_COMMAND_BODY_BYTES
 from tests.test_server import start
 from tests.test_store import good_lane, write_project
@@ -101,6 +101,12 @@ ASSETS = {
     "/panel/studio-quotas-model.js": "text/javascript; charset=utf-8",
     "/panel/studio-quotas.js": "text/javascript; charset=utf-8",
     "/panel/studio-quotaflow.js": "text/javascript; charset=utf-8",
+    # The desk's page, at its own address from the first day: the hub mounts
+    # this route before `GET /` ever switches to it, and `GET /` still answers
+    # studio.html, so the two documents are told apart by route alone.
+    "/panel/desk.html": "text/html; charset=utf-8",
+    # The wire doors, moved out of the Studio's boot module for the desk to share.
+    "/panel/desk-transport.js": "text/javascript; charset=utf-8",
     # The classic panel, at the route that now reaches it. This target was a
     # deliberate 404 while `GET /` served index.html; the Studio took the front
     # door, so the near-miss that used to assert the 404 became this row.
@@ -184,6 +190,18 @@ REFUSED = (
     "/panel/%2e%2e/studio-view.js", "/panel/STUDIO-VIEW.JS",
     "/panel/Studio-view.js", "/panel/studio-view.js/",
     "/panel/studio-view.js%00.txt",
+    # The desk page's near-misses (spec 5.6.9). Its route is real from the day
+    # its file is packaged, so every neighbouring spelling -- a wrong suffix, a
+    # query, a case fold, a trailing slash, an encoded traversal -- is asserted
+    # a 404 in the same commit rather than left to be found later.
+    "/panel/desk.htm", "/panel/desk.html?v=1", "/panel/DESK.HTML",
+    "/panel/Desk.html", "/panel/desk.html/", "/panel/%2e%2e/desk.html",
+    # The wire doors module, given the same nine shapes as the Studio's own.
+    "/panel/desk-transport.json", "/panel/desk-transport.js?v=1",
+    "/panel/desk-transport.js.map", "/panel/../desk-transport.js",
+    "/panel/%2e%2e/desk-transport.js", "/panel/DESK-TRANSPORT.JS",
+    "/panel/Desk-transport.js", "/panel/desk-transport.js/",
+    "/panel/desk-transport.js%00.txt",
 )
 #: Packaged panel resources served by NO route. The Graph window's files left
 #: this list when the route above became real; the partition check below is
@@ -385,6 +403,46 @@ def test_the_panel_route_answers_with_the_entry_and_with_no_other_document(
     finally:
         server_.shutdown()
         server_.server_close()
+
+
+def test_the_desk_page_is_served_at_its_own_address_while_the_front_door_still_answers_the_studio(
+        tmp_path):
+    """Two documents, two routes: the desk is reachable and `GET /` has not moved.
+
+    The hub mounts `/panel/desk.html` from the first day, before the entry page
+    switches to the desk. Serving the desk page proves nothing about the front
+    door, and the front door still answering the Studio's shell proves nothing
+    about the desk, so both are read off the wire in one place and compared to
+    the packaged bytes, and to each other -- a route table that pointed both at
+    one file would satisfy each half alone.
+    """
+    root = write_project(tmp_path, lanes={"claude": good_lane()})
+    server_, base = start(root)
+    panel = importlib.resources.files("conductor") / "panel"
+    try:
+        desk_status, desk_body, desk_headers = _status(base + "/panel/desk.html")
+        entry_status, entry_body, _ = _status(base + "/")
+    finally:
+        server_.shutdown()
+        server_.server_close()
+    assert desk_status == 200 and entry_status == 200
+    assert desk_body == (panel / "desk.html").read_bytes()
+    assert desk_headers["Content-Type"] == "text/html; charset=utf-8"
+    assert entry_body == (panel / "studio.html").read_bytes()
+    assert entry_body != desk_body
+    assert server_assets.ENTRY_PAGE == "studio.html"
+
+
+def test_the_desk_registry_is_a_literal_slice_of_the_panel_allowlist():
+    """`DESK_ASSETS` rows are the allowlist's own rows, spelled as literals."""
+    assert server_assets.DESK_ASSETS, "the desk registry is empty"
+    for route, row in server_assets.DESK_ASSETS.items():
+        assert server.PANEL_ASSETS.get(route) == row, route
+        _, name = row
+        assert route == f"/panel/{name}"
+        assert name.startswith("desk") and not set(name) & set("/\\%?:*")
+    registered = {name for _, name in server_assets.DESK_ASSETS.values()}
+    assert server_assets.ENTRY_PAGE not in registered
 
 
 def test_the_built_wheel_carries_exactly_the_panel_resources_the_server_serves(

@@ -1,10 +1,12 @@
 "use strict";
-// Boot, transport and router for the Workflow Studio: one store, one render
-// pass, one door to the wire and one door that writes.
+// Boot and router for the Workflow Studio: one store, one render pass, and the
+// meaning of every read and every press.
 //
-// This is the ONLY module of the Studio that touches the network. `graph.js`
-// holds the same position in its own window and the source gate pins both the
-// same way: two `fetch(` -- one read, one write -- and one `new EventSource(`.
+// The wire itself is `desk-transport.js`, the ONLY module of the panel that
+// touches the network: the source gate pins it at two `fetch(` -- one read, one
+// write -- and one `new EventSource(`, and pins this module at none. It asks
+// the transport for a read, a write or the stream and decides what the answer
+// means; `graph.js` holds the same position in its own window.
 //
 // Facts enter through a READ and through nothing else. A frame on the stream
 // carries an identifier and never a record, so it can never be a fact here: it
@@ -15,7 +17,8 @@
 // earlier write can reach `submit`, and every write is followed by a read that
 // is what actually confirms it -- only a read whose provenance matches what the
 // write ASKED FOR. Anything else is outcome-unknown, and never a guess.
-import {ERROR_LABELS, canonicalJson, refusalCode} from "./command-projection.js";
+import {ERROR_LABELS, canonicalJson} from "./command-projection.js";
+import {LATE, createTransport, path} from "./desk-transport.js";
 import {mountCanvas} from "./studio-canvas.js";
 import {focusTarget, restoreFocus, restoreTyped, typedValues} from "./studio-focus.js";
 import {mountInspector} from "./studio-inspector.js";
@@ -43,10 +46,8 @@ import {isId, mountDiagnostics, mountOverview, mountToolbar}
 //: (`studio-notice-copy.js`), so a sentence already on screen switches with it.
 const UNKNOWN = Object.freeze({key: "notice.outcome_unknown"});
 const STREAM_DOWN = Object.freeze({key: "notice.stream_down_write"});
-//: A GET is aborted at READ_DEADLINE, its body included -- wide, as a healthy
-//: read can queue behind a write. LATE is this window's word for it.
-const READ_DEADLINE = 20000;
-const LATE = "read_late";
+//: A read the transport abandoned at its deadline fails with LATE; this window
+//: says it as LATE_SAID.
 const LATE_SAID = Object.freeze({key: "notice.read_late"});
 const UNSENT = Object.freeze({key: "notice.unsent"});
 const WRITING = Object.freeze({key: "notice.writing"});
@@ -81,11 +82,6 @@ const noticeHas = (notice, key) => Array.isArray(notice)
   });
 
   let state = EMPTY;
-  // The token this process minted, held in ONE module-local variable. It goes
-  // into a request header and nowhere else: never a URL, never a DOM node,
-  // never storage. A generation travels with it so an answer authorized by a
-  // session that has since rotated cannot land.
-  let csrfToken = "", sessionEpoch = 0;
   let streamOpen = false;
   // Which write is the current one. A dropped stream retires the write in
   // flight along with the session that authorized it.
@@ -120,6 +116,9 @@ const noticeHas = (notice, key) => Array.isArray(notice)
     }});
   readLocale = appearance.value.locale;
   window.addEventListener("pagehide", () => appearance.dispose());
+  //: The doors to the wire live in the transport module; the language they ask
+  //: in is this window's, read at each request.
+  const {readJson, submit, dropSession, openStream} = createTransport(() => appearance.value.locale);
 
   function dispatch(event, redraw = true) {
     const next = reduce(state, event);
@@ -153,66 +152,11 @@ const noticeHas = (notice, key) => Array.isArray(notice)
 
   // -- reads ---------------------------------------------------------------
   //
-  // The one read door. Every GET on this surface goes through it, so a refusal
-  // is translated in one place and no caller invents a second vocabulary for
-  // what went wrong -- and every GET is bounded in one place, body and all.
-  async function readJson(target, stop = new AbortController()) {
-    const timer = setTimeout(() => stop.abort(LATE), READ_DEADLINE);
-    let response, payload;
-    try {
-      response = await fetch(target, {cache: "no-store", signal: stop.signal,
-        headers: {"Accept-Language": appearance.value.locale}});
-      payload = await response.json();
-    } catch (_error) {
-      throw new Error(stop.signal.aborted ? LATE : "store_error");
-    } finally {
-      clearTimeout(timer);
-    }
-    if (!response.ok) throw new Error(refusalCode(payload));
-    return payload;
-  }
+  // Every GET on this surface goes through `readJson`, the transport module's
+  // one read door, so a refusal is translated in one place and every GET is
+  // bounded in one place, body and all. What a read's outcome MEANS is decided
+  // below, and only here.
 
-  //: `graph.js:209-226`, in shape and in order. The exact key set is checked
-  //: rather than the two keys read, the origin is compared to this window's
-  //: own, and a session that rotated under the request makes its answer
-  //: unusable -- a token that arrived for a generation nobody is waiting for
-  //: is not this window's token.
-  async function loadSession() {
-    if (csrfToken) return {generation: sessionEpoch, token: csrfToken};
-    const generation = ++sessionEpoch;
-    const payload = await readJson("/command/session");
-    if (generation !== sessionEpoch
-        || !payload || Object.keys(payload).sort().join(",") !== "csrf_token,origin"
-        || typeof payload.csrf_token !== "string" || !payload.csrf_token
-        || payload.origin !== location.origin) throw new Error("same_origin_denied");
-    csrfToken = payload.csrf_token;
-    return {generation, token: csrfToken};
-  }
-
-  const path = Object.freeze({
-    tasks: () => "/command/tasks",
-    workflows: () => "/command/workflows",
-    workflow: (id) => `/command/workflows/${encodeURIComponent(id)}`,
-    revision: (id, n) => `/command/workflows/${encodeURIComponent(id)}`
-      + `/revisions/${encodeURIComponent(String(n))}`,
-    draft: (id) => `/command/workflows/${encodeURIComponent(id)}/draft`,
-    revisions: (id) => `/command/workflows/${encodeURIComponent(id)}/revisions`,
-    runs: () => "/command/runs",
-    run: (id) => `/command/runs/${encodeURIComponent(id)}`,
-    controls: (id) => `/command/runs/${encodeURIComponent(id)}/controls`,
-    decisions: (id) => `/command/runs/${encodeURIComponent(id)}/decisions`,
-    proposals: (id) => `/command/runs/${encodeURIComponent(id)}/proposals`,
-    actions: (id) => `/command/runs/${encodeURIComponent(id)}/actions`,
-    artifacts: (id) => `/command/runs/${encodeURIComponent(id)}/artifacts`,
-    automation: (id) => `/command/runs/${encodeURIComponent(id)}/automation`,
-    automationPreview: (id) => `/command/runs/${encodeURIComponent(id)}/automation/preview`,
-    automationAuthorize: (id) => `/command/runs/${encodeURIComponent(id)}/automation/authorize`,
-    automationControl: (id) => `/command/runs/${encodeURIComponent(id)}/automation/control`,
-  });
-  // Closed mutation targets share the same CSRF and refusal door.
-  const WRITE_TARGETS = Object.freeze(["draft", "revisions", "runs",
-    "decisions", "proposals", "actions", "artifacts", "tasks",
-    "automationPreview", "automationAuthorize", "automationControl"]);
   // These writes are independent of a selected workflow.
   const RUN_SCOPED = Object.freeze(
     ["decisions", "proposals", "actions", "artifacts", "tasks",
@@ -409,53 +353,11 @@ const noticeHas = (notice, key) => Array.isArray(notice)
     }
   }
 
-  // -- the one mutation door -----------------------------------------------
+  // -- writes --------------------------------------------------------------
   //
-  // Its target comes from a closed list and its body from the caller. Nothing
-  // else in this file reaches the wire with a method, and a Human's click is
-  // the only thing that reaches this.
-  async function submit(target, subject, body) {
-    if (!WRITE_TARGETS.includes(target)) return {status: "refused",
-      code: "route_not_found"};
-    let session;
-    try {
-      session = await loadSession();
-    } catch (error) {
-      return {code: error instanceof Error ? error.message : "store_error",
-        status: "refused"};
-    }
-    let response;
-    try {
-      response = await fetch(path[target](subject), {
-        body: JSON.stringify(body),
-        headers: {"Content-Type": "application/json", "Accept-Language": appearance.value.locale,
-          "X-Conduct-CSRF": session.token},
-        method: "POST",
-      });
-    } catch (_error) {
-      return {status: "unknown"};
-    }
-    let payload = null;
-    try {
-      payload = await response.json();
-    } catch (_error) {
-      payload = null;
-    }
-    if (!response.ok) {
-      const code = refusalCode(payload);
-      if (["csrf_denied", "same_origin_denied"].includes(code)) {
-        sessionEpoch += 1;
-        csrfToken = "";
-      }
-      return {code, payload, status: "refused"};
-    }
-    // A session rotated under an in-flight write makes its answer unusable:
-    // this window cannot say what landed, and saying nothing landed would be a
-    // claim about a durable record it did not observe.
-    return session.generation !== sessionEpoch
-      ? {status: "unknown"} : {payload, status: "accepted"};
-  }
-
+  // `submit` is the transport module's one mutation door: its target comes from
+  // a closed list there and its body from the caller, and a Human's click is
+  // the only thing that reaches it. What its answer means is decided below.
   function refusalOf(result) {
     if (result.status !== "refused") {
       return {phase: "outcome-unknown", notice: UNKNOWN};
@@ -633,7 +535,7 @@ const noticeHas = (notice, key) => Array.isArray(notice)
   // the server had to drop from a full mailbox, so it buys the same re-read; a
   // `run` frame carries identifiers only, and no field of it ever becomes a
   // fact on screen.
-  const stream = new EventSource("/events");
+  const stream = openStream();
   stream.onmessage = (event) => {
     let frame;
     try {
@@ -675,9 +577,8 @@ const noticeHas = (notice, key) => Array.isArray(notice)
     streamOpen = false;
     workflowEpoch += 1;
     runEpoch += 1;
-    sessionEpoch += 1;
+    dropSession();
     writeGeneration += 1;
-    csrfToken = "";
     pendingCarry = null;
     quotas.disconnectQuotas();
     automation.disconnect();

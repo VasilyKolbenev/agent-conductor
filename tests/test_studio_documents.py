@@ -354,9 +354,10 @@ def test_the_document_fragment_exports_its_two_builders_and_mounts_nothing():
     assert "export default" not in docs
     assert "mount.replaceChildren(" not in docs
     assert "chip(" not in docs
-    # The boot module names the road and hands the two callbacks through.
+    # The transport module names the road; the boot module hands the two callbacks through.
     boot = _code(BOOT)
-    assert "artifacts: (id) => `/command/runs/${encodeURIComponent(id)}/artifacts`," in boot
+    assert "artifacts: (id) => `/command/runs/${encodeURIComponent(id)}/artifacts`," in _code(
+        PANEL / "desk-transport.js")
     assert "editDocument: docs.editDocument," in boot
     assert "publishDocument: docs.publishDocument," in boot
     # And the inspector's sentence about an external input names the screen

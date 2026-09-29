@@ -39,7 +39,9 @@ from conductor.command import (
     workflow_draft,
 )
 from conductor.command.adapters import provider
+from conductor.server_assets import DESK_ASSETS
 
+from tests.studio_partition import hub_registry_names, packaged_names, partition_faults
 from tests.test_graph_source import _code
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -64,11 +66,16 @@ MODULES = ("studio-runstep-copy.js", "studio-participant-copy.js", "studio-run-d
            "studio-participants.js", "studio-orbit.js", "studio-ceilings.js",
            "studio-tasks-model.js", "studio-tasks.js", "studio-taskflow.js",
            "studio-mounts.js", "studio-shell.js", "studio-runhead.js", "studio-preferences.js", "studio-i18n.js",
-           "studio-quotas-model.js", "studio-quotas.js", "studio-quotaflow.js")
-#: The one transport module: every `fetch(`, the one stream, the session token
-#: and the screen router. `graph.js` holds the same position in its window, and
-#: the sealed-API guard below pins this one the same way.
+           "studio-quotas-model.js", "studio-quotas.js", "studio-quotaflow.js",
+           "desk-transport.js")
+#: The boot module: what each frame and each read MEANS, and the screen router.
+#: It reaches the wire only through the transport module below.
 BOOT = "studio.js"
+#: The one transport module: every `fetch(`, the one stream and the session
+#: token, moved out of the boot module so the desk can be built on the same
+#: doors. `graph.js` holds the same position in its window, and the sealed-API
+#: guard below pins this one the same way.
+TRANSPORT_MODULE = "desk-transport.js"
 IMPORTS = r'from "(\./[a-z-]+\.js)";'
 
 #: What each module MAY import -- a permission table, not an obligation. The
@@ -116,6 +123,10 @@ PERMITTED_IMPORTS = {
                                   "./studio-runhead.js"}),
     "studio-taskflow.js": frozenset({"./studio-tasks-model.js", "./studio-taskruns.js"}),
     "studio-model.js": frozenset(),
+    #: The wire doors import the one thing they translate a refusal with, and no
+    #: screen, store or copy module: a door that could reach a screen would be a
+    #: second boot module.
+    "desk-transport.js": frozenset({"./command-projection.js"}),
     # Pure S2 decoder; the actual store read door composes it with the base model.
     "studio-situation.js": frozenset({"./studio-model.js", "./studio-feedback-model.js",
                                       "./studio-runwords.js"}),
@@ -350,17 +361,30 @@ def test_every_studio_file_sits_in_the_panel_under_the_line_cap():
         assert lines <= LINE_CAP, f"{path.name} is {lines} lines"
 
 
-def test_the_packaged_studio_modules_are_exactly_the_ones_this_module_guards():
+def test_the_packaged_studio_desk_and_hub_files_are_all_guarded_or_registered():
     """A tenth module cannot arrive and be guarded by nothing.
 
     The list above is what every other test here iterates, so a file that is
     not on it passes no guard at all. Held in both directions: a module added
     to the package without a line here reds, and a line here naming no file
-    reds too.
+    reds too. The desk's files and the hub page's join the Studio's under the
+    same rule, each set answering to the registry of what its server serves:
+    `DESK_ASSETS` for the project server, `HUB_ASSETS` for the hub. The hub's
+    entry page, `hub.html`, is packaged but is not a `HUB_ASSETS` row: `GET /`
+    answers it, `/hub/<name>` does not (spec 4.6.3).
+
+    `HUB_ASSETS` is written by the lane that owns the hub and does not exist
+    yet. `hub_registry_names` reads it as absent -- and only for a missing
+    `conductor.hub.assets` -- so a `hub*` file packaged while no registry exists
+    reds here, and the day that lane adds the module this test starts judging
+    against it with no edit. The relation itself is `tests/studio_partition.py`'s,
+    shown biting on synthetic trees in `tests/test_desk_source.py`.
     """
-    packaged = {entry.name for entry in PANEL.iterdir()
-                if entry.name.startswith("studio") and entry.name.endswith(".js")}
-    assert packaged == set(MODULES)
+    faults = partition_faults(
+        packaged=packaged_names(PANEL), modules=frozenset(MODULES),
+        desk=frozenset(name for _, name in DESK_ASSETS.values()),
+        hub=hub_registry_names())
+    assert faults == [], faults
 
 
 def test_the_studio_module_graph_is_acyclic_and_stays_inside_its_permissions():
@@ -410,21 +434,32 @@ def test_the_boundary_module_reaches_no_dom_and_opens_no_socket():
     assert re.findall(IMPORTS, MODEL.read_text(encoding="utf-8")) == []
 
 
-def test_the_wire_door_opens_in_the_boot_module_and_nowhere_else():
+def test_the_wire_door_opens_in_the_transport_module_and_nowhere_else():
     """Transport is one file, and the sealed list is forbidden in all of them.
 
     A module that is still a placeholder passes this trivially, which is the
     honest answer: an empty file opens no door. It stops being trivial the
     moment the module is written, and that is when this guard starts paying.
+
+    The boot module is the one other file that may carry a word of the list --
+    it asks the platform for the reader's language -- and it may not carry a
+    door: `fetch(` and the stream belong to the transport module alone, which
+    is checked to HOLD them so an emptied transport cannot pass for a clean one.
     """
     everything = (_code(*(PANEL / name for name in MODULES))
                   + "\n" + HTML.read_text(encoding="utf-8")
                   + "\n" + STYLE.read_text(encoding="utf-8")).lower()
     for forbidden in SEALED:
         assert forbidden not in everything, forbidden
-    quiet = _code(*(PANEL / name for name in MODULES if name != BOOT)).lower()
+    homes = (BOOT, TRANSPORT_MODULE)
+    quiet = _code(*(PANEL / name for name in MODULES if name not in homes)).lower()
     for forbidden in TRANSPORT:
         assert forbidden not in quiet, forbidden
+    boot = _code(PANEL / BOOT).lower()
+    door = _code(PANEL / TRANSPORT_MODULE).lower()
+    for forbidden in ("fetch(", "eventsource"):
+        assert forbidden not in boot, forbidden
+        assert forbidden in door, forbidden
 
 
 def test_the_shell_names_one_script_and_only_this_origin_s_packaged_files():

@@ -275,9 +275,10 @@ def test_only_a_human_press_reaches_the_two_new_write_targets():
     door beneath it, in the stream and in all three read paths.
 
     The door moved next door when the boot module reached its line cap, and the
-    claim did not move with it: the boot still owns every socket, so the boot is
-    still where a frame or a read could reach a write, and it is the boot that
-    is searched.
+    claim did not move with it: the boot still owns what every frame and every
+    read MEANS (the sockets themselves are the transport module's, which is
+    handed no handler), so the boot is still where a frame or a read could reach
+    a write, and it is the boot that is searched.
     """
     boot, writer = _code(BOOT), _code(WRITER)
     step = {"chooseStep", "editStep", "proposeStep", "confirmStep"}
@@ -296,7 +297,7 @@ def test_only_a_human_press_reaches_the_two_new_write_targets():
     # And no read, no frame and no reconnect reaches a handler, the factory, or
     # the private door. Named sections, because "absent from this file" would
     # pass on a file that had no handlers at all.
-    sections = {"the stream": boot[boot.index("const stream = new EventSource"):]}
+    sections = {"the stream": boot[boot.index("const stream = openStream()"):]}
     for name in ("loadRun", "loadRuns", "refreshRun"):
         sections[name] = _function(boot, name)
     for where, section in sorted(sections.items()):
