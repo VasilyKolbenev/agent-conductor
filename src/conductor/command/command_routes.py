@@ -46,7 +46,10 @@ COMMAND_ROUTES = (
     ("GET", "/command/tasks"),
     ("POST", "/command/tasks"),
     ("GET", "/command/tasks/<task_id>"),
+    ("GET", "/command/tasks/<task_id>/preparation"),
     ("GET", "/command/quotas"),
+    ("GET", "/command/project/cycle"),
+    ("POST", "/command/project/cycle/pin"),
     ("GET", "/command/runs/<run_id>/automation"),
     ("POST", "/command/runs/<run_id>/automation/preview"),
     ("POST", "/command/runs/<run_id>/automation/authorize"),
@@ -73,7 +76,11 @@ _WORKFLOW_ROUTE = re.compile(
 #: `run_path` admits -- so a name past the bound is a path no row names rather
 #: than a task the store is then asked about and cannot hold.
 _TASK_ROUTE = re.compile(
-    rf"/command/tasks/([A-Za-z0-9][A-Za-z0-9._-]{{0,{MAX_TASK_ID - 1}}})\Z")
+    rf"/command/tasks/([A-Za-z0-9][A-Za-z0-9._-]{{0,{MAX_TASK_ID - 1}}})(?:/(preparation))?\Z")
+#: The two paths of the project's pinned cycle (spec 7.10), one verb each: the read of what is
+#: pinned, and the write that pins or unpins. The bare `project` path and the flag of "continue
+#: after" are other lanes' rows and join this pattern with their own canon commit.
+_PROJECT_ROUTE = re.compile(r"/command/project/(cycle/pin|cycle)\Z")
 _SESSION_PATH = "/command/session"
 _QUOTAS_PATH = "/command/quotas"
 _WORKFLOWS_PATH = "/command/workflows"
@@ -145,6 +152,9 @@ def match_route(method: str, path: str) -> Route:
     task = _task_route(method, path)
     if task is not None:
         return task
+    project = _PROJECT_ROUTE.fullmatch(path)
+    if project is not None:
+        return _project_route(method, project.group(1))
     workflow = _WORKFLOW_ROUTE.fullmatch(path)
     if workflow is not None:
         return _workflow_route(method, workflow)
@@ -165,15 +175,17 @@ def _known(path: str) -> bool:
                      _RUNS_PATH, _TASKS_PATH}
             or _RUN_ROUTE.fullmatch(path) is not None
             or _WORKFLOW_ROUTE.fullmatch(path) is not None
-            or _TASK_ROUTE.fullmatch(path) is not None)
+            or _TASK_ROUTE.fullmatch(path) is not None
+            or _PROJECT_ROUTE.fullmatch(path) is not None)
 
 
 def _task_route(method: str, path: str) -> Route | None:
-    """Name one of the three task routes, or ``None`` when the path is not one.
+    """Name one of the four task routes, or ``None`` when the path is not one.
 
     ``/command/tasks`` is the second path the table admits under BOTH verbs,
-    for the run list's reason. The read of one task is GET only, and a name
-    past the task bound matched nothing above, so it is no route at all.
+    for the run list's reason. The read of one task, and the read of what it
+    still lacks (`preparation`), are GET only, and a name past the task bound
+    matched nothing above, so it is no route at all.
     """
     if path == _TASKS_PATH:
         return Route("tasks")
@@ -182,7 +194,17 @@ def _task_route(method: str, path: str) -> Route | None:
         return None
     if method != "GET":
         raise ApiRefusal.fixed("method_not_allowed")
-    return Route("task", task_id=matched.group(1))
+    task_id, tail = matched.groups()
+    return Route("task" if tail is None else "task_preparation", task_id=task_id)
+
+
+def _project_route(method: str, tail: str) -> Route:
+    """Name one of the two project-cycle routes: the read under GET, the pin under POST."""
+    name, expected = ("project_cycle", "GET") if tail == "cycle" else (
+        "project_cycle_pin", "POST")
+    if method != expected:
+        raise ApiRefusal.fixed("method_not_allowed")
+    return Route(name)
 
 
 def _workflow_route(method: str, matched: "re.Match[str]") -> Route:

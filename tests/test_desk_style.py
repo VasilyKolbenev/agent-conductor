@@ -378,7 +378,7 @@ def declared_media(css: str) -> list[tuple[str, int]]:
     walks it. The heads are found here by their spelling and their braces.
     """
     text = re.sub(r"/\*.*?\*/", " ", css, flags=re.DOTALL)
-    return [(f"@media {re.sub(r'[ \t\r\n]+', ' ', found.group(1)).strip()}",
+    return [("@media " + re.sub(r"[ \t\r\n]+", " ", found.group(1)).strip(),
              text[:found.start()].count("{") - text[:found.start()].count("}"))
             for found in re.finditer(r"@media\b([^{]*)\{", text)]
 

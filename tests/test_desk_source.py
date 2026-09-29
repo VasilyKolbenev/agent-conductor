@@ -304,17 +304,18 @@ def test_the_desk_page_carries_its_five_region_mounts_once_each_and_empty():
 
 # -- the boot module -------------------------------------------------------------
 #
-# `desk.js` reads two routes and paints what each read says on the mount it
+# `desk.js` reads the routes of `DESK_READS` and paints what each read says on the mount it
 # feeds. It may read no other route until one is argued for here, it writes no
 # route out by hand (a route is `path.<name>` of the transport module), and it
-# names only ids the page carries. `GET /command/project` and the
-# `X-Conduct-Project` header belong to lane H's route on day 5 and are not faked:
-# the day that lands this list, the literal check and the header check change with it.
+# names only ids the page carries. The `X-Conduct-Project` header belongs to lane H's
+# claim and is not faked: the day that lands it, the header check changes with it. The
+# project claim itself is READ (`path.project`), and only by a framed window in embed mode.
 
 #: The `path.<name>` reads the boot module makes, exactly: the two lists, the automation of
-#: the newest run of each task (spec 5.2.1 reads it for every task, as the hub does), and
-#: the read of the chosen task's newest run and of its controls.
-DESK_READS = frozenset({"tasks", "runs", "automation", "run", "controls"})
+#: the newest run of each task (spec 5.2.1 reads it for every task, as the hub does), the
+#: read of the chosen task's newest run and of its controls, and the project claim -- asked
+#: only by a framed window whose hash says `embed=hub` (spec 4.5.5).
+DESK_READS = frozenset({"tasks", "runs", "automation", "run", "controls", "project"})
 MOUNT_IDS = frozenset(ident for _, ident in REGIONS)
 
 
@@ -363,6 +364,8 @@ BOOT_BROKEN = {
         _edit("path.controls(runId)", "path.decisions(runId)"), "not argued for"),
     "a scene read that was dropped": (
         _edit("path.controls(runId)", "path.run(runId)"), "no longer reads"),
+    "the project claim that embed mode needs, dropped": (
+        _edit("path.project()", "path.runs()"), "no longer reads"),
     "the project header before its route": (
         lambda text: text + '\nconst HEADERS = {"X-Conduct-Project": "p"};\n',
         "X-Conduct-Project"),
@@ -494,7 +497,8 @@ def test_the_desk_write_check_reads_code_and_not_the_prose_around_it():
 
 #: The modules of the desk that only read, draw or say a word: none reaches a write door, and
 #: none says a state word outside the seven. A module joins this list the day it is written.
-READ_SIDE = ("desk.js", "desk-rail.js", "desk-scene.js", "desk-status.js")
+READ_SIDE = ("desk.js", "desk-rail.js", "desk-scene.js", "desk-status.js", "desk-hash.js",
+             "desk-embed.js")
 #: The render modules, and the one function each exports (`mountX(mount, state, handlers)`).
 RENDER_MODULES = {"desk-rail.js": "mountRail", "desk-scene.js": "mountScene"}
 

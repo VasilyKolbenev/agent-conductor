@@ -60,6 +60,10 @@ DESK_ASSETS = {
     # The word of a task row and the strings that say it: shared with the hub later.
     "/panel/desk-status.js": ("text/javascript; charset=utf-8", "desk-status.js"),
     "/panel/desk-status-copy.js": ("text/javascript; charset=utf-8", "desk-status-copy.js"),
+    # The desk's address: the grammar of its hash, shared with the hub's page.
+    "/panel/desk-hash.js": ("text/javascript; charset=utf-8", "desk-hash.js"),
+    # Embed mode: whether a hub frames the desk, and the one message it says.
+    "/panel/desk-embed.js": ("text/javascript; charset=utf-8", "desk-embed.js"),
     # The regions the desk draws: one module each, `mountX` only.
     "/panel/desk-rail.js": ("text/javascript; charset=utf-8", "desk-rail.js"),
     "/panel/desk-scene.js": ("text/javascript; charset=utf-8", "desk-scene.js"),

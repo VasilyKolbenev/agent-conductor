@@ -75,6 +75,8 @@ def write_route(api: CommandApi, route: Route, body: Mapping[str, Any]) -> _Repl
     if route.name == "workflow_flow":
         assert route.workflow_id is not None
         return _write_flow(api, route.workflow_id, body)
+    if route.name == "project_cycle_pin":
+        return flow_routes.pin_project_cycle(api._cycle, api._templates, body, api._clock)
     if route.name in {"workflow_draft", "workflow_revisions"}:
         assert route.workflow_id is not None
         if route.name == "workflow_draft":

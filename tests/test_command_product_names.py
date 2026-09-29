@@ -87,6 +87,32 @@ def test_agent_instruction_names_live_beside_the_adapters_and_product_names_hand
         "the request path names no vendor: the names are the adapters' to spell")
 
 
+def vendor_words():
+    """The words that name a catalogued provider's family, as the provider-breadth guard derives
+    them: the parts of every provider id, less the words every id shares."""
+    generic = {"code", "harness", "preview", "cli", "agent", "build"}
+    return {part for provider_id in PROVIDER_CATALOG for part in provider_id.split("-")} - generic
+
+
+def test_five_of_the_six_instruction_names_carry_a_vendor_word_which_keeps_them_out_of_here():
+    """Why `AGENT_INSTRUCTION_NAMES` is not spelled in `product_names` although spec 9.2 puts it
+    there: `product_names` is a module of the request path, and the provider-breadth guard
+    (`test_alpha1_gate_g_provider_breadth`) forbids a provider word in any literal of that path.
+    The names are the vendors' own file and folder names, so they are spelled beside the adapters
+    and handed on under the same name. When they stop carrying a vendor word, this test says the
+    split can be dissolved.
+    """
+    words = vendor_words()
+    carrying = [name for name in agent_instructions.AGENT_INSTRUCTION_NAMES
+                if any(word in name.lower() for word in words)]
+    assert carrying == ["CLAUDE.md", ".claude/", ".codex/", ".grok/", ".kimi/"]
+    literals = [node.value.lower() for node in ast.walk(ast.parse(
+        Path(names.__file__).read_text(encoding="utf-8")))
+        if isinstance(node, ast.Constant) and isinstance(node.value, str)]
+    assert not [text for text in literals if any(word in text for word in words)]
+    assert names.AGENT_INSTRUCTION_NAMES is agent_instructions.AGENT_INSTRUCTION_NAMES
+
+
 def test_exclude_lines_are_the_single_spelling_of_spec_9_2():
     lines = list(names.EXCLUDE_LINES)
     assert lines[:5] == BLOCK_HEAD

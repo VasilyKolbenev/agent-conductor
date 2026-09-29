@@ -45,8 +45,15 @@ def statuses(bench):
         "nodes => nodes.map(node => [node.dataset.link, node.dataset.status])")
 
 
+#: The keys of the desk's hash that the wizard writes. The others (`lang`, `theme`) are the
+#: desk's own: its boot module keeps the language in the address, so a hash read while the
+#: wizard runs carries them, and what these tests judge is only what the wizard added.
+WIZARD_KEYS = ("task", "prepare", "workflow", "run", "starter")
+
+
 def keys_of(hash_text):
-    return {key: values[0] for key, values in parse_qs(hash_text.lstrip("#")).items()}
+    fields = parse_qs(hash_text.lstrip("#"))
+    return {key: values[0] for key, values in fields.items() if key in WIZARD_KEYS}
 
 
 def press(bench):
