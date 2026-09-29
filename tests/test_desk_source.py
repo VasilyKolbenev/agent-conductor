@@ -54,17 +54,39 @@ def _document_faults(html: str) -> list[str]:
     return faults
 
 
+class _Attributes(HTMLParser):
+    """Every attribute name of every start tag, as the tokenizer reads them, lower-cased."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.names: list[str] = []
+
+    def handle_starttag(self, tag, attrs):
+        self.names += [name for name, _value in attrs]
+
+
+def _attribute_names(html: str) -> list[str]:
+    seen = _Attributes()
+    seen.feed(html)
+    seen.close()
+    return seen.names
+
+
 def _inline_faults(html: str, expected_scripts: tuple[str, ...]) -> list[str]:
     faults = []
     if re.findall(r"<script\b[^>]*>", html, re.IGNORECASE) != list(expected_scripts):
         faults.append("the script tags are not exactly the expected ones")
     if re.search(r"<style\b", html, re.IGNORECASE):
         faults.append("the page carries a <style> block")
-    # An attribute name follows whitespace or a `/`: the tokenizer takes both as the
-    # separator, so `<a/style="x">` is a style attribute.
-    if re.search(r"[\s/]style\s*=", html, re.IGNORECASE):
+    # The verdict is the tokenizer's: an attribute is whatever it reads as one, however it is
+    # separated from what precedes it (a space, a `/`, or nothing after a quoted value). The
+    # patterns stay as a second net over the raw text, and each is written to take a space or a
+    # `/` as the separator, as the tokenizer does.
+    names = _attribute_names(html)
+    if "style" in names or re.search(r"[\s/]style\s*=", html, re.IGNORECASE):
         faults.append("the page carries an inline style attribute")
-    if re.search(r"[\s/]on[a-z]+\s*=", html, re.IGNORECASE):
+    if (any(name.startswith("on") for name in names)
+            or re.search(r"[\s/]on[a-z]+\s*=", html, re.IGNORECASE)):
         faults.append("the page carries an inline handler")
     return faults
 
@@ -191,6 +213,14 @@ BROKEN = {
     "a handler after a slash": (CLEAN.replace("<a ", '<a/onclick="run()" '), "handler"),
     "a handler after a tab": (CLEAN.replace("<a ", '<a\tonclick="run()" '), "handler"),
     "a handler after a newline": (CLEAN.replace("<a ", '<a\nonclick="run()" '), "handler"),
+    # After a quoted value the tokenizer needs no separator either: it reads the next attribute
+    # name where the closing quote ends (a parse error, and an attribute all the same).
+    "a style attribute straight after a quoted value": (
+        CLEAN.replace(LINK, LINK + 'style="color:red"'), "style attribute"),
+    "a handler straight after a quoted value": (
+        CLEAN.replace(LINK, LINK + 'onclick="run()"'), "handler"),
+    "a handler on the root element straight after a quoted value": (
+        CLEAN.replace('<html lang="en">', '<html lang="en"onload="run()">'), "handler"),
     "no language": (CLEAN.replace(' lang="en"', ""), "lang"),
     "an empty title": (CLEAN.replace(f"<title>{PRODUCT_NAME}</title>", "<title> </title>"),
                        "title"),
