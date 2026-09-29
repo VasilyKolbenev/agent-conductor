@@ -16,6 +16,7 @@ difference is settled in the fixture or in the route, on the record.
 | `tasks.json` | `GET /command/tasks` (the title in the preselection's label) | 7.10 |
 | `quotas.json` | `GET /command/quotas` (the keys the roles step reads) | 5.6.6, 6.3 |
 | `previous_run.json`, `previous_revision.json` | `GET /command/runs/<id>` and `GET /command/workflows/<id>/revisions/<n>` of the last run | 7.10 |
+| `flow_state_none.json` | `GET /command/workflows/<id>/flow` of a workflow with neither a draft nor a revision: `source: "none"`, `flow: null`, `draft_digest: null` (the `workflow_id` is overwritten per cycle) | 7.1 |
 
 The provider rows inside `workflows.json` carry three facts the server's roster does not carry
 yet: `capabilities` (which roads a harness has), `task_channel` (how it is fed, in the shape

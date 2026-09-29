@@ -23,7 +23,9 @@ MODEL = "desk-wizard-model.js"
 
 #: A wizard opened on a fresh task, and the few helpers every model test shares: `run` folds
 #: events through the reducer, `typed` fills step 1, `started` moves to step 2, `opened` asks
-#: for the reads, `reply` answers one of the asks the state wants, `show` prints JSON.
+#: for the reads, `reply` answers one of the asks the state wants, `show` prints JSON, `land`
+#: answers the outstanding flow ask with one payload and then the write that answer made due
+#: (a cycle's expectation is read before its first write).
 PRELUDE = """
 const open = (over = {}) => wiz.initialWizard(
   {starterId: null, viewMode: false, newTaskId: "task-t1", ...over});
@@ -38,6 +40,14 @@ const reply = (state, name, payload, over = {}) => wiz.reduceWizard(state, {type
   ask: askOf(state, name, over.subject),
   result: {status: over.status ?? "accepted", code: over.code, payload}});
 const show = (value) => console.log(JSON.stringify(value));
+const flowAsk = (state) => wiz.wantedAsks(state).find(
+  (ask) => ask.name === "flow" || ask.name === "flow_read");
+const landAsk = (state, ask, payload) => wiz.reduceWizard(state, {type: "answered", ask,
+  result: {status: "accepted", payload}});
+const land = (state, payload) => {
+  const first = flowAsk(state), next = landAsk(state, first, payload), then = flowAsk(next);
+  return then && then.id !== first.id ? landAsk(next, then, payload) : next;
+};
 """
 
 

@@ -25,13 +25,16 @@ from tests.test_store import good_lane, write_project
 
 #: Evaluated once on the served page. `host.log` is every ask the model made, in order; `auto`
 #: maps an ask name to a result, or to a table of results by ask subject with "*" as default.
+#: `host.fake`, when a test sets it, is asked first: a function of the ask that answers the ones
+#: it knows (a door with a memory) and returns undefined for the rest, which fall to `auto`.
 HOST_JS = """
 async () => {
   const wiz = await import("/panel/desk-wizard-model.js");
   const {mountWizard} = await import("/panel/desk-wizard.js");
   const focus = await import("/panel/studio-focus.js");
   const i18n = await import("/panel/studio-i18n.js");
-  const host = {log: [], auto: {}, closed: 0, renders: 0, state: null, mount: null, wiz, i18n};
+  const host = {log: [], auto: {}, fake: null, closed: 0, renders: 0, state: null, mount: null,
+    wiz, i18n};
   const settle = async () => { for (let at = 0; at < 8; at += 1) await Promise.resolve(); };
   const render = () => {
     const held = focus.focusTarget();
@@ -43,7 +46,7 @@ async () => {
   const perform = (ask) => {
     host.log.push(ask);
     const rules = host.auto[ask.name];
-    const result = rules && (rules[ask.subject] ?? rules["*"]);
+    const result = host.fake?.(ask) ?? (rules && (rules[ask.subject] ?? rules["*"]));
     if (result) Promise.resolve().then(() => dispatch({type: "answered", ask, result}));
   };
   const dispatch = (event) => {
@@ -75,6 +78,33 @@ async () => {
   host.asks = () => host.log.map((ask) => [ask.id, ask.name, ask.subject]);
   host.say = (key, params) => i18n.message(host.state.locale, key, params || {});
   window.host = host;
+}
+"""
+
+
+#: The fake flow door (see `Bench.door`). `host.standing` is the table of drafts it keeps, so a
+#: test may read what stands after the wizard has written.
+DOOR_JS = """
+(data) => {
+  const standing = {...data.drafts};
+  window.host.standing = standing;
+  window.host.fake = (ask) => {
+    if (ask.name !== "flow" && ask.name !== "flow_read") return undefined;
+    const held = standing[ask.subject] ?? null;
+    const state = data.flows[ask.subject];
+    const answer = (payload) => ({status: "accepted", code: null, payload});
+    if (ask.name === "flow_read") {
+      return answer(held === null ? {...data.none, workflow_id: ask.subject}
+        : {...state, source: "draft", draft_digest: held});
+    }
+    const sent = ask.body.expected_digest ?? null;
+    const absent = ask.body.expected_absent === true;
+    if (absent ? held !== null : sent !== held) {
+      return {status: "refused", code: "draft_conflict", payload: null};
+    }
+    standing[ask.subject] = state.draft_digest ?? "sha256:" + "a".repeat(64);
+    return answer({...state, source: "draft", draft_digest: standing[ask.subject]});
+  };
 }
 """
 
@@ -119,6 +149,23 @@ class Bench:
     def asks(self) -> list[list[str]]:
         return self.call("asks")
 
+    def bodies(self, name: str) -> list[Any]:
+        """The body of every ask of one name, in the order they were made."""
+        return self.page.evaluate(
+            "(name) => window.host.log.filter((ask) => ask.name === name).map((ask) => ask.body)",
+            name)
+
+    def door(self, flows: dict[str, Any], drafts: dict[str, str | None]) -> None:
+        """Put a fake flow door in front of the answers: it judges `expected_*` like spec 7.1.3.
+
+        `drafts` maps a workflow id to the digest of the draft standing for it (a missing id or
+        null: none). A read answers the standing draft or `source: none`; a write whose
+        expectation differs from what stands is a `draft_conflict`, and one that agrees leaves
+        a new draft. `flows` maps a workflow id to the `FlowState` its write answers with.
+        """
+        self.page.evaluate(DOOR_JS, {"flows": flows, "drafts": drafts,
+                                     "none": fixture("wizard", "flow_state_none.json")})
+
     def say(self, key: str, **params: str) -> str:
         return self.call("say", key, params)
 
@@ -143,6 +190,16 @@ def ok(payload: Any) -> dict[str, Any]:
     return {"status": "accepted", "code": None, "payload": payload}
 
 
+def no_draft(workflow_id: str) -> dict[str, Any]:
+    """The answer of `GET …/flow` for a workflow with neither a draft nor a revision."""
+    return ok({**fixture("wizard", "flow_state_none.json"), "workflow_id": workflow_id})
+
+
+#: What the flow read answers for the ready cycles unless a test says otherwise: nothing stands.
+NO_DRAFTS = {name: no_draft(name) for name in (
+    "desk-standard", "desk-short", "desk-starter-docs")}
+
+
 def wizard_reads(**over: Any) -> dict[str, Any]:
     """The table a host answers the opening reads from: every read the wizard makes at open.
 
@@ -157,7 +214,8 @@ def wizard_reads(**over: Any) -> dict[str, Any]:
         "tasks": ok(fixture("wizard", "tasks.json")),
         "quotas": ok(fixture("wizard", "quotas.json")),
         "documents": ok(fixture("wizard", "documents.json")),
-        "document": ok(fixture("wizard", "document.json"))}
+        "document": ok(fixture("wizard", "document.json")),
+        "flow_read": NO_DRAFTS}
     table.update(over)
     return {name: {"*": value} if "status" in value else value for name, value in table.items()}
 

@@ -106,24 +106,31 @@ export function preselect(reads) {
 
 // -- the flow write ----------------------------------------------------------------------
 
-//: Whether an accepted answer is really the flow state of the workflow it was asked about.
-export function isFlowState(payload, workflowId) {
-  return record(payload) && payload.workflow_id === workflowId && record(payload.flow)
-    && Array.isArray(payload.diagnostics) && typeof payload.publishable === "boolean";
+//: Whether an accepted answer is really the flow state of the workflow it was asked about. A ready
+//: cycle nobody has written has neither a draft nor a revision, and the server answers `source:
+//: "none"` with no flow: that is an answer (`allowNone`), not a refusal. A saved cycle always has
+//: a flow, so for it the same answer is unreadable.
+export function isFlowState(payload, workflowId, allowNone = false) {
+  if (!record(payload) || payload.workflow_id !== workflowId) return false;
+  const flowed = record(payload.flow)
+    || (allowNone && payload.flow === null && payload.source === "none");
+  return flowed && Array.isArray(payload.diagnostics) && typeof payload.publishable === "boolean";
 }
 
 //: `POST …/flow` (spec 7.1): the source is the ready cycle's own id, or the flow itself for a
-//: saved one; exactly one of the two expectations, as the draft door has it; and a publish
-//: revision only when the chain asks for one. Returns null while a saved cycle's flow is unread.
-export function flowBody(choice, flow, publish, binding) {
+//: saved one; exactly one of the two expectations, as the draft door has it, worded from the
+//: digest of the draft that stands (`digest`, null when none does) as the last read or answer said;
+//: and a publish revision only when the chain asks for one. Returns null while a saved cycle's
+//: flow is unread.
+export function flowBody(choice, flow, digest, publish, binding) {
   if (publish !== null && !Number.isSafeInteger(publish)) throw new Error("a revision is a number");
   let source = {starter_id: choice.workflowId};
   if (choice.kind !== "starter") {
     if (!flow) return null;
     source = {flow: flow.flow};
   }
-  const expected = typeof flow?.draft_digest === "string"
-    ? {expected_digest: flow.draft_digest} : {expected_absent: true};
+  const expected = typeof digest === "string" ? {expected_digest: digest}
+    : {expected_absent: true};
   return {source, ...expected, publish_revision: publish, binding};
 }
 

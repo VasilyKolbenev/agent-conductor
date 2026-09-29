@@ -25,8 +25,8 @@
 //   step, mode {starterId, view}, task {taskId, title, brief, hint, idea, written},
 //   reads {name: {status: "ok" | "failed", code, payload}}, asked [ask id], opened, closing,
 //   materials {items, counter, picker, refusal, includeInstructions},
-//   cycle {choice, chosenBy, generation, flow, flowFor, flowGeneration, status, refusal,
-//          settled, boundKey},
+//   cycle {choice, chosenBy, generation, flow, flowFor, flowGeneration, draft, status, refusal,
+//          settled, boundKey},  (draft: what the last flow answer said about the standing draft)
 //   roles {owner, instructions}, history {runs, revisions}.
 import {taskTitle, isTaskId} from "./studio-tasks-model.js";
 import {GIT_EXITS, GIT_SENTENCES, MATERIAL_KINDS, REFUSALS, bodyOf, documentCard, estimateOf,
@@ -39,7 +39,7 @@ import {NOTES, QUOTA_REASONS, ROLE_KINDS, argvFit, offersFor, quotaOf, roleKind,
 import {BUILT_STEPS, LIMITS, STEPS, briefDocument, evolve, frozen, inputChars, taskText,
   utf8Bytes} from "./desk-wizard-base.js";
 import {answerHistory, assignRole, assignmentView, bindingNow, editInstruction, hasProviders,
-  heldFlow, historyAsks, instructionFields, likeInstruction, ownInstruction,
+  historyAsks, instructionFields, likeInstruction, ownInstruction,
   previousAssignment, rolesGate, rolesPublication, syncBinding} from "./desk-wizard-team.js";
 
 //: The one starter the hash may name (spec 4.5.2). The two ready cycles the wizard offers as
@@ -102,8 +102,8 @@ export function initialWizard(opening) {
       includeInstructions: null},
     cycle: {choice: starterId === null ? null : {kind: "starter", workflowId: starterId},
       chosenBy: starterId === null ? null : "starter", generation: starterId === null ? 0 : 1,
-      flow: null, flowFor: null, flowGeneration: -1, status: "idle", refusal: null,
-      settled: [], boundKey: "null"},
+      flow: null, flowFor: null, flowGeneration: -1, draft: null, status: "idle",
+      refusal: null, settled: [], boundKey: "null"},
     roles: {owner: {}, instructions: {}},
     history: {runs: {}, revisions: {}}});
 }
@@ -196,12 +196,14 @@ export function cycleFacts(state) {
 }
 
 //: `POST …/flow` for the chosen cycle. Its id carries the generation of the choice, so an
-//: answer for a card the owner has left is told apart from the card they are on.
+//: answer for a card the owner has left is told apart from the card they are on. There is no
+//: request until a read or an answer has said what draft stands for this cycle: the write's
+//: expectation is that fact, never a guess (spec 7.1).
 export function flowWriteRequest(state, {publish = null, binding = null} = {}) {
-  const {choice, flow, flowFor, generation} = state.cycle;
-  if (choice === null) return null;
+  const {choice, flow, flowFor, draft, generation} = state.cycle;
+  if (choice === null || draft === null || draft.for !== choice.workflowId) return null;
   const held = flow !== null && flowFor === choice.workflowId ? flow : null;
-  const body = flowBody(choice, held, publish, binding);
+  const body = flowBody(choice, held, draft.digest, publish, binding);
   return body === null ? null : {id: `write:flow:${generation}`, name: "flow", door: "write",
     target: "flow", subject: choice.workflowId, body};
 }
@@ -210,7 +212,8 @@ function cycleGate(state) {
   const cycle = state.cycle;
   if (cycle.choice === null) return "cycle_none";
   if (cycle.status !== "idle") return `flow_${cycle.status}`;
-  if (cycle.flow === null || cycle.flowFor !== cycle.choice.workflowId) return "flow_pending";
+  const id = cycle.choice.workflowId;
+  if (cycle.flow === null || cycle.flowFor !== id || cycle.draft?.for !== id) return "flow_pending";
   return cycle.flow.publishable === true ? null : "flow_unpublishable";
 }
 
@@ -232,16 +235,22 @@ function applyPreselection(state) {
     generation: cycle.generation + 1}});
 }
 
+//: A new generation of the flow conversation. Another card starts from nothing; the same card
+//: keeps what was answered for it, so choosing it again writes again with the digest that stands.
+function restarted(cycle, leftCard) {
+  const left = leftCard ? {flow: null, flowFor: null, flowGeneration: -1, draft: null,
+    boundKey: "null"} : {};
+  return {...cycle, ...left, status: "idle", refusal: null, generation: cycle.generation + 1};
+}
+
 function chooseCycle(state, event) {
   if (state.mode.starterId !== null) return state;
   const card = cycleCards(state).find((one) => one.id === event.id && one.kind !== "build");
   if (!card) return state;
   const cycle = state.cycle;
   const same = cycle.choice?.workflowId === card.workflowId;
-  const left = same ? {} : {flow: null, flowFor: null, flowGeneration: -1, boundKey: "null"};
-  return evolve(state, {cycle: {...cycle, ...left, choice: {kind: card.kind,
-    workflowId: card.workflowId}, chosenBy: "owner", generation: cycle.generation + 1,
-    status: "idle", refusal: null}});
+  return evolve(state, {cycle: {...restarted(cycle, !same), choice: {kind: card.kind,
+    workflowId: card.workflowId}, chosenBy: "owner"}});
 }
 
 // -- the steps and their gates ---------------------------------------------------------
@@ -334,8 +343,9 @@ function flowReadAsk(id, workflowId) {
 }
 
 //: The flow asks step 3 makes due, and only once the owner stands on that step: a conflict is
-//: read again; a saved cycle is read before anything is written for it; a write goes only when
-//: no other write is in flight, so it carries the digest the last answer left.
+//: read again; a cycle is read before anything is written for it, whatever its kind, because a
+//: draft an earlier wizard left is a fact only the server knows; a write goes only when no other
+//: write is in flight, so it carries the digest the last answer left.
 function cycleAsks(state) {
   const cycle = state.cycle;
   if (cycle.choice === null || BUILT_STEPS.indexOf(state.step) < BUILT_STEPS.indexOf("cycle")) {
@@ -345,12 +355,11 @@ function cycleAsks(state) {
   if (cycle.status === "conflict") {
     return [flowReadAsk(`read:flow:${cycle.generation}:reread`, id)];
   }
-  if (cycle.choice.kind === "saved" && heldFlow(state) === null) {
-    return [flowReadAsk(`read:flow:${cycle.generation}`, id)];
-  }
+  if (cycle.draft?.for !== id) return [flowReadAsk(`read:flow:${cycle.generation}`, id)];
   const binding = bindingNow(state);
   if (cycle.choice.kind === "saved" && binding === null) return [];
   const ask = flowWriteRequest(state, {publish: null, binding});
+  if (ask === null) return [];
   const busy = state.asked.some((sent) => sent.startsWith("write:flow:") && sent !== ask.id
     && !cycle.settled.includes(sent));
   return busy ? [] : [ask];
@@ -384,20 +393,36 @@ function generationOf(id) {
   return Number(id.split(":")[2]);
 }
 
-//: A flow answer, for a write or for the read that follows a conflict. It lands only on the
-//: card the owner is still on and only if it is not older than the one already held; either
-//: way its ask is settled, which frees the next write. A conflict is read again and told to the
-//: owner, and only their next choice of the card writes again.
+//: An accepted flow answer: it always says what draft stands (`draft`), and it is the cycle's
+//: flow when it answers a write, a saved cycle's read or the read after a conflict. A ready
+//: cycle's first read is about the draft alone: the flow in it is not the one the owner chose
+//: until the cycle's own write has answered, so the step must not be judged on it.
+function landAccepted(state, ask, payload, wasWrite) {
+  const cycle = state.cycle, generation = generationOf(ask.id);
+  const settled = [...cycle.settled, ask.id];
+  const status = !wasWrite && cycle.status === "conflict" ? "changed_elsewhere" : "idle";
+  const digest = typeof payload.draft_digest === "string" ? payload.draft_digest : null;
+  const keeps = wasWrite || cycle.choice.kind === "saved" || cycle.status === "conflict";
+  const held = keeps ? {flow: structuredClone(payload), flowFor: ask.subject,
+    flowGeneration: generation} : {};
+  return evolve(state, {cycle: {...cycle, ...held, settled, status, refusal: null,
+    draft: {for: ask.subject, digest, generation}}});
+}
+
+//: A flow answer, for a write or for a read. It lands only on the card the owner is still on and
+//: only if it is not older than what is held; either way its ask is settled, which frees the
+//: next write. A conflict is read again and told to the owner, and only their next choice of the
+//: card writes again.
 function landFlow(state, ask, result, wasWrite) {
   const cycle = state.cycle, settled = [...cycle.settled, ask.id];
   const onIt = cycle.choice !== null && cycle.choice.workflowId === ask.subject;
-  if (!onIt || generationOf(ask.id) < cycle.flowGeneration) {
+  const newest = Math.max(cycle.flowGeneration, cycle.draft?.generation ?? -1);
+  if (!onIt || generationOf(ask.id) < newest) {
     return evolve(state, {cycle: {...cycle, settled}});
   }
-  if (result.status === "accepted" && isFlowState(result.payload, ask.subject)) {
-    const status = !wasWrite && cycle.status === "conflict" ? "changed_elsewhere" : "idle";
-    return evolve(state, {cycle: {...cycle, settled, flow: structuredClone(result.payload),
-      flowFor: ask.subject, flowGeneration: generationOf(ask.id), status, refusal: null}});
+  const ready = cycle.choice.kind === "starter";
+  if (result.status === "accepted" && isFlowState(result.payload, ask.subject, ready)) {
+    return landAccepted(state, ask, result.payload, wasWrite);
   }
   const code = result.status === "accepted" ? "answer_unreadable" : result.code ?? result.status;
   const status = code === "draft_conflict" ? "conflict"

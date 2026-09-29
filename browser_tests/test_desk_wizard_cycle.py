@@ -9,7 +9,8 @@ from __future__ import annotations
 import pytest
 from playwright.sync_api import expect
 
-from browser_tests.desk_wizard_bench import bench, desk_url, ok, to_step, wizard_reads  # noqa: F401
+from browser_tests.desk_wizard_bench import (  # noqa: F401
+    NO_DRAFTS, bench, desk_url, ok, to_step, wizard_reads)
 from tests.desk_wizard_node import fixture
 
 LANGS = ("ru", "en")
@@ -26,7 +27,7 @@ READS = {"cycle-7c1e5a90": ok({**FLOW["desk-standard-tester"], "source": "publis
 
 
 def reads(**over):
-    return wizard_reads(**{"flow": WRITES, "flow_read": READS, **over})
+    return wizard_reads(**{"flow": WRITES, "flow_read": {**NO_DRAFTS, **READS}, **over})
 
 
 def cards(bench):
@@ -185,6 +186,23 @@ def test_a_draft_conflict_tells_the_owner_and_choosing_the_card_again_writes_aga
     bench.call("dispatch", {"type": "cycle-choose", "id": "desk-standard"})
     writes = [ask for ask in bench.asks() if ask[1] == "flow"]
     assert len(writes) == 2 and writes[1][0] != writes[0][0]
+    assert bench.problems == []
+
+
+@pytest.mark.parametrize("starter", [None, "desk-starter-docs"])
+@pytest.mark.parametrize("lang", LANGS)
+def test_a_left_over_draft_does_not_make_the_next_wizard_say_the_cycle_changed_elsewhere(
+        bench, lang, starter):
+    card = starter or "desk-standard"
+    bench.door({card: FLOW[card]}, {card: DIGEST})
+    to_step(bench, lang, "cycle", starter=starter, reads=reads())
+    expect(bench.control("wizard:next")).to_be_enabled()
+    assert bench.page.locator("[data-flow-status]").count() == 0
+    assert [ask[1] for ask in bench.asks() if ask[2] == card and ask[1].startswith("flow")] == [
+        "flow_read", "flow"], "the draft is read before the first write"
+    first = bench.bodies("flow")[0]
+    assert first["expected_digest"] == DIGEST and "expected_absent" not in first
+    assert bench.wizard()["cycle"]["status"] == "idle"
     assert bench.problems == []
 
 

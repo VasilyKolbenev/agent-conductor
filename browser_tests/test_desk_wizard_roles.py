@@ -9,7 +9,8 @@ from __future__ import annotations
 import pytest
 from playwright.sync_api import expect
 
-from browser_tests.desk_wizard_bench import bench, desk_url, ok, to_step, wizard_reads  # noqa: F401
+from browser_tests.desk_wizard_bench import (  # noqa: F401
+    NO_DRAFTS, bench, desk_url, ok, to_step, wizard_reads)
 from tests.desk_wizard_node import fixture
 
 LANGS = ("ru", "en")
@@ -33,7 +34,7 @@ def reads(**over):
     table = {"flow": {"desk-standard": ok(FLOW["desk-standard"]),
                       "desk-starter-docs": ok(FLOW["desk-starter-docs"]),
                       "cycle-7c1e5a90": ok(SAVED)},
-             "flow_read": {"cycle-7c1e5a90": ok(SAVED)}}
+             "flow_read": {**NO_DRAFTS, "cycle-7c1e5a90": ok(SAVED)}}
     return wizard_reads(**{**table, **over})
 
 

@@ -19,9 +19,11 @@ DATA = {"flows": FLOWS, "workflows": fixture("wizard", "workflows.json"),
         "runs": fixture("wizard", "runs.json"), "tasks": fixture("wizard", "tasks.json"),
         "pinned": fixture("wizard", "project_cycle.json"),
         "unpinned": fixture("wizard", "project_cycle_none.json"),
-        "git": fixture("wizard", "git_repo.json")}
+        "git": fixture("wizard", "git_repo.json"),
+        "none": fixture("wizard", "flow_state_none.json")}
 #: A wizard standing on the cycle step: `atCycle` has asked nothing yet, `settled` has read the
-#: three answers a preselection needs, `answer` hands one ask's outcome back to the reducer.
+#: three answers a preselection needs, `answer` hands one ask's outcome back to the reducer,
+#: `picks` chooses a card and answers its first read, so the write it made due is `asks[0]`.
 CYCLE = PRELUDE + """
 const atCycle = (over = {}) => run(started(over), {type: "next"});
 const answer = (state, ask, result) => wiz.reduceWizard(state, {type: "answered", ask, result});
@@ -39,6 +41,16 @@ const asksOf = (step) => step.asks.map((ask) => [ask.id, ask.name, ask.door, ask
 const digest = "sha256:" + "a".repeat(64);
 const drafted = (flow, over = {}) => ({...structuredClone(flow), source: "draft",
   draft_digest: digest, published: null, ...over});
+const none = (id) => ({...structuredClone(d.none), workflow_id: id});
+const lands = (step, payload) => wiz.stepWizard(step.state, {type: "answered",
+  ask: step.asks[0], result: ok(payload)});
+const picks = (id, seen = none(id)) => lands(chosen(
+  reply(opened(atCycle()), "workflows", d.workflows), id), seen);
+const inStarterMode = () => {
+  const state = run(open({starterId: "desk-starter-docs"}),
+    {type: "edit-title", value: "Notes"}, {type: "edit-idea", value: "An app."}, {type: "next"});
+  return run(reply(opened(state), "git", d.git), {type: "next"});
+};
 """
 
 
@@ -88,26 +100,26 @@ def test_desk_prefixed_workflows_are_never_saved_cycles_and_starter_docs_is_neve
 
 def test_the_starter_mode_cycle_is_fixed_and_offers_no_choice_and_no_build_your_own():
     out = run_js(CYCLE + """
-      const starter = () => {
-        let state = run(open({starterId: "desk-starter-docs"}),
-          {type: "edit-title", value: "Notes"}, {type: "edit-idea", value: "An app."},
-          {type: "next"});
-        state = reply(opened(state), "git", d.git);
-        return run(state, {type: "next"});
-      };
-      const state = starter();
+      const state = inStarterMode();
       const attempt = chosen(state, "desk-short");
+      const read = wiz.wantedAsks(state).filter((ask) => ask.door === "read"
+        && ask.name === "flow_read").map((ask) => [ask.id, ask.subject]);
+      const written = land(state, none("desk-starter-docs"));
       show({step: state.step, cards: wiz.cycleCards(state).map((card) =>
           [card.id, card.kind, card.locked, card.canPin]),
         choice: state.cycle.choice, by: state.cycle.chosenBy,
         choose_ignored: attempt.state === state && attempt.asks.length === 0,
-        ask_ids: wiz.wantedAsks(state).filter((ask) => ask.name === "flow")
+        read, writes_before_the_read: wiz.wantedAsks(state)
+          .filter((ask) => ask.door === "write").length,
+        ask_ids: wiz.wantedAsks(written).filter((ask) => ask.name === "flow")
           .map((ask) => [ask.id, ask.subject, ask.body.source])});
     """, DATA)
     assert out["step"] == "cycle"
     assert out["cards"] == [["desk-starter-docs", "starter", True, False]]
     assert out["choice"] == {"kind": "starter", "workflowId": "desk-starter-docs"}
     assert out["by"] == "starter" and out["choose_ignored"] is True
+    assert out["read"] == [["read:flow:1", "desk-starter-docs"]]
+    assert out["writes_before_the_read"] == 0
     assert out["ask_ids"] == [["write:flow:1", "desk-starter-docs",
                                {"starter_id": "desk-starter-docs"}]]
 
@@ -179,10 +191,8 @@ def test_choosing_a_card_asks_for_the_flow_with_no_publication():
         build_same: build.state === base, writes_before: wiz.wantedAsks(base)
           .filter((ask) => ask.door === "write").length});
     """, DATA)
-    assert out["starter"] == [["write:flow:1", "flow", "write", "flow", "desk-short"]]
-    assert out["starter_body"] == {"source": {"starter_id": "desk-short"},
-                                   "expected_absent": True, "publish_revision": None,
-                                   "binding": None}
+    assert out["starter"] == [["read:flow:1", "flow_read", "read", "flowRead", "desk-short"]]
+    assert out["starter_body"] is None, "a read carries no body"
     assert out["saved"] == [["read:flow:1", "flow_read", "read", "flowRead", "old-cycle"]]
     assert out["saved_body"] is None
     assert out["choice"] == {"kind": "starter", "workflowId": "desk-short"}
@@ -190,9 +200,9 @@ def test_choosing_a_card_asks_for_the_flow_with_no_publication():
     assert out["writes_before"] == 0
 
 
-def test_the_flow_write_uses_expected_absent_first_and_the_drafts_digest_after():
+def test_the_flow_write_uses_the_expectation_the_read_reported_and_the_drafts_digest_after():
     out = run_js(CYCLE + """
-      const first = chosen(reply(opened(atCycle()), "workflows", d.workflows), "desk-standard");
+      const first = picks("desk-standard");
       const landed = answer(first.state, first.asks[0], ok(drafted(d.flows.standard)));
       const bound = wiz.flowWriteRequest(landed, {publish: null, binding: {"role-doer": "codex"}});
       const published = wiz.flowWriteRequest(landed, {publish: 2, binding: null});
@@ -207,6 +217,90 @@ def test_the_flow_write_uses_expected_absent_first_and_the_drafts_digest_after()
     assert out["published"]["publish_revision"] == 2 and out["published"]["binding"] is None
     assert out["both_expectations"] == [["expected_digest"], ["expected_digest"]]
     assert out["id"] == "write:flow:1"
+
+
+def test_a_ready_cycle_is_read_before_its_first_write_and_the_write_carries_what_the_read_said():
+    out = run_js(CYCLE + """
+      const read = chosen(reply(opened(atCycle()), "workflows", d.workflows), "desk-short");
+      const published = {...structuredClone(d.flows.short), source: "published",
+        draft_digest: null};
+      const writes = (payload) => lands(read, payload).asks.map((ask) => [ask.id, ask.body]);
+      show({read: asksOf(read), writes_before: wiz.wantedAsks(read.state)
+          .filter((ask) => ask.door === "write").length,
+        left_over: writes(drafted(d.flows.short)), none: writes(none("desk-short")),
+        published: writes(published)});
+    """, DATA)
+    assert out["read"] == [["read:flow:1", "flow_read", "read", "flowRead", "desk-short"]]
+    assert out["writes_before"] == 0, "no write goes out before the read has landed"
+    source = {"starter_id": "desk-short"}
+    standing = {"source": source, "expected_digest": "sha256:" + "a" * 64,
+                "publish_revision": None, "binding": None}
+    absent = {"source": source, "expected_absent": True, "publish_revision": None,
+              "binding": None}
+    assert out["left_over"] == [["write:flow:1", standing]]
+    assert out["none"] == [["write:flow:1", absent]], "no draft and no revision"
+    assert out["published"] == [["write:flow:1", absent]], "a revision is not a draft"
+
+
+@pytest.mark.parametrize("mode", ["normal", "starter"])
+def test_a_wizard_that_finds_a_left_over_draft_lands_idle_and_never_changed_elsewhere(mode):
+    out = run_js(CYCLE + """
+      const starter = d.mode === "starter";
+      const id = starter ? "desk-starter-docs" : "desk-standard";
+      const flow = drafted(starter ? d.flows.starter : d.flows.standard);
+      const at = starter ? inStarterMode()
+        : reply(opened(atCycle()), "workflows", d.workflows);
+      const first = starter ? {state: at, asks: [flowAsk(at)]} : chosen(at, id);
+      const second = lands(first, flow);
+      const write = second.asks[0];
+      const landed = answer(second.state, write, ok(flow));
+      show({first: first.asks[0].name, write: [write.name, write.body.expected_digest,
+          write.body.expected_absent], status: landed.cycle.status,
+        gate: wiz.canAdvance(landed).reason, facts: wiz.cycleFacts(landed).status,
+        flow_for: landed.cycle.flowFor, id});
+    """, {**DATA, "mode": mode})
+    assert out["first"] == "flow_read", "the draft is read before anything is written"
+    assert out["write"] == ["flow", "sha256:" + "a" * 64, None]
+    assert out["status"] == "idle" and out["facts"] == "idle"
+    assert out["gate"] is None, "the step is complete once the write has landed"
+    assert out["flow_for"] == out["id"]
+
+
+def test_a_saved_cycle_read_keeps_its_flow_and_its_digest_for_the_binding_write():
+    out = run_js(CYCLE + """
+      const flow = {...structuredClone(d.flows.tester), workflow_id: "old-cycle",
+        source: "draft", draft_digest: digest, latest_revision: 3, next_revision: 4};
+      const read = lands(chosen(reply(opened(atCycle()), "workflows", d.workflows),
+        "old-cycle"), flow);
+      const write = wiz.flowWriteRequest(read.state, {publish: null, binding: {"role-doer": "x"}});
+      show({held: read.state.cycle.flowFor, draft: read.state.cycle.draft,
+        expected: [write.body.expected_digest, write.body.expected_absent],
+        source_flow: JSON.stringify(write.body.source.flow) === JSON.stringify(flow.flow)});
+    """, DATA)
+    assert out["held"] == "old-cycle"
+    assert out["draft"] == {"for": "old-cycle", "digest": "sha256:" + "a" * 64, "generation": 1}
+    assert out["expected"] == ["sha256:" + "a" * 64, None] and out["source_flow"] is True
+
+
+def test_an_answer_that_is_not_a_flow_state_of_this_cycle_is_refused_and_not_stored():
+    out = run_js(CYCLE + """
+      const base = reply(opened(atCycle()), "workflows", d.workflows);
+      const after = (id, payload) => {
+        const state = lands(chosen(base, id), payload).state.cycle;
+        return [state.status, state.draft, state.flow];
+      };
+      const noDraft = (id) => ({...none(id), source: "draft"});
+      show({ready_none: after("desk-short", none("desk-short"))[0],
+        saved_none: after("old-cycle", none("old-cycle")),
+        other_workflow: after("desk-short", none("desk-standard")),
+        flow_missing_on_a_draft: after("desk-short", noDraft("desk-short"))[0],
+        no_diagnostics: after("desk-short", {...none("desk-short"), diagnostics: null})[0]});
+    """, DATA)
+    assert out["ready_none"] == "idle", "a ready cycle with no draft answers source none"
+    assert out["saved_none"] == ["refused", None, None], "a saved cycle must have a flow"
+    assert out["other_workflow"] == ["refused", None, None]
+    assert out["flow_missing_on_a_draft"] == "refused"
+    assert out["no_diagnostics"] == "refused"
 
 
 def test_a_saved_cycle_is_read_first_and_written_only_with_its_own_flow():
@@ -231,7 +325,7 @@ def test_a_saved_cycle_is_read_first_and_written_only_with_its_own_flow():
 
 def test_a_draft_conflict_answer_asks_for_a_reread_and_keeps_the_chosen_card():
     out = run_js(CYCLE + """
-      const first = chosen(reply(opened(atCycle()), "workflows", d.workflows), "desk-standard");
+      const first = picks("desk-standard");
       const conflict = wiz.stepWizard(first.state, {type: "answered", ask: first.asks[0],
         result: {status: "refused", code: "draft_conflict", payload: null}});
       const reread = conflict.asks[0];
@@ -256,29 +350,30 @@ def test_a_draft_conflict_answer_asks_for_a_reread_and_keeps_the_chosen_card():
 
 def test_a_write_waits_for_the_one_in_flight_and_goes_with_the_fresh_digest():
     out = run_js(CYCLE + """
-      const first = chosen(reply(opened(atCycle()), "workflows", d.workflows), "desk-standard");
+      const first = picks("desk-standard");
       const second = chosen(first.state, "desk-short");
-      const late = wiz.stepWizard(second.state, {type: "answered", ask: first.asks[0],
+      const read = lands(second, none("desk-short"));
+      const late = wiz.stepWizard(read.state, {type: "answered", ask: first.asks[0],
         result: ok(drafted(d.flows.standard))});
-      show({first: asksOf(first), second_waits: second.asks.length,
+      show({first: asksOf(first), second: asksOf(second), write_waits: read.asks.length,
         after_answer: asksOf(late), body: late.asks[0].body,
         stale_did_not_land: [late.state.cycle.flow, late.state.cycle.flowFor],
         settled: late.state.cycle.settled});
     """, DATA)
     assert out["first"] == [["write:flow:1", "flow", "write", "flow", "desk-standard"]]
-    assert out["second_waits"] == 0
+    assert out["second"] == [["read:flow:2", "flow_read", "read", "flowRead", "desk-short"]]
+    assert out["write_waits"] == 0
     assert out["after_answer"] == [["write:flow:2", "flow", "write", "flow", "desk-short"]]
     assert out["body"]["expected_absent"] is True, "another card's draft digest is not this card's"
     assert out["stale_did_not_land"] == [None, None]
-    assert out["settled"] == ["write:flow:1"]
+    assert out["settled"] == ["read:flow:1", "read:flow:2", "write:flow:1"]
 
 
 def test_the_cycle_step_shows_the_answers_budget_and_diagnostics_and_never_its_own_arithmetic():
     out = run_js(CYCLE + """
       const facts = (flow, workflowId) => {
-        const picked = chosen(reply(opened(atCycle()), "workflows", d.workflows), workflowId);
-        const landed = answer(picked.state, picked.asks[0], ok(flow));
-        return wiz.cycleFacts(landed);
+        const written = picks(workflowId);
+        return wiz.cycleFacts(answer(written.state, written.asks[0], ok(flow)));
       };
       const odd = structuredClone(d.flows.standard);
       odd.budget.clean.actions = 7;
@@ -327,24 +422,26 @@ def test_every_control_whose_door_is_not_wired_is_named_and_none_is_a_silent_no_
 def test_the_cycle_step_is_complete_only_with_a_chosen_card_whose_flow_landed_and_is_publishable():
     out = run_js(CYCLE + """
       const base = reply(opened(atCycle()), "workflows", d.workflows);
-      const picked = chosen(base, "desk-standard");
+      const asked = chosen(base, "desk-standard");
+      const written = picks("desk-standard");
       const gate = (state) => wiz.canAdvance(state).reason;
       const bad = drafted(d.flows.standard, {publishable: false,
         diagnostics: [{code: "final_gate_missing", severity: "error", at: null, params: {}}]});
-      const step = (result) => gate(wiz.reduceWizard(picked.state,
-        {type: "answered", ask: picked.asks[0], result}));
-      show({none: gate(base), pending: gate(picked.state),
+      const step = (result) => gate(wiz.reduceWizard(written.state,
+        {type: "answered", ask: written.asks[0], result}));
+      show({none: gate(base), pending: gate(written.state), read_pending: gate(asked.state),
         landed: step(ok(d.flows.standard)), unpublishable: step(ok(bad)),
         refused: step({status: "refused", code: "contract_invalid",
           payload: {diagnostics: bad.diagnostics}}),
         unknown: step({status: "unknown"}),
-        wrong_workflow: gate(wiz.reduceWizard(picked.state, {type: "answered",
-          ask: picked.asks[0], result: ok(d.flows.short)})),
-        refusal: wiz.reduceWizard(picked.state, {type: "answered", ask: picked.asks[0],
+        wrong_workflow: gate(wiz.reduceWizard(written.state, {type: "answered",
+          ask: written.asks[0], result: ok(d.flows.short)})),
+        refusal: wiz.reduceWizard(written.state, {type: "answered", ask: written.asks[0],
           result: {status: "refused", code: "contract_invalid",
             payload: {diagnostics: bad.diagnostics}}}).cycle.refusal});
     """, DATA)
     assert out["none"] == "cycle_none" and out["pending"] == "flow_pending"
+    assert out["read_pending"] == "flow_pending"
     assert out["landed"] is None and out["unpublishable"] == "flow_unpublishable"
     assert out["refused"] == "flow_refused" and out["unknown"] == "flow_unknown"
     assert out["wrong_workflow"] == "flow_refused"
@@ -358,7 +455,8 @@ def test_flow_asks_wait_for_the_cycle_step_and_the_cycle_step_publishes_the_next
       for (const [name, payload] of [["workflows", d.workflows], ["runs", d.runs],
           ["cycle_read", d.unpinned], ["tasks", d.tasks]]) early = reply(early, name, payload);
       const arrived = wiz.stepWizard(early, {type: "next"});
-      const landed = answer(arrived.state, arrived.asks[0], ok(drafted(d.flows.standard)));
+      const read = lands(arrived, none("desk-standard"));
+      const landed = answer(read.state, read.asks[0], ok(drafted(d.flows.standard)));
       const rows = wiz.publications(landed, "en");
       show({early_choice: early.cycle.choice, early_asks: wiz.wantedAsks(early)
           .filter((ask) => ask.door === "write" || ask.name === "flow_read").length,
@@ -369,7 +467,7 @@ def test_flow_asks_wait_for_the_cycle_step_and_the_cycle_step_publishes_the_next
     assert out["early_choice"] == {"kind": "starter", "workflowId": "desk-standard"}
     assert out["early_asks"] == 0
     assert out["on_arrival"] == [
-        ["write:flow:1", "flow", "write", "flow", "desk-standard"],
+        ["read:flow:1", "flow_read", "read", "flowRead", "desk-standard"],
         ["read:run:task-b-r1", "previous_run", "read", "run", "task-b-r1"],
         ["read:revision:desk-standard:1", "previous_revision", "read", "revision",
          "desk-standard"]]

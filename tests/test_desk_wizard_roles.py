@@ -20,17 +20,15 @@ DATA = {"flows": FLOWS, "workflows": fixture("wizard", "workflows.json"),
         "quotas": fixture("wizard", "quotas.json"),
         "previous_run": fixture("wizard", "previous_run.json"),
         "previous_revision": fixture("wizard", "previous_revision.json")}
-#: A wizard on the roles step. `reads` answers what the step draws on, `land` answers whichever
-#: flow ask is outstanding, `atRoles` chooses a cycle by pinning it, lands its flow and moves on.
+#: A wizard on the roles step. `reads` answers what the step draws on, `land` (shared prelude)
+#: answers the flow asks a cycle makes in turn, `atRoles` chooses a cycle by pinning it, lands
+#: its flow and moves on.
 ROLES = PRELUDE + """
 const digest = "sha256:" + "b".repeat(64);
 const ok = (payload) => ({status: "accepted", payload});
 const answer = (state, ask, result) => wiz.reduceWizard(state, {type: "answered", ask, result});
 const flowOf = (base, over = {}) => ({...structuredClone(base), draft_digest: digest,
   source: "draft", published: null, ...over});
-const flowAsk = (state) => wiz.wantedAsks(state).find(
-  (ask) => ask.name === "flow" || ask.name === "flow_read");
-const land = (state, flow) => answer(state, flowAsk(state), ok(flow));
 const pin = (id) => ({pinned: {workflow_id: id, latest_revision: 1, set_by: "Вы: Василий",
   set_at: "2026-09-28T13:50:00Z"}});
 const reads = (state, over = {}) => Object.entries({workflows: d.workflows, runs: d.runs,
