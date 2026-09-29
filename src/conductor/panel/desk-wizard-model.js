@@ -288,13 +288,14 @@ export function nextStep(state) {
 }
 
 //: Whether the wizard may leave the current step, and if not, the code that says why and the step
-//: it belongs to: the first gate that fails among the steps up to and including this one, which
-//: is exactly what `moveTo` refuses on, so Next is never enabled where pressing it does nothing.
-//: An earlier step can fail again after it was left (a read lands late), and then it, not the
-//: current step, is what stands in the way. It does not say whether a step follows: the last
-//: built step is complete and still has nowhere to go.
+//: it belongs to. `ok` holds exactly when `moveTo` would not refuse, so Next is never enabled where
+//: pressing it does nothing: every step up to and including this one must pass. The reason is the
+//: current step's own when it fails (the owner can act on it here), else the first earlier step
+//: that fails again after it was left (a read lands late). It does not say whether a step
+//: follows: the last built step is complete and still has nowhere to go.
 export function canAdvance(state) {
-  for (const step of BUILT_STEPS.slice(0, BUILT_STEPS.indexOf(state.step) + 1)) {
+  const held = [state.step, ...BUILT_STEPS.slice(0, BUILT_STEPS.indexOf(state.step))];
+  for (const step of held) {
     const reason = gateOf(state, step);
     if (reason !== null) return Object.freeze({ok: false, reason, step});
   }

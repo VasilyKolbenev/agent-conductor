@@ -160,6 +160,25 @@ def test_the_step_waits_for_the_server_to_check_the_assignment_and_says_so(bench
 
 
 @pytest.mark.parametrize("lang", LANGS)
+def test_a_lost_answer_on_the_roles_step_offers_try_again_and_the_step_recovers(bench, lang):
+    to_roles(bench, lang, reads=reads())
+    bench.page.evaluate("() => { window.host.auto.flow = {}; }")
+    bench.control("wizard:role:role-doer").select_option("claude-code")
+    bench.answer("flow", None, subject="desk-standard", status="unknown")
+    status = bench.page.locator("[data-flow-status]")
+    expect(status).to_have_attribute("data-flow-status", "unknown")
+    assert status.inner_text() == bench.say("wizard.flow.unknown")
+    assert reason(bench) == bench.say("wizard.reason.flow_unknown")
+    bench.page.evaluate("(flow) => { window.host.auto.flow = {'desk-standard': flow}; }",
+                        ok(FLOW["desk-standard"]))
+    bench.control("wizard:cycle:retry").click()
+    expect(bench.page.locator("[data-flow-status]")).to_have_count(0)
+    expect(bench.page.locator("[data-wizard-reason]")).to_have_text("")
+    assert [ask[1] for ask in bench.asks()][-2:] == ["flow_read", "flow"]
+    assert bench.problems == []
+
+
+@pytest.mark.parametrize("lang", LANGS)
 def test_the_no_providers_state_shows_the_no_providers_message_and_blocks_the_step(bench, lang):
     empty = {**fixture("wizard", "workflows.json"), "providers": []}
     to_roles(bench, lang, reads=reads(workflows=ok(empty)))

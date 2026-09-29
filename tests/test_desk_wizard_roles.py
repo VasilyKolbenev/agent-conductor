@@ -441,6 +441,24 @@ def test_a_role_change_sends_the_binding_for_diagnostics_and_waits_for_the_write
     assert out["held"] == 0
 
 
+def test_a_lost_binding_write_on_the_roles_step_is_retried_from_that_step_with_no_card_to_choose():
+    out = run_js(ROLES + """
+      const state = standardAt("desk-standard");
+      const lost = wiz.stepWizard(state, {type: "answered", ask: flowAsk(state),
+        result: {status: "unknown"}});
+      const retry = wiz.stepWizard(lost.state, {type: "cycle-retry"});
+      const then = land(retry.state, flowOf(d.flows.standard));
+      show({lost: [lost.state.step, lost.state.cycle.status, gate(lost.state)],
+        retry: [retry.state.step, retry.state.cycle.status, retry.asks.map((ask) => ask.name)],
+        wrote: flowAsk(then).body.binding, gate_after: gate(then)});
+    """, DATA)
+    assert out["lost"] == ["roles", "unknown", "flow_unknown"]
+    assert out["retry"] == ["roles", "idle", ["flow_read"]], "it reads before it writes again"
+    assert out["wrote"] == {"role-analyst": "codex", "role-doer": "codex",
+                            "role-checker": "claude-code"}
+    assert out["gate_after"] is None
+
+
 def test_the_next_step_is_ready_only_with_every_role_assigned_and_every_instruction_filled():
     out = run_js(ROLES + """
       const noProviders = {...structuredClone(d.workflows), providers: []};

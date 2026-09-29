@@ -535,6 +535,7 @@ def test_next_is_enabled_only_when_moving_on_would_not_be_refused_and_names_the_
       const gitAnswer = (state, result) => wiz.reduceWizard(state, {type: "answered",
         ask: askOf(state, "git"), result});
       const scenarios = {ready: ready(), git_dropped: dropped(ready()),
+        both: dropped(settled(d.unpinned)),
         git_not_repo_root: gitAnswer(dropped(ready()), ok(d.roots)),
         git_unsupported: gitAnswer(dropped(ready()), ok(d.unsupported)),
         git_failed: gitAnswer(dropped(ready()), {status: "refused", code: "store_error"}),
@@ -548,6 +549,7 @@ def test_next_is_enabled_only_when_moving_on_would_not_be_refused_and_names_the_
           "unsupported": fixture("wizard", "git_unsupported.json")})
     assert out["ready"] == {"ok": True, "reason": None, "step": "cycle", "moved": True}
     for name, reason, step in (("git_dropped", "git_reading", "materials"),
+                               ("both", "flow_pending", "cycle"),
                                ("git_not_repo_root", "git_stops", "materials"),
                                ("git_unsupported", "git_stops", "materials"),
                                ("git_failed", "git_failed", "materials"),
