@@ -60,7 +60,7 @@ you are shipping.
 Expect exit 0, and this list of subcommands — no more, no fewer:
 
 ```
-usage: conduct [-h] {validate,init,doctor,prompt,report,preview,integration-smoke,reconcile,providers,ownership,up,demo} ...
+usage: conduct [-h] {validate,init,doctor,prompt,report,preview,integration-smoke,reconcile,providers,ownership,up,demo,tools} ...
 ```
 
 If a subcommand you expected is missing, the wheel is not built from what you think it is.
@@ -606,6 +606,9 @@ Named so that passing it is not read as more than it is.
   and by nothing in this procedure.
 - **Ctrl-C.** The steps above stop the servers with `Stop-Process`, which is not the interrupt
   a person sends. Stop one by hand once.
+- **`conduct tools`.** `conduct tools pin git --path <absolute path>` writes the pin of the git a
+  child may run into `~/.december-command/tools.json` (or under `CONDUCT_HOME`), which this
+  procedure would leave on the machine it ran on; it is held by `tests/test_tool_pins.py`.
 - **Any platform but this one.** Everything above ran on Windows. The CI configuration runs the
   suite and the browser gate on Linux, Windows and macOS (nine jobs), builds one wheel, and walks
   the installed-wheel road (`scripts/wheel_road.py`: a clean venv, init, ownership activate, two
