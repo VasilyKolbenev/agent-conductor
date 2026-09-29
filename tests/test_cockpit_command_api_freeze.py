@@ -143,6 +143,9 @@ EXPECTED_ERRORS = {
     #: The LIFECYCLE of the server itself: nothing about the request, the run or
     #: the plan is at fault, the process is draining toward a stop.
     "server_stopping": (409, "lifecycle"),
+    #: The IDENTITY of the server: the request is well formed and its session is current,
+    #: and it was made for another project than the one this process serves.
+    "project_mismatch": (409, "identity"),
     #: The project's one slot is another run's: the request is fine and the state moves.
     "slot_busy": (409, "concurrency"),
     #: The confirmation a human gave no longer stands on the run's facts: it moved, or the

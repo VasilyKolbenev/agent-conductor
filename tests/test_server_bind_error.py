@@ -49,7 +49,7 @@ def test_an_oserror_after_the_bind_is_not_a_bind_error_and_the_port_is_free_agai
     port = probe.getsockname()[1]
     probe.close()
 
-    def fail_after_the_bind(subject, folder):
+    def fail_after_the_bind(subject, folder, expected_project_id=None):
         raise OSError("the owner record could not be read")
 
     monkeypatch.setattr("conductor.server_policy.acquire_server_owner", fail_after_the_bind)

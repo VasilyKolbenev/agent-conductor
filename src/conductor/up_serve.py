@@ -103,6 +103,7 @@ def _status_of_refused_flags(args):
 def _start(root, port, providers, plan: up_flags.UpPlan, status, stopper):
     """Everything between the settled flags and a bound, owned server."""
     from conductor import server                  # deferred: see `__main__`'s import block
+    from conductor.command.project_claim import Launch     # deferred with it
     if plan.mode == "view":                       # day 8 builds it; see the slice plan
         raise up_flags.UpRefusal("start_failed",
                                  "--mode view is not built yet (spec 4.3.1)")
@@ -120,7 +121,10 @@ def _start(root, port, providers, plan: up_flags.UpPlan, status, stopper):
     except (OwnerRefused, store.StoreError) as error:
         raise _refusal_for(error) from error
     try:
-        srv = server.build(root, port=port, providers=pinned, hub_origin=plan.hub_origin)
+        srv = server.build(root, port=port, providers=pinned, hub_origin=plan.hub_origin,
+                           launch=Launch(plan.mode, plan.demo, plan.transition,
+                                         plan.auto_continue),
+                           expected_project_id=plan.project_id)
     except server.ServerBindError as error:
         raise _bind_refusal(error, port) from error
     except (OwnerRefused, store.StoreError, OSError) as error:

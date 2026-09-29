@@ -1,12 +1,19 @@
 """Construct the command workers from one resolved operator configuration."""
 from datetime import datetime
 
+from .command.project_claim import ProjectIdentity
 
 
 def start_command(subject, root, registry, providers, budget, clock, ids, token_factory):
     from .server import (_resolved_providers, EXECUTION_WORKERS, ExecutionCoordinator,
                          CommandApi, CommandSession, RunStore, QuotaCollector)
     assigned_port = subject.server_address[1]
+    owner, launch = subject.project_owner, subject.launch
+    # The nonce is the OWNER's: what this process holds, not a value read before it did.
+    subject.project_identity = ProjectIdentity(
+        project_id=None if owner is None else owner.project_id,
+        hub_origin=subject.hub_origin, demo=launch.demo, mode=launch.mode,
+        transition_id=launch.transition_id, auto_continue=launch.auto_continue)
     subject.command_session = CommandSession.mint(assigned_port, token_factory)
     subject.command_store = RunStore(root)
     resolution = _resolved_providers(registry, providers, root, clock, ids)

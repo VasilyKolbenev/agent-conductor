@@ -7,9 +7,8 @@ with `server.build` replaced by a function that fails the test if it is reached,
 "before any IO" is a measured claim. A handful of real processes then confirm the
 contract survives an interpreter: nothing else can show that no traceback escapes.
 
-Not here on purpose: the second identity check after `acquire_owner` (needs
-`ProjectOwner.project_id`, day 5) and the child-side kill-on-close job check
-(with the supervisor, 4.1.13 item 3).
+Not here on purpose: the child-side kill-on-close job check (with the supervisor,
+4.1.13 item 3).
 """
 from __future__ import annotations
 
@@ -367,6 +366,54 @@ def test_the_settled_hub_origin_reaches_build_and_a_standalone_up_passes_none(
     with pytest.raises(Reached):
         main(["up", "--dir", str(project.root), "--port", "0"])
     assert [call["hub_origin"] for call in seen] == [ORIGIN, None]
+
+
+def test_the_launch_facts_of_the_plan_reach_build_and_a_standalone_up_launches_plain(
+        tmp_path, monkeypatch):
+    project = DrainProject.build(tmp_path)
+    monkeypatch.setenv("CONDUCT_HOME", str(project.home))
+    seen: list[dict] = []
+    monkeypatch.setattr("conductor.server.build", _spying_build(seen))
+    handover = ["--mode", "active", "--transition", TRANSITION,
+                "--auto-continue", "6d0f2c1a-3b4e-4f5a-8b9c-0d1e2f3a4b5c@3"]
+    with pytest.raises(Reached):
+        main(["up", "--dir", str(project.root), "--port", "0",
+              *_hub(project.home, project.project_id), *handover])
+    with pytest.raises(Reached):
+        main(["up", "--dir", str(project.root), "--port", "0"])
+    from conductor.command.project_claim import Launch
+    assert [call["launch"] for call in seen] == [
+        Launch("active", False, TRANSITION, "6d0f2c1a-3b4e-4f5a-8b9c-0d1e2f3a4b5c@3"),
+        Launch("active", False, None, None)]
+
+
+def test_up_asks_build_to_confirm_the_project_id_and_a_standalone_up_asks_for_none(
+        tmp_path, monkeypatch):
+    project = DrainProject.build(tmp_path)
+    monkeypatch.setenv("CONDUCT_HOME", str(project.home))
+    seen: list[dict] = []
+    monkeypatch.setattr("conductor.server.build", _spying_build(seen))
+    with pytest.raises(Reached):
+        main(["up", "--dir", str(project.root), "--port", "0",
+              *_hub(project.home, project.project_id)])
+    with pytest.raises(Reached):
+        main(["up", "--dir", str(project.root), "--port", "0"])
+    assert [call["expected_project_id"] for call in seen] == [project.project_id, None]
+
+
+def test_a_root_taken_over_between_the_check_and_the_hold_is_refused_on_one_line_and_closed(
+        tmp_path, monkeypatch, capsys):
+    from conductor import ownership
+    project = DrainProject.build(tmp_path)
+    monkeypatch.setenv("CONDUCT_HOME", str(project.home))
+    monkeypatch.setattr(ownership.ProjectOwner, "project_id", property(lambda self: OTHER_ID))
+    code = main(["up", "--dir", str(project.root), "--port", "0",
+                 *_hub(project.home, project.project_id)])
+    err = capsys.readouterr().err
+    assert code == 1 and len(err.splitlines()) == 1
+    assert err.startswith("conduct up: refused project_identity_changed: ")
+    assert json.loads(project.status_file.read_text(encoding="utf-8"))["state"] == "refused"
+    assert project.head_phase() == "closed"          # the owner opened, saw, and let go
 
 
 def test_the_matching_nonce_passes_the_identity_check_and_reaches_build(

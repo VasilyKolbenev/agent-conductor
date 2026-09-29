@@ -29,7 +29,8 @@ START_CODES = FLAG_CODES | frozenset({
     "store_error", "providers_invalid", "bind_failed", "start_failed"})
 #: The codes an ownership refusal may keep; any other one is `start_failed`.
 OWNER_CODES = frozenset({"owner_busy", "recovery_required", "ownership_lost",
-                         "transition_conflict", "ownership_unavailable"})
+                         "transition_conflict", "ownership_unavailable",
+                         "project_identity_changed"})
 MODES = ("active", "view")
 
 _PROJECT_ID = re.compile(r"[0-9a-f]{32}")
@@ -60,6 +61,7 @@ class UpPlan:
     stop_on_stdin_eof: bool
     transition: str | None
     auto_continue: str | None
+    demo: bool = False
 
     @property
     def hub(self) -> bool:
@@ -68,6 +70,8 @@ class UpPlan:
 
 
 STANDALONE = UpPlan(None, "active", None, None, False, None, None)
+#: `conduct demo`: no hub flags, and the plan says it is the demo (4.5.1).
+DEMO = UpPlan(None, "active", None, None, False, None, None, demo=True)
 
 
 def refusal_line(code: str, detail: str) -> str:

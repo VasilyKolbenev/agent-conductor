@@ -178,7 +178,7 @@ def _cmd_demo(args: argparse.Namespace) -> int:
     serving the empty front door that made this a finding.
     """
     import tempfile               # local to its one use; no boundary rides on it
-    from conductor import demo                # deferred: see the import block
+    from conductor import demo, up_flags      # deferred: see the import block
     from conductor.command.run_store import StoreError   # deferred with it
     try:
         root = demo.materialize(Path(tempfile.mkdtemp(prefix="conduct-demo-")))
@@ -194,7 +194,7 @@ def _cmd_demo(args: argparse.Namespace) -> int:
     print(f"demo workflow {named['workflow_id']} revision {named['revision']}, "
           f"run {named['run_id']}, gate {named['waiting_gate']} is waiting",
           file=sys.stderr)
-    return _serve(root, args.port)
+    return _serve(root, args.port, plan=up_flags.DEMO)
 
 
 def _require_a_project(root: Path | str) -> None:
@@ -497,8 +497,8 @@ def _add_ownership(sub):
 
 def _cmd_tools(args: argparse.Namespace) -> int:
     # Deferred like the server: it runs a subprocess, and `conduct init` must not import that.
-    from conductor import tool_pins
-    return tool_pins.pin_command(args.tool, args.path)
+    from conductor.hub import cli
+    return cli.tools_pin(args.tool, args.path)
 
 
 def _add_tools(sub) -> None:

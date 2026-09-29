@@ -23,6 +23,7 @@ REFUSALS = {
     "windows_name_unsafe": 422,
     "windows_path_too_long": 422,
     "server_stopping": 409,
+    "project_mismatch": 409,
     "slot_busy": 409,
     "preview_stale": 409,
 }

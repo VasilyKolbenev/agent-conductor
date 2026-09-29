@@ -9,10 +9,12 @@ the default runner is not left unproven.
 """
 from __future__ import annotations
 
+import ast
 import json
 import os
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 import pytest
@@ -200,11 +202,55 @@ def test_output_naming_the_other_tool_is_refused_and_nothing_is_written(tmp_path
     assert not (tmp_path / "tools.json").exists()
 
 
-def test_a_relative_path_is_refused_tool_path_invalid_before_anything_runs(tmp_path):
+def test_a_relative_path_is_tool_version_unreadable_and_says_why_before_anything_runs(tmp_path):
     def pin():
         tool_pins.pin_tool("git", "git", folder=tmp_path, run=_raises(AssertionError("ran")),
                            source={})
-    assert _code(pin) == "tool_path_invalid"
+    with pytest.raises(ToolPinError) as caught:
+        pin()
+    assert caught.value.code == "tool_version_unreadable"
+    assert "absolute" in caught.value.detail
+
+
+# -- the closed list of codes: the spec's names, and the two proposals --------------
+
+SPEC_NAMES = {"git_not_pinned", "gh_not_pinned", "git_changed", "gh_changed", "git_too_old",
+              "tool_version_unreadable"}
+PROPOSED_NAMES = {"tools_file_invalid", "tools_file_unwritable"}
+
+
+def test_the_spec_codes_and_the_two_proposals_are_the_whole_list():
+    assert tool_pins.SPEC_CODES == frozenset(SPEC_NAMES)
+    assert tool_pins.PROPOSED_CODES == frozenset(PROPOSED_NAMES)
+
+
+@pytest.mark.parametrize("code", ["tool_path_invalid", "tool_changed", "gh_unpinned", "", "x"])
+def test_a_tool_pin_error_refuses_a_code_that_is_neither_in_the_spec_nor_proposed(code):
+    with pytest.raises(ValueError):
+        ToolPinError(code, "detail")
+
+
+@pytest.mark.parametrize("code", sorted(SPEC_NAMES | PROPOSED_NAMES))
+def test_a_tool_pin_error_carries_every_listed_code(code):
+    assert ToolPinError(code, "detail").code == code
+
+
+def test_every_code_a_raise_site_of_the_library_names_is_on_the_list():
+    tree = ast.parse(Path(tool_pins.__file__).read_text(encoding="utf-8"))
+    listed = SPEC_NAMES | PROPOSED_NAMES
+    named = []
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                and node.func.id == "ToolPinError" and node.args):
+            continue
+        first = node.args[0]
+        if isinstance(first, ast.Constant):
+            named.append(first.value)
+        elif isinstance(first, ast.JoinedStr):     # f"{tool}_not_pinned": one name per tool
+            tail = "".join(part.value for part in first.values if isinstance(part, ast.Constant))
+            named.extend(f"{tool}{tail}" for tool in tool_pins.TOOLS)
+    assert named, "the scan found no raise site, so it proves nothing"
+    assert set(named) <= listed, sorted(set(named) - listed)
 
 
 def test_a_write_that_fails_is_tools_file_unwritable(tmp_path, monkeypatch):
@@ -299,76 +345,80 @@ def test_a_path_that_holds_no_executable_is_tool_version_unreadable_through_the_
     assert _code(pin) == "tool_version_unreadable"
 
 
-# -- `conduct tools pin` -------------------------------------------------------------
+# -- a pin is read-modify-write under one lock ---------------------------------------
 
 
-def _cli(argv: list[str], capsys) -> tuple[int, str, str]:
-    from conductor.__main__ import main
-    code = main(argv)
-    out, err = capsys.readouterr()
-    return code, out, err
+def _pin_in_a_thread(tmp_path, tool, path, text, gate, failures):
+    def probe(argv, env):
+        gate.wait()                # both pins are past their probe before either writes
+        return text
+
+    def go():
+        try:
+            tool_pins.pin_tool(tool, path, folder=tmp_path, run=probe, source={})
+        except BaseException as error:                          # noqa: BLE001 -- reported below
+            failures.append(error)
+
+    return threading.Thread(target=go)
 
 
-@pytest.fixture
-def home(tmp_path, monkeypatch) -> Path:
-    folder = tmp_path / "home"
-    monkeypatch.setenv("CONDUCT_HOME", str(folder))
-    return folder
+def test_two_pins_of_different_tools_at_once_both_survive(tmp_path):
+    gate, failures = threading.Barrier(2, timeout=15), []
+    threads = [
+        _pin_in_a_thread(tmp_path, "git", ABS_GIT, "git version 2.47.1\n", gate, failures),
+        _pin_in_a_thread(tmp_path, "gh", ABS_GH, "gh version 2.62.0\n", gate, failures)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(30)
+    assert not any(thread.is_alive() for thread in threads) and failures == []
+    assert tool_pins.load_pins(tmp_path) == ToolPins(ToolPin("git", ABS_GIT, "2.47.1"),
+                                                     ToolPin("gh", ABS_GH, "2.62.0"))
 
 
-def test_tools_pin_prints_one_json_line_of_tool_path_and_version_and_writes_the_pin(
-        tmp_path, home, capsys):
-    tool = _fake_tool(tmp_path / "bin", "git version 2.47.1")
-    code, out, err = _cli(["tools", "pin", "git", "--path", tool], capsys)
-    assert (code, err) == (0, "")
-    assert out.count("\n") == 1 and json.loads(out) == {
-        "tool": "git", "path": tool, "version": "2.47.1"}
-    assert tool_pins.read_pin("git", home) == ToolPin("git", tool, "2.47.1")
+def test_a_file_that_becomes_invalid_while_the_tool_answers_is_refused_and_left_alone(tmp_path):
+    def probe(argv, env):
+        _put(tmp_path, b"{ edited by the owner meanwhile")
+        return "git version 2.47.1\n"
+
+    def pin():
+        tool_pins.pin_tool("git", ABS_GIT, folder=tmp_path, run=probe, source={})
+
+    assert _code(pin) == "tools_file_invalid"
+    assert (tmp_path / "tools.json").read_bytes() == b"{ edited by the owner meanwhile"
 
 
-def _one_refusal(code: int, out: str, err: str, refused: str) -> None:
-    assert (code, out) == (1, "")
-    assert len(err.splitlines()) == 1 and "Traceback" not in err
-    assert err.startswith(f"conduct tools pin: refused {refused}: "), err
+def test_a_pin_that_cannot_take_the_lock_refuses_tools_file_unwritable_and_writes_nothing(
+        tmp_path, monkeypatch):
+    from conductor.ownership_native import NativeHold
+    monkeypatch.setattr(tool_pins, "LOCK_ATTEMPTS", 3)
+    monkeypatch.setattr(tool_pins, "LOCK_PAUSE_SECONDS", 0.001)
+    (tmp_path / "tools.lock").write_bytes(b"")
+    holder = NativeHold(tmp_path / "tools.lock", exclusive=True)
+    try:
+        assert _code(lambda: _pin(tmp_path)) == "tools_file_unwritable"
+    finally:
+        holder.close()
+    assert not (tmp_path / "tools.json").exists()
+    assert _pin(tmp_path).version == "2.47.1"          # the same pin goes through once it is free
 
 
-def test_a_git_that_is_too_old_is_refused_on_one_line_and_pins_nothing(
-        tmp_path, home, capsys):
-    tool = _fake_tool(tmp_path / "bin", "git version 2.30.0")
-    _one_refusal(*_cli(["tools", "pin", "git", "--path", tool], capsys), "git_too_old")
-    assert not (home / "tools.json").exists()
+def test_a_pin_creates_the_lock_file_once_and_leaves_it_in_place(tmp_path):
+    folder = tmp_path / "not-there-yet"
+    tool_pins.pin_tool("git", ABS_GIT, folder=folder, run=_says("git version 2.47.1\n"), source={})
+    lock = folder / "tools.lock"
+    assert lock.is_file()
+    identity = lock.stat().st_ino
+    tool_pins.pin_tool("gh", ABS_GH, folder=folder, run=_says("gh version 2.62.0\n"), source={})
+    assert lock.stat().st_ino == identity
 
 
-def test_a_path_that_runs_nothing_is_refused_tool_version_unreadable(tmp_path, home, capsys):
-    missing = str(tmp_path / "bin" / "nothing-here")
-    _one_refusal(*_cli(["tools", "pin", "gh", "--path", missing], capsys),
-                 "tool_version_unreadable")
+def test_a_write_that_fails_lets_go_of_the_lock(tmp_path, monkeypatch):
+    def refuse(path, payload, **options):
+        raise PermissionError(13, "read-only")
 
-
-def test_a_relative_path_is_refused_tool_path_invalid(home, capsys):
-    _one_refusal(*_cli(["tools", "pin", "git", "--path", "git"], capsys), "tool_path_invalid")
-
-
-def test_an_invalid_tools_file_is_refused_and_left_as_the_owner_wrote_it(
-        tmp_path, home, capsys):
-    tool = _fake_tool(tmp_path / "bin", "git version 2.47.1")
-    target = _put(home, b"{ not the schema")
-    _one_refusal(*_cli(["tools", "pin", "git", "--path", tool], capsys), "tools_file_invalid")
-    assert target.read_bytes() == b"{ not the schema"
-
-
-def test_a_relative_conduct_home_is_refused_conduct_home_invalid(tmp_path, monkeypatch, capsys):
-    monkeypatch.setenv("CONDUCT_HOME", "relative/home")
-    tool = _fake_tool(tmp_path / "bin", "git version 2.47.1")
-    _one_refusal(*_cli(["tools", "pin", "git", "--path", tool], capsys), "conduct_home_invalid")
-
-
-@pytest.mark.parametrize("argv", [
-    ["tools", "pin", "hg", "--path", ABS_GIT], ["tools", "pin", "git"], ["tools"],
-    ["tools", "unpin", "git"]])
-def test_a_tools_command_line_argparse_cannot_read_is_a_usage_error(argv, home, capsys):
-    from conductor.__main__ import main
-    with pytest.raises(SystemExit) as caught:
-        main(argv)
-    assert caught.value.code == 2
-    assert not (home / "tools.json").exists()
+    with monkeypatch.context() as patched:
+        patched.setattr("conductor.atomic_replace.replace_bytes", refuse)
+        assert _code(lambda: _pin(tmp_path)) == "tools_file_unwritable"
+    monkeypatch.setattr(tool_pins, "LOCK_ATTEMPTS", 1)   # a lock still held would refuse at once
+    assert _pin(tmp_path).version == "2.47.1"

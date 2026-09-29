@@ -115,6 +115,8 @@ export const ERROR_LABELS = Object.freeze({
     + "open first; the run was read again.",
   malformed_request: "The request could not be read.",
   method_not_allowed: "That operation is unavailable.",
+  project_mismatch: "This server serves another project. Nothing was read or written; "
+    + "reload the page.",
   record_conflict: "The durable record conflicts with an existing fact.",
   route_not_found: "The run route was not found.",
   route_unsafe: "The run route is structurally unsafe.",
