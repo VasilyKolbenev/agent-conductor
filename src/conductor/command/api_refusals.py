@@ -58,6 +58,7 @@ ERROR_STATUS = MappingProxyType({
     "run_terminal": 409,
     "gate_unreached": 409,
     "server_stopping": 409,
+    "project_mismatch": 409,
 })
 
 _FIXED_MESSAGES = MappingProxyType({
@@ -125,6 +126,12 @@ _FIXED_MESSAGES = MappingProxyType({
     #: write, whichever one it is. It carries no detail, so it needs no
     #: `_REVIEWED_FACTS` row.
     "server_stopping": "the server is stopping and accepts no new command",
+    #: Its own code because the request is well formed and its session is current: it was
+    #: made for another project than the one this server serves (a stale window on a
+    #: reused port, or a header naming a project this server does not have). Nothing about
+    #: it can be corrected by resending. It carries no detail, and the header value it
+    #: sent is never put into the answer, so it needs no `_REVIEWED_FACTS` row.
+    "project_mismatch": "this server serves another project",
 })
 
 

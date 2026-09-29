@@ -84,6 +84,7 @@ export const NOTICE_COPY = Object.freeze({
   "error.gate_unreached": ["This gate has not been reached yet. ALL roads into it must open first; the run was read again.", "Эти ворота ещё не достигнуты. Сначала должны открыться ВСЕ ведущие к ним ветви; запуск прочитан снова."],
   "error.malformed_request": ["The request could not be read.", "Запрос не удалось прочитать."],
   "error.method_not_allowed": ["That operation is unavailable.", "Эта операция недоступна."],
+  "error.project_mismatch": ["This server serves another project. Nothing was read or written; reload the page.", "Этот сервер обслуживает другой проект. Ничего не прочитано и не записано; перезагрузите страницу."],
   "error.record_conflict": ["The durable record conflicts with an existing fact.", "Долговечная запись противоречит существующему факту."],
   "error.route_not_found": ["The run route was not found.", "Маршрут запуска не найден."],
   "error.route_unsafe": ["The run route is structurally unsafe.", "Маршрут запуска структурно небезопасен."],
