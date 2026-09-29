@@ -126,9 +126,12 @@ def missing_bindings(definition: Any, values: tuple[object, ...]) -> dict[str, l
     `instructions` names each dispatch step whose instruction is not a document a human
     published (an agent's document does not count), in the order of the plan. `inputs` names,
     sorted, every document a step reads that no document holds and no review of the plan
-    produces. Whether a plan can be bound at all (a step that is neither a dispatch nor a
-    review) is `bind_inputs`'s verdict and not a document to publish, so such a step is left
-    out here. Empty in both lists exactly when `bind_inputs` accepts.
+    produces. Whether a plan can be bound at all is `bind_inputs`'s verdict on the plan and not
+    a document to publish, and it refuses three kinds whatever is published: a step that is
+    neither a dispatch nor a review (left out here), a review that names no valid result
+    document (it produces none to count here) and a step whose input list repeats a document
+    or is malformed (not judged here). For every other plan both lists are empty exactly when
+    `bind_inputs` accepts.
     """
     steps = [node for node in definition.nodes
              if node.kind == "task" and node.capability in _BOUND_CAPABILITIES]

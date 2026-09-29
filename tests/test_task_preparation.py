@@ -14,9 +14,9 @@ import pytest
 from conductor.command import task_preparation
 from conductor.command.adapters import AdapterRegistry
 from conductor.command.api_refusals import ApiRefusal
-from conductor.command.artifacts import ArtifactDocument
+from conductor.command.artifacts import ArtifactDocument, required_input_refs
 from conductor.command.authorization_inputs import bind_inputs, executable_nodes
-from conductor.command.contract_values import ContractError
+from conductor.command.contract_values import ContractError, _id, _unique_ids
 from conductor.command.contracts import DecisionReceipt, RunEnvelope
 from conductor.command.graph_definition import GraphDefinition, GraphEdge, GraphNode
 from conductor.command.graph_schedule import schedule
@@ -348,10 +348,22 @@ def document(ref, **more):
                             created_at=NOW, media_type="text/markdown", content=ref, **more)
 
 
-def plans():
-    """Every shipped template and every form of the corpus that a bounded run can carry."""
+def reading_an_input_twice(document):
+    """The template with its dispatch step naming its first input a second time."""
+    def repeated(node):
+        refs = node["arguments"]["artifact_refs"]
+        return {**node, "arguments": {**node["arguments"], "artifact_refs": [*refs, refs[0]]}}
+    return {**document, "nodes": [repeated(node) if node.get("capability") == "dispatch" else node
+                                  for node in document["nodes"]]}
+
+
+def corpus_plans():
+    """Every shipped template, every form of the corpus that becomes a plan, and one shipped
+    template altered so that its dispatch step reads an input twice."""
     found = {path.stem: plan_of({**load_template(path.stem).as_dict()})
              for path in sorted(TEMPLATE_DIR.glob("*.json"))}
+    found["desk-standard-reading-an-input-twice"] = plan_of(
+        reading_an_input_twice(load_template("desk-standard").as_dict()))
     corpus = [accepted(raw) for raw in STUDIO_CORPUS.values()]
     corpus += [compile_flow(flow) for flow in CANONICAL.values()]
     for number, raw in enumerate(corpus):
@@ -359,24 +371,47 @@ def plans():
             found[f"form-{number}"] = plan_of(raw)
         except ContractError:
             continue
-    return {name: plan for name, plan in found.items() if _bindable(plan)}
+    return found
 
 
 def _bindable(plan):
+    """Whether `bind_inputs` judges the plan itself acceptable, whatever is published.
+
+    Three of its refusals are about the plan and no document's business: a step that is neither
+    a dispatch nor a review, a review that names no valid result document, and a step that reads
+    one input twice (or in no valid form).
+    """
     try:
-        executable_nodes(plan)
+        for node in executable_nodes(plan):
+            _unique_ids("input references", required_input_refs(node.capability, node.arguments))
+            if node.capability == "review":
+                _id("result_artifact_ref", node.arguments.get("result_artifact_ref"))
     except ContractError:
         return False
     return True
 
 
+def instructions_of(plan):
+    return [node.arguments["instruction_ref"] for node in plan.nodes
+            if node.capability == "dispatch"]
+
+
+def reads_of(plan):
+    """Every document any step of the plan reads: its instructions and its inputs, the ones a
+    review of the plan produces for a later step included."""
+    inputs = (ref for node in plan.nodes if node.capability is not None
+              for ref in required_input_refs(node.capability, node.arguments))
+    return sorted({*instructions_of(plan), *inputs})
+
+
 def published_states(plan):
-    """Nothing, everything, everything but one document, and the brief alone."""
-    instructions = [node.arguments["instruction_ref"] for node in plan.nodes
-                    if node.capability == "dispatch"]
-    everything = ["artifact-brief", "artifact-materials", *instructions]
-    states = [[], everything, ["artifact-brief"]]
-    states += [[ref for ref in everything if ref != gone] for gone in everything]
+    """Nothing, the brief alone, what a run is handed, every document any step reads, and each of
+    those last two sets but one document."""
+    everything = ["artifact-brief", "artifact-materials", *instructions_of(plan)]
+    reads = reads_of(plan)
+    states = [[], ["artifact-brief"], everything, reads]
+    for whole in (everything, reads):
+        states += [[ref for ref in whole if ref != gone] for gone in whole]
     return states
 
 
@@ -388,7 +423,9 @@ def accepts(plan, values):
     return True
 
 
-PLANS = plans()
+ALL_PLANS = corpus_plans()
+PLANS = {name: plan for name, plan in ALL_PLANS.items() if _bindable(plan)}
+SET_ASIDE = {name: plan for name, plan in ALL_PLANS.items() if name not in PLANS}
 
 
 @pytest.mark.parametrize("name", sorted(PLANS))
@@ -399,6 +436,25 @@ def test_missing_bindings_is_empty_exactly_when_bind_inputs_accepts(name):
         missing = task_preparation.missing_bindings(plan, values)
         assert (not missing["instructions"] and not missing["inputs"]) == accepts(plan, values), (
             name, refs, missing)
+
+
+@pytest.mark.parametrize("name", sorted(SET_ASIDE))
+def test_a_plan_left_out_of_that_claim_is_refused_by_bind_inputs_with_every_document_published(
+        name):
+    plan = SET_ASIDE[name]
+    assert not accepts(plan, tuple(document(ref) for ref in reads_of(plan)))
+
+
+@pytest.mark.parametrize("name", ["dalio-v1", "desk-standard-reading-an-input-twice"])
+def test_a_plan_bind_inputs_refuses_however_it_is_published_can_read_as_missing_nothing(name):
+    """Why those plans are left out: a review naming no result document (`dalio-v1`) and a step
+    reading one input twice are the plan's fault, and `missing_bindings` names no document for
+    either, so with every document published it says nothing is missing and `bind_inputs`
+    still refuses."""
+    plan = SET_ASIDE[name]
+    values = tuple(document(ref) for ref in reads_of(plan))
+    assert task_preparation.missing_bindings(plan, values) == {"instructions": [], "inputs": []}
+    assert not accepts(plan, values)
 
 
 def test_the_corpus_reaches_the_shipped_cycles_and_at_least_four_forms():
