@@ -29,11 +29,23 @@ const STARTER_MARK = Object.freeze({ru: "из стартовых докумен�
 const HEADING = Object.freeze({ru: "Материалы", en: "Materials"});
 const NONE = Object.freeze({ru: "Материалов нет", en: "No materials"});
 const LINK_LINE = Object.freeze({
-  ru: (path, oid) => `Файл проекта в рабочей папке: \`${path}\` (git blob \`${oid}\`), `
+  ru: (path, oid) => `Файл проекта в рабочей папке: ${codeSpan(path)} (git blob \`${oid}\`), `
     + "текст не скопирован",
-  en: (path, oid) => `Project file in the work folder: \`${path}\` (git blob \`${oid}\`), `
+  en: (path, oid) => `Project file in the work folder: ${codeSpan(path)} (git blob \`${oid}\`), `
     + "text not copied",
 });
+
+//: `text` as an inline code span whatever backticks it holds, as the composer writes it: a
+//: delimiter one longer than the longest run inside, and a space on each side where the text
+//: begins or ends with a backtick, or with a space on both ends.
+function codeSpan(text) {
+  const runs = text.match(/`+/g) ?? [];
+  const delimiter = "`".repeat(Math.max(0, ...runs.map((run) => run.length)) + 1);
+  const padded = text.startsWith("`") || text.endsWith("`")
+    || (text.startsWith(" ") && text.endsWith(" "));
+  const pad = padded ? " " : "";
+  return `${delimiter}${pad}${text}${pad}${delimiter}`;
+}
 
 function bytes(text) {
   return encoder.encode(text).length;

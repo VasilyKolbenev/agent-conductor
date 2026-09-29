@@ -44,9 +44,10 @@ _KEYS = {"text": frozenset({"kind", "title", "content"}), "link": _LINK_KEYS,
 
 _HEADING = {"ru": "Материалы", "en": "Materials"}
 _NONE = {"ru": "Материалов нет", "en": "No materials"}
+#: `{path}` is filled with the path already quoted as a code span (`_code_span`).
 _LINK_LINE = {
-    "ru": "Файл проекта в рабочей папке: `{path}` (git blob `{oid}`), текст не скопирован",
-    "en": "Project file in the work folder: `{path}` (git blob `{oid}`), text not copied",
+    "ru": "Файл проекта в рабочей папке: {path} (git blob `{oid}`), текст не скопирован",
+    "en": "Project file in the work folder: {path} (git blob `{oid}`), text not copied",
 }
 
 
@@ -167,7 +168,8 @@ def _link_section(at: int, doc_id: str, oid: str, lang: str,
     held = _held(at, doc_id, base)
     if held.git_oid != oid:
         raise MaterialsRefused("materials_base_moved", index=at)
-    return _Section(PROJECT_DOC, held.path, _LINK_LINE[lang].format(path=held.path, oid=oid))
+    return _Section(PROJECT_DOC, held.path,
+                    _LINK_LINE[lang].format(path=_code_span(held.path), oid=oid))
 
 
 def _copy_section(at: int, content: object, doc_id: str, oid: str,
@@ -177,8 +179,8 @@ def _copy_section(at: int, content: object, doc_id: str, oid: str,
     if doc_id not in documents:
         raise MaterialsRefused("doc_unknown", index=at)
     path = documents[doc_id]
-    if not _quotable(path):
-        raise ContractError("documents holds each path as one line of text without a backtick")
+    if not _one_line(path):
+        raise ContractError("documents holds each path as one line of text")
     if not isinstance(content, str) or not content.strip():
         raise ContractError(f"items[{at}].content must be non-blank text")
     if not _is_text(content):
@@ -192,8 +194,8 @@ def _held(at: int, doc_id: str, base: Mapping[str, BaseFile] | None) -> BaseFile
     held = base.get(doc_id)
     if held is None:
         raise MaterialsRefused("doc_unknown", index=at)
-    if not isinstance(held, BaseFile) or not _quotable(held.path):
-        raise ContractError("base holds BaseFile rows whose path is one line without a backtick")
+    if not isinstance(held, BaseFile) or not _one_line(held.path):
+        raise ContractError("base holds BaseFile rows whose path is one line of text")
     return held
 
 
@@ -236,10 +238,24 @@ def _line(name: str, value: object) -> str:
     return text
 
 
-def _quotable(path: object) -> bool:
-    """A path a heading and a code span can carry: one line, no backtick, and text."""
+def _one_line(path: object) -> bool:
+    """A path a heading and a code span can carry: one line of text."""
     return (isinstance(path, str) and path != "" and _is_text(path)
-            and not set(path) & {"\n", "\r", "`"})
+            and not set(path) & {"\n", "\r"})
+
+
+def _code_span(text: str) -> str:
+    """`text` as an inline code span whatever backticks it holds (CommonMark).
+
+    The delimiter is one backtick longer than the longest run inside the text, so nothing in it
+    can close the span; a space is added on each side where the text begins or ends with a
+    backtick, or with a space on both ends, because a span drops one space from each end.
+    """
+    longest = max((len(run) for run in re.findall(r"`+", text)), default=0)
+    delimiter = "`" * (longest + 1)
+    padded = text[0] == "`" or text[-1] == "`" or (text[0] == " " and text[-1] == " ")
+    pad = " " if padded else ""
+    return f"{delimiter}{pad}{text}{pad}{delimiter}"
 
 
 def _fenced(content: str) -> str:
