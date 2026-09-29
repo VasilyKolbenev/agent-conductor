@@ -120,7 +120,7 @@ def _start(root, port, providers, plan: up_flags.UpPlan, status, stopper):
     except (OwnerRefused, store.StoreError) as error:
         raise _refusal_for(error) from error
     try:
-        srv = server.build(root, port=port, providers=pinned)
+        srv = server.build(root, port=port, providers=pinned, hub_origin=plan.hub_origin)
     except server.ServerBindError as error:
         raise _bind_refusal(error, port) from error
     except (OwnerRefused, store.StoreError, OSError) as error:

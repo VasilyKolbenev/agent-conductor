@@ -20,6 +20,7 @@ them, and `tests/test_server_http_framing.py` reads each one off a real socket.
 """
 from __future__ import annotations
 
+from conductor import up_flags
 from conductor.command.http_transport import (
     HttpRefusal, announces_a_body, command_content_length)
 
@@ -32,6 +33,24 @@ from conductor.command.http_transport import (
 IDLE_CONNECTION_SECONDS = 5.0
 
 
+def frame_policy(hub_origin: str | None) -> str:
+    """The `Content-Security-Policy` value of a child: who may frame it (spec 4.6.6).
+
+    Only `frame-ancestors`; the child adds no other directive in V1. Without a hub the
+    page may be framed by itself alone; a child started by a hub also admits that
+    hub's origin. The value is written into a header, so the origin is judged against
+    the one grammar of `up_flags` again here instead of being trusted from the caller.
+
+    Raises:
+        ValueError: `hub_origin` is not exactly `http://127.0.0.1:<port>`.
+    """
+    if hub_origin is None:
+        return "frame-ancestors 'self'"
+    if not up_flags.is_hub_origin(hub_origin):
+        raise ValueError(f"hub origin must be http://127.0.0.1:<port>, not {hub_origin!r}")
+    return f"frame-ancestors 'self' {hub_origin}"
+
+
 class KeptConnection:
     """The framing half of the handler: its version, its lifetime, its answers.
 
@@ -42,8 +61,10 @@ class KeptConnection:
     a longer name.
 
     What it needs from the class it is mixed into is stated rather than assumed:
-    that writing surface, and nothing else. It chooses no route, reads no path,
-    and knows nothing about what this server serves.
+    that writing surface, and one attribute of the server it runs under,
+    `content_security_policy`, which `end_headers` writes on every answer. It
+    chooses no route, reads no path, and knows nothing about what this server
+    serves.
     """
 
     #: Answer HTTP/1.1 and keep the connection. Under HTTP/1.0 every response
@@ -72,6 +93,18 @@ class KeptConnection:
     #: road consumes through the bounded door or closes. Settling a POST body at
     #: the entrance would read it before those checks had spoken.
     BODY_READING_METHODS = frozenset({"POST"})
+
+    def end_headers(self) -> None:
+        """Add the one `Content-Security-Policy` header, then end the headers.
+
+        Every answer of `BaseHTTPRequestHandler` ends its headers here: `_send_body`, the
+        event stream, and `send_error` (400, 414, 501), which goes past every route. So
+        the header is written in exactly one place and no route can forget it. The value
+        is `server.content_security_policy`, fixed at start (spec 4.6.6). A reply in
+        HTTP/0.9 has no headers at all, and `send_header` writes none there.
+        """
+        self.send_header("Content-Security-Policy", self.server.content_security_policy)
+        super().end_headers()
 
     def parse_request(self) -> bool:
         """Parse as the standard library does, then settle the body before any route.

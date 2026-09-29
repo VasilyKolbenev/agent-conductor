@@ -348,6 +348,27 @@ def test_another_nonce_is_refused_project_identity_changed_and_writes_no_ownersh
     assert project.head_phase() == "active"
 
 
+def _spying_build(seen: list[dict]):
+    def build(*args, **kwargs):
+        seen.append(kwargs)
+        raise Reached("server.build was reached")
+    return build
+
+
+def test_the_settled_hub_origin_reaches_build_and_a_standalone_up_passes_none(
+        tmp_path, monkeypatch):
+    project = DrainProject.build(tmp_path)
+    monkeypatch.setenv("CONDUCT_HOME", str(project.home))
+    seen: list[dict] = []
+    monkeypatch.setattr("conductor.server.build", _spying_build(seen))
+    hub = _hub(project.home, project.project_id)
+    with pytest.raises(Reached):
+        main(["up", "--dir", str(project.root), "--port", "0", *hub])
+    with pytest.raises(Reached):
+        main(["up", "--dir", str(project.root), "--port", "0"])
+    assert [call["hub_origin"] for call in seen] == [ORIGIN, None]
+
+
 def test_the_matching_nonce_passes_the_identity_check_and_reaches_build(
         tmp_path, monkeypatch):
     project = DrainProject.build(tmp_path)

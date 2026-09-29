@@ -61,7 +61,7 @@ from conductor.command.http_transport import (
 #: Re-exported deliberately: `IDLE_CONNECTION_SECONDS` is a fact about THIS
 #: server that callers and guards read off it, and moving where it is
 #: written did not move what it is about.
-from conductor.http_framing import IDLE_CONNECTION_SECONDS, KeptConnection
+from conductor.http_framing import IDLE_CONNECTION_SECONDS, KeptConnection, frame_policy
 from conductor.command.providers import ProviderResolution, resolve_providers
 from conductor.command.run_store import RunStore
 from conductor.command.runtime import Budget
@@ -551,9 +551,11 @@ class ConductServer(ThreadingHTTPServer):
             budget: Budget = PRODUCT_COMMAND_BUDGET,
             clock: Callable[[], str] = _command_clock,
             ids: Callable[[str], str] = _command_id,
-            token_factory: Callable[[int], str] = secrets.token_urlsafe) -> None:
+            token_factory: Callable[[int], str] = secrets.token_urlsafe,
+            hub_origin: str | None = None) -> None:
         # Attributes first: a failed bind makes socketserver call our
         # server_close() before __init__ finishes.
+        self._content_security_policy = frame_policy(hub_origin)   # refuses a bad origin
         self.shutting_down = False
         self._command_admission = threading.Condition()
         self._command_posts = 0
@@ -591,6 +593,11 @@ class ConductServer(ThreadingHTTPServer):
             self._retire_execution()
         finally:
             super().shutdown()
+
+    @property
+    def content_security_policy(self) -> str:
+        """The `Content-Security-Policy` of every answer: built once at start, never changed."""
+        return self._content_security_policy
 
     @property
     def draining(self) -> bool:
@@ -653,12 +660,15 @@ def build(
         clock: Callable[[], str] = _command_clock,
         ids: Callable[[str], str] = _command_id,
         token_factory: Callable[[int], str] = secrets.token_urlsafe,
+        hub_origin: str | None = None,
 ) -> ConductServer:
     """Build the loopback panel server (fail-closed startup).
 
     Args:
         root: The project root (the directory that contains `conductor/`).
         port: TCP port to bind on 127.0.0.1; 0 lets the OS assign one.
+        hub_origin: The origin of the hub that started this child, validated by
+            `--hub-origin`; it is added to the frame policy of every answer (4.6.6).
 
     Returns:
         A `ConductServer` ready for `serve_forever()`; its watcher thread
@@ -668,6 +678,7 @@ def build(
         StoreError: If `root` has no conductor/ directory, or map.toml is
             broken at startup. Runtime map breakage instead degrades to the
             last-good map plus a warning in `state.json`.
+        ValueError: If `hub_origin` is not exactly `http://127.0.0.1:<port>`.
         ServerBindError: If the port cannot be bound (an `OSError`).
         OSError: Any other failure of the start, after or besides the bind.
     """
@@ -678,4 +689,4 @@ def build(
     return ConductServer(
         ("127.0.0.1", port), Path(root), cdir, registry=registry,
         providers=providers, budget=budget, clock=clock, ids=ids,
-        token_factory=token_factory)
+        token_factory=token_factory, hub_origin=hub_origin)
