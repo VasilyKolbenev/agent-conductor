@@ -85,10 +85,46 @@ function settled(automation, entry) {
   return automation?.state === "unconfigured" && !entry ? say("not_started") : null;
 }
 
+//: The reasons a person is asked to look at something, and the only ones: the table of spec
+//: 4.1.9 in its order. Each has a word of its own in the copy, `attention_<reason>`. The first
+//: five are the reasons a run that needs a person can carry.
+export const ATTENTION_REASONS = Object.freeze([
+  "gate_decision", "confirmation", "input_document", "reconcile", "attempt_bound",
+  "restart_required", "stalled", "expired", "queue_confirmation", "slot_stuck",
+  "recovery_required", "login_recovery_required",
+]);
+const HUMAN_REASONS = Object.freeze(ATTENTION_REASONS.slice(0, 5));
+
+const text = (value) => (typeof value === "string" ? value : null);
+const isObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
+
+//: The first reason a run's wait was READ to have (a reason with a count), or null.
+function firstReason(attention) {
+  const reasons = isObject(attention) && Array.isArray(attention.reasons) ? attention.reasons : [];
+  const found = reasons.find((one) => isObject(one) && HUMAN_REASONS.includes(one.reason)
+    && one.count > 0);
+  return found === undefined ? null : found.reason;
+}
+
+//: The two facts a word may carry beside its key, each a named value and never a sentence:
+//: the reason a person is asked to look (when the wait was read with the row), and the moment
+//: of the snapshot the row was read from (the key stays the same; the caption is added).
+function decorated(word, {attention, data, takenAt}) {
+  const extra = {};
+  const reason = word.key === "waiting_you" ? firstReason(attention) : null;
+  if (reason !== null) extra.reason = reason;
+  if (data === "snapshot") extra.snapshot_at = text(takenAt);
+  return Object.keys(extra).length === 0 ? word : say(word.key, {...word.params, ...extra});
+}
+
+//: The word of a task's row. `mode` is accepted and does not change it: a project in `view`
+//: says its checkpoints itself, through the automation read (rule 10).
 export function taskStatus(input) {
-  const {task, run, automation = null, entry = null} = input;
-  return first(task, run) || queued(entry) || doing(run) || granted(automation)
+  const {task, run, automation = null, entry = null, attention = null, data = "live",
+    snapshot_at: takenAt = null} = input;
+  const word = first(task, run) || queued(entry) || doing(run) || granted(automation)
     || outcome(run) || settled(automation, entry) || say("no_outcome");
+  return decorated(word, {attention, data, takenAt});
 }
 
 // -- the journal and the time a human step has waited (spec 4.5.6) --------------------------
@@ -108,9 +144,6 @@ const INSTANT_FIELDS = Object.freeze({
 //: The hub keeps the last 256 rows of a journal and the desk keeps the same number, so a
 //: record older than the window is not found by either.
 const JOURNAL_ROWS = 256;
-
-const text = (value) => (typeof value === "string" ? value : null);
-const isObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 
 //: One row of the index, or null for a row that is not a typed record.
 function indexRow(row) {
@@ -183,4 +216,114 @@ export function waitingSince(input) {
   const nodes = Array.isArray(runtime) ? runtime.filter(isObject) : [];
   const named = (Array.isArray(sources) ? sources : []).filter((one) => typeof one === "string");
   return pick(named.map((source) => OPENERS[reason](rows, nodes, source)), false);
+}
+
+// -- "waiting for you": the items of a project (spec 4.1.9, one table for the hub and the desk) --
+
+//: One item. A key is the copy's word for the reason; a `since` is when the wait began or, when
+//: that is not known, when it was first noticed; `snapshot_at` is the moment of the snapshot the
+//: project was read from, and null for a live read.
+function makeItem(context, reason, ids, since) {
+  return Object.freeze({reason, key: `attention_${reason}`, project_id: context.project_id,
+    task_id: ids.task_id ?? null, run_id: ids.run_id ?? null, gate_id: ids.gate_id ?? null,
+    since: Object.freeze(since), snapshot_at: context.snapshot_at});
+}
+const noticed = (at) => ({kind: "observed", at: text(at)});
+
+//: A row of a project summary whose task and newest run can be read: an unreadable record names
+//: no reason it could be asked about.
+const readable = (row) => isObject(row.task) && !row.task.unreadable && isObject(row.run)
+  && !row.run.unreadable;
+const idsOf = (row) => ({task_id: text(row.task.task_id), run_id: text(row.run.run_id)});
+
+//: The first entry of each human reason a run's wait was read to have: one pair of run and
+//: reason is one item, however often the input says it.
+function humanEntries(seen) {
+  const entries = new Map();
+  for (const one of seen.reasons) {
+    if (isObject(one) && HUMAN_REASONS.includes(one.reason) && one.count > 0
+        && !entries.has(one.reason)) entries.set(one.reason, one);
+  }
+  return [...entries.values()];
+}
+
+function humanItem(context, row, seen, entry) {
+  const sources = Array.isArray(entry.sources) ? entry.sources : [];
+  const at = waitingSince({reason: entry.reason, sources, journal: seen.journal,
+    runtime: seen.runtime});
+  const gate = entry.reason === "gate_decision" && Array.isArray(seen.gates)
+    ? seen.gates.find((one) => isObject(one) && sources.includes(one.node_id)) : undefined;
+  const since = at === null ? noticed(text(seen.observed_at) ?? context.observed)
+    : {kind: "waiting", at};
+  return makeItem(context, entry.reason, {...idsOf(row), gate_id: text(gate?.gate_id)}, since);
+}
+
+//: A run that needs a person and whose reasons were read. A run whose reasons were NOT read makes
+//: no item: its row still says it waits (rule 4), and naming a reason would be inventing one.
+function humanItems(context, row) {
+  if (!readable(row) || row.run.human_state !== "required") return [];
+  const seen = row.attention;
+  if (!isObject(seen) || seen.unreadable === true || !Array.isArray(seen.reasons)) return [];
+  return humanEntries(seen).map((entry) => humanItem(context, row, seen, entry));
+}
+
+//: A run whose grant stalled or expired, or that stands at a checkpoint asking for an explicit
+//: resume -- in a project that is `active`: a `view` project's checkpoints are the project's
+//: own line in the hub (`project_not_active`) and never an item.
+function grantItems(context, row) {
+  if (!readable(row) || !isObject(row.automation)) return [];
+  const {state, reason_code: why} = row.automation;
+  const checkpoint = state === "restart_required" && why === "explicit_resume_required"
+    && context.mode === "active";
+  const reason = state === "stalled" || state === "expired" ? state
+    : (checkpoint ? "restart_required" : null);
+  return reason === null ? [] : [makeItem(context, reason, idsOf(row), noticed(context.observed))];
+}
+
+//: The entries of the task queue that wait for a person, dated by the server's `state_since`
+//: (null: noticed), and a slot that is stuck, which has no time of its own and is always noticed.
+function queueItems(context, queue, rows) {
+  if (!isObject(queue)) return [];
+  const entries = Array.isArray(queue.entries) ? queue.entries.filter(isObject) : [];
+  const waiting = entries.filter((one) => one.state === "confirmation_required").map((one) => {
+    const since = text(one.state_since) === null ? noticed(context.observed)
+      : {kind: "waiting", at: one.state_since};
+    return makeItem(context, "queue_confirmation",
+      {task_id: text(one.task_id), run_id: text(one.run_id)}, since);
+  });
+  if (!isObject(queue.slot) || queue.slot.state !== "stuck") return waiting;
+  const holder = rows.find((row) => isObject(row.run) && text(queue.slot.run_id) !== null
+    && row.run.run_id === queue.slot.run_id && isObject(row.task));
+  return [...waiting, makeItem(context, "slot_stuck",
+    {task_id: holder ? text(holder.task.task_id) : null, run_id: text(queue.slot.run_id)},
+    noticed(context.observed))];
+}
+
+//: What is true of the project as a whole, and of the login that only the hub can see.
+function projectItems(context, project) {
+  return [
+    ...(project.state === "recovery_required"
+      ? [makeItem(context, "recovery_required", {}, noticed(context.observed))] : []),
+    ...(project.login_unclosed === true
+      ? [makeItem(context, "login_recovery_required", {}, noticed(context.observed))] : []),
+  ];
+}
+
+//: The items a person is asked to look at in one project, from the raw fields of its summary --
+//: `GET /hub/projects` for the hub, the same fields built from its own reads for the desk. The
+//: list runs the human steps of every task, then the grants, then the queue, then the slot, then
+//: the project's own facts. No clock is read: a time a wait was NOT found for is the instant the
+//: caller says it noticed (`observed_at`), and stays null when the caller did not say.
+export function attentionItems(input) {
+  const project = isObject(input) ? input : {};
+  const rows = Array.isArray(project.tasks) ? project.tasks.filter(isObject) : [];
+  const context = {project_id: text(project.project_id), mode: project.mode,
+    snapshot_at: project.data === "snapshot" ? text(project.snapshot_at) : null,
+    observed: text(project.observed_at)};
+  return Object.freeze([
+    ...rows.flatMap((row) => humanItems(context, row)),
+    ...rows.flatMap((row) => grantItems(context, row)),
+    ...queueItems(context, project.task_queue, rows),
+    ...projectItems(context, project),
+  ]);
 }
