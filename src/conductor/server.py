@@ -492,7 +492,8 @@ class Handler(KeptConnection, BaseHTTPRequestHandler):
 def _resolved_providers(
         registry: AdapterRegistry | None,
         providers: Sequence[ProviderConfig], root: Path,
-        clock: Callable[[], str], ids: Callable[[str], str]) -> ProviderResolution:
+        clock: Callable[[], str], ids: Callable[[str], str],
+        spawns_allowed: bool = True) -> ProviderResolution:
     """Take an explicit registry OR the operator provider config, never both.
 
     An explicitly injected registry is a test/embedding seam and is used verbatim,
@@ -507,7 +508,8 @@ def _resolved_providers(
             raise ProviderConfigError(
                 "pass either an explicit adapter registry or provider config, not both")
         return ProviderResolution(registry=registry, contracts=())
-    return resolve_providers(providers, root=root, clock=clock, ids=ids)
+    return resolve_providers(providers, root=root, clock=clock, ids=ids,
+                             spawns_allowed=spawns_allowed)
 
 
 class ServerBindError(OSError):

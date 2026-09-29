@@ -37,7 +37,7 @@ from threading import Thread
 import pytest
 
 from conductor import ownership, ownership_transition, server
-from conductor.command import http_writes, task_routes
+from conductor.command import http_writes, providers, task_routes
 from conductor.command.adapters.process import CommandSpec, CommandSpecError, ProcessRunner
 from conductor.command.api_contracts import ApiRefusal
 from conductor.command.api_refusals import ERROR_STATUS, _FIXED_MESSAGES
@@ -122,20 +122,14 @@ def test_a_refused_spawn_claims_no_ownership_loan_and_leaves_the_owner_whole(tmp
 # -- the first witness ---------------------------------------------------------------
 
 
-def test_a_server_launched_for_viewing_spawns_no_child_through_task_creation_reads_and_preview(
-        tmp_path, spy):
-    """A task, the reads and the preview, walked on a server launched for viewing: no child.
-
-    It holds for `Launch(mode="active")` as well, because the mode does not reach the runner
-    yet (see the module docstring). What it pins is the walk: each step below answers as
-    written, and the process starts nothing while it does.
-    """
+def _walk_reads_and_preview(tmp_path, mode: str = "view") -> int:
+    """A task, the reads and the preview on a server launched in `mode`; how many steps."""
     root = write_project(tmp_path, lanes={"claude": good_lane()})
     f = setup(root, two_steps=True, checker=True)
     ownership_transition.activate(root, legacy_writers_stopped=True)
     subject = server.build(root, 0, registry=f.registry, clock=lambda: NOW,
                            ids=f.runtime._ids, token_factory=lambda _: TOKEN,
-                           launch=Launch(mode="view"))
+                           launch=Launch(mode=mode))
     thread = Thread(target=subject.serve_forever, daemon=True)
     thread.start()
     # A registry given by hand has no installed provider configuration to judge.
@@ -165,6 +159,18 @@ def test_a_server_launched_for_viewing_spawns_no_child_through_task_creation_rea
         subject.server_close()
         thread.join(10)
     assert len(walked) == len(flow) and not thread.is_alive()
+    return len(walked)
+
+
+def test_a_server_launched_for_viewing_spawns_no_child_through_task_creation_reads_and_preview(
+        tmp_path, spy):
+    """A task, the reads and the preview, walked on a server launched for viewing: no child.
+
+    A registry given by hand builds no runner, so this walk cannot tell the two modes apart;
+    what it pins is the walk itself. The witness that can tell them apart is the one under the
+    spec's name, below.
+    """
+    assert _walk_reads_and_preview(tmp_path) == 11
     assert spy.calls == [], f"a child was started: {spy.calls}"
 
 
@@ -175,12 +181,13 @@ RUN = "run-view-1"
 
 
 @contextmanager
-def _served(tmp_path):
-    """A project on an activated root, with one provider resolved, launched for viewing."""
+def _served(tmp_path, mode: str = "view"):
+    """A project on an activated root, with one provider resolved, launched in `mode`."""
     root = write_project(tmp_path, lanes={"claude": good_lane()})
+    (root / "work").mkdir()          # a runner refuses a working folder that is the root itself
     ownership_transition.activate(root, legacy_writers_stopped=True)
     subject = server.build(root, 0, providers=pinned(tmp_path), clock=lambda: NOW,
-                           token_factory=lambda _: TOKEN, launch=Launch(mode="view"))
+                           token_factory=lambda _: TOKEN, launch=Launch(mode=mode))
     thread = Thread(target=subject.serve_forever, daemon=True)
     thread.start()
     try:
@@ -268,6 +275,76 @@ def test_the_cycle_and_run_walk_sees_a_spawn_planted_in_each_road_it_walks(
     with _served(tmp_path) as subject:
         _walk_cycle_and_run(subject)
     assert planted and len(spy.calls) == len(planted), (road, planted, spy.calls)
+
+
+# -- the mode reaches the runner the providers build (spec 4.3.1) ----------------------
+
+
+@pytest.fixture
+def runners(monkeypatch) -> list[ProcessRunner]:
+    """Every runner the provider resolver builds, in order: the class it builds is recorded."""
+    made: list[ProcessRunner] = []
+
+    class Recording(ProcessRunner):
+        def __init__(self, *args, **kwargs) -> None:
+            super().__init__(*args, **kwargs)
+            made.append(self)
+
+    monkeypatch.setattr(providers, "ProcessRunner", Recording)
+    return made
+
+
+def _ask_for_a_child(runner: ProcessRunner) -> str:
+    """One real command through this runner: what it did, in a word."""
+    try:
+        return runner.run(_spec()).status
+    except CommandSpecError:
+        return "refused"
+
+
+def _prepare_flow(base: Path, mode: str, runners, spy) -> dict:
+    """Both prepare roads on servers launched in `mode`, then a child asked of every runner."""
+    _walk_reads_and_preview(base / "reads", mode)
+    made = len(runners)
+    with _served(base / "cycle", mode) as subject:
+        _walk_cycle_and_run(subject)
+        by_the_walks = len(spy.calls)
+        asked = [_ask_for_a_child(runner) for runner in runners[made:]]
+    return {"children_by_the_walks": by_the_walks, "asked": asked, "children": len(spy.calls)}
+
+
+def test_view_mode_process_never_spawns_a_child_through_a_full_prepare_flow(
+        tmp_path, spy, runners):
+    """View: no child in the prepare flow and every runner refuses one. Active: a runner spawns.
+
+    Both walks (task, reads and preview on a hand registry; flow, draft, revision, template and
+    run creation on a resolved provider) run on servers launched in the mode under test. Then a
+    real command is asked of every runner the resolver built for that server. In `view` each
+    is refused before a child exists and the `Popen` spy stays empty; in `active` the same ask
+    starts one real child per runner, which is what makes the empty spy mean something.
+
+    Not walked: the read of git state and the request of a seed, which the spec's text names.
+    Their routes are lane L's and do not exist in this build; their own tests are L's
+    (`test_view_mode_git_routes_refuse_project_not_active_and_spawn_nothing`, 9.12).
+    """
+    viewed = _prepare_flow(tmp_path / "view", "view", runners, spy)
+    assert viewed["asked"] and set(viewed["asked"]) == {"refused"}, viewed
+    assert (viewed["children_by_the_walks"], viewed["children"]) == (0, 0), viewed
+    active = _prepare_flow(tmp_path / "active", "active", runners, spy)
+    assert active["asked"] == ["completed"] * len(active["asked"]) and active["asked"], active
+    assert active["children_by_the_walks"] == 0, active
+    assert active["children"] == len(active["asked"]), active
+
+
+def test_the_provider_resolver_builds_a_runner_that_refuses_when_spawning_is_not_allowed(
+        tmp_path, spy, runners):
+    root = _root(tmp_path)
+    for allowed in (False, True):
+        providers.resolve_providers(pinned(tmp_path), root=root, clock=lambda: NOW,
+                                    ids=lambda kind: f"{kind}-1", spawns_allowed=allowed)
+    refused, permitted = runners
+    assert (_ask_for_a_child(refused), _ask_for_a_child(permitted)) == ("refused", "completed")
+    assert len(spy.calls) == 1
 
 
 # -- the code the view door throws (spec 4.3.1, 11.1) -----------------------------------

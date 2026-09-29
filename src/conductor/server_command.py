@@ -16,7 +16,8 @@ def start_command(subject, root, registry, providers, budget, clock, ids, token_
         transition_id=launch.transition_id, auto_continue=launch.auto_continue)
     subject.command_session = CommandSession.mint(assigned_port, token_factory)
     subject.command_store = RunStore(root)
-    resolution = _resolved_providers(registry, providers, root, clock, ids)
+    resolution = _resolved_providers(registry, providers, root, clock, ids,
+                                     spawns_allowed=launch.mode == "active")
     subject.command_registry = resolution.registry
     subject.command_providers = resolution.contracts
     subject.quota_collector = QuotaCollector(
