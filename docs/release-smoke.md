@@ -330,9 +330,10 @@ Expect the URL on stdout, `http://127.0.0.1:7802/`, and the scaffolded project's
 Expect the second `up`, on the port the first one holds, to refuse and exit 1:
 
 ```
-cannot serve on 127.0.0.1:7802: [WinError 10048] ... To try a different port, rerun with --port PORT.
+conduct up: refused bind_failed: cannot serve on 127.0.0.1:7802: [WinError 10048] ... To try a different port, rerun with --port PORT.
 ```
 
+Every refused start of `conduct up` is that one line, `conduct up: refused <code>: <detail>`, with exit 1.
 The message names its own answer: rerun with `--port`. The operating system's half of the line
 is whatever your platform says about a busy socket, and it is localized — read past it to the
 sentence Conduct adds. If that sentence is missing, this build is older than it claims to be.
