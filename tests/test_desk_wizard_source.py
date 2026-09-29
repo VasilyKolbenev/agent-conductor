@@ -13,8 +13,8 @@ import re
 from pathlib import Path
 
 from tests.desk_wizard_node import run_js
+from tests.js_exports import exported_names
 from tests.test_graph_source import _code
-from tests.test_studio_canvas import _exported_names
 
 PANEL = Path(__file__).resolve().parents[1] / "src" / "conductor" / "panel"
 #: The wizard's pure modules, each with the one set of siblings it may import. Grown by the
@@ -95,7 +95,7 @@ def test_the_events_are_one_closed_table_whose_keys_are_the_event_list():
 
 
 def test_the_renderer_exports_mount_wizard_and_nothing_else():
-    assert _exported_names(_code(PANEL / RENDERER)) == ["mountWizard"]
+    assert exported_names(_code(PANEL / RENDERER)) == ["mountWizard"]
 
 
 def _emitted(code: str, events: list[str]) -> set[str]:
