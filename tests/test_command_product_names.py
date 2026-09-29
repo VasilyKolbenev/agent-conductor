@@ -17,7 +17,7 @@ import pytest
 from conductor import ownership_records
 from conductor.command import product_names as names
 from conductor.command import work_layout
-from conductor.command.adapters import harness_workspace
+from conductor.command.adapters import agent_instructions, harness_workspace
 from conductor.command.providers import PROVIDER_CATALOG
 
 SOURCE = Path(names.__file__).resolve().parent
@@ -25,8 +25,6 @@ ADAPTERS = SOURCE / "adapters"
 #: Spelled from spec 9.2 and 8.1: the first five lines of the block, then one folder line and one
 #: marker line per harness.
 BLOCK_HEAD = ["/conductor/", "/conductor.v3/", "/.conduct*", "/work/", "/instructions/"]
-#: The order spec 9.2 lists the harness modules in.
-HARNESS_ORDER = ("claude_code", "codex_cli", "grok_build", "kimi_code", "dsh_harness")
 
 
 def harness_names():
@@ -64,10 +62,11 @@ def test_the_retired_pattern_is_the_name_ownership_transition_renames_to():
     assert names.RETIRED_PATTERN == f"{ownership_records.HOME}-retired-*"
 
 
-def test_harness_folder_names_are_imported_and_never_spelled_in_the_module():
+def test_harness_folder_names_are_read_from_the_catalog_and_never_spelled_in_the_module():
     source = Path(names.__file__).read_text(encoding="utf-8")
     for home, marker in harness_names():
         assert home not in source and marker not in source
+    assert names._HARNESS_NAMES == tuple(sorted(harness_names()))
 
 
 def test_product_top_names_are_single_components_without_repeats():
@@ -81,14 +80,20 @@ def test_agent_instruction_names_are_the_six_of_spec_9_2():
         "AGENTS.md", "CLAUDE.md", ".claude/", ".codex/", ".grok/", ".kimi/")
 
 
+def test_agent_instruction_names_live_beside_the_adapters_and_product_names_hands_them_on():
+    assert names.AGENT_INSTRUCTION_NAMES is agent_instructions.AGENT_INSTRUCTION_NAMES
+    source = Path(names.__file__).read_text(encoding="utf-8")
+    assert "CLAUDE" not in source and ".codex" not in source, (
+        "the request path names no vendor: the names are the adapters' to spell")
+
+
 def test_exclude_lines_are_the_single_spelling_of_spec_9_2():
     lines = list(names.EXCLUDE_LINES)
     assert lines[:5] == BLOCK_HEAD
     assert lines[5:7] == ["/.claude-home/", "/.claude-marker"]  # the example of spec 8.1
     tail = []
-    for module_name in HARNESS_ORDER:
-        module = importlib.import_module(f"conductor.command.adapters.{module_name}")
-        tail += [f"/{module.HOME_DIR}/", f"/{module.MARKER_DIR}"]
+    for home, marker in sorted(harness_names()):  # by name, so a new harness slots in by itself
+        tail += [f"/{home}/", f"/{marker}"]
     assert lines[5:] == tail
 
 
