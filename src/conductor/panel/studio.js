@@ -2,11 +2,11 @@
 // Boot and router for the Workflow Studio: one store, one render pass, and the
 // meaning of every read and every press.
 //
-// The wire itself is `desk-transport.js`, the ONLY module of the panel that
-// touches the network: the source gate pins it at two `fetch(` -- one read, one
-// write -- and one `new EventSource(`, and pins this module at none. It asks
-// the transport for a read, a write or the stream and decides what the answer
-// means; `graph.js` holds the same position in its own window.
+// The wire itself is `desk-transport.js`, the ONLY module of the Studio and the
+// desk that touches the network: the source gate pins it at two `fetch(` -- one
+// read, one write -- and one `new EventSource(`, and pins this module at none.
+// It asks the transport for a read, a write or the stream and decides what the
+// answer means; `graph.js` and the classic `command.js` keep doors of their own.
 //
 // Facts enter through a READ and through nothing else. A frame on the stream
 // carries an identifier and never a record, so it can never be a fact here: it

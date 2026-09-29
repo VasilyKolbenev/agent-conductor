@@ -3,9 +3,10 @@
 // one mutation door and the one stream door, moved out of the boot module so a
 // second window can be built on them without a second copy.
 //
-// This is the ONLY module of the panel that touches the network. `graph.js`
-// holds the same position in its own window and the source gates pin both the
-// same way: two `fetch(` -- one read, one write -- and one `new EventSource(`.
+// This is the ONLY module of the Studio and the desk that touches the network.
+// `graph.js` and the classic `command.js` keep doors of their own, each under
+// its own source gate; here the gates pin two `fetch(` -- one read, one write --
+// and one `new EventSource(`.
 // What a caller does with an answer, and which screen it lands on, stays with
 // the caller: this module opens the doors and knows nothing else.
 //

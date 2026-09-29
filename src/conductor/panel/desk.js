@@ -9,9 +9,10 @@
 // mount yet: the modules that fill them arrive one region at a time.
 //
 // It reaches the wire only through `desk-transport.js`, the ONLY module of the
-// panel that touches the network, and holds no door, no timer and no storage of
-// its own. Facts enter through a READ and through nothing else, and this module
-// writes nothing at all. It reads the two routes that exist for it today; the
+// Studio and the desk that touches the network (`graph.js` and the classic
+// `command.js` keep doors of their own), and holds no door, no timer and no
+// storage of its own. Facts enter through a READ and through nothing else, and
+// this module writes nothing at all. It reads the two routes that exist for it today; the
 // project route and its header are lane H's and are not faked here.
 import {LATE, createTransport, path} from "./desk-transport.js";
 import {message} from "./studio-i18n.js";
