@@ -181,12 +181,20 @@ def test_the_same_operation_changes_the_entries_when_the_profile_does_not_protec
 def test_a_name_that_is_absent_stays_uncreatable_where_the_profile_denies_it(
         absent_box, unprotected_box):
     guarded, open_box = absent_box, unprotected_box
-    open_box.run_body('rmdir "@VENDOR@/hooks"; mkdir "@VENDOR@/hooks"; '
-                      'printf x > "@VENDOR@/hooks/e"')
+    guarded_vendor = guarded.layout.vendor_home
+    assert guarded_vendor != open_box.layout.vendor_home, "the two boxes share one vendor home"
+    for name in ("hooks", "hooks-paths"):
+        assert not (guarded_vendor / name).exists(), f"{name} stands before the attempt"
+    control = open_box.run_body('rmdir "@VENDOR@/hooks"; mkdir "@VENDOR@/hooks"; '
+                                'printf x > "@VENDOR@/hooks/e"')
+    assert control.applied, control
     assert (open_box.layout.vendor_home / "hooks" / "e").exists(), "the control cannot create it"
-    guarded.run_body('mkdir "@VENDOR@/hooks"; printf x > "@VENDOR@/hooks-paths"')
-    assert not (guarded.layout.vendor_home / "hooks").exists()
-    assert not (guarded.layout.vendor_home / "hooks-paths").exists()
+    attempt = guarded.run_body('mkdir "@VENDOR@/hooks"; printf x > "@VENDOR@/hooks-paths"; '
+                               'printf ok > "@VENDOR@/control.txt"')
+    assert attempt.applied, attempt
+    assert not (guarded_vendor / "hooks").exists()
+    assert not (guarded_vendor / "hooks-paths").exists()
+    assert (guarded_vendor / "control.txt").read_bytes() == b"ok", "launch was not sound"
 
 
 def test_the_vendor_home_is_updated_while_the_source_tree_is_unreadable(implement_box):

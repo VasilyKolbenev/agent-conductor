@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import tempfile
 import threading
 import time
 from contextlib import contextmanager, nullcontext
@@ -82,7 +83,8 @@ class SeatbeltBox:
 
 
 def _layout(tmp_path) -> Layout:
-    return make_layout(Path(tmp_path).resolve())
+    """A layout in a directory of its own, so two boxes of one test never share a vendor home."""
+    return make_layout(Path(tempfile.mkdtemp(prefix="box-", dir=tmp_path)).resolve())
 
 
 def _writable(layout: Layout, *, review: bool = False) -> list[Path]:
