@@ -120,6 +120,8 @@ ASSETS = {
     "/panel/desk-hash.js": "text/javascript; charset=utf-8",
     # Embed mode: whether a hub frames the desk, and the one message it says.
     "/panel/desk-embed.js": "text/javascript; charset=utf-8",
+    # The time of an instant, short and exact: shared with the hub's page.
+    "/panel/desk-time.js": "text/javascript; charset=utf-8",
     # The regions the desk draws.
     "/panel/desk-rail.js": "text/javascript; charset=utf-8",
     "/panel/desk-scene.js": "text/javascript; charset=utf-8",
@@ -265,6 +267,10 @@ REFUSED = (
     "/panel/desk-embed.json", "/panel/desk-embed.js?v=1", "/panel/desk-embed.js.map",
     "/panel/../desk-embed.js", "/panel/%2e%2e/desk-embed.js", "/panel/DESK-EMBED.JS",
     "/panel/Desk-embed.js", "/panel/desk-embed.js/", "/panel/desk-embed.js%00.txt",
+    # The time module, the same nine shapes.
+    "/panel/desk-time.json", "/panel/desk-time.js?v=1", "/panel/desk-time.js.map",
+    "/panel/../desk-time.js", "/panel/%2e%2e/desk-time.js", "/panel/DESK-TIME.JS",
+    "/panel/Desk-time.js", "/panel/desk-time.js/", "/panel/desk-time.js%00.txt",
     # The rail, the same nine shapes.
     "/panel/desk-rail.json", "/panel/desk-rail.js?v=1", "/panel/desk-rail.js.map",
     "/panel/../desk-rail.js", "/panel/%2e%2e/desk-rail.js", "/panel/DESK-RAIL.JS",

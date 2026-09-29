@@ -102,6 +102,9 @@ PERMITTED_IMPORTS = {
     #: Embed mode: whether a hub frames the desk, and the one message it says. Values in and
     #: one call out, so it imports nothing -- the boot module hands it the claim it read.
     "desk-embed.js": frozenset(),
+    #: The time of an instant, short and exact, shared with the hub's page: it imports
+    #: nothing and reads no clock -- the caller hands it the string the server wrote.
+    "desk-time.js": frozenset(),
     #: The wizard's whole state and every way it changes, as pure functions. It
     #: reaches the task model for the one rule that judges a task title, and the
     #: step modules that answer its questions, and nothing else: no DOM builder,
