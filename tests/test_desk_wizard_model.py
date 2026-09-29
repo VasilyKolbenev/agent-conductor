@@ -7,17 +7,7 @@ The later steps have their own files (`test_desk_wizard_materials.py`, `_cycle.p
 """
 from __future__ import annotations
 
-from tests.desk_wizard_node import run_js
-
-#: A wizard opened on a fresh task, and a way to run a list of events through the reducer.
-PRELUDE = """
-const open = (over = {}) => wiz.initialWizard(
-  {starterId: null, viewMode: false, newTaskId: "task-t1", ...over});
-const run = (state, ...events) => events.reduce((now, one) => wiz.reduceWizard(now, one), state);
-const typed = (over = {}) => run(open(over),
-  {type: "edit-title", value: "Fix login"}, {type: "edit-brief", value: "Make it work."});
-const show = (value) => console.log(JSON.stringify(value));
-"""
+from tests.desk_wizard_node import PRELUDE, run_js
 
 RU_BRIEF = ("# Починить вход\n\n## Что нужно сделать\nВход не работает.\nНужно починить.\n\n"
             "## Как понять, что готово (подсказка)\nТесты проходят\n")
@@ -208,7 +198,8 @@ def test_next_moves_forward_only_when_the_current_step_is_ready_and_back_always_
 def test_the_task_step_publishes_the_task_and_the_brief_only_once_it_is_complete():
     out = run_js(PRELUDE + """
       const ready = run(typed(), {type: "edit-hint", value: "Tests pass"});
-      show({incomplete: wiz.publications(open(), "en"), ready: wiz.publications(ready, "en")});
+      const ofTask = (state) => wiz.publications(state, "en").filter((row) => row.step === "task");
+      show({incomplete: wiz.publications(open(), "en"), ready: ofTask(ready)});
     """)
     assert out["incomplete"] == []
     assert out["ready"] == [{"step": "task", "writes": [
@@ -265,13 +256,13 @@ def test_an_answer_is_recorded_by_the_ask_it_answers_and_a_read_can_be_asked_aga
 
 def test_no_event_mutates_the_state_it_was_given_or_the_payload_it_was_handed():
     out = run_js(PRELUDE + """
-      const opened = wiz.stepWizard(typed(), {type: "open"});
-      const before = JSON.stringify(opened.state);
+      const first = wiz.stepWizard(typed(), {type: "open"});
+      const before = JSON.stringify(first.state);
       const payload = {git: {state: "repo", head: {ref: "refs/heads/main"}}};
       const kept = JSON.stringify(payload);
-      const after = wiz.reduceWizard(opened.state, {type: "answered", ask: opened.asks[0],
+      const after = wiz.reduceWizard(first.state, {type: "answered", ask: first.asks[0],
         result: {status: "accepted", payload}});
-      show({state_unchanged: JSON.stringify(opened.state) === before,
+      show({state_unchanged: JSON.stringify(first.state) === before,
         payload_unfrozen: !Object.isFrozen(payload) && JSON.stringify(payload) === kept,
         state_frozen: Object.isFrozen(after) && Object.isFrozen(after.reads.git.payload)
           && Object.isFrozen(after.task) && Object.isFrozen(after.asked)});

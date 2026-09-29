@@ -69,7 +69,7 @@ MODULES = ("studio-runstep-copy.js", "studio-participant-copy.js", "studio-run-d
            "studio-mounts.js", "studio-shell.js", "studio-runhead.js", "studio-preferences.js", "studio-i18n.js",
            "studio-quotas-model.js", "studio-quotas.js", "studio-quotaflow.js",
            "desk-transport.js",
-           "desk-wizard-model.js")
+           "desk-wizard-model.js", "desk-wizard-materials.js")
 #: The boot module: what each frame and each read MEANS, and the screen router.
 #: It reaches the wire only through the transport module below.
 BOOT = "studio.js"
@@ -130,10 +130,15 @@ PERMITTED_IMPORTS = {
     #: second boot module.
     "desk-transport.js": frozenset({"./command-projection.js"}),
     #: The wizard's whole state and every way it changes, as pure functions. It
-    #: reaches the task model for the one rule that judges a task title, and
-    #: nothing else: no DOM builder, no copy, no transport -- an ask it wants
-    #: performed is a value it returns.
-    "desk-wizard-model.js": frozenset({"./studio-tasks-model.js"}),
+    #: reaches the task model for the one rule that judges a task title, and the
+    #: step modules that answer its questions, and nothing else: no DOM builder,
+    #: no copy, no transport -- an ask it wants performed is a value it returns.
+    "desk-wizard-model.js": frozenset({"./studio-tasks-model.js",
+                                       "./desk-wizard-materials.js"}),
+    #: Step 2 as pure functions over values the model hands it: what git said,
+    #: what the cards would compose. It imports nothing, so the model above it
+    #: can never be reached back.
+    "desk-wizard-materials.js": frozenset(),
     # Pure S2 decoder; the actual store read door composes it with the base model.
     "studio-situation.js": frozenset({"./studio-model.js", "./studio-feedback-model.js",
                                       "./studio-runwords.js"}),

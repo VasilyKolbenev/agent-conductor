@@ -21,6 +21,25 @@ PANEL = Path(__file__).resolve().parents[1] / "src" / "conductor" / "panel"
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 MODEL = "desk-wizard-model.js"
 
+#: A wizard opened on a fresh task, and the few helpers every model test shares: `run` folds
+#: events through the reducer, `typed` fills step 1, `started` moves to step 2, `opened` asks
+#: for the reads, `reply` answers one of the asks the state wants, `show` prints JSON.
+PRELUDE = """
+const open = (over = {}) => wiz.initialWizard(
+  {starterId: null, viewMode: false, newTaskId: "task-t1", ...over});
+const run = (state, ...events) => events.reduce((now, one) => wiz.reduceWizard(now, one), state);
+const typed = (over = {}) => run(open(over),
+  {type: "edit-title", value: "Fix login"}, {type: "edit-brief", value: "Make it work."});
+const started = (over = {}) => run(typed(over), {type: "next"});
+const opened = (state = started()) => wiz.stepWizard(state, {type: "open"}).state;
+const askOf = (state, name, subject) => wiz.wantedAsks(state)
+  .find((ask) => ask.name === name && (subject === undefined || ask.subject === subject));
+const reply = (state, name, payload, over = {}) => wiz.reduceWizard(state, {type: "answered",
+  ask: askOf(state, name, over.subject),
+  result: {status: over.status ?? "accepted", code: over.code, payload}});
+const show = (value) => console.log(JSON.stringify(value));
+"""
+
 
 def fixture(*parts: str) -> Any:
     """One JSON fixture under `tests/fixtures/`, parsed."""

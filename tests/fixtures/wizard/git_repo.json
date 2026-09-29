@@ -1,0 +1,14 @@
+{
+  "git": {
+    "state": "repo",
+    "unsupported": null,
+    "head": {"ref": "refs/heads/main", "commit": "abc1234def5678abc1234def5678abc1234def56"},
+    "object_format": "sha1",
+    "dirty_paths": 3,
+    "exclude": "written",
+    "agent_instructions": {"found": 4, "default_include": false},
+    "remotes": [{"name": "origin", "github": "owner/repo", "url_has_credentials": false}],
+    "tools": {"git": {"version": "2.47.1"}, "gh": null},
+    "signing": false
+  }
+}

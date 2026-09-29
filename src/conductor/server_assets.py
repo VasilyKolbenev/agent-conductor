@@ -55,6 +55,8 @@ DESK_ASSETS = {
     "/panel/desk-transport.js": ("text/javascript; charset=utf-8", "desk-transport.js"),
     # The wizard's own modules: the lane that writes the wizard adds one row per file.
     "/panel/desk-wizard-model.js": ("text/javascript; charset=utf-8", "desk-wizard-model.js"),
+    "/panel/desk-wizard-materials.js": (
+        "text/javascript; charset=utf-8", "desk-wizard-materials.js"),
 }
 
 # Exact package resources, never a path derived from the request target.

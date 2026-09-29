@@ -19,8 +19,12 @@
 //
 // State shape (all frozen):
 //   step, mode {starterId, view}, task {taskId, title, brief, hint, idea, written},
-//   reads {name: {status: "ok" | "failed", code, payload}}, asked [ask id], opened.
+//   reads {name: {status: "ok" | "failed", code, payload}}, asked [ask id], opened, closing,
+//   materials {items, counter, picker, refusal, includeInstructions}.
 import {taskTitle, TASK_TITLE_LIMIT, isTaskId} from "./studio-tasks-model.js";
+import {MATERIAL_KINDS, MATERIAL_LIMITS, bodyOf, documentCard, estimateOf, gitFacts,
+  instructionsRow, isComplete, isDocumentRow, isMaterialKind, isOid, pickerOf, textCard}
+  from "./desk-wizard-materials.js";
 
 export const STEPS = Object.freeze(["task", "materials", "cycle", "roles", "prepare", "run"]);
 export const BUILT_STEPS = Object.freeze(["task", "materials", "cycle", "roles"]);
@@ -28,8 +32,9 @@ export const BUILT_STEPS = Object.freeze(["task", "materials", "cycle", "roles"]
 //: cards. The set of cards is the desk's own, never the order `starters()` happens to give.
 export const HASH_STARTERS = Object.freeze(["desk-starter-docs"]);
 export const WIZARD_STARTERS = Object.freeze(["desk-standard", "desk-short"]);
-export const LIMITS = Object.freeze({materials: 12, documentBytes: 49152, argvChars: 32767,
-  title: TASK_TITLE_LIMIT});
+export {MATERIAL_KINDS};
+export const LIMITS = Object.freeze({materials: MATERIAL_LIMITS.count,
+  documentBytes: MATERIAL_LIMITS.bytes, argvChars: 32767, title: TASK_TITLE_LIMIT});
 
 //: What the documents this wizard composes say, in the language of the interface. A document
 //: is data for agents, not interface text, so its headings live here and not in the catalogue.
@@ -79,10 +84,12 @@ export function initialWizard(opening) {
   const starterId = HASH_STARTERS.includes(opening.starterId) ? opening.starterId : null;
   const written = opening.taskWritten === true;
   const title = written && typeof opening.title === "string" ? opening.title : "";
-  return frozen({step: "task", opened: false, asked: [],
+  return frozen({step: "task", opened: false, asked: [], closing: null,
     mode: {starterId, view: opening.viewMode === true},
     task: {taskId: opening.newTaskId, title, brief: "", hint: "", idea: "", written},
-    reads: {}});
+    reads: {},
+    materials: {items: [], counter: 0, picker: false, refusal: null,
+      includeInstructions: null}});
 }
 
 // -- step 1: the task ------------------------------------------------------------------
@@ -120,12 +127,61 @@ function taskPublication(state, lang) {
       content: briefDocument(state, lang)}]};
 }
 
+// -- step 2: the materials --------------------------------------------------------------
+
+//: Where the agents get their code, said from the one git read and the mode.
+export function gitReading(state) {
+  return gitFacts(state.reads.git, state.mode);
+}
+
+export function availableKinds(state) {
+  return MATERIAL_KINDS.filter((kind) => kind !== "project_doc" || !state.mode.view);
+}
+
+export function materialsBody(state, lang) {
+  return bodyOf(state.materials.items, lang);
+}
+
+//: The approximate size of what the cards compose ("≈": the server alone knows the exact one).
+export function materialsEstimate(state) {
+  return estimateOf(state.materials.items);
+}
+
+export function agentInstructionsRow(state) {
+  return instructionsRow(state.reads.git, state.materials.includeInstructions);
+}
+
+export function documentPicker(state) {
+  return pickerOf(state.materials.picker && !state.mode.view, state.reads.documents,
+    state.materials.items);
+}
+
+//: Closing with cards that no server holds yet loses them, so it asks first (spec 6.2.2).
+export function closeNeedsWarning(state) {
+  return state.materials.items.length > 0;
+}
+
+function materialsGate(state) {
+  const stop = gitReading(state).stop;
+  if (stop !== null) return stop;
+  const estimate = materialsEstimate(state);
+  if (estimate.overCount) return "materials_over_count";
+  if (!state.materials.items.every(isComplete)) return "material_incomplete";
+  return estimate.overBytes ? "materials_over_bytes" : null;
+}
+
+function materialsPublication(state, lang) {
+  return {step: "materials", writes: [
+    {link: 2, target: "seed", later: true},
+    {link: 5, target: "materials", ref: "artifact-materials", body: materialsBody(state, lang)}]};
+}
+
 // -- the steps and their gates ---------------------------------------------------------
 
 //: Why a step is not complete yet, as a closed code (null when it is). One entry per built
 //: step; a step with no entry has nothing to refuse.
-const GATES = {task: taskGate};
-const PUBLISHERS = {task: taskPublication};
+const GATES = {task: taskGate, materials: materialsGate};
+const PUBLISHERS = {task: taskPublication, materials: materialsPublication};
 
 function gateOf(state, step) {
   return Object.hasOwn(GATES, step) ? GATES[step](state) : null;
@@ -167,11 +223,16 @@ function moveTo(state, step) {
   return to > at && held ? state : evolve(state, {step});
 }
 
-//: What each step would publish once the chain of later slices sends it. Only a complete
-//: step publishes anything, and no descriptor carries an id the chain has yet to make.
+//: What each step would publish once the chain of later slices sends it. The chain runs in
+//: order, so a step publishes only when it and every step before it is complete, and no
+//: descriptor carries an id the chain has yet to make.
 export function publications(state, lang) {
-  return Object.freeze(BUILT_STEPS.filter((step) => gateOf(state, step) === null
-    && Object.hasOwn(PUBLISHERS, step)).map((step) => frozen(PUBLISHERS[step](state, lang))));
+  const rows = [];
+  for (const step of BUILT_STEPS) {
+    if (gateOf(state, step) !== null) break;
+    if (Object.hasOwn(PUBLISHERS, step)) rows.push(frozen(PUBLISHERS[step](state, lang)));
+  }
+  return Object.freeze(rows);
 }
 
 // -- asks --------------------------------------------------------------------------------
@@ -180,10 +241,30 @@ function readAsk(name, target) {
   return {id: `read:${name}`, name, door: "read", target, subject: null, body: null};
 }
 
+function documentAsk(docId) {
+  return {id: `read:document:${docId}`, name: "document", door: "read", target: "document",
+    subject: docId, body: null};
+}
+
+//: The reads step 2 makes due: the list once the picker opens, and the text of each document
+//: taken as a copy that has not been read yet. None of them exists in view (spec 9.1.6).
+function materialAsks(state) {
+  if (state.mode.view) return [];
+  const asks = state.materials.picker ? [readAsk("documents", "documents")] : [];
+  for (const card of state.materials.items) {
+    if (card.kind === "project_doc" && card.mode === "copy" && !card.fetched) {
+      asks.push(documentAsk(card.docId));
+    }
+  }
+  return asks;
+}
+
 //: Every ask the state calls for, whether or not it went out already; `stepWizard` hands out
 //: only those whose id is not yet in `asked`.
 export function wantedAsks(state) {
-  return state.opened ? OPENING_READS.map(([name, target]) => readAsk(name, target)) : [];
+  if (!state.opened) return [];
+  return [...OPENING_READS.map(([name, target]) => readAsk(name, target)),
+    ...materialAsks(state)];
 }
 
 function readOf(result) {
@@ -196,7 +277,24 @@ function answerRead(name) {
   return (state, _ask, result) => evolve(state, {reads: {...state.reads, [name]: readOf(result)}});
 }
 
-const ANSWERS = Object.fromEntries(READ_NAMES.map((name) => [name, answerRead(name)]));
+//: A document read for a card taken as a copy. A refusal sends the card back to a link; only
+//: "not text" is final, because it is a fact about the file and not about this attempt.
+function answerDocument(state, ask, result) {
+  const card = state.materials.items.find((one) => one.docId === ask.subject);
+  if (!card) return state;
+  const payload = result.payload;
+  if (result.status === "accepted" && typeof payload?.content === "string") {
+    return replaceCard(state, card, {content: payload.content, fetched: true,
+      gitOid: isOid(payload.git_oid) ? payload.git_oid : card.gitOid, blocked: null});
+  }
+  const reason = payload?.detail?.reason ?? result.code ?? result.status;
+  const final = reason === "document_not_text";
+  return replaceCard(state, card, {mode: "link", blocked: final ? reason : "read_failed"},
+    final ? reason : "read_failed");
+}
+
+const ANSWERS = {...Object.fromEntries([...READ_NAMES, "documents"]
+  .map((name) => [name, answerRead(name)])), document: answerDocument};
 
 function validResult(result) {
   return result !== null && typeof result === "object"
@@ -210,9 +308,96 @@ function answered(state, event) {
 }
 
 function reread(state, event) {
-  if (!READ_NAMES.includes(event.name)) return state;
+  if (!READ_NAMES.includes(event.name) && event.name !== "documents") return state;
   const {[event.name]: _dropped, ...reads} = state.reads;
   return evolve(state, {reads, asked: state.asked.filter((id) => id !== `read:${event.name}`)});
+}
+
+// -- events on the cards -----------------------------------------------------------------
+
+//: Every change to the cards clears the last refusal: a reason is about the last thing tried.
+function withMaterials(state, patch, extra = {}) {
+  return evolve(state, {...extra, materials: {...state.materials, refusal: null, ...patch}});
+}
+
+function refuse(state, code) {
+  return state.materials.refusal === code ? state
+    : evolve(state, {materials: {...state.materials, refusal: code}});
+}
+
+function replaceCard(state, card, patch, refusal = null, extra = {}) {
+  const items = state.materials.items.map((one) => (one === card ? {...one, ...patch} : one));
+  return evolve(state, {...extra, materials: {...state.materials, items, refusal}});
+}
+
+function listedRows(state) {
+  const read = state.reads.documents;
+  const rows = read && read.status === "ok" ? read.payload?.documents : null;
+  return Array.isArray(rows) ? rows.filter(isDocumentRow) : [];
+}
+
+function nextCard(state, make) {
+  const {counter, items} = state.materials;
+  return withMaterials(state, {items: [...items, make(`m${counter + 1}`)], counter: counter + 1,
+    picker: false});
+}
+
+function addDocument(state, event) {
+  if (state.mode.view) return state;
+  if (event.docId === undefined) {
+    return state.materials.picker ? state : withMaterials(state, {picker: true});
+  }
+  if (state.materials.items.length >= LIMITS.materials) return refuse(state, "too_many_materials");
+  if (state.materials.items.some((card) => card.docId === event.docId)) {
+    return refuse(state, "already_added");
+  }
+  const row = listedRows(state).find((one) => one.doc_id === event.docId);
+  return row ? nextCard(state, (key) => documentCard(key, row)) : refuse(state, "doc_unknown");
+}
+
+function addMaterial(state, event) {
+  if (!isMaterialKind(event.kind)) return state;
+  if (event.kind === "project_doc") return addDocument(state, event);
+  if (state.materials.items.length >= LIMITS.materials) return refuse(state, "too_many_materials");
+  return nextCard(state, (key) => textCard(key, event));
+}
+
+function cardOf(state, key) {
+  return state.materials.items.find((card) => card.key === key);
+}
+
+//: A card's title is its own only when it is text; a copied document's text is editable, a
+//: link has none. Anything else is a field the card does not have.
+function editable(card, field) {
+  if (field === "title") return card.kind !== "project_doc";
+  return field === "content" && (card.kind !== "project_doc" || card.mode === "copy");
+}
+
+function editMaterial(state, event) {
+  const card = cardOf(state, event.key);
+  if (!card || typeof event.value !== "string" || !editable(card, event.field)
+      || card[event.field] === event.value) return state;
+  return replaceCard(state, card, {[event.field]: event.value});
+}
+
+function removeMaterial(state, event) {
+  if (!cardOf(state, event.key)) return state;
+  return withMaterials(state, {items: state.materials.items.filter((c) => c.key !== event.key)});
+}
+
+//: Link or copy for a project document. Asking for the text again is allowed while it has not
+//: been read; a file the server called "not text" is refused before an ask is made.
+function setMode(state, event) {
+  const card = cardOf(state, event.key);
+  if (!card || card.kind !== "project_doc" || card.mode === event.mode
+      || !["link", "copy"].includes(event.mode)) return state;
+  if (event.mode === "copy" && card.blocked === "document_not_text") {
+    return refuse(state, "document_not_text");
+  }
+  const again = event.mode === "copy" && !card.fetched;
+  const asked = again ? state.asked.filter((id) => id !== `read:document:${card.docId}`)
+    : state.asked;
+  return replaceCard(state, card, {mode: event.mode, blocked: null}, null, {asked});
 }
 
 // -- events ------------------------------------------------------------------------------
@@ -238,6 +423,17 @@ const HANDLERS = {
   "edit-brief": editTask("brief", (state) => state.mode.starterId === null),
   "edit-hint": editTask("hint", (state) => state.mode.starterId === null),
   "edit-idea": editTask("idea", (state) => state.mode.starterId !== null),
+  "material-add": addMaterial,
+  "material-edit": editMaterial,
+  "material-remove": removeMaterial,
+  "material-mode": setMode,
+  "include-instructions": (state, event) => (typeof event.value === "boolean"
+    && state.materials.includeInstructions !== event.value
+    ? evolve(state, {materials: {...state.materials, includeInstructions: event.value}})
+    : state),
+  "close-request": (state) => (closeNeedsWarning(state) && state.closing === null
+    ? evolve(state, {closing: "confirm"}) : state),
+  "close-cancel": (state) => (state.closing === null ? state : evolve(state, {closing: null})),
   reread,
   answered,
 };
