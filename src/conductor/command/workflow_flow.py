@@ -10,6 +10,7 @@ from __future__ import annotations
 import copy
 import math
 import re
+from collections.abc import Mapping
 from types import MappingProxyType
 from typing import Any
 
@@ -17,6 +18,7 @@ from .authorization_terms import AUTOMATION_CONTRACT
 from .contract_values import ContractError
 from .graph_template_document import SCHEMA_VERSION
 from .workflow_draft import MAX_DRAFT_EDGES as MAX_LINKS, MAX_DRAFT_NODES as MAX_STEPS
+from .workflow_draft import NOT_YET_FIELDS, parse_document
 
 FLOW_VERSION = 1
 MAX_READS = 8
@@ -324,12 +326,7 @@ def _step_inputs(steps: list[dict[str, Any]], links: list[dict[str, str]]) -> di
     materials. Any other step reads the result of the nearest reviews above it, and of the steps
     it names in `reads`, in the order of `steps`.
     """
-    order = {row["step_id"]: n for n, row in enumerate(steps)}
-    reviews = {row["step_id"] for row in steps
-               if row["type"] == "agent" and row["capability"] == "review"}
-    parents: dict[str, list[str]] = {}
-    for link in links:
-        parents.setdefault(link["to"], []).append(link["from"])
+    order, reviews, parents = _roads(steps, links)
     found: dict[str, list[str]] = {}
     for row in steps:
         if row["type"] != "agent":
@@ -340,6 +337,17 @@ def _step_inputs(steps: list[dict[str, Any]], links: list[dict[str, str]]) -> di
         refs = [f"artifact-{name}" for name in chosen]
         found[row["step_id"]] = refs if nearest else [*ENTRY_INPUTS, *refs]
     return found
+
+
+def _roads(steps: list[dict[str, Any]], links: list[dict[str, str]]):
+    """The order of steps, the review steps, and the steps above each step along the roads."""
+    order = {row["step_id"]: n for n, row in enumerate(steps)}
+    reviews = {row["step_id"] for row in steps
+               if row["type"] == "agent" and row["capability"] == "review"}
+    parents: dict[str, list[str]] = {}
+    for link in links:
+        parents.setdefault(link["to"], []).append(link["from"])
+    return order, reviews, parents
 
 
 def _nearest_reviews(step_id: str, parents: dict[str, list[str]], reviews: set[str]) -> set[str]:
@@ -357,3 +365,133 @@ def _nearest_reviews(step_id: str, parents: dict[str, list[str]], reviews: set[s
         else:
             pending.extend(parents.get(name, ()))
     return found
+
+
+# --- import: a workflow document becomes a flow (spec 7.3) --------------------------------------
+
+_WHEN_OF_CONDITION = MappingProxyType({
+    condition: when for when, condition in LINK_WHEN.items() if condition is not None})
+#: The keys of a template node that only `ext` can carry, in the order `import_template` tests them.
+_EXT_ORDER = ("stage", "arguments", "resources", "attempt_bound", "required_evidence",
+              "failure_policy", "missing_artifact_policy", "gate_id", "success_requires")
+
+
+class FlowImportError(ContractError):
+    """A document this flow cannot hold without losing something the document says."""
+
+
+def import_template(document: object) -> dict[str, Any]:
+    """The flow of a workflow document: a template as shipped or stored, or a draft (spec 7.3).
+
+    `compile_flow(import_template(doc))` is `doc` for every document a template accepts, and
+    `import_template(compile_flow(f)) == f` for a flow in canonical form. The typed fields are
+    read from the document; what the compiler would write anyway is left out of `ext`, and every
+    other value the document carries is kept there, so nothing is lost and nothing is read-only.
+    `template_id` and `revision` name the workflow, not the drawing, and are not read.
+
+    Raises:
+        ContractError: The document is not one a template could carry (a key it does not name,
+            a node or edge the core refuses, a size bound).
+        FlowImportError: A gate or a loop binds a role, which a flow has no place for.
+    """
+    if not isinstance(document, Mapping):
+        raise FlowShapeError("document", "must be a JSON object")
+    body = parse_document({key: value for key, value in document.items()
+                           if key not in NOT_YET_FIELDS})
+    nodes = body["nodes"]
+    links = [_link_of(row) for row in body["edges"]]
+    steps = [_bare_step(node) for node in nodes]
+    flow = {"flow_version": FLOW_VERSION, "title": body["title"], "steps": steps, "links": links,
+            "ext": {} if body.get("execution_contract") == AUTOMATION_CONTRACT
+            else {"execution_contract": None}}
+    _read_typed_arguments(steps, links, nodes)
+    for step, node, made in zip(steps, nodes, compile_flow(flow)["nodes"]):
+        step["ext"] = _extension(node, made)
+    return settled_flow(flow)
+
+
+def _link_of(edge: dict[str, str]) -> dict[str, str]:
+    when = "always" if "condition" not in edge else _WHEN_OF_CONDITION[edge["condition"]]
+    return {"from": edge["from_node"], "to": edge["to_node"], "when": when}
+
+
+def _bare_step(node: dict[str, Any]) -> dict[str, Any]:
+    """The typed fields of one node's step, before its arguments and `ext` are read."""
+    if node["kind"] != "task" and "role_id" in node:
+        raise FlowImportError(f"node {node['node_id']!r} is a {node['kind']} that binds a role")
+    kind = {"gate": "human", "loop": "loop"}.get(node["kind"]) or (
+        "agent" if "capability" in node else "route")
+    step: dict[str, Any] = {
+        "step_id": node["node_id"], "type": kind, "title": None,
+        "purpose": node.get("purpose"), "position": copy.deepcopy(node.get("position")),
+        "timeout_seconds": node.get("timeout_seconds")}
+    if kind == "agent":
+        step.update(role_id=node["role_id"], capability=node["capability"],
+                    verifier_role_id=node.get("verifier_role_id"), review_profile=None,
+                    reads=[], instruction_from=None)
+    if kind == "loop":
+        step.update(back_to=node["loop"]["back_to"], bound=node["loop"]["bound"])
+    step["ext"] = {}
+    if node["title"] != kind_title(step):
+        step["title"] = node["title"]
+    return step
+
+
+def _read_typed_arguments(steps: list[dict[str, Any]], links: list[dict[str, str]],
+                          nodes: list[dict[str, Any]]) -> None:
+    """Say a review's profile and reads and a dispatch's instruction source with typed fields.
+
+    Only what the document's own arguments spell is read. Whether that is all they say is decided
+    afterwards, by compiling the step and comparing; arguments that differ go whole into `ext`.
+    """
+    order, reviews, parents = _roads(steps, links)
+    dispatching = {row["step_id"] for row in steps
+                   if row["type"] == "agent" and row["capability"] == "dispatch"}
+    for step, node in zip(steps, nodes):
+        if step["type"] != "agent" or step["capability"] not in ("review", "dispatch"):
+            continue
+        arguments = node["arguments"]
+        if step["capability"] == "review":
+            profile = arguments.get("review_profile")
+            step["review_profile"] = profile if profile in REVIEW_PROFILES else None
+            refs = arguments.get("target_artifact_refs")
+        else:
+            step["instruction_from"] = _instruction_source(
+                arguments.get("instruction_ref"), step["step_id"], dispatching)
+            refs = arguments.get("artifact_refs")
+        nearest = _nearest_reviews(step["step_id"], parents, reviews)
+        extra = _extra_reads(refs, reviews - nearest - {step["step_id"]}, order)
+        step["reads"] = extra if len(extra) <= MAX_READS else []
+
+
+def _instruction_source(ref: object, own: str, dispatching: set[str]) -> str | None:
+    """The dispatch step whose instruction this ref names, when it is not the step's own."""
+    if not isinstance(ref, str) or not ref.startswith("instruction-"):
+        return None
+    name = ref[len("instruction-"):]
+    return name if name != own and name in dispatching else None
+
+
+def _extra_reads(refs: object, candidates: set[str], order: dict[str, int]) -> list[str]:
+    """The review steps a step's input list names beyond the nearest ones, in the order of steps."""
+    if not isinstance(refs, list):
+        return []
+    named = {ref[len("artifact-"):] for ref in refs
+             if isinstance(ref, str) and ref.startswith("artifact-")}
+    return sorted(named & candidates, key=order.__getitem__)
+
+
+def _extension(node: dict[str, Any], made: dict[str, Any]) -> dict[str, Any]:
+    """The keys of a document node that the compiler would not write itself, with their values.
+
+    A key the compiler writes and the document lacks is said as null; the only one that can
+    happen is `success_requires` on a gate that demands nothing, and null means "not written".
+    """
+    ext: dict[str, Any] = {}
+    for key in _EXT_ORDER:
+        if key in node:
+            if key not in made or node[key] != made[key]:
+                ext[key] = copy.deepcopy(node[key])
+        elif key in made:
+            ext[key] = None
+    return ext

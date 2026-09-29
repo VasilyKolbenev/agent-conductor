@@ -15,7 +15,9 @@ import pytest
 from conductor.command import workflow_draft, workflow_flow as flow_schema
 from conductor.command.adapters.deep_commands import REVIEW_PROFILES
 from conductor.command.contract_values import ContractError
+from conductor.command.contracts import canonical_json
 from conductor.command.graph_conditions import EDGE_CONDITIONS
+from conductor.command.graph_template import TEMPLATE_DIR
 from conductor.command.graph_template_document import GraphTemplate, TemplateNode
 from conductor.command.workflow_flow import FlowShapeError, settled_flow
 
@@ -361,16 +363,16 @@ def test_an_extension_key_replaces_the_computed_value_whole():
                 "profile": "implement", "artifact_refs": ["artifact-brief"]}  # a key fewer
     flow = chain(step("do", "agent", ext={
         "arguments": override, "resources": [], "stage": "do", "attempt_bound": 4,
-        "required_evidence": "test_run", "failure_policy": "stop",
-        "missing_artifact_policy": "stop"}), step("done", "human", ext={"gate_id": "gate-mine"}))
+        "required_evidence": "digest", "failure_policy": "halt_run",
+        "missing_artifact_policy": "fail"}), step("done", "human", ext={"gate_id": "gate-mine"}))
     nodes = nodes_of(flow)
     assert nodes["do"]["arguments"] == override
     assert nodes["do"]["resources"] == []
     assert {key: nodes["do"][key] for key in (
         "stage", "attempt_bound", "required_evidence", "failure_policy",
         "missing_artifact_policy")} == {
-        "stage": "do", "attempt_bound": 4, "required_evidence": "test_run",
-        "failure_policy": "stop", "missing_artifact_policy": "stop"}
+        "stage": "do", "attempt_bound": 4, "required_evidence": "digest",
+        "failure_policy": "halt_run", "missing_artifact_policy": "fail"}
     assert nodes["done"]["gate_id"] == "gate-mine"
     assert nodes["done"]["success_requires"] == "human_approval"
 
@@ -449,3 +451,253 @@ def test_every_compiled_fixture_cycle_builds_a_template(cycle):
     built = GraphTemplate.from_dict({**document, "template_id": "cycle-test", "revision": 1})
     assert [node.node_id for node in built.nodes] == [
         row["step_id"] for row in fixture_flow(cycle)["steps"]]
+
+
+# --- import_template and the round trips (spec 7.3, 7.11 item 1) -------------------------------
+
+SANDBOX = [{"kind": "sandbox", "name": "project-root"}]
+NOT_IN_A_DRAFT = ("template_id", "revision")
+
+
+def imported(document):
+    return flow_schema.import_template(document)
+
+
+def accepted(raw):
+    """The document a template holds once it is accepted: the form both sides are judged in."""
+    return GraphTemplate.from_dict(raw).as_dict()
+
+
+def without_identity(document):
+    return {key: value for key, value in document.items() if key not in NOT_IN_A_DRAFT}
+
+
+def same(left, right):
+    return canonical_json(left) == canonical_json(right)
+
+
+def review_node(node_id, targets, *, role="role-analyst", profile="spec", **extra):
+    return {"node_id": node_id, "kind": "task", "title": node_id.title(), "role_id": role,
+            "capability": "review", "resources": [], "arguments": {
+                "work_item_id": "work-001", "target_artifact_refs": targets,
+                "result_artifact_ref": f"artifact-{node_id}", "review_profile": profile}, **extra}
+
+
+def dispatch_node(node_id, refs, *, instruction=None, **extra):
+    return {"node_id": node_id, "kind": "task", "title": node_id.title(), "role_id": "role-doer",
+            "capability": "dispatch", "verifier_role_id": "role-checker", "resources": SANDBOX,
+            "arguments": {"work_item_id": "work-001", "artifact_refs": refs,
+                          "instruction_ref": instruction or f"instruction-{node_id}",
+                          "profile": "implement", "output_limit_profile": "normal"}, **extra}
+
+
+def gate_node(node_id, **extra):
+    return {"node_id": node_id, "kind": "gate", "title": node_id.title(),
+            "gate_id": f"gate-{node_id}", "resources": [], **extra}
+
+
+def loop_node(node_id, back_to, bound):
+    return {"node_id": node_id, "kind": "loop", "title": node_id.title(), "resources": [],
+            "loop": {"bound": bound, "back_to": back_to}}
+
+
+def edge(source, target, condition=None):
+    return {"from_node": source, "to_node": target,
+            **({} if condition is None else {"condition": condition})}
+
+
+def template(nodes, edges, **contract):
+    return {"schema_version": 1, "template_id": "template-corpus", "revision": 1,
+            "title": "Corpus", "nodes": nodes, "edges": edges, **contract}
+
+
+BOUNDED = {"execution_contract": "bounded-run-v1"}
+#: Documents of the kinds Studio wrote, one property each (spec 7.11 item 1). Every one is a
+#: template `GraphTemplate.from_dict` accepts, and none of them is what the compiler would write.
+STUDIO_CORPUS = {
+    "every extension key": template([
+        review_node("goal", ["artifact-brief"], stage="goal", attempt_bound=2,
+                    required_evidence="digest", failure_policy="halt_run",
+                    missing_artifact_policy="block", resources=SANDBOX),
+        gate_node("ask", gate_id="gate-mine", success_requires="human_approval"),
+        dispatch_node("do", ["artifact-goal"], stage="do")],
+        [edge("goal", "ask", "on_succeeded"), edge("ask", "do", "on_approved")], **BOUNDED),
+    "roads without a condition and no contract": template([
+        review_node("goal", ["artifact-brief"]), review_node("identify", ["artifact-goal"]),
+        gate_node("confirm-gate"), dispatch_node("do", ["artifact-identify"])],
+        [edge("goal", "identify"), edge("identify", "confirm-gate"),
+         edge("confirm-gate", "do", "on_approved")]),
+    "a loop with roads out of it": template([
+        dispatch_node("do", ["artifact-brief"]), loop_node("fix", "do", 2),
+        gate_node("result"), gate_node("second-look")],
+        [edge("do", "result", "on_succeeded"), edge("do", "fix", "on_failed"),
+         edge("fix", "second-look", "on_bound_reached")], **BOUNDED),
+    "a task without a capability": template([
+        {"node_id": "wait", "kind": "task", "title": "Wait", "resources": []},
+        gate_node("result")], [edge("wait", "result")], **BOUNDED),
+    "a gate that demands nothing": template([gate_node("only")], []),
+    "a capability other than review and dispatch": template([
+        {"node_id": "probe", "kind": "task", "title": "Probe", "role_id": "role-analyst",
+         "capability": "evidence", "resources": [],
+         "arguments": {"target_action_id": "action-1", "kinds": ["digest"]}},
+        gate_node("result")], [edge("probe", "result", "on_succeeded")], **BOUNDED),
+    "review arguments no flow field can say": template([
+        review_node("goal", ["artifact-brief", "artifact-materials", "artifact-extra"])],
+        [], **BOUNDED),
+    "a title that is the kind's name": template([
+        {**review_node("goal", ["artifact-brief"]), "title": "Analyst"},
+        {**gate_node("result"), "title": "Decision"}], [edge("goal", "result", "on_succeeded")],
+        **BOUNDED),
+}
+
+
+@pytest.mark.parametrize("name", sorted(STUDIO_CORPUS))
+def test_import_then_compile_returns_every_studio_corpus_document_unchanged(name):
+    document = accepted(STUDIO_CORPUS[name])
+    flow = imported(document)
+    assert settled_flow(flow) == flow
+    assert same(compiled(flow), without_identity(document))
+
+
+@pytest.mark.parametrize("path", sorted(TEMPLATE_DIR.glob("*.json")), ids=lambda path: path.stem)
+def test_import_then_compile_returns_every_shipped_template_unchanged(path):
+    document = accepted(json.loads(path.read_text(encoding="utf-8")))
+    flow = imported(document)
+    assert settled_flow(flow) == flow
+    assert same(compiled(flow), without_identity(document))
+
+
+def test_import_of_dalio_v5_equals_the_fixture_flow():
+    document = accepted(json.loads((TEMPLATE_DIR / "dalio-v5.json").read_text(encoding="utf-8")))
+    assert imported(document) == fixture_flow("dalio-v5")
+
+
+def looped_flows():
+    """The canonical flows that hold loops: a tester, nested loops, two passes, a middle gate."""
+    doer = step("do", "agent", verifier_role_id="role-checker")
+    tester = step("tester", "agent", role_id="role-tester", verifier_role_id="role-checker")
+    with_tester = chain(review("analyst"), doer, tester, step("result", "human"))
+    with_tester["steps"] += [step("do-fix", "loop", back_to="do", bound=3),
+                             step("tester-fix", "loop", back_to="do", bound=2)]
+    with_tester["links"] += [{"from": "do", "to": "do-fix", "when": "failed"},
+                             {"from": "tester", "to": "tester-fix", "when": "failed"}]
+    nested = chain(review("analyst"), doer, step("result", "human"))
+    nested["steps"] += [step("inner", "loop", back_to="do", bound=2),
+                        step("outer", "loop", back_to="analyst", bound=2)]
+    nested["links"] += [{"from": "do", "to": "inner", "when": "failed"},
+                        {"from": "result", "to": "outer", "when": "changes_requested"}]
+    two_passes = chain(
+        step("do", "agent", verifier_role_id="role-checker"),
+        step("test", "agent", role_id="role-tester", verifier_role_id="role-checker"),
+        step("result", "human"))
+    two_passes["steps"] += [step("do-fix", "loop", back_to="do", bound=2),
+                            step("test-fix", "loop", back_to="test", bound=3)]
+    two_passes["links"] += [{"from": "do", "to": "do-fix", "when": "failed"},
+                            {"from": "test", "to": "test-fix", "when": "failed"}]
+    middle = chain(review("analyst"), step("approve-plan", "human"), doer, step("result", "human"))
+    middle["steps"].append(step("redo", "loop", back_to="analyst", bound=2))
+    middle["links"].append({"from": "approve-plan", "to": "redo", "when": "changes_requested"})
+    return {"tester": with_tester, "nested loops": nested, "two pass loops": two_passes,
+            "rework from a middle gate": middle}
+
+
+def canonical_corpus():
+    doer = step("do", "agent", verifier_role_id="role-checker")
+    linear = chain(review("analyst"), doer, step("result", "human"))
+    fork = {"flow_version": 1, "title": "Fork", "ext": {}, "links": [
+        {"from": "plan", "to": "left", "when": "success"},
+        {"from": "plan", "to": "right", "when": "success"},
+        {"from": "left", "to": "join", "when": "success"},
+        {"from": "right", "to": "join", "when": "success"},
+        {"from": "join", "to": "result", "when": "success"}],
+        "steps": [review("plan"), review("left", role_id="role-reviewer"),
+                  review("right", role_id="role-designer"),
+                  step("join", "agent", verifier_role_id="role-checker"), step("result", "human")]}
+    branches = chain(review("analyst"), step("decide", "human"))
+    branches["steps"] += [step("ship", "human"), step("dropped", "human")]
+    branches["links"] += [{"from": "decide", "to": "ship", "when": "approved"},
+                          {"from": "decide", "to": "dropped", "when": "rejected"}]
+    shared = chain(review("analyst"), doer, step("polish", "agent", instruction_from="do",
+                                                  verifier_role_id="role-checker"),
+                   step("result", "human"))
+    reads = chain(review("plan"), review("ideas", role_id="role-reviewer"),
+                  review("scheme", role_id="role-designer", reads=["plan"]),
+                  step("result", "human"))
+    odd = chain(step("wait-here", "route"), step("probe", "agent", capability="evidence"),
+                step("result", "human", title="Sign off", purpose="Approve.", timeout_seconds=600,
+                     position={"x": 4, "y": 5}))
+    return {"linear": linear, **looped_flows(), "an AND fork": fork,
+            "a rejected branch": branches, "a shared instruction": shared, "reads": reads,
+            "a route, another capability and typed extras": odd}
+
+
+CANONICAL = canonical_corpus()
+
+
+@pytest.mark.parametrize("name", sorted(CANONICAL))
+def test_compile_then_import_returns_every_canonical_flow_unchanged(name):
+    flow = CANONICAL[name]
+    assert settled_flow(flow) == flow
+    document = compiled(flow)
+    assert imported(document) == flow
+    assert same(compiled(imported(document)), document)
+
+
+def test_an_imported_title_equal_to_the_kind_name_becomes_null():
+    flow = imported(accepted(STUDIO_CORPUS["a title that is the kind's name"]))
+    assert [row["title"] for row in flow["steps"]] == [None, None]
+
+
+def test_import_puts_arguments_it_cannot_express_whole_into_ext():
+    flow = imported(accepted(STUDIO_CORPUS["review arguments no flow field can say"]))
+    only = flow["steps"][0]
+    assert only["ext"]["arguments"]["target_artifact_refs"] == [
+        "artifact-brief", "artifact-materials", "artifact-extra"]
+    assert only["reads"] == [] and only["review_profile"] == "spec"
+
+
+def test_import_leaves_out_of_ext_every_key_the_compiler_would_write_itself():
+    written = {**compiled(canonical_flow()), "template_id": "template-corpus", "revision": 1}
+    flow = imported(accepted(written))
+    assert [row["ext"] for row in flow["steps"]] == [{}, {}, {}, {}]
+    assert flow["ext"] == {}
+    flow = imported(accepted(STUDIO_CORPUS["roads without a condition and no contract"]))
+    assert flow["ext"] == {"execution_contract": None}
+    assert {row["when"] for row in flow["links"]} == {"always", "approved"}
+
+
+def test_import_says_null_for_the_success_requirement_a_gate_does_not_carry():
+    flow = imported(accepted(STUDIO_CORPUS["a gate that demands nothing"]))
+    assert flow["steps"][0]["ext"] == {"success_requires": None}
+
+
+def test_import_ignores_template_id_and_revision_and_takes_a_draft_with_a_dangling_road():
+    document = without_identity(accepted(STUDIO_CORPUS["a gate that demands nothing"]))
+    flow = imported(document)
+    document["edges"] = [edge("only", "nowhere")]
+    dangling = imported(document)
+    assert dangling["steps"] == flow["steps"]
+    assert dangling["links"] == [{"from": "only", "to": "nowhere", "when": "always"}]
+
+
+def test_import_refuses_a_document_no_template_would_carry():
+    document = accepted(STUDIO_CORPUS["a gate that demands nothing"])
+    document["provider"] = "somewhere"
+    with pytest.raises(ContractError):
+        imported(document)
+
+
+def test_import_returns_a_new_document_and_leaves_its_input_alone():
+    document = accepted(STUDIO_CORPUS["every extension key"])
+    before = copy.deepcopy(document)
+    flow = imported(document)
+    flow["steps"][0]["ext"]["resources"].append({"kind": "tool", "name": "x"})
+    assert document == before
+
+
+def test_import_refuses_a_gate_that_binds_a_role_rather_than_dropping_the_binding():
+    gate = {**gate_node("g"), "role_id": "role-analyst", "capability": "review", "arguments": {}}
+    document = accepted(template([gate], [], **BOUNDED))
+    with pytest.raises(flow_schema.FlowImportError) as refused:
+        imported(document)
+    assert "'g'" in str(refused.value) and isinstance(refused.value, ContractError)

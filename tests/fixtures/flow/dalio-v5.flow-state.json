@@ -1,7 +1,7 @@
 {
   "workflow_id": "cycle-3f9a1c7e",
   "source": "draft",
-  "draft_digest": "sha256:e5b29db4245c41c2c69f2c6aaf993b981e2c8a16793419026f920acd720f8257",
+  "draft_digest": "sha256:9f008767aaee941d6c8182765e9cfb21a967fa7df5895c5cc1d073fb8cd69caa",
   "flow": {
     "flow_version": 1,
     "title": "Стандартный цикл",
@@ -16,7 +16,7 @@
         "role_id": "role-thinker",
         "capability": "review",
         "verifier_role_id": null,
-        "review_profile": null,
+        "review_profile": "spec",
         "reads": [],
         "instruction_from": null,
         "ext": {
@@ -41,7 +41,7 @@
         "role_id": "role-thinker",
         "capability": "review",
         "verifier_role_id": null,
-        "review_profile": null,
+        "review_profile": "quality",
         "reads": [],
         "instruction_from": null,
         "ext": {
@@ -66,7 +66,7 @@
         "role_id": "role-diagnostician",
         "capability": "review",
         "verifier_role_id": null,
-        "review_profile": null,
+        "review_profile": "quality",
         "reads": [],
         "instruction_from": null,
         "ext": {
@@ -91,7 +91,7 @@
         "role_id": "role-designer",
         "capability": "review",
         "verifier_role_id": null,
-        "review_profile": null,
+        "review_profile": "spec",
         "reads": [],
         "instruction_from": null,
         "ext": {
