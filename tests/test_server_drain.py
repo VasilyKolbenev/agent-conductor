@@ -21,7 +21,8 @@ from datetime import datetime, timezone
 import pytest
 
 from tests._drain_harness import (
-    PROBE, RUN_ID, WAIT, DrainChild, DrainProject, post_paths, stays_true, wait_until)
+    PAST_THE_OLD_JOIN, PROBE, RUN_ID, WAIT, DrainChild, DrainProject, post_paths,
+    stays_true, wait_until)
 
 NOT_YET = pytest.mark.xfail(
     strict=True, reason="drain is not implemented yet (spec §4.1.6)")
@@ -65,14 +66,16 @@ def _wait_until_draining(child: DrainChild) -> None:
                "a POST to be refused 409 server_stopping", child)
 
 
-def _let_the_drain_settle(child: DrainChild, project: DrainProject) -> None:
-    """Hold the attempt for a probe window while the drain runs its in-memory steps.
+def _let_the_drain_settle(child: DrainChild, project: DrainProject, window: float) -> None:
+    """Hold the attempt for a window while the drain runs its in-memory steps.
 
     The spec puts `hold_new_work()` one step after the status write and nothing
     durable marks that step, so a witness that released the attempt the instant it
-    saw `stopping` would race the drain instead of judging it.
+    saw `stopping` would race the drain instead of judging it. A witness that also
+    claims the drain WAITS holds the attempt past what `shutdown()` waits for a
+    worker today (`PAST_THE_OLD_JOIN`), or a server that merely closes would pass.
     """
-    stays_true(lambda: child.alive() and project.results() == [], PROBE,
+    stays_true(lambda: child.alive() and project.results() == [], window,
                "the running attempt is neither killed nor finished by the drain")
 
 
@@ -82,7 +85,7 @@ def _instant(text: str) -> datetime:
 
 def test_the_drain_harness_runs_two_steps_and_a_real_ctrl_c_closes_the_idle_project(project):
     project.require_ctrl_c()
-    child = project.start(hub=False, auto_release=True, ctrl_c="enabled")
+    child = project.start(hub=False, auto_release=True, ctrl_c="enabled", settle_delay=0)
     child.wait_serving()
     child.authorize()
     project.wait_run_terminal(child)
@@ -98,7 +101,7 @@ def test_eof_stops_new_proposals_and_lets_the_running_attempt_finish(project):
     child = _draining_by_eof(project)
     child.wait_state("stopping", DRAIN_BEGINS)
     assert child.status()["drain_deadline"] is not None
-    _let_the_drain_settle(child, project)
+    _let_the_drain_settle(child, project, PROBE)
     child.release(1)
     assert child.wait_exit(WAIT) == 0
     assert project.results() == ["succeeded"]
@@ -112,7 +115,7 @@ def test_closed_is_published_only_after_workers_and_the_login_lease_retire(proje
     child = _draining_by_eof(project)
     child.wait_state("stopping", DRAIN_BEGINS)
     stays_true(lambda: project.head_phase() == "opened" and project.lease_standing()
-               and not project.closed_leases(), PROBE,
+               and not project.closed_leases(), PAST_THE_OLD_JOIN,
                "the head stays opened while the attempt holds its lease")
     child.release(1)
     at_closed = {}
@@ -136,7 +139,7 @@ def test_ctrl_c_in_standalone_up_takes_the_same_drain_path(project):
     child.send_ctrl_c()
     _wait_until_draining(child)
     assert child.http("GET", "/command/session")[0] == 200
-    _let_the_drain_settle(child, project)
+    _let_the_drain_settle(child, project, PAST_THE_OLD_JOIN)
     child.release(1)
     assert child.wait_exit(WAIT) == 0
     assert project.results() == ["succeeded"]
@@ -176,7 +179,7 @@ def test_second_ctrl_c_does_not_interrupt_drain(project):
     _wait_until_draining(child)
     child.send_ctrl_c()
     stays_true(lambda: child.alive() and project.results() == []
-               and project.head_phase() == "opened", PROBE * 2,
+               and project.head_phase() == "opened", PAST_THE_OLD_JOIN,
                "the drain goes on after a second Ctrl+C")
     child.release(1)
     assert child.wait_exit(WAIT) == 0

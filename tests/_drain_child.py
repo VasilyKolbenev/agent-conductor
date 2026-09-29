@@ -15,7 +15,8 @@ still is a file it owns (``DRAIN_CONTROL``), never a sleep:
 Optional knobs, all environment: ``DRAIN_AUTO_RELEASE`` (never hold),
 ``DRAIN_FAULT=quota_uncertain`` (the quota collector cannot prove its retirement),
 ``DRAIN_MARGIN`` (seconds that replace the drain margin, when the drain module
-exists), ``DRAIN_CTRL_C=ignored|enabled`` (a known Ctrl+C state on entry, whatever
+exists), ``DRAIN_SETTLE_DELAY`` (seconds a worker lingers after each attempt's
+receipt), ``DRAIN_CTRL_C=ignored|enabled`` (a known Ctrl+C state on entry, whatever
 the parent's own state was: `ignored` is what a harness child inherits, and the
 product's standalone `up` must clear it for itself).
 """
@@ -146,8 +147,31 @@ def _fake_build(real_build):
         doer._store = checker._store = subject.command_store
         policy = subject.command_api._policy
         policy.provider_digest, policy.provider_facts = (lambda config: PD), None
+        _linger_after_each_attempt(subject.command_api.runtime)
         return subject
     return build
+
+
+def _linger_after_each_attempt(runtime) -> None:
+    """Keep every worker busy for `DRAIN_SETTLE_DELAY` after its attempt's receipt is durable.
+
+    The runtime wakes the policy driver when the receipt is appended, and the worker
+    only settles when `execute` returns. This widens the gap between those two moments
+    so that a driver which is NOT held from proposing has time to propose the next
+    step before the drain can see the server idle.
+    """
+    delay = float(os.environ.get("DRAIN_SETTLE_DELAY", "0"))
+    if not delay:
+        return
+    real_execute = runtime.execute
+
+    def execute(authorization):
+        try:
+            return real_execute(authorization)
+        finally:
+            time.sleep(delay)
+
+    runtime.execute = execute
 
 
 def _install() -> None:
