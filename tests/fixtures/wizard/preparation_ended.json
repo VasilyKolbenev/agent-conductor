@@ -1,0 +1,21 @@
+{
+  "task": {"schema_version": 1, "task_id": "task-bench", "title": "Fix login",
+           "work_scope": "task-bench", "created_at": "2026-09-29T10:00:00Z"},
+  "seed": {"schema_version": 1, "task_id": "task-bench", "work_scope": "task-bench",
+           "work_item_id": "work-001", "source": "git",
+           "base_commit": "abc1234def5678abc1234def5678abc1234def56",
+           "base_tree": "def5678abc1234def5678abc1234def5678abc12", "object_format": "sha1",
+           "base_ref": "refs/heads/main", "file_count": 412, "total_bytes": 3145728,
+           "include_agent_instructions": false, "staging": "s-1a2b3c4d", "skipped": [],
+           "agent_instructions_skipped": ["CLAUDE.md"], "warnings": [],
+           "staged_at": "2026-09-29T10:00:05Z", "state": "seeded"},
+  "next_run_number": 2,
+  "runs": [
+    {"run_id": "task-bench-r1", "created_at": "2026-09-29T10:00:20Z",
+     "workflow_id": "desk-standard", "revision": 1, "stage": "ended",
+     "missing": {"instructions": [], "inputs": []},
+     "grant": {"authorization_id": "auth-bench0000-1", "authorized_by": "vasily",
+               "authorized_at": "2026-09-29T10:03:00Z", "preauthorized_at": null},
+     "queue": null}
+  ]
+}

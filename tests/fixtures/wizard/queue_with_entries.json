@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "revision": 7,
+  "slot": {"state": "busy", "run_id": "task-a-r1", "reason_code": "plan_waiting"},
+  "entries": [
+    {"run_id": "task-c-r1", "task_id": "task-c", "title": "Refactor the api", "position": 1,
+     "kind": "start", "enqueued_at": "2026-09-29T09:40:00Z", "enqueued_by": "vasily",
+     "state": "preauthorized", "reason_code": "slot_busy", "state_since": "2026-09-29T09:40:00Z",
+     "preauthorization": {"authorized_by": "vasily", "preauthorized_at": "2026-09-29T09:40:00Z",
+                          "digest": "sha256:ca11ab1eca11ab1eca11ab1eca11ab1eca11ab1eca11ab1eca11ab1eca11ab1e"}},
+    {"run_id": "task-d-r1", "task_id": "task-d", "title": "Write the release notes", "position": 2,
+     "kind": "start", "enqueued_at": "2026-09-29T09:50:00Z", "enqueued_by": "vasily",
+     "state": "confirmation_required", "reason_code": "terms_changed", "state_since": null,
+     "preauthorization": {"authorized_by": "vasily", "preauthorized_at": "2026-09-29T09:50:00Z",
+                          "digest": "sha256:decade00decade00decade00decade00decade00decade00decade00decade00"}}
+  ]
+}

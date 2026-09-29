@@ -1,0 +1,7 @@
+{
+  "task": {"schema_version": 1, "task_id": "task-bench", "title": "Fix login",
+           "work_scope": "task-bench", "created_at": "2026-09-29T10:00:00Z"},
+  "seed": null,
+  "next_run_number": 1,
+  "runs": []
+}
