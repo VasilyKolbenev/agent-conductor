@@ -7,7 +7,9 @@ around every attempt. What they assert is the FINAL behavior: the `stopping`,
 409 `server_stopping` refusal, the ownership head `closed` published only after
 the attempt and its login lease retired, and the exit codes. None of them names a
 function of the drain module: they were written, and shown red with `--runxfail`,
-before it existed, and they passed unchanged when it landed.
+before it existed, and they passed when it landed. One changed on the way: the probe
+window of the overdue witness (4) was lengthened in 521a0fe, because a mutant drain that
+closed right after `stop_overdue` passed inside the original one second.
 
 The instrument control needs no drain: it proves the harness itself (fake dispatch,
 lease, ownership close, Ctrl+C delivery) so a red witness cannot be blamed on it.
