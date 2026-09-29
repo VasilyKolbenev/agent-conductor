@@ -6,8 +6,11 @@ child exists, no ownership loan was claimed (a loan that is retired without proo
 the owner), and the refusal is the same `CommandSpecError` every unusable command gets.
 
 This is the first slice of that section. What is here: the runner's refusal (with a control,
-so a spy that sees nothing cannot pass), and a witness that a server launched with
-`Launch(mode="view")` spawns nothing through task creation, the reads and the preview.
+so a spy that sees nothing cannot pass), and two witnesses that a server launched with
+`Launch(mode="view")` spawns nothing: one through task creation, the reads and the preview,
+one through the writes of a cycle and a run (flow, draft, revision, template, run creation).
+A calibration plants a child in each road of the second walk and requires the spy to see it,
+so a road the walk does not reach turns that case red instead of passing unnoticed.
 
 What that witness does NOT prove, and why its name says what it walks and not what it
 guarantees: the mode does not gate spawning yet. `Launch.mode` reaches only the project
@@ -26,15 +29,22 @@ so it is not used before it is true.
 from __future__ import annotations
 
 import subprocess
+from contextlib import contextmanager
 from threading import Thread
 
 import pytest
 
 from conductor import ownership, ownership_transition, server
+from conductor.command import http_writes, task_routes
 from conductor.command.adapters.process import CommandSpec, CommandSpecError, ProcessRunner
+from conductor.command.graph_template import load_template
 from conductor.command.project_claim import Launch
 from tests._fakeproc import fake_argv
 from tests.test_command_http_api import TOKEN
+from tests.test_command_run_routes import INSTANCE, ROLE
+from tests.test_command_run_socket import pinned
+from tests.test_command_workflow_draft import WORKFLOW, a_document
+from tests.test_command_workflow_flow import chain, review, step
 from tests.test_policy_driver import ask
 from tests.test_policy_runtime import NOW, PD, setup
 from tests.test_server_command_http import _request
@@ -150,3 +160,105 @@ def test_a_server_launched_for_viewing_spawns_no_child_through_task_creation_rea
         thread.join(10)
     assert len(walked) == len(flow) and not thread.is_alive()
     assert spy.calls == [], f"a child was started: {spy.calls}"
+
+
+# -- the second witness: the writes of a cycle and a run -----------------------------
+
+FLOW_CYCLE = "cycle-0a1b2c3d"
+RUN = "run-view-1"
+
+
+@contextmanager
+def _served(tmp_path):
+    """A project on an activated root, with one provider resolved, launched for viewing."""
+    root = write_project(tmp_path, lanes={"claude": good_lane()})
+    ownership_transition.activate(root, legacy_writers_stopped=True)
+    subject = server.build(root, 0, providers=pinned(tmp_path), clock=lambda: NOW,
+                           token_factory=lambda _: TOKEN, launch=Launch(mode="view"))
+    thread = Thread(target=subject.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield subject
+    finally:
+        subject.shutdown()
+        subject.server_close()
+        thread.join(10)
+        assert not thread.is_alive()
+
+
+def _send(subject, method, path, body, expected):
+    status, payload, _ = _request(subject, method, path, body)
+    assert status == expected, (method, path, status, payload)
+    return payload
+
+
+def _walk_cycle_and_run(subject) -> None:
+    """A task, two cycles, a template and a run bound to the task, then the reads that show them."""
+    _send(subject, "GET", "/command/session", None, 200)
+    _send(subject, "POST", "/command/tasks", {"task_id": "task-1", "title": "Look around"}, 201)
+    flow_path = f"/command/workflows/{FLOW_CYCLE}/flow"
+    flow = chain(review("plan"), step("result", "human"))
+    saved = _send(subject, "POST", flow_path, {
+        "source": {"flow": flow}, "publish_revision": None, "expected_absent": True}, 201)
+    published = _send(subject, "POST", flow_path, {
+        "source": {"flow": flow}, "publish_revision": 1,
+        "expected_digest": saved["draft_digest"]}, 201)
+    assert published["published"] is not None, published
+    draft_path = f"/command/workflows/{WORKFLOW}/draft"
+    _send(subject, "POST", draft_path, {"document": a_document(), "expected_absent": True}, 201)
+    drawn = _send(subject, "GET", f"/command/workflows/{WORKFLOW}", None, 200)
+    _send(subject, "POST", f"/command/workflows/{WORKFLOW}/revisions", {
+        "revision": 1, "reviewed_digest": drawn["draft"]["digest"]}, 201)
+    _send(subject, "POST", "/command/templates", load_template("dalio-v2").as_dict(), 201)
+    opened = _send(subject, "POST", "/command/runs", {
+        "run_id": RUN, "cycle_id": "default-orbit", "mode": "confirm",
+        "participants": [{"instance_id": INSTANCE, "provider_id": "codex", "model": None}],
+        "workflow_id": WORKFLOW, "revision": 1, "assignments": {ROLE: INSTANCE},
+        "task_id": "task-1"}, 201)
+    assert opened["graph"]["run_id"] == RUN, opened
+    listed = _send(subject, "GET", "/command/runs", None, 200)
+    assert [row["run_id"] for row in listed["runs"]] == [RUN], listed
+    _send(subject, "GET", f"/command/runs/{RUN}", None, 200)
+    _send(subject, "GET", "/command/tasks/task-1", None, 200)
+
+
+def test_a_server_launched_for_viewing_spawns_no_child_through_cycle_publication_and_run_creation(
+        tmp_path, spy):
+    """A cycle through the flow door and through draft and revision, a template, a run: no child.
+
+    Run creation needs a resolved provider, so this walk cannot share the server of the walk
+    above (a server takes an adapter registry or provider configuration, never both). The
+    provider it resolves owns the spawn-capable runner, so a zero here is not "nothing was
+    there to spawn from". Like that walk it holds in `active` too until the mode reaches the
+    runner, and the calibration below shows it would see a child in every road it walks.
+    """
+    with _served(tmp_path) as subject:
+        _walk_cycle_and_run(subject)
+        resolved = [row.provider_id for row in subject.command_providers if row.available]
+    assert resolved == ["codex"]
+    assert spy.calls == [], f"a child was started: {spy.calls}"
+
+
+# -- the calibration: the walk above must be able to say no --------------------------
+
+#: The handler each write of the cycle and run walk goes through, one per POST route.
+ROADS = ("create_task", "_write_flow", "_save_draft", "_publish_revision",
+         "_publish_template", "_open_run")
+
+
+@pytest.mark.parametrize("road", ROADS)
+def test_the_cycle_and_run_walk_sees_a_spawn_planted_in_each_road_it_walks(
+        tmp_path, spy, monkeypatch, road):
+    """A witness that cannot say no is a number: plant a child in one road, expect to see it."""
+    home = task_routes if road == "create_task" else http_writes
+    real, planted = getattr(home, road), []
+
+    def plant(*args, **kwargs):
+        planted.append(road)
+        subprocess.Popen(fake_argv()).wait()
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(home, road, plant)
+    with _served(tmp_path) as subject:
+        _walk_cycle_and_run(subject)
+    assert planted and len(spy.calls) == len(planted), (road, planted, spy.calls)
