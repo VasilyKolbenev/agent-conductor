@@ -124,7 +124,7 @@ def test_hold_new_work_returns_only_after_a_tick_past_the_gate_has_admitted_its_
         seen["requests"] = [row.node_id for row in records(run.f, "action_request")]
         seen["inflight"] = run.driver._inflight
 
-    holder = Thread(target=hold)
+    holder = Thread(target=hold, daemon=True)
     try:
         authorize(run.f)
         assert entered.wait(8), "no tick reached its proposal"
@@ -134,9 +134,21 @@ def test_hold_new_work_returns_only_after_a_tick_past_the_gate_has_admitted_its_
             "hold_new_work returned while a tick was still admitting its action")
     finally:
         go.set()  # never leave the tick parked: the fixture stops the driver next
-    holder.join(8)
-    assert not holder.is_alive()
+        if holder.is_alive():
+            holder.join(8)
+    assert not holder.is_alive(), "hold_new_work never returned once the tick was released"
     assert seen["requests"] == ["do"] and seen["inflight"] is not None
+
+
+def test_a_stopped_and_held_driver_refuses_with_the_hold_refusal_first(run):
+    run.driver.stop()
+    with pytest.raises(ContractError) as stopped:
+        run.driver.hold_activation("run")
+    assert not isinstance(stopped.value, policy_driver.NewWorkHeld), (
+        "a stopped driver that is not held refuses as one that is not running")
+    run.driver.hold_new_work()
+    with pytest.raises(policy_driver.NewWorkHeld):
+        run.driver.hold_activation("run")
 
 
 def test_slot_of_a_driver_that_was_never_activated_is_empty_and_not_holding(run):
@@ -154,6 +166,24 @@ def test_slot_reports_the_active_and_inflight_runs_and_the_hold(run):
     assert run.driver.slot() == snapshot("run", None, True)
     run.driver.deactivate("run")
     assert run.driver.slot() == snapshot(None, None, True)
+
+
+def test_slot_reads_no_journal_and_settles_nothing(run, monkeypatch):
+    in_flight(run)
+    ticked = []
+    monkeypatch.setattr(run.driver, "_tick", lambda *args: ticked.append(args))  # nobody settles
+    let_the_step_finish(run)
+    assert [row.outcome for row in records(run.f, "action_result")] == ["succeeded"]
+
+    def unreadable(*args, **kwargs):
+        raise AssertionError("slot() must not read a journal")
+    monkeypatch.setattr(run.f.store, "read", unreadable)
+    assert run.driver.slot() == policy_driver.SlotSnapshot("run", "run", False), (
+        "the finished action still counts as in flight until a tick or an activation settles it")
+    monkeypatch.undo()
+    run.driver.hold_new_work()  # so the tick below settles and admits nothing after it
+    run.driver._tick("run", "grant")  # the driver's own tick, which does settle
+    assert run.driver.slot().inflight_run_id is None
 
 
 def test_a_slot_snapshot_is_frozen_and_does_not_follow_the_driver(run):

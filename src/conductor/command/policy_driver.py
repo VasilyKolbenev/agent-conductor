@@ -71,8 +71,11 @@ class PolicyDriver:
     def slot(self) -> SlotSnapshot:
         """A frozen copy of the active run, the run with an action in flight, and the hold flag.
 
-        It reads no journal, so `_inflight` can lag one tick behind a written result; the state of
-        the holder comes from `automation_view` (spec 4.4.6).
+        It reads no journal and settles nothing, so the run it names as in flight is the one the
+        driver last recorded. That run can still be named after its result is written, because
+        `_inflight` clears only when a tick or an activation settles it, and it is recorded only
+        once the request is written. The state of the holder comes from `automation_view`
+        (spec 4.4.6).
         """
         with self._condition:
             return SlotSnapshot(
