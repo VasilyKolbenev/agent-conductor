@@ -19,6 +19,14 @@ desk can draw the editor, the diagnostics and the counter before the routes exis
 - The totals of every `budget` equal the 7.8 table, and every derived number follows from the rows
   and the flow by the 7.8 formulas (`tests/test_command_flow_fixtures.py`).
 - Every `flow` settles unchanged through `workflow_flow.settled_flow`.
+- `inputs.instructions` is one row per dispatch step, read off the flow: the `instruction_ref` in the
+  step's `ext.arguments` when it has one, otherwise `instruction-<instruction_from or step_id>`. An
+  `ext` replaces the computed arguments whole (7.2.1), so the `dalio-v5` copy names
+  `instruction-plan`, not the default `instruction-do`. Both replacement budgets are held to the flow
+  of the cycle they replace.
+- `inputs.documents` is not read off the flow: it is the pair the wizard publishes for every run
+  (6.2.3, 6.4.1 link 5), so the `dalio-v5` copy keeps both although its `goal` reads only
+  `artifact-brief`. What the flow does read from outside stays inside that pair.
 - Derived, not yet produced by code: the flows of the four `desk-*` and tester cycles come from 7.9
   and 7.6; the `dalio-v5` flow applies the 7.3 import rules by hand (every review and `do` carries
   its whole `arguments` and its `stage` in `ext`, both gates carry `gate_id` and a null

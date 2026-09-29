@@ -219,3 +219,33 @@ def test_expected_instructions_follow_the_ext_override_and_instruction_from():
         {"step_id": "own", "instruction_ref": "instruction-own"},
         {"step_id": "shared", "instruction_ref": "instruction-own"},
         {"step_id": "pinned", "instruction_ref": "instruction-plan"}]
+
+
+#: the two documents the wizard publishes for every run (spec 6.2.3), whatever the flow reads
+RUN_DOCUMENTS = ["artifact-brief", "artifact-materials"]
+#: inputs an `ext` override names that no review produces; only dalio-v5 has any (goal: the brief)
+OUTSIDE_READS = {"dalio-v5": {"artifact-brief"}}
+
+
+def outside_reads(flow):
+    """Refs the `ext.arguments` of agent steps read that no review step's result produces."""
+    agents = [row for row in flow["steps"] if row["type"] == "agent"]
+    produced = {row["ext"].get("arguments", {}).get("result_artifact_ref")
+                for row in agents if row["capability"] == "review"}
+    named = {ref for row in agents for key in ("target_artifact_refs", "artifact_refs")
+             for ref in row["ext"].get("arguments", {}).get(key, [])}
+    return named - produced
+
+
+@pytest.mark.parametrize("stem,cycle", BUDGET_FILES, ids=[stem for stem, _ in BUDGET_FILES])
+def test_budget_documents_are_the_pair_the_wizard_always_publishes_for_every_cycle(stem, cycle):
+    budget, _ = budget_and_flow(stem, cycle)
+    assert budget["inputs"]["documents"] == RUN_DOCUMENTS
+
+
+@pytest.mark.parametrize("cycle", CYCLES)
+def test_every_input_an_ext_override_names_is_a_run_document_or_a_review_result(cycle):
+    value = state(cycle)
+    outside = outside_reads(value["flow"])
+    assert outside == OUTSIDE_READS.get(cycle, set())
+    assert outside <= set(value["budget"]["inputs"]["documents"])
