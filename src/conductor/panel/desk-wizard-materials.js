@@ -35,12 +35,22 @@ const LINK_LINE = Object.freeze({
     + "text not copied",
 });
 
+//: The length of the longest run of one character in a text (0 when it does not occur). A loop and
+//: not a regex literal: the scope guard reads a backtick inside a regex as the start of a template.
+function longestRun(text, mark) {
+  let longest = 0, run = 0;
+  for (const char of text) {
+    run = char === mark ? run + 1 : 0;
+    longest = Math.max(longest, run);
+  }
+  return longest;
+}
+
 //: `text` as an inline code span whatever backticks it holds, as the composer writes it: a
 //: delimiter one longer than the longest run inside, and a space on each side where the text
 //: begins or ends with a backtick, or with a space on both ends.
 function codeSpan(text) {
-  const runs = text.match(/`+/g) ?? [];
-  const delimiter = "`".repeat(Math.max(0, ...runs.map((run) => run.length)) + 1);
+  const delimiter = "`".repeat(longestRun(text, "`") + 1);
   const padded = text.startsWith("`") || text.endsWith("`")
     || (text.startsWith(" ") && text.endsWith(" "));
   const pad = padded ? " " : "";
@@ -112,8 +122,7 @@ export function bodyOf(cards, lang) {
 //: The fence of a Mermaid block, as the composer writes it: three backticks, or one more than
 //: the longest run of backticks inside the text, so the text can never close its own block.
 function fenceFor(content) {
-  const runs = content.match(/`+/g) ?? [];
-  return "`".repeat(Math.max(3, ...runs.map((run) => run.length + 1)));
+  return "`".repeat(Math.max(3, longestRun(content, "`") + 1));
 }
 
 function section(card, number, lang) {
