@@ -111,6 +111,13 @@ LAYOUT_FACTS = """(ids) => ({
     const box = document.getElementById(id).getBoundingClientRect();
     return [id, {x: box.x, y: box.y, width: box.width, height: box.height}];
   }))})"""
+#: The widths the page is measured at, from a small phone to a wide screen, both sides of the
+#: 900px break included, and the largest window that stacks.
+SWEPT_WIDTHS = (320, 375, 414, 600, 768, 899, 900, 901, 1024, 1280, 1440, 1920)
+STACKED_UP_TO = 900
+#: A rule that widens one region only in a window under 400px: the overflow a two-width
+#: test at 800 and 1280 cannot see.
+PLANTED_NARROW_OVERFLOW = "@media (max-width:400px){.desk-feed{min-width:600px}}"
 #: The sentences the top bar says for the two phases a bad read earns, spelled
 #: out here and not read back from the catalogue the page loads.
 SAID_REFUSED = "This read was refused. Nothing below is newer than the refusal."
@@ -300,23 +307,61 @@ def test_the_shell_reads_the_two_routes_that_exist_and_writes_nothing(desk: Desk
     assert desk.problems == []
 
 
-def test_the_page_never_scrolls_sideways_and_the_regions_stack_under_900px(
-        desk: Desk) -> None:
+def _sweep(page: Page) -> dict[int, dict]:
+    """The layout facts at each swept width, one evaluation per width."""
     ids = [ident for ident, _ in REGION_WORDS]
-    wide = desk.page.evaluate(LAYOUT_FACTS, ids)
-    boxes = wide["boxes"]
-    assert wide["overflow"] <= 0, wide
-    # Three columns under the top bar: the rail, the centre, the pult.
-    assert boxes["deskRail"]["x"] < boxes["deskScene"]["x"] < boxes["deskPult"]["x"]
-    assert boxes["deskRail"]["y"] == boxes["deskPult"]["y"] > 0
-    assert boxes["deskScene"]["y"] < boxes["deskFeed"]["y"] < boxes["deskSummary"]["y"]
-    desk.page.set_viewport_size({"width": 800, "height": 900})
-    narrow = desk.page.evaluate(LAYOUT_FACTS, ids)
-    stacked = narrow["boxes"]
-    assert narrow["overflow"] <= 0, narrow
-    assert stacked["deskRail"]["y"] < stacked["deskScene"]["y"] < stacked["deskPult"]["y"]
-    assert all(box["width"] > 0 for box in stacked.values()), stacked
+    facts = {}
+    for width in SWEPT_WIDTHS:
+        page.set_viewport_size({"width": width, "height": 900})
+        facts[width] = page.evaluate(LAYOUT_FACTS, ids)
+    return facts
+
+
+def test_the_page_does_not_scroll_sideways_at_any_swept_width_and_stacks_up_to_900px(
+        desk: Desk) -> None:
+    """Twelve widths from a phone to a wide screen, the two sides of the 900px break included.
+
+    The claim is the sweep's, and it is stated as the sweep: at every width in the table the
+    page's scroll width is no wider than the window, and the regions stand in the layout that
+    width owes them -- three columns above 900px, one stacked reading order at 900px and under.
+    """
+    for width, facts in _sweep(desk.page).items():
+        boxes = facts["boxes"]
+        assert facts["overflow"] <= 0, (width, facts["overflow"])
+        assert all(box["width"] > 0 for box in boxes.values()), (width, boxes)
+        assert boxes["deskScene"]["y"] < boxes["deskFeed"]["y"] < boxes["deskSummary"]["y"], width
+        if width <= STACKED_UP_TO:
+            assert boxes["deskRail"]["y"] < boxes["deskScene"]["y"] < boxes["deskPult"]["y"], width
+        else:
+            assert boxes["deskRail"]["x"] < boxes["deskScene"]["x"] < boxes["deskPult"]["x"], width
+            assert boxes["deskRail"]["y"] == boxes["deskPult"]["y"] > 0, width
     assert desk.problems == []
+
+
+def test_the_sweep_sees_an_overflow_that_only_a_narrow_window_shows(
+        chromium: Browser, desk_url: str) -> None:
+    """The regression for the old two-width test: a region wider than a phone.
+
+    A rule that widens the feed only under 400px leaves 800px and 1280px, the two widths the
+    test used to look at, exactly as they were. Sweeping finds it at 320px and 375px and
+    nowhere else, so a page that scrolled sideways on a phone can no longer pass.
+    """
+    context = chromium.new_context(viewport={"width": 1280, "height": 900})
+    page = context.new_page()
+
+    def widen(route: Route) -> None:
+        real = route.fetch()
+        route.fulfill(response=real, body=real.text() + PLANTED_NARROW_OVERFLOW)
+
+    page.route("**/panel/desk.css", widen)
+    try:
+        page.goto(desk_url, wait_until="load")
+        page.wait_for_selector('#deskShell[data-state="ready"]')
+        overflowing = {width for width, facts in _sweep(page).items() if facts["overflow"] > 0}
+    finally:
+        context.close()
+    assert overflowing == {320, 375}
+    assert not overflowing & {800, 1280}
 
 
 def test_the_classic_panel_link_is_a_visible_focusable_target_of_44px(desk: Desk) -> None:
