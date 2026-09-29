@@ -174,8 +174,13 @@ def _hold_and_quiet(srv) -> None:
 def _wait_for_idle(srv, status, deadline: datetime, clock: Callable[[], datetime]) -> None:
     """Step 5, and step 7: past the deadline the state changes and the wait goes on."""
     execution = getattr(srv, "command_execution", None)
+    wait_posts = getattr(srv, "wait_command_posts", lambda timeout: True)
     overdue = False
-    while execution is not None and not execution.wait_idle(WAIT_SLICE_SECONDS):
+    while True:
+        posts_idle = wait_posts(WAIT_SLICE_SECONDS)
+        execution_idle = execution is None or execution.wait_idle(WAIT_SLICE_SECONDS)
+        if posts_idle and execution_idle:
+            return
         if not overdue and clock() > deadline:
             overdue = True
             _report(status, "stop_overdue", drain_deadline=deadline)

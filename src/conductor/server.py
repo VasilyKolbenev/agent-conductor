@@ -54,6 +54,7 @@ from conductor.command.coordinator import ExecutionCoordinator
 from conductor.command.http_api import (
     PRODUCT_COMMAND_BUDGET,
     CommandApi,
+    CommandResponse,
 )
 from conductor.command.http_transport import (
     CommandSession, HttpRefusal, validate_command_host)
@@ -396,7 +397,7 @@ class Handler(KeptConnection, BaseHTTPRequestHandler):
                     body = b""
                 if len(body) != length:
                     self.close_connection = True
-        response = self.server.command_api.handle(method, self.path, pairs, body)
+        response = self.server.command_response(method, self.path, pairs, body)
         encoded = canonical_json(response.payload).encode("utf-8")
         self._send_body(
             response.status, "application/json; charset=utf-8", encoded,
@@ -537,7 +538,9 @@ class ConductServer(ThreadingHTTPServer):
         # Attributes first: a failed bind makes socketserver call our
         # server_close() before __init__ finishes.
         self.shutting_down = False
-        self.draining = False               # set by the drain: every command POST is refused
+        self._command_admission = threading.Condition()
+        self._command_posts = 0
+        self._draining = False
         self.project_owner = None
         self.policy_driver = None
         self.retirement_uncertain = False
@@ -571,6 +574,38 @@ class ConductServer(ThreadingHTTPServer):
             self._retire_execution()
         finally:
             super().shutdown()
+
+    @property
+    def draining(self) -> bool:
+        return self._draining
+
+    @draining.setter
+    def draining(self, value: bool) -> None:
+        # The flag and admission count share one boundary. Reading headers or
+        # waiting for a body never admits a mutation across this transition.
+        with self._command_admission:
+            self._draining = value
+
+    def command_response(self, method, path, headers, body) -> CommandResponse:
+        """Admit a complete POST, then account for it until its mutation ends."""
+        if method != "POST":
+            return self.command_api.handle(method, path, headers, body)
+        with self._command_admission:
+            if self._draining:
+                refusal = ApiRefusal.fixed("server_stopping")
+                return CommandResponse(refusal.status, refusal.as_dict())
+            self._command_posts += 1
+        try:
+            return self.command_api.handle(method, path, headers, body)
+        finally:
+            with self._command_admission:
+                self._command_posts -= 1
+                self._command_admission.notify_all()
+
+    def wait_command_posts(self, timeout: float) -> bool:
+        """Drain waits for already admitted writes before trusting idle workers."""
+        with self._command_admission:
+            return self._command_admission.wait_for(lambda: self._command_posts == 0, timeout)
 
     def _retire_execution(self) -> None:
         """Retire this server's execution workers and quota collection lifetime."""
