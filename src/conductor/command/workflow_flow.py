@@ -50,6 +50,17 @@ EXT_FIELDS = frozenset({
     "missing_artifact_policy", "gate_id", "success_requires",
 })
 FLOW_EXT_FIELDS = frozenset({"execution_contract"})
+#: The role keys of a template node that a flow types only on an agent step. The core accepts a
+#: gate or a loop that binds a role, so an import must hold one; a flow has no typed place for it
+#: on such a step, and it lives in that step's `ext` (spec 7.3, rules 2 and 3), where the compiler
+#: lays it over the node like any other key. `EXT_FIELDS` stays the nine keys of spec 7.2.
+BOUND_EXT_FIELDS = frozenset({"role_id", "capability", "verifier_role_id"})
+#: The keys the `ext` of each step type may carry: an agent already types its role, and a route
+#: is a task with none.
+STEP_EXT_FIELDS = MappingProxyType({
+    "agent": EXT_FIELDS, "route": EXT_FIELDS,
+    "human": EXT_FIELDS | BOUND_EXT_FIELDS, "loop": EXT_FIELDS | BOUND_EXT_FIELDS,
+})
 #: Where each typed step field lands in a template node; ``ext`` lands in ``EXT_FIELDS``.
 TEMPLATE_FIELD_OF_STEP_FIELD = MappingProxyType({
     "step_id": "node_id", "type": "kind", "title": "title", "purpose": "purpose",
@@ -106,7 +117,7 @@ def _step(path: str, value: object) -> dict[str, Any]:
     if kind == "loop":
         step.update(back_to=_text(f"{path}.back_to", body["back_to"]),
                     bound=_whole(f"{path}.bound", body["bound"]))
-    step["ext"] = _ext(f"{path}.ext", body["ext"])
+    step["ext"] = _ext(f"{path}.ext", body["ext"], STEP_EXT_FIELDS[kind])
     return step
 
 
@@ -143,8 +154,8 @@ def _flow_ext(path: str, value: object) -> dict[str, None]:
     return dict(body)
 
 
-def _ext(path: str, value: object) -> dict[str, Any]:
-    body = _object(path, value, EXT_FIELDS, required=False)
+def _ext(path: str, value: object, allowed=EXT_FIELDS) -> dict[str, Any]:
+    body = _object(path, value, allowed, required=False)
     for key, item in body.items():
         _plain(f"{path}.{key}", item)
     return copy.deepcopy(body)
@@ -374,10 +385,8 @@ _WHEN_OF_CONDITION = MappingProxyType({
 #: The keys of a template node that only `ext` can carry, in the order `import_template` tests them.
 _EXT_ORDER = ("stage", "arguments", "resources", "attempt_bound", "required_evidence",
               "failure_policy", "missing_artifact_policy", "gate_id", "success_requires")
-
-
-class FlowImportError(ContractError):
-    """A document this flow cannot hold without losing something the document says."""
+#: What a gate or a loop adds to that list when it binds a role, tested first.
+_BOUND_ORDER = ("role_id", "capability", "verifier_role_id")
 
 
 def import_template(document: object) -> dict[str, Any]:
@@ -387,12 +396,12 @@ def import_template(document: object) -> dict[str, Any]:
     `import_template(compile_flow(f)) == f` for a flow in canonical form. The typed fields are
     read from the document; what the compiler would write anyway is left out of `ext`, and every
     other value the document carries is kept there, so nothing is lost and nothing is read-only.
+    A gate or a loop that binds a role keeps the binding in its `ext` (`BOUND_EXT_FIELDS`).
     `template_id` and `revision` name the workflow, not the drawing, and are not read.
 
     Raises:
         ContractError: The document is not one a template could carry (a key it does not name,
             a node or edge the core refuses, a size bound).
-        FlowImportError: A gate or a loop binds a role, which a flow has no place for.
     """
     if not isinstance(document, Mapping):
         raise FlowShapeError("document", "must be a JSON object")
@@ -406,7 +415,7 @@ def import_template(document: object) -> dict[str, Any]:
             else {"execution_contract": None}}
     _read_typed_arguments(steps, links, nodes)
     for step, node, made in zip(steps, nodes, compile_flow(flow)["nodes"]):
-        step["ext"] = _extension(node, made)
+        step["ext"] = _extension(node, made, step["type"])
     return settled_flow(flow)
 
 
@@ -417,8 +426,6 @@ def _link_of(edge: dict[str, str]) -> dict[str, str]:
 
 def _bare_step(node: dict[str, Any]) -> dict[str, Any]:
     """The typed fields of one node's step, before its arguments and `ext` are read."""
-    if node["kind"] != "task" and "role_id" in node:
-        raise FlowImportError(f"node {node['node_id']!r} is a {node['kind']} that binds a role")
     kind = {"gate": "human", "loop": "loop"}.get(node["kind"]) or (
         "agent" if "capability" in node else "route")
     step: dict[str, Any] = {
@@ -481,14 +488,17 @@ def _extra_reads(refs: object, candidates: set[str], order: dict[str, int]) -> l
     return sorted(named & candidates, key=order.__getitem__)
 
 
-def _extension(node: dict[str, Any], made: dict[str, Any]) -> dict[str, Any]:
+def _extension(node: dict[str, Any], made: dict[str, Any], kind: str) -> dict[str, Any]:
     """The keys of a document node that the compiler would not write itself, with their values.
 
     A key the compiler writes and the document lacks is said as null; the only one that can
     happen is `success_requires` on a gate that demands nothing, and null means "not written".
+    A gate or a loop, whose step types have no role of their own, also keeps the role keys the
+    node carries.
     """
     ext: dict[str, Any] = {}
-    for key in _EXT_ORDER:
+    keys = (*_BOUND_ORDER, *_EXT_ORDER) if kind in ("human", "loop") else _EXT_ORDER
+    for key in keys:
         if key in node:
             if key not in made or node[key] != made[key]:
                 ext[key] = copy.deepcopy(node[key])

@@ -20,6 +20,7 @@ CAPPED = (
     "src/conductor/command/workflow_flow.py",
     "tests/test_command_line_cap.py",
     "tests/test_command_flow_fixtures.py",
+    "tests/test_command_flow_import_corners.py",
     "tests/test_command_flow_routes.py",
     "tests/test_command_flow_rules.py",
     "tests/test_command_plan_budget.py",
