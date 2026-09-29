@@ -35,18 +35,20 @@ import {GIT_EXITS, GIT_SENTENCES, MATERIAL_KINDS, REFUSALS, bodyOf, documentCard
 import {WIZARD_STARTERS, cardsOf, factsOf, flowBody, isFlowState, preselect}
   from "./desk-wizard-cycle.js";
 import {NOTES, QUOTA_REASONS, ROLE_KINDS, argvFit, offersFor, quotaOf, roleKind, rolesOf,
-  rosterOf, suggest} from "./desk-wizard-roles.js";
+  rosterOf, rosterState, suggest} from "./desk-wizard-roles.js";
 import {BUILT_STEPS, LIMITS, STEPS, briefDocument, evolve, frozen, inputChars, taskText,
   utf8Bytes} from "./desk-wizard-base.js";
 import {answerHistory, assignRole, assignmentView, bindingNow, editInstruction, hasProviders,
   historyAsks, instructionFields, likeInstruction, ownInstruction,
-  previousAssignment, rolesGate, rolesPublication, syncBinding} from "./desk-wizard-team.js";
+  previousAssignment, rolesGate, rolesPublication, rosterStatus, syncBinding}
+  from "./desk-wizard-team.js";
 
 //: The one starter the hash may name (spec 4.5.2). The two ready cycles the wizard offers as
 //: cards are the cycle module's, re-exported here as the wizard's one vocabulary.
 export const HASH_STARTERS = Object.freeze(["desk-starter-docs"]);
 export {STEPS, BUILT_STEPS, LIMITS, MATERIAL_KINDS, WIZARD_STARTERS, argvFit, briefDocument,
-  inputChars, offersFor, quotaOf, roleKind, rolesOf, rosterOf, taskText, utf8Bytes,
+  inputChars, offersFor, quotaOf, roleKind, rolesOf, rosterOf, rosterState, rosterStatus,
+  taskText, utf8Bytes,
   assignmentView, hasProviders, instructionFields, previousAssignment,
   GIT_EXITS, GIT_SENTENCES, NOTES, QUOTA_REASONS, REFUSALS, ROLE_KINDS};
 export const suggestAssignment = suggest;
@@ -58,7 +60,8 @@ export const REASONS = Object.freeze([
   "materials_over_bytes",
   "cycle_none", "flow_pending", "flow_conflict", "flow_changed_elsewhere", "flow_refused",
   "flow_unknown", "flow_unpublishable",
-  "no_providers", "roles_unassigned", "instruction_empty", "instruction_too_large",
+  "no_providers", "roster_pending", "roles_unassigned", "instruction_empty",
+  "instruction_too_large",
   "instruction_argv_over", "binding_pending", "binding_rows"]);
 //: The controls whose door a later slice opens. Each is drawn disabled with its reason and
 //: never as a button that does nothing.

@@ -1,8 +1,9 @@
 """The wizard model's step 4 ("Роли и указания"): roles, harness offers, instruction fields.
 
 The roster, the quotas and the previous run are stand-in reads under `tests/fixtures/wizard/`
-(the provider rows carry the three facts the wizard needs: `capabilities`, `task_channel`,
-`offered`); the flows are lane L's fixtures. Every test is a value, run through the real module.
+(the provider rows are the server's own, with its `controls` for the roads, plus the two facts
+still owed by it: `offered` and `task_channel`); the flows are lane L's fixtures. Every test is a
+value, run through the real module.
 """
 from __future__ import annotations
 
@@ -14,6 +15,7 @@ FLOWS = {"standard": fixture("flow", "desk-standard.flow-state.json"),
          "tester": fixture("flow", "desk-standard-tester.flow-state.json"),
          "dalio": fixture("flow", "dalio-v5.flow-state.json")}
 DATA = {"flows": FLOWS, "workflows": fixture("wizard", "workflows.json"),
+        "served": fixture("wizard", "workflows_served.json"),
         "runs": fixture("wizard", "runs.json"), "tasks": fixture("wizard", "tasks.json"),
         "unpinned": fixture("wizard", "project_cycle_none.json"),
         "pinned": fixture("wizard", "project_cycle.json"),
@@ -85,6 +87,47 @@ def test_the_roster_says_whether_any_harness_is_offered_to_anyone():
                    "before_any_read": False}
 
 
+def test_the_roads_are_read_from_controls_and_a_row_with_only_the_servers_keys_is_pending():
+    out = run_js(ROLES + """
+      const rows = d.workflows.providers;
+      const hidden = rows.map((row) => ({...row, offered: false}));
+      const noChannel = rows.map(({task_channel, ...row}) => row);
+      const oldShape = {provider_id: "x", display_name: "X", availability: "available",
+        capabilities: ["dispatch"], offered: true, task_channel: null};
+      show({roads: wiz.rosterOf(rows).map((row) => [row.id, row.roads]),
+        served: [wiz.rosterOf(d.served.providers), wiz.rosterState(d.served.providers)],
+        full: wiz.rosterState(rows), none: [wiz.rosterState([]), wiz.rosterState(null)],
+        hidden: wiz.rosterState(hidden), no_channel: wiz.rosterState(noChannel),
+        one_bare: wiz.rosterState([...rows, d.served.providers[0]]),
+        old_shape: wiz.rosterOf([oldShape]).map((row) => row.roads)});
+    """, DATA)
+    assert out["roads"] == [["claude-code", ["dispatch", "review"]],
+                            ["codex", ["dispatch", "review"]], ["grok-build", ["dispatch"]],
+                            ["kimi-code", ["dispatch"]], ["deepseek-harness", ["dispatch"]]]
+    assert out["served"] == [[], "pending"], "the row the server serves today has no offered flag"
+    assert out["full"] == "ready" and out["none"] == ["none", "none"]
+    assert out["hidden"] == "none", "rows that all say not offered: nothing is offered"
+    assert out["no_channel"] == "pending" and out["one_bare"] == "pending"
+    assert out["old_shape"] == [[]], "`capabilities` is not a field of the server's row"
+
+
+def test_a_server_without_the_owed_facts_blocks_step_four_with_its_own_reason_not_none():
+    out = run_js(ROLES + """
+      const hidden = {...structuredClone(d.workflows),
+        providers: d.workflows.providers.map((row) => ({...row, offered: false}))};
+      const none = {...structuredClone(d.workflows), providers: []};
+      const status = (state) => [wiz.rosterStatus(state), gate(state), wiz.hasProviders(state)];
+      show({served: status(atRoles({workflows: d.served})),
+        none: status(atRoles({workflows: none})), hidden: status(atRoles({workflows: hidden})),
+        full: status(standardAt("desk-standard"))});
+    """, DATA)
+    assert out["served"] == ["pending", "roster_pending", False]
+    assert out["none"] == ["none", "no_providers", False]
+    assert out["hidden"] == ["none", "no_providers", False]
+    assert out["full"][0] == "ready" and out["full"][2] is True
+    assert out["full"][1] not in ("roster_pending", "no_providers")
+
+
 def test_role_kinds_read_the_name_and_a_numbered_role_is_the_same_kind_again():
     out = run_js(ROLES + """
       show(["role-doer", "role-doer-2", "role-checker", "role-thinker", "doer", "role-", ""]
@@ -116,7 +159,7 @@ def test_a_harness_the_owner_hid_for_version_two_is_never_offered():
       const tried = wiz.reduceWizard(state, {type: "role-assign", role_id: "role-doer",
         provider_id: "qwen-code"});
       const bare = wiz.rosterOf([{provider_id: "x", display_name: "X",
-        availability: "available", capabilities: ["dispatch"]}]);
+        availability: "available", controls: ["dispatch"], task_channel: null}]);
       show({roster: wiz.rosterOf(d.workflows.providers).map((row) => row.id),
         offered_anywhere: rows.some((row) => row.offers.some((one) => one.id === "qwen-code")),
         assigned_anywhere: rows.some((row) => row.provider === "qwen-code"),

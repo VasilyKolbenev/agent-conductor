@@ -16,9 +16,9 @@ import {element} from "./command-view.js";
 import {localize} from "./studio-i18n.js";
 import {WIZARD_COPY} from "./desk-wizard-copy.js";
 import {BUILT_STEPS, LIMITS, RETRYABLE, agentInstructionsRow, assignmentView, availableKinds,
-  canAdvance, closeNeedsWarning, cycleCards, cycleFacts, documentPicker, gitReading, hasProviders,
-  instructionFields, materialsEstimate, nextStep, preselection, stepStates, taskFields}
-  from "./desk-wizard-model.js";
+  canAdvance, closeNeedsWarning, cycleCards, cycleFacts, documentPicker, gitReading,
+  instructionFields, materialsEstimate, nextStep, preselection, rosterStatus, stepStates,
+  taskFields} from "./desk-wizard-model.js";
 
 function modeOf(wizard) {
   if (wizard.mode.starterId !== null) return "starter";
@@ -552,9 +552,10 @@ function instructionView(ctx, field) {
 
 function rolesBody(ctx) {
   const heading = element("h3", {text: ctx.t("wizard.roles.heading")});
-  if (!hasProviders(ctx.wizard)) {
-    return [heading, element("p", {"data-providers-none": "",
-      text: ctx.t("wizard.providers.none")})];
+  const roster = rosterStatus(ctx.wizard);
+  if (roster !== "ready") {
+    return [heading, element("p", {[`data-providers-${roster}`]: "",
+      text: ctx.t(`wizard.providers.${roster}`)})];
   }
   const facts = cycleFacts(ctx.wizard), fields = instructionFields(ctx.wizard, ctx.lang);
   const none = fields.length === 0

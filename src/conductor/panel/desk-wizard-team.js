@@ -10,7 +10,7 @@ import {BUILT_STEPS, LIMITS, evolve, inputChars, isLanguage, taskText, utf8Bytes
   from "./desk-wizard-base.js";
 import {factsOf} from "./desk-wizard-cycle.js";
 import {BINDING_CODES, argvFit, assignmentFrom, fieldsOf, offersFor, previousRun, quotaOf,
-  rolesOf, rosterOf, suggest} from "./desk-wizard-roles.js";
+  rolesOf, rosterOf, rosterState, suggest} from "./desk-wizard-roles.js";
 
 export function heldFlow(state) {
   const {choice, flow, flowFor} = state.cycle;
@@ -22,9 +22,15 @@ function providersOf(state) {
   return read && read.status === "ok" ? read.payload?.providers ?? [] : [];
 }
 
-//: Whether any harness is offered at all: with none, the step says so and cannot be left.
+//: `ready`, `none` (no harness is offered) or `pending` (the server has not said which are): the
+//: step says which of the last two it is and cannot be left.
+export function rosterStatus(state) {
+  return rosterState(providersOf(state));
+}
+
+//: Whether any harness is offered at all.
 export function hasProviders(state) {
-  return rosterOf(providersOf(state)).length > 0;
+  return rosterStatus(state) === "ready";
 }
 
 function quotasOf(state) {
@@ -110,7 +116,8 @@ export function instructionFields(state, lang) {
 }
 
 export function rolesGate(state) {
-  if (rosterOf(providersOf(state)).length === 0) return "no_providers";
+  const roster = rosterStatus(state);
+  if (roster !== "ready") return roster === "pending" ? "roster_pending" : "no_providers";
   if (assignmentView(state).some((row) => row.provider === null)) return "roles_unassigned";
   const fields = instructionFields(state, "ru");
   const own = fields.filter((one) => one.source !== "like");

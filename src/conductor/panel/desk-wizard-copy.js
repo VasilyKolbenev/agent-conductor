@@ -331,6 +331,9 @@ export const WIZARD_COPY = Object.freeze({
   "wizard.providers.none": ["No harnesses are set up. Run `conduct providers`, or edit the "
     + "providers file.", "Ни одного харнесса не настроено. Выполните `conduct providers` "
     + "или правьте файл провайдеров."],
+  "wizard.providers.pending": ["The server has not yet said which harnesses this version offers, "
+    + "so none can be assigned yet.", "Сервер пока не сообщил, какие харнессы предлагает эта "
+    + "версия, поэтому назначить харнесс пока нельзя."],
   "wizard.instr.none": ["No step of this cycle carries out work, so it needs no instructions.",
     "В этом цикле нет шагов-исполнителей, поэтому указания не нужны."],
   "wizard.instr.field_doer": ["Doer: what to do", "Исполнитель: что сделать"],
@@ -349,6 +352,8 @@ export const WIZARD_COPY = Object.freeze({
     "Командная строка: {chars} из {limit} знаков"],
   "wizard.reason.no_providers": ["No harness is available: set the providers up first.",
     "Нет ни одного харнесса: сначала настройте провайдеров."],
+  "wizard.reason.roster_pending": ["Waiting for the server to say which harnesses are offered.",
+    "Ждём, пока сервер сообщит, какие харнессы предлагаются."],
   "wizard.reason.roles_unassigned": ["Assign a harness to every role.",
     "Назначьте харнесс каждой роли."],
   "wizard.reason.instruction_empty": ["Fill in every required instruction.",

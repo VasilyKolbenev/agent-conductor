@@ -4,8 +4,8 @@
 // Pure functions over the reads and the flow the model hands over, importing nothing: the roles
 // a flow names, which harnesses may take each, a suggestion for the ones the owner leaves alone,
 // and the instruction fields a cycle asks for. The harness facts come from the roster's own rows
-// (`capabilities`, `task_channel`, `offered`); no harness is named here, and a row that does not
-// say it is offered is not offered.
+// (`controls`, and the two facts still owed, `task_channel` and `offered`); no harness is named
+// here, and a row that does not say it is offered is not offered.
 export const ROLE_KINDS = Object.freeze(["analyst", "designer", "diagnostician", "reviewer",
   "doer", "tester", "checker"]);
 //: The closed words the suggestion and the quota reading can say, each with a message.
@@ -70,19 +70,39 @@ export function rolesOf(flow) {
 
 // -- the roster and the quotas -----------------------------------------------------------
 
-//: The harnesses the wizard may offer, from the provider rows. A row that is not `offered`
-//: (the owner's list for this version) is dropped whole, so nothing downstream can name it.
-export function rosterOf(providers) {
+function providerRows(providers) {
   return (Array.isArray(providers) ? providers : []).filter((row) => record(row)
-    && typeof row.provider_id === "string" && row.offered === true).map((row) => {
+    && typeof row.provider_id === "string");
+}
+
+//: The harnesses the wizard may offer, from the provider rows as the server projects them
+//: (`provider_id`, `display_name`, `availability`, `implementation`, `auth`, `controls`,
+//: `vendor_sandbox`): the roads a harness has are its `controls`. Two facts the wizard needs are
+//: not on that row yet and are owed by the server: `offered` (the owner's list for this version)
+//: and `task_channel` (how the harness is fed). A row that is not `offered` is dropped whole, so
+//: nothing downstream can name it.
+export function rosterOf(providers) {
+  return providerRows(providers).filter((row) => row.offered === true).map((row) => {
     const channel = record(row.task_channel) ? row.task_channel : null;
     return {id: row.provider_id,
       name: typeof row.display_name === "string" ? row.display_name : row.provider_id,
       available: row.availability === "available",
-      roads: (Array.isArray(row.capabilities) ? row.capabilities : [])
+      roads: (Array.isArray(row.controls) ? row.controls : [])
         .filter((one) => typeof one === "string"),
       channel: typeof channel?.channel === "string" ? channel.channel : null};
   });
+}
+
+//: Whether the roster can be used, and if not, which of two different things is true: `none`, the
+//: server named no harness this version offers, or `pending`, a row lacks one of the two facts the
+//: server still owes (a boolean `offered`, and the `task_channel` key, null being an answer), so
+//: nothing can be said about who is offered. Saying "none" for "not yet served" would be false.
+export function rosterState(providers) {
+  const rows = providerRows(providers);
+  if (rows.length === 0) return "none";
+  const described = (row) => typeof row.offered === "boolean" && Object.hasOwn(row, "task_channel");
+  if (!rows.every(described)) return "pending";
+  return rosterOf(providers).length === 0 ? "none" : "ready";
 }
 
 export function offersFor(role, roster) {

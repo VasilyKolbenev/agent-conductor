@@ -1,8 +1,9 @@
 """The wizard's step 4 ("Роли и указания") and the starter journey, on the real renderer, RU and EN.
 
 The roster, quotas and last run are the stand-in reads under `tests/fixtures/wizard/` (the provider
-rows carry `capabilities`, `task_channel` and `offered`); the flows are lane L's fixtures. What
-the model decides is in `tests/test_desk_wizard_roles.py`; what is drawn from it is here.
+rows are the server's own plus the two facts it still owes, `offered` and `task_channel`); the
+flows are lane L's fixtures. What the model decides is in `tests/test_desk_wizard_roles.py`; what
+is drawn from it is here.
 """
 from __future__ import annotations
 
@@ -167,6 +168,20 @@ def test_the_no_providers_state_shows_the_no_providers_message_and_blocks_the_st
     assert bench.page.locator("[data-role]").count() == 0
     assert reason(bench) == bench.say("wizard.reason.no_providers")
     assert bench.control("wizard:prepare").is_disabled()
+
+
+@pytest.mark.parametrize("lang", LANGS)
+def test_the_row_as_served_today_says_roster_facts_are_not_served_not_that_none_is_set_up(
+        bench, lang):
+    served = fixture("wizard", "workflows_served.json")
+    to_roles(bench, lang, reads=reads(workflows=ok(served)))
+    assert bench.page.locator("[data-providers-pending]").inner_text() == bench.say(
+        "wizard.providers.pending")
+    assert bench.page.locator("[data-providers-none]").count() == 0, "none is not the same claim"
+    assert bench.page.locator("[data-role]").count() == 0
+    assert reason(bench) == bench.say("wizard.reason.roster_pending")
+    assert bench.control("wizard:prepare").is_disabled()
+    assert bench.problems == []
 
 
 @pytest.mark.parametrize("lang", LANGS)
