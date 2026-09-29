@@ -71,7 +71,7 @@ MODULES = ("studio-runstep-copy.js", "studio-participant-copy.js", "studio-run-d
            "desk-transport.js",
            "desk-wizard-model.js", "desk-wizard-materials.js", "desk-wizard-cycle.js",
            "desk-wizard-roles.js", "desk-wizard-base.js", "desk-wizard-team.js",
-           "desk-wizard-copy.js")
+           "desk-wizard-copy.js", "desk-wizard.js")
 #: The boot module: what each frame and each read MEANS, and the screen router.
 #: It reaches the wire only through the transport module below.
 BOOT = "studio.js"
@@ -146,6 +146,11 @@ PERMITTED_IMPORTS = {
     #: model for the title limit and the three step modules for theirs, and nothing above it.
     "desk-wizard-base.js": frozenset({"./studio-tasks-model.js", "./desk-wizard-materials.js",
                                       "./desk-wizard-roles.js"}),
+    #: The wizard, drawn: `mountWizard` only. It reads the model's slice and the words, builds
+    #: elements through the view's helper, and may import no store, no transport and no other
+    #: screen -- an edit is an event it hands to its host.
+    "desk-wizard.js": frozenset({"./desk-wizard-model.js", "./desk-wizard-copy.js",
+                                 "./command-view.js", "./studio-i18n.js"}),
     #: The wizard's RU/EN strings, one frozen catalogue in the shape of the other copy
     #: modules. It imports nothing: text is data, and `studio-i18n.js` spreads it in.
     "desk-wizard-copy.js": frozenset(),
