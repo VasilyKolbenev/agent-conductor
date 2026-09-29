@@ -337,6 +337,102 @@ def test_the_desk_boot_check_refuses_each_defect_and_names_it(edit, needle):
     assert any(needle in fault for fault in faults), faults
 
 
+# -- the boot module writes nothing ----------------------------------------------
+#
+# Facts enter the desk through a READ and through nothing else, and this module is the
+# one that turns a read into a word on a region. It may not reach the mutation door
+# (the transport's `submit`, its session drop and its stream), open a door of its own,
+# or say a state word the seven do not hold. The doors are named, not counted: the
+# function reads the module's code, comments stripped, so prose that says "submit"
+# does not red and a real call does.
+
+#: What reaches a write, or a door of the module's own. Each is a word of the code.
+WRITE_DOORS = (r"\bsubmit\b", r"\bdropSession\b", r"\bopenStream\b", r"\bfetch\s*\(",
+               r"\bmethod\s*:", r'"POST"', r"\bXMLHttpRequest\b", r"\bsendBeacon\b")
+#: The functions whose returns ARE phases: every word they return is a state word.
+PHASE_FUNCTIONS = ("phaseOf", "worst")
+
+
+def _function_body(code: str, name: str) -> str:
+    start = re.search(rf"function\s+{name}\s*\([^)]*\)\s*\{{", code)
+    if start is None:
+        return ""
+    depth, at = 1, start.end()
+    while at < len(code) and depth:
+        depth += (code[at] == "{") - (code[at] == "}")
+        at += 1
+    return code[start.end():at]
+
+
+def _state_words(code: str) -> set[str]:
+    """Every literal the module puts in a state position: a mark, an attribute, a phase."""
+    words = set(re.findall(r'\bmark\([^,()]+,\s*"([^"]*)"\s*\)', code))
+    words |= set(re.findall(r'data-state"\s*,\s*"([^"]*)"', code))
+    words |= set(re.findall(r'\bdataset\.state\s*=\s*"([^"]*)"', code))
+    words |= set(re.findall(r'\bphase\s*:\s*"([^"]*)"', code))
+    for name in PHASE_FUNCTIONS:
+        words |= set(re.findall(r'"([a-z]+)"', _function_body(code, name)))
+    return words
+
+
+def desk_write_faults(source: str) -> list[str]:
+    """Every way a desk module reaches a write door or says a stray state word.
+
+    Args:
+        source: The text of one desk module.
+
+    Returns:
+        One sentence per fault; empty when the module only reads and says the seven.
+    """
+    code = strip_comments(source)
+    faults = [f"reaches a write door: {found.group(0)}"
+              for pattern in WRITE_DOORS for found in re.finditer(pattern, code)]
+    faults += [f"writes the state word {word!r}, which is not one of the seven"
+               for word in sorted(_state_words(code) - set(SCREEN_STATES))]
+    return faults
+
+
+#: Each defect the guard claims to refuse: the edit that plants it in a copy of the real
+#: module, and a word its fault must contain.
+BOOT_WRITES = {
+    "a submit taken from the transport": (
+        _edit("const {readJson} = createTransport(locale);",
+              "const {readJson, submit} = createTransport(locale);"), "write door"),
+    "a session drop": (lambda text: text + "\ndropSession();\n", "write door"),
+    "a stream opened by the boot module": (lambda text: text + "\nopenStream();\n",
+                                           "write door"),
+    "a POST method": (lambda text: text + '\nconst OPTIONS = {method: "POST"};\n',
+                      "write door"),
+    "a door of its own": (lambda text: text + '\nfetch("/command/tasks");\n', "write door"),
+    "a state word the seven do not hold, through mark": (
+        _edit('mark(shell, "loading");', 'mark(shell, "done");'), "'done'"),
+    "a phase word the seven do not hold, returned": (
+        _edit('phases.includes("refused") ? "refused" : "ready"',
+              'phases.includes("refused") ? "refused" : "finished"'), "'finished'"),
+    "a state word through setAttribute": (
+        lambda text: text + '\nnode.setAttribute("data-state", "ok");\n', "'ok'"),
+    "a state word through dataset": (
+        lambda text: text + '\nnode.dataset.state = "idle";\n', "'idle'"),
+}
+
+
+def test_the_desk_boot_module_writes_nothing_and_says_only_the_seven_state_words():
+    assert len(SCREEN_STATES) == 7
+    assert desk_write_faults(DESK_SCRIPT.read_text(encoding="utf-8")) == []
+
+
+@pytest.mark.parametrize("edit,needle", list(BOOT_WRITES.values()), ids=list(BOOT_WRITES))
+def test_the_desk_write_check_refuses_each_planted_write_and_names_it(edit, needle):
+    faults = desk_write_faults(edit(DESK_SCRIPT.read_text(encoding="utf-8")))
+    assert faults, "a defective module was accepted"
+    assert any(needle in fault for fault in faults), faults
+
+
+def test_the_desk_write_check_reads_code_and_not_the_prose_around_it():
+    prose = '// it never calls submit() and never says "done" in mark(shell, "done")\n'
+    assert desk_write_faults(prose + DESK_SCRIPT.read_text(encoding="utf-8")) == []
+
+
 # -- the partition over studio*, desk* and hub* ---------------------------------
 #
 # `test_studio_source.py` holds the real directory to `partition_faults`; what is
