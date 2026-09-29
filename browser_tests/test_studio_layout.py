@@ -456,7 +456,7 @@ def test_the_chosen_starters_note_is_drawn_whole_under_the_control(
             "items => items.map(item => item.value)")
         noted = [row for row in options if row.endswith("— see the note")]
         ready = [row for row in options if row.endswith("— ready to run")]
-        assert len(noted) == 1 and len(ready) == 4, options
+        assert len(noted) == 1 and len(ready) == 7, options
         note = page.locator("#workflowToolbar [data-starter-note]")
         assert note.inner_text() == "A blank start is an empty drawing."
         select.select_option(values[options.index(noted[0])])

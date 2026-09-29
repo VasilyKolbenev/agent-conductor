@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "template_id": "desk-starter-docs",
+  "revision": 1,
+  "title": "Starter documents",
+  "nodes": [
+    {
+      "node_id": "plan",
+      "kind": "task",
+      "title": "Analyst",
+      "purpose": "Turn the idea into a project plan: goal, scope, stages and open questions. Answer in the language of the brief.",
+      "timeout_seconds": 1800,
+      "role_id": "role-analyst",
+      "capability": "review",
+      "arguments": {
+        "work_item_id": "work-001",
+        "target_artifact_refs": [
+          "artifact-brief",
+          "artifact-materials"
+        ],
+        "result_artifact_ref": "artifact-plan",
+        "review_profile": "spec"
+      },
+      "resources": []
+    },
+    {
+      "node_id": "ideas",
+      "kind": "task",
+      "title": "Reviewer",
+      "purpose": "List ideas and risks for the plan, each with a short reason. Answer in the language of the brief.",
+      "timeout_seconds": 1800,
+      "role_id": "role-reviewer",
+      "capability": "review",
+      "arguments": {
+        "work_item_id": "work-001",
+        "target_artifact_refs": [
+          "artifact-plan"
+        ],
+        "result_artifact_ref": "artifact-ideas",
+        "review_profile": "quality"
+      },
+      "resources": []
+    },
+    {
+      "node_id": "scheme",
+      "kind": "task",
+      "title": "Designer",
+      "purpose": "Draw the project scheme as Mermaid text from the plan and the ideas. Answer in the language of the brief.",
+      "timeout_seconds": 1800,
+      "role_id": "role-designer",
+      "capability": "review",
+      "arguments": {
+        "work_item_id": "work-001",
+        "target_artifact_refs": [
+          "artifact-plan",
+          "artifact-ideas"
+        ],
+        "result_artifact_ref": "artifact-scheme",
+        "review_profile": "spec"
+      },
+      "resources": []
+    },
+    {
+      "node_id": "result",
+      "kind": "gate",
+      "title": "Decision",
+      "gate_id": "gate-result",
+      "success_requires": "human_approval",
+      "resources": []
+    }
+  ],
+  "edges": [
+    {
+      "from_node": "plan",
+      "to_node": "ideas",
+      "condition": "on_succeeded"
+    },
+    {
+      "from_node": "ideas",
+      "to_node": "scheme",
+      "condition": "on_succeeded"
+    },
+    {
+      "from_node": "scheme",
+      "to_node": "result",
+      "condition": "on_succeeded"
+    }
+  ],
+  "execution_contract": "bounded-run-v1"
+}

@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "template_id": "desk-short",
+  "revision": 1,
+  "title": "Short",
+  "nodes": [
+    {
+      "node_id": "do",
+      "kind": "task",
+      "title": "Doer",
+      "purpose": "Carry out the task in the project folder following the instruction, the brief and the materials. Answer in the language of the brief.",
+      "timeout_seconds": 1800,
+      "role_id": "role-doer",
+      "capability": "dispatch",
+      "verifier_role_id": "role-checker",
+      "arguments": {
+        "work_item_id": "work-001",
+        "instruction_ref": "instruction-do",
+        "profile": "implement",
+        "artifact_refs": [
+          "artifact-brief",
+          "artifact-materials"
+        ],
+        "output_limit_profile": "normal"
+      },
+      "resources": [
+        {
+          "kind": "sandbox",
+          "name": "project-root"
+        }
+      ]
+    },
+    {
+      "node_id": "result",
+      "kind": "gate",
+      "title": "Decision",
+      "gate_id": "gate-result",
+      "success_requires": "human_approval",
+      "resources": []
+    },
+    {
+      "node_id": "do-fix",
+      "kind": "loop",
+      "title": "Loop",
+      "loop": {
+        "bound": 2,
+        "back_to": "do"
+      },
+      "resources": []
+    }
+  ],
+  "edges": [
+    {
+      "from_node": "do",
+      "to_node": "result",
+      "condition": "on_succeeded"
+    },
+    {
+      "from_node": "do",
+      "to_node": "do-fix",
+      "condition": "on_failed"
+    }
+  ],
+  "execution_contract": "bounded-run-v1"
+}
