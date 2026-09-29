@@ -52,6 +52,11 @@ const UNUSABLE = Object.freeze({phase: "failed", list: NONE});
 const NO_RUN = Object.freeze({phase: "empty", detail: null, absent: null});
 const READING_RUN = Object.freeze({phase: "loading", detail: null, absent: null});
 const UNUSABLE_RUN = Object.freeze({phase: "failed", detail: null, absent: null});
+//: The word of the live connection the scene is drawn under. The desk opens no stream yet,
+//: so nothing it draws is confirmed live and the word is the Studio's own `closed`: the
+//: deck then says a gate as an attention it cannot confirm and marks no active step, as it
+//: does in the Studio once its stream has dropped. The stream slice turns this into state.
+const NO_STREAM = "closed";
 //: What the transport answers when the wire gave no answer at all: the read was
 //: abandoned at its deadline, or the request could not be made. Any other answer
 //: is the server's own refusal.
@@ -122,7 +127,7 @@ function render() {
   const said = words();
   const view = {locale: locale(), listed: said.rail === "ready", tasks: state.tasks,
     runs: state.runs, automation: state.automation, taskId: state.taskId, run: state.run,
-    task: state.tasks.list.find((row) => row.task_id === state.taskId) ?? null};
+    connection: NO_STREAM, task: state.tasks.list.find((row) => row.task_id === state.taskId) ?? null};
   mountRail(byId("deskRail"), view, handlers);
   mountScene(byId("deskScene"), view, handlers);
   mark(byId("deskRail"), said.rail);

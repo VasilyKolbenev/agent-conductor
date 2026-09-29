@@ -433,14 +433,18 @@ def test_pressing_a_row_marks_it_alone_and_the_keyboard_keeps_its_place(desk_in)
 # one; the deck's own inner workings are the Studio's and have their own browser modules.
 FIX_STEPS = 8
 #: What the scene of `task-fix` (its newest run stands at the Confirm gate) says, per language.
+#: The desk opens no stream, so nothing on the scene is confirmed live and the gate is said
+#: as `unconfirmed` (the Studio's own word for a decision it cannot vouch for), not as a
+#: decision needed.
 SCENE_WORDS = {
-    "en": {"team": "Run team", "lenses": ["Trace", "Orbit"], "gate": "Decision needed",
+    "en": {"team": "Run team", "lenses": ["Trace", "Orbit"], "unconfirmed": "Attention unconfirmed",
            "subject": "Fix lost text · run run-fix-new", "none": "This task has no run yet.",
            "choose": "Choose a task to see its newest run.",
            "unknown": "The newest run of this task cannot be established: a run record "
                       "cannot be read.",
            "unreadable": "This task cannot be read, so there is no run to show."},
-    "ru": {"team": "Команда запуска", "lenses": ["Трасса", "Орбита"], "gate": "Нужно решение",
+    "ru": {"team": "Команда запуска", "lenses": ["Трасса", "Орбита"],
+           "unconfirmed": "Участие не подтверждено",
            "subject": "Fix lost text · запуск run-fix-new",
            "none": "У этой задачи ещё нет запусков.",
            "choose": "Выберите задачу, чтобы увидеть её новейший запуск.",
@@ -470,6 +474,9 @@ SCENE_FACTS = """() => {
     steps: document.querySelectorAll("#deskScene .studio-trace__step").length,
     gates: [...document.querySelectorAll(
       '#deskScene .studio-trace__step[data-word="needs_decision"]')].map((node) => node.innerText),
+    unconfirmed: [...document.querySelectorAll(
+      '#deskScene .studio-trace__step[data-word="attention_unconfirmed"]')].map(
+      (node) => node.innerText),
     planets: [...document.querySelectorAll(
       "#deskScene [data-trassa-instance], #deskScene [data-instance]")].map(
       (node) => ({id: node.dataset.trassaInstance || node.dataset.instance,
@@ -515,7 +522,8 @@ def test_choosing_a_task_mounts_the_trace_for_its_newest_run_and_only_reads(desk
         "ready", words["subject"], ["task-fix"])
     assert facts["lenses"] == words["lenses"] and facts["pressed"] == ["true", "false"]
     assert facts["traceShown"] and not facts["fleetShown"] and facts["steps"] == FIX_STEPS
-    assert len(facts["gates"]) == 1 and words["gate"] in facts["gates"][0]
+    assert facts["gates"] == []
+    assert len(facts["unconfirmed"]) == 1 and words["unconfirmed"] in facts["unconfirmed"][0]
     assert [row["id"] for row in facts["planets"] if row["shown"]] == ["claude-dev"]
     detail = sorted(path for _method, path, _header in window.asked
                     if path.startswith("/command/runs/") and not path.endswith("/automation"))
