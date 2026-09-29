@@ -19,6 +19,7 @@ CAPPED = (
     "src/conductor/command/product_names.py",
     "src/conductor/command/project_cycle.py",
     "src/conductor/command/project_git.py",
+    "src/conductor/command/seed_record.py",
     "src/conductor/command/task_preparation.py",
     "src/conductor/command/workflow_flow.py",
     "tests/test_command_line_cap.py",
@@ -38,6 +39,7 @@ CAPPED = (
     "tests/test_preview_draft.py",
     "tests/test_preview_stale_refusal.py",
     "tests/test_project_not_active_refusal.py",
+    "tests/test_seed_record.py",
     "tests/test_slot_busy_refusal.py",
     "tests/test_task_preparation.py",
 )
