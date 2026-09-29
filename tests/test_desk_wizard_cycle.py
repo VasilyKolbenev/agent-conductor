@@ -139,12 +139,12 @@ def test_preselection_takes_the_pinned_cycle_then_the_last_runs_workflow_and_nam
         applied: [settled().cycle.choice, settled().cycle.chosenBy],
         applied_last: [settled(d.unpinned).cycle.choice, settled(d.unpinned).cycle.chosenBy]});
     """, DATA)
-    assert out["pinned"] == {"ready": True, "pinnedUnread": False,
+    assert out["pinned"] == {"ready": True, "pinnedUnread": False, "workflowsUnread": False,
                              "choice": {"kind": "saved", "workflowId": "cycle-7c1e5a90"},
                              "source": {"kind": "pinned", "by": "Вы: Василий",
                                         "at": "2026-09-28T13:50:00Z", "task": None,
                                         "taskTitle": None, "workflowId": "cycle-7c1e5a90"}}
-    assert out["last_run"] == {"ready": True, "pinnedUnread": False,
+    assert out["last_run"] == {"ready": True, "pinnedUnread": False, "workflowsUnread": False,
                                "choice": {"kind": "starter", "workflowId": "desk-standard"},
                                "source": {"kind": "last_run", "by": None,
                                           "at": "2026-09-28T13:50:00Z", "task": "task-b",
@@ -210,6 +210,40 @@ def test_an_unread_pinned_cycle_falls_back_to_the_last_run_and_says_nothing_fals
                              "last_run"]
     assert out["lost_unread"] is True and out["none_pinned_is_not_unread"] is False
     assert out["applied"] == ["desk-standard", "preselection"]
+
+
+def test_an_unread_list_of_cycles_chooses_nothing_and_no_pin_or_run_is_called_absent():
+    """The pin and the runs were read but the list they are looked up in was not: unknown."""
+    out = run_js(CYCLE + """
+      const unread = (result, pin, runs = d.runs) => {
+        let state = reply(opened(atCycle()), "workflows", null, result);
+        for (const [name, payload] of [["runs", runs], ["cycle_read", pin], ["tasks", d.tasks]]) {
+          state = reply(state, name, payload);
+        }
+        return state;
+      };
+      const newestOn = (workflowId) => {
+        const runs = structuredClone(d.runs);
+        runs.runs[1].workflow_id = workflowId;
+        return runs;
+      };
+      const refused = {status: "refused", code: "store_error"}, lost = {status: "unknown"};
+      const seen = (state) => {
+        const found = wiz.preselection(state.reads);
+        return {ready: found.ready, unread: found.workflowsUnread, choice: found.choice,
+          source: found.source.kind, applied: [state.cycle.choice, state.cycle.chosenBy],
+          gate: wiz.canAdvance(state).reason};
+      };
+      show({pinned: seen(unread(refused, d.pinned)), pinned_lost: seen(unread(lost, d.pinned)),
+        unpinned_saved_run: seen(unread(refused, d.unpinned, newestOn("cycle-7c1e5a90"))),
+        unpinned_starter_run: seen(unread(refused, d.unpinned)),
+        read: seen(settled(d.unpinned))});
+    """, DATA)
+    nothing = {"ready": True, "unread": True, "choice": None, "source": "none",
+               "applied": [None, None], "gate": "cycle_none"}
+    unread = ("pinned", "pinned_lost", "unpinned_saved_run", "unpinned_starter_run")
+    assert {name: out[name] for name in unread} == dict.fromkeys(unread, nothing)
+    assert out["read"]["unread"] is False and out["read"]["source"] == "last_run"
 
 
 def test_choosing_a_card_asks_for_the_flow_with_no_publication():

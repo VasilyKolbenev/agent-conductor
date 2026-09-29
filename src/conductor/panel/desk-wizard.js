@@ -370,10 +370,15 @@ function sourceLine(ctx) {
   return text === null ? [] : [element("p", {"data-cycle-source": source.kind, text})];
 }
 
-//: A pinned cycle that could not be read is said to be unread, never to be absent.
+//: A pinned cycle, or the list of cycles, that could not be read is said to be unread, never to be
+//: absent.
 function unreadNote(ctx) {
-  if (ctx.wizard.mode.starterId !== null || !preselection(ctx.wizard.reads).pinnedUnread) return [];
-  return [element("p", {"data-cycle-unread": "", text: ctx.t("wizard.cycle.pinned_unread")})];
+  if (ctx.wizard.mode.starterId !== null) return [];
+  const {pinnedUnread, workflowsUnread} = preselection(ctx.wizard.reads);
+  const note = (name, key) => element("p", {[name]: "", text: ctx.t(key)});
+  return [...(pinnedUnread ? [note("data-cycle-unread", "wizard.cycle.pinned_unread")] : []),
+    ...(workflowsUnread ? [note("data-cycle-workflows-unread", "wizard.cycle.workflows_unread")]
+      : [])];
 }
 
 function cardName(ctx, card) {

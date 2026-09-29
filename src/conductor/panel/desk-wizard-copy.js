@@ -197,6 +197,10 @@ export const WIZARD_COPY = Object.freeze({
     + "Выберите цикл."],
   "wizard.cycle.pinned_unread": ["The project cycle could not be read, so nothing is said about it.",
     "Цикл проекта не удалось прочитать, поэтому о нём ничего не сказано."],
+  "wizard.cycle.workflows_unread": ["The list of cycles could not be read, so no cycle is chosen "
+    + "beforehand and nothing is said about the project cycle or the last run.",
+    "Список циклов не удалось прочитать, поэтому цикл заранее не выбран и о цикле проекта "
+    + "и прошлом запуске ничего не сказано."],
   "wizard.flow.pending": ["Asking the server about this cycle…",
     "Спрашиваем сервер об этом цикле…"],
   "wizard.flow.changed": ["The cycle was changed in another window. Try again.",

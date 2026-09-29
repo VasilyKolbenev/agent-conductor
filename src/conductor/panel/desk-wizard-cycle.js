@@ -87,15 +87,19 @@ function choiceOf(card) {
 //: card (spec 7.10). It says where the choice came from, and says only what was read: a pinned
 //: cycle that could not be read is reported as unread, never as absent, and a last run whose
 //: workflow is not offered here (`last_run_uncarded`) chooses nothing and names that workflow,
-//: instead of choosing an older run's cycle under the words "the last run".
+//: instead of choosing an older run's cycle under the words "the last run". The pin and the last
+//: run are looked up in the list of cycles, so when that list could not be read
+//: (`workflowsUnread`) a cycle missing from it is unknown, not absent: nothing is chosen and no
+//: source is claimed.
 export function preselect(reads) {
   const cards = cardsOf(reads, null).filter((card) => card.kind !== "build");
   const cardFor = (id) => cards.find((card) => card.workflowId === id) ?? null;
   const base = {ready: ["workflows", "runs", "cycle_read"].every((name) => reads[name]),
-    pinnedUnread: reads.cycle_read !== undefined && reads.cycle_read.status !== "ok"};
+    pinnedUnread: reads.cycle_read !== undefined && reads.cycle_read.status !== "ok",
+    workflowsUnread: reads.workflows !== undefined && reads.workflows.status !== "ok"};
   //: Nothing is chosen while a read is out: the last run's cycle would be false if the pinned
   //: one has not been heard yet.
-  if (!base.ready) return {...base, choice: null, source: NO_SOURCE};
+  if (!base.ready || base.workflowsUnread) return {...base, choice: null, source: NO_SOURCE};
   const pinned = pinnedOf(reads.cycle_read);
   const byPin = pinned === null ? null : cardFor(pinned.workflow_id);
   if (byPin !== null) {

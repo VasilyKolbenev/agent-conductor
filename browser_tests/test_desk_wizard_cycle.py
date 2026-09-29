@@ -112,6 +112,27 @@ def test_an_unread_pinned_cycle_says_it_could_not_be_read_and_claims_nothing_mor
 
 
 @pytest.mark.parametrize("lang", LANGS)
+@pytest.mark.parametrize("pinned", [True, False], ids=["pinned", "unpinned"])
+def test_an_unread_list_of_cycles_is_said_and_no_cycle_is_chosen_or_called_missing(
+        bench, lang, pinned):
+    runs = fixture("wizard", "runs.json")
+    runs["runs"][1]["workflow_id"] = "cycle-7c1e5a90"
+    refused = {"status": "refused", "code": "store_error", "payload": None}
+    over = {"cycle_read": ok(PINNED)} if pinned else {}
+    to_step(bench, lang, "cycle", reads=reads(workflows=refused, runs=ok(runs), **over))
+    assert bench.page.locator("[data-cycle-workflows-unread]").inner_text() == bench.say(
+        "wizard.cycle.workflows_unread")
+    assert bench.page.locator("[data-cycle-source]").count() == 0, "no source is claimed"
+    assert bench.page.locator('[data-card-id][data-chosen="true"]').count() == 0
+    assert bench.control("wizard:next").is_disabled()
+    assert bench.text("[data-wizard-reason]") == bench.say("wizard.reason.cycle_none")
+    bench.control("wizard:cycle:choose:desk-short").click()
+    expect(bench.page.locator('[data-card-id="desk-short"]')).to_have_attribute(
+        "data-chosen", "true")
+    assert bench.problems == []
+
+
+@pytest.mark.parametrize("lang", LANGS)
 def test_the_starter_cycle_is_shown_locked_with_no_alternative(bench, lang):
     to_step(bench, lang, "cycle", starter="desk-starter-docs", reads=reads())
     assert cards(bench) == ["desk-starter-docs"], "no other card and no build-your-own"
