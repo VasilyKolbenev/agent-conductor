@@ -1,6 +1,7 @@
 """The Cockpit's static resources are exact packaged, GET-only assets."""
 from __future__ import annotations
 
+import ast
 import importlib.resources
 import urllib.error
 import urllib.request
@@ -351,7 +352,7 @@ def test_a_refused_post_consumes_exactly_what_its_framing_declares(
     assert refused.answered == [404]
 
 
-def test_the_allowlist_is_exact_literals_and_never_a_derived_path():
+def test_the_allowlist_is_exactly_the_expected_routes_each_named_for_a_plain_packaged_file():
     assert set(server.PANEL_ASSETS) == set(ASSETS)
     for target, (content_type, name) in server.PANEL_ASSETS.items():
         assert content_type == ASSETS[target]
@@ -434,8 +435,42 @@ def test_the_desk_page_is_served_at_its_own_address_while_the_front_door_still_a
     assert server_assets.ENTRY_PAGE == "studio.html"
 
 
+def _module_level_literal(source: str, name: str):
+    """The value `source` assigns to `name` at its top level, if it was written out.
+
+    `ast.literal_eval` refuses anything computed -- a comprehension, a name, a
+    call, a `**` splice -- so a value that comes back is a literal in the text.
+    """
+    for node in ast.parse(source).body:
+        if isinstance(node, ast.Assign) and any(
+                isinstance(target, ast.Name) and target.id == name
+                for target in node.targets):
+            return ast.literal_eval(node.value)
+    raise AssertionError(f"{name} is not assigned at module level")
+
+
+def test_a_registry_that_is_computed_is_not_read_as_a_literal():
+    computed = 'DESK_ASSETS = {f"/panel/{n}": ("text/css", n) for n in ("a.css",)}'
+    for source in (computed, "DESK_ASSETS = {**OTHER_ASSETS}",
+                   'DESK_ASSETS = {"/panel/a.css": ("text/css", NAME)}'):
+        with pytest.raises(ValueError):
+            _module_level_literal(source, "DESK_ASSETS")
+    with pytest.raises(AssertionError):
+        _module_level_literal("OTHER = {}", "DESK_ASSETS")
+    written = 'DESK_ASSETS = {"/panel/a.css": ("text/css", "a.css")}'
+    assert _module_level_literal(written, "DESK_ASSETS") == {
+        "/panel/a.css": ("text/css", "a.css")}
+
+
 def test_the_desk_registry_is_a_literal_slice_of_the_panel_allowlist():
-    """`DESK_ASSETS` rows are the allowlist's own rows, spelled as literals."""
+    """`DESK_ASSETS` is written out row by row, and each row is the allowlist's own.
+
+    Literal is read off the source text of `server_assets.py`, not off the
+    imported dict: a registry built by a comprehension imports to the same
+    mapping, and only the text can say it was not written out.
+    """
+    source = Path(server_assets.__file__).read_text(encoding="utf-8")
+    assert _module_level_literal(source, "DESK_ASSETS") == server_assets.DESK_ASSETS
     assert server_assets.DESK_ASSETS, "the desk registry is empty"
     for route, row in server_assets.DESK_ASSETS.items():
         assert server.PANEL_ASSETS.get(route) == row, route
