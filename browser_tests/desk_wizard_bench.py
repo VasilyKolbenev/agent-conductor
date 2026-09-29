@@ -86,7 +86,7 @@ async () => {
 #: test may read what stands after the wizard has written.
 DOOR_JS = """
 (data) => {
-  const standing = {...data.drafts};
+  const standing = {...data.drafts}, left = {lose: data.lose, race: data.race};
   window.host.standing = standing;
   window.host.fake = (ask) => {
     if (ask.name !== "flow" && ask.name !== "flow_read") return undefined;
@@ -97,12 +97,20 @@ DOOR_JS = """
       return answer(held === null ? {...data.none, workflow_id: ask.subject}
         : {...state, source: "draft", draft_digest: held});
     }
+    if (left.race !== null) {
+      standing[ask.subject] = left.race;
+      left.race = null;
+    }
     const sent = ask.body.expected_digest ?? null;
     const absent = ask.body.expected_absent === true;
-    if (absent ? held !== null : sent !== held) {
+    if (absent ? standing[ask.subject] != null : sent !== standing[ask.subject]) {
       return {status: "refused", code: "draft_conflict", payload: null};
     }
     standing[ask.subject] = state.draft_digest ?? "sha256:" + "a".repeat(64);
+    if (left.lose > 0) {
+      left.lose -= 1;
+      return {status: "unknown", code: null, payload: null};
+    }
     return answer({...state, source: "draft", draft_digest: standing[ask.subject]});
   };
 }
@@ -155,15 +163,19 @@ class Bench:
             "(name) => window.host.log.filter((ask) => ask.name === name).map((ask) => ask.body)",
             name)
 
-    def door(self, flows: dict[str, Any], drafts: dict[str, str | None]) -> None:
+    def door(self, flows: dict[str, Any], drafts: dict[str, str | None], *, lose: int = 0,
+             race: str | None = None) -> None:
         """Put a fake flow door in front of the answers: it judges `expected_*` like spec 7.1.3.
 
         `drafts` maps a workflow id to the digest of the draft standing for it (a missing id or
         null: none). A read answers the standing draft or `source: none`; a write whose
         expectation differs from what stands is a `draft_conflict`, and one that agrees leaves
         a new draft. `flows` maps a workflow id to the `FlowState` its write answers with.
+        `lose` is how many writes are lost (answered `unknown`, though they land); `race` is the
+        digest another window's draft takes between a read and the next write, which refuses it.
         """
-        self.page.evaluate(DOOR_JS, {"flows": flows, "drafts": drafts,
+        self.page.evaluate(DOOR_JS, {"flows": flows, "drafts": drafts, "lose": lose,
+                                     "race": race,
                                      "none": fixture("wizard", "flow_state_none.json")})
 
     def say(self, key: str, **params: str) -> str:

@@ -235,12 +235,27 @@ function applyPreselection(state) {
     generation: cycle.generation + 1}});
 }
 
+//: The two flow answers the owner recovers from by asking again: the write's answer never came,
+//: or the draft moved under it. A conflict in flight is being read again, and a refusal is the
+//: server's verdict on the cycle.
+export const RETRYABLE = Object.freeze(["unknown", "changed_elsewhere"]);
+
 //: A new generation of the flow conversation. Another card starts from nothing; the same card
-//: keeps what was answered for it, so choosing it again writes again with the digest that stands.
+//: keeps what was answered for it, so choosing it again writes again with the digest that stands
+//: -- except after a lost answer: that write may have landed, so what stood is read again.
 function restarted(cycle, leftCard) {
-  const left = leftCard ? {flow: null, flowFor: null, flowGeneration: -1, draft: null,
-    boundKey: "null"} : {};
-  return {...cycle, ...left, status: "idle", refusal: null, generation: cycle.generation + 1};
+  const left = leftCard ? {flow: null, flowFor: null, flowGeneration: -1, boundKey: "null"} : {};
+  const forgets = leftCard || cycle.status === "unknown";
+  return {...cycle, ...left, draft: forgets ? null : cycle.draft, status: "idle", refusal: null,
+    generation: cycle.generation + 1};
+}
+
+//: "Try again": the same card, a new generation. It needs no card to choose, so it is also the
+//: way out for a locked one (starter mode) and for step 4, where no card is shown.
+function retryFlow(state) {
+  const cycle = state.cycle;
+  if (cycle.choice === null || !RETRYABLE.includes(cycle.status)) return state;
+  return evolve(state, {cycle: restarted(cycle, false)});
 }
 
 function chooseCycle(state, event) {
@@ -588,6 +603,7 @@ const HANDLERS = {
   "picker-close": (state) => (state.materials.picker
     ? evolve(state, {materials: {...state.materials, picker: false}}) : state),
   "cycle-choose": chooseCycle,
+  "cycle-retry": retryFlow,
   "role-assign": assignRole,
   "instruction-edit": editInstruction,
   "instruction-own": ownInstruction,

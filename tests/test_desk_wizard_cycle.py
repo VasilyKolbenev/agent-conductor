@@ -266,6 +266,84 @@ def test_a_wizard_that_finds_a_left_over_draft_lands_idle_and_never_changed_else
     assert out["flow_for"] == out["id"]
 
 
+def test_a_lost_flow_write_is_retried_by_reading_again_and_then_writing_in_starter_mode():
+    out = run_js(CYCLE + """
+      const later = "sha256:" + "c".repeat(64);
+      const state = inStarterMode();
+      const read = lands({state, asks: [flowAsk(state)]}, none("desk-starter-docs"));
+      const lost = wiz.stepWizard(read.state, {type: "answered", ask: read.asks[0],
+        result: {status: "unknown"}});
+      const retry = wiz.stepWizard(lost.state, {type: "cycle-retry"});
+      const reread = lands(retry, drafted(d.flows.starter, {draft_digest: later}));
+      const landed = answer(reread.state, reread.asks[0],
+        ok(drafted(d.flows.starter, {draft_digest: later})));
+      show({lost: [lost.state.cycle.status, wiz.canAdvance(lost.state).reason, lost.asks.length],
+        retry: [retry.state.cycle.status, asksOf(retry), retry.state.cycle.draft],
+        write: [asksOf(reread), reread.asks[0].body.expected_digest,
+          reread.asks[0].body.expected_absent],
+        done: [landed.cycle.status, wiz.canAdvance(landed).reason]});
+    """, DATA)
+    assert out["lost"] == ["unknown", "flow_unknown", 0], "a lost answer leaves nothing to ask"
+    assert out["retry"] == ["idle", [["read:flow:2", "flow_read", "read", "flowRead",
+                                      "desk-starter-docs"]], None]
+    assert out["write"] == [[["write:flow:2", "flow", "write", "flow", "desk-starter-docs"]],
+                            "sha256:" + "c" * 64, None]
+    assert out["done"] == ["idle", None]
+
+
+@pytest.mark.parametrize("mode", ["normal", "starter"])
+def test_a_moved_draft_is_retried_with_the_fresh_digest_and_the_locked_starter_can_do_it(mode):
+    out = run_js(CYCLE + """
+      const starter = d.mode === "starter";
+      const id = starter ? "desk-starter-docs" : "desk-standard";
+      const flow = starter ? d.flows.starter : d.flows.standard;
+      const at = starter ? inStarterMode() : reply(opened(atCycle()), "workflows", d.workflows);
+      const first = starter ? {state: at, asks: [flowAsk(at)]} : chosen(at, id);
+      const write = lands(first, none(id));
+      const conflict = wiz.stepWizard(write.state, {type: "answered", ask: write.asks[0],
+        result: {status: "refused", code: "draft_conflict", payload: null}});
+      const moved = lands(conflict, drafted(flow));
+      const retry = wiz.stepWizard(moved.state, {type: "cycle-retry"});
+      show({status: moved.state.cycle.status, gate: wiz.canAdvance(moved.state).reason,
+        retry: [retry.state.cycle.status, asksOf(retry), retry.asks[0].body.expected_digest]});
+    """, {**DATA, "mode": mode})
+    assert out["status"] == "changed_elsewhere" and out["gate"] == "flow_changed_elsewhere"
+    card = "desk-starter-docs" if mode == "starter" else "desk-standard"
+    assert out["retry"] == ["idle", [["write:flow:2", "flow", "write", "flow", card]],
+                            "sha256:" + "a" * 64]
+
+
+def test_retry_is_ignored_unless_the_answer_was_lost_or_the_draft_moved():
+    out = run_js(CYCLE + """
+      const same = (state) => wiz.stepWizard(state, {type: "cycle-retry"}).state === state;
+      const written = picks("desk-standard");
+      const landed = answer(written.state, written.asks[0], ok(d.flows.standard));
+      const refused = answer(written.state, written.asks[0],
+        {status: "refused", code: "contract_invalid", payload: null});
+      const conflict = wiz.stepWizard(written.state, {type: "answered", ask: written.asks[0],
+        result: {status: "refused", code: "draft_conflict", payload: null}}).state;
+      show({none_chosen: same(reply(opened(atCycle()), "workflows", d.workflows)),
+        pending: same(written.state), idle: same(landed), refused: same(refused),
+        conflict: same(conflict)});
+    """, DATA)
+    assert out == {"none_chosen": True, "pending": True, "idle": True, "refused": True,
+                   "conflict": True}
+
+
+def test_choosing_the_same_card_after_a_lost_answer_reads_again_before_it_writes():
+    out = run_js(CYCLE + """
+      const written = picks("desk-standard");
+      const lost = wiz.stepWizard(written.state, {type: "answered", ask: written.asks[0],
+        result: {status: "unknown"}});
+      const again = chosen(lost.state, "desk-standard");
+      show({status: lost.state.cycle.status, asks: asksOf(again),
+        draft: again.state.cycle.draft});
+    """, DATA)
+    assert out["status"] == "unknown"
+    assert out["asks"] == [["read:flow:2", "flow_read", "read", "flowRead", "desk-standard"]]
+    assert out["draft"] is None, "the lost write may have landed: what stood is not known"
+
+
 def test_a_saved_cycle_read_keeps_its_flow_and_its_digest_for_the_binding_write():
     out = run_js(CYCLE + """
       const flow = {...structuredClone(d.flows.tester), workflow_id: "old-cycle",

@@ -207,6 +207,45 @@ def test_a_left_over_draft_does_not_make_the_next_wizard_say_the_cycle_changed_e
 
 
 @pytest.mark.parametrize("lang", LANGS)
+def test_a_lost_answer_in_starter_mode_offers_try_again_and_the_retry_reads_before_it_writes(
+        bench, lang):
+    card = "desk-starter-docs"
+    bench.door({card: FLOW[card]}, {}, lose=1)
+    to_step(bench, lang, "cycle", starter=card, reads=reads())
+    status = bench.page.locator("[data-flow-status]")
+    expect(status).to_have_attribute("data-flow-status", "unknown")
+    assert status.inner_text() == bench.say("wizard.flow.unknown")
+    assert bench.control("wizard:next").is_disabled()
+    assert bench.control("wizard:cycle:choose:" + card).count() == 0, "the card is locked"
+    bench.control("wizard:cycle:retry").click()
+    expect(bench.control("wizard:next")).to_be_enabled()
+    assert bench.page.locator("[data-flow-status]").count() == 0
+    assert bench.control("wizard:cycle:retry").count() == 0
+    assert [ask[1] for ask in bench.asks() if ask[2] == card and ask[1].startswith("flow")] == [
+        "flow_read", "flow", "flow_read", "flow"]
+    assert bench.bodies("flow")[0]["expected_absent"] is True
+    assert bench.bodies("flow")[1]["expected_digest"] == DIGEST, "the lost write had landed"
+    assert bench.problems == []
+
+
+@pytest.mark.parametrize("lang", LANGS)
+def test_a_racing_window_makes_the_owner_try_again_and_the_retry_writes_the_fresh_digest(
+        bench, lang):
+    racer = "sha256:" + "b" * 64
+    bench.door({"desk-standard": FLOW["desk-standard"]}, {}, race=racer)
+    to_step(bench, lang, "cycle", reads=reads())
+    expect(bench.page.locator("[data-flow-status]")).to_have_attribute(
+        "data-flow-status", "changed_elsewhere")
+    assert bench.say("wizard.flow.changed") in bench.root().inner_text()
+    assert bench.control("wizard:next").is_disabled()
+    bench.control("wizard:cycle:retry").click()
+    expect(bench.control("wizard:next")).to_be_enabled()
+    assert bench.bodies("flow")[-1]["expected_digest"] == racer
+    assert bench.page.locator("[data-flow-status]").count() == 0
+    assert bench.problems == []
+
+
+@pytest.mark.parametrize("lang", LANGS)
 def test_a_published_card_offers_make_project_cycle_and_it_is_disabled_with_its_reason(bench, lang):
     to_step(bench, lang, "cycle", reads=reads())
     pin = bench.control("wizard:cycle:pin:desk-standard")

@@ -15,8 +15,8 @@
 import {element} from "./command-view.js";
 import {localize} from "./studio-i18n.js";
 import {WIZARD_COPY} from "./desk-wizard-copy.js";
-import {BUILT_STEPS, LIMITS, agentInstructionsRow, assignmentView, availableKinds, canAdvance,
-  closeNeedsWarning, cycleCards, cycleFacts, documentPicker, gitReading, hasProviders,
+import {BUILT_STEPS, LIMITS, RETRYABLE, agentInstructionsRow, assignmentView, availableKinds,
+  canAdvance, closeNeedsWarning, cycleCards, cycleFacts, documentPicker, gitReading, hasProviders,
   instructionFields, materialsEstimate, nextStep, preselection, stepStates, taskFields}
   from "./desk-wizard-model.js";
 
@@ -391,13 +391,18 @@ function cardItems(ctx) {
     : cycleCard(ctx, card)));
 }
 
-//: What the server said about the cycle chosen, or that its answer is not in yet.
+//: What the server said about the cycle chosen, or that its answer is not in yet. A lost answer
+//: and a moved draft come with "try again", which needs no card and so works when the card is
+//: locked and on the roles step.
 function flowStatus(ctx, facts) {
   if (ctx.wizard.cycle.choice === null) return [];
   const key = {conflict: "changed", changed_elsewhere: "changed", refused: "refused",
     unknown: "unknown"}[facts.status] ?? (facts.revisions === null ? "pending" : null);
-  return key === null ? []
-    : [element("p", {"data-flow-status": facts.status, text: ctx.t(`wizard.flow.${key}`)})];
+  if (key === null) return [];
+  const retry = RETRYABLE.includes(facts.status) ? [action("wizard:cycle:retry",
+    ctx.t("wizard.flow.retry"), () => ctx.send({type: "cycle-retry"}))] : [];
+  return [element("p", {"data-flow-status": facts.status, text: ctx.t(`wizard.flow.${key}`)}),
+    ...retry];
 }
 
 //: The conditions exactly as the server counted them; nothing is added or worked out here.
