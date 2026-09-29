@@ -44,11 +44,12 @@ from tests.test_store import good_lane, write_project
 #: the page, its sheet and boot module, the transport and the refusal vocabulary
 #: it translates with, the reader of the address's language (and the element
 #: helper that reader draws its controls with), and the catalogue (with its
-#: fourteen copy modules) that says a word in the reader's language.
+#: fifteen copy modules) that says a word in the reader's language.
 DESK_BOOT_ASSETS = {
     "desk.html": 200, "desk.css": 200, "desk.js": 200, "desk-transport.js": 200,
     "command-projection.js": 200, "studio-i18n.js": 200,
     "studio-preferences.js": 200, "command-view.js": 200, "desk-copy.js": 200,
+    "desk-status-copy.js": 200,
     "studio-agents-copy.js": 200, "studio-automation-copy.js": 200,
     "studio-feedback-copy.js": 200, "studio-notice-copy.js": 200,
     "studio-participant-copy.js": 200, "studio-run-docs-copy.js": 200,
