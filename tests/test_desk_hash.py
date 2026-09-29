@@ -131,7 +131,10 @@ def test_the_id_grammars_accept_exactly_what_their_sources_accept():
         task: address.readDeskHash("task=" + encodeURIComponent(id)).task !== null,
         source: tasks.isTaskId(id),
         run: address.readDeskHash("run=" + encodeURIComponent(id)).run !== null,
+        gate: address.readDeskHash("run=r1&gate=" + encodeURIComponent(id)).gate !== null,
         workflow: address.readDeskHash("workflow=" + encodeURIComponent(id)).workflow !== null,
+        starter: address.readDeskHash("new=task&starter=" + encodeURIComponent(id))
+          .starter !== null,
       }))));
     """, MODULES, corpus)
     for id_, row in zip(corpus, judged):
@@ -139,7 +142,7 @@ def test_the_id_grammars_accept_exactly_what_their_sources_accept():
         assert row["task"] == bool(command_routes._TASK_ROUTE.fullmatch(f"/command/tasks/{id_}")), \
             repr(id_)
         in_runs = bool(command_routes._RUN_ROUTE.fullmatch(f"/command/runs/{id_}"))
-        assert row["run"] == in_runs, repr(id_)
+        assert (row["run"], row["gate"], row["starter"]) == (in_runs,) * 3, repr(id_)
         in_workflows = bool(command_routes._WORKFLOW_ROUTE.fullmatch(f"/command/workflows/{id_}"))
         assert row["workflow"] == in_workflows, repr(id_)
     assert any(row["task"] for row in judged) and not all(row["task"] for row in judged)
