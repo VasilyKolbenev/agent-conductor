@@ -5,7 +5,10 @@ and a red result there is a finding about the mechanism, not a regression. Every
 has two controls: the same operation run WITHOUT the sandbox changes the tree (that half
 is ``test_os_boundary_layout``, which runs on every POSIX host), and a write to the
 attempt's own tmp works in a launch built the same way. The judge is a digest snapshot the
-parent takes, never what the child prints. The profile text is unit-tested separately.
+parent takes, never what the child prints. A run counts as ``applied`` only when its shell
+first failed to write a canary the profile must refuse (not merely because the wrapper ran
+the command), so an unconfined launch cannot pass for a confined one. The profile text is
+unit-tested separately.
 
 Two cases are the ones most likely to fail and are named so a red run is read correctly:
 the hard link from a protected file (Seatbelt matches paths, so a second name for the same
@@ -219,13 +222,13 @@ def test_a_profile_that_denies_hard_links_from_the_source_refuses_the_link_and_s
 
 
 def test_a_profile_that_does_not_compile_is_refused_and_the_target_never_runs(tmp_path):
-    marker = tmp_path / "ran"
-    script = f'echo {sb.APPLIED}; touch "{marker}"'
+    marker, canary = tmp_path / "ran", tmp_path / "witness"
+    script = sb.witnessed_script(canary, f'touch "{marker}"')
     bad = "(version 1)\n(allow default)\n(this-is-not-a-rule)\n"
     done = subprocess.run(sb.sandbox_argv(bad, ["/bin/sh", "-c", script]),
                           capture_output=True, timeout=60, check=False)
     output = (done.stdout + done.stderr).decode("utf-8", errors="replace")
     assert done.returncode != 0
     with pytest.raises(sb.PolicyNotApplied):
-        sb.require_applied(output)
+        sb.require_applied(output, canary)
     assert not marker.exists(), "the target ran although the profile was never applied"

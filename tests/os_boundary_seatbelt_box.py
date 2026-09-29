@@ -2,10 +2,12 @@
 
 Everything here is POSIX and imports cleanly on any host; only the darwin tests apply the
 real ``sandbox-exec``. A ``SeatbeltBox`` owns a layout and one profile: ``run_body`` runs a
-shell body under that profile (the sandboxed shell prints ``APPLIED`` first) or, with
-``sandboxed=False``, the identical shell without it. ``SeatbeltRunner`` builds a
-``ProcessRunner`` over the same layout with a production ``ProcessOwnership`` scope, and
-does not replace any part of the runner.
+shell body under that profile or, with ``sandboxed=False``, the same body without it. A
+sandboxed launch is judged applied only when its shell first failed to write the box's
+CANARY (a path in an empty directory no profile makes writable) and the canary is still
+absent afterwards; a wrapper that execs the command without a profile fails that test and
+the body never runs. ``SeatbeltRunner`` builds a ``ProcessRunner`` over the same layout with
+a production ``ProcessOwnership`` scope, and does not replace any part of the runner.
 """
 from __future__ import annotations
 
@@ -32,11 +34,26 @@ _WAIT = 60.0
 
 @dataclass(frozen=True)
 class Outcome:
-    """One shell run: whether the profile was applied first, how it ended, what it printed."""
+    """One shell run: was it confined (the canary witness), how it ended, what it printed."""
 
     applied: bool
     exit_code: int
     output: str
+
+
+def make_canary(layout: Layout) -> Path:
+    """The path a launch's witness writes to, in an empty directory no profile makes writable."""
+    directory = layout.base / "canary"
+    directory.mkdir(exist_ok=True)
+    return directory / "witness"
+
+
+def _judged_applied(output: str, canary: Path) -> bool:
+    try:
+        sb.require_applied(output, canary)
+    except sb.PolicyNotApplied:
+        return False
+    return True
 
 
 class SeatbeltBox:
@@ -44,6 +61,7 @@ class SeatbeltBox:
 
     def __init__(self, layout: Layout, **profile_arguments) -> None:
         self.layout = layout
+        self.canary = make_canary(layout)
         self._arguments = profile_arguments
         self.profile = sb.seatbelt_profile(**profile_arguments)
 
@@ -58,13 +76,16 @@ class SeatbeltBox:
         return self.layout.tokens(root_name)
 
     def run_body(self, body: str, *, sandboxed: bool = True, root: str = "source") -> Outcome:
-        script = f"echo {sb.APPLIED}; " + render(body, self.tokens(root))
-        command = ["/bin/sh", "-c", script]
-        argv = sb.sandbox_argv(self.profile, command) if sandboxed else command
+        script = render(body, self.tokens(root))
+        if sandboxed:
+            command = ["/bin/sh", "-c", sb.witnessed_script(self.canary, script)]
+            argv = sb.sandbox_argv(self.profile, command)
+        else:
+            argv = ["/bin/sh", "-c", script]
         done = subprocess.run(argv, capture_output=True, timeout=_STEP_TIMEOUT, env=dict(_ENV),
                               cwd=str(self.layout.tmp), check=False)
         text = (done.stdout + done.stderr).decode("utf-8", errors="replace")
-        return Outcome(text.lstrip().startswith(sb.APPLIED), done.returncode, text)
+        return Outcome(_judged_applied(text, self.canary), done.returncode, text)
 
     def run(self, operation: Operation, *, root: str = "source",
             sandboxed: bool = True) -> list[Outcome]:
@@ -199,11 +220,12 @@ class SeatbeltRunner:
     def __init__(self, layout: Layout, runner: ProcessRunner, scope: LeaseScope,
                  profile: str) -> None:
         self.layout, self.runner, self.scope, self.profile = layout, runner, scope, profile
+        self.canary = make_canary(layout)
         self.watches: list[PosixWatch] = []
 
     def spec(self, script: str, *, timeout: float | None = None, profile: str | None = None,
              executable: str | None = None) -> CommandSpec:
-        body = f"echo {sb.APPLIED}; " + render(script, self.layout.tokens())
+        body = sb.witnessed_script(self.canary, render(script, self.layout.tokens()))
         argv = sb.sandbox_argv(profile or self.profile, ["/bin/sh", "-c", body])
         if executable is not None:
             argv[0] = executable

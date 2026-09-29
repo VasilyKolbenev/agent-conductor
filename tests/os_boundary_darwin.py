@@ -17,12 +17,18 @@ run natively on macOS to find out; nothing here claims it.
 from __future__ import annotations
 
 import os
+import shlex
 from collections.abc import Iterable, Sequence
 
 SANDBOX_EXEC = "/usr/bin/sandbox-exec"
-#: Printed by the sandboxed shell before anything else. It can only appear if the profile
-#: was applied and the command then started, which is the witness that policy was applied.
+#: Printed by the sandboxed shell only AFTER a write the profile must refuse was refused.
+#: Starting the command proves nothing (a wrapper that execs it with no profile starts it
+#: too); a refused write to the canary shows the shell is confined.
 APPLIED = "APPLIED"
+#: Printed instead, before the body runs, when that write WENT THROUGH: no profile confines
+#: the shell, whatever the wrapper did or claimed.
+UNCONFINED = "UNCONFINED"
+_UNCONFINED_EXIT = 97
 _UNQUOTABLE = ('"', "\\", "\n", "\r", "\x00")
 
 
@@ -75,9 +81,34 @@ def sandbox_argv(profile: str, command: Sequence[str]) -> list[str]:
     return [SANDBOX_EXEC, "-p", profile, *command]
 
 
-def require_applied(output: str) -> None:
-    """Raise PolicyNotApplied unless the sandboxed shell reported the profile applied."""
+def witnessed_script(canary, body: str) -> str:
+    """The shell text a sandboxed launch runs: prove the profile confines it, then ``body``.
+
+    The shell first tries to create ``canary``, a path in a directory no profile makes
+    writable. If the write is refused it prints ``APPLIED`` and runs ``body``. If it works
+    it prints ``UNCONFINED`` and exits before ``body``, so a launch without the policy runs
+    none of the command's code. The witness observes one denied path: it shows the profile
+    confined the shell, not that every rule in it holds (the darwin tests judge each rule
+    by the tree). It is made in-band by this preamble, so it guards against a missing or
+    misconfigured wrapper, not against a hostile child.
+    """
+    path = os.fspath(canary)
+    if not os.path.isabs(path):
+        raise ValueError(f"a witness names an absolute path only, not {path!r}")
+    return (f"if ( printf x > {shlex.quote(path)} ) 2>/dev/null; "
+            f"then echo {UNCONFINED}; exit {_UNCONFINED_EXIT}; fi; echo {APPLIED}; {body}")
+
+
+def require_applied(output: str, canary=None) -> None:
+    """Raise PolicyNotApplied unless the shell reported APPLIED first and left no canary.
+
+    The first line is the shell's word (see ``witnessed_script``); the parent's own look at
+    ``canary`` is the other half: a file there means a write the profile must refuse was made.
+    """
     first = output.lstrip().splitlines()[0].strip() if output.strip() else ""
     if first != APPLIED:
         raise PolicyNotApplied(
-            f"the sandbox wrapper did not report {APPLIED!r} first (saw {first[:60]!r})")
+            f"the sandboxed shell did not report {APPLIED!r} first (saw {first[:60]!r})")
+    if canary is not None and os.path.lexists(canary):
+        raise PolicyNotApplied(
+            f"the canary {os.fspath(canary)!r} exists: a write the profile must refuse was made")

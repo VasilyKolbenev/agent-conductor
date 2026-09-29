@@ -5,8 +5,11 @@ and then execs the command, so the child keeps its pid and session and the runne
 group stop (``killpg`` on the session it started) reaches it and everything it started.
 The ownership scope is the production ``ProcessOwnership`` value with a real inheritable
 descriptor and a recorded ``retire``. The refusal differs from Windows: there is no moment
-to check a token before the child runs, so "policy applied" is a witness the sandboxed
-shell prints first, and a profile that never applied is judged from the outcome.
+to check a token from outside before the child runs, so the launch checks itself. Its shell
+first tries a write the profile must refuse (a canary in an empty directory) and prints
+``APPLIED`` only when that write fails; when the write works it prints ``UNCONFINED`` and
+stops before the body. The parent then also checks the canary is absent, so a wrapper that
+execs the command without a profile is judged not applied and none of the command runs.
 """
 from __future__ import annotations
 
@@ -35,7 +38,7 @@ def test_a_sandboxed_child_run_by_the_runner_completes_and_the_loan_is_retired(s
     rb = seatbelt_runner
     outcome = rb.runner.run(rb.spec('printf x > "@TMPD@/ran"; echo child-output'))
     assert outcome.status == "completed" and outcome.exit_code == 0, outcome
-    sb.require_applied(outcome.output.decode("utf-8", errors="replace"))
+    sb.require_applied(outcome.output.decode("utf-8", errors="replace"), rb.canary)
     assert b"child-output" in outcome.output
     assert (rb.layout.tmp / "ran").read_bytes() == b"x"
     assert rb.runner.active_tokens() == ()
@@ -79,8 +82,26 @@ def test_a_profile_that_cannot_be_applied_is_judged_not_applied_and_leaves_nothi
                                     profile="(version 1)\n(allow default)\n(bogus-rule)\n"))
     assert outcome.status == "completed" and outcome.exit_code != 0, outcome
     with pytest.raises(sb.PolicyNotApplied):
-        sb.require_applied(outcome.output.decode("utf-8", errors="replace"))
+        sb.require_applied(outcome.output.decode("utf-8", errors="replace"), rb.canary)
     assert not marker.exists(), "the target ran although the profile was never applied"
+    assert rb.runner.active_tokens() == () and rb.scope.retired == [True]
+
+
+@posix_only
+def test_a_wrapper_that_applies_no_profile_is_judged_not_applied_before_the_body_runs(
+        seatbelt_runner, tmp_path):
+    """The macOS analog of the Windows launch that silently produced an unconfined child."""
+    rb = seatbelt_runner
+    wrapper = tmp_path / "no-profile-exec"
+    wrapper.write_bytes(b'#!/bin/sh\nshift 2\nexec "$@"\n')
+    wrapper.chmod(0o755)
+    marker = rb.layout.tmp / "ran"
+    outcome = rb.runner.run(rb.spec(f'touch "{marker}"', executable=str(wrapper)))
+    assert outcome.status == "completed" and outcome.exit_code != 0, outcome
+    with pytest.raises(sb.PolicyNotApplied):
+        sb.require_applied(outcome.output.decode("utf-8", errors="replace"), rb.canary)
+    assert not marker.exists(), "the body ran although no profile was applied"
+    assert rb.canary.exists(), "the write the profile must refuse left no evidence"
     assert rb.runner.active_tokens() == () and rb.scope.retired == [True]
 
 
