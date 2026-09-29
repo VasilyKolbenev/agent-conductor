@@ -24,6 +24,7 @@ REFUSALS = {
     "windows_path_too_long": 422,
     "server_stopping": 409,
     "slot_busy": 409,
+    "preview_stale": 409,
 }
 #: The login each frozen provider row carries now that a row can pin one. Three
 #: of them were configured before the field existed, so they carry the login that

@@ -22,7 +22,8 @@ from conductor.command.plan_budget import product_limits
 from conductor.command.policy_preview import PREVIEW_FIELDS
 from tests.test_command_http_api import PORT, TOKEN, post
 from tests.test_policy_driver import authorize as authorize_both_steps
-from tests.test_policy_runtime import NOW, PD, propose, setup
+from tests.test_policy_runtime import ASK, NOW, PD, propose, setup
+from tests.test_slot_busy_refusal import TakenSlot, door
 from tests.test_task_preparation import STANDARD_ASK, Project
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "flow"
@@ -216,6 +217,21 @@ def test_a_run_with_no_grant_yet_has_no_spent_and_is_not_exhausted(project):
 
 
 # --- through the doors ----------------------------------------------------------------------------
+
+
+def test_preview_stale_and_slot_busy_are_told_apart_from_contract_invalid(tmp_path):
+    f = setup(tmp_path)
+    api, path = door(f), "/command/runs/run/automation/authorize"
+    preview = f.policy.preview("run", ASK)
+    body = {"authorization_id": "grant", "preview_digest": preview["preview_digest"],
+            "authorized_by": "owner", "terms": preview["terms"], "supersedes": None}
+    invalid = post(api, path, {**body, "extra": 1})
+    f.policy.previews.discard("session", "run")
+    stale = post(api, path, body)
+    f.policy.driver = TakenSlot()
+    busy = post(api, path, body)
+    assert [(row.status, row.payload["error"]["code"]) for row in (invalid, stale, busy)] == [
+        (422, "contract_invalid"), (409, "preview_stale"), (409, "slot_busy")]
 
 
 def test_the_preview_after_a_revoked_grant_is_drafted_with_what_the_run_really_spent(tmp_path):

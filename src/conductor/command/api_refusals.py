@@ -59,6 +59,7 @@ ERROR_STATUS = MappingProxyType({
     "gate_unreached": 409,
     "server_stopping": 409,
     "slot_busy": 409,
+    "preview_stale": 409,
 })
 
 _FIXED_MESSAGES = MappingProxyType({
@@ -133,6 +134,12 @@ _FIXED_MESSAGES = MappingProxyType({
     #: the vocabulary-completeness one, and the whole answer when the holder is not an
     #: id that is safe to render.
     "slot_busy": "another bounded run holds this project's slot",
+    #: Its own code rather than `contract_invalid`, for the reason `slot_busy` is: the body
+    #: is well formed, and what refuses it is that the preview a human reviewed is gone,
+    #: was evicted, has expired, or no longer describes the run. A client told "invalid"
+    #: resends the same body; told this, it repeats the preview and shows what moved. It
+    #: carries no detail, so it needs no `_REVIEWED_FACTS` row.
+    "preview_stale": "the reviewed preview is absent, expired or no longer matches the run",
 })
 
 

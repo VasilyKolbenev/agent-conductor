@@ -8,7 +8,7 @@ from .contracts import ActionRequest, ActionResultReceipt
 from .plan_budget import product_limits
 from .policy_history import current_authorization
 from .preview_draft import drafted_preview
-from .policy_preview import (PREVIEW_FIELDS, PreviewCache, authorization_terms,
+from .policy_preview import (PREVIEW_FIELDS, PreviewCache, PreviewStale, authorization_terms,
                              build_preview, from_terms)
 from .run_authorization import RunAuthorization, RunAuthorizationControl
 from .store_errors import RecordConflict
@@ -69,7 +69,7 @@ class PolicyService:
             fresh = build_preview(recovered, asked, budget=self.budget, registry=self.registry,
                 provider_digest=self.provider_digest, clock=lambda: now, provider_facts=self.provider_facts)
             if fresh["terms"] != body["terms"] or fresh["preview_digest"] != body["preview_digest"]:
-                raise ContractError("reviewed starting facts changed; preview again")
+                raise PreviewStale("reviewed starting facts changed; preview again")
             candidate = self._candidate(body, now)
             if candidate.run_id != run_id:
                 raise ContractError("preview belongs to another run")

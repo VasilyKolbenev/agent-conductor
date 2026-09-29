@@ -15,6 +15,7 @@ from .adapters import AdapterContractError, UnsupportedCapability
 from .adapters.deep_commands import DEEP_ARGUMENT_TYPES
 from .path_admission import WindowsNameError, WindowsPathError
 from .policy_driver import SlotBusy
+from .policy_preview import PreviewStale
 from .artifacts import ArtifactDocument
 from .contracts import (
     ActionProposal,
@@ -484,6 +485,8 @@ def refusal_from_exception(error: Exception) -> ApiRefusal:
         return ApiRefusal.fixed("authorization_refused")
     # BEFORE the `ContractError` arm, which it is a subclass of: a taken slot is not a fault
     # in the terms, and the holder is named only when it is an id that is safe to render.
+    if isinstance(error, PreviewStale):
+        return ApiRefusal.fixed("preview_stale")
     if isinstance(error, SlotBusy):
         return (ApiRefusal.slot_busy(error.holder) if _safe_id(error.holder)
                 else ApiRefusal.fixed("slot_busy"))

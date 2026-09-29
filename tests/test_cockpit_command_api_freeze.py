@@ -145,6 +145,9 @@ EXPECTED_ERRORS = {
     "server_stopping": (409, "lifecycle"),
     #: The project's one slot is another run's: the request is fine and the state moves.
     "slot_busy": (409, "concurrency"),
+    #: The confirmation a human gave no longer stands on the run's facts: it moved, or the
+    #: preview it named is gone. The request is well formed and nothing else is at fault.
+    "preview_stale": (409, "authorization"),
 }
 EXPECTED_ERROR_CODES = frozenset(EXPECTED_ERRORS)
 
