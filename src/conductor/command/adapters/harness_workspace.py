@@ -81,6 +81,7 @@ from .workspace_turn import _RootGate, indexed_root_gate
 from ..path_admission import admit_work_path
 from ..work_layout import WORK_DIR, TASKS_DIR, work_parts, work_route
 from .attempt_scope import AttemptScope
+from . import work_seed
 
 from ..containment import (
     RouteViolation,
@@ -712,30 +713,7 @@ class HarnessWorkspace:
         elsewhere -- or that answer to a second name -- are never read as this
         task's evidence.
         """
-        base = self._directory_route(WORK_DIR)
-        rows: dict[str, str] = {}
-        found = _leaf(base)
-        if found is None or not stat.S_ISDIR(found.st_mode):
-            return rows
-        stack = [base]
-        while stack:
-            for path in sorted(stack.pop().iterdir()):
-                relative = path.relative_to(base).as_posix()
-                entry = _leaf(path)
-                if entry is None:
-                    continue
-                violation = portal_violation(path, entry)
-                if violation is not None:
-                    rows[relative] = violation.code.value
-                elif stat.S_ISDIR(entry.st_mode):
-                    stack.append(path)
-                elif not stat.S_ISREG(entry.st_mode):
-                    rows[relative] = RouteViolationCode.IRREGULAR_FILE.value
-                elif entry.st_nlink != 1:
-                    rows[relative] = RouteViolationCode.HARD_LINK.value
-                else:
-                    rows[relative] = hashlib.sha256(path.read_bytes()).hexdigest()
-        return rows
+        return work_seed.digest_work_tree(self._directory_route(WORK_DIR), _leaf)
 
     def read_work_tree(
             self, work_item_id: str, changed: tuple[str, ...],
@@ -753,31 +731,8 @@ class HarnessWorkspace:
         if type(changed) is not tuple or any(type(path) is not str for path in changed):
             raise TypeError("changed must be a tuple of work-tree paths")
         base = self._directory_route(*work_parts(work_item_id, work_scope))
-        tree, contents = {}, {}
-        if _leaf(base) is None:
-            return tree, contents
-        stack = [base]
-        while stack:
-            for path in sorted(stack.pop().iterdir()):
-                relative = path.relative_to(self.root / WORK_DIR).as_posix()
-                entry = _leaf(path)
-                if entry is None:
-                    continue
-                violation = portal_violation(path, entry)
-                if violation is not None:
-                    tree[relative] = violation.code.value
-                elif stat.S_ISDIR(entry.st_mode):
-                    stack.append(path)
-                elif not stat.S_ISREG(entry.st_mode):
-                    tree[relative] = RouteViolationCode.IRREGULAR_FILE.value
-                elif entry.st_nlink != 1:
-                    tree[relative] = RouteViolationCode.HARD_LINK.value
-                else:
-                    digest, content = _read_work_file(path, entry, relative in changed, budget)
-                    tree[relative] = digest
-                    if content is not None:
-                        contents[relative] = content
-        return tree, contents
+        return work_seed.read_work_tree(
+            base, self.root / WORK_DIR, changed, budget, _leaf, _read_work_file)
 
     def read_result_tree(self, work_item_id, changed, *, work_scope=None):
         """Read complete changed files and prove each reported deletion locally."""
