@@ -28,6 +28,7 @@ so it is not used before it is true.
 """
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 from contextlib import contextmanager
@@ -345,6 +346,63 @@ def test_the_provider_resolver_builds_a_runner_that_refuses_when_spawning_is_not
     refused, permitted = runners
     assert (_ask_for_a_child(refused), _ask_for_a_child(permitted)) == ("refused", "completed")
     assert len(spy.calls) == 1
+
+
+# -- no driver, no collector, and the limits of the active project (spec 4.3.1, 4.5.4) ---
+
+
+def test_view_mode_starts_no_policy_driver_and_no_quota_collector(tmp_path):
+    """A view server has neither, and closes as cleanly as an active one that has both."""
+    seen = {}
+    for mode in ("view", "active"):
+        with _served(tmp_path / mode, mode) as subject:
+            seen[mode] = (subject.policy_driver is not None,
+                          subject.quota_collector is not None)
+        assert not subject.retirement_uncertain and subject.project_owner is None, mode
+    assert seen == {"view": (False, False), "active": (True, True)}
+
+
+def _limits_home(tmp_path, monkeypatch) -> Path:
+    home = tmp_path / "conduct-home"
+    home.mkdir()
+    monkeypatch.setenv("CONDUCT_HOME", str(home))
+    return home
+
+
+def _quotas(subject) -> dict:
+    return _send(subject, "GET", "/command/quotas", None, 200)
+
+
+def test_view_mode_quotas_answer_from_the_hub_limits_snapshot_with_its_time(
+        tmp_path, monkeypatch):
+    home = _limits_home(tmp_path, monkeypatch)
+    with _served(tmp_path / "view-before", "view") as subject:
+        nothing = _quotas(subject)
+    with _served(tmp_path / "active", "active") as subject:
+        answer = _quotas(subject)
+    stored = {"schema_version": 1, "project_id": "3f9c0a1b2c3d4e5f60718293a4b5c6d7",
+              "taken_at": "2026-08-11T11:59:01Z", "quotas": answer}
+    (home / "limits.json").write_text(json.dumps(stored), encoding="utf-8")
+    with _served(tmp_path / "view-after", "view") as subject:
+        shown = _quotas(subject)
+    assert nothing["snapshots"] == [] and nothing["hub_snapshot"] is None
+    assert [row["provider_id"] for row in nothing["providers"]]        # this project's own rows
+    assert shown == {**answer, "hub_snapshot": {
+        "project_id": stored["project_id"], "taken_at": "2026-08-11T11:59:01Z"}}
+    assert answer["snapshots"], "the stored answer must carry rows for the copy to mean anything"
+
+
+def test_the_hub_snapshot_key_is_absent_in_active_mode_even_when_a_snapshot_stands(
+        tmp_path, monkeypatch):
+    home = _limits_home(tmp_path, monkeypatch)
+    (home / "limits.json").write_text(json.dumps({
+        "schema_version": 1, "project_id": "3f9c0a1b2c3d4e5f60718293a4b5c6d7",
+        "taken_at": "2026-08-11T11:59:01Z",
+        "quotas": {"as_of": NOW, "max_age_seconds": 300.0, "providers": [], "snapshots": []},
+    }), encoding="utf-8")
+    with _served(tmp_path / "active", "active") as subject:
+        answer = _quotas(subject)
+    assert "hub_snapshot" not in answer and answer["providers"]
 
 
 # -- the code the view door throws (spec 4.3.1, 11.1) -----------------------------------

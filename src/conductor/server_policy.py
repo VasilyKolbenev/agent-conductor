@@ -20,7 +20,8 @@ def acquire_server_owner(subject, root, expected_project_id=None):
 
 
 def start_policy(subject, clock, ids):
-    if subject.project_owner is None:
+    """Build and start the driver; a project without an owner, or opened for viewing, has none."""
+    if subject.project_owner is None or subject.launch.mode == "view":
         return
     from .command.policy_driver import PolicyDriver
     policy = subject.command_api._policy

@@ -2,6 +2,8 @@
 from datetime import datetime
 
 from .command.project_claim import ProjectIdentity
+from .command.quota_snapshot_view import LIMITS_FILE, HubLimitsView
+from .hub.home import ConductHomeInvalid, conduct_home_path
 
 
 def start_command(subject, root, registry, providers, budget, clock, ids, token_factory):
@@ -20,7 +22,8 @@ def start_command(subject, root, registry, providers, budget, clock, ids, token_
                                      spawns_allowed=launch.mode == "active")
     subject.command_registry = resolution.registry
     subject.command_providers = resolution.contracts
-    subject.quota_collector = QuotaCollector(
+    # A view process polls no quota source: the login is the active project's (4.3.1).
+    subject.quota_collector = None if launch.mode == "view" else QuotaCollector(
         subject.command_quotas, resolution.quota_plans,
         clock=lambda: datetime.fromisoformat(clock().replace("Z", "+00:00")))
     subject.command_api = CommandApi(
@@ -29,6 +32,8 @@ def start_command(subject, root, registry, providers, budget, clock, ids, token_
         publish_run=subject.clients.publish_run, providers=subject.command_providers,
         quota_service=subject.command_quotas,
         project=subject.broker.project_name, provider_configs=providers)
+    if launch.mode == "view":
+        _answer_quotas_from_the_hub(subject)
     # The effect belongs to server-owned workers, never to a request thread:
     # the coordinator holds the API's own runtime, so it spends exactly the
     # grants that boundary minted and can spend no others. Each start() mints
@@ -39,3 +44,18 @@ def start_command(subject, root, registry, providers, budget, clock, ids, token_
         subject.command_execution.start()
     from .server_policy import start_policy
     start_policy(subject, clock, ids)
+
+
+def _answer_quotas_from_the_hub(subject) -> None:
+    """A view process shows the active project's limits from `<conduct-home>/limits.json`.
+
+    The API takes its quota reader from its constructor, and that parameter is lane L's (4.1.4);
+    until it is there the reader is put in the one place the API reads it from, as the driver is
+    put into the policy. A home that cannot be named is no data, not a failed start: a hub child
+    already judged it when it judged `--status-file`.
+    """
+    try:
+        path = conduct_home_path() / LIMITS_FILE
+    except ConductHomeInvalid:
+        path = None
+    subject.command_api._quota_view = HubLimitsView(path)

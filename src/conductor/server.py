@@ -583,7 +583,8 @@ class ConductServer(ThreadingHTTPServer):
             self._start_command(root, registry, providers, budget, clock, ids, token_factory)
             self.broker.refresh()               # initial state before serving
             self.watcher.start()
-            self.quota_collector.start()
+            if self.quota_collector is not None:      # a view process has none (4.3.1)
+                self.quota_collector.start()
         except BaseException:
             self.server_close()
             raise
