@@ -26,7 +26,7 @@ if os.name == "nt":
 
     from tests import os_boundary_windows as ac
     from tests.os_boundary_box import (  # noqa: F401
-        base_environment, container, implement_box, serve_loopback)
+        base_environment, container, implement_box, make_box, serve_loopback)
 
 EXTERNAL = "https://example.com"
 PRIVATE_NETWORK_CLIENT_SERVER = "S-1-15-3-3"
@@ -157,23 +157,30 @@ def test_the_project_stays_unreadable_in_the_launch_that_updates_the_vendor_home
     assert (box.layout.vendor_home / "auth.json").read_bytes() == b"token=updated"
 
 
-def test_no_acl_outside_the_attempts_own_directories_changes_and_each_grant_is_one_entry(
-        implement_box):
-    box = implement_box
-    layout, sid = box.layout, box.container.sid
-    watched = [layout.base, layout.base.parent, Path(tempfile.gettempdir()),
-               Path(os.environ["USERPROFILE"]), ac.CMD, ac.POWERSHELL]
-    before = {str(path): ac.acl_text(path) for path in watched}
-    source_before = box.snapshot("source")
-    for operation in operations_for("source"):
-        box.run(operation, root="source")
-    box.run_script(_UPDATE)
-    assert {str(path): ac.acl_text(path) for path in watched} == before
-    assert box.snapshot("source") == source_before
-    for granted in (layout.tmp, layout.home, layout.vendor_home, layout.work):
-        assert ac.acl_text(granted).count(sid) == 1, granted
-    for untouched in (layout.source, layout.base):
-        assert sid not in ac.acl_text(untouched), untouched
+def _acls(base: Path) -> dict[str, str]:
+    """The ACL text of what an attempt must never change: the account's and the project's."""
+    watched = [base, base.parent, Path(tempfile.gettempdir()), Path(os.environ["USERPROFILE"]),
+               ac.CMD, ac.POWERSHELL]
+    return {str(path): ac.acl_text(path) for path in watched}
+
+
+def test_no_watched_acl_changes_across_the_profile_lifetime_and_each_grant_is_one_entry(tmp_path):
+    """The baseline precedes the profile and the grants, and is compared after its deletion."""
+    before = _acls(tmp_path)
+    with ac.Container() as owned:
+        box = make_box(tmp_path, owned, ac.MODIFY)
+        layout, sid = box.layout, owned.sid
+        source_before = box.snapshot("source")
+        for operation in operations_for("source"):
+            box.run(operation, root="source")
+        box.run_script(_UPDATE)
+        assert _acls(tmp_path) == before, "an ACL changed while the profile existed"
+        assert box.snapshot("source") == source_before
+        for granted in (layout.tmp, layout.home, layout.vendor_home, layout.work):
+            assert ac.acl_text(granted).count(sid) == 1, granted
+        for untouched in (layout.source, layout.base):
+            assert sid not in ac.acl_text(untouched), untouched
+    assert _acls(tmp_path) == before, "an ACL changed once the profile was deleted"
 
 
 def test_deleting_the_profile_removes_its_mapping_and_folder_and_a_launch_for_it_fails():

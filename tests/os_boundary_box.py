@@ -182,7 +182,8 @@ def container():
         yield current
 
 
-def _box(tmp_path: Path, current: ac.Container, work_rights: str) -> Box:
+def make_box(tmp_path: Path, current: ac.Container, work_rights: str) -> Box:
+    """A layout under ``tmp_path`` and the grants for a container the caller owns."""
     layout = make_layout(tmp_path)
     for directory in (layout.tmp, layout.home, layout.vendor_home):
         ac.grant(directory, current.sid, ac.MODIFY)
@@ -193,10 +194,10 @@ def _box(tmp_path: Path, current: ac.Container, work_rights: str) -> Box:
 @pytest.fixture
 def implement_box(tmp_path, container):
     """Tmp, home, vendor home and the work copy writable. The source tree: no entry."""
-    return _box(tmp_path, container, ac.MODIFY)
+    return make_box(tmp_path, container, ac.MODIFY)
 
 
 @pytest.fixture
 def review_box(tmp_path, container):
     """As the implement box, but the work copy is read and execute only."""
-    return _box(tmp_path, container, ac.READ_EXECUTE)
+    return make_box(tmp_path, container, ac.READ_EXECUTE)
