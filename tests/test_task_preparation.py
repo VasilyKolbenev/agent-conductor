@@ -18,7 +18,8 @@ from conductor.command.artifacts import ArtifactDocument
 from conductor.command.authorization_inputs import bind_inputs, executable_nodes
 from conductor.command.contract_values import ContractError
 from conductor.command.contracts import DecisionReceipt, RunEnvelope
-from conductor.command.graph_definition import GraphDefinition, GraphNode
+from conductor.command.graph_definition import GraphDefinition, GraphEdge, GraphNode
+from conductor.command.graph_schedule import schedule
 from conductor.command.http_api import CommandApi
 from conductor.command.http_transport import CommandSession
 from conductor.command.graph_template import (
@@ -30,6 +31,7 @@ from conductor.command.runtime import Budget
 from conductor.command.task_contracts import MAX_TASK_ID, TaskRecord
 from conductor.command.task_store import TaskStore
 from conductor.command.workflow_flow import compile_flow
+from tests.test_command_graph_projection import a_proposal, a_request, a_result
 from tests.test_command_http_api import PORT, TOKEN, get_headers, post
 from tests.test_command_workflow_flow import CANONICAL, STUDIO_CORPUS, accepted
 from tests.test_command_workflow_routes import durable_digest
@@ -117,6 +119,37 @@ class Project:
             snapshot_digest(config)))
         return run_id
 
+    def stalled_run(self, number):
+        """A gate, then the shipped `do` step allowed one attempt, answered `unknown`: the bound
+        is spent, so what is owed is owed for good. The plan reads `stalled` and no ending is
+        recorded yet. A confirm-mode run, because a bounded run's store takes no request by hand."""
+        run_id = f"{TASK}-r{number}"
+        config = config_for(run_id, TASK, "custom")
+        self.store.create_run(RunEnvelope(
+            run_id, run_id, NOW, snapshot_digest(config), mode="confirm"), config)
+        template = load_template("desk-short")
+        drawn = materialize(template, binding_of(template), config, graph_id="graph-drawn",
+                            run_id=run_id, created_at=NOW)
+        step = GraphNode.from_dict(
+            {**next(node for node in drawn.nodes if node.node_id == "do").as_dict(),
+             "attempt_bound": 1})
+        self.store.append(GraphDefinition(
+            f"graph-{run_id}", run_id, NOW, edges=(GraphEdge("gate", "do"),),
+            nodes=(GraphNode("gate", "gate", "Approve", gate_id="gate-id"), step)))
+        self.store.append(DecisionReceipt(
+            "decision", run_id, "gate-id", "approve", "owner", NOW, "Reviewed", ("src",),
+            snapshot_digest(config)))
+        self.publish(run_id, "artifact-brief", "artifact-materials", "instruction-do")
+        proposal = a_proposal(
+            node_id="do", index=1, run_id=run_id, instance_id=step.instance_id,
+            capability=step.capability, arguments=step.payload(),
+            config_digest=snapshot_digest(config))
+        request = a_request(proposal, index=1, run_id=run_id)
+        for record in (proposal, request, a_result(
+                request, index=1, run_id=run_id, outcome="unknown", evidence_refs=())):
+            self.store.append(record)
+        return run_id
+
     def read(self, queue=None):
         args = () if queue is None else (queue,)
         status, payload = task_preparation.read_preparation(self.tasks, self.store, TASK, *args)
@@ -169,6 +202,19 @@ def test_a_run_whose_ending_is_recorded_is_ended_and_the_record_changes_nothing_
                                ids=lambda kind: f"{kind}-{next(ids)}")
     assert closed is not None
     assert project.row(run_id) == before and before["stage"] == "ended"
+
+
+def test_a_run_closed_as_stalled_is_ended_by_its_record_alone(project):
+    run_id = project.stalled_run(1)
+    records = project.store.read(run_id).records
+    plan = next(row.value for row in records if row.kind == "graph_definition")
+    assert schedule(plan, tuple(row.value for row in records)).run_state == "stalled"
+    before = project.row(run_id)
+    closed = close_if_terminal(project.store, run_id, clock=lambda: NOW,
+                               ids=lambda kind: f"{kind}-1")
+    assert closed is not None and closed.state == "stalled"
+    assert before["stage"] == "ready_to_preview"
+    assert project.row(run_id) == {**before, "stage": "ended"}
 
 
 def test_a_queue_entry_of_an_ended_run_does_not_make_it_queued(project):
