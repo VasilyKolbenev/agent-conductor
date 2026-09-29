@@ -118,6 +118,8 @@ ASSETS = {
     "/panel/desk-status-copy.js": "text/javascript; charset=utf-8",
     # The grammar of the desk's hash, shared with the hub's page.
     "/panel/desk-hash.js": "text/javascript; charset=utf-8",
+    # Embed mode: whether a hub frames the desk, and the one message it says.
+    "/panel/desk-embed.js": "text/javascript; charset=utf-8",
     # The regions the desk draws.
     "/panel/desk-rail.js": "text/javascript; charset=utf-8",
     "/panel/desk-scene.js": "text/javascript; charset=utf-8",
@@ -250,6 +252,10 @@ REFUSED = (
     "/panel/desk-hash.json", "/panel/desk-hash.js?v=1", "/panel/desk-hash.js.map",
     "/panel/../desk-hash.js", "/panel/%2e%2e/desk-hash.js", "/panel/DESK-HASH.JS",
     "/panel/Desk-hash.js", "/panel/desk-hash.js/", "/panel/desk-hash.js%00.txt",
+    # The embed module, the same nine shapes.
+    "/panel/desk-embed.json", "/panel/desk-embed.js?v=1", "/panel/desk-embed.js.map",
+    "/panel/../desk-embed.js", "/panel/%2e%2e/desk-embed.js", "/panel/DESK-EMBED.JS",
+    "/panel/Desk-embed.js", "/panel/desk-embed.js/", "/panel/desk-embed.js%00.txt",
     # The rail, the same nine shapes.
     "/panel/desk-rail.json", "/panel/desk-rail.js?v=1", "/panel/desk-rail.js.map",
     "/panel/../desk-rail.js", "/panel/%2e%2e/desk-rail.js", "/panel/DESK-RAIL.JS",

@@ -73,7 +73,7 @@ PERMITTED_IMPORTS = {
     #: screen and no store, and the wire only through the transport -- it holds no door of
     #: its own.
     "desk.js": frozenset({"./desk-transport.js", "./studio-i18n.js",
-                          "./desk-hash.js", "./studio-tasks-model.js",
+                          "./desk-hash.js", "./desk-embed.js", "./studio-tasks-model.js",
                           "./studio-model.js", "./studio-taskruns.js", "./studio-draft.js",
                           "./studio-situation.js", "./studio-controls.js",
                           "./studio-focus.js", "./desk-rail.js", "./desk-scene.js"}),
@@ -99,6 +99,9 @@ PERMITTED_IMPORTS = {
     #: The grammar of the desk's hash, shared with the hub's page for the same reason: it
     #: imports nothing, and `studio-preferences.js` re-exports its two preference functions.
     "desk-hash.js": frozenset(),
+    #: Embed mode: whether a hub frames the desk, and the one message it says. Values in and
+    #: one call out, so it imports nothing -- the boot module hands it the claim it read.
+    "desk-embed.js": frozenset(),
     #: The wizard's whole state and every way it changes, as pure functions. It
     #: reaches the task model for the one rule that judges a task title, and the
     #: step modules that answer its questions, and nothing else: no DOM builder,

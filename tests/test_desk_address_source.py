@@ -226,6 +226,96 @@ def test_the_listener_check_refuses_each_planted_listener_and_names_it(edit, nee
     assert any(needle in fault for fault in faults), faults
 
 
+# -- one message, to an origin the server named --------------------------------------------
+#
+# The desk says where it is to the page that frames it in ONE call, in the embed module, and the
+# second argument of that call is a name that holds the hub's origin as the project claim gave
+# it: never a literal, and never the wildcard that would hand the message to any page.
+MESSAGE_HOME = "desk-embed.js"
+POST = re.compile(r"\bpostMessage\s*\(")
+WILDCARD = re.compile(r"""["'`]\*["'`]""")
+NAME = re.compile(r"[A-Za-z_$][\w$]*")
+
+
+def _arguments(code: str, start: int) -> list[str]:
+    """The top-level arguments of the call whose opening parenthesis ends at `start`."""
+    depth, args, current = 1, [], []
+    for char in code[start:]:
+        depth += char in "([{"
+        depth -= char in ")]}"
+        if depth == 0:
+            break
+        if char == "," and depth == 1:
+            args.append("".join(current).strip())
+            current = []
+        else:
+            current.append(char)
+    return args + ["".join(current).strip()]
+
+
+def message_faults(sources: dict[str, str]) -> list[str]:
+    """Every way the desk's one message stops being one message to a named origin.
+
+    Args:
+        sources: Each desk module's name and text.
+
+    Returns:
+        One sentence per fault; empty when `postMessage(` is called once, in the embed module,
+        with two arguments the second of which is a name, and no module holds a wildcard string.
+    """
+    codes = {name: strip_comments(text) for name, text in sources.items()}
+    calls = [(name, found) for name, code in codes.items() for found in POST.finditer(code)]
+    homes = [name for name, _found in calls]
+    faults = [] if homes == [MESSAGE_HOME] else [
+        f"postMessage( is called {len(calls)} times, in {homes}: exactly one, in {MESSAGE_HOME}"]
+    for name, found in calls:
+        args = _arguments(codes[name], found.end())
+        if len(args) != 2:
+            faults.append(f"postMessage in {name} has {len(args)} arguments; the target is a "
+                          "second one")
+        elif not NAME.fullmatch(args[1]):
+            faults.append(f"the target of postMessage in {name} is not a name: {args[1]}")
+    return faults + [f"{name} carries a wildcard string" for name, code in codes.items()
+                     if WILDCARD.search(code)]
+
+
+def _edited(name: str, old: str, new: str):
+    """The desk's sources with `old` in module `name` replaced by `new`."""
+    def apply(sources: dict[str, str]) -> dict[str, str]:
+        assert old in sources[name], f"the sabotage target is gone from {name}: {old!r}"
+        return {**sources, name: sources[name].replace(old, new, 1)}
+    return apply
+
+
+MESSAGE_BROKEN = {
+    "the wildcard as the target": (_edited(MESSAGE_HOME, ", origin);", ', "*");'),
+                                   "wildcard"),
+    "the wildcard in single quotes": (_edited(MESSAGE_HOME, ", origin);", ", '*');"),
+                                      "not a name"),
+    "no target at all": (_edited(MESSAGE_HOME, ", origin);", ");"), "has 1 arguments"),
+    "a literal origin as the target": (
+        _edited(MESSAGE_HOME, ", origin);", ', "http://127.0.0.1:7700");'), "not a name"),
+    "a second call in the boot module": (
+        _grown(BOOT_MODULE, "\nwindow.parent.postMessage({}, origin);\n"), "exactly one"),
+    "a second call in a region module": (
+        _grown("desk-rail.js", "\nwindow.parent.postMessage({}, origin);\n"), "exactly one"),
+    "the call removed": (_edited(MESSAGE_HOME, "parent.postMessage(", "parent.post("),
+                         "0 times"),
+    "a wildcard string anywhere else": (_grown(BOOT_MODULE, '\nconst any = "*";\n'), "wildcard"),
+}
+
+
+def test_the_desk_sends_one_message_from_the_embed_module_to_a_name_and_holds_no_wildcard():
+    assert message_faults(_sources()) == []
+
+
+@pytest.mark.parametrize("edit,needle", list(MESSAGE_BROKEN.values()), ids=list(MESSAGE_BROKEN))
+def test_the_message_check_refuses_each_planted_defect_and_names_it(edit, needle):
+    faults = message_faults(edit(_sources()))
+    assert faults, "a defective desk was accepted"
+    assert any(needle in fault for fault in faults), faults
+
+
 def test_the_router_writes_nothing_and_the_address_moves_only_by_replace_state_in_one_function():
     assert router_faults((PANEL / BOOT_MODULE).read_text(encoding="utf-8")) == []
 

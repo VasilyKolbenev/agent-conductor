@@ -51,7 +51,7 @@ from tests.test_store import good_lane, write_project
 DESK_BOOT_ASSETS = {
     "desk.html": 200, "desk.css": 200, "desk.js": 200, "desk-transport.js": 200,
     "command-projection.js": 200, "studio-i18n.js": 200,
-    "desk-hash.js": 200, "command-view.js": 200, "desk-copy.js": 200,
+    "desk-hash.js": 200, "desk-embed.js": 200, "command-view.js": 200, "desk-copy.js": 200,
     "desk-status-copy.js": 200,
     # What the boot module judges a read with, and the rail it draws from it.
     "studio-tasks-model.js": 200, "studio-model.js": 200, "studio-taskruns.js": 200,

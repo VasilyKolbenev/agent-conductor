@@ -20,12 +20,15 @@
 // the desk that touches the network (`graph.js` and the classic `command.js` keep doors of
 // their own), and holds no door, no timer and no storage of its own. Facts enter through
 // a READ and through nothing else, and this module writes nothing at all. It reads the
-// routes that exist for it today; the project route and its header are lane H's and are
-// not faked here.
+// routes that exist for it today, and the project claim only when a framed window asks for
+// embed mode (spec 4.5.5): the claim's header, `X-Conduct-Project`, is lane H's and is not
+// faked here. In embed mode it says its location to the hub, in one message, and listens to
+// nothing the hub posts.
 import {LATE, createTransport, path} from "./desk-transport.js";
 import {message} from "./studio-i18n.js";
 import {deskHash, foreignProject, navigationChange, preferenceHash, readDeskHash,
   readPreferences} from "./desk-hash.js";
+import {announceLocation, embedAsked, embedTarget} from "./desk-embed.js";
 import {projectTasks} from "./studio-tasks-model.js";
 import {projectRuns} from "./studio-model.js";
 import {newestRun} from "./studio-taskruns.js";
@@ -44,6 +47,7 @@ const READS = Object.freeze({
   automation: (runId) => path.automation(runId),
   run: (runId) => path.run(runId),
   controls: (runId) => path.controls(runId),
+  project: () => path.project(),
 });
 //: The five mounts, in reading order: the desk boots only on a page that carries all of
 //: them. A mount no module fills stays in the word `empty`.
@@ -81,12 +85,15 @@ let door = null;
 //: The project this desk bound to, from its first hash (null when that named none); the last
 //: address the desk wrote, which a new hash is compared with; the hash it last wrote or read;
 //: what was last remembered; and the promise that the lists have landed and the first hash
-//: has been applied.
+//: has been applied. `embedded` is the hub origin when embed mode is in force (null when it is
+//: not), and `announced` is the location the hub was last told.
 let bound = null;
 let lastWritten = readDeskHash("");
 let seen = "";
 let shown = Object.freeze({task: null, run: null});
 let booted = Promise.resolve();
+let embedded = null;
+let announced = null;
 
 const byId = (id) => document.getElementById(id);
 //: The page's own language is the language of record: `<html lang>` says it, and anything
@@ -175,7 +182,8 @@ function where() {
 function remember() {
   if (state.foreign || location.hash !== seen) return;
   const at = where();
-  const address = preferenceHash(deskHash({project: bound, task: at.task, run: at.run}),
+  const embed = embedded === null ? null : "hub";
+  const address = preferenceHash(deskHash({project: bound, embed, task: at.task, run: at.run}),
     {locale: locale(), theme: document.documentElement.getAttribute("data-theme")});
   history.replaceState(null, "", address);
   seen = location.hash;
@@ -183,10 +191,23 @@ function remember() {
   shown = at;
 }
 
-//: A change of what is drawn is remembered in the address; a redraw of the same is not.
+//: Say where the desk is to the hub that framed it (spec 4.5.5), when embed mode is in force
+//: and this is not what the hub was last told. The message is the location and nothing else.
+function announce() {
+  if (embedded === null || state.foreign) return;
+  const at = where();
+  if (announced !== null && announced.task === at.task && announced.run === at.run) return;
+  announced = at;
+  announceLocation(window.parent, embedded.origin,
+    {project_id: bound, task_id: at.task, run_id: at.run});
+}
+
+//: A change of what is drawn is remembered in the address and told to the hub; a redraw of
+//: the same is not.
 function follow() {
   const at = where();
   if (at.task !== shown.task || at.run !== shown.run) remember();
+  announce();
 }
 
 //: A terminal desk keeps nothing a late answer brings.
@@ -378,6 +399,27 @@ async function start(address) {
   remember();
 }
 
+//: Embed mode (spec 4.5.5), decided once, at load. Only a framed window whose hash asks for it
+//: reads the project claim; the desk embeds only if the claim repeats the hash's project and
+//: names a hub origin of the exact grammar. Any other answer, a refusal, or no route at all
+//: leaves it off, and the hash the desk keeps then says no `embed`. The hub is told where the
+//: desk stands at once, and again at each change.
+async function enterEmbed(address) {
+  const framed = window.parent !== window;
+  if (!embedAsked({framed, address})) return;
+  let claim = null;
+  try {
+    claim = await readJson(READS.project());
+  } catch (_error) {
+    claim = null;
+  }
+  const origin = embedTarget({framed, address, claim});
+  if (origin === null || state.foreign) return;
+  embedded = Object.freeze({origin});
+  remember();
+  announce();
+}
+
 //: The page's language is the address's (`#lang=ru`), and without a choice the page's own
 //: `lang` stands. The platform's language is not asked for here or in the hash module: the
 //: source guards keep that question in the transport and the Studio's boot module, and the
@@ -389,8 +431,12 @@ function boot() {
   door = createTransport(locale);
   bound = address.project;
   window.addEventListener("hashchange", onHashChange);
-  if (address.projectRepeated) enterForeign();
-  else booted = load().then(() => start(address));
+  if (address.projectRepeated) {
+    enterForeign();
+    return;
+  }
+  booted = load().then(() => start(address));
+  enterEmbed(address);
 }
 
 if (byId("deskShell") && MOUNTS.every((id) => byId(id))) boot();
