@@ -21,6 +21,7 @@ from types import SimpleNamespace
 import pytest
 
 from conductor import server, server_assets
+from tests import studio_partition
 from tests.studio_partition import hub_registry_names, packaged_names, partition_faults
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -172,12 +173,14 @@ def test_every_reference_the_desk_page_makes_is_a_route_this_server_serves():
 # refuse a tree is shown refusing one and a check that stopped biting reds in
 # this file rather than passing quietly over a real tree that happens to be clean.
 
+#: `hub.html` is packaged and is NOT a registry row: spec 4.6.3 has `GET /` answer
+#: it and `/hub/<name>` answer only `HUB_ASSETS`, the import closure of `hub.js`.
 BASE = {
     "packaged": frozenset({"studio.js", "studio.css", "studio.html", "desk.html",
                            "desk-hash.js", "hub.js", "hub.html"}),
     "modules": frozenset({"studio.js", "desk-hash.js"}),
     "desk": frozenset({"desk.html", "desk-hash.js"}),
-    "hub": frozenset({"hub.js", "hub.html", "desk-hash.js"}),
+    "hub": frozenset({"hub.js", "desk-hash.js"}),
 }
 
 
@@ -206,15 +209,19 @@ TORN = {
     "a hub file inside the desk registry": (
         _with(desk=_grown("desk", "hub.js")), "hub file in DESK_ASSETS"),
     "a hub file no hub registry names": (
-        _with(hub=frozenset({"hub.html", "desk-hash.js"})), "hub file in no HUB_ASSETS"),
+        _with(hub=frozenset({"desk-hash.js"})), "hub file in no HUB_ASSETS"),
     "a hub registry row naming no file": (
         _with(hub=_grown("hub", "hub-gone.js")), "HUB_ASSETS row names no"),
     "a hub registry row that is neither a hub file nor shared": (
         _with(hub=_grown("hub", "desk.html")), "neither a hub file nor a shared"),
     "a shared module missing from the hub registry": (
-        _with(hub=frozenset({"hub.js", "hub.html"})), "shared module missing"),
+        _with(hub=frozenset({"hub.js"})), "shared module missing"),
     "a hub file while no hub registry exists": (
         _with(hub=None), "no hub registry exists"),
+    "the hub entry page listed as a registry row": (
+        _with(hub=_grown("hub", "hub.html")), "entry page listed in HUB_ASSETS"),
+    "a hub registry with no packaged entry page": (
+        _with(packaged=BASE["packaged"] - {"hub.html"}), "entry page not packaged"),
 }
 
 
@@ -234,6 +241,60 @@ def test_a_missing_hub_registry_is_tolerated_only_while_no_hub_file_is_packaged(
                   hub=None)
     assert partition_faults(**quiet) == []
     assert partition_faults(**_with(hub=None)) != []
+
+
+#: The name spec 4.6.3 gives the document `GET /` answers on the hub, written here
+#: on purpose rather than read from the helper, so the helper's own constant is
+#: held to the spec and not to itself.
+HUB_ENTRY = "hub.html"
+#: The hub's own rows of the `/hub/<name>` allowlist (spec 4.6.3), then the four
+#: modules it shares with the desk (spec 4.1.10). `hub.html` is in neither list.
+SPEC_HUB_OWN = ("hub.css", "hub.js", "hub-frame.js", "hub-rail.js", "hub-stub.js",
+                "hub-add.js", "hub-copy.js")
+SPEC_SHARED = ("desk-hash.js", "desk-status.js", "desk-status-copy.js", "desk-time.js")
+
+
+def test_the_partition_names_the_hub_entry_page_the_spec_gives_the_root():
+    assert studio_partition.HUB_ENTRY_PAGE == HUB_ENTRY
+
+
+def test_the_hub_entry_page_is_held_packaged_and_outside_the_hub_registry():
+    """Each entry-page rule alone: one defect in, exactly one sentence out.
+
+    A row that named its defect by `any(needle in fault)` would still pass if a
+    second mechanism reported the same tree, so these two are compared whole.
+    """
+    listed = partition_faults(**_with(hub=_grown("hub", HUB_ENTRY)))
+    assert listed == [f"hub entry page listed in HUB_ASSETS: {HUB_ENTRY}"]
+    missing = partition_faults(**_with(packaged=BASE["packaged"] - {HUB_ENTRY}))
+    assert missing == [f"hub entry page not packaged: {HUB_ENTRY}"]
+
+
+def test_the_tree_spec_4_6_3_describes_is_accounted_for_with_the_entry_page_outside_the_registry():
+    """The day the hub page is packaged and its registry is written to spec.
+
+    Eleven `HUB_ASSETS` rows go through the loader exactly as lane H's module
+    would hand them over; `hub.html` is the twelfth packaged file and is served
+    at `/`, so it is not one of them. Listing it as a row is what this partition
+    once demanded, so that tree is shown refused as well.
+    """
+    def row(name: str) -> tuple[str, str]:
+        kind = "text/css" if name.endswith(".css") else "text/javascript"
+        return f"{kind}; charset=utf-8", name
+
+    module = SimpleNamespace(HUB_ASSETS={
+        f"/hub/{name}": row(name) for name in SPEC_HUB_OWN + SPEC_SHARED})
+    hub = hub_registry_names(lambda _name: module)
+    assert len(hub) == 11 and HUB_ENTRY not in hub
+    shared = frozenset(SPEC_SHARED)
+    tree = {
+        "packaged": frozenset(SPEC_HUB_OWN) | shared | {HUB_ENTRY, "desk.html", "studio.js"},
+        "modules": shared | {"studio.js"},
+        "desk": shared | {"desk.html"},
+        "hub": hub,
+    }
+    assert partition_faults(**tree) == []
+    assert partition_faults(**{**tree, "hub": hub | {HUB_ENTRY}}) != []
 
 
 def test_the_partition_reads_only_studio_desk_and_hub_files_with_a_page_suffix(tmp_path):

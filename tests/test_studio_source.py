@@ -369,7 +369,9 @@ def test_the_packaged_studio_desk_and_hub_files_are_all_guarded_or_registered():
     to the package without a line here reds, and a line here naming no file
     reds too. The desk's files and the hub page's join the Studio's under the
     same rule, each set answering to the registry of what its server serves:
-    `DESK_ASSETS` for the project server, `HUB_ASSETS` for the hub.
+    `DESK_ASSETS` for the project server, `HUB_ASSETS` for the hub. The hub's
+    entry page, `hub.html`, is packaged but is not a `HUB_ASSETS` row: `GET /`
+    answers it, `/hub/<name>` does not (spec 4.6.3).
 
     `HUB_ASSETS` is written by the lane that owns the hub and does not exist
     yet. `hub_registry_names` reads it as absent -- and only for a missing

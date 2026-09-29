@@ -18,6 +18,13 @@ registry to account for it. Once the module exists, `HUB_ASSETS` is read as a
 mapping shaped like `PANEL_ASSETS` (`route -> (content_type, name)`); a module
 that exists without it, or with another shape, fails loudly rather than being
 skipped.
+
+The hub's entry page is the one `hub*` file that is not a registry row. Spec
+4.6.3 has `GET /` answer `hub.html` and `/hub/<name>` answer only `HUB_ASSETS`,
+which is the import closure of `hub.js`, and a page nothing imports is not in a
+closure. It is the same arrangement as `ENTRY_PAGE` beside `PANEL_ASSETS` on
+the project server, so the partition gives it a slot of its own: once the
+registry exists the entry page must be packaged and must not be a row.
 """
 from __future__ import annotations
 
@@ -34,6 +41,9 @@ SHARED_MODULES = frozenset({"desk-hash.js", "desk-status.js", "desk-status-copy.
 PREFIXES = ("studio", "desk", "hub")
 SUFFIXES = (".js", ".css", ".html")
 HUB_REGISTRY_MODULE = "conductor.hub.assets"
+#: The document the hub answers `GET /` with (spec 4.6.3): packaged, and never a
+#: `HUB_ASSETS` row.
+HUB_ENTRY_PAGE = "hub.html"
 
 
 def packaged_names(panel: Path) -> frozenset[str]:
@@ -79,12 +89,22 @@ def hub_registry_names(
     return frozenset(name for _, name in registry.values())
 
 
+def _entry_page_faults(packaged: frozenset[str], hub: frozenset[str]) -> list[str]:
+    faults = []
+    if HUB_ENTRY_PAGE not in packaged:
+        faults.append(f"hub entry page not packaged: {HUB_ENTRY_PAGE}")
+    if HUB_ENTRY_PAGE in hub:
+        faults.append(f"hub entry page listed in HUB_ASSETS: {HUB_ENTRY_PAGE}")
+    return faults
+
+
 def _hub_faults(packaged: frozenset[str], hub: frozenset[str] | None) -> list[str]:
     hub_files = {name for name in packaged if name.startswith("hub")}
     if hub is None:
         return [f"hub file packaged while no hub registry exists: {name}"
                 for name in sorted(hub_files)]
-    faults = [f"hub file in no HUB_ASSETS row: {name}" for name in sorted(hub_files - hub)]
+    faults = [f"hub file in no HUB_ASSETS row: {name}"
+              for name in sorted(hub_files - hub - {HUB_ENTRY_PAGE})]
     faults += [f"HUB_ASSETS row names no packaged file: {name}"
                for name in sorted(hub - packaged)]
     faults += [f"HUB_ASSETS row is neither a hub file nor a shared module: {name}"
@@ -92,7 +112,7 @@ def _hub_faults(packaged: frozenset[str], hub: frozenset[str] | None) -> list[st
                if not name.startswith("hub") and name not in SHARED_MODULES]
     faults += [f"shared module missing from HUB_ASSETS: {name}"
                for name in sorted((SHARED_MODULES & packaged) - hub)]
-    return faults
+    return faults + _entry_page_faults(packaged, hub)
 
 
 def partition_faults(*, packaged: frozenset[str], modules: frozenset[str],
