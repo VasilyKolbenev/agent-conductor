@@ -100,7 +100,8 @@ def test_the_drain_harness_runs_two_steps_and_a_real_ctrl_c_closes_the_idle_proj
 def test_eof_stops_new_proposals_and_lets_the_running_attempt_finish(project):
     child = _draining_by_eof(project)
     child.wait_state("stopping", DRAIN_BEGINS)
-    assert child.status()["drain_deadline"] is not None
+    wait_until(lambda: (child.status() or {}).get("drain_deadline"), WAIT,
+               "the status file to carry drain_deadline", child)
     _let_the_drain_settle(child, project, PROBE)
     child.release(1)
     assert child.wait_exit(WAIT) == 0
