@@ -4,22 +4,39 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>December — Desk</title>
+<link rel="stylesheet" href="/panel/desk.css">
 <!-- The project desk. It is served at /panel/desk.html from the first day, and
      the hub mounts exactly that address, so it exists before any of its code
      does. `GET /` does not answer with it yet: that is still the Studio's
      shell, and the entry page switches in the slice that removes the five tabs.
 
-     Every reference below is an ABSOLUTE /panel/ path. One document will be
+     Every reference here is an ABSOLUTE /panel/ path. One document will be
      reachable at two addresses once the entry switches, and a relative name
      would resolve differently at each; the absolute spelling is the one that
      makes the two answers the same bytes. tests/test_desk_source.py holds it,
-     and holds this page to no script and no inline style until it has either. -->
+     and holds this page to nothing inline: no style block, no style attribute,
+     no handler, and no script the test does not name.
+
+     The five mounts below are the regions of the desk (spec 5.1): the rail of
+     tasks, the scene, the feed, the summary and the pult. Each is EMPTY and
+     stands in the machine word `empty` until a module fills it and a read says
+     otherwise; the top bar's status line is the one sentence a person reads. -->
 </head>
 <body>
-<main id="deskShell">
-  <h1>December Command · Desk</h1>
-  <p>The project desk is being built. Nothing on this page reads or writes a project yet.</p>
-  <p><a href="/panel/index.html">Classic panel</a></p>
-</main>
+<div class="desk-shell" id="deskShell">
+  <header class="desk-top" id="deskTop">
+    <h1 class="desk-brand">December Command</h1>
+    <p class="desk-status" id="deskStatus" role="status" aria-live="polite"></p>
+    <p class="desk-note">The desk is being built: its regions are mounted and stay empty until their modules land.</p>
+    <a class="desk-classic" href="/panel/index.html">Classic panel</a>
+  </header>
+  <nav class="desk-rail" id="deskRail" aria-label="Tasks" data-region="rail" data-state="empty"></nav>
+  <main class="desk-center" id="deskCenter">
+    <section class="desk-scene" id="deskScene" aria-label="Scene" data-region="scene" data-state="empty"></section>
+    <section class="desk-feed" id="deskFeed" aria-label="Progress" data-region="feed" data-state="empty"></section>
+    <section class="desk-summary" id="deskSummary" aria-label="Summary" data-region="summary" data-state="empty"></section>
+  </main>
+  <aside class="desk-pult" id="deskPult" aria-label="Your console" data-region="pult" data-state="empty"></aside>
+</div>
 </body>
 </html>

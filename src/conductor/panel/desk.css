@@ -1,0 +1,89 @@
+/* The project desk -- the shell and its five empty regions.
+
+   The palette is the approved concept's (layout-v4): an evergreen ground and a
+   lime "ion" accent in the dark theme, with a light pair. Every colour is a token
+   and the theme is one attribute. The concept's web fonts are not shipped: the
+   panel loads nothing from another origin, so the font stacks are system stacks.
+
+   Every colour-bearing declaration in this file is either a MEASURED row in
+   tests/test_desk_style.py -- resolved through the cascade, composited onto the
+   surface its chain stands on and held to its WCAG floor in every theme and
+   every media environment -- or a named EXEMPT with the reason written beside
+   it. That test also pins the tokens to the concept value by value, holds the
+   sheet to two :root blocks, the 44px target floor, and no keyframe animation. */
+:root{
+  color-scheme:dark light;
+  --space:#050908; --ground:#0a0f0d; --panel:#0e1512; --line:#24312a; --line-strong:#3a4a40;
+  --ink:#eef4e8; --muted:#a3b1a9; --faint:#839187;
+  --ion:#d4f99b; --on-ion:#10180b; --amber:#efc48b; --on-amber:#1b1305;
+  --display:"Segoe UI Variable Display","Segoe UI",system-ui,sans-serif;
+  --sans:"Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;
+  --mono:ui-monospace,"Cascadia Mono",Consolas,monospace;
+}
+@media (prefers-color-scheme:light){:root{
+  --space:#e7ece5; --ground:#eef1ed; --panel:#f8faf6; --line:#c7d1c8; --line-strong:#9aab9f;
+  --ink:#18241c; --muted:#4e6055; --faint:#607568;
+  --ion:#36520f; --on-ion:#f4f9ea; --amber:#8a6500; --on-amber:#fff7e2;
+}}
+
+/* A stored choice overrides the OS; without it the media default stays live. */
+:root[data-theme="dark"]{
+  --space:#050908; --ground:#0a0f0d; --panel:#0e1512; --line:#24312a; --line-strong:#3a4a40;
+  --ink:#eef4e8; --muted:#a3b1a9; --faint:#839187;
+  --ion:#d4f99b; --on-ion:#10180b; --amber:#efc48b; --on-amber:#1b1305;
+  --display:"Segoe UI Variable Display","Segoe UI",system-ui,sans-serif;
+  --sans:"Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;
+  --mono:ui-monospace,"Cascadia Mono",Consolas,monospace;
+
+  color-scheme:dark;
+}
+:root[data-theme="light"]{
+  --space:#e7ece5; --ground:#eef1ed; --panel:#f8faf6; --line:#c7d1c8; --line-strong:#9aab9f;
+  --ink:#18241c; --muted:#4e6055; --faint:#607568;
+  --ion:#36520f; --on-ion:#f4f9ea; --amber:#8a6500; --on-amber:#fff7e2;
+
+  color-scheme:light;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{margin:0;min-height:100%}
+body{background:var(--space);color:var(--ink);font:14px/1.45 var(--sans);
+     -webkit-font-smoothing:antialiased}
+h1,p{margin:0}
+button{font:inherit;cursor:pointer;background:none;border:0;padding:0;color:inherit}
+:focus-visible{outline:2px solid var(--ion);outline-offset:3px}
+
+/* Every control the shell or a region module builds clears the 44px minimum
+   target height, declared over the ELEMENT TYPES rather than over a list of
+   classes: a control added later by another module is already above the floor. */
+.desk-shell button,.desk-shell select,.desk-shell input,.desk-shell textarea{min-height:44px}
+
+/* ── shell ────────────────────────────────────────────────────────────── */
+/* The rail, the centre and the pult are three columns under the top bar; under
+   900px they stack in reading order and the page never scrolls sideways. */
+.desk-shell{display:grid;grid-template-columns:248px minmax(0,1fr) 300px;
+  grid-template-rows:auto minmax(0,1fr);min-height:100vh;max-width:1280px;
+  margin:0 auto;background:var(--ground)}
+.desk-top{grid-column:1/-1;display:flex;align-items:center;flex-wrap:wrap;
+  gap:4px 20px;padding:0 22px;min-height:48px;border-bottom:1px solid var(--line)}
+.desk-brand{font:500 12px var(--display);letter-spacing:.26em;text-transform:uppercase}
+.desk-status{font-size:12.5px;color:var(--muted)}
+.desk-note{font-size:12px;color:var(--muted)}
+.desk-classic{margin-left:auto;display:inline-flex;align-items:center;min-height:44px;
+  font-size:12.5px;color:var(--muted);text-decoration:underline}
+
+/* ── the five regions ─────────────────────────────────────────────────── */
+.desk-rail{min-width:0;min-height:0;padding:16px 12px;overflow:auto;
+  border-right:1px solid var(--line)}
+.desk-center{display:grid;grid-template-rows:minmax(0,1fr) auto auto;min-width:0;min-height:0}
+.desk-scene{min-height:320px;margin:12px;border-radius:18px;background:var(--space)}
+.desk-feed{min-height:120px;padding:12px 22px}
+.desk-summary{min-height:56px;padding:0 22px;border-top:1px solid var(--line)}
+.desk-pult{min-width:0;min-height:0;padding:16px 14px;overflow:auto;
+  border-left:1px solid var(--line)}
+
+@media (max-width:900px){
+  .desk-shell{grid-template-columns:minmax(0,1fr);grid-template-rows:auto}
+  .desk-rail{border-right:0;border-bottom:1px solid var(--line)}
+  .desk-pult{border-left:0;border-top:1px solid var(--line)}
+}

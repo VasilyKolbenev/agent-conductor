@@ -23,6 +23,7 @@ import pytest
 from conductor import server, server_assets
 from tests import studio_partition
 from tests.studio_partition import hub_registry_names, packaged_names, partition_faults
+from tests.test_studio_source import SCREEN_STATES
 
 ROOT = Path(__file__).resolve().parents[1]
 PANEL = ROOT / "src" / "conductor" / "panel"
@@ -161,17 +162,37 @@ def test_the_desk_page_meets_its_own_contract():
 
 
 def test_every_reference_the_desk_page_makes_is_a_route_this_server_serves():
-    """The page names exactly one neighbour, and that neighbour is a real route.
+    """The page names exactly its stylesheet and one neighbour, all real routes.
 
-    The list is exact so a second reference has to be argued for here, and it
+    The list is exact so a further reference has to be argued for here, and it
     is not empty so the served-route check below cannot pass by having nothing
-    to judge. The slice that adds `desk.css` and `desk.js` extends it to
+    to judge. The slice that adds `desk.js` extends it to
     `["/panel/desk.css", "/panel/desk.js", "/panel/index.html"]` (spec 5.6.8).
     """
     html = DESK_PAGE.read_text(encoding="utf-8")
     refs = re.findall(QUOTED_REFERENCE, html)
-    assert refs == ["/panel/index.html"]
+    assert refs == ["/panel/desk.css", "/panel/index.html"]
     assert set(refs) <= set(server.PANEL_ASSETS), sorted(set(refs) - set(server.PANEL_ASSETS))
+    assert html.count('<link rel="stylesheet" href="/panel/desk.css">') == 1
+
+
+#: The regions spec 5.1 gives the desk besides its top bar, in reading order, with
+#: the id the page gives each mount. Each starts `empty`: a mount is a container a
+#: later module fills, and which word it stands in is a fact only a read can supply.
+REGIONS = (("rail", "deskRail"), ("scene", "deskScene"), ("feed", "deskFeed"),
+           ("summary", "deskSummary"), ("pult", "deskPult"))
+
+
+def test_the_desk_page_carries_its_five_region_mounts_once_each_and_empty():
+    html = DESK_PAGE.read_text(encoding="utf-8")
+    for region, ident in REGIONS:
+        assert html.count(f'id="{ident}"') == 1, ident
+        tag = re.search(rf'<[a-z]+ [^>]*id="{ident}"[^>]*>', html)
+        assert tag and f'data-region="{region}"' in tag[0], ident
+        assert 'data-state="empty"' in tag[0] and "empty" in SCREEN_STATES, ident
+        assert re.search(rf'id="{ident}"[^>]*></[a-z]+>', html), f"{ident} is not empty"
+    assert re.findall(r'data-region="([a-z]+)"', html) == [name for name, _ in REGIONS]
+    assert html.count('id="deskShell"') == 1 and html.count('id="deskStatus"') == 1
 
 
 # -- the partition over studio*, desk* and hub* ---------------------------------
