@@ -360,14 +360,15 @@ def test_the_desk_boot_check_refuses_each_defect_and_names_it(edit, needle):
 #
 # Facts enter the desk through a READ and through nothing else, and this module is the
 # one that turns a read into a word on a region. It may not reach the mutation door
-# (the transport's `submit`, its session drop and its stream), open a door of its own,
-# or say a state word the seven do not hold. The doors are named, not counted: the
-# function reads the module's code, comments stripped, so prose that says "submit"
-# does not red and a real call does.
+# (the transport's `submit` and the session it mints a write's token from), open a door
+# of its own, or say a state word the seven do not hold. The event stream is not among
+# them: it is a read, and the spec puts the desk's subscription in this module. The doors
+# are named, not counted: the function reads the module's code, comments stripped, so
+# prose that says "submit" does not red and a real call does.
 
 #: What reaches a write, or a door of the module's own. Each is a word of the code.
-WRITE_DOORS = (r"\bsubmit\b", r"\bdropSession\b", r"\bopenStream\b", r"\bfetch\s*\(",
-               r"\bmethod\s*:", r'"POST"', r"\bXMLHttpRequest\b", r"\bsendBeacon\b")
+WRITE_DOORS = (r"\bsubmit\b", r"\bdropSession\b", r"\bfetch\s*\(", r"\bmethod\s*:",
+               r'"POST"', r"\bXMLHttpRequest\b", r"\bsendBeacon\b")
 #: The functions whose returns ARE phases: every word they return is a state word.
 PHASE_FUNCTIONS = ("phaseOf", "worst")
 
@@ -417,8 +418,6 @@ BOOT_WRITES = {
     "a submit taken from the transport": (
         lambda text: text + "\nconst {submit} = createTransport(locale);\n", "write door"),
     "a session drop": (lambda text: text + "\ndropSession();\n", "write door"),
-    "a stream opened by the boot module": (lambda text: text + "\nopenStream();\n",
-                                           "write door"),
     "a POST method": (lambda text: text + '\nconst OPTIONS = {method: "POST"};\n',
                       "write door"),
     "a door of its own": (lambda text: text + '\nfetch("/command/tasks");\n', "write door"),
@@ -446,6 +445,16 @@ def test_the_desk_write_check_refuses_each_planted_write_and_names_it(edit, need
     faults = desk_write_faults(edit(DESK_SCRIPT.read_text(encoding="utf-8")))
     assert faults, "a defective module was accepted"
     assert any(needle in fault for fault in faults), faults
+
+
+def test_the_desk_write_check_does_not_take_the_stream_for_a_write_door():
+    """The event stream is a read: a frame buys a re-read and is never a fact or a write.
+
+    The boot module is where the spec puts its subscription (5.6.1), so a check that refused
+    `openStream` would refuse the desk its own live updates the day they are written.
+    """
+    source = DESK_SCRIPT.read_text(encoding="utf-8")
+    assert desk_write_faults(source + "\nconst stream = openStream();\n") == []
 
 
 def test_the_desk_write_check_reads_code_and_not_the_prose_around_it():
